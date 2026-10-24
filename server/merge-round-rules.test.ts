@@ -153,3 +153,85 @@ test("round.mjs's clean-merge carry-over matches landing.ts over clean, evil, re
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// A later Not Yet stops the carry (§chat.worktrees/merge-guard): both copies stop at the first commit with an
+// answer, the newest answer there deciding, Not Yet a tie or an unreadable time.
+interface RoundAnswer {
+  landingAnswer: (landing: { goAheads: unknown[]; notYet: unknown[] }, branch: string, head: string) => { kind: string } | null;
+  landingAnswerAt: RoundCarry["landingAnswerAt"];
+}
+
+test("round.mjs's newest-answer rule matches landing.ts's answerAt over every pairing of times", async () => {
+  const round = (await import(ROUND)) as RoundAnswer;
+  const landing = await import("../pi-config/extensions/worktrees/landing.ts");
+  const sha = "a".repeat(40);
+  const times = [undefined, "2026-10-24T00:00:00Z", "2026-10-24T00:05:00Z", "x"];
+  for (const go of times) for (const no of times) {
+    const data = {
+      v: 1 as const,
+      goAheads: go === undefined ? [] : [{ branch: "b", commit: sha, at: go, by: "land-it" as const }],
+      notYet: no === undefined ? [] : [{ branch: "b", commit: sha, at: no }],
+    };
+    const ours = landing.answerAt(data, "b", sha)?.kind ?? null;
+    assert.equal(round.landingAnswer(data, "b", sha)?.kind ?? null, ours, `go ${go} / not yet ${no}`);
+  }
+});
+
+test("round.mjs and landing.ts both stop the carry at a later Not Yet: A pressed, Not Yet at B, C lands nothing", async () => {
+  const round = (await import(ROUND)) as RoundAnswer & RoundCarry;
+  const landing = await import("../pi-config/extensions/worktrees/landing.ts");
+  const { runGit } = await import("../pi-config/extensions/worktrees/git.ts");
+  const { execFileSync } = await import("node:child_process");
+  const { rmSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { scratchRoot } = await import("./test-scratch");
+  const dir = scratchRoot("sova-notyet-");
+  const repo = join(dir, "repo");
+  const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", ...args], { cwd: repo, encoding: "utf8", env: { ...process.env, GIT_EDITOR: "true", GIT_MERGE_AUTOEDIT: "no" } }).trim();
+  const commit = (name: string) => {
+    writeFileSync(join(repo, name), `${name}\n`);
+    git("add", "-A");
+    git("commit", "-q", "-m", name);
+  };
+  const cleanMerge = (name: string) => {
+    git("checkout", "-q", "master");
+    commit(name);
+    git("checkout", "-q", "feat");
+    git("merge", "--no-edit", "-q", "master");
+    return git("rev-parse", "HEAD");
+  };
+  try {
+    execFileSync("git", ["init", "-q", "-b", "master", repo]);
+    commit("base.txt");
+    git("checkout", "-q", "-b", "feat");
+    commit("feat.txt");
+    const A = git("rev-parse", "HEAD");
+    const B = cleanMerge("m1.txt");
+    const C = cleanMerge("m2.txt");
+    const run = (args: string[]) => runGit(args, repo);
+    const parentOf = (s: string) => round.cleanMergeParent(run, s, "master");
+    const carry = { git: runGit, cwd: repo, target: "master" };
+    const file = join(dir, "landing.json");
+    const both = async (label: string, want: Record<string, boolean>) => {
+      const parsed = landing.readLanding(file);
+      for (const [name, sha] of Object.entries({ A, B, C })) {
+        const ours = !!(await landing.goAheadFor("feat", sha, file, carry));
+        const theirs = (await round.landingAnswerAt(parsed, "feat", sha, parentOf))?.kind === "go-ahead";
+        assert.equal(theirs, ours, `${label}: ${name}`);
+        assert.equal(ours, want[name], `${label}: ${name}`);
+      }
+    };
+    landing.recordGoAhead({ branch: "feat", commit: A, at: "2026-10-24T00:00:00Z", by: "land-it" }, file);
+    await both("Land It at A", { A: true, B: true, C: true });
+    landing.recordNotYet({ branch: "feat", commit: B, at: "2026-10-24T00:05:00Z" }, file);
+    await both("then Not Yet at B", { A: true, B: false, C: false });
+    landing.recordGoAhead({ branch: "feat", commit: B, at: "2026-10-24T00:10:00Z", by: "land-it" }, file);
+    await both("then Land It at B", { A: true, B: true, C: true });
+    rmSync(file);
+    landing.recordGoAhead({ branch: "feat", commit: A, at: "2026-10-24T00:00:00Z", by: "land-it" }, file);
+    landing.recordNotYet({ branch: "feat", commit: A, at: "2026-10-24T00:05:00Z" }, file);
+    await both("Not Yet at A after its Land It", { A: false, B: false, C: false });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

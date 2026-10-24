@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { acquireLock, alsoUpdateNudges, areaGuides, dirtyPaths, expandArgs, failingTestFiles, globRe, groupOf, guideFrontMatter, hasScript, homeShown, landingAnswer, mainMergesOn, needsRestart, ownerOf, parseBatch, parseBoard, parseLanding, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
+import { acquireLock, alsoUpdateNudges, areaGuides, dirtyPaths, expandArgs, failingTestFiles, globRe, groupOf, guideFrontMatter, hasScript, homeShown, landingAnswer, landingAnswerAt, mainMergesOn, needsRestart, ownerOf, parseBatch, parseBoard, parseLanding, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
 
 const ROUND = fileURLToPath(new URL("../scripts/round.mjs", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -1435,4 +1435,19 @@ test("Ready to land: ask queues the branch for Sova's Landing card; status reads
     writeFileSync(stateFile, saved);
     for (const f of [queueFile, shownFile, landingFile, boardFile]) rmSync(f, { force: true });
   }
+});
+
+test("landingAnswerAt: a later Not Yet on the way stops the carry; the newest answer at a commit wins", async () => {
+  const [A, B, C] = ["a", "b", "c"].map((c) => c.repeat(40));
+  const parentOf = async (s) => (s === C ? B : s === B ? A : undefined);
+  const go = (commit, at) => ({ branch: "f", commit, at, by: "land-it" });
+  const no = (commit, at) => ({ branch: "f", commit, at });
+  const kind = async (landing, head) => (await landingAnswerAt(landing, "f", head, parentOf))?.kind ?? null;
+  assert.deepEqual(await landingAnswerAt({ goAheads: [go(A, "2026-10-24T00:00:00Z")], notYet: [] }, "f", C, parentOf), { kind: "go-ahead", withoutSpecs: false, by: "land-it", at: A });
+  const later = { goAheads: [go(A, "2026-10-24T00:00:00Z")], notYet: [no(B, "2026-10-24T00:05:00Z")] };
+  assert.equal(await kind(later, C), null, "Not Yet at B is never walked past");
+  assert.equal(await kind(later, B), "not-yet");
+  assert.equal(await kind({ goAheads: [go(A, "2026-10-24T00:00:00Z")], notYet: [no(A, "2026-10-24T00:05:00Z")] }, C), null, "Not Yet at A after its go-ahead");
+  assert.equal(await kind({ goAheads: [go(A, "2026-10-24T00:00:00Z"), go(B, "2026-10-24T00:10:00Z")], notYet: [no(B, "2026-10-24T00:05:00Z")] }, C), "go-ahead", "a go-ahead at B after its Not Yet");
+  assert.equal(await kind({ goAheads: [go(B, "2026-10-24T00:05:00Z")], notYet: [no(B, "2026-10-24T00:05:00Z")] }, B), "not-yet", "a tie is Not Yet");
 });

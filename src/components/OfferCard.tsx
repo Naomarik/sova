@@ -224,9 +224,7 @@ function OfferOutcome(props: { card: OfferCard }) {
           <span>Not now</span>
         </Match>
         <Match when={c().state === "superseded"}>
-          <span>
-            Replaced by <span class="text-mono">{c().supersededBy}</span>
-          </span>
+          <span>Replaced by a newer commit</span>
         </Match>
         <Match when={c().state === "withdrawn"}>
           <span>No longer offered</span>

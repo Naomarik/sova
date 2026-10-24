@@ -1332,9 +1332,9 @@
         "server/owner-page-tabs.integration.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-22T16:16Z",
-        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
+        "by": "Omar",
+        "at": "2026-10-23T21:49Z",
+        "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#4f6c19c9"
       }
     },
     "§app.project-assistant/chat": {
@@ -1376,9 +1376,9 @@
         "server/project-assistant-ready.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-22T16:16Z",
-        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
+        "by": "Omar",
+        "at": "2026-10-23T21:49Z",
+        "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#4f6c19c9"
       }
     },
     "§app.project-assistant/drawings": {
@@ -1496,9 +1496,9 @@
         "src/lib/assistant-model-rows.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-22T21:57Z",
-        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#3ef3672c"
+        "by": "Omar",
+        "at": "2026-10-23T22:20Z",
+        "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#4f6c19c9"
       }
     },
     "§app.project-assistant/never": {
@@ -1518,6 +1518,31 @@
         "by": "naomarik",
         "at": "2026-10-20T12:19Z",
         "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#2d6e96df"
+      }
+    },
+    "§app.project-assistant/offers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-assistant/abilities",
+        "§app.project-assistant/tools"
+      ],
+      "code": [
+        "server/project-assistant-loadout.ts",
+        "server/project-assistant-prompt.md",
+        "server/project-assistant-tools.ts",
+        "server/project-assistant-offers.ts",
+        "server/assistant-would-act.ts",
+        "server/project-assistant-offers.test.ts",
+        "server/project-assistant-attended.test.ts",
+        "server/project-assistant-versions.integration.test.ts",
+        "server/project-assistant.integration.test.ts"
+      ],
+      "agreed": {
+        "by": "Omar",
+        "at": "2026-10-23T21:49Z",
+        "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#4f6c19c9"
       }
     },
     "§app.project-assistant/photos": {
@@ -1675,7 +1700,7 @@
     "§app.project-assistant/tools": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.project-services/deploy-callers",
         "§app.owner-page/conversations"
@@ -1690,9 +1715,9 @@
         "server/project-assistant-prompt.md"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-22T09:38Z",
-        "source": "pi-session:4dbe354b-e46f-46a6-8617-0cedc16ff81f#4b53db3a"
+        "by": "Omar",
+        "at": "2026-10-23T21:49Z",
+        "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#4f6c19c9"
       }
     },
     "§app.project-assistant/versions": {
@@ -2662,9 +2687,9 @@
         "server/project-assistant.integration.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-20T12:19Z",
-        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#2d6e96df"
+        "by": "Omar",
+        "at": "2026-10-23T22:20Z",
+        "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#4f6c19c9"
       }
     },
     "§app/project-commands": {
@@ -9318,9 +9343,9 @@
         "§app.project-overseer/tools"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "Omar",
+        "at": "2026-10-23T21:49Z",
+        "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#4f6c19c9"
       }
     },
     "§app.project-overseer/gaps": {
@@ -16974,9 +16999,9 @@
         "server/project-services/slots.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T20:29Z",
-        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#ddd8cd7b"
+        "by": "Omar",
+        "at": "2026-10-24T09:55Z",
+        "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#2df6b895"
       }
     },
     "§app.project-services/conform": {

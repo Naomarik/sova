@@ -574,7 +574,7 @@ same engine in-process, never over HTTP:
 - **The Project Assistant** (the `assistant` caller, §app.project-assistant/tools): only `up`, and
   only of the one instance its `start_version` named, which must be a copy the owner's versions list
   holds (§app.project-assistant/versions), and only once the project statechart took its
-  `services/run` act (`copiesRun` in the Project Assistant column, or a turn the operator started).
+  `services/run` act (`copiesRun` in the Project Assistant column, in the operator's turns too).
   Every other verb, and `up` of any other instance, is `forbidden`; the self-host rule refuses it
   like any caller but the operator.
 

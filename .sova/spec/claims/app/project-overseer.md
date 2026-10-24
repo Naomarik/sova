@@ -260,10 +260,12 @@ user row.
   to exactly one power, "always" or "operator"; a test enumerates them.
 - **The operator is never restricted.** A message the operator sends from the UI makes that run
   theirs (decided by identity), and so does a message the global Overseer sends through its route in a
-  turn the operator started (§app.overseer/org-project-overseers), and so does a turn the operator
-  starts in the Project Assistant's chat: every tool runs in it, whatever the switches say, under the
-  per-message limits. A client's (owner's) message is never the operator's: what it sets off is a
-  separate kind of caller (`by: "assistant"`) checked against the Project Assistant column.
+  turn the operator started (§app.overseer/org-project-overseers): every tool runs in it, whatever
+  the switches say, under the per-message limits. The Project Assistant's chat is the exception: a
+  turn the operator starts there is checked against the Project Assistant column like the owner's
+  (§app.project-assistant/offers). A client's (owner's) message is never the operator's: what it
+  sets off is a separate kind of caller (`by: "assistant"`) checked against the Project Assistant
+  column.
 - **On** means the act goes ahead within the limits (§app.project-overseer/limits) and, when it
   reaches a person or the code, after the waiting period, where anyone may Cancel it in Needs you
   (§app.project-overseer/holds). There is no Approve step and no confirmation by the overseer.

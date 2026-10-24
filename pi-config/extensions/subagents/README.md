@@ -529,7 +529,7 @@ Member tools:
 
 | Tool           | Who          | Behavior                                                                                         |
 | -------------- | ------------ | ------------------------------------------------------------------------------------------------ |
-| `team_msg`     | any member   | `{ to, message, subject?, urgent?, replyTo? }`; `to` is a sibling role, worker ID, or `all`. Queues an inbox item per recipient and answers at once (`Queued for <role> (<id>): item i_N`). |
+| `team_msg`     | any member   | `{ to, message, subject?, urgent?, replyTo?, needsReply? }`; `replyTo` closes that item in your inbox, `needsReply` stores a question; `to` is a sibling role, worker ID, or `all`. Queues an inbox item per recipient and answers at once (`Queued for <role> (<id>): item i_N`). |
 | `team_inbox`   | any member   | `{ action?: list \| open \| done \| sent, ids?, note?, limit? }`; the member's inbox, served by the parent. |
 | `team_ask`     | any member   | `{ question, subject? }`; to the routing coordinator as a `question` item, else to the operator; the answer arrives later. |
 | `team_roster`  | orchestrator | Live roster of the member's own team with states, ownership and recent actions.                  |
@@ -583,7 +583,9 @@ refused because the member is busy, starting or asleep, and none is lost.
   (never reused, a hint file `inbox-seq.json` covers compaction). An item has a
   subject (≤120 chars, default its first line), the message (≤8,000), `urgent`,
   `replyTo`, kind (`message`, `question`, `report`, `handover`, `notice`,
-  `instruction`) and status `new → read → addressed` with an optional note.
+  `instruction`) and status `new → read → addressed` with an optional note;
+  an addressed item records `closedBy` (`member` for `done`, `reply` for a
+  `replyTo` answer, `auto` for the safety net; absent = member, older lines).
   Compaction keeps every open item and the newest 2,000 others per member.
 - **Delivery lane** (`delivery.ts`): every steer to a worker, the main thread's
   `agent_steer` and the `/team` workspace's included, runs on a serial lane per
@@ -592,17 +594,37 @@ refused because the member is busy, starting or asleep, and none is lost.
   goes ahead of queued entries, never the one in flight.
 - **Wakes**: an idle member's normal items are gathered for 3 s, then it gets one
   list (`[Team inbox: N new (k urgent) — …]`, at most 20 lines, urgent first,
-  short bodies inline up to 4,000 chars; shown in full = read); an urgent item
-  wakes it at once. A busy member gets urgent items at its next step (a
+  subjects only: a member must open an item to see it; a list of exactly one
+  item shows it in full and counts as opening it; an item listed before and
+  still unopened is marked `(unopened)`). It ends with a **Still open** block
+  (≤5 lines: items opened and not closed, questions first) and the footer
+  telling the member to close each item in the same step as the work. An
+  urgent item wakes it at once. A busy member gets urgent items at its next step (a
   mid-turn steer) and normal ones when its turn ends. One wake is in flight per
   member; a failed wake is retried after 5 s, 15 s, 60 s, then every 5 min while
   the member is live (team action `wake retry`).
+- **Inbox zero** (§app.teams/inbox-zero): opened items are tagged with the
+  worker's task (`fold.ts` `inboxTurn()`; a wake's items with its steer number
+  until that steer's run begins, `steerTask()`), so a wake accepted after a run
+  ended but before its settle was handled belongs to the next turn. At each
+  settle (before the routed report) the parent closes, `closedBy: "auto"`, every
+  open non-question item seen in a task that has ended; never an unseen item,
+  never one read with no turn record (before this change). `replyTo` closes an
+  item of any kind; `team_msg` `needsReply: true` stores a `question`.
+- **The gate** (§app.teams/inbox-gate): a wake that starts an idle member's turn
+  and lists unopened items carries `[Open your inbox first: team_inbox open …]`;
+  `member.ts` then refuses every tool but `team_inbox`, `team_msg` and
+  `team_ask` (`tool_call` block) until an item is opened. A later user message
+  that is not a wake (a direct instruction) lifts it for the turn.
 - **Older member code**: `member.ts` writes `caps.json` (`{"inbox":1}`) into its
   directory at load. A member picked back up without it (or on a backend without
   team tools) gets each item in full on the lane, plus the legacy `inbox.jsonl`
   copy its old `team_inbox` reads. A new member whose parent is on older code
   falls back to that copy for `team_inbox list`.
-- **Moving and returning** (`inbox-lifecycle.ts`): at retirement the old member's open items move
+- **Moving and returning** (`inbox-lifecycle.ts`): every end (stopped, failed, ejected, found
+  ended after a reload, retired) counts as the end of the member's turn, so first every item it
+  opened in a recorded turn that is not a question closes automatically (`closedBy: "auto"`); handled
+  news is never returned as "not addressed" nor moved. Then: at retirement the old member's open items move
   to its successor (ids and senders kept, `movedFrom` recorded, listed to it); a member that ends
   with a live successor hands them on the same way. A member that ends with none (stopped, failed,
   ejected, or found ended after a reload) returns them: one "not addressed" notice per sender — a
@@ -611,8 +633,13 @@ refused because the member is busy, starting or asleep, and none is lost.
   `team-notice` message that starts no turn. After a reload the parent folds every
   `items.jsonl`, returns the items of members found ended, and wakes each live member for items it
   was never listed.
-- `team_roster` and `team_list` show each member's open count (`3 open items`);
-  a queued answer notes a recipient with more than 50 open items.
+- `team_roster` and `team_list` show each member's open count (`3 open items`), with its
+  unanswered questions and the oldest one's wait (`3 open items (1 question unanswered 20 min)`),
+  and one team line, `Inbox: N open · closed by members M · automatically A`; a queued answer
+  notes a recipient with more than 50 open items.
+- **Reports name what is left**: a member's report routed to its coordinator, and the
+  coordinator's own completion to the parent, end with `[Left open: i_7 question from writer
+  (opened); i_9 report (unopened)]` when items are still open after the turn-end safety net.
 
 `orchestrator: true` is a per-member flag on `team_create` / `team_add`. It is
 sibling-scoped coordination only: the orchestrator can see its team and steer
@@ -758,6 +785,31 @@ for that call with a warning line in the result; the extension never writes the 
   handover instructions go on the old member's delivery lane: never refused because a delivery is
   in progress, a redirect lands after that one; the `team_succeed` result says the old member was
   told to brief its successor only when that delivery was taken, else that it could not be told.
+- **Runtime fallback.** The primary/fallback choice is made again while the team runs. A member
+  with the coordinator or monitor duty whose turn ends with a failed task moves to its fallback at
+  once when the error says its model is out of usage (`../provider-limits/usage-out.ts`: usage,
+  credits, quota, balance or billing ran out, a usage limit was reached — monthly, weekly or 5-hour
+  included, such as Ollama's `429: {"message":"you (…) have reached your monthly usage limit, add
+  usage credits: …"}` or the Claude Code bridge's `You've hit your limit · resets 3pm` once every
+  login is out — or the sign-in no longer works), and otherwise on its 3rd failed turn in a row (a
+  good turn resets the count); a single 429 rate limit keeps today's path. Only once per member,
+  only while it runs its role's current primary, never while a handover involving it is pending.
+  The member is stopped, its seat ejected first (source `system`, so a full team of 24 still gets
+  it), and its successor starts at once on the fallback through the main chat's replacement path
+  (no note asked for, nothing to retire): a monitor's runs its first check at once; a coordinator's
+  is told its predecessor stopped without a note and why, and routes the team from its start. The
+  failed turn's own completion goes nowhere; the routing coordinator gets one `handover` item when
+  the monitor switched; the `handover` event's detail is `successor <role> (<ag_NN>) on
+  <backend>/<model>; fallback: primary <tuple> <reason>`, with a `handover` action row (Sova shows
+  it as "Monitor moved to its fallback <model>: <primary model> <reason>."). With no fallback that
+  can run, a monitor is stopped (one `notice` item for the coordinator, one `team-notice` in the
+  main chat) and a coordinator is reported to the main chat once (a `team-notice`), and keeps
+  running. The model is marked out for an hour as a `subagents-dead-tuple-v1` entry (`{version: 1,
+  backend, model, reason, at, teamId?, duty?}`), replayed from all of the session's entries at
+  `session_start`: every tuple check (standing roles, the members default, successors) refuses it
+  meanwhile, and a team whose duty switched stays on its fallback. A failed monitor turn that
+  doesn't switch, with no pending or held `wake_nudge`, gets its next check scheduled by the parent
+  (`everyMinutes`), so the monitor never goes silent.
 - **Records.** Team actions gain `report`, `handover`, `retire`, `wrap-up`, `pause`, `resume`
   (sources `monitor`, `system`); handover, retire, wrap-up, pause and resume are also appended as
   `subagents-team-event-v1` entries (`{version, teamId, kind, workerId, role, at, detail?}`; a

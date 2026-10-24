@@ -3,15 +3,21 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import teamMemberExtension, { MEMBER_TOOLS, ORCHESTRATOR_TOOLS, registerMemberTools } from "./member.ts";
+import teamMemberExtension, { MEMBER_TOOLS, ORCHESTRATOR_TOOLS, registerInboxGate, registerMemberTools } from "./member.ts";
+import { wakeText } from "./delivery.ts";
+import type { InboxItem } from "./inbox.ts";
+
 import { MEMBER_ENV, MESSAGE_LIMIT_TEXT, appendInbox, encodeMemberContext, initMemberDir, memberToolText, takeRequests, writeResponse, type MemberContext } from "./mailbox.ts";
 import { hasInboxCaps } from "./inbox.ts";
 
 function fakePi() {
 	const tools = new Map<string, any>();
+	const handlers = new Map<string, ((e: any) => any)[]>();
 	return {
 		tools,
-		pi: { registerTool: (t: any) => tools.set(t.name, t) } as any,
+		handlers,
+		emit: (name: string, event: any) => (handlers.get(name) ?? []).map((f) => f(event)).find((r) => r !== undefined),
+		pi: { registerTool: (t: any) => tools.set(t.name, t), on: (name: string, f: (e: any) => any) => { handlers.set(name, [...(handlers.get(name) ?? []), f]); } } as any,
 		call: (name: string, params: any = {}, signal?: AbortSignal) => tools.get(name).execute("id", params, signal, () => {}, {} as any),
 	};
 }
@@ -155,4 +161,59 @@ test("team_inbox is a request the parent serves (it is the only writer); a paren
 	} finally {
 		s.cleanup();
 	}
+});
+
+test("inbox gate (§app.teams/inbox-gate): a gated wake that starts the turn refuses other tools until an item is opened; an instruction lifts it", () => {
+	const h = fakePi();
+	const gate = registerInboxGate(h.pi);
+	const it = (id: string): InboxItem => ({ id, teamId: "team_01", from: { role: "lead", workerId: "ag_01" }, to: { role: "dev", workerId: "ag_02" }, kind: "message", urgent: false, subject: id, body: id, sentAt: 1, status: "new" });
+	const gated = wakeText([it("i_4"), it("i_5")], { gate: true }).text;
+	const user = (text: string) => ({ message: { role: "user", content: [{ type: "text", text }] } });
+	const call = (toolName: string, input: any = {}) => h.emit("tool_call", { toolName, input });
+	// A turn started by a gated wake.
+	h.emit("agent_start", {});
+	h.emit("message_end", user(gated));
+	assert.deepEqual(gate.state(), ["i_4", "i_5"]);
+	assert.deepEqual(call("bash", { command: "ls" }), { block: true, reason: "Open your inbox first (team_inbox open i_4 i_5)" });
+	for (const name of ["team_msg", "team_ask"]) assert.equal(call(name), undefined, `${name} stays allowed`);
+	assert.equal(call("team_inbox", { action: "list" }), undefined, "team_inbox stays allowed");
+	assert.ok(call("read"), "listing is not opening: still gated");
+	assert.equal(call("team_inbox", { action: "open", ids: ["i_5"] }), undefined);
+	assert.equal(call("bash"), undefined, "opened one item: the gate lifts");
+	// The turn ends; the next turn starts with something else: no gate.
+	h.emit("agent_end", {});
+	h.emit("agent_start", {});
+	h.emit("message_end", user("[Instruction from orchestrator lead (ag_01), team_01]\nRun the tests"));
+	assert.equal(call("bash"), undefined, "a turn started by anything else is never gated");
+	// A direct instruction mid-turn lifts the gate; a mid-turn wake never sets it.
+	h.emit("agent_start", {});
+	h.emit("message_end", user(gated));
+	assert.ok(call("bash"));
+	h.emit("message_end", user("Please run pnpm test now"));
+	assert.equal(call("bash"), undefined, "nothing a direct instruction asks for is refused");
+	h.emit("agent_start", {});
+	h.emit("message_end", user("[Instruction] start"));
+	h.emit("message_end", user(gated));
+	assert.equal(call("bash"), undefined, "a wake reaching a busy member mid-turn never gates");
+	// An ungated wake (setting off, or a single item shown in full) never gates.
+	h.emit("agent_start", {});
+	h.emit("message_end", user(wakeText([it("i_6"), it("i_7")]).text));
+	assert.equal(call("bash"), undefined);
+});
+
+test("inbox gate: an open naming none of the gated items does not lift it; a successful open result does", () => {
+	const h = fakePi();
+	registerInboxGate(h.pi);
+	const it = (id: string): InboxItem => ({ id, teamId: "team_01", from: { role: "lead", workerId: "ag_01" }, to: { role: "dev", workerId: "ag_02" }, kind: "message", urgent: false, subject: id, body: id, sentAt: 1, status: "new" });
+	const gated = wakeText([it("i_4"), it("i_5")], { gate: true }).text;
+	const call = (toolName: string, input: any = {}) => h.emit("tool_call", { toolName, input });
+	h.emit("agent_start", {});
+	h.emit("message_end", { message: { role: "user", content: [{ type: "text", text: gated }] } });
+	assert.equal(call("team_inbox", { action: "open", ids: ["i_zz"] }), undefined, "team_inbox itself is allowed");
+	assert.ok(call("bash"), "a bogus id lifts nothing");
+	h.emit("tool_result", { toolName: "team_inbox", input: { action: "open", ids: ["i_zz"] }, isError: true, content: [] });
+	assert.ok(call("bash"), "a failed open lifts nothing");
+	// An item opened that the wake listed in Still open (not gated): its successful result lifts it.
+	h.emit("tool_result", { toolName: "team_inbox", input: { action: "open", ids: ["i_2"] }, isError: false, content: [] });
+	assert.equal(call("bash"), undefined, "a successful open lifts the gate");
 });

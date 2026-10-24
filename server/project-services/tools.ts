@@ -90,6 +90,9 @@ function bodyOf(p: Record<string, unknown>, defaultProject: string | null): Reco
   return out;
 }
 
+/** The verbs whose bare call (no instance, checkout or branch) aims at a checkout (§app.project-services/callers). */
+const BARE_TARGET_VERBS = new Set(["create", "up", "test"]);
+
 /** The result with no link's `url`, wherever links sit. */
 export function withoutUrls(r: VerbResult): VerbResult {
   const strip = (ls: VerbResult["links"]) => ls.map(({ url: _url, ...l }) => l);
@@ -134,6 +137,8 @@ export interface VerbToolOptions {
   caller: (ctx: ToolCtx | undefined) => Promise<Caller>;
   /** The project a call without one is about. */
   defaultProject: (ctx: ToolCtx | undefined) => Promise<string | null>;
+  /** The checkout a bare create/up/test aims at (no instance, checkout or branch given), or null: the project's. */
+  defaultCheckout?: (ctx: ToolCtx | undefined) => Promise<string | null>;
   redactor?: () => Redactor;
   /** The Overseers' verb `onboard` (absent: the verb is not offered). */
   onboard?: OnboardRun;
@@ -156,7 +161,12 @@ export function projectVerbsTool(o: VerbToolOptions): Tool {
       }
       const caller = await o.caller(ctx);
       // No tool result ever carries a share link's URL (§app.project-services/share): the engine gives it to the operator only.
-      const r = withoutUrls(await o.engine().run(String(p.verb ?? ""), bodyOf(p, await o.defaultProject(ctx)), caller, signal ? { signal } : {}));
+      const body = bodyOf(p, await o.defaultProject(ctx));
+      if (o.defaultCheckout && BARE_TARGET_VERBS.has(String(p.verb)) && !body.instance && !body.checkout && !body.branch) {
+        const checkout = await o.defaultCheckout(ctx);
+        if (checkout) body.checkout = checkout;
+      }
+      const r = withoutUrls(await o.engine().run(String(p.verb ?? ""), body, caller, signal ? { signal } : {}));
       const note = await resultNote(o.engine(), r, ctx?.state() ?? stateView([]));
       return { content: [{ type: "text" as const, text: renderResult(r, note) }], details: { v: 1, result: r } };
     },
@@ -178,6 +188,13 @@ function gitTop(cwd: string): Promise<string | null> {
   return new Promise((done) =>
     execFile("git", ["rev-parse", "--show-toplevel"], { cwd, timeout: 5_000 }, (err, stdout) => done(err ? null : canonical(String(stdout).trim()))),
   );
+}
+
+/** The cwd's checkout when it is not its project's main checkout, else null. */
+export async function cwdCheckout(cwd: string | undefined, top: (cwd: string) => Promise<string | null> = gitTop): Promise<string | null> {
+  if (!cwd) return null;
+  const [checkout, root] = await Promise.all([top(cwd), projectRootOf(cwd)]);
+  return checkout && root && canonical(root) !== checkout ? checkout : null;
 }
 
 /** The session's own checkouts: its tracked worktrees, and its cwd's checkout. */
@@ -224,6 +241,8 @@ export function sessionVerbsTool(engine: () => ProjectEngine): Tool {
       const cwd = ctx?.cwd;
       return cwd ? projectRootOf(cwd) : null;
     },
+    // A bare up from a worktree aims at that worktree, never the main checkout (refused for a session).
+    defaultCheckout: async (ctx) => cwdCheckout(ctx?.cwd),
     caller: async (ctx) => {
       const cwd = ctx?.cwd;
       return { kind: "session", id: ctx?.sessionId ?? "unknown", root: cwd ? await projectRootOf(cwd) : null, own: await ownCheckouts(ctx) };

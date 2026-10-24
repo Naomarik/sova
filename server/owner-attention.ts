@@ -4,6 +4,7 @@ import { readIndex, readOrgOrPlaceholder, readProjects, readRoster } from "./org
 import { featureChats, orgRequests } from "./project-assistant-store";
 import { batonById } from "./baton";
 import { convergeFeatureChats } from "./feature-chats";
+import { heldRequestIds } from "./project-holds";
 
 /**
  * The owner's asks in Needs you (§app.project-assistant/requests, §app.owner-page/link), act tier,
@@ -71,6 +72,19 @@ export function ownerAttention(): AttentionItem[] {
         return fallback;
       }
     };
+    const heldBy = new Map<string, Set<string>>();
+    const held = (pid: string): Set<string> => {
+      let x = heldBy.get(pid);
+      if (!x) {
+        try {
+          x = heldRequestIds(pid);
+        } catch {
+          x = new Set();
+        }
+        heldBy.set(pid, x);
+      }
+      return x;
+    };
     for (const r of requests) {
       // Closed by the owner while the team was working on it (§app.project-assistant/closing): one item, until Got It.
       if (r.status === "closed" && r.closed && r.closed.prior === "started" && !r.closed.noted) {
@@ -90,6 +104,8 @@ export function ownerAttention(): AttentionItem[] {
         continue;
       }
       if (r.status !== "with-team") continue;
+      // A fix whose start waits in a hold is the held act's (its own Needs you item, with Cancel), not a request for the operator.
+      if (r.kind === "fix" && held(r.projectId).has(r.id)) continue;
       const chat = r.kind === "feature" ? chats.find((c) => c.requestId === r.id) : undefined;
       if (chat?.ended) {
         const project = projects.find((p) => p.id === r.projectId);

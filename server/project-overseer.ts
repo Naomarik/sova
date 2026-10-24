@@ -1621,9 +1621,15 @@ onOrgChange((engine, change) => {
   for (const sid of change.sessions) {
     if (!sid.startsWith("build/") || fixesNoted.has(sid)) continue;
     const d = hostOf(engine).data(sid) as { basis?: { kind?: unknown; id?: unknown }; path?: unknown; projectId?: unknown; sessionId?: unknown } | null;
-    if (!d || d.basis?.kind !== "owner-request" || typeof d.basis.id !== "string" || typeof d.path !== "string" || !d.path) continue;
+    if (!d || d.basis?.kind !== "owner-request" || typeof d.basis.id !== "string") continue;
+    // Set up once its session file exists: the build's own record holds the path (its statechart data never did).
+    const [, pid = "", bid = ""] = sid.split("/");
+    const sessionId = String(d.sessionId ?? bid);
+    const projectId = String(d.projectId ?? pid);
+    const path = typeof d.path === "string" && d.path ? d.path : (readBuild(projectId, sessionId)?.path ?? "");
+    if (!path) continue;
     fixesNoted.add(sid);
-    const e = { projectId: String(d.projectId ?? ""), orgId: engine, basisId: d.basis.id, sessionId: String(d.sessionId ?? sid.split("/").at(-1)) };
+    const e = { projectId, orgId: engine, basisId: d.basis.id, sessionId };
     for (const fn of fixStartedHooks)
       try {
         fn(e);

@@ -375,3 +375,92 @@ test("turning the merge guard off is a grant (§chat.worktrees/merge-guard); on,
   assert.match(both?.what ?? "", /^turns the merge guard off.*; run buttons: Merge \(m\) runs project\.worktree\.merge$/);
   assert.equal(typeof both?.pin, "string");
 });
+
+describe("this machine's copy limit (§app.project-services/instances): a Sova-kept setting with history, Undo and grant/narrow", async () => {
+  const { dir, project } = await gitProject("copies");
+  const pid = project.id;
+  writeFileSync(join(dir, ".sova", "project.json"), JSON.stringify({ version: 1, slots: { cap: 4 }, services: { web: { cmd: ["node", "web.mjs"], ports: { http: { base: 41_000 } } } } }));
+  const { machineCopyLimit } = await import("./project-services/copy-limit");
+  const { registerServicesViewRoutes } = await import("./project-services/view-routes");
+  const put = (body: unknown, headers: Record<string, string> = {}) => {
+    const a = new Hono();
+    registerServicesViewRoutes(a);
+    return a.request(`/api/projects/${pid}/services/limit`, { method: "PUT", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+  };
+
+  test("lowering applies at once in the operator's turn; raising waits on a card; a run the operator didn't start applies nothing", async () => {
+    const params = tool(pid, true).parameters as any;
+    assert.ok(params.properties.edits.items.properties.setting.enum.includes("copies"), "the model can name it");
+    assert.match(tool(pid, true).description, /\{setting: "copies", limit: 1–16 \| null\}/);
+    const low = await run(pid, true, { op: "propose", why: "Fewer copies at once.", edits: [{ setting: "copies", limit: 2 }] });
+    assert.equal(machineCopyLimit(dir), 2, "lowered below the file's 4: applied at once");
+    assert.deepEqual(low.details.appliedNow.map((r: any) => [r.field, r.from, r.to, r.by.kind]), [["copies", null, 2, "project-overseer"]]);
+    const quiet = await run(pid, false, { op: "propose", why: "Even fewer.", edits: [{ setting: "copies", limit: 1 }] });
+    assert.equal(machineCopyLimit(dir), 2, "nothing applies in a run the operator didn't start");
+    assert.equal(quiet.details.card.state, "waiting");
+    await post(app(), `/api/projects/${pid}/settings/cards/${quiet.details.card.id}/withdraw`, {});
+    const high = await run(pid, true, { op: "propose", why: "Room for twelve.", edits: [{ setting: "copies", limit: 12 }] });
+    assert.equal(machineCopyLimit(dir), 2, "a raise is a grant: it waits");
+    const c = high.details.card;
+    assert.deepEqual(c.kept.map((k: any) => [k.field, k.from, k.to]), [["copies", 2, 12]]);
+    assert.match(c.grants[0].what, /raises the copy limit on this machine to 12 running copies at once \(from 2\)/);
+    const r = await post(app(), `/api/projects/${pid}/settings/apply`, { card: c.id, fingerprint: c.fingerprint });
+    assert.equal(r.status, 200, await r.clone().text());
+    assert.equal(machineCopyLimit(dir), 12);
+    const last = settings.readHistory(pid).at(-1)!;
+    assert.deepEqual([last.field, last.from, last.to, last.by.via, last.card], ["copies", 2, 12, "card", c.id]);
+  });
+
+  test("a reset to the file's value is a grant only when the file's is higher; bad values are refused in words", async () => {
+    const reset = await run(pid, true, { op: "propose", why: "Back to the file's.", edits: [{ setting: "copies", limit: null }] });
+    assert.equal(machineCopyLimit(dir), null, "12 → the file's 4 narrows: applied at once");
+    assert.equal(reset.details.card, null);
+    await run(pid, true, { op: "propose", why: "One.", edits: [{ setting: "copies", limit: 1 }] });
+    const back = await run(pid, true, { op: "propose", why: "Back to the file's.", edits: [{ setting: "copies", limit: null }] });
+    assert.equal(machineCopyLimit(dir), 1, "1 → the file's 4 raises it: a card");
+    assert.match(back.details.card.grants[0].what, /to 4 running copies at once \(from 1\)/);
+    await post(app(), `/api/projects/${pid}/settings/cards/${back.details.card.id}/withdraw`, {});
+    for (const [edit, why] of [
+      [{ setting: "copies", limit: 17 }, /a whole number from 1 to 16/],
+      [{ setting: "copies", limit: 0 }, /a whole number from 1 to 16/],
+      [{ setting: "copies" }, /names limit/],
+      [{ setting: "copies", limit: 3, cap: 3 }, /Unknown copies setting "cap"/],
+    ] as const) {
+      await assert.rejects(run(pid, true, { op: "propose", why: "x", edits: [edit] }), why, JSON.stringify(edit));
+    }
+    assert.equal(machineCopyLimit(dir), 1, "nothing written");
+  });
+
+  test("the Branches tab's PUT is the operator's page only; its change is a history line whose raise only the page may undo", async () => {
+    for (const headers of [{ "x-sova-caller": "k" }, { "x-sova-token": "x" }, { [OVERSEER_SENDER_HEADER]: senderSecret() }] as Record<string, string>[]) {
+      const r = await put({ cap: 9 }, headers);
+      assert.equal(r.status, 403, JSON.stringify(headers));
+    }
+    assert.equal(machineCopyLimit(dir), 1);
+    assert.equal((await put({ cap: 40 })).status, 400);
+    assert.equal((await put({})).status, 400);
+    const r = await put({ cap: 9 });
+    assert.equal(r.status, 200, await r.clone().text());
+    const body = await r.json();
+    assert.deepEqual([body.limit.value, body.limit.source, body.limit.file], [9, "machine", 4]);
+    const row = settings.readHistory(pid).at(-1)!;
+    assert.deepEqual([row.field, row.from, row.to, row.by.kind, row.by.via], ["copies", 1, 9, "operator", "page"]);
+    // Lowering it again, then undoing that lowering, raises it: the page only.
+    assert.equal((await put({ cap: 3 })).status, 200);
+    const lowered = settings.readHistory(pid).at(-1)!;
+    const refused = await post(app(), `/api/projects/${pid}/settings/undo`, { id: lowered.id }, { "x-sova-caller": "k" });
+    assert.equal(refused.status, 403);
+    assert.equal(machineCopyLimit(dir), 3);
+    const ok = await post(app(), `/api/projects/${pid}/settings/undo`, { id: lowered.id });
+    assert.equal(ok.status, 200, await ok.clone().text());
+    assert.equal(machineCopyLimit(dir), 9);
+    // The history reads in words, and All settings lists the row with its source.
+    const h = await (await app().request(`/api/projects/${pid}/settings/history`)).json();
+    assert.deepEqual([h[0].label, h[0].fromText, h[0].toText], ["Copy limit", "3 at once", "9 at once"]);
+    const info = await settings.settingsInfo(pid);
+    const rowInfo = info.rows.find((x) => x.setting === "copies")!;
+    assert.deepEqual([rowInfo.label, rowInfo.state, rowInfo.detail, rowInfo.href], ["Copy limit", "9 at once", "set on this machine", `#/projects/${pid}/branches`]);
+    assert.equal((await put({ cap: null })).status, 200);
+    assert.deepEqual([machineCopyLimit(dir), (await settings.settingsInfo(pid)).rows.find((x) => x.setting === "copies")!.detail], [null, "from the project's file"]);
+  });
+});

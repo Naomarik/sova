@@ -37,7 +37,8 @@ import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRet
 import { bindKey, paletteKeyAction } from "./commands/keys";
 import { composerOf } from "./commands/composers";
 import { closePalette, paletteRequest, togglePaletteFromKey } from "./commands/palette-open";
-import { isOverseerHash, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
+import { isOverseerHash, OVERSEER_HASH, overseerHistoryId } from "./lib/overseer";
+import { onFeedPush, sessionFeedOpen } from "./lib/session-feed";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
 import type { CostsQuery } from "./lib/cost-history";
 import type { PerfQuery } from "./lib/perf";
@@ -134,9 +135,9 @@ function openSettingsFromHash() {
   openSettings(tab);
 }
 
-/** While a run is in flight, re-read the list often enough that the Busy chip clears itself when
-    the run settles in a session nobody is looking at. Idle costs nothing: the interval only
-    exists while something is busy. */
+/** While a run is in flight and the session feed is down, re-read the list often enough that the
+    Busy chip clears itself when the run settles in a session nobody is looking at. Idle costs
+    nothing: the interval only exists while something is busy with no feed. */
 const BUSY_POLL_MS = 5_000;
 
 /** Insights polling (paused while the tab is hidden). The usage file itself changes ≤ every 3 min. */
@@ -425,10 +426,22 @@ export function App() {
   setAgentsFeedSource(agents.data);
   const explanations = createPoll(fetchExplanations, EXPLAIN_POLL_MS);
   setExplanationsFeedSource(explanations.data);
-  const overseer = createPoll(getOverseer, OVERSEER_POLL_MS);
-  /** The attention digest, read once for the page on the entry button's cadence: the sidebar's
-      Needs you region, the home card and the app badge all read it. */
-  const attention = createPoll(getAttention, OVERSEER_POLL_MS);
+  /** The Overseer's state and the attention digest (the sidebar's Needs you region, the home card
+      and the app badge all read it), one copy each for the page. Never on a timer: read at load,
+      when the tab is shown again (createPoll) and whenever the session feed (re)opens, then
+      replaced by each value the feed pushes on change (lib/session-feed). */
+  const overseer = createPoll(getOverseer, null);
+  const attention = createPoll(getAttention, null);
+  onCleanup(
+    onFeedPush({
+      resync: () => {
+        overseer.refetch();
+        attention.refetch();
+      },
+      attention: (d) => attention.set(d),
+      overseer: (o) => overseer.set(o),
+    }),
+  );
   // The app badge (an installed app, with notifications allowed): the sessions that need you, kept
   // current from the digest this page already reads; zero clears it (lib/push.ts).
   const badgeCount = createMemo(() => {
@@ -921,8 +934,9 @@ export function App() {
 
   /** Any row claiming a run in flight (the sidebar's Busy chip's fallback source). */
   const anyBusy = createMemo(() => (list() ?? []).some((s) => s.busy));
+  // Only while the session feed is down: open, its `list_changed` says when a run settles.
   createEffect(() => {
-    if (!anyBusy()) return;
+    if (!anyBusy() || sessionFeedOpen()) return;
     const t = setInterval(refresh, BUSY_POLL_MS);
     onCleanup(() => clearInterval(t));
   });

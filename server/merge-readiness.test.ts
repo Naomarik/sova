@@ -1058,6 +1058,42 @@ test("idle unmerged sessions (§app/idle-git-cache): no Git between 5-minute rea
   }
 });
 
+test("checkReadinessInputs (§app.decisions/push): a tree's Git inputs moving re-reads that row alone and announces its new answer; unchanged stamps read no Git", async () => {
+  const { onSessionsChanged } = await import("./list-generation");
+  const path = sessionFile(chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z")]));
+  const row = summary(path);
+  let stamp = "s1";
+  let reads = 0;
+  let status: WorktreeStatus & { head?: string } = { path: "/wt/agents-row-dropdown", source: "session", exists: true, branch: "feat/agents-row-dropdown", base: "master", merged: "no", ahead: 0, behind: 0, dirty: false, head: "b0" };
+  r.resetReadiness();
+  r.configureReadiness({ insights: { treeStatus: async () => (reads++, status) }, git: fakeGit({}), asksUser: () => undefined, now: () => 0, processStart: 0, treeStamp: () => null, inputsStamp: () => stamp });
+  let bumps = 0;
+  const off = onSessionsChanged(() => bumps++);
+  try {
+    r.readinessOverlay(row);
+    await r.readinessIdle();
+    assert.equal(r.readinessOverlay(row)?.trees[0]?.state, "in-progress", "no commits yet");
+    const readsBefore = reads;
+    bumps = 0;
+    assert.equal(r.checkReadinessInputs(), 0);
+    await r.readinessIdle();
+    assert.equal(reads, readsBefore, "unchanged stamps: no Git");
+    // A commit in the worktree, with no session-file write.
+    status = { ...status, ahead: 1, head: "h1" };
+    stamp = "s2";
+    assert.equal(r.checkReadinessInputs(), 1);
+    await r.readinessIdle();
+    assert.ok(reads > readsBefore);
+    assert.equal(r.readinessOverlay(row)?.trees[0]?.state, "ready");
+    assert.ok(bumps > 0, "the new answer starts a listing");
+    assert.equal(r.checkReadinessInputs(), 0, "the new stamp is the baseline");
+  } finally {
+    off();
+    await r.readinessIdle();
+    r.resetReadiness();
+  }
+});
+
 // ---- Ready to land (§chat.worktrees/ready-to-land) ------------------------------------------------
 
 test("b1: idle, check ok, asks nothing and a finished turn outcome is Ready to land; it stays so after a follow-up reply that asks nothing, at the same head; a new head needs a finished outcome again", async () => {

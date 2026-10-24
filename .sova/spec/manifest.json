@@ -2385,8 +2385,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T02:25Z",
-        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+        "at": "2026-10-23T16:59Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#c38b4920"
       }
     },
     "§app.subagents-pane/memory-outline": {
@@ -8009,12 +8009,71 @@
         "pi-config/extensions/subagents/mailbox.test.ts",
         "pi-config/extensions/subagents/member.test.ts",
         "pi-config/extensions/subagents/reattach.test.ts",
-        "pi-config/extensions/subagents/restore.test.ts"
+        "pi-config/extensions/subagents/restore.test.ts",
+        "pi-config/extensions/subagents/fold.ts",
+        "pi-config/extensions/subagents/contracts.ts",
+        "pi-config/extensions/subagents/inbox-zero.test.ts"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T03:53Z",
-        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+        "at": "2026-10-23T16:59Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#c38b4920"
+      }
+    },
+    "§app.teams/inbox-gate": {
+      "kind": "behavior",
+      "requires": [
+        "§app.teams/inbox"
+      ],
+      "authority": "accepted",
+      "code": [
+        "pi-config/extensions/subagents/inbox.ts",
+        "pi-config/extensions/subagents/delivery.ts",
+        "pi-config/extensions/subagents/member.ts",
+        "pi-config/extensions/subagents/mailbox.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/fold.ts",
+        "pi-config/extensions/subagents/contracts.ts",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/subagents/inbox.test.ts",
+        "pi-config/extensions/subagents/delivery.test.ts",
+        "pi-config/extensions/subagents/member.test.ts",
+        "pi-config/extensions/subagents/inbox-zero.test.ts",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/subagents/reattach.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T20:03Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#c38b4920"
+      }
+    },
+    "§app.teams/inbox-zero": {
+      "kind": "behavior",
+      "requires": [
+        "§app.teams/inbox"
+      ],
+      "authority": "accepted",
+      "code": [
+        "pi-config/extensions/subagents/inbox.ts",
+        "pi-config/extensions/subagents/delivery.ts",
+        "pi-config/extensions/subagents/member.ts",
+        "pi-config/extensions/subagents/mailbox.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/fold.ts",
+        "pi-config/extensions/subagents/contracts.ts",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/subagents/inbox.test.ts",
+        "pi-config/extensions/subagents/delivery.test.ts",
+        "pi-config/extensions/subagents/member.test.ts",
+        "pi-config/extensions/subagents/inbox-zero.test.ts",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/subagents/reattach.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T20:03Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#c38b4920"
       }
     },
     "§app.teams/requests": {
@@ -8185,9 +8244,9 @@
         "pi-config/extensions/subagents/inbox.ts"
       ],
       "agreed": {
-        "by": "user (Omar)",
-        "at": "2026-10-23T21:42Z",
-        "source": "pi-session:74251d15-e6e2-46d5-8c62-d3d1a0187849#ce30380d"
+        "by": "naomarik",
+        "at": "2026-10-24T10:31Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#22df1e4b"
       }
     },
     "§teams.defaults/file": {
@@ -8247,9 +8306,9 @@
         "pi-config/extensions/subagents/delivery.ts"
       ],
       "agreed": {
-        "by": "user (Omar)",
-        "at": "2026-10-23T21:42Z",
-        "source": "pi-session:74251d15-e6e2-46d5-8c62-d3d1a0187849#ce30380d"
+        "by": "naomarik",
+        "at": "2026-10-24T10:31Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#22df1e4b"
       }
     },
     "§teams.defaults/roster-context": {
@@ -8270,8 +8329,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T02:25Z",
-        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+        "at": "2026-10-24T10:31Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#22df1e4b"
       }
     },
     "§teams.defaults/routing": {
@@ -8291,9 +8350,9 @@
         "pi-config/extensions/subagents/delivery.ts"
       ],
       "agreed": {
-        "by": "user (Omar)",
-        "at": "2026-10-23T21:42Z",
-        "source": "pi-session:74251d15-e6e2-46d5-8c62-d3d1a0187849#ce30380d"
+        "by": "naomarik",
+        "at": "2026-10-24T10:31Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#22df1e4b"
       }
     },
     "§teams.defaults/runtime-fallback": {

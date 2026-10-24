@@ -74,7 +74,8 @@ claude-code imports nothing outside its own directory. For worker niceness it ca
   `accounts.ts` mirrors nothing of `folderMatcher`, and a terminal session (no variable) keeps the device's order.
   Every process `chat-host` launches gets it (chats, workers, team members, hidden chats, overseers, a chat
   started again after a reap or a server restart); `CHAT_PROCESS_ENV` lists it, so a server scrubs an inherited
-  one and `chatEnv` never passes it on. A chat the router opens in the server's own process (a boot failure's
+  one and `chatEnv` never passes it on, and the launch drops one a worker's loadout env carries
+  (`withoutLoginContext`; `server/chat-host-login-context.test.ts` reads each launch's env). A chat the router opens in the server's own process (a boot failure's
   fallback) gets none and keeps the order. The provider's `loginContext` option reads it per choice; the
   one-shots (titles, memory summaries, topic outlines, Decisions, model discovery) never pass it.
 

@@ -184,7 +184,7 @@ describe("a project's coding sessions", async () => {
     writeFileSync(join(client, ".sova", "offers.json"), JSON.stringify({ version: 1, mainMerges: "go-ahead", offers: {} }));
     git(client, "add", ".sova/offers.json");
     git(client, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "guard on");
-    await assert.rejects(po.mergeCodingWorktree(project.id, started.sessionId), /only with your go-ahead for this exact commit/);
+    await assert.rejects(po.mergeCodingWorktree(project.id, started.sessionId), /only with the user's go-ahead for this exact commit/);
     assert.equal(existsSync(join(client, "logout.txt")), false, "nothing merged");
     wt = await po.mergeCodingWorktree(project.id, started.sessionId, { byPage: true });
     assert.equal(readFileSync(join(client, "logout.txt"), "utf8"), "logout\n");

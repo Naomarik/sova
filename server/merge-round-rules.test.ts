@@ -65,3 +65,91 @@ test("round.mjs reads every batch the server frames, note by note, and the same 
   for (const name of ["merge-k7m4qz", "merge", "merge-K7M4QZ", "a-000000", "-a-000000", `${"a".repeat(16)}-abcdef`, `${"a".repeat(17)}-abcdef`, "merge-k7m4q", "merge-k7m4qz1", "my-topic-abc123"])
     assert.equal(round.TOPIC_NAME_RE.test(name), TOPIC_NAME_RE.test(name), name);
 });
+
+// The go-ahead carry-over (§chat.worktrees/merge-guard): the driver's copy of landing.ts's cleanMergeParent and
+// goAheadFor's chain must give the same answer for every kind of commit, in a real repository.
+interface RoundCarry {
+  cleanMergeParent: (run: (args: string[]) => Promise<{ code: number; stdout: string }>, merge: string, target: string) => Promise<string | undefined>;
+  landingAnswerAt: (landing: { goAheads: unknown[]; notYet: unknown[] }, branch: string, head: string, parentOf: (sha: string) => Promise<string | undefined>) => Promise<{ kind: string; at?: string } | null>;
+  CARRY_MAX: number;
+}
+
+test("round.mjs's clean-merge carry-over matches landing.ts over clean, evil, resolved, octopus and other-branch merges", async () => {
+  const round = (await import(ROUND)) as RoundCarry;
+  const landing = await import("../pi-config/extensions/worktrees/landing.ts");
+  const { runGit } = await import("../pi-config/extensions/worktrees/git.ts");
+  const { execFileSync } = await import("node:child_process");
+  const { rmSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { scratchRoot } = await import("./test-scratch");
+  const dir = scratchRoot("sova-carry-");
+  const repo = join(dir, "repo");
+  const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "-c", "rerere.enabled=false", ...args], { cwd: repo, encoding: "utf8", env: { ...process.env, GIT_EDITOR: "true", GIT_MERGE_AUTOEDIT: "no" } }).trim();
+  const tryGit = (...args: string[]) => {
+    try {
+      git(...args);
+    } catch {
+      // a conflict: resolved by hand below
+    }
+  };
+  const commit = (name: string, text: string) => {
+    writeFileSync(join(repo, name), text);
+    git("add", "-A");
+    git("commit", "-q", "-m", name);
+    return git("rev-parse", "HEAD");
+  };
+  try {
+    execFileSync("git", ["init", "-q", "-b", "master", repo]);
+    commit("a.txt", "one\ntwo\n");
+    git("checkout", "-q", "-b", "feat");
+    const P = commit("b.txt", "feature\n");
+    const cases: Record<string, string> = { plain: P };
+    git("checkout", "-q", "master");
+    commit("c.txt", "master\n");
+    git("checkout", "-q", "-b", "other", "master~1");
+    commit("o.txt", "other\n");
+    git("checkout", "-q", "feat");
+    git("merge", "--no-edit", "-q", "master");
+    cases.clean = git("rev-parse", "HEAD");
+    git("reset", "-q", "--hard", P);
+    git("merge", "--no-edit", "--no-commit", "-q", "master");
+    writeFileSync(join(repo, "b.txt"), "edited in the merge\n");
+    git("add", "-A");
+    git("commit", "-q", "--no-edit");
+    cases.evil = git("rev-parse", "HEAD");
+    git("reset", "-q", "--hard", P);
+    git("merge", "--no-edit", "-q", "master", "other");
+    cases.octopus = git("rev-parse", "HEAD");
+    git("reset", "-q", "--hard", P);
+    git("merge", "--no-edit", "-q", "other");
+    cases.otherBranch = git("rev-parse", "HEAD");
+    git("reset", "-q", "--hard", P);
+    commit("a.txt", "one\nTWO feat\n");
+    git("checkout", "-q", "master");
+    commit("a.txt", "one\nTWO master\n");
+    git("checkout", "-q", "feat");
+    tryGit("merge", "--no-edit", "-q", "master");
+    writeFileSync(join(repo, "a.txt"), "one\nTWO both\n");
+    git("add", "-A");
+    git("commit", "-q", "--no-edit");
+    cases.resolved = git("rev-parse", "HEAD");
+    const run = (args: string[]) => runGit(args, repo);
+    const file = join(dir, "landing.json");
+    landing.recordGoAhead({ branch: "feat", commit: P, at: "2026-10-24T00:00:00Z", by: "land-it" }, file);
+    const parsed = landing.readLanding(file);
+    assert.equal(round.CARRY_MAX, landing.CARRY_MAX);
+    const answers: Record<string, boolean> = {};
+    for (const [name, sha] of Object.entries(cases)) {
+      const theirs = await round.cleanMergeParent(run, sha, "master");
+      const ours = await landing.cleanMergeParent(runGit, repo, sha, "master");
+      assert.equal(theirs, ours, name);
+      const viaRound = await round.landingAnswerAt(parsed, "feat", sha, (s) => round.cleanMergeParent(run, s, "master"));
+      const viaLanding = await landing.goAheadFor("feat", sha, file, { git: runGit, cwd: repo, target: "master" });
+      assert.equal(viaRound?.kind === "go-ahead", !!viaLanding, name);
+      answers[name] = !!viaLanding;
+    }
+    assert.deepEqual(answers, { plain: true, clean: true, evil: false, octopus: false, otherBranch: false, resolved: false });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

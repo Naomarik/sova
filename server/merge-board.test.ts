@@ -42,7 +42,7 @@ test("a row per tracked worktree, with its state, reason, reading time and owner
   assert.equal(b.at, "2026-10-05T09:01:00.000Z");
   assert.deepEqual({ read: b.read, pending: b.pending }, { read: 4, pending: 0 });
   const x = b.rows.find((r) => r.branch === "feat/x")!;
-  assert.deepEqual(x, { path: "/w/x", branch: "feat/x", repo: "/work/sova/.git", state: "waiting-approval", reason: "waiting-approval reason", readAt: "2026-10-05T09:00:05.000Z", owner: { id: "a", status: "idle", profile: "coder", lastActiveAt: "2026-10-05T09:00:00.000Z" } });
+  assert.deepEqual(x, { path: "/w/x", branch: "feat/x", repo: "/work/sova/.git", state: "waiting-approval", reason: "waiting-approval reason", readAt: "2026-10-05T09:00:05.000Z", owner: { id: "a", title: "a", status: "idle", profile: "coder", lastActiveAt: "2026-10-05T09:00:00.000Z" } });
   assert.equal(b.rows.find((r) => r.branch === "feat/y")!.owner.status, "busy", "a turn running");
   assert.equal(b.rows.find((r) => r.branch === "feat/z")!.owner.status, "busy", "workers working");
   assert.equal(b.rows.find((r) => r.branch === "feat/q")!.owner.status, "busy", "a message queued");

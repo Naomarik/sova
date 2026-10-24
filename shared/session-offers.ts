@@ -52,7 +52,9 @@ export const RUN_ALLOWED = ["project.worktree.merge"] as const;
 export type RunId = (typeof RUN_ALLOWED)[number];
 
 /** Placeholders a title may use, and those a send text may use. */
-export const TITLE_FILLS = ["branch", "base", "project"] as const;
+/** `{commit}` in a title is the moment's commit shortened to TITLE_COMMIT_LEN characters. */
+export const TITLE_FILLS = ["branch", "base", "commit", "project"] as const;
+export const TITLE_COMMIT_LEN = 7;
 export const SEND_FILLS = ["branch", "base", "commit", "project", "drafts"] as const;
 /** What a button's landing key records (§chat.offers/buttons): the user's go-ahead for this exact commit, or Not Yet. */
 export const LANDING_RECORDS = ["go-ahead", "go-ahead-without-specs", "not-yet"] as const;

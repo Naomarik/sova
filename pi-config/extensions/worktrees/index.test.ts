@@ -311,7 +311,7 @@ test("merge guard: a project with mainMerges go-ahead merges into master only on
 		sh(t, "add", "-A");
 		sh(t, "commit", "-q", "-m", "g");
 		const before = sh(r.main, "rev-parse", "master");
-		await assert.rejects(f.call(c, { action: "merge", path: t }), /only with your go-ahead for this exact commit: press Land It/);
+		await assert.rejects(f.call(c, { action: "merge", path: t }), /only with the user's go-ahead for this exact commit\. Once the branch is Ready to land/);
 		assert.equal(sh(r.main, "rev-parse", "master"), before, "nothing merged");
 		// A go-ahead for an older commit doesn't count.
 		const old = sh(t, "rev-parse", "HEAD");
@@ -319,7 +319,7 @@ test("merge guard: a project with mainMerges go-ahead merges into master only on
 		writeFileSync(join(t, "g2.txt"), "g2\n");
 		sh(t, "add", "g2.txt");
 		sh(t, "commit", "-q", "-m", "g2");
-		await assert.rejects(f.call(c, { action: "merge", path: t }), /press Land It/);
+		await assert.rejects(f.call(c, { action: "merge", path: t }), /no card to press/);
 		assert.equal(sh(r.main, "rev-parse", "master"), before);
 		// Land It at the current head: it merges.
 		recordGoAhead({ branch: "feat/g", commit: sh(t, "rev-parse", "HEAD"), at: new Date().toISOString(), by: "land-it" }, goAheads);

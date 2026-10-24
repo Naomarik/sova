@@ -10,6 +10,8 @@
 // list is left alone, and so is a list scrolled to its very top: it stays at the top. The side
 // strip's region press scrolls with `scrollIntoView`: that is a scroll, and the list takes it as the new place.
 
+import { GUIDE_LINE, guideHeadOf } from "./guide-line";
+
 /** What a correction needs, measured after a change. All px; offsets are from the list's top edge. */
 export interface HoldReading {
   /** Where the anchor sat when it was last recorded. */
@@ -242,9 +244,18 @@ export function holdListScroll(list: HTMLElement): () => void {
   };
 
   /** The user's own toggle: the head they pressed holds still, not the first row. A project's fold button folds the
-      project under its head. */
+      project under its head. A group's guide line (lib/guide-line) collapses the group under its head too, and a head
+      that had scrolled out above the list's top is held at the top instead, where the line's press brings it. */
   const pressHead = (target: EventTarget | null) => {
     const el = target instanceof Element ? target : null;
+    const line = el?.closest(`.${GUIDE_LINE}`);
+    if (line && list.contains(line)) {
+      const head = guideHeadOf(line);
+      if (!head) return;
+      record([head]);
+      if (held[0]) held[0].offset = Math.max(0, held[0].offset);
+      return;
+    }
     const head = el?.closest(".project-fold")?.closest(".org-project-head") ?? el?.closest(HEADS);
     if (head && list.contains(head)) record([head]);
   };

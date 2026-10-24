@@ -60,3 +60,10 @@ test("it offers to close a request made moot, and closes or reopens only after t
   assert.match(line!, /reopen_request/);
   assert.match(line!, /the team's call/);
 });
+
+test("it looks at what's new and the versions' summaries before it says it can't tell", () => {
+  const line = template.split("\n").find((l) => l.includes("project_news"));
+  assert.ok(line, "the what's-new line");
+  assert.match(line!, /owner_versions/);
+  assert.match(line!, /Never say you can't tell until you have looked at both/);
+});

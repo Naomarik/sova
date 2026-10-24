@@ -11,6 +11,7 @@ import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 import { advanceRequest, effectiveAssistantModel, fileRequest, orgRequests } from "./project-assistant-store";
 import { specLookupTools } from "./spec-lookup";
 import { assistantRequestTools } from "./assistant-request-tools";
+import { projectNewsTool } from "./assistant-news";
 import { setFeatureStartForTest, startFeatureChat } from "./feature-chats";
 import type { ToolWords } from "./project-assistant-offers";
 
@@ -418,11 +419,13 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
   const lookups = specLookupTools({ sessionId: ctx.sessionId, projects: () => assistantProjects(orgId), view: "outsider" });
   // The owner's requests, and their close and reopen on the owner's yes (§app.project-assistant/closing).
   const [ownerRequests, closeRequest, reopenRequest] = assistantRequestTools({ orgId, sessionId: ctx.sessionId, owner: ctx.owner, projects: () => assistantProjects(orgId), branch: ctx.branch });
-  return [...lookups, agree, ...drafts, reportIssue, ownerRequests!, closeRequest!, reopenRequest!, startFix, deploy, ownerVersions, startVersion, startFeature];
+  // What's new, read only (§app.project-assistant/news).
+  const news = projectNewsTool({ orgId, projects: () => assistantProjects(orgId).map((p) => ({ ...p, root: readProjects(orgId).find((x) => x.id === p.id)?.root })) });
+  return [...lookups, agree, ...drafts, reportIssue, ownerRequests!, closeRequest!, reopenRequest!, news, startFix, deploy, ownerVersions, startVersion, startFeature];
 }
 
 /** The tool names, in loadout order (the allowlist). */
-export const ASSISTANT_TOOL_NAMES = ["spec_lookup", "code_read", "requirement_agree", "requirement_drop", "requirements_summary", "requirements_confirm", "report_issue", "owner_requests", "close_request", "reopen_request", "start_fix", "deploy", "owner_versions", "start_version", "start_feature_chat"] as const;
+export const ASSISTANT_TOOL_NAMES = ["spec_lookup", "code_read", "requirement_agree", "requirement_drop", "requirements_summary", "requirements_confirm", "report_issue", "owner_requests", "close_request", "reopen_request", "project_news", "start_fix", "deploy", "owner_versions", "start_version", "start_feature_chat"] as const;
 
 export { setFeatureStartForTest };
 

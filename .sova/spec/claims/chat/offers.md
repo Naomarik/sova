@@ -31,9 +31,10 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   and hyphens, starting with a letter, at most 32 characters. An offer has:
   - `when` (required, at most 200 characters): when the agent may show it.
   - `why` (optional, at most 200): what it saves the user.
-  - `title` (required, at most 120): the card's question. `{branch}`, `{base}` and `{project}` are
-    filled in from Sova's facts about the session (the branch its folder is on, the repository's
-    main branch, master else main, and the project's folder name); no other placeholder is
+  - `title` (required, at most 120): the card's question. `{branch}`, `{base}`, `{commit}` and
+    `{project}` are filled in from Sova's facts about the session (the branch its folder is on, the
+    repository's main branch, master else main, the moment's commit shortened to 7 characters, and
+    the project's folder name); no other placeholder is
     allowed, and one with no value reads as a plain phrase ("this branch", "its base").
   - `onlyIf` (optional): conditions that must all hold (§chat.offers/conditions).
   - `repeat` (optional): `once-per-commit` (the default), `once-per-reply` or `once-per-session`
@@ -44,10 +45,9 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   - `buttons` (required): 1 to 4 buttons, each `{label, about}` with exactly one of `send` or
     `run` (§chat.offers/buttons). `label` is at most 32 characters, `about` at most 160 (one line:
     what the button does).
-- **`mainMerges`** (optional, top level): `"go-ahead"` turns on the merge guard
-  (§chat.worktrees/merge-guard); absent, merges are unchanged. Any other value makes the file broken.
 - **Strict, one offer at a time.** The file must be JSON with exactly the keys `version` (1) and
-  `offers`, and optionally `mainMerges`; anything else makes the whole file **broken**, and no offer shows. Inside, each offer
+  `offers`; anything else makes the whole file **broken**, and no offer shows, except a leftover
+  top-level `mainMerges` (the retired merge guard's switch), which is accepted and does nothing. Inside, each offer
   is checked on its own: an unknown key, a missing or over-long field, a bad name, an unknown
   condition, placeholder or `repeat` value, or a bad button makes that offer **broken**, listed
   with its reason, and never hides the others. At most 8 offers count; those after the eighth are
@@ -84,7 +84,8 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   this moment; or the user chose Not Now on it in this session. Each refusal says which, and
   "Nothing was shown." One open offer at a time: while another offer's card is open in the
   session, nothing shows and the refusal names the open offer in one line (a card whose offer left
-  the file is withdrawn, not open). The call never ends the agent's turn.
+  the file is withdrawn, and a once-per-commit card whose branch moved on is replaced by a newer
+  commit, §chat.offers/card: neither is open, so the new card shows at once). The call never ends the agent's turn.
 
 ## §chat.offers/conditions — Conditions and the repeat guard
 
@@ -128,7 +129,7 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   click counts: the text, then Cancel or the button's label again. `{drafts}`, the worktree's
   spec drafts left unpromoted, may be filled in there and in `send`.
 - **Landing records.** `"landing": "go-ahead"` records the user's go-ahead to land this branch at
-  this exact commit (§chat.worktrees/merge-guard), `"go-ahead-without-specs"` the same with its
+  this commit (§chat.worktrees/landing-answers), `"go-ahead-without-specs"` the same with its
   spec drafts left behind, and `"not-yet"` the user's Not Yet for this commit. Each is recorded
   when the click's send succeeds, never on a refused one.
 - **To the chat that showed it.** A button of an `another-chat` offer may say `"to": "shower"`
@@ -169,13 +170,21 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   send that fails reopens it.
 - **Not Now** hides that offer for the rest of the session: the card reads "Not now", and the agent
   can't show that offer here again. It sends nothing. `session.offers.unsnooze` brings it back.
+- **Replaced by a newer commit.** A card shown once per commit (§chat.offers/conditions) is for
+  its branch at that one commit. Sova reads the branch's head again on every click, each time the
+  session's cards are read and whenever it shows an offer in that session; once the branch has moved on, the card reads "Replaced by a newer
+  commit", and a click on it is refused: nothing is sent, run or recorded (no go-ahead, no Not
+  Yet). When the head can't be read at a click, the click is refused and the card stays as it is.
+  This holds for every once-per-commit offer, Land It included.
 - **Other ends.** A card whose offer left
   the file reads "No longer offered" on its next click or read, and the click does nothing.
 - **Read only.** A view that can't act on the session (watching a terminal session, a shared page)
   shows the cards with their choices and no controls; an open one reads "Waiting for an answer:"
   and its buttons' labels.
-- **Asks you, quietly.** While a session is idle with an open offer, it carries the asks-you mark
-  (§app.decisions/asks-user): never Needs you, never a phone notification.
+- **Needs you.** While a session shows an open offer card, idle or working, the card is a Needs
+  you item (`offer-waiting`, §app.overseer/attention-digest), listed among the blockers and counted
+  in the Overseer's "need you"; it never sends a phone notification and never briefs the Overseer.
+  While the session is idle its row also carries the asks-you mark (§app.decisions/asks-user).
 - **Never over an alignment.** An offer never shows while the session has an open alignment
   question, and it never replaces an alignment card.
 
@@ -207,16 +216,15 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
 Sova's repository declares one offer, **landing**, `shownBy: another-chat`, so no Sova chat gets
 the tool from it: Sova shows it itself when the Merge Captain queues a branch
 (§chat.merge-round/round), from the captain's chat, once per commit, and only while the branch is
-Ready to land (§chat.worktrees/ready-to-land). Its title is "Land {branch}?". Its buttons are send
+Ready to land (§chat.worktrees/ready-to-land). Its title is "Land {branch} at {commit}?", the
+commit shortened to 7 characters. Its buttons are send
 buttons only:
 
 - **Land It** (only when no spec draft is left): records the go-ahead for this commit and sends it
   to the captain ("Go ahead: land {branch} at {commit}."), who lands, pushes and restarts as
-  usual without asking again.
+  usual without asking again. It is a shortcut for telling the captain: no merge waits for it.
 - **Merge Without Specs…** (only when drafts are left and the session said why it can't land
   them): asks first, naming the drafts that stay behind to promote later on a fresh branch from
   master, then records the go-ahead without specs and sends the captain the go-ahead without them.
 - **Not Yet**: records Not Yet for this commit and tells this session's agent to keep working; the
   captain leaves the branch until its head changes.
-
-The file also sets `"mainMerges": "go-ahead"` (§chat.worktrees/merge-guard).

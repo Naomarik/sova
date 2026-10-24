@@ -274,7 +274,10 @@ test("after a reload, every inbox is folded from disk: a live member is woken fo
 		const list = host.get(devChat).sends.slice(sent).map((s) => s.text).join("\n---\n");
 		assert.match(list, /- i_1 message from qa — API is ready/, "the item from before the reload, listed from disk");
 		assert.match(list, /- i_3 notice from Sova — Not addressed: 1 item\(s\) returned from qa \(ag_02\)/);
-		assert.match(list, /\[Not addressed: 1 item\(s\) returned from qa \(ag_02\), team_01 — its process had ended when the main chat restarted, with no successor\]\n {4}- i_2 message sent [^\n]* — Please test the parser/);
+		// Two items: listed by subject; the notice's text is in the item, opened with team_inbox.
+		const notice = readMemberItems(devDir).find((i) => i.id === "i_3")!;
+		assert.match(notice.body, /^\[Not addressed: 1 item\(s\) returned from qa \(ag_02\), team_01 — its process had ended when the main chat restarted, with no successor\]\n- i_2 message sent [^\n]* — Please test the parser/);
+
 		const qaItems = readMemberItems(qaDir);
 		assert.deepEqual(qaItems.map((i) => [i.id, Boolean(i.returned)]), [["i_2", true]], "qa's item is marked returned, not open");
 		await second.shutdown();

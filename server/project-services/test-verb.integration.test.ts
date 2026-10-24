@@ -28,7 +28,7 @@ const def = (over: { test?: object | null; timeout?: number } = {}) => ({
   slots: { cap: 2 },
   services: {
     web: { cmd: ["node", "web.mjs"], ports: { http: { base: BASE } }, ready: { http: "http", path: "/", timeout: 10 } },
-    repl: { cmd: ["node", "repl.mjs"], start: "on-demand", ports: { nrepl: { base: BASE + 10 } }, ready: { tcp: "nrepl", timeout: 10 }, about: "Test REPL: node client.mjs ${ports.repl.nrepl}" },
+    repl: { cmd: ["node", "repl.mjs"], start: "on-demand", ports: { nrepl: { base: BASE + 20 } }, ready: { tcp: "nrepl", timeout: 10 }, about: "Test REPL: node client.mjs ${ports.repl.nrepl}" },
   },
   ...(over.test === null ? {} : { test: over.test ?? { run: ["node", "runner.mjs"], requires: ["repl"], timeout: over.timeout ?? 20, smoke: ["unit/a", "unit/b"] } }),
 });
@@ -70,7 +70,7 @@ const unitLive = async (id: string, svc: string) => ["active", "activating"].inc
 const svc = (r: VerbResult, name: string) => r.services.find((s) => s.name === name)!;
 
 before(async () => {
-  BASE = await reservePorts(15);
+  BASE = await reservePorts(40);
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-testverb-proj-")));
   project = join(parent, "demo");
   mkdirSync(join(project, ".sova"), { recursive: true });

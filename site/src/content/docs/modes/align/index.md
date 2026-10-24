@@ -104,11 +104,13 @@ In a chat Sova runs with align on, the newest card of an open alignment can be a
 None of these change the alignment directly. They write an ordinary message for the agent to
 record, exactly as if you had typed it.
 
-## The chip in the composer
+## The badge in the message box
 
-While an alignment is open, the composer shows a chip such as **1 align · 5/7 decided**: the open
-alignments, and how many of their questions are decided. Press it to list them, each with a
-progress bar; choose one to jump to its card.
+While an alignment is open, a small badge sits at the left edge of the message box. Its ring fills
+as questions are decided, the number in the middle is the questions still open, and the dots under
+it are the open alignments. A numeral on top (I, II, III…) counts any option cards waiting too.
+Press it to open **Waiting on you**: each alignment with its progress and its next open question,
+and **Show in Chat** to jump to its card.
 
 ## When the agent is waiting on you
 
@@ -121,7 +123,7 @@ session is **waiting on your answers**:
   [Needs you](/docs/needs-you/).
 
 Once you've replied and the agent moved on without touching an alignment, or you turn align off,
-the questions stay on the card and the chip but leave the row, Needs you and notifications. Once
+the questions stay on the card and the badge but leave the row, Needs you and notifications. Once
 the session's branch is merged, they leave Needs you too.
 
 ## What keeps the agent on it

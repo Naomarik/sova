@@ -25,6 +25,7 @@ import {
   rarelyUsed,
   runButtonsOf,
   snapshotOf,
+  TITLE_COMMIT_LEN,
 } from "../shared/session-offers";
 import { sessionsChanged } from "./list-generation";
 import { projectRootOf } from "./project-root";
@@ -480,8 +481,17 @@ export async function showOffer(input: ShowInput): Promise<OfferCard> {
   facts.drafts = unpromotedDraftNames(folder)?.join(", ");
   const moment = momentOf(def.repeat, facts.head, input.replyId ?? `at:${s.lastActiveAt ?? ""}`);
   if (rec.cards.some((c) => c.name === input.offer && c.moment === moment)) throw new OfferRefusal(`"${input.offer}" was already shown ${MOMENT_WORDS[def.repeat]}. ${projectWords}`);
-  // One open offer at a time: a new one never replaces it (an open card whose offer left the file is withdrawn, not open).
-  const open = rec.cards.find((c) => c.state === "open" && !!stillOffered(rec, c));
+  // One open offer at a time: a new one never replaces it (an open card whose offer left the file is withdrawn, and a
+  // once-per-commit card whose branch moved on is superseded: neither is open, so the current one shows at once).
+  let open: StoredCard | undefined;
+  for (const c of rec.cards) {
+    if (c.state !== "open" || !stillOffered(rec, c)) continue;
+    if ((await commitMoved(c)) === "moved") {
+      supersede(rec, c);
+      continue;
+    }
+    open ??= c;
+  }
   if (open) throw new OfferRefusal(`The offer "${open.name}" (${open.title}) is still open in this session; the user answers it first. ${projectWords}`);
   let from: OfferCard["from"];
   if (fromPath) {
@@ -490,6 +500,7 @@ export async function showOffer(input: ShowInput): Promise<OfferCard> {
     from = { id: f.id, title: f.title || "Untitled" };
   }
   const card = makeCard({ ...def, buttons: shown }, input, ++rec.n, facts, moment, root, note, from, fromPath, deps.now().toISOString());
+  for (const c of rec.cards) if (c.state === "superseded" && !c.supersededBy) c.supersededBy = card.id;
   rec.cards.push(card);
   rec.path = input.path;
   saveRecord(rec);
@@ -508,7 +519,8 @@ function makeCard(def: OfferDef, input: ShowInput, n: number, facts: Facts & { h
   return {
     id: `of_${n}`,
     name: input.offer,
-    title: fillText(def.title, fill),
+    // A title names the commit short (§chat.offers/file); a send keeps the moment's longer form.
+    title: fillText(def.title, { ...fill, commit: facts.head?.slice(0, TITLE_COMMIT_LEN) }),
     ...(note ? { note } : {}),
     buttons: def.buttons.map((b) => ({ label: b.label, about: b.about, kind: b.run ? ("run" as const) : ("send" as const), ...(b.confirm ? { confirm: fillText(b.confirm, fill) } : {}) })),
     at,
@@ -536,6 +548,28 @@ function wireCard(c: StoredCard): OfferCard {
 
 // ---- clicks (§chat.offers/card) -----------------------------------------------------------------
 
+/** The commit a once-per-commit card is for (§chat.offers/card), from its moment; undefined for any other card. */
+const commitOf = (card: StoredCard): string | undefined => (card.moment.startsWith("commit:") ? card.moment.slice("commit:".length) : undefined);
+
+/**
+ * Whether a once-per-commit card's branch has moved on from the commit it was shown for (§chat.offers/card):
+ * "moved", "same", "unknown" when the branch's head can't be read now, "untied" for a card tied to no commit
+ * and branch. Read from the branch itself in the project's main checkout, so a worktree's own folder never matters.
+ */
+async function commitMoved(card: StoredCard): Promise<"moved" | "same" | "unknown" | "untied"> {
+  const at = commitOf(card);
+  if (!at || !card.branch) return "untied";
+  const now = await gitLine(["rev-parse", "--verify", "-q", `refs/heads/${card.branch}^{commit}`], card.root);
+  if (!now) return "unknown";
+  return now === at ? "same" : "moved";
+}
+
+/** An open card replaced by a newer commit (§chat.offers/card): it reads "Replaced by a newer commit". */
+function supersede(rec: SessionRecord, card: StoredCard): void {
+  card.state = "superseded";
+  saveRecord(rec);
+}
+
 /** Re-check a stored open card against the file now: a card whose offer left the file is withdrawn. */
 function stillOffered(rec: SessionRecord, card: StoredCard): { file: ParsedOffersFile; def: OfferDef } | null {
   const file = readOffersFile(card.root);
@@ -560,6 +594,15 @@ export async function chooseOffer(path: string, sessionId: string, cardId: strin
   if (!Number.isInteger(index) || !button) throw new OfferRefusal("No such button on this card.", 400);
   const live = stillOffered(rec, card);
   if (!live) throw new OfferRefusal(`This offer is no longer in the project's ${OFFERS_FILE}. Nothing was sent.`);
+  // A card for one commit is never pressed once its branch moved on (§chat.offers/card): nothing sent, run or recorded.
+  const moved = await commitMoved(card);
+  if (moved === "moved") {
+    supersede(rec, card);
+    throw new OfferRefusal(`${card.branch} has a newer commit than this card was shown for, so the card was replaced. Nothing was sent.`);
+  }
+  if (moved === "unknown") throw new OfferRefusal(`Sova can't read ${card.branch}'s current commit, so it can't tell this card still stands. Nothing was sent.`);
+  // Read again after the await: a second click at the same moment finds it claimed.
+  if (card.state !== "open") throw new OfferRefusal("This card is no longer open.");
   const run = card.runs[index];
   if (run && !runsApproved(card.root, live.file)) throw new OfferRefusal("This offer's run buttons are not approved now: approve them on the project page's Offers list. Nothing ran.");
   const at = deps.now().toISOString();
@@ -688,9 +731,12 @@ export async function sessionOffers(sessionId: string, cwd: string | undefined):
   const root = await projectRootOf(cwd).catch(() => null);
   const hasFile = !!root && readOffersFile(root).state !== "missing";
   if (!rec) return { cards: [], notNow: [], hasFile };
-  for (const c of rec.cards) if (c.state === "open" && !liveOffer(readOffersFile(c.root), c.name)) {
-    c.state = "withdrawn";
-    saveRecord(rec);
+  for (const c of rec.cards) {
+    if (c.state !== "open") continue;
+    if (!liveOffer(readOffersFile(c.root), c.name)) {
+      c.state = "withdrawn";
+      saveRecord(rec);
+    } else if ((await commitMoved(c)) === "moved") supersede(rec, c);
   }
   return { cards: rec.cards.map(wireCard), notNow: [...rec.notNow], hasFile: hasFile || rec.cards.length > 0 };
 }
@@ -746,7 +792,8 @@ export function offerNoteFor(sessionId: string): string | null {
 
 let openIndex: { dir: string; open: Map<string, { title: string; at: number; name: string; root: string }> } | null = null;
 
-/** The session's open offer, for its asks-you mark (§app.decisions/asks-user). Read from one index of every record. */
+/** The session's open offer: its Needs you item (§app.overseer/attention-digest, `offer-waiting`) and, while idle, its
+    asks-you mark (§app.decisions/asks-user). Read from one index of every record. */
 export function openOfferOf(sessionId: string): { title: string; at: number } | undefined {
   const dir = offersDir();
   if (!openIndex || openIndex.dir !== dir) {
@@ -787,12 +834,6 @@ export function withOpenOffer(sessionId: string, signals: SessionSignals | undef
   if (!offer || signals?.kinds.includes("asks-you")) return signals;
   // No classifier asked: the provider is the turn's own when one was, else nominal (the wire needs one).
   return { ...(signals ?? { turnId: "offer", provider: "pi" as const }), at: Math.max(signals?.at ?? 0, offer.at), kinds: ["asks-you", ...(signals?.kinds ?? [])] };
-}
-
-/** The digest's words for a session with an open offer: its title, else what the signals store says. */
-export function offerSignalText<T extends { sentence?: string }>(sessionId: string, text: T): T {
-  const offer = openOfferOf(sessionId);
-  return offer ? { ...text, sentence: offer.title } : text;
 }
 
 export { OFFER_DETAILS_VERSION };

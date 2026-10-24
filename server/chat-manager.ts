@@ -746,16 +746,30 @@ function workerHostExtension(pi: PiExtensionAPI): void {
 }
 
 /**
+ * A worker chat's own inline extensions: a worker or team member (never a hidden chat) gets project_verbs and its
+ * instance note, as an ordinary chat does (§app.project-services/callers), served when the server declared it, else
+ * in this process.
+ */
+export function workerExtensionFactories(w: Pick<WorkerSpec, "kind">, path: string) {
+  if (w.kind !== "worker") return [];
+  return [
+    servedDecls
+      ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
+      : projectVerbsExtension(projectEngine),
+  ];
+}
+
+/**
  * One build of a worker chat (design §2.3): its own extensions only, in its order, discovery off; its
  * flags; the built-ins outside its list excluded (extension tools never filtered); its appended
- * prompt; its model and thinking as a fresh session takes them. Nothing of an ordinary chat.
+ * prompt; its model and thinking as a fresh session takes them. Nothing of an ordinary chat but, for a worker or team member, project_verbs.
  */
-function workerBuild(w: WorkerSpec): PiBuild {
+function workerBuild(w: WorkerSpec, path: string): PiBuild {
   return {
     loader: {
       noExtensions: true,
       additionalExtensionPaths: [...w.extensions],
-      extensionFactories: [],
+      extensionFactories: workerExtensionFactories(w, path),
       ...(w.appendSystemPrompt ? { appendSystemPrompt: [w.appendSystemPrompt] } : {}),
     },
     flags: () => ({ extra: w.flags }),
@@ -4315,7 +4329,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
   const worker = presetWorkers.get(path) ?? null;
   const build = async ({ cwd, read }: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
     // A worker chat (§app.chat-processes/workers) is its loadout and nothing else.
-    if (worker) return workerBuild(worker);
+    if (worker) return workerBuild(worker, path);
     if (!launch.recorded) {
       const now = alignLaunchOf(read.state);
       if (now.recorded || launch.data === null) Object.assign(launch, now);

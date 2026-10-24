@@ -1,9 +1,10 @@
 // Run: npx tsx --test server/attention.test.ts (or npm test). Pure: no files, no runtime.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import type { SessionSummary } from "../shared/protocol";
-import { type AttentionRow, blockerCount, blockerKey, buildDigest, DIGEST_MAX, openQuestionsText, sessionItems, STALE_MS, whereOf, workerErrorTime } from "./attention";
+import { PUSH_KINDS, type SessionSummary } from "../shared/protocol";
+import { type AttentionRow, blockerCount, blockerKey, buildDigest, DIGEST_MAX, NEVER_BRIEFED, openQuestionsText, sessionItems, STALE_MS, whereOf, workerErrorTime } from "./attention";
 import { workerErrorTimesOf } from "./live";
+import { listsInNeedsYou } from "../shared/needs-you";
 
 const NOW = Date.parse("2026-09-25T12:00:00.000Z");
 
@@ -422,3 +423,28 @@ describe("unverified: the turn card's done-but-unchecked guess", () => {
     assert.deepEqual(signalsOverlay("u", { enabled: true, viewing: false, running: false, seenAt: NOW }, data, NOW)?.kinds, ["unverified"], "seen keeps it");
   });
 });
+
+describe("an open option card (§chat.offers/card, §app.overseer/attention-digest)", () => {
+  const offer = { title: "Land feat/x at abc1234?", at: NOW - 30_000 };
+  test("is a Needs you blocker, idle or working, quoting its title; never a push kind, never briefed", () => {
+    const idle = sessionItems(row(summary("o"), { offer }), NOW);
+    assert.deepEqual(idle.filter((i) => i.tier === "act").map((i) => `${i.kind}:${i.detail}:${i.since}`), [`offer-waiting:Waiting on your answer: Land feat/x at abc1234?:${NOW - 30_000}`]);
+    assert.ok(idle.some(listsInNeedsYou), "listed in Needs you's main list");
+    assert.equal(idle.find((i) => i.kind === "offer-waiting")?.soft, undefined, "not the softer tier");
+    const working = sessionItems(row(summary("o", { busy: true, activity: { state: "working" } }), { offer }), NOW);
+    assert.ok(working.some((i) => i.tier === "act" && i.kind === "offer-waiting"), "while a turn runs too");
+    assert.deepEqual(kinds(row(summary("o", { archived: true }), { offer })), [], "archived: out of the way");
+    assert.equal((PUSH_KINDS as readonly string[]).includes("offer-waiting"), false, "no phone notification");
+    assert.ok(NEVER_BRIEFED.has("offer-waiting"), "no Overseer brief");
+  });
+
+  test("counts on the badge, and replaces the soft asks-you its idle row's mark would add", () => {
+    const signals = { at: NOW - 5000, turnId: "offer", provider: "pi" as const, kinds: ["asks-you" as const] };
+    const items = sessionItems(row(summary("o", { signals }), { offer }), NOW);
+    assert.deepEqual(items.filter((i) => i.kind === "asks-you"), []);
+    const d = buildDigest([row(summary("o", { signals }), { offer }), row(summary("p"))], NOW);
+    assert.equal(d.badge.act, 1);
+    assert.equal(d.badge.needsYou, 1);
+  });
+});
+

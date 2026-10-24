@@ -232,3 +232,12 @@ describe("the owner page's route (share listener)", () => {
     assert.equal((await act(plinks.handleOf("r", r.id), { action: "close" })).status, 404);
   });
 });
+
+test("the share listener lets the owner's close and reopen through, and nothing else like it", async () => {
+  const { shareMayReach } = await import("./share/edge");
+  const t = "a".repeat(43);
+  assert.ok(shareMayReach("POST", `/api/i/${t}/requests/r_abcdefgh`));
+  assert.equal(shareMayReach("GET", `/api/i/${t}/requests/r_abcdefgh`), false);
+  assert.equal(shareMayReach("POST", `/api/i/${t}/requests/or_abcdefgh`), false, "a request id is no handle");
+  assert.equal(shareMayReach("POST", `/api/i/${t}/requests`), false);
+});

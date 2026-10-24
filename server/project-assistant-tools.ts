@@ -3,7 +3,8 @@ import type { HEntry, ToolSpec } from "../shared/harness";
 import type { ModelPick } from "../shared/powers";
 import { assistantWouldAct, deployTargetOf } from "./assistant-would-act";
 import { OWNER_REQUEST_TEXT_MAX, OWNER_REQUEST_TITLE_MAX, type OwnerRequest, type OwnerRequestKind } from "../shared/project-assistant";
-import { closeTryRequests, noteVersionFailed, noteVersionStarting, projectVersions, START_TIMEOUT_MS, tryRequestIsFor, type OwnerVersion } from "./owner-versions";
+import { closeTryRequests, noteVersionFailed, noteVersionStarting, projectVersions, shownVersionSummary, START_TIMEOUT_MS, tryRequestIsFor, type OwnerVersion } from "./owner-versions";
+import { outsiderRedactor } from "./share/hub";
 import { agreeRequirement, changeOfRef, conversationDraftTools } from "./conversation-draft-tools";
 import type { ConversationRef } from "./conversation-draft-store";
 import { orgDir, OrgError, readProjects, readRoster } from "./orgs";
@@ -286,7 +287,7 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
     name: "owner_versions",
     label: "Versions to try",
     description:
-      "The versions of each project the owner can try (the current version, each fix's copy), and whether each is running, starting, didn't start or not running. Use it before you answer \"can I try it?\"; start one with start_version.",
+      "The versions of each project the owner can try (the current version, each fix's copy), whether each is running, starting, didn't start or not running, and what each changes when a summary is written. Use it before you answer \"can I try it?\" or \"what's in this version?\"; start one with start_version.",
     promptSnippet: "owner_versions: the versions the owner can try, and whether each is running",
     parameters: obj({}, []),
     async execute() {
@@ -297,7 +298,11 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
           lines.push(`- ${p.name}: no versions to try.`);
           continue;
         }
-        for (const v of vs) lines.push(`- ${p.name}: ${v.label}: ${v.endpoint === null ? "can't be shown outside the team" : VERSION_STATE_WORDS[v.state]}`);
+        const r = outsiderRedactor(orgId);
+        for (const v of vs) {
+          const summary = shownVersionSummary(orgId, v, r);
+          lines.push(`- ${p.name}: ${v.label}: ${v.endpoint === null ? "can't be shown outside the team" : VERSION_STATE_WORDS[v.state]}${summary ? `. What it changes: ${summary}` : ""}`);
+        }
       }
       return say(lines.length ? lines.join("\n") : "There is no project yet.");
     },

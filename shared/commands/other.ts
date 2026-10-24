@@ -8,6 +8,70 @@ import { CHAT_ENTRIES } from "./chat.ts";
 const orgId: CommandParam = { type: "string", description: "The organization's id", in: "path", required: true };
 const requestId: CommandParam = { type: "string", description: "The owner request's id (or_…)", in: "path", required: true };
 
+const projectId: CommandParam = { type: "string", description: "The project's id", in: "path", required: true };
+const instance: CommandParam = { type: "string", description: "The version's copy (its instance id)", in: "path", required: true };
+const versionParams = { "org-id": { ...orgId, key: "id" }, "project-id": { ...projectId, key: "pid" }, instance: { ...instance, key: "instance" } };
+const versionRoute = (fixed?: Record<string, unknown>) => ({ method: "PUT" as const, path: "/api/orgs/:id/projects/:pid/versions/:instance", ...(fixed ? { fixed } : {}) });
+
+/** The versions on the owner's page and their summaries, on the project page's Owner Page card (§app.project-assistant/versions). */
+const ORG_VERSION_SUMMARY_ENTRIES: CommandEntry[] = [
+  {
+    id: "org.project.versions",
+    label: "Show Owner's Versions",
+    summary: "The versions of a project on the owner's page, each with its summary as kept (automatic, the team's rewrite, hidden).",
+    effect: "looks",
+    params: { "org-id": { ...orgId, key: "id" }, "project-id": { ...projectId, key: "pid" } },
+    route: { method: "GET", path: "/api/orgs/:id/projects/:pid/versions" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
+    id: "org.project.version.rewrite",
+    label: "Rewrite Summary",
+    summary: "Replace a version's summary on the owner's page with your own words.",
+    effect: "changes",
+    params: { ...versionParams, text: { type: "string", description: "The summary the owner reads", in: "body", required: true } },
+    route: versionRoute(),
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "org.project.version.automatic",
+    label: "Use Automatic",
+    summary: "Show a version's automatic summary again instead of your rewrite.",
+    effect: "changes",
+    params: versionParams,
+    route: versionRoute({ text: null }),
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "org.project.version.hide",
+    label: "Hide Summary",
+    summary: "Hide a version's summary from the owner and their assistant.",
+    effect: "changes",
+    params: versionParams,
+    route: versionRoute({ hidden: true }),
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "org.project.version.show",
+    label: "Show Summary",
+    summary: "Show a hidden version summary to the owner again.",
+    effect: "changes",
+    params: versionParams,
+    route: versionRoute({ hidden: false }),
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+];
+
 /** An owner request's answers on the org's Requests tab (§app.project-assistant/request-chat). */
 const ORG_OWNER_REQUEST_ENTRIES: CommandEntry[] = [
   {
@@ -499,5 +563,6 @@ export const OTHER_ENTRIES: CommandEntry[] = [
     meshNeed: "full",
   },
   ...ORG_OWNER_REQUEST_ENTRIES,
+  ...ORG_VERSION_SUMMARY_ENTRIES,
   ...CHAT_ENTRIES,
 ];

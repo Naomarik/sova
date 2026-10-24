@@ -142,6 +142,30 @@ export interface OwnerVersionRow {
   /** "starting": the assistant started it and it hasn't answered yet; "failed": it didn't start
       (§app.project-assistant/versions). */
   state: "running" | "starting" | "not-running" | "failed";
+  /** One or two plain sentences on what it changes against the Current version, when one is shown (written
+      automatically or by the team, cleaned for the owner; §app.project-assistant/versions). */
+  summary?: string;
+}
+
+/** A version on the team's Owner Page card, with its summary as stored (operator-side):
+ * GET /api/orgs/:id/projects/:pid/versions -> VersionSummaryRow[]
+ * PUT /api/orgs/:id/projects/:pid/versions/:instance  body { text?: string | null, hidden?: boolean } -> VersionSummaryRow[]
+ *     (text: Rewrite; null: Use Automatic; hidden: Hide / Show) */
+export interface VersionSummaryRow {
+  /** The copy's instance id. */
+  instance: string;
+  label: string;
+  /** The Current version (it has no summary). */
+  current: boolean;
+  state: OwnerVersionRow["state"];
+  /** What the owner is shown now (before the outsider filter), or null. */
+  summary: string | null;
+  /** Where the shown one comes from; "hidden" while the team hides it. */
+  source: "auto" | "team" | "hidden" | null;
+  hidden: boolean;
+  /** The automatic one and the team's rewrite, as kept. */
+  auto: string | null;
+  team: string | null;
 }
 
 /** A photo in a message: `n` numbers the photos of THIS view in order (fetched from

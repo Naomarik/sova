@@ -258,6 +258,7 @@ const ACCEPTS: Record<string, string> = {
  */
 const TYPE_ACCEPTS: Record<string, string> = {
   "session.title.set | real:title=null": "title null is the reset, by design (session.title.reset sends it)",
+  "org.project.version.rewrite | real:text=null": "text null is Use Automatic, by design (org.project.version.automatic sends it)",
   // Finding: POST /api/sessions ignores a profile or prompt that is not a string (startOf), and makes a plain session.
   ...Object.fromEntries(["profile", "prompt"].flatMap((p) => ["number", "float-huge", "boolean", "object", "array", "proto-object", "null"].map((b) => [`session.create | real:${p}=${b}`, "finding: a non-string profile or prompt is ignored, not refused"]))),
 };
@@ -373,6 +374,28 @@ function ownerRequestFixture(status: "done" | "declined"): Fixture {
   };
 }
 
+/** An org with a project, for the versions on its owner's page (§app.project-assistant/versions); `oracle` reads the
+    summary kept for the copy `i_fuzz` afterwards. */
+function versionFixture(oracle?: (e: import("./version-summaries").SummaryEntry | undefined) => void, extra: Record<string, unknown> = {}): Fixture {
+  return {
+    values: () => {
+      const v: Record<string, unknown> = { instance: "i_fuzz", ...extra };
+      pendingSetup.push(async () => {
+        const orgs = await import("./orgs");
+        const d = join(root, `org-project-${++n}`);
+        mkdirSync(d, { recursive: true });
+        const org = await orgs.createOrg({ name: `Fuzz Org ${n}`, dir: join(root, `org-${n}`) });
+        const proj = await orgs.addProject(org.id, { name: "Fuzz project", root: d });
+        v["org-id"] = org.id;
+        v["project-id"] = proj.id;
+      });
+      return v;
+    },
+    status: 200,
+    ...(oracle ? { oracle: async (_b: unknown, v: Record<string, unknown>) => oracle((await import("./version-summaries")).readSummaries(String(v["org-id"]), String(v["project-id"]))["i_fuzz"]) } : {}),
+  };
+}
+
 const FIXTURES: Record<string, Fixture> = {
   "session.list": { values: () => ({}), status: 200 },
   "session.get": { values: () => ({ session: session()[1] }), status: 200 },
@@ -380,6 +403,11 @@ const FIXTURES: Record<string, Fixture> = {
   "project.services.view": { values: () => ({ pid: "no-such-project" }), status: 404 },
   "org.owner.request.done": ownerRequestFixture("done"),
   "org.owner.request.decline": ownerRequestFixture("declined"),
+  "org.project.versions": versionFixture(),
+  "org.project.version.rewrite": versionFixture((e) => assert.equal(e?.team?.text, "Fuzz summary"), { text: "Fuzz summary" }),
+  "org.project.version.automatic": versionFixture((e) => assert.equal(e?.team, undefined)),
+  "org.project.version.hide": versionFixture((e) => assert.equal(e?.hidden, true)),
+  "org.project.version.show": versionFixture((e) => assert.equal(e?.hidden, undefined)),
   "org.owner.request.noted": {
     values: () => {
       const v: Record<string, unknown> = {};

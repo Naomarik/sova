@@ -456,6 +456,7 @@
     "PUT /api/peer/share-gateway/links": {"need":"share","is":"peer"},
     "PUT /api/projects/:pid/overseer/memory": {"need":"admin","is":"pending"},
     "PUT /api/projects/:pid/overseer/todos/order": {"need":"admin","is":"command","ids":["project.overseer.todo.reorder"]},
+    "PUT /api/projects/:pid/services/limit": {"need":"admin","is":"trust-grants"},
     "PUT /api/public-links": {"need":"admin","is":"pending"},
     "PUT /api/push/settings": {"need":"admin","is":"pending"},
     "PUT /api/sessions/draft": {"need":"sessions","is":"command","ids":["session.draft.set"]},

@@ -667,6 +667,14 @@ export function servedToolsFor(chatId: ChatId, sessionId: string, known: () => s
   return specs.map(declOfTool);
 }
 
+/** The server-hosted tools of a worker or team member (WorkerKind "worker", never a hidden chat), hosted
+    here: only `project_verbs`, under an ordinary session's rules (§app.project-services/callers). */
+export function servedWorkerTools(chatId: ChatId): ServerToolDecl[] {
+  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine())];
+  serveTools(chatId, specs);
+  return specs.map(declOfTool);
+}
+
 /**
  * Every server-hosted tool of a chat this server opens or adopts: servedToolsFor's, then, for an
  * ordinary chat (no special kind but a powers profile), its `offer` tool when its snapshot names any

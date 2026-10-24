@@ -400,7 +400,10 @@ first and a commit already on the target branch second, and M's tree is exactly 
 merge-tree --write-tree` makes of those two parents (no conflict, nothing edited by hand). It
 carries through a chain of such merges (master merged in again after it moved), up to 20. Any
 other new commit (a merge with an extra edit, a resolved conflict, three parents, or a commit of
-the branch's own) needs a new go-ahead. The `worktree merge` tool, Merge Branch and the merge
+the branch's own) needs a new go-ahead. A Not Yet is never carried past: walking back from the
+head, the first commit with an answer for the branch decides by its newest answer (the later
+recorded time; Not Yet when the two tie), so a Not Yet at the head or at any merge on the way
+stops the carry, and a go-ahead pressed after it lands again. The `worktree merge` tool, Merge Branch and the merge
 round's driver (§chat.merge-round/driver) all apply this one rule; `landing.json` is unchanged.
 
 Merges into any other branch, typed `git` commands and projects without the key are unchanged.

@@ -201,8 +201,9 @@ shell and under a timeout.
   that before it answers READY, that the user's go-ahead to merge covers it, and that a READY with
   them left is handed back; with none the text is as above. **A recorded go-ahead** (Land It, in
   `<state root>/landing.json`) for the branch at its current head, or at an earlier head when every
-  commit since is a clean merge of master (§chat.worktrees/merge-guard's rule, so a go-ahead
-  survives the check's own master merge), counts as the owner's READY: the
+  commit since is a clean merge of master and none of them has Not Yet as its newest answer
+  (§chat.worktrees/merge-guard's rule, so a go-ahead survives the check's own master merge but
+  never a later Not Yet), counts as the owner's READY: the
   branch goes to "to check"; one recorded without specs also lets its check pass with drafts left,
   naming them. A recorded Not Yet at the current head puts it in "not ready" until the head moves.
   **The merge guard.** When master's own copy of `.sova/offers.json` says `"mainMerges": "go-ahead"`

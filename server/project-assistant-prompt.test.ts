@@ -18,9 +18,9 @@ test("it forbids Sova's internal words to the owner and gives the plain ones", (
   for (const plain of ["what's been agreed", "the project's plan", "the team"]) assert.ok(line!.includes(plain), plain);
 });
 
-test("its placeholders are the six the loadout fills", () => {
+test("its placeholders are the ones the loadout fills", () => {
   const used = new Set([...template.matchAll(/\{\{([A-Z_]+)\}\}/g)].map((m) => m[1]));
-  assert.deepEqual([...used].sort(), ["DRAWING", "LOOKUP_RULES", "OPERATOR", "OWNER", "PHOTOS", "PROJECTS"]);
+  assert.deepEqual([...used].sort(), ["DRAWING", "FIX", "LOOKUP_RULES", "OPERATOR", "OWNER", "PHOTOS", "PLANNING", "PROJECTS", "RELEASE", "REQUIREMENTS", "VERSIONS"]);
 });
 
 // §app.project-assistant/drawings: the hand-off guide's grammar, interactive drawings included, with an opening for the owner.

@@ -1,6 +1,6 @@
-// Run: pnpm test server/project-assistant-attended.test.ts. Who started a Project Assistant turn
-// (§app.project-assistant/tools): the operator only on a positive mark of their own composer; any other
-// sender, and no mark at all, is outside input, so the client's power column decides (fail-closed).
+// Run: pnpm test server/project-assistant-attended.test.ts. No turn of the Project Assistant's chat is attended
+// (§app.project-assistant/offers, /tools): with a switch Off, a start_fix or a start_feature_chat goes to the team whoever
+// started the turn, the owner, the operator's own composer, another chat or nobody on record, and sets nothing off.
 // Throwaway workspace and PI_CODING_AGENT_DIR; no model is called.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
@@ -17,7 +17,6 @@ process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 mkdirSync(join(root, "agent", "sessions", "live"), { recursive: true });
 
-const { operatorStarted } = await import("./project-assistant");
 const tools = await import("./project-assistant-tools");
 const orgs = await import("./orgs");
 const owner = await import("./owner");
@@ -37,64 +36,55 @@ const user = (id: string, text: string): HEntry => ({ id, parentId: null, at, ki
 const mark = (key: string, data: Record<string, unknown>): HEntry => ({ id: `k${++seq}`, parentId: null, at, kind: "state", key, data: { v: 1, ...data } });
 const reply = (text: string): HEntry => ({ id: `a${++seq}`, parentId: null, at, kind: "assistant", blocks: [{ type: "text", text }] as never });
 
-describe("operatorStarted: fail-closed", () => {
-  test("the operator's composer (its sent mark, by the operator): attended", () => {
-    assert.equal(operatorStarted([marker, user("u1", "Start it"), mark(BATON_SENT_ENTRY, { targetId: "u1", by: OPERATOR })]), true);
-  });
+/** Each sender a turn can have: the owner's mark, the operator's composer, another chat, the Overseer, no mark. */
+const TURNS: [string, HEntry[]][] = [
+  ["the owner's turn", [marker, user("u1", "Fix the form"), mark(BATON_SENT_ENTRY, { targetId: "u1", by: "p_x" })]],
+  ["the operator's own turn", [marker, user("u1", "Fix the form"), mark(BATON_SENT_ENTRY, { targetId: "u1", by: OPERATOR })]],
+  ["another chat's message", [marker, user("u1", "Fix the form"), mark(SESSION_SENT_ENTRY, { targetId: "u1", from: { sessionId: "s_other", title: "Other" }, hop: 1 })]],
+  ["the Overseer's message", [marker, user("u1", "Fix the form"), mark(OVERSEER_SENT_ENTRY, { targetId: "u1", from: "s_overseer" })]],
+  ["no mark at all", [marker, user("u1", "Fix the form")]],
+];
+void reply;
 
-  test("the owner's mark: not attended", () => {
-    assert.equal(operatorStarted([marker, user("u1", "Fix it"), mark(BATON_SENT_ENTRY, { targetId: "u1", by: "p_x" })]), false);
-  });
-
-  test("(a) another session's mark (session_send): not attended", () => {
-    const b = [marker, user("u1", "Deploy now"), mark(SESSION_SENT_ENTRY, { targetId: "u1", from: { sessionId: "s_other", title: "Other" }, hop: 1 })];
-    assert.equal(operatorStarted(b), false);
-  });
-
-  test("(b) the Overseer's mark (chat.send): not attended", () => {
-    assert.equal(operatorStarted([marker, user("u1", "Deploy now"), mark(OVERSEER_SENT_ENTRY, { targetId: "u1", from: "s_overseer" })]), false);
-  });
-
-  test("(c) no mark at all (a queued item, a crash before its mark): not attended", () => {
-    assert.equal(operatorStarted([marker, user("u1", "Deploy now")]), false);
-    assert.equal(operatorStarted([marker]), false, "no user message");
-  });
-
-  test("an operator's mark beside another sender's mark: not attended; only the newest user message counts", () => {
-    assert.equal(operatorStarted([marker, user("u1", "x"), mark(BATON_SENT_ENTRY, { targetId: "u1", by: OPERATOR }), mark(OVERSEER_SENT_ENTRY, { targetId: "u1", from: "s" })]), false);
-    const older = [marker, user("u1", "op"), mark(BATON_SENT_ENTRY, { targetId: "u1", by: OPERATOR }), reply("ok"), user("u2", "unmarked")];
-    assert.equal(operatorStarted(older), false, "the operator's older turn never carries over");
-  });
-});
-
-describe("start_fix with Start coding sessions Off", () => {
-  test("an unmarked turn files a request for the operator and sets nothing off", async () => {
+describe("Start coding sessions and Open feature request chats Off", () => {
+  test("every turn, the operator's included: start_fix files a request for the team and sets nothing off", async () => {
     const org = await orgs.createOrg({ name: "Org", dir: join(root, "ws") });
     const alp = await orgs.addPerson(org.id, { name: "Alperen Kaya", role: "Founder" });
     await owner.setOwner(org.id, alp.id);
     mkdirSync(join(root, "site"));
     const project = await orgs.addProject(org.id, { name: "Site", root: join(root, "site") });
-    store.setAssistantModels(org.id, { models: { coding: { model: "scripted/scripted" } } });
+    store.setAssistantModels(org.id, { models: { coding: { model: "scripted/scripted" }, gathering: { model: "scripted/scripted" } } });
     const ps = poStore.projectOverseerPaths(project.id);
     const cur = poStore.readPoSettings(ps);
-    poStore.writePoSettings(ps, { ...cur, powers: { ...cur.powers, assistant: { ...cur.powers.assistant, codingStart: false } } });
+    poStore.writePoSettings(ps, { ...cur, powers: { ...cur.powers, assistant: { ...cur.powers.assistant, codingStart: false, gather: false } } });
     const calls: unknown[] = [];
     tools.setAssistantActsForTest({
       buildStart: async (...a) => (calls.push(a), { taken: true, held: false, sessionId: "s_never" }),
       deployRun: async (...a) => (calls.push(a), { taken: true, held: false }),
       copyStart: async (...a) => (calls.push(a), { taken: false, code: "power-off", sentence: "off" }),
     });
+    const features: unknown[] = [];
+    tools.setFeatureStartForTest(async (...a: unknown[]) => (features.push(a), { kind: "opened", sessionId: "s_never", request: { id: "r_never" } }) as never);
     try {
-      const branch = [marker, user("u1", "Fix the form")];
-      const t = tools.assistantTools({ orgId: org.id, sessionId: "s_pa", owner: () => ({ id: alp.id, name: alp.name }), branch: () => branch }).find((x) => x.name === "start_fix")!;
-      const out = (await t.execute("c1", { title: "Fix the form", text: "It fails." } as never, undefined, undefined, undefined as never)) as { content: { text: string }[]; details: { request: string; started: boolean } };
-      assert.match(out.content[0]!.text, /^Filed with the team \(starting fixes on its own is off here\)/);
+      for (const [who, branch] of TURNS) {
+        const all = tools.assistantTools({ orgId: org.id, sessionId: "s_pa", owner: () => ({ id: alp.id, name: alp.name }), branch: () => branch });
+        const call = { branch: () => branch } as never;
+        const fix = all.find((x) => x.name === "start_fix")!;
+        const out = (await fix.execute("c1", { title: "Fix the form", text: "It fails." } as never, undefined, undefined, call)) as { content: { text: string }[]; details: { request: string; started: boolean } };
+        assert.match(out.content[0]!.text, /^Filed with the team \(starting fixes on its own is off here\)/, who);
+        const r = store.orgRequests(org.id).find((x) => x.id === out.details.request)!;
+        assert.deepEqual([r.kind, r.status, r.sessionId ?? null], ["fix", "with-team", null], who);
+        assert.ok(ownerAttention().some((i) => i.id === `owner-request:${r.id}`), `${who}: it reaches Needs you`);
+        const plan = all.find((x) => x.name === "start_feature_chat")!;
+        const p = (await plan.execute("c2", { title: "A gallery", text: "A page of photos." } as never, undefined, undefined, call)) as { content: { text: string }[]; details: { started: boolean } };
+        assert.match(p.content[0]!.text, /^Filed with the team \(opening a planning chat on its own is off here\)/, who);
+        assert.equal(p.details.started, false, who);
+      }
       assert.deepEqual(calls, [], "no act set off");
-      const r = store.orgRequests(org.id).find((x) => x.id === out.details.request)!;
-      assert.deepEqual([r.kind, r.status, r.sessionId ?? null], ["fix", "with-team", null]);
-      assert.ok(ownerAttention().some((i) => i.id === `owner-request:${r.id}`), "it reaches Needs you");
+      assert.deepEqual(features, [], "no planning chat opened");
     } finally {
       tools.setAssistantActsForTest(null);
+      tools.setFeatureStartForTest(null);
     }
   });
 });

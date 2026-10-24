@@ -12,7 +12,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
+import { gateRefusal, gatedIds, WAKE_HEADER } from "./delivery.ts";
 import { writeInboxCaps } from "./inbox.ts";
+
 import {
 	INBOX_ACTIONS,
 	MAX_INBOX_IDS,
@@ -70,24 +72,25 @@ export function registerMemberTools(pi: ExtensionAPI, me: MemberContext, options
 		name: "team_msg",
 		label: "Message Team Member",
 		description: text.team_msg,
-		promptSnippet: "Message a teammate by role (delivered by the parent session)",
+		promptSnippet: "Message a teammate by role (queued in its inbox)",
 		parameters: Type.Object(
 			{
 				to: Type.String({ minLength: 1, description: "Recipient role, worker ID (ag_NN), or \"all\"." }),
 				message: Message,
 				subject: Subject,
 				urgent: Type.Optional(Type.Boolean({ description: "Wake an idle recipient at once and reach a busy one at its next step. Default false." })),
-				replyTo: Type.Optional(Type.String({ pattern: "^i_[0-9a-z]{1,12}$", description: "The item id this answers (i_N); answering a question marks it addressed." })),
+				replyTo: Type.Optional(Type.String({ pattern: "^i_[0-9a-z]{1,12}$", description: "The id of an item in your inbox this answers (i_N); the reply closes that item." })),
+				needsReply: Type.Optional(Type.Boolean({ description: "The recipient must answer: the message waits as a question until a reply with replyTo. Default false." })),
 				...(me.duty === "monitor" ? { notice: Type.Optional(StringEnum(["wrap-up", "pause", "resume"] as const)) } : {}),
 			},
 			{ additionalProperties: false },
 		),
-		async execute(_id, params: { to: string; message: string; subject?: string; urgent?: boolean; replyTo?: string; notice?: "wrap-up" | "pause" | "resume" }, signal) {
+		async execute(_id, params: { to: string; message: string; subject?: string; urgent?: boolean; replyTo?: string; needsReply?: boolean; notice?: "wrap-up" | "pause" | "resume" }, signal) {
 			if (!params.message.trim()) throw new Error("Message must not be blank.");
 			return send({
 				type: "message", to: params.to.trim(), message: params.message,
 				...(params.subject?.trim() ? { subject: params.subject.trim() } : {}), ...(params.urgent ? { urgent: true } : {}),
-				...(params.replyTo ? { replyTo: params.replyTo } : {}), ...(params.notice ? { notice: params.notice } : {}),
+				...(params.replyTo ? { replyTo: params.replyTo } : {}), ...(params.needsReply ? { needsReply: true } : {}), ...(params.notice ? { notice: params.notice } : {}),
 			}, signal);
 		},
 	});
@@ -215,6 +218,59 @@ export function registerMemberTools(pi: ExtensionAPI, me: MemberContext, options
 	});
 }
 
+/** Tools a gated member may still call (§app.teams/inbox-gate). */
+export const GATE_EXEMPT = new Set(["team_inbox", "team_msg", "team_ask"]);
+
+const userText = (message: unknown): string => {
+	const content = (message as { content?: unknown } | undefined)?.content;
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return "";
+	return content.map((c) => (c && typeof c === "object" && (c as { type?: unknown }).type === "text" ? String((c as { text?: unknown }).text ?? "") : "")).join("");
+};
+
+/**
+ * The inbox gate (§app.teams/inbox-gate): a run whose first user message is a gated wake list (the
+ * main chat adds the gate line only to a wake that starts the member's turn and lists unopened
+ * items) refuses every tool but team_inbox, team_msg and team_ask until the member opens an item.
+ * Any later user message that is not a wake list (a direct instruction) lifts it for the turn.
+ */
+export function registerInboxGate(pi: ExtensionAPI): { state(): string[] | undefined } {
+	let gated: string[] | undefined;
+	let userMessages = 0;
+	pi.on("agent_start", () => {
+		gated = undefined;
+		userMessages = 0;
+	});
+	pi.on("agent_end", () => {
+		gated = undefined;
+	});
+	pi.on("message_end", (event) => {
+		const message = (event as { message?: { role?: string } }).message;
+		if (message?.role !== "user") return;
+		const text = userText(message);
+		userMessages++;
+		if (userMessages === 1) gated = gatedIds(text);
+		else if (!text.startsWith(WAKE_HEADER)) gated = undefined;
+	});
+	pi.on("tool_call", (event) => {
+		if (!gated) return undefined;
+		const e = event as { toolName: string; input?: { action?: string; ids?: unknown } };
+		// Opening an item the wake listed lifts it at once (a batch of calls may follow in the same step).
+		if (e.toolName === "team_inbox" && e.input?.action === "open" && Array.isArray(e.input.ids) && e.input.ids.some((id) => gated!.includes(String(id)))) {
+			gated = undefined;
+			return undefined;
+		}
+		if (GATE_EXEMPT.has(e.toolName)) return undefined;
+		return { block: true, reason: gateRefusal(gated) };
+	});
+	// Any other open lifts it only once it succeeded (a bogus id or a failed open lifts nothing).
+	pi.on("tool_result", (event) => {
+		const e = event as { toolName: string; input?: { action?: string }; isError?: boolean };
+		if (gated && e.toolName === "team_inbox" && e.input?.action === "open" && !e.isError) gated = undefined;
+	});
+	return { state: () => gated };
+}
+
 export default function teamMemberExtension(pi: ExtensionAPI): void {
 	const me = decodeMemberContext(process.env[MEMBER_ENV]);
 	if (!me) return; // Not a team member child: inert by design.
@@ -225,4 +281,5 @@ export default function teamMemberExtension(pi: ExtensionAPI): void {
 		/* Without the marker the parent keeps sending full-text deliveries. */
 	}
 	registerMemberTools(pi, me);
+	registerInboxGate(pi);
 }

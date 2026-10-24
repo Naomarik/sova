@@ -174,7 +174,7 @@ test("Sova's own definition: hermetic copies on 4810 + 10 × slot, slot 0 adopts
   assert.deepEqual(server.adopt, { unit: "sova-runtime.service", ports: { http: 4800 } });
   assert.deepEqual(server.cmd, ["pnpm", "run", "dev:hermetic"]);
   assert.equal(server.env.SOVA_PORT, "${ports.server.http}");
-  assert.deepEqual([0, 1, 2, def.slots.cap + 2].map((s) => portsFor(def, s).server!.http), [4800, 4820, 4830, 4810 + 10 * (def.slots.cap + 2)]);
+  assert.deepEqual([0, 1, 2, 18].map((s) => portsFor(def, s).server!.http), [4800, 4820, 4830, 4990]);
   assert.deepEqual(def.setup.map((s) => s.id), ["mise-trust", "node-modules", "agent-dir"]);
   assert.equal(def.share?.allow, false);
 });

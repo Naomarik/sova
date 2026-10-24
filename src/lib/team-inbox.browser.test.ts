@@ -140,3 +140,47 @@ test("a failed list read says so and keeps nothing stale; Retry reads again", as
     h.dispose();
   }
 });
+
+test("the summary line and the chips follow the poll: a safety-net close shows as Closed automatically; an older server shows no line", async () => {
+  const { inboxSummary, statusChip } = await import("./team-inbox");
+  let auto = false;
+  let older = false;
+  const [key] = solid.createSignal<Key | null>({ path: "/s.jsonl", teamId: "team_01", workerId: "ag_02" });
+  let reader!: ReturnType<typeof createInboxReader>;
+  let summary!: () => string | null;
+  let chips!: () => string[];
+  const dispose = solid.createRoot((d) => {
+    reader = createInboxReader({
+      key,
+      active: () => true,
+      pollMs: 20,
+      list: async () => {
+        const v = view("ag_02", ["i_2", "i_1"]);
+        if (auto) {
+          v.items[1] = { ...v.items[1]!, status: "addressed", closedBy: "auto", note: "closed automatically: seen, not closed by dev" };
+          v.counts = { open: 1, urgent: 0, total: 2, closedByMember: 0, closedAutomatically: 1 };
+        } else v.counts = { ...v.counts, closedByMember: 0, closedAutomatically: 0 };
+        if (older) v.counts = { open: v.counts.open, urgent: 0, total: 2 };
+        return v;
+      },
+      body: async (_k, id) => ({ id, body: id }),
+    });
+    summary = solid.createMemo(() => inboxSummary(reader.view()?.counts, "dev"));
+    chips = solid.createMemo(() => (reader.view()?.items ?? []).map((i) => statusChip(i).word));
+    return d;
+  });
+  try {
+    await tick(5);
+    assert.equal(summary(), "2 open");
+    assert.deepEqual(chips(), ["New", "New"]);
+    auto = true;
+    await tick(40);
+    assert.equal(summary(), "1 open · 1 closed automatically");
+    assert.deepEqual(chips(), ["New", "Closed automatically"]);
+    older = true;
+    await tick(40);
+    assert.equal(summary(), null, "no split from the server: no line");
+  } finally {
+    dispose();
+  }
+});

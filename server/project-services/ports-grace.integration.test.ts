@@ -48,7 +48,7 @@ const svc = (name: string, at: number, late: number, timeout: number, onDemand: 
 });
 
 before(async () => {
-  base = await reservePorts(40);
+  base = await reservePorts(120);
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-ports-grace-proj-")));
   project = join(parent, "demo");
   mkdirSync(join(project, ".sova"), { recursive: true });
@@ -58,10 +58,10 @@ before(async () => {
     slots: { cap: 2 },
     services: {
       web: svc("web", base, LATE_MS, 20, false),
-      stuck: svc("stuck", base + 10, -1, 3, true),
+      stuck: svc("stuck", base + 40, -1, 3, true),
       // Its late port never opens of itself, and its ready timeout is long: waiting it out would end not-ready,
       // so port-held proves the engine never waited (no clock asked).
-      racy: svc("racy", base + 20, -1, 60, true),
+      racy: svc("racy", base + 80, -1, 60, true),
     },
   };
   writeFileSync(join(project, ".sova", "project.json"), JSON.stringify(d, null, 2));
@@ -91,9 +91,9 @@ test("a port a foreign process takes while the service is coming up fails port-h
   let foreign: Server | null = null;
   const up = engine.run("up", { project, services: ["racy"] }, op);
   // Past the start's own port check: racy's HTTP port listens; then something else takes its late port.
-  while (!(await listens(base + 20))) await new Promise((r) => setTimeout(r, 50));
+  while (!(await listens(base + 80))) await new Promise((r) => setTimeout(r, 50));
   foreign = createServer((s) => s.end());
-  await new Promise<void>((ok) => foreign!.listen(base + 21, "127.0.0.1", () => ok()));
+  await new Promise<void>((ok) => foreign!.listen(base + 81, "127.0.0.1", () => ok()));
   try {
     const r = await up;
     assert.equal(r.error?.code, "port-held", r.error?.message);

@@ -13,6 +13,7 @@ import { LIMIT_KEYS, LIMIT_LABEL } from "./profiles.ts";
 import { POWERS, POWER_INFO } from "./powers.ts";
 import { PO_CAP_LABEL, type ProjectOverseerCaps } from "./project-overseer.ts";
 import { OFFERS_FILE } from "./session-offers.ts";
+import { COPIES_EDIT_KEYS } from "./project-settings.ts";
 
 export type SettingId =
   | "overseer.watch"
@@ -31,6 +32,7 @@ export type SettingId =
   | "project.ownerHidden"
   | "project.frozen"
   | "project.archive"
+  | "copies"
   | "services"
   | "profile"
   | "playbook"
@@ -68,7 +70,7 @@ const profileLimitKeys = Object.fromEntries(LIMIT_KEYS.map((k) => [`limits.${k}`
 const serviceKeys = Object.fromEntries(DEFINITION_KEYS.service.map((k) => [`services.<name>.${k}`, `a service's ${k}`]));
 const topKeys: Record<string, string> = {
   version: "the contract's version (1)",
-  slots: "how many running copies at once ({cap})",
+  slots: "the project's default for how many copies may run at once ({cap}, 1–16); this machine's copy limit (the copies setting) overrides it",
   host: "where it runs",
   setup: "steps that set a copy up",
   data: "each copy's data (a file copied or a provisioned store)",
@@ -80,6 +82,10 @@ const topKeys: Record<string, string> = {
   deploy: "the deploy targets and their recipe",
   sources: "other checkouts it builds from",
 };
+const COPIES_KEY_WORDS: Record<(typeof COPIES_EDIT_KEYS)[number], string> = {
+  limit: "how many of the project's copies may run at once on this machine, 1–16; null removes this machine's value, so the main checkout's .sova/project.json (its slots {cap}, default 4) applies",
+};
+const copiesKeys = Object.fromEntries(COPIES_EDIT_KEYS.map((k) => [k, COPIES_KEY_WORDS[k]]));
 const serviceTop = Object.fromEntries(DEFINITION_KEYS.top.map((k) => [k, topKeys[k] ?? k]));
 
 export const SETTINGS_REFERENCE: Record<SettingId, ReferenceEntry> = {
@@ -258,6 +264,16 @@ export const SETTINGS_REFERENCE: Record<SettingId, ReferenceEntry> = {
     grant: null,
     keys: { archived: "refused here: Archive Project… on the project page keeps its own confirm" },
     changedAt: "the project page's Danger zone (Archive Project…)",
+  },
+  copies: {
+    id: "copies",
+    label: "Copy limit",
+    where: "sova",
+    summary: "How many of the project's copies may run at once on this machine (only running copies count; the main checkout's and conformance's never do). Kept by Sova for this machine; until it is set, the project's file's value applies. Lowering it stops nothing: new starts wait until fewer run.",
+    edit: '{setting: "copies", limit: <1–16> | null}',
+    grant: "Raised (a reset to the file's value counts when that is higher).",
+    keys: copiesKeys,
+    changedAt: "the Branches tab (Change)",
   },
   services: {
     id: "services",

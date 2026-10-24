@@ -9998,7 +9998,8 @@
         "server/projects/runtime-routes.ts",
         "server/project-coding-runtime.test.ts",
         "pi-config/README.md",
-        "server/merge-round-rules.test.ts"
+        "server/merge-round-rules.test.ts",
+        ".sova/playbooks/merge-round/scripts/round.mjs"
       ],
       "requires": [
         "§chat.worktrees/tool",
@@ -10006,7 +10007,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-24T09:23Z",
+        "at": "2026-10-24T10:22Z",
         "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
@@ -17365,7 +17366,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-24T09:23Z",
+        "at": "2026-10-24T10:22Z",
         "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },

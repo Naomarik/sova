@@ -226,8 +226,10 @@ appends (one line each).
   It goes after 7 idle days (no reply since), like every soft item.
 - **An open offer asks too.** While an idle session shows an open offer card (§chat.offers/card),
   its row carries `asks-you` as if its last reply asked, with no model call, while the feature is
-  on; the digest's line is "Asks you: {the offer's title}". It clears when the card is answered,
-  set to Not Now or no longer offered, and open alignment questions still take its place.
+  on. It clears when the card is answered, set to Not Now, no longer offered or replaced by a newer
+  commit, and open alignment questions still take its place. The digest doesn't list it as a soft
+  `asks-you` item: the open card is a Needs you item of its own (`offer-waiting`,
+  §app.overseer/attention-digest), idle or working.
 
 ## §app.decisions/team-stall — A team gone quiet
 

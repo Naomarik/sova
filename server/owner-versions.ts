@@ -200,6 +200,21 @@ export function tryRequestIsFor(r: Pick<OwnerRequest, "kind" | "version" | "titl
   return r.title === v.label.slice(0, OWNER_REQUEST_TITLE_MAX) || (!!v.legacyLabel && r.title === v.legacyLabel.slice(0, OWNER_REQUEST_TITLE_MAX));
 }
 
+/**
+ * Whether `start_version` could make the Current version's copy (§app.project-assistant/tools, q6): the main checkout
+ * is on master, its definition lets copies be shown (share endpoints, not refused, no sensitive data), and it has no
+ * copy yet. Its root, or null.
+ */
+export async function currentVersionMakeable(project: { root?: string }): Promise<string | null> {
+  if (!project.root) return null;
+  const root = real(project.root);
+  if (readRegistry().instances.some((r) => real(r.project) === root && real(r.checkout) === root)) return null;
+  if (!(await onMaster(project.root).catch(() => false))) return null;
+  const def = defAt(project.root);
+  if (!def || shareRefusal(def) !== null || holdsSensitive(def) || !def.share?.endpoints.length) return null;
+  return project.root;
+}
+
 /** A version's copy runs (whoever started it): the owner's open `try` requests for exactly that copy are done
     (§app.project-assistant/requests); a closed one is never touched. */
 export function closeTryRequests(orgId: string, projectId: string, v: { id: string; label: string; legacyLabel?: string }, requests: readonly OwnerRequest[] = orgRequests(orgId)): void {

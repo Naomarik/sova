@@ -365,18 +365,19 @@ export class GitDiffs {
       card = known.merges.filter((m) => m.sha.toLowerCase() === sha && canonical(m.path) === dir).at(-1);
       if (!card) throw new DiffError("That commit is not a merge this session recorded");
     }
-    if (!(await isDir(dir))) {
-      // A merged worktree is often removed after the merge, but its commit lives on in the
-      // repository: read it from another folder the session knows that has it. So is a pinned
-      // card's saved head.
+    // A merged worktree is often removed after the merge (its folder gone, or left behind with
+    // stray files and no `.git`), but its commit lives on in the repository: read it from another
+    // folder the session knows that has it. So is a pinned card's saved head.
+    const elsewhere = async (): Promise<string | null> => {
       const sha = scope.kind === "commit" || scope.kind === "merge" ? scope.sha : scope.kind === "worktree" ? scope.pin?.head : undefined;
-      if (sha) {
-        const top = await this.topHolding(known, sha);
-        if (top) return { top, known, card };
-      }
+      return sha ? this.topHolding(known, sha) : null;
+    };
+    if (!(await isDir(dir))) {
+      const top = await elsewhere();
+      if (top) return { top, known, card };
       throw new DiffError("That folder does not exist", 404);
     }
-    const top = await this.topOf(dir);
+    const top = (await this.topOf(dir)) ?? (await elsewhere());
     if (!top) throw new DiffError("That folder is not in a git work tree");
     return { top, known, card };
   }

@@ -152,6 +152,58 @@ describe("a go-ahead carried over a clean master merge", () => {
 		assert.equal(await goAheadFor("feat", git("rev-parse", "HEAD"), file, carry()), undefined, "its second parent is on no master");
 	});
 
+	/** A on feat, B a clean master merge on A, C a clean master merge on B. */
+	const chain = () => {
+		const A = git("rev-parse", "HEAD");
+		masterMoves("c.txt");
+		git("merge", "--no-edit", "-q", "master");
+		const B = git("rev-parse", "HEAD");
+		masterMoves("d.txt");
+		git("merge", "--no-edit", "-q", "master");
+		const C = git("rev-parse", "HEAD");
+		return { A, B, C };
+	};
+	const notYetAt = (commit: string, at: string) => recordNotYet({ branch: "feat", commit, at, session: "s1" }, file);
+	const goAt = (commit: string, at: string) => recordGoAhead({ branch: "feat", commit, at, by: "land-it", session: "s1" }, file);
+
+	test("a later Not Yet stops the carry: Land It at A, Not Yet at B, and neither B nor C lands", async () => {
+		const { A, B, C } = chain();
+		goAt(A, "2026-10-24T00:00:00Z");
+		assert.equal((await goAheadFor("feat", C, file, carry()))?.commit, A, "carried before the Not Yet");
+		notYetAt(B, "2026-10-24T00:05:00Z");
+		assert.equal(await goAheadFor("feat", B, file, carry()), undefined);
+		assert.equal(await goAheadFor("feat", C, file, carry()), undefined);
+		assert.equal((await goAheadFor("feat", A, file, carry()))?.commit, A, "A itself still has its go-ahead");
+	});
+
+	test("a Not Yet at A after its go-ahead: the newer answer wins, at A and through the carry", async () => {
+		const { A, B, C } = chain();
+		goAt(A, "2026-10-24T00:00:00Z");
+		notYetAt(A, "2026-10-24T00:05:00Z");
+		assert.deepEqual(readLanding(file).goAheads.map((g) => g.commit), [A], "both are on record");
+		assert.equal(await goAheadFor("feat", A, file, carry()), undefined);
+		assert.equal(await goAheadFor("feat", B, file, carry()), undefined);
+		assert.equal(await goAheadFor("feat", C, file, carry()), undefined);
+	});
+
+	test("a go-ahead at B after a Not Yet at B lands, at B and carried to C", async () => {
+		const { A, B, C } = chain();
+		goAt(A, "2026-10-24T00:00:00Z");
+		notYetAt(B, "2026-10-24T00:05:00Z");
+		goAt(B, "2026-10-24T00:10:00Z");
+		assert.equal((await goAheadFor("feat", B, file, carry()))?.commit, B);
+		assert.equal((await goAheadFor("feat", C, file, carry()))?.commit, B);
+		// Both on record at B (as an older file may hold them): the later time decides, Not Yet a tie.
+		const both = (go: string, no: string) =>
+			writeFileSync(file, JSON.stringify({ v: 1, goAheads: [{ branch: "feat", commit: B, at: go, by: "land-it" }], notYet: [{ branch: "feat", commit: B, at: no }] }));
+		both("2026-10-24T00:10:00Z", "2026-10-24T00:05:00Z");
+		assert.equal((await goAheadFor("feat", C, file, carry()))?.commit, B, "go-ahead newer");
+		both("2026-10-24T00:05:00Z", "2026-10-24T00:10:00Z");
+		assert.equal(await goAheadFor("feat", C, file, carry()), undefined, "Not Yet newer");
+		both("2026-10-24T00:05:00Z", "2026-10-24T00:05:00Z");
+		assert.equal(await goAheadFor("feat", C, file, carry()), undefined, "a tie is Not Yet");
+	});
+
 	test("a plain commit after the press never carries it", async () => {
 		const P = git("rev-parse", "HEAD");
 		pressAt(P);

@@ -462,10 +462,13 @@ export function mainMergesOn(text) {
 }
 
 /** The user's newest answer on the Landing card for this branch at exactly this head: the go-ahead, or Not Yet. */
+/** Both may be recorded at one commit: the later `at` wins, Not Yet a tie or a time that can't be read
+ *  (landing.ts answerAt, held equal by server/merge-round-rules.test.ts). */
 export const landingAnswer = (landing, branch, head) => {
   const go = landing.goAheads.filter((g) => g.branch === branch && g.commit === head).at(-1);
-  if (go) return { kind: "go-ahead", withoutSpecs: go.withoutSpecs === true, by: go.by };
-  return landing.notYet.some((n) => n.branch === branch && n.commit === head) ? { kind: "not-yet" } : null;
+  const no = landing.notYet.filter((n) => n.branch === branch && n.commit === head).at(-1);
+  if (go && (!no || Date.parse(go.at) > Date.parse(no.at))) return { kind: "go-ahead", withoutSpecs: go.withoutSpecs === true, by: go.by };
+  return no ? { kind: "not-yet" } : null;
 };
 
 /** How many clean master merges a go-ahead carries through (landing.ts CARRY_MAX). */
@@ -493,7 +496,8 @@ export async function cleanMergeParent(run, merge, target) {
 /**
  * landingAnswer with landing.ts goAheadFor's carry: a go-ahead recorded at an earlier commit counts at `head`
  * when every commit since is a clean master merge (`parentOf`, cleanMergeParent), up to CARRY_MAX; `at` then
- * names the commit it was pressed at. Not Yet counts only at `head` itself.
+ * names the commit it was pressed at. The walk stops at the first commit with an answer (the head included):
+ * Not Yet as its newest answer stops it with no go-ahead, so a later Not Yet is never carried past.
  */
 export async function landingAnswerAt(landing, branch, head, parentOf) {
   const here = landingAnswer(landing, branch, head);
@@ -506,6 +510,7 @@ export async function landingAnswerAt(landing, branch, head, parentOf) {
     sha = parent;
     const a = landingAnswer(landing, branch, sha);
     if (a?.kind === "go-ahead") return { ...a, at: sha };
+    if (a?.kind === "not-yet") return null;
   }
   return null;
 }

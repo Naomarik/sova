@@ -163,19 +163,34 @@ export async function cleanMergeParent(git: Git, cwd: string, merge: string, tar
 }
 
 /**
+ * The user's newest answer for this branch at exactly this commit: a go-ahead, or Not Yet. Both may be recorded
+ * at one commit (Not Yet doesn't clear a go-ahead); the later `at` wins, and Not Yet wins a tie or a time that
+ * can't be read. The merge round's driver keeps a copy (round.mjs landingAnswer), held equal by a test.
+ */
+export function answerAt(data: LandingData, branch: string, commit: string): { kind: "go-ahead"; goAhead: GoAhead } | { kind: "not-yet" } | undefined {
+	const go = data.goAheads.filter((g) => g.branch === branch && g.commit === commit).at(-1);
+	const no = data.notYet.filter((n) => n.branch === branch && n.commit === commit).at(-1);
+	if (go && (!no || Date.parse(go.at) > Date.parse(no.at))) return { kind: "go-ahead", goAhead: go };
+	return no ? { kind: "not-yet" } : undefined;
+}
+
+/**
  * The go-ahead for this branch at this commit, if any (§chat.worktrees/merge-guard). With `carry`, one
  * recorded at an earlier commit counts too when every commit since is a clean merge of the target
- * (cleanMergeParent), up to CARRY_MAX of them: the merge round's own master merge never costs the user's
+ * (cleanMergeParent), up to CARRY_MAX of them, unless a commit on the way (the head included) has Not Yet as its
+ * newest answer, which stops the walk with no go-ahead: the merge round's own master merge never costs the user's
  * press. The worktree tool, Merge Branch and (through its copy) the merge round all ask this.
  */
 export async function goAheadFor(branch: string, commit: string, file: string = landingFile(), carry?: Carry): Promise<GoAhead | undefined> {
-	const all = readLanding(file).goAheads.filter((g) => g.branch === branch);
-	const at = (sha: string) => all.filter((g) => g.commit === sha).at(-1);
+	const data = readLanding(file);
+	const any = data.goAheads.some((g) => g.branch === branch);
 	let sha = commit;
 	for (let i = 0; ; i++) {
-		const hit = at(sha);
-		if (hit) return hit;
-		if (!carry || i >= CARRY_MAX || !all.length) return undefined;
+		// The walk stops at the first commit with an answer: the newest one there decides (a later Not Yet wins).
+		const hit = answerAt(data, branch, sha);
+		if (hit?.kind === "go-ahead") return hit.goAhead;
+		if (hit?.kind === "not-yet") return undefined;
+		if (!carry || i >= CARRY_MAX || !any) return undefined;
 		const parent = await cleanMergeParent(carry.git, carry.cwd, sha, carry.target).catch(() => undefined);
 		if (!parent) return undefined;
 		sha = parent;

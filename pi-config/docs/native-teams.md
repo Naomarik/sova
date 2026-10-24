@@ -386,6 +386,18 @@ the existing wake mechanism, not an orchestrator loop.
   Coordinate genuinely conflicting files through separate tasks or sequential
   follow-ups, not parallel members.
 
+- **Standing roles fall back at runtime.** A coordinated team's coordinator or
+  monitor whose turn fails because its model ran out of usage (credits,
+  quota, a monthly, weekly or 5-hour limit, a failed sign-in; one shared
+  classifier, `../extensions/provider-limits/usage-out.ts`), or that fails 3
+  turns in a row of any kind, while it runs its role's primary, is stopped,
+  its seat released, and its successor starts at once on the role's fallback
+  through the main chat's replacement path. A single 429 rate limit doesn't
+  switch. The model is marked out for an hour (`subagents-dead-tuple-v1`,
+  replayed after a reload), so new teams, the members default and later
+  successors skip it; the team that switched stays on its fallback. With no
+  fallback a monitor is stopped and a coordinator is reported, each once.
+
 ## Verification
 
 Offline suites and checks (run in this tree):

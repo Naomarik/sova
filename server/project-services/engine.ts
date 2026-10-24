@@ -16,7 +16,6 @@ import {
   portsFor,
   READ_VERBS,
   render,
-  scratchSlots as scratchSlotsOf,
   selectorsProblem,
   serviceOrder,
   FAILURE_MESSAGE_MAX,
@@ -39,6 +38,9 @@ import {
   type TestsReport,
   type VerbResult,
 } from "../../shared/project-contract";
+import { numberedPorts, overLimitSentence, slotLayoutOf, unavailableSentence, type CopyLimit } from "../../shared/project-slots";
+import { COPY_SLOT_TOP } from "../../shared/project-contract";
+import { countsAsRunning, limitInForce, runningCopies } from "./copy-limit";
 import type { PortOwner } from "../port-owner";
 import { startStaticServe, staticServes, StaticServeError, stopStaticServe } from "../preview-serve";
 import { projectOf } from "../project-root";
@@ -712,6 +714,11 @@ export class ProjectEngine {
     // A coding session.
     if (verb === "conform") return;
     const checkout = run.rec?.checkout ?? (run as Run & { target?: string }).target ?? null;
+    // A bare create/up/test from the main checkout: name the session's own worktrees rather than refuse it blind.
+    const bare = !run.req.instance && !run.req.checkout && !run.req.branch && (verb === "create" || verb === "up" || verb === "test");
+    const trees = caller.own.filter((c) => c !== project);
+    if (bare && checkout === project && trees.length)
+      throw new VerbFailure("invalid-request", `${verb} names no checkout and this session runs in the main checkout, which is never a session's: name one of its worktrees with checkout (${trees.join(", ")})`);
     if (!checkout || checkout === project || !caller.own.includes(checkout))
       throw new VerbFailure("forbidden", "a session acts only on instances of its own worktrees (never the main checkout)");
     if ((verb === "reset" || verb === "teardown") && run.rec && !createdByCaller) throw new VerbFailure("needs-confirm", `${verb} of an instance this session did not create is the operator's`);
@@ -904,17 +911,47 @@ export class ProjectEngine {
     const main = target.checkout === project;
     if (!main && run.req.slot === 0) throw new VerbFailure("refused-slot0", "slot 0 is the main checkout's");
     if (main && run.req.slot !== undefined && run.req.slot !== 0) throw new VerbFailure("invalid-request", "the main checkout is slot 0");
-    if (run.req.slot !== undefined && run.req.slot > def.slots.cap + 2) throw new VerbFailure("invalid-request", `slot is at most ${def.slots.cap + 2}`);
-    const checkoutPorts = (slot: number) => def.services.filter((s) => s.scope === "checkout").flatMap((s) => Object.values(portsFor(def, slot)[s.name] ?? {}));
-    const listening = (p: number) => this.portOwner(p) !== "none";
+    // Places come from the fixed range; the limit counts running copies only; the port numbering is the
+    // main checkout's saved definition's (§app.project-services/instances).
+    const limit = limitInForce(project, def);
+    const conforming = run.caller.kind === "conform";
+    // This definition's places: the usable slots of 1 to 16 and its scratch slots (§app.project-services/instances).
+    const layout = slotLayoutOf(def, limit.numbering);
+    const [scratchA, scratchB] = layout.scratch;
+    const scratchWords = `slots ${scratchA} and ${scratchB} are conformance's scratch slots`;
+    if (!main && !conforming && run.req.slot !== undefined) {
+      if (layout.scratch.includes(run.req.slot)) throw new VerbFailure("invalid-request", `slot ${run.req.slot} is not given to a copy: ${scratchWords}; copies take 1 to ${COPY_SLOT_TOP}`);
+      if (run.req.slot > COPY_SLOT_TOP) throw new VerbFailure("invalid-request", `slot is at most ${COPY_SLOT_TOP}: copies take 1 to ${COPY_SLOT_TOP}, and ${scratchWords}`);
+      const off = layout.unavailable.find((u) => u.slot === run.req.slot);
+      if (off) throw new VerbFailure("invalid-request", `${unavailableSentence(off)} No copy takes it; ask for another slot, or none`);
+    }
+    const numbered = (slot: number) => numberedPorts(def, limit.numbering, slot);
+    const checkoutPorts = (slot: number) => def.services.filter((s) => s.scope === "checkout").flatMap((s) => Object.values(numbered(slot)[s.name] ?? {}));
+    // No slot's allocation gives an adopted unit's port (§app.project-services/adopt).
+    const adopted = adoptedService(def);
+    const adoptedPorts = new Set(adopted ? Object.values(adopted.adopt!.ports) : []);
+    const listening = (p: number): boolean | string => {
+      if (adoptedPorts.has(p)) return `slot 0's adopted unit ${adopted!.adopt!.unit}`;
+      const o = this.portOwner(p);
+      return o === "none" ? false : o === "unknown" ? "a process this user can't read" : `pid ${o.pid}${o.cwd ? ` (${o.cwd})` : ""}`;
+    };
     const rec = await this.step(run, "slot", "slot", async () => {
       const made = mutateRegistry((r) => {
         const dup = r.instances.find((i) => i.project === project && i.checkout === target.checkout);
         if (dup) return { rec: dup, fresh: false };
-        const range = Array.from({ length: def.slots.cap }, (_, i) => i + 1);
-        const pick = main ? pickSlot(r, project, checkoutPorts, [], () => false, 0) : pickSlot(r, project, checkoutPorts, range, listening, run.req.slot);
-        if ("refused" in pick) throw new VerbFailure("cap-reached", pick.refused);
-        const all = portsFor(def, pick.slot);
+        // Only running copies count; the main checkout's and conformance's scratch copies never do.
+        if (!main && !conforming) this.refuseOverLimit(runningCopies(r, project), limit);
+        const copies = r.instances.filter((i) => i.project === project && i.slot !== 0 && !i.createdBy.startsWith("conform:")).sort((x, y) => x.slot - y.slot);
+        const held = copies.length ? copies.map((i) => `slot ${i.slot} (${i.id}, ${i.checkout})`).join(", ") : "none";
+        const pick = main ? pickSlot(r, project, checkoutPorts, [], () => false, 0) : pickSlot(r, project, checkoutPorts, layout.ordinary, listening, run.req.slot);
+        if ("refused" in pick)
+          throw new VerbFailure(
+            "slots-blocked",
+            run.req.slot !== undefined
+              ? `${pick.refused} (the project's copies hold: ${held})`
+              : `no usable slot of 1 to ${COPY_SLOT_TOP} is free for a copy (${scratchWords}${layout.unavailable.length ? `; ${layout.unavailable.map(unavailableSentence).join(" ").replace(/\.$/, "")}` : ""}; the project's copies hold: ${held}): ${pick.refused.replace(/^no free slot: /, "")}. Free one of those ports, or tear down a copy`,
+          );
+        const all = numbered(pick.slot);
         const ports: Record<string, Record<string, number>> = {};
         for (const s of def.services) if (s.scope === "checkout" && Object.keys(s.ports).length) ports[s.name] = all[s.name] ?? {};
         const rec: InstanceRecord = {
@@ -958,6 +995,17 @@ export class ProjectEngine {
     }
     await this.provisionUnlessAdopted(run, def, run.rec);
     return run.rec;
+  }
+
+  /**
+   * Refuse `cap-reached` when `running` (the project's running copies, the one about to start left out)
+   * already number the limit in force (§app.project-services/instances): at it, or above it after a lowering.
+   */
+  private refuseOverLimit(running: InstanceRecord[], limit: CopyLimit): void {
+    const sentence = overLimitSentence(running.length, limit.cap);
+    if (!sentence) return;
+    const names = running.map((i) => `slot ${i.slot} (${i.branch ?? i.id}, ${i.id})`).join(", ");
+    throw new VerbFailure("cap-reached", `${sentence} Running: ${names}. The limit of ${limit.cap} is ${limit.from}; the Branches tab changes it.`);
   }
 
   /** An adopted slot 0 runs no setup and no data step: its unit is set up outside Sova (§app.project-services/adopt). */
@@ -1432,6 +1480,18 @@ export class ProjectEngine {
     const scope = scopeOf(rec);
     const own = wanted.filter((s) => s.scope === "checkout");
     const anyRunning = (await Promise.all(def.services.filter((s) => s.scope === "checkout").map((s) => this.isActive(this.unitOf(rec.id, s.name), s)))).some((a) => a.active);
+    // A copy that runs nothing yet starts only under the limit (§app.project-services/instances): the count
+    // and its claim (its services wanted running) are one registry write, so two callers can't both pass.
+    if (own.length && rec.slot !== 0 && run.caller.kind !== "conform" && !rec.createdBy.startsWith("conform:")) {
+      const limit = limitInForce(rec.project, def);
+      mutateRegistry((r) => {
+        const mine = r.instances.find((i) => i.id === rec.id);
+        if (!mine || countsAsRunning(mine)) return;
+        this.refuseOverLimit(runningCopies(r, rec.project, rec.id), limit);
+        for (const s of own) mine.desired[s.name] = "running";
+        Object.assign(rec.desired, mine.desired);
+      });
+    }
     let bumped = false;
     for (const s of own) {
       rec.desired[s.name] = "running";
@@ -2068,7 +2128,7 @@ export class ProjectEngine {
 
   /** The folders `def`'s dir resources copy, as the main checkout would render them. */
   dataSources(def: ProjectDef, project: string): string[] {
-    const scope: Scope = { id: "conform", project, checkout: project, branch: null, slot: scratchSlotsOf(def)[0], ports: {}, data: {} };
+    const scope: Scope = { id: "conform", project, checkout: project, branch: null, slot: slotLayoutOf(def, limitInForce(project, def).numbering).scratch[0], ports: {}, data: {} };
     return def.data.flatMap((d) => (d.kind === "dir" && d.from !== "empty" ? [render(d.from, this.vars(def, scope))] : []));
   }
 

@@ -260,12 +260,10 @@ user row.
   to exactly one power, "always" or "operator"; a test enumerates them.
 - **The operator is never restricted.** A message the operator sends from the UI makes that run
   theirs (decided by identity), and so does a message the global Overseer sends through its route in a
-  turn the operator started (§app.overseer/org-project-overseers): every tool runs in it, whatever
-  the switches say, under the per-message limits. The Project Assistant's chat is the exception: a
-  turn the operator starts there is checked against the Project Assistant column like the owner's
-  (§app.project-assistant/offers). A client's (owner's) message is never the operator's: what it
-  sets off is a separate kind of caller (`by: "assistant"`) checked against the Project Assistant
-  column.
+  turn the operator started (§app.overseer/org-project-overseers), and so does a turn the operator
+  starts in the Project Assistant's chat: every tool runs in it, whatever the switches say, under the
+  per-message limits. A client's (owner's) message is never the operator's: what it sets off is a
+  separate kind of caller (`by: "assistant"`) checked against the Project Assistant column.
 - **On** means the act goes ahead within the limits (§app.project-overseer/limits) and, when it
   reaches a person or the code, after the waiting period, where anyone may Cancel it in Needs you
   (§app.project-overseer/holds). There is no Approve step and no confirmation by the overseer.
@@ -573,7 +571,8 @@ user row.
 - **Every project setting, one tool.** The project overseer knows and can change every setting of
   its project, Sova-kept and in the project's files: its own settings (Watch, the powers in both
   columns, the models, extra instructions, the limits and pace, the hold, its abilities, its memory
-  switch), the project's name, and, in an organization's project, its main stakeholder
+  switch), the project's name, the project's copy limit on this machine
+  (§app.project-services/instances), and, in an organization's project, its main stakeholder
   (§app.organizations/stakeholder), whether it shows on the owner's page (§app.owner-page/controls)
   and whether its spec is frozen (§app.requirements/frozen-spec), and the files `.sova/project.json` (services), `.sova/profiles/<id>.json`,
   a playbook's `PLAYBOOK.md` with its schedule lines, a project mode's `MODE.md`
@@ -586,20 +585,22 @@ user row.
 - **The reference comes from the parsers.** Each entry is generated from the key lists the
   parsers accept (the services contract, the profile file, a playbook's frontmatter and schedule,
   `MODE.md`, the offers file, the overseer's settings patch, the project's own patch, the placement
-  patch and the spec patch): a key a parser reads with no reference entry fails a test. Archiving has
+  patch, the spec patch and the copy limit's edit): a key a parser reads with no reference entry fails a test. Archiving has
   an entry too (`project.archive`): it says archiving is yours on the project page, with its own confirm.
 - **Structured edits, checked by the same parsers.** `edits` name a setting, never a path:
   `{setting: "overseer", patch}` (the overseer settings' fields), `{setting: "memory", on, type?,
   size?}`, `{setting: "project", name?, stakeholder?, ownerHidden?, frozen?}` (the last three an
   organization's project only: a standalone project's is refused in words), `{setting: "profile", id, profile | null}`, `{setting:
-  "playbook", id, text | null}`, `{setting: "mode", id, text | null}`, `{setting: "offers", file |
+  "playbook", id, text | null}`, `{setting: "copies", limit: 1–16 | null}` (null: back to the
+  main checkout's file's value), `{setting: "mode", id, text | null}`, `{setting: "offers", file |
   null}`, `{setting: "services", file | null}` (null removes the file). Each is checked exactly as
   Sova reads it; the first problem is the refusal and nothing is written. Moving the project's
   folder and archiving it are refused: they are yours on the project page, archiving with its own
   confirm. File edits need the project root in Git ("The project folder isn't a Git repository, so
   its settings files change by hand.").
 - **What widens is a grant, and only you grant.** A grant is any of: a power turned On in either
-  column; a limit raised (Unlimited included), the pace quickened, the hold shortened or the brake
+  column; a limit raised (Unlimited included), the copy limit included (a reset to the file's value
+  when that is higher than this machine's); the pace quickened, the hold shortened or the brake
   lifted (Resume); Watch turned on; the extra instructions changed; its gathering abilities changed;
   a profile that grants a session power or that the Overseer may start, unless its approval already
   covers those powers (§chat.profiles/trust); a
@@ -610,7 +611,7 @@ user row.
   §chat.worktrees/merge-guard), since it lets sessions merge into master without your go-ahead; and
   any change to the services file; the spec unfrozen; the project shown on the owner's page again. The overseer never approves one.
 - **What narrows applies at once, in your turn.** In a turn the operator started, each Sova-kept
-  change that is no grant (a power Off, a limit lowered, a model, its memory switch, the name, the
+  change that is no grant (a power Off, a limit lowered, the copy limit lowered, a model, its memory switch, the name, the
   spec frozen, the project hidden from the owner's page, the main stakeholder changed)
   applies at once and its result says so, each with **Undo**. Everything else goes on a **Settings
   change card**: grants, and every change to the project's files. In a run the operator did not start
@@ -658,7 +659,8 @@ user row.
   the token in a header, the Overseer's sender mark, an extension's key or a peer it is refused (403)
   and nothing changes. Any other undo is open to any caller, as before.
 - **The Settings tab lists every setting.** Its **All settings** section lists each project setting,
-  Sova-kept and in the project's files (services, profiles, playbooks and their schedules, modes,
+  Sova-kept and in the project's files (the **Copy limit**, its value and "set on this machine" or
+  "from the project's file", linking to the Branches tab; services, profiles, playbooks and their schedules, modes,
   offers), with its state (on, off, set, not set, broken, needs approval, approved) and a link to
   where it is changed or approved (its section on the tab, Settings → Profiles, the Playbooks dialog,
   a chat's mode menu, the Offers list, the Branches tab; a section of the tab itself scrolls into view).

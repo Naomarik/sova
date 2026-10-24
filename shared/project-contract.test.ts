@@ -13,7 +13,6 @@ import {
   parseDefinition,
   portsFor,
   render,
-  scratchSlots,
   serviceOrder,
   type VerbResult,
 } from "./project-contract";
@@ -37,7 +36,7 @@ test("a static site is one service with one port", () => {
   assert.equal(def.services[0]!.reload, "none");
   assert.deepEqual(portsFor(def, 0), { site: { http: 8731 } });
   assert.deepEqual(portsFor(def, 3), { site: { http: 8734 } });
-  assert.deepEqual(scratchSlots(def), [5, 6]);
+  assert.deepEqual(def.slots, { cap: 4 });
 });
 
 test("a full definition parses with defaults filled in", () => {
@@ -65,7 +64,7 @@ test("a full definition parses with defaults filled in", () => {
   });
   assert.deepEqual(def.share, { endpoints: [], allow: false });
   assert.equal(def.deploy, undefined);
-  assert.equal(def.slots.cap, 2);
+  assert.deepEqual(def.slots, { cap: 2 });
   assert.equal(def.setup[0]!.timeout, 120);
   const server = def.services.find((s) => s.name === "server")!;
   assert.deepEqual(server.ready, { http: "http", path: "/api/health", timeout: 90 });
@@ -112,6 +111,34 @@ test("refusals name the JSON path of the first problem", () => {
   assert.throws(() => parseDefinition("{not json"), (e) => e instanceof DefinitionError && e.path === "$");
 });
 
+/** Motorsaif's shape: web's nrepl (7850, stride 20) meets cljs's test-http (8020, stride 11) only in slots 14 and 10. */
+const MOTORSAIF_SHAPE = {
+  version: 1,
+  services: {
+    db: { cmd: ["x"], ports: { port: { base: 4334, stride: 20 }, h2: { base: 4335, stride: 20 } } },
+    redis: { cmd: ["x"], ports: { port: { base: 6375, stride: 20 } } },
+    cljs: { cmd: ["x"], ports: { nrepl: { base: 9100, stride: 20 }, http: { base: 9830, stride: 20 }, "test-http": { base: 8020, stride: 11 } } },
+    web: { cmd: ["x"], ports: { http: { base: 4100, stride: 20 }, nrepl: { base: 7850, stride: 20 } } },
+    "test-repl": { cmd: ["x"], ports: { nrepl: { base: 7852, stride: 20 } } },
+  },
+};
+
+test("ports are checked over slots 0 to cap + 2 only: a meeting further up never makes a file invalid", () => {
+  // Valid before the copies' fixed range existed, valid now: the meetings are past cap + 2.
+  assert.doesNotThrow(() => parse(MOTORSAIF_SHAPE), "Motorsaif's definition (slot 14 meets slot 10)");
+  assert.doesNotThrow(() => parse({ version: 1, slots: { cap: 4 }, services: { web: { cmd: ["x"], ports: { http: { base: 3000 } } }, api: { cmd: ["y"], ports: { http: { base: 3010 } } } } }), "3000/3010 meet in slot 10, past cap + 2 of 4");
+  assert.doesNotThrow(() => parse({ version: 1, slots: { cap: 2 }, services: { w: { cmd: ["x"], ports: { p: { base: 65_520 } } } } }), "slot 18 would pass 65535, but cap + 2 is 4");
+  // Within cap + 2 the old rule holds.
+  assert.throws(
+    () => parse({ version: 1, slots: { cap: 4 }, services: { web: { cmd: ["x"], ports: { http: { base: 3040 } } }, api: { cmd: ["y"], ports: { http: { base: 3044 } } } } }),
+    (e) => e instanceof DefinitionError && e.path === "$.services.web.ports.http" && /slot 4 gives it port 3044, which api\.http has in slot 0/.test(e.message),
+  );
+  assert.throws(
+    () => parse({ version: 1, slots: { cap: 2 }, services: { w: { cmd: ["x"], ports: { p: { base: 65_532 } } } } }),
+    (e) => e instanceof DefinitionError && /slot 4 would need port 65536/.test(e.message),
+  );
+});
+
 test("templates render every known variable and $$ as a literal $", () => {
   assert.equal(render("${ports.web.http}/x $$HOME", { "ports.web.http": "4010" }), "4010/x $HOME");
   assert.throws(() => render("${slot}", {}), /no value/);
@@ -120,7 +147,7 @@ test("templates render every known variable and $$ as a literal $", () => {
 test("every error code has one exit class and one status", () => {
   const want: Record<number, string[]> = {
     1: ["not-ready", "start-failed", "hook-failed", "tests-failed", "deploy-failed", "verify-failed"],
-    2: ["not-conformant", "cap-reached", "port-held", "dirty-worktree", "unsupported", "refused-slot0", "share-denied", "forbidden", "needs-confirm", "deploy-refused", "needs-override"],
+    2: ["not-conformant", "cap-reached", "slots-blocked", "port-held", "dirty-worktree", "unsupported", "refused-slot0", "share-denied", "forbidden", "needs-confirm", "deploy-refused", "needs-override"],
     3: ["invalid-request", "invalid-definition", "not-found"],
     4: ["busy"],
   };

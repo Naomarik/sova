@@ -195,8 +195,8 @@ broken block's source (§app.baton/outsider-view).
 
   | Fence | Draws | `mark` targets |
   |---|---|---|
-  | `vis flow` | boxes and arrows, laid out by rank; frames around some nodes (§chat.markdown/vis-flow-groups) | node id or label |
-  | `vis state` | a state machine (flow's layout, round nodes, `start`/`end` dots; frames as in flow) | state id |
+  | `vis flow` | boxes and arrows, laid out by rank, questions as hexagons, no text cut (§chat.markdown/vis-flow-text); frames around some nodes (§chat.markdown/vis-flow-groups); tap a shape to follow it (§chat.markdown/vis-flow-focus) | node id or label |
+  | `vis state` | a state machine (flow's layout, round nodes, `start`/`end` dots; text, frames and tapping as in flow) | state id |
   | `vis sequence` | actors, lifelines and numbered messages, with step-through | actor id or label, message number or exact label |
   | `vis layers` | a stack of labelled layers | layer label |
   | `vis tree` | an indented hierarchy | item name |
@@ -238,7 +238,8 @@ broken block's source (§app.baton/outsider-view).
   cells carry an icon and a visually hidden word, flow frames carry a title.
 - **Step-through** (sequence). The drawing starts complete; nothing plays by itself.
   **Step Through** starts at the first item; Previous / Next walk it ("Step 3 of 8", "3/8" at phone
-  width, announced politely); later items are dimmed; **Show All** ends the walk.
+  width, announced politely); later items are dimmed; **Show All** ends the walk. A flow or state
+  drawing instead lets the reader pick one shape and follow its arrows (§chat.markdown/vis-flow-focus).
 - **Warnings (soft).** Where the intent is plain, a block draws instead of falling back: any one
   text (a label, a note, a `title:`, a `caption:`) over 200 characters is cut to 200, ending in "…"
   (the whole text stays in Source), and the marks above are dropped. The figure then draws with,
@@ -296,8 +297,10 @@ broken block's source (§app.baton/outsider-view).
   A drawing is never the scroll anchor, so one growing above the reader leaves their text in place.
 - **Size and phones.** SVG kinds draw at their natural size, shrink to 80 % to fit the pane, then
   scroll sideways inside a focusable region; the pane never widens (390 px included). Kinds that
-  can re-lay out do so first (flow turns `dir: right` downwards; bars turn horizontal when labels
-  can't fit). At a container width ≤ 420 px the head's buttons are icon-only.
+  can re-lay out do so first (flow turns `dir: right` downwards, then tightens its spacing, and
+  re-laying out never cuts its text: §chat.markdown/vis-flow-text; bars turn horizontal when labels
+  can't fit). A flow or state drawing's focusable region is its figure's one Tab stop, where the
+  arrow keys move between shapes and scroll them into view (§chat.markdown/vis-flow-focus). At a container width ≤ 420 px the head's buttons are icon-only.
 - **Tokens and theme.** Tokens only (`src/design/tokens.css`), through three tone variables
   (`--vis-fill`, `--vis-stroke`, `--vis-ink`) for `accent ok warn error info muted`. SVG is styled
   by classes, so a theme switch needs no re-render.
@@ -433,12 +436,65 @@ called `group` or `frame` in a chain still parses as before.
 - **Look.** A frame is a rounded, dashed `--color-border-strong` rectangle with a `--color-sunken`
   fill, drawn under edges and nodes. Its title sits inside at the top (caption size, semibold),
   drawn over the edges with a halo in the frame's fill, so it stays legible where an edge enters.
-  In `dir: right` the title is cut to the frame's width with an ellipsis, the whole label as a
-  tooltip. Share and owner pages draw a flow's frames the same way; the phone re-lays out as any
-  flow does.
+  The title is never cut: in `dir: right` it wraps to as many lines as it needs at the frame's
+  width, and the frame's top grows to hold them; downwards the frame widens to its title. Share and
+  owner pages draw a flow's frames the same way; the phone re-lays out as any flow does.
 - **No regression.** A fence without group lines parses and lays out exactly as before, and a
   chain line that uses the word as an id (`frame -> x`) is a chain, not a group.
 - **The guide** teaches it in one line under flow, and its main flow example draws one group.
+
+## §chat.markdown/vis-flow-text — `vis flow` text: questions as hexagons, nothing cut
+
+In a `vis flow` or `vis state` drawing every word the fence wrote is on the drawing.
+
+- **Questions are wide hexagons.** A `decision` node draws as a hexagon with a flat top and bottom
+  and pointed sides. It wraps its whole text at the width an ordinary box wraps at, so it is about
+  as wide as one, and its text sits inside the flat part. Every decision in every flow and state
+  drawing has this shape; the fence word stays `decision` and the guide is unchanged.
+- **Nothing is cut.** Shape text, a shape's note, an arrow's label (a self-loop's too) and a
+  frame's title (§chat.markdown/vis-flow-groups) wrap to as many lines as they need and never end
+  in "…", at natural size and at every re-fitted spacing for a narrow pane. The 200-character
+  limit per text (§chat.markdown/visuals, Warnings) is what keeps a shape from growing without end.
+- **Arrows meet the outline.** An arrow into or out of a hexagon touches its outline: its flat top
+  or bottom in a downward flow, its pointed side in a `dir: right` one.
+- **No hover text.** A shape carries no tooltip; its whole text is already drawn, and it is the
+  shape's accessible name (§chat.markdown/vis-flow-focus).
+- **No regression.** A flow with no decision and no text the old limits cut lays out exactly as
+  before (`layout-master.json`); only fences with a decision, or with text that was cut, change.
+
+## §chat.markdown/vis-flow-focus — `vis flow` focus: tap a shape to follow it
+
+In a `vis flow` or `vis state` drawing, tapping (or clicking) a shape **picks** it; nothing
+happens on hover.
+
+- **What lights up.** The picked shape gets an accent ring outside its outline and a heavier
+  outline. Its direct neighbours (one arrow away, in either direction) and the arrows between them
+  and it stay at full strength, those arrows darker and thicker in ink, never accent; every other
+  shape, arrow and arrow label fades. A self-loop adds no neighbour. A mark on a shape stays
+  visible underneath. Tapping the picked shape again clears the pick; tapping another moves it.
+  One shape is picked per figure: in a figure with panels (§chat.markdown/vis-flow-sections),
+  picking in one panel clears the other's.
+- **The reading panel.** While a shape is picked, a panel opens under the drawing (under the panel
+  that holds it, in a figure with panels), above the figure's numbered notes and caption. It shows
+  the shape's kind (Question, Start, Step, Outcome; in a state machine Start, State, End), its whole
+  text, its mark note with the note's number if it has one, a **From** row with one button per
+  shape an arrow comes from, and a **Leads to** row with one per shape an arrow goes to, an arrow's
+  label on its button ("yes → Project's login"). A row with no shapes is left out. Pressing a
+  button moves the pick to that shape. The panel closes when the pick clears. It is never part of
+  the height a drawing reserves (§chat.markdown/visuals, No layout shift): it opens only when the
+  reader asks.
+- **Keyboard and screen readers.** Each figure is one Tab stop, a panelled one included. While it
+  has focus the arrow keys move a focus ring from shape to shape in that direction (into the next
+  or previous panel at a panel's edge) and scroll the shape into view, Home and End go to the first
+  and last; Enter or Space picks the shape under the ring (or clears it if it is the picked one);
+  Escape clears the pick and, only when there was one, goes no further, so it closes nothing else
+  on the screen. Each shape is a button named by its kind and whole text, pressed while picked;
+  the panel is announced politely when it changes. Start and end dots take a tap area of at least
+  32px.
+- **Where.** The same in chat replies, on alignment cards (§chat.alignment/visuals), and on share
+  and owner pages (§app.baton/outsider-view). A sideways swipe of a drawing that scrolls is not a
+  tap. The docs site's examples are still pictures: their shapes are not buttons and do nothing
+  (§site.docs/vis-examples).
 
 ## §chat.markdown/vis-lenience — `vis` lines models get wrong: one reading, or a did-you-mean
 

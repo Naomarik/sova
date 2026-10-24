@@ -561,7 +561,7 @@ export function SubagentProfilesSettings() {
                 () => (
                   <>
                     <Show when={coordinatorOn(p())}>
-                      <p class="field-hint settings-delegate-desc">Without a fallback, a team isn't created when a role's primary can't run.</p>
+                      <p class="field-hint settings-delegate-desc">Without a fallback, a team isn't created when a role's primary can't run. With one, a role whose primary runs out of usage during the team moves to it.</p>
                     </Show>
                     <For each={["coordinator", "monitor"] as const}>
                       {(role) => {

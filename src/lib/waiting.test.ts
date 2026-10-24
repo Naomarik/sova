@@ -1,6 +1,7 @@
 // The composer's waiting badge and its dialog (§chat.composer/waiting-badge, §chat.composer/waiting-dialog):
 // the counts, the ring's arc, the numeral, the faded and hidden looks, the name, and the dialog's grouping.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, test } from "node:test";
 import type { AlignDocInfo, AlignQuestionInfo } from "../../shared/protocol";
 import type { AlignEntry } from "./align";
@@ -145,5 +146,24 @@ describe("the dialog", () => {
 
   test("the title counts the items", () => {
     assert.equal(waitingTitle(3), "Waiting on you · 3");
+  });
+});
+
+describe("the badge's place in the box", () => {
+  // The badge's own rule in waiting.css: the geometry is driven in a browser; this holds the anchor.
+  const css = readFileSync(new URL("../waiting.css", import.meta.url), "utf8");
+  const rule = /\n\.waiting-badge \{([^}]*)\}/.exec(css)?.[1] ?? "";
+  const decl = (prop: string) => new RegExp(`(^|;|\\s)${prop}\\s*:\\s*([^;]+);`).exec(rule)?.[2]?.trim();
+
+  test("pinned to the box's bottom, never its top: a multi-line message keeps it on the last line", () => {
+    assert.ok(rule, "the .waiting-badge rule is in waiting.css");
+    assert.equal(decl("position"), "absolute");
+    assert.equal(decl("bottom"), "var(--stroke-icon)");
+    assert.equal(decl("top"), undefined);
+  });
+
+  test("one line tall inside the border, so a one-line box is exactly its band and stays centred", () => {
+    assert.equal(decl("height"), "calc(var(--control-md) - 2 * var(--stroke-icon))");
+    assert.equal(decl("place-items"), "center");
   });
 });

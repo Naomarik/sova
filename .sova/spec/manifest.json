@@ -1416,11 +1416,13 @@
         "src/share/owner.css",
         "src/lib/owner-abilities.ts",
         "src/lib/owner-abilities.test.ts",
-        "src/lib/needs-you.ts"
+        "src/lib/needs-you.ts",
+        "server/feature-chat-close-race.test.ts",
+        "server/project-assistant-tools.ts"
       ],
       "agreed": {
         "by": "Omar (al_1 go-ahead)",
-        "at": "2026-10-24T21:08Z",
+        "at": "2026-10-24T22:11Z",
         "source": "pi-session:3ca7d7a1-521f-40ef-8493-5da871963c1c#56f51242"
       }
     },
@@ -1726,11 +1728,14 @@
         "server/owner-request-chat.test.ts",
         "server/owner-request-close.ts",
         "server/owner-request-close.test.ts",
-        "server/owner-versions.ts"
+        "server/owner-versions.ts",
+        "server/project-holds.ts",
+        "server/project-overseer.ts",
+        "server/owner-request-close-holds.test.ts"
       ],
       "agreed": {
         "by": "Omar (al_1 go-ahead)",
-        "at": "2026-10-24T21:08Z",
+        "at": "2026-10-24T22:18Z",
         "source": "pi-session:3ca7d7a1-521f-40ef-8493-5da871963c1c#56f51242"
       }
     },

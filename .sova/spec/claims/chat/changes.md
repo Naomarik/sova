@@ -236,7 +236,9 @@ worktree it tracked, a merged worktree's folder) or inside one, by the one rule 
 tool applies too; the diff covers that folder's whole repository. Anything else is refused with a
 reason, before git runs there. A commit or merge whose
 folder is gone, as a merged worktree's often is, is read from the first folder the session knows whose
-repository still has it, the session's own folder first.
+repository still has it, the session's own folder first; so is one whose folder is still on disk
+but no longer in a git work tree (a removed worktree's leftover files), and only when no known
+folder has the commit is it refused as not in a git work tree.
 
 Any comparison may be narrowed to paths (repo-relative files or folders, each checked as the
 `show_changes` tool checks its paths, at most as many as it takes): the file list and every read

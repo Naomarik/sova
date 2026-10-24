@@ -78,7 +78,9 @@ role nor members default; it does not remove workers already running.
 - **It does no implementation.** Its header says so: it routes and unblocks the work the main
   thread assigned, verifies and reports, and never edits files itself. It keeps
   `team_roster`/`team_steer` and gains `team_report` and `team_succeed`; it still cannot add or
-  stop arbitrary members.
+  stop arbitrary members. Like every member it keeps its inbox at zero (§app.teams/inbox-zero):
+  it closes each report, question and notice in the same step as handling it, a question by
+  answering it with `replyTo`.
 - **It sees every teammate's assignment.** Its header lists each other member (the monitor aside)
   with the task the main thread gave it — the member's prompt, cut after 1,500 characters with a
   marker giving the remaining length and telling it to ask that member for the rest — and its
@@ -124,7 +126,8 @@ duty (a successor takes over from its predecessor the moment it starts).
 - **Wake.** Every member except the coordinator is spawned with `wake: false`.
 - **Completions.** When any other member settles, its completion (the same summary the parent
   would get) is queued for the routing coordinator as a `report` item in its inbox
-  (§app.teams/inbox; urgent when the task failed), not sent to the parent. A killed
+  (§app.teams/inbox; urgent when the task failed), not sent to the parent; it ends with the
+  member's `[Left open: …]` line when it left items open (§app.teams/inbox-zero). A killed
   member's completion goes nowhere. The monitor's own settles go nowhere (it settles after every
   check); only a failed monitor task is reported to the coordinator, except a failure that moves a
   standing member to its fallback or stops it, which is said once instead
@@ -132,7 +135,8 @@ duty (a successor takes over from its predecessor the moment it starts).
 - **Questions.** Another member's `team_ask` is queued for the routing coordinator as a
   `question` item, which it answers with `team_msg` and `replyTo` set to that item; the member is
   told it was queued for the coordinator, with the item's id. The monitor has no `team_ask`.
-- **The coordinator's own completion** goes to the parent as `subagent-complete`, starting a
+- **The coordinator's own completion** (with its own `[Left open: …]` line when it left items
+  open) goes to the parent as `subagent-complete`, starting a
   parent turn only when no other member (the monitor aside) is working — an interim "waiting on
   the builder" does not wake the parent; a quiescent team does.
 - **No live coordinator.** If the team's coordinator has ended and no successor is live, routing
@@ -202,7 +206,8 @@ has the tool; the parent refuses it from anyone else. Each report is a team acti
   pause recorded with no such window (no cache, no tracked provider) holds nothing. The hold is in
   memory only: a pause restored after a reload has none.
   Otherwise it schedules the next check in `everyMinutes` and ends its turn; it never sleeps in a
-  shell. Extra `instructions` from the file follow.
+  shell. Before ending each turn it closes that check's item and every other item it handled with
+  `team_inbox done` (§app.teams/inbox-zero). Extra `instructions` from the file follow.
 - **No note of its own.** The monitor holds no file tools, so its header names no handover note:
   it hands over over `team_msg` (see §teams.defaults/handover).
 - **Notices are records.** A `wrap-up`, `pause` or `resume` notice is recorded as a team action
@@ -257,7 +262,11 @@ line says how many still have headroom and that this is not a reason to pause. A
 whose reset time has passed is shown as reset with its usage unknown (the cached percent predates
 the reset) and is never marked at or over the pause threshold, so a stale cache cannot keep a team
 paused. A coordinator's roster also lists the assignments (§teams.defaults/coordinator). Each
-member's line also carries its open-item count (`3 open items`, §app.teams/inbox) when it has any.
+member's line also carries its open-item count (`3 open items`, §app.teams/inbox) when it has any,
+with its unanswered questions and the oldest one's wait (`3 open items (1 question unanswered 20
+min)`, `(2 questions unanswered, oldest 20 min)`; a wait reads `under 1 min`, `20 min`, `2 h 5
+min`), and once the team has any item, `team_roster` and `team_list` end with one team line,
+`Inbox: {n} open · closed by members {m} · automatically {a}`.
 
 ## §teams.defaults/handover — Successors, handover notes and retirement
 

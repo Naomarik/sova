@@ -75,10 +75,11 @@ export async function closeOwnerRequests(orgId: string, ids: readonly string[], 
   const d = deps();
   const out: OwnerRequest[] = [];
   for (const r of rs) {
-    const closed = closeRequestLine(orgId, r.id, by);
+    // A fix whose start still waits (held, q8): its start is cancelled, whatever the request reads. A fix already
+    // running goes on. One whose start was only held never was being worked on: its close says so (no Needs you item).
+    const cancelled = r.kind === "fix" ? await d.cancelHeldStart(r.projectId, r.id).catch((err) => (warn(r.id, "cancelling its held start")(err), 0)) : 0;
+    const closed = closeRequestLine(orgId, r.id, by, Date.now(), cancelled > 0 ? "with-team" : r.status);
     out.push(closed);
-    // A fix whose start still waits (held, q8): its start is cancelled. A fix already started goes on.
-    if (r.kind === "fix" && r.status === "with-team") await d.cancelHeldStart(r.projectId, r.id).catch(warn(r.id, "cancelling its held start"));
     // A feature request's open planning chat ends with it (q9); it stays readable.
     if (r.kind === "feature")
       for (const c of featureChats(orgId).filter((x) => x.requestId === r.id && !x.ended)) await d.endFeatureChat(orgId, c.sessionId).catch(warn(r.id, "ending its feature request chat"));

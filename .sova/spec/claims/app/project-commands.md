@@ -14,6 +14,7 @@ control sends to the route named, so every answer and refusal is the route's own
 - `project.list`, `project.get` (`GET /api/projects`, `GET /api/projects/:pid`): every registered project, or one.
 - `project.create` (`POST /api/projects`): Add Project (a folder's `root`) or Clone from GitHub (`clone`); the operator's, on its own host.
 - `project.update` (`PATCH /api/projects/:pid`): rename a project or move its root.
+- `project.claude-login.get`, `project.claude-login.set` (`GET`/`PUT /api/projects/:pid/claude-login`): the Claude login a project's new chats start on (a login id, `org` or `none`; §app.claude-logins/project-login).
 - `project.archive`, `project.unarchive` (`POST /api/projects/:pid/archive|unarchive`): archive a project (refused while anything in it is open) or bring it back.
 - `project.preview.off` (`POST /api/previews/:id/off`): turn a preview link off at once.
 - `project.worktree.list`, `project.worktree.merge`, `project.worktree.remove` (`/api/projects/:pid/overseer/worktrees…`): a project's coding sessions' worktrees; merge one's branch into its target, or remove it.

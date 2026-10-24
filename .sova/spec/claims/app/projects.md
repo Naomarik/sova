@@ -182,7 +182,8 @@ started: from the project, from New Session's folder tab, from a TUI or from Cla
 - The org layer may address the project layer: it spawns builds for its gaps, notes reasons for
   the watch loop, and contributes, through registration points the project layer offers, the
   ceiling on its overseer's level and its people, a look hint, overseer tools and prompt sections,
-  archive blockers, session kinds and the roots a project may not use.
+  archive blockers, session kinds, the roots a project may not use and the Claude login a placed
+  project follows by default (§app.claude-logins/project-login).
 - Two tests enforce it: a statecharts test that no project-layer statechart names an org-layer
   statechart id or key, and a server test that no project-layer module reaches an org-layer module
   through its runtime imports, followed through every module in between.

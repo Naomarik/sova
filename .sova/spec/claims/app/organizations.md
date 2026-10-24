@@ -167,6 +167,9 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
     says what it did: "Committed {short sha} and pushed.", "Committed {short sha}.", "Nothing new
     to commit. Pushed the commits the remote lacked." or "Nothing new to commit." Then the
     **WhatsApp Number** card (§app.outreach/org-sender): which number the org's messages go from.
+    Last, the **Claude login for its projects** card (§app.claude-logins/project-login): the
+    Claude login every project the org places follows unless the project picks its own; kept on
+    this host, never in the workspace repo.
 - **Rows and width.** A hand-off session row's title and meta line wrap rather than truncate. Each
   card on the org list, org and project pages stops at 880px wide, left-aligned, except the
   project page's Overview, whose cards fill its columns (§app.organizations/project-page). The project

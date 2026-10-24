@@ -66,7 +66,11 @@ after each landing, since every other branch is then checked against the new mas
   §chat.topics/open), piped into the driver's `reply`. In a project whose master turns the merge
   guard on (`"mainMerges": "go-ahead"`, Sova's own), that READY alone lands nothing: only the user's
   Land It at that head, or the user naming the branch to the captain, lets it be checked and landed;
-  without either the branch stays queued for the card and the captain tells the user why. It never
+  without either the branch stays queued for the card and the captain tells the user why. The
+  captain tells the user to press Land It only for a branch whose card Sova showed (`status` says
+  so), naming the owner's chat by its title with a link to it (`#/sid/<id>`); a branch with no owner
+  chat (owner archived, or no session tracks its worktree) has no card, so the captain asks the
+  user for a typed OK in its own chat instead ("say land <branch> here"). It never
   asks a busy session. Notes arrive
   only between turns, so the captain reads the owner again just before landing; a hold that arrives
   after a landing is reported to the owner and the user, never undone. A session that needs to
@@ -126,7 +130,8 @@ after each landing, since every other branch is then checked against the new mas
   `update-ref` on it outside a scrub the user approved for that case; a private name written inline
   in a command; another session's project instance touched, or its worktree changed beyond the
   check's master merge (and a rebuilt `node_modules`), without its OK.
-- **The report** each round: shas merged, push result, restart state, the branches with no live owner (each the first time it is the user's call), owners asked
+- **The report** each round: shas merged, push result, restart state, the branches with no live owner (each the first time it is the user's call, with the typed OK that lands it), the branches
+  whose Landing card waits for the user (each naming the owner's chat with its link), owners asked
   and their answers, anything handed back and why. A quiet round (nothing asked, checked, landed or
   pushed, and nothing new for the user) reports one line: "Nothing new on the merge board."
 
@@ -195,7 +200,9 @@ shell and under a timeout.
   those § ids, or "status unreadable", telling the owner to promote them on its branch and commit
   that before it answers READY, that the user's go-ahead to merge covers it, and that a READY with
   them left is handed back; with none the text is as above. **A recorded go-ahead** (Land It, in
-  `<state root>/landing.json`) for the branch at its current head counts as the owner's READY: the
+  `<state root>/landing.json`) for the branch at its current head, or at an earlier head when every
+  commit since is a clean merge of master (§chat.worktrees/merge-guard's rule, so a go-ahead
+  survives the check's own master merge), counts as the owner's READY: the
   branch goes to "to check"; one recorded without specs also lets its check pass with drafts left,
   naming them. A recorded Not Yet at the current head puts it in "not ready" until the head moves.
   **The merge guard.** When master's own copy of `.sova/offers.json` says `"mainMerges": "go-ahead"`
@@ -282,8 +289,11 @@ shell and under a timeout.
   regard to busy sessions: it reads no live records. Exit 0 either way; 2 only when the settings' restart unit
   isn't a plain unit name. It never schedules or runs a restart itself.
 - **`report`** prints the round report's skeleton from the state, listing each branch with no live
-  owner once per head (`For you, once (no live owner): …`). A quiet round prints only `Nothing new on
-  the merge board.`
+  owner once per head (`For you, once (no live owner): …`, each with "say land <branch> here to land
+  it"), and each branch whose Landing card Sova showed at its current head, waiting for the user
+  (`Waiting for your Land It: <branch> at <sha7> in "<owner's title>" (#/sid/<id>)`). `status` and
+  `ask` name a queued branch's owner chat the same way, by title and link, never "its card is
+  shown" alone. A quiet round prints only `Nothing new on the merge board.`
 
 The two rules it shares with the server, which subjects are temporary and which changed files need a
 restart, are copies, held equal to `server/merge-readiness.ts`'s by a test over an enumerated table;

@@ -6905,9 +6905,9 @@
         "§app.overseer/seen"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§app.overseer/caps": {
@@ -9943,9 +9943,9 @@
         "§chat.worktrees/readiness"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T20:31Z",
-        "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#76a2e465"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§chat.worktrees/merge-card": {
@@ -9994,16 +9994,17 @@
         "server/projects/runtime.ts",
         "server/projects/runtime-routes.ts",
         "server/project-coding-runtime.test.ts",
-        "pi-config/README.md"
+        "pi-config/README.md",
+        "server/merge-round-rules.test.ts"
       ],
       "requires": [
         "§chat.worktrees/tool",
         "§chat.offers/file"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§chat.worktrees/pane": {
@@ -10049,9 +10050,9 @@
         "§app.decisions/attention-signals"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§chat.worktrees/sandbox": {
@@ -10637,7 +10638,12 @@
       "requires": [
         "§app.overseer/attention-digest",
         "§app.overseer/tools"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+      }
     },
     "§app.notifications/settings": {
       "kind": "behavior",
@@ -17312,9 +17318,9 @@
         "§chat.worktrees/merge-board"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§chat/merge-round": {
@@ -17349,9 +17355,9 @@
         "§chat.worktrees/merge-board"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§app.access/callers": {

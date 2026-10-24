@@ -137,7 +137,7 @@ export interface OwnerVersionRow {
   /** v_…: opened at /i/<token>/v/<handle>. */
   handle: string;
   project: string;
-  /** "Current version", "Fix: {title}" or "Fix {n} · started {date}". */
+  /** "Current version", "Fix: {title}" or "Work in progress · started {date}", unique within its project (a repeat gets " (2)"). */
   label: string;
   /** "starting": the assistant started it and it hasn't answered yet; "failed": it didn't start
       (§app.project-assistant/versions). */

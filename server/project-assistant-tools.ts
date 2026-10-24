@@ -3,7 +3,7 @@ import type { HEntry, ToolSpec } from "../shared/harness";
 import type { ModelPick } from "../shared/powers";
 import { assistantWouldAct, deployTargetOf } from "./assistant-would-act";
 import { OWNER_REQUEST_TEXT_MAX, OWNER_REQUEST_TITLE_MAX, type OwnerRequest, type OwnerRequestKind } from "../shared/project-assistant";
-import { closeTryRequests, noteVersionFailed, noteVersionStarting, projectVersions, START_TIMEOUT_MS, type OwnerVersion } from "./owner-versions";
+import { closeTryRequests, noteVersionFailed, noteVersionStarting, projectVersions, START_TIMEOUT_MS, tryRequestIsFor, type OwnerVersion } from "./owner-versions";
 import { agreeRequirement, changeOfRef, conversationDraftTools } from "./conversation-draft-tools";
 import type { ConversationRef } from "./conversation-draft-store";
 import { orgDir, OrgError, readProjects, readRoster } from "./orgs";
@@ -138,10 +138,27 @@ async function versionsOf(orgId: string, projectId: string): Promise<OwnerVersio
   return await projectVersions(orgId, p).catch((): OwnerVersion[] => []);
 }
 
-/** The open `try` request for this version, or a new one (a second ask files none, §app.project-assistant/requests). */
-function tryRequest(orgId: string, projectId: string, label: string, text: string): OwnerRequest {
-  const open = orgRequests(orgId).find((r) => r.projectId === projectId && r.kind === "try" && r.title === label.slice(0, OWNER_REQUEST_TITLE_MAX) && r.status === "with-team");
-  return open ?? fileRequest(orgId, { projectId, kind: "try", title: label.slice(0, OWNER_REQUEST_TITLE_MAX), text: text.slice(0, OWNER_REQUEST_TEXT_MAX) });
+/** The open `try` request for this version (by its copy), or a new one naming the copy (a second ask files none,
+    §app.project-assistant/requests). */
+function tryRequest(orgId: string, projectId: string, v: Pick<OwnerVersion, "label" | "legacyLabel"> & { rec: { id: string } }, text: string): OwnerRequest {
+  const ref = { id: v.rec.id, label: v.label, ...(v.legacyLabel ? { legacyLabel: v.legacyLabel } : {}) };
+  const open = orgRequests(orgId).find((r) => r.projectId === projectId && r.status === "with-team" && tryRequestIsFor(r, ref));
+  return open ?? fileRequest(orgId, { projectId, kind: "try", title: v.label.slice(0, OWNER_REQUEST_TITLE_MAX), text: text.slice(0, OWNER_REQUEST_TEXT_MAX), version: v.rec.id });
+}
+
+/**
+ * The version the owner named (§app.project-assistant/tools): its label, its older label, or a short name that starts
+ * exactly one version's label or older label ("Fix 1", "work in progress"). Several matches ask which; none lists them.
+ */
+export function pickVersion<V extends Pick<OwnerVersion, "label" | "legacyLabel">>(vs: readonly V[], asked: string): V {
+  const want = asked.trim().toLowerCase();
+  const names = (v: V) => [v.label, ...(v.legacyLabel ? [v.legacyLabel] : [])].map((x) => x.toLowerCase());
+  const exact = vs.filter((v) => names(v).includes(want));
+  if (exact.length === 1) return exact[0]!;
+  const prefix = want ? vs.filter((v) => names(v).some((x) => x.startsWith(want))) : [];
+  if (prefix.length === 1) return prefix[0]!;
+  const among = (exact.length > 1 ? exact : prefix.length > 1 ? prefix : vs).map((x) => `"${x.label}"`).join(", ");
+  throw new Error(`Say which version: one of ${among}.`);
 }
 
 /** After the answer: the up that goes on, and the start timeout. A failure files the `try` request once (the team knows). */
@@ -152,14 +169,14 @@ function followStart(orgId: string, projectId: string, v: OwnerVersion, done: Pr
     filed = true;
     noteVersionFailed(v.rec.id);
     try {
-      tryRequest(orgId, projectId, v.label, `The owner asked to try it; it didn't start: ${why}`);
+      tryRequest(orgId, projectId, v, `The owner asked to try it; it didn't start: ${why}`);
     } catch (err) {
       console.warn(`[project-assistant] filing a version that didn't start: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
   void done.then((r) => {
     if (!r.ok) fail(`${r.code}: ${r.message}`);
-    else closeTryRequests(orgId, projectId, v.label);
+    else closeTryRequests(orgId, projectId, { id: v.rec.id, label: v.label, ...(v.legacyLabel ? { legacyLabel: v.legacyLabel } : {}) });
   });
   const t = setTimeout(() => {
     void versionsOf(orgId, projectId).then((vs) => {
@@ -295,7 +312,7 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
     parameters: obj(
       {
         ...projectParam(orgId),
-        version: str("The version's label, as owner_versions gives it (e.g. \"Current version\"); optional when the project has only one."),
+        version: str("The version's label, as owner_versions gives it (e.g. \"Current version\"), or a short name that starts only one of them; optional when the project has only one."),
       },
       needsProject(orgId),
     ),
@@ -303,20 +320,20 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
       const p = projectOf(orgId, params.project);
       const vs = await versionsOf(orgId, p.id);
       if (!vs.length) return say(`${p.name} has no versions to try.`);
-      const asked = typeof params.version === "string" ? params.version.trim().toLowerCase() : "";
-      const v = asked ? vs.find((x) => x.label.toLowerCase() === asked) : vs.length === 1 ? vs[0] : undefined;
+      const asked = typeof params.version === "string" ? params.version.trim() : "";
+      const v = asked ? pickVersion(vs, asked) : vs.length === 1 ? vs[0] : undefined;
       if (!v) throw new Error(`Say which version: one of ${vs.map((x) => `"${x.label}"`).join(", ")}.`);
       if (v.endpoint === null) return say(`${p.name}'s versions can't be shown outside the team.`);
       const ready = `${v.label} of ${p.name}`;
       if (v.state === "running") return say(`${ready} is running. Its Open button is in this chat and on the home page.`, { version: v.handle });
       if (v.state === "starting") return say(`${ready} is starting. Its Open button is in this chat and on the home page.`, { version: v.handle });
       const team = (sentence: string) => {
-        const r = tryRequest(orgId, p.id, v.label, `The owner asked to try it. ${sentence}`);
+        const r = tryRequest(orgId, p.id, v, `The owner asked to try it. ${sentence}`);
         return say(sentence, { request: r.id, started: false });
       };
       const failed = (why: string) => {
         noteVersionFailed(v.rec.id);
-        const r = tryRequest(orgId, p.id, v.label, `The owner asked to try it; it didn't start: ${why}`);
+        const r = tryRequest(orgId, p.id, v, `The owner asked to try it; it didn't start: ${why}`);
         return say("It didn't start; the team knows.", { request: r.id, started: false });
       };
       const would = await assistantWouldAct(orgId, p.id, "version");

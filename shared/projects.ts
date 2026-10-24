@@ -49,6 +49,13 @@ export interface ClaudeLoginResolved {
   name: string;
 }
 
+/** A login the card offers (on the host that holds the project or organization). */
+export interface ClaudeLoginOption {
+  id: string;
+  /** Its email, else its label, else its id; "This computer's own login" for `default`. */
+  name: string;
+}
+
 /** `GET`/`PUT /api/projects/:pid/claude-login`. */
 export interface ProjectClaudeLogin {
   /** A login id, "none" (this computer's order) or "org" (same as its organization; only while placed). */
@@ -58,10 +65,13 @@ export interface ProjectClaudeLogin {
   /** While placed: the organization's login for its projects (null: none). */
   orgLogin?: string | null;
   resolved: ClaudeLoginResolved | null;
+  /** The logins it may be given (the routes add them). */
+  options?: ClaudeLoginOption[];
 }
 
 /** `GET`/`PUT /api/orgs/:id/claude-login`. */
 export interface OrgClaudeLogin {
   /** A login id, or "none". */
   setting: string;
+  options?: ClaudeLoginOption[];
 }

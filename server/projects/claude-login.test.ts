@@ -34,7 +34,8 @@ registerProjectRoutes(app);
 registerOrgRoutes(app);
 const send = async (method: string, url: string, body?: unknown) => {
   const res = await app.request(url, { method, headers: { "Content-Type": "application/json" }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
-  return { status: res.status, body: (await res.json()) as any };
+  const { options, ...answer } = (await res.json()) as Record<string, any>;
+  return { status: res.status, body: answer as any, options: options as { id: string; name: string }[] | undefined };
 };
 
 const A = "l-0000000a", B = "l-0000000b", C = "l-0000000c";
@@ -63,7 +64,9 @@ async function standalone(name: string): Promise<{ id: string; root: string }> {
 test("a standalone project: No preference by default, its own login saved host-local, handed to chats in its folder and worktrees", async () => {
   const acme = await standalone("acme");
   const other = await standalone("other");
-  assert.deepEqual((await send("GET", `/api/projects/${acme.id}/claude-login`)).body, { setting: "none", placed: false, resolved: null });
+  const first = await send("GET", `/api/projects/${acme.id}/claude-login`);
+  assert.deepEqual(first.body, { setting: "none", placed: false, resolved: null });
+  assert.deepEqual(first.options, [{ id: "default", name: "This computer's own login" }, { id: A, name: `${A}@example.com` }, { id: B, name: `${B}@example.com` }, { id: C, name: `${C}@example.com` }], "the logins of the host that holds it");
   assert.equal(loginContextForCwd(acme.root), undefined, "no assignment anywhere: nothing is handed over");
   assert.deepEqual(loginContextEnv(acme.root), {});
 

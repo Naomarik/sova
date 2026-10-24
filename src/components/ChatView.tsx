@@ -67,7 +67,7 @@ import { HOST_MOVE_GRACE_MS, hostOf, mayBeHostMove, meshOn, recheckHost, session
 import { cachedTranscript, cacheItems, cacheSpot, keptOlder, transcripts } from "../lib/transcript-cache";
 import { inputsPending, knownInputs, knownWorkers, workersShown } from "../lib/known-before-mount";
 import { composerSeen, knownComposer, listFetchedAt, rememberComposer, sameKnown } from "../lib/composer-known";
-import { openFailureView } from "../lib/open-failure";
+import { cwdFallbackView, openFailureView, type CwdFallbackInfo } from "../lib/open-failure";
 import {
   closeRemoteStatus,
   isRemoteNotice,
@@ -441,6 +441,8 @@ export function ChatView(props: {
   const turnError = () => feed().turnError;
   /** A permanent open failure (code "config"): shown once, never retried, never appended to. */
   const [configError, setConfigError] = createSignal<string | null>(null);
+  /** The chat runs in the home folder because its stored folder is gone (hello `cwdFallback`). */
+  const [cwdFallback, setCwdFallback] = createSignal<CwdFallbackInfo | null>(null);
   /** The open-failure banner's action state: an Archive in flight. */
   const [archiving, setArchiving] = createSignal(false);
   const [dialogs, setDialogs] = createSignal<{ id: string; request: unknown }[]>([]);
@@ -821,6 +823,7 @@ export function ChatView(props: {
           });
           setModel(msg.model);
           setHelloReview(msg.alignReview);
+          setCwdFallback(msg.cwdFallback ?? null);
           // The shield and the login stay as shown until the messages after the hello settle them
           // ("commands", "sandbox", "claude_login"), so neither blinks out and back.
           setProfileInfo(null); // a "profile" message follows for a profile or a session before its first message
@@ -2131,6 +2134,13 @@ export function ChatView(props: {
                   }
                 />
               )}
+            </Show>
+            {/* Its stored folder is gone: the chat runs in the home folder, and says so while it does. */}
+            <Show when={cwdFallback()} keyed>
+              {(f) => {
+                const v = cwdFallbackView(f);
+                return <Banner tone="warn" title={v.title} body={v.body} />;
+              }}
             </Show>
             {/* Permanent until the world it names changes: the diagnosis and the gestures that
                 fix it, derived in src/lib/open-failure.ts. The first action is the primary one. */}

@@ -68,8 +68,15 @@ function layered(s: Loaded): { file: SessionSetupFile; role: string | null }[] {
   ];
 }
 
+/** A row's name: a file in the session's own folder by its path from there (`AGENTS.md`), any
+    other with home written `~`. */
+export function contextLabel(path: string, cwd: string, home: string | null): string {
+  const dir = cwd.replace(/\/+$/, "");
+  return dir && path.startsWith(`${dir}/`) ? path.slice(dir.length + 1) : tildePath(path, home);
+}
+
 export function contextRows(s: Loaded, home: string | null): ContextRow[] {
-  return layered(s).map(({ file, role }) => ({ file, label: tildePath(file.path, home), role, switchable: role === null }));
+  return layered(s).map(({ file, role }) => ({ file, label: contextLabel(file.path, s.cwd, home), role, switchable: role === null }));
 }
 
 /** A row this session keeps out: listed, and counted by no total. */
@@ -88,6 +95,10 @@ export function flipped(s: Loaded, kind: "context" | "skill", key: string, on: b
 /** The switches' accessible names. */
 export const contextSwitchLabel = (label: string) => `Load ${label}`;
 export const skillSwitchLabel = (name: string) => `Offer ${name}`;
+/** A row name's accessible name: pressing it opens the file in the viewer (/setup-card-open-file). */
+export const openFileLabel = (name: string) => `Read ${name}`;
+/** The toast when a file can't be opened; the server's reason follows. */
+export const OPEN_FILE_FAILED = "Couldn't open that file.";
 
 /** What a set of files adds up to on disk, and — when any of them was estimated — what sending
     them would cost. */

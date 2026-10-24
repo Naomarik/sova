@@ -17,7 +17,8 @@ export interface TourRecordingContext {
   agentDir: string;
   /** Trusted server environment; tests can supply their isolated home without using the host's. */
   home?: string;
-  sandbox: { on: boolean; worktreeRoots?: readonly string[]; parent?: SessionPolicyInput["parent"] };
+  /** `cwdWritable: false`: the cwd is a stand-in for a folder that is gone, never a writable root. */
+  sandbox: { on: boolean; worktreeRoots?: readonly string[]; parent?: SessionPolicyInput["parent"]; cwdWritable?: false };
   worker?: { id: string; teamId?: string };
 }
 
@@ -51,6 +52,7 @@ export async function spawnTourCommand(context: TourRecordingContext, argv: read
     const prepared = await prepareSessionCommand({
       agentDir: context.agentDir, cwd: context.cwd, sessionId: context.sessionId,
       worktreeRoots: context.sandbox.worktreeRoots, parent: context.sandbox.parent, home: context.home,
+      ...(context.sandbox.cwdWritable === false ? { cwdWritable: false } : {}),
     }, command, { env: attribution, ...(proxy ? { proxy } : {}) });
     if (!prepared.ok) throw new Error(`Recording refused: sandbox unavailable (${prepared.error}). Nothing ran.`);
     command = prepared.value.argv;

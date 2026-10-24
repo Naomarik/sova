@@ -8,7 +8,7 @@ import { POWERS, POWER_INFO } from "./powers";
 import { PO_PATCH_FIELDS, PO_CAP_LABEL } from "./project-overseer";
 import { BUTTON_KEYS, OFFER_KEYS, OFFERS_FILE_KEYS } from "./session-offers";
 import { MODE_KEYS } from "./project-modes";
-import { PROJECT_EDIT_KEYS } from "./project-settings";
+import { COPIES_EDIT_KEYS, PROJECT_EDIT_KEYS } from "./project-settings";
 import { SETTINGS_REFERENCE, settingsIndex, type SettingId } from "./settings-reference";
 
 // The ratchet (§app.project-overseer/settings): every key a settings parser reads has a reference entry,
@@ -46,6 +46,13 @@ test("the project's other settings (stakeholder, owner's page, Frozen, archive) 
   // The project edit of sova_settings propose names every one of them, and nothing without an entry.
   assert.deepEqual(missing([...placementKeys, spec!, "archived", "name", "root"], new Set(PROJECT_EDIT_KEYS)), []);
   assert.deepEqual(missing(PROJECT_EDIT_KEYS, project), []);
+});
+
+test("the copy limit's edit: every key it takes has an entry, and it is Sova-kept, changed on the Branches tab", () => {
+  assert.deepEqual(missing(COPIES_EDIT_KEYS, keysOf("copies")), []);
+  assert.deepEqual(Object.keys(SETTINGS_REFERENCE.copies.keys), [...COPIES_EDIT_KEYS]);
+  assert.equal(SETTINGS_REFERENCE.copies.where, "sova");
+  assert.match(SETTINGS_REFERENCE.copies.grant ?? "", /Raised/);
 });
 
 test("every profile field and limit has an entry", () => {

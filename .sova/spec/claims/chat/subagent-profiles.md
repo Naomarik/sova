@@ -128,7 +128,8 @@ backend stays explicit and follows that backend's existing model-default behavio
 was given; the profile never crosses it. Synthesized coordinators and monitors keep their own tuples.
 
 - **Never a failed team.** A members default the model policy denies, whose backend isn't loaded,
-  or whose pi model the session's registry doesn't list is not used: those members run on the
+  whose pi model the session's registry doesn't list, or whose model ran out of usage at runtime
+  within the hour (§teams.defaults/runtime-fallback) is not used: those members run on the
   parent's model, and the `team_create` or `team_add` result says so in one line with the reason.
 - **The planning message** (`/team <objective>`) carries one line while a members default is set:
   "Members you don't give a model run on X; pass a member model to override."

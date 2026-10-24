@@ -63,7 +63,6 @@ import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTo
 import { readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
 import { ROW_BUILT_INS, RowPlaceContext, useRowAdditions } from "../lib/row-place";
 import { RowPlaceView } from "./RowPlace";
-import { requestListRefresh } from "../lib/list-refresh";
 import { orgHref } from "../lib/orgs-route";
 import { inLocalProjectsRegion, projectBlocks, projectOpenCount, PROJECTS_KEY } from "../lib/project-region";
 import { projectHref, projectSessionHref, PROJECTS_HREF } from "../lib/projects-route";
@@ -1333,11 +1332,10 @@ export function Sidebar(props: {
   });
 
   // Decision marks arrive over the session feed as they change, and so does word that the list itself
-  // changed (a session a TUI just started): that re-reads it, and the attention digest with it (App,
-  // lib/list-refresh.ts), since the Organizations region's Needs you lists the digest's items: a reply
-  // or a Get Link in another tab clears its row at once, not at the digest's next 10 s read. The list
-  // poll stays the fallback.
-  openSessionFeed(requestListRefresh);
+  // changed (a session a TUI just started): that re-reads the list only. The attention digest (the
+  // Organizations region's Needs you lists its items) is pushed whole by the same feed as it changes
+  // (App), so a reply or a Get Link in another tab clears its row at once with no read of its own.
+  openSessionFeed(() => props.onRefresh());
   /** The one live figure the toolbar line, the foot, the phone bar and the spine all show: the
       sessions whose turn runs plus the subagents working, this host's from the Agents poll, the
       peers' from their lists, the open chat's from its socket — independent of the search and the

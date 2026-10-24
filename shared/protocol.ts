@@ -1434,6 +1434,22 @@ export type SessionSetup =
   /** Nothing could be read: `reason` is a sentence for the user. Never cached. */
   | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; checkedAt: number };
 
+// GET /api/sessions/context/file?path=<session file>&file=<listed path> -> SessionSetupFileText
+//                                  (server/session-setup.ts, §chat.transcript/setup-card-open-file:
+//                                  the text of ONE file the session's own setup read lists, for the
+//                                  markdown viewer. Any other path is a 404, so it reads nothing else
+//                                  on disk; a remote session or an unreadable setup is a 409; a file
+//                                  over SETUP_FILE_MAX_BYTES a 413. 400 a bad path, 404 a missing
+//                                  session file. Never cached.)
+// ---------------------------------------------------------------------------
+/** The largest file the setup card opens in the viewer. */
+export const SETUP_FILE_MAX_BYTES = 1024 * 1024;
+
+export interface SessionSetupFileText {
+  path: string;
+  text: string;
+}
+
 // GET /api/sessions/tools?path=<session file> -> SessionTools   (server/session-tools.ts,
 //                                  §chat.transcript/setup-card-tools: the tools the HELD chat declares
 //                                  to its model now, in its order, with the descriptions as declared.
@@ -2390,7 +2406,9 @@ export type ChatServerMessage =
   /** `after` (only to a client that asked with `&have=`): the client's rows up to and including
       this row are the branch's first `older` rows, and `items` are the rows after it (possibly
       none); `olderSummary` sums up all `older` of them, the client's own included. */
-  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive; after?: string }
+  /** `cwdFallback` (§app.shell/missing-folder-home): the chat runs in the home folder because its stored
+      local folder is gone; absent when it runs in its own folder. */
+  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive; after?: string; cwdFallback?: CwdFallback }
   /** Which code a chat in its own process runs (§app.chat-processes/code-pickup). Sent after the
       hello when not current, and to every client on each change; none received = current. A chat
       hosted in the server sends it only to answer `reload_code`. See ChatCodeState. */
@@ -4184,7 +4202,8 @@ export interface FrontDoorConfig {
 // Push: WS /ws/watch?feed=sessions — the existing read-only socket, in a session-less mode (no
 // ?path=). Sends SessionFeedMessage: a full `marks` snapshot on connect, then one `marks` message
 // per change (a signal, tag or turn error written, cleared, or pruned) and `tags_backfill` progress while a
-// backfill runs. The client overlays these onto its SessionSummary list by id without waiting for
+// backfill runs; `list_changed`, `attention` and `overseer` when those change (never on connect: the
+// client reads the list, digest and Overseer once per open and when its tab becomes visible). The client overlays these onto its SessionSummary list by id without waiting for
 // the list poll; the list itself still carries the same fields (the poll stays the source of truth
 // after a reconnect). Never writes; the socket ignores anything the client sends.
 // ---------------------------------------------------------------------------
@@ -4411,6 +4430,14 @@ export interface SessionSummary {
 }
 
 /** One worktree's merge readiness (§chat.worktrees/readiness). */
+/** A chat running in the home folder because its stored local working directory is gone
+    (§app.shell/missing-folder-home): `original` is the stored folder, unchanged in the file; `cwd` the
+    home folder of the machine the chat runs on. */
+export interface CwdFallback {
+  original: string;
+  cwd: string;
+}
+
 /** "removed": the worktree's folder is gone and its work isn't known merged (§chat.worktrees/readiness). */
 export type ReadinessState = "merged" | "stale" | "in-progress" | "blocked" | "ready" | "waiting-approval" | "removed";
 
@@ -4534,6 +4561,12 @@ export type SessionFeedMessage =
       connect, then on each change of the total or its coverage. Never a reason to re-read the
       list. */
   | { type: "llm_inflight"; inflight: LlmInflight }
+  /** The attention digest (as GET /api/overseer/attention returns it), sent only when it differs
+      from the last one this server pushed; never on connect (the client reads it once when the
+      feed opens and when the tab becomes visible again). */
+  | { type: "attention"; digest: AttentionDigest }
+  /** The Overseer's state (as GET /api/overseer returns it), sent the same way as `attention`. */
+  | { type: "overseer"; info: OverseerInfo }
   | { type: "error"; message: string };
 
 /** Why an LlmInflight count is only a floor. `host` is the peer's id; absent = this host. */

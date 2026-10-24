@@ -785,6 +785,31 @@ for that call with a warning line in the result; the extension never writes the 
   handover instructions go on the old member's delivery lane: never refused because a delivery is
   in progress, a redirect lands after that one; the `team_succeed` result says the old member was
   told to brief its successor only when that delivery was taken, else that it could not be told.
+- **Runtime fallback.** The primary/fallback choice is made again while the team runs. A member
+  with the coordinator or monitor duty whose turn ends with a failed task moves to its fallback at
+  once when the error says its model is out of usage (`../provider-limits/usage-out.ts`: usage,
+  credits, quota, balance or billing ran out, a usage limit was reached — monthly, weekly or 5-hour
+  included, such as Ollama's `429: {"message":"you (…) have reached your monthly usage limit, add
+  usage credits: …"}` or the Claude Code bridge's `You've hit your limit · resets 3pm` once every
+  login is out — or the sign-in no longer works), and otherwise on its 3rd failed turn in a row (a
+  good turn resets the count); a single 429 rate limit keeps today's path. Only once per member,
+  only while it runs its role's current primary, never while a handover involving it is pending.
+  The member is stopped, its seat ejected first (source `system`, so a full team of 24 still gets
+  it), and its successor starts at once on the fallback through the main chat's replacement path
+  (no note asked for, nothing to retire): a monitor's runs its first check at once; a coordinator's
+  is told its predecessor stopped without a note and why, and routes the team from its start. The
+  failed turn's own completion goes nowhere; the routing coordinator gets one `handover` item when
+  the monitor switched; the `handover` event's detail is `successor <role> (<ag_NN>) on
+  <backend>/<model>; fallback: primary <tuple> <reason>`, with a `handover` action row (Sova shows
+  it as "Monitor moved to its fallback <model>: <primary model> <reason>."). With no fallback that
+  can run, a monitor is stopped (one `notice` item for the coordinator, one `team-notice` in the
+  main chat) and a coordinator is reported to the main chat once (a `team-notice`), and keeps
+  running. The model is marked out for an hour as a `subagents-dead-tuple-v1` entry (`{version: 1,
+  backend, model, reason, at, teamId?, duty?}`), replayed from all of the session's entries at
+  `session_start`: every tuple check (standing roles, the members default, successors) refuses it
+  meanwhile, and a team whose duty switched stays on its fallback. A failed monitor turn that
+  doesn't switch, with no pending or held `wake_nudge`, gets its next check scheduled by the parent
+  (`everyMinutes`), so the monitor never goes silent.
 - **Records.** Team actions gain `report`, `handover`, `retire`, `wrap-up`, `pause`, `resume`
   (sources `monitor`, `system`); handover, retire, wrap-up, pause and resume are also appended as
   `subagents-team-event-v1` entries (`{version, teamId, kind, workerId, role, at, detail?}`; a

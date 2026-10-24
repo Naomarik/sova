@@ -54,6 +54,9 @@ export interface OpenFlags {
   review?: boolean;
   alignVisuals?: boolean;
   link?: { origin: string; token: string; tools: "member" | "legacy" };
+  /** The cwd is the home folder standing in for a stored folder that is gone: the sandbox must not
+      make it a writable root (§app.shell/missing-folder-home). */
+  cwdNotWritable?: boolean;
   /** A worker chat's own extension flags (`--name value` on an RPC worker's argv), set last. */
   extra?: Record<string, string | true>;
 }
@@ -70,6 +73,7 @@ export function extensionFlagValues(f: OpenFlags): Map<string, boolean | string>
     flags.set("sova-link-token", f.link.token);
     flags.set("sova-link-tools", f.link.tools);
   }
+  if (f.cwdNotWritable) flags.set("sandbox-cwd-not-writable", true);
   for (const [name, value] of Object.entries(f.extra ?? {})) flags.set(name, value);
   return flags;
 }
@@ -350,6 +354,16 @@ export interface PiBuild {
   /** Each session built, as a driving session over it, before anything runs on it (the profile's run state,
       a special kind's watch). */
   built?(session: HarnessSession): void;
+  /** Notes appended to the system prompt after every other append (the user's APPEND_SYSTEM.md and the
+      loadout's own parts), each as given. */
+  promptNotes?: string[];
+}
+
+/** The loader with `notes` appended to its system prompt appends, after whatever its own override keeps
+    (the override, not `appendSystemPrompt`, so the user's APPEND_SYSTEM.md is still discovered). */
+export function withPromptNotes(loader: PiLoaderOptions, notes: readonly string[]): PiLoaderOptions {
+  const own = loader.appendSystemPromptOverride;
+  return { ...loader, appendSystemPromptOverride: (base: string[]) => [...(own ? own(base) : base), ...notes] };
 }
 
 /** A session file opened for a hosted chat, its runtime not built yet. */
@@ -400,7 +414,7 @@ export async function openPiSession(path: string, cwdOverride: string | undefine
       onStep("loadout");
       const plan = await build({ cwd, read: openRead(sessionManager) });
       onStep("extensions load");
-      const services = await servicesForCwd(cwd, modelRuntime, plan.flags, plan.loader);
+      const services = await servicesForCwd(cwd, modelRuntime, plan.flags, plan.promptNotes?.length ? withPromptNotes(plan.loader, plan.promptNotes) : plan.loader);
       const present = services.resourceLoader.getExtensions().extensions.flatMap((e) => [...e.tools.keys()]);
       const excluded = plan.exclude(present);
       for (const d of services.diagnostics) console.warn(`[chat] runtime ${d.type}: ${d.message}`);

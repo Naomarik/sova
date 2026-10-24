@@ -1,10 +1,11 @@
 /**
- * The run-status row's right end (§app.overseer/confirm, §chat.alignment/chip): one cluster, in a
- * fixed order, with the Inputs trigger (or the box held for it) last. Only the cluster's first
- * part takes the auto margin, so the row has exactly two ends and nothing floats between them,
- * whichever parts are present.
+ * The run-status row's right end (§app.overseer/confirm): one cluster, in a fixed order, with the
+ * Inputs trigger (or the box held for it) last. Only the cluster's first part takes the auto
+ * margin, so the row has exactly two ends and nothing floats between them, whichever parts are
+ * present. Open alignments and option cards are not in this row: they are the composer's waiting
+ * badge, inside the message box (§chat.composer/waiting-badge).
  */
-export type RunStatusEndPart = "running" | "cards" | "align" | "inputs" | "inputs-held";
+export type RunStatusEndPart = "running" | "inputs" | "inputs-held";
 
 export interface RunStatusEndItem {
   part: RunStatusEndPart;
@@ -12,11 +13,9 @@ export interface RunStatusEndItem {
   lead: boolean;
 }
 
-export function runStatusEnd(has: { running?: boolean; cards?: boolean; align?: boolean; inputs?: boolean; inputsHeld?: boolean }): RunStatusEndItem[] {
+export function runStatusEnd(has: { running?: boolean; inputs?: boolean; inputsHeld?: boolean }): RunStatusEndItem[] {
   const order: [RunStatusEndPart, boolean | undefined][] = [
     ["running", has.running],
-    ["cards", has.cards],
-    ["align", has.align],
     ["inputs", has.inputs],
     ["inputs-held", !has.inputs && has.inputsHeld],
   ];

@@ -15,6 +15,7 @@ import { previewAddress, previewOrigin } from "./share/preview-address";
 import { awaitShareLinks } from "./share/links-events";
 import { advanceRequest, orgRequests } from "./project-assistant-store";
 import { OWNER_REQUEST_TITLE_MAX, type OwnerRequest } from "../shared/project-assistant";
+import { readSummaries, refreshSummary, shownSummary } from "./version-summaries";
 
 /**
  * Versions you can try (§app.project-assistant/versions): each shown project's running copies the
@@ -31,6 +32,8 @@ export interface OwnerVersion {
   projectId: string;
   projectName: string;
   label: string;
+  /** The main checkout's copy (the Current version): no summary. */
+  current: boolean;
   /** The label the copy had under the old wording (`Fix {n} · started {date}`): an older `try` request's title, and
       a short name `start_version` still takes. Absent on the Current version and a fix the owner asked for. */
   legacyLabel?: string;
@@ -182,7 +185,9 @@ export async function projectVersions(orgId: string, project: { id: string; name
     // A copy whose copies can't be shown never reads starting or failed: it is not openable at all.
     const state = ep ? stateOf(rec.id, running, Date.now()) : "not-running";
     if (state === "running") closeTryRequests(orgId, project.id, { id: rec.id, label, ...(legacyLabel ? { legacyLabel } : {}) }, requests);
-    out.push({ handle: handleOf("v", rec.id), projectId: project.id, projectName: project.name, label, ...(legacyLabel ? { legacyLabel } : {}), rec, endpoint: ep ? endpoint : null, port: ep?.port ?? null, serve, running, state });
+    // A fix copy's summary is written (again) in the background when its branch moved (§app.project-assistant/versions).
+    if (!main) void refreshSummary(orgId, project.id, { current: false, rec });
+    out.push({ handle: handleOf("v", rec.id), projectId: project.id, projectName: project.name, label, current: main, ...(legacyLabel ? { legacyLabel } : {}), rec, endpoint: ep ? endpoint : null, port: ep?.port ?? null, serve, running, state });
   }
   return out;
 }
@@ -211,8 +216,25 @@ export function closeTryRequests(orgId: string, projectId: string, v: { id: stri
     the secret redactor only, as on every other row of the page; the label, which may carry a request title a
     model wrote, through the outsider filter too. Never the project's name through `said`: its phrases hold the
     org's name, so a project named after its org read `[redacted]`. */
-export const versionRows = (vs: OwnerVersion[], r: { redact: (t: string) => string; said: (t: string) => string }): OwnerVersionRow[] =>
-  vs.map((v) => ({ handle: v.handle, project: r.redact(v.projectName), label: r.redact(r.said(v.label)), state: v.state }));
+export const versionRows = (vs: OwnerVersion[], r: { redact: (t: string) => string; said: (t: string) => string }, orgId?: string): OwnerVersionRow[] =>
+  vs.map((v) => {
+    const summary = orgId ? shownVersionSummary(orgId, v, r) : null;
+    return { handle: v.handle, project: r.redact(v.projectName), label: r.redact(r.said(v.label)), state: v.state, ...(summary ? { summary } : {}) };
+  });
+
+/** A version's shown summary, cleaned for the owner and the assistant's model (§app.owner-page/never's carve-out): the
+    automatic one through the outsider filter's `said` and the secret redactor, the team's own through the redactor. */
+export function shownVersionSummary(orgId: string, v: Pick<OwnerVersion, "projectId" | "current" | "rec">, r: { redact: (t: string) => string; said: (t: string) => string }): string | null {
+  if (v.current) return null;
+  let shown: ReturnType<typeof shownSummary> = null;
+  try {
+    shown = shownSummary(readSummaries(orgId, v.projectId)[v.rec.id]);
+  } catch {
+    return null;
+  }
+  if (!shown) return null;
+  return shown.source === "team" ? r.redact(shown.text) : r.redact(r.said(shown.text));
+}
 
 /** The owner-bound preview of a version for this owner link, kept or made now; its URL, or null when it can't be opened. */
 export async function openVersion(v: OwnerVersion, link: { hash: string; expiresAt: string }, now = Date.now()): Promise<string | null> {

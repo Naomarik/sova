@@ -1,8 +1,10 @@
 import type { Context, Hono } from "hono";
-import type { AssistantInfo, PricedPick } from "../shared/project-assistant";
+import type { AssistantInfo, PricedPick, VersionSummaryRow } from "../shared/project-assistant";
 import { WORK_KINDS } from "../shared/powers";
 import { attentionChanged } from "./attention-memo";
-import { OrgError, readIndex, readOrgOrPlaceholder } from "./orgs";
+import { OrgError, readIndex, readOrgOrPlaceholder, readProjects } from "./orgs";
+import { projectVersions } from "./owner-versions";
+import { setVersionSummary, summaryPatchOf, teamRows } from "./version-summaries";
 import { assistantSeesImages, currentAssistantPath, ensureAssistant, refreshAssistant } from "./project-assistant";
 import { assistantReplyState } from "./project-assistant-ready";
 import { assistantDefault, assistantPicksAdopted, markAssistantPicksAdopted, readBatonSettings, writeAssistantDefault, writeBatonSettings } from "./baton-settings";
@@ -123,6 +125,13 @@ export function saveAssistantDefault(body: unknown): { assistant: PricedPick | n
   return { assistant: pricedPick(next) };
 }
 
+/** A project's versions on the owner's page, with their summaries as kept (the team's view). */
+async function versionSummaryRows(orgId: string, projectId: string): Promise<VersionSummaryRow[]> {
+  const project = readProjects(orgId).find((x) => x.id === projectId);
+  if (!project) throw new OrgError("Unknown project", 404);
+  return teamRows(orgId, projectId, await projectVersions(orgId, project).catch(() => []));
+}
+
 export function registerAssistantRoutes(app: Hono<any>): void {
   app.put(
     "/api/settings/project-assistant",
@@ -165,6 +174,22 @@ export function registerAssistantRoutes(app: Hono<any>): void {
       throw err;
     }
   });
+  // The versions on the owner's page with their summaries, for the project page's Owner Page card; Rewrite, Use
+  // Automatic, Hide and Show (§app.project-assistant/versions).
+  app.get(
+    "/api/orgs/:id/projects/:pid/versions",
+    handle(async (c) => c.json(await versionSummaryRows(p(c, "id"), p(c, "pid")))),
+  );
+  app.put(
+    "/api/orgs/:id/projects/:pid/versions/:instance",
+    handle(async (c) => {
+      const [id, pid] = [p(c, "id"), p(c, "pid")];
+      const patch = summaryPatchOf(await body(c));
+      if (!readProjects(id).some((x) => x.id === pid)) throw new OrgError("Unknown project", 404);
+      setVersionSummary(id, pid, p(c, "instance"), patch);
+      return c.json(await versionSummaryRows(id, pid));
+    }),
+  );
   // Open Assistant Chat: the owner's conversation, made when there is none yet.
   app.post(
     "/api/orgs/:id/owner/assistant/open",

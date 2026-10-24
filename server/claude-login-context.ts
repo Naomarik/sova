@@ -6,6 +6,13 @@ import { loginContextForCwd } from "./projects/claude-login";
  * and the logins saved for other work, as accounts.ts loginContextFromEnv reads it. Empty when there is
  * nothing to hand over, or when it can't be worked out (the chat then keeps this computer's order).
  */
+/** `env` without the login context: only the server hands it over, never a worker's loadout. */
+export function withoutLoginContext(env: Record<string, string> | undefined): Record<string, string> {
+  if (!env || !(LOGIN_CONTEXT_ENV in env)) return env ?? {};
+  const { [LOGIN_CONTEXT_ENV]: _dropped, ...rest } = env;
+  return rest;
+}
+
 export function loginContextEnv(cwd: string): Record<string, string> {
   try {
     const ctx = loginContextForCwd(cwd);

@@ -69,7 +69,7 @@ import { setRemoteHosted } from "./resource-monitor";
 import { subagentSessionRefusal } from "./session-guards";
 import { getSessionSummary } from "./sessions-index";
 import { agentRoot, stateRoot } from "./state-root";
-import { loginContextEnv } from "./claude-login-context";
+import { loginContextEnv, withoutLoginContext } from "./claude-login-context";
 import { markOwned, recentForeignWriteAgeSec } from "./write-guard";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -212,7 +212,7 @@ export class ChatHostRouter {
           home: homedir(),
           agentDir: w?.spec.agentDir ?? agentRoot(),
           extra: {
-            ...w?.spec.env,
+            ...withoutLoginContext(w?.spec.env),
             ...(w?.spec.agentDir ? { SOVA_CHAT_STATE_ROOT: stateRoot() } : {}),
             SOVA_CHAT_SOCK: c.sock,
             SOVA_CHAT_PATH: c.sessionPath,

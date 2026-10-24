@@ -436,8 +436,10 @@ called `group` or `frame` in a chain still parses as before.
 - **Look.** A frame is a rounded, dashed `--color-border-strong` rectangle with a `--color-sunken`
   fill, drawn under edges and nodes. Its title sits inside at the top (caption size, semibold),
   drawn over the edges with a halo in the frame's fill, so it stays legible where an edge enters.
-  The title is never cut: in `dir: right` it wraps to as many lines as it needs at the frame's
-  width, and the frame's top grows to hold them; downwards the frame widens to its title. Share and
+  The title is never cut: it wraps to as many lines as it needs, and the strip above the members
+  grows to hold them. In `dir: right` it wraps at the frame's width; downwards at the wider of a
+  shape's text width and the room the frame's members take side by side, so a long title never
+  widens its frame past that and a phone still fits the drawing. Share and
   owner pages draw a flow's frames the same way; the phone re-lays out as any flow does.
 - **No regression.** A fence without group lines parses and lays out exactly as before, and a
   chain line that uses the word as an id (`frame -> x`) is a chain, not a group.

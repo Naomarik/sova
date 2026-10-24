@@ -1217,7 +1217,7 @@ class Round {
           const ab = await git(tree, ["merge", "--abort"], { timeoutMs: 60_000 });
           if (ab.code !== 0) stop(2, `git merge --abort failed in ${tree}: ${firstLine(ab)}`);
           const rec = (st.branches[branch] ??= {});
-          rec.check = { head: before, masterSha: master, ok: false, needs: ["spec conflict with master: handed back"], flaky: [], at: this.now };
+          rec.check = { head: before, masterSha: master, ok: false, needs: ["spec conflict with master: handed back"], flaky: [], preexisting: [], at: this.now };
           rec.answer = { kind: "not-ready", why: "handed back: spec conflict with master", handedBack: true, head: before, at: this.now, ...(rec.answer?.noteAt !== undefined ? { noteAt: rec.answer.noteAt } : {}) };
           this.event("check", { branch, head: before, ok: false });
           this.saveState();
@@ -1245,6 +1245,7 @@ class Round {
     delete env.NODE_TEST_CONTEXT;
     const needs = [];
     const flaky = [];
+    const preexisting = [];
     const step = async (key, floorKey, label, cmd, args, cwd, extraEnv = {}) => {
       const timeoutMs = timeoutFor(this.floor(floorKey), st.timings[key]);
       const r = await run(cmd, args, { cwd, env: { ...env, ...extraEnv }, timeoutMs, logFile: join(logDir, `${key.replace(/[^A-Za-z0-9._-]/g, "_")}.log`) });
@@ -1276,7 +1277,11 @@ class Round {
             }
             const v = verdicts[file];
             const onMaster = v === "pre-existing" ? "also fails on master" : v === "new" ? "passes on master" : v;
-            if (alone[file] === "fails") {
+            if (alone[file] === "fails" && v === "pre-existing") {
+              // Fails alone on the branch and on master too: master's, not the branch's.
+              preexisting.push(file);
+              said[file] = "fails alone; pre-existing: also fails on master";
+            } else if (alone[file] === "fails") {
               needs.push(v === "new" ? `new test failure: ${file}` : `test failure in ${file} (${onMaster})`);
               said[file] = `fails alone; ${onMaster}`;
             } else {
@@ -1356,7 +1361,7 @@ class Round {
 
     const ok = needs.length === 0;
     const rec = (st.branches[branch] ??= {});
-    rec.check = { head, masterSha: master, ok, needs, flaky, at: this.now, logs: logDir };
+    rec.check = { head, masterSha: master, ok, needs, flaky, preexisting, at: this.now, logs: logDir };
     if (left.length) {
       const who = rec.ask?.owner ?? ownerOf(rec)?.owner;
       if (rec.answer?.kind === "ready" && rec.answer.head === head) rec.answer = { ...rec.answer, kind: "not-ready", why: "handed back: docs not promoted", handedBack: true };
@@ -1364,10 +1369,11 @@ class Round {
     }
     this.event("check", { branch, head, ok });
     this.saveState();
+    if (preexisting.length) lines.push(`Pre-existing on master (not blocking): ${preexisting.join(", ")}.`);
     if (flaky.length) lines.push(`Flaky (failed in the full run, passed alone; not blocking): ${flaky.join(", ")}.`);
     lines.push(`Logs: ${logDir}`);
     lines.push(ok ? `landable at ${head.slice(0, 7)}` : `needs: ${needs.join("; ")}`);
-    return { exit: ok ? 0 : 1, lines, data: { head, master, ok, needs, flaky, alsoUpdate: nudges, logs: logDir }, next: ok ? `round.mjs land ${branch}` : "hand it back to the owner with what it needs (session_send, only when idle)" };
+    return { exit: ok ? 0 : 1, lines, data: { head, master, ok, needs, flaky, preexisting, alsoUpdate: nudges, logs: logDir }, next: ok ? `round.mjs land ${branch}` : "hand it back to the owner with what it needs (session_send, only when idle)" };
   }
 
   /** Each file that failed in the branch's full run, run again on its own in the branch's worktree, through the

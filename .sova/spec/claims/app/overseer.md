@@ -792,14 +792,15 @@ jumps to it (§app.overseer/links).
 - **Approve-later and rule options.** An answer option may carry `at` (and `until`), which makes its
   click an approval for later, or `rule`, which makes its click adopt a standing rule; the button
   says so under its label, and the card shows the approval's state (§app.overseer/approvals).
-- **The composer chip.** While the Overseer's thread has open cards, its composer shows a chip
-  ("2 open cards") whose menu lists each one (id, title) and jumps to its card. It counts the open
-  cards of the whole branch, also those above the rows the view has loaded (the transcript's summary
-  of older rows carries each open card's newest snapshot and its row), and a jump to one of those
-  builds the older rows down to it first. The run-status row has exactly two ends, whatever it
-  carries: at the left the live dot, the step's icon and the subagents trigger; at the right,
-  together, "3 of 10 running" (§app.overseer/caps), the card chip, then the Inputs trigger last.
-  Nothing sits between the two ends.
+- **In the composer's badge.** While the Overseer's thread has open cards, the composer's waiting
+  badge (§chat.composer/waiting-badge) counts them as its option cards, and its dialog
+  (§chat.composer/waiting-dialog) lists each one (id, title) with Show in Chat, which jumps to its
+  card. It counts the open cards of the whole branch, also those above the rows the view has loaded
+  (the transcript's summary of older rows carries each open card's newest snapshot and its row), and
+  a jump to one of those builds the older rows down to it first. The run-status row carries no card
+  chip and has exactly two ends, whatever it carries: at the left the live dot, the step's icon and
+  the subagents trigger; at the right, together, "3 of 10 running" (§app.overseer/caps), then the
+  Inputs trigger last. Nothing sits between the two ends.
 - **Hide tool calls never folds it.** The card is the Overseer's question, not its working, so
   "Hide tool calls" leaves it (and its result) in the thread, like the link card
   (§app.overseer/links-tools).
@@ -893,7 +894,7 @@ session is on which branch survives a compaction and a restart:
 The Overseer's chat and its earlier conversations never fetch their older rows in the
 background, in a browser on this machine too: they hold the newest rows and the ones the reader
 scrolls up to or a jump fetches (§chat.transcript/rendering), so the end of a reply fetches again
-only those. The card chip still counts every open card on the branch, and the chip, a card
+only those. The composer's waiting badge still counts every open card on the branch, and its dialog, a card
 reference and the Timeline still reach every card and message on it: one above the rows held is
 fetched down to, then lands.
 
@@ -909,7 +910,7 @@ fetched down to, then lands.
   configurable in Settings → Overseer; a settings file without the two new ones reads them as their
   defaults.
 - **The running count shows.** While any Overseer-started session counts as running, the
-  Overseer's composer shows "3 of 10 running" beside its chips, from the same count the cap
+  Overseer's composer shows "3 of 10 running" in its run-status row, from the same count the cap
   checks, and the refusal and the prompt name Settings → Overseer → Limits. The text is a button
   that opens Settings → Overseer scrolled to Limits. The running-at-once refusal tells the model
   to tell the user in plain words which limit was reached and that it can be raised in Settings →

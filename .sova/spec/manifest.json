@@ -2986,7 +2986,7 @@
         "src/components/Composer.tsx",
         "src/design/base.css",
         "src/app.css",
-        "src/components/AlignChip.tsx",
+        "src/components/WaitingBadge.tsx",
         "src/design/align-viewer.css",
         "src/components/VoiceInput.tsx",
         "src/design/voice.css",
@@ -3959,16 +3959,19 @@
         "src/lib/api.ts",
         "src/design/base.css",
         "shared/protocol.ts",
-        "server/session-offers.ts"
+        "server/session-offers.ts",
+        "server/session-offers.test.ts",
+        "server/attention.ts",
+        "server/overseer.ts"
       ],
       "requires": [
         "§app.overseer/confirm",
         "§app.decisions/asks-user"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§chat.offers/conditions": {
@@ -4003,9 +4006,9 @@
         "§chat.profiles/projects"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§chat.offers/from-another-chat": {
@@ -4064,9 +4067,9 @@
         "§chat.offers/from-another-chat"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§chat.offers/tool": {
@@ -4093,9 +4096,9 @@
         "§chat.offers/file"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§chat.slash-commands/announcements": {
@@ -6962,7 +6965,7 @@
         "server/overseer-card-tool.ts",
         "server/overseer.ts",
         "server/project-overseer.ts",
-        "src/components/OverseerCardChip.tsx",
+        "src/components/WaitingDialog.tsx",
         "src/components/ChatView.tsx",
         "src/components/Composer.tsx",
         "shared/row-counts.ts",
@@ -8121,9 +8124,9 @@
         "§app.session-list/spine"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T20:31Z",
-        "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#76a2e465"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§teams.defaults/command": {
@@ -11885,10 +11888,11 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "src/components/AlignChip.tsx",
+        "src/components/WaitingDialog.tsx",
         "src/components/Composer.tsx",
         "src/components/ChatView.tsx",
         "src/lib/align.ts",
+        "src/lib/waiting.ts",
         "src/lib/align.test.ts",
         "src/design/align-viewer.css",
         "src/design/base.css",
@@ -11900,7 +11904,12 @@
         "§chat.alignment/card",
         "§chat.composer/anatomy",
         "§chat.transcript/rendering"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+      }
     },
     "§chat.alignment/document": {
       "kind": "behavior",
@@ -14242,9 +14251,9 @@
         "§chat.offers/card"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§app.decisions/call-ledger": {
@@ -21021,6 +21030,55 @@
         "server/claude-login-state.ts"
       ]
     },
+    "§chat.composer/waiting-badge": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.composer/anatomy",
+        "§chat.alignment/chip",
+        "§chat.offers/card",
+        "§app.overseer/confirm"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/WaitingBadge.tsx",
+        "src/lib/waiting.ts",
+        "src/lib/waiting.test.ts",
+        "src/waiting.css",
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+      }
+    },
+    "§chat.composer/waiting-dialog": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.composer/waiting-badge",
+        "§chat.offers/card",
+        "§chat.offers/buttons",
+        "§chat.alignment/chip",
+        "§app.overseer/confirm"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/WaitingDialog.tsx",
+        "src/components/OfferCard.tsx",
+        "src/lib/waiting.ts",
+        "src/lib/waiting.test.ts",
+        "src/waiting.css",
+        "src/components/ChatView.tsx"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+      }
+    },
     "§tools.spec/span-promotion": {
       "kind": "behavior",
       "authority": "accepted",
@@ -21919,8 +21977,6 @@
         "src/components/ComposerMenu.tsx",
         "src/components/ModeMenu.tsx",
         "src/components/MeshHostMenu.tsx",
-        "src/components/AlignChip.tsx",
-        "src/components/OverseerCardChip.tsx",
         "src/components/CostsTab.tsx",
         "src/mesh.css",
         "src/costs-tab.css",

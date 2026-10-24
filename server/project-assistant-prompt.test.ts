@@ -51,3 +51,12 @@ test("its photo lines follow whether the owner can send photos", () => {
   assert.match(ASSISTANT_PHOTOS_ON, /never read personal numbers/);
   assert.match(ASSISTANT_PHOTOS_OFF, /can't send photos here/);
 });
+
+test("it offers to close a request made moot, and closes or reopens only after the owner's clear yes", () => {
+  const line = template.split("\n").find((l) => l.includes("close_request"));
+  assert.ok(line, "the closing line");
+  assert.match(line!, /made it moot/);
+  assert.match(line!, /only after their clear yes in their next message/);
+  assert.match(line!, /reopen_request/);
+  assert.match(line!, /the team's call/);
+});

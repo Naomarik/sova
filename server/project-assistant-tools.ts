@@ -10,14 +10,15 @@ import { orgDir, OrgError, readProjects, readRoster } from "./orgs";
 import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 import { advanceRequest, effectiveAssistantModel, fileRequest, orgRequests } from "./project-assistant-store";
 import { specLookupTools } from "./spec-lookup";
+import { assistantRequestTools } from "./assistant-request-tools";
 import { setFeatureStartForTest, startFeatureChat } from "./feature-chats";
 import type { ToolWords } from "./project-assistant-offers";
 
 /**
  * The Project Assistant's served tools (§app.project-assistant/tools). Always: the spec and code
  * look-ups (outsider view, server/spec-lookup.ts), the conversation-draft tools per project
- * (server/conversation-draft-tools.ts) with its own requirement_agree, report_issue and
- * owner_requests. By the project's Project Assistant column: start_fix (codingStart), deploy
+ * (server/conversation-draft-tools.ts) with its own requirement_agree, report_issue,
+ * owner_requests and close_request / reopen_request on the owner's yes (server/assistant-request-tools.ts). By the project's Project Assistant column: start_fix (codingStart), deploy
  * (deploy), start_version (copiesRun) and start_feature_chat (gather), each set off as the caller
  * kind `assistant` (assistantActs below), never as the operator, in the operator's own turns too
  * (§app.project-assistant/offers: no part of the question is skipped). Which of them the model sees,
@@ -168,8 +169,6 @@ function followStart(orgId: string, projectId: string, v: OwnerVersion, done: Pr
   t.unref?.();
 }
 
-const STATUS_WORDS: Record<string, string> = { "with-team": "with the team", started: "being worked on", done: "done", declined: "not planned" };
-
 export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
   const orgId = ctx.orgId;
   const words = ctx.words ?? { releaseSelf: true, versionStart: true };
@@ -202,20 +201,6 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
       const kind = (["bug", "outage", "question", "feature"] as const).includes(params.kind) ? (params.kind as OwnerRequestKind) : "bug";
       const r = fileRequest(orgId, { projectId: p.id, kind, title: params.title, text: params.text });
       return say(kind === "outage" ? "Filed, and the team was alerted at once. Tell the owner the team knows the app is down." : "Filed with the team. Tell the owner it's with the team and they can follow it under Your requests.", { request: r.id });
-    },
-  };
-
-  const ownerRequests: ToolSpec = {
-    name: "owner_requests",
-    label: "The owner's requests",
-    description: "The owner's requests and where each one stands (with the team, being worked on, done, not planned), newest first.",
-    promptSnippet: "owner_requests: the owner's requests and where they stand",
-    parameters: obj({}, []),
-    async execute() {
-      const names = new Map(assistantProjects(orgId).map((p) => [p.id, p.name]));
-      const rows = orgRequests(orgId).filter((r) => names.has(r.projectId));
-      if (!rows.length) return say("The owner has no requests yet.");
-      return say(rows.map((r) => `- ${r.title} (${names.get(r.projectId)}): ${STATUS_WORDS[r.status] ?? r.status}, since ${r.updatedAt.slice(0, 10)}`).join("\n"));
     },
   };
 
@@ -414,11 +399,13 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
 
   const drafts = conversationDraftTools({ sessionId: ctx.sessionId, conversation, projects: () => assistantProjects(orgId).map((p) => ({ projectId: p.id, name: p.name })) });
   const lookups = specLookupTools({ sessionId: ctx.sessionId, projects: () => assistantProjects(orgId), view: "outsider" });
-  return [...lookups, agree, ...drafts, reportIssue, ownerRequests, startFix, deploy, ownerVersions, startVersion, startFeature];
+  // The owner's requests, and their close and reopen on the owner's yes (§app.project-assistant/closing).
+  const [ownerRequests, closeRequest, reopenRequest] = assistantRequestTools({ orgId, sessionId: ctx.sessionId, owner: ctx.owner, projects: () => assistantProjects(orgId), branch: ctx.branch });
+  return [...lookups, agree, ...drafts, reportIssue, ownerRequests!, closeRequest!, reopenRequest!, startFix, deploy, ownerVersions, startVersion, startFeature];
 }
 
 /** The tool names, in loadout order (the allowlist). */
-export const ASSISTANT_TOOL_NAMES = ["spec_lookup", "code_read", "requirement_agree", "requirement_drop", "requirements_summary", "requirements_confirm", "report_issue", "owner_requests", "start_fix", "deploy", "owner_versions", "start_version", "start_feature_chat"] as const;
+export const ASSISTANT_TOOL_NAMES = ["spec_lookup", "code_read", "requirement_agree", "requirement_drop", "requirements_summary", "requirements_confirm", "report_issue", "owner_requests", "close_request", "reopen_request", "start_fix", "deploy", "owner_versions", "start_version", "start_feature_chat"] as const;
 
 export { setFeatureStartForTest };
 

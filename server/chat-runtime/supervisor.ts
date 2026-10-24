@@ -180,6 +180,8 @@ export const CHAT_PROCESS_ENV = [
   "SOVA_CHAT_LIVE_ROOT",
   "SOVA_CHAT_COPIES_ROOT",
   "SOVA_CALLER_KEY",
+  // accounts.ts LOGIN_CONTEXT_ENV: a chat's project login, handed over per chat (never inherited by a server).
+  "SOVA_CLAUDE_LOGIN_CONTEXT",
 ] as const;
 
 /** Delete every chat process's own variable from a server's env (the server: at boot, before anything reads it); the names it held. */

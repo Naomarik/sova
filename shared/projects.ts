@@ -38,3 +38,30 @@ export interface ProjectRegistered {
   /** The folder asked for, when the project's root is its checkout root instead. */
   normalizedFrom?: string;
 }
+
+/** What a project's or org's Claude login resolves to (§app.claude-logins/project-login). */
+export interface ClaudeLoginResolved {
+  /** A login id of the host that runs the project ("default": its own login). */
+  login: string;
+  /** Whose setting it is: the project's own, or its organization's for its projects. */
+  source: "project" | "org";
+  /** The project's or the organization's name. */
+  name: string;
+}
+
+/** `GET`/`PUT /api/projects/:pid/claude-login`. */
+export interface ProjectClaudeLogin {
+  /** A login id, "none" (this computer's order) or "org" (same as its organization; only while placed). */
+  setting: string;
+  /** Placed in an organization: "Same as organization" is offered. */
+  placed: boolean;
+  /** While placed: the organization's login for its projects (null: none). */
+  orgLogin?: string | null;
+  resolved: ClaudeLoginResolved | null;
+}
+
+/** `GET`/`PUT /api/orgs/:id/claude-login`. */
+export interface OrgClaudeLogin {
+  /** A login id, or "none". */
+  setting: string;
+}

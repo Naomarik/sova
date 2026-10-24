@@ -1117,6 +1117,9 @@ export interface ClaudeAccountsInfo {
   pool?: ClaudePoolInfo;
   /** macOS only: Claude Code's own login can't be read here (§app.claude-logins/macos-keychain). Absent otherwise. */
   claudeOwnLoginUnreadable?: true;
+  /** Login id → the projects and organizations here that use it ("Project Acme", "Organization Fold")
+      (§app.claude-logins/project-login). Absent when none does. */
+  usedBy?: Record<string, string[]>;
 }
 /** A device of the mesh, as the pool shows it. */
 export interface ClaudePoolDevice {
@@ -1184,6 +1187,9 @@ export interface ChatClaudeLogin {
   /** A pick waiting for the running reply to end, or being applied (a borrow in flight)
       (§app.claude-logins/switch-queue). */
   pending?: { id: string; name: string };
+  /** Not recorded yet, and the login shown is the chat's project's (`project`) or its organization's
+      for its projects (`org`) (§app.claude-logins/project-login). Absent otherwise. */
+  source?: "project" | "org";
 }
 /** How every refusal of `set_claude_login` begins, so the chat shows it as that switch's banner. */
 export const LOGIN_UNCHANGED = "Claude login unchanged:";

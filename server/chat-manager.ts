@@ -2518,14 +2518,14 @@ class ChatSession {
 
   /** This chat's Claude login with its waiting pick, as every tab is told it. */
   loginMessage(): ChatServerMessage {
-    const msg = claudeLoginMessage(this.harness.branch(), undefined, { pending: this.loginPending });
+    const msg = claudeLoginMessage(this.harness.branch(), undefined, { pending: this.loginPending, cwd: this.harness.cwd || undefined });
     this.noteLogin(msg.login);
     return msg;
   }
 
   /** The `claude_login` message every hello is followed by (claudeLoginAfterHello). */
   private loginAfterHello(): ChatServerMessage {
-    const msg = claudeLoginAfterHello(this.harness.branch(), undefined, { pending: this.loginPending }); // the branch's newest entry
+    const msg = claudeLoginAfterHello(this.harness.branch(), undefined, { pending: this.loginPending, cwd: this.harness.cwd || undefined }); // the branch's newest entry
     this.noteLogin(msg.login);
     return msg;
   }
@@ -2538,7 +2538,7 @@ class ChatSession {
   setClaudeLogin(login: string | null): void {
     assertNotLive(this.path);
     this.assertNoForeignWrites();
-    const current = chatClaudeLogin(this.harness.branch())?.id;
+    const current = chatClaudeLogin(this.harness.branch(), undefined, { cwd: this.harness.cwd || undefined })?.id;
     if (login !== null && login !== current) {
       if (!/^(default|l-[0-9a-f]{8})$/.test(login)) throw new Error("There's no such Claude login.");
       if (!(this.harness.model()?.ref ?? "").startsWith("claude-code-cli/")) throw new Error("This chat isn't on a Claude Code model.");

@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 466 |
-| Routes a catalogue entry points at | 100 |
-| Catalogue entries | 127 |
+| Routes registered | 470 |
+| Routes a catalogue entry points at | 104 |
+| Catalogue entries | 131 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -96,6 +96,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.get` | Show Project | looks | `GET /api/projects/:pid` | sessions |
 | `project.create` | Add Project | changes | `POST /api/projects` | admin |
 | `project.update` | Edit Project | changes | `PATCH /api/projects/:pid` | admin |
+| `project.claude-login.get` | Show Project Claude Login | looks | `GET /api/projects/:pid/claude-login` | sessions |
+| `project.claude-login.set` | Set Project Claude Login | changes | `PUT /api/projects/:pid/claude-login` | admin |
 | `project.archive` | Archive Project | changes | `POST /api/projects/:pid/archive` | admin |
 | `project.unarchive` | Unarchive Project | changes | `POST /api/projects/:pid/unarchive` | admin |
 | `project.preview.off` | Turn Off Preview Link | changes | `POST /api/previews/:id/off` | admin |
@@ -154,6 +156,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `org.owner.request.chat` | Start Chat | changes | `POST /api/orgs/:id/owner/requests/:rid/chat` | admin |
 | `org.owner.request.done` | Mark Done | changes | `POST /api/orgs/:id/owner/requests/:rid` | admin |
 | `org.owner.request.decline` | Decline | changes | `POST /api/orgs/:id/owner/requests/:rid` | admin |
+| `org.claude-login.get` | Show Organization Claude Login | looks | `GET /api/orgs/:id/claude-login` | sessions |
+| `org.claude-login.set` | Set Organization Claude Login | changes | `PUT /api/orgs/:id/claude-login` | admin |
 | `chat.stop` | Stop | changes | `POST /api/chat/action` | sessions |
 | `chat.compact` | Compact | changes | `POST /api/chat/action` | sessions |
 | `chat.rewind` | Rewind | changes | `POST /api/chat/action` | sessions |
@@ -621,6 +625,8 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `POST /api/mode/command` | full | `chat.mode-command` |
 | `GET /api/models` | sessions | `models.list` |
 | `PUT /api/models/favorite` | sessions | `models.favorite` |
+| `GET /api/orgs/:id/claude-login` | sessions | `org.claude-login.get` |
+| `PUT /api/orgs/:id/claude-login` | admin | `org.claude-login.set` |
 | `POST /api/orgs/:id/owner/requests/:rid` | admin | `org.owner.request.decline`, `org.owner.request.done` |
 | `POST /api/orgs/:id/owner/requests/:rid/chat` | admin | `org.owner.request.chat` |
 | `GET /api/overseer/attention` | sessions | `overseer.attention` |
@@ -642,6 +648,8 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `GET /api/projects/:pid` | sessions | `project.get` |
 | `PATCH /api/projects/:pid` | admin | `project.update` |
 | `POST /api/projects/:pid/archive` | admin | `project.archive` |
+| `GET /api/projects/:pid/claude-login` | sessions | `project.claude-login.get` |
+| `PUT /api/projects/:pid/claude-login` | admin | `project.claude-login.set` |
 | `GET /api/projects/:pid/costs` | sessions | `project.costs` |
 | `GET /api/projects/:pid/files` | sessions | `project.files.list` |
 | `GET /api/projects/:pid/overseer/idea` | sessions | `project.overseer.idea.get` |

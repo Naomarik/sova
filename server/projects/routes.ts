@@ -8,6 +8,8 @@ import { ADD_LEAD, confirmRefusal, OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER,
 import { cancelHeld } from "../project-holds";
 import { archiveBlockers } from "../project-overseer";
 import { nudgeMarks } from "../session-feed";
+import { knownLogin, UNKNOWN_LOGIN } from "../claude-login-known";
+import { projectLoginView, setProjectLogin } from "./claude-login";
 import { cloneRepo, overseerRepoProblem } from "./clone";
 import { reservedRoots } from "./contributions";
 import { RegistryError, reservedRootProblem } from "./registry";
@@ -108,6 +110,20 @@ export function registerProjectRoutes(app: Hono<any>): void {
   );
 
   app.get("/api/projects/:pid", handle((c) => c.json(readProject(pidOf(c)), 200, NO_STORE)));
+
+  // The project's Claude login (§app.claude-logins/project-login): kept on this host, new chats only.
+  app.get("/api/projects/:pid/claude-login", handle((c) => c.json(projectLoginView(pidOf(c)), 200, NO_STORE)));
+  app.put(
+    "/api/projects/:pid/claude-login",
+    handle(async (c) => {
+      const pid = pidOf(c);
+      const p = readProject(pid);
+      const login = (await body(c)).login;
+      if (login === "org" && p.space.kind === "standalone") throw new OrgError("Only a project an organization places can follow it.");
+      if (login !== "org" && login !== "none" && !knownLogin(login)) throw new OrgError(typeof login === "string" ? UNKNOWN_LOGIN : "Expected { login: <login id> | \"org\" | \"none\" }");
+      return c.json(setProjectLogin(pid, login as string), 200, NO_STORE);
+    }),
+  );
 
   app.patch(
     "/api/projects/:pid",

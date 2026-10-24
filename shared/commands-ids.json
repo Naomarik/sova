@@ -127,7 +127,11 @@
     "org.owner.request.chat",
     "org.owner.request.done",
     "org.owner.request.decline",
-    "settings.assistant-default.set"
+    "settings.assistant-default.set",
+    "project.claude-login.get",
+    "project.claude-login.set",
+    "org.claude-login.get",
+    "org.claude-login.set"
   ],
   "retired": [
     "settings.agents.get"

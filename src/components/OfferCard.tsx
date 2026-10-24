@@ -4,6 +4,7 @@ import type { OfferCard } from "../../shared/session-offers";
 import { chooseOfferButton, getSessionOffers, setOfferNotNow } from "../lib/api";
 import { toast } from "../lib/ui-state";
 import { Icon } from "./ui";
+import "../waiting.css";
 
 /**
  * Offer cards (§chat.offers/card): a project's named button cards, drawn like the Overseer's decision
@@ -17,6 +18,8 @@ export interface OfferControls {
   card(id: string): OfferCard | undefined;
   /** Cards no `offer` call in this transcript carries: shown by another chat. */
   tray(): OfferCard[];
+  /** Every open card of the session, wherever it stands (the composer's waiting badge counts them). */
+  open(): OfferCard[];
   busy(id: string): boolean;
   choose(card: OfferCard, index: number): void;
   notNow(card: OfferCard): void;
@@ -70,6 +73,7 @@ export function createOfferControls(path: () => string, inThread: (card: OfferCa
   return {
     card: (id) => state.cards.find((c) => c.id === id),
     tray: () => state.cards.filter((c) => !inThread(c) && (c.state === "open" || shownHere().has(c.id))),
+    open: () => state.cards.filter((c) => c.state === "open"),
     busy: (id) => busy() === id,
     choose(card, index) {
       if (!canAct() || busy()) return;
@@ -99,19 +103,6 @@ export function OfferCardView(props: { card: OfferCard }) {
   const ctx = useContext(OfferContext);
   const card = () => ctx?.card(props.card.id) ?? props.card;
   const open = () => card().state === "open";
-  const canAct = () => !!ctx && open() && !ctx.busy(card().id);
-  // A button with a confirm asks first (§chat.offers/buttons): its question, then Cancel or the label again.
-  const [asking, setAsking] = createSignal<number | null>(null);
-  const asked = () => {
-    const i = asking();
-    return i === null ? undefined : card().buttons[i];
-  };
-  const press = (i: number) => {
-    if (!canAct()) return;
-    if (card().buttons[i]?.confirm && asking() !== i) return void setAsking(i);
-    setAsking(null);
-    ctx!.choose(card(), i);
-  };
   return (
     <section class="card overseer-confirm overseer-card offer-card" data-offer-id={card().id} data-phase={card().state} aria-label={`Offer ${card().id}: ${card().title}`}>
       <div class="card-head overseer-card-head">
@@ -125,45 +116,87 @@ export function OfferCardView(props: { card: OfferCard }) {
       <div class="card-foot overseer-card-foot">
         <Show when={open()} fallback={<OfferOutcome card={card()} />}>
           <Show when={ctx} fallback={<span class="overseer-confirm-hint">Waiting for an answer: {card().buttons.map((b) => b.label).join(" · ")}.</span>}>
-          <Show when={asked()}>
-            {(b) => (
-              <div class="offer-card-confirm" role="group" aria-label={`Confirm ${b().label}`}>
-                <p class="overseer-confirm-detail">{b().confirm}</p>
-                <div class="overseer-card-buttons">
-                  <button type="button" class="button button-sm button-ghost" onClick={() => setAsking(null)}>
-                    Cancel
-                  </button>
-                  <button type="button" class="button button-sm button-destructive" aria-disabled={canAct() ? undefined : "true"} onClick={() => press(asking()!)}>
-                    {b().label.replace(/…$/, "")}
-                  </button>
-                </div>
-              </div>
-            )}
-          </Show>
-          <Show when={asking() === null}>
-          <div class="overseer-card-buttons">
-            <For each={card().buttons}>
-              {(b, i) => (
-                <button
-                  type="button"
-                  class="button button-sm"
-                  aria-disabled={canAct() ? undefined : "true"}
-                  title={b.about}
-                  onClick={() => press(i())}
-                >
-                  {b.label}
-                </button>
-              )}
-            </For>
-            <button type="button" class="button button-sm button-ghost offer-card-not-now" aria-disabled={canAct() ? undefined : "true"} title="Hide this offer for the rest of this session." onClick={() => canAct() && ctx!.notNow(card())}>
-              Not Now
-            </button>
-          </div>
-          </Show>
+            <OfferActions card={props.card} />
           </Show>
         </Show>
       </div>
     </section>
+  );
+}
+
+/**
+ * An open card's buttons and Not Now, with a button's confirm step: the card's own controls, also
+ * drawn by the composer's Waiting on you dialog (§chat.composer/waiting-dialog), so a press there
+ * answers the same card the same way. Needs OfferContext.
+ */
+export function OfferActions(props: { card: OfferCard }) {
+  const ctx = useContext(OfferContext);
+  const card = () => ctx?.card(props.card.id) ?? props.card;
+  const open = () => card().state === "open";
+  const canAct = () => !!ctx && open() && !ctx.busy(card().id);
+  // A button with a confirm asks first (§chat.offers/buttons): its question, then Cancel or the label again.
+  const [asking, setAsking] = createSignal<number | null>(null);
+  const asked = () => {
+    const i = asking();
+    return i === null ? undefined : card().buttons[i];
+  };
+  // Focus stays on the card through the confirm step: Cancel takes it when the question opens,
+  // and the button that asked gets it back on Cancel (a press on a removed button drops it).
+  let group: HTMLDivElement | undefined;
+  const focusIn = (sel: string) => queueMicrotask(() => group?.querySelector<HTMLElement>(sel)?.focus());
+  const press = (i: number) => {
+    if (!canAct()) return;
+    if (card().buttons[i]?.confirm && asking() !== i) {
+      setAsking(i);
+      return focusIn(".offer-card-cancel");
+    }
+    setAsking(null);
+    ctx!.choose(card(), i);
+  };
+  const cancel = () => {
+    const i = asking();
+    setAsking(null);
+    if (i !== null) focusIn(`[data-offer-button="${i}"]`);
+  };
+  return (
+    <div class="offer-card-actions" ref={group}>
+      <Show when={asked()}>
+        {(b) => (
+          <div class="offer-card-confirm" role="group" aria-label={`Confirm ${b().label}`}>
+            <p class="overseer-confirm-detail">{b().confirm}</p>
+            <div class="overseer-card-buttons">
+              <button type="button" class="button button-sm button-ghost offer-card-cancel" onClick={cancel}>
+                Cancel
+              </button>
+              <button type="button" class="button button-sm button-destructive" aria-disabled={canAct() ? undefined : "true"} onClick={() => press(asking()!)}>
+                {b().label.replace(/…$/, "")}
+              </button>
+            </div>
+          </div>
+        )}
+      </Show>
+      <Show when={asking() === null}>
+        <div class="overseer-card-buttons">
+          <For each={card().buttons}>
+            {(b, i) => (
+              <button
+                type="button"
+                class="button button-sm"
+                data-offer-button={i()}
+                aria-disabled={canAct() ? undefined : "true"}
+                title={b.about}
+                onClick={() => press(i())}
+              >
+                {b.label}
+              </button>
+            )}
+          </For>
+          <button type="button" class="button button-sm button-ghost offer-card-not-now" aria-disabled={canAct() ? undefined : "true"} title="Hide this offer for the rest of this session." onClick={() => canAct() && ctx!.notNow(card())}>
+            Not Now
+          </button>
+        </div>
+      </Show>
+    </div>
   );
 }
 

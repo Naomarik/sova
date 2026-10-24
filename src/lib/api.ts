@@ -1,6 +1,8 @@
 import type { AssistantInfo, AssistantView, PricedPick } from "../../shared/project-assistant";
 import type { OrgClaudeLogin, ProjectClaudeLogin } from "../../shared/projects";
 import type { ModelPick, WorkModels } from "../../shared/powers";
+import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
+import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow } from "../../shared/project-settings";
 import type { ProfilesListing } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
@@ -61,8 +63,11 @@ import type {
   BatchRefusal,
   SessionGroup,
   SessionHiddenWorkers,
+  TeamInboxBody,
+  TeamInboxView,
   SessionInsight,
   SessionSetup,
+  SessionSetupFileText,
   SessionTools,
   SessionSummary,
   ThemeList,
@@ -135,7 +140,7 @@ import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../
 import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../shared/provider-limits";
 import type { TargetInfo } from "./remote-session";
 import type { CommandEntry } from "../../shared/commands-catalog";
-import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo, TagsBackfillProgress, TagsBackfillScope } from "../../shared/protocol";
+import type { AlignTriage, WorkerChecks, DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
 import { upgradeLegacyRows } from "./legacy-rows";
 import { onAuthorized, onUnauthorized } from "./auth";
@@ -956,6 +961,16 @@ export const fetchSessionInsight = (path: string) =>
 export const fetchHiddenWorkers = (path: string) =>
   request<SessionHiddenWorkers>(`/api/insights/session/workers?path=${encodeURIComponent(path)}`);
 
+/** One team member's inbox, read-only (§app.subagents-pane/member-inbox): its items, newest first,
+    without bodies. Polled while the pane's Inbox tab is open. */
+export const fetchTeamInbox = (path: string, teamId: string, workerId: string) =>
+  request<TeamInboxView>(`/api/insights/session/inbox?path=${encodeURIComponent(path)}&team=${encodeURIComponent(teamId)}&worker=${encodeURIComponent(workerId)}`);
+/** One inbox item's whole message, read when it is opened. */
+export const fetchTeamInboxBody = (path: string, teamId: string, workerId: string, id: string) =>
+  request<TeamInboxBody>(
+    `/api/insights/session/inbox?path=${encodeURIComponent(path)}&team=${encodeURIComponent(teamId)}&worker=${encodeURIComponent(workerId)}&item=${encodeURIComponent(id)}`,
+  );
+
 /** The repository around a session's folder (read-only git). `fresh` skips the server's ~10s cache.
     Use loadGitSummary (lib/git-summary.ts), which shares a request already running. */
 export const fetchGitSummary = (path: string, fresh = false) =>
@@ -965,6 +980,9 @@ export const fetchGitSummary = (path: string, fresh = false) =>
     folder. `fresh` skips the server's cache. */
 export const fetchSessionSetup = (path: string, fresh = false) =>
   request<SessionSetup>(`/api/sessions/context?path=${encodeURIComponent(path)}${fresh ? "&fresh=1" : ""}`);
+/** One file the session's setup lists, as text (§chat.transcript/setup-card-open-file). Never cached. */
+export const fetchSetupFile = (path: string, file: string) =>
+  request<SessionSetupFileText>(`/api/sessions/context/file?path=${encodeURIComponent(path)}&file=${encodeURIComponent(file)}`);
 /** The tools a held chat declares to its model now (§chat.transcript/setup-card-tools). Never cached. */
 export const fetchSessionTools = (path: string) => request<SessionTools>(`/api/sessions/tools?path=${encodeURIComponent(path)}`);
 /** Switch a new session's context files and skills (§chat.transcript/setup-card-toggles): the
@@ -1129,19 +1147,15 @@ export async function putDecisionKey(key: string): Promise<DecisionKeyInfo> {
   }
 }
 
+/** The open alignment cards' triage (§app.decisions/align-triage): asked once per card version, only with attention signals on. */
+export const getAlignTriage = (path: string) => request<AlignTriage>(`/api/sessions/align-triage?path=${encodeURIComponent(path)}`);
+/** Each worker's newest done report check (§app.decisions/worker-report): asked once per report, only with attention signals on. */
+export const getWorkerChecks = (path: string) => request<WorkerChecks>(`/api/sessions/worker-checks?path=${encodeURIComponent(path)}`);
+
 export const deleteDecisionKey = () => request<DecisionKeyInfo>("/api/settings/decisions/key", { method: "DELETE" });
 
 /** One canned decision through the chain (the Test button). A provider failure is `ok: false`, not a throw. */
 export const probeDecisions = () => request<DecisionProbeResult>("/api/settings/decisions/probe", { method: "POST" });
-
-export const getTagsBackfill = () => request<TagsBackfillProgress>("/api/sessions/tags/backfill");
-
-/** Start tagging past sessions, or get the job already running. */
-export const startTagsBackfill = (scope: TagsBackfillScope) =>
-  request<TagsBackfillProgress>("/api/sessions/tags/backfill", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scope }) });
-
-/** Stop the running backfill; what it tagged stays. */
-export const cancelTagsBackfill = () => request<TagsBackfillProgress>("/api/sessions/tags/backfill/cancel", { method: "POST" });
 
 // ---- organizations and baton sessions (§app/organizations, §app/baton) -------------------------------
 
@@ -1554,3 +1568,24 @@ export async function runCommandRequest(method: string, url: string, body?: Reco
   else if (res.ok) onAuthorized();
   return { status: res.status, body: parsed };
 }
+
+// ---- session offers: a session's offer cards and the project page's list (§chat/offers) --------
+
+export const getSessionOffers = (path: string) => request<SessionOffersAnswer>(`/api/session-offers?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+export const chooseOfferButton = (path: string, card: string, button: number) =>
+  request<{ card: OfferCard }>("/api/session-offers/choose", { method: "POST", body: JSON.stringify({ path, card, button }) });
+export const setOfferNotNow = (path: string, offer: string) => request<{ notNow: string[] }>("/api/session-offers/snooze", { method: "POST", body: JSON.stringify({ path, offer }) });
+// A project's settings (§app.project-overseer/settings, shared/project-settings.ts).
+export const getProjectSettings = (projectId: string) => request<ProjectSettingsInfo>(`${projectPath(projectId)}/settings`, { cache: "no-store" });
+export const getSettingsHistory = (projectId: string) => request<SettingsHistoryRow[]>(`${projectPath(projectId)}/settings/history`, { cache: "no-store" });
+/** Apply and Approve (or Land, `card` "local"): a trust grant, from this page only. */
+export const applySettingsCard = (projectId: string, card: string, fingerprint: string) =>
+  request<SettingsApplyResult>(`${projectPath(projectId)}/settings/apply`, jsonInit("POST", { card, fingerprint }));
+/** Dismiss a card (Discard, for "local", with the fingerprint it showed). */
+export const withdrawSettingsCard = (projectId: string, card: string, fingerprint?: string) =>
+  request<ProjectSettingsInfo>(`${projectPath(projectId)}/settings/cards/${encodeURIComponent(card)}/withdraw`, jsonInit("POST", fingerprint ? { fingerprint } : {}));
+export const undoSettingsRow = (projectId: string, id: string) =>
+  request<{ undone?: SettingsHistoryRow[]; card?: SettingsCardView }>(`${projectPath(projectId)}/settings/undo`, jsonInit("POST", { id }));
+export const getProjectOffers = (projectId: string) => request<ProjectOffersAnswer>(`${projectPath(projectId)}/offers`, { cache: "no-store" });
+export const approveProjectOfferRuns = (projectId: string, fingerprint: string) =>
+  request<ProjectOffersAnswer>(`${projectPath(projectId)}/offers/approve`, { method: "POST", body: JSON.stringify({ fingerprint }) });

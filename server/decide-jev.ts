@@ -23,10 +23,10 @@ import { usagePurposeOf } from "./decide-llm";
 
 export const JEV_API = "https://api.typesafe.ai";
 export const JEV_TIMEOUT_MS = 8_000;
-/** Purposes nobody waits on (tags, subagent checks, a merge's follow-up check) get longer: Jev
+/** Purposes nobody waits on (a merge's follow-up check, a worker's report check; tags and subagent checks before they retired) get longer: Jev
     takes 3–9 s at these state sizes, and a timeout is a missing answer. */
 export const JEV_BACKGROUND_TIMEOUT_MS = 15_000;
-const BACKGROUND_PURPOSES: ReadonlySet<string> = new Set(["tags", "worker", "merge-followup"]);
+const BACKGROUND_PURPOSES: ReadonlySet<string> = new Set(["tags", "worker", "merge-followup", "worker-report"]);
 /** Jev's limit is 32k tokens for state + the longest question; keep a margin (chars/4 is rough). */
 export const JEV_MAX_TOKENS = 30_000;
 

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync } from "node:fs";
+import { homedir } from "node:os";
 import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type ChatSpecialKind, type RunStartAnswer, type ServerToolCall, type ServerToolDecl, type ServerToolOutcome, type SpecialSpec, unsentRefusal, type WorkerHost, type WorkerSpec } from "../shared/chat-runtime";
 import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORKER_HOST_EVENT, type WorkerHostAnnouncement } from "../pi-config/extensions/subagents/worker-host.ts";
 import { prepareOwnerArea } from "../shared/decisions";
@@ -53,6 +54,7 @@ import { cutTail, helloAfterHave, type HistoryPart, pullFields } from "./tail-he
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
 import { targetOfCwd } from "./targets";
+import { cwdFallbackNote, probeFolder, type CwdFallback } from "./session-cwd";
 import { sovaToken } from "./auth";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
@@ -95,6 +97,10 @@ import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, si
 import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { QUEUE_OPEN_TOOL, queuePushExtension, topicStore } from "./topics";
+import { OFFER_NOTE_MESSAGE, OFFER_TOOL } from "../shared/session-offers";
+
+/** The offer note in this process (a chat the server hosts itself: tests). */
+const offerNoteHere = async (sessionId: string): Promise<string | null> => (await import("./session-offers")).offerNoteFor(sessionId);
 import { noteUsageSession, registerUsageSession, resolveUsageAttribution } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { reviewSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
@@ -159,6 +165,8 @@ export function setServedTools(decls: readonly ServerToolDecl[] | null): void {
 export interface ChatHosts {
   playbook?: PlaybookHost;
   instanceNote?: (ctx: HookCtx) => Promise<string | null>;
+  /** The offer tool's note of a run button's outcome (§chat.offers/card). */
+  offerNote?: (sessionId: string) => Promise<string | null>;
 }
 let chatHosts: ChatHosts = {};
 export function setChatHosts(h: ChatHosts): void {
@@ -337,13 +345,33 @@ export class ConfigError extends Error {
  */
 const configFailures = new Map<string, ConfigError>();
 
+/** The first line of a refusal for a stored folder that is gone (src/lib/open-failure.ts parses it). */
+const GONE_PREFIX = "Stored session working directory does not exist: ";
+const goneError = (path: string, cwd: string) => new ConfigError(`${GONE_PREFIX}${cwd}\nSession file: ${path}`, cwd);
+
+/** Where an open happens, and whether that is the home folder standing in for a stored folder that is gone. */
+export interface OpenCwd {
+  cwd: string;
+  fallback: CwdFallback | null;
+}
+
 /**
- * Where an open must happen: the stored cwd, which must exist. Throws the ConfigError with the
- * stored cwd, the name the user knows; the banner's restore advice is about it.
+ * Where an open must happen (§app.shell/missing-folder-home): the stored cwd when it is there. A
+ * local stored cwd that is genuinely missing opens in the home folder of THIS host (the one the
+ * chat runs on: `home` defaults to its os.homedir(), read at the call). Refused with a ConfigError,
+ * naming the stored cwd: a folder Sova chose for the chat (`overridden`: a baton's or a project
+ * overseer's), a remote session's placeholder (the home folder here is not the target's), a home
+ * folder that is itself gone, and a stored cwd that exists but can't be reached (permission).
  */
-export function resolveOpenCwd(path: string, sessionCwd: string): string {
-  if (!existsSync(sessionCwd)) throw new ConfigError(`Stored session working directory does not exist: ${sessionCwd}\nSession file: ${path}`, sessionCwd);
-  return sessionCwd;
+export function resolveOpenCwd(path: string, sessionCwd: string, opts: { overridden?: boolean; home?: string } = {}): OpenCwd {
+  const probe = probeFolder(sessionCwd);
+  if (probe.state === "present") return { cwd: sessionCwd, fallback: null };
+  if (probe.state === "unreachable")
+    throw new ConfigError(`Stored session working directory can't be reached (${probe.code}): ${sessionCwd}\nSession file: ${path}`, sessionCwd);
+  if (opts.overridden || targetOfCwd(sessionCwd)) throw goneError(path, sessionCwd);
+  const home = opts.home ?? homedir();
+  if (!home || home === sessionCwd || probeFolder(home).state !== "present") throw goneError(path, sessionCwd);
+  return { cwd: home, fallback: { original: sessionCwd, cwd: home } };
 }
 
 /** The cached permanent failure for `path`, if it still applies. Exported because it is the whole
@@ -353,8 +381,11 @@ export function resolveOpenCwd(path: string, sessionCwd: string): string {
 export function activeConfigFailure(path: string): ConfigError | undefined {
   const failure = configFailures.get(path);
   if (!failure) return undefined;
-  if (existsSync(failure.cwd)) {
-    configFailures.delete(path); // the directory came back: let the next open try for real
+  // The directory came back, or what is wrong with it changed (an unreachable folder that is now
+  // gone opens in the home folder): let the next open try for real.
+  const now = probeFolder(failure.cwd).state;
+  if (now === "present" || (now === "missing" && !failure.message.startsWith(GONE_PREFIX))) {
+    configFailures.delete(path);
     return undefined;
   }
   return failure;
@@ -372,11 +403,14 @@ export function assertOpenConfig(path: string): void {
   if (known) throw known;
   // Detect it cheaply on the first connect too: the header's cwd is all it takes, and the open
   // would otherwise build a model runtime before the SDK reached the same conclusion.
-  const cwd = cwdOverride(path) ?? storedCwd(path);
-  if (cwd && !existsSync(cwd)) {
-    const failure = new ConfigError(`Stored session working directory does not exist: ${cwd}\nSession file: ${path}`, cwd);
-    configFailures.set(path, failure);
-    throw failure;
+  const override = cwdOverride(path);
+  const cwd = override ?? storedCwd(path);
+  if (!cwd) return;
+  try {
+    resolveOpenCwd(path, cwd, { overridden: override !== undefined });
+  } catch (err) {
+    if (err instanceof ConfigError) configFailures.set(path, err);
+    throw err;
   }
 }
 
@@ -407,9 +441,10 @@ function storedCwd(path: string): string | null {
 }
 
 /** The SDK throws MissingSessionCwdError; match by name so we don't depend on its class identity. */
+const isMissingCwdError = (err: unknown) => err instanceof Error && err.name === "MissingSessionCwdError";
 function asConfigError(err: unknown, cwd: string): ConfigError | null {
   if (err instanceof ConfigError) return err;
-  if (err instanceof Error && err.name === "MissingSessionCwdError") return new ConfigError(err.message, cwd);
+  if (isMissingCwdError(err)) return new ConfigError((err as Error).message, cwd);
   return null;
 }
 
@@ -1014,6 +1049,8 @@ class ChatSession {
   specialSpec: SpecialSpec | null = null;
   /** A worker chat's loadout (§app.chat-processes/workers), else null. */
   workerSpec: WorkerSpec | null = null;
+  /** Set when this chat runs in the home folder because its stored local folder is gone (§app.shell/missing-folder-home). */
+  cwdFallback: CwdFallback | null = null;
   specialPort: SpecialPort | null = null;
   /** Composer messages a kind attributes (`@clientSend`), one at a time, in order. */
   private clientSends: Promise<void> = Promise.resolve();
@@ -2705,6 +2742,7 @@ class ChatSession {
       thinking: harness.thinking(),
       context: toContextInfo(contextOfBranch(branch), this.host.models),
       ...(this.alignLaunch?.data ? { alignReview: this.alignLaunch.data.review } : {}),
+      ...(this.cwdFallback ? { cwdFallback: this.cwdFallback } : {}),
       ...(tail ? { live: tail } : {}),
     };
   }
@@ -4242,11 +4280,23 @@ async function openSession(path: string, onDisposed: () => void, onStep: (step: 
   }
 }
 
-async function openLocked(path: string, onDisposed: () => void, onStep: (step: string) => void): Promise<ChatSession> {
+async function openLocked(path: string, onDisposed: () => void, onStep: (step: string) => void, retried = false): Promise<ChatSession> {
   // Merely opening (browsing) a session never modifies its file: the model/thinking entries pi records
   // while building it wait in `file.deferred` for the first prompt (server/harness/pi/open.ts, P1).
   onStep("open file");
-  const file = await openPiSession(path, cwdOverride(path), onStep);
+  const override = cwdOverride(path);
+  let file = await openPiSession(path, override, onStep);
+  const sessionCwd = file.read.cwd;
+  // The runtime cannot be built against a directory that is gone. Decided here, in the process the
+  // chat runs in, whatever the server saw before it started (§app.shell/missing-folder-home): a
+  // local folder that is gone opens in this host's home folder; what can't open is classified
+  // (ConfigError, not "internal") and cheap to repeat.
+  const where: OpenCwd = sessionCwd ? resolveOpenCwd(path, sessionCwd, { overridden: override !== undefined }) : { cwd: sessionCwd, fallback: null };
+  if (where.fallback) {
+    // pi takes the cwd when it opens the file; the header keeps the stored one (nothing is written).
+    file.restoreAppends();
+    file = await openPiSession(path, where.cwd, onStep);
+  }
   // The chat that hosts this runtime, once bound: the vis extension is built before it exists, and
   // until bind() has resolved the chat's mode it reads the mode from the branch itself.
   const visHost: { chat?: ChatSession } = {};
@@ -4323,6 +4373,8 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
         ? [sessionPowersExtension({ sessionId: read.id, cwd, title: () => titleOf(read.branch()), profile: snap, run: profile.run, limits: profile.limits, path: () => path })]
         : [];
     const outline = special ? false : !isFanoutMember(read);
+    // The offer tool, served (its declaration came with the open) or, in this process, from the snapshot.
+    const offerSpecs: ToolSpec[] = special ? [] : servedDecls ? servedSpecs(path, (n) => n === OFFER_TOOL) : await (await import("./session-offers-tool")).sessionOfferTools(read.id, path, cwd);
     // A link member's tools are fixed by its creation marker, read at every build (§mesh.links/tools).
     const linkTools = isLinkMember(read) ? "member" : "legacy";
     return {
@@ -4349,9 +4401,11 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
                 : projectVerbsExtension(projectEngine),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
               servedDecls
-                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && !TOUR_TOOLS.has(n)))
+                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && !TOUR_TOOLS.has(n)))
                 : queuePushExtension({ sessionId: () => read.id, title: () => titleOf(read.branch()) }),
               servedVisToolsExtension("sova-tours", servedDecls ? servedSpecs(path, n => TOUR_TOOLS.has(n)) : tourTools(read.id, path), () => visHost.chat ? visHost.chat.modeState.minorModes.includes("vis") : undefined),
+              // offer: this project's offers, from the session's snapshot (§chat.offers/tool). Most chats have none: no extension.
+              ...(offerSpecs.length ? [servedToolsExtension("sova-session-offers", offerSpecs, (ctx) => (chatHosts.offerNote ?? offerNoteHere)(ctx.sessionId), OFFER_NOTE_MESSAGE)] : []),
               ...powers,
             ],
             ...overrides,
@@ -4399,18 +4453,29 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
       },
     };
   };
-  const sessionCwd = file.read.cwd;
-  // The runtime cannot be built against a directory that is gone. Check before doing the work, so
-  // the failure is classified (ConfigError, not "internal") and cheap to repeat.
-  const openCwd = sessionCwd ? resolveOpenCwd(path, sessionCwd) : sessionCwd;
+  const openCwd = where.cwd;
+  // In the home folder for a stored folder that is gone: the agent is told (a note after its prompt's
+  // own appends), and the sandbox does not make the home folder a writable root (§app.shell/missing-folder-home).
+  const fallback = where.fallback;
+  const placed = fallback
+    ? async (o: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
+        const b = await build(o);
+        return {
+          ...b,
+          promptNotes: [...(b.promptNotes ?? []), cwdFallbackNote(fallback)],
+          ...(worker ? {} : { flags: () => ({ ...b.flags(), cwdNotWritable: true }) }),
+        };
+      }
+    : build;
   try {
-    const host = new PiChatHost(await file.start(openCwd, build));
+    const host = new PiChatHost(await file.start(openCwd, placed));
     let unregisterUsage: (() => void) | undefined;
     const chat = new ChatSession(path, host, () => {
       unregisterUsage?.();
       forgetSpecial(path);
       onDisposed();
     });
+    chat.cwdFallback = fallback;
     // A Stop pressed before a restart still pauses its topic batches (§chat.topics/delivery).
     chat.topicsPaused = topicStore().receiverPaused(path);
     onStep("extensions start");
@@ -4484,6 +4549,12 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
     sessionsChanged(); // its row now carries `chat` (heldChatState)
     return chat;
   } catch (err) {
+    // The folder went between the check above and pi's own (deleted while the open ran): opened again,
+    // once, so it gets the home folder like any open that finds it gone.
+    if (!retried && !fallback && isMissingCwdError(err) && sessionCwd && probeFolder(sessionCwd).state === "missing") {
+      file.restoreAppends();
+      return openLocked(path, onDisposed, onStep, true);
+    }
     const config = asConfigError(err, sessionCwd);
     throw config ?? err;
   } finally {

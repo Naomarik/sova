@@ -3,12 +3,17 @@
 A static [Astro](https://astro.build) site for Sova, styled with the app's own design system:
 `src/styles/tokens.css` is a copy of `src/design/tokens.css`, and `src/styles/components.css` is a
 subset of `.claude/skills/fold-ai-dev-design/fold-ai-dev.css`. The home page's product screens
-and its session video are real Sova, captured on demo data (see Screens and video below); the
+and its hero video are real Sova, captured on demo data (see Screens and video below); the
 Mesh and Organizations pages, and the phone lock screen beside the Overseer, are CSS
 illustrations built from those classes.
 
 It ships static HTML and one stylesheet. The only JavaScript is two small inline scripts in
-`src/layouts/Base.astro` (the theme toggle and the copy button). No UI framework, no analytics,
+`src/layouts/Base.astro` (the theme toggle and the copy button) and the hero video's caption script in
+`src/components/screens/VideoCaption.astro`: under the video, a chapter bar (each segment a button
+that jumps to its chapter) and the chapter's name and caption say what it shows at that moment,
+from the cue list the recorder writes, following the video's own clock. Without JavaScript, with
+reduced motion or when the video can't play, the still shows with one fixed line and no bar;
+screen readers get the scene list once. No UI framework, no analytics,
 no web fonts from a CDN: Inter and JetBrains Mono are served from `public/fonts/` with their
 licenses.
 
@@ -60,8 +65,13 @@ Set `SOVA_SITE_URL` to the address the site is served from so link previews get 
   reply are in one plain-JSON file, `scripts/screens/story.json`; edit only that, then:
   `pnpm run screens:check` (names each problem by line and column), `pnpm run screens` (the
   screenshots whose inputs changed, as lossless WebP masters in `src/assets/screens/` with their
-  `manifest.json`), `pnpm run screens:video` (the session video in `public/video/`) and
-  `pnpm run screens:verify`. Commit the story with what they wrote. The pages take each image's
+  `manifest.json`), `pnpm run screens:video` (the hero video in `public/video/`, AV1
+  with an H.264 fallback, checked before it replaces the old one; nothing but the pointer is drawn
+  into it, its captions are page text from the cue list in the manifest; the phone section shows
+  stills only) and
+  `pnpm run screens:verify`. A reworded caption or chapter needs only `pnpm run screens:video -- --cues`, no new
+  recording. The video shows real provider and model names; the footer says the replies are
+  scripted and Sova isn't affiliated with the model makers. Commit the story with what they wrote. The pages take each image's
   alt text and size from the manifest; the build turns the masters into AVIF and WebP and never
   runs the capture, so a stale image builds without complaint. The capture needs the
   repository's root install and build, the playwright skill's browser and, for the video,
@@ -84,7 +94,7 @@ origin, or some crawlers ignore the image.
 
 ## Deploy: Cloudflare Pages
 
-Static output, no Functions and no adapter.
+Static output, no Functions and no adapter. The site is live at https://sova.naomarik.com/.
 
 | Setting | Value |
 | --- | --- |
@@ -103,7 +113,7 @@ is touched):
 ```sh
 cd site
 pnpm install --frozen-lockfile
-SOVA_SITE_URL=<the site's address> pnpm run build
+SOVA_SITE_URL=https://sova.naomarik.com/ pnpm run build
 node scripts/check-docs-leaks.mjs
 wrangler pages deploy dist --project-name <the Pages project> --branch main --commit-hash <sha>
 ```

@@ -225,7 +225,7 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
 `POST /api/mode?path=<session>` switches exactly the chat that file belongs to, and `mode.json` is
 not written. A chat this server doesn't hold open (one closed for being quiet,
 §app.chat-processes/idle-stop) is opened for it, as a send opens it; a session that can't open (a
-TUI holds it, its folder is gone) is refused with why (409), and a file that isn't there is a 404.
+TUI holds it, its remote placeholder folder is gone) is refused with why (409), and a file that isn't there is a 404.
 A switch of a project's coding session whose minor modes leave `spec` out is refused before
 anything switches (409, "Spec is always on for coding sessions; it can't be turned off.",
 §app.project-overseer/coding-mode). The chat then:
@@ -651,7 +651,9 @@ answer anything, and they never send a message into a chat.
   agent's or an extension's), its tools and commands work but its hooks
   stay inactive, and the mode's row says "Hooks need your approval" with **Approve Hooks**, which
   approves that exact version (refused, like a stale approval, when it changed since the row was
-  drawn). Only you approve hooks, from Sova's own page on this machine: an approval of hooks sent by
+  drawn). **Apply and Approve** on a project overseer's Settings change card that grants a mode records your
+  own approval of the version it lands (§app.project-overseer/settings), under the same page-only rule.
+  Only you approve hooks, from Sova's own page on this machine: an approval of hooks sent by
   the Overseer, by a chat's agent with its chat's key, by a script or extension sending Sova's token,
   or through a mesh peer is refused. An approval those callers give when turning a mode on is kept
   as theirs: its tools and commands run, its hooks wait for yours. Telling your page from a script is a heuristic (the

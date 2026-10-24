@@ -66,15 +66,15 @@ test("round.mjs reads every batch the server frames, note by note, and the same 
     assert.equal(round.TOPIC_NAME_RE.test(name), TOPIC_NAME_RE.test(name), name);
 });
 
-// The go-ahead carry-over (§chat.worktrees/merge-guard): the driver's copy of landing.ts's cleanMergeParent and
-// goAheadFor's chain must give the same answer for every kind of commit, in a real repository.
+// The go-ahead carry-over (§chat.merge-round/driver): a Land It recorded by landing.ts counts, through the driver's
+// own walk, across clean master merges only, for every kind of commit, in a real repository.
 interface RoundCarry {
   cleanMergeParent: (run: (args: string[]) => Promise<{ code: number; stdout: string }>, merge: string, target: string) => Promise<string | undefined>;
   landingAnswerAt: (landing: { goAheads: unknown[]; notYet: unknown[] }, branch: string, head: string, parentOf: (sha: string) => Promise<string | undefined>) => Promise<{ kind: string; at?: string } | null>;
   CARRY_MAX: number;
 }
 
-test("round.mjs's clean-merge carry-over matches landing.ts over clean, evil, resolved, octopus and other-branch merges", async () => {
+test("round.mjs carries landing.ts's go-ahead over clean master merges only: not evil, resolved, octopus or other-branch merges", async () => {
   const round = (await import(ROUND)) as RoundCarry;
   const landing = await import("../pi-config/extensions/worktrees/landing.ts");
   const { runGit } = await import("../pi-config/extensions/worktrees/git.ts");
@@ -137,25 +137,22 @@ test("round.mjs's clean-merge carry-over matches landing.ts over clean, evil, re
     const file = join(dir, "landing.json");
     landing.recordGoAhead({ branch: "feat", commit: P, at: "2026-10-24T00:00:00Z", by: "land-it" }, file);
     const parsed = landing.readLanding(file);
-    assert.equal(round.CARRY_MAX, landing.CARRY_MAX);
+    assert.equal(round.CARRY_MAX, 20);
     const answers: Record<string, boolean> = {};
+    const parents: Record<string, boolean> = {};
     for (const [name, sha] of Object.entries(cases)) {
-      const theirs = await round.cleanMergeParent(run, sha, "master");
-      const ours = await landing.cleanMergeParent(runGit, repo, sha, "master");
-      assert.equal(theirs, ours, name);
-      const viaRound = await round.landingAnswerAt(parsed, "feat", sha, (s) => round.cleanMergeParent(run, s, "master"));
-      const viaLanding = await landing.goAheadFor("feat", sha, file, { git: runGit, cwd: repo, target: "master" });
-      assert.equal(viaRound?.kind === "go-ahead", !!viaLanding, name);
-      answers[name] = !!viaLanding;
+      parents[name] = (await round.cleanMergeParent(run, sha, "master")) === P;
+      answers[name] = (await round.landingAnswerAt(parsed, "feat", sha, (s) => round.cleanMergeParent(run, s, "master")))?.kind === "go-ahead";
     }
+    assert.deepEqual(parents, { plain: false, clean: true, evil: false, octopus: false, otherBranch: false, resolved: false });
     assert.deepEqual(answers, { plain: true, clean: true, evil: false, octopus: false, otherBranch: false, resolved: false });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-// A later Not Yet stops the carry (§chat.worktrees/merge-guard): both copies stop at the first commit with an
-// answer, the newest answer there deciding, Not Yet a tie or an unreadable time.
+// The newest answer at one commit (§chat.worktrees/landing-answers): the driver's copy matches landing.ts's, Not Yet
+// a tie or an unreadable time; and the driver's walk stops at the first commit with an answer.
 interface RoundAnswer {
   landingAnswer: (landing: { goAheads: unknown[]; notYet: unknown[] }, branch: string, head: string) => { kind: string } | null;
   landingAnswerAt: RoundCarry["landingAnswerAt"];
@@ -177,7 +174,7 @@ test("round.mjs's newest-answer rule matches landing.ts's answerAt over every pa
   }
 });
 
-test("round.mjs and landing.ts both stop the carry at a later Not Yet: A pressed, Not Yet at B, C lands nothing", async () => {
+test("round.mjs stops the carry at a later Not Yet recorded by landing.ts: A pressed, Not Yet at B, C holds", async () => {
   const round = (await import(ROUND)) as RoundAnswer & RoundCarry;
   const landing = await import("../pi-config/extensions/worktrees/landing.ts");
   const { runGit } = await import("../pi-config/extensions/worktrees/git.ts");
@@ -210,15 +207,12 @@ test("round.mjs and landing.ts both stop the carry at a later Not Yet: A pressed
     const C = cleanMerge("m2.txt");
     const run = (args: string[]) => runGit(args, repo);
     const parentOf = (s: string) => round.cleanMergeParent(run, s, "master");
-    const carry = { git: runGit, cwd: repo, target: "master" };
     const file = join(dir, "landing.json");
     const both = async (label: string, want: Record<string, boolean>) => {
       const parsed = landing.readLanding(file);
       for (const [name, sha] of Object.entries({ A, B, C })) {
-        const ours = !!(await landing.goAheadFor("feat", sha, file, carry));
-        const theirs = (await round.landingAnswerAt(parsed, "feat", sha, parentOf))?.kind === "go-ahead";
-        assert.equal(theirs, ours, `${label}: ${name}`);
-        assert.equal(ours, want[name], `${label}: ${name}`);
+        const kind = (await round.landingAnswerAt(parsed, "feat", sha, parentOf))?.kind ?? null;
+        assert.equal(kind, want[name] ? "go-ahead" : "not-yet", `${label}: ${name}`);
       }
     };
     landing.recordGoAhead({ branch: "feat", commit: A, at: "2026-10-24T00:00:00Z", by: "land-it" }, file);

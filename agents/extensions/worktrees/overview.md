@@ -30,14 +30,12 @@ and each merge becomes a card.
 - `spec.ts`: when a merge is recorded, it adds the landing's spec warnings to the merge note (changed files no claim
   maps, draft records left behind, hand-resolved §, orphaned evidence), in any project with a spec, mode on or off.
 
-- `landing.ts` (builtins only): the merge guard's store, `<state root>/landing.json` (the user's go-ahead
-  per branch and exact commit, and Not Yet), and the switch `"mainMerges": "go-ahead"` read from the
-  target branch's `.sova/offers.json` (§chat.worktrees/merge-guard). Sova writes the store (a Land It
-  click, `server/session-offers.ts`; the operator's Merge Branch, `server/project-overseer.ts`) and the
-  merge round's driver reads it; `worktree merge` refuses a guarded merge without a record, the merge
-  captain's session excepted. `goAheadFor` (async) also carries a go-ahead over clean master merges
-  (`cleanMergeParent`); the round's driver keeps a copy, held equal by
-  `server/merge-round-rules.test.ts`: change both together.
+- `landing.ts` (builtins only): the user's answers on a branch's Landing card, `<state root>/landing.json`
+  (Land It or Not Yet per branch and commit, §chat.worktrees/landing-answers). Sova writes it (a click on
+  the card, `server/session-offers.ts`) and the merge round's driver reads it, carrying an answer over
+  clean master merges itself (`round.mjs` `cleanMergeParent`, `landingAnswerAt`). Nothing enforces it:
+  `worktree merge` needs no go-ahead. `answerAt`'s newest-answer rule has a copy in the driver
+  (`landingAnswer`), held equal by `server/merge-round-rules.test.ts`: change both together.
 
 `create <name>` runs `git worktree add -b feat/<name>` at `<parent of the main checkout>/.worktrees/<repo>-<name>`
 (AGENTS.md's worktree rule) and tracks it, so workers may start there. The dev watcher doesn't watch this directory: an edit reaches a running server only at
@@ -49,6 +47,6 @@ its restart.
 - `git.ts`'s `reviewBase`, `mergedReviewBase` or `REVIEW_LIMITS`: show-changes' tests too
   (`cd pi-config/extensions/show-changes && node --test git.test.ts`) and `server/git-diff.test.ts`; the
   tool and the viewer must keep choosing the same base and limits.
-- `landing.ts`'s file shape or the switch: Sova's writers and readers above and
+- `landing.ts`'s file shape: Sova's writers and readers above and
   `.sova/playbooks/merge-round/scripts/round.mjs` (its `parseLanding`) in the same branch.
 - `spec.ts`: [modes/spec](../../modes/spec/overview.md) (its MODE.md row).

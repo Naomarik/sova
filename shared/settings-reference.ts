@@ -372,10 +372,9 @@ export const SETTINGS_REFERENCE: Record<SettingId, ReferenceEntry> = {
     file: OFFERS_FILE,
     summary: "Button cards the project's chats may show.",
     edit: '{setting: "offers", file: {version: 1, offers: {…}} | null}',
-    grant: "An offers file with run buttons: its run buttons' approval. Turning mainMerges off (or removing the file while it is on).",
+    grant: "An offers file with run buttons: its run buttons' approval.",
     keys: {
       version: "1",
-      mainMerges: '"go-ahead": sessions merge into main/master only with your go-ahead for that commit (the merge captain exempt); turning it off is a grant',
       offers: "the offers by name (at most 8)",
       "offers.<name>.when": "when to show it",
       "offers.<name>.why": "why",

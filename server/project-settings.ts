@@ -477,7 +477,7 @@ const relOf = (root: string, abs: string): string => abs.slice(root.length + (ro
 
 /** The grant a file change holds (what it allows, keyed like its approval), or null. */
 export async function fileGrant(root: string, f: { setting: SettingId; id?: string; rel: string }, before: string | null, after: string | null): Promise<StoredGrant | null> {
-  if (f.setting === "offers") return offersGrant(root, before, after);
+  if (f.setting === "offers") return offersGrant(root, after);
   if (after === null) return null;
   if (f.setting === "services") return { key: `services:${root}`, setting: "services", what: "changes what runs on this computer (the project's services file)" };
   if (f.setting === "profile" && f.id) {
@@ -514,29 +514,14 @@ export async function fileGrant(root: string, f: { setting: SettingId; id?: stri
   return null;
 }
 
-/** MAIN_MERGES_GO_AHEAD in the text of an offers file (a broken file turns nothing on). */
-const guardOn = (text: string | null): boolean => {
-  const p = parseOffersFile(text);
-  return p.state === "ok" && p.mainMerges === "go-ahead";
-};
-
-/**
- * An offers file change's grant: its run buttons when they aren't approved as they are, and turning the merge
- * guard off (§chat.worktrees/merge-guard: `mainMerges` no longer "go-ahead", or the file removed), which lets
- * sessions merge into main/master without the user's go-ahead. One grant: the guard's words lead, the runs' pin rides along.
- */
-function offersGrant(root: string, before: string | null, after: string | null): StoredGrant | null {
-  const off = guardOn(before) && !guardOn(after);
-  const parsed = after === null ? null : parseOffersFile(after);
-  const fp = parsed ? runFingerprint(parsed) : null;
-  const runs = parsed && fp && !runsApproved(root, parsed) ? runButtonsOf(parsed) : [];
-  const runWords = runs.length ? `run buttons: ${runs.map((r) => `${r.label} (${r.offer}) runs ${r.run}`).join("; ")}` : "";
-  if (off) {
-    const what = "turns the merge guard off: sessions may merge into master without your go-ahead for each commit";
-    return { key: `offers:${root}`, setting: "offers", what: runWords ? `${what}; ${runWords}` : what, ...(runs.length ? { pin: fp } : {}) };
-  }
-  if (!runs.length) return null;
-  return { key: `offers:${root}`, setting: "offers", what: runWords, pin: fp };
+/** An offers file change's grant: its run buttons, when they aren't approved as they are (§chat.offers/approval). */
+function offersGrant(root: string, after: string | null): StoredGrant | null {
+  if (after === null) return null;
+  const parsed = parseOffersFile(after);
+  const fp = runFingerprint(parsed);
+  if (!fp || runsApproved(root, parsed)) return null;
+  const runs = runButtonsOf(parsed);
+  return { key: `offers:${root}`, setting: "offers", what: `run buttons: ${runs.map((r) => `${r.label} (${r.offer}) runs ${r.run}`).join("; ")}`, pin: fp };
 }
 
 /** A file change in words. */
@@ -1037,7 +1022,6 @@ async function recordApprovals(root: string, grants: StoredGrant[]): Promise<str
         done.push(g.key);
       }
     } else if (g.setting === "offers") {
-      // Turning the merge guard off records nothing: the operator's own Apply is the grant. Run buttons record their approval.
       if (g.pin !== undefined) approveRuns(root, parseOffersFile(readText(join(root, OFFERS_FILE))), g.pin);
       done.push(g.key);
     } else done.push(g.key);

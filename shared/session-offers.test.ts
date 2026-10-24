@@ -120,17 +120,17 @@ test("Sova's own offers file parses, and gives no Sova chat the tool", () => {
     ],
   );
   assert.deepEqual(landing.onlyIf, ["no-open-alignment", "ready-to-land"]);
-  assert.equal(f.mainMerges, "go-ahead", "Sova's repository turns the merge guard on");
+  assert.equal(JSON.parse(readFileSync(new URL("../.sova/offers.json", import.meta.url), "utf8")).mainMerges, undefined, "Sova's repository has no merge guard switch");
   assert.equal(snapshotOf(f), null);
 });
 
-test("mainMerges: absent or go-ahead; any other value breaks the whole file", () => {
-  const off = parseOffersFile(file({ a: offer() }));
-  assert.ok(off.state === "ok" && off.mainMerges === undefined);
-  const on = parseOffersFile(file({ a: offer() }, { mainMerges: "go-ahead" }));
-  assert.ok(on.state === "ok" && on.mainMerges === "go-ahead");
-  const bad = parseOffersFile(file({ a: offer() }, { mainMerges: true }));
-  assert.equal(bad.state, "broken");
+test("a leftover mainMerges (the retired merge guard's switch) is accepted, whatever its value, and does nothing", () => {
+  const plain = parseOffersFile(file({ a: offer() }));
+  for (const v of ["go-ahead", true, "off"]) {
+    const left = parseOffersFile(file({ a: offer() }, { mainMerges: v }));
+    assert.deepEqual(left, plain, String(v));
+  }
+  assert.equal(parseOffersFile(file({ a: offer() }, { mainMergez: "go-ahead" })).state, "broken", "any other unknown key still breaks the file");
 });
 
 test("a button's onlyIf, confirm and landing keys are checked like the offer's", () => {

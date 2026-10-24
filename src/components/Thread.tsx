@@ -4,6 +4,7 @@ import type { HandoffRunInfo, TmpAttachment, TranscriptItem } from "../../shared
 import { rowFacts } from "../../shared/wire-v1";
 import type { BatonMark } from "../../shared/baton";
 import { wrapupRowIds } from "../lib/wrapup-rows";
+import { readHoldTop } from "../lib/read-hold";
 import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState } from "../lib/live";
 import { agoTime, modelLabel, modelMismatch, prettyJson, stampTime, thousands, tildePath } from "../lib/format";
 import { useMinuteNow } from "../lib/minute-clock";
@@ -1891,8 +1892,9 @@ export function ThreadScroller(props: {
     if (!added) return false;
     const id = row.dataset.entry ?? "";
     readTo = null;
-    const top = el.scrollTop + row.getBoundingClientRect().bottom - el.getBoundingClientRect().bottom;
-    if (el.scrollHeight - top - el.clientHeight < FOLLOW_PX) return false;
+    // Clamped to what the view can scroll to: a transcript that fits stays following.
+    const top = readHoldTop(el, row.getBoundingClientRect().bottom - el.getBoundingClientRect().bottom, FOLLOW_PX);
+    if (top === null) return false;
     endJumpHold();
     el.scrollTop = top;
     lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;

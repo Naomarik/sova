@@ -5,7 +5,7 @@ import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, Settin
 import type { ProfilesListing } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
-import type { HostServicesView, ProjectServicesView, ServicesUiVerb } from "../../shared/services-view";
+import type { CopyLimitView, HostServicesView, ProjectServicesView, ServicesUiVerb } from "../../shared/services-view";
 import type { SubagentProfilesFile, SubagentProfilesInfo } from "../../shared/subagent-profiles";
 import type {
   VoiceDeviceInfo,
@@ -1400,6 +1400,9 @@ export const refreshPrices = () => request<PricesInfo>("/api/usage/prices/refres
 // ---- a project's software registry (§app/project-runtime) -------------------------------------------
 /** The project's copies on this host, for its Branches tab (§app.project-services/services-ui). */
 export const getProjectServices = (projectId: string) => request<ProjectServicesView>(`${projectPath(projectId)}/services`);
+/** Set this machine's copy limit for the project (null: back to the project's file's): the operator's own page only. */
+export const setCopyLimit = (projectId: string, cap: number | null) =>
+  request<{ limit: CopyLimitView }>(`${projectPath(projectId)}/services/limit`, jsonInit("PUT", { cap }));
 /** Run one verb on the project as the operator. A refusal is a result too (its `error`), never thrown;
     only an unreachable server or an unknown project throws. */
 export async function runProjectVerb(projectId: string, verb: ServicesUiVerb, body: Record<string, unknown>): Promise<VerbResult> {

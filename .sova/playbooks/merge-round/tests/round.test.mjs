@@ -565,23 +565,26 @@ test("check: a test file failing in the full run but passing alone is flaky and 
   assert.deepEqual(reruns.map((c) => [c.cwd, c.args]), [[wt("feat/clean"), ["exec", "node", "scripts/run-tests.mjs", "--runtime", process.env.SOVA_RUNTIME === "node" ? "node" : "bun", "server/new-fail.test.ts"]]]);
 });
 
-test("check: only a file that also fails alone holds the branch; master says whether it is new", async () => {
+test("check: a file failing alone holds the branch only when it passes on master; one failing on master too is pre-existing", async () => {
   writeFileSync(pnpmLog, "");
   const r = await run(["check", "feat/clean"], { env: { FAKE_PNPM_MODE: "fail", FAKE_ALONE_FAIL: "server/new-fail.test.ts" } });
   assert.equal(r.code, 1, r.out);
-  assert.match(r.out, /^needs: new test failure: server\/new-fail\.test\.ts; test failure in server\/pre-fail\.test\.ts \(also fails on master\)$/m);
-  assert.match(r.out, /server\/new-fail\.test\.ts \(fails alone; passes on master\), server\/pre-fail\.test\.ts \(fails alone; also fails on master\)/);
+  assert.match(r.out, /^needs: new test failure: server\/new-fail\.test\.ts$/m);
+  assert.match(r.out, /server\/new-fail\.test\.ts \(fails alone; passes on master\), server\/pre-fail\.test\.ts \(fails alone; pre-existing: also fails on master\)/);
+  assert.match(r.out, /^Pre-existing on master \(not blocking\): server\/pre-fail\.test\.ts\.$/m);
+  assert.deepEqual(state().branches["feat/clean"].check.preexisting, ["server/pre-fail.test.ts"]);
   assert.doesNotMatch(r.out, /^Flaky/m);
   const calls = readFileSync(pnpmLog, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((c) => c.args[0] === "exec");
   const runtime = process.env.SOVA_RUNTIME === "node" ? "node" : "bun";
   assert.deepEqual(calls.filter((c) => c.cwd === wt("feat/clean")).map((c) => c.args.at(-1)), ["server/new-fail.test.ts", "server/pre-fail.test.ts"], "each alone in the worktree first");
   // master's runs are cached per (master, file); the first check of this master runs both there.
   for (const c of calls) assert.deepEqual(c.args.slice(0, 5), ["exec", "node", "scripts/run-tests.mjs", "--runtime", runtime]);
-  // Flaky with one file and failing alone with the other: the flaky one holds nothing.
+  // One flaky, one pre-existing: neither holds the branch.
   const mixed = await run(["check", "feat/clean"], { env: { FAKE_PNPM_MODE: "fail" } });
-  assert.equal(mixed.code, 1, mixed.out);
-  assert.match(mixed.out, /^needs: test failure in server\/pre-fail\.test\.ts \(also fails on master\)$/m);
+  assert.equal(mixed.code, 0, mixed.out);
+  assert.match(mixed.out, /^Pre-existing on master \(not blocking\): server\/pre-fail\.test\.ts\.$/m);
   assert.match(mixed.out, /^Flaky \(failed in the full run, passed alone; not blocking\): server\/new-fail\.test\.ts\.$/m);
+  assert.match(mixed.out, /^landable at [0-9a-f]{7}$/m);
 });
 
 test("check runs pnpm test:int after pnpm test, with the same alone-then-master rule; a tree without the script skips it", async () => {
@@ -593,12 +596,12 @@ test("check runs pnpm test:int after pnpm test, with the same alone-then-master 
   git(main, "worktree", "add", "-q", wt("feat/int"), "-b", "feat/int");
   commit(wt("feat/int"), "package.json", `${JSON.stringify({ scripts: { test: "x", "test:int": "y" } })}\n`, "int: the tiers' scripts");
   writeFileSync(pnpmLog, "");
-  const r = await run(["check", "feat/int"], { env: { FAKE_PNPM_MODE: "int-fail" } });
+  const r = await run(["check", "feat/int"], { env: { FAKE_PNPM_MODE: "int-fail", FAKE_ALONE_FAIL: "server/new-int.integration.test.ts" } });
   assert.equal(r.code, 1, r.out);
   assert.match(r.out, /^pnpm test: ok, \d+s\.$/m);
   assert.match(r.out, /^pnpm test:int: FAILED \(exit 1\), \d+s\.$/m);
-  assert.match(r.out, /needs: test failure in server\/pre-fail\.test\.ts \(also fails on master\)$/m);
-  assert.match(r.out, /Flaky \(failed in the full run, passed alone; not blocking\): server\/new-int\.integration\.test\.ts\./);
+  assert.match(r.out, /needs: new test failure: server\/new-int\.integration\.test\.ts$/m);
+  assert.match(r.out, /Pre-existing on master \(not blocking\): server\/pre-fail\.test\.ts/);
   const calls = readFileSync(pnpmLog, "utf8").trim().split("\n").map((l) => JSON.parse(l));
   const order = calls.map((c) => c.args[0]).filter((a) => a === "test" || a === "test:int");
   assert.deepEqual(order, ["test", "test:int"]);

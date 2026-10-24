@@ -144,3 +144,21 @@ export async function cancelHeldForRequest(projectId: string, requestId: string)
   }
   return n;
 }
+
+/** The owner requests whose fix start waits in a hold on this project (their held `build/start` acts' basis ids). */
+export function heldRequestIds(projectId: string): Set<string> {
+  const out = new Set<string>();
+  let engine: string;
+  try {
+    engine = engineOrThrow(projectId);
+  } catch {
+    return out;
+  }
+  if (!isOrgHostOpen(engine)) return out;
+  for (const h of hostOf(engine).holds()) {
+    if (h.act === false || h.event !== "build/start" || projectOfHold(engine, h) !== projectId) continue;
+    const b = (h.data as { basis?: { kind?: unknown; id?: unknown } } | undefined)?.basis;
+    if (b?.kind === "owner-request" && typeof b.id === "string") out.add(b.id);
+  }
+  return out;
+}

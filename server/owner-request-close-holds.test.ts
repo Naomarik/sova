@@ -87,3 +87,13 @@ test("B1, belt and braces: a fix that reads started but whose start is still hel
   assert.equal(heldStarts().length, before - 1, "its held start is cancelled whatever its status");
   assert.equal(ownerAttention().filter((i) => i.id.includes(r.id)).length, 0, "it never started: no 'closed while being worked on' item");
 });
+
+test("a fix whose start waits in a hold is the held act's Needs you item, not also an owner request", async () => {
+  const tools = await import("./project-assistant-tools");
+  const { ownerAttention } = await import("./owner-attention");
+  const startFix = tools.assistantTools({ orgId: org.id, sessionId: "s_b1c", owner: () => ({ id: omar.id, name: omar.name }), branch: () => [] }).find((t) => t.name === "start_fix")!;
+  const out = (await startFix.execute("c1", { title: "Fix the header", text: "It overlaps." } as never, undefined, undefined, undefined as never)) as { details: { request: string } };
+  const rid = out.details.request;
+  assert.equal(ownerAttention().filter((i) => i.id === `owner-request:${rid}`).length, 0);
+  await close.closeOwnerRequests(org.id, [rid], { kind: "owner", personId: omar.id });
+});

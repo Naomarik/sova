@@ -13,6 +13,11 @@ import type { SettingId } from "./settings-reference.ts";
 /** The keys `{setting: "project", …}` takes in sova_settings propose (root and archived only to refuse in words). */
 export const PROJECT_EDIT_KEYS = ["name", "root", "archived", "stakeholder", "ownerHidden", "frozen"] as const;
 
+/** The keys `{setting: "copies", …}` takes in sova_settings propose: this machine's copy limit (§app.project-services/instances). */
+export const COPIES_EDIT_KEYS = ["limit"] as const;
+/** The history field of this machine's copy limit (its value: 1–16, or null for the project's file's). */
+export const COPIES_FIELD = "copies";
+
 /** Who made a change. `via`: through what. */
 export interface SettingsBy {
   kind: "operator" | "project-overseer" | "overseer";

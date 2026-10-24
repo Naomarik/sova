@@ -486,7 +486,7 @@ const row = (branch: string, state: BoardRow["state"], status: BoardRow["owner"]
   state,
   reason: state,
   readAt: "2026-10-05T09:00:00.000Z",
-  owner: { id: `owner-${branch}`, status, profile: null, lastActiveAt: "2026-10-05T09:00:00.000Z" },
+  owner: { id: `owner-${branch}`, title: `Owner of ${branch}`, status, profile: null, lastActiveAt: "2026-10-05T09:00:00.000Z" },
 });
 
 test("merge-ready: a branch turning ready with an idle owner wakes the round once, naming it", async () => {

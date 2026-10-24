@@ -27,6 +27,8 @@ export type OwnerStatus = "idle" | "busy" | "archived";
 
 export interface BoardOwner {
   id: string;
+  /** The session's title, so the merge captain names the owner's chat to the user. */
+  title: string;
   status: OwnerStatus;
   /** The session's profile id; null for Default. */
   profile: string | null;
@@ -140,7 +142,7 @@ export function buildBoard(sessions: readonly SessionSummary[], inputs: BoardInp
       reason: tree.reason ?? tree.state,
       ...(tree.landing ? { landing: tree.landing } : {}),
       readAt: new Date(at).toISOString(),
-      owner: { id: s.id, status, profile: s.profile?.id ?? null, lastActiveAt: s.lastActiveAt },
+      owner: { id: s.id, title: s.title || "Untitled", status, profile: s.profile?.id ?? null, lastActiveAt: s.lastActiveAt },
     });
   }
   rows.sort((a, b) => a.path.localeCompare(b.path));

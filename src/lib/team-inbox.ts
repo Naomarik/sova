@@ -20,10 +20,11 @@ export const kindWord = (k: TeamInboxKind | string): string => KIND_WORDS[k as T
 export const fromWord = (it: Pick<TeamInboxItemInfo, "from">): string => `from ${it.from.role || it.from.workerId}`;
 
 export type InboxTone = "info" | "plain" | "success";
-/** The status chip: its word and tone. A returned item left this inbox for its sender. */
-export function statusChip(it: Pick<TeamInboxItemInfo, "status" | "returned">): { word: string; tone: InboxTone } {
+/** The status chip: its word and tone. A returned item left this inbox for its sender; an item
+    Sova's safety net closed (§app.teams/inbox-zero) reads "Closed automatically", plain. */
+export function statusChip(it: Pick<TeamInboxItemInfo, "status" | "returned" | "closedBy">): { word: string; tone: InboxTone } {
   if (it.returned) return { word: "Returned to sender", tone: "plain" };
-  if (it.status === "addressed") return { word: "Addressed", tone: "success" };
+  if (it.status === "addressed") return it.closedBy === "auto" ? { word: "Closed automatically", tone: "plain" } : { word: "Addressed", tone: "success" };
   if (it.status === "read") return { word: "Read", tone: "plain" };
   return { word: "New", tone: "info" };
 }
@@ -40,6 +41,17 @@ export const openChipTitle = (n: number): string => `${n} open ${n === 1 ? "item
 /** The tab's label: "Inbox · 3 open", or "Inbox". */
 export const inboxTabLabel = (c: TeamInboxCounts | undefined): string => (c && c.open > 0 ? `Inbox · ${c.open} open` : "Inbox");
 export const emptyInboxText = (role: string): string => `0 items in ${role}'s inbox.`;
+/** The line above the list: "2 open · 5 closed by builder · 3 closed automatically", a part at 0
+    left out; null when the server sent no split (an older server) or every part is 0. */
+export function inboxSummary(c: TeamInboxCounts | undefined, role: string): string | null {
+  if (!c || c.closedByMember === undefined || c.closedAutomatically === undefined) return null;
+  const parts = [
+    c.open > 0 ? `${c.open} open` : null,
+    c.closedByMember > 0 ? `${c.closedByMember} closed by ${role}` : null,
+    c.closedAutomatically > 0 ? `${c.closedAutomatically} closed automatically` : null,
+  ].filter((p): p is string => p !== null);
+  return parts.length ? parts.join(" · ") : null;
+}
 
 export interface InboxKey {
   path: string;

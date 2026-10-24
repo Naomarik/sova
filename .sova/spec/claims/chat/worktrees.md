@@ -44,8 +44,8 @@ by argument list with no shell, locally only (a remote session refuses it).
   `main` in a repository without `master`, whatever its base branch) and records the merge (§chat.worktrees/merge-card). Where `target` is checked out, that checkout
   must have no tracked changes, and the merge runs there (fast-forward when possible, else a merge
   commit; a conflict is aborted and reported, changing nothing). Where it is not checked out, only
-  a fast-forward is done. In a project that turns the merge guard on, a merge into `main` or
-  `master` also needs the user's go-ahead for that exact commit (§chat.worktrees/merge-guard).
+  a fast-forward is done. No merge needs a recorded go-ahead, into `main` or `master` included
+  (§chat.worktrees/landing-answers).
 - **list**: the set with each worktree's status.
 
 `detach` and `merge` take the worktree's path or its branch name. Every answer lists the
@@ -361,27 +361,35 @@ never asked. The session's newest reply with that line gives the why, shown on t
 Landing card (§chat.offers/sova-landing). Once the drafts are promoted and committed the new head
 is Ready to land by the same rule.
 
+**What still blocks the card.** When the session's latest turn outcome says its work is finished
+but a worktree it tracks isn't Ready to land at its head for reasons the session can fix itself
+(uncommitted files, spec drafts not promoted, conflicts with its base, a temporary commit subject,
+a failing check run), and the project's offers file has an offer shown only when Ready to land
+(`ready-to-land`, as Sova's own Landing offer), Sova tells the session once per head commit, as a
+message in its chat, what still blocks its landing card, each blocker counted ("1 uncommitted file,
+11 spec drafts to make official"): to fix them on its branch, and that the card shows only once
+nothing does. That message never mentions Land It. When spec drafts are the only thing left, the
+specs message above is sent instead. Nothing is sent while a turn runs, for an archived or
+terminal session, or when the outcome doesn't say the work is finished (or no outcome is ever
+recorded for the session).
+
 The Session tab's chip reads **Ready to land** (or **Landing specs**) in place of Ready to merge or
 Waiting for your OK while it holds; every other reader of readiness (the row's badge, the digest,
 the offers' `branch-ready`) is unchanged.
 
-## §chat.worktrees/merge-guard — Merging into master needs your go-ahead
+## §chat.worktrees/landing-answers — Land It and Not Yet are kept, never enforced
 
-A project turns this on in its offers file with `"mainMerges": "go-ahead"` (§chat.offers/file);
-Sova's own repository does. Read from the target branch itself (`git show
-refs/heads/<target>:.sova/offers.json`), so a branch can't switch it off for its own merge. Then:
+Sova keeps the user's answers on a branch's Landing card (§chat.offers/sova-landing) in
+`<state root>/landing.json`, outside every repository: a go-ahead (Land It, or Merge Without
+Specs… with the branch's spec drafts left behind) or a Not Yet, each for the branch at the commit
+the card was shown for, the newest 200 of each kept. Both may be recorded at one commit: the later
+recorded time wins, and Not Yet wins a tie or a time that can't be read. The merge round's driver
+reads them as the user's word (§chat.merge-round/driver); nothing else acts on them.
 
-- the `worktree merge` tool (§chat.worktrees/tool) into `main` or `master` refuses, merging
-  nothing, unless the user's go-ahead for that branch at exactly its current head commit is
-  recorded: "This project lands branches on master only with your go-ahead for this exact commit:
-  press Land It on the branch's landing card." Land It (§chat.offers/sova-landing) records it in
-  `<state root>/landing.json`, outside every repository. A session on the Merge Captain profile
-  (its newest profile entry) is exempt: it lands on the user's Land It as before.
-- the Project Overseer's Merge Branch (§app.project-overseer/coding-worktrees) into `main` or
-  `master` follows the same rule: pressed on the operator's own page it is the go-ahead itself (and
-  is recorded); asked any other way it is refused without one for the branch's head.
-
-Merges into any other branch, typed `git` commands and projects without the key are unchanged.
+Nothing enforces them. No merge needs a recorded go-ahead: the `worktree` tool's merge
+(§chat.worktrees/tool) and the Project Overseer's Merge Branch
+(§app.project-overseer/coding-worktrees) merge into `main` or `master` as into any other branch,
+from any session, whatever the project's offers file says, and Merge Branch records nothing.
 
 ## §chat.worktrees/cleanup — Removing merged worktrees
 
@@ -472,7 +480,7 @@ and no HTTP call (the merge round's driver, §chat.merge-round/driver); the sche
   common git directory, read from the worktree's `.git` entry without running git; null when
   unreadable), readiness `state` and `reason`, its `landing` when it is Ready to land or Landing
   specs (§chat.worktrees/ready-to-land: `state`, the full head `commit`, the unpromoted `drafts`, the
-  session's `specsWhy`), `readAt`, and its `owner`: session id, status
+  session's `specsWhy`), `readAt`, and its `owner`: session id, title, status
   `idle` | `busy` | `archived`, profile id (null for Default) and last activity. Rows are sorted by
   path.
 - **Who owns a row.** Built only from readiness's own last answers, never by reading git or a

@@ -5,8 +5,8 @@ While the **align** minor mode is on (§chat/mode-menu), the agent agrees with t
 build before building it, and records each agreement as an **alignment**: a structured document it
 keeps with one tool, `align`, from pi's `mode` extension (`pi-config/extensions/mode`). A session
 can hold several alignments at once, one per concern. The user never edits one: they answer in
-chat, and the agent records the answer. Sova shows each alignment as a card in the transcript, a
-chip in the composer, and a count on the session's row. It works the same in the TUI and in Sova,
+chat, and the agent records the answer. Sova shows each alignment as a card in the transcript, in
+the composer's waiting badge, and a count on the session's row. It works the same in the TUI and in Sova,
 for sessions Sova holds and sessions it only watches, with one web-only shortcut: in a chat Sova
 holds, the card can tick recommendations to take, pick an option as a question's answer, and go
 with all of the recommendations (§chat.alignment/card).
@@ -48,7 +48,7 @@ extension and Sova's card apply the same rule.
 or marked done; `implementing` when it was marked so; otherwise `aligning` while any question is
 open or it has no questions yet, and `confirmed` once every question is decided or dropped. Only
 the transitions no data can show are explicit: implementing, done, dropped, and back to open.
-Done and dropped are terminal; everything else is **open** for the chip and the session's count.
+Done and dropped are terminal; everything else is **open** for the composer's badge and the session's count.
 
 ## §chat.alignment/tool — The `align` tool
 
@@ -147,7 +147,7 @@ server.
 **Older sessions** keep their `align-doc` entries from before the tool (a markdown document the
 extension parsed from the agent's reply). They are read-only history: their card renders as it did
 (the newest one on the branch, as one line that opens a read-only viewer), nothing parses markdown
-any more, and they count toward no chip, row or digest.
+any more, and they count toward no badge, row or digest.
 
 ## §chat.alignment/model — What keeps the agent on it
 
@@ -402,55 +402,23 @@ an `align` call: it is the message, not its working.
 - While a run streams, the call's card appears as soon as its result arrives, from the result's
   own snapshot; the settled transcript renders the same card.
 
-## §chat.alignment/chip — The chip in the composer
+## §chat.alignment/chip — The alignments in the composer's badge
 
-In a chat's composer, the run-status row carries an alignment chip **immediately left of the
-Inputs trigger** (§chat/composer): "{n} aligns · {decided}/{total} decided" ("1 align · 5/7 decided"), where
-`n` is the open alignments on the branch and `decided`/`total` count their decided and all their
-live (not dropped) questions, the same counts the rows show. They count the whole branch, even
-rows the thread hasn't fetched (§chat.transcript/rendering). It is omitted when no alignment is open, and the row shows for it alone. The
-chip and the Inputs trigger sit together at the row's right end. In a narrow composer's run-status
-row (§chat.transcript/streaming) it is the one control that may give way: when nothing else can,
-its count ends in an ellipsis ("1 align · 0/8…"), and its accessible name keeps the whole count.
+A chat's open alignments show in the composer's waiting badge (§chat.composer/waiting-badge), inside
+the message box; the run-status row carries no alignment chip. The badge's counts are the branch's
+open alignments, their decided questions and all their live (not dropped) questions, the same counts
+the rows show. They count the whole branch, even rows the thread hasn't fetched
+(§chat.transcript/rendering).
 
-```html
-<button type="button" class="run-status-link run-status-align" aria-haspopup="menu" aria-expanded="false"
-        aria-label="2 open alignments, 10 of 15 questions decided — show alignments">
-  <span class="icon icon-sm" style="--icon:url(/icons/chat.svg)" aria-hidden="true"></span>
-  <span class="text-num">2 aligns · 10/15 decided</span>
-  <span class="icon icon-sm" style="--icon:url(/icons/chevron-down.svg)" aria-hidden="true"></span>
-</button>
-<div class="model-menu action-menu align-menu" popover="auto" role="menu" aria-label="Open alignments">
-  <div class="align-menu-item" role="menuitem" tabindex="0"
-       aria-label="al_3 Autonomy settings: 5 of 7 questions decided — jump to its card">
-    <span class="text-mono align-menu-id">al_3</span>
-    <span class="align-menu-title" title="Autonomy settings">Autonomy settings</span>
-    <span class="align-menu-bar" aria-hidden="true"><span class="align-menu-fill align-menu-fill-warn" style="width:71%"></span></span>
-    <span class="chip chip-count chip-warn"><i class="chip-dot"></i>5/7</span>
-  </div>
-  <div class="align-menu-item" role="menuitem" tabindex="0"
-       aria-label="al_1 Queue shape: implementing, no questions — jump to its card">
-    <span class="text-mono align-menu-id">al_1</span>
-    <span class="align-menu-title" title="Queue shape">Queue shape</span>
-    <span class="chip chip-accent"><i class="chip-dot"></i>Implementing</span>
-  </div>
-</div>
-```
-
-- **Expanding** it (a menu button, `aria-expanded`; ↑/↓ move between rows, Home/End go to the
-  first/last, Escape closes) lists each open alignment on one line: those with an open question
-  first, each group the last touched first. A row reads left to right: its id (mono, muted), its
-  title (one line, cut with an ellipsis, the whole title on hover), a thin progress bar of its
-  decided questions out of its live ones, and a round count chip "{decided}/{live}" ("5/7"). The
-  bar and the chip are warn while any question is open and success once all are decided. An
-  alignment with no live questions shows its status word in the status chip's tone instead of
-  the bar and count. The summary is not shown, nor any question. Rows are 44px tall at every
-  width. The panel opens above the chip when it fits, 340px wide from 768px; under 768px it is
-  the menus' bottom sheet.
-- **Choosing one** jumps to that alignment's newest card in the transcript (the jump's highlight
+- **Listed in the dialog.** The badge's dialog (§chat.composer/waiting-dialog) lists each open
+  alignment: those with an open question first, each group the last touched first. Each shows its
+  title, a meter of its decided questions out of its live ones, the topic of its next open question,
+  and Show in Chat. An alignment with no live questions shows its status word instead of the
+  meter.
+- **Show in Chat** jumps to that alignment's newest card in the transcript (the jump's highlight
   included), building older rows first when the thread hasn't reached it; if the card isn't on
   screen, a toast says so.
-- The counts follow the transcript as it streams: a live `align` result updates the chip before
+- The counts follow the transcript as it streams: a live `align` result updates the badge before
   the run settles.
 
 ## §chat.alignment/session-mark — The session's open questions
@@ -463,7 +431,7 @@ document comes after the user's last prompt (a wake nudge, a partner's link mess
 batch, §chat.topics/row, is not one, and neither is a message an Overseer sent, the one its
 `sova-overseer-sent` mark names, §app.overseer/sent-marker: alignment questions are the user's).
 Once the user has spoken again and the agent moved on without touching an alignment, or align is
-turned off (nothing could record an answer), the questions stay on the card and the chip but leave
+turned off (nothing could record an answer), the questions stay on the card and the composer's badge but leave
 the row mark, Needs you and push; the next align result that changes a document brings them back.
 Files with no `align` tool result are only searched for it, never parsed; after the first one, each
 change parses only the lines appended since (a file that shrank or was rewritten is read again).

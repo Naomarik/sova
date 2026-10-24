@@ -310,7 +310,8 @@
         "server/session-powers.ts",
         "server/chat-host.test.ts",
         "server/chat-runtime/host.test.ts",
-        "server/tours/tools.ts"
+        "server/tours/tools.ts",
+        "server/project-services/worker-verbs.test.ts"
       ],
       "requires": [
         "§app/chat-processes",
@@ -320,8 +321,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "at": "2026-10-23T20:56Z",
+        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#ddd8cd7b"
       },
       "evidence": "verified"
     },
@@ -525,7 +526,8 @@
         "server/chat-runtime/trial-s4-crash.integration.test.ts",
         "server/chat-runtime/trial-s4-hidden.integration.test.ts",
         "server/chat-runtime/trial-s4-off.integration.test.ts",
-        "server/chat-runtime/trial-s5-handoff.integration.test.ts"
+        "server/chat-runtime/trial-s5-handoff.integration.test.ts",
+        "server/project-services/worker-verbs.test.ts"
       ],
       "requires": [
         "§app/chat-processes",
@@ -535,7 +537,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T12:56Z"
+        "at": "2026-10-23T20:29Z",
+        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#ddd8cd7b"
       },
       "evidence": "verified"
     },
@@ -1329,9 +1332,9 @@
         "server/owner-page-tabs.integration.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-22T16:16Z",
-        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
+        "by": "Omar",
+        "at": "2026-10-23T21:49Z",
+        "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#4f6c19c9"
       }
     },
     "§app.project-assistant/chat": {
@@ -1373,9 +1376,9 @@
         "server/project-assistant-ready.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-22T16:16Z",
-        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
+        "by": "Omar",
+        "at": "2026-10-23T21:49Z",
+        "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#4f6c19c9"
       }
     },
     "§app.project-assistant/drawings": {
@@ -1493,9 +1496,9 @@
         "src/lib/assistant-model-rows.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-22T21:57Z",
-        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#3ef3672c"
+        "by": "Omar",
+        "at": "2026-10-23T22:20Z",
+        "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#4f6c19c9"
       }
     },
     "§app.project-assistant/never": {
@@ -1515,6 +1518,31 @@
         "by": "naomarik",
         "at": "2026-10-20T12:19Z",
         "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#2d6e96df"
+      }
+    },
+    "§app.project-assistant/offers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-assistant/abilities",
+        "§app.project-assistant/tools"
+      ],
+      "code": [
+        "server/project-assistant-loadout.ts",
+        "server/project-assistant-prompt.md",
+        "server/project-assistant-tools.ts",
+        "server/project-assistant-offers.ts",
+        "server/assistant-would-act.ts",
+        "server/project-assistant-offers.test.ts",
+        "server/project-assistant-attended.test.ts",
+        "server/project-assistant-versions.integration.test.ts",
+        "server/project-assistant.integration.test.ts"
+      ],
+      "agreed": {
+        "by": "Omar",
+        "at": "2026-10-23T21:49Z",
+        "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#4f6c19c9"
       }
     },
     "§app.project-assistant/photos": {
@@ -1672,7 +1700,7 @@
     "§app.project-assistant/tools": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.project-services/deploy-callers",
         "§app.owner-page/conversations"
@@ -1687,9 +1715,9 @@
         "server/project-assistant-prompt.md"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-22T09:38Z",
-        "source": "pi-session:4dbe354b-e46f-46a6-8617-0cedc16ff81f#4b53db3a"
+        "by": "Omar",
+        "at": "2026-10-23T21:49Z",
+        "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#4f6c19c9"
       }
     },
     "§app.project-assistant/versions": {
@@ -2389,8 +2417,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T02:25Z",
-        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+        "at": "2026-10-23T16:59Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#c38b4920"
       }
     },
     "§app.subagents-pane/memory-outline": {
@@ -2691,9 +2719,9 @@
         "server/project-assistant.integration.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-20T12:19Z",
-        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#2d6e96df"
+        "by": "Omar",
+        "at": "2026-10-23T22:20Z",
+        "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#4f6c19c9"
       }
     },
     "§app/project-commands": {
@@ -3018,16 +3046,16 @@
         "src/components/Composer.tsx",
         "src/design/base.css",
         "src/app.css",
-        "src/components/AlignChip.tsx",
+        "src/components/WaitingBadge.tsx",
         "src/design/align-viewer.css",
         "src/components/VoiceInput.tsx",
         "src/design/voice.css",
         "src/components/ComposerMenu.tsx"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-22T15:11Z",
-        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+        "by": "user",
+        "at": "2026-10-24T16:18Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#be7cefce"
       }
     },
     "§chat.composer/behavior": {
@@ -3974,9 +4002,9 @@
         "§app.commands/catalogue"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "omar (user)",
+        "at": "2026-10-24T17:42Z",
+        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
       }
     },
     "§chat.offers/card": {
@@ -3991,16 +4019,19 @@
         "src/lib/api.ts",
         "src/design/base.css",
         "shared/protocol.ts",
-        "server/session-offers.ts"
+        "server/session-offers.ts",
+        "server/session-offers.test.ts",
+        "server/attention.ts",
+        "server/overseer.ts"
       ],
       "requires": [
         "§app.overseer/confirm",
         "§app.decisions/asks-user"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§chat.offers/conditions": {
@@ -4035,9 +4066,9 @@
         "§chat.profiles/projects"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "omar (user)",
+        "at": "2026-10-24T17:42Z",
+        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
       }
     },
     "§chat.offers/from-another-chat": {
@@ -4096,9 +4127,9 @@
         "§chat.offers/from-another-chat"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "omar (user)",
+        "at": "2026-10-24T17:42Z",
+        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
       }
     },
     "§chat.offers/tool": {
@@ -4125,9 +4156,9 @@
         "§chat.offers/file"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§chat.slash-commands/announcements": {
@@ -6937,9 +6968,9 @@
         "§app.overseer/seen"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§app.overseer/caps": {
@@ -6994,7 +7025,7 @@
         "server/overseer-card-tool.ts",
         "server/overseer.ts",
         "server/project-overseer.ts",
-        "src/components/OverseerCardChip.tsx",
+        "src/components/WaitingDialog.tsx",
         "src/components/ChatView.tsx",
         "src/components/Composer.tsx",
         "shared/row-counts.ts",
@@ -8013,12 +8044,71 @@
         "pi-config/extensions/subagents/mailbox.test.ts",
         "pi-config/extensions/subagents/member.test.ts",
         "pi-config/extensions/subagents/reattach.test.ts",
-        "pi-config/extensions/subagents/restore.test.ts"
+        "pi-config/extensions/subagents/restore.test.ts",
+        "pi-config/extensions/subagents/fold.ts",
+        "pi-config/extensions/subagents/contracts.ts",
+        "pi-config/extensions/subagents/inbox-zero.test.ts"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T03:53Z",
-        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+        "at": "2026-10-23T16:59Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#c38b4920"
+      }
+    },
+    "§app.teams/inbox-gate": {
+      "kind": "behavior",
+      "requires": [
+        "§app.teams/inbox"
+      ],
+      "authority": "accepted",
+      "code": [
+        "pi-config/extensions/subagents/inbox.ts",
+        "pi-config/extensions/subagents/delivery.ts",
+        "pi-config/extensions/subagents/member.ts",
+        "pi-config/extensions/subagents/mailbox.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/fold.ts",
+        "pi-config/extensions/subagents/contracts.ts",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/subagents/inbox.test.ts",
+        "pi-config/extensions/subagents/delivery.test.ts",
+        "pi-config/extensions/subagents/member.test.ts",
+        "pi-config/extensions/subagents/inbox-zero.test.ts",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/subagents/reattach.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T20:03Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#c38b4920"
+      }
+    },
+    "§app.teams/inbox-zero": {
+      "kind": "behavior",
+      "requires": [
+        "§app.teams/inbox"
+      ],
+      "authority": "accepted",
+      "code": [
+        "pi-config/extensions/subagents/inbox.ts",
+        "pi-config/extensions/subagents/delivery.ts",
+        "pi-config/extensions/subagents/member.ts",
+        "pi-config/extensions/subagents/mailbox.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/fold.ts",
+        "pi-config/extensions/subagents/contracts.ts",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/subagents/inbox.test.ts",
+        "pi-config/extensions/subagents/delivery.test.ts",
+        "pi-config/extensions/subagents/member.test.ts",
+        "pi-config/extensions/subagents/inbox-zero.test.ts",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/subagents/reattach.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T20:03Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#c38b4920"
       }
     },
     "§app.teams/requests": {
@@ -8153,9 +8243,9 @@
         "§app.session-list/spine"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T20:31Z",
-        "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#76a2e465"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§teams.defaults/command": {
@@ -8190,8 +8280,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T02:25Z",
-        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+        "at": "2026-10-24T10:31Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#22df1e4b"
       }
     },
     "§teams.defaults/file": {
@@ -8229,9 +8319,9 @@
         "pi-config/extensions/subagents/inbox-lifecycle.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T02:25Z",
-        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+        "by": "user (Omar)",
+        "at": "2026-10-23T21:42Z",
+        "source": "pi-session:74251d15-e6e2-46d5-8c62-d3d1a0187849#ce30380d"
       }
     },
     "§teams.defaults/monitor": {
@@ -8252,8 +8342,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T02:25Z",
-        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+        "at": "2026-10-24T10:31Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#22df1e4b"
       }
     },
     "§teams.defaults/roster-context": {
@@ -8274,8 +8364,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T02:25Z",
-        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+        "at": "2026-10-24T10:31Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#22df1e4b"
       }
     },
     "§teams.defaults/routing": {
@@ -8296,8 +8386,35 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T02:25Z",
-        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+        "at": "2026-10-24T10:31Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#22df1e4b"
+      }
+    },
+    "§teams.defaults/runtime-fallback": {
+      "kind": "behavior",
+      "requires": [
+        "§teams.defaults/coordinator",
+        "§teams.defaults/monitor",
+        "§teams.defaults/handover",
+        "§teams.defaults/routing"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/docs/native-teams.md",
+        "pi-config/extensions/provider-limits/usage-out.ts",
+        "pi-config/extensions/provider-limits/usage-out.test.ts",
+        "pi-config/extensions/provider-limits/gate.ts",
+        "server/reports.ts",
+        "server/reports.test.ts"
+      ],
+      "agreed": {
+        "by": "user (Omar)",
+        "at": "2026-10-23T22:36Z",
+        "source": "pi-session:74251d15-e6e2-46d5-8c62-d3d1a0187849#ce30380d"
       }
     },
     "§teams.defaults/team-report": {
@@ -9320,9 +9437,9 @@
         "§app.project-overseer/tools"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "Omar",
+        "at": "2026-10-23T21:49Z",
+        "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#4f6c19c9"
       }
     },
     "§app.project-overseer/gaps": {
@@ -9459,7 +9576,8 @@
         "server/project-overseer-prompt.md",
         "src/components/Thread.tsx",
         "src/components/ProjectPage.tsx",
-        "server/overseer-org-part.ts"
+        "server/overseer-org-part.ts",
+        "server/project-services/copy-limit.ts"
       ],
       "requires": [
         "§app.project-overseer/autonomy-levels",
@@ -9471,9 +9589,9 @@
         "§app.requirements/frozen-spec"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "omar (user)",
+        "at": "2026-10-24T17:42Z",
+        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
       }
     },
     "§app.project-overseer/tools": {
@@ -9961,6 +10079,33 @@
         "src/components/SessionDetails.tsx"
       ]
     },
+    "§chat.worktrees/landing-answers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/worktrees/landing.ts",
+        "pi-config/extensions/worktrees/landing.test.ts",
+        "pi-config/extensions/worktrees/index.ts",
+        "pi-config/extensions/worktrees/index.test.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-routes.ts",
+        "server/projects/runtime.ts",
+        "server/projects/runtime-routes.ts",
+        "server/project-coding-runtime.test.ts",
+        "pi-config/extensions/worktrees/README.md",
+        "agents/extensions/worktrees/overview.md"
+      ],
+      "requires": [
+        "§chat.worktrees/tool",
+        "§chat.offers/sova-landing"
+      ],
+      "agreed": {
+        "by": "omar (user)",
+        "at": "2026-10-24T17:42Z",
+        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
+      }
+    },
     "§chat.worktrees/merge-board": {
       "kind": "behavior",
       "authority": "accepted",
@@ -9975,9 +10120,9 @@
         "§chat.worktrees/readiness"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T20:31Z",
-        "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#76a2e465"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§chat.worktrees/merge-card": {
@@ -10008,34 +10153,6 @@
         "by": "naomarik",
         "at": "2026-10-22T03:00Z",
         "source": "pi-session:ecc675e0-f5e1-4efc-915d-91012183b844#6f4c32b2"
-      }
-    },
-    "§chat.worktrees/merge-guard": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "pi-config/extensions/worktrees/landing.ts",
-        "pi-config/extensions/worktrees/landing.test.ts",
-        "pi-config/extensions/worktrees/index.ts",
-        "pi-config/extensions/worktrees/index.test.ts",
-        "server/project-overseer.ts",
-        "server/project-overseer-routes.ts",
-        "pi-config/extensions/worktrees/README.md",
-        "agents/extensions/worktrees/overview.md",
-        "server/projects/runtime.ts",
-        "server/projects/runtime-routes.ts",
-        "server/project-coding-runtime.test.ts",
-        "pi-config/README.md"
-      ],
-      "requires": [
-        "§chat.worktrees/tool",
-        "§chat.offers/file"
-      ],
-      "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
       }
     },
     "§chat.worktrees/pane": {
@@ -10081,9 +10198,9 @@
         "§app.decisions/attention-signals"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§chat.worktrees/sandbox": {
@@ -10116,9 +10233,9 @@
         "pi-config/extensions/subagents/index.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "omar (user)",
+        "at": "2026-10-24T17:42Z",
+        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
       }
     },
     "§chat.worktrees/workers": {
@@ -10669,7 +10786,12 @@
       "requires": [
         "§app.overseer/attention-digest",
         "§app.overseer/tools"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+      }
     },
     "§app.notifications/settings": {
       "kind": "behavior",
@@ -11911,10 +12033,11 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "src/components/AlignChip.tsx",
+        "src/components/WaitingDialog.tsx",
         "src/components/Composer.tsx",
         "src/components/ChatView.tsx",
         "src/lib/align.ts",
+        "src/lib/waiting.ts",
         "src/lib/align.test.ts",
         "src/design/align-viewer.css",
         "src/design/base.css",
@@ -11926,7 +12049,12 @@
         "§chat.alignment/card",
         "§chat.composer/anatomy",
         "§chat.transcript/rendering"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+      }
     },
     "§chat.alignment/document": {
       "kind": "behavior",
@@ -14268,9 +14396,9 @@
         "§chat.offers/card"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§app.decisions/call-ledger": {
@@ -14967,11 +15095,20 @@
         "pi-config/extensions/provider-limits/stream.ts",
         "pi-config/extensions/provider-limits/stream.test.ts",
         "pi-config/extensions/provider-limits/gate.ts",
-        "src/components/SettingsDialog.tsx"
+        "src/components/SettingsDialog.tsx",
+        "pi-config/extensions/provider-limits/usage-out.ts",
+        "pi-config/extensions/provider-limits/usage-out.test.ts",
+        "pi-config/extensions/provider-limits/gate.test.ts",
+        "pi-config/extensions/provider-limits/README.md"
       ],
       "requires": [
         "§app.provider-limits/queue"
-      ]
+      ],
+      "agreed": {
+        "by": "user (Omar)",
+        "at": "2026-10-23T22:36Z",
+        "source": "pi-session:74251d15-e6e2-46d5-8c62-d3d1a0187849#ce30380d"
+      }
     },
     "§app.provider-limits/setting": {
       "kind": "behavior",
@@ -16959,12 +17096,16 @@
         "server/project-services/on-merge.integration.test.ts",
         "server/app.ts",
         "server/harness/pi/golden/session/S7-compact-manual.jsonl",
-        "server/harness/pi/golden/session/S8-compact-auto.jsonl"
+        "server/harness/pi/golden/session/S8-compact-auto.jsonl",
+        "server/chat-host.ts",
+        "server/chat-handle.ts",
+        "server/project-services/worker-verbs.test.ts",
+        "server/project-services/slots.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-20T12:19Z",
-        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#2d6e96df"
+        "by": "Omar",
+        "at": "2026-10-24T09:55Z",
+        "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#2df6b895"
       }
     },
     "§app.project-services/conform": {
@@ -17002,8 +17143,15 @@
         "server/project-services/conform-cleanup.integration.test.ts",
         "server/project-services/ports-grace.test.ts",
         "server/project-services/ports-grace.integration.test.ts",
-        "server/project-services/def-hash.ts"
-      ]
+        "server/project-services/def-hash.ts",
+        "shared/project-slots.ts",
+        "server/project-services/slots.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T21:38Z",
+        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#6ee58735"
+      }
     },
     "§app.project-services/contract": {
       "kind": "behavior",
@@ -17022,8 +17170,14 @@
         "server/project-services/ports-grace.test.ts",
         "server/project-services/ports-grace.integration.test.ts",
         "server/project-services/copy-tree.test.ts",
-        "server/project-services/copy-tree.integration.test.ts"
-      ]
+        "server/project-services/copy-tree.integration.test.ts",
+        "shared/project-slots.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T21:38Z",
+        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#6ee58735"
+      }
     },
     "§app.project-services/create": {
       "kind": "behavior",
@@ -17101,8 +17255,18 @@
         "server/project-services/store.integration.test.ts",
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
-        "server/project-services/engine.integration.test.ts"
-      ]
+        "server/project-services/engine.integration.test.ts",
+        "shared/project-slots.ts",
+        "server/project-services/slots.test.ts",
+        "shared/project-contract.test.ts",
+        "server/project-services/copy-limit.ts",
+        "shared/project-contract.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T21:38Z",
+        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#6ee58735"
+      }
     },
     "§app.project-services/lock": {
       "kind": "behavior",
@@ -17190,8 +17354,14 @@
         "scripts/sova-project.mjs",
         "server/project-services/tools.ts",
         "server/project-services/share.test.ts",
-        "server/project-services/share.integration.test.ts"
-      ]
+        "server/project-services/share.integration.test.ts",
+        "server/project-services/slots.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T20:30Z",
+        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#ddd8cd7b"
+      }
     },
     "§app.project-services/status-logs": {
       "kind": "behavior",
@@ -17344,9 +17514,9 @@
         "§chat.worktrees/merge-board"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "omar (user)",
+        "at": "2026-10-24T18:10Z",
+        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
       }
     },
     "§chat/merge-round": {
@@ -17381,9 +17551,9 @@
         "§chat.worktrees/merge-board"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "omar (user)",
+        "at": "2026-10-24T18:10Z",
+        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
       }
     },
     "§app.access/callers": {
@@ -18171,7 +18341,12 @@
         "pi-config/extensions/subagents/index.ts",
         "pi-config/extensions/subagents/index.test.ts",
         "pi-config/extensions/subagents/teams.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user (Omar)",
+        "at": "2026-10-23T22:19Z",
+        "source": "pi-session:74251d15-e6e2-46d5-8c62-d3d1a0187849#ce30380d"
+      }
     },
     "§chat.subagent-profiles/menu": {
       "kind": "behavior",
@@ -18397,8 +18572,15 @@
         "server/project-services/tools.ts",
         "server/project-services/engine.ts",
         "server/project-services/note.test.ts",
-        "server/project-services/note.integration.test.ts"
-      ]
+        "server/project-services/note.integration.test.ts",
+        "server/project-services/worker-verbs.test.ts",
+        "server/chat-manager.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T20:29Z",
+        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#ddd8cd7b"
+      }
     },
     "§app.project-services/self-host": {
       "kind": "behavior",
@@ -19150,7 +19332,7 @@
     "§app.project-services/services-ui": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.project-services/status-logs",
         "§app.project-services/callers",
@@ -19175,8 +19357,14 @@
         "src/lib/link-delete.ts",
         "src/delete-button.css",
         "src/lib/two-step.ts",
-        "server/app.ts"
-      ]
+        "server/app.ts",
+        "server/project-services/copy-limit.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T21:39Z",
+        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#6ee58735"
+      }
     },
     "§app.project-services/adopt": {
       "kind": "behavior",
@@ -21047,6 +21235,55 @@
         "server/claude-login-state.ts"
       ]
     },
+    "§chat.composer/waiting-badge": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.composer/anatomy",
+        "§chat.alignment/chip",
+        "§chat.offers/card",
+        "§app.overseer/confirm"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/WaitingBadge.tsx",
+        "src/lib/waiting.ts",
+        "src/lib/waiting.test.ts",
+        "src/waiting.css",
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-24T16:18Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#be7cefce"
+      }
+    },
+    "§chat.composer/waiting-dialog": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.composer/waiting-badge",
+        "§chat.offers/card",
+        "§chat.offers/buttons",
+        "§chat.alignment/chip",
+        "§app.overseer/confirm"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/WaitingDialog.tsx",
+        "src/components/OfferCard.tsx",
+        "src/lib/waiting.ts",
+        "src/lib/waiting.test.ts",
+        "src/waiting.css",
+        "src/components/ChatView.tsx"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+      }
+    },
     "§tools.spec/span-promotion": {
       "kind": "behavior",
       "authority": "accepted",
@@ -21945,8 +22182,6 @@
         "src/components/ComposerMenu.tsx",
         "src/components/ModeMenu.tsx",
         "src/components/MeshHostMenu.tsx",
-        "src/components/AlignChip.tsx",
-        "src/components/OverseerCardChip.tsx",
         "src/components/CostsTab.tsx",
         "src/mesh.css",
         "src/costs-tab.css",

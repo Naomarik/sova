@@ -169,9 +169,16 @@ function registerRuntimeEffects(host: OrgHostApi): void {
   });
 }
 
+/** Registry starts in flight (a test waits them out with settleRuntimeForTest). */
+const starting = new Set<Promise<void>>();
+function startRegistriesTracked(host: OrgHostApi): void {
+  const p = startRegistries(host).finally(() => starting.delete(p));
+  starting.add(p);
+}
+
 onOrgHostOpened((host) => {
   registerRuntimeEffects(host);
-  queueMicrotask(() => void startRegistries(host));
+  queueMicrotask(() => startRegistriesTracked(host));
 });
 
 // A registry's own move or its playbook build's: read again (an unchanged read sends nothing).
@@ -182,7 +189,7 @@ onOrgChange((engine, change) => {
   for (const sid of change.sessions) {
     if (sid.startsWith("project/")) {
       const id = str(host.data(sid)?.id);
-      if (id && !host.configuration(runtimeSid(id))) void startRegistries(host);
+      if (id && !host.configuration(runtimeSid(id))) startRegistriesTracked(host);
     } else if (sid.startsWith("runtime/") || sid.startsWith("build/")) {
       const pid = str(host.data(sid)?.projectId);
       if (!pid) continue;
@@ -394,14 +401,14 @@ export interface MergeRunOutcome {
  * Merge Branch on a proposed run (§app.project-runtime/merge): refused when `hash` is no longer the one its branch
  * proposes, then Merge Branch on its session with every refusal of its own.
  */
-export async function mergeRun(projectId: string, hash: string, opts: { byPage: boolean } = { byPage: false }): Promise<MergeRunOutcome> {
+export async function mergeRun(projectId: string, hash: string): Promise<MergeRunOutcome> {
   await readRuntime(projectId);
   const review = playbookReviewOf(projectId);
   if (!review) throw new RuntimeRefusal(NO_RUN_PROPOSED, 409);
   // Never main's hash by mistake: only the one the branch proposes now.
   if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(review.proposes === "deploy" ? DEPLOY_CHANGED_SINCE : CHANGED_SINCE, 409);
   try {
-    await mergeCodingWorktree(projectId, review.sessionId, opts);
+    await mergeCodingWorktree(projectId, review.sessionId);
   } catch (err) {
     if (!(err instanceof OrgError)) throw err;
     return { view: await readRuntime(projectId), merged: false, refused: err.message };
@@ -490,4 +497,23 @@ export function resetRuntimeForTest(): void {
   sent.clear();
   for (const t of timers.values()) clearTimeout(t);
   timers.clear();
+}
+
+/**
+ * Tests: do now what the registries would do later, and wait until none has work left: every registry
+ * start in flight, every read a settle timer holds (run at once, not after SETTLE_MS) and every read
+ * in flight, again until quiet. A test that hashes the state root calls this first, so no write from a
+ * project made in its set-up lands after the hash.
+ */
+export async function settleRuntimeForTest(): Promise<void> {
+  await Promise.resolve(); // a host opened just now queues its registry start as a microtask
+  while (starting.size || timers.size || inflight.size) {
+    await Promise.allSettled([...starting]);
+    const due = [...timers.keys()];
+    for (const pid of due) {
+      clearTimeout(timers.get(pid));
+      timers.delete(pid);
+    }
+    await Promise.allSettled([...due.map((pid) => observe(pid)), ...inflight.values()]);
+  }
 }

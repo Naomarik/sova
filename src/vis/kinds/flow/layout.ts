@@ -407,6 +407,21 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
   best.forEach((l, r) => (layers[r] = l));
   setOrder();
 
+  // ---- frame titles, downwards: a title runs across the frame, so it wraps to the wider of the
+  // level's text width and the least room its members take side by side on one rank (the frame is
+  // at least that wide), and its strip above the members grows a line per extra line. A frame
+  // never widens past its members for a long title, so the drawing still fits a phone.
+  const downLines = groups.map((g, gi) => {
+    if (right) return [g.label];
+    const rows = new Map<number, LNode[]>();
+    for (const n of L) if (grp[n.key] === gi) rows.set(n.rank, [...(rows.get(n.rank) ?? []), n]);
+    const row = Math.max(0, ...[...rows.values()].map((ns) => ns.reduce((a, n) => a + n.across + n.extra, 0) + (ns.length - 1) * VIRTUAL_GAP));
+    const fit = Math.max(MAX_TEXT, row / SEMIBOLD);
+    return measure(g.label, GROUP.font) <= fit ? [g.label] : wrap(g.label, fit, ALL, GROUP.font, measure);
+  });
+  /** The strip above a downward frame's members that holds its title's lines. */
+  const titleAlongOf = (gi: number) => (right ? 0 : GROUP.title + (downLines[gi]!.length - 1) * GROUP.line);
+
   // ---- along: rank thickness and offsets ---------------------------------------------------
   const thick = layers.map((layer) => Math.max(0, ...layer.map((k) => L[k]!.along)));
   const at: number[] = [];
@@ -414,8 +429,8 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
   const before = new Array<number>(maxRank + 1).fill(0);
   const after = new Array<number>(maxRank + 1).fill(0);
   // Nested ranks of several frames stack their pads; one frame's title and pad sit in the gap above it.
-  grpRanks.forEach(({ from, to }) => {
-    before[from] = Math.max(before[from]!, GROUP.pad + (right ? 0 : GROUP.title));
+  grpRanks.forEach(({ from, to }, gi) => {
+    before[from] = Math.max(before[from]!, GROUP.pad + titleAlongOf(gi));
     after[to] = Math.max(after[to]!, GROUP.pad);
   });
   for (let r = 0; r <= maxRank; r++) {
@@ -426,7 +441,7 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
   // ---- frame titles: in dir: right a title runs along the frame, whose length the ranks alone
   // fix, so it wraps to that width before anything is placed across (where its lines take room).
   const titleLines = groups.map((g, gi) => {
-    if (!right) return [g.label];
+    if (!right) return downLines[gi]!;
     const { from, to } = grpRanks[gi]!;
     const len = at[to]! + thick[to]! / 2 - (at[from]! - thick[from]! / 2);
     const fit = len / SEMIBOLD;
@@ -472,7 +487,7 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
   // ---- groups: a frame is one rectangle over all its ranks, so every other node on those ranks
   // must sit left or right of its span. Pushes only ever move things right (a node, a frame and
   // what lies after them), in the one left-to-right order of groups, so this settles.
-  const titleW = groups.map((g) => measure(g.label, GROUP.font) * SEMIBOLD + 2 * GROUP.pad);
+  const titleW = groups.map((_, gi) => widest(titleLines[gi]!, GROUP.font, measure) * SEMIBOLD + 2 * GROUP.pad);
   const span = (gi: number) => {
     const ms = L.filter((n) => grp[n.key] === gi);
     let lo = Math.min(...ms.map((n) => n.pos - n.across / 2)) - GROUP.pad - titleAcrossOf(gi);
@@ -640,7 +655,7 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
   const placedGroups: PlacedFlowGroup[] = groups.map((g, gi) => {
     const f = frameSpans[gi]!;
     const { from, to } = grpRanks[gi]!;
-    const a0 = at[from]! - thick[from]! / 2 - GROUP.pad - (right ? 0 : GROUP.title);
+    const a0 = at[from]! - thick[from]! / 2 - GROUP.pad - titleAlongOf(gi);
     const a1 = at[to]! + thick[to]! / 2 + GROUP.pad;
     const p0 = pt(f.lo + shift, a0);
     const p1 = pt(f.hi + shift, a1);

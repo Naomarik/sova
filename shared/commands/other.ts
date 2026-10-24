@@ -43,6 +43,17 @@ const ORG_OWNER_REQUEST_ENTRIES: CommandEntry[] = [
     sessionFile: "never",
     meshNeed: "admin",
   },
+  {
+    id: "org.owner.request.noted",
+    label: "Got It",
+    summary: "Note an owner request the owner closed while it was being worked on: its Needs you item ends.",
+    effect: "changes",
+    params: { "org-id": { ...orgId, key: "id" }, "request-id": { ...requestId, key: "rid" } },
+    route: { method: "POST", path: "/api/orgs/:id/owner/requests/:rid", fixed: { noted: true } },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
 ];
 
 export const OTHER_ENTRIES: CommandEntry[] = [

@@ -15,7 +15,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | --- | ---: |
 | Routes registered | 480 |
 | Routes a catalogue entry points at | 115 |
-| Catalogue entries | 142 |
+| Catalogue entries | 143 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -170,6 +170,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `org.owner.request.chat` | Start Chat | changes | `POST /api/orgs/:id/owner/requests/:rid/chat` | admin |
 | `org.owner.request.done` | Mark Done | changes | `POST /api/orgs/:id/owner/requests/:rid` | admin |
 | `org.owner.request.decline` | Decline | changes | `POST /api/orgs/:id/owner/requests/:rid` | admin |
+| `org.owner.request.noted` | Got It | changes | `POST /api/orgs/:id/owner/requests/:rid` | admin |
 | `chat.stop` | Stop | changes | `POST /api/chat/action` | sessions |
 | `chat.compact` | Compact | changes | `POST /api/chat/action` | sessions |
 | `chat.rewind` | Rewind | changes | `POST /api/chat/action` | sessions |
@@ -644,7 +645,7 @@ Approving what a project's files may make Sova do (an offers file's run buttons,
 | `POST /api/mode/command` | full | `chat.mode-command` |
 | `GET /api/models` | sessions | `models.list` |
 | `PUT /api/models/favorite` | sessions | `models.favorite` |
-| `POST /api/orgs/:id/owner/requests/:rid` | admin | `org.owner.request.decline`, `org.owner.request.done` |
+| `POST /api/orgs/:id/owner/requests/:rid` | admin | `org.owner.request.decline`, `org.owner.request.done`, `org.owner.request.noted` |
 | `POST /api/orgs/:id/owner/requests/:rid/chat` | admin | `org.owner.request.chat` |
 | `GET /api/overseer/attention` | sessions | `overseer.attention` |
 | `GET /api/overseer/idea` | sessions | `overseer.idea.get` |

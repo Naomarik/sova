@@ -8,7 +8,7 @@ import { agreeRequirement, changeOfRef, conversationDraftTools } from "./convers
 import type { ConversationRef } from "./conversation-draft-store";
 import { orgDir, OrgError, readProjects, readRoster } from "./orgs";
 import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
-import { effectiveAssistantModel, fileRequest, orgRequests, setRequestStatus } from "./project-assistant-store";
+import { advanceRequest, effectiveAssistantModel, fileRequest, orgRequests } from "./project-assistant-store";
 import { specLookupTools } from "./spec-lookup";
 import { setFeatureStartForTest, startFeatureChat } from "./feature-chats";
 import type { ToolWords } from "./project-assistant-offers";
@@ -247,7 +247,7 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
       const a = await acts();
       const out = await a.buildStart(p.id, { requestId: r.id, title: r.title, text: r.text, model }, { attended, sessionId: ctx.sessionId });
       if (!out.taken) return team(out.code === "power-off" ? "starting fixes on its own is off here" : "the team has to start it");
-      if (out.sessionId) setRequestStatus(orgId, r.id, "started", { sessionId: out.sessionId });
+      if (out.sessionId) advanceRequest(orgId, r.id, "started", { sessionId: out.sessionId });
       return say(out.held ? "The fix will start in a few minutes unless the team stops it. Tell the owner it's being worked on soon." : "The fix has started. Tell the owner it's being worked on; a version to try shows up when it's ready.", { request: r.id, started: !out.held });
     },
   };
@@ -274,7 +274,7 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
       const a = await acts();
       const out = await a.deployRun(p.id, { requestId: r.id, why: r.text }, { attended, sessionId: ctx.sessionId });
       if (!out.taken) return await team();
-      setRequestStatus(orgId, r.id, "started");
+      advanceRequest(orgId, r.id, "started");
       return say(out.held ? "The release will start in a few minutes unless the team stops it." : "The release has started. Tell the owner it's on its way.", { request: r.id, started: true });
     },
   };
@@ -436,7 +436,8 @@ void import("./project-overseer")
   .then(({ onOwnerFixStarted }) =>
     onOwnerFixStarted((e) => {
       try {
-        setRequestStatus(e.orgId, e.basisId, "started", { sessionId: e.sessionId });
+        // Never on a request the owner closed meanwhile (§app.project-assistant/closing): it stays closed.
+        advanceRequest(e.orgId, e.basisId, "started", { sessionId: e.sessionId });
       } catch (err) {
         console.warn(`[project-assistant] marking a fix started failed: ${err instanceof Error ? err.message : String(err)}`);
       }

@@ -4,7 +4,9 @@ import { dirname, join } from "node:path";
 import { WORK_KINDS, type ModelPick, type WorkKind, type WorkModels } from "../shared/powers";
 import {
   OWNER_REQUEST_KINDS,
+  isRequestClosed,
   type AssistantModelSource,
+  type OwnerRequestBy,
   OWNER_REQUEST_TEXT_MAX,
   OWNER_REQUEST_TITLE_MAX,
   type AssistantStore,
@@ -21,8 +23,9 @@ import { orgDir, OrgError, readIndex, readProjects } from "./orgs";
  * The Project Assistant's org-side records (§app.project-assistant/models, /requests), all in the
  * org's workspace repo so they travel with it:
  *   `<workspace>/project-assistant.json`       { version: 1, models, conversations: {personId: sessionId} }
- *   `<workspace>/projects/<pid>/owner-requests.jsonl`  append-only: {kind:"filed", …request} | {kind:"status", id, status, at, sessionId?}
+ *   `<workspace>/projects/<pid>/owner-requests.jsonl`  append-only: {kind:"filed", …request, version?} | {kind:"status", id, status, at, sessionId?, by?, prior?}
  *        | {kind:"linked", id, sessionId, at} (Start Chat's chat: no status change, §app.project-assistant/request-chat)
+ *        | {kind:"noted", id, at} (the operator's Got It on a request the owner closed while it was worked on, §app.project-assistant/closing)
  * Read tolerantly: a bad file reads as empty, a torn line is skipped, a line of a kind not known here is skipped.
  */
 
@@ -199,6 +202,12 @@ const clean = (v: unknown, max: number, what: string): string => {
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 };
 
+const STATUSES: readonly OwnerRequestStatus[] = ["with-team", "started", "done", "declined", "closed"];
+function byOf(v: unknown): OwnerRequestBy | null {
+  if (!isObj(v) || (v.kind !== "owner" && v.kind !== "assistant") || typeof v.personId !== "string" || !SAFE_ID.test(v.personId)) return null;
+  return { kind: v.kind, personId: v.personId };
+}
+
 /** Every request of one project, folded, newest first. */
 export function projectRequests(orgId: string, projectId: string): OwnerRequest[] {
   let text = "";
@@ -218,16 +227,28 @@ export function projectRequests(orgId: string, projectId: string): OwnerRequest[
     }
     if (!isObj(l) || typeof l.id !== "string") continue;
     if (l.kind === "filed" && typeof l.title === "string" && typeof l.text === "string" && typeof l.at === "string" && (OWNER_REQUEST_KINDS as readonly string[]).includes(String(l.request))) {
-      byId.set(l.id, { id: l.id, projectId, kind: l.request as OwnerRequestKind, title: l.title, text: l.text, status: "with-team", createdAt: l.at, updatedAt: l.at });
+      byId.set(l.id, { id: l.id, projectId, kind: l.request as OwnerRequestKind, title: l.title, text: l.text, status: "with-team", createdAt: l.at, updatedAt: l.at, ...(typeof l.version === "string" && SAFE_ID.test(l.version) ? { version: l.version } : {}) });
     } else if (l.kind === "status" && typeof l.at === "string") {
       const r = byId.get(l.id);
       if (!r) continue;
-      if (l.status === "started" || l.status === "done" || l.status === "declined" || l.status === "with-team") r.status = l.status;
+      if (l.status === "closed") {
+        const by = byOf(l.by);
+        // A close line with no one behind it is no close (only the owner, or their assistant, closes).
+        if (!by) continue;
+        r.closed = { by, at: l.at, prior: STATUSES.includes(l.prior as OwnerRequestStatus) && l.prior !== "closed" ? (l.prior as OwnerRequestStatus) : "with-team" };
+        r.status = "closed";
+      } else if (l.status === "started" || l.status === "done" || l.status === "declined" || l.status === "with-team") {
+        r.status = l.status;
+        delete r.closed;
+      }
       if (typeof l.sessionId === "string" && l.sessionId) r.sessionId = l.sessionId;
       r.updatedAt = l.at;
     } else if (l.kind === "linked" && typeof l.at === "string" && typeof l.sessionId === "string" && l.sessionId) {
       const r = byId.get(l.id);
       if (r) r.linked = { sessionId: l.sessionId, at: l.at };
+    } else if (l.kind === "noted" && typeof l.at === "string") {
+      const r = byId.get(l.id);
+      if (r?.closed) r.closed.noted = true;
     }
   }
   return [...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -250,17 +271,18 @@ const append = (orgId: string, projectId: string, line: object) => {
   appendFileSync(f, `${JSON.stringify(line)}\n`);
 };
 
-/** File a request (the assistant's report_issue, start_fix, deploy). */
-export function fileRequest(orgId: string, input: { projectId: string; kind: OwnerRequestKind; title: unknown; text: unknown }, now = Date.now()): OwnerRequest {
+/** File a request (the assistant's report_issue, start_fix, deploy; a `try` request names its version's copy). */
+export function fileRequest(orgId: string, input: { projectId: string; kind: OwnerRequestKind; title: unknown; text: unknown; version?: string }, now = Date.now()): OwnerRequest {
   if (!readProjects(orgId).some((p) => p.id === input.projectId)) throw new OrgError("Unknown project", 404);
   if (!OWNER_REQUEST_KINDS.includes(input.kind)) throw new OrgError("Unknown kind of request.");
   const title = clean(input.title, OWNER_REQUEST_TITLE_MAX, "title").replace(/\s+/g, " ");
   const text = clean(input.text, OWNER_REQUEST_TEXT_MAX, "text");
   const id = `or_${randomBytes(9).toString("base64url")}`;
   const at = new Date(now).toISOString();
-  append(orgId, input.projectId, { kind: "filed", id, request: input.kind, title, text, at });
+  const version = input.kind === "try" && input.version && SAFE_ID.test(input.version) ? input.version : undefined;
+  append(orgId, input.projectId, { kind: "filed", id, request: input.kind, title, text, at, ...(version ? { version } : {}) });
   attentionChanged(); // Needs you, and an outage's phone notification
-  return { id, projectId: input.projectId, kind: input.kind, title, text, status: "with-team", createdAt: at, updatedAt: at };
+  return { id, projectId: input.projectId, kind: input.kind, title, text, status: "with-team", createdAt: at, updatedAt: at, ...(version ? { version } : {}) };
 }
 
 /** A request's status changes (a fix started; the operator's Mark Done / Decline). */
@@ -269,6 +291,50 @@ export function setRequestStatus(orgId: string, id: string, status: OwnerRequest
   if (!r) throw new OrgError("Unknown request", 404);
   append(orgId, r.projectId, { kind: "status", id, status, at: new Date(now).toISOString(), ...(extra.sessionId ? { sessionId: extra.sessionId } : {}) });
   attentionChanged();
+  return findRequest(orgId, id)!;
+}
+
+/**
+ * A change the team's side makes on its own (a fix's session starting, a turn in its chat, its chat archived, its
+ * version's copy running, a tool's own follow-up): never on a closed request (§app.project-assistant/requests:
+ * nothing reopens or restarts one). Null when it was closed (nothing written).
+ */
+export function advanceRequest(orgId: string, id: string, status: Exclude<OwnerRequestStatus, "closed">, extra: { sessionId?: string } = {}, now = Date.now()): OwnerRequest | null {
+  const r = findRequest(orgId, id);
+  if (!r) throw new OrgError("Unknown request", 404);
+  if (isRequestClosed(r.status)) return null;
+  return setRequestStatus(orgId, id, status, extra, now);
+}
+
+/** The owner (or their assistant on their yes) closes an open request: a `closed` line with who and the prior status. */
+export function closeRequestLine(orgId: string, id: string, by: OwnerRequestBy, now = Date.now()): OwnerRequest {
+  const r = findRequest(orgId, id);
+  if (!r) throw new OrgError("Unknown request", 404);
+  if (isRequestClosed(r.status)) throw new OrgError("This request is already closed.", 409, "closed");
+  append(orgId, r.projectId, { kind: "status", id, status: "closed", at: new Date(now).toISOString(), by, prior: r.status });
+  attentionChanged();
+  return findRequest(orgId, id)!;
+}
+
+/** The owner reopens a request they closed, to the status worked out for it (§app.project-assistant/closing). */
+export function reopenRequestLine(orgId: string, id: string, by: OwnerRequestBy, status: "with-team" | "started", now = Date.now()): OwnerRequest {
+  const r = findRequest(orgId, id);
+  if (!r) throw new OrgError("Unknown request", 404);
+  if (r.status !== "closed") throw new OrgError("Only a request you closed can be reopened here.", 409, "not-yours");
+  append(orgId, r.projectId, { kind: "status", id, status, at: new Date(now).toISOString(), by });
+  attentionChanged();
+  return findRequest(orgId, id)!;
+}
+
+/** The operator's Got It on a request the owner closed while it was being worked on: its Needs you item ends. */
+export function noteClosedRequest(orgId: string, id: string, now = Date.now()): OwnerRequest {
+  const r = findRequest(orgId, id);
+  if (!r) throw new OrgError("Unknown request", 404);
+  if (r.status !== "closed" || !r.closed) throw new OrgError("Only a request the owner closed takes Got It.", 409, "not-closed");
+  if (!r.closed.noted) {
+    append(orgId, r.projectId, { kind: "noted", id, at: new Date(now).toISOString() });
+    attentionChanged();
+  }
   return findRequest(orgId, id)!;
 }
 

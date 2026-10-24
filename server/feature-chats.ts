@@ -257,6 +257,14 @@ export async function ownerEndsFeatureChat(orgId: string, sessionId: string): Pr
   await closeBaton(sessionId, { envelope: envelopeFor(orgId, row.projectId, { by: "system", attended: false }), reason: "The owner ended it." });
 }
 
+/** The owner closed the chat's `feature` request (§app.project-assistant/closing): an open chat ends with it, kept
+    readable as history, and their one open chat is free again. A chat already ended or gone is left as it is. */
+export async function closeFeatureChatForRequest(orgId: string, sessionId: string): Promise<void> {
+  const row = batonById(sessionId)?.row;
+  if (!row || row.orgId !== orgId || !isOpen(row)) return;
+  await (closeForTest ?? closeBaton)(sessionId, { envelope: envelopeFor(orgId, row.projectId, { by: "system", attended: false }), reason: "The owner closed the request." });
+}
+
 // ---- the owner's page writes to it ------------------------------------------------------------------------------
 
 /** The owner's own feature request chat by its page handle (k_…): only a chat this person opened while they are the

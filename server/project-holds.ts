@@ -120,3 +120,27 @@ export async function cancelHeld(projectId: string, ref: string, reason: string 
   const engine = engineOrThrow(projectId);
   await actOrThrow(engine, h.sessionId, "hold/cancel", { id: h.id, ...(reason ? { reason } : {}) }, envelopeFor(engine, projectId, who), { settle: true });
 }
+
+/**
+ * The owner closed a fix request whose start still waits (§app.project-assistant/closing, q8): every held `build/start`
+ * act of the project with that request as its basis is cancelled (`hold/cancel`, a correction any caller may make).
+ * Returns how many. An engine not open on this host holds none.
+ */
+export async function cancelHeldForRequest(projectId: string, requestId: string): Promise<number> {
+  const engine = engineOrThrow(projectId);
+  if (!isOrgHostOpen(engine)) return 0;
+  const basisOf = (h: Hold): unknown => (h.data as { basis?: { kind?: unknown; id?: unknown } } | undefined)?.basis;
+  const mine = hostOf(engine)
+    .holds()
+    .filter((h) => h.act !== false && h.event === "build/start" && projectOfHold(engine, h) === projectId)
+    .filter((h) => {
+      const b = basisOf(h) as { kind?: unknown; id?: unknown } | undefined;
+      return b?.kind === "owner-request" && b.id === requestId;
+    });
+  let n = 0;
+  for (const h of mine) {
+    await actOrThrow(engine, h.sessionId, "hold/cancel", { id: h.id, reason: "The owner closed the request." }, envelopeFor(engine, projectId, { by: "system", attended: false }), { settle: true });
+    n++;
+  }
+  return n;
+}

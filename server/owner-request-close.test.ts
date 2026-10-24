@@ -110,13 +110,19 @@ describe("the store", () => {
 });
 
 describe("closing sets off what it should, and only that", () => {
-  test("a fix still waiting to start has its held start cancelled; one already started goes on", async () => {
+  test("closing a fix always tries to cancel a held start; one that was running keeps its prior status, one only held never was", async () => {
     const held = file("fix", "Fix the arrows");
-    await close.closeOwnerRequests(org.id, [held.id], byOwner);
     const started = file("fix", "Fix the quiver");
     store.setRequestStatus(org.id, started.id, "started", { sessionId: "s-quiver" });
-    await close.closeOwnerRequests(org.id, [started.id], byOwner);
-    assert.deepEqual(calls.cancelled, [held.id]);
+    const stuck = file("fix", "Fix the strings");
+    store.setRequestStatus(org.id, stuck.id, "started", { sessionId: "s-strings" });
+    // Only `held` and `stuck` still have a start waiting in a hold.
+    close.setCloseDepsForTest({ cancelHeldStart: async (_p, rid) => (calls.cancelled.push(rid), rid === started.id ? 0 : 1), endFeatureChat: async () => {}, note: async () => true });
+    await close.closeOwnerRequests(org.id, [held.id, started.id, stuck.id], byOwner);
+    assert.deepEqual(calls.cancelled, [held.id, started.id, stuck.id], "tried for every fix, whatever it reads");
+    assert.equal(store.findRequest(org.id, started.id)?.closed?.prior, "started", "a running fix was being worked on");
+    assert.equal(store.findRequest(org.id, stuck.id)?.closed?.prior, "with-team", "a start that was only held never was");
+    assert.equal(ownerAttention().filter((i) => i.id.includes(stuck.id)).length, 0);
   });
   test("a feature request's open planning chat ends with it; an ended one is left alone", async () => {
     const r = file("feature", "A gift card page");

@@ -1,5 +1,5 @@
 import { OPERATOR, type BatonSession } from "../shared/baton";
-import type { FeatureChatRecord, OwnerRequest } from "../shared/project-assistant";
+import { isRequestClosed, type FeatureChatRecord, type OwnerRequest } from "../shared/project-assistant";
 import type { ModelPick } from "../shared/powers";
 import { allBatons, batonById, closeBaton, createBaton, noteMessage, sessionPathOf, undoNote } from "./baton";
 import { acquireChatHandle } from "./chat-handle";
@@ -7,7 +7,7 @@ import { handleOf } from "./person-links";
 import { refreshShare } from "./share/hub";
 import { envelopeFor } from "./org-engine";
 import { OrgError, ownerOf, readRoster } from "./orgs";
-import { addFeatureChat, effectiveAssistantModel, endFeatureChatRecord, featureChatRecord, featureChats, fileRequest, setRequestStatus } from "./project-assistant-store";
+import { addFeatureChat, advanceRequest, effectiveAssistantModel, endFeatureChatRecord, featureChatRecord, featureChats, fileRequest, findRequest, setRequestStatus } from "./project-assistant-store";
 import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 
 /**
@@ -164,8 +164,17 @@ export async function startFeatureChat(
     }
     if (!made.sessionId || made.held || made.planned || !made.path) return { kind: "team", request, why: "the start was held" };
     addFeatureChat(orgId, { sessionId: made.sessionId, personId: input.owner.id, projectId: input.projectId, requestId: request.id, at: new Date().toISOString() });
-    // The request's chat (the Requests tab's Open Chat): a status line naming it, its status unchanged.
-    setRequestStatus(orgId, request.id, "with-team", { sessionId: made.sessionId });
+    // The owner closed the request while the chat was starting (§app.project-assistant/closing, q9): the new chat ends
+    // with it, kept as history, and no status line is written over the close.
+    if (isRequestClosed(findRequest(orgId, request.id)?.status ?? "with-team")) {
+      const row = batonById(made.sessionId)?.row;
+      await (closeForTest ?? closeBaton)(made.sessionId, { envelope: envelopeFor(orgId, row?.projectId ?? input.projectId, { by: "system", attended: false }), reason: "The owner closed the request." }).catch((err: unknown) =>
+        console.warn(`[feature-chats] ending ${made.sessionId} after its request closed: ${err instanceof Error ? err.message : String(err)}`),
+      );
+      return { kind: "team", request, why: "the owner closed the request while its chat was starting" };
+    }
+    // The request's chat (the Requests tab's Open Chat): a status line naming it, its status unchanged; never on a closed one.
+    advanceRequest(orgId, request.id, "with-team", { sessionId: made.sessionId });
     return { kind: "opened", request, sessionId: made.sessionId };
   } finally {
     starting.delete(key);

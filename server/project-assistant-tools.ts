@@ -251,7 +251,8 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
       const a = await acts();
       const out = await a.buildStart(p.id, { requestId: r.id, title: r.title, text: r.text, model }, { attended, sessionId: ctx.sessionId });
       if (!out.taken) return team(out.code === "power-off" ? "starting fixes on its own is off here" : "the team has to start it");
-      if (out.sessionId) advanceRequest(orgId, r.id, "started", { sessionId: out.sessionId });
+      // Only a start that runs is being worked on; a held one reads started when its hold ends (onOwnerFixStarted).
+      if (out.sessionId && !out.held) advanceRequest(orgId, r.id, "started", { sessionId: out.sessionId });
       return say(out.held ? "The fix will start in a few minutes unless the team stops it. Tell the owner it's being worked on soon." : "The fix has started. Tell the owner it's being worked on; a version to try shows up when it's ready.", { request: r.id, started: !out.held });
     },
   };

@@ -307,11 +307,11 @@ export function advanceRequest(orgId: string, id: string, status: Exclude<OwnerR
 }
 
 /** The owner (or their assistant on their yes) closes an open request: a `closed` line with who and the prior status. */
-export function closeRequestLine(orgId: string, id: string, by: OwnerRequestBy, now = Date.now()): OwnerRequest {
+export function closeRequestLine(orgId: string, id: string, by: OwnerRequestBy, now = Date.now(), prior?: OwnerRequestStatus): OwnerRequest {
   const r = findRequest(orgId, id);
   if (!r) throw new OrgError("Unknown request", 404);
   if (isRequestClosed(r.status)) throw new OrgError("This request is already closed.", 409, "closed");
-  append(orgId, r.projectId, { kind: "status", id, status: "closed", at: new Date(now).toISOString(), by, prior: r.status });
+  append(orgId, r.projectId, { kind: "status", id, status: "closed", at: new Date(now).toISOString(), by, prior: prior ?? r.status });
   attentionChanged();
   return findRequest(orgId, id)!;
 }

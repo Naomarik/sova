@@ -1,7 +1,9 @@
 /* ---- WAITING BADGE AND DIALOG (§chat.composer/waiting-badge, §chat.composer/waiting-dialog).
-   The badge sits inside the message box at its left edge, centred on the first text line (the
-   box's one line is --control-md tall, its text centred in it), and the text starts right of it
-   on every line, so a wrapped message reads as one column beside it. It adds no row. */
+   The badge sits inside the message box at its left edge, centred on the last text line: it is
+   pinned to the box's bottom, a --control-md band, which is the whole box while it holds one line
+   (its text centred in it), so one line looks the same and a taller message keeps the badge down
+   by Send. The text starts right of it on every line, so a wrapped message reads as one column
+   beside it. It adds no row. */
 
 .composer-field {
   position: relative;
@@ -18,7 +20,7 @@
   position: absolute;
   z-index: 1;
   left: var(--stroke-icon);
-  top: var(--stroke-icon);
+  bottom: var(--stroke-icon);
   width: var(--tap-min);
   height: calc(var(--control-md) - 2 * var(--stroke-icon));
   display: grid;

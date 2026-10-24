@@ -60,7 +60,7 @@ export function WaitingGlyph(props: { counts: WaitingCounts; look: WaitingLook }
 
 /**
  * The composer's waiting badge (§chat.composer/waiting-badge): inside the message box at its left
- * edge, on the first text line. A press opens the Waiting on you dialog
+ * edge, on the last text line. A press opens the Waiting on you dialog
  * (§chat.composer/waiting-dialog); the dialog stays open, saying nothing is left, when the last
  * item goes and the badge with it.
  */

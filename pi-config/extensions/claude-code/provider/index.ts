@@ -16,7 +16,7 @@
 import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import type { ThinkingLevelMap } from "@earendil-works/pi-ai";
 import { claudeContextWindow, claudeModel, claudeOffer, isClaudeIdShape, resolveClaude } from "../catalog.ts";
-import { CLAUDE_LOGIN_ENTRY, hostLogins, recordedLogin } from "../accounts.ts";
+import { CLAUDE_LOGIN_ENTRY, hostLogins, loginContextFromEnv, recordedLogin } from "../accounts.ts";
 import { registerAutoCompact } from "./auto-compact.ts";
 import { CLAUDE_LOGIN_COMMAND, pickChatLogin } from "./login-command.ts";
 import { getSessionBridge } from "./session-bridge.ts";
@@ -178,5 +178,6 @@ export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessio
  * registry and its exit hooks, so no CLI process starts at extension load.
  */
 export function registerClaudeCodeProvider(pi: ExtensionAPI): void {
-	registerProviderIfEnabled(pi, getSessionBridge({ logins: hostLogins() }));
+	// A Sova chat process carries its project's login (SOVA_CLAUDE_LOGIN_CONTEXT); a terminal session carries none.
+	registerProviderIfEnabled(pi, getSessionBridge({ logins: hostLogins(), loginContext: () => loginContextFromEnv() }));
 }

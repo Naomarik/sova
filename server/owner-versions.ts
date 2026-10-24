@@ -31,6 +31,9 @@ export interface OwnerVersion {
   projectId: string;
   projectName: string;
   label: string;
+  /** The label the copy had under the old wording (`Fix {n} · started {date}`): an older `try` request's title, and
+      a short name `start_version` still takes. Absent on the Current version and a fix the owner asked for. */
+  legacyLabel?: string;
   rec: InstanceRecord;
   /** Its first share endpoint and port, when the copy can be shared at all. */
   endpoint: string | null;
@@ -150,6 +153,7 @@ export async function projectVersions(orgId: string, project: { id: string; name
   for (const r of requests) if (r.projectId === project.id && r.kind === "fix" && r.sessionId) fixTitle.set(r.sessionId, r.title);
   const out: OwnerVersion[] = [];
   let n = 0;
+  const seen = new Map<string, number>();
   const mainOnMaster = await onMaster(project.root);
   const ordered = [...recs].sort((a, b) => (real(a.checkout) === root ? -1 : real(b.checkout) === root ? 1 : a.createdAt.localeCompare(b.createdAt)));
   for (const rec of ordered) {
@@ -159,7 +163,15 @@ export async function projectVersions(orgId: string, project: { id: string; name
     if (!main && !tree) continue;
     // The main checkout on any other branch is not the current version: no row for it.
     if (main && !mainOnMaster) continue;
-    const label = main ? "Current version" : fixTitle.has(tree!.sessionId) ? `Fix: ${fixTitle.get(tree!.sessionId)}` : `Fix ${++n} · started ${dateWord(rec.createdAt)}`;
+    // Honest words (§app.project-assistant/versions): a fix the owner asked for by its request's title, the team's own
+    // work as work in progress; the old wording kept only to find older requests and short names by.
+    const legacyLabel = !main && !fixTitle.has(tree!.sessionId) ? `Fix ${++n} · started ${dateWord(rec.createdAt)}` : undefined;
+    const base = main ? "Current version" : fixTitle.has(tree!.sessionId) ? `Fix: ${fixTitle.get(tree!.sessionId)}` : `Work in progress · started ${dateWord(rec.createdAt)}`;
+    // Unique within the project: a repeat gets " (2)", " (3)"… in the copies' order.
+    const k = base.toLowerCase();
+    const count = (seen.get(k) ?? 0) + 1;
+    seen.set(k, count);
+    const label = count === 1 ? base : `${base} (${count})`;
     const def = defAt(rec.checkout) ?? mainDef;
     // Never a copy whose definition (or the main one's) refuses sharing or holds sensitive data.
     const refused = !def || shareRefusal(def) !== null || (mainDef !== null && holdsSensitive(mainDef));
@@ -169,17 +181,25 @@ export async function projectVersions(orgId: string, project: { id: string; name
     const running = !!ep && rec.desired[ep.service.name] === "running" && (ep.service.static !== undefined ? serve !== null : await answers(ep.port));
     // A copy whose copies can't be shown never reads starting or failed: it is not openable at all.
     const state = ep ? stateOf(rec.id, running, Date.now()) : "not-running";
-    if (state === "running") closeTryRequests(orgId, project.id, label, requests);
-    out.push({ handle: handleOf("v", rec.id), projectId: project.id, projectName: project.name, label, rec, endpoint: ep ? endpoint : null, port: ep?.port ?? null, serve, running, state });
+    if (state === "running") closeTryRequests(orgId, project.id, { id: rec.id, label, ...(legacyLabel ? { legacyLabel } : {}) }, requests);
+    out.push({ handle: handleOf("v", rec.id), projectId: project.id, projectName: project.name, label, ...(legacyLabel ? { legacyLabel } : {}), rec, endpoint: ep ? endpoint : null, port: ep?.port ?? null, serve, running, state });
   }
   return out;
 }
 
-/** A version's copy runs (whoever started it): the owner's open `try` requests for it are done (§app.project-assistant/requests). */
-export function closeTryRequests(orgId: string, projectId: string, label: string, requests: readonly OwnerRequest[] = orgRequests(orgId)): void {
-  const title = label.slice(0, OWNER_REQUEST_TITLE_MAX);
+/** Whether a `try` request asked for this version: by its copy's id, or, for one filed before requests named their
+    copy, by its title being the version's label or its old label (§app.project-assistant/versions). */
+export function tryRequestIsFor(r: Pick<OwnerRequest, "kind" | "version" | "title">, v: { id: string; label: string; legacyLabel?: string }): boolean {
+  if (r.kind !== "try") return false;
+  if (r.version) return r.version === v.id;
+  return r.title === v.label.slice(0, OWNER_REQUEST_TITLE_MAX) || (!!v.legacyLabel && r.title === v.legacyLabel.slice(0, OWNER_REQUEST_TITLE_MAX));
+}
+
+/** A version's copy runs (whoever started it): the owner's open `try` requests for exactly that copy are done
+    (§app.project-assistant/requests); a closed one is never touched. */
+export function closeTryRequests(orgId: string, projectId: string, v: { id: string; label: string; legacyLabel?: string }, requests: readonly OwnerRequest[] = orgRequests(orgId)): void {
   for (const r of requests)
-    if (r.projectId === projectId && r.kind === "try" && r.status === "with-team" && r.title === title)
+    if (r.projectId === projectId && r.status === "with-team" && tryRequestIsFor(r, v))
       try {
         advanceRequest(orgId, r.id, "done");
       } catch (err) {

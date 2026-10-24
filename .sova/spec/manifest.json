@@ -1902,9 +1902,9 @@
         "src/lib/section-reveal.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-21T14:42Z",
-        "source": "pi-session:d5060398-05c1-4e9b-a6a5-186d2888b9b8#483165cc"
+        "by": "omar",
+        "at": "2026-10-23T23:10Z",
+        "source": "pi-session:3f2248f5-f2ff-4447-a7d5-c7b38e115af6#b8fd14ae"
       }
     },
     "§app.session-list/archive-cleanup": {
@@ -1943,9 +1943,9 @@
         "src/components/RowPlace.tsx"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-21T14:42Z",
-        "source": "pi-session:d5060398-05c1-4e9b-a6a5-186d2888b9b8#483165cc"
+        "by": "omar",
+        "at": "2026-10-23T23:10Z",
+        "source": "pi-session:3f2248f5-f2ff-4447-a7d5-c7b38e115af6#b8fd14ae"
       }
     },
     "§app.session-list/groups": {
@@ -1963,7 +1963,39 @@
         "src/lib/group-open.test.ts",
         "src/lib/session-groups.ts",
         "src/lib/session-groups.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-23T23:10Z",
+        "source": "pi-session:3f2248f5-f2ff-4447-a7d5-c7b38e115af6#b8fd14ae"
+      }
+    },
+    "§app.session-list/guide-lines": {
+      "kind": "behavior",
+      "requires": [
+        "§app.session-list/content-rules",
+        "§app.session-list/organizations",
+        "§app.session-list/groups",
+        "§app.session-list/archive-by-date",
+        "§app.projects/list",
+        "§app.session-list/accessibility"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/Sidebar.tsx",
+        "src/lib/guide-line.ts",
+        "src/lib/list-scroll-hold.ts",
+        "src/app.css",
+        "src/lib/guide-line.test.ts",
+        "server/sidebar-guide-lines.integration.test.ts",
+        "src/design/base.css"
+      ],
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-23T23:10Z",
+        "source": "pi-session:3f2248f5-f2ff-4447-a7d5-c7b38e115af6#b8fd14ae"
+      }
     },
     "§app.session-list/recent": {
       "kind": "behavior",
@@ -10552,9 +10584,9 @@
         "src/lib/section-reveal.browser.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-21T14:42Z",
-        "source": "pi-session:d5060398-05c1-4e9b-a6a5-186d2888b9b8#483165cc"
+        "by": "omar",
+        "at": "2026-10-23T23:10Z",
+        "source": "pi-session:3f2248f5-f2ff-4447-a7d5-c7b38e115af6#b8fd14ae"
       }
     },
     "§app.project-overseer/coding-mode": {
@@ -18681,9 +18713,9 @@
         "§app.session-list/organizations"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-21T14:42Z",
-        "source": "pi-session:d5060398-05c1-4e9b-a6a5-186d2888b9b8#483165cc"
+        "by": "omar",
+        "at": "2026-10-23T23:10Z",
+        "source": "pi-session:3f2248f5-f2ff-4447-a7d5-c7b38e115af6#b8fd14ae"
       }
     },
     "§app.projects/placement": {

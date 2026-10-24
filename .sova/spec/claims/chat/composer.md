@@ -69,7 +69,7 @@ pending attachments, then the input row (mic, `plus` trigger, textarea, Send, St
       <label class="visually-hidden" for="composer-input">Message</label>
       <div class="composer-field">
         <!-- with an open alignment or option card: the waiting badge, at the box's left edge on its
-             first line (§chat.composer/waiting-badge) -->
+             last line (§chat.composer/waiting-badge) -->
         <button class="waiting-badge" type="button" aria-haspopup="dialog" aria-label="…">…</button>
         <textarea class="input textarea composer-input" id="composer-input" rows="1"
                   placeholder="Enter sends" enterkeyhint="send"
@@ -559,9 +559,11 @@ wait for the socket's own word.
 
 ## §chat.composer/waiting-badge — What's waiting on you, inside the message box
 
-One small badge inside the message box, at its left edge and centred on the first text line, says
+One small badge inside the message box, at its left edge and centred on the last text line, says
 what in this chat waits for your answer: its open alignments (§chat/alignment) and its open option
-cards. It replaces the alignment chip and the Overseer's open-cards chip that used to sit in the
+cards. With one line it is centred on that line, beside the text; as the message grows to more
+lines it stays on the bottom one, next to Send, and never rides up with the first. It replaces
+the alignment chip and the Overseer's open-cards chip that used to sit in the
 run-status row, and it adds no row: the run-status row keeps only its other parts, and the box
 keeps its height. The text, typed or placeholder, starts right of the badge on every line, so a
 wrapped message reads as one column beside it, at the 390px phone width too.

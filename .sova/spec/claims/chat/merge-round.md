@@ -77,7 +77,9 @@ after each landing, since every other branch is then checked against the new mas
   then all the integration tests (§app.server-runtime/test-tiers), each with timeouts near their
   baseline, each touched pi-config extension's suite, build; a test file failing in the full run
   is run again on its own with the suite's runner: passing alone it is named flaky and doesn't hold
-  the branch, failing alone it holds it, named as also failing on master when it does; an
+  the branch; failing alone it is run on master too, and one that also fails there is named
+  pre-existing and doesn't hold the branch either, while one that passes on master, or that can't
+  be told, holds it; an
   extension suite failing the same way on master is master's), leak-scanned over the commits landing would publish,
   then landed with `worktree merge` and built in the main checkout. A step that fails in no time
   didn't run, and its log is read. A branch its owner already merged goes straight to `landed`. A
@@ -249,10 +251,13 @@ shell and under a timeout.
   unclaimed file is a need. A
   test file that fails, in either tier, is run again on its own in the branch's worktree, through
   the same runner on the same runtime (`scripts/run-tests.mjs --runtime <bun|node> <file>`): one
-  that passes alone is named flaky in the check's output and doesn't hold the branch. Only a file
-  that also fails alone is a need. That file is then run on master too, in the main checkout at
-  master's sha (said when it can't be: the file dirty there, the checkout elsewhere), cached per
-  master sha and file, and the need says whether it also fails on master or is new. It also runs `leak-scan.mjs` over the commits landing would
+  that passes alone is named flaky in the check's output and doesn't hold the branch. A file that
+  also fails alone is run on master, in the main checkout at master's sha, cached per master sha
+  and file: one that fails there too is named pre-existing (`Pre-existing on master (not
+  blocking): …`) and doesn't hold the branch; one that passes there is a need, `new test failure:
+  <file>`. A file whose rerun alone or on master can't be told (it timed out, the runner couldn't
+  run it, the file is dirty in the main checkout or that checkout isn't at master) is a need too,
+  with the reason. It also runs `leak-scan.mjs` over the commits landing would
   publish (origin/master to the branch's head): a hit is a need, printed as the scan prints it; a
   scan that can't run is said and doesn't block, since `push` scans again. Each area guide
   (`agents/**/overview.md` in the branch's tree) names in its front-matter the files it `watches`

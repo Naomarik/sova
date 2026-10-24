@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { goAheadFor, landingFile, mainMergesOn, profileIdOf, readLanding, recordGoAhead, recordNotYet } from "./landing.ts";
+import { answerAt, goAheadFor, landingFile, readLanding, recordGoAhead, recordNotYet } from "./landing.ts";
 
 const A = "a".repeat(40);
 const B = "b".repeat(40);
@@ -28,23 +28,28 @@ test("go-aheads are kept per branch and exact commit; Not Yet is cleared by a go
 	}
 });
 
+test("the newest answer at a commit wins; Not Yet wins a tie or a time that can't be read", () => {
+	const at = (go: string | undefined, no: string | undefined) =>
+		answerAt({ v: 1, goAheads: go ? [{ branch: "f", commit: A, at: go, by: "land-it" }] : [], notYet: no ? [{ branch: "f", commit: A, at: no }] : [] }, "f", A)?.kind ?? null;
+	assert.equal(at("2026-10-24T00:05:00Z", "2026-10-24T00:00:00Z"), "go-ahead");
+	assert.equal(at("2026-10-24T00:00:00Z", "2026-10-24T00:05:00Z"), "not-yet");
+	assert.equal(at("2026-10-24T00:00:00Z", "2026-10-24T00:00:00Z"), "not-yet");
+	assert.equal(at("x", "2026-10-24T00:00:00Z"), "not-yet");
+	assert.equal(at(undefined, undefined), null);
+});
+
+test("a Merge Branch record from before the guard was removed still reads", () => {
+	const dir = mkdtempSync(join(tmpdir(), "landing-"));
+	const file = join(dir, "landing.json");
+	try {
+		writeFileSync(file, JSON.stringify({ v: 1, goAheads: [{ branch: "feat/x", commit: A, at: "2026-10-23T00:00:00Z", by: "page" }], notYet: [] }));
+		assert.equal(goAheadFor("feat/x", A, file)?.by, "page");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("the file lives in the chat's state root, else the agent dir's sova folder", () => {
 	assert.equal(landingFile({ SOVA_CHAT_STATE_ROOT: "/s" }), "/s/landing.json");
 	assert.equal(landingFile({ PI_CODING_AGENT_DIR: "/a" }), "/a/sova/landing.json");
-});
-
-test("mainMerges: only the exact value turns the guard on", () => {
-	assert.equal(mainMergesOn(JSON.stringify({ version: 1, offers: {}, mainMerges: "go-ahead" })), true);
-	assert.equal(mainMergesOn(JSON.stringify({ version: 1, offers: {} })), false);
-	assert.equal(mainMergesOn(JSON.stringify({ version: 1, offers: {}, mainMerges: "yes" })), false);
-	assert.equal(mainMergesOn(null), false);
-	assert.equal(mainMergesOn("{nope"), false);
-});
-
-test("the profile is the newest sova-profile entry on the branch", () => {
-	const e = (id: string | null) => ({ type: "custom", customType: "sova-profile", data: { v: 1, profile: id ? { id } : null } });
-	assert.equal(profileIdOf([]), null);
-	assert.equal(profileIdOf([e("merge-captain")]), "merge-captain");
-	assert.equal(profileIdOf([e("merge-captain"), { type: "message" }, e(null)]), null);
-	assert.equal(profileIdOf([e(null), e("merge-captain")]), "merge-captain");
 });

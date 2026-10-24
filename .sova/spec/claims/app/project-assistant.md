@@ -8,7 +8,8 @@ knows each project from its overview and spec and can read its code (§app/spec-
 cleaned for outsiders), remembers every earlier conversation with them, and writes new
 requirements into its own conversation draft (§app.requirements/conversation-drafts). What else it may set off is
 the project's Project Assistant column of power switches (§app.project-overseer/autonomy-levels): anything
-Off reaches the operator as a request. The owner can send it photos and screenshots
+Off reaches the operator as a request, and it offers only what would happen now
+(§app.project-assistant/offers). The owner can send it photos and screenshots
 (§app.project-assistant/photos), its answers may carry a drawing (§app.project-assistant/drawings),
 and it can start a version the owner may try and hand them an `Open` button for it
 (§app.project-assistant/versions). The operator picks its models, sees its requests in Needs
@@ -36,7 +37,8 @@ The owner is never the operator: nothing an owner writes is operator identity, w
 - **Its memory switch** is `project-assistant.json`'s `memory` (absent = on, UniiChat 128 KB).
 - **Its prompt** tells it who it talks to (the owner's first name, never their profile), the
   operator's first name, each shown project (§app.owner-page/conversations) with its overview
-  (§app.spec-lookup/overview) and a project word to name it by, and how to answer: plain words for a
+  (§app.spec-lookup/overview) and a project word to name it by, what it can set off now
+  (§app.project-assistant/offers), and how to answer: plain words for a
   non-technical client, never a file, path, branch, tool, model or internal name, never a promise
   about when, and never the words spec, draft, claim, branch, session or model: "what's been
   agreed", "the project's plan", "the team" instead. It is not told the org's About text, the overseer's notes, any profile but the
@@ -59,13 +61,9 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   Settings → Models turned off, the chat is not ready and does not answer: the page says it isn't
   ready yet and the owner's message is not taken (409 `not-ready`).
 - **The operator in the chat.** The operator opens the same conversation in Sova (Owner card,
-  `Open Assistant Chat`) and may write in it; a turn the operator starts is attended: its acts are
-  never restricted (§app.project-overseer/autonomy-levels). The owner sees the operator's messages under the
-  operator's first name. A turn the owner starts is never attended. Only a message the operator typed
-  in the chat's own composer counts as the operator's turn. Anything else is outside input that the
-  Project Assistant column decides: a message another chat sent, one the Overseer sent, or one with
-  no record of who sent it (for example a message the server stopped writing before it saved its
-  sender).
+  `Open Assistant Chat`) and may write in it. The owner sees the operator's messages under the
+  operator's first name. A turn the operator starts gets no exception: the Project Assistant column
+  decides what it offers and sets off, as in the owner's turns (§app.project-assistant/offers).
 - **Rewind, regenerate and modes are refused**: every message in it is someone's.
 
 ## §app.project-assistant/photos — The owner's photos
@@ -163,11 +161,11 @@ The owner is never the operator: nothing an owner writes is operator identity, w
     `owner_versions` gave (the project's only version when it lists one). It starts only a copy the
     versions list holds (the Current version or a fix's copy), never a branch, the team's work in
     progress or a new copy. Before any act it refuses, in plain words, when the project lists no
-    versions or its copies can't be shown outside the team. An already running copy answers that it
-    is running, with its `Open` button. Otherwise it is the project's `services/run` act
+    versions or its copies can't be shown outside the team. An already running (or starting) copy answers
+    that it is running (or starting), with its `Open` button, whatever the switches. Otherwise it is the project's `services/run` act
     (`copiesRun`, never held, logged in the project's activity), then the engine's `up` of exactly
     that copy as the assistant caller (§app.project-services/callers). With Create, start and update
-    running copies On (or in a turn the operator started) it starts at once and the answer says it
+    running copies On it starts at once and the answer says it
     is starting; Off (or a brake), checked before the act, nothing starts and no act is logged, a `try` request is filed
     (§app.project-assistant/requests) and the answer says it went to the team. A start the engine
     refuses, or one that fails or doesn't answer within its time (§app.project-assistant/versions),
@@ -182,8 +180,11 @@ The owner is never the operator: nothing an owner writes is operator identity, w
 - **Before it acts**, each of `start_fix`, `deploy`, `start_version` and `start_feature_chat` asks the one question the
   owner page asks (§app.project-assistant/abilities) for its project, and on `team` sets nothing off:
   the request stays with the team (`deploy` asks the operator to deploy), and its answer says it went
-  to the team (`started: false`). A turn the operator started skips the switch, brake and engine
-  parts of that question (its acts are never restricted), and keeps the rest.
+  to the team (`started: false`). A turn the operator started asks the same question, with no part
+  skipped (§app.project-assistant/offers).
+- **In the tool list** only as §app.project-assistant/offers says: `start_fix` and
+  `start_feature_chat` only while some shown project would act; `deploy`'s and `start_version`'s
+  descriptions follow what would happen now.
 - **Never**: the shell, files, any operator-only act, another org, a project hidden from the owner
   (§app.owner-page/conversations), a link URL, stopping, removing or making a copy.
 
@@ -227,7 +228,8 @@ The owner is never the operator: nothing an owner writes is operator identity, w
 - **The tools ask it too** (§app.project-assistant/tools), so a line that says the team handles it
   is a tool that answers it went to the team: Deploy On while the engine or a brake refuses
   `deploy/run` reads "The team releases it" and `deploy` answers `started: false`. The page always
-  asks as the owner (unattended).
+  asks as the owner (unattended), and so do the assistant's prompt, its tool list and its acts,
+  in the operator's turns too (§app.project-assistant/offers).
 - **Several projects.** When every shown project the line covers gives the same answer, the line
   is one plain sentence; when they differ, it names the projects of each answer, in the order
   right away, on its own, the team ("Get a problem fixed: on its own for RakibaDesigns, the team
@@ -244,7 +246,47 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   overseer's column, a model, a brake's reason or a limit.
 - **Fresh.** Worked out at each read of Home, so a switch change shows on the owner's page at its
   next read (within a minute, or at once on returning to the tab); nothing is pushed. The
-  assistant follows a change from its next act (the tools read the column at each call).
+  assistant follows a change from its next reply (what it offers, §app.project-assistant/offers)
+  and its next act (the tools read the column at each call).
+
+## §app.project-assistant/offers — What it offers is what would happen now
+
+- **At each reply.** As each reply starts, the assistant's system prompt and its tool list are
+  worked out again from the question Home's card asks (§app.project-assistant/abilities), for fix,
+  version, release and feature and each shown project: everything that question counts (the
+  switch, a brake or pause, no model set, the limits, no release steps, no version that could be
+  opened). An ability is offered only where it answers `now` or `held`. One that answers `team` or
+  `none` everywhere is hidden completely: the prompt says nothing of it and the assistant never
+  offers it.
+- **A fix.** While no shown project would start a fix, the prompt has no fix offer and `start_fix`
+  is not in its tool list; a problem is filed with the team as always (`report_issue`).
+- **Planning something new.** While no shown project would open a feature request chat
+  (§app.project-assistant/feature-chats), the prompt has no planning chat and `start_feature_chat`
+  is not in its tool list. Asking for something new then takes the path that is always there,
+  presented as the normal way and never as a refusal: work out what they want, repeat it back, and
+  after a clear yes send it to the team.
+- **A release.** `deploy` stays in the tool list (asking the team is always allowed), but its
+  prompt line and description follow the answer: only while it would release on its own does it
+  say it releases; otherwise it says it asks the team; and for a project with no release steps it
+  never says the team will release it, only that the request is with the team.
+- **Versions.** Opening a version that is already running or starting is always offered, whatever
+  the switches (`owner_versions`, and `start_version` answering with its `Open` button,
+  §app.project-assistant/versions). Starting a version that isn't running is offered only where its
+  project's version answer is `now`; elsewhere the assistant says a request to start one goes to
+  the team, and `start_version` files it (a `try` request).
+- **Several projects.** When an ability is offered for only some shown projects, the prompt names
+  those projects, as Home's card does; a call for another project still goes to the team.
+- **A change mid-chat** applies from the next reply. That reply's run starts with a hidden note to
+  the assistant naming each ability newly offered or no longer offered, and telling it not to
+  follow up an earlier offer that is no longer true. The note comes once per change and never when
+  nothing changed, and it is never in the owner's view. It compares with the offers this server last worked out for the chat (at its
+  open, or when the server reconnected to it), so a change made while no server ran gets no note;
+  the prompt follows it all the same.
+- **No exception for the operator.** A turn the operator started in the chat gets the same prompt,
+  the same tool list and the same checks at each act as the owner's turn.
+- **The act still asks.** Each act asks the question again at its call
+  (§app.project-assistant/tools), so what changed since the reply started, or a project the offer
+  didn't name, goes to the team.
 
 ## §app.project-assistant/requests — The owner's requests, and where they stand
 
@@ -414,7 +456,8 @@ The owner is never the operator: nothing an owner writes is operator identity, w
 - **Cost shown**: each model with its price per million input and output tokens
   (§app.project-costs/price-table), or that its price isn't known.
 - **None resolved = not run**: no reply model, no reply (§app.project-assistant/chat); no coding
-  model, `start_fix` stays a request.
+  model, a fix isn't offered and `start_fix` stays a request; no gathering model, a planning chat
+  isn't offered (§app.project-assistant/offers).
 
 ## §app.project-assistant/never — What the owner and the assistant's model never get
 

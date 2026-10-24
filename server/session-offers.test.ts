@@ -68,6 +68,8 @@ beforeEach(() => {
     },
     async git(args) {
       if (args[0] === "rev-parse" && args[1] === "HEAD") return { code: 0, stdout: `${head}\n` };
+      // The branch's own head (a once-per-commit card's check, §chat.offers/card).
+      if (args.includes("refs/heads/feat/x^{commit}")) return { code: 0, stdout: `${head}\n` };
       if (args.includes("--abbrev-ref")) return { code: 0, stdout: "feat/x\n" };
       if (args.includes("refs/heads/master")) return { code: 0, stdout: "x\n" };
       if (args[0] === "status") return { code: 0, stdout: "" };
@@ -155,18 +157,64 @@ describe("showing an offer", () => {
     assert.equal(JSON.stringify(card).includes("merge it"), false, "the send text stays on the server");
   });
 
-  test("the repeat guard: once per commit by default; a new commit may show it again once the first is answered", async () => {
+  test("the repeat guard: once per commit by default; a new commit shows it again once the first is answered", async () => {
     writeOffers({ merge: def() });
     const id = sid();
     await show(id, "merge");
     await refused(show(id, "merge"), /already shown for this commit/);
-    head = "b".repeat(40);
-    await refused(show(id, "merge"), /open/);
     await offers.chooseOffer(pathOf(id), id, "of_1", 1);
+    head = "b".repeat(40);
     const second = await show(id, "merge");
     assert.equal(second.id, "of_2");
     const cards = (await offers.sessionOffers(id, project)).cards;
     assert.deepEqual(cards.map((c) => [c.id, c.state]), [["of_1", "chosen"], ["of_2", "open"]]);
+  });
+
+  test("a once-per-commit card can't be pressed once its branch moved on: refused, nothing sent or recorded; a show at the new head replaces it", async () => {
+    writeFileSync(join(project, ".sova", "offers.json"), readFileSync(new URL("../.sova/offers.json", import.meta.url), "utf8"));
+    rmSync(join(project, ".sova", "spec"), { recursive: true, force: true });
+    const landing = join(root, "agent", "sova", "landing.json");
+    const { goAheadFor, readLanding } = await import("../pi-config/extensions/worktrees/landing.ts");
+    const captain = sid();
+    const owner = sid();
+    const A = "1".repeat(40);
+    const B = "2".repeat(40);
+    head = A;
+    landingTree = { path: project, branch: "feat/x", state: "ready", landing: { state: "ready", commit: head } };
+    const showLanding = () => offers.showOffer({ path: pathOf(owner), sessionId: owner, offer: "landing", by: "another-chat", from: pathOf(captain), tree: project });
+    const atA = await showLanding();
+    assert.equal(atA.title, `Land feat/x at ${A.slice(0, 7)}?`);
+    // The branch moves on to B: Land It at A is refused, and nothing reaches the captain or landing.json.
+    head = B;
+    await refused(offers.chooseOffer(pathOf(owner), owner, atA.id, 0), /newer commit/);
+    await refused(offers.chooseOffer(pathOf(owner), owner, atA.id, 1), /no longer open/);
+    assert.equal(requests.length, 0, "nothing sent");
+    assert.equal(await goAheadFor("feat/x", A, landing), undefined, "no go-ahead at A");
+    assert.equal(await goAheadFor("feat/x", B, landing), undefined, "nor at B");
+    assert.equal(readLanding(landing).notYet.some((n) => n.commit === A || n.commit === B), false, "no Not Yet");
+    assert.equal((await offers.sessionOffers(owner, project)).cards.find((c) => c.id === atA.id)?.state, "superseded");
+    // Shown at B while A's card were still open: A's is replaced and B's shows at once.
+    head = A;
+    const other = sid();
+    const first = await offers.showOffer({ path: pathOf(other), sessionId: other, offer: "landing", by: "another-chat", from: pathOf(captain), tree: project });
+    head = B;
+    landingTree = { path: project, branch: "feat/x", state: "ready", landing: { state: "ready", commit: head } };
+    const atB = await offers.showOffer({ path: pathOf(other), sessionId: other, offer: "landing", by: "another-chat", from: pathOf(captain), tree: project });
+    assert.equal(atB.title, `Land feat/x at ${B.slice(0, 7)}?`);
+    const cards = (await offers.sessionOffers(other, project)).cards;
+    assert.deepEqual(cards.map((c) => [c.id, c.state, c.supersededBy ?? null]), [[first.id, "superseded", atB.id], [atB.id, "open", null]]);
+    await offers.chooseOffer(pathOf(other), other, atB.id, 0);
+    assert.match((requests.at(-1)!.body as { text: string }).text, new RegExp(`^Go ahead: land feat/x at ${B.slice(0, 12)}\\.$`));
+    assert.equal((await goAheadFor("feat/x", B, landing))?.session, other);
+  });
+
+  test("a click whose branch head can't be read is refused and leaves the card open", async () => {
+    writeOffers({ merge: def() });
+    const id = sid();
+    const card = await show(id, "merge");
+    offers.setOfferDeps({ git: async (args) => (args[0] === "rev-parse" && args.includes("refs/heads/feat/x^{commit}") ? { code: 1, stdout: "" } : { code: 0, stdout: "" }) });
+    await refused(offers.chooseOffer(pathOf(id), id, card.id, 0), /can't read feat\/x/);
+    assert.equal(requests.length, 0);
   });
 
   test("while another offer is open, a new one shows nothing and the refusal names the open one", async () => {
@@ -316,7 +364,7 @@ describe("asks you, quietly", () => {
     const card = await show(id, "merge");
     assert.deepEqual(offers.withOpenOffer(id, undefined, false)?.kinds, ["asks-you"]);
     assert.equal(offers.withOpenOffer(id, undefined, true), undefined, "mid-turn: not yet");
-    assert.deepEqual(offers.offerSignalText(id, { stuckWorkers: [] as string[] } as { sentence?: string; stuckWorkers: string[] }), { stuckWorkers: [], sentence: "Merge feat/x into master?" });
+    assert.deepEqual(offers.openOfferOf(id) && { title: offers.openOfferOf(id)!.title }, { title: "Merge feat/x into master?" }, "the digest's Needs you item reads it, idle or working");
     await offers.chooseOffer(pathOf(id), id, card.id, 1);
     assert.equal(offers.withOpenOffer(id, undefined, false), undefined);
     head = "e".repeat(40);
@@ -363,14 +411,14 @@ describe("the Landing offer (§chat.offers/sova-landing, §chat.offers/buttons)"
     const owner = sid();
     landingTree = { path: project, branch: "feat/x", state: "ready", landing: { state: "ready", commit: head } };
     const card = await offers.showOffer({ path: pathOf(owner), sessionId: owner, offer: "landing", by: "another-chat", from: pathOf(captain), tree: project });
-    assert.equal(card.title, "Land feat/x?");
+    assert.equal(card.title, `Land feat/x at ${head.slice(0, 7)}?`);
     assert.deepEqual(card.buttons.map((b) => b.label), ["Land It", "Not Yet"], "Merge Without Specs… is off the card: no draft is left");
     await offers.chooseOffer(pathOf(owner), owner, card.id, 0);
     assert.equal((requests.at(-1)!.body as { path: string }).path, pathOf(captain));
     assert.match((requests.at(-1)!.body as { text: string }).text, /^Go ahead: land feat\/x at a{12}\.$/);
     const { goAheadFor } = await import("../pi-config/extensions/worktrees/landing.ts");
-    assert.equal(goAheadFor("feat/x", head, landingFile())?.session, owner);
-    assert.equal(goAheadFor("feat/x", "b".repeat(40), landingFile()), undefined);
+    assert.equal((await goAheadFor("feat/x", head, landingFile()))?.session, owner);
+    assert.equal(await goAheadFor("feat/x", "b".repeat(40), landingFile()), undefined);
   });
 
   test("not Ready to land: nothing is shown; Not Yet records Not Yet; a refused send records nothing", async () => {
@@ -407,7 +455,7 @@ describe("the Landing offer (§chat.offers/sova-landing, §chat.offers/buttons)"
     await offers.chooseOffer(pathOf(owner), owner, card.id, 0);
     assert.match((requests.at(-1)!.body as { text: string }).text, /without its specs \(my-draft\)/);
     const { goAheadFor } = await import("../pi-config/extensions/worktrees/landing.ts");
-    assert.equal(goAheadFor("feat/x", head, landingFile())?.withoutSpecs, true);
+    assert.equal((await goAheadFor("feat/x", head, landingFile()))?.withoutSpecs, true);
     drafts(false);
   });
 });

@@ -52,14 +52,15 @@ export const RUN_ALLOWED = ["project.worktree.merge"] as const;
 export type RunId = (typeof RUN_ALLOWED)[number];
 
 /** Placeholders a title may use, and those a send text may use. */
-export const TITLE_FILLS = ["branch", "base", "project"] as const;
+/** `{commit}` in a title is the moment's commit shortened to TITLE_COMMIT_LEN characters. */
+export const TITLE_FILLS = ["branch", "base", "commit", "project"] as const;
+export const TITLE_COMMIT_LEN = 7;
 export const SEND_FILLS = ["branch", "base", "commit", "project", "drafts"] as const;
-/** What a button's landing key records (§chat.offers/buttons): the user's go-ahead for this exact commit, or Not Yet. */
+/** What a button's landing key records (§chat.offers/buttons): the user's go-ahead for this commit, or Not Yet. */
 export const LANDING_RECORDS = ["go-ahead", "go-ahead-without-specs", "not-yet"] as const;
 export type LandingRecord = (typeof LANDING_RECORDS)[number];
-/** The offers file's top-level switch of the merge guard (§chat.worktrees/merge-guard), and its one value. */
-export const MAIN_MERGES_KEY = "mainMerges";
-export const MAIN_MERGES_GO_AHEAD = "go-ahead";
+/** The retired merge guard's top-level switch: a leftover one is accepted and does nothing (§chat.offers/file). */
+export const RETIRED_FILE_KEYS = ["mainMerges"] as const;
 
 export const NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
 
@@ -91,12 +92,12 @@ export interface OfferDef {
 
 export type ParsedOffer = { name: string; ok: true; def: OfferDef } | { name: string; ok: false; error: string };
 
-export type ParsedOffersFile = { state: "missing" } | { state: "broken"; error: string } | { state: "ok"; offers: ParsedOffer[]; mainMerges?: typeof MAIN_MERGES_GO_AHEAD };
+export type ParsedOffersFile = { state: "missing" } | { state: "broken"; error: string } | { state: "ok"; offers: ParsedOffer[] };
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
 /** The keys the offers file, an offer and a button may hold (the parse refuses any other; the settings reference covers each). */
-export const OFFERS_FILE_KEYS = ["version", "offers", "mainMerges"] as const;
+export const OFFERS_FILE_KEYS = ["version", "offers"] as const;
 export const OFFER_KEYS = ["when", "why", "title", "onlyIf", "repeat", "shownBy", "disabled", "buttons"] as const;
 export const BUTTON_KEYS = ["label", "about", "send", "run", "to", "onlyIf", "confirm", "landing"] as const;
 
@@ -218,11 +219,10 @@ export function parseOffersFile(text: string | null): ParsedOffersFile {
     return { state: "broken", error: `The file is not JSON: ${err instanceof Error ? err.message : String(err)}` };
   }
   if (!isObj(raw)) return { state: "broken", error: "The file must be a JSON object." };
-  const extra = Object.keys(raw).filter((k) => !(OFFERS_FILE_KEYS as readonly string[]).includes(k));
+  const extra = Object.keys(raw).filter((k) => !(OFFERS_FILE_KEYS as readonly string[]).includes(k) && !(RETIRED_FILE_KEYS as readonly string[]).includes(k));
   if (extra.length) return { state: "broken", error: `The file has an unknown key "${extra[0]}".` };
   if (raw.version !== 1) return { state: "broken", error: 'The file needs "version": 1.' };
   if (!isObj(raw.offers)) return { state: "broken", error: 'The file needs "offers": an object of named offers.' };
-  if (raw.mainMerges !== undefined && raw.mainMerges !== MAIN_MERGES_GO_AHEAD) return { state: "broken", error: `"${MAIN_MERGES_KEY}" can only be "${MAIN_MERGES_GO_AHEAD}".` };
   const offers: ParsedOffer[] = [];
   for (const [name, v] of Object.entries(raw.offers)) {
     if (!NAME_RE.test(name)) {
@@ -240,7 +240,7 @@ export function parseOffersFile(text: string | null): ParsedOffersFile {
       offers.push({ name, ok: false, error: `${err.message[0]!.toUpperCase()}${err.message.slice(1)}.` });
     }
   }
-  return { state: "ok", offers, ...(raw.mainMerges === MAIN_MERGES_GO_AHEAD ? { mainMerges: MAIN_MERGES_GO_AHEAD } : {}) };
+  return { state: "ok", offers };
 }
 
 /** The file's offer named `name`, when it is valid and enabled now. */

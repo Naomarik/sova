@@ -8,7 +8,6 @@ import {
   isVerbResult,
   ordered,
   parseDefinition,
-  scratchSlots,
   type Check,
   CONFORM_LOG_LINES,
   type ConformLog,
@@ -18,6 +17,8 @@ import {
   type ProjectDef,
   type VerbResult,
 } from "../../shared/project-contract";
+import { slotLayoutOf } from "../../shared/project-slots";
+import { limitInForce } from "./copy-limit";
 import { projectOf } from "../project-root";
 import { actFor, callerTag, parseRequest, passRefusal, realGit, VerbFailure, type Caller, type ProjectEngine } from "./engine";
 import { rssOf } from "./drivers";
@@ -179,6 +180,12 @@ export function readStamp(project: string, defHash: string): Stamp | null {
   return s && typeof s === "object" ? s : null;
 }
 
+/** Every stamp of `project` on this host, by definition hash (the Branches tab's memory estimate reads them). */
+export function stampsOf(project: string): Record<string, Stamp> {
+  const all = readStamps().stamps[project];
+  return all && typeof all === "object" ? all : {};
+}
+
 function writeStamp(project: string, defHash: string, stamp: Stamp): void {
   const f = readStamps();
   f.stamps[project] = { ...(f.stamps[project] ?? {}), [defHash]: stamp };
@@ -298,7 +305,10 @@ async function runSuite(
   const s = new Suite(engine, confCaller);
   const { project, commit, def } = t;
   const memory = new Memory(engine, def.services.filter((x) => x.scope === "checkout" && x.cmd && !x.container).map((x) => x.name));
-  const [slotA, slotB] = scratchSlots(def);
+  // The scratch slots sit above the copies' fixed range, whatever the limit, where their ports meet no
+  // other place's (§app.project-services/conform, /instances).
+  const layout = slotLayoutOf(def, limitInForce(project, def).numbering);
+  const [slotA, slotB] = layout.scratch;
   const branchA = `sova/conform-${runId}-a`;
   const branchB = `sova/conform-${runId}-b`;
   const token = `sova-conform-${runId}`;
@@ -598,6 +608,7 @@ async function runSuite(
       leaks,
       ...(logs.length ? { logs } : {}),
       ...(recA ? { memory: memory.report() } : {}),
+      ...(layout.scratchNote ? { notes: [layout.scratchNote] } : {}),
     },
     envelopes: s.envelopes,
     failure: s.firstFailure,

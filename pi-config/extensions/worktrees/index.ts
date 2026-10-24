@@ -22,7 +22,6 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { createWorktree, defaultTarget, forkPoint, GitError, type Git, inspectWorktree, landedStats, mergeWorktree, type MergeProbe, probeMerge, runGit } from "./git.ts";
-import { CAPTAIN_PROFILE, goAheadFor, LANDING_REFUSAL, landingFile, mergeNeedsGoAhead, profileIdOf } from "./landing.ts";
 import { type MergeSpecReport, mergeSpecReport, specLines } from "./spec.ts";
 import {
 	activeTrees,
@@ -59,15 +58,12 @@ export interface WorktreesOptions {
 	now?: () => number;
 	/** The spec report of a merge (default spec.ts `mergeSpecReport`). */
 	specReport?: typeof mergeSpecReport;
-	/** Where the user's landing go-aheads are kept (default landing.ts `landingFile`, read per call). */
-	landingFile?: () => string;
 }
 
 export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = {}) {
 	const git = options.git ?? runGit;
 	const now = options.now ?? Date.now;
 	const specReport = options.specReport ?? mergeSpecReport;
-	const goAheadsFile = options.landingFile ?? (() => landingFile());
 	let set: WorktreesActive | undefined;
 	let sessionId = "";
 	let sandboxOn = false;
@@ -126,19 +122,6 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 		if (!ctx.hasUI) throw new Error("This session's sandbox is on and there is no one to ask; the user must approve worktree changes.");
 		const ok = await ctx.ui.confirm(title, `${message}\n\nThe sandbox is on: this lets the session and its workers write there.`);
 		if (!ok) throw new Error("The user declined; nothing changed.");
-	}
-
-	/**
-	 * The merge guard (§chat.worktrees/merge-guard): in a project whose offers file, as the target holds
-	 * it, says `"mainMerges": "go-ahead"`, a merge into main or master needs the user's go-ahead for the
-	 * branch at exactly its current head, unless this session runs as the merge captain.
-	 */
-	async function goAheadCheck(ctx: ExtensionContext, t: TrackedWorktree, target: string): Promise<void> {
-		if (!(await mergeNeedsGoAhead(git, t.path, target))) return;
-		if (profileIdOf(ctx.sessionManager.getBranch()) === CAPTAIN_PROFILE) return;
-		const head = await git(["rev-parse", "--verify", "-q", `refs/heads/${t.branch}^{commit}`], t.path);
-		const sha = head.code === 0 ? head.stdout.trim() : "";
-		if (!sha || !goAheadFor(t.branch, sha, goAheadsFile())) throw new Error(LANDING_REFUSAL);
 	}
 
 	/** The spec report of a merge; best-effort, so a failure never fails the merge. */
@@ -280,7 +263,6 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 						if (!t) throw new Error(`No tracked worktree ${params.path}.\n${listing()}`);
 						if (t.status !== "active") throw new Error(`${t.path} is ${statusText(t)}; only an active worktree is merged.`);
 						const target = params.target ?? (await defaultTarget(git, t.path)) ?? "master";
-						await goAheadCheck(ctx, t, target);
 						await approve(ctx, "Merge a worktree?", `Merge ${t.branch} (${t.path}) into ${target}.`);
 						const { before, branchSha, ...m } = await mergeWorktree(git, { tree: t, target });
 						markMerged(t, { target: m.target, sha: m.sha, how: "tool" });

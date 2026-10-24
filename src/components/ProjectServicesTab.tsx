@@ -1,7 +1,7 @@
 import { createSignal, For, type JSX, Show } from "solid-js";
 import type { LinkView, VerbResult } from "../../shared/project-contract";
-import { type CopyView, isStarting, type ServiceRowView } from "../../shared/services-view";
-import { getProjectServices, runProjectVerb } from "../lib/api";
+import { type CopyLimitView, type CopyView, isStarting, type ServiceRowView } from "../../shared/services-view";
+import { getProjectServices, runProjectVerb, setCopyLimit } from "../lib/api";
 import { createPoll } from "../lib/poll";
 import {
   adoptedLine,
@@ -10,13 +10,19 @@ import {
   copyChip,
   copyMemory,
   copyName,
+  costLine,
   createdByWord,
   DESTRUCTIVE,
   doneLine,
   entryHref,
   entryTitle,
   httpHref,
+  limitHint,
+  limitInputProblem,
+  limitLine,
+  limitSource,
   memoryOf,
+  usableLine,
   notReadyLine,
   openEntry,
   portLabel,
@@ -71,6 +77,114 @@ function Ports(props: { service: ServiceRowView; named?: boolean }) {
         </For>
       </span>
     </Show>
+  );
+}
+
+/**
+ * The copy limit (§app.project-services/services-ui): how many copies there are and run, the limit in force and
+ * where it comes from, with Change (an inline editor: a number, Save, Cancel, Reset to File's Value); the
+ * over-limit sentence while more run than it allows; and what the copies cost in memory, warning when the
+ * copies at the limit need more than this machine has available now.
+ */
+function CopyLimit(props: { projectId: string; limit: CopyLimitView; archived: boolean; changed: () => void }) {
+  const [editing, setEditing] = createSignal(false);
+  const [text, setText] = createSignal("");
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const open = () => {
+    setText(String(props.limit.value));
+    setError(null);
+    setEditing(true);
+  };
+  const save = async (cap: number | null) => {
+    if (busy()) return;
+    if (cap !== null) {
+      const why = limitInputProblem(text());
+      if (why) return setError(why);
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await setCopyLimit(props.projectId, cap);
+      const done = r.limit.source === "machine" ? `Up to ${r.limit.value} copies run at once on this machine.` : `The project's file sets the limit again: up to ${r.limit.value} at once.`;
+      toast(done);
+      announce(done);
+      setEditing(false);
+      props.changed();
+    } catch (x) {
+      setError(errText(x));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const cost = () => costLine(props.limit);
+  return (
+    <div class="services-limit">
+      <Show
+        when={editing()}
+        fallback={
+          <p class="orgs-line services-limit-line">
+            <span>
+              {limitLine(props.limit)}, <span class="services-limit-source">{limitSource(props.limit)}</span>
+            </span>
+            <Show when={!props.archived}>
+              <button type="button" class="button button-sm button-ghost" onClick={open}>
+                Change
+              </button>
+            </Show>
+          </p>
+        }
+      >
+        <form
+          class="services-limit-form"
+          novalidate
+          onSubmit={(e) => {
+            e.preventDefault();
+            void save(Number(text().trim()));
+          }}
+        >
+          <div class="field">
+            <label class="field-label" for={`copy-limit-${props.projectId}`}>
+              Copies at once on this machine
+            </label>
+            <input
+              id={`copy-limit-${props.projectId}`}
+              class="input services-limit-input"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              max="16"
+              step="1"
+              value={text()}
+              aria-invalid={error() ? "true" : undefined}
+              aria-describedby={`copy-limit-hint-${props.projectId}`}
+              onInput={(e) => setText(e.currentTarget.value)}
+            />
+            <p class="field-hint" id={`copy-limit-hint-${props.projectId}`}>
+              {limitHint(props.limit)}
+            </p>
+            <Show when={error()}>{(e) => <p class="field-error">{e()}</p>}</Show>
+          </div>
+          <div class="button-row">
+            <button type="submit" class="button button-sm button-primary" aria-disabled={busy() ? "true" : undefined}>
+              {busy() ? "Saving…" : "Save"}
+            </button>
+            <button type="button" class="button button-sm button-ghost" onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+            <Show when={props.limit.source === "machine"}>
+              <button type="button" class="button button-sm button-ghost" onClick={() => void save(null)}>
+                Reset to File's Value
+              </button>
+            </Show>
+          </div>
+        </form>
+      </Show>
+      <Show when={props.limit.over}>{(o) => <p class="banner banner-warn services-limit-over">{o()}</p>}</Show>
+      <Show when={usableLine(props.limit)}>{(u) => <p class="field-hint services-limit-places">{u()}</p>}</Show>
+      <For each={props.limit.unavailable ?? []}>{(line) => <p class="field-hint services-limit-places">{line}</p>}</For>
+      <p class={`field-hint services-limit-cost${cost().warn ? " services-limit-cost-warn" : ""}`}>{cost().text}</p>
+    </div>
   );
 }
 
@@ -346,9 +460,16 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
       <Show when={poll.data()} fallback={<p class="orgs-empty">{poll.error() ? `Couldn't read this project's copies. ${poll.error()}` : "Reading this project's copies."}</p>}>
         {(v) => (
           <>
-            <p class="orgs-line">
-              {copies().length === 1 ? "1 copy" : `${copies().length} copies`} on this host, {copies().filter((c) => c.state === "running" || c.state === "degraded").length} running.
-            </p>
+            <Show
+              when={v().limit}
+              fallback={
+                <p class="orgs-line">
+                  {copies().length === 1 ? "1 copy" : `${copies().length} copies`} on this host, {copies().filter((c) => c.state === "running" || c.state === "degraded").length} running.
+                </p>
+              }
+            >
+              {(l) => <CopyLimit projectId={props.projectId} limit={l()} archived={props.archived} changed={() => poll.refetch()} />}
+            </Show>
             <Show when={v().error}>{(e) => <p class="field-error">Couldn't read their status. {e()}</p>}</Show>
             <Show when={poll.error()}>{(e) => <p class="field-error">The last read failed; this is what it showed before. {e()}</p>}</Show>
             <Show when={copies().length}>

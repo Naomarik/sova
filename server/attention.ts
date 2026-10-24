@@ -54,7 +54,13 @@ export interface AttentionRow {
   /** One of the session's tour recordings waits for a sign-in (server/tours/sign-in-notice.ts, §app.tours/sites):
       where, what it asks for, and since when (ms epoch). */
   tourSignIn?: { origin: string; code: boolean; since: number };
+  /** The session shows an open offer card (server/session-offers.ts openOfferOf, §chat.offers/card): its title
+      and when it was shown (ms epoch). */
+  offer?: { title: string; at: number };
 }
+
+/** Act kinds that list in Needs you and count in "need you" but never brief the Overseer (and are no push kind). */
+export const NEVER_BRIEFED: ReadonlySet<AttentionKind> = new Set(["offer-waiting"]);
 
 export const DIGEST_MAX = 30;
 export const STALE_MS = 3 * 86_400_000;
@@ -160,6 +166,10 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   // A tour recording waiting for a sign-in (§app.tours/sites): a blocker until it stops waiting.
   const tour = row.tourSignIn;
   if (tour && !s.archived) add("act", "tour-sign-in", tour.since || lastActive, tour.code ? `Enter the sign-in code for ${tour.origin} on the tour card.` : `Sign in to ${tour.origin} on the tour card.`);
+  // An open option card (§chat.offers/card, Land It today): it waits on the user's click whether or not a turn
+  // runs, so it is a blocker; never a push (no push kind) and never a brief (NEVER_BRIEFED).
+  const offer = row.offer;
+  if (offer && !s.archived) add("act", "offer-waiting", offer.at || lastActive, `Waiting on your answer: ${offer.title}`);
   // Decision signals (server/signals-store.ts): the list carries them only while they should show
   // (idle, not expired after 7 idle days), with the kinds already derived from the fixed thresholds.
   // They are guesses, so never blockers (§app.overseer/attention-digest): soft decide items, which
@@ -167,7 +177,8 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   // reply that seems to ask is one unless open questions already say so (§app.decisions/asks-user).
   const sig = s.signals?.kinds ?? [];
   const at = s.signals?.at ?? lastActive;
-  const asks = sig.includes("asks-you") && !questions && !s.archived;
+  // An open offer card is its own item above, so the asks-you mark it gives an idle row adds no soft item.
+  const asks = sig.includes("asks-you") && !questions && !s.archived && !offer;
   if (asks) {
     const sentence = row.signalText?.sentence;
     add("decide", "asks-you", at, sentence ? `${askLead(row.signalText?.askKind)}: ${sentence}` : "The last reply asks you something.", true);

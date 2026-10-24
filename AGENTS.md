@@ -53,7 +53,7 @@ also update Y" list live in its guide: read the guide of every area your task to
 - Feature work never edits `~/webapps/sova`, the live tree. Each feature session works in its own
   worktree and branch (`git worktree add ~/webapps/.worktrees/sova-<name> -b feat/<name>`; an agent uses
   the `worktree` tool, whose `create <name>` does exactly that and tracks it so its workers may start
-  there); a branch lands through its landing card (the merge captain lands it on your Land It; see
+  there); a branch lands through the merge captain, on the user's go-ahead (see
   **Landing**). Uncommitted edits in the live tree block a release.
   One exception: applying a Project Overseer's Settings change card on Sova's own project
   (§app.project-overseer/settings) lands its settings files on master in the live tree as one commit,
@@ -83,11 +83,13 @@ also update Y" list live in its guide: read the guide of every area your task to
   idle, and its latest turn outcome says the work is finished (with Decisions off: the code checks
   alone). It holds for that commit until the branch changes or lands.
 - **Who merges.** In Sova's repo the merge captain queues a Ready to land branch and Sova shows its
-  session the Landing card: **Land It** is your go-ahead for that exact commit, and the captain
-  lands, pushes and restarts; **Not Yet** leaves it until a new commit. A session's own `worktree
-  merge` into master is refused without that go-ahead (`"mainMerges": "go-ahead"` in
-  `.sova/offers.json`); typed git isn't guarded. A project without a captain declares its own
-  landing offer, or none.
+  session the Landing card: **Land It** is your go-ahead, a shortcut for telling the captain, and the
+  captain lands, pushes and restarts; **Not Yet** leaves it until a new commit. A card exists only once
+  the branch is Ready to land and queued: a session tells the user to press Land It only when its
+  chat shows that card, and otherwise says what still blocks it (Sova's note names it). A branch
+  with no owner chat gets no card: the captain asks for the user's typed OK instead. A Land It
+  survives the captain's clean master merge into the branch. No merge into master needs a
+  recorded go-ahead. A project without a captain declares its own landing offer, or none.
 - **Specs land with the branch.** Sova tells a finished session once per commit to promote its spec
   drafts on its branch and commit them; the branch reads Landing specs until then. If it can't,
   the card offers Merge Without Specs… behind a confirmation.

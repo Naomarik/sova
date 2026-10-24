@@ -58,12 +58,19 @@ export async function readItems(file: string): Promise<InboxItem[] | null> {
 export function countsOf(items: InboxItem[]): TeamInboxCounts {
   let open = 0;
   let urgent = 0;
+  let closedByMember = 0;
+  let closedAutomatically = 0;
   for (const it of items) {
+    if (it.status === "addressed" && it.kind !== "instruction" && !it.returned) {
+      // A reply counts as closed by the member; an item with no marker predates it (the member).
+      if (it.closedBy === "auto") closedAutomatically++;
+      else closedByMember++;
+    }
     if (!isOpen(it)) continue;
     open++;
     if (it.urgent) urgent++;
   }
-  return { open, urgent, total: items.length };
+  return { open, urgent, total: items.length, closedByMember, closedAutomatically };
 }
 
 /** `i_<base36>` ids grow with time across the whole main chat; anything else sorts after them by text. */
@@ -90,6 +97,7 @@ export function itemInfo(it: InboxItem): TeamInboxItemInfo {
     ...(it.replyTo ? { replyTo: it.replyTo } : {}),
     ...(it.movedFrom && it.movedFrom.length > 0 ? { movedFrom: it.movedFrom.map((m) => ({ role: m.role, workerId: m.workerId, at: m.at, why: m.why })) } : {}),
     ...(it.returned ? { returned: { at: it.returned.at, why: it.returned.why } } : {}),
+    ...(it.status === "addressed" && it.closedBy ? { closedBy: it.closedBy } : {}),
   };
 }
 

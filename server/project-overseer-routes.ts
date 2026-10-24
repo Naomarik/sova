@@ -13,10 +13,6 @@ import { projectOf, projectOverseerPaths, type ProjectOverseerPaths, readPoSetti
 import { overseerMemoryInfo, putOverseerMemorySwitch } from "./memory/routes";
 import { recordKept } from "./project-settings";
 import { TOKEN_HEADER } from "./auth";
-import { pageOnlyRefusal } from "./page-only";
-
-/** Only whether the request is the operator's own page matters here; the words are never shown. */
-const NOT_PAGE = { overseer: "overseer", local: "local", chat: "chat", script: "script", extension: "extension" };
 
 /**
  * The operator's routes for project overseers (§app/project-overseer; the list is in
@@ -251,9 +247,7 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
   // A coding session's own worktree: merge its branch back into its target, or remove it once merged (or empty).
   app.post(`${base}/worktrees/merge`, handle(async (c) => {
     const p = pathsOf(c);
-    // Pressed on the operator's own page, Merge Branch is the user's go-ahead (§chat.worktrees/merge-guard).
-    const byPage = pageOnlyRefusal(c, NOT_PAGE) === null;
-    return c.json(await mergeCodingWorktree(p.projectId, (await body(c)).sessionId, { byPage }), 200, NO_STORE);
+    return c.json(await mergeCodingWorktree(p.projectId, (await body(c)).sessionId), 200, NO_STORE);
   }));
   app.post(`${base}/worktrees/remove`, handle(async (c) => {
     const p = pathsOf(c);

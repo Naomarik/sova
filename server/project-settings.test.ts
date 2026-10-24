@@ -357,23 +357,18 @@ test("only the project overseer has sova_settings, and its ops map to a power (p
   assert.ok(families.length > 0 && families.every((k) => k.startsWith("project-overseer")), families.join(", "));
 });
 
-test("turning the merge guard off is a grant (§chat.worktrees/merge-guard); on, or unchanged, isn't", async () => {
-  const on = JSON.stringify({ version: 1, mainMerges: "go-ahead", offers: {} });
-  const off = JSON.stringify({ version: 1, offers: {} });
+test("an offers file's only grant is its unapproved run buttons: removing a leftover mainMerges, or the file, is none", async () => {
+  const left = JSON.stringify({ version: 1, mainMerges: "go-ahead", offers: {} });
+  const plain = JSON.stringify({ version: 1, offers: {} });
   const f = { setting: "offers" as const, rel: ".sova/offers.json" };
   const r = join(root, "guard-root");
-  const g = await settings.fileGrant(r, f, on, off);
-  assert.match(g?.what ?? "", /turns the merge guard off: sessions may merge into master without your go-ahead/);
-  assert.equal(g?.pin, undefined, "no run buttons to approve");
-  assert.match((await settings.fileGrant(r, f, on, null))?.what ?? "", /turns the merge guard off/, "removing the file turns it off too");
-  assert.equal(await settings.fileGrant(r, f, off, on), null, "turning it on narrows");
-  assert.equal(await settings.fileGrant(r, f, on, on), null);
-  assert.equal(await settings.fileGrant(r, f, null, off), null);
-  // With run buttons too: one grant, the guard's words first, the runs' pin along.
+  assert.equal(await settings.fileGrant(r, f, left, plain), null);
+  assert.equal(await settings.fileGrant(r, f, left, null), null);
+  assert.equal(await settings.fileGrant(r, f, plain, left), null);
   const runs = JSON.stringify({ version: 1, offers: { m: { when: "w", title: "t", buttons: [{ label: "Merge", about: "Merges.", run: "project.worktree.merge" }] } } });
-  const both = await settings.fileGrant(r, f, on, runs);
-  assert.match(both?.what ?? "", /^turns the merge guard off.*; run buttons: Merge \(m\) runs project\.worktree\.merge$/);
-  assert.equal(typeof both?.pin, "string");
+  const g = await settings.fileGrant(r, f, left, runs);
+  assert.equal(g?.what, "run buttons: Merge (m) runs project.worktree.merge");
+  assert.equal(typeof g?.pin, "string");
 });
 
 describe("this machine's copy limit (§app.project-services/instances): a Sova-kept setting with history, Undo and grant/narrow", async () => {

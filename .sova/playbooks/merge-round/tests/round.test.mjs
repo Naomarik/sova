@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { acquireLock, alsoUpdateNudges, areaGuides, dirtyPaths, expandArgs, failingTestFiles, globRe, groupOf, guideFrontMatter, hasScript, homeShown, landingAnswer, landingAnswerAt, mainMergesOn, needsRestart, ownerOf, parseBatch, parseBoard, parseLanding, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
+import { acquireLock, alsoUpdateNudges, areaGuides, dirtyPaths, expandArgs, failingTestFiles, globRe, groupOf, guideFrontMatter, hasScript, homeShown, landingAnswer, landingAnswerAt, needsRestart, ownerOf, parseBatch, parseBoard, parseLanding, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
 
 const ROUND = fileURLToPath(new URL("../scripts/round.mjs", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -47,7 +47,7 @@ const landed = (branch, over = {}) => ({ state: "ready", commit: execFileSync("g
 
 const gitEnv = { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(root, "gitconfig") };
 const baseEnv = () => {
-  const env = { ...process.env, ...gitEnv, PATH: `${bin}:${dirname(process.execPath)}:${process.env.PATH}`, HOME: root, PI_CODING_AGENT_DIR: agent, PI_SESSION_ID: ME, SOVA_ROUND_PNPM: join(bin, "pnpm"), SOVA_ROUND_SPEC_CORE: core, SOVA_ROUND_HEALTH_URL: "http://127.0.0.1:9/api/health", FAKE_PNPM_LOG: pnpmLog, FAKE_PRUNE_LOG: join(root, "prune.log"), CLAUDE_CONFIG_DIR: join(root, "claude-login") };
+  const env = { ...process.env, ...gitEnv, PATH: `${bin}:${dirname(process.execPath)}:${process.env.PATH}`, HOME: root, PI_CODING_AGENT_DIR: agent, PI_SESSION_ID: ME, SOVA_ROUND_PNPM: join(bin, "pnpm"), SOVA_ROUND_SPEC_CORE: core, SOVA_ROUND_HEALTH_URL: "http://127.0.0.1:9/api/health", FAKE_PNPM_LOG: pnpmLog, FAKE_MAIN: main, FAKE_PRUNE_LOG: join(root, "prune.log"), CLAUDE_CONFIG_DIR: join(root, "claude-login") };
   for (const k of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"]) delete env[k];
   return env;
 };
@@ -101,6 +101,10 @@ if (args[0] === "test" && mode === "fail") {
   console.log("  test at server/pre-fail.test.ts:3:1");
   process.exit(1);
 }
+if (args[0] === "test" && mode === "flaky") {
+  console.log("✖ server/new-fail.test.ts (3ms)");
+  process.exit(1);
+}
 if (args[0] === "test:int" && mode === "int-fail") {
   console.log("FAIL server/new-int.integration.test.ts (exit 1, 0 pass, 1 fail)");
   console.log("  FAIL server/pre-fail.test.ts");
@@ -110,7 +114,12 @@ if (args[0] === "test" && mode === "hang") {
   const c = spawn("sleep", ["1000"], { stdio: "ignore" });
   fs.writeFileSync(process.env.FAKE_HANG_PID, String(c.pid));
   setInterval(() => {}, 1000);
-} else if (args[0] === "exec") process.exit(args.at(-1).includes("pre-fail") ? 1 : 0);
+} else if (args[0] === "exec") {
+  // A file run alone: pre-fail fails everywhere; one FAKE_ALONE_FAIL names also fails alone in a worktree (never on master's checkout).
+  const file = args.at(-1);
+  const onMain = fs.realpathSync(process.cwd()) === fs.realpathSync(process.env.FAKE_MAIN);
+  process.exit(file.includes("pre-fail") || (!onMain && (process.env.FAKE_ALONE_FAIL || "").split(",").includes(file)) ? 1 : 0);
+}
 else process.exit(0);
 `);
   writeFileSync(join(bin, "systemctl"), `#!/bin/sh\necho "$@" >> ${JSON.stringify(systemctlLog)}\necho 0\n`);
@@ -539,23 +548,43 @@ test("check: a failing spec check and unclaimed files hold nothing; a draft not 
   }
 });
 
-test("check: a failing test file is pre-existing when it fails on master too; pnpm test runs without CLAUDE_CONFIG_DIR", async () => {
+test("check: a test file failing in the full run but passing alone is flaky and holds nothing", async () => {
   writeFileSync(pnpmLog, "");
-  const r = await run(["check", "feat/clean"], { env: { FAKE_PNPM_MODE: "fail" } });
-  assert.equal(r.code, 1, r.out);
-  assert.match(r.out, /needs: new test failure: server\/new-fail\.test\.ts$/m);
-  assert.match(r.out, /Pre-existing on master \(not blocking\): server\/pre-fail\.test\.ts/);
+  const r = await run(["check", "feat/clean"], { env: { FAKE_PNPM_MODE: "flaky" } });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /^  failing files: server\/new-fail\.test\.ts \(flaky: passes alone\)\.$/m);
+  assert.match(r.out, /^Flaky \(failed in the full run, passed alone; not blocking\): server\/new-fail\.test\.ts\.$/m);
+  assert.match(r.out, /^landable at [0-9a-f]{7}$/m);
+  assert.deepEqual(state().branches["feat/clean"].check.flaky, ["server/new-fail.test.ts"]);
   const calls = readFileSync(pnpmLog, "utf8").trim().split("\n").map((l) => JSON.parse(l));
   const testCall = calls.find((c) => c.args[0] === "test");
-  assert.equal(testCall.claude, false);
+  assert.equal(testCall.claude, false, "pnpm test runs without CLAUDE_CONFIG_DIR");
   assert.equal(testCall.cwd, wt("feat/clean"));
-  const rerun = calls.find((c) => c.args[0] === "exec");
-  assert.equal(rerun.cwd, main);
-  // The same runner and runtime as the branch's pnpm test (Bun unless SOVA_RUNTIME=node).
-  assert.deepEqual(rerun.args, ["exec", "node", "scripts/run-tests.mjs", "--runtime", process.env.SOVA_RUNTIME === "node" ? "node" : "bun", "server/pre-fail.test.ts"]);
+  // Rerun on its own in the branch's worktree, with the same runner and runtime (Bun unless SOVA_RUNTIME=node); never on master.
+  const reruns = calls.filter((c) => c.args[0] === "exec");
+  assert.deepEqual(reruns.map((c) => [c.cwd, c.args]), [[wt("feat/clean"), ["exec", "node", "scripts/run-tests.mjs", "--runtime", process.env.SOVA_RUNTIME === "node" ? "node" : "bun", "server/new-fail.test.ts"]]]);
 });
 
-test("check runs pnpm test:int after pnpm test, with the same pre-existing rule; a tree without the script skips it", async () => {
+test("check: only a file that also fails alone holds the branch; master says whether it is new", async () => {
+  writeFileSync(pnpmLog, "");
+  const r = await run(["check", "feat/clean"], { env: { FAKE_PNPM_MODE: "fail", FAKE_ALONE_FAIL: "server/new-fail.test.ts" } });
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /^needs: new test failure: server\/new-fail\.test\.ts; test failure in server\/pre-fail\.test\.ts \(also fails on master\)$/m);
+  assert.match(r.out, /server\/new-fail\.test\.ts \(fails alone; passes on master\), server\/pre-fail\.test\.ts \(fails alone; also fails on master\)/);
+  assert.doesNotMatch(r.out, /^Flaky/m);
+  const calls = readFileSync(pnpmLog, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((c) => c.args[0] === "exec");
+  const runtime = process.env.SOVA_RUNTIME === "node" ? "node" : "bun";
+  assert.deepEqual(calls.filter((c) => c.cwd === wt("feat/clean")).map((c) => c.args.at(-1)), ["server/new-fail.test.ts", "server/pre-fail.test.ts"], "each alone in the worktree first");
+  // master's runs are cached per (master, file); the first check of this master runs both there.
+  for (const c of calls) assert.deepEqual(c.args.slice(0, 5), ["exec", "node", "scripts/run-tests.mjs", "--runtime", runtime]);
+  // Flaky with one file and failing alone with the other: the flaky one holds nothing.
+  const mixed = await run(["check", "feat/clean"], { env: { FAKE_PNPM_MODE: "fail" } });
+  assert.equal(mixed.code, 1, mixed.out);
+  assert.match(mixed.out, /^needs: test failure in server\/pre-fail\.test\.ts \(also fails on master\)$/m);
+  assert.match(mixed.out, /^Flaky \(failed in the full run, passed alone; not blocking\): server\/new-fail\.test\.ts\.$/m);
+});
+
+test("check runs pnpm test:int after pnpm test, with the same alone-then-master rule; a tree without the script skips it", async () => {
   writeFileSync(pnpmLog, "");
   const skipped = await run(["check", "feat/clean"]);
   assert.match(skipped.out, /pnpm test:int: skipped \(this tree's package\.json has no test:int script\)\./);
@@ -568,8 +597,8 @@ test("check runs pnpm test:int after pnpm test, with the same pre-existing rule;
   assert.equal(r.code, 1, r.out);
   assert.match(r.out, /^pnpm test: ok, \d+s\.$/m);
   assert.match(r.out, /^pnpm test:int: FAILED \(exit 1\), \d+s\.$/m);
-  assert.match(r.out, /needs: new test failure: server\/new-int\.integration\.test\.ts$/m);
-  assert.match(r.out, /Pre-existing on master \(not blocking\): server\/pre-fail\.test\.ts/);
+  assert.match(r.out, /needs: test failure in server\/pre-fail\.test\.ts \(also fails on master\)$/m);
+  assert.match(r.out, /Flaky \(failed in the full run, passed alone; not blocking\): server\/new-int\.integration\.test\.ts\./);
   const calls = readFileSync(pnpmLog, "utf8").trim().split("\n").map((l) => JSON.parse(l));
   const order = calls.map((c) => c.args[0]).filter((a) => a === "test" || a === "test:int");
   assert.deepEqual(order, ["test", "test:int"]);
@@ -1029,26 +1058,28 @@ test("pure board rules: the file's shape, the owner rule and the groups", () => 
   assert.equal(landingAnswer(parseLanding("{bad"), "b", "a".repeat(40)), null);
 });
 
-test("groupOf with the merge guard on: only the user's go-ahead at this head checks or lands", () => {
+test("groupOf: the owner's READY or the user's Land It checks, a green check lands, Not Yet holds; no merge guard", () => {
   const board = { owner: "A", status: "idle", at: 2000 };
   const g = (rec, row, extra = {}) => groupOf({ rec, row, head: "h", master: "m", pending: 0, ...extra });
   const row = { state: "ready", landing: { state: "ready", commit: "h" } };
   const ready = { board, answer: { kind: "ready", head: "h" } };
   const green = { check: { ok: true, head: "h", masterSha: "m" } };
-  for (const r of [g(ready, row, { guarded: true }), g({ ...ready, ...green }, row, { guarded: true })])
-    assert.ok(r !== "check" && r !== "land", `a session's own READY is no go-ahead: ${r}`);
-  assert.equal(g(ready, row, { guarded: true }), "ask", "queued for the Landing card");
-  const shown = { ...ready, ask: { queued: "lq_1", head: "h", at: 1, owner: "A" } };
-  assert.equal(g(shown, row, { guarded: true, queued: { at: 1, card: "of_1" } }), "waiting");
-  assert.equal(g({ board }, row, { guarded: true, answer: { kind: "go-ahead" } }), "check");
-  assert.equal(g({ board, ...green }, row, { guarded: true, answer: { kind: "go-ahead" } }), "land");
-  const named = { ...ready, source: "user", chip: "ready" };
-  assert.equal(g(named, row, { guarded: true }), "check", "the user named it to the captain");
-  assert.equal(g({ ...named, ...green }, row, { guarded: true }), "land");
-  assert.ok(mainMergesOn('{"mainMerges":"go-ahead"}') && !mainMergesOn('{"mainMerges":"off"}') && !mainMergesOn(null) && !mainMergesOn("{bad"));
-  // The guard off: today's behaviour.
-  assert.equal(g(ready, row), "check");
+  assert.equal(g(ready, row), "check", "the owner's READY alone checks it");
   assert.equal(g({ ...ready, ...green }, row), "land");
+  assert.equal(g({ board }, row, { answer: { kind: "go-ahead" } }), "check", "Land It counts as READY");
+  // Land It at the pre-check head P, carried to the check's clean master merge (landingAnswerAt's `at`): it lands.
+  assert.equal(g({ board, ...green }, row, { answer: { kind: "go-ahead", at: "p" } }), "land");
+  assert.equal(g({ board, ...green }, row), "land", "a check that passed at this head and master lands");
+  assert.equal(g({ board }, row), "ask", "neither: queued for the Landing card");
+  const shown = { board, ask: { queued: "lq_1", head: "h", at: 1, owner: "A" } };
+  assert.equal(g(shown, row, { queued: { at: 1, card: "of_1" } }), "waiting");
+  // Not Yet holds, at this head or carried from P, green check or the owner's READY notwithstanding.
+  for (const answer of [{ kind: "not-yet" }, { kind: "not-yet", at: "p" }]) {
+    assert.equal(g({ ...ready, ...green }, row, { answer }), "not-ready");
+    assert.equal(g({ board }, row, { answer }), "not-ready");
+  }
+  const named = { board, source: "user", chip: "ready", answer: { kind: "ready", head: "h" } };
+  assert.equal(g(named, null), "check", "the user named it, its owner said READY");
 });
 
 test("also-update rules: globs, the guides' front-matter and which touched areas missed their files", () => {
@@ -1437,6 +1468,46 @@ test("Ready to land: ask queues the branch for Sova's Landing card; status reads
   }
 });
 
+test("Land It before the check: the check's own clean merge of master keeps it, and the branch lands with no new press", async () => {
+  const sova = join(agent, "sova");
+  const landingFile = join(sova, "landing.json");
+  const saved = readFileSync(stateFile, "utf8");
+  const masterBefore = git(main, "rev-parse", "master");
+  try {
+    git(main, "worktree", "add", "-q", "-b", "feat/carry", wt("feat/carry"), "master");
+    const P = commit(wt("feat/carry"), "carry.txt", "carry\n", "carry: a file");
+    writeBoard([["feat/carry", "waiting-approval", OWNER, "idle", undefined, landed("feat/carry")]]);
+    writeFileSync(landingFile, JSON.stringify({ v: 1, goAheads: [{ branch: "feat/carry", commit: P, at: new Date().toISOString(), by: "land-it" }], notYet: [] }));
+    const group = async () => JSON.parse((await run(["status", "--json"])).out).branches.find((b) => b.branch === "feat/carry").group;
+    assert.equal(await group(), "check", "Land It at P");
+    // Master moves on; the check merges it into the branch, so the head is no longer P.
+    commit(main, "carry-master.txt", "master moved\n", "master: moves on for carry");
+    const c = await run(["check", "feat/carry"]);
+    assert.equal(c.code, 0, c.out);
+    const M = git(main, "rev-parse", "feat/carry");
+    assert.notEqual(M, P, "the check merged master in");
+    assert.equal(git(main, "rev-parse", "feat/carry^1"), P);
+    assert.equal(await group(), "land", "the press at P counts at M");
+    const land = await run(["land", "feat/carry"]);
+    assert.equal(land.code, 0, land.out);
+    assert.match(land.out, new RegExp(`^The user's Land It at ${P.slice(0, 7)}\\.$`, "m"));
+    assert.match(land.out, /call: worktree \{"action":"merge"/);
+    // The user's Not Yet at P after it holds the branch, at M too, and land refuses.
+    writeFileSync(landingFile, JSON.stringify({ v: 1, goAheads: [{ branch: "feat/carry", commit: P, at: "2026-10-24T00:00:00Z", by: "land-it" }], notYet: [{ branch: "feat/carry", commit: P, at: "2026-10-24T00:05:00Z" }] }));
+    assert.equal(await group(), "not-ready");
+    const held = await run(["land", "feat/carry"]);
+    assert.equal(held.code, 1, held.out);
+    assert.match(held.out, new RegExp(`The user said Not Yet to feat/carry at ${P.slice(0, 7)}`));
+  } finally {
+    writeFileSync(stateFile, saved);
+    for (const f of [landingFile, boardFile]) rmSync(f, { force: true });
+    spawnSyncGit(main, ["worktree", "remove", "--force", wt("feat/carry")]);
+    spawnSyncGit(main, ["branch", "-D", "feat/carry"]);
+    git(main, "update-ref", "refs/heads/master", masterBefore);
+    git(main, "reset", "-q", "--hard", masterBefore);
+  }
+});
+
 test("landingAnswerAt: a later Not Yet on the way stops the carry; the newest answer at a commit wins", async () => {
   const [A, B, C] = ["a", "b", "c"].map((c) => c.repeat(40));
   const parentOf = async (s) => (s === C ? B : s === B ? A : undefined);
@@ -1445,9 +1516,11 @@ test("landingAnswerAt: a later Not Yet on the way stops the carry; the newest an
   const kind = async (landing, head) => (await landingAnswerAt(landing, "f", head, parentOf))?.kind ?? null;
   assert.deepEqual(await landingAnswerAt({ goAheads: [go(A, "2026-10-24T00:00:00Z")], notYet: [] }, "f", C, parentOf), { kind: "go-ahead", withoutSpecs: false, by: "land-it", at: A });
   const later = { goAheads: [go(A, "2026-10-24T00:00:00Z")], notYet: [no(B, "2026-10-24T00:05:00Z")] };
-  assert.equal(await kind(later, C), null, "Not Yet at B is never walked past");
+  assert.deepEqual(await landingAnswerAt(later, "f", C, parentOf), { kind: "not-yet", at: B }, "Not Yet at B is never walked past, and holds C");
   assert.equal(await kind(later, B), "not-yet");
-  assert.equal(await kind({ goAheads: [go(A, "2026-10-24T00:00:00Z")], notYet: [no(A, "2026-10-24T00:05:00Z")] }, C), null, "Not Yet at A after its go-ahead");
+  assert.equal(await kind({ goAheads: [go(A, "2026-10-24T00:00:00Z")], notYet: [no(A, "2026-10-24T00:05:00Z")] }, C), "not-yet", "Not Yet at A after its go-ahead");
+  assert.equal(await kind({ goAheads: [], notYet: [no(A, "2026-10-24T00:05:00Z")] }, C), "not-yet", "a Not Yet alone carries too");
+  assert.equal(await kind({ goAheads: [go(A, "2026-10-24T00:00:00Z")], notYet: [] }, "d".repeat(40)), null, "a commit of its own: no answer");
   assert.equal(await kind({ goAheads: [go(A, "2026-10-24T00:00:00Z"), go(B, "2026-10-24T00:10:00Z")], notYet: [no(B, "2026-10-24T00:05:00Z")] }, C), "go-ahead", "a go-ahead at B after its Not Yet");
   assert.equal(await kind({ goAheads: [go(B, "2026-10-24T00:05:00Z")], notYet: [no(B, "2026-10-24T00:05:00Z")] }, B), "not-yet", "a tie is Not Yet");
 });

@@ -1,11 +1,11 @@
 // A project's own Claude login reaching the chats Sova starts (§app.claude-logins/project-login), end to end: a real
 // server with real chat processes (startHermeticServer: the stand-in `claude`, scripts/fake-claude.mjs, first on PATH),
-// a registry of two invented logins, and the login each chat's child starts on, read from its session's newest
-// `claude-login` entry. A chat in the project's folder and in one of its linked worktrees, a chat in no project (the
-// saved login is a last resort), the project's login limited (a note naming it), and after a server restart (each
-// chat process starts again from the supervisor, which hands the context over again). Then a second project whose login
-// is not this device's first: a worker a project chat spawns, a team member and a /btw hidden chat, each a chat process
-// the server starts from its loadout (the parent of the first two on the trial's scripted model, which calls
+// a registry of three invented logins, and the login each chat's child starts on, read from its session's
+// `claude-login` entry. Every project's login is one this device's order does not put first, so each case fails when
+// the hand-over is missing. A chat in the project's folder and in one of its linked worktrees, the overseer, a chat in
+// no project (saved logins are a last resort), the project's login limited (a note naming it), and after a server
+// restart (each chat process starts again from the supervisor, which hands the context over again). Then a worker a
+// project chat spawns, a team member and a /btw hidden chat, each a chat process the server starts from its loadout (the parent of the first two on the trial's scripted model, which calls
 // agent_spawn and team_create). Processes: hence this tier.
 import assert from "node:assert/strict";
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
@@ -16,10 +16,12 @@ import { linkPiConfigExtensions } from "./testing/agent-dir";
 import { startHermeticServer, type HermeticServer } from "./testing/hermetic-server";
 
 let s: HermeticServer;
-const A = "l-0000000a", B = "l-0000000b";
+// This device's order is [B, A, C]: Acme and Beta are on A, Zeta on B. A child that missed the hand-over starts on B, so
+// every case below tells the two apart: a project chat expects A, a chat in no project C (B saved for Zeta).
+const A = "l-0000000a", B = "l-0000000b", C = "l-0000000c";
 let acme = "";
 let pid = "";
-// A second project, on A: this device's order puts B first, so a child that missed the hand-over runs on B.
+// Beta: a second project on A, for the workers, team member and hidden chat.
 let beta = "";
 // The trial's scripted model (scripts/chat-runtime-trial/mock-llm.mjs): a parent on it calls agent_spawn and
 // team_create as its message's [call …] tags say, so its workers and team members start as a model starts them.
@@ -144,14 +146,14 @@ before(async () => {
   // The Claude Code provider is pi-config's: linked in, then the server boots again so its runtime has it too.
   linkPiConfigExtensions(s.agentDir);
   await s.restart();
-  // Two invented logins on this device, B first: a chat in no project would start on B.
+  // Three invented logins on this device, B first: a chat that got no hand-over starts on B.
   const login = (id: string) => ({ id, addedAt: 1, enabled: true, device: "local", identity: { accountUuid: `acct-${id}`, email: `${id}@example.com` } });
   // Each signed in (the stand-in refuses a turn on a login directory with no credentials).
-  for (const id of [A, B]) {
+  for (const id of [A, B, C]) {
     mkdirSync(join(s.agentDir, "claude-accounts", id), { recursive: true, mode: 0o700 });
     writeFileSync(join(s.agentDir, "claude-accounts", id, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "fake", refreshToken: "fake", expiresAt: Date.now() + 8 * 3600_000 } }));
   }
-  writeFileSync(join(s.agentDir, "claude-accounts.json"), JSON.stringify({ version: 1, logins: [login(A), login(B)], devices: { local: { order: [B, A, "default"] } } }));
+  writeFileSync(join(s.agentDir, "claude-accounts.json"), JSON.stringify({ version: 1, logins: [login(A), login(B), login(C)], devices: { local: { order: [B, A, C, "default"] } } }));
   acme = join(s.work, "acme");
   mkdirSync(acme);
   git(acme, "init", "-q", "-b", "main");
@@ -162,8 +164,24 @@ before(async () => {
   const reg = await api("POST", "/api/projects", { root: acme, name: "Acme" });
   assert.equal(reg.status, 201, JSON.stringify(reg.body));
   pid = reg.body.project.id;
-  const put = await api("PUT", `/api/projects/${pid}/claude-login`, { login: B });
+  const put = await api("PUT", `/api/projects/${pid}/claude-login`, { login: A });
   assert.equal(put.status, 200, JSON.stringify(put.body));
+  const project = async (name: string, login: string): Promise<string> => {
+    const root = join(s.work, name.toLowerCase());
+    mkdirSync(root);
+    git(root, "init", "-q", "-b", "main");
+    writeFileSync(join(root, "README.md"), `${name}\n`);
+    git(root, "add", "README.md");
+    git(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init");
+    const r = await api("POST", "/api/projects", { root, name });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    const put = await api("PUT", `/api/projects/${r.body.project.id}/claude-login`, { login });
+    assert.equal(put.status, 200, JSON.stringify(put.body));
+    return root;
+  };
+  // Beta: the workers', team's and hidden chat's project. Zeta: holds B, this device's first, saved for it.
+  beta = await project("Beta", A);
+  await project("Zeta", B);
 });
 after(async () => {
   trialMock?.kill();
@@ -175,12 +193,12 @@ let inProject = "";
 
 test("a chat in the project's folder, and in one of its worktrees, starts on the project's login", async () => {
   const c = await chatIn(acme);
-  assert.deepEqual([c.first.login, c.first.from], [B, undefined], "B, recorded with no note");
+  assert.deepEqual([c.first.login, c.first.from], [A, undefined], "A, recorded with no note");
   await sleep(1000);
-  assert.deepEqual(loginEntries(c.path).map((e) => e.login), [B], "and it stays there");
+  assert.deepEqual(loginEntries(c.path).map((e) => e.login), [A], "and it stays there");
   inProject = c.path;
   const w = await chatIn(join(s.work, ".worktrees", "acme-feat"));
-  assert.equal(w.first.login, B, "a linked worktree is the project's");
+  assert.equal(w.first.login, A, "a linked worktree is the project's");
 });
 
 test("the project's overseer starts on the project's login too", async () => {
@@ -195,22 +213,22 @@ test("the project's overseer starts on the project's login too", async () => {
   // Its loadout loads no pi-config extension, so it keeps no `claude-login` entry (its failovers neither): the stand-in's
   // answer names the login its child ran on.
   const said = await until(`the overseer's answer`, () => /Fake answer from login (\S+?)\./.exec(readFileSync(path, "utf8"))?.[1]);
-  assert.equal(said, B);
+  assert.equal(said, A);
 });
 
 test("a chat in no project takes the project's login only as a last resort", async () => {
   const c = await chatIn(s.work);
-  assert.equal(c.first.login, A, "B is saved for Acme, though it is first in this device's order");
+  assert.equal(c.first.login, C, "A is saved for Acme and Beta, B for Zeta, though B is first in this device's order");
 });
 
 test("the project's login limited: a new chat moves on, and its note names that login and why", async () => {
-  writeFileSync(join(s.agentDir, "claude-accounts-state.json"), JSON.stringify({ version: 1, logins: { [B]: { kind: "limit", at: Date.now(), until: Date.now() + 3_600_000, window: "five_hour" } } }));
+  writeFileSync(join(s.agentDir, "claude-accounts-state.json"), JSON.stringify({ version: 1, logins: { [A]: { kind: "limit", at: Date.now(), until: Date.now() + 3_600_000, window: "five_hour" } } }));
   try {
     const c = await chatIn(acme);
-    assert.equal(c.first.login, A);
-    assert.equal(c.first.from, B);
+    assert.equal(c.first.login, C, "the next login with room that no other project keeps");
+    assert.equal(c.first.from, A);
     assert.equal(c.first.reason, "moved");
-    assert.match(c.first.text ?? "", new RegExp(`^Claude: using ${A}@example\\.com \\(project Acme's login ${B}@example\\.com is limited until `));
+    assert.match(c.first.text ?? "", new RegExp(`^Claude: using ${C}@example\\.com \\(project Acme's login ${A}@example\\.com is limited until `));
   } finally {
     writeFileSync(join(s.agentDir, "claude-accounts-state.json"), JSON.stringify({ version: 1, logins: {} }));
   }
@@ -219,31 +237,20 @@ test("the project's login limited: a new chat moves on, and its note names that 
 test("after a server restart, chat processes started again still get the project's login", async () => {
   await s.restart();
   const c = await chatIn(acme);
-  assert.equal(c.first.login, B, "a new chat after the restart");
+  assert.equal(c.first.login, A, "a new chat after the restart");
   // The first chat, opened again on the restarted server, keeps its recorded login and records nothing new.
   const before = loginEntries(inProject).length;
   const sent = await api("POST", "/api/sessions/prompt", { path: inProject, text: "again" });
   assert.ok(sent.status < 300, JSON.stringify(sent.body));
   await sleep(1500);
   assert.equal(loginEntries(inProject).length, before);
-  assert.equal(loginEntries(inProject).at(-1)?.login, B);
+  assert.equal(loginEntries(inProject).at(-1)?.login, A);
 });
 
 // Workers, team members and hidden chats: each a chat process of its own, started by the server from its loadout
 // (server/chat-host.ts startWorker). Each in Beta, whose login (A) is not this device's first (B).
 
 test("a worker started from a project chat starts on the project's login", async () => {
-  // Registered last: a second assigned login changes what a chat in no project falls back to (the test above).
-  beta = join(s.work, "beta");
-  mkdirSync(beta);
-  git(beta, "init", "-q", "-b", "main");
-  writeFileSync(join(beta, "README.md"), "beta\n");
-  git(beta, "add", "README.md");
-  git(beta, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init");
-  const regB = await api("POST", "/api/projects", { root: beta, name: "Beta" });
-  assert.equal(regB.status, 201, JSON.stringify(regB.body));
-  const putB = await api("PUT", `/api/projects/${regB.body.project.id}/claude-login`, { login: A });
-  assert.equal(putB.status, 200, JSON.stringify(putB.body));
   const parent = await sendIn(beta, TRIAL_MODEL, `[call agent_spawn ${JSON.stringify({ prompt: "hello worker", backend: "claude-code", name: "login-worker" })}]`);
   const w = await childLogin(parent, (r) => r.kind === "worker", "hello worker");
   assert.equal(w.rec.spec?.cwd, beta, "it runs in the project's folder");

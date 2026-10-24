@@ -3,7 +3,7 @@ import type { HEntry, ToolSpec } from "../shared/harness";
 import type { ModelPick } from "../shared/powers";
 import { assistantWouldAct, deployTargetOf } from "./assistant-would-act";
 import { OWNER_REQUEST_TEXT_MAX, OWNER_REQUEST_TITLE_MAX, type OwnerRequest, type OwnerRequestKind } from "../shared/project-assistant";
-import { closeTryRequests, noteVersionFailed, noteVersionStarting, projectVersions, shownVersionSummary, START_TIMEOUT_MS, tryRequestIsFor, type OwnerVersion } from "./owner-versions";
+import { closeTryRequests, currentVersionMakeable, noteVersionFailed, noteVersionStarting, projectVersions, shownVersionSummary, START_TIMEOUT_MS, tryRequestIsFor, type OwnerVersion } from "./owner-versions";
 import { outsiderRedactor } from "./share/hub";
 import { agreeRequirement, changeOfRef, conversationDraftTools } from "./conversation-draft-tools";
 import type { ConversationRef } from "./conversation-draft-store";
@@ -51,7 +51,7 @@ export interface AssistantActs {
   buildStart(projectId: string, a: { requestId: string; title: string; text: string; model: ModelPick }, o: { attended: boolean; sessionId: string }): Promise<ActOutcome>;
   deployRun(projectId: string, a: { requestId: string; why: string }, o: { attended: boolean; sessionId: string }): Promise<ActOutcome>;
   /** The project's services/run act, then the engine's up of exactly that instance (§app.project-services/callers). */
-  copyStart(projectId: string, a: { instance: string; root: string }, o: { attended: boolean; sessionId: string }): Promise<CopyStartOutcome>;
+  copyStart(projectId: string, a: { instance: string; root: string } | { main: true; root: string }, o: { attended: boolean; sessionId: string }): Promise<CopyStartOutcome>;
 }
 
 let actsForTest: AssistantActs | null = null;
@@ -67,7 +67,7 @@ async function acts(): Promise<AssistantActs> {
     buildStart: (pid, a, o) => assistantAct(pid, { act: "build/start", basis: { kind: "owner-request", id: a.requestId }, prompt: `${a.title}\n\n${a.text}`, title: `Fix: ${a.title}`, model: a.model ? { model: a.model.model, thinking: a.model.thinking ?? null } : null }, o),
     deployRun: (pid, a, o) => assistantAct(pid, { act: "deploy/run", basis: { kind: "owner-request", id: a.requestId }, ...(a.why ? { why: a.why.slice(0, 300) } : {}) }, o),
     copyStart: async (pid, a, o) => {
-      const out = await assistantAct(pid, { act: "services/run", instance: a.instance, root: a.root }, o);
+      const out = await assistantAct(pid, "main" in a ? { act: "services/run", main: true, root: a.root } : { act: "services/run", instance: a.instance, root: a.root }, o);
       if (!out.taken) return out;
       return { taken: true, done: out.done ?? Promise.resolve({ ok: true as const }) };
     },
@@ -308,6 +308,29 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
     },
   };
 
+  /** The Current version's copy, made and started (q6): the same question and act as any version, never held. */
+  const makeCurrent = async (p: { id: string; name: string }, root: string) => {
+    const label = "Current version";
+    const team = (sentence: string) => {
+      const r = orgRequests(orgId).find((x) => x.projectId === p.id && x.kind === "try" && x.status === "with-team" && !x.version && x.title === label) ?? fileRequest(orgId, { projectId: p.id, kind: "try", title: label, text: `The owner asked to try it. ${sentence}` });
+      return say(sentence, { request: r.id, started: false });
+    };
+    const would = await assistantWouldAct(orgId, p.id, "version");
+    if (would.outcome === "team") return team(would.sentence ?? "It went to the team.");
+    const a = await acts();
+    const out = await a.copyStart(p.id, { main: true, root }, { attended, sessionId: ctx.sessionId });
+    if (!out.taken) return out.code === "power-off" || out.code === "brake" ? team(out.sentence) : team("It didn't start; the team knows.");
+    // Once made, the copy is listed: follow it as any started version (its mark, the timeout, its try requests).
+    const made = (await versionsOf(orgId, p.id)).find((x) => x.current);
+    if (made) {
+      noteVersionStarting(made.rec.id);
+      followStart(orgId, p.id, made, out.done);
+      return say(`${label} of ${p.name} is starting. Its Open button is in this chat and on the home page.`, { version: made.handle, started: true });
+    }
+    void out.done;
+    return say(`${label} of ${p.name} is starting. Its Open button shows on the home page once it's ready.`, { started: true });
+  };
+
   const startVersion: ToolSpec = {
     name: "start_version",
     label: "Start a version",
@@ -325,8 +348,11 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
     async execute(_id, params) {
       const p = projectOf(orgId, params.project);
       const vs = await versionsOf(orgId, p.id);
-      if (!vs.length) return say(`${p.name} has no versions to try.`);
       const asked = typeof params.version === "string" ? params.version.trim() : "";
+      // No copy of the Current version yet (q6): it may make one, under the same switch.
+      const makeable = vs.some((x) => x.current) ? null : await currentVersionMakeable(readProjects(orgId).find((x) => x.id === p.id) ?? {});
+      if (makeable && (!asked ? !vs.length : "current version".startsWith(asked.toLowerCase()) && asked.length >= 3)) return await makeCurrent(p, makeable);
+      if (!vs.length) return say(`${p.name} has no versions to try.`);
       const v = asked ? pickVersion(vs, asked) : vs.length === 1 ? vs[0] : undefined;
       if (!v) throw new Error(`Say which version: one of ${vs.map((x) => `"${x.label}"`).join(", ")}.`);
       if (v.endpoint === null) return say(`${p.name}'s versions can't be shown outside the team.`);

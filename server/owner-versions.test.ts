@@ -276,3 +276,58 @@ describe("a version is its copy, not its label (§app.project-assistant/versions
     assert.throws(() => pickVersion(vs, "the purple one"), /Say which version: one of "Current version"/);
   });
 });
+
+describe("the Current version's copy, made when there is none (q6, §app.project-assistant/tools)", () => {
+  const writeReg = (withMain: boolean) =>
+    writeFileSync(registryFile(), JSON.stringify({ version: 1, instances: [...(withMain ? [inst("i_main", site, 0, "2026-10-01T00:00:00.000Z", null)] : []), inst("i_fix", fixTree, 1, "2026-10-10T00:00:00.000Z", "sova/fix-the-bow-page")], shared: [] }));
+
+  test("makeable only while the main checkout has no copy, is on master and may be shown", async () => {
+    writeReg(false);
+    assert.equal(await versions.currentVersionMakeable(proj), site);
+    writeReg(true);
+    assert.equal(await versions.currentVersionMakeable(proj), null, "it has a copy");
+    writeReg(false);
+    writeFileSync(join(site, ".sova", "project.json"), JSON.stringify({ ...DEF, data: { db: { kind: "dir", sensitive: true } } }));
+    assert.equal(await versions.currentVersionMakeable(proj), null, "sensitive data: never shown");
+    writeFileSync(join(site, ".sova", "project.json"), JSON.stringify(DEF));
+  });
+
+  test("start_version on the Current version makes and starts the main checkout's copy as the assistant, under its switch", async () => {
+    writeReg(false);
+    versions.setVersionTreesForTest(async () => [{ sessionId: "s_fix", branch: "sova/fix-the-bow-page", path: fixTree, title: "x", sessionPath: null }]);
+    const tools = await import("./project-assistant-tools");
+    const would = await import("./assistant-would-act");
+    const calls: unknown[] = [];
+    tools.setAssistantActsForTest({
+      buildStart: async () => ({ taken: false, code: "x", sentence: "x" }),
+      deployRun: async () => ({ taken: false, code: "x", sentence: "x" }),
+      copyStart: async (_pid, a) => {
+        calls.push(a);
+        return { taken: true, done: Promise.resolve({ ok: true as const }) };
+      },
+    });
+    let column = true;
+    would.setWouldActFactsForTest({
+      column: () => ({ assistant: { ...(column ? { copiesRun: true } : { copiesRun: false }) } as never, models: null }),
+      braked: async () => false,
+      codingModel: () => null,
+      hasRelease: async () => false,
+      hasVersion: async () => true,
+      engine: async () => ({ refusal: null, holdMs: 0 }),
+    });
+    try {
+      const sv = tools.assistantTools({ orgId: org.id, sessionId: "s1", owner: () => ({ id: alp.id, name: alp.name }), branch: () => [] }).find((t) => t.name === "start_version")!;
+      const out = (await sv.execute("c", { version: "Current version" } as never, undefined, undefined, undefined as never)) as { content: { text: string }[] };
+      assert.deepEqual(calls, [{ main: true, root: site }]);
+      assert.match(out.content[0]!.text, /^Current version of Archery website is starting\./);
+      column = false;
+      const off = (await sv.execute("c", { version: "current" } as never, undefined, undefined, undefined as never)) as { content: { text: string }[]; details: { started?: boolean } };
+      assert.equal(calls.length, 1, "switch off: nothing is made");
+      assert.equal(off.details.started, false);
+    } finally {
+      tools.setAssistantActsForTest(null);
+      would.setWouldActFactsForTest(null);
+      writeReg(true);
+    }
+  });
+});

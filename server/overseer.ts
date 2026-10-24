@@ -23,7 +23,7 @@ import {
   type SovaConfirmItem,
 } from "../shared/protocol";
 import { setArchived } from "./archived-sessions";
-import { type AttentionRow, blockerCount, blockerKey, buildDigest, mergedBranch, workerErrorTime } from "./attention";
+import { type AttentionRow, blockerCount, blockerKey, buildDigest, mergedBranch, NEVER_BRIEFED, workerErrorTime } from "./attention";
 import { readIndex, stakeholderAttention } from "./orgs";
 import { heldAttention } from "./project-holds";
 import { conflictAttention } from "./decisions";
@@ -105,7 +105,7 @@ import type { ServerToolDecl } from "../shared/chat-runtime";
 import { archiveWorktrees } from "./archive-worktrees";
 import { markOwned } from "./write-guard";
 import { signalTextOf, teamStallOf } from "./signals-store";
-import { offerSignalText } from "./session-offers";
+import { openOfferOf } from "./session-offers";
 import { readDecisionSettings } from "./decide-settings";
 import { onAttentionChanged } from "./attention-memo";
 import { sessionFeed } from "./session-feed";
@@ -368,11 +368,12 @@ export function attentionDigest(list?: readonly SessionSummary[]): Promise<Retur
         viewing: isViewing(s.id),
         activitySince: live?.since ?? 0,
         lastReplyAt: lastReplyAtOf(s.path),
-        ...(s.signals || s.workerSignals ? { signalText: offerSignalText(s.id, signalTextOf(s.id, nowMs)) } : {}),
+        ...(s.signals || s.workerSignals ? { signalText: signalTextOf(s.id, nowMs) } : {}),
         ...(stallsOn ? teamStallField(s.id) : {}),
         ...(aliases[s.id] ? { alias: aliases[s.id] } : {}),
         ...(reviews.has(s.path) ? { playbook: reviews.get(s.path)! } : {}),
         ...(signIns.has(s.id) ? { tourSignIn: signIns.get(s.id)! } : {}),
+        ...offerField(s),
       };
     });
     // Items of no session: an org project's missing stakeholder, its held acts and conflicts routed to the operator
@@ -387,6 +388,13 @@ export function attentionDigest(list?: readonly SessionSummary[]): Promise<Retur
     if (digestMemo?.value === value) digestMemo = null;
   });
   return value;
+}
+
+/** The session's open offer card (§chat.offers/card) as a digest row's field: a Needs you item, idle or working. */
+function offerField(s: SessionSummary): { offer?: { title: string; at: number } } {
+  if (s.archived) return {};
+  const o = openOfferOf(s.id);
+  return o ? { offer: { title: o.title, at: Number.isFinite(o.at) ? o.at : 0 } } : {};
 }
 
 function teamStallField(id: string): { teamStall?: { since: number; names: string[] } } {
@@ -1310,12 +1318,14 @@ async function tick(ignoreGap = false): Promise<{ briefed: string[] } | { error:
   if ((readSeen()[st.current] ?? 0) > lastBriefAt || isViewing(st.current)) unattended = 0;
   const chat = chatHandle(path)?.mirror;
   const idle = !chat || (!chat.running && chat.queue.web === 0);
-  const counts = new Map(act.map((i) => [blockerKey(i), blockerCount(i)]));
-  const d = briefDecision({ current: act.map(blockerKey), counts, announced, proactivity: settings.proactivity, now: Date.now(), lastBriefAt: ignoreGap ? 0 : lastBriefAt, unattended: ignoreGap ? 0 : unattended, overseerIdle: idle });
+  // An option card waiting for the user is Needs you but never a brief (§app.overseer/attention-digest).
+  const briefable = act.filter((i) => !NEVER_BRIEFED.has(i.kind));
+  const counts = new Map(briefable.map((i) => [blockerKey(i), blockerCount(i)]));
+  const d = briefDecision({ current: briefable.map(blockerKey), counts, announced, proactivity: settings.proactivity, now: Date.now(), lastBriefAt: ignoreGap ? 0 : lastBriefAt, unattended: ignoreGap ? 0 : unattended, overseerIdle: idle });
   const before = announced;
   announced = d.announced;
   if (!d.brief.length) return { briefed: [] };
-  const text = briefText(act.filter((i) => d.brief.includes(blockerKey(i))));
+  const text = briefText(briefable.filter((i) => d.brief.includes(blockerKey(i))));
   try {
     const overseer = await acquireChatHandle(path);
     // Keyed by what it briefs (§app.chat-processes/server-messages): sent again after a lost answer, one turn.

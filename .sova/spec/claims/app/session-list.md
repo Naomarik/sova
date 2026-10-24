@@ -691,7 +691,7 @@ label a person reads says "sessions pane".
 The top of the list, above Recent: the sessions blocked on you right now — a dialog open, an
 errored turn, a subagent that ended in an error, an idle session with open alignment questions
 whose branch is not merged (§chat.alignment/session-mark), a baton hand-off (the baton is with you, or a person needs
-their link, §app.baton/needs-you), and a tour recording waiting for you to sign in (§app.tours/sites); a roster proposal stays a decide item. Then, as a
+their link, §app.baton/needs-you), a tour recording waiting for you to sign in (§app.tours/sites), and an option card waiting for your answer, such as Land It (§chat.offers/card); a roster proposal stays a decide item. Then, as a
 **softer tier** under the blockers, the turn card's guesses (§app.overseer/attention-digest, soft
 items): a reply that waits on you (§app.decisions/asks-user) and a reply that says it is done
 without checking. A team gone quiet (§app.decisions/team-stall) is not here: it is a quiet mark

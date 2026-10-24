@@ -59,7 +59,7 @@ profile after a usage limit, and Off. A profile never turns on a project mode.
 ## §site.docs/align — Align and alignments (`/docs/modes/align/`)
 
 The align minor mode: what an alignment holds, answering it, Settings → Alignment (writing style,
-Visuals, review), the card, chip and session mark, Needs you and notifications, and the terminal
+Visuals, review), the card, the composer's badge and session mark, Needs you and notifications, and the terminal
 viewer.
 
 ## §site.docs/align-review — Adversarial review (`/docs/modes/align/review/`)

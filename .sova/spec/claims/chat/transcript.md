@@ -583,16 +583,13 @@ Driven by `ChatServerMessage.event`. Streaming working blocks follow the same br
   renders whenever any of the three has something to show,
   so an idle session with messages still has one. The subagents trigger follows the same two forms
   (words wide, its ring and a count narrow, §app/subagents-pane). The triggers never shrink, so none
-  runs its words into the next. The alignment chip doesn't either, except in the narrow form once
-  nothing else can give: its count then ends in an ellipsis ("1 align · 0/8…"), its full text still
-  its accessible name. At 344px that is every state with the subagents trigger and the inputs
-  trigger beside it; at 390px only a rare state's.
+  runs its words into the next. Open alignments and option cards are not in this row: they are the
+  waiting badge inside the message box (§chat.composer/waiting-badge).
   **Nothing moves.** The row is 20px tall whatever it carries (the triggers' net height) with its
   own 16px bottom margin, so the textarea and the composer keep their place between idle and
   working and as the step changes. The row's gap and each trigger's inline padding are 8px in the
   wide form; in the narrow one they are 6px and a trigger's parts sit 4px apart, so a working row
-  with the subagents trigger, the alignment chip and the inputs trigger stays on one line inside
-  the composer at 344px.
+  with the subagents trigger and the inputs trigger stays on one line inside the composer at 344px.
 - **End of turn** (`agent_settled`, or `agent_end` if that's all you get). Remove the live dots
   and the run status; the row's one dot stays while a subagent still works. Replace the optimistic items with the server's canonical ones if it sends
   them. Announce "Reply finished." in the polite live region; announce nothing per delta.
@@ -828,7 +825,7 @@ virtualized.
   and text selection reach every row built so far: the newest 400 or so, and every row the
   reader has scrolled up to or a jump has built. A row held but not built, or not fetched, is not
   in the page, so the browser's own find does not reach it; the Timeline, the outline's Jump to
-  Message, Open in Session, the card chip and a card reference still reach every row on the
+  Message, Open in Session, the waiting dialog's Show in Chat and a card reference still reach every row on the
   branch, since each jump builds (and if need be fetches) its target first (below). A row off
   screen is skipped by layout and paint
   (`content-visibility: auto`), at a height estimated from its kind, its text and its images
@@ -862,7 +859,7 @@ virtualized.
   the rows they don't carry: the ids of their inputs and, apart, of those the user typed, how many messages they hold, whether
   any is a reply, and the alignments still open among them (each one's newest revision there,
   and its row); so does each fetch, of the rows above what it returns. The inputs count, Fan
-  Out's "up to message {n}", Undo last turn and the composer's alignment chip
+  Out's "up to message {n}", Undo last turn and the composer's waiting badge
   (§chat.alignment/chip) count the rows held plus those, so they're right from the first `hello`
   on, with no older row fetched. A newer revision among the rows held, or live, takes an
   alignment's place: one done or dropped there is no longer open.
@@ -897,7 +894,9 @@ virtualized.
   left at the end that gained rows while away, kept or brought by that `hello` or snapshot, stops
   at the last row read: that row's bottom at the bottom of the view, not following, with "Jump to
   Latest · N new" counting the rows below it, unless they're short enough that the view is still
-  within 80px of the end. One that gained none stays at the end, following, as does one whose last
+  within 80px of the end: a transcript that fits on screen with them, or overflows it by less than
+  80px, counts as within 80px and stays at the end, following, with no Jump to Latest. One that
+  gained none stays at the end, following, as does one whose last
   row read isn't among its rows, or one the reader has scrolled or touched first. A kept
   spot whose row the `hello` didn't keep is fetched and placed then, unless the view has moved
   from the end meanwhile. Any other open lands at the end. A reload keeps nothing. Rows kept this

@@ -248,10 +248,6 @@
 .align-rev-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .align-rev > .disclosure-body { display: grid; gap: var(--space-2); max-width: var(--measure); }
 
-/* The composer's alignment chip (§chat.alignment/chip) sits right before the Inputs trigger, with
-   the triggers' -8px offset. The row's right-hand cluster is pushed to its end by one auto margin,
-   on the cluster's first part (app.css, .run-status-lead), never by the part before it. */
-.run-status > .run-status-align { margin-left: calc(var(--run-status-pad) * -1); }
 /* The answers picked on a card (recommendations ticked, options clicked), staged above the composer
    (§chat.composer/anatomy): one removable row, sent with the next message. */
 .align-picks {
@@ -264,16 +260,5 @@
   color: var(--color-ink-2);
 }
 .align-picks-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (min-width: 768px) {
-  .model-menu.action-menu.align-menu { width: 340px; max-width: calc(100vw - var(--space-6)); }
-}
-/* A menu row (.popover-item): id, title, then how far its questions are decided — a bar and
-   "{decided}/{live}", or the status word when it has none. One line; the title gives way. */
-.align-menu-id { flex: none; color: var(--color-ink-muted); }
-.align-menu-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink); }
-.align-menu-bar { flex: none; width: 54px; height: 4px; border-radius: var(--r-full); background: var(--color-border); overflow: hidden; }
-.align-menu-fill { display: block; height: 100%; border-radius: inherit; }
-.align-menu-fill-warn { background: var(--status-warn); }
-.align-menu-fill-success { background: var(--status-success); }
 .align-doc code,
 .align-rev code { font-family: var(--font-mono); font-size: 0.92em; padding: 0 var(--space-1); border-radius: var(--r-xs); background: var(--color-sunken); overflow-wrap: anywhere; }

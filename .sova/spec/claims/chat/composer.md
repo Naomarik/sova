@@ -6,7 +6,7 @@ Steer and Stop beside the textarea and the model indicator and mode switch in th
 In Focus (§chat.transcript/focus-view) it is hidden but kept, draft and all.
 
 Owns: its markup, the textarea's keys and placeholder, sending, steering and stopping, drafts, the
-disabled reasons, the `plus` button (it opens the Commands palette, §app/command-palette), the
+disabled reasons, the waiting badge and its dialog, the `plus` button (it opens the Commands palette, §app/command-palette), the
 flyout that holds the model, login and sandbox panels, the sandbox shield, the @ menu's folder read,
 and what the foot shows from a switch's first frame. Not here: the mode menu (§chat/mode-menu), the
 model picker (§chat/model-menu), the slash menu (§chat/slash-commands), attaching images
@@ -33,8 +33,8 @@ pending attachments, then the input row (mic, `plus` trigger, textarea, Send, St
     <p class="run-status"><span class="live-dot" aria-hidden="true"></span><span class="run-status-state" title="Working · running bash"><span class="icon icon-sm run-status-narrow" style="--icon: url(/icons/wrench.svg)" aria-hidden="true"></span><span class="run-status-say">Working<span class="run-status-detail">· running bash</span></span></span></p>
     <!-- and, with workers: the subagents trigger, button.run-status-link, its ring meter and count
          and no dot of its own (§app/subagents-pane) -->
-    <!-- with an open alignment: the alignment chip, a menu button immediately left of the Inputs
-         trigger, both at the row's right end (§chat.alignment/chip) -->
+    <!-- open alignments and option cards are not here: they are the waiting badge inside the
+         message box, below (§chat.composer/waiting-badge) -->
 
     <!-- answers picked on an alignment card (recommendations ticked, options picked), staged for
          the next send (§chat.alignment/card); each question reads "rec" or its option's letter;
@@ -67,9 +67,14 @@ pending attachments, then the input row (mic, `plus` trigger, textarea, Send, St
       <input class="visually-hidden" type="file" multiple tabindex="-1" aria-hidden="true"
              accept="image/png,image/jpeg,image/gif,image/webp">
       <label class="visually-hidden" for="composer-input">Message</label>
-      <textarea class="input textarea composer-input" id="composer-input" rows="1"
-                placeholder="Enter sends" enterkeyhint="send"
-                aria-describedby="composer-reason"></textarea>   <!-- touch mode: no placeholder, enterkeyhint="enter" -->
+      <div class="composer-field">
+        <!-- with an open alignment or option card: the waiting badge, at the box's left edge on its
+             last line (§chat.composer/waiting-badge) -->
+        <button class="waiting-badge" type="button" aria-haspopup="dialog" aria-label="…">…</button>
+        <textarea class="input textarea composer-input" id="composer-input" rows="1"
+                  placeholder="Enter sends" enterkeyhint="send"
+                  aria-describedby="composer-reason"></textarea>   <!-- touch mode: no placeholder, enterkeyhint="enter" -->
+      </div>
       <div class="composer-actions">
         <button class="button button-primary" type="submit">
           <span class="icon" style="--icon: url(/icons/arrow-right.svg)" aria-hidden="true"></span><span class="button-label">Send</span>
@@ -551,3 +556,84 @@ Busy mark stays on), but until the socket is open Send and Stop are both `aria-d
 the chat's `hello`) with the "Connecting to chat…" reason, so nothing goes into a closed socket or
 a chat still starting, and it counts as no turn starting (no list refresh). Answering an alignment card, "Switching model…" and the other pending states still
 wait for the socket's own word.
+
+## §chat.composer/waiting-badge — What's waiting on you, inside the message box
+
+One small badge inside the message box, at its left edge and centred on the last text line, says
+what in this chat waits for your answer: its open alignments (§chat/alignment) and its open option
+cards. With one line it is centred on that line, beside the text; as the message grows to more
+lines it stays on the bottom one, next to Send, and never rides up with the first. It replaces
+the alignment chip and the Overseer's open-cards chip that used to sit in the
+run-status row, and it adds no row: the run-status row keeps only its other parts, and the box
+keeps its height. The text, typed or placeholder, starts right of the badge on every line, so a
+wrapped message reads as one column beside it, at the 390px phone width too.
+
+```html
+<div class="composer-field" data-waiting="">
+  <button type="button" class="waiting-badge" aria-haspopup="dialog"
+          aria-label="3 questions open in 2 alignments, 1 card waiting — show what's waiting">
+    <svg viewBox="-20 -22 40 42" aria-hidden="true">
+      <circle r="14" class="waiting-badge-track" stroke-dasharray="65.97 87.96" transform="rotate(135)" />
+      <circle r="14" class="waiting-badge-progress" stroke-dasharray="26.39 87.96" transform="rotate(135)" />
+      <text class="waiting-badge-count" y="3.5">3</text>
+      <circle class="waiting-badge-dot" cx="-3" cy="16" r="1.5" /><circle class="waiting-badge-dot" cx="3" cy="16" r="1.5" />
+      <text class="waiting-badge-cards" y="-11">I</text>
+    </svg>
+  </button>
+  <textarea class="input textarea composer-input" …></textarea>
+</div>
+```
+
+- **The ring.** A 270° arc open at the bottom: its track in border-strong, and over it in the
+  accent the share of questions decided, `decided / total` over the live (not dropped) questions
+  of the branch's open alignments, the counts the alignment rows show (§chat.alignment/chip).
+- **The middle number** is the open (undecided) questions of those alignments.
+- **The dots** under it are one per open alignment, centred, 6 units apart (closer together past
+  6, so they stay within the ring's width).
+- **The numeral on top**, in the accent, counts the open option cards: I, II, III, IV, then V+
+  for 5 or more; it is left out at 0. An option card is any open offer card of the session
+  (§chat.offers/card), whatever offer the project declared, and in the Overseer's chat any of its
+  open cards (§app.overseer/confirm). It never depends on which offer a card is: there are no
+  per-offer icons.
+- **Only option cards.** With option cards and no open alignment it shows the track and the
+  numeral alone: no progress, no number, no dots.
+- **Nothing undecided.** With open alignments whose questions are all decided (or which have none)
+  and no option card, the badge fades: muted ink, the progress drawn in the track's colour, at low
+  opacity; it still opens the dialog. With no open alignment and no option card it is not there,
+  and the text starts at the box's own padding again.
+- **Its name.** The accessible name says the counts in words: "{q} questions open in {n}
+  alignments, {c} cards waiting — show what's waiting" (1: "question", "alignment", "card";
+  parts with nothing in them are left out, "1 card waiting — show what's waiting"; faded: "All
+  questions decided in 1 alignment — show what's waiting", or "1 alignment open — show what's
+  waiting" when it has no questions). It is a button with a 44px target,
+  never inside the textarea's own text; the ring is `aria-hidden`.
+- **Clicking it** opens the Waiting on you dialog (§chat.composer/waiting-dialog).
+- The counts follow the transcript as it streams, as the alignment counts do, and the option
+  cards follow the session's cards as Sova reads them.
+
+## §chat.composer/waiting-dialog — The Waiting on you dialog
+
+The badge (§chat.composer/waiting-badge) opens a centred dialog, "Waiting on you · {n}" where `n`
+counts its items, with a close button (x), over a backdrop. Escape, a click on the backdrop and
+the close button close it, and focus goes back to the badge. Below 768px it is the design
+system's bottom sheet, and it fits a 390×844 screen, its list scrolling inside it.
+
+It holds two groups, each a list of bordered cards, and leaves out a group with nothing in it:
+
+- **Option cards.** Each open option card shows its title, its note under it, and its buttons,
+  which act exactly as the card in the chat does (§chat.offers/card, §chat.offers/buttons): the
+  same choice is sent for the same card, a button with a `confirm` asks its question first
+  (Cancel, then its label again), and a card that is busy or can't be acted on here shows its
+  buttons disabled. A press answers the card in the chat; it never makes a second card. Each also
+  has **Show in Chat**, which closes the dialog and jumps to the card. In the Overseer's chat its
+  open cards are listed instead, by id and title, with Show in Chat only.
+- **Alignments.** Each open alignment shows its title, a meter "{decided}/{total}" of its live
+  questions decided, the topic of its next open question ("Next: {topic}"; "All decided" when
+  none is open), and only **Show in Chat**, which closes the dialog and jumps to the alignment's
+  newest card (§chat.alignment/chip). The dialog never answers an alignment and never draws a
+  second copy of its card.
+
+Option cards come first, newest first; alignments in the order the chip's menu listed them, those
+with an open question first, each group the last touched first. While the dialog is open its
+counts and cards follow the chat; once nothing is left in it, it says "Nothing is waiting on you
+in this chat." with the close button.

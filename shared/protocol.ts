@@ -3007,13 +3007,18 @@ export interface TeamMember {
       to. Absent when the member has no items file, and from older servers. */
   inbox?: TeamInboxCounts;
 }
-export interface TeamInboxCounts { open: number; urgent: number; total: number }
+/** `closedByMember`: addressed items the member closed itself (`team_inbox done` or a reply);
+    `closedAutomatically`: addressed items Sova's safety net closed (§app.teams/inbox-zero). Both
+    absent from older servers, which show no summary line. */
+export interface TeamInboxCounts { open: number; urgent: number; total: number; closedByMember?: number; closedAutomatically?: number }
 export type TeamInboxKind = "message" | "question" | "report" | "handover" | "notice" | "instruction";
 export type TeamInboxStatus = "new" | "read" | "addressed";
 /** One item in a member's inbox, without its body (GET /api/insights/session/inbox). `from` is
     the sender (`workerId` "parent" for the main thread and for Sova); `movedFrom`: the members it
     was first sent to, oldest first, when a handover or a forward moved it here; `returned`: it was
-    sent back to its sender and is no longer open. Times are epoch ms. */
+    sent back to its sender and is no longer open; `closedBy`: how an addressed item was closed
+    (`member` by `team_inbox done`, `reply` by a reply naming it, `auto` by Sova's safety net),
+    absent on older items and from older servers (read as the member). Times are epoch ms. */
 export interface TeamInboxItemInfo {
   id: string;
   from: { role: string; workerId: string };
@@ -3028,7 +3033,9 @@ export interface TeamInboxItemInfo {
   replyTo?: string;
   movedFrom?: { role: string; workerId: string; at: number; why: "handover" | "forward" }[];
   returned?: { at: number; why: string };
+  closedBy?: TeamInboxClosedBy;
 }
+export type TeamInboxClosedBy = "member" | "reply" | "auto";
 /** GET /api/insights/session/inbox?path=&team=&worker=: one member's items, newest first.
     `items` is capped at the newest 500; `total` counts them all. */
 export interface TeamInboxView {
@@ -3451,6 +3458,7 @@ export type AttentionKind =
   | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
   | "held-act"            // act tier, never pushed: a statechart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
+  | "offer-waiting"       // act tier, never pushed or briefed: the session shows an open offer card (Land It, §chat.offers/card), idle or working
   | "tour-sign-in"        // act tier, never pushed: one of the session's tour recordings waits for the user to sign in on its card (§app.tours/sites; from the server's memory, gone on restart)
   | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Merge Branch (§app.project-runtime/review; the run's session, `playbook` set)
   | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project page)

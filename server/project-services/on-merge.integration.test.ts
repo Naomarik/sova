@@ -37,7 +37,7 @@ const defOf = (extra: Record<string, string> = {}) => ({
   slots: { cap: 1 },
   services: {
     web: { cmd: ["node", "server.mjs"], env: { PORT: "${ports.web.http}", ...extra }, ports: { http: { base: BASE } }, ready: { http: "http" }, reload: "restart", onMerge: "reload" },
-    api: { cmd: ["node", "server.mjs"], env: { PORT: "${ports.api.http}" }, ports: { http: { base: BASE + 10 } }, ready: { http: "http" }, reload: "restart" },
+    api: { cmd: ["node", "server.mjs"], env: { PORT: "${ports.api.http}" }, ports: { http: { base: BASE + 20 } }, ready: { http: "http" }, reload: "restart" },
   },
 });
 
@@ -55,7 +55,7 @@ const pidOn = async (port: number): Promise<string> => (await (await fetch(`http
 const deps = (): Partial<OnMergeDeps> => ({ run: (verb, body, caller) => engine.run(verb, body, caller), selfCheckout: () => self, file });
 
 before(async () => {
-  BASE = await reservePorts(14);
+  BASE = await reservePorts(40);
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-onmerge-proj-")));
   project = join(parent, "shop");
   file = join(parent, "on-merge.json");
@@ -78,7 +78,7 @@ test("main moved: the main checkout's copy reloads only its running onMerge serv
   assert.equal(up.state, "running", up.error?.message);
   assert.equal(up.slot, 0);
   const web0 = await pidOn(BASE);
-  const api0 = await pidOn(BASE + 10);
+  const api0 = await pidOn(BASE + 20);
 
   assert.equal(await mainMoved(project, deps()), null, "a first sight only records HEAD");
   assert.equal(await mainMoved(project, deps()), null, "HEAD unchanged: nothing");
@@ -89,7 +89,7 @@ test("main moved: the main checkout's copy reloads only its running onMerge serv
   const line = await mainMoved(project, deps());
   assert.equal(line, `Main moved to ${head.slice(0, 7)}: onMerge reloaded web on the main checkout's copy.`);
   assert.notEqual(await pidOn(BASE), web0, "web restarted");
-  assert.equal(await pidOn(BASE + 10), api0, "api untouched");
+  assert.equal(await pidOn(BASE + 20), api0, "api untouched");
   assert.equal(onMergeNotes(project, file)[0]?.line, line);
   assert.equal(await mainMoved(project, deps()), null, "the same move never reloads twice");
 });

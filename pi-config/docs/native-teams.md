@@ -315,10 +315,11 @@ Guarantees, enforced by `team-widget.test.ts`:
   The mailbox, each member's inbox (`items.jsonl`) and pending nudges are
   kept beside the team's handover notes. After a reload every inbox is folded
   from disk: live members are woken for items never listed, and a member found
-  ended returns its open items to their senders ("not addressed"; Sova's own
+  ended first closes automatically what it opened and didn't close (never a
+  question), then returns its open items to their senders ("not addressed"; Sova's own
   to the coordinator, the main thread's to the main chat as a `team-notice`
-  message that starts no turn). At a handover the retired member's open items
-  move to its successor, keeping their ids.
+  message that starts no turn). At a handover the retired member's opened items
+  close the same way and its other open items move to its successor, keeping their ids.
 - **History is per branch.** On session start, team entries
   (`subagents-team-v1`, versioned create/add operations) restore from the
   **active branch only**; a `/tree` jump re-restores. History teams are
@@ -385,6 +386,18 @@ the existing wake mechanism, not an orchestrator loop.
   tells each member what to avoid, but nothing blocks conflicting edits.
   Coordinate genuinely conflicting files through separate tasks or sequential
   follow-ups, not parallel members.
+
+- **Standing roles fall back at runtime.** A coordinated team's coordinator or
+  monitor whose turn fails because its model ran out of usage (credits,
+  quota, a monthly, weekly or 5-hour limit, a failed sign-in; one shared
+  classifier, `../extensions/provider-limits/usage-out.ts`), or that fails 3
+  turns in a row of any kind, while it runs its role's primary, is stopped,
+  its seat released, and its successor starts at once on the role's fallback
+  through the main chat's replacement path. A single 429 rate limit doesn't
+  switch. The model is marked out for an hour (`subagents-dead-tuple-v1`,
+  replayed after a reload), so new teams, the members default and later
+  successors skip it; the team that switched stays on its fallback. With no
+  fallback a monitor is stopped and a coordinator is reported, each once.
 
 ## Verification
 

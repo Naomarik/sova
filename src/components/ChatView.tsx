@@ -24,6 +24,7 @@ import { courier, Outbox, sendsOf, sendsOnTheWay, takeBackHere, type Frame } fro
 import { chatCourier } from "../lib/chat-courier";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
 import { createOfferControls, OfferContext, OfferTray } from "./OfferCard";
+import type { OfferCard } from "../../shared/session-offers";
 import { SettingsCardContext } from "./SettingsChangeCard";
 import type { OverseerApprovals } from "./OverseerApprovalsPanel";
 import { CARD_TOOL, type OverseerCard } from "../../shared/overseer-card";
@@ -1634,6 +1635,16 @@ export function ChatView(props: {
   // Offer cards (§chat.offers/card): an ordinary chat's, read from the server, again after each turn.
   const offers = props.overseer || props.projectOverseer ? undefined : createOfferControls(() => props.path, (c) => !!c.toolCallId, () => !archivedPane() && !batonGate());
   if (offers) createEffect(on(() => live.running, (now, before) => void (before && !now && offers.refresh()), { defer: true }));
+  /** Show in Chat for an offer card (§chat.composer/waiting-dialog): its `offer` call's row (the
+      jump's highlight included), else the card where it stands (the tray at the thread's end). */
+  const jumpToOffer = (card: OfferCard) => {
+    const rows = card.toolCallId ? (items()?.filter((it) => it.toolCallId === card.toolCallId) ?? []) : [];
+    rows.sort((a, b) => Number(b.kind === "tool-call") - Number(a.kind === "tool-call"));
+    if (rows.some((row) => jumpToEntry(row.id, props.path))) return;
+    const el = transcriptRoot(props.path)?.querySelector<HTMLElement>(`[data-offer-id="${CSS.escape(card.id)}"]`);
+    if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+    else toast("That card isn't in the transcript on screen.");
+  };
   const blocked = (): ComposerReason | null => {
     if (archivedPane()) return { icon: "archive", text: "This session is archived. Unarchive it to send." };
     // A baton session (§app.baton/attribution): the operator writes only while holding the baton.
@@ -2451,10 +2462,18 @@ export function ChatView(props: {
         onShowTimeline={props.onShowTimeline}
         inputCount={inputCount() ?? 0}
         inputsPending={inputsPending(inputCount(), items(), !!props.summary?.() && knownInputs(props.summary()!))}
-        aligns={aligns()}
-        onJumpAlign={jumpToAlign}
-        cards={openCards(cards())}
-        onJumpCard={jumpToCard}
+        waiting={{
+          get aligns() {
+            return aligns();
+          },
+          offers,
+          get overseerCards() {
+            return openCards(cards());
+          },
+          jumpAlign: jumpToAlign,
+          jumpOverseerCard: jumpToCard,
+          jumpOffer: jumpToOffer,
+        }}
         autonomy={props.overseer ? autonomy() : undefined}
         autofocus={props.autofocus}
         model={modelControl}

@@ -3307,13 +3307,8 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   /* Between blocks the Working state draws nothing here (no step, its words hidden): it gives
      back its gap, so the ring sits one gap after the dot. */
   .run-status-state:not(:has(> .icon)):not(:has(> .run-status-words)) { margin-left: calc(var(--run-status-pad) * -1); }
-  /* The one trigger that may give way here: "1 align · 0/8 decided" is the widest, so at a 344px
-     screen its count ends in an ellipsis rather than pushing the row past the edge (its full text
-     stays its accessible name). */
-  .run-status > .run-status-link.run-status-align { flex: 0 1 auto; min-width: 0; }
   /* Stopping and the rare states give way first, down to about 4em of their words. */
   .run-status-state:has(> .run-status-words) { flex-shrink: 1000000; min-width: 4em; }
-  .run-status > .run-status-align .text-num { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .run-status-say {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
@@ -3329,13 +3324,8 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   /* Between blocks the Working state draws nothing here (no step, its words hidden): it gives
      back its gap, so the ring sits one gap after the dot. */
   .run-status-state:not(:has(> .icon)):not(:has(> .run-status-words)) { margin-left: calc(var(--run-status-pad) * -1); }
-  /* The one trigger that may give way here: "1 align · 0/8 decided" is the widest, so at a 344px
-     screen its count ends in an ellipsis rather than pushing the row past the edge (its full text
-     stays its accessible name). */
-  .run-status > .run-status-link.run-status-align { flex: 0 1 auto; min-width: 0; }
   /* Stopping and the rare states give way first, down to about 4em of their words. */
   .run-status-state:has(> .run-status-words) { flex-shrink: 1000000; min-width: 4em; }
-  .run-status > .run-status-align .text-num { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .run-status-say {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;

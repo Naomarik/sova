@@ -96,6 +96,7 @@ export const ERROR_CODES = [
   "invalid-definition",
   "not-conformant",
   "cap-reached",
+  "slots-blocked",
   "port-held",
   "not-ready",
   "start-failed",
@@ -125,6 +126,7 @@ const EXIT: Record<ErrorCode, ExitClass> = {
   "verify-failed": 1,
   "not-conformant": 2,
   "cap-reached": 2,
+  "slots-blocked": 2,
   "port-held": 2,
   "dirty-worktree": 2,
   unsupported: 2,
@@ -298,6 +300,10 @@ export const SHARE_ENDPOINTS_MAX = 20;
 export const CONTRACT_FILE = ".sova/project.json";
 export const SLOT_CAP_DEFAULT = 4;
 export const SLOT_CAP_MAX = 16;
+/** Every copy's slot is one of 1 to COPY_SLOT_TOP, whatever the copy limit (§app.project-services/instances). */
+export const COPY_SLOT_TOP = 16;
+/** Conformance's scratch slots are searched from here up (shared/project-slots.ts slotLayoutOf). */
+export const SCRATCH_FROM = COPY_SLOT_TOP + 1;
 export const READY_TIMEOUT_DEFAULT = 60;
 export const READY_TIMEOUT_MAX = 600;
 export const HOOK_TIMEOUT_DEFAULT = 120;
@@ -315,8 +321,6 @@ export function selectorsProblem(v: unknown): string | null {
   for (const x of v) if (typeof x !== "string" || !SELECTOR.test(x)) return `${JSON.stringify(x)} is not a selector (letters, digits and _ . / : * -, starting with a letter, digit or _, at most 200)`;
   return null;
 }
-/** Conformance takes the two slots above the cap (§app.project-services/conform). */
-export const scratchSlots = (def: Pick<ProjectDef, "slots">): [number, number] => [def.slots.cap + 1, def.slots.cap + 2];
 
 const NAME = /^[a-z][a-z0-9-]{0,30}$/;
 /** The variables Sova sets itself (§app.project-services/contract): a definition's env never names one. */
@@ -839,8 +843,9 @@ export function parseDefinition(text: string): ProjectDef {
   serviceOrder(def);
   const adopting = services.filter((s) => s.adopt);
   if (adopting.length > 1) throw new DefinitionError(`$.services.${adopting[1]!.name}.adopt`, "at most one service adopts a unit");
-  // Ports: every allocated port, in every slot up to the scratch slots, must fit, and no two ports
-  // of one instance may coincide.
+  // Ports: every allocated port, in every slot up to cap + 2, must fit, and no two ports of one
+  // instance may coincide. Higher slots (the copies' fixed range, the scratch slots) never make a
+  // file invalid: a slot whose ports overlap is only a place no copy takes (shared/project-slots.ts slotLayoutOf).
   const top = cap + 2;
   for (const s of services)
     for (const [k, p] of Object.entries(s.ports))
@@ -1058,6 +1063,8 @@ export interface ConformReport {
   /** On a failed run: the last lines of each service (or step) that was not ready or failed, read before teardown. */
   logs?: ConformLog[];
   memory?: ConformMemory;
+  /** What the run says besides its checks: its scratch slots' ports overlapping other places' (§app.project-services/instances). */
+  notes?: string[];
 }
 export interface TestFailure {
   name: string;

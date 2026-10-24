@@ -59,6 +59,7 @@
 //               completion
 //     t19       a team across a restart: alpha's team_msg to beta just before it arrives once; a
 //               team_ask reaches the parent once; after a parent reload alpha's inbox keeps beta's message
+//               (closed automatically by then: listed with `limit`, which shows closed items)
 //     t19n      a monitor's wake_nudge set before a parent reload fires once after it (team-defaults.json)
 //     t20       kill -9 of a worker mid-run: the continue once, the run finishes, one completion; a
 //               second kill during that resume is final ("stopped unexpectedly", last output)
@@ -1739,7 +1740,9 @@ async function t18b() {
 
 // T19: a team across a restart: alpha's team_msg to beta, made just before the restart, arrives once;
 // alpha's team_ask reaches the parent once; after a parent reload alpha's inbox still lists beta's
-// earlier message.
+// earlier message. Beta's message reached alpha as a one-item wake, which showed it in full, and the
+// safety net closed it when that turn ended (§app.teams/inbox-zero), so it is no longer open: the
+// default list shows only open items, and `limit` lists the newest whatever their status.
 async function t19() {
   const team = {
     name: "t19",
@@ -1782,9 +1785,12 @@ async function t19() {
   const list = await agentList(p3);
   const a = list.find((x) => x.name === "alpha");
   R.check(a && !a.restored, `t19: after the parent's reload alpha is live again, not restored (${JSON.stringify(a)?.slice(0, 160)})`);
-  if (a) await turn(p3, `[call agent_steer ${JSON.stringify({ id: a.id, message: "[call team_inbox {}] read your inbox" })}]`);
-  await waitFor(() => askedBy(chatPid(alpha.path)).some((e) => e.afterTool && /HELLO-T19/.test(e.toolText ?? "")), 60000);
-  R.check(askedBy(chatPid(alpha.path)).some((e) => e.afterTool && /HELLO-T19/.test(e.toolText ?? "")), "t19: after the parent's reload alpha's team_inbox still lists beta's earlier message");
+  if (a) await turn(p3, `[call agent_steer ${JSON.stringify({ id: a.id, message: '[call team_inbox {"limit":20}] read your inbox' })}]`);
+  const listed = () => askedBy(chatPid(alpha.path)).find((e) => e.afterTool && /HELLO-T19/.test(e.toolText ?? ""))?.toolText ?? "";
+  await waitFor(() => listed(), 60000);
+  const rows = listed().split("\n").filter((l) => /HELLO-T19/.test(l));
+  R.check(rows.length === 1, `t19: after the parent's reload alpha's team_inbox still lists beta's earlier message, once (${JSON.stringify(rows)})`);
+  R.check(rows.length === 1 && /\[addressed\]/.test(rows[0]) && /closed automatically/.test(rows[0]), `t19: beta's message is listed as closed automatically, its status kept through the reload (${rows[0]})`);
   noRpc("t19");
   p3.s.close();
 }

@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, BrowserContext, Page } from "playwright-core";
-import type { OwnerHome } from "../shared/owner";
+import type { OwnerHome, OwnerProject } from "../shared/owner";
 import type { AssistantView } from "../shared/project-assistant";
 import { launchTourBrowser } from "./tours/browser";
 import { scratchRoot } from "./test-scratch";
@@ -56,8 +56,26 @@ function homeOf(x: Partial<OwnerHome> = {}): OwnerHome {
   };
 }
 const viewOf = (x: Partial<AssistantView> = {}): AssistantView => ({ ready: true, busy: false, messages: [], ...x });
+/** A project's answer, for a card opened from Home. */
+const projectOf = (p: { id: string; name: string }): OwnerProject => ({
+  ...p,
+  status: "quiet",
+  lastActivityAt: "",
+  org: { name: "Rakiba" },
+  owner: { name: "Sara Rakiba", first: "Sara" },
+  operator: { name: "Omar Hughes", first: "Omar" },
+  updatedAt: NOW,
+  news: [],
+  waiting: [],
+  people: [],
+  decisions: [],
+  differences: [],
+  conversations: [],
+  finished: 0,
+  inProgress: 0,
+});
 
-/** A page at `width`, every request answered: the build's files, the Home answer, the chat's view. */
+/** A page at `width`, every request answered: the build's files, the Home answer, a project's answer, the chat's view. */
 async function open(width: number, hash: string, o: { home?: OwnerHome; view?: AssistantView; touch?: boolean } = {}): Promise<{ page: Page; ctx: BrowserContext }> {
   const ctx = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: !!o.touch, isMobile: !!o.touch });
   const page = await ctx.newPage();
@@ -70,6 +88,8 @@ async function open(width: number, hash: string, o: { home?: OwnerHome; view?: A
     if (asset) return route.fulfill({ path: join(dist, "assets", asset[1]!) });
     if (url.pathname === `/api/i/${TOKEN}/assistant`) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(o.view ?? viewOf()) });
     if (url.pathname === `/api/i/${TOKEN}`) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(home) });
+    const project = [A, B].find((p) => url.pathname === `/api/i/${TOKEN}/p/${p.id}`);
+    if (project) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(projectOf(project)) });
     return route.fulfill({ status: 404, contentType: "application/json", body: "{}" });
   });
   await page.goto(`${ORIGIN}/i/${TOKEN}${hash}`);
@@ -240,6 +260,7 @@ test("1280px: the tabs are a left sidebar, the page beside it, no bottom bar", a
   // A project opens inside Home: Home stays highlighted.
   await page.getByRole("link", { name: /RakibaDesigns/ }).first().click();
   await page.waitForFunction(() => location.hash.startsWith("#p/"));
+  await page.getByRole("link", { name: "← All projects" }).waitFor({ timeout: 10_000 });
   assert.equal(await page.getByRole("link", { name: "Home" }).getAttribute("aria-current"), "page");
   await page.goto(`${ORIGIN}/i/${TOKEN}#a`);
   await page.locator("#assistant-text").waitFor({ timeout: 10_000 });

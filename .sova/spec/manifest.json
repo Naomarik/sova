@@ -17140,7 +17140,8 @@
         "pi-config/extensions/mode/index.ts",
         "pi-config/extensions/mode/tests/agree-turn.mjs",
         "pi-config/extensions/spec/docs/MODE.md"
-      ]
+      ],
+      "evidence": "verified"
     },
     "§tools.spec/census-note": {
       "kind": "behavior",
@@ -21746,6 +21747,7 @@
       "evidence": "verified",
       "code": [
         "pi-config/extensions/mode/spec-mode.md",
+        "pi-config/extensions/spec/WRITING.md",
         "pi-config/extensions/mode/spec-guard.ts",
         "pi-config/extensions/subagents/spec-brief.ts",
         "pi-config/extensions/subagents/spec-brief.test.ts",
@@ -24555,6 +24557,39 @@
         "at": "2026-10-19T15:13Z",
         "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
       }
+    },
+    "§tools.spec/writing-on-demand": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§tools.spec/mode-reading",
+        "§tools.spec/census-note",
+        "§tools.spec/align-agree",
+        "§chat.mode-menu/minor-toggle-keeps-prompt"
+      ],
+      "code": [
+        "pi-config/extensions/mode/spec-mode.md",
+        "pi-config/extensions/spec/WRITING.md",
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/mode/spec-guard.test.ts",
+        "pi-config/extensions/mode/spec-worker.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/align-tool.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/subagents/spec-brief.ts",
+        "pi-config/extensions/subagents/spec-brief.test.ts",
+        "pi-config/extensions/mode/tests/spec-turn.mjs",
+        "pi-config/extensions/mode/tests/spec-worker.mjs",
+        "pi-config/extensions/mode/tests/agree-turn.mjs",
+        "scripts/spec-pointers.test.ts",
+        "pi-config/extensions/spec/docs/MODE.md"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-25T20:24Z",
+        "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
+      },
+      "evidence": "verified"
     }
   },
   "boundary": {

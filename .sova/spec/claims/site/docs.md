@@ -69,7 +69,9 @@ route, when it runs, blockers, and what the card shows.
 
 ## §site.docs/spec-mode — Spec (`/docs/modes/spec/`)
 
-The spec minor mode: working from the project's spec, the census note and its one unread line before
+The spec minor mode: its guide's two parts (finding your way on every turn, the writing procedure
+once, before the first behavior-changing edit or with the first census note or an alignment's
+go-ahead), working from the project's spec, the census note and its one unread line before
 finishing, updating a claim the task didn't create without asking and listing it in the reply's one
 spec line ("Also updates …"), the Agree step when align is on too, drafts and promotion, the spec
 writer, what workers get (and the claims a finished worker's changes landed in), and project coding

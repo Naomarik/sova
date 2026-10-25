@@ -122,6 +122,33 @@ describe("the share listener's /i/ (§app.owner-page/link)", () => {
     assert.equal(strip(await (await app.request(`/api/orgs/${org.id}/owner/preview?c=${k}`)).text()), strip((await share(`/api/i/${token}/c/${k}`)).text));
   });
 
+  test("through the edge: the paged reads answer, a near-miss path or another method is 404, and Home groups the shown conversations (§app.owner-page/page)", async () => {
+    const { body } = await call<OwnerLinkResult>("GET", `/api/orgs/${org.id}/owner/link?keep=1`);
+    const token = tokenOf(body.link);
+    const k = plinks.handleOf("k", s1.sessionId);
+    const older = await share(`/api/i/${token}/c/${k}/older?before=1000`);
+    assert.equal(older.status, 200, older.text);
+    const page = JSON.parse(older.text) as { items: unknown[]; older: number };
+    assert.equal(page.older, 0);
+    assert.ok(older.text.includes("We open at nine."), "the earlier items are the conversation's own");
+    // The preview pages the same way, from the same function.
+    assert.equal(await (await app.request(`/api/orgs/${org.id}/owner/preview?c=${k}&before=1000`)).text(), older.text);
+    const chat = await share(`/api/i/${token}/assistant/older?before=10`);
+    assert.equal(chat.status, 200, chat.text);
+    assert.deepEqual(JSON.parse(chat.text), { messages: [], older: 0 });
+    assert.equal((await share(`/api/i/${token}/c/${k}/older?before=x`)).status, 400);
+    // Not on the allowlist: refused at the edge before any route (an extra segment, a POST).
+    assert.equal(shareMayReach("GET", `/api/i/${token}/c/${k}/older/more`), false);
+    assert.equal((await share(`/api/i/${token}/c/${k}/older/more`)).status, 404);
+    assert.equal((await shareReq("POST", `/api/i/${token}/assistant/older`)).status, 404);
+    // Home's Conversations: the shown ones only, Outstanding and History as the page groups them.
+    const home = JSON.parse((await share(`/api/i/${token}`)).text) as OwnerHome;
+    const titles = (home.conversations ?? []).map((c) => c.publicTitle).sort();
+    assert.deepEqual(titles, ["Budget", "Opening hours", "Parking", "Salaries"], "no hidden conversation, nothing of a switched-off project");
+    const kinds = Object.fromEntries((home.conversations ?? []).map((c) => [c.publicTitle, [c.status.kind, !!c.endedAt]]));
+    assert.deepEqual(kinds, { Budget: ["waiting-on-you", false], Parking: ["offered", false], "Opening hours": ["done", true], Salaries: ["closed", true] });
+  });
+
   test("dead and unknown links say nothing more; a hidden handle is 404 like a random one; headers", async () => {
     const { body } = await call<OwnerLinkResult>("GET", `/api/orgs/${org.id}/owner/link`);
     const token = tokenOf(body.link);

@@ -61,10 +61,10 @@ import { lastVisits } from "./visits";
 import type { OwnerLinkResult } from "../shared/owner";
 import { ownerLinkFor, ownerLinkNeeds, ownerPageInfo, revokeOwnerLinks, setOwner } from "./owner";
 import { featureChatOwnerFirst } from "./feature-chats";
-import { ownerView } from "./owner-page";
+import { ownerConversationOlder, ownerView } from "./owner-page";
 import { orgRequests } from "./project-assistant-store";
 import { batonSettingsView, registerAssistantRoutes, saveBatonSettings } from "./project-assistant-routes";
-import { assistantPhoto, assistantView } from "./project-assistant";
+import { assistantOlder, assistantPhoto, assistantView } from "./project-assistant";
 import { readUpdates, withdrawUpdate } from "./project-updates";
 import { setRemote } from "./workspace-git";
 import { actOrThrow, hostOf } from "./org-engine";
@@ -678,7 +678,19 @@ export function registerOrgRoutes(app: Hono<any>): void {
           if (!got || !/^image\/(?:jpeg|png|webp|gif)$/.test(got.mimeType)) throw new OrgError("No such photo.", 404);
           return c.body(new Uint8Array(Buffer.from(got.data, "base64")), 200, { "Content-Type": got.mimeType, "Content-Security-Policy": "default-src 'none'; sandbox", "Cache-Control": "no-store" });
         }
+        // An earlier page of it (§app.project-assistant/chat, Paged), as the owner's link reads it.
+        const before = c.req.query("before");
+        if (before !== undefined) {
+          if (!/^(?:0|[1-9][0-9]{0,6})$/.test(before)) throw new OrgError("before is a message number.", 400);
+          return c.json(await assistantOlder(p(c, "id"), Number(before)));
+        }
         return c.json(await assistantView(p(c, "id")));
+      }
+      // A conversation's earlier items (§app.owner-page/content).
+      const before = c.req.query("before");
+      if (conversation !== undefined && before !== undefined) {
+        if (!/^(?:0|[1-9][0-9]{0,6})$/.test(before)) throw new OrgError("before is a position.", 400);
+        return c.json(await ownerConversationOlder(p(c, "id"), conversation, Number(before)));
       }
       return c.json(await ownerView(p(c, "id"), { ...(project !== undefined ? { project } : {}), ...(conversation !== undefined ? { conversation } : {}) }));
     }),

@@ -4,7 +4,8 @@
  * Imported by the server, the operator app and the share build, so it imports only types.
  *
  * Share listener (T = the owner token):
- * GET  /api/i/T/assistant        -> AssistantView
+ * GET  /api/i/T/assistant        -> AssistantView (the newest VIEW page; `older` before it)
+ * GET  /api/i/T/assistant/older?before=<n> -> AssistantOlder (the page before message n)
  * POST /api/i/T/assistant        body { text, images? } -> 202 { ok: true } | 409 { code: "not-ready" | "busy" | "no-photos" | "photo-expired" } | 400 too-many | 429
  * POST /api/i/T/assistant/image  raw image bytes -> 201 { id, size, mime } | 409 no-photos | 413 | 400 | 429 | 507 (§app.project-assistant/photos)
  * GET  /api/i/T/assistant/img/<n> -> the n-th photo of the chat's view (AssistantImage.n)
@@ -205,12 +206,32 @@ export interface AssistantView {
   ready: boolean;
   /** A reply is being written now. */
   busy: boolean;
-  /** The last 200, oldest first. */
+  /** The newest page (50), oldest first; each `n` counts from the conversation's first message. */
   messages: AssistantMessage[];
+  /** How many messages come before `messages` (0: it starts at the first). Absent from an older server: all were sent. */
+  older?: number;
   /** The reply so far, while it is written. */
   streaming?: string;
   /** Present only while photos are on and the reply model sees images: the composer shows its paperclip. */
   photos?: { perMessage: number; maxBytes: number };
+}
+
+/** How many messages the chat's view, and each earlier page, carries (§app.project-assistant/chat, Paged). */
+export const ASSISTANT_PAGE = 50;
+
+/** One page of messages: those with `n` below `before` (all, when absent), the newest `size` of them, and how many
+    come before the page. `n` counts from the conversation's first message, so pages merge by it. */
+export function pageOf<T extends { n: number }>(all: readonly T[], before?: number, size = ASSISTANT_PAGE): { messages: T[]; older: number } {
+  const upto = before === undefined ? all.length : all.findIndex((m) => m.n >= before);
+  const end = upto < 0 ? all.length : upto;
+  const start = Math.max(0, end - size);
+  return { messages: all.slice(start, end), older: start };
+}
+
+/** GET /api/i/T/assistant/older?before=<n>: up to a page of the messages before message n, and how many come before them. */
+export interface AssistantOlder {
+  messages: AssistantMessage[];
+  older: number;
 }
 
 export type AssistantServerMessage =

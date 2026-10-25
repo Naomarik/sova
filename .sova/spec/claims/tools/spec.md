@@ -438,7 +438,8 @@ A spec that holds records both ways is mixed: a version 2 `manifest.json` whose 
 object, or a version 1 one with `claims/**/*.json` record files beside it. Every command refuses a
 mixed spec with `layout-mixed` (exit 2; the bounded views as their `cause`, with the fix as their
 `message`) and names the one command that finishes it: `merge-manifest --write` while a Git merge is
-in progress, else `migrate --write` (with `--draft NAME` for a draft). A record file is read whatever
+in progress, else `migrate --write` (with `--draft NAME` for a draft); a `manifest.json` a Git merge
+left unparsed (its conflict markers) names `merge-manifest --write` the same way. A record file is read whatever
 its name when its claim file sits beside it (an area may be called `secrets`), by the core, the draft
 tool and the review policy too; its directories are still checked as before.
 In version 2, `check` also refuses a record in a file its identifier doesn't place it in

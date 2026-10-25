@@ -8,7 +8,11 @@
  * - Each project root that is a git checkout is registered (`git maintenance register` in its main
  *   checkout) with these keys in the repository's own config: maintenance.auto=false,
  *   maintenance.strategy=incremental, maintenance.prefetch.enabled=false,
- *   maintenance.worktree-prune.enabled=false, gc.worktreePruneExpire=never.
+ *   maintenance.worktree-prune.enabled=false, gc.worktreePruneExpire=never, and a weekly full gc
+ *   (maintenance.gc.enabled=true, maintenance.gc.schedule=weekly; no expiry shortened). A key added
+ *   since a repository was registered is set at the next sweep.
+ * - Each sweep removes cleanup locks a killed run left (older than an hour), only when no git process
+ *   works in that repository (recoverStaleLocks): otherwise every later run skips and exits 0.
  * - What Sova did is recorded in <state root>/git-maintenance.json: whether it added the
  *   registration (a repository already in the user's maintenance.repo is left as it was) and each
  *   key's earlier value. A repository no project holds any longer is unregistered only when Sova
@@ -21,8 +25,9 @@
  * their own deps (a throwaway HOME / GIT_CONFIG_GLOBAL, a stand-in scheduler).
  */
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { CLEANUP_LOCKS, STUCK_LOCK_MS } from "./git-folder";
 import { NO_BACKGROUND_CLEANUP } from "./git-no-background";
 import { stateRoot } from "./state-root";
 
@@ -33,6 +38,10 @@ export const MAINTENANCE_KEYS: readonly (readonly [string, string])[] = [
   ["maintenance.prefetch.enabled", "false"],
   ["maintenance.worktree-prune.enabled", "false"],
   ["gc.worktreePruneExpire", "never"],
+  // A full gc weekly: the incremental strategy alone never prunes, so a repository only grows. No
+  // expiry is shortened: git's defaults keep unreachable objects 2 weeks and reflogs 90/30 days.
+  ["maintenance.gc.enabled", "true"],
+  ["maintenance.gc.schedule", "weekly"],
 ];
 
 export type GitRun = (args: string[], cwd: string) => Promise<{ code: number; stdout: string; stderr: string }>;
@@ -43,6 +52,9 @@ export interface MaintenanceDeps {
   /** The record (default <state root>/git-maintenance.json). */
   recordPath: string;
   log: (line: string) => void;
+  /** Where the process table is read (default /proc); tests point it elsewhere. */
+  procRoot?: string;
+  now?: () => number;
 }
 
 interface RepoRecord {
@@ -149,6 +161,106 @@ async function unregister(deps: MaintenanceDeps, repo: string, rec: RepoRecord):
   }
 }
 
+/** Set each key a repository registered earlier doesn't have yet (one added since), recording its earlier value. */
+async function addMissingKeys(deps: MaintenanceDeps, repo: string, r: RepoRecord): Promise<boolean> {
+  let changed = false;
+  for (const [k, v] of MAINTENANCE_KEYS) {
+    if (k in r.before) continue;
+    r.before[k] = await localValue(deps.git, repo, k);
+    const set = await deps.git(["config", "--local", k, v], repo);
+    if (set.code !== 0) deps.log(`${repo}: couldn't set ${k}: ${firstLine(set.stderr || set.stdout)}`);
+    changed = true;
+  }
+  return changed;
+}
+
+/** A running git process: where it works, and the git folders its environment names. */
+export interface GitProcess {
+  pid: number;
+  cwd: string;
+  gitDirs: string[];
+}
+
+const GIT_PROGRAM = /^git(-[a-z0-9-]+)?$/;
+
+/**
+ * Every git process this host's process table shows, or null when it can't be read whole: no
+ * `procRoot` (macOS), or a git process whose folder or environment can't be read (another user's).
+ * A process that ends while being read is left out.
+ */
+export function gitProcesses(procRoot = "/proc"): GitProcess[] | null {
+  let pids: string[];
+  try {
+    pids = readdirSync(procRoot).filter((d) => /^\d+$/.test(d));
+  } catch {
+    return null;
+  }
+  const out: GitProcess[] = [];
+  for (const pid of pids) {
+    const dir = join(procRoot, pid);
+    let argv0: string;
+    try {
+      argv0 = readFileSync(join(dir, "cmdline"), "utf8").split("\0")[0] ?? "";
+    } catch {
+      continue; // gone, or nothing to read
+    }
+    if (!GIT_PROGRAM.test(basename(argv0))) continue;
+    try {
+      const cwd = readlinkSync(join(dir, "cwd"));
+      const env = readFileSync(join(dir, "environ"), "utf8").split("\0");
+      const gitDirs = env.filter((e) => /^(GIT_DIR|GIT_COMMON_DIR|GIT_WORK_TREE)=/.test(e)).map((e) => resolve(cwd, e.slice(e.indexOf("=") + 1)));
+      out.push({ pid: Number(pid), cwd, gitDirs });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") continue; // it ended meanwhile
+      return null; // a git we can't see into: unsure
+    }
+  }
+  return out;
+}
+
+const within = (p: string, root: string) => p === root || p.startsWith(root.endsWith("/") ? root : `${root}/`);
+
+/**
+ * Remove the cleanup locks (git-folder.ts CLEANUP_LOCKS: maintenance.lock, gc.pid, the
+ * multi-pack-index and commit-graph locks) older than STUCK_LOCK_MS in `repo`'s git folder, which a
+ * killed run left: while maintenance.lock or gc.pid stays, every scheduled run skips and exits 0.
+ * Only when the process table says no git works in the repository, its git folder or one of its
+ * worktrees; when it can't say, nothing. Never index.lock or a ref's lock. Returns what it removed.
+ */
+export async function recoverStaleLocks(repo: string, deps: MaintenanceDeps): Promise<string[]> {
+  const gitDir = join(repo, ".git");
+  const now = (deps.now ?? Date.now)();
+  const stale = CLEANUP_LOCKS.map((rel) => join(gitDir, rel)).filter((p) => {
+    try {
+      return now - lstatSync(p).mtimeMs > STUCK_LOCK_MS;
+    } catch {
+      return false;
+    }
+  });
+  if (!stale.length) return [];
+  const list = await deps.git(["worktree", "list", "--porcelain"], repo);
+  if (list.code !== 0) return [];
+  const places = [repo, gitDir, ...list.stdout.split("\n").filter((l) => l.startsWith("worktree ")).map((l) => l.slice(9))].map(real);
+  const procs = gitProcesses(deps.procRoot);
+  if (!procs) {
+    deps.log(`${repo}: left ${stale.length} stale lock(s): can't tell whether a git is working there`);
+    return [];
+  }
+  const busy = procs.find((p) => [p.cwd, ...p.gitDirs].some((d) => places.some((pl) => within(real(d), pl))));
+  if (busy) return [];
+  const removed: string[] = [];
+  for (const p of stale) {
+    try {
+      rmSync(p);
+      removed.push(p);
+      deps.log(`${repo}: removed the stale lock ${p} (more than an hour old, no git working there)`);
+    } catch (err) {
+      deps.log(`${repo}: couldn't remove ${p}: ${(err as Error).message}`);
+    }
+  }
+  return removed;
+}
+
 /**
  * Bring git's registrations in line with `roots` (every project root on this host): register each
  * main checkout not yet recorded, unregister each recorded one no root holds, then start git's
@@ -164,7 +276,10 @@ export async function syncGitMaintenance(roots: readonly string[], deps: Mainten
   const anyCwd = [...wanted][0] ?? dirname(deps.recordPath);
   let current: Set<string> | null = null;
   for (const repo of wanted) {
-    if (rec.repos[repo]) continue;
+    if (rec.repos[repo]) {
+      if (await addMissingKeys(deps, repo, rec.repos[repo]!)) writeRecord(deps.recordPath, rec);
+      continue;
+    }
     current ??= await registeredRepos(deps.git, anyCwd);
     const done = await register(deps, repo, current.has(repo));
     if (done) {
@@ -178,6 +293,7 @@ export async function syncGitMaintenance(roots: readonly string[], deps: Mainten
     delete rec.repos[repo];
     writeRecord(deps.recordPath, rec);
   }
+  for (const repo of Object.keys(rec.repos)) if (existsSync(repo)) await recoverStaleLocks(repo, deps);
   const first = Object.keys(rec.repos).find((r) => existsSync(r));
   if (first && !rec.started) {
     const s = await deps.git(["maintenance", "start", "--scheduler=auto"], first);

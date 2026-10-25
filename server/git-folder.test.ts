@@ -49,6 +49,15 @@ test("stuck: a cleanup lock more than an hour old, the oldest named; a fresh one
   assert.deepEqual(r?.warning, { kind: "stuck", lock: "commit-graph-chain.lock", path: join(dir, "objects/info/commit-graphs/commit-graph-chain.lock"), since: NOW - 3 * STUCK_LOCK_MS }, "stuck wins over overdue");
 });
 
+test("a killed maintenance or gc run's lock (maintenance.lock, gc.pid) 2 hours old reads as stuck", async () => {
+  for (const rel of ["objects/maintenance.lock", "gc.pid"]) {
+    const dir = folder({ locks: { [rel]: 2 * 60 * 60_000 } });
+    const r = await measureGitFolder(dir, NOW);
+    assert.equal(r?.warning?.kind, "stuck", rel);
+    assert.equal(r?.warning?.kind === "stuck" && r.warning.lock, rel.split("/").pop());
+  }
+});
+
 test("overdue: more than 50 pack files or more than 6,700 loose objects, each count only when it is over", async () => {
   assert.equal((await measureGitFolder(folder({ packs: OVERDUE_PACKS }), NOW))?.warning, null, "exactly 50 is not over");
   assert.deepEqual((await measureGitFolder(folder({ packs: OVERDUE_PACKS + 1 }), NOW))?.warning, { kind: "overdue", packs: OVERDUE_PACKS + 1 });

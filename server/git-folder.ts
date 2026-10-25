@@ -15,8 +15,10 @@ export const STUCK_LOCK_MS = 60 * 60_000;
 /** More pack files than this, or loose objects than OVERDUE_LOOSE (git's own gc.auto default): cleanup hasn't run for a long time. */
 export const OVERDUE_PACKS = 50;
 export const OVERDUE_LOOSE = 6_700;
-/** The locks a cut-off `git maintenance` run leaves, relative to the git folder. */
-export const CLEANUP_LOCKS = ["objects/pack/multi-pack-index.lock", "objects/info/commit-graphs/commit-graph-chain.lock"] as const;
+/** The locks a cut-off `git maintenance` or `git gc` run leaves, relative to the git folder. While
+    maintenance.lock or gc.pid stays, every later run skips ("lock file exists") and exits 0.
+    Never index.lock or a ref's lock: those belong to whatever git is writing. */
+export const CLEANUP_LOCKS = ["objects/maintenance.lock", "gc.pid", "objects/pack/multi-pack-index.lock", "objects/info/commit-graphs/commit-graph-chain.lock"] as const;
 
 /** Walk `dir` by stat; null when the folder can't be read at all. */
 export async function measureGitFolder(dir: string, now: number, cap = GIT_FOLDER_ENTRY_CAP): Promise<GitFolderReading | null> {

@@ -453,8 +453,10 @@ export const isReadyState = (state) => state === "ready" || state === "waiting-a
 // Landing (§chat.worktrees/ready-to-land, §chat.offers/sova-landing): the board's `landing` per row,
 // and the user's answers on the Landing card, which Sova keeps in `<state root>/landing.json`.
 
-/** A row the captain may queue: Ready to land, or Landing specs whose owner said why they can't land. */
-export const landingEligible = (row, head) => !!row?.landing && row.landing.commit === head && (row.landing.state === "ready" || !!row.landing.specsWhy);
+/** A row the captain may queue: Ready to land, Landing specs whose owner said why they can't land, or Landing specs only
+ *  because its drafts changed since the user's Land It (a new card shows what changed). */
+export const landingEligible = (row, head) => !!row?.landing && row.landing.commit === head && (row.landing.state === "ready" || !!row.landing.specsWhy ||
+  (!!row.landing.docs?.changedSinceGoAhead?.length && !row.landing.docs?.problems?.length));
 
 /** `landing.json`'s text → {goAheads, notYet, docsEntries} (a bad file reads as none). docsEntries are the docs
  *  commits the round made itself, each with its one parent: the only spec-only commits a go-ahead carries across. */

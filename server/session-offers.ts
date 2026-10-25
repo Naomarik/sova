@@ -31,9 +31,9 @@ import { sessionsChanged } from "./list-generation";
 import { projectRootOf } from "./project-root";
 import { runFingerprint, runsApproved } from "./session-offers-trust";
 import { stateRoot } from "./state-root";
-import { unpromotedDraftNames } from "./spec-drafts-state";
+import { type DraftsHash, draftsChanged, draftsHash, unpromotedDraftNames } from "./spec-drafts-state";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
-import { LANDING_FILE_NAME, recordGoAhead, recordNotYet } from "../pi-config/extensions/worktrees/landing.ts";
+import { goAheadFor, LANDING_FILE_NAME, recordGoAhead, recordNotYet } from "../pi-config/extensions/worktrees/landing.ts";
 
 /**
  * Session offers (§chat/offers): the server's side. Each session's record (its tool snapshot, its
@@ -68,6 +68,8 @@ interface StoredCard extends OfferCard {
   /** The branch and full head commit the card was shown for. */
   branch?: string;
   head?: string;
+  /** A Landing card: the branch's spec drafts as the card showed them, which its Land It records (§chat.worktrees/landing-answers). */
+  drafts?: DraftsHash;
 }
 
 interface SessionRecord {
@@ -209,6 +211,7 @@ function readRecord(sessionId: string): SessionRecord | null {
           ...(Array.isArray(s.landing) ? { landing: s.landing as (LandingRecord | null)[] } : {}),
           ...(typeof s.branch === "string" ? { branch: s.branch } : {}),
           ...(typeof s.head === "string" ? { head: s.head } : {}),
+          ...(s.drafts && typeof (s.drafts as DraftsHash).hash === "string" && Array.isArray((s.drafts as DraftsHash).names) ? { drafts: s.drafts as DraftsHash } : {}),
         });
       }
       rec = {
@@ -372,6 +375,10 @@ async function factsOf(cwd: string, root: string): Promise<Facts & { head?: stri
   return { ...(branch && branch !== "HEAD" ? { branch } : {}), ...(base ? { base } : {}), ...(head ? { head, commit: head.slice(0, 12) } : {}), project: basename(root) || root };
 }
 
+/** Held only because its drafts changed since the user's Land It, and they'd land as they are now: the user answers again. */
+const reLand = (l: { state: string; docs?: { problems?: string[]; changedSinceGoAhead?: string[] } } | undefined): boolean =>
+  l?.state === "specs" && !!l.docs?.changedSinceGoAhead?.length && !l.docs.problems?.length;
+
 const CONDITION_WORDS: Record<OfferCondition, string> = {
   "branch-ready": "the branch is ready to merge",
   "waiting-for-ok": "the branch waits for the user's OK",
@@ -381,6 +388,7 @@ const CONDITION_WORDS: Record<OfferCondition, string> = {
   "ready-to-land": "the branch is ready to land",
   "specs-promoted": "the branch holds no spec draft left unpromoted",
   "specs-left": "the branch holds spec drafts left unpromoted",
+  "docs-fit": "the branch is ready to land with its docs",
 };
 
 /** The trees a condition reads: the one the offer is shown for, else every tree of the session. */
@@ -393,11 +401,13 @@ async function conditionHolds(c: OfferCondition, s: SessionSummary, root: string
     case "waiting-for-ok":
       return (await trees()).some((t) => t.state === "waiting-approval");
     case "ready-to-land":
-      return (await trees()).some((t) => t.landing?.state === "ready" || !!t.landing?.specsWhy);
+      return (await trees()).some((t) => t.landing?.state === "ready" || !!t.landing?.specsWhy || reLand(t.landing));
     case "specs-promoted":
       return !unpromotedDraftNames(folder)?.length;
     case "specs-left":
       return !!unpromotedDraftNames(folder)?.length;
+    case "docs-fit":
+      return (await trees()).some((t) => t.landing?.state === "ready" || reLand(t.landing));
     case "tree-clean": {
       const r = await deps.git(["status", "--porcelain"], s.cwd).catch(() => ({ code: 1, stdout: "x" }));
       return r.code === 0 && r.stdout.trim() === "";
@@ -479,7 +489,22 @@ export async function showOffer(input: ShowInput): Promise<OfferCard> {
   if (!shown.length) throw new OfferRefusal(`None of "${input.offer}"'s buttons fits now. ${projectWords}`);
   const facts = await factsOf(folder, root);
   facts.drafts = unpromotedDraftNames(folder)?.join(", ");
-  const moment = momentOf(def.repeat, facts.head, input.replyId ?? `at:${s.lastActiveAt ?? ""}`);
+  // A Landing card says what docs land with the branch; after a Land It whose drafts changed since, it shows again at
+  // the same commit, once per set of drafts, saying which changed (§chat.offers/sova-landing).
+  const landingCard = def.buttons.some((b) => b.landing);
+  const drafts = landingCard && facts.head ? draftsHash(folder) : undefined;
+  let docs: OfferCard["docs"];
+  let momentDocs = "";
+  if (landingCard && facts.head && facts.branch) {
+    const pressed = (() => { try { return goAheadFor(facts.branch!, facts.head!, landingFileOf())?.drafts; } catch { return undefined; } })();
+    const changed = pressed ? draftsChanged(pressed, drafts) : [];
+    if (changed.length && drafts) momentDocs = `#docs:${drafts.hash}`;
+    const d = (await trees()).find((t) => t.landing?.docs)?.landing?.docs;
+    const counts = d && (d.added || d.changed) ? `Lands with its docs: ${d.added ? `${d.added} new promise${d.added === 1 ? "" : "s"}` : ""}${d.added && d.changed ? ", " : ""}${d.changed ? `${d.changed} changed` : ""}` : "";
+    const line = [changed.length ? `Its docs changed since your Land It: ${changed.join(", ")}.` : "", counts].filter(Boolean).join(" ");
+    if (line) docs = { line, names: d?.names ?? [] };
+  }
+  const moment = momentOf(def.repeat, facts.head, input.replyId ?? `at:${s.lastActiveAt ?? ""}`) + (def.repeat === "once-per-commit" && facts.head ? momentDocs : "");
   if (rec.cards.some((c) => c.name === input.offer && c.moment === moment)) throw new OfferRefusal(`"${input.offer}" was already shown ${MOMENT_WORDS[def.repeat]}. ${projectWords}`);
   // One open offer at a time: a new one never replaces it (an open card whose offer left the file is withdrawn, and a
   // once-per-commit card whose branch moved on is superseded: neither is open, so the current one shows at once).
@@ -499,7 +524,7 @@ export async function showOffer(input: ShowInput): Promise<OfferCard> {
     if (!f) throw new OfferRefusal("The session in from doesn't exist.", 404);
     from = { id: f.id, title: f.title || "Untitled" };
   }
-  const card = makeCard({ ...def, buttons: shown }, input, ++rec.n, facts, moment, root, note, from, fromPath, deps.now().toISOString());
+  const card = { ...makeCard({ ...def, buttons: shown }, input, ++rec.n, facts, moment, root, note, from, fromPath, deps.now().toISOString()), ...(docs ? { docs } : {}), ...(drafts ? { drafts } : {}) };
   for (const c of rec.cards) if (c.state === "superseded" && !c.supersededBy) c.supersededBy = card.id;
   rec.cards.push(card);
   rec.path = input.path;
@@ -542,14 +567,14 @@ function makeCard(def: OfferDef, input: ShowInput, n: number, facts: Facts & { h
 
 /** The card as the wire carries it (what a click needs stays here). */
 function wireCard(c: StoredCard): OfferCard {
-  const { moment: _m, root: _r, sends: _s, runs: _u, to: _t, fromPath: _f, landing: _l, branch: _b, head: _h, ...card } = c;
+  const { moment: _m, root: _r, sends: _s, runs: _u, to: _t, fromPath: _f, landing: _l, branch: _b, head: _h, drafts: _d, ...card } = c;
   return card;
 }
 
 // ---- clicks (§chat.offers/card) -----------------------------------------------------------------
 
 /** The commit a once-per-commit card is for (§chat.offers/card), from its moment; undefined for any other card. */
-const commitOf = (card: StoredCard): string | undefined => (card.moment.startsWith("commit:") ? card.moment.slice("commit:".length) : undefined);
+const commitOf = (card: StoredCard): string | undefined => (card.moment.startsWith("commit:") ? card.moment.slice("commit:".length).split("#")[0] : undefined);
 
 /**
  * Whether a once-per-commit card's branch has moved on from the commit it was shown for (§chat.offers/card):
@@ -647,7 +672,8 @@ function recordLanding(card: StoredCard, index: number, sessionId: string, at: s
   if (!what || !card.branch || !card.head) return;
   try {
     if (what === "not-yet") recordNotYet({ branch: card.branch, commit: card.head, session: sessionId, at }, landingFileOf());
-    else recordGoAhead({ branch: card.branch, commit: card.head, session: sessionId, at, by: "land-it", ...(what === "go-ahead-without-specs" ? { withoutSpecs: true as const } : {}) }, landingFileOf());
+    // Land It covers the drafts as the card showed them (a later change holds the branch: §chat.worktrees/landing-answers).
+    else recordGoAhead({ branch: card.branch, commit: card.head, session: sessionId, at, by: "land-it", ...(what === "go-ahead-without-specs" ? { withoutSpecs: true as const } : {}), ...(card.drafts ? { drafts: card.drafts } : {}) }, landingFileOf());
   } catch (err) {
     console.warn(`[offers] landing record not written: ${err instanceof Error ? err.message : String(err)}`);
   }

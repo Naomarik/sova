@@ -36,7 +36,7 @@ export const FILE_MAX_BYTES = 64 * 1024;
 export const RARE_MIN_SHOWN = 5;
 export const RARE_SHARE = 0.2;
 
-export const CONDITIONS = ["branch-ready", "waiting-for-ok", "tree-clean", "no-open-alignment", "has-merge-captain", "ready-to-land", "specs-promoted", "specs-left"] as const;
+export const CONDITIONS = ["branch-ready", "waiting-for-ok", "tree-clean", "no-open-alignment", "has-merge-captain", "ready-to-land", "specs-promoted", "specs-left", "docs-fit"] as const;
 export type OfferCondition = (typeof CONDITIONS)[number];
 export const REPEATS = ["once-per-commit", "once-per-reply", "once-per-session"] as const;
 export type OfferRepeat = (typeof REPEATS)[number];
@@ -337,6 +337,9 @@ export interface OfferCard {
   name: string;
   title: string;
   note?: string;
+  /** The docs that land with the branch (Sova's Landing card, §chat.offers/sova-landing): one line, and the promises'
+      § ids behind "Show the promises". */
+  docs?: { line: string; names: string[] };
   buttons: OfferCardButton[];
   /** ISO time it was shown. */
   at: string;
@@ -376,6 +379,7 @@ export function normalizeOfferCard(raw: unknown): OfferCard | undefined {
   }
   const out: OfferCard = { id, name, title, buttons, at, by, state: state as OfferCardState };
   if (typeof raw.note === "string") out.note = raw.note;
+  if (isObj(raw.docs) && typeof raw.docs.line === "string" && Array.isArray(raw.docs.names)) out.docs = { line: raw.docs.line, names: raw.docs.names.filter((n): n is string => typeof n === "string") };
   if (isObj(raw.from) && typeof raw.from.id === "string" && typeof raw.from.title === "string") out.from = { id: raw.from.id, title: raw.from.title };
   if (typeof raw.toolCallId === "string") out.toolCallId = raw.toolCallId;
   if (isObj(raw.choice) && typeof raw.choice.index === "number" && typeof raw.choice.label === "string" && typeof raw.choice.at === "string") out.choice = { index: raw.choice.index, label: raw.choice.label, at: raw.choice.at };

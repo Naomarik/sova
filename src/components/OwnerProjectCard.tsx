@@ -7,6 +7,7 @@ import { useMinuteNow } from "../lib/minute-clock";
 import { updateMeta } from "../lib/owner-card";
 import { firstName } from "../lib/person-page";
 import { announce, toast } from "../lib/ui-state";
+import { OwnerVersionSummaries } from "./OwnerVersionSummaries";
 import "../orgs.css";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
@@ -15,7 +16,8 @@ const errText = (err: unknown) => (err instanceof ApiError || err instanceof Err
  * The project page's Owner Page card (§app.owner-page/controls, /updates): whether this project
  * shows on the owner's page, and the log of every update the project overseer posted there, each
  * with Take Down (off the page; it stays in this list and the workspace history). No editor: the
- * overseer posts at milestones, or when the operator asks it to in its chat.
+ * overseer posts at milestones, or when the operator asks it to in its chat. Then the versions on the owner's page
+ * with their summaries (OwnerVersionSummaries, §app.project-assistant/versions).
  */
 export function OwnerProjectCard(props: { org: OrgDetail; project: OrgProject; onOrg(org: OrgDetail): void }) {
   const now = useMinuteNow();
@@ -123,6 +125,7 @@ export function OwnerProjectCard(props: { org: OrgDetail; project: OrgProject; o
         </ul>
       </Show>
       <Show when={err()}>{(e) => <p class="field-error">{e()}</p>}</Show>
+      <OwnerVersionSummaries orgId={props.org.id} projectId={props.project.id} first={first()} />
     </section>
   );
 }

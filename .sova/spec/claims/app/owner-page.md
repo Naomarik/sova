@@ -138,8 +138,12 @@ A shown conversation can include its reviewed checked tour attachments (§app.to
     On a phone the tab bar hides while the owner types in the box and comes back when they leave
     it. The operator's Preview as shows the same, read only.
   - **Requests** (`#r`): every one of the owner's requests (§app.project-assistant/requests),
-    newest first, each its title, its project, kind and where it stands; with none, a line
-    saying nothing was asked yet and `Open the Chat`.
+    newest first, each its title, its project, kind and where it stands, an open one with `Close`;
+    the ones the owner closed below the rest under **Closed**, greyed, each with `Reopen`
+    (§app.project-assistant/closing); with none, a line saying nothing was asked yet and `Open the
+    Chat`. `Requests`' count and Home's line leave closed requests out.
+  - **Versions you can try** show each version's summary under its name when one is shown
+    (§app.project-assistant/versions).
   - **A project** (`#p/<handle>`): its name and status, then in this order: **Updates**,
     **Waiting on you** (this project's, only when there is something), **Who we've talked to**,
     **What's been decided**, **What's been built**, **Conversations**. Updates, decisions and
@@ -273,6 +277,11 @@ Tour reads reveal only a checked public presentation bound to a conversation and
   worked out from its column (§app.project-assistant/abilities): right away, on its own, the team,
   none. Never a switch's name or label, a level, the overseer's column, a model, a brake's reason
   or a limit.
+- **One carve-out**: a version's summary (§app.project-assistant/versions), one or two plain
+  sentences a model wrote from a fix's commits and changed files, is shown under its version: only
+  through the outsider filter's `said`, then the secret redactor, never the commits, files,
+  branches or messages it was written from, and never once the team hid it (their own rewrite,
+  through the secret redactor, replaces it).
 - A test plants a distinct marker in every one of those fields, checks each marker is present in
   the operator's own views (so its absence means something), then reads every owner-page answer
   and the shell and finds none of them.
@@ -296,7 +305,8 @@ Tour reads reveal only a checked public presentation bound to a conversation and
   /api/i/<token>/c/<k_handle>/end` (the owner's feature request chat,
   §app.project-assistant/feature-chats), `GET /api/i/<token>/assistant` (the chat), `POST /api/i/<token>/assistant`
   (a message to it), `POST /api/i/<token>/assistant/image` and `GET
-  /api/i/<token>/assistant/img/<n>` (the owner's photos, §app.project-assistant/photos), the socket
+  /api/i/<token>/assistant/img/<n>` (the owner's photos, §app.project-assistant/photos), `POST
+  /api/i/<token>/requests/<r_handle>` (close or reopen a request, §app.project-assistant/closing), the socket
   `/ws/i?token=` (the chat's live view), `GET /i/<token>/v/<v_handle>`
   (a version) and `POST /i/<token>/ask-link` (§app.owner-page/link). The tour reads check current
   owner access and the already-exposed conversation cut before any file read, and recheck after
@@ -355,7 +365,10 @@ Tour reads reveal only a checked public presentation bound to a conversation and
   row at the top of the modal, never a fixed bar) and the chat's suggestions, read only. A test pins that the preview's data equals the token
   route's for the same org.
 - **Project page: an Owner Page card** (only while the org has an owner): the `Show this project
-  on {first name}'s page` switch and the updates log with `Take Down` (§app.owner-page/updates).
+  on {first name}'s page` switch, the updates log with `Take Down` (§app.owner-page/updates), and
+  the versions on the owner's page with their summaries, `Rewrite`, `Use Automatic`, `Hide` and
+  `Show` (§app.project-assistant/versions; `GET /api/orgs/:id/projects/:pid/versions`, `PUT
+  /api/orgs/:id/projects/:pid/versions/:instance {text?: string | null, hidden?: boolean}`).
 - **Baton strip**: `Hide From {first name}` / `Show To {first name}`, a row of the strip's More
   actions menu (§app.baton/strip-layout), on each conversation of an org with an owner but a feature
   request chat (§app.project-assistant/feature-chats), and a line while it is hidden

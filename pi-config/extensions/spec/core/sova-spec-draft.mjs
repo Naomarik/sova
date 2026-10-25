@@ -1159,10 +1159,11 @@ async function cmdEvidence(root, o) {
 }
 
 // The Agree step in one call: stamp who agreed, and when, on draft records (creating the record of a declaration
-// that has prose but none), record doc-only evidence for those that map no code, and promote those through promote's
-// own plan, only when that plan is clean: no refusal, no drift warning, no note, no foreign § beyond a parent gaining it. Anything else leaves
-// the current spec as it was and points to the ordinary path. A record that maps code is only stamped.
-const AGREE_NEXT = "evidence --commit (or --snapshot), then promote --id … to preview, then promote … --plan SHA --write";
+// that has prose but none), and record doc-only evidence for those that map no code. It promotes nothing: the
+// records become official when their branch lands (`land`), the doc-only evidence's verification counting as the
+// chat's note. A record that maps code is only stamped: its build records the note.
+const AGREE_NEXT = "record your verification note when it is built (evidence --note); it becomes official when its branch lands (land)";
+const AGREE_LANDS = "it becomes official when its branch lands (land); where nothing lands branches, run land once before the last commit";
 const SOURCE_ENV = "SPEC_AGREE_SOURCE";
 // Set by the agent's runtime only in a process it started as a worker: the reference it was given, empty for none.
 const GIVEN_ENV = "SPEC_AGREE_GIVEN";
@@ -1218,7 +1219,7 @@ async function cmdAgree(root, o) {
     return now;
   });
   const docOnly = now.ids.filter((x) => x.docOnly).map((x) => x.id);
-  const out = { exit: 0, written: true, ...show(now) };
+  const out = { exit: 0, written: true, ...show(now), ...(docOnly.length ? { lands: docOnly.map((id) => ({ id, when: AGREE_LANDS })) } : {}) };
   if (!docOnly.length) return out;
   const stage = (what, e) => { if (e instanceof Fail) { e.message = `agreed is stamped in the draft, but ${what}: ${e.message}`; e.out = { ...out, ...(e.out ?? {}) }; } return e; };
   // Doc-only evidence, unless what is recorded already covers the record and prose as they are.
@@ -1229,21 +1230,8 @@ async function cmdAgree(root, o) {
     try { out.evidenceRecordedAt = (await cmdEvidence(root, { ...o, id: needs, "doc-only": true, snapshot: false, commit: undefined, path: [], log: undefined, write: true })).recordedAt; }
     catch (e) { throw stage("its doc-only evidence was not recorded", e); }
   }
-  // Promote's own plan, previewed; applied only when nothing in it would make a person look twice.
-  const po = { name: o.name, id: docOnly, all: false, file: [], meta: [], "own-base": [] };
-  const p = await plan(root, po);
-  // A new claim under an existing parent marks the parent child-added: that is the claim itself, not a foreign edit;
-  // and the records this call agreed to are its own, wherever they already are.
-  const foreign = p.out.alsoChangesDetail.filter((x) => x.change !== "child-added" && !docOnly.includes(x.id));
-  if (!p.refusals.length && !p.targets.length) return { ...out, promotion: { written: false, ids: docOnly, plan: p.planSha, alreadyCurrent: true } };
-  const why = [...p.refusals.map((r) => `refused ${r.code}: ${r.message}`), ...p.out.driftWarnings.map((w) => `warn drift: ${w}`),
-    ...p.out.notes.map((n) => `note ${n.code}: ${n.message}`), ...foreign.map((x) => `it also changes foreign ${x.id} (${x.change})`)];
-  const preview = { plan: p.planSha, refusals: p.out.refusals, driftWarnings: p.out.driftWarnings, notes: p.out.notes, alsoChanges: p.out.alsoChanges };
-  if (why.length) throw new Fail(1, "agree-not-promoted", `agreed is stamped in the draft, but its promotion is not clean, so nothing was written to the current spec: ${why.join("; ")}. Resolve it, then promote ${o.name} --id … to preview, then --plan SHA --write`, { ...out, promotion: { written: false, ids: docOnly, ...preview } });
-  try {
-    const r = await cmdPromote(root, { ...po, plan: p.planSha, write: true });
-    return { ...out, promotion: { written: true, ids: r.ids, plan: r.plan, targets: r.targets, alsoChanges: r.alsoChanges } };
-  } catch (e) { throw stage("its promotion was refused", e); }
+  // Nothing is promoted here: the branch's landing makes these records official with the rest of its drafts.
+  return out;
 }
 
 // Build the promotion: selected units, conflicts, evidence, the full candidate tree, and the file plan.
@@ -2458,8 +2446,7 @@ function human(out) {
     L.push(`agree ${out.name}: ${out.written ? "stamped in the draft" : "preview; nothing written — pass --write"}`,
       ...out.ids.map((i) => `  ${i.id} agreed by ${i.agreed.by} at ${i.agreed.at}${i.agreed.source ? `, source ${i.agreed.source}` : ""}${i.created ? " (record created)" : ""}${i.stamped ? "" : " (already so)"}; ${i.docOnly ? "doc-only" : "maps code: stamped only"}`));
     for (const n of out.notPromoted ?? []) L.push(`  not promoted ${n.id}: ${n.why}; next: ${n.next}`);
-    const p = out.promotion;
-    if (p) L.push(p.written ? `promoted ${p.ids.join(", ")} (plan ${p.plan}): ${p.targets.map((t) => `${t.action} ${SPEC}/${t.path}`).join(", ")}` : p.alreadyCurrent ? `already current: ${p.ids.join(", ")}` : `not promoted: ${p.ids.join(", ")} (plan ${p.plan})`);
+    for (const l of out.lands ?? []) L.push(`  ${l.id}: doc-only evidence recorded; ${l.when}`);
   }
   if (out.command === "promote" && out.targets) {
     L.push(`promote ${out.name}: ${out.ids.join(", ") || "(no ids)"} ${out.written ? "(written)" : "(preview; nothing written)"}`);

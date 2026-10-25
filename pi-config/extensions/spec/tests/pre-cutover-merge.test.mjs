@@ -90,12 +90,12 @@ for (const [name, opts, can] of CASES) test(`pre-cutover branch merges the conve
   assert.ok(merge.status !== 0 || (chk.status !== 0 && mixed), `merge ${merge.status}: ${merge.stdout}${merge.stderr}\ncheck ${chk.status}: ${JSON.stringify(codes(chk.j))}`);
   // Stronger: whatever Git did, the spec it left does not load as a valid spec.
   assert.notEqual(chk.status, 0, `the half-merged spec must not check clean: ${JSON.stringify(codes(chk.j))}`);
-  if (opts.drivers) {
-    assert.ok(mixed, `with the helper configured the manifest is left as the branch had it, beside master's record files: layout-mixed, got ${JSON.stringify(codes(chk.j))}`);
-    const msg = messages(chk.j) + JSON.stringify(chk.j.findings);
-    assert.match(msg, /merge-manifest/, "mid-merge, the fix named is merge-manifest");
-    assert.match(msg, /--write/);
-  }
+  if (opts.drivers) assert.ok(mixed, `with the helper configured the manifest is left as the branch had it, beside master's record files: layout-mixed, got ${JSON.stringify(codes(chk.j))}`);
+  // With or without a helper (without one, Git's line merge leaves conflict markers in manifest.json), the next
+  // check names the one command that finishes the merge.
+  const msg = messages(chk.j) + JSON.stringify(chk.j.findings);
+  assert.match(msg, /merge-manifest/, `mid-merge, check names merge-manifest: ${msg.slice(0, 600)}`);
+  assert.match(msg, /--write/, "with --write");
   // the one command (landing 1's merge-manifest, in index mode) finishes the merge in master's layout
   const fin = repoDraft(root, ["merge-manifest", "--write"]);
   assert.equal(fin.status, 0, JSON.stringify(fin.j).slice(0, 800));

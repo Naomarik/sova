@@ -1,13 +1,14 @@
 // Settings → Memory (§chat.memory/settings): <agent dir>/mode-memory.json, the summarizer (a worker tuple
-// plus an optional fallback, the spec writer's shape) and the memory choice new chats start from. Only
-// Sova reads it: the engine is the server's. A missing or malformed file reads as the defaults; a slot
-// that doesn't parse takes its default alone. Written atomically.
+// plus an optional fallback, the spec writer's shape), each type's Summary size (every chat's and the
+// Overseer's: no chat has a size of its own) and the memory type new chats start from. Only Sova reads
+// it: the engine is the server's. A missing or malformed file reads as the defaults; a slot that doesn't
+// parse takes its default alone. Written atomically.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CLAUDE_EFFORTS, DELEGATE_BACKENDS, parseChoice, PI_EFFORTS, statCachedReader, writeJsonAtomic } from "../../pi-config/extensions/mode/delegate.ts";
-import type { ChatMemoryChoice, MemorySaveResult, MemorySettings, MemorySettingsInfo, WorkerChoice } from "../../shared/protocol";
+import type { ChatMemoryChoice, MemorySaveResult, MemorySettings, MemorySettingsInfo, MemoryType, WorkerChoice } from "../../shared/protocol";
 import { MEMORY_SIZE_MAX, MEMORY_SIZE_MIN } from "../../shared/protocol";
-import { BUILTIN_MEMORY_CHOICE, isMemoryType, MEMORY_TYPE_INFO, memoryTypeInfo } from "../../shared/memory";
+import { BUILTIN_MEMORY_CHOICE, isMemoryType, MEMORY_TYPE_INFO, MEMORY_TYPES, memoryTypeInfo } from "../../shared/memory";
 import { agentRoot } from "../state-root";
 import { delegateOptions, verifySlots, type DelegateSources } from "../delegate";
 
@@ -17,30 +18,29 @@ export const memoryFile = (): string => join(agentRoot(), MEMORY_FILE_NAME);
 /** Haiku 5.5 at low effort: what the spike measured (§chat.memory/summarizer). */
 export const DEFAULT_SUMMARIZER: WorkerChoice = { backend: "claude-code", model: "claude-haiku-5-5", effort: "low" };
 
+/** Each type's own size: what a type uses until Settings → Memory sets one. */
+export const builtinMemorySizes = (): Record<MemoryType, number> =>
+  Object.fromEntries(MEMORY_TYPES.map((t) => [t, memoryTypeInfo(t).defaultSize])) as Record<MemoryType, number>;
+
 export function memoryDefaults(): MemorySettings {
-  return { version: 1, summarizer: { primary: { ...DEFAULT_SUMMARIZER }, fallback: null } };
+  return { version: 1, summarizer: { primary: { ...DEFAULT_SUMMARIZER }, fallback: null }, sizes: builtinMemorySizes() };
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+const isSize = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= MEMORY_SIZE_MIN && v <= MEMORY_SIZE_MAX;
+const SIZE_RULE = `a whole number of KB from ${MEMORY_SIZE_MIN} to ${MEMORY_SIZE_MAX}`;
+const TYPE_RULE = () => `one of: ${MEMORY_TYPE_INFO.map((t) => t.id).join(", ")}`;
 
-/** A memory choice, or the reason it isn't one. `partial`: a patch (either field may be absent). */
-export function parseMemoryChoice(value: unknown, partial: true): Partial<ChatMemoryChoice> | { error: string };
-export function parseMemoryChoice(value: unknown, partial?: false): ChatMemoryChoice | { error: string };
-export function parseMemoryChoice(value: unknown, partial = false): Partial<ChatMemoryChoice> | { error: string } {
-  if (!isRecord(value)) return { error: "memory must be an object { type?, size? }" };
-  const out: Partial<ChatMemoryChoice> = {};
-  if (value.type !== undefined || !partial) {
-    if (!isMemoryType(value.type)) return { error: `memory.type must be one of: ${MEMORY_TYPE_INFO.map((t) => t.id).join(", ")}` };
-    out.type = value.type;
-  }
-  if (value.size !== undefined || !partial) {
-    const size = value.size;
-    if (typeof size !== "number" || !Number.isInteger(size) || size < MEMORY_SIZE_MIN || size > MEMORY_SIZE_MAX)
-      return { error: `memory.size must be a whole number of KB from ${MEMORY_SIZE_MIN} to ${MEMORY_SIZE_MAX}` };
-    out.size = size;
-  }
-  if (partial && out.type === undefined && out.size === undefined) return { error: "memory: send type and/or size" };
-  return out;
+/**
+ * A memory patch from a chat's menu or the Overseer's switch, or the reason it isn't one: a type only.
+ * A `size` is ignored, never refused (an older client still sends one): the size is Settings' for the
+ * type (§chat.memory/choice).
+ */
+export function parseMemoryPatch(value: unknown): { type?: MemoryType } | { error: string } {
+  if (!isRecord(value)) return { error: "memory must be an object { type }" };
+  if (value.type === undefined) return value.size !== undefined ? {} : { error: "memory: send a type" };
+  if (!isMemoryType(value.type)) return { error: `memory.type must be ${TYPE_RULE()}` };
+  return { type: value.type };
 }
 
 /** Tolerant read of the file's content. */
@@ -56,16 +56,21 @@ export function normalizeMemorySettings(value: unknown): MemorySettings {
       if (!("error" in fallback)) out.summarizer.fallback = fallback;
     }
   }
-  if (value.default !== undefined) {
-    const d = parseMemoryChoice(value.default);
-    if (!("error" in d)) out.default = d;
+  const sizes = isRecord(value.sizes) ? value.sizes : {};
+  for (const t of MEMORY_TYPES) if (isSize(sizes[t])) out.sizes![t] = sizes[t];
+  const d = isRecord(value.default) ? value.default : undefined;
+  if (d && isMemoryType(d.type)) {
+    out.default = { type: d.type };
+    // An older file saved a size with its default: it becomes that type's size once, while `sizes` names
+    // none for it. The default is written without it from then on, so this runs before any rewrite.
+    if (isSize(d.size) && sizes[d.type] === undefined) out.sizes![d.type] = d.size;
   }
   return out;
 }
 
 /** A PUT body, strictly: a bad slot is an error, never a silent default. */
-export function parseMemorySettings(value: unknown): Omit<MemorySettings, "default"> & { default?: ChatMemoryChoice } | { error: string } {
-  if (!isRecord(value) || value.version !== 1) return { error: "Expected { version: 1, summarizer: { primary, fallback }, default? }" };
+export function parseMemorySettings(value: unknown): MemorySettings | { error: string } {
+  if (!isRecord(value) || value.version !== 1) return { error: "Expected { version: 1, summarizer: { primary, fallback }, sizes?, default? }" };
   if (!isRecord(value.summarizer)) return { error: "summarizer must be { primary, fallback }" };
   const primary = parseChoice(value.summarizer.primary);
   if ("error" in primary) return { error: `summarizer.primary: ${primary.error}` };
@@ -76,10 +81,19 @@ export function parseMemorySettings(value: unknown): Omit<MemorySettings, "defau
     fallback = f;
   }
   const out: MemorySettings = { version: 1, summarizer: { primary, fallback } };
+  if (value.sizes !== undefined) {
+    if (!isRecord(value.sizes)) return { error: `sizes must be { ${MEMORY_TYPES.join("?, ")}? }` };
+    const sizes: Partial<Record<MemoryType, number>> = {};
+    for (const [t, n] of Object.entries(value.sizes)) {
+      if (!isMemoryType(t)) return { error: `sizes: ${t} is not a memory type (${TYPE_RULE()})` };
+      if (!isSize(n)) return { error: `sizes.${t} must be ${SIZE_RULE}` };
+      sizes[t] = n;
+    }
+    out.sizes = sizes;
+  }
   if (value.default !== undefined) {
-    const d = parseMemoryChoice(value.default);
-    if ("error" in d) return { error: `default: ${d.error}` };
-    out.default = d;
+    if (!isRecord(value.default) || !isMemoryType(value.default.type)) return { error: `default: type must be ${TYPE_RULE()}` };
+    out.default = { type: value.default.type };
   }
   return out;
 }
@@ -101,27 +115,30 @@ export function memorySettingsReader(file = memoryFile()): () => MemorySettings 
   return statCachedReader(file, loadMemorySettings, memoryDefaults);
 }
 
-/** The choice a chat with no record of its own uses: the saved default, else UniiChat at its size. */
+/** The Summary size every chat (and the Overseer) of `type` uses: Settings' for that type. */
+export function memorySizeFor(type: MemoryType, settings: MemorySettings): number {
+  return settings.sizes?.[type] ?? memoryTypeInfo(type).defaultSize;
+}
+
+/** The choice a chat with no record of its own uses: the saved default type, else UniiChat, at Settings' size. */
 export function defaultMemoryChoice(file = memoryFile()): ChatMemoryChoice {
-  return loadMemorySettings(file).default ?? { ...BUILTIN_MEMORY_CHOICE };
+  const s = loadMemorySettings(file);
+  const type = s.default?.type ?? BUILTIN_MEMORY_CHOICE.type;
+  return { type, size: memorySizeFor(type, s) };
 }
 
-/** Save `choice` as the default new chats start from, keeping the summarizer. */
-export function saveDefaultMemoryChoice(choice: ChatMemoryChoice, file = memoryFile()): void {
-  saveMemorySettings({ ...loadMemorySettings(file), default: { ...choice } }, file);
+/** Save `type` as the one new chats start from, keeping the summarizer and the sizes (an older default's
+    size among them: the load moved it into `sizes` first). */
+export function saveDefaultMemoryType(type: MemoryType, file = memoryFile()): void {
+  saveMemorySettings({ ...loadMemorySettings(file), default: { type } }, file);
 }
 
-/** A choice after a patch: a new type without a size of its own takes that type's default size. */
-export function applyMemoryPatch(cur: ChatMemoryChoice, patch: Partial<ChatMemoryChoice>): ChatMemoryChoice {
-  const type = patch.type ?? cur.type;
-  const size = patch.size ?? (type !== cur.type ? memoryTypeInfo(type).defaultSize : cur.size);
-  return { type, size };
-}
-
-/** A record's choice completed: a size absent from it is the type's own default. */
-export function choiceOf(record: { type: ChatMemoryChoice["type"]; size?: number } | null | undefined, file = memoryFile()): ChatMemoryChoice {
-  if (!record) return defaultMemoryChoice(file);
-  return { type: record.type, size: record.size ?? memoryTypeInfo(record.type).defaultSize };
+/** A record's choice completed: the record's type (else the saved default's) at Settings' size for it. A
+    size the record holds is an older chat's own, and ignored. */
+export function choiceOf(record: { type: MemoryType; size?: number } | null | undefined, file = memoryFile()): ChatMemoryChoice {
+  const s = loadMemorySettings(file);
+  const type = record?.type ?? s.default?.type ?? BUILTIN_MEMORY_CHOICE.type;
+  return { type, size: memorySizeFor(type, s) };
 }
 
 const BACKEND_LABELS = { pi: "pi", "claude-code": "Claude Code" } as const;
@@ -151,6 +168,13 @@ export async function putMemorySettings(body: unknown, sources: DelegateSources,
     "memory summaries",
   );
   if ("error" in verdict) return verdict;
-  saveMemorySettings({ ...parsed, ...(parsed.default ? {} : stored.default ? { default: stored.default } : {}) }, file);
+  saveMemorySettings(
+    {
+      ...parsed,
+      sizes: { ...stored.sizes, ...parsed.sizes },
+      ...(parsed.default ? {} : stored.default ? { default: stored.default } : {}),
+    },
+    file,
+  );
   return { ...memorySettingsInfo(file), warnings: verdict.warnings };
 }

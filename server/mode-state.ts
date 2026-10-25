@@ -20,9 +20,9 @@ import {
   type ModeState,
 } from "../pi-config/extensions/mode/state.ts";
 import type { StateView } from "../shared/harness";
-import type { ChatMemoryChoice, MemoryModeInfo, ModeApplies, ModeInfo } from "../shared/protocol";
+import type { ChatMemoryChoice, MemoryModeInfo, MemoryType, ModeApplies, ModeInfo } from "../shared/protocol";
 import { MEMORY_SIZES, MEMORY_TYPE_INFO } from "../shared/memory";
-import { parseMemoryChoice } from "./memory/settings";
+import { parseMemoryPatch } from "./memory/settings";
 import { stateViewOf } from "./harness/pi/state";
 import { MODE } from "./harness/state-kinds";
 
@@ -54,8 +54,9 @@ export interface ModePatch {
   mode?: ModeState["mode"];
   minorModes?: ModeState["minorModes"];
   strict?: ModeState["strict"];
-  /** The memory choice (§chat.memory/choice): a chat's own record, or with no path the saved default. */
-  memory?: Partial<ChatMemoryChoice>;
+  /** The memory type (§chat.memory/choice): a chat's own record, or with no path the saved default. Empty
+      when a body sent only a size, which is ignored (the size is Settings'). */
+  memory?: { type?: MemoryType };
 }
 
 /** What POST /api/mode was asked to do: change a chat's mode (or the default file, without a path),
@@ -79,7 +80,7 @@ export function parseModePatch(body: unknown): ModePatch | { error: string } {
     patch.minorModes = normalizeState({ minorModes: b.minorModes }).minorModes;
   }
   if (b.memory !== undefined) {
-    const memory = parseMemoryChoice(b.memory, true);
+    const memory = parseMemoryPatch(b.memory);
     if ("error" in memory) return memory;
     patch.memory = memory;
   }

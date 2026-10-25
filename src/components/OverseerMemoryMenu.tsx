@@ -10,8 +10,9 @@ import { Banner, Icon } from "./ui";
 /**
  * The Overseer's memory switch (§app.overseer/memory-switch): it has no mode menu, so its memory
  * has this button in its composer foot, before Quick Actions. The popover holds a Memory checkbox
- * row and the same type and size rows as the mode menu's panel; each pick writes
- * `PUT /api/overseer/memory` at once and reaches the Overseer from its next turn.
+ * row and the same type rows as the mode menu's panel, scrolling above the fixed foot (its size is
+ * Settings → Memory's); each pick writes `PUT /api/overseer/memory` at once and reaches the Overseer
+ * from its next turn.
  */
 export function OverseerMemoryMenu() {
   const paneId = usePaneId();
@@ -48,7 +49,7 @@ export function OverseerMemoryMenu() {
     if (menu.matches(":popover-open")) menu.hidePopover();
   };
 
-  const write = async (patch: { on?: boolean; type?: MemoryType; size?: number }) => {
+  const write = async (patch: { on?: boolean; type?: MemoryType }) => {
     if (busy()) return;
     setBusy(true);
     setError(null);
@@ -100,7 +101,7 @@ export function OverseerMemoryMenu() {
         }}
       >
         <Show when={error()}>{(e) => <Banner tone="error" title={e().title} body={e().body} />}</Show>
-        <div ref={rows}>
+        <div class="memory-panel-scroll" ref={rows}>
           <div class="model-menu-list" role="menu" aria-label="Overseer memory">
             <div
               class="popover-item popover-item-detail popover-item-mono"
@@ -122,13 +123,11 @@ export function OverseerMemoryMenu() {
           <MemoryTypePanel
             idPrefix={paneId("overseer-memory")}
             types={info()?.types}
-            sizes={info()?.sizes}
             choice={info()}
             busy={busy() || !info()}
-            onPick={(patch) => {
-              const i = info();
-              if (i && (patch.type ?? i.type) === i.type && (patch.size ?? i.size) === i.size) return;
-              void write(patch);
+            onPick={(type) => {
+              if (info()?.type === type) return;
+              void write({ type });
             }}
           />
         </div>

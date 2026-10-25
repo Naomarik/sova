@@ -185,10 +185,12 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
   }
   if (raw.memory !== undefined) {
     const m = raw.memory;
-    const ok = isObj(m) && typeof m.on === "boolean" && (m.type === "uniichat" || m.type === "zoomable") && Number.isInteger(m.size) && (m.size as number) >= 8 && (m.size as number) <= 512;
-    if (ok) out.memory = { on: m.on as boolean, type: m.type as "uniichat" | "zoomable", size: m.size as number };
+    const ok = isObj(m) && typeof m.on === "boolean" && (m.type === "uniichat" || m.type === "zoomable");
+    // A size an older file holds is kept as it is, and read by nothing: the size is Settings → Memory's.
+    const size = ok && Number.isInteger(m.size) && (m.size as number) >= 8 && (m.size as number) <= 512 ? (m.size as number) : undefined;
+    if (ok) out.memory = { on: m.on as boolean, type: m.type as "uniichat" | "zoomable", ...(size !== undefined ? { size } : {}) };
     else {
-      const e = fail("memory must be { on, type, size }");
+      const e = fail("memory must be { on, type }");
       if (e) return e;
     }
   }

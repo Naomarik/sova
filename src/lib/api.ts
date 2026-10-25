@@ -14,7 +14,6 @@ import type {
   SessionsDirInfo,
   AttentionDigest,
   ChatModeResult,
-  ChatMemoryChoice,
   MemoryOpen,
   MemoryOutline,
   MemorySaveResult,
@@ -476,7 +475,7 @@ export const getMode = (host?: string | null) => request<ModeInfo>(hostUrl(host,
  * follows, from its next message, the reply says how (ChatModeResult.applies), and mode.json is not
  * written. Without `path` this writes the default for new sessions instead and changes no open chat.
  */
-export const postMode = (patch: { mode?: string; minorModes?: string[]; memory?: Partial<ChatMemoryChoice> }, path?: string) =>
+export const postMode = (patch: { mode?: string; minorModes?: string[]; memory?: { type: MemoryType } }, path?: string) =>
   request<ModeInfo | ChatModeResult>(`/api/mode${path ? `?path=${encodeURIComponent(path)}` : ""}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -502,7 +501,7 @@ export const getMemoryOptions = () => request<DelegateOptions>("/api/settings/me
 export const putMemorySettings = (settings: MemorySettings) =>
   request<MemorySaveResult>("/api/settings/memory", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) });
 export const getOverseerMemory = () => request<OverseerMemoryInfo>("/api/overseer/memory");
-export const putOverseerMemory = (patch: { on?: boolean; type?: MemoryType; size?: number }) =>
+export const putOverseerMemory = (patch: { on?: boolean; type?: MemoryType }) =>
   request<OverseerMemoryInfo>("/api/overseer/memory", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
 
 /** POST /api/sandbox?path=… { state, on }: set that held chat's sandbox state (§chat.sandbox/states)

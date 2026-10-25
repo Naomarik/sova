@@ -1072,8 +1072,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 /* The memory row's detail line, under its description, while it is on. */
 .mode-menu-detail { color: var(--color-ink-2); }
 .memory-type-by { font-weight: var(--fw-regular); color: var(--color-ink-muted); }
-.memory-type-link .popover-item-label { color: var(--color-accent); }
-.memory-size-default { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* The memory menus' rows scroll as one between the popover's fixed head and foot (the Subagents
+   picker's pattern), so a short window cuts none off; the lists inside don't scroll on their own. */
+.memory-panel-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.memory-panel-scroll > .model-menu-list { flex: none; overflow: visible; }
 /* The run-status row's memory piece shrinks before the triggers do, ending in an ellipsis. */
 .run-status > .run-status-memory { flex: 0 1 auto; min-width: 4em; }
 .run-status > .run-status-memory.run-status-link { flex: 0 1 auto; }

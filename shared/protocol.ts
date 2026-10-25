@@ -1775,16 +1775,18 @@ export interface ChatModeResult extends ModeInfo {
 // The `memory` minor mode: the model works from a summary of the whole chat (the VIEW: one-line
 // summaries, recent ones fine and old ones coarse) and opens any line word for word with its `zoom`
 // tool. Turned on from a chat's mode menu only (web; never the terminal, a worker or a profile) and,
-// for the Overseer, from its own toggle. Two types; each chat keeps its own type and view size.
+// for the Overseer, from its own toggle. Two types; each chat keeps its own type, and every chat uses
+// the view size Settings → Memory holds for its type (MemorySettings.sizes).
 //
 // POST /api/mode?path=… { minorModes?, memory?: Partial<ChatMemoryChoice> } -> ChatModeResult
-//                                  `memory` alone is a valid body (a type or size change; kept even while
-//                                  memory is off). 400 a bad type or size; 400 "memory" in minorModes for a
+//                                  `memory` alone is a valid body (a type change; kept even while memory is
+//                                  off). `memory.size` is ignored: the size is Settings'. 400 a bad type;
+//                                  400 "memory" in minorModes for a
 //                                  chat that can't have it (the Overseer: use its own route below; a baton or
 //                                  project-overseer session).
-// POST /api/mode?path=… { saveDefault: true } also saves this chat's memory choice as the default (the
+// POST /api/mode?path=… { saveDefault: true } also saves this chat's memory type as the default (the
 //                                  memory settings file's `default`).
-// POST /api/mode { minorModes?, memory? } (no path) writes the default only, as before.
+// POST /api/mode { minorModes?, memory? } (no path) writes the default only, as before (a memory type only).
 // GET  /api/memory?path=…        -> MemoryOutline (the lines the model sees now, oldest first; works for a
 //                                  chat that isn't open too. 400 no/bad path, 404 not a session)
 // GET  /api/memory/open?path=…&id=<first message>&n=<messages, a power of 2>
@@ -1792,12 +1794,15 @@ export interface ChatModeResult extends ModeInfo {
 //                                  long ones in pages). 400 bad id/n, 404 no such line yet
 // GET  /api/settings/memory      -> MemorySettingsInfo (<agent dir>/mode-memory.json; missing → defaults)
 // GET  /api/settings/memory/options -> DelegateOptions (the same discovery as spec/options)
-// PUT  /api/settings/memory MemorySettings -> MemorySaveResult (replaces the summarizer; `default` absent keeps
-//                                  the stored one. 400 bad shape; unverifiable or policy-denied models save
-//                                  with a warning. Every chat's summarizer reads it at its next summary)
+// PUT  /api/settings/memory MemorySettings -> MemorySaveResult (replaces the summarizer and the sizes; `sizes`
+//                                  or `default` absent keeps the stored ones. 400 bad shape or a size outside
+//                                  [MEMORY_SIZE_MIN, MEMORY_SIZE_MAX]; unverifiable or policy-denied models save
+//                                  with a warning. Every chat's summarizer reads it at its next summary, and
+//                                  its size at its next turn or compaction)
 // GET  /api/overseer/memory      -> OverseerMemoryInfo
-// PUT  /api/overseer/memory { on?, type?, size? } -> OverseerMemoryInfo (kept in overseer.json; reaches the
-//                                  Overseer from its next turn. 400 bad body)
+// PUT  /api/overseer/memory { on?, type? } -> OverseerMemoryInfo (kept in overseer.json; reaches the
+//                                  Overseer from its next turn. `size` is ignored: the size is Settings'.
+//                                  400 bad body)
 // WS (chat): { type: "memory_status", status } after hello while memory is on, and on every change
 //                                  (the turn it goes off included), only from a runtime with the memory
 //                                  engine (an ordinary chat, or the Overseer). No message: memory is off.
@@ -1824,22 +1829,22 @@ export interface MemoryTypeInfo {
   rowDescription: string;
   /** "UniiChat — by Victor Taelin" */
   detail: string;
-  /** "Read the design ↗" target, when the type has a write-up. */
+  /** The help card's "Read the design ↗" target, when the type has a write-up. */
   link?: string;
-  /** The view size (KB) a chat of this type uses until it picks one. */
+  /** The view size (KB) of this type until Settings → Memory sets one. */
   defaultSize: number;
 }
 
 /** A chat's memory choice. `size`: the view grows to `size` KB, then merges down to half of it
     (UniiChat's 64–128 KB is 128); for zoomable compaction, the size of the openable summary a
-    compaction leaves. */
+    compaction leaves. The type is the chat's; the size is always Settings' for that type. */
 export interface ChatMemoryChoice {
   type: MemoryType;
   size: number;
 }
 
-/** ModeInfo.memory: the choice, plus what can be chosen. `sizes`: the panel's suggested sizes (KB);
-    any whole number in [MEMORY_SIZE_MIN, MEMORY_SIZE_MAX] is accepted. */
+/** ModeInfo.memory: the choice, plus what can be chosen. `sizes`: the suggested sizes (KB) Settings →
+    Memory offers; any whole number in [MEMORY_SIZE_MIN, MEMORY_SIZE_MAX] is accepted there. */
 export interface MemoryModeInfo extends ChatMemoryChoice {
   types: MemoryTypeInfo[];
   sizes: number[];
@@ -1905,11 +1910,15 @@ export interface MemoryOutline {
 export type MemoryOpen = { lines: MemoryLine[] } | { message: MemoryMessage };
 
 /** <agent dir>/mode-memory.json. `summarizer`: who writes the summaries (default Claude Code
-    claude-haiku-5-5 at low effort); `default`: the choice new chats start from (Save as default). */
+    claude-haiku-5-5 at low effort); `sizes`: each type's view size (KB) every chat and the Overseer use
+    (absent on a write: keep the stored ones; always both on a read); `default`: the type new chats
+    start from (Save as default). An older file's `default.size` is read once into `sizes` and never
+    written again. */
 export interface MemorySettings {
   version: 1;
   summarizer: { primary: WorkerChoice; fallback: WorkerChoice | null };
-  default?: ChatMemoryChoice;
+  sizes?: Partial<Record<MemoryType, number>>;
+  default?: { type: MemoryType; size?: number };
 }
 
 export interface MemorySettingsInfo {
@@ -3128,8 +3137,9 @@ export interface OverseerSettings {
   explorer: WorkerChoice;
   /** Resume the runs a server restart cut off (§app.overseer/auto-resume). Absent = on. */
   autoResume?: boolean;
-  /** The Overseer's memory (§chat.memory/overseer): its own switch, type and size. Absent = off. */
-  memory?: { on: boolean; type: MemoryType; size: number };
+  /** The Overseer's memory (§chat.memory/overseer): its own switch and type. Absent = off. `size`: an
+      older file's, kept but ignored (the size is Settings → Memory's). */
+  memory?: { on: boolean; type: MemoryType; size?: number };
 }
 
 export interface OverseerSettingsInfo {

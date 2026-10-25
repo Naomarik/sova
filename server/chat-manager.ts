@@ -52,12 +52,12 @@ import { ChatMemory } from "./memory/chat";
 import { readOverseerSettings } from "./overseer-store";
 
 /** The Overseer's memory choice as a record (overseer.json), or null: it then uses the saved default. */
-function overseerMemoryRecord(): { v: 1; type: "uniichat" | "zoomable"; size: number } | null {
+function overseerMemoryRecord(): { v: 1; type: "uniichat" | "zoomable" } | null {
   const m = readOverseerSettings().memory;
-  return m ? { v: 1, type: m.type, size: m.size } : null;
+  return m ? { v: 1, type: m.type } : null;
 }
 import { withWebMinors } from "./memory/permit";
-import { applyMemoryPatch, saveDefaultMemoryChoice } from "./memory/settings";
+import { saveDefaultMemoryType } from "./memory/settings";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension } from "./project-services/tools";
@@ -1744,7 +1744,7 @@ class ChatSession {
       sessionId: () => this.harness.id,
       cwd: () => this.harness.cwd || undefined,
       branch: () => this.harness.branch(),
-      // The Overseer has no mode entry: its switch, type and size are overseer.json's (§chat.memory/overseer).
+      // The Overseer has no mode entry: its switch and type are overseer.json's (§chat.memory/overseer).
       record: () => (this.overseer ? overseerMemoryRecord() : (this.harness.state.branch().latest(MEMORY)?.data ?? null)),
       on: () => (this.overseer ? (readOverseerSettings().memory?.on ?? false) : this.modeState.minorModes.includes("memory")),
       send: (msg) => this.broadcast(msg),
@@ -1773,18 +1773,17 @@ class ChatSession {
   }
 
   /**
-   * Write this chat's memory choice (§chat.memory/choice): a `sova-memory` record on its branch, the
-   * patch over the current choice. Kept while memory is off. Refused where a mode switch would be.
+   * Write this chat's memory type (§chat.memory/choice): a `sova-memory` record on its branch. Kept while
+   * memory is off. Refused where a mode switch would be. No size: every chat uses Settings' for its type.
    */
-  writeMemoryChoice(patch: Partial<{ type: "uniichat" | "zoomable"; size: number }>): void {
+  writeMemoryChoice(patch: { type?: "uniichat" | "zoomable" }): void {
     if (this.disposed || this.foreignWrite || this.hasForeignWrites()) throw new ModeRefusedError("This chat can't be written now.");
     assertNotLive(this.path);
-    const cur = this.memory.choiceNow();
-    const next = applyMemoryPatch(cur, patch);
-    if (next.type === cur.type && next.size === cur.size && this.harness.state.branch().latest(MEMORY)) return;
+    if (!patch.type) return;
     const prev = this.harness.state.branch().latest(MEMORY)?.data;
+    if (prev && prev.type === patch.type) return;
     this.flushDeferredAppends();
-    this.harness.state.append(MEMORY, { v: 1, type: next.type, size: next.size, ...(prev?.on !== undefined ? { on: prev.on } : {}) });
+    this.harness.state.append(MEMORY, { v: 1, type: patch.type, ...(prev?.on !== undefined ? { on: prev.on } : {}) });
     markOwned(this.path);
   }
 
@@ -1859,7 +1858,7 @@ class ChatSession {
     }
     try {
       const memory = this.memoryOffered() ? this.memory.choiceNow() : undefined;
-      if (memory) saveDefaultMemoryChoice(memory);
+      if (memory) saveDefaultMemoryType(memory.type);
       return modeInfo(writeMode(defaultPatchOf(this.modeState)), memory);
     } catch (err) {
       throw new ModeRefusedError(`The subagent profile default "${profile}" WAS saved, but the mode default was not: ${err instanceof Error ? err.message : String(err)}`);

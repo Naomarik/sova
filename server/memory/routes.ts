@@ -3,7 +3,7 @@
 import type { Hono } from "hono";
 import type { HEntry } from "../../shared/harness";
 import type { MemoryOutline, OverseerMemoryInfo } from "../../shared/protocol";
-import { MEMORY_SIZES, MEMORY_TYPE_INFO } from "../../shared/memory";
+import { isMemoryType, MEMORY_SIZES, MEMORY_TYPE_INFO } from "../../shared/memory";
 import { stateView } from "../harness/state-view";
 import { MEMORY, MODE } from "../harness/state-kinds";
 import { readOverseerSettings, writeOverseerSettings } from "../overseer-store";
@@ -11,7 +11,7 @@ import type { DelegateSources } from "../delegate";
 import { delegateOptions } from "../delegate";
 import { MemoryEngine } from "./engine";
 import { zoomableLines } from "./chat";
-import { applyMemoryPatch, choiceOf, defaultMemoryChoice, memorySettingsInfo, parseMemoryChoice, putMemorySettings } from "./settings";
+import { choiceOf, defaultMemoryChoice, memorySettingsInfo, putMemorySettings } from "./settings";
 import { MemoryStore, memoryDir } from "./store";
 
 /** What the routes ask the rest of the server. */
@@ -52,9 +52,10 @@ async function coldOutline(path: string, deps: MemoryRouteDeps): Promise<{ outli
   };
 }
 
+/** The Overseer's switch and type, at Settings' size for that type (a size overseer.json still holds is ignored). */
 function overseerInfo(deps: MemoryRouteDeps): OverseerMemoryInfo {
   const m = readOverseerSettings().memory;
-  const choice = m ? { type: m.type, size: m.size } : defaultMemoryChoice();
+  const choice = m ? choiceOf({ type: m.type }) : defaultMemoryChoice();
   return { on: m?.on ?? false, ...choice, types: [...MEMORY_TYPE_INFO], sizes: [...MEMORY_SIZES], status: deps.overseer()?.memory.status() ?? { state: "off" } };
 }
 
@@ -101,7 +102,7 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRouteDeps): void {
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: "Expected JSON body { version: 1, summarizer, default? }" }, 400);
+      return c.json({ error: "Expected JSON body { version: 1, summarizer, sizes?, default? }" }, 400);
     }
     const result = await putMemorySettings(body, deps.sources);
     return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
@@ -113,20 +114,21 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRouteDeps): void {
     try {
       body = (await c.req.json()) as Record<string, unknown>;
     } catch {
-      return c.json({ error: "Expected JSON body { on?, type?, size? }" }, 400);
+      return c.json({ error: "Expected JSON body { on?, type? }" }, 400);
     }
-    if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "Expected JSON body { on?, type?, size? }" }, 400);
+    if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "Expected JSON body { on?, type? }" }, 400);
     if (body.on !== undefined && typeof body.on !== "boolean") return c.json({ error: "on must be true or false" }, 400);
-    let patch = {};
-    if (body.type !== undefined || body.size !== undefined) {
-      const p = parseMemoryChoice({ type: body.type, size: body.size }, true);
-      if ("error" in p) return c.json({ error: p.error }, 400);
-      patch = p;
-    }
+    if (body.type !== undefined && !isMemoryType(body.type))
+      return c.json({ error: `type must be one of: ${MEMORY_TYPE_INFO.map((t) => t.id).join(", ")}` }, 400);
+    // `size` is ignored, not refused: the size is Settings → Memory's (§chat.memory/overseer). A size an
+    // older overseer.json holds is kept, unread.
     const settings = readOverseerSettings();
     const was = settings.memory;
-    const cur = was ? { type: was.type, size: was.size } : defaultMemoryChoice();
-    const next = { on: typeof body.on === "boolean" ? body.on : (was?.on ?? false), ...applyMemoryPatch(cur, patch) };
+    const next = {
+      on: typeof body.on === "boolean" ? body.on : (was?.on ?? false),
+      type: isMemoryType(body.type) ? body.type : (was?.type ?? defaultMemoryChoice().type),
+      ...(was?.size !== undefined ? { size: was.size } : {}),
+    };
     writeOverseerSettings({ ...settings, memory: next });
     const chat = deps.overseer();
     if (chat) {

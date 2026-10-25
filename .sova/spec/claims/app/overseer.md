@@ -182,12 +182,14 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   playbook on a registered project (§app.project-runtime/onboard), in a turn the user started).
 - **Sending (`sova_send`) is typing in that session's composer.** Idle, with subagents working or
   not, the message starts a turn. Mid-turn it is **queued as a follow-up** behind the running turn
-  by default: a queued row in that session, "Queued", which the user can remove
-  (§chat.transcript/a-queued-message), and which goes in when the turn ends. With
+  by default: a queued row in that session, "Queued", which the user can remove until it is
+  handed to the agent (§chat.transcript/a-queued-message), and which goes in when the turn ends. With
   `delivery: "steer"` it is queued as a **steer** instead and goes into the running turn at its
   next step, as the composer's Steer does; the Overseer's prompt reserves that for a user who asked
   to interrupt or redirect the turn. A compaction running holds the message the same way until it
-  ends. Queued messages go in the order they were sent, one at a time, whatever their kind. A
+  ends. Queued messages go in the order they were sent: follow-ups one at a time, and every steer
+  waiting while the turn runs together, each its own message at the agent's next step; a steer sent
+  after a follow-up waits for that follow-up. A
   leading `/` runs that session's command, as in the composer. The tool's result says which
   happened: sent, queued behind the turn, queued as a steer, or held for the compaction. Never a
   terminal-owned, archived or worker session, and never the Overseer's own. The route is

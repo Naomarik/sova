@@ -262,8 +262,8 @@ The transcript shows the result as your message (§chat/transcript), with no spe
 
 **Mid-turn it is a follow-up, never a steer.** The dialog always sends a `prompt` frame
 (`ChatView.send(text, false, [])`), even while a turn is streaming. The server's `acceptPrompt`
-queues a streaming-time prompt as `kind: "followUp"`, which shows as a **removable queue row**.
-`handOffQueued` then hands it to `session.prompt(text, { streamingBehavior: "followUp" })` while
+queues a streaming-time prompt as `kind: "followUp"`, which shows as a **queue row**, removable
+until it is handed to the agent (§chat.transcript/a-queued-message). `handOffQueued` then hands it to `session.prompt(text, { streamingBehavior: "followUp" })` while
 the turn is still streaming, or starts it as the next turn once that one has ended, so it
 **runs after the current turn**. That is the opposite of the composer's own mid-turn Send, which
 becomes `Steer` and sends `{type:"steer"}` into the running turn (§chat/composer "While streaming"). The

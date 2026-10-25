@@ -65,19 +65,50 @@ function addInto(into: number[], ring: Ring, end: number): void {
   for (let i = 0; i < TOKEN_SLOTS; i++) into[i] = Math.min(MAX_SLOT_TOKENS * 10, (into[i] ?? 0) + (add[i] ?? 0));
 }
 
-const isZero = (out: readonly number[]): boolean => out.every((n) => n === 0);
+/** Nothing of `ring` is left in the 30-minute window ending at slot `end` (no copy made). */
+function agedOut(ring: Ring, end: number): boolean {
+  // Slot j of the ring is epoch slot ring.end - (TOKEN_SLOTS - 1 - j); the window keeps > end - TOKEN_SLOTS.
+  for (let j = 0; j < TOKEN_SLOTS; j++) if ((ring.out[j] ?? 0) > 0 && ring.end - (TOKEN_SLOTS - 1 - j) > end - TOKEN_SLOTS) return false;
+  return true;
+}
+
+/**
+ * The report says exactly what the live process last said: the same producer, flags, folds and ring,
+ * compared on the raw report (a stored slot is the raw one unless the raw one was out of bounds, which
+ * then reads as different and takes the full path).
+ */
+function repeats(live: NonNullable<Entry["live"]>, r: ProcessReport): boolean {
+  if (live.producer !== r.producer) return false;
+  const partialFlags = (r.claudeTurns ?? 0) > 0 || r.degraded === true;
+  const t = r.tokens as { bucketMs?: unknown; end?: unknown; out?: unknown; partial?: unknown } | null | undefined;
+  const ring = live.ring;
+  if (!ring || !t || typeof t !== "object" || t.bucketMs !== TOKEN_BUCKET_MS || t.end !== ring.end) return false;
+  if (live.partial !== (partialFlags || t.partial === true)) return false;
+  const f = r.folded;
+  const nf = Array.isArray(f) ? f.length : 0;
+  if (nf !== live.folded.length) return false;
+  for (let i = 0; i < nf; i++) if ((f as unknown[])[i] !== live.folded[i]) return false;
+  const out = t.out;
+  if (!Array.isArray(out) || out.length !== TOKEN_SLOTS) return false;
+  for (let i = 0; i < TOKEN_SLOTS; i++) if (out[i] !== ring.out[i]) return false;
+  return true;
+}
 
 export class SessionTokenStore {
   private readonly entries = new Map<string, Entry>();
   /** Bumped by every change a view could show. */
   private rev = 0;
   private cached: { rev: number; slot: number; view: Record<string, SessionTokens>; wire: Record<string, string> } | null = null;
+  /** The slot of the last sweep: entries left by gone processes are pruned at most once per 30 s slot,
+      from the store's own calls (no timer), so they go as they age out even with no board asking. */
+  private sweptSlot = -1;
 
   constructor(private readonly now: () => number = Date.now) {}
 
   /** A chat process's state: its ring replaces its last one; a new process keeps the old one's tokens. */
   note(n: SessionNote, report: ProcessReport | undefined): void {
     if (!report || typeof report.producer !== "string" || !report.producer) return;
+    this.maybeSweep();
     let e = this.entries.get(n.sessionId);
     if (!e) {
       if (this.entries.size >= MAX_ENTRIES) this.sweep();
@@ -92,6 +123,8 @@ export class SessionTokenStore {
       this.rev++;
     }
     if (e.gone.has(report.producer)) return;
+    // Most state reports repeat the last ring: read in place, nothing parsed or allocated.
+    if (e.live && repeats(e.live, report)) return;
     if (e.live && e.live.producer !== report.producer) this.retire(e);
     const parsed = parseTokenRing(report.tokens);
     const live = {
@@ -100,7 +133,6 @@ export class SessionTokenStore {
       partial: !parsed || !!parsed.partial || (report.claudeTurns ?? 0) > 0 || report.degraded === true,
       folded: Array.isArray(report.folded) ? report.folded.filter((f) => typeof f === "string") : [],
     };
-    // Most state reports repeat the ring: those change nothing.
     if (!e.live || !sameLive(e.live, live)) this.rev++;
     e.live = live;
   }
@@ -109,6 +141,14 @@ export class SessionTokenStore {
   release(sessionId: string): void {
     const e = this.entries.get(sessionId);
     if (e?.live) this.retire(e);
+    this.maybeSweep();
+  }
+
+  private maybeSweep(): void {
+    const slot = slotOf(this.now());
+    if (slot === this.sweptSlot) return;
+    this.sweptSlot = slot;
+    this.sweep();
   }
 
   private retire(e: Entry): void {
@@ -129,7 +169,7 @@ export class SessionTokenStore {
     const end = slotOf(this.now());
     for (const [id, e] of this.entries) {
       if (e.live) continue;
-      if (!e.kept || isZero(alignRing(e.kept, end))) {
+      if (!e.kept || agedOut(e.kept, end)) {
         this.entries.delete(id);
         this.rev++;
       }

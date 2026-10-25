@@ -1,7 +1,8 @@
-import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, untrack, type JSX } from "solid-js";
 import { newestTopics, topicTime } from "../../shared/outline-order";
 import type { AgentsInsight, ContextInfo, OutlineTopic, SessionSummary, WorktreeStatus } from "../../shared/protocol";
-import { fetchSessionInsight, fetchWorktrees, getUsageSessions, getUsageToday } from "../lib/api";
+import { type AgentsAnswer, fetchSessionInsight, fetchWorktrees, getUsageSessions, getUsageToday } from "../lib/api";
+import { wantAgentsTokens } from "../lib/agents-feed";
 import {
   BOARD_FILTERS,
   BOARD_PAGE,
@@ -18,7 +19,7 @@ import {
   rowDetail,
   rowHasDetail,
   type RowRate,
-  rowRates,
+  rateReader,
   sameRateCell,
   sortRows,
   STATE_WORD,
@@ -510,7 +511,7 @@ function AgentsTabs(props: { tab: AgentsTab }) {
 
 /** `#/agents`: every session on one board; what it's about, where it stands and its worktrees folded inside. */
 export function AgentsView(props: {
-  agents: Poll<AgentsInsight>;
+  agents: Poll<AgentsAnswer>;
   sessions: SessionSummary[] | undefined;
   now: number;
   /** Team a `#/agents/<teamKey>` link names: its session stays on the board and its pane opens on Agents. */
@@ -625,18 +626,23 @@ export function AgentsView(props: {
     }),
   );
 
-  // Tokens a minute (§app.insights/session-token-rate): every row's means at once, re-read when the
-  // agents answer's tokens change and on one 30 s tick, the sidebar's rule: only while a shown row
-  // has tokens and the tab is visible.
+  // Tokens a minute (§app.insights/session-token-rate): the app's agents poll asks for them only while
+  // the board is shown (the poll itself pauses while the tab is hidden); entering the board asks at once.
+  createEffect(() => {
+    if (onCosts()) return;
+    onCleanup(wantAgentsTokens());
+    if (!untrack(() => props.agents.data()?.tokensAsked)) props.agents.refetch();
+  });
+  // Every row's means at once, worked out again only when the answer's tokens read differently and on
+  // one 30 s tick, the sidebar's rule: only while a shown row has tokens and the tab is visible.
   const [tabVisible, setTabVisible] = createSignal(!document.hidden);
   const onVisibility = () => setTabVisible(!document.hidden);
   document.addEventListener("visibilitychange", onVisibility);
   onCleanup(() => document.removeEventListener("visibilitychange", onVisibility));
   const [rateClock, setRateClock] = createSignal(0);
-  const rates = createMemo(() => {
-    rateClock();
-    return rowRates(props.agents.data()?.tokens, Date.now());
-  });
+  const readRates = rateReader();
+  /** The same Map while the tokens read the same within a step: an identical poll redraws nothing. */
+  const rates = createMemo(() => readRates(props.agents.data()?.tokens, rateClock(), Date.now()));
   const rateTicking = createMemo(() => {
     if (onCosts() || !tabVisible()) return false;
     const t = props.agents.data()?.tokens;
@@ -698,8 +704,10 @@ export function AgentsView(props: {
     onOpenAgents: (p) => props.onOpenAgents(p),
     workersSpend: (sid) => spends().get(sid) ?? null,
     rateOf: (id) => rates().get(id),
+    /** A missing `tokens` means an older server only on an answer that asked for them. */
     get tokensReported() {
-      return props.agents.data()?.tokens !== undefined;
+      const d = props.agents.data();
+      return !d?.tokensAsked || d.tokens !== undefined;
     },
   };
 

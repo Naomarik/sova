@@ -148,4 +148,47 @@ describe("SessionTokenStore", () => {
     s.note(worker("w", "m"), { producer: "pw", tokens: { bucketMs: 1, end: 1, out: [] } });
     assert.deepEqual(s.view()["m"], { end: SLOT, own: [3], own30: 3, partial: true });
   });
+
+  test("1,000 exited workers: held while their tokens are in the window, all pruned once they age out, with no board asking", () => {
+    const s = store();
+    s.note(main("m"), report("pm", [1]));
+    for (let k = 0; k < 1000; k++) {
+      s.note(worker(`w${k}`, "m"), report(`p${k}`, [k + 1]));
+      s.release(`w${k}`);
+    }
+    assert.equal(s.size, 1001, "their tokens still count on the parent's row");
+    // 29 minutes on, a live chat's ordinary state report: every exited worker's slot is still in the 30-minute ring.
+    clock += 29 * 60_000;
+    s.note(main("m"), report("pm", [1]));
+    assert.equal(s.size, 1001);
+    // 31 minutes after they wrote: gone, on the next ordinary call; no view() was asked for.
+    clock += 2 * 60_000;
+    s.note(main("m"), report("pm", [1]));
+    assert.equal(s.size, 1, "only the live chat is left");
+    // A release alone prunes too (an exit with no other chat reporting).
+    s.note(worker("late", "m"), report("pl", [9]));
+    s.release("late");
+    clock += 31 * 60_000;
+    s.release("m");
+    assert.equal(s.size, 0);
+  });
+
+  test("a repeated report takes the fast path and changes nothing; any difference takes the full one", () => {
+    const s = store();
+    s.note(main("m"), report("pm", [5, 6]));
+    const first = s.wire();
+    s.note(main("m"), report("pm", [5, 6]));
+    assert.equal(s.wire(), first, "identical: not rebuilt");
+    s.note(main("m"), report("pm", [5, 6], { claudeTurns: 1 }));
+    assert.equal(s.view()["m"]!.partial, true, "a Claude turn running: partial");
+    s.note(main("m"), report("pm", [5, 6]));
+    assert.equal(s.view()["m"]!.partial, undefined, "and back");
+    s.note(main("m"), report("pm", [5, 6], { folded: ["px"] }));
+    s.note(main("m"), report("pm", [5, 7], { folded: ["px"] }));
+    assert.deepEqual(s.view()["m"]!.own, [5, 7], "one slot changed: read");
+    // An out-of-bounds slot is stored clamped, so its repeat never matches in place, and still reads clamped.
+    s.note(main("m"), report("pm", [Number.MAX_SAFE_INTEGER]));
+    s.note(main("m"), report("pm", [Number.MAX_SAFE_INTEGER]));
+    assert.deepEqual(s.view()["m"]!.own, [10_000_000]);
+  });
 });

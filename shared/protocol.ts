@@ -2657,7 +2657,7 @@ export type WatchServerMessage =
 // missing/corrupt sources: they return an honest empty/unavailable payload.
 // ---------------------------------------------------------------------------
 // GET /api/insights/usage          -> UsageInsight
-// GET /api/insights/agents         -> AgentsInsight     (all live pi processes; poll ~5s)
+// GET /api/insights/agents         -> AgentsInsight     (all live pi processes; poll ~5s; ?tokens=1 adds `tokens`)
 // POST /api/upload                -> UploadResult 201  (raw image bytes; Content-Type: image/*; saved in /tmp)
 // POST /api/upload?draft=<session path> -> UploadResult 201  (same, saved durably in that session's folder
 //                                  <agent dir>/sova/attachments/<session id>/; 400 invalid session path, 404 no such session)
@@ -3106,8 +3106,9 @@ export interface AgentsInsight {
   sessions: LiveAgentSession[]; // working first, then by lastActivity
   /** Output tokens of each Sova-hosted main thread, its workers at any depth rolled up, keyed by
       its session id: only sessions with tokens in the last 5 minutes (§app.insights/session-token-rate),
-      each one `SessionTokens` as one string (shared/session-tokens-wire.ts). `{}` when none; absent
-      from older servers (every row then reads as unmeasured). */
+      each one `SessionTokens` as one string (shared/session-tokens-wire.ts). Only on `?tokens=1`
+      (the board asks while it is shown): then `{}` when none, and absent only from older servers
+      (every row then reads as unmeasured). */
   tokens?: Record<string, string>;
 }
 

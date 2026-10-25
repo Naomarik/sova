@@ -18,6 +18,7 @@ import {
   rateCell,
   rowDetail,
   rowHasDetail,
+  rateReader,
   rowRates,
   sameRateCell,
   sortRows,
@@ -420,6 +421,28 @@ test("rates: the sidebar's 5-minute mean, own and workers apart, and the 30-minu
   assert.equal(rowRates({ a: encodeSessionTokens({ end: at, own: slots(600, 10), own30: 6000 }) }, NOW + 60_000).get("a")!.five, 960, "a minute on, two slots fewer");
   assert.equal(rowRates(undefined, NOW).size, 0);
   assert.equal(rowRates({ a: "not a row" }, NOW).size, 0, "a malformed row reads as no tokens");
+});
+
+test("rates are worked out once per answer content and 30 s step: two identical polls compute once", () => {
+  let computed = 0;
+  const read = rateReader((t, now) => (computed++, rowRates(t, now)));
+  const row = encodeSessionTokens({ end: at, own: slots(600, 10), own30: 6000 });
+  // Two polls, each a fresh object with the same tokens (as two 5 s answers in one step are).
+  const first = read({ a: row, b: row }, 0, NOW);
+  const second = read({ a: row, b: row }, 0, NOW + 5_000);
+  assert.equal(computed, 1, "the identical second poll reuses the first's work");
+  assert.equal(second, first, "the same Map, so nothing downstream redraws");
+  // A changed answer, or the next 30 s step, works them out again; then the cache holds again.
+  read({ a: row }, 0, NOW + 10_000);
+  assert.equal(computed, 2, "different content: computed");
+  read({ a: row }, 1, NOW + 30_000);
+  assert.equal(computed, 3, "the next step: computed");
+  read({ a: row }, 1, NOW + 35_000);
+  assert.equal(computed, 3, "same content, same step: reused");
+  // No tokens (an answer that didn't ask) is a content too: computed once, then reused.
+  read(undefined, 1, NOW);
+  read(undefined, 1, NOW);
+  assert.equal(computed, 4);
 });
 
 test("the cell: the sidebar's format, a sentence with both windows and the split; a dash that says why", () => {

@@ -9,7 +9,7 @@ import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../shared/prot
 import { reuseUnchanged } from "./lib/summary-diff";
 import { stampListRows } from "./lib/composer-known";
 import { OptimisticArchive, type ArchiveMutation } from "./lib/optimistic-archive";
-import { setAgentsFeedSource } from "./lib/agents-feed";
+import { agentsTokensWanted, setAgentsFeedSource } from "./lib/agents-feed";
 import { setExplanationsFeedSource } from "./lib/explanations-feed";
 import {
   ApiError,
@@ -422,7 +422,8 @@ export function App() {
     .then(reconcileTheme)
     .catch(() => {});
   const usage = createPoll(fetchUsage, USAGE_POLL_MS);
-  const agents = createPoll(fetchAgents, AGENTS_POLL_MS);
+  // One poll for the whole app (the sidebar feed reads it); it asks for tokens only while a board is shown.
+  const agents = createPoll(() => fetchAgents({ tokens: agentsTokensWanted() }), AGENTS_POLL_MS);
   setAgentsFeedSource(agents.data);
   const explanations = createPoll(fetchExplanations, EXPLAIN_POLL_MS);
   setExplanationsFeedSource(explanations.data);

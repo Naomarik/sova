@@ -363,7 +363,7 @@ export class ChatHostRouter {
         // A worker whose record isn't known (yet) lands on no row rather than on the wrong one.
         const special = kindOfMirror(m);
         const hidden = (!!special && special !== "powers") || (!w && !!m.worker);
-        sessionTokens().note({ sessionId: m.sessionId, ...(w ? { parent: w.parent.sessionId } : {}), hidden }, m.llm);
+        sessionTokens().note(w ? { sessionId: m.sessionId, parent: w.parent.sessionId, hidden } : { sessionId: m.sessionId, hidden }, m.llm);
       }
     },
     exit: (h, cause) => {

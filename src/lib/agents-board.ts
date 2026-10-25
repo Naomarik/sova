@@ -366,6 +366,29 @@ export function rowRates(tokens: Readonly<Record<string, string>> | undefined, n
   return out;
 }
 
+/** The tokens record's content as one string: equal answers give equal keys, whatever their objects. */
+export function tokensKey(tokens: Readonly<Record<string, string>> | undefined): string {
+  if (!tokens) return "";
+  let k = "";
+  for (const id in tokens) k += `${id}=${tokens[id]}\n`;
+  return k;
+}
+
+/**
+ * `rowRates`, worked out once per content and 30 s step: a poll whose tokens read the same as the
+ * last (most polls) gets the last Map back, the same object, so nothing downstream redraws.
+ * `step` is the board's 30 s clock. `compute` is for tests.
+ */
+export function rateReader(compute: typeof rowRates = rowRates): (tokens: Readonly<Record<string, string>> | undefined, step: number, now: number) => Map<string, RowRate> {
+  let last: { key: string; step: number; rates: Map<string, RowRate> } | null = null;
+  return (tokens, step, now) => {
+    const key = tokensKey(tokens);
+    if (last && last.key === key && last.step === step) return last.rates;
+    last = { key, step, rates: compute(tokens, now) };
+    return last.rates;
+  };
+}
+
 /** What a row's Tokens/min cell says: a figure with its sentence, or a muted dash with why. */
 export interface RateCell {
   /** `48k tok/min`; null for a dash. */

@@ -551,6 +551,13 @@ export function createShareApp(): Hono {
       await f.ownerEndsFeatureChat(orgId, f.ownersChatByHandle(orgId, personId, handle).sessionId);
     }, []),
   );
+  // The owner closes or reopens their own request (§app.project-assistant/closing), by its page handle.
+  app.post(
+    "/api/i/:token/requests/:handle",
+    featureRoute(async (orgId, personId, handle, body) => {
+      await (await import("../owner-request-close")).ownerRequestAction(orgId, personId, handle, body.action);
+    }, ["action"]),
+  );
   app.get("/api/i/:token", ownerRead(() => ({})));
   app.get("/api/i/:token/p/:handle", ownerRead((c) => ({ project: c.req.param("handle") ?? "" })));
   app.get("/api/i/:token/c/:handle", ownerRead((c) => ({ conversation: c.req.param("handle") ?? "" })));

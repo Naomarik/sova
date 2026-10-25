@@ -30,6 +30,7 @@ import { callerTag, realGit, type Caller, type ProjectEngine } from "./engine";
 import { realExec, SLICE } from "./drivers";
 import { defHashOf, deployHashOf } from "./def-hash";
 import { hostVars, servicesRoot, stateHash, tryLock } from "./store";
+import { NO_BACKGROUND_CLEANUP } from "../git-no-background";
 
 /**
  * The deploy verbs (§app.project-services/deploy): a target of the definition's `deploy`, never an
@@ -543,7 +544,7 @@ export class Deployer {
     const remote = (await this.git(["config", "--get", `branch.${branch}.remote`], root)).stdout.trim();
     const merge = (await this.git(["config", "--get", `branch.${branch}.merge`], root)).stdout.trim();
     if (!remote || !merge) return { id: "pushed", ok: false, detail: `${branch} has no upstream: push it first` };
-    const f = await this.git(["fetch", "--quiet", remote, merge], root);
+    const f = await this.git([...NO_BACKGROUND_CLEANUP, "fetch", "--quiet", remote, merge], root);
     if (f.code !== 0) return { id: "pushed", ok: false, detail: `${remote} could not be read (${f.stderr.trim().split("\n")[0] || `exit ${f.code}`}): nothing is planned on an unknown remote` };
     const up = (await this.git(["rev-parse", "--verify", "--quiet", "FETCH_HEAD^{commit}"], root)).stdout.trim();
     const ok = !!up && (await this.git(["merge-base", "--is-ancestor", commit, up], root)).code === 0;

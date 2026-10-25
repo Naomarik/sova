@@ -7,8 +7,9 @@ import { after, beforeEach, test } from "node:test";
 import { envFileText, SystemdDriver, systemdRunArgv, type Exec } from "../project-services/drivers";
 import { FakeDriver } from "./fake-driver";
 import { execFileSync } from "node:child_process";
-import { CHAT_PROCESS_ENV, chatDriver, chatEnv, chatGitConfigPath, chatProcessAlive, chatSocketPath, ChatSupervisor, chooseChatHost, exitOfLog, sweepOldChildren, nextEpoch, scrubChatProcessEnv, supervisorConfig, type ChatDeath, type SupervisorDeps } from "./supervisor";
+import { CHAT_PROCESS_ENV, chatDriver, chatEnv, chatProcessAlive, chatSocketPath, ChatSupervisor, chooseChatHost, exitOfLog, sweepOldChildren, nextEpoch, scrubChatProcessEnv, supervisorConfig, type ChatDeath, type SupervisorDeps } from "./supervisor";
 import { GC_TIMER_OFF } from "./gc-timer";
+import { gitCleanupConfigPath } from "../git-no-background";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-chat-supervisor-"));
 after(() => rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true }));
@@ -986,7 +987,7 @@ test("the chat env names Sova's git system config: git run by the chat starts no
   const agentDir = mkdtempSync(join(tmpdir(), "chat-gitcfg-"));
   t.after(() => rmSync(agentDir, { recursive: true, force: true }));
   const env = chatEnv({ serverEnv: { LANG: "C", GIT_CONFIG_NOSYSTEM: "1" }, bun: "/opt/bun/bin/bun", home: agentDir, agentDir });
-  assert.equal(env.GIT_CONFIG_SYSTEM, chatGitConfigPath(agentDir));
+  assert.equal(env.GIT_CONFIG_SYSTEM, gitCleanupConfigPath(agentDir));
   assert.equal(env.GIT_CONFIG_NOSYSTEM, undefined, "it would make git skip the file");
   // Never a variable that turns the idle git cache off (§app/idle-git-cache).
   assert.equal(env.GIT_CONFIG_COUNT, undefined);

@@ -4,6 +4,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { PromoteCommit } from "../shared/decisions";
 import { type Git, probeMerge, runGit } from "../pi-config/extensions/worktrees/git.ts";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
+import { NO_BACKGROUND_CLEANUP } from "./git-no-background";
 
 /**
  * The project's coding sessions each run in their own git worktree and branch of the client
@@ -246,7 +247,7 @@ export async function mergeBack(w: WorktreeRecord, root: string, title: string, 
   if ((await git(["merge-base", "--is-ancestor", b, "HEAD"], root)).code === 0) throw new WorktreeRefusal(`${w.branch} has nothing to merge into ${w.target}.`);
   const who = await git(["config", "user.email"], root);
   const id = who.code === 0 && who.stdout.trim() ? [] : SOVA_ID;
-  const r = await git([...id, "-c", "commit.gpgsign=false", "merge", "--no-edit", "-m", `Merge ${w.branch}: ${title}`, "--", `refs/heads/${w.branch}`], root);
+  const r = await git([...id, ...NO_BACKGROUND_CLEANUP, "-c", "commit.gpgsign=false", "merge", "--no-edit", "-m", `Merge ${w.branch}: ${title}`, "--", `refs/heads/${w.branch}`], root);
   if (r.code !== 0) {
     const conflicted = await git(["diff", "--name-only", "--diff-filter=U"], root);
     const n = conflicted.stdout.split("\n").filter(Boolean).length;
@@ -378,7 +379,7 @@ export async function commitSpec(snap: SpecSnapshot, message: string, git: Git =
   const add = await git(["add", "--", ...files], snap.top);
   if (add.code !== 0) return { skipped: `Not committed: ${firstLine(add.stderr || add.stdout)}` };
   // Sova's identity, never the repo's or the host's: the commit is Sova's act, not the operator's.
-  const c = await git([...SOVA_ID, "-c", "commit.gpgsign=false", "commit", "--only", "-m", message, "--", ...files], snap.top);
+  const c = await git([...SOVA_ID, ...NO_BACKGROUND_CLEANUP, "-c", "commit.gpgsign=false", "commit", "--only", "-m", message, "--", ...files], snap.top);
   if (c.code !== 0) return { skipped: `Not committed: ${firstLine(c.stderr || c.stdout)}` };
   const sha = await git(["rev-parse", "HEAD"], snap.top);
   return { sha: sha.stdout.trim(), branch: snap.branch ?? "", files, message };

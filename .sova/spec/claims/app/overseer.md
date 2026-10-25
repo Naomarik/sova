@@ -532,7 +532,9 @@ sessions are left out, and the coverage line counts them as skipped.
     or an ask whose session has work not merged (ready, built, uncommitted, at risk or lost) or
     that says merge, land, commit, build, start, go ahead or proceed; then open alignment
     questions; then other asks; the most recently active first within each.
-  - **Ready to merge**: a worktree ready, or waiting for the user's go-ahead.
+  - **Ready to land**: a worktree Ready to land at its head (§chat.worktrees/ready-to-land).
+  - **Landing specs**: one whose landing waits on its spec drafts.
+  - **Ready to merge**: any other worktree ready, or waiting for the user's go-ahead.
   - **Built, not merged**: a worktree with commits of its own in progress, blocked or stale
     (§chat.worktrees/readiness), one whose session is working now saying so.
   - **Uncommitted only (lost if the worktree goes)**: a worktree with at least one uncommitted
@@ -1295,7 +1297,8 @@ feed's last list while nothing has changed since it was built, and builds a list
   input.
 - **Ready to merge (decide)** (§chat.worktrees/readiness): an idle, unarchived session with a
   worktree ready, "Ready to merge: {branch}", or ready and waiting for the go-ahead, "Waiting for
-  your OK: {branch}". Never Needs you, a brief or a notification.
+  your OK: {branch}"; a worktree with a landing says its word instead, "Ready to land: {branch}" or
+  "Landing specs: {branch}" (§chat.worktrees/ready-to-land). Never Needs you, a brief or a notification.
 - **Merges (decide)** (§chat.worktrees/readiness): a merge the follow-up check
   (§app.decisions/merge-followup) calls significant, "Merged with open work: {cue}"; and one
   `restart-pending` item of no session, "Restart pending: {n} merge(s) changed the server since it

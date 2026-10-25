@@ -561,7 +561,8 @@ A receipt written before claims were recorded counts, for each id it names, what
 says there. The rule is one function of the draft tool, run on the drafts' and the spec's files
 alone, with no Git and no other process. The tool's `drafts` and `prune --official`
 (§tools.spec/draft-hygiene) and Sova's readiness (§chat.worktrees/readiness) call it; the merge
-round's driver reads `drafts` (§chat.merge-round/driver).
+round's driver reads the verdict `drafts` reports (§chat.merge-round/driver). A draft the rule can't
+read is never official, for each of them.
 
 ## §tools.spec/draft-hygiene — Drafts left behind are reported, and only an approved list or confirmed-official drafts are pruned
 
@@ -570,15 +571,18 @@ repository too) and writes nothing. Each draft gets its age (days since its last
 evidence recorded or promoted), one state with the reasons for it, and a suggested action:
 `landed` (an id is still pending while its implementation is on the default branch: a commit its
 evidence names is in that branch, or the work tree's own branch was merged into it after the draft
-was made) suggests promote; `promoted` (every id is already current, was promoted by this draft
-before current moved on, or is on the default branch exactly as the draft says it), `superseded` (nothing pending, and an id current changed differently) and
+was made) suggests promote; `promoted` (every id is already current, or was promoted by this draft
+before current moved on), `superseded` (nothing pending, and an id current changed differently) and
 `empty` (it changes nothing and is older than the age limit) suggest delete; `old` (pending, older
 than the limit, 7 days unless `--days N`), `active` and `unreadable` suggest keep, `landed` with
-the ids whose evidence must be re-recorded first. An id current says differently counts as
-current when the draft is official there (§tools.spec/draft-official), so a draft a later promoted
-draft reworded reads `promoted`; otherwise it is in conflict. Each draft also lists
-`promotedConflict`: the ids in conflict that it promoted before, which count as current in its
-state but are not official. The default branch is the one
+the ids whose evidence must be re-recorded first. Each draft carries the rule's verdict,
+`official` (§tools.spec/draft-official; false for one it can't read), and its ids sort by it: an id
+the rule calls official counts as current, so a draft a later promoted draft reworded reads
+`promoted`; any other is pending or in conflict. Each draft also lists `promotedConflict`: the ids
+in conflict that it promoted before, which count as current in its state but are not official. A
+draft made unofficial only by a claim outside any § (a manifest key, a claim file's lines outside
+its declarations) names no id and reads `active`. A reader that holds work until its drafts are
+official reads `official`, never the state. The default branch is the one
 `promote` names (origin's HEAD, else `master`, else `main`); a project without Git gets no `landed`.
 It exits 1 when any draft is other than `active`.
 
@@ -588,12 +592,11 @@ no draft, a hash that no longer matches (the draft changed after it was approved
 interrupted promotion refuses the whole prune, and nothing is deleted.
 
 `draft prune --official` needs no list: it deletes only drafts the tool itself confirms are already
-official, and keeps every other one. Without `--from` it reads the project's own drafts as `drafts`
-does and deletes those it reads `promoted` with nothing in `promotedConflict`, under the same lock
-and refusal of an interrupted promotion as an approved prune. With `--from DIR` it reads each draft folder directly in `DIR`, a copy
-kept outside the project such as the one a merge round keeps, against the project's current spec
-alone, by the same rule (§tools.spec/draft-official), with no Git: one that changes at least one
-claim, every one official, is deleted; one with a claim that isn't, one that changes nothing, and one
+official, and keeps every other one. It reads each draft folder of the project's own drafts, or
+with `--from DIR` of `DIR` (copies kept outside the project, such as the ones a merge round keeps),
+against the project's current spec by the same rule (§tools.spec/draft-official), with no Git; in
+the project, under the same lock and refusal of an interrupted promotion as an approved prune. One
+that changes at least one claim, every one official, is deleted; one with a claim that isn't, one that changes nothing, and one
 it can't read are kept.
 Without `--write` either form only lists what it would delete and what it keeps, with why. No other
 command deletes a draft, and none suggests deleting one that still has a pending id.

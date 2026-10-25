@@ -7127,8 +7127,8 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-24T09:23Z",
-        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+        "at": "2026-10-25T22:33Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
       }
     },
     "§app.overseer/caps": {
@@ -7476,9 +7476,9 @@
         "§app.project-overseer/coding-worktrees"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-20T15:52Z",
-        "source": "pi-session:01a158a6-750f-7276-9b13-ca61fad634cd#ec45ecfd"
+        "by": "user",
+        "at": "2026-10-25T22:33Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
       },
       "evidence": "verified"
     },
@@ -10370,7 +10370,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-25T20:43Z",
+        "at": "2026-10-25T22:33Z",
         "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
       }
     },
@@ -14754,7 +14754,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-25T20:43Z",
+        "at": "2026-10-25T22:33Z",
         "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
       }
     },
@@ -17762,7 +17762,8 @@
         ".sova/playbooks/merge-round/references/round.md",
         ".sova/playbooks/merge-round/references/check.md",
         ".sova/playbooks/merge-round/references/land.md",
-        "AGENTS.md"
+        "AGENTS.md",
+        ".sova/playbooks/merge-round/references/start.md"
       ],
       "requires": [
         "§chat.schedules/fire",
@@ -17772,7 +17773,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-25T20:43Z",
+        "at": "2026-10-25T22:33Z",
         "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
       }
     },
@@ -17810,7 +17811,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-25T20:43Z",
+        "at": "2026-10-25T22:33Z",
         "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
       }
     },
@@ -18187,7 +18188,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-25T20:43Z",
+        "at": "2026-10-25T22:33Z",
         "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
       }
     },
@@ -18205,7 +18206,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-25T20:43Z",
+        "at": "2026-10-25T22:33Z",
         "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
       },
       "requires": [

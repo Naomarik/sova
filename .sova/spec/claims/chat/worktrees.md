@@ -314,13 +314,13 @@ draft(s) not promoted)". Merged and the commit come from the merge card; pushed 
 merge (it started after it, or the merge changed no server file), else restart owed; spec from
 the merged worktree's own `.sova/spec/drafts/`, while that folder still exists: a draft counts as
 promoted when it is official (§tools.spec/draft-official), the one rule the merge round's check
-reads too. The
+reads too; a draft that rule can't read counts as not promoted. The
 line is the first line of the badge's `title` (§app.session-list/anatomy) and travels with the
 row (`SessionSummary.readiness.status`).
 
 Routine session-list and merge-readiness refreshes never query spec assessment status or
 recapture assessment inputs, including for idle merged worktrees, and never run a spec tool.
-The spec facts readiness carries are which drafts aren't official, for the status line's count,
+The spec facts readiness carries are which drafts aren't official (an unreadable one included), for the status line's count,
 a merged tree's reason and the landing (§chat.worktrees/ready-to-land), worked out by the draft
 rule's own function in the server's process from the drafts' files and kept until one of them
 changes. Readiness carries no other spec observation, and the row and its title display none. Ordinary git readiness, bash checks,
@@ -330,7 +330,9 @@ gates.
 
 **In the attention digest** (§app.overseer/attention-digest), decide tier, never Needs you, a brief
 or a phone notification: "Ready to merge: {branch}" for a ready worktree and "Waiting for your OK:
-{branch}" for one waiting for the go-ahead, while the session is idle; "Merged with open work:
+{branch}" for one waiting for the go-ahead, while the session is idle, except that a worktree with a
+landing says its landing's word, "Ready to land: {branch}" or "Landing specs: {branch}"
+(§chat.worktrees/ready-to-land), as its reason line does; "Merged with open work:
 {cue}" for a merge the follow-up check calls significant; and one "Restart pending" item for the
 whole server, however many sessions' merges ask for it, naming how many merges and their
 branches.
@@ -384,9 +386,11 @@ or "Landing specs · 2 drafts" (with "· can't land them: <why>" once the sessio
 reader that writes the reason shows it as is: the Session tab's chip and line, the merge board
 (§chat.worktrees/merge-board) and so the merge round's `status`, `session_detail`, and the
 branch labels the Overseer's and the agents' session lists print ("branch feat/x (ready to
-land)"). The merge-ready wake names such branches the same way (§chat.schedules/merge-ready).
-The row's lit count and badge, the digest and the offers' `branch-ready` still read the
-readiness state, which stays ready or waiting for your OK underneath.
+land)"). The merge-ready wake names such branches the same way (§chat.schedules/merge-ready),
+and so do the attention digest's decide item ("Ready to land: feat/x", §chat.worktrees/readiness)
+and the Overseer's roundup, whose sections "Ready to land" and "Landing specs" list such branches
+apart from Ready to merge (§app.overseer/roundup). The row's lit count and badge and the offers'
+`branch-ready` still read the readiness state, which stays ready or waiting for your OK underneath.
 
 ## §chat.worktrees/landing-answers — Land It and Not Yet are kept, never enforced
 

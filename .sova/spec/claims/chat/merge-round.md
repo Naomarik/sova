@@ -241,9 +241,12 @@ shell and under a timeout.
   PROMOTE.md says (master's whole spec, or with records beside each claim file only the areas that
   clashed, the merge committed, its drafts promoted again with the same `--id`s, the claims
   committed), then answer READY again. It exits 1 and never says to resolve a spec conflict itself.
-  After every merge of master, before the merge commit, it asks the spec tool whether the spec now
-  holds records both ways (`layout-mixed`): if so it finishes it with `merge-manifest --write`, and
-  when that can't, it aborts the merge and says so. It then
+  After every merge of master, before the merge commit, it reads the spec's records with the spec
+  tool (`records`): a spec now holding records both ways (`layout-mixed`) is finished with
+  `merge-manifest --write`; when that can't finish it, when the records don't read (an unreadable
+  manifest, a bad record file), or when the tool gives no answer, it aborts the merge, so the
+  worktree is as it was, and says which. A clean merge is otherwise committed exactly as Git's
+  one-step merge commits it. It then
   runs the typecheck, `pnpm test` and then `pnpm test:int` (§app.server-runtime/test-tiers; a tree
   whose package.json has no `test:int` script skips it and says so), both without
   `CLAUDE_CONFIG_DIR`, each touched pi-config extension's

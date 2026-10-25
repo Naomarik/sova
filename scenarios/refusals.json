@@ -1,0 +1,30 @@
+{
+  "name": "refusals",
+  "about": "What sova refuses, with the exit class and the sentence a person or a script gets: mistakes in the command line, answers the routes refuse, and a session a terminal holds, which nothing may write to while a title (Sova's own) still changes.",
+  "steps": [
+    { "name": "a session to refuse things on", "sova": ["run", "session.create", "--cwd", "."], "save": "s" },
+    { "name": "give it a message", "sova": ["run", "session.send", "--session", "{{s.path}}", "--text", "Hello."] },
+    { "name": "its reply", "sova": ["run", "session.read", "--session", "{{s.path}}"], "until": { "items": { "$some": { "kind": "assistant-text", "text": "The package name is in package.json." } } } },
+
+    { "name": "an unknown command", "sova": ["run", "no.such.command"], "exit": 3, "stderr": "sova: no command no.such.command (sova list)" },
+    { "name": "an unknown param", "sova": ["run", "session.title.set", "--session", "{{s.id}}", "--colour", "red"], "exit": 3, "stderr": "sova: session.title.set has no param --colour (sova describe session.title.set)" },
+    { "name": "a change with no session named", "sova": ["run", "session.archive"], "exit": 3, "stderr": "sova: session.archive needs --session <id|path>" },
+    { "name": "a required param left out", "sova": ["run", "session.send", "--session", "{{s.path}}"], "exit": 3, "stderr": "sova: --text is required" },
+    { "name": "a value off its list", "sova": ["run", "session.configure", "--session", "{{s.path}}", "--thinking", "loud"], "exit": 3, "stderr": "sova: --thinking must be one of: off, minimal, low, medium, high, xhigh, max" },
+    { "name": "a host that isn't this machine", "sova": ["list", "--url", "http://192.0.2.1:4800"], "exit": 2, "stderr": "sova: refused: 192.0.2.1 is not this machine (only 127.0.0.1, localhost or ::1)" },
+    { "name": "the wrong token", "sova": ["run", "session.list"], "env": { "SOVA_TOKEN": "not-this-servers-token" }, "exit": 2, "json": { "locked": true, "error": "Unauthorized - reload the page to unlock" }, "stderr": "sova: session.list answered 401" },
+
+    { "name": "an unknown session", "sova": ["run", "session.title.set", "--session", "no-such-id", "--title", "x"], "exit": 3, "stderr": "sova: session no-such-id: 404 No session with that id" },
+    { "name": "a title with a control character", "sova": ["run", "session.title.set", "--session", "{{s.path}}", "--title", "a\u0001b"], "exit": 3, "json": { "error": "title must be 1–80 characters, and no control characters" } },
+    { "name": "a tag that isn't one", "sova": ["run", "session.tags.set", "--session", "{{s.id}}", "--tags", "Not A Tag"], "exit": 3, "json": { "error": "Tag \"not a tag\" is not valid: lowercase letters, digits and dashes, at most 32." } },
+    { "name": "a folder that isn't there", "sova": ["run", "session.create", "--cwd", "/no/such/folder"], "exit": 3, "json": { "error": "cwd does not exist" } },
+
+    { "name": "a terminal opens the session", "terminal": "{{s.path}}" },
+    { "name": "no message while a terminal has it", "sova": ["run", "session.send", "--session", "{{s.path}}", "--text", "Hello again."], "exit": 2, "json": { "error": { "$match": "^It is open in a terminal \\(pid \\d+\\), so this server must not write to it\\.$" } }, "stderr": "answered 409" },
+    { "name": "no settings change while a terminal has it", "sova": ["run", "session.configure", "--session", "{{s.path}}", "--model", "{{model}}"], "exit": 2, "json": { "error": { "$match": "^It is open in a terminal \\(pid \\d+\\), so this server must not write to it\\.$" } } },
+    { "name": "no archive while a terminal has it", "sova": ["run", "session.archive", "--session", "{{s.path}}"], "exit": 2, "json": { "error": "This session is open in a TUI, so it stays on top while live. Nothing was archived." } },
+    { "name": "still not archived", "sova": ["run", "session.get", "--session", "{{s.id}}"], "json": { "archived": false } },
+    { "name": "its transcript has only the first message", "sova": ["run", "session.read", "--session", "{{s.path}}"], "json": { "items": { "$none": { "kind": "user", "text": "Hello again." } } } },
+    { "name": "a title is Sova's own, so it still changes", "sova": ["run", "session.title.set", "--session", "{{s.path}}", "--title", "Held by a terminal"], "json": { "title": "Held by a terminal" } }
+  ]
+}

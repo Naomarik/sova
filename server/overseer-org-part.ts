@@ -14,7 +14,7 @@ import { ABILITIES_PARAM, baseAbilities, FILES_PARAM, overseerAbilities, withFil
 import { actOrThrow, heldAt, holdRef, hostOf, isOrgHostOpen, onOrgHostOpened } from "./org-engine";
 import type { Envelope } from "./org-envelope";
 import { OrgError } from "./org-error";
-import { decidePersonAct, onOrgAttached, operatorName, overseerPersonLine, placementSid, readIndex, readOrg, readOrgAbout, readProjects, readRoster, stakeholderLine } from "./orgs";
+import { decidePersonAct, findPerson, onOrgAttached, operatorName, orgOfProject, overseerPersonLine, patchPlacement, placementSid, readIndex, readOrg, readOrgAbout, readProjects, readRoster, stakeholderLine } from "./orgs";
 import { markSendsNoted, projectSends, sendsToNote } from "./outreach/log";
 import { updateIdea } from "./overseer-ideas";
 import { serverRedactor } from "./overseer-redact";
@@ -27,9 +27,13 @@ import { cut, link, obj, PREVIEW_IN_GATHERING, Refusal, str, strs, text } from "
 import { pipelineInfo } from "./project-pipeline";
 import { appendUpdate, cleanUpdateText } from "./project-updates";
 import { contributeProjectPart, type GapPart, type OtherSessions, type OverseerToolCtx } from "./projects/contributions";
-import { listDecisions, promoteDecisions, reconcileProject } from "./reconcile";
+import { listDecisions, promoteDecisions, reconcileProject, setFrozen } from "./reconcile";
+import { setPlacementDeps } from "./project-settings";
 import { renderTranscript, sessionRef } from "./session-guards";
 import { readView } from "./share/hub";
+import { specEntries } from "./spec-lookup";
+import { ownerRequestsLines } from "./project-assistant-store";
+import "./spec-lookup-part"; // every project's spec look-up: the overseer's spec_lookup, overview, a standalone project's Spec line
 
 /**
  * The organization's part of a project it places (design "What crosses the seam"): what the project layer's
@@ -144,13 +148,27 @@ export function lastBuildFinishedAt(projectId: string): number | null {
 }
 
 /**
+ * An organization's own note (the owner page link's send, §app.owner-page/send): the same check over the
+ * org's About text and roster, and every project's private text (its notes, instructions, goals and
+ * briefings), since no one project frames it.
+ */
+export function orgNoteLeak(orgId: string, text: string): string | null {
+  for (const p of readProjects(orgId)) {
+    const hit = ownerUpdateLeak(orgId, p.id, text);
+    if (hit) return hit;
+  }
+  return ownerUpdateLeak(orgId, null, text);
+}
+
+/**
  * The refusal for an owner update that repeats private text, or null (§app.owner-page/updates). An update is
  * written by this project's overseer, whose prompt holds the org's About text, its notes and the
  * operator's instructions: any run of OWNER_UPDATE_REPEAT characters from those, from a
  * conversation's goal or a hand-off briefing, or from a person's profile, and any contact value,
  * refuses the post. The About text is read here to be kept OUT of the update, never to write it.
+ * `projectId` null: the org's own text only (its About text and roster), for orgNoteLeak.
  */
-export function ownerUpdateLeak(orgId: string, projectId: string, text: string): string | null {
+export function ownerUpdateLeak(orgId: string, projectId: string | null, text: string): string | null {
   // A kept preview link is a secret the operator sends on (§app.project-overseer/previews).
   if (holdsPreviewLink(text)) return PREVIEW_IN_OWNER_UPDATE;
   const norm = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
@@ -160,14 +178,14 @@ export function ownerUpdateLeak(orgId: string, projectId: string, text: string):
     for (let i = 0; i + OWNER_UPDATE_REPEAT <= s.length; i++) if (hay.includes(s.slice(i, i + OWNER_UPDATE_REPEAT))) return true;
     return false;
   };
-  const paths = projectOverseerPaths(projectId);
+  const paths = projectId ? projectOverseerPaths(projectId) : null;
   const roster = readRoster(orgId);
-  const batons = projectBatons(orgId, projectId);
+  const batons = projectId ? projectBatons(orgId, projectId) : [];
   const PRIVATE = "This update repeats text from About this organization or your notes. Updates are for the client: write it again in your own words.";
   const OTHER = "This update repeats private text (a conversation's goal or briefing, the operator's instructions, or a person's profile or contact). Updates are for the client: write it again in your own words.";
   const sources: [string, string[]][] = [
-    [PRIVATE, [readOrgAbout(orgId), readNotes(paths.notes)]],
-    [OTHER, [readPoSettings(paths).extraSystemPrompt, ...batons.flatMap((b) => [b.goal, ...b.handoffs.map((h) => h.briefing), ...(b.offers ?? []).map((o) => o.briefing)])]],
+    [PRIVATE, [readOrgAbout(orgId), paths ? readNotes(paths.notes) : ""]],
+    [OTHER, [paths ? readPoSettings(paths).extraSystemPrompt : "", ...batons.flatMap((b) => [b.goal, ...b.handoffs.map((h) => h.briefing), ...(b.offers ?? []).map((o) => o.briefing)])]],
     [OTHER, roster.flatMap((x) => [x.voice, x.role, ...x.skills, x.referral?.why ?? ""])],
   ];
   for (const [what, texts] of sources) if (texts.some((t) => t && repeats(t))) return what;
@@ -183,7 +201,7 @@ export interface SendStatusRow {
   id: string;
   personId: string;
   person: string;
-  link?: "handoff" | "preview";
+  link?: "handoff" | "preview" | "owner";
   note: boolean;
   by: "operator" | "operator-via-overseer" | "project-overseer";
   event: "held" | "sent" | "delivered" | "read" | "failed" | "refused" | "unknown";
@@ -287,23 +305,21 @@ decisions they state are recorded with their exact words. So also:
    decision areas cover it, else the project's main stakeholder (who decides every area nobody else
    does), else the operator.
 3. Within your autonomy, act on them: start gathering sessions aimed at the right person, reconcile,
-   promote decisions that are drafted and consistent, and (at L3) start coding sessions that build on
-   the decisions promoted into the spec.
+   promote decisions that are drafted and consistent, and start coding sessions that build on the
+   decisions promoted into the spec.
 
 Each gap you file becomes a statechart that tracks it from open to done (the project page's Pipeline): its
 gatherings, its decisions and its builds. Every start names its gap (\`gap: "§gap/<name>"\`), or
 \`gap: "none"\` for work no gap covers. \`sova_pipeline\` shows where every gap stands.
 
-Its levels add to yours:
-- L0 propose: file ideas (gaps).
-- L1 gather: also start gathering sessions and offers, and run the reconciler.
-- L2 reconcile: also promote drafted decisions into the spec, approve or decline referrals.
-- L3 build: also start coding sessions that build on promoted decisions, within the caps.
+Its powers add to yours (each its own switch in "What may happen without you"): starting, offering and
+closing gatherings; messaging people on WhatsApp; posting owner updates; approving or declining proposed
+people; promoting decisions into the spec. Filing ideas (gaps) and running the reconciler are always allowed.
 
-The statecharts also act by themselves, at the level in force: they reconcile when a gathering on a gap ends
-with decisions recorded (L1), promote a gap's drafted decisions whose author decides the area (L2),
-start a gap's build once all its live decisions are promoted (L3, its first prompt made from them),
-start a gathering you planned (\`plan: true\`, L1), and close their own older gathering nobody wrote in
+The statecharts also act by themselves, under the same switches: they reconcile when a gathering on a gap ends
+with decisions recorded, promote a gap's drafted decisions whose author decides the area (Promote), start a
+gap's build once all its live decisions are promoted (Start coding sessions, its first prompt made from
+them), start a gathering you planned (\`plan: true\`, Start gatherings), and close their own older gathering nobody wrote in
 once a newer one to the same person is open. Don't do these again by hand: read the feed first.
 
 In a run the operator did not start, an act that reaches a person (a gathering or offer, closing one, a
@@ -338,7 +354,7 @@ Corrections also cover a gap done too early and a session linked to the wrong ga
   day, and when the operator asks you to. Plain, short words about what changed for them: never tools,
   branches, files, sessions, models, ids or costs, never judgments about people, and never anything
   from "About this organization", your notes, a goal or a person's profile.
-- You can message roster people on WhatsApp (\`sova_send_to_person\`, L1): their own link to one of
+- You can message roster people on WhatsApp (\`sova_send_to_person\`, its WhatsApp power on your own): their own link to one of
   this project's gathering sessions, their own link to a public preview of this project (by its id,
   \`pv_…\`), a short note, or a link with a note. When you act on your own, each message waits in the
   hold, where the operator can cancel it, and goes only in the person's working hours. You never see
@@ -366,7 +382,7 @@ Corrections also cover a gap done too early and a session linked to the wrong ga
   asked for it. When the area doesn't fit, don't promote it: tell the operator which decision it is
   and why its area looks wrong (they set it on the project page, and then the main stakeholder or
   they decide it), or ask with \`sova_card\`.
-- At L3, on your own, you may start a coding session to build on decisions promoted into the spec. The
+- With Start coding sessions On for you, on your own you may start a coding session to build on decisions promoted into the spec. The
   gaps you file (\`§gap/…\`) are yours, for gathering.
 - Never state a gap's state from memory: read it with sova_pipeline in this turn first.
 - A preview reaches a person by its id: send it with \`sova_send_to_person\` and its \`preview\` id
@@ -400,6 +416,12 @@ const buildNote = (d: DecisionRow): string =>
 
 const namesOf = (roster: Person[]): Record<string, string> => Object.fromEntries(roster.map((x) => [x.id, x.name]));
 
+/** The project's open owner requests, as sova_project shows them: nothing when there are none. */
+function ownerRequestsPart(orgId: string, projectId: string): string[] {
+  const t = ownerRequestsLines(orgId, projectId);
+  return t ? ["", t] : [];
+}
+
 async function orgRead(orgId: string, projectId: string): Promise<string[]> {
   const project = placedProject(orgId, projectId);
   if (!project) return [];
@@ -407,6 +429,7 @@ async function orgRead(orgId: string, projectId: string): Promise<string[]> {
   const active = roster.filter((x) => x.status === "active");
   const proposed = roster.filter((x) => x.status === "proposed");
   const batons = projectBatons(orgId, projectId);
+  const entries = await specEntries(projectId);
   const nm = namesOf(roster);
   let dec: DecisionsInfo | null = null;
   let decErr = "";
@@ -441,7 +464,10 @@ async function orgRead(orgId: string, projectId: string): Promise<string[]> {
     conflicts.length ? conflicts.map((c) => `- ${c.id} · ${c.areaKey} · routed to ${nm[c.routedTo] ?? c.routedTo} (${c.routeReason})`).join("\n") : "(none)",
     "",
     "## Spec",
-    dec ? `${dec.spec.exists ? "exists" : "none yet"} · ${dec.spec.promoted} promoted${builtCounts(dec)} · ${dec.spec.drafted} drafted, not promoted${dec.spec.frozen ? " · frozen" : ""}` : "(unavailable)",
+    // §app.project-overseer/tools: every entry the main line's spec has, then the promoted decisions.
+    dec ? `${entries === null ? (dec.spec.exists ? "exists · " : "none yet · ") : entries === 0 ? "none yet · " : `${entries} entries · `}${dec.spec.promoted} promoted requirements${builtCounts(dec)} · ${dec.spec.drafted} drafted, not promoted${dec.spec.frozen ? " · frozen" : ""}` : "(unavailable)",
+    // §app.project-assistant/requests: the owner's open requests, data for the operator (never a task of its own).
+    ...ownerRequestsPart(orgId, projectId),
   ];
 }
 
@@ -876,6 +902,41 @@ export async function postOwnerUpdate(orgId: string, projectId: string, body: st
   if (fx?.error) throw new Error(fx.error);
   return { update: fx?.result as ProjectUpdate, owner: owner?.name ?? "" };
 }
+
+// ---- the project's settings: its placement's part (§app.project-overseer/settings) ---------------------------
+
+// The project overseer's sova_settings changes these through the routes' own writes, as the operator (it applies
+// only in a turn the operator started, or at their Apply on its card).
+setPlacementDeps({
+  read(projectId) {
+    const orgId = orgOfProject(projectId);
+    const p = orgId ? readProjects(orgId).find((x) => x.id === projectId) : undefined;
+    return p ? { "project.stakeholder": p.stakeholder ?? null, "project.ownerHidden": p.ownerHidden === true, "project.frozen": p.spec?.frozen === true } : null;
+  },
+  stakeholderRefusal(projectId, personId) {
+    const orgId = orgOfProject(projectId);
+    const p = orgId ? findPerson(orgId, personId) : undefined;
+    return p && p.status === "active" ? null : "Only an active person on the roster can be a project's main stakeholder.";
+  },
+  nameOf(personId) {
+    for (const o of readIndex().orgs) {
+      try {
+        const p = findPerson(o.id, personId);
+        if (p) return p.name;
+      } catch {
+        // an org that doesn't open: skipped
+      }
+    }
+    return null;
+  },
+  async write(projectId, field, to) {
+    const orgId = orgOfProject(projectId);
+    if (!orgId) throw new OrgError("No organization places this project any more.", 409);
+    if (field === "project.frozen") await setFrozen(orgId, projectId, to === true);
+    else if (field === "project.ownerHidden") await patchPlacement(orgId, projectId, { ownerHidden: to === true });
+    else await patchPlacement(orgId, projectId, { stakeholder: typeof to === "string" ? to : null });
+  },
+});
 
 // ---- the contribution ---------------------------------------------------------------------------------------
 

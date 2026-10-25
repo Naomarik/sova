@@ -60,6 +60,7 @@ import {
   recordIdOf,
   recordSlug,
   specDirOf,
+  specHash,
   specExists,
   SpecToolError,
   writeProjectDraft,
@@ -290,26 +291,7 @@ function assignRecordIds(root: string, store: DecisionStore): void {
 
 // ---- spec status ------------------------------------------------------------------------------------------
 
-/** SHA-256 over the current spec's manifest and claims (paths + bytes), "" when there is none. */
-export function specHash(root: string): string {
-  const dir = specDirOf(root);
-  if (!existsSync(join(dir, "manifest.json"))) return "";
-  const h = createHash("sha256");
-  const walk = (rel: string) => {
-    const abs = join(dir, rel);
-    let st;
-    try {
-      st = statSync(abs);
-    } catch {
-      return;
-    }
-    if (st.isDirectory()) for (const n of readdirSync(abs).sort()) walk(join(rel, n));
-    else if (st.isFile()) h.update(`${rel}\0`).update(readFileSync(abs)).update("\0");
-  };
-  walk("manifest.json");
-  walk("claims");
-  return h.digest("hex");
-}
+export { specHash };
 
 function specStatus(orgId: string, projectId: string, store: DecisionStore): SpecStatus {
   const project = projectOf(orgId, projectId);
@@ -1278,6 +1260,11 @@ async function promoteEffect(orgId: string, projectId: string, e: Effect): Promi
       promoted = [];
     }
   }
+  // The same decisions in their conversations' drafts read promoted (§app.requirements/draft-approval).
+  if (promoted.length)
+    await import("./conversation-draft-routes")
+      .then((m) => m.markDecisionItemsPromoted(projectId, promoted))
+      .catch((err) => console.warn(`[reconcile] conversation drafts after a promotion: ${err instanceof Error ? err.message : String(err)}`));
   const by = e.by === "overseer" || e.by === "bulk" ? e.by : "operator-explicit";
   const sha = commit && "sha" in commit ? commit.sha : undefined;
   return { promoted, refused, textHashes, ...(sha ? { commit: { sha } } : {}), ...(commit ? { commitInfo: commit } : {}), ...(draft ? { draft } : {}), specHash: specHash(project.root), at: d.now().getTime() };

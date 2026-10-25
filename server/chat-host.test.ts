@@ -26,11 +26,15 @@ const { FakeDriver } = await import("./chat-runtime/fake-driver");
 const { ChatSupervisor } = await import("./chat-runtime/supervisor");
 const { activeConfigFailure, BusyError, ConfigError, disposeAllChats, serverToolSpec } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
+const { targetDir } = await import("./targets");
 // Start times as on Linux (/proc); on macOS none (no ps spawned: the unit tier forbids it), so locks read by pid alone.
 const { procStart, setProcStartForTest } = await import("./chat-runtime/writer-lock");
 setProcStartForTest((pid) => procStart(pid, "linux"));
 const { PROFILE_ENTRY } = await import("../shared/profiles");
 const { LINK_MEMBER_ENTRY } = await import("../shared/mesh-links");
+const { CHAT_CLOSED_CLOSE_CODE } = await import("../shared/protocol");
+const { isPermanentClose } = await import("../src/lib/socket");
+const { UNREACHABLE } = await import("./chat-handle-remote");
 
 after(async () => {
   await disposeAllChats();
@@ -56,8 +60,10 @@ function session(o: { extra?: object[]; fresh?: boolean } = {}): { path: string;
   return { path: canonicalPath(path), id };
 }
 
-/** Two ends of an in-memory stream, as a connected socket pair. */
-function pair(): [Duplex, Duplex] {
+/** Two ends of an in-memory stream, as a connected socket pair. `later`: each write lands on the
+    other end on a later turn, as over a socket, so a frame answered at once doesn't re-enter the
+    link that is still reading the frame before it. */
+function pair(later = false): [Duplex, Duplex] {
   const ends: Duplex[] = [];
   for (let i = 0; i < 2; i++)
     ends.push(
@@ -65,11 +71,13 @@ function pair(): [Duplex, Duplex] {
         allowHalfOpen: false, // as a socket: one end closing closes the other
         read() {},
         write(chunk, _enc, cb) {
-          ends[1 - i]!.push(chunk);
+          if (later) setImmediate(() => ends[1 - i]!.push(chunk));
+          else ends[1 - i]!.push(chunk);
           cb();
         },
         final(cb) {
-          ends[1 - i]!.push(null);
+          if (later) setImmediate(() => ends[1 - i]!.push(null));
+          else ends[1 - i]!.push(null);
           cb();
         },
       }),
@@ -98,7 +106,9 @@ afterEach(async () => {
 
 type Connect = typeof import("./chat-runtime/link").connectLink;
 /** `wrap`: the router's connect seen through it (a link that misbehaves). */
-function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir: string; live: boolean }; resumes?: ResumeCall[]; wrap?: (c: Connect) => Connect } = {}) {
+/** `sup`: the supervisor's own knobs (its clock, idle time, exit wait). */
+/** `deps`: the router's test-only waits; `openTrail`: each in-process chat host's open trail. */
+function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir: string; live: boolean }; resumes?: ResumeCall[]; wrap?: (c: Connect) => Connect; sup?: { now?: () => number; idleMs?: number; exitWaitMs?: number }; later?: boolean; deps?: { bootWaitMs?: number; openWaitMs?: number; slowStartMs?: number }; openTrail?: ConstructorParameters<typeof ChatRuntimeHost>[0]["openTrail"] } = {}) {
   const driver = new FakeDriver();
   // Its own records and socket paths: a later router takes back only these units.
   const dir = mkdtempSync(join(agentDir, "sup-"));
@@ -119,11 +129,11 @@ function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir
     if (!host || startOf.get(sock) !== spec) {
       startOf.set(sock, spec);
       control.delete(sock);
-      host = new ChatRuntimeHost({ path: spec.env.SOVA_CHAT_PATH!, sessionId: spec.env.SOVA_CHAT_ID!, unit: spec.unit, build: opts.build, startedAt: 1, exit: (c) => exits.push(c), log: quiet, tickMs: 60_000 });
+      host = new ChatRuntimeHost({ path: spec.env.SOVA_CHAT_PATH!, sessionId: spec.env.SOVA_CHAT_ID!, unit: spec.unit, build: opts.build, startedAt: 1, exit: (c) => exits.push(c), log: quiet, tickMs: 60_000, ...(o.openTrail ? { openTrail: o.openTrail } : {}) });
       hosts.set(sock, host);
       made.hosts.push(host);
     }
-    const [a, b] = pair();
+    const [a, b] = pair(o.later);
     const runtimeEnd = new Link(a as never, { log: quiet });
     const link = new Link(b as never, { log: quiet });
     made.links.push(runtimeEnd, link);
@@ -148,7 +158,7 @@ function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir
   // every test: the real one would act on the shared in-flight markers.
   const resumes = o.resumes ?? [];
   const resumeCrashed = (path: string, since: number, _before: unknown, done?: () => void) => void resumes.push({ path, since, ...(done ? { done } : {}) });
-  const router = new ChatHostRouter(++epoch, o.build ?? "b1", { driver, connect: o.wrap ? o.wrap(connect) : connect, supervisor, bun: "bun" in o ? () => o.bun ?? null : anyBun, ...(o.gen ? { gen: o.gen } : {}), resumeCrashed });
+  const router = new ChatHostRouter(++epoch, o.build ?? "b1", { driver, connect: o.wrap ? o.wrap(connect) : connect, supervisor: { ...supervisor, ...o.sup }, bun: "bun" in o ? () => o.bun ?? null : anyBun, ...(o.gen ? { gen: o.gen } : {}), resumeCrashed, ...o.deps });
   made.routers.push(router);
   // The next server: a router over the same units (a restart), with a higher epoch.
   // `delayMs`: each of its connects takes that long first (a slow take-back).
@@ -184,6 +194,138 @@ test("an ordinary chat runs in a process of its own; a link member is ordinary",
   const m = await t.router.acquire(member.path, false);
   assert.equal(m?.where, "process");
   assert.equal(t.driver.started.length, 2);
+  t.router.detach();
+});
+
+/** A tab on chat `h`, as the server holds it (attach in this process would run the pane's whole
+    greeting through the in-memory link at once), and the chat's state as it reports it: `quiet`,
+    with that tab attached. */
+function paneOn(router: unknown, h: unknown, client: { send(m: unknown): void; close(code?: number): void }, quiet = true): void {
+  const handle = h as { clients: Map<string, unknown>; ids: Map<unknown, string>; mirror: { quiet: { quiet: boolean; clients: number; since: number } } };
+  handle.clients.set("k1", client);
+  handle.ids.set(client, "k1");
+  handle.mirror = { ...handle.mirror, quiet: { ...handle.mirror.quiet, quiet, clients: 1, since: Date.now() } };
+  (router as { hooks: { state(h: unknown): void } }).hooks.state(h);
+}
+
+test("idle stop: a quiet chat with a tab attached closes after the idle time; the tab is told it closed, and only its next open starts the chat again", async () => {
+  // The supervisor's clock, moved on by hand (its waits still pass in real time).
+  let ahead = 0;
+  const t = setup({ later: true, sup: { now: () => Date.now() + ahead, idleMs: 30 * 60_000, exitWaitMs: 50 } });
+  const sup = (t.router as unknown as { sup: InstanceType<typeof ChatSupervisor> }).sup;
+  const s = session();
+  const h = await t.router.acquire(s.path, false);
+  const got: { type: string; code?: string; reason?: string }[] = [];
+  const closes: number[] = [];
+  // A tab attached, as ws.ts attaches one; the chat reports its state with it attached.
+  h.attach({ wire: 2, send: (m) => void got.push(m as never), close: (code) => void closes.push(code ?? 0) });
+  const said = () => (h as unknown as { mirror: { quiet: { quiet: boolean; clients: number } } }).mirror.quiet;
+  for (let i = 0; i < 50 && said().clients !== 1; i++) await new Promise((r) => setTimeout(r, 20));
+  assert.equal(said().clients, 1, "the chat says the tab is attached");
+  assert.equal(said().quiet, true);
+  assert.ok(got.some((m) => m.type === "hello"), "the tab had its hello");
+  // 29 minutes on: still running.
+  ahead += 29 * 60_000;
+  await sup.tick();
+  assert.deepEqual(t.exits, []);
+  assert.equal(t.router.get(s.path), h);
+  // 31: asked to close, it accepts though the tab is attached.
+  ahead += 2 * 60_000;
+  await sup.tick();
+  await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(t.exits, ["idle"]);
+  assert.equal(t.router.get(s.path), undefined, "the router is done with it");
+  // The tab: told it closed, never told to reconnect; its socket closed by the server.
+  assert.deepEqual(got.filter((m) => m.type === "closed" || m.type === "error"), [{ type: "closed", reason: "idle" }]);
+  assert.deepEqual(closes, [CHAT_CLOSED_CLOSE_CODE], "a code no tab retries: an older bundle, which doesn't know `closed`, stays down too");
+  assert.ok(isPermanentClose(CHAT_CLOSED_CLOSE_CODE));
+  // Nothing starts it again on its own.
+  ahead += 60 * 60_000;
+  await sup.tick();
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(t.driver.started.length, 1, "no second process");
+  // The tab's send opens it again (ws.ts acquires on its connect, then hands the message on): one new process.
+  const again = await t.router.acquire(s.path, false);
+  assert.notEqual(again, h);
+  assert.equal(t.driver.started.length, 2);
+  t.router.detach();
+});
+
+test("archive: a tab on the chat is told it closed, never to reconnect (which would start the archived chat again)", async () => {
+  const t = setup({ later: true });
+  const s = session();
+  const h = await t.router.acquire(s.path, false);
+  const got: { type: string; code?: string; reason?: string }[] = [];
+  const closes: number[] = [];
+  h.attach({ wire: 2, send: (m) => void got.push(m as never), close: (code) => void closes.push(code ?? 0) });
+  for (let i = 0; i < 50 && !got.some((m) => m.type === "hello"); i++) await new Promise((r) => setTimeout(r, 20));
+  assert.ok(got.some((m) => m.type === "hello"), "the tab had its hello");
+  // As archiveSession closes it (sessions-index.ts).
+  assert.equal(await t.router.close(s.path, "Session archived; its runtime was closed.", { quiet: "archived" }), true);
+  await new Promise((r) => setTimeout(r, 100));
+  assert.deepEqual(t.exits, ["archived"]);
+  assert.deepEqual(got.filter((m) => m.type === "closed" || m.type === "error"), [{ type: "closed", reason: "archived" }], "no `reloaded`: a tab that reconnects reopens the chat");
+  assert.deepEqual(closes, [CHAT_CLOSED_CLOSE_CODE], "a code no tab retries: an older bundle, which doesn't know `closed`, stays down too");
+  assert.ok(isPermanentClose(CHAT_CLOSED_CLOSE_CODE));
+  assert.equal(t.router.get(s.path), undefined);
+  assert.equal(t.driver.started.length, 1);
+  t.router.detach();
+});
+
+test("archive: what the chat took before it closed reaches its tab first (a send's answer) or its caller (a call's), never handed back as unreachable", async () => {
+  const t = setup({ later: true });
+  const s = session();
+  const h = await t.router.acquire(s.path, false);
+  const got: { type: string; clientId?: string; code?: string }[] = [];
+  const client = { wire: 2 as const, send: (m: unknown) => void got.push(m as never), close: () => {} };
+  h.attach(client);
+  for (let i = 0; i < 50 && !got.some((m) => m.type === "hello"); i++) await new Promise((r) => setTimeout(r, 20));
+  // A send from the tab and a call from the server, both on their way when the archive starts.
+  h.clientMessage(client, { type: "prompt", text: "taken before the archive", clientId: "c-taken" } as never);
+  const call = h.send({ text: "a server's send", origin: "server" }).then(
+    (r) => ({ ok: true as const, r }),
+    (err: unknown) => ({ ok: false as const, message: err instanceof Error ? err.message : String(err) }),
+  );
+  await t.router.close(s.path, "Session archived; its runtime was closed.", { quiet: "archived" });
+  await new Promise((r) => setTimeout(r, 100));
+  const named = got.findIndex((m) => m.clientId === "c-taken");
+  const closed = got.findIndex((m) => m.type === "closed");
+  assert.ok(closed >= 0, "told closed");
+  assert.ok(named >= 0 && named < closed, `the chat's answer to the send reached the tab before \`closed\`: ${JSON.stringify(got.slice(-6))}`);
+  assert.notEqual(got[named]!.code, "refused", "the chat took it");
+  assert.ok(!got.some((m) => m.type === "error" && m.code === "reloaded"), "no reconnect");
+  const outcome = await call;
+  assert.ok(outcome.ok || !outcome.message.includes(UNREACHABLE), `a call the chat took is answered by it, never failed as unreachable: ${JSON.stringify(outcome)}`);
+  t.router.detach();
+});
+
+test("a close for a cleared Overseer or a moved project still tells its tabs to reconnect (they reopen the chat)", async () => {
+  const t = setup({ later: true });
+  const s = session();
+  const h = await t.router.acquire(s.path, false);
+  const got: { type: string; code?: string }[] = [];
+  h.attach({ wire: 2, send: (m) => void got.push(m as never), close: () => {} });
+  for (let i = 0; i < 50 && !got.some((m) => m.type === "hello"); i++) await new Promise((r) => setTimeout(r, 20));
+  await t.router.close(s.path, "The Overseer was cleared. Opening the new conversation.");
+  await new Promise((r) => setTimeout(r, 100));
+  assert.ok(got.some((m) => m.type === "error" && m.code === "reloaded"), "told to reconnect");
+  assert.ok(!got.some((m) => m.type === "closed"));
+  t.router.detach();
+});
+
+test("idle stop: a chat with a working worker, a tab attached or not, is never asked to close", async () => {
+  let ahead = 0;
+  const t = setup({ later: true, sup: { now: () => Date.now() + ahead, idleMs: 30 * 60_000, exitWaitMs: 50 } });
+  const sup = (t.router as unknown as { sup: InstanceType<typeof ChatSupervisor> }).sup;
+  const s = session();
+  const h = await t.router.acquire(s.path, false);
+  // The chat says a worker works (not quiet), with the tab attached.
+  paneOn(t.router, h, { send: () => {}, close: () => {} }, false);
+  ahead += 120 * 60_000;
+  await sup.tick();
+  await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(t.exits, [], "never asked: not quiet");
+  assert.equal(t.router.get(s.path), h);
   t.router.detach();
 });
 
@@ -429,10 +571,10 @@ test("a worker's own session file is refused for good with the subagent-session 
   }
 });
 
-test("a chat whose folder is gone is refused before any process, and remembered until the folder is back", async () => {
+test("a remote chat whose placeholder folder is gone is refused before any process, and remembered until the folder is back", async () => {
   const t = setup();
-  const gone = join(agentDir, "gone");
-  mkdirSync(gone);
+  const gone = targetDir("acme", "/srv/gone");
+  mkdirSync(gone, { recursive: true });
   const s = session();
   writeFileSync(s.path, readFileSync(s.path, "utf8").replace(JSON.stringify(cwd), JSON.stringify(gone)));
   const old = new Date(Date.now() - 10 * 60_000);
@@ -441,10 +583,23 @@ test("a chat whose folder is gone is refused before any process, and remembered 
   for (let i = 0; i < 2; i++) await assert.rejects(t.router.acquire(s.path, false), (err: unknown) => err instanceof ConfigError && err.cwd === gone);
   assert.ok(activeConfigFailure(s.path) instanceof ConfigError, "remembered");
   assert.equal(t.driver.started.length, 0, "no process for a doomed open");
-  mkdirSync(gone);
+  mkdirSync(gone, { recursive: true });
   assert.equal(activeConfigFailure(s.path), undefined, "the folder came back");
   const h = await t.router.acquire(s.path, false);
   assert.equal(h?.where, "process");
+  t.router.detach();
+});
+
+test("a local chat whose folder is gone is not refused: its process starts, to open it in the home folder (§app.shell/missing-folder-home)", async () => {
+  const t = setup();
+  const gone = join(agentDir, "gone-local");
+  const s = session();
+  writeFileSync(s.path, readFileSync(s.path, "utf8").replace(JSON.stringify(cwd), JSON.stringify(gone)));
+  const old = new Date(Date.now() - 10 * 60_000);
+  utimesSync(s.path, old, old);
+  const h = await t.router.acquire(s.path, false);
+  assert.equal(h?.where, "process");
+  assert.equal(activeConfigFailure(s.path), undefined);
   t.router.detach();
 });
 
@@ -567,4 +722,127 @@ test("a death the next server finds at its start: the dead process's last writes
   die(c, undefined);
   assert.notEqual(recentForeignWriteAgeSec(c.path), null);
   assert.equal(readLock(c.path), null);
+});
+
+// ---- the start-up trail (§app.chat-processes/boot-log) -------------------------------------------------
+
+/** What the router logs (`[chat-host] …`) while `fn` runs. */
+async function routerLog<T>(fn: () => Promise<T>): Promise<{ lines: string[]; result: PromiseSettledResult<T> }> {
+  const lines: string[] = [];
+  const was = console.log;
+  console.log = (...args: unknown[]) => void lines.push(args.map(String).join(" "));
+  try {
+    const result = await fn().then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason: unknown) => ({ status: "rejected" as const, reason }),
+    );
+    return { lines: lines.filter((l) => l.startsWith("[chat-host]")), result };
+  } finally {
+    console.log = was;
+  }
+}
+
+/** A chat process that answers on its socket and then never gets further: still booting (with the steps
+    `boot` sends, none for older code), or ready with an open that never answers (`opening` steps). */
+function stuckRuntime(driver: () => InstanceType<typeof FakeDriver>, o: { state: "booting" | "ready"; boot?: object[]; opening?: object[] }): Connect {
+  return (async (sock: string, opts: { build: string }) => {
+    const spec = [...driver().started].reverse().find((s) => s.env.SOVA_CHAT_SOCK === sock)!;
+    const [a, b] = pair();
+    const runtimeEnd = new Link(a as never, { log: quiet });
+    const link = new Link(b as never, { log: quiet });
+    made.links.push(runtimeEnd, link);
+    const hello = { t: "hello" as const, proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch: 0, build: opts.build, pid: 4242, startedAt: 1, unit: spec.unit, sessionId: spec.env.SOVA_CHAT_ID!, path: spec.env.SOVA_CHAT_PATH!, state: o.state, seq: 0 };
+    setImmediate(() => {
+      for (const f of o.boot ?? []) runtimeEnd.send(f as never);
+    });
+    runtimeEnd.on("open", () => {
+      for (const f of o.opening ?? []) runtimeEnd.send(f as never);
+    });
+    return { link, hello };
+  }) as never;
+}
+
+const deathsOf = (t: { supervisor: { deathsFile(): string } }) =>
+  readFileSync(t.supervisor.deathsFile(), "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l) as { detail?: string });
+
+test("a start that never says ready: the server's log and the stopped chat's record name the step it was stuck in; the error is unchanged", async () => {
+  let t: ReturnType<typeof setup>;
+  t = setup({
+    deps: { bootWaitMs: 150 },
+    wrap: () =>
+      stuckRuntime(() => t.driver, {
+        state: "booting",
+        boot: [
+          { t: "boot", phase: "starting", step: "chat code", stepMs: 0, totalMs: 40 },
+          { t: "boot", phase: "starting", step: "extensions start", stepMs: 1_500, totalMs: 2_000 },
+        ],
+      }),
+  });
+  const s = session();
+  const { lines, result } = await routerLog(() => t.router.acquire(s.path, false));
+  assert.equal(result.status, "rejected");
+  assert.equal((result as PromiseRejectedResult).reason.message, "This chat's process didn't start: it could not start its process (The chat process didn't answer (hello) in time.)");
+  const said = lines.find((l) => l.includes(`${s.id}: not ready after`));
+  assert.match(said ?? lines.join("\n"), /: not ready after \d+\.\d s; stuck in extensions start for 1\.\d s \(answered after \d+\.\d s\)$/);
+  const detail = deathsOf(t).at(-1)?.detail ?? "";
+  assert.match(detail, /^no hello: The chat process didn't answer \(hello\) in time\.; stuck in extensions start for 1\.\d s \(answered after \d+\.\d s\)$/);
+});
+
+test("a start on older code reports no step: the record says so", async () => {
+  let t: ReturnType<typeof setup>;
+  t = setup({ deps: { bootWaitMs: 100 }, wrap: () => stuckRuntime(() => t.driver, { state: "booting" }) });
+  const s = session();
+  const { lines, result } = await routerLog(() => t.router.acquire(s.path, false));
+  assert.equal(result.status, "rejected");
+  assert.match(lines.find((l) => l.includes(`${s.id}: not ready after`)) ?? "", /; no step reported \(answered after/);
+  assert.match(deathsOf(t).at(-1)?.detail ?? "", /; no step reported \(answered after \d+\.\d s\)$/);
+});
+
+test("an open that never answers: the server's log names the step the open was in; the error is unchanged", async () => {
+  let t: ReturnType<typeof setup>;
+  t = setup({ deps: { openWaitMs: 150 }, wrap: () => stuckRuntime(() => t.driver, { state: "ready", opening: [{ t: "boot", phase: "opening", step: "extensions start", stepMs: 0, totalMs: 300 }] }) });
+  const s = session();
+  const { lines, result } = await routerLog(() => t.router.acquire(s.path, false));
+  assert.equal(result.status, "rejected");
+  assert.equal((result as PromiseRejectedResult).reason.message, "This chat's process didn't start: it did not open in its process (The chat process didn't answer (opened) in time.)");
+  assert.match(
+    lines.find((l) => l.includes(`${s.id}: its open got no answer`)) ?? lines.join("\n"),
+    /: its open got no answer after \d+\.\d s \(The chat process didn't answer \(opened\) in time\.\): stuck in extensions start for 0\.\d s$/,
+  );
+});
+
+test("a chat's open names its steps in order, and its server hears them; a fast start adds no line to the server's log, a slow one adds one", async () => {
+  const steps: string[] = [];
+  const ends: boolean[] = [];
+  const heard: string[] = [];
+  const t = setup({
+    openTrail: (send) => ({
+      step: (name) => {
+        steps.push(name);
+        send({ t: "boot", phase: "opening", step: name, stepMs: 0, totalMs: 0 });
+      },
+      finish: (ok = true) => void ends.push(ok),
+    }),
+    wrap: (c) =>
+      (async (sock: string, opts: never) => {
+        const r = await (c as (s: string, o: never) => Promise<{ link: InstanceType<typeof Link> }>)(sock, opts);
+        r.link.on("boot", (f) => void heard.push(f.step));
+        return r;
+      }) as never,
+  });
+  const fast = await routerLog(() => t.router.acquire(session().path, false));
+  assert.equal(fast.result.status, "fulfilled");
+  assert.deepEqual(steps, ["open file", "loadout", "extensions load", "session", "extensions start", "finish"]);
+  assert.deepEqual(ends, [true]);
+  assert.deepEqual(heard, steps, "each step reached the server");
+  assert.deepEqual(fast.lines.filter((l) => / started in /.test(l)), []);
+
+  const slow = setup({ deps: { slowStartMs: 0 } });
+  const s = session();
+  const logged = await routerLog(() => slow.router.acquire(s.path, false));
+  assert.equal(logged.result.status, "fulfilled");
+  assert.match(logged.lines.find((l) => l.includes(`${s.id}: started in`)) ?? "", /: started in \d+\.\d s \(answered after \d+\.\d s, ready after \d+\.\d s, opened after \d+\.\d s\)$/);
 });

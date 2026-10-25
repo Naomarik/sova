@@ -22,20 +22,23 @@ import { closeChat, cwdOverride, getModelRuntime, heldChatState, isSessionBusy, 
 import { isUnread, isViewing, readSeen, turnErrorShows } from "./seen";
 import { contextWindow } from "./models";
 import { parseTargetCwd } from "./targets";
-import { firstText, headerOf, lineEntry, lineMay, toHEntry } from "./harness/pi/reader";
+import { firstText, headerOf, joinedText, lineEntry, lineMay, toHEntry } from "./harness/pi/reader";
 import { contextStep } from "./harness/pi/usage";
 import { type AlignScan, readAlignScan } from "./align-state";
 import { WorkerSessions } from "./worker-sessions";
 import { isOverseerId, overseerDir } from "./overseer-store";
 import { readDecisionSettings } from "./decide-settings";
-import { readSignals, signalsOverlay, workerSignalsOverlay } from "./signals-store";
+import { readSignals, signalsOverlay, withoutRestartAsk } from "./signals-store";
+import { withOpenOffer } from "./session-offers";
 import { dropSessionTags, tagsFor } from "./session-tags";
 import { pruneReadiness, readinessOverlay } from "./merge-readiness";
 import { listGeneration } from "./list-generation";
-import { projectOverseerOfPath } from "./project-overseer-store";
+import { projectOverseerOfPath, readPoState } from "./project-overseer-store";
+import { projectOverseerUnread } from "./project-overseer-unread";
 import { projectCodingIds, projectKeeps, projectSessionLookup } from "./project-sessions";
 import { reservedRoots } from "./projects/contributions";
 import { removeMemory } from "./memory/store";
+import { removeSessionTours } from "./tours/lifecycle";
 
 /**
  * What another layer adds to the list (organizations: a baton session's `baton`, an org session's `org`), and
@@ -109,6 +112,8 @@ interface CacheEntry {
   outline: OutlineScan | null;
   /** The file's last finished assistant reply (tail window), for the unread dot and the turn-error mark. */
   lastReply: LastReply | null;
+  /** The Ended line's excerpts, found in the same tail window (§app.overseer/list-overview). */
+  ending: TailEnding;
   /** The file carries the Overseer marker. Whether it IS the Overseer's is decided per read
       (`overseerOf`): the answer changes with overseer-state.json, not with the file. */
   marked: boolean;
@@ -452,7 +457,49 @@ export function finishedReply(h: HEntry | null): LastReply | null {
  * null when the window has none.
  */
 export async function readTailReply(path: string, size: number): Promise<LastReply | null> {
+  return (await readTailEnding(path, size)).reply;
+}
+
+/** How much of the last user message and of the final reply the Ended line keeps (§app.overseer/list-overview). */
+export const ENDING_EXCERPT = 200;
+
+/** How a session ended, from its tail window: the opening of its last finished reply and of its
+    last user message (a wake nudge, a link message or a topic batch is not one), each with its time. */
+export interface TailEnding {
+  /** `stop` and `error` are the reply's stop reason and error (LastReply's); `close` is the last
+      ENDING_CLOSE characters of its text, kept preview links redacted, whitespace collapsed (the
+      roundup's question check, §app.overseer/roundup). */
+  reply?: { at: number; text: string; stop?: string; error?: string; close?: string };
+  user?: { at: number; text: string };
+}
+
+/** A short excerpt, whitespace collapsed, kept preview links redacted before the cut, and copied so
+    it never keeps its (possibly huge) source string alive (a slice is a view in Bun). */
+function excerpt(text: string): string {
+  const t = redactPreviewLinks(text.slice(0, ENDING_EXCERPT * 10)).replace(/\s+/g, " ").trim();
+  const cutText = t.length > ENDING_EXCERPT ? `${t.slice(0, ENDING_EXCERPT - 1)}…` : t;
+  return Buffer.from(cutText, "utf8").toString("utf8");
+}
+
+/** How much of the final reply's ending the tail keeps for the roundup's question check. */
+export const ENDING_CLOSE = 1200;
+
+/** The reply's last ENDING_CLOSE characters, redacted and collapsed like excerpt, and copied. */
+function closeOf(text: string): string {
+  const t = redactPreviewLinks(text.slice(-ENDING_CLOSE * 10)).replace(/\s+/g, " ").trim();
+  return Buffer.from(t.slice(-ENDING_CLOSE), "utf8").toString("utf8");
+}
+
+/**
+ * One backward scan of the tail window (readTailReply's): the last finished reply, and the excerpts
+ * the Ended line shows (its text's opening, and the last user message's), found within the same
+ * bounded window, so a listing never reads a whole transcript for them.
+ */
+export async function readTailEnding(path: string, size: number): Promise<{ reply: LastReply | null; ending: TailEnding }> {
   const fh = await open(path, "r");
+  let reply: LastReply | null = null;
+  const ending: TailEnding = {};
+  const done = () => ({ reply, ending });
   try {
     const floor = Math.max(0, size - MAX_TAIL);
     let end = size;
@@ -461,7 +508,7 @@ export async function readTailReply(path: string, size: number): Promise<LastRep
       const start = Math.max(floor, end - CHUNK);
       const chunk = Buffer.alloc(end - start);
       const { bytesRead } = await fh.read(chunk, 0, chunk.length, start);
-      if (bytesRead < chunk.length) return null;
+      if (bytesRead < chunk.length) return done();
       end = start;
       const buf = carry.length ? Buffer.concat([chunk, carry]) : chunk;
       let stop = buf.length;
@@ -469,17 +516,32 @@ export async function readTailReply(path: string, size: number): Promise<LastRep
         const i = stop > 0 ? buf.lastIndexOf(NL, stop - 1) : -1;
         if (i < 0 && start > 0) break;
         const line = buf.subarray(i + 1, stop);
-        if (line.includes('"assistant"')) {
-          // A torn trailing line or one that isn't JSON reads as null: skipped.
-          const hit = finishedReply(lineEntry(line));
-          if (hit) return hit;
+        const wantReply = !reply && line.includes('"assistant"');
+        const wantUser = !ending.user && line.includes('"user"');
+        // A torn trailing line or one that isn't JSON reads as null: skipped.
+        const h = wantReply || wantUser ? lineEntry(line) : null;
+        if (wantReply && h?.kind === "assistant") {
+          const hit = finishedReply(h);
+          if (hit) {
+            reply = hit;
+            const said = joinedText(h, { images: false });
+            const close = closeOf(said);
+            ending.reply = { at: hit.at, text: excerpt(said), stop: hit.stopReason, ...(hit.error ? { error: hit.error } : {}), ...(close ? { close } : {}) };
+          }
+        } else if (wantUser && h) {
+          if (h.kind === "user") {
+            const said = joinedText(h, { images: false });
+            const at = entryTime(h);
+            if (said.trim() && !notTitle(said) && at !== null) ending.user = { at, text: excerpt(said) };
+          }
         }
-        if (i < 0) return null;
+        if (reply && ending.user) return done();
+        if (i < 0) return done();
         stop = i;
       }
       carry = buf.subarray(0, stop);
     }
-    return null;
+    return done();
   } finally {
     await fh.close();
   }
@@ -688,7 +750,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     const scan = await readOutline(path, st.size, hit?.outline ?? null);
     const outline = scan?.found ?? null;
     const ctx = await readTailContext(path, st.size);
-    const lastReply = await readTailReply(path, st.size);
+    const { reply: lastReply, ending } = await readTailEnding(path, st.size);
     const align = await readAlignScan(path, st.size, hit?.align ?? null);
     // A workspace session (an org's baton or overseer file) is listed under the dir it opens in on
     // THIS host; its header keeps the dir of the host that created it (§app.organizations/portability).
@@ -713,7 +775,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       ...(align.summary ? { align: align.summary } : {}),
       ...(profileField(head.profile) ? { profile: profileField(head.profile) } : {}),
     };
-    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan, lastReply, marked: head.overseer, align };
+    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan, lastReply, ending, marked: head.overseer, align };
     cache.set(path, entry);
     if (summary.outlineGist && summary.outlineGist !== hit?.summary.outlineGist) gistChanged(path);
     return withWindow(entry, resolveWindow);
@@ -783,6 +845,14 @@ export function cachedTitleOf(path: string): string | undefined {
   return hit ? withTitle(hit.summary, memoSessionTitleRecords()).title : undefined;
 }
 
+/** A session's display title as the list shows it (its stored title, else its name or first message,
+    else "Untitled"), reading the file when its summary is not cached or is stale; undefined when the
+    file is not a session. */
+export async function displayTitleOf(path: string): Promise<string | undefined> {
+  const s = await summarize(path).catch(() => null);
+  return s ? withTitle(s, memoSessionTitleRecords()).title : undefined;
+}
+
 /** ms epoch of a session's last assistant reply, from the cached tail read; undefined when unknown. */
 export function lastReplyAtOf(path: string): number | undefined {
   return cache.get(path)?.lastReply?.at;
@@ -791,6 +861,12 @@ export function lastReplyAtOf(path: string): number | undefined {
 /** A session's last finished reply, from the cached tail read; undefined when unknown. */
 export function lastReplyOf(path: string): LastReply | undefined {
   return cache.get(path)?.lastReply ?? undefined;
+}
+
+/** How the session ended, as the list's cache read it from the file's tail (no read here); undefined
+    while the file isn't cached. */
+export function endingOf(path: string): TailEnding | undefined {
+  return cache.get(path)?.ending;
 }
 
 /**
@@ -838,13 +914,31 @@ function decisionFields(
   const data = readSignals();
   const ctx = { enabled: true, seenAt: seen[s.id], viewing: isViewing(s.id) };
   const running = isSessionBusy(s.path) || (l?.activity ?? activityOf(own?.rec))?.state === "working";
-  const signals = signalsOverlay(s.id, { ...ctx, running }, data);
-  const workerSignals = workerSignalsOverlay(s.id, ctx, Date.now(), data);
+  // An open offer card asks the user too (§app.decisions/asks-user, §chat.offers/card).
+  const signals = withOpenOffer(s.id, signalsOverlay(s.id, { ...ctx, running }, data), running);
   return {
     ...(signals ? { signals } : {}),
-    ...(workerSignals ? { workerSignals } : {}),
     ...(tags ? { tags } : {}),
   };
+}
+
+/**
+ * The one async overlay of a finished row: a project overseer's count of unseen replies
+ * (`unreadReplies`, §app.overseer/seen), on its current conversation only and only while `unread`
+ * is set. The list and every single-row refresh both end here, so a row never loses its count on a
+ * refresh. Each project's counter is kept between reads (server/project-overseer-unread), shared
+ * with the project overseer page: a rebuild re-reads only what the file gained.
+ */
+async function withUnreadReplies(row: SessionSummary): Promise<SessionSummary> {
+  const projectId = row.unread ? row.projectOverseer?.projectId : undefined;
+  if (!projectId) return row;
+  try {
+    if (readPoState({ projectId })?.current !== row.id) return row;
+    return { ...row, unreadReplies: await projectOverseerUnread(projectId, row.path, row.seenAt) };
+  } catch {
+    // An unreadable state or file: the count is unknown, and absent says so.
+    return row;
+  }
 }
 
 /** How long a finished listing serves further callers, from its build's start (§app.session-list/listing-reuse). */
@@ -943,9 +1037,10 @@ async function buildSessions(): Promise<SessionSummary[]> {
     };
     // Merge readiness (§chat.worktrees/readiness): the last background answer; git is never awaited here.
     const readiness = readinessOverlay(row);
-    out.push(redactPreviewLinksDeep(readiness ? { ...row, readiness } : row, previewLabels));
+    out.push(redactPreviewLinksDeep(withoutRestartAsk(readiness ? { ...row, readiness } : row), previewLabels));
   }
   pruneReadiness(out);
+  for (let i = 0; i < out.length; i++) out[i] = await withUnreadReplies(out[i]!);
   out.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
   return out;
 }
@@ -966,15 +1061,40 @@ async function windowResolver(): Promise<WindowResolver | undefined> {
 
 /** One summary. `resolveWindow` is optional on purpose: without it the context gauge has no
  *  window (tests and any caller that must not spin up a ModelRuntime). */
-export async function getSessionSummary(path: string, resolveWindow?: WindowResolver): Promise<SessionSummary | null> {
+/** The stores a single-row summary reads besides its file, read once and shared by every row of
+    one request (the Overseer's history, a batch of refreshes). */
+export interface SummaryReads {
+  live: Map<string, LiveRecord>;
+  own: Map<string, RawLiveRecord>;
+  groups: Record<string, string>;
+  titles: ReturnType<typeof readSessionTitleRecords>;
+  seen: Record<string, number>;
+  attention: boolean;
+  fields: ReturnType<typeof fieldLookup>;
+}
+
+export function summaryReads(): SummaryReads {
+  return {
+    live: readLive(),
+    own: readOwnLiveRecords(),
+    groups: readAssignments(),
+    titles: readSessionTitleRecords(),
+    seen: readSeen(),
+    attention: readDecisionSettings().features.attention,
+    fields: fieldLookup(),
+  };
+}
+
+export async function getSessionSummary(path: string, resolveWindow?: WindowResolver, reads?: SummaryReads): Promise<SessionSummary | null> {
   const s = await summarize(path, resolveWindow);
   if (!s) return null;
-  const l = readLive().get(path);
-  const ownRec = readOwnLiveRecords().get(path);
-  const groupId = readAssignments()[s.id];
+  const r = reads ?? summaryReads();
+  const l = r.live.get(path);
+  const ownRec = r.own.get(path);
+  const groupId = r.groups[s.id];
   const worker = await workerSessions.isWorker(s.path).catch(() => false);
   const row: SessionSummary = {
-    ...withTitle(s, readSessionTitleRecords()),
+    ...withTitle(s, r.titles),
     ...outlineOverlay(s, liveOutline(l, ownRec)),
     live: liveField(l),
     workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
@@ -984,12 +1104,12 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     ...(groupId !== undefined ? { groupId } : {}),
     busy: isSessionBusy(s.path),
     ...heldChatField(s.path),
-    ...attentionFields(s, l, ownRec, readSeen()),
-    ...decisionFields(s, l, ownRec, readSeen(), readDecisionSettings().features.attention),
-    ...fieldLookup()(s.path, s.id, s.cwd),
+    ...attentionFields(s, l, ownRec, r.seen),
+    ...decisionFields(s, l, ownRec, r.seen, r.attention),
+    ...r.fields(s.path, s.id, s.cwd),
   };
   const readiness = readinessOverlay(row);
-  return redactPreviewLinksDeep(readiness ? { ...row, readiness } : row);
+  return withUnreadReplies(redactPreviewLinksDeep(withoutRestartAsk(readiness ? { ...row, readiness } : row)));
 }
 
 const archivedListeners = new Set<(sessionId: string) => void>();
@@ -1009,6 +1129,12 @@ function sessionArchived(id: string): void {
       console.error("[sessions] archive listener failed", err);
     }
   }
+}
+
+/** The transcript unlink is irreversible: residual tour cleanup must not misreport its outcome. */
+async function cleanDeletedTours(id: string): Promise<void> {
+  try { await removeSessionTours(id); }
+  catch { console.error("[sessions] Deleted chat tour cleanup is pending; a later sweep will retry."); }
 }
 
 export const SUBAGENTS_WORKING = "Subagents are working in this session. Stop them or wait for them to finish before archiving.";
@@ -1056,6 +1182,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
       if (!draftCounts(readDrafts()[s.id])) {
         await closeChat(s.path, "Session archived; its runtime was closed.");
         await unlink(s.path);
+        await cleanDeletedTours(s.id);
         cache.delete(s.path);
         setArchived(s.id, false);
         removeWebSession(s.id);
@@ -1073,7 +1200,8 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
   // Archiving is the close gesture: shut the held runtime down (running subagents die with it).
   // There is no idle timer anymore — a runtime lives until this, a reload, or server shutdown.
   if (archived) {
-    await closeChat(s.path, "Session archived; its runtime was closed.");
+    // Its open tabs keep what they show and don't reconnect: a reconnect would start it again.
+    await closeChat(s.path, "Session archived; its runtime was closed.", { quiet: "archived" });
     sessionArchived(s.id);
   }
   return { ok: true, summary: { ...s, archived } };
@@ -1211,6 +1339,7 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
     try {
       await closeChat(path, "Session deleted by archive cleanup; its runtime was closed.");
       await unlink(path);
+      await cleanDeletedTours(id);
       cache.delete(path);
       setArchived(id, false);
       removeWebSession(id);

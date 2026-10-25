@@ -151,6 +151,105 @@ export function showWorkersOfLabel(working: number, total: number, split: Workin
   return `${workersOfLabel(working, total, split)} — show ${!split || split.members === 0 ? "subagents" : "workers"}`;
 }
 
+/** A worker has ended once it is done, failed or stopped; every other status (starting, running,
+    stopping, waiting, restored) is live. The session's list keeps the ended ones for good. */
+export const workerEnded = (w: Pick<WorkerInfo, "status">): boolean => w.status === "done" || w.status === "error" || w.status === "killed";
+
+/** A session's workers split into live and ended, the ended by kind. */
+export interface WorkerTally {
+  live: number;
+  ended: number;
+  /** The ended by kind, only when the list names every ended worker; null: it can't say. */
+  kinds: { stopped: number; failed: number; done: number } | null;
+}
+
+/**
+ * Tallies a worker list. `total` is the record's own count (a live record lists at most 40
+ * workers, the live ones first), so the ended ones it trims still count as ended; the kinds are
+ * then unknown and left out rather than shown as a split that doesn't add up.
+ */
+export function tallyWorkers(workers: readonly Pick<WorkerInfo, "status">[], total?: number): WorkerTally {
+  let live = 0;
+  const kinds = { stopped: 0, failed: 0, done: 0 };
+  for (const w of workers) {
+    if (w.status === "killed") kinds.stopped++;
+    else if (w.status === "error") kinds.failed++;
+    else if (w.status === "done") kinds.done++;
+    else live++;
+  }
+  const listed = kinds.stopped + kinds.failed + kinds.done;
+  const ended = Math.max(listed, (total ?? 0) - live);
+  return { live, ended, kinds: ended === listed ? kinds : null };
+}
+
+/** "16 stopped, 2 failed": the ended by kind, a kind at 0 left out; undefined when unknown. */
+export function endedKinds(t: WorkerTally): string | undefined {
+  if (!t.kinds || t.ended === 0) return undefined;
+  const { stopped, failed, done } = t.kinds;
+  const parts = [stopped && `${stopped} stopped`, failed && `${failed} failed`, done && `${done} done`].filter(Boolean);
+  return parts.join(", ") || undefined;
+}
+
+/** "18 ended: 16 stopped, 2 failed" ("18 ended" when the kinds are unknown); undefined: none ended. */
+export function endedNote(t: WorkerTally | null | undefined): string | undefined {
+  if (!t || t.ended === 0) return undefined;
+  const kinds = endedKinds(t);
+  return kinds ? `${t.ended} ended: ${kinds}` : `${t.ended} ended`;
+}
+
+/** The idle row's words when nothing is live but some ended: "18 subagents, all ended". */
+export const allEndedLabel = (n: number): string => (n === 1 ? "1 subagent, ended" : `${n} subagents, all ended`);
+
+/** The composer's subagents trigger: what its ring draws (`working` of `total`), its narrow count
+    `n`, its wide words `text`, `say` (the words plus the ended note: a plain row's tooltip) and the
+    button's accessible name `label`. */
+export interface WorkersTrigger {
+  working: number;
+  total: number;
+  n: string;
+  text: string;
+  say: string;
+  label: string;
+}
+
+/**
+ * The subagents trigger, or null when there's no row. `total` is the live workers (or, before the
+ * session's list has come, the list count it falls back to), never fewer than `working`;
+ * `tally` (null before the list) names the ended ones. Idle, the row is offered only when it
+ * can open the pane: for the live ones, else, when every worker has ended, for those.
+ */
+export function workersTrigger(o: {
+  working: number;
+  total: number;
+  tally?: WorkerTally | null;
+  split?: WorkingSplit | null;
+  running: boolean;
+  canOpen: boolean;
+}): WorkersTrigger | null {
+  const working = Math.max(0, o.working);
+  // The list's total can lag the socket's working count: never draw more working than there are.
+  const total = Math.max(o.total, working);
+  const note = endedNote(o.tally);
+  const withNote = (words: string) => (note ? `${words} · ${note}` : words);
+  if (working > 0) {
+    const text = workersOfLabel(working, total, o.split);
+    const say = withNote(text);
+    return { working, total, n: `${working}/${total}`, text, say, label: `${say} — show ${!o.split || o.split.members === 0 ? "subagents" : "workers"}` };
+  }
+  if (o.running || !o.canOpen) return null; // an idle row is only worth having when it opens the pane
+  if (total > 0) {
+    const text = count(total, "subagent", "subagents");
+    const say = withNote(text);
+    return { working: 0, total, n: `${total}`, text, say, label: `${say} — show subagents` };
+  }
+  const ended = o.tally?.ended ?? 0;
+  if (ended === 0) return null;
+  const text = allEndedLabel(ended);
+  const kinds = endedKinds(o.tally!);
+  const say = kinds ? `${text}: ${kinds}` : text;
+  return { working: 0, total: ended, n: `${ended}`, text, say, label: `${say} — show subagents` };
+}
+
 /** "Team · Explain UX" for the one team behind a count, else nothing to add. */
 export const teamNote = (split: WorkingSplit | null | undefined): string | undefined =>
   split?.team && split.members > 0 ? `Team · ${split.team}` : undefined;

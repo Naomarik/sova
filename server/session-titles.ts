@@ -12,7 +12,8 @@ import { sessionsChanged } from "./list-generation";
  * Clearing an override puts the derived title — the session's first user message — back, which is
  * why the derived one is never copied in here.
  */
-const FILE = join(stateRoot(), "session-titles.json");
+/** Read at each use, never at import: the state root is the process's current one. */
+const file = (): string => join(stateRoot(), "session-titles.json");
 
 /** The cap lives in the wire contract, beside every other one; re-exported so this module's
     callers (and its tests) read the rule from the module that enforces it. */
@@ -33,7 +34,7 @@ export function cleanSessionTitle(raw: unknown): string | null {
 }
 
 /**
- * One stored title and who set it (§app.session-list/selecting-several-sessions). The file is
+ * One stored title and who set it. The file is
  * version 2: `titles[id]` is a bare string — a title stored before provenance existed, which
  * counts as explicit — or `{title, by, at}`. Only `by: "auto"` may ever be replaced by Sova's own
  * namer (server/session-autotitle.ts); every other title is explicit.
@@ -70,7 +71,7 @@ function load(): Record<string, StoredTitle> {
   // No prototype: an id is a plain key, and "__proto__" must stay one.
   const out: Record<string, StoredTitle> = Object.create(null);
   try {
-    const v = JSON.parse(readFileSync(FILE, "utf8"));
+    const v = JSON.parse(readFileSync(file(), "utf8"));
     const titles: unknown = v?.titles;
     if (!titles || typeof titles !== "object" || Array.isArray(titles)) return out;
     // One bad value must not cost the user every other title.
@@ -95,12 +96,12 @@ let titles = plain(records);
 
 /** Atomic (tmp + rename), then the in-memory maps are refreshed to what was written. */
 function save(next: Record<string, StoredTitle>): void {
-  mkdirSync(dirname(FILE), { recursive: true });
-  const tmp = `${FILE}.${process.pid}.tmp`;
+  mkdirSync(dirname(file()), { recursive: true });
+  const tmp = `${file()}.${process.pid}.tmp`;
   const out: Record<string, string | { title: string; by: SessionTitleBy; at?: number }> = {};
   for (const [id, t] of Object.entries(next)) out[id] = t.legacy ? t.title : { title: t.title, by: t.by, ...(t.at !== undefined ? { at: t.at } : {}) };
   writeFileSync(tmp, JSON.stringify({ version: 2, titles: out }));
-  renameSync(tmp, FILE);
+  renameSync(tmp, file());
   sessionsChanged();
   records = next;
   titles = plain(next);

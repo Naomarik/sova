@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mergeNumbers, NO_WORKTREES, readinessChip, readinessReason, worktreeChips, worktreesSummary, worktreeStatus } from "./worktrees";
+import { canReviewChanges, mergeNumbers, NO_WORKTREES, readinessChip, readinessReason, worktreeChips, worktreesSummary, worktreeStatus } from "./worktrees";
 import { readinessCount } from "./readiness";
 
 const merge = { target: "master", sha: "abc1234def", how: "tool" as const, at: 1 };
@@ -62,4 +62,32 @@ test("readinessChip's tone follows mergeability: success exactly where the row's
     ["blocked", "warn", false],
     ["stale", "warn", false],
   ]);
+});
+
+test("Review Changes (§chat.changes/entry): none on a branch with no commits; commits that cancel out keep it", () => {
+  const row = { status: "active" as const, exists: true };
+  const empty = { ...row, readiness: { path: "/w", branch: "b", state: "in-progress" as const, why: "no commits yet", noCommits: true as const } };
+  const cancelled = { ...row, readiness: { path: "/w", branch: "b", state: "ready" as const, why: "no check run seen", reason: "Ready to merge · no check run seen · 2 commits ahead" } };
+  assert.equal(canReviewChanges(empty), false);
+  assert.equal(readinessReason(empty), "In progress · no commits yet", "the row says why it has no control");
+  assert.equal(canReviewChanges(cancelled), true);
+  assert.equal(canReviewChanges(row), true, "shown until readiness is read");
+  assert.equal(canReviewChanges({ ...row, exists: false }), false);
+  assert.equal(canReviewChanges({ ...row, status: "dropped" }), false);
+});
+
+test("Ready to land and Landing specs (§chat.worktrees/ready-to-land): the chip and the line say them in place of Ready to merge", () => {
+  const sha = "f".repeat(40);
+  const ready = { readiness: { path: "/w", branch: "feat/x", state: "waiting-approval" as const, why: "checks passed", reason: "Waiting for your OK · checks passed · 2 commits ahead", landing: { state: "ready" as const, commit: sha } } };
+  assert.equal(readinessChip(ready)?.label, "Ready to land");
+  assert.equal(readinessChip(ready)?.tone, "success");
+  assert.equal(readinessReason(ready), "Ready to land · checks passed · 2 commits ahead");
+  const specs = { readiness: { ...ready.readiness, state: "ready" as const, landing: { state: "specs" as const, commit: sha, drafts: ["a", "b"] } } };
+  assert.equal(readinessChip(specs)?.label, "Landing specs");
+  assert.equal(readinessReason(specs), "Landing specs · 2 drafts");
+  const stuck = { readiness: { ...specs.readiness, landing: { ...specs.readiness.landing, specsWhy: "no spec tools here" } } };
+  assert.equal(readinessChip(stuck)?.tone, "warn");
+  assert.equal(readinessReason(stuck), "Landing specs · 2 drafts · can't land them: no spec tools here");
+  // Without a landing, unchanged.
+  assert.equal(readinessChip({ readiness: { path: "/w", branch: "feat/x", state: "ready" } })?.label, "Ready to merge");
 });

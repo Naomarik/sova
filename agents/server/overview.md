@@ -19,6 +19,8 @@ watcher, the price seed and the share listener. The pi harness boundary has its 
   [QUIRKS.md](../../server/harness/pi/QUIRKS.md). The restart rules every task follows are in
   [AGENTS.md](../../AGENTS.md#live-server-restart).
 - Spec: `§app/server-runtime`.
+- The command catalogue, the `scripts/sova.mjs` command line and what extensions may add:
+  [commands/overview.md](commands/overview.md).
 - What the server imports from `pi-config/` and `src/`: [agents/extensions/overview.md](../extensions/overview.md)
   and [agents/frontend/overview.md](../frontend/overview.md).
 
@@ -92,6 +94,16 @@ The server runs on Bun (`bun server/index.ts`, Bun 1.4.2, pinned in `mise.toml`)
   `cappedWebSocketServer` / `cappedWebSocket` (ws `maxPayload` and `handshakeTimeout` aren't enforced
   on Bun; Sova enforces both itself). How tests run on Bun: [agents/testing/overview.md](../testing/overview.md).
   A `mise.toml` change needs `mise trust <worktree>` again.
+- **Chat processes run without Bun's GC timer:** `chatEnv` puts `BUN_GC_TIMER_DISABLE=1` in each
+  chat's environment (`server/chat-runtime/gc-timer.ts`; an idle chat spent most of its CPU on that
+  timer, and its memory still comes back down after a reply). The chat deletes it from its own
+  environment as it boots, so the programs its tools run (tests, a hermetic server) keep the timer.
+  `gc-timer.test.ts` holds the canary that the pinned Bun still names it: on a Bun bump that drops
+  it, remove the setting.
+- **A kept regex capture keeps its whole source string** (JSC substrings point into their source):
+  code that keeps a small piece of a big string for long copies it, as `lineHead`
+  (`server/harness/pi/reader.ts`) does; `server/harness/pi/reader-retention.test.ts` fails when the
+  session list's scans keep whole lines again.
 
 ### Prices and the share listener
 

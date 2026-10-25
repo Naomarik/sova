@@ -134,7 +134,10 @@ export const METHODS: Impl = {
     return found.ok ? { ok: true } : { ok: false, error: found.error };
   },
   switchMode: (chat, { patch }) => chat.switchMode(patch),
-  applyMode: (chat, { patch }) => chat.applyMode(mergeMode(chat.modeState, patch)),
+  applyMode: (chat, { patch }) => chat.applyMode(mergeMode(chat.modeState, patch), patch.projectModes),
+  modeResult: (chat) => chat.modeResult(),
+  approveHooks: (chat, { approvals }) => chat.approveHooks(approvals),
+  runModeCommand: (chat, { mode, name, args }) => chat.runModeCommand(mode, name, args),
   pinMode: (chat) => chat.pinMode(),
   saveModeDefault: (chat) => chat.saveModeDefault(),
   subagentProfileInfo: (chat) => chat.subagentProfileInfo(),
@@ -146,7 +149,7 @@ export const METHODS: Impl = {
     const kind = kindOf(type);
     return chat.harness.state.append(kind, data);
   },
-  appendNote: (chat, { noteType, text }) => chat.appendNote(noteType, text),
+  appendNote: (chat, { noteType, text, details }) => chat.appendNote(noteType, text, details),
   writeProfile: (chat, { data }) => (chat.writeProfile(data), null),
   writeLoadout: (chat, { data }) => (chat.writeLoadout(data), null),
   flushDeferredAppends: (chat) => (chat.flushDeferredAppends(), null),

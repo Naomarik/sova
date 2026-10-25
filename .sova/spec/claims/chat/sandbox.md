@@ -40,6 +40,20 @@ no state confines the main thread and leaves its workers loose.
   `{on: false}` Subagents only, `{on: true}` On. An entry written before the field existed has
   none, so it restores as Subagents only (it was off) or On. An entry with `on: true` and
   `workers: "off"` reads as On: the field is dropped, never the confinement.
+- **Turning on.** Turning a chat On first records a provisional On entry (enforcement
+  unavailable, reason `starting`) before the confined tools are registered. Once the policy is
+  resolved and probed, it records the real state. If that fails, throws or is overtaken by a
+  later change, the newest entry still ends truthful: On with unavailable enforcement when the
+  confined tools stay registered, or the later state. Whenever a chat's tools are confined, its
+  newest entry already says On. A provisional entry left last by an interruption is not taken as
+  recorded: the next start records the truthful state. Only the latest of overlapping changes
+  registers tools or records a state. Sova's sandbox shield shows the provisional state with the
+  word "Turning on…", never as Unavailable or broken, and its status line reads "Sandbox turning
+  on…" (§chat.composer/sandbox-shield). The two entries are one change to the person: Sova draws no transcript row
+  for either, the shield follows the newest entry ("Turning on…", then the real state), and the change
+  gives at most one toast, with the state it ended in. A provisional entry overtaken by Off or
+  Subagents only leaves no trace but a brief "Turning on…" on the shield: it ends on the later
+  state, and no row or toast reports the provisional one.
 - **Workers take it at their start.** A change reaches the session's own tools from their next
   tool call, and its workers only when they start or resume afterwards
   (§app.worker-restore/resume): a running worker keeps the confinement it started with until it
@@ -90,7 +104,8 @@ tools from their next call and is recorded in a `sandbox` entry.
   restart its CLI.
 - **Persistence.** Each change appends a `custom` entry `sandbox`
   `{version: 1, on, level, backend, enforcement, reasons?, workers?}` (`workers` as
-  §chat.sandbox/states says); opening the session restores the newest one on its branch. A
+  §chat.sandbox/states says): turning On appends a provisional entry, then the real state
+  (§chat.sandbox/states); Off and Subagents only append one; opening the session restores the newest one on its branch. A
   session with no entry takes the `--sandbox` flag, else the policy file's `defaultOn`, which
   ships as `false` (Subagents only). Opening a session writes nothing, except when it
   comes up on with no entry saying so: then one entry pins it on, so a later change to
@@ -126,7 +141,8 @@ services, and sends the network through an allowlisting proxy, on Linux and on m
 On means the policy file's `level`: `workspace-write` by default, `read-only` if the file says
 so. It is not a choice in the UI. Under `workspace-write`:
 
-- **Filesystem.** The whole filesystem is readable and read-only, except the session's cwd, a
+- **Filesystem.** The whole filesystem is readable and read-only, except the session's cwd (not
+  when it is the home folder standing in for a folder that is gone, §app.shell/missing-folder-home), a
   per-session tmp mounted as `/tmp`, the policy's `writable` roots (`~/.local/state/mise` in
   the shipped policy), and the session's active tracked worktrees, each with its `.agent`
   read-only (§chat.worktrees/sandbox). `read-only` drops the cwd, the `writable` roots and the
@@ -157,7 +173,17 @@ so. It is not a choice in the UI. Under `workspace-write`:
   refused too. Any other host is refused with a 403 and a visible message. A tool that ignores
   proxy variables cannot connect at all. If the proxy cannot be reached inside (its relay or its
   socket is missing), the network is **none**, with a note, never the host's; enforcement stays
-  `full`, because that is a tightening.
+  `full`, because that is a tightening. A guided-tour recording from a sandboxed chat gets a proxy
+  of its own for that one attempt, with the chat's allowlist and two additions the chat's own
+  proxy never has: it also refuses an allowlisted name that resolves to any other non-public
+  address (private, carrier-grade NAT, unique-local or IPv4-mapped), and it may reach exactly the
+  one loopback host and port of a project tour's own verified running copy, whose endpoint is
+  `http://127.0.0.1:<port>`, rechecked at each contact and gone when the attempt ends; a site tour
+  of a loopback origin gets no exception (§app.tours/sandbox). A recording from a chat whose
+  sandbox is Off runs through a per-attempt proxy too, but that one is Sova's own (the sandbox
+  plays no part): it admits only origins that tour declares or its pages already requested, while approved (§app.tours/sites), and leaves the
+  chat's sandbox Off. A recording attempt can hand its own sandbox proxy an admission check, which refuses a
+  connection before any lookup or dial; without one, the proxy behaves exactly as before.
 - **Git's delayed-execution files.** Inside the writable tree, `.git/hooks`, `.git/config`,
   `.git/config.worktree`, `.git/worktrees/`, each submodule's `.git/modules/*/hooks` and `config`,
   a `.git` gitfile and a linked worktree's `commondir` are read-only, so the agent cannot plant a

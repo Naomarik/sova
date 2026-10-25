@@ -190,3 +190,128 @@ test("a worker killed by its parent is stopped; one that ended while away stays 
 		fs.rmSync(agentDir, { recursive: true, force: true });
 	}
 });
+
+test("a member picked back up after a reload with no caps marker (older member code) gets each message in full plus the legacy copy; once it announces caps, a list", async () => {
+	const { MEMBER_ENV, awaitResponse, decodeMemberContext, readInbox, requestId, writeRequest } = await import("./mailbox.ts");
+	const { readMemberItems, writeInboxCaps } = await import("./inbox.ts");
+	const agentDir = tmpAgentDir();
+	try {
+		const host = new FakeWorkerHost();
+		const file = sessionFile();
+		const first = manager(file, host, agentDir);
+		first.start();
+		await first.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		await until(() => host.starts.length === 2, "the starts");
+		const dirOf = (i: number) => decodeMemberContext(host.starts[i]!.spec.env[MEMBER_ENV])!.dir;
+		const [devDir, qaDir] = [dirOf(0), dirOf(1)];
+		const devChat = host.get("ag_01").ref.chatId;
+		for (const [i, chat] of [[0, devChat], [1, host.get("ag_02").ref.chatId]] as const) host.turn(chat, { user: "go", reply: "ok", key: `${host.starts[i]!.key}:task#1` });
+		await until(() => file.entries.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE && e.data.ref).length >= 2, "the refs");
+		await first.shutdown();
+		const second = manager(file, host, agentDir);
+		second.start();
+		await until(() => host.get(devChat).watchers.size > 0, "dev picked back up");
+		const ask = async (dir: string, request: Record<string, unknown>) => {
+			const id = requestId();
+			writeRequest(dir, { version: 1, id, at: Date.now(), ...request } as any);
+			return (await awaitResponse(dir, id, 3000, undefined, 5))!;
+		};
+		const sentBefore = host.get(devChat).sends.length;
+		const r = await ask(qaDir, { type: "message", to: "dev", message: "API is ready" });
+		assert.equal(r.ok, true, r.text);
+		assert.match(r.text, /^Queued for dev \(ag_01\): item i_1$/);
+		await until(() => host.get(devChat).sends.length > sentBefore, "the full-text delivery");
+		assert.equal(host.get(devChat).sends.at(-1)!.text, "[Team message from qa (ag_02), team_01]\nAPI is ready\n(Reply with team_msg to \"qa\" if needed; team_inbox lists delivered messages.)");
+		await until(() => readInbox(devDir).length === 1, "the legacy copy");
+		assert.deepEqual(readInbox(devDir).map((x) => [x.from, x.fromId, x.text]), [["qa", "ag_02", "API is ready"]]);
+		assert.deepEqual(readMemberItems(devDir).map((i) => [i.id, i.status]), [["i_1", "read"]], "stored too, read once delivered");
+		// The member reloads onto inbox-aware code: it writes caps.json, and the next item comes as a list.
+		writeInboxCaps(devDir);
+		host.turn(devChat, { user: "x", reply: "ok", key: `${host.starts[0]!.key}:task#2` });
+		const n = host.get(devChat).sends.length;
+		await ask(qaDir, { type: "message", to: "dev", message: "Second", urgent: true });
+		await until(() => host.get(devChat).sends.length > n, "the list");
+		assert.match(host.get(devChat).sends.at(-1)!.text, /^\[Team inbox: 1 new \(1 urgent\) — /);
+		await second.shutdown();
+	} finally {
+		fs.rmSync(agentDir, { recursive: true, force: true });
+	}
+});
+
+test("after a reload, every inbox is folded from disk: a live member is woken for items never listed, and a member found ended returns its open items to their senders", async () => {
+	const { MEMBER_ENV, awaitResponse, decodeMemberContext, requestId, writeRequest } = await import("./mailbox.ts");
+	const { readMemberItems, writeInboxCaps } = await import("./inbox.ts");
+	const agentDir = tmpAgentDir();
+	try {
+		const host = new FakeWorkerHost();
+		const file = sessionFile();
+		const first = manager(file, host, agentDir);
+		first.start();
+		await first.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		await until(() => host.starts.length === 2, "the starts");
+		const dirOf = (i: number) => decodeMemberContext(host.starts[i]!.spec.env[MEMBER_ENV])!.dir;
+		const [devDir, qaDir] = [dirOf(0), dirOf(1)];
+		const devChat = host.get("ag_01").ref.chatId, qaChat = host.get("ag_02").ref.chatId;
+		const ask = async (dir: string, request: Record<string, unknown>) => {
+			const id = requestId();
+			writeRequest(dir, { version: 1, id, at: Date.now(), ...request } as any);
+			return (await awaitResponse(dir, id, 3000, undefined, 5))!;
+		};
+		// Both are busy on their first task: normal items wait for its end, unlisted.
+		assert.match((await ask(qaDir, { type: "message", to: "dev", message: "API is ready" })).text, /^Queued for dev \(ag_01\): item i_1$/);
+		assert.match((await ask(devDir, { type: "message", to: "qa", message: "Please test the parser" })).text, /^Queued for qa \(ag_02\): item i_2$/);
+		await until(() => file.entries.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE && e.data.ref).length >= 2, "the refs");
+		const sent = host.get(devChat).sends.length;
+		await first.shutdown();
+		assert.equal(readMemberItems(devDir)[0].listedAt, undefined, "never listed before the reload");
+		// While no parent is there: dev finishes its task (it runs on inbox-aware code), qa's process ends.
+		writeInboxCaps(devDir);
+		host.turn(devChat, { user: "build", reply: "built", key: `${host.starts[0]!.key}:task#1` });
+		host.end(qaChat, { cause: "killed" });
+		const second = manager(file, host, agentDir);
+		second.start();
+		await until(() => host.get(devChat).sends.slice(sent).some((s) => s.text.includes("Not addressed")), "dev woken with its items");
+		const list = host.get(devChat).sends.slice(sent).map((s) => s.text).join("\n---\n");
+		assert.match(list, /- i_1 message from qa — API is ready/, "the item from before the reload, listed from disk");
+		assert.match(list, /- i_3 notice from Sova — Not addressed: 1 item\(s\) returned from qa \(ag_02\)/);
+		// Two items: listed by subject; the notice's text is in the item, opened with team_inbox.
+		const notice = readMemberItems(devDir).find((i) => i.id === "i_3")!;
+		assert.match(notice.body, /^\[Not addressed: 1 item\(s\) returned from qa \(ag_02\), team_01 — its process had ended when the main chat restarted, with no successor\]\n- i_2 message sent [^\n]* — Please test the parser/);
+
+		const qaItems = readMemberItems(qaDir);
+		assert.deepEqual(qaItems.map((i) => [i.id, Boolean(i.returned)]), [["i_2", true]], "qa's item is marked returned, not open");
+		await second.shutdown();
+	} finally {
+		fs.rmSync(agentDir, { recursive: true, force: true });
+	}
+});
+
+test("a member that settles with inbox items waiting reports its own final answer first, then gets the list (a real chat worker)", async () => {
+	const { MEMBER_ENV, awaitResponse, decodeMemberContext, requestId, writeRequest } = await import("./mailbox.ts");
+	const agentDir = tmpAgentDir();
+	try {
+		const host = new FakeWorkerHost();
+		const file = sessionFile();
+		const m = manager(file, host, agentDir);
+		m.start();
+		await m.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		await until(() => host.starts.length === 2, "the starts");
+		const qaDir = decodeMemberContext(host.starts[1]!.spec.env[MEMBER_ENV])!.dir;
+		const devChat = host.get("ag_01").ref.chatId;
+		host.state(devChat, { status: "running" });
+		const id = requestId();
+		writeRequest(qaDir, { version: 1, id, at: Date.now(), type: "message", to: "dev", message: "API is ready" } as any);
+		assert.equal((await awaitResponse(qaDir, id, 3000, undefined, 5))?.text, "Queued for dev (ag_01): item i_1");
+		await new Promise((r) => setTimeout(r, 30));
+		assert.equal(host.get(devChat).sends.length, 0, "busy: nothing sent mid-turn for a normal item");
+		host.turn(devChat, { user: "build", reply: "built it", key: `${host.starts[0]!.key}:task` });
+		await until(() => m.completions().some((c) => c[0].content.includes("ag_01")), "dev's completion");
+		const done = m.completions().find((c) => c[0].content.includes("ag_01"))!;
+		assert.match(done[0].content, /built it/, "its final answer, not an empty new task");
+		await until(() => host.get(devChat).sends.length === 1, "the list after the turn");
+		assert.match(host.get(devChat).sends[0]!.text, /^\[Team inbox: 1 new — [^\n]*\]\n- i_1 message from qa — API is ready/);
+		await m.shutdown();
+	} finally {
+		fs.rmSync(agentDir, { recursive: true, force: true });
+	}
+});

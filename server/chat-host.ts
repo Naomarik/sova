@@ -10,8 +10,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { claudeExecutable } from "../pi-config/extensions/claude-code/claude-executable.ts";
 import { producerId, setChildCounts } from "../pi-config/extensions/llm-inflight/tracker.ts";
-import { type ChatRuntimeMirror, type ChatRuntimeSettings, DEFAULT_RUNTIME_SETTINGS, type FrameOf } from "../shared/chat-runtime-wire";
+import { type ChatRuntimeMirror, type ChatRuntimeSettings, DEFAULT_RUNTIME_SETTINGS, type ExitCause, type FrameOf } from "../shared/chat-runtime-wire";
 import { sovaToken } from "./auth";
+import { callerKeys as serverCallerKeys, type CallerKeys } from "./caller-keys";
 import {
   acquireChatHandle,
   assertOpenConfig,
@@ -20,6 +21,7 @@ import {
   ConfigError,
   RefusedError,
   type ChatHandle,
+  type CloseOpts,
   chatHandle,
   currentLinkOrigin,
   errorOfRefusal,
@@ -27,14 +29,15 @@ import {
   openKindOf,
   recordConfigFailure,
   adoptSpecial,
-  servedToolsFor,
+  servedToolsForChat,
+  servedWorkerTools,
   setChatRouter,
   setWorkerHostSource,
   specialHostOf,
   specialSpecFor,
   takeOpeningChoice,
 } from "./chat-handle";
-import { type ChatSpecialKind, isNoAnswer, type SpecialSpec, type WorkerSpec } from "../shared/chat-runtime";
+import { type ChatSpecialKind, isNoAnswer, type ServerToolDecl, type SpecialSpec, type WorkerSpec } from "../shared/chat-runtime";
 import { type HeldRequests, holdRequests, RemoteChatHandle, type RemoteHooks } from "./chat-handle-remote";
 import { awaitFrame, connectLink, type Link } from "./chat-runtime/link";
 import { crashSkip } from "./chat-runtime/crash";
@@ -75,6 +78,27 @@ const READY_WAIT_MS = 10_000;
 /** How long opening a chat waits for that take-back: past its own one-minute retries, so a chat whose
     process survived is never started a second time. */
 const TAKE_BACK_MAX_MS = 120_000;
+/** How long a new chat process may boot before its start fails: the worst measured start under heavy load was 34 s. */
+const BOOT_WAIT_MS = 40_000;
+/** How long a chat process may take to answer its `open`. */
+const OPEN_WAIT_MS = 60_000;
+/** A start this slow or slower, launch to open, gets a line in the server's log (§app.chat-processes/boot-log). */
+const SLOW_START_MS = 5_000;
+
+const secs = (ms: number) => `${(Math.max(0, ms) / 1000).toFixed(1)} s`;
+
+/** The last step a chat process reported on `link` for `phase` (§app.chat-processes/boot-log), heard
+    until `off`: `stuck in <step> for N s`, or `no step reported` (a chat on older code reports none). */
+function hearSteps(link: Link, phase: FrameOf<"boot">["phase"]): { stuck(): string; off(): void } {
+  let last: { f: FrameOf<"boot">; at: number } | null = null;
+  const off = link.on("boot", (f) => {
+    if (f.phase === phase) last = { f, at: Date.now() };
+  });
+  return {
+    stuck: () => (last ? `stuck in ${last.f.step} for ${secs(last.f.stepMs + Date.now() - last.at)}` : "no step reported"),
+    off,
+  };
+}
 
 /** How this server runs chat processes, once decided at start (logged in full). */
 let host: ChatHost | null = null;
@@ -87,6 +111,11 @@ export function chatHostHealth(): { driver: ChatHost["driver"] | "starting"; bun
 }
 
 const log = (line: string) => console.log(`[chat-host] ${line}`);
+
+/** What a worker chat is served (§app.project-services/callers): a worker's or team member's project_verbs; a hidden chat, nothing. */
+export function workerServed(worker: { kind: string }, path: string): ServerToolDecl[] {
+  return worker.kind === "worker" ? servedWorkerTools(path) : [];
+}
 
 /** What a test swaps (a fake driver, links over in-memory streams); the server uses the real ones. */
 export interface RouterDeps {
@@ -104,6 +133,13 @@ export interface RouterDeps {
   gen?: Generation;
   /** A crashed chat's one resume, a few seconds on (the server: overseer's resumeCrashedChat); `done` once sent or refused. */
   resumeCrashed?: (path: string, since: number, before: (path: string) => Promise<void>, done?: () => void) => void;
+  /** Tests only: how long a booting process may take to say ready (40 s), to answer its open (60 s),
+      and from when a start is slow enough for the server's log (5 s). */
+  bootWaitMs?: number;
+  openWaitMs?: number;
+  slowStartMs?: number;
+  /** Each chat process's key (§app.command-audit/keys); default the server's own. */
+  callerKeys?: CallerKeys;
 }
 
 export class ChatHostRouter {
@@ -136,6 +172,10 @@ export class ChatHostRouter {
   private readonly bun: () => string | null;
   private readonly sweepChildren: (() => Promise<string[]>) | undefined;
   private readonly gen: Generation | undefined;
+  private readonly bootWaitMs: number;
+  private readonly openWaitMs: number;
+  private readonly slowStartMs: number;
+  private readonly callerKeys: CallerKeys;
   /** Unused code generations collected (after the take-back, hourly, after a run of reloads). */
   private gc: { collect: () => Promise<void>; stop: () => void } | null = null;
 
@@ -149,7 +189,13 @@ export class ChatHostRouter {
     this.bun = deps.bun ?? chatBun;
     this.sweepChildren = deps.sweepChildren;
     this.gen = deps.gen;
+    this.bootWaitMs = deps.bootWaitMs ?? BOOT_WAIT_MS;
+    this.openWaitMs = deps.openWaitMs ?? OPEN_WAIT_MS;
+    this.slowStartMs = deps.slowStartMs ?? SLOW_START_MS;
     this.resumeCrashed = deps.resumeCrashed ?? resumeCrashedChat;
+    this.callerKeys = deps.callerKeys ?? serverCallerKeys;
+    // A key names its chat only while the supervisor tracks that chat on that unit: every end of a process untracks it.
+    this.callerKeys.setLiveness((chatId, unit) => this.sup.list().some((r) => r.chatId === chatId && r.unit === unit));
     // Every process starts on the generation's copy, the checkout when there is none: a new chat, a
     // reopen, a reload's replacement, a worker. One already running keeps its own.
     const currentCode = deps.gen?.dir ?? REPO;
@@ -180,6 +226,8 @@ export class ChatHostRouter {
             SOVA_CHAT_BUILD: id,
             SOVA_CHAT_LIVE_ROOT: REPO,
             SOVA_CHAT_COPIES_ROOT: codeRoot(),
+            // After the worker spec's env: a loadout never chooses its key.
+            SOVA_CALLER_KEY: this.callerKeys.issue(c.chatId, c.unit),
           },
         }),
         build: id,
@@ -200,9 +248,9 @@ export class ChatHostRouter {
         log(`${id}: did not start (${d.detail ?? d.cause})`);
         this.forget(d.sessionPath);
       },
-      onStopped: (id) => {
+      onStopped: (id, cause) => {
         const path = this.paths.get(id);
-        if (path) this.forget(path);
+        if (path) this.forget(path, cause);
       },
       drain: (id, reason) => this.handleOf(id)?.drain(reason) ?? Promise.resolve({ ok: false }),
       reapClaude: (id) => this.handleOf(id)?.releaseIdleModelChild() ?? Promise.resolve("none" as const),
@@ -264,9 +312,14 @@ export class ChatHostRouter {
     return path ? this.remotes.get(path) : undefined;
   }
 
-  /** Done with this chat's process: its panes still here reconnect quietly (the chat reopens on demand). */
-  private forget(path: string): void {
+  /** Done with this chat's process: its panes still here reconnect quietly (the chat reopens on demand),
+      except after an idle stop: they are told the chat closed, and keep what they show without
+      reconnecting until they need it (§chat.transcript/instant-open). */
+  private forget(path: string, cause?: ExitCause): void {
     const h = this.remotes.get(path);
+    // An archive's own exit can come before its close finishes: its panes are told `closed` either way.
+    if (cause === "idle" || h?.closingQuietly) h?.closePanesQuietly(cause === "idle" ? "idle" : "archived");
+    // Panes told `closed` are gone from the handle already: this ends its calls only.
     h?.endPanes("Reconnecting. Your draft is kept.", "reloaded");
     if (h) {
       this.paths.delete(h.mirror.sessionId);
@@ -282,7 +335,8 @@ export class ChatHostRouter {
     state: (h) => {
       const m = h.mirror;
       const sup = this.sup;
-      sup.noteIdle(m.sessionId, m.quiet.quiet && m.quiet.clients === 0, m.quiet.since);
+      // Quiet is enough: an open tab doesn't keep a chat running (§app.chat-processes/idle-stop).
+      sup.noteIdle(m.sessionId, m.quiet.quiet, m.quiet.since);
       sup.noteClaude(m.sessionId, m.claude);
       const w = this.workerPaths.has(h.path) ? this.workers.record(m.sessionId) : undefined;
       setRemoteHosted(h.path, {
@@ -293,6 +347,7 @@ export class ChatHostRouter {
         toolsRunning: m.monitor.toolsRunning,
         lastToolEnd: m.monitor.lastToolEnd,
         pid: h.at.pid,
+        ...(m.model?.provider ? { provider: m.model.provider } : {}),
         ...(w ? { worker: { parentPath: w.parent.path, parentSessionId: w.parent.sessionId, workerId: w.parent.workerId } } : {}),
       });
       if (w) this.workers.onState(h);
@@ -305,7 +360,7 @@ export class ChatHostRouter {
       const id = h.mirror.sessionId;
       this.sup.expectExit(id, cause);
       // A reload's replacement takes the handle over (rollout's open); anything else is done.
-      if (cause !== "reload") this.forget(h.path);
+      if (cause !== "reload") this.forget(h.path, cause);
       if (this.workers.has(id)) this.workers.onExit(id, cause);
     },
     linkEnd: (h, end) => {
@@ -356,9 +411,9 @@ export class ChatHostRouter {
   private async openOn(link: Link, path: string, sessionId: string, force: boolean, kind: OpenKind = null, built?: SpecialSpec, worker?: WorkerSpec): Promise<ChatRuntimeMirror> {
     const id = randomUUID();
     if (worker) {
-      // A worker chat opens as its loadout says, with nothing an ordinary chat is served.
-      const answer = awaitFrame(link, "opened", 60_000, (f) => f.id === id);
-      link.send({ t: "open", id, path, force, link: null, served: [], worker });
+      // A worker chat opens as its loadout says, served only project_verbs (a worker or team member, never a hidden chat).
+      const answer = this.awaitOpened(link, id, sessionId);
+      link.send({ t: "open", id, path, force, link: null, served: workerServed(worker, path), worker });
       const f: FrameOf<"opened"> = await answer;
       if (f.ok) return f.mirror;
       if (f.refusal) throw errorOfRefusal(f.refusal);
@@ -367,15 +422,30 @@ export class ChatHostRouter {
     // A special chat's loadout is the server's word on it at each open (its refusal: no open); a
     // start built it already, before its process was spawned.
     const special: SpecialSpec | undefined = built ?? (kind && kind !== "powers" ? await specialSpecFor(kind, path) : undefined);
-    const answer = awaitFrame(link, "opened", 60_000, (f) => f.id === id);
+    const answer = this.awaitOpened(link, id, sessionId);
     const origin = currentLinkOrigin();
     const opening = takeOpeningChoice(path);
-    const served = servedToolsFor(path, sessionId, () => this.remotes.get(path)?.mirror.monitor.title ?? "", kind === "powers");
+    const served = await servedToolsForChat(path, sessionId, () => this.remotes.get(path)?.mirror.monitor.title, kind);
     link.send({ t: "open", id, path, force, ...(opening ? { opening } : {}), link: origin ? { origin, token: sovaToken() } : null, served, ...(special ? { special } : {}) });
     const f: FrameOf<"opened"> = await answer;
     if (f.ok) return f.mirror;
     if (f.refusal) throw errorOfRefusal(f.refusal);
     throw new Error(f.error?.message ?? "The chat did not open in its process.");
+  }
+
+  /** The answer to open `id`, waited for from before the open is sent. One that doesn't come is logged
+      with the step the chat's open was in (§app.chat-processes/boot-log); the error is unchanged. */
+  private async awaitOpened(link: Link, id: string, sessionId: string): Promise<FrameOf<"opened">> {
+    const steps = hearSteps(link, "opening");
+    const t0 = Date.now();
+    try {
+      return await awaitFrame(link, "opened", this.openWaitMs, (f) => f.id === id);
+    } catch (err) {
+      log(`${sessionId}: its open got no answer after ${secs(Date.now() - t0)} (${err instanceof Error ? err.message : String(err)}): ${steps.stuck()}`);
+      throw err;
+    } finally {
+      steps.off();
+    }
   }
 
   private adoptHandle(rec: ChatRecord, link: Link, mirror: ChatRuntimeMirror, held?: HeldRequests): RemoteChatHandle {
@@ -433,6 +503,13 @@ export class ChatHostRouter {
         // surviving chat, and so not its copy.
         found(new Map());
         this.sup.watch(2_000);
+        // The keys of chats this start did not take back, only after a whole take-back (a failed one may not know a survivor).
+        if (tookBack)
+          try {
+            this.callerKeys.prune();
+          } catch (err) {
+            log(`caller keys: the prune failed (${err instanceof Error ? err.message : String(err)})`);
+          }
         if (this.gen && tookBack) this.gc = startGenerationGc(() => this.buildsInUse());
         else if (this.gen) log("unused code is not collected this server life: the take-back failed");
       });
@@ -449,8 +526,9 @@ export class ChatHostRouter {
         // The calls it queued while no server was there come at once, before its state: kept for the handle.
         const held = holdRequests(link);
         const state = await awaitFrame(link, "state", 5_000);
-        // A worker chat is the registry's: nothing is served to it.
+        // A worker chat is the registry's: only a worker's or team member's project_verbs runs here again.
         if (state.mirror.worker) {
+          workerServed(state.mirror.worker, rec.sessionPath);
           this.workerPaths.add(rec.sessionPath);
           const h = this.adoptHandle(rec, link, state.mirror, held);
           if (!this.workers.adopt(h)) log(`${rec.chatId}: a worker chat no worker record names`);
@@ -459,7 +537,7 @@ export class ChatHostRouter {
         // Its server-hosted tools run here now, as for a chat this server opened (the same specs: the
         // chat declared them at its open).
         const kind = kindOfMirror(state.mirror);
-        servedToolsFor(rec.sessionPath, state.mirror.sessionId, () => this.remotes.get(rec.sessionPath)?.mirror.monitor.title ?? "", kind === "powers");
+        await servedToolsForChat(rec.sessionPath, state.mirror.sessionId, () => this.remotes.get(rec.sessionPath)?.mirror.monitor.title, kind);
         if (kind && kind !== "powers") await adoptSpecial(kind, rec.sessionPath);
         const h = this.adoptHandle(rec, link, state.mirror, held);
         this.pushSpecial(h);
@@ -484,6 +562,10 @@ export class ChatHostRouter {
     const each = await Promise.race([this.takingBack, hang.then(() => null)]);
     const mine = each?.get(path);
     if (mine) await Promise.race([mine, hang]);
+  }
+  /** The take-back of this path's chat, if one of it was left running (bounded). */
+  settled(path: string): Promise<void> {
+    return this.takenBack(path);
   }
   get(path: string): ChatHandle | undefined {
     const h = this.remotes.get(path);
@@ -517,7 +599,7 @@ export class ChatHostRouter {
         // "Chat anyway" reopens it in its process, and that close drops what this server serves it: served again.
         if (again === "reloaded") {
           const kind = kindOfMirror(open.mirror);
-          servedToolsFor(path, open.mirror.sessionId, () => open.mirror.monitor.title ?? "", kind === "powers");
+          await servedToolsForChat(path, open.mirror.sessionId, () => open.mirror.monitor.title, kind);
           if (kind && kind !== "powers") await adoptSpecial(kind, path);
         }
         return open;
@@ -631,24 +713,41 @@ export class ChatHostRouter {
     exitsItself: (err: unknown) => boolean = () => false,
   ): Promise<RemoteChatHandle> {
     let rec: ChatRecord;
+    const t0 = Date.now();
     try {
       rec = await sup.start(at);
     } catch (err) {
       throw new NoProcess(err instanceof Error ? err.message : String(err));
     }
     let link: Link;
+    let answeredAt = 0;
+    // The start's steps, heard while its hello says booting (§app.chat-processes/boot-log).
+    let steps: ReturnType<typeof hearSteps> | null = null;
     try {
       const c = await this.connect(rec.sock, { epoch: this.epoch, build: this.build, settings: this.settings, since: null, retryForMs: 10_000 });
       link = c.link;
+      answeredAt = Date.now();
       sup.noteConnected(rec.chatId);
       if (c.hello.proto < minProto) throw new Error(`its process speaks protocol ${c.hello.proto}, below ${minProto}`);
-      if (c.hello.state === "booting") await awaitFrame(link, "hello", 30_000, (h) => h.state !== "booting");
+      if (c.hello.state === "booting") {
+        steps = hearSteps(link, "starting");
+        await awaitFrame(link, "hello", this.bootWaitMs, (h) => h.state !== "booting");
+      }
     } catch (err) {
-      await sup.lost(rec.chatId, `no hello: ${err instanceof Error ? err.message : String(err)}`).catch(() => {});
-      throw new NoProcess(err instanceof Error ? err.message : String(err));
+      const msg = err instanceof Error ? err.message : String(err);
+      // Where the start was when the wait ended: in the server's log and the stopped chat's record.
+      const where = steps ? `; ${steps.stuck()} (answered after ${secs(answeredAt - t0)})` : "";
+      if (steps) log(`${rec.chatId}: not ready after ${secs(Date.now() - t0)}${where}`);
+      await sup.lost(rec.chatId, `no hello: ${msg}${where}`).catch(() => {});
+      throw new NoProcess(msg);
+    } finally {
+      steps?.off();
     }
+    const readyAt = Date.now();
     try {
       const h = this.adoptHandle(rec, link, await open(link, rec));
+      const total = Date.now() - t0;
+      if (total >= this.slowStartMs) log(`${rec.chatId}: started in ${secs(total)} (answered after ${secs(answeredAt - t0)}, ready after ${secs(readyAt - t0)}, opened after ${secs(total)})`);
       this.good(rec);
       await adopted?.(h);
       return h;
@@ -660,13 +759,18 @@ export class ChatHostRouter {
     }
   }
 
-  async close(path: string, message: string): Promise<boolean> {
+  async close(path: string, message: string, opts: CloseOpts = {}): Promise<boolean> {
     const h = this.remotes.get(path);
     if (!h || h.closed) return false;
     const sid = h.mirror.sessionId;
+    // An archive: the chat's own goodbye (`reloaded`, from its dispose) reaches no tab, so none
+    // reconnects, which would start the archived chat again. Its tabs keep everything before it (an
+    // ack for a send it took) and are told `closed` once the drain returned; its calls end after that.
+    if (opts.quiet) h.beginQuietClose();
     this.sup.expectExit(sid, "archived");
     const r = await h.drain("archived", { force: true, message });
     if (!r.ok) await this.sup.stop(sid, "archived").catch(() => {});
+    if (opts.quiet) h.closePanesQuietly(opts.quiet);
     this.forget(path);
     return true;
   }
@@ -828,8 +932,13 @@ export function startChatHost(): void {
       if (!router) throw new Error("The Sova server's chat host did not start.");
       return router.acquire(path, force);
     },
-    close: (path, message) => (router ? router.close(path, message) : Promise.resolve(false)),
+    close: (path, message, opts) => (router ? router.close(path, message, opts) : Promise.resolve(false)),
     composersChanged: () => router?.composersChanged(),
+    // The router itself first (as acquire), then that chat's take-back.
+    takenBack: async (path) => {
+      await Promise.race([boot, new Promise<void>((r) => setTimeout(r, TAKE_BACK_MAX_MS).unref?.())]);
+      await router?.settled(path);
+    },
   });
 }
 

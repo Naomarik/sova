@@ -19,12 +19,84 @@ export const READ_VERBS: readonly Verb[] = ["status", "logs", "doctor"];
 /** The deploy verbs anyone with the project in scope may call: they read (§app.project-services/deploy-callers). */
 export const DEPLOY_READ_VERBS: readonly DeployVerb[] = ["deploy.status", "deploy.logs", "deploy.check"];
 
+// ---- a verb's params (§app.project-commands/verb-params) ------------------------------------------
+
+/** A verb param's type on the command line (`list`: comma-separated there, an array on the wire); the tools' schema type follows from it. */
+export type VerbParamType = "string" | "path" | "integer" | "boolean" | "list";
+
+/**
+ * One param a verb's request body may carry, written once for every caller: the agents' tools
+ * (server/project-services/tools.ts) and the command catalogue's `project.verb.*` entries
+ * (shared/commands/projects.ts), the operator's command line.
+ */
+export interface VerbParam {
+  /** The body key the engine reads. */
+  wire: string;
+  type: VerbParamType;
+  /** On the tools `project_verbs` and `sova_project_verbs`: its name there, what the model is told, and its bounds. Absent: not on the tools. */
+  tool?: {
+    name: string;
+    description: string;
+    /** What the Overseers' tool says instead, when it differs. */
+    overseerDescription?: string;
+    minimum?: number;
+    maximum?: number;
+    maxItems?: number;
+  };
+  /** On the command line: its flag and description, and its default for a deploy verb. Absent: not there. */
+  cli?: { flag: string; description: string; deployDefault?: string };
+}
+
+export const VERB_PARAMS: readonly VerbParam[] = [
+  { wire: "project", type: "path", tool: { name: "project", description: "The project: an absolute path inside it (default: this session's project)." }, cli: { flag: "project", description: "The project's root", deployDefault: "." } },
+  { wire: "instance", type: "string", tool: { name: "instance", description: "An instance id (from status)." }, cli: { flag: "instance", description: "An instance id" } },
+  { wire: "checkout", type: "path", tool: { name: "checkout", description: "create/up: an existing worktree (absolute path) to run as an instance." }, cli: { flag: "checkout", description: "A checkout's path" } },
+  { wire: "branch", type: "string", tool: { name: "branch", description: "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)." }, cli: { flag: "branch", description: "A branch name" } },
+  { wire: "from", type: "string", tool: { name: "from", description: "create/up with a new branch: the commit it starts at (default the main checkout's HEAD)." }, cli: { flag: "from", description: "The ref a new branch starts from" } },
+  { wire: "slot", type: "integer", cli: { flag: "slot", description: "A slot number" } },
+  { wire: "services", type: "list", tool: { name: "services", description: "up/down/apply/logs: only these services." }, cli: { flag: "services", description: "Service names, comma-separated" } },
+  { wire: "restart", type: "boolean", tool: { name: "restart", description: "apply: restart instead of each service's reload." }, cli: { flag: "restart", description: "Restart what runs" } },
+  { wire: "lines", type: "integer", tool: { name: "lines", description: "logs: how many lines (default 100).", minimum: 1, maximum: 500 }, cli: { flag: "lines", description: "How many log lines" } },
+  { wire: "keepData", type: "boolean", tool: { name: "keep_data", description: "teardown: keep the data resources." }, cli: { flag: "keep-data", description: "Keep the instance's data" } },
+  { wire: "resources", type: "list", tool: { name: "resources", description: "reset: only these data resources." }, cli: { flag: "resources", description: "Resource names, comma-separated" } },
+  { wire: "ref", type: "string", tool: { name: "ref", description: "conform: the branch or commit whose definition to prove (default the main checkout's HEAD)." }, cli: { flag: "ref", description: "A git ref" } },
+  { wire: "select", type: "list", tool: { name: "select", description: "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite.", maxItems: 50 }, cli: { flag: "select", description: "Test selectors, comma-separated" } },
+  { wire: "endpoint", type: "string", tool: { name: "endpoint", description: 'share/revoke: the endpoint, "<service>.<port>", one of the definition\'s share.endpoints.' }, cli: { flag: "endpoint", description: "A service endpoint, service.port" } },
+  { wire: "days", type: "integer", tool: { name: "days", description: "share: how many days the link lasts (default 1, at most 7 or the definition's share.maxDays).", minimum: 1, maximum: 7 }, cli: { flag: "days", description: "How many days a share link lasts" } },
+  { wire: "link", type: "string", tool: { name: "link", description: "revoke: one share link, by its id (pv_…)." }, cli: { flag: "link", description: "A share link id" } },
+  { wire: "target", type: "string", tool: { name: "target", description: "deploy.*: the deploy target, by name (deploy.status lists them)." }, cli: { flag: "target", description: "A deploy target" } },
+  { wire: "commit", type: "string", tool: { name: "commit", description: "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)." }, cli: { flag: "commit", description: "A commit" } },
+  { wire: "plan", type: "string", tool: { name: "plan", description: "deploy.run: a plan's id (pl_…); only the operator runs one." }, cli: { flag: "plan", description: "A plan id" } },
+  { wire: "deploy", type: "string", tool: { name: "deploy", description: "deploy.logs: one deploy, by its id (dp_…; default the target's latest)." }, cli: { flag: "deploy", description: "A deploy id" } },
+  {
+    wire: "why",
+    type: "string",
+    tool: {
+      name: "why",
+      description: "deploy.request (and onboard): why, one line for the operator.",
+      overseerDescription: "onboard: why the playbook runs now; deploy.request: why to ship now (one line, for the operator).",
+    },
+    cli: { flag: "why", description: "Why" },
+  },
+  { wire: "overrideTests", type: "string", cli: { flag: "override-tests", description: "Why the tests are overridden" } },
+  { wire: "overrideDirty", type: "string", cli: { flag: "override-dirty", description: "Why a dirty tree is overridden" } },
+  { wire: "confirm", type: "boolean", cli: { flag: "confirm", description: "The operator's confirm" } },
+  { wire: "dismiss", type: "boolean", cli: { flag: "dismiss", description: "Dismiss the request" } },
+];
+
+/** The flags each kind of verb takes on the command line, in the order they are listed there. */
+export const VERB_FLAGS: { readonly instance: readonly string[]; readonly deploy: readonly string[] } = {
+  instance: ["project", "instance", "checkout", "branch", "from", "slot", "services", "restart", "lines", "keep-data", "resources", "ref", "select", "endpoint", "days", "link", "confirm"],
+  deploy: ["project", "target", "commit", "ref", "plan", "deploy", "why", "lines", "override-tests", "override-dirty", "confirm", "dismiss"],
+};
+
 export const ERROR_CODES = [
   "not-found",
   "invalid-request",
   "invalid-definition",
   "not-conformant",
   "cap-reached",
+  "slots-blocked",
   "port-held",
   "not-ready",
   "start-failed",
@@ -54,6 +126,7 @@ const EXIT: Record<ErrorCode, ExitClass> = {
   "verify-failed": 1,
   "not-conformant": 2,
   "cap-reached": 2,
+  "slots-blocked": 2,
   "port-held": 2,
   "dirty-worktree": 2,
   unsupported: 2,
@@ -227,6 +300,10 @@ export const SHARE_ENDPOINTS_MAX = 20;
 export const CONTRACT_FILE = ".sova/project.json";
 export const SLOT_CAP_DEFAULT = 4;
 export const SLOT_CAP_MAX = 16;
+/** Every copy's slot is one of 1 to COPY_SLOT_TOP, whatever the copy limit (§app.project-services/instances). */
+export const COPY_SLOT_TOP = 16;
+/** Conformance's scratch slots are searched from here up (shared/project-slots.ts slotLayoutOf). */
+export const SCRATCH_FROM = COPY_SLOT_TOP + 1;
 export const READY_TIMEOUT_DEFAULT = 60;
 export const READY_TIMEOUT_MAX = 600;
 export const HOOK_TIMEOUT_DEFAULT = 120;
@@ -244,8 +321,6 @@ export function selectorsProblem(v: unknown): string | null {
   for (const x of v) if (typeof x !== "string" || !SELECTOR.test(x)) return `${JSON.stringify(x)} is not a selector (letters, digits and _ . / : * -, starting with a letter, digit or _, at most 200)`;
   return null;
 }
-/** Conformance takes the two slots above the cap (§app.project-services/conform). */
-export const scratchSlots = (def: Pick<ProjectDef, "slots">): [number, number] => [def.slots.cap + 1, def.slots.cap + 2];
 
 const NAME = /^[a-z][a-z0-9-]{0,30}$/;
 /** The variables Sova sets itself (§app.project-services/contract): a definition's env never names one. */
@@ -768,8 +843,9 @@ export function parseDefinition(text: string): ProjectDef {
   serviceOrder(def);
   const adopting = services.filter((s) => s.adopt);
   if (adopting.length > 1) throw new DefinitionError(`$.services.${adopting[1]!.name}.adopt`, "at most one service adopts a unit");
-  // Ports: every allocated port, in every slot up to the scratch slots, must fit, and no two ports
-  // of one instance may coincide.
+  // Ports: every allocated port, in every slot up to cap + 2, must fit, and no two ports of one
+  // instance may coincide. Higher slots (the copies' fixed range, the scratch slots) never make a
+  // file invalid: a slot whose ports overlap is only a place no copy takes (shared/project-slots.ts slotLayoutOf).
   const top = cap + 2;
   for (const s of services)
     for (const [k, p] of Object.entries(s.ports))
@@ -987,6 +1063,8 @@ export interface ConformReport {
   /** On a failed run: the last lines of each service (or step) that was not ready or failed, read before teardown. */
   logs?: ConformLog[];
   memory?: ConformMemory;
+  /** What the run says besides its checks: its scratch slots' ports overlapping other places' (§app.project-services/instances). */
+  notes?: string[];
 }
 export interface TestFailure {
   name: string;

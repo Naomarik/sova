@@ -6,23 +6,27 @@ import { relativeIn, relativeTime } from "./format";
 import { firstName } from "./person-page";
 
 const DAY = 86_400_000;
-/** Under this many days left, the line says only when it expires, as a warning. */
-export const OWNER_LINK_WARN_DAYS = 14;
+/** The link turns itself off this long after its last use (server/person-links.ts OWNER_IDLE_DAYS). */
+export const OWNER_IDLE_DAYS = 7;
 
 const times = (n: number) => (n === 1 ? "1 time" : `${n} times`);
 
-/** The link line and whether it warns: "Owner link made 3d ago · expires in 80d · opened 4 times";
-    under 14 days left "Owner link expires in 9d." (warn); expired "The owner link expired 2d ago."
-    (warn). `null` when there is no owner. */
+/** The link line and whether it warns (§app.owner-page/controls). Live: "Owner link made 3d ago ·
+    last used yesterday · turns off in 6d if unused · opened 4 times" ("not used yet" before its
+    first use). Turned off unused: "The owner link turned off 2d ago: nobody used it for a week."
+    (warn), and once the owner asked: "Kim asked for a new link 1h ago." (warn). `null` with no owner. */
 export function ownerLinkLine(info: OwnerPageInfo | undefined, now = Date.now()): { text: string; warn: boolean } | null {
   if (!info?.person) return null;
   const l = info.link;
   if (!l) return { text: "No owner link yet.", warn: false };
-  if (l.state === "expired" || (l.state === "live" && Date.parse(l.expiresAt) <= now)) return { text: `The owner link expired ${relativeTime(l.expiresAt, now)}.`, warn: true };
   if (l.state === "off") return { text: "The owner link is turned off.", warn: false };
-  const expires = relativeIn(l.expiresAt, now) ?? "soon";
-  if (Date.parse(l.expiresAt) - now < OWNER_LINK_WARN_DAYS * DAY) return { text: `Owner link expires ${expires}.`, warn: true };
-  return { text: `Owner link made ${relativeTime(l.createdAt, now)} · expires ${expires} · opened ${times(info.opened)}`, warn: false };
+  if (l.state === "expired" || Date.parse(l.expiresAt) <= now) {
+    if (l.askedAt) return { text: `${firstName(info.person.name)} asked for a new link ${relativeTime(l.askedAt, now)}.`, warn: true };
+    return { text: `The owner link turned off ${relativeTime(l.expiresAt, now)}: nobody used it for a week.`, warn: true };
+  }
+  const lastUse = Date.parse(l.expiresAt) - OWNER_IDLE_DAYS * DAY;
+  const used = lastUse > Date.parse(l.createdAt) + 60_000 ? `last used ${relativeTime(new Date(lastUse).toISOString(), now)}` : "not used yet";
+  return { text: `Owner link made ${relativeTime(l.createdAt, now)} · ${used} · turns off ${relativeIn(l.expiresAt, now) ?? "soon"} if unused · opened ${times(info.opened)}`, warn: false };
 }
 
 /** "Set by you 2d ago." for the newest change by the operator; "" when the newest isn't theirs

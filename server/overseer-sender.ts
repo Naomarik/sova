@@ -10,6 +10,14 @@ const SENDER_SECRET = randomBytes(32).toString("hex");
 /** The value the Overseer's own in-process calls carry (server/overseer.ts). */
 export const senderSecret = (): string => SENDER_SECRET;
 
+/** Whether `header` is the sender secret (the Overseer's own in-process call), whether or not an Overseer is current. */
+export function isSenderSecret(header: string | undefined): boolean {
+  if (!header) return false;
+  const got = Buffer.from(header);
+  const want = Buffer.from(SENDER_SECRET);
+  return got.length === want.length && timingSafeEqual(got, want);
+}
+
 /** The current Overseer's id when `header` is the sender secret (a tool call of its own), else undefined. */
 export function overseerSender(header: string | undefined): string | undefined {
   if (!header) return undefined;
@@ -65,3 +73,7 @@ export const confirmRefusal = (what: string, lead = "This reaches people or ends
   `${lead}: ask with sova_card, listing ${what} in its items, and act in the turn the user's click starts.`;
 /** The lead of an add's refusal (§app.overseer/org-project-add). */
 export const ADD_LEAD = "This adds a project";
+/** An add's refusal when no click on a card opened the turn at all (§app.overseer/org-project-add):
+    `what` names the folder with the org the call asked for. */
+export const addNoClickRefusal = (what: string) =>
+  `${ADD_LEAD}, and this turn wasn't opened by a click on a card: reopen the card (sova_card reopen, if you recorded its answer) or ask again with sova_card, listing ${what} in its items, so the user can click it again, and act in the turn that click starts.`;

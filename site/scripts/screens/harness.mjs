@@ -179,22 +179,34 @@ export async function startServer(root, { node = false } = {}) {
 const SKILL = resolve(REPO, ".claude/skills/playwright/scripts");
 
 /** The playwright skill's isolated browser (start-browser.sh), and playwright from its own
-    node_modules, refused when that resolves outside this worktree. */
-export async function startBrowser() {
+    node_modules, refused when that resolves outside this worktree. Where start-browser.sh can't
+    run (it keeps its pid file and profile in /tmp, which a sandbox may make read-only), the same
+    Chromium is started here instead, its profile under `root` (pass the run's root). */
+export async function startBrowser({ root, deviceScale } = {}) {
   for (const p of [SKILL, join(SKILL, "node_modules")]) {
     if (!existsSync(p)) throw new Error(`${p} is missing: install the playwright skill's packages (agents/frontend/overview.md: Playwright in a fresh worktree)`);
     const real = realpathSync(p);
     if (real !== REPO && !real.startsWith(`${REPO}/`)) throw new Error(`${p} resolves to ${real}, outside ${REPO}: refusing to use it`);
   }
+  const { chromium } = createRequire(join(SKILL, "package.json"))("playwright");
+  // The video needs its own: the screencast films the window at the window's pixel scale, not the
+  // page's emulated one, so a 2x recording needs a window forced to 2x (start-browser.sh has no
+  // such flag).
+  if (deviceScale) {
+    if (!root) throw new Error("startBrowser({ deviceScale }) needs the run's root for the browser profile");
+    return ownBrowser(chromium, root, deviceScale);
+  }
   let out;
   try {
     out = execFileSync(join(SKILL, "start-browser.sh"), ["--headless"], { cwd: SKILL, stdio: ["ignore", "pipe", "pipe"] }).toString();
   } catch (e) {
-    throw new Error(`the playwright skill's start-browser.sh failed (exit ${e.status}):\n${String(e.stdout ?? "")}${String(e.stderr ?? "")}`.trim());
+    const why = `${String(e.stdout ?? "")}${String(e.stderr ?? "")}`.trim();
+    if (!root) throw new Error(`the playwright skill's start-browser.sh failed (exit ${e.status}):\n${why}`);
+    console.warn(`start-browser.sh failed (exit ${e.status}); starting Chromium directly, its profile under the run's root`);
+    return ownBrowser(chromium, root);
   }
   const port = /PW_PORT=(\d+)/.exec(out)?.[1];
   if (!port) throw new Error(`start-browser.sh printed no PW_PORT:\n${out}`);
-  const { chromium } = createRequire(join(SKILL, "package.json"))("playwright");
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   return {
     browser,
@@ -202,6 +214,35 @@ export async function startBrowser() {
     stop: async () => {
       try { await browser.close(); } catch {}
       try { execFileSync(join(SKILL, "stop-browser.sh"), [], { cwd: SKILL, env: { ...process.env, PW_PORT: port }, stdio: "ignore" }); } catch {}
+    },
+  };
+}
+
+/** The skill's binary choice (CHROMIUM_BIN, then PATH), started headless with CDP on a free port
+    and a profile inside `root`, its window at `deviceScale` if given; stopped with its process group. */
+async function ownBrowser(chromium, root, deviceScale = null) {
+  let bin = process.env.CHROMIUM_BIN;
+  for (const name of ["chromium", "chromium-browser", "google-chrome", "google-chrome-stable"]) {
+    if (bin) break;
+    try { bin = execFileSync("which", [name], { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch {}
+  }
+  if (!bin) throw new Error("no Chromium binary found: set CHROMIUM_BIN");
+  const port = await freePort();
+  const profile = join(root, "browser-profile");
+  mkdirSync(profile, { recursive: true });
+  // --no-sandbox: a sandbox that leaves /tmp read-only also runs this in a user namespace, where
+  // Chromium's own sandbox can't start. It only ever opens the run's own local server.
+  const flags = [`--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--headless=new", "--disable-gpu", "--no-sandbox", "--disable-crash-reporter", ...(deviceScale ? [`--force-device-scale-factor=${deviceScale}`] : [])];
+  // The caller's own environment: Chromium crashed at start (SIGTRAP) with TMPDIR or XDG dirs moved.
+  const child = startChild(bin, flags, { env: process.env, cwd: root, log: join(root, "logs", "browser.log") });
+  await waitFor(() => fetch(`http://127.0.0.1:${port}/json/version`).then((r) => r.ok), { what: "Chromium's CDP endpoint", timeout: 30_000 });
+  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  return {
+    browser,
+    port,
+    stop: async () => {
+      try { await browser.close(); } catch {}
+      await child.stop();
     },
   };
 }
@@ -267,7 +308,14 @@ export const FREEZE_CSS = "*, *::before, *::after { animation-duration: 0s !impo
 
 /** What must never reach an image: this machine's home, user and host, tailnet names and
     addresses, and the capture root itself. Held in memory only. */
-export function leakPatterns(root) {
+/** Model and provider names as they show on screen: a known family's word and what is glued to it
+    ("glm-5.3", "GPT-6.1", "Opus 5.5"). Every one the page shows must be part of one of the
+    story's own models (its id, name or provider), so no other model ever appears. */
+const MODEL_WORD = /\b(?:claude|opus|sonnet|haiku|gpt|codex|gemini|gemma|kimi|moonshot|ollama|qwen|glm|zai|z\.ai|deepseek|mistral|mixtral|codestral|llama|openrouter|groq|cerebras|bedrock|vertex|anthropic|openai|minimax)[\w.-]*(?: \d[\d.]*)?/gi;
+/** Every model name the gate has passed, for the run's summary. */
+export const modelsSeen = new Set();
+
+export function leakPatterns(root, models = {}) {
   const lits = [];
   const add = (v, what) => v && v.length >= 3 && !["demo", "root", "localhost"].includes(v) && lits.push({ v, what });
   add(homedir(), "the real home directory");
@@ -282,6 +330,7 @@ export function leakPatterns(root) {
   } catch {}
   return {
     lits,
+    models: Object.values(models).flatMap((m) => [m.id, m.name, m.provider]).filter(Boolean).map((x) => x.toLowerCase()),
     res: [
       [/(?<!\bexample)\.ts\.net\b/i, "a .ts.net name"],
       [/\b100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b/, "a tailnet (100.64.0.0/10) address"],
@@ -298,7 +347,7 @@ export function leakPatterns(root) {
 
 /** Every visible string, attribute and link on the page, checked against the patterns. Throws. */
 export async function leakGate(page, patterns, where) {
-  const { all, visible } = await page.evaluate(() => {
+  const { all, visible, shown } = await page.evaluate(() => {
     const text = [document.body.innerText];
     const seen = [document.title];
     const attrs = [location.href.replace(/#t=[^&]*/, "")];
@@ -313,12 +362,18 @@ export async function leakGate(page, patterns, where) {
       }
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) text.push(el.value, el.placeholder);
     }
-    return { visible: text.join("\n"), all: [...text, ...seen, ...attrs].join("\n") };
+    return { visible: text.join("\n"), shown: [...text, ...seen].join("\n"), all: [...text, ...seen, ...attrs].join("\n") };
   });
   const hits = [];
   for (const { v, what } of patterns.lits) if (all.toLowerCase().includes(v.toLowerCase())) hits.push(what);
   for (const [re, what] of patterns.res) if (re.test(all)) hits.push(what);
   for (const { v, what } of patterns.visible ?? []) if (visible.includes(v)) hits.push(what);
+  if (patterns.models?.length)
+    for (const w of shown.match(MODEL_WORD) ?? []) {
+      const t = w.replace(/[.-]+$/, "");
+      if (patterns.models.some((m) => m.includes(t.toLowerCase()))) modelsSeen.add(t);
+      else hits.push(`a model or provider the story doesn't have ("${t}")`);
+    }
   if (hits.length) throw new Error(`leak gate at ${where}: the page shows ${[...new Set(hits)].join(", ")}. Nothing was written.`);
 }
 
@@ -340,11 +395,26 @@ export async function cropToViewport(frames, vp, outDir) {
   mkdirSync(outDir, { recursive: true });
   let size = null;
   const out = [];
+  const metas = [];
+  for (const f of frames) metas.push(await sharp(f.file).metadata());
+  // The film's pixel scale: the one most frames have. A frame painted at another (a repaint for
+  // something else, such as a screenshot, can reach the screencast with its picture at one size and
+  // its metadata at another) would be cropped wrong and flash zoomed in or out for one frame: it is
+  // dropped, and the frame before it simply stays on screen longer.
+  const scaleOf = (f, m) => Math.round((m.width / f.w) * 100) / 100;
+  const counts = new Map();
+  frames.forEach((f, i) => counts.set(scaleOf(f, metas[i]), (counts.get(scaleOf(f, metas[i])) ?? 0) + 1));
+  const film = [...counts].sort((a, b) => b[1] - a[1])[0][0];
+  const dropped = [];
   for (const [i, f] of frames.entries()) {
     const top = f.top ?? 0;
     if (f.w + 0.5 < vp.width || f.h - top + 0.5 < vp.height)
       throw new Error(`frame ${i} shows ${Math.round(f.w)}x${Math.round(f.h - top)} CSS px, less than the ${vp.width}x${vp.height} viewport; nothing was encoded`);
-    const meta = await sharp(f.file).metadata();
+    const meta = metas[i];
+    if (Math.abs(scaleOf(f, meta) - film) > 0.02 || Math.abs(meta.height / f.h - film) > 0.02) {
+      dropped.push({ i, t: f.t, size: `${meta.width}x${meta.height}`, css: `${Math.round(f.w)}x${Math.round(f.h)}` });
+      continue;
+    }
     const s = meta.width / f.w;
     const box = { left: 0, top: Math.round(top * s), width: Math.min(Math.round(vp.width * s), meta.width), height: 0 };
     box.height = Math.min(Math.round(vp.height * s), meta.height - box.top);
@@ -354,11 +424,12 @@ export async function cropToViewport(frames, vp, outDir) {
     await sharp(f.file).extract(box).resize(size[0], size[1], { fit: "fill" }).png({ compressionLevel: 1 }).toFile(file);
     out.push({ ...f, file });
   }
-  return { frames: out, width: size[0], height: size[1] };
+  if (!out.length) throw new Error("no screencast frame is at the film's pixel scale");
+  return { frames: out, width: size[0], height: size[1], scale: film, dropped };
 }
 
-/** Where debug output of a failed run goes: the worktree's ignored .agent/screens/. */
-export const DEBUG_DIR = join(REPO, ".agent", "screens", "debug");
+/** Where debug output of a failed run goes: the worktree's ignored .agent/screens/ (or $SCREENS_DEBUG_DIR). */
+export const DEBUG_DIR = process.env.SCREENS_DEBUG_DIR ?? join(REPO, ".agent", "screens", "debug");
 export const OUT_DIR = join(SITE, "src", "assets", "screens");
 
 /**

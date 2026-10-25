@@ -746,7 +746,8 @@ function LoginList(props: { tick: number; onConflicts(n: number): void }) {
 /**
  * The stale-tab banner: the host answering this tab is not the one that loaded it, or serves a
  * different Sova. A different protocol can't be worked around, so it has no Dismiss; another build
- * or a new host is information, and the tab keeps working.
+ * or a new host is information, and the tab keeps working. Every tab shows it, mesh on or off, in
+ * the same words.
  */
 export function StaleTabBanner(props: { change: HelloChange; onDismiss(): void }) {
   const c = () => props.change;

@@ -24,20 +24,28 @@ import { registerWrapupRoutes } from "./wrapup-routes";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
 import { registerProjectFileRoutes } from "./project-files-routes";
+import { registerSessionOfferRoutes } from "./session-offers-routes";
 import { setFileCopyGuards } from "./project-files-tool";
 import { registerProjectRoutes } from "./projects/routes";
 import { registerProjectServiceRoutes } from "./project-services/routes";
 import { registerServicesViewRoutes } from "./project-services/view-routes";
 import { registerDecisionRoutes } from "./decisions-routes";
+import { registerConversationDraftRoutes } from "./conversation-draft-routes";
 import { registerVoiceRoutes } from "./voice/service";
 import { registerSessionShareRoutes } from "./session-shares-routes";
+import { mountTourRoutes } from "./tour-routes";
+import { ensureTourToolRuntime, setTourNeedsYou, setTourResumed } from "./tours/runtime";
+import { setTourSignInWaits, tourResumedNotifier, tourSignInNotifier } from "./tours/sign-in-notice";
 import { registerSessionForkRoutes } from "./session-fork-routes";
 import { mountPreviewLinks } from "./preview-links-routes";
 import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
 import { mountOutreachRelay } from "./outreach/relay";
 import { mountOutreach } from "./outreach/routes";
-import { chatHandle, chatHandles, getModelRuntime, ModeRefusedError } from "./chat-handle";
+import { deliverFrames, postedFrames, POSTED_FRAMES_MAX } from "./ws";
+import { mountChatActions } from "./chat-actions";
+import { acquireChatHandle, type ChatHandle, chatHandle, chatHandleById, chatHandles, getModelRuntime, ModeRefusedError } from "./chat-handle";
+import { restorePick } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { canonicalPath, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { agentRoot, stateRoot } from "./state-root";
 import { runtimeInfo } from "./runtime-choice";
@@ -48,7 +56,7 @@ import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
-import { getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
+import { getAgentsInsight, getHiddenWorkers, getMemberInbox, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
 import { registerUsageRoutes } from "./usage-routes";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
 import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
@@ -62,15 +70,17 @@ import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
 import { cleanupPlan, cleanupRemove, configureCleanup, worktreesSummary } from "./worktree-cleanup";
-import { applyLoadout, getSessionSetup } from "./session-setup";
+import { applyLoadout, getSessionSetup, readSetupFile } from "./session-setup";
 import { getSessionTools } from "./session-tools";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
-import { AUTO_TITLE_MAX_PATHS, TOOL_CONTENT_MAX_IDS, type SessionsDirInfo, type SessionTitleSource, type ToolContentResponse, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
+import { AUTO_TITLE_MAX_PATHS, TOOL_CONTENT_MAX_IDS, type SessionsDirInfo, type SessionTitleSource, type ProjectModeApprovalNeeded, type ToolContentResponse, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
+import { codingSpecRefusal } from "./project-coding-mode";
+import { projectCodingIds } from "./project-sessions";
 import { configureSession } from "./sessions-configure";
 import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
 import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
@@ -89,6 +99,7 @@ import { alignSettingsInfo, saveAlignSettingsBody } from "./align-settings";
 import { readSummarizerSettings, writeSummarizerSettings } from "./topic-outline-settings";
 import { claudeCliStatus } from "./claude-status";
 import { AutoTitleSweep, autoTitlePaths, nameSession, shortenPicks, traceToFile, type NameDeps } from "./session-autotitle";
+import { setSummaryWriter, summaryFromChain } from "./version-summaries";
 import { parseSessionTitleSettings, readSessionTitleSettings, sessionTitleSettingsInfo, writeSessionTitleSettings } from "./session-titles-settings";
 import type { LlmRuntime } from "./decide-llm";
 import { claudeLoginEnv, registerClaudeAccountRoutes } from "./claude-accounts";
@@ -98,6 +109,8 @@ import { registerMemoryRoutes } from "./memory/routes";
 import { parseSandboxBody } from "./sandbox-state";
 import { WORKER_ID_RE } from "./worker-resume";
 import { meshApi, meshRoutes } from "./mesh";
+import { registerCommandsRoutes } from "./commands-routes";
+import { auditStart, registerAuditRoutes } from "./command-audit";
 import { mountDetails } from "./mesh/details";
 import { mountResync } from "./mesh/resync";
 import { probePeer } from "./mesh/hello";
@@ -126,14 +139,22 @@ import { checkRename, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parse
 import { renameIdeaEverywhere } from "./overseer-idea-tools";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
 import { findExtension, listExtensions, proxyExtension, serveExtensionFile } from "./extensions";
-import { decisions } from "./decide-runtime";
+import { decisions, decisionSettings, decisionsReady } from "./decide-runtime";
+import { alignTriage } from "./align-triage";
+import { workerChecks } from "./worker-checks";
 import { decisionsInfo, decisionsOptions, deleteKey, probeDecisions, putJevKey, saveDecisions } from "./decide-routes";
 import { tagRoutes } from "./tags-backfill";
 import { pushRoutes } from "./push-routes";
 import { chatTrialRoutes } from "./chat-trial-routes";
 import { sessionsChanged } from "./list-generation";
 import { resourceMonitor } from "./resource-monitor";
-import { authGate, SERVER_HEADER, unlock, pair, revealToken } from "./auth";
+import { authGate, CALLER_HEADER, extensionCaller, isExtensionKey, SERVER_HEADER, TOKEN_HEADER, unlock, pair, revealToken, setExtensionKeyCheck } from "./auth";
+import { localRequest } from "./mesh/proxy";
+import { pageOnlyRefusal } from "./page-only";
+import { registerProjectSettingsRoutes } from "./project-settings-routes";
+import { isProjectModeId } from "../shared/project-modes";
+import { extensionKeys } from "./extension-keys";
+import { registerUpdatesRoutes } from "./updates/routes";
 
 const DIST_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 /** tokens.css and base.css, served as is at /design/* for extension UIs (server/extensions.ts). */
@@ -167,14 +188,30 @@ let built = false;
 export function buildApp(deps: AppDeps) {
   if (built) throw new Error("buildApp: the app is built once per process");
   built = true;
+  /** The chat a person's action on it needs: open, or opened now, as a send opens a chat closed while
+      quiet (§chat.transcript/instant-open), never "open the chat first". A missing file is a 404; a
+      session that can't open (a TUI holds it, its remote placeholder folder is gone) is refused with why. */
+  async function chatFor(path: string): Promise<{ chat: ChatHandle } | { status: 404 | 409; error: string }> {
+    if (!existsSync(path)) return { status: 404, error: "Session file not found" };
+    try {
+      return { chat: await acquireChatHandle(path) };
+    } catch (err) {
+      return { status: 409, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
   const app = new Hono();
 
   // The gate (server/auth.ts, §app.access/gate), first so it stands before everything, and the
   // X-Sova-Server mark on every answer (a refusal and the static shell included), which the preview
-  // proxy refuses to pass on. In-process calls and the peer listener are never asked.
+  // proxy refuses to pass on. In-process calls and the peer listener are never asked. An installed
+  // extension's own key is checked by server/extension-keys.ts (§app.extensions/backend-key).
+  setExtensionKeyCheck(extensionKeys);
   app.use("*", async (c, next) => {
     const refused = authGate(c);
     if (refused) return refused;
+    // Who ran what (server/command-audit.ts, §app.command-audit/record): only a call that shows the
+    // token; noted once answered, off the answer's path. Neither step can change the answer.
+    const audited = auditStart(c);
     await next();
     try {
       c.res.headers.set(SERVER_HEADER, "sova");
@@ -183,6 +220,7 @@ export function buildApp(deps: AppDeps) {
       c.res = new Response(c.res.body, c.res);
       c.res.headers.set(SERVER_HEADER, "sova");
     }
+    audited?.(c.res.status, c.req.routePath);
   });
 
   // A request that may change something starts the next session listing afresh, before it runs and
@@ -226,6 +264,8 @@ export function buildApp(deps: AppDeps) {
   app.get("/api/auth/status", (c) => c.json({ ok: true }));
   // The folder this server lists sessions from (its agent dir's), which the empty list names.
   app.get("/api/sessions/dir", (c) => c.json({ sessionsDir: SESSIONS_DIR, home: homedir() } satisfies SessionsDirInfo));
+  // Updates: what runs, the daily check, and the operator's upgrade.
+  registerUpdatesRoutes(app);
 
   app.get("/api/sessions", async (c) => c.json(await listSessions()));
   registerProfileRoutes(app);
@@ -357,8 +397,11 @@ export function buildApp(deps: AppDeps) {
   registerOrgRoutes(app);
   registerWrapupRoutes(app);
   registerProjectOverseerRoutes(app);
+  registerProjectSettingsRoutes(app);
   registerProjectCostRoutes(app);
   registerProjectFileRoutes(app);
+  // Session offers: a session's offer cards and clicks, another chat's show, the project page's list (§chat/offers).
+  registerSessionOfferRoutes(app);
   // The usage ledger: every figure of spend, answered by the usage helper (§app.insights/usage-ledger).
   registerUsageRoutes(app);
   registerProjectRoutes(app);
@@ -367,11 +410,36 @@ export function buildApp(deps: AppDeps) {
   registerServicesViewRoutes(app);
   // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
   registerDecisionRoutes(app);
+  registerConversationDraftRoutes(app);
   // Voice input: setup, status and transcription on this host (server/voice/; §chat/voice).
   registerVoiceRoutes(app);
   // Session share links: the operator's routes and Follow live (server/session-shares-routes.ts;
   // §app/session-share). The recipients' routes are the share listener's (server/share/session-routes.ts).
   registerSessionShareRoutes(app);
+  mountTourRoutes(app);
+  // A tour recording waiting for a sign-in marks its chat as needing you and tells its agent once, through
+  // Sova's own prompt, so a chat Sova can't write to gets only the mark (§app.tours/sites). No secret goes either way.
+  // The notice is held while the chat is busy (never queued behind its turn) and dropped once that wait has ended.
+  setTourNeedsYou(tourSignInNotifier({
+    pathOf: pathOfId,
+    prompt: (path, text, key) => promptSession(path, text, undefined, "followUp", undefined, key),
+    busy: (path) => { const m = chatHandle(path)?.mirror; return !!m && !m.closed && (m.running || m.compacting || m.starting); },
+    stillWaiting: (jobId, since) => ensureTourToolRuntime().stillWaitingSignIn(jobId, since),
+    log: (line) => console.warn(line),
+  }));
+  // The user answered a recording's sign-in or site approval and it continued: an idle chat is told once to call
+  // status (it waits), so a chat that ended its turn at the card doesn't sit idle (§app.tours/sites). Held while
+  // the chat is busy; dropped if it started working meanwhile or the job no longer continues from that answer.
+  const chatBusy = (m: { closed: boolean; running: boolean; compacting: boolean; starting: boolean } | undefined) => !!m && !m.closed && (m.running || m.compacting || m.starting);
+  setTourResumed(tourResumedNotifier({
+    pathOf: pathOfId,
+    prompt: (path, text, key) => promptSession(path, text, undefined, "followUp", undefined, key),
+    busy: (path) => chatBusy(chatHandle(path)?.mirror),
+    busyOf: (sessionId) => chatBusy(chatHandleById(sessionId)?.mirror),
+    stillContinuing: (jobId, at) => ensureTourToolRuntime().stillContinuing(jobId, at),
+    log: (line) => console.warn(line),
+  }));
+  setTourSignInWaits(() => ensureTourToolRuntime().waitingSignIns().map((w) => ({ sessionId: w.sessionId, origin: w.origin, fields: w.fields, since: Date.parse(w.since) || 0 })));
   // Fork a conversation through a delivered reply (server/session-fork-routes.ts): POST /api/sessions/fork
   // makes a new web-owned session from the source's active branch, read-only on the source.
   registerSessionForkRoutes(app);
@@ -545,6 +613,8 @@ export function buildApp(deps: AppDeps) {
     settings: () => readSessionTitleSettings(),
     summary: (path) => getSessionSummary(path),
   });
+  // Versions' summaries for the owner (§app.project-assistant/versions) are written by the same title models.
+  setSummaryWriter((prompt) => summaryFromChain(readSessionTitleSettings(), prompt, titleDeps()));
   const autoTitleSweep = new AutoTitleSweep({
     settings: () => readSessionTitleSettings(),
     list: listSessions,
@@ -747,6 +817,50 @@ export function buildApp(deps: AppDeps) {
     return c.json(await getSessionSetup(path, { fresh: c.req.query("fresh") === "1" }));
   });
 
+  // One file the session's setup lists, for the markdown viewer (§chat.transcript/setup-card-open-file):
+  // a path the list doesn't name is a 404 before any read. Never cached.
+  app.get("/api/sessions/context/file", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    const file = c.req.query("file");
+    if (!file) return c.json({ error: "Missing ?file=" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const r = await readSetupFile(path, file);
+    return r.ok ? c.json(r.file, 200, { "Cache-Control": "no-store" }) : c.json({ error: r.error }, r.status);
+  });
+
+  // Triage on a session's open alignment cards (§app.decisions/align-triage): a stakes chip per open
+  // question, asked once per card version and only with attention signals on. Same 400/404 as above.
+  app.get("/api/sessions/align-triage", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const s = await getSessionSummary(path);
+    if (!s) return c.json({ error: "Session file not found" }, 404);
+    const branch = await readBranch(path).catch(() => []);
+    return c.json(
+      await alignTriage(s, branch, { settings: decisionSettings, provider: () => (decisionsReady() ? decisions() : null), held: (p) => !!chatHandle(p) }),
+      200,
+      { "Cache-Control": "no-store" },
+    );
+  });
+
+  // The check of each worker's newest done report (§app.decisions/worker-report): an Untested chip
+  // on the worker row, asked once per report and only with attention signals on. Same 400/404.
+  app.get("/api/sessions/worker-checks", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const s = await getSessionSummary(path);
+    if (!s) return c.json({ error: "Session file not found" }, 404);
+    const branch = await readBranch(path).catch(() => []);
+    return c.json(
+      await workerChecks(s, branch, { settings: decisionSettings, provider: () => (decisionsReady() ? decisions() : null), held: (p) => !!chatHandle(p) }),
+      200,
+      { "Cache-Control": "no-store" },
+    );
+  });
+
   // The tools a held chat declares to its model now (server/session-tools.ts, §chat.transcript/setup-card-tools).
   // Same 400/404 as the context route above; a session this server doesn't hold (or a terminal's, or a
   // special one) is a 200 whose `state` says so. Never cached.
@@ -876,7 +990,10 @@ export function buildApp(deps: AppDeps) {
     const path = resolveSessionPath(raw);
     if (!path) return c.json({ error: "Invalid session path" }, 400);
     const chat = chatHandle(path);
-    return chat ? c.json(await chat.subagentProfileInfo()) : c.json({ error: "Open the chat first" }, 404);
+    if (chat) return c.json(await chat.subagentProfileInfo());
+    // A chat closed while quiet (or never opened): its pick read from its file; a read never opens it.
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    return c.json(subagentProfilesInfo(restorePick((await deps.extensionEntriesOf(path)) as Parameters<typeof restorePick>[0])));
   });
   app.put("/api/settings/subagents", async (c) => {
     const result = await saveSubagentProfiles(await c.req.json().catch(() => null), delegateSources);
@@ -900,8 +1017,9 @@ export function buildApp(deps: AppDeps) {
   app.post("/api/subagents", async (c) => {
     const path = resolveSessionPath(c.req.query("path"));
     if (!path) return c.json({ error: "Invalid session path" }, 400);
-    const chat = chatHandle(path);
-    if (!chat) return c.json({ error: "Open the chat first" }, 404);
+    const got = await chatFor(path);
+    if ("error" in got) return c.json({ error: got.error }, got.status);
+    const { chat } = got;
     try { return c.json(await chat.switchSubagentProfile((await c.req.json()).profile)); }
     catch (err) { return c.json({ error: err instanceof Error ? err.message : String(err) }, 409); }
   });
@@ -1028,7 +1146,16 @@ export function buildApp(deps: AppDeps) {
   // The mode is per session. ~/.pi/agent/mode.json is the default new sessions
   // start from; GET reads it, POST without ?path= writes it and changes no open chat. A switch never writes
   // it (chat-manager switchMode): the default moves when a caller asks for exactly that.
-  app.get("/api/mode", (c) => c.json(modeInfo(readMode(), defaultMemoryChoice())));
+  // With ?path=: that held chat's own mode, its project modes read now (§chat.mode-menu/project-modes).
+  app.get("/api/mode", async (c) => {
+    const rawPath = c.req.query("path");
+    if (rawPath === undefined) return c.json(modeInfo(readMode(), defaultMemoryChoice()));
+    const path = resolveSessionPath(rawPath);
+    if (!path) return c.json({ error: "Invalid ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    const chat = chatHandle(path);
+    if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
+    return c.json(await chat.modeResult());
+  });
 
   // With ?path=<session .jsonl>: switch that one held chat, from its next message (server/chat-manager
   // applyMode), or with { saveDefault: true } make that chat's own mode the default, switching nothing
@@ -1042,6 +1169,41 @@ export function buildApp(deps: AppDeps) {
       throw err;
     }
   }
+
+  /** Why this request can't approve hooks: only the operator's own page on this machine may. */
+  function hooksApprovalRefusal(c: Context): string | null {
+    return pageOnlyRefusal(c, {
+      overseer: "The Overseer can't approve a project mode's hooks: approve them yourself in the mode menu.",
+      local: "A project mode's hooks are approved only on this machine.",
+      chat: "A chat can't approve a project mode's hooks: approve them yourself in the mode menu.",
+      script: "A script can't approve a project mode's hooks: approve them yourself in the mode menu.",
+      extension: "An extension can't approve a project mode's hooks: approve them yourself in the mode menu.",
+    });
+  }
+
+  // POST /api/mode/command?path= { mode, name, args? } (§chat.mode-menu/project-mode-commands): one command of a
+  // project mode on in that chat, run by the chat's own process from the copy it turned on. A peer needs `full`
+  // (server/mesh/access.ts). The chat checks everything (on, sandbox, approval, files); a program that ran answers 200.
+  app.post("/api/mode/command", async (c) => {
+    const rawPath = c.req.query("path");
+    const path = rawPath === undefined ? null : resolveSessionPath(rawPath);
+    if (!path) return c.json({ error: "Invalid ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Expected JSON body { mode, name, args? }" }, 400);
+    }
+    const b = body !== null && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
+    if (!b || !isProjectModeId(b.mode) || typeof b.name !== "string" || !/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/.test(b.name) || b.name.length > 32)
+      return c.json({ error: "Expected JSON body { mode: <project mode id>, name: <command name>, args?: {…} }" }, 400);
+    if (Object.keys(b).some((k) => k !== "mode" && k !== "name" && k !== "args")) return c.json({ error: "Unknown field: send mode, name and args only" }, 400);
+    if (b.args !== undefined && (b.args === null || typeof b.args !== "object" || Array.isArray(b.args))) return c.json({ error: "args must be a JSON object" }, 400);
+    const got = await chatFor(path);
+    if ("error" in got) return c.json({ error: got.error }, got.status);
+    const out = await got.chat.runModeCommand(b.mode, b.name, b.args);
+    return out.ok ? c.json(out.result) : c.json({ error: out.error }, out.status);
+  });
 
   app.post("/api/mode", async (c) => {
     const rawPath = c.req.query("path");
@@ -1060,15 +1222,68 @@ export function buildApp(deps: AppDeps) {
       // A chat's own mode is what is saved, so there has to be a chat: no path is a 400, not a write
       // of whatever the file already says.
       if (path === null) return c.json({ error: "saveDefault needs ?path=: it saves that chat's own mode" }, 400);
-      const chat = chatHandle(path);
-      if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
-      return modeRefusal(c, () => chat.saveModeDefault());
+      const got = await chatFor(path);
+      if ("error" in got) return c.json({ error: got.error }, got.status);
+      return modeRefusal(c, () => got.chat.saveModeDefault());
     }
-    if (path === null) return c.json(await switchMode(request.patch));
-    const chat = chatHandle(path);
-    if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
-    return modeRefusal(c, () => chat.switchMode(request.patch));
+    if (request.kind === "approveHooks") {
+      // Hooks run with no one watching, so only you approve them, here (§chat.mode-menu/project-mode-hooks).
+      const notYou = hooksApprovalRefusal(c);
+      if (notYou) return c.json({ error: notYou }, 403);
+      if (path === null) return c.json({ error: "approveHooks needs ?path=: hooks belong to one chat's project modes" }, 400);
+      const got = await chatFor(path);
+      if ("error" in got) return c.json({ error: got.error }, got.status);
+      try {
+        const result = await got.chat.approveHooks(request.approvals);
+        if (result.needsApproval) return c.json({ error: result.error ?? "Approval needed", needsApproval: result.needsApproval } satisfies ProjectModeApprovalNeeded, 409);
+        return c.json(result);
+      } catch (err) {
+        if (err instanceof ModeRefusedError) return c.json({ error: err.message }, 409);
+        throw err;
+      }
+    }
+    if (path === null) {
+      // The default never stores project modes (§chat.mode-menu/project-modes): they belong to one chat's checkout.
+      if (request.patch.projectModes !== undefined) return c.json({ error: "Project modes belong to one chat: send projectModes with ?path=" }, 400);
+      return c.json(await switchMode(request.patch));
+    }
+    const got = await chatFor(path);
+    if ("error" in got) return c.json({ error: got.error }, got.status);
+    // A project's coding session keeps spec on (§app.project-overseer/coding-mode).
+    const specOff = codingSpecRefusal(request.patch.minorModes);
+    if (specOff && projectCodingIds().has(got.chat.mirror.sessionId)) return c.json({ error: specOff }, 409);
+    // The Overseer's own call turns a project mode on as its approval (q7); a body never says so itself.
+    // Who approves (§chat.mode-menu/project-mode-hooks): the Overseer's turn-on, the operator's own page (`user`, the
+    // only approval hooks run on), or any other caller (`caller`: tools and commands run on it, as today, hooks don't).
+    const approvedBy = request.patch.projectModes === undefined ? undefined : overseerSender(c.req.header(OVERSEER_SENDER_HEADER)) ? ("overseer" as const) : hooksApprovalRefusal(c) ? ("caller" as const) : ("user" as const);
+    const patch = { ...request.patch, ...(approvedBy ? { approvedBy } : {}) };
+    try {
+      const result = await got.chat.switchMode(patch);
+      if (result.needsApproval) return c.json({ error: result.error ?? "Approval needed", needsApproval: result.needsApproval } satisfies ProjectModeApprovalNeeded, 409);
+      return c.json(result);
+    } catch (err) {
+      if (err instanceof ModeRefusedError) return c.json({ error: err.message }, 409);
+      throw err;
+    }
   });
+
+  // Frames a page handed over as it went (a tab closed or reloaded before its chat socket opened,
+  // §chat.transcript/send-while-starting): a keepalive request, answered before they run. They take
+  // a chat socket's own path (server/ws.ts deliverFrames): in order, each client id once, a refusal
+  // put back as the session's draft.
+  app.post("/api/chat/frames", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const frames = postedFrames(await c.req.json().catch(() => null));
+    if (!frames) return c.json({ error: `Expected { frames: [...] }, 1 to ${POSTED_FRAMES_MAX} objects with a type` }, 400);
+    sessionsChanged();
+    deliverFrames(path, frames);
+    return c.json({ accepted: frames.length }, 202);
+  });
+
+  // One in-chat action from a script, with its outcome to wait for (server/chat-actions.ts, §app/chat-actions).
+  mountChatActions(app);
 
   // The sandbox extension's state for one held chat (§chat.sandbox/states): its /sandbox handler runs
   // directly (server/sandbox-state.ts). "unsupported" when the runtime has no sandbox extension.
@@ -1083,9 +1298,9 @@ export function buildApp(deps: AppDeps) {
     }
     const parsed = parseSandboxBody(body);
     if ("error" in parsed) return c.json({ error: parsed.error }, 400);
-    const chat = chatHandle(path);
-    if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
-    return c.json(await chat.applySandbox(parsed.state));
+    const got = await chatFor(path);
+    if ("error" in got) return c.json({ error: got.error }, got.status);
+    return c.json(await got.chat.applySandbox(parsed.state));
   });
 
   // Resume one restored subagent worker of a held chat, idle (server/worker-resume.ts): the subagents
@@ -1095,8 +1310,9 @@ export function buildApp(deps: AppDeps) {
     if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
     const id = c.req.query("id") ?? "";
     if (!WORKER_ID_RE.test(id)) return c.json({ error: "Invalid or missing ?id= (a worker id like ag_03)" }, 400);
-    const chat = chatHandle(path);
-    if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
+    const got = await chatFor(path);
+    if ("error" in got) return c.json({ error: got.error }, got.status);
+    const { chat } = got;
     const outcome = await chat.resumeWorker(id);
     if (!outcome.ok) return c.json({ error: outcome.error }, outcome.status);
     return c.json({ worker: await chat.workerInfo(id) } satisfies WorkerResumeResult);
@@ -1248,6 +1464,16 @@ export function buildApp(deps: AppDeps) {
     return c.json(await getHiddenWorkers(path), 200, { "Cache-Control": "no-store" });
   });
 
+  // One team member's inbox, read-only (§app.subagents-pane/member-inbox): its items without
+  // bodies, or with &item= one item's whole message. The server never writes an inbox.
+  app.get("/api/insights/session/inbox", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const res = await getMemberInbox(path, c.req.query("team") ?? "", c.req.query("worker") ?? "", c.req.query("item"));
+    return res.ok ? c.json(res.body, 200, { "Cache-Control": "no-store" }) : c.json({ error: res.error }, res.status);
+  });
+
   // Resource monitor (§app/resource-monitor): the latest background sample, and its history (5s from
   // the in-memory hour, 30s from the disk log). Read-only.
   app.get("/api/monitor", (c) => {
@@ -1275,7 +1501,7 @@ export function buildApp(deps: AppDeps) {
   });
 
   // Git diffs for the changes viewer (server/git-diff.ts, shared/protocol.ts DiffScope). Read-only;
-  // the scope names a folder the session knows, the server picks every ref.
+  // the scope names a folder the session knows, the server picks every ref but a pinned card's two oids.
   const diffRoute = (fn: (c: Context) => Promise<unknown>) => async (c: Context) => {
     try {
       return c.json(await fn(c), 200, { "Cache-Control": "no-store" });
@@ -1284,11 +1510,16 @@ export function buildApp(deps: AppDeps) {
       throw err;
     }
   };
-  app.get("/api/diff/summary", diffRoute((c) => gitDiffs.summary(scopeFromQuery((n) => c.req.query(n)))));
+  const diffScope = (c: Context) =>
+    scopeFromQuery(
+      (n) => c.req.query(n),
+      (n) => c.req.queries(n),
+    );
+  app.get("/api/diff/summary", diffRoute((c) => gitDiffs.summary(diffScope(c))));
   app.get(
     "/api/diff/patch",
     diffRoute((c) =>
-      gitDiffs.patch(scopeFromQuery((n) => c.req.query(n)), c.req.query("file") ?? "", c.req.query("old"), { context: c.req.query("context") === "1" }),
+      gitDiffs.patch(diffScope(c), c.req.query("file") ?? "", c.req.query("old"), { context: c.req.query("context") === "1", origins: c.req.query("origins") === "1" }),
     ),
   );
 
@@ -1510,6 +1741,10 @@ export function buildApp(deps: AppDeps) {
   });
   // Installed extensions (server/extensions.ts), with each backend's cached health.
   app.get("/api/extensions", async (c) => c.json(await listExtensions()));
+  // The catalogue as this server knows it, extensions' own entries included (server/commands-routes.ts).
+  registerCommandsRoutes(app, SERVER_HEAD);
+  // The record of who ran what, newest first (server/command-audit.ts, §app.command-audit/list).
+  registerAuditRoutes(app);
 
   // The mesh (server/mesh/): /api/mesh/*, the peer-only /api/peer/*, and the /peer/<id>/ proxy,
   // which falls through to the handlers below while no peer is configured.

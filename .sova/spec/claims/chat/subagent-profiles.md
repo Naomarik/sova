@@ -38,7 +38,7 @@ says so for a day and can put the previous library back (§chat.subagent-profile
   may also carry an optional `reviewer` (`{primary, fallback}` or `null`), the adversarial
   reviewer's route (§chat.alignment-review/route): a profile without the key parses as before, and
   a parse never adds it. Likewise an optional `alignment` `{style?, visuals?}`: the align mode's
-  writing style (`default`, `simplified` or `pm`) and Visuals for chats on this profile, each
+  writing style (`pm`, `simplified` or `default`, the last read as Technical) and Visuals for chats on this profile, each
   field present only when the profile overrides the host's `mode-align.json`
   (§chat.alignment/settings-file); an empty object, an unknown key or a bad value is malformed, and a
   profile without it reads exactly as before. The default
@@ -128,7 +128,8 @@ backend stays explicit and follows that backend's existing model-default behavio
 was given; the profile never crosses it. Synthesized coordinators and monitors keep their own tuples.
 
 - **Never a failed team.** A members default the model policy denies, whose backend isn't loaded,
-  or whose pi model the session's registry doesn't list is not used: those members run on the
+  whose pi model the session's registry doesn't list, or whose model ran out of usage at runtime
+  within the hour (§teams.defaults/runtime-fallback) is not used: those members run on the
   parent's model, and the `team_create` or `team_add` result says so in one line with the reason.
 - **The planning message** (`/team <objective>`) carries one line while a members default is set:
   "Members you don't give a model run on X; pass a member model to override."
@@ -190,8 +191,8 @@ profile in its mode menu; new chats start on the default."
   - **Reviewer**, only while adversarial review is switched on (§chat.alignment-review/route): one
     switch ("Review alignments with a reviewer"); its summary is the reviewer's model, or
     "Off · no review".
-  - **Alignment**, last: two choices, **Writing style** (Use host default, Default, Simplified,
-    Project manager) and **Visuals** (Use host default, On, Off), each starting on "Use host default"
+  - **Alignment**, last: two choices, **Writing style** (Use host default, Project manager,
+    Simplified, Technical) and **Visuals** (Use host default, On, Off), each starting on "Use host default"
     for a profile without an override; its summary is "Host default" or what it overrides
     ("Project manager · visuals on"). "Use host default" stores no field, and both on it store no
     `alignment` at all.
@@ -201,7 +202,7 @@ profile in its mode menu; new chats start on the default."
   from discovery, a changed worker its backend can't run is refused, one that can't be checked or
   that the policy denies saves with a note. The dialog's Save Changes saves the library; unsaved
   edits hold a close. Going back keeps them: the list then offers only that profile's Edit, so
-  another profile can't be opened over them, and Discard Changes or Save Changes frees the rest.
+  another profile can't be opened over them, and Save Changes frees the rest (Cancel discards them and closes the dialog).
 - A save reaches every chat on that profile from its next turn or team action.
 
 ## §chat.subagent-profiles/replaced — When another device's copy changed the library
@@ -259,7 +260,9 @@ one tap: **Switch This Chat to <profile>**, naming the first profile (in list or
 chat's current one, excluding Off since it promises no provider choice) whose footprint uses no
 model of the exhausted provider. Pressing
 it switches this chat only, as a pick in the menu does. With no such profile the row links to
-Settings → Subagents instead. Nothing switches automatically, and there is no near-limit hint.
+Settings → Subagents instead. A failure with no thread row of its own (its error drawn at the
+thread's end, §chat.transcript/states) keeps this row when a newer turn starts and its error
+banner goes. Nothing switches automatically, and there is no near-limit hint.
 
 ## §chat.subagent-profiles/overseer — The Overseer
 

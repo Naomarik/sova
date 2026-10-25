@@ -31,6 +31,14 @@ export interface ActionMenuItemProps {
   keepFocus?: boolean;
   /** The row replaces the menu's body with a screen instead of acting and closing. */
   stayOpen?: boolean;
+  /** A choice row (§design/menu-rows): `menuitemradio` with its check first, tinted and checked
+      while true. Absent: a plain `menuitem`. */
+  checked?: boolean;
+  /** A trailing value in words (`.popover-item-end`), never the row's only label. */
+  end?: string;
+  /** A trailing mark drawn in `.popover-item-end` instead of `end` (a count pill, say): its words
+      belong in `aria`, so it is `aria-hidden` by its maker. */
+  endBadge?: JSX.Element;
 }
 
 /** What a menu's body is handed: the rows it draws with, and the menu's own state. */
@@ -92,6 +100,19 @@ export function ActionMenu(props: {
   contain?: boolean;
   /** Called as the panel opens and closes: a trigger that would otherwise unmount can stay while open. */
   onToggle?(open: boolean): void;
+  /** The panel is a `role="menu"` named this (a menu of rows only, no screens). */
+  menuName?: string;
+  /** More classes on the panel. */
+  panelClass?: string;
+  /** Escape or a click outside puts focus back on the trigger, unless the click focused something else. */
+  returnFocus?: boolean;
+  /** Below 768px the panel drops as a dropdown under the trigger, as wide as this element (the pane),
+      not as the bottom sheet every other menu becomes there. */
+  span?: () => HTMLElement | undefined;
+  /** `false`: an icon trigger with its border (a split button's ▾), not the ghost "⋯". */
+  ghost?: boolean;
+  /** Drawn inside the trigger after its icon: a dot, say. Its words belong in `label`. */
+  badge?: JSX.Element;
   children: (api: ActionMenuApi) => JSX.Element;
 }) {
   let trigger!: HTMLButtonElement;
@@ -117,6 +138,8 @@ export function ActionMenu(props: {
   const place = () => {
     if (!menu.isConnected || !menu.matches(":popover-open")) return;
     const r = trigger.getBoundingClientRect();
+    const spanBox = spanning();
+    if (spanBox) menu.style.setProperty("--menu-width", `${Math.round(Math.max(spanBox.width - 2 * EDGE_GAP, 0))}px`);
     const below = innerHeight - EDGE_GAP - (r.bottom + TRIGGER_GAP);
     const above = r.top - TRIGGER_GAP - EDGE_GAP;
     // Measure AFTER handing it the larger side's room, so the height read back is the height
@@ -130,13 +153,19 @@ export function ActionMenu(props: {
     const maxTop = Math.max(EDGE_GAP, innerHeight - EDGE_GAP - box.height);
     const maxLeft = Math.max(EDGE_GAP, innerWidth - EDGE_GAP - box.width);
     menu.style.setProperty("--menu-top", `${Math.round(Math.min(Math.max(top, EDGE_GAP), maxTop))}px`);
-    menu.style.setProperty("--menu-left", `${Math.round(Math.min(Math.max(props.align === "start" ? r.left : r.right - box.width, EDGE_GAP), maxLeft))}px`);
+    const left = spanBox ? spanBox.left + EDGE_GAP : props.align === "start" ? r.left : r.right - box.width;
+    menu.style.setProperty("--menu-left", `${Math.round(Math.min(Math.max(left, EDGE_GAP), maxLeft))}px`);
+  };
+  /** The pane's box while the panel spans it: only below 768px, where it would otherwise be a sheet. */
+  const spanning = (): DOMRect | null => {
+    const el = props.span?.();
+    return el && matchMedia("(max-width: 767px)").matches ? el.getBoundingClientRect() : null;
   };
 
   const openMenu = () => {
     menu.showPopover();
     place();
-    queueMicrotask(() => menu.querySelector<HTMLElement>("[role=menuitem]")?.focus());
+    queueMicrotask(() => menu.querySelector<HTMLElement>("[role^=menuitem]")?.focus());
   };
   // A screen is a different height from the rows; the panel is re-placed once it has rendered.
   createEffect(() => {
@@ -171,6 +200,9 @@ export function ActionMenu(props: {
     };
     const body = (
       <>
+        <Show when={p.checked !== undefined}>
+          <Icon name="check" small class="popover-item-check" />
+        </Show>
         {p.icon}
         <span class="popover-item-text">
           <span class="popover-item-label">{p.label}</span>
@@ -178,12 +210,16 @@ export function ActionMenu(props: {
             <span class="popover-item-desc">{p.disabled || p.description}</span>
           </Show>
         </span>
+        <Show when={p.endBadge} fallback={<Show when={p.end}><span class="popover-item-end">{p.end}</span></Show>}>
+          <span class="popover-item-end">{p.endBadge}</span>
+        </Show>
       </>
     );
     const shared = {
       // A second line (the reason it can't run, or what it does) makes it a detail row.
       get class() { return p.disabled || p.description ? "popover-item popover-item-detail" : "popover-item"; },
-      role: "menuitem",
+      get role() { return p.checked === undefined ? "menuitem" : "menuitemradio"; },
+      get "aria-checked"() { return p.checked === undefined ? undefined : p.checked ? "true" : "false"; },
       tabindex: 0,
       // Keep these reactive: groups initially render before their sessions load.
       get "aria-label"() { return p.aria; },
@@ -233,11 +269,19 @@ export function ActionMenu(props: {
   const panel = (
     <div
       ref={menu}
-      class="model-menu action-menu"
+      class={`model-menu action-menu${props.span ? " action-menu-span" : ""}${props.panelClass ? ` ${props.panelClass}` : ""}`}
       popover="auto"
+      role={props.menuName ? "menu" : undefined}
+      aria-label={props.menuName}
       onToggle={(e) => {
         setOpen((e as ToggleEvent).newState === "open");
-        if ((e as ToggleEvent).newState !== "open") setScreen(null);
+        if ((e as ToggleEvent).newState !== "open") {
+          setScreen(null);
+          // Escape, or a click on nothing focusable: focus would be lost with the panel, so it goes
+          // back to the trigger. A click that focused something else keeps it there.
+          const at = document.activeElement;
+          if (props.returnFocus && (!at || at === document.body || menu.contains(at))) trigger.focus();
+        }
         props.onToggle?.(open());
       }}
     >
@@ -250,7 +294,7 @@ export function ActionMenu(props: {
       <button
         ref={trigger}
         type="button"
-        class={`button${props.text ? "" : " button-icon button-ghost"}${props.class ? ` ${props.class}` : ""}`}
+        class={`button${props.text ? "" : props.ghost === false ? " button-icon" : " button-icon button-ghost"}${props.class ? ` ${props.class}` : ""}`}
         aria-haspopup="menu"
         aria-expanded={open() ? "true" : "false"}
         aria-label={props.label}
@@ -262,6 +306,7 @@ export function ActionMenu(props: {
         onKeyDown={stop}
       >
         {props.icon === null ? null : <Icon name={props.icon ?? "more"} />}
+        {props.badge}
         <Show when={props.text}>
           {(text) => (
             <span class="action-menu-text">

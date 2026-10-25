@@ -7,6 +7,7 @@ import { type ProcTable, realSyncExec, type SyncExec } from "../project-services
 import { stateHash } from "../project-services/store";
 import type { ExitCause } from "../../shared/chat-runtime-wire";
 import { stateRoot } from "../state-root";
+import { GC_TIMER_OFF } from "./gc-timer";
 
 /**
  * The chat supervisor (al_3 stage 2, design §3): starts an ordinary chat's process as a systemd
@@ -35,6 +36,8 @@ const REAP_WAIT_MS = 30_000;
 /** How often, and how far apart, a unit's log is read again when it does not yet say how the unit ended. */
 const JOURNAL_RETRIES = 4;
 const JOURNAL_RETRY_MS = 750;
+/** At most this long between two asks of the service manager about a chat whose process looks fine. */
+export const RECONCILE_MS = 30_000;
 const REPO_ROOT = resolve(import.meta.dirname, "..", "..");
 
 export const chatsRoot = () => join(stateRoot(), "chats");
@@ -162,8 +165,8 @@ const DENY = new Set(["INVOCATION_ID", "JOURNAL_STREAM", "MANAGERPID", "NOTIFY_S
 
 /**
  * The variables the launch sets for one chat process, and only for it: its socket, file, id, unit and
- * build, the state root of the server that started it, and where its code was copied from and to
- * (§app.chat-processes/code-generations). A server never reads them: one started from a chat's own
+ * build, the state root of the server that started it, where its code was copied from and to
+ * (§app.chat-processes/code-generations), and its caller key (§app.command-audit/keys). A server never reads them: one started from a chat's own
  * tools (a hermetic server in a worktree) deletes them from its env at boot (scrubChatProcessEnv),
  * and a chat process never inherits them from its server.
  */
@@ -176,6 +179,7 @@ export const CHAT_PROCESS_ENV = [
   "SOVA_CHAT_STATE_ROOT",
   "SOVA_CHAT_LIVE_ROOT",
   "SOVA_CHAT_COPIES_ROOT",
+  "SOVA_CALLER_KEY",
 ] as const;
 
 /** Delete every chat process's own variable from a server's env (the server: at boot, before anything reads it); the names it held. */
@@ -189,7 +193,8 @@ export function scrubChatProcessEnv(env: NodeJS.ProcessEnv = process.env): strin
  * The environment a chat process starts with (design §1.2): the server's (in-process chats see it
  * whole today), minus DENY and CHAT_PROCESS_ENV; PATH with Sova's Bun first and the Claude program's directory next (so the
  * chat finds the same `claude` the server resolved, whatever its cwd's mise config says), then the
- * server's PATH; HOME; PI_CODING_AGENT_DIR. `extra` (the chat's own `SOVA_CHAT_*`) goes last and wins.
+ * server's PATH; HOME; PI_CODING_AGENT_DIR; Bun's GC timer off (server/chat-runtime/gc-timer.ts). `extra`
+ * (the chat's own `SOVA_CHAT_*`) goes last and wins.
  */
 export function chatEnv(o: { serverEnv: NodeJS.ProcessEnv; bun: string; claude?: string | null; home: string; agentDir: string; extra?: Record<string, string> }): Record<string, string> {
   const env: Record<string, string> = {};
@@ -199,6 +204,7 @@ export function chatEnv(o: { serverEnv: NodeJS.ProcessEnv; bun: string; claude?:
   env.PATH = path.join(":");
   env.HOME = o.home;
   env.PI_CODING_AGENT_DIR = o.agentDir;
+  env[GC_TIMER_OFF.name] = GC_TIMER_OFF.value;
   return { ...env, ...o.extra };
 }
 
@@ -350,6 +356,8 @@ export interface SupervisorDeps {
   pollMs?: number;
   /** The chat process's working directory (default the repository root, as for the server: never the chat's own cwd, whose mise config must not pick the runtime). */
   workdir?: string;
+  /** Where the watch reads a chat's process itself (`/proc`, Linux only): elsewhere every tick asks the driver. */
+  platform?: NodeJS.Platform;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   log?: (line: string) => void;
@@ -416,6 +424,11 @@ export class ChatSupervisor {
   /** Replacement processes' pids counted as own from their start until repoint or stopUnit, by unit. */
   private replacementClaims = new Map<string, Claim>();
   private ticking = false;
+  /** A close waited for (an idle close, awaitExit), by chat id, until it is done: a start of the same
+      chat waits for it, since its new process would run under the same unit name the close may stop. */
+  private closing = new Map<string, Promise<void>>();
+  /** When the driver last said each chat's unit was up (check), by chat id: the watch's slow reconcile. */
+  private statusAt = new Map<string, number>();
   private skippedEnv = new Set<string>();
   private readonly regDir: () => string;
   private readonly deaths: () => string;
@@ -510,6 +523,52 @@ export class ChatSupervisor {
     }
   }
 
+  /** Wait until `unit` no longer runs process `pid` (gone, or another process now: never this one's to
+      stop); false when `pid` is still its main process after `ms`. No pid recorded: until the unit is gone. */
+  private async waitProcessGone(unit: string, pid: number | null, ms: number): Promise<boolean> {
+    const until = this.now() + ms;
+    for (;;) {
+      const st = await this.deps.driver.status(unit);
+      const gone = isGone(st) || (pid !== null && st.pid !== null && st.pid !== pid);
+      if (gone || this.now() >= until) return gone;
+      await this.sleep(this.deps.pollMs ?? 100);
+    }
+  }
+
+  /** Process `rec.pid`'s close: waited for up to 30 s, then its unit stopped, only while the unit still
+      runs that process. */
+  private async closeProcess(rec: ChatRecord): Promise<void> {
+    if (await this.waitProcessGone(rec.unit, rec.pid, this.deps.exitWaitMs ?? EXIT_WAIT_MS)) return;
+    const st = await this.deps.driver.status(rec.unit);
+    if (rec.pid !== null && st.pid !== null && st.pid !== rec.pid) return this.log(`${rec.unit}: not stopped, it runs another process now (pid ${st.pid}, not ${rec.pid})`);
+    await this.deps.driver.stop(rec.unit);
+  }
+
+  /** Run `close` (a close of chat `chatId`'s process) with starts of the chat held until it is done, and
+      until every other close of the chat still in flight is done too (an idle close and a worker stop's
+      awaitExit can overlap): the entry chains them, so it clears only when the last one settles. */
+  private holdStarts<T>(chatId: string, close: () => Promise<T>): Promise<T> {
+    const p = close();
+    const before = this.closing.get(chatId);
+    const held = Promise.all([before, p.catch(() => {})]).then(() => {});
+    this.closing.set(chatId, held);
+    void held.then(() => {
+      if (this.closing.get(chatId) === held) this.closing.delete(chatId);
+    });
+    return p;
+  }
+
+  /** Wait, up to `ms`, for a close of chat `chatId` in flight; false when it is still going. */
+  private async closed(chatId: string, ms: number): Promise<boolean> {
+    const until = this.now() + ms;
+    for (;;) {
+      const p = this.closing.get(chatId);
+      if (!p) return true;
+      if (this.now() >= until) return false;
+      await Promise.race([p, this.sleep(this.deps.pollMs ?? 100)]);
+    }
+  }
+
   /** Start `unit` for `chat` and wait for its main process; the record is the caller's to write. */
   private async spawn(chat: ChatLaunch, unit: string, sock: string): Promise<ChatRecord> {
     const { argv, env, build, nice, workdir } = this.deps.launch({ ...chat, unit, sock, epoch: this.deps.epoch });
@@ -537,6 +596,10 @@ export class ChatSupervisor {
    * for, up to 10 s, until its unit and the session's writer lock are free.
    */
   async start(chat: ChatLaunch): Promise<ChatRecord> {
+    // A close of its previous process still waited for (it may stop the unit by name): done first,
+    // whether or not that process is still tracked (a link's end forgets it as soon as it exits).
+    if (!(await this.closed(chat.chatId, this.deps.predecessorWaitMs ?? PREDECESSOR_WAIT_MS)))
+      throw new Error(`The chat's previous process (${this.unitOf(chat.chatId)}) is still closing.`);
     const held = this.chats.get(chat.chatId);
     if (held) {
       const st = await this.deps.driver.status(held.rec.unit);
@@ -599,6 +662,7 @@ export class ChatSupervisor {
   private forget(chatId: string) {
     this.chats.get(chatId)?.releasePid();
     this.chats.delete(chatId);
+    this.statusAt.delete(chatId);
     rmSync(this.file(chatId), { force: true });
   }
 
@@ -663,6 +727,7 @@ export class ChatSupervisor {
     }
     this.chats.get(rec.chatId)?.releasePid();
     this.chats.delete(rec.chatId);
+    this.statusAt.delete(rec.chatId);
     this.log(`${rec.chatId}: died (${death.cause}${death.exit !== null ? `, exit ${death.exit}` : ""}${death.signal ? `, ${death.signal}` : ""})`);
     try {
       await this.deps.onDeath?.(death);
@@ -693,6 +758,7 @@ export class ChatSupervisor {
     if (!t) return "unknown";
     const st = await this.deps.driver.status(t.rec.unit);
     if (isUp(st) || st.pid !== null) {
+      if (this.chats.get(chatId) === t) this.statusAt.set(chatId, this.now());
       // A start whose main process came after spawn stopped waiting: recorded and own from now.
       if (t.rec.pid === null && st.pid !== null && this.chats.get(chatId) === t) {
         const rec = { ...t.rec, pid: st.pid };
@@ -821,7 +887,7 @@ export class ChatSupervisor {
     return recs;
   }
 
-  /** Chat `chatId`'s mirror: idle (quiet, nobody attached) since `since`, or not. */
+  /** Chat `chatId`'s mirror: idle (quiet, whether or not a tab has it open) since `since`, or not. */
   noteIdle(chatId: string, idle: boolean, since?: number): void {
     const t = this.chats.get(chatId);
     if (!t) return;
@@ -868,10 +934,13 @@ export class ChatSupervisor {
   }
 
   /**
-   * Close an idle chat through its drain: the chat re-checks that it is quiet with nobody attached.
+   * Close an idle chat through its drain: the chat re-checks that it is quiet (an open tab doesn't count).
    * A refusal restarts its idle clock; an accepted drain is waited for 30 s, then the unit is stopped.
    */
-  private async idleStop(chatId: string, t: Tracked): Promise<void> {
+  private idleStop(chatId: string, t: Tracked): Promise<void> {
+    return this.holdStarts(chatId, () => this.idleClose(chatId, t));
+  }
+  private async idleClose(chatId: string, t: Tracked): Promise<void> {
     if (!this.deps.drain) return;
     t.draining = true;
     try {
@@ -882,12 +951,30 @@ export class ChatSupervisor {
         t.idleSince = null;
         return;
       }
-      if (!(await this.waitGone(t.rec.unit, this.deps.exitWaitMs ?? EXIT_WAIT_MS))) await this.deps.driver.stop(t.rec.unit);
+      await this.closeProcess(t.rec);
       if (this.chats.get(chatId) === t) this.forget(chatId);
       this.log(`${chatId}: closed (idle)`);
       this.deps.onStopped?.(chatId, "idle");
     } finally {
       t.draining = false;
+    }
+  }
+
+  /**
+   * The watch's fast look, with no program started: chat `chatId`'s recorded process still runs
+   * `chat-runtime/main.ts` inside its unit (its cgroup, or its detached session), and the driver said
+   * the unit was up less than RECONCILE_MS ago. Anything else (no pid yet, the process gone or someone
+   * else's, an old answer, not Linux) asks the driver now, as `check` does.
+   */
+  private looksUp(chatId: string, t: Tracked): boolean {
+    const pid = t.rec.pid;
+    if (!pid || (this.deps.platform ?? process.platform) !== "linux") return false;
+    const at = this.statusAt.get(chatId);
+    if (at === undefined || this.now() - at >= RECONCILE_MS) return false;
+    try {
+      return this.deps.driver.owns(t.rec.unit, pid) && (this.deps.isChatProcess ?? chatProcessAlive)(pid);
+    } catch {
+      return false;
     }
   }
 
@@ -901,7 +988,7 @@ export class ChatSupervisor {
           await this.lost(id, t.lostDetail);
           continue;
         }
-        if (t.draining || (await this.check(id)) !== "up") continue;
+        if (t.draining || (!this.looksUp(id, t) && (await this.check(id)) !== "up")) continue;
         if (t.reaping !== null && this.now() - t.reaping >= REAP_WAIT_MS) {
           t.reaping = null;
           this.capClaude();
@@ -945,7 +1032,7 @@ export class ChatSupervisor {
   async awaitExit(chatId: string): Promise<void> {
     const t = this.chats.get(chatId);
     if (!t) return;
-    if (!(await this.waitGone(t.rec.unit, this.deps.exitWaitMs ?? EXIT_WAIT_MS))) await this.deps.driver.stop(t.rec.unit);
+    await this.holdStarts(chatId, () => this.closeProcess(t.rec));
   }
   /** Wait up to 10 s until no process holds `sessionPath`'s writer lock (a stale one, of a dead pid, counts as free). */
   async waitUnlocked(sessionPath: string): Promise<boolean> {
@@ -983,5 +1070,6 @@ export class ChatSupervisor {
   detach(): void {
     this.unwatch();
     this.chats.clear();
+    this.statusAt.clear();
   }
 }

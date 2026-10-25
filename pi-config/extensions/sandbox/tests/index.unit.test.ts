@@ -6,7 +6,8 @@ import { createRequire, registerHooks } from "node:module";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { SANDBOX_STATE_EVENT, type SandboxStateEvent } from "../state.ts";
+import { isStarting, normalizeActive, SANDBOX_STARTING, SANDBOX_STATE_EVENT, type SandboxStateEvent } from "../state.ts";
+import { LinuxBwrapBackend } from "../backends/linux-bwrap.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WT = join(HERE, "..", "..", "..", "..");
@@ -36,18 +37,18 @@ test.after(async () => {
 type Handler = (event: unknown, ctx: unknown) => unknown;
 
 /** One extension instance on a fake pi, started in `cwd` with these flag values. */
-async function start(cwd: string, flags: Record<string, string>) {
-	const tools = new Map<string, { execute: (...a: unknown[]) => Promise<{ content: { text?: string }[] }> }>();
+async function start(cwd: string, flags: Record<string, string>, hooks: { onRegister?: () => void; seed?: { type: string; customType: string; data: unknown }[] } = {}) {
+	const tools = new Map<string, { execute: (...a: unknown[]) => Promise<{ content: { text?: string }[]; isError?: boolean }> }>();
 	const handlers = new Map<string, Handler[]>();
 	const listeners = new Map<string, ((d: unknown) => void)[]>();
 	const commands = new Map<string, { handler: (args: string, ctx: unknown) => Promise<void> }>();
 	const events: SandboxStateEvent[] = [];
 	const notes: string[] = [];
-	const entries: { type: string; customType: string; data: unknown }[] = [];
+	const entries: { type: string; customType: string; data: unknown }[] = [...(hooks.seed ?? [])];
 	const pi = {
 		registerFlag() {},
 		getFlag: (n: string) => flags[n],
-		registerTool: (d: { name: string }) => tools.set(d.name, d as never),
+		registerTool: (d: { name: string }) => { hooks.onRegister?.(); tools.set(d.name, d as never); },
 		registerCommand: (n: string, c: never) => commands.set(n, c),
 		registerEntryRenderer() {},
 		on: (e: string, h: Handler) => handlers.set(e, [...(handlers.get(e) ?? []), h]),
@@ -64,10 +65,8 @@ async function start(cwd: string, flags: Record<string, string>) {
 	const sessionManager = { getBranch: () => entries, getSessionId: () => `s${Math.random().toString(36).slice(2)}`, getSessionFile: () => undefined };
 	const ctx = { cwd, hasUI: true, ui: { notify: (t: string) => notes.push(t), setStatus() {} }, sessionManager };
 	for (const h of handlers.get("session_start") ?? []) await h({ reason: "startup" }, ctx);
-	const run = async (name: string, params: object) => {
-		const r = await tools.get(name)!.execute("id", params, undefined, undefined, ctx);
-		return r.content.map((c) => c.text ?? "").join("");
-	};
+	const call = (name: string, params: object) => tools.get(name)!.execute("id", params, undefined, undefined, ctx);
+	const run = async (name: string, params: object) => (await call(name, params)).content.map((c) => c.text ?? "").join("");
 	let stopped = false;
 	const stop = async () => {
 		if (stopped) return;
@@ -75,7 +74,7 @@ async function start(cwd: string, flags: Record<string, string>) {
 		for (const h of handlers.get("session_shutdown") ?? []) await h({ reason: "quit" }, ctx);
 	};
 	started.push(stop);
-	return { tools, events, notes, entries, run, stop, emit: pi.events.emit, command: (a: string) => commands.get("sandbox")!.handler(a, ctx), last: () => events.at(-1)! };
+	return { tools, events, notes, entries, run, call, stop, emit: pi.events.emit, command: (a: string) => commands.get("sandbox")!.handler(a, ctx), last: () => events.at(-1)! };
 }
 
 function dirs() {
@@ -156,7 +155,12 @@ test("a worker started outside its parent's roots refuses every tool; inside, it
 	await inside.run("write", { path: "../up.txt", content: "up" });
 	assert.equal(readFileSync(join(a, "up.txt"), "utf8"), "up", "the parent's whole root is the worker's too");
 	await assert.rejects(inside.run("write", { path: join(b, "no.txt"), content: "x" }), /\[sandbox:/);
-	await assert.rejects(inside.run("bash", { command: `touch ${join(b, "no2.txt")}` }), /Read-only file system/);
+	// pi's bash returns a non-zero exit as an error result (isError), not a throw.
+	const touched = await inside.call("bash", { command: `touch ${join(b, "no2.txt")}` });
+	const touchedText = touched.content.map((c: { text?: string }) => c.text ?? "").join("");
+	assert.equal(touched.isError, true);
+	assert.match(touchedText, /\[sandbox: /);
+	assert.match(touchedText, /Read-only file system/);
 	assert.equal(existsSync(join(b, "no.txt")) || existsSync(join(b, "no2.txt")), false);
 	// Its own event narrows transitively: grandchildren get the same roots.
 	assert.deepEqual(JSON.parse(piFlags(inside.last(), { cwd: join(a, "sub") })["sandbox-parent"]!).writable, JSON.parse(flags["sandbox-parent"]!).writable);
@@ -325,4 +329,87 @@ test("workerLaunch: an unavailable parent refuses every backend; a remote sessio
 	assert.equal(r.last().on, false);
 	assert.equal(r.last().workerLaunch, undefined);
 	await r.stop();
+});
+
+// ─── turning On: the newest entry says On whenever the tools are confined (§chat.sandbox/states) ───
+
+const newest = (entries: { data: unknown }[]) => normalizeActive(entries.at(-1)?.data);
+
+test("turning On records a provisional On entry before any confined tool exists, then the real state", { skip: !linux }, async () => {
+	const { a } = dirs();
+	const seen: (ReturnType<typeof normalizeActive>)[] = [];
+	let watching = false;
+	let s: Awaited<ReturnType<typeof start>>;
+	s = await start(a, {}, { onRegister: () => { if (watching) seen.push(newest(s.entries)); } });
+	assert.equal(s.entries.length, 0);
+	watching = true;
+	await s.command("on");
+	assert.ok(seen.length > 0, "confined tools were registered");
+	for (const at of seen) assert.ok(at && isStarting(at), `at every confined registration the newest entry is the provisional On: ${JSON.stringify(at)}`);
+	assert.deepEqual(s.entries[0]!.data, { version: 1, on: true, level: "workspace-write", backend: "linux-bwrap", enforcement: "unavailable", reasons: [SANDBOX_STARTING] });
+	const final = newest(s.entries)!;
+	assert.equal(s.entries.length, 2, "exactly the provisional and the real state");
+	assert.ok(final.on && !isStarting(final) && ["full", "partial"].includes(final.enforcement), JSON.stringify(final));
+	// /sandbox on while on re-probes: no provisional entry, and the newest entry stays a final On.
+	await s.command("on");
+	assert.ok(!isStarting(newest(s.entries)!));
+	assert.ok(s.entries.every((e, i) => i === 0 || !isStarting(normalizeActive(e.data)!)), "no later provisional entry");
+	await s.stop();
+});
+
+test("a snapshot that throws still ends on a truthful entry: On, unavailable, tools refuse", { skip: !linux }, async () => {
+	const { a } = dirs();
+	const s = await start(a, {});
+	const probe = LinuxBwrapBackend.prototype.probe;
+	LinuxBwrapBackend.prototype.probe = async () => { throw new Error("probe crashed"); };
+	try {
+		await s.command("on");
+		const final = newest(s.entries)!;
+		assert.equal(final.on, true);
+		assert.equal(final.enforcement, "unavailable");
+		assert.ok(!isStarting(final), "never left on the provisional entry");
+		assert.equal(s.last().on, true);
+		await assert.rejects(s.run("write", { path: "x", content: "x" }));
+	} finally { LinuxBwrapBackend.prototype.probe = probe; }
+	await s.stop();
+});
+
+test("a provisional entry left newest by an interrupted start is not taken as recorded: the real state follows", { skip: !linux }, async () => {
+	const { a } = dirs();
+	const provisional = { type: "custom", customType: "sandbox", data: { version: 1, on: true, level: "workspace-write", backend: "linux-bwrap", enforcement: "unavailable", reasons: [SANDBOX_STARTING] } };
+	const s = await start(a, {}, { seed: [provisional] });
+	const final = newest(s.entries)!;
+	assert.ok(s.entries.length >= 2 && !isStarting(final), JSON.stringify(s.entries.map((e) => e.data)));
+	assert.ok(final.on && ["full", "partial"].includes(final.enforcement));
+	// Positive control: a real On entry newest opens with nothing written.
+	const again = await start(a, {}, { seed: [{ type: "custom", customType: "sandbox", data: final }] });
+	assert.equal(again.entries.length, 1);
+	await s.stop();
+	await again.stop();
+});
+
+test("overlapping changes: an On still probing cannot land after a later Off", { skip: !linux }, async () => {
+	const { a, b } = dirs();
+	const s = await start(a, {});
+	const probe = LinuxBwrapBackend.prototype.probe;
+	let release!: () => void;
+	const gate = new Promise<void>((done) => { release = done; });
+	LinuxBwrapBackend.prototype.probe = async function (this: LinuxBwrapBackend, ...args: Parameters<typeof probe>) { await gate; return probe.apply(this, args); };
+	try {
+		const on = s.command("on");
+		await new Promise((r) => setTimeout(r, 50));
+		const off = s.command("off");
+		release();
+		await Promise.all([on, off]);
+	} finally { LinuxBwrapBackend.prototype.probe = probe; }
+	const final = newest(s.entries)!;
+	assert.equal(final.on, false, JSON.stringify(s.entries.map((e) => e.data)));
+	assert.equal(final.workers, "off");
+	assert.equal(s.last().on, false);
+	assert.ok(!isStarting(final));
+	// The session's own tools are stock again: a write outside the workspace is not refused.
+	const outside = join(b, "written-by-stock.txt");
+	await s.run("write", { path: outside, content: "x" });
+	assert.ok(existsSync(outside));
+	await s.stop();
 });

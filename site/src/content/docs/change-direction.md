@@ -1,6 +1,6 @@
 ---
 title: Change direction
-description: Rewind to before a message, regenerate a reply, fork from a reply, steer a running turn, and switch models mid-session.
+description: Rewind to before a message, regenerate a reply, fork from a reply, steer a running turn, switch models mid-session, and hide everything but the conversation.
 group: Features
 order: 14
 ---
@@ -20,7 +20,7 @@ When an action is off, it stays visible with its reason, such as "Stop the curre
 
 ## Rewind
 
-**Rewind** under one of your messages takes the session back to just before it. That message and every reply after it leave the branch, and its text comes back into the composer, ahead of any draft, so you can edit and send it again. Attached images aren't handed back.
+**Rewind** under one of your messages takes the session back to just before it. That message and every reply after it leave the branch, and its text comes back into the composer, ahead of any draft, so you can edit and send it again. Attached images aren't handed back. A message from another session comes back without the line naming its sender.
 
 It asks first: the first press shows "This message and every reply after it leave the branch. The session file keeps them." with **Rewind Here** and **Cancel**. Nothing is deleted; the session file still holds the turns you took back.
 
@@ -28,14 +28,14 @@ Rewind won't stop a running turn for you. It's off while a turn or a compaction 
 
 The same rewind is in two more places:
 
-- **Undo last turn** in the composer's `+` menu goes back one message without leaving the composer.
-- The session pane's **Timeline** lists your messages, each with its own Rewind. Type `/tree` in the composer to open it filtered to your messages.
+- **Undo last turn** in the Commands palette (the composer's `+` opens it) goes back one message without leaving the composer: pick it, then pick it again to confirm.
+- The session pane's **Timeline** lists every message sent to the session, each with its own Rewind. A message from another session, the Overseer or a teammate has a line above it naming the sender, such as "From the Overseer". Type `/tree` in the composer to open it with **Inputs Only** on, which keeps only the messages you typed. That filter and the composer's "{n} inputs" count leave out messages from others and scheduled wake-ups.
 
 ## Regenerate
 
 **Regenerate** under a reply runs that turn again. Sova rewinds to the message of yours that started the reply and sends it again, with its text and images, on the session's current model. Switch models first and regenerate to compare. The whole turn runs again, tools included, and your composer draft is left alone.
 
-If you steered the turn partway, the steer is the message that started the later reply, so regenerating that reply sends the steer again. The confirm names the message it will send. A reply to a scheduled wake-up has no message of yours to send again, so Regenerate is off there.
+If you steered the turn partway, the steer is the message that started the later reply, so regenerating that reply sends the steer again. The confirm names the message it will send. A reply to a scheduled wake-up, or to notes other sessions pushed to a topic, has no message of yours to send again, so Regenerate is off there.
 
 ## Fork from a reply
 
@@ -53,13 +53,19 @@ Until the agent takes it, your message shows as **Queued**, with a button to rem
 
 ## Switch models mid-session
 
-Press the model name at the left of the composer's foot, then **Model**, or press `Ctrl+P` (`⌘P` on a Mac). Pick a provider, then a model, or type to search across them. The same menu holds the **Thinking** levels for the current model.
+Press the model name at the left of the composer's foot, then **Model**, or press `Ctrl+P` (`⌘P` on a Mac). Pick a provider, then a model, or type to search across them. The star on a model row (or `Ctrl+F`) adds it to Favorites at the top of the list without choosing it. The same menu holds the **Thinking** levels for the current model.
 
 - **Between turns.** A switch waits until the running turn finishes: "Model changes wait until this turn finishes."
-- **It's this session's.** Once a session has your first message, a pick changes only that session. A pick in a brand-new session becomes the default for new sessions.
+- **It's this session's.** Once a session has your first message, a pick changes only that session. A model or thinking level you pick in a brand-new session becomes the default for new sessions.
 - **Only models you allow.** A model turned off in Settings → Models isn't listed.
 
 When the switch lands, Sova says "Model changed to {model}." If it fails, a banner says why and that you're still on the previous model.
+
+## Focus on the conversation
+
+**Focus**, the four-corners button at the transcript's bottom right, leaves only the conversation on screen: the header keeps just the session's title (and Back, on a narrow window), and the strips under it and the composer go away. Press it again to bring them back. Your draft and its attachments are kept as they were. Notices that something is wrong, such as a lost connection, still show.
+
+Focus is set per browser, not per session: it stays on as you switch sessions and across reloads. Every single-chat screen has it, the Overseer's included; a workspace pane doesn't (its menu's **Focus** item only moves you to that pane).
 
 ## Follow the work as it happens
 

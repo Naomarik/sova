@@ -98,8 +98,10 @@ chosen here. Start that session from a TUI.
 The dialog makes one session. There is no type to choose: a group of sessions is made from the
 sidebar or by the Overseer (§workspace.groups/making-a-comparison).
 
-- **Prefill.** The `cwd` of the open session, else the most recently active session's `cwd`,
-  skipping any folder that is hidden (below) while Show hidden folders is off. The field shows the
+- **Prefill.** The `cwd` of the open session; else, on a project's page (`#/projects/<pid>`, any
+  of its tabs, a project of this host), that project's root, so the dialog opens with this project
+  already picked (the folder hint below says so, and the Project tab has it selected); else the
+  most recently active session's `cwd`, skipping any folder that is hidden (below) while Show hidden folders is off. The field shows the
   path with `~`, and the full path goes in `title`. With nothing to prefill it reads "Choose a
   folder" in `--color-ink-muted`, and Create Session is `aria-disabled`. **The prefill is decided
   once, when the dialog opens**: turning the toggle on afterwards offers the hidden folders in the

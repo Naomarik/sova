@@ -22,7 +22,7 @@ const session = (o: { id: string; cwd?: string; createdAt: string; lastActiveAt?
 const ids = (list: readonly SessionSummary[]) => list.map((s) => s.id);
 const shape = (groups: { cwd: string; sessions: SessionSummary[] }[]) => groups.map((g) => [g.cwd, ids(g.sessions)] as const);
 
-test("Live & web orders by creation, and an activity burst doesn't move anything", () => {
+test("Folders orders by creation, and an activity burst doesn't move anything", () => {
   // `old` was created first and has been hammered since; `new` was created last and is quiet.
   const older = session({ id: "a", createdAt: "2026-09-01T00:00:00Z", lastActiveAt: "2026-09-22T12:00:00Z" });
   const newer = session({ id: "b", createdAt: "2026-09-20T00:00:00Z", lastActiveAt: "2026-09-20T00:00:01Z" });

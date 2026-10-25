@@ -21,12 +21,13 @@ export function createOlderRows(o: {
   /** False: never fetch the rest in the background, whatever the hello says; only what is
       scrolled to or jumped to (the Overseer, §app.overseer/transcript-window). */
   prefetch?: boolean;
+  /** What was known to be above the rows the view opened on, kept with them (lib/transcript-cache
+      `keptOlder`): only for laying out the page before the hello (`api.known`). */
+  kept?: () => Older | null;
 }) {
   /** Null until this connection's hello or snapshot says what's above the list. */
   const [older, setOlder] = createSignal<Older | null>(null);
   const [slow, setSlow] = createSignal(false);
-  /** Loads asked for before the hello: they go once it has said what's above. */
-  let waiting: (() => void)[] = [];
   /** A hello or snapshot has landed: rows read from the file before it are no longer news. */
   let answered = false;
 
@@ -73,10 +74,17 @@ export function createOlderRows(o: {
 
   const api: OlderRowsApi = {
     left: () => older()?.left ?? null,
+    known: () => (older() ?? o.kept?.() ?? null)?.left ?? null,
     more: () => void loader.more(),
+    // Never waits on the chat, never throws: before its hello or snapshot (a chat still starting,
+    // or failing to) the file's newest rows say what's above; a load that can't land says "stale",
+    // and a jump still "stale" on its retry says it can't land (lib/jump jumpWhenArrived).
     load: async (target) => {
-      if (!older()) await new Promise<void>((r) => waiting.push(r));
-      return loader.to(target);
+      if (!older()) {
+        const r = await fetchTranscriptRows(o.path, { tail: true }).catch(() => null);
+        if (r && !("code" in r) && !older()) land(r.items, r.older, r.olderSummary);
+      }
+      return older() ? loader.to(target).catch(() => "stale" as const) : "stale";
     },
     slow,
   };
@@ -94,27 +102,20 @@ export function createOlderRows(o: {
     hello(msg: { items: TranscriptItem[]; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; after?: string }): void {
       answered = true;
       loader.reset();
-      const release = () => {
-        const now = waiting;
-        waiting = [];
-        now.forEach((r) => r());
-      };
       if (msg.after !== undefined) {
         const placed = afterRows(o.items(), msg.items, msg.after, msg.older, msg.olderSummary);
         if (!placed) {
-          void reload().then(release);
+          void reload();
           return;
         }
         batch(() => {
           o.setItems(placed.items);
           setOlder(placed.older);
         });
-        release();
         if (msg.prefetch && o.prefetch !== false && placed.older.left > 0) void loader.prefetch();
         return;
       }
       const next = land(msg.items, msg.older, msg.olderSummary);
-      release();
       if (msg.prefetch && o.prefetch !== false && next.left > 0) void loader.prefetch();
     },
     /** The newest rows read from the session file before the chat has answered

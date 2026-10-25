@@ -42,7 +42,7 @@ test("a row per tracked worktree, with its state, reason, reading time and owner
   assert.equal(b.at, "2026-10-05T09:01:00.000Z");
   assert.deepEqual({ read: b.read, pending: b.pending }, { read: 4, pending: 0 });
   const x = b.rows.find((r) => r.branch === "feat/x")!;
-  assert.deepEqual(x, { path: "/w/x", branch: "feat/x", repo: "/work/sova/.git", state: "waiting-approval", reason: "waiting-approval reason", readAt: "2026-10-05T09:00:05.000Z", owner: { id: "a", status: "idle", profile: "coder", lastActiveAt: "2026-10-05T09:00:00.000Z" } });
+  assert.deepEqual(x, { path: "/w/x", branch: "feat/x", repo: "/work/sova/.git", state: "waiting-approval", reason: "waiting-approval reason", readAt: "2026-10-05T09:00:05.000Z", owner: { id: "a", title: "a", status: "idle", profile: "coder", lastActiveAt: "2026-10-05T09:00:00.000Z" } });
   assert.equal(b.rows.find((r) => r.branch === "feat/y")!.owner.status, "busy", "a turn running");
   assert.equal(b.rows.find((r) => r.branch === "feat/z")!.owner.status, "busy", "workers working");
   assert.equal(b.rows.find((r) => r.branch === "feat/q")!.owner.status, "busy", "a message queued");
@@ -106,4 +106,30 @@ test("the source waits for readiness, writes the file whole at 0600, and shares 
   t += 30_000;
   await src.get(30_000);
   assert.equal(lists, 2);
+});
+
+test("the source rewrites the file only when the board changed, or once it is refreshMs old", async () => {
+  const file = join(root, "state-unchanged", "merge-board.json");
+  let t = 1000;
+  const readings: Record<string, SessionReadiness | null> = { a: readiness(tree("/w/x", "feat/x", "ready")) };
+  const src = new BoardSource({ list: async () => [session("a")], idle: async () => {}, inputs: inputs(readings), file, now: () => t, refreshMs: 120_000 });
+  const writtenAt = () => JSON.parse(readFileSync(file, "utf8")).at as string;
+  await src.get();
+  const first = writtenAt();
+  t += 60_000;
+  await src.get();
+  assert.equal(writtenAt(), first, "same content: not rewritten");
+  readings.a = readiness(tree("/w/x", "feat/x", "blocked"));
+  await src.get();
+  assert.notEqual(writtenAt(), first, "changed: rewritten");
+  const second = writtenAt();
+  t += 120_000;
+  await src.get();
+  assert.notEqual(writtenAt(), second, "unchanged but old: rewritten so readers see it fresh");
+});
+
+test("a row carries its landing (§chat.worktrees/ready-to-land) when the tree has one, and none otherwise", () => {
+  const landing = { state: "specs" as const, commit: "a".repeat(40), drafts: ["d"], specsWhy: "no tools" };
+  const b = buildBoard([session("a")], inputs({ a: readiness({ ...tree("/w/l", "feat/l", "ready"), landing }, tree("/w/m", "feat/m", "ready")) }), 0);
+  assert.deepEqual(b.rows.map((r) => [r.branch, r.landing ?? null]), [["feat/l", landing], ["feat/m", null]]);
 });

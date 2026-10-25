@@ -23,11 +23,11 @@ import { FRAME_HOST_NAME } from "./vis-frame-host";
  *
  * Peer routes (peer listener; the caller is its verified StableID, and the address the gateway
  * dials back ALWAYS comes from peers.json, never from a body):
- * GET  /api/peer/share-gateway/info[?kinds=1[&preview=1]] -> GatewayInfo | 404 { error: "not-gateway" }
+ * GET  /api/peer/share-gateway/info[?kinds=1[&preview=1]][&proto=1] -> GatewayInfo | 404 { error: "not-gateway" }
  *                                     (this host is no gateway). `kinds` is answered only when asked
- *                                     with `?kinds=1`, and `previewUrl` only with `preview=1` too: an
- *                                     older routed host parses the info strictly and would refuse a
- *                                     key it doesn't know.
+ *                                     with `?kinds=1`, `previewUrl` only with `preview=1` too, and
+ *                                     `shareProtocol` only with `proto=1`: an older routed host parses
+ *                                     the info strictly and would refuse a key it doesn't know.
  * PUT  /api/peer/share-gateway/links  body RegistrySnapshot (≤ SNAPSHOT_MAX_BYTES, refused before
  *                                     parsing when larger) -> RegistryAck
  */
@@ -157,6 +157,10 @@ export interface PublicLinksInfo {
   routed?: RoutedHost[];
   /** The peers whose hello advertises a share gateway (discovery; acceptance is GatewayInfo). */
   gateways?: AdvertisedGateway[];
+  /** Only on a routed host whose via gateway answered its info: the share protocol that gateway
+      stated (`theirs`, null when it stated none: an older gateway) and this host's (`ours`,
+      SHARE_PROTOCOL). The gateway is behind when `theirs` is null or lower (§mesh.public/share-protocol). */
+  gatewayProtocol?: { theirs: number | null; ours: number };
 }
 
 export interface RoutedHost {
@@ -220,15 +224,29 @@ export interface GatewayInfo {
   kinds?: RegistryLinkKind[];
   /** Only when asked with `?kinds=1&preview=1`, and only while a preview address is set. */
   previewUrl?: string;
+  /** Only when asked with `proto=1`: this gateway's SHARE_PROTOCOL. */
+  shareProtocol?: number;
 }
+
+/**
+ * The share protocol (§mesh.public/share-protocol): what a gateway and the hosts routed through it
+ * must agree on, as one small whole number. It goes up only for a change the other side can't
+ * follow (the registry format, the hop's headers, what a hop's answer may carry back, the offline
+ * answers, the forward-only route and socket shapes); a new page, socket or upload under an
+ * existing kind needs no bump, since the gateway forwards any well-formed address of a registered
+ * link. 1 is every gateway before this number existed (no redirect passes a hop); 2 lets a
+ * redirect to the gateway's own preview address pass. server/share-contract.test.ts holds it.
+ */
+export const SHARE_PROTOCOL = 2;
 
 /** A link's kind, which binds the routes its row may serve: `h` hand-off (/h/, /api/h/, /ws/h),
     `i` owner page (/i/, /api/i/), `s` session share (/s/, /api/s/, /ws/s, §app/session-share),
+    `t` checked tour (/t/, /api/t/, no websocket),
     `x` reserved for exposures (phase 2; never a share route), `p` a preview link (its own host
     `<label>.<zone>`, every path on it, §mesh.public/preview). */
-export type RegistryLinkKind = "h" | "i" | "s" | "x" | "p";
+export type RegistryLinkKind = "h" | "i" | "s" | "x" | "p" | "t";
 /** Every kind this build's gateway accepts, in GatewayInfo.kinds. */
-export const REGISTRY_LINK_KINDS: readonly RegistryLinkKind[] = ["h", "i", "s", "x", "p"];
+export const REGISTRY_LINK_KINDS: readonly RegistryLinkKind[] = ["h", "i", "s", "x", "p", "t"];
 
 export interface RegistryLink {
   /** Lowercase 64-hex sha256 of the token: the gateway never sees a token. */
@@ -334,7 +352,7 @@ export interface OfflineBody {
   error: "offline";
   retryAfter: number;
 }
-/** The close code of a live `/ws/h` or `/ws/s` hop whose host went away; the page reconnects with backoff. */
+/** The close code of a live share socket hop whose host went away; the page reconnects with backoff. */
 export const HOP_LOST_CLOSE = 4503;
 export const RECONNECT_BACKOFF_MS = { first: 5000, max: 60_000 } as const;
 

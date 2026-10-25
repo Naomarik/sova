@@ -31,10 +31,12 @@ Stamped by the host (`server/org-envelope.ts`) inside the org's serialized step:
 
 | key | meaning |
 |---|---|
-| `by` | `operator` · `overseer` · `system` · `model` (a gathering's model) · `person` · `wrapup` · `statechart` (the statechart's own act, r3) · `sova` (Sova on its own: a settle session's reconcile) |
+| `by` | `operator` · `overseer` · `system` · `model` (a gathering's model) · `person` · `wrapup` · `statechart` (the statechart's own act, r3) · `sova` (Sova on its own: a settle session's reconcile) · `assistant` (the Project Assistant, from an owner's message: the client column) |
 | `via` | `"overseer"`: the global Overseer acting for the operator (with `overseerId`, `card`) |
-| `attended` | the operator's turn (their message entered the overseer's context, W20) |
-| `autonomy`, `paused`, `ceiling` | the level in force (`rules/levels.cljc effective-autonomy`: paused → L0; else a `ceiling {autonomy, reason}` below the setting caps it (only the org layer contributes one: an empty roster → L0, "The roster has no active people yet, so the overseer only proposes (L0)."); else the setting, default L1) |
+| `attended` | the operator's turn (their message entered the overseer's context, W20; or their own turn in the Project Assistant's chat): never restricted |
+| `powers`, `column` | the caller's column of powers as set (`{gather, whatsapp, ownerUpdates, roster, promote, bookkeeping, codingStart, codingPrompt, onboard, markMerged, copiesRun, copiesReset, share, deploy}` → bool; kebab keys here): `assistant` for `by` assistant, else `overseer`. An envelope with none (an older host, an old trace) reads its `autonomy` level's carry-over (`rules/powers.cljc column`) |
+| `paused`, `ceiling` | the brakes (`rules/powers.cljc brake`): `paused` (an attach on this host) or a `ceiling {reason}` (only the org layer contributes one: an empty roster, "The roster has no active people yet."; the host drops it while Resume lifts it): every power of both columns acts as Off |
+| `autonomy` | the never-looser level of `powers` (older readers only) |
 | `archived` | the project's shelf |
 | `allowance {gather,promote,create,prompt: {used,max}}`, `ledger` | the ledger this turn draws on (message when attended, else day); `used` includes pending holds of the kind but the one being released (F2) |
 | `atOnce {gatheringsOpen,gatheringsCap,codingRunning,codingCap}` | counted from statechart states (+ pending holds that would open one) |
@@ -43,11 +45,16 @@ Stamped by the host (`server/org-envelope.ts`) inside the org's serialized step:
 | `invalid` (+ `invalidStatus`) | the host's own argument refusal (name resolution, abilities and mode ceilings, a folder, a root, field shapes) — the statechart refuses with it where today's code checks it |
 | per act | `target {id,name,status,referral?,tz?,hours?}` / `targets [..]` (r7: every person an act reaches, with their zone and hours), `namesTaken [lowercased]`, `ownerAreas [..]`, `chosen` (hand_to's holder-chose, a transcript check), `live` (a terminal holds the session), `leak` (the owner update's 24-char backstop sentence), `ownerActive`, `buildFinishedAt`, `blockers {phrases,coding,overseerWorking}` (`phrases`: whole parts others contribute, first: the org's "N gathering sessions open (…)"), `authorOwnsArea`, `operatorName`, `projectName` |
 
-Level refusals come first (engine, `registry/options :level-check`): the operator's click, a person, a
-gathering model, the wrap-up and the system are never level-checked; `overseer` and `statechart` acts are
-checked against the level in force (a statechart act is never attended). Holds (q10, r4, r6): an act whose
-registry entry says `hold: true` is held when not the operator's click, not attended and `holdMs > 0`;
-at the hold's end it is delivered again with a fresh envelope and every check re-runs (F2).
+Power refusals come first (engine, `registry/options :level-check` = `rules/powers.cljc power-check`, on the
+act's `:power`): the operator's click and any attended turn are never checked (a statechart act is never
+attended); a person, a gathering model, the wrap-up and the system are nobody's column; `overseer`,
+`statechart` and `assistant` acts need their power On in their column and no brake (code `power-off`:
+"{Label} is off for the overseer on its own. …" / "… for the Project Assistant. …"; code `brake`: the brake's
+reason). `:power "always"` acts are never checked; `"operator"` ones run only for the operator. Holds (q10,
+r4, r6): an act whose registry entry says `hold: true` is held when not the operator's click, not attended and
+`holdMs > 0` (the overseer's, the statechart's and the Project Assistant's); at the hold's end it is delivered
+again with a fresh envelope and every check re-runs (F2). No hold waits for an approval (al_3 q2): the old
+`confirmKinds`, `hold/approve` and `hold/waiting` are gone.
 
 ## org (`org/<org>`, portable)
 
@@ -60,6 +67,7 @@ Start: `{id, name, slug, createdAt, holder: {hostId, hostName, since}}`.
 | `project/place` | op · the host (the org-open invariant: a project session here with no placement) | `{projectId, placedVia: born \| import}` + `invalid` | spawns `placement/<org>/<projectId>` (`:if-exists :skip`: placing a placed project changes nothing). The project session itself (`project/<p>`) is started by the host in the same engine |
 | `person/add` | op | `{personId, person: PersonInput, byKind?}` + `namesTaken` | `rules/person apply-change` (caps, "{name} is already on the roster." 409); spawns `person` active |
 | `owner/set` | op | `{personId \| null}` + `target` | "Only an active person on the roster can be the owner." (400); same person: nothing; effect `revoke-owner-links {why: owner-changed}` |
+| `owner/send-link` | op · GO (card: the owner) | `{note?, sentBy?}` + `target`, `invalid`, `leak` | §app.owner-page/send, in any owner state: "Only the operator sends an owner their page link." (403: any caller but the operator, the global Overseer's envelope being the operator's), "{org} has no owner, so there is no owner page to send. Nothing was sent." (409), "{name} isn't {org}'s owner. Nothing was sent." (409), "{name} is not active. Nothing was sent." (409), note ≤ 500 (400), `leak` (409); effect `owner-link-send {personId, by, note?}` (the host's organization-own outreach send: no project, idempotency `org:<org>#<person>#<key>`) |
 | `holder/claim`, `holder/release` | residence | `{hostId, hostName, since}` / `{hostId}` | r1: the holder record |
 | `link/moved` (person) | engine | | the owner left → `owner-cleared`, effect `revoke-owner-links {why: left}` |
 
@@ -72,7 +80,10 @@ Effects: `read-holder {fetchMs}` → `effect/done {result: {local, remote}}` (ho
 unreachable remote, the clone's alone was read); `commit {message?}` → `{result: {headAt, pushFailed?, error?}}`;
 `push`; `pause-overseers` (attach only); `revoke-owner-links {why: detached}`.
 Acts: `attach/confirm` (op, in `held-elsewhere`), `org/detach` (op), `commit/now` (op).
-Host events: `store/written`, `commit/look` (its own 1-min timer). The attach route answers 409
+Host events: `store/written`, `commit/look` (its own timer, armed at `head-at` + `commit-every` (in `clean`,
+from the later of `head-at` and `tried-at`, the last attempt whose result was `committed: false`), never
+sooner than 1 min: `look-at`; a commit answered in `clean`/`dirty` re-arms it). The commit result's
+`committed` is read. The attach route answers 409
 `code: "held"` with `held-sentence(heldBy)` while in `held-elsewhere`.
 
 ## person (`person/<org>/<pid>`, portable)
@@ -82,7 +93,7 @@ Start: `{orgId, id, person (cleaned), changed [{field,from,to}], by: ChangeBy}` 
 | event | by | payload | notes |
 |---|---|---|---|
 | `person/edit` | op · wrapup · overseer | `{patch, byKind?, sessionId?, entryId?, quote?}` + `namesTaken` | a `status` in the patch is the lifecycle move (one transition per pair); field authority "A {kind} change may not write {field}." (409) |
-| `person/approve`, `person/decline` | op · overseer (L2 `sova_roster`, held unattended) | | "{name} is not waiting for approval." / overseer: "{name} is {status}, not proposed." (409) |
+| `person/approve`, `person/decline` | op · overseer (power `roster`, `sova_roster`, held unattended) | | "{name} is not waiting for approval." / overseer: "{name} is {status}, not proposed." (409) |
 | `person/leave` | op (GO: card) | | |
 | `person/revert` | op | `{row: {at, field, from, to}}` (read from roster-history.jsonl) | "No such change" 404; creation 409; C6 "{name}'s {field} has changed since then, so reverting this would undo a later change. Revert the latest change instead." (409) |
 
@@ -118,12 +129,14 @@ reconciler: the placement spawns that). v2.
 | `project/edit` | op | `{name?, root?}` + `invalid` | |
 | `project/archive` / `project/unarchive` | op (GO: card for archive) | + `blockers {phrases?, coding?, overseerWorking?}` | "Stop these first: {list}." (409); idempotent |
 | `overseer/start` / `overseer/clear` | op | `{conversationId}` | clear keeps ≤ 20 earlier; sends `ledger/reset-message` to the watch |
-| `preview/start` | overseer (L1, held unattended, confirm kind `preview`) · op | `{codingSession, port \| folder, purpose, days?, overseerId}` + the host's `invalid` (the session, the port's listener, the folder, Sova's ports, the address) | archived, the host's check, then the purpose; effect `preview {codingSession, port\|folder, purpose, days?, overseerId}` (never a link; the host mints and keeps it) |
-| `services/down` | overseer (L0 `sova_project_verbs down`; never held, counts nothing) | `{verb, instance?}` + the host's `invalid` | the host's check only (never refused for an archived project); no effect: the act is the gate, the host runs the verb once it is taken |
-| `services/run` | overseer (L3 `sova_project_verbs` create, up, apply, reset, teardown, conform, test; never held, counts nothing) | `{verb, instance?}` + the host's `invalid` | archived, then the host's check; no effect, as `services/down` |
-| `verbs/onboard` | op · overseer (L3 `sova_project_verbs onboard`, held unattended; confirm kind `build`; counts `create`) | `{sessionId, title?, prompt, model?, thinking?, mode?, why?, playbookId?, label?, proposes?}` + the host's `invalid` (the playbook missing, the folder not here, a run already live) and `runtimeStanding` | archived, the host's check, then an unattended overseer while `runtimeStanding` is registered: "The project's software is registered and current: the playbook has nothing to do."; caps; spawns `build/<p>/<sessionId>` (kind `onboard`, `gap: "none"`, the prompt the host stamps: the playbook's turn) and sends `playbook/started {sid, sessionId, startedBy, why?, title?, playbookId?, label?, proposes?}` to `runtime/<p>`. Not q7: a fixed prompt, a branch only, the operator merges |
-| `build/start` | op · overseer (L3, attended only: q7) · GO | `{sessionId, title?, prompt?, model?, thinking?, mode?, opItem?, folder?}` | q7, at every level: "A coding session starts only in a turn the operator started: ask with sova_card."; spawns `build/<p>/<sessionId>` (`gap: "none"`) |
-| `session/prompt` | overseer (L3 `sova_send`, held; confirm kind `prompt`) · op | `{sessionId, title, text, mode?}` + `live` (a terminal holds it), `invalid` (the mode check) | "\"{title}\" is open in a terminal, so it is read-only.", "text must not be blank."; caps (a prompt); effect `prompt {session, text, mode?}` (`session`: an effect's own sessionId is the statechart's). A coding session under the root that is NOT a build (a build's is `build/prompt`); never a gathering (F-128, r10) |
+| `preview/start` | overseer (power `share`, held unattended) · op | `{codingSession, port \| folder, purpose, days?, overseerId}` + the host's `invalid` (the session, the port's listener, the folder, Sova's ports, the address) | archived, the host's check, then the purpose; effect `preview {codingSession, port\|folder, purpose, days?, overseerId}` (never a link; the host mints and keeps it) |
+| `services/down` | overseer (always: `sova_project_verbs down`; never held, counts nothing) | `{verb, instance?}` + the host's `invalid` | the host's check only (never refused for an archived project); no effect: the act is the gate, the host runs the verb once it is taken |
+| `services/run` | overseer (power `copiesRun`: `sova_project_verbs` create, up, apply, conform, test; never held, counts nothing) | `{verb, instance?}` + the host's `invalid` | archived, then the host's check; no effect, as `services/down` |
+| `services/reset` | overseer (power `copiesReset`: `sova_project_verbs` reset, teardown; never held, counts nothing) | `{verb, instance?}` + the host's `invalid` | archived, then the host's check |
+| `deploy/run` | overseer (power `deploy`, held unattended) · assistant (power `deploy`, assistant column, held) · op | `{target?, commit?, why?}` + the host's `invalid` | archived, then the host's check; effect `deploy-run {by, attended, target?, commit?, why?}`: the host plans and runs the project's own recipe (no overrides: a plan that needs one is refused) |
+| `verbs/onboard` | op · overseer (power `onboard`: `sova_project_verbs onboard`, held unattended; counts `create`) | `{sessionId, title?, prompt, model?, thinking?, mode?, why?, playbookId?, label?, proposes?}` + the host's `invalid` (the playbook missing, the folder not here, a run already live) and `runtimeStanding` | archived, the host's check, then an unattended overseer while `runtimeStanding` is registered: "The project's software is registered and current: the playbook has nothing to do."; caps; spawns `build/<p>/<sessionId>` (kind `onboard`, `gap: "none"`, the prompt the host stamps: the playbook's turn) and sends `playbook/started {sid, sessionId, startedBy, why?, title?, playbookId?, label?, proposes?}` to `runtime/<p>`. Not q7: a fixed prompt, a branch only, the operator merges |
+| `build/start` | op · overseer (power `codingStart`, attended only: q7) · assistant (power `codingStart`, assistant column, only with `basis {kind: owner-request, id}`; held) · GO | `{sessionId, title?, prompt?, model?, thinking?, mode?, opItem?, folder?}` | q7, at every level: "A coding session starts only in a turn the operator started: ask with sova_card."; spawns `build/<p>/<sessionId>` (`gap: "none"`) |
+| `session/prompt` | overseer (power `codingPrompt`, `sova_send`, held) · op | `{sessionId, title, text, mode?}` + `live` (a terminal holds it), `invalid` (the mode check) | "\"{title}\" is open in a terminal, so it is read-only.", "text must not be blank."; caps (a prompt); effect `prompt {session, text, mode?}` (`session`: an effect's own sessionId is the statechart's). A coding session under the root that is NOT a build (a build's is `build/prompt`); never a gathering (F-128, r10) |
 | `started/noted` | item | `{sid, kind}` | a build an item started joins the list (watched) |
 
 Exported: `name, root, archived, overseer, started, lastMergedAt` (the newest `merged.at` among the builds it
@@ -145,10 +158,10 @@ Start: `{orgId, projectId, via: born|import, placedAt}` (from the org's `project
 | `placement/edit` | op | `{ownerHidden}` + `invalid` | |
 | `spec/freeze` | op | `{frozen, specHash?}` + `invalid` ("spec must be { frozen: boolean }") | |
 | `stakeholder/set` | op | `{personId \| null}` + `target` | "Only an active person on the roster can be a project's main stakeholder." (400) |
-| `owner-update/post` | overseer (L1, held unattended) · op | `{text}` + `ownerActive`, `leak`, `buildFinishedAt` | today's order: owner, blank, 2,000, leak, then unattended only: 24 h ("An update was posted {…}: at most one a day."), milestone; effect `owner-update {text, run}` |
-| `outreach/send` | overseer (L1, held unattended) · op · GO (card) | `{note?, link?, sentBy?}` + `target`, `invalid`, `leak` | effect `outreach-send {personId, by, link?, note?}` |
-| `gap/file` | overseer (L0 `sova_idea add §gap/…`) | `{gapId (g_…), ideaId}` | spawns `item/<org>/<p>/<gapId>` |
-| `baton/start` | op · overseer (L1, `gap: "none"`, held) · GO (card: the project and every person) | BatonStartInput + `sessionId` | "{project} is archived. Unarchive it first." (409, from the project's exported facts); caps; spawns a baton |
+| `owner-update/post` | overseer (power `ownerUpdates`, held unattended) · op | `{text}` + `ownerActive`, `leak`, `buildFinishedAt` | today's order: owner, blank, 2,000, leak, then unattended only: 24 h ("An update was posted {…}: at most one a day."), milestone; effect `owner-update {text, run}` |
+| `outreach/send` | overseer (power `whatsapp`, held unattended) · op · GO (card) | `{note?, link?, sentBy?}` + `target`, `invalid`, `leak` | effect `outreach-send {personId, by, link?, note?}` |
+| `gap/file` | overseer (always: `sova_idea add §gap/…`) | `{gapId (g_…), ideaId}` | spawns `item/<org>/<p>/<gapId>` |
+| `baton/start` | op · overseer (power `gather`, `gap: "none"`, held) · GO (card: the project and every person) | BatonStartInput + `sessionId` | "{project} is archived. Unarchive it first." (409, from the project's exported facts); caps; spawns a baton |
 | `milestone/noted` | baton · decision | `{kind, shown}` | |
 | `started/noted` | item | `{sid, kind}` | a gathering an item started joins its list (watched) |
 | `link/moved` (project) | engine | | `lastMergedAt` after `lastPostAt` sets the milestone |
@@ -165,15 +178,17 @@ Owner-update withdraw (`updates.jsonl`) is plain data: its route, no statechart 
 Start: `{projectId, paused?, settings?, tickOrigin?, tickMs?}` (the host starts it paused at attach).
 
 Host events: `facts/changed {ceiling?, lookHint?}` (each set only when named; null clears; only the org layer
-contributes them: its `ceiling` caps the level, its `lookHint` follows "Re-read the project (sova_project)." in
+contributes them: its `ceiling` is the empty-roster brake, its `lookHint` follows "Re-read the project (sova_project)." in
 the look text), `settings/changed {settings}` (overseer.json as read),
-`operator/level-set {resumeAt}` (ends a pause; not `autonomy`, the envelope's level in force), `org/attached-here`, `turn/started {look}`,
+`operator/powers-set {powers?, resume?}` (Resume: `resume` ends the pause; `powers` sets the switches, never the pause),
+`operator/level-set {resumeAt}` (an older host or trace: ends the pause, the overseer column the carry-over of `resumeAt`), `org/attached-here`, `turn/started {look}`,
 `turn/user-entered` (the operator's message entered the context: the per-message ledger resets),
 `turn/ended`, `reason/noted {kind, params, key, by} | {reasons: [..]}`, `ledger/take {kind, n, ledger, by}`,
 `ledger/reset-message`, `limit/refused {kind, ledger, used, max}`, `look/finished`, `look/stopped {detail}`,
 `look/not-started {detail}`, `look/skipped {detail}` (a refused Run Now, recorded), `sova/resumed`.
 Acts: `operator/run-now` (409 "Not started: {why}." / archived "{project} is archived. Unarchive it to use its overseer.").
-Invocation `:sova/look {reasons, autonomy, text (watchText), projectId}`.
+Invocation `:sova/look {reasons, powers (the overseer column in force), text (watchText: the On powers' labels, or the brake), projectId}`.
+Settings carry `powers {overseer, assistant}` and `emptyRosterResumed`; version 2 (v1's `settings.autonomy` migrates to the powers by the carry-over).
 Exported: `paused, ceiling, lookHint, archived, looksToday, lastRun, held, reasons, ledgers, settings`.
 
 ## baton (`baton/<org>/<sid>`, portable)
@@ -193,7 +208,7 @@ person (unless `mintLink: false` or to the operator); an offer mints per invitee
 | `offer/reach {offerId}` | the statechart's own timer (`offer-reach`, r12) | | reaches whoever waits and is in hours now; re-arms at the next window; ignored for another offer |
 | `message/refused` | host | | the runtime refused it after all: undone (503 busy counts nothing) |
 | `baton/take-back`, `baton/handoff {target, question, briefing}`, `baton/offer {targets, question, briefing, offerId}` (+ `targetPeople`), `baton/withdraw` | op (GO: card) | | while a reply runs: effect `stop-reply`, the move waits for `reply/ended` and is checked again |
-| `baton/close` | op · overseer (L1 `sova_close_gathering`, held) · system · statechart (the r3 move) | `{reason, ownerProject}` | overseer's order: reason, own, settle, ended, wrote |
+| `baton/close` | op · overseer (power `gather`, `sova_close_gathering`, held) · system · statechart (the r3 move) | `{reason, ownerProject}` | overseer's order: reason, own, settle, ended, wrote |
 | `baton/extend {more}` (the route's `by`; `by` is the envelope's actor), `baton/abilities {abilities}`, `baton/hide {hidden}`, `baton/wrapup-retry` | op | | |
 | `budget/recount {n}` | host | | never raises |
 | `reply/starting`, `reply/writing`, `reply/ended` | host (chat layer) | | |
@@ -219,9 +234,9 @@ Acts: `decision/owner-area {ownerArea}` (+ `ownerAreas`, `authorOwnsArea`, `oper
 
 ## reconciler (`reconciler/<org>/<p>`, portable)
 
-Acts: `reconcile/request {delayMs, by, owner}` (op · overseer L1 `sova_reconcile` · GO · sova · statechart),
-`decision/promote {ids, bulk?}` (op · overseer L2 `sova_promote`, held · statechart), `draft/rewrite` (op),
-`correct/clear-failed {reason}` (L1). Host events: `settings/reconcile {on}`, `reconcile/finished
+Acts: `reconcile/request {delayMs, by, owner}` (op · overseer `sova_reconcile`, always · GO · sova · statechart),
+`decision/promote {ids, bulk?}` (op · overseer power `promote`, `sova_promote`, held · statechart), `draft/rewrite` (op),
+`correct/clear-failed {reason}` (power `bookkeeping`). Host events: `settings/reconcile {on}`, `reconcile/finished
 {decisions [{id,…result}], conflicts [{id, a, b, area, areaKey, ownerArea, p, routedTo, routeReason,
 selfAsserted?, routeError?, batonSessionId, model?, thinking?}], resolved [{id, outcome, resolvedBy}],
 compared, draftedIds, error?}`, `reconcile/stopped {detail}`, `settle/results {decisions}`,
@@ -245,11 +260,11 @@ Start: `{orgId, projectId, id, ideaId, stallAfterMs?}` (spawned by its placement
 Its starts are noted (`started/noted {sid, kind}`) with whoever lists them: builds with `project/<p>`, gatherings
 with `placement/<org>/<p>`; a build it spawns carries no `orgId`. Batons' and decisions' `milestone/noted` go to
 the placement.
-Acts: `gather/start {sessionId, to|targets, publicTitle, question, goal, briefing, …}` (overseer L1, held;
-op; GO: card lists the project and every person), `gather/plan {…same}` (overseer L0: a planned gathering), `build/start {sessionId, title?, prompt?,
-decisions?}` (overseer L3, held; op), `gap/drop {fromIdea?}` (L0 `sova_idea`; op), `item/hold`,
+Acts: `gather/start {sessionId, to|targets, publicTitle, question, goal, briefing, …}` (overseer power `gather`, held;
+op; GO: card lists the project and every person), `gather/plan {…same}` (overseer, always: a planned gathering), `build/start {sessionId, title?, prompt?,
+decisions?}` (overseer power `codingStart`, held; op), `gap/drop {fromIdea?}` (always, `sova_idea`; op), `item/hold`,
 `item/resume` (op only), corrections `correct/reopen`, `correct/skip-stall`, `correct/relink {session,
-toItem}` (L1, `sova_correct`), `hold/cancel {id, reason}` (L0). Host/statechart events: `link/moved` (its
+toItem}` (power `bookkeeping`, `sova_correct`), `hold/cancel {id, reason}` (always). Host/statechart events: `link/moved` (its
 batons, decisions, builds, its watch), `item/adopt {session}`, `item/stalled` (its own timer).
 Drive (`dsl/drive`, by statechart): `reconcile/request` and `decision/promote` to the reconciler,
 `build/start` and `gather/start` to itself, `baton/close` to a baton.
@@ -270,10 +285,10 @@ ahead, dirty, newSinceMerge, branchGone, error}`, `worktree/adopted {branch, bas
 `tree-root` with no branch yet: the first worktree its session made itself, as the `worktree` tool named it; records
 `branch base target adoptedAt`, clears `later`, moves the tree to open and sends `worktree-note`; taken once, ignored after).
 Until adopted, `build/merge` and `build/remove-worktree` are refused "It runs in the project root until it makes a worktree."
-Acts: `build/prompt {text, mode?}` + `invalid`, `live` (overseer L3 `sova_send`, held; op),
+Acts: `build/prompt {text, mode?}` + `invalid`, `live` (overseer power `codingPrompt`, `sova_send`, held; op),
 `build/merge` + `elsewhere` (op only) → effect `merge` → `effect/done {result: {commit}}` |
 `effect/failed {detail}` (git's refusal, today's words); `build/remove-worktree` → effect
-`remove-worktree`; `correct/merged {commit, reason}` (L2).
+`remove-worktree`; `correct/merged {commit, reason}` (power `markMerged`).
 Exported: `…, later, adoptedAt, turn, workers, running, tree, branchState, merged, lastTurnAt`.
 
 ## runtime (`runtime/<p>`, host-local, project layer)
@@ -306,8 +321,8 @@ overseer started the run: `{"runtime/playbook-done" :overseer-started}`).
 `key` is typed (C3). A reason sent in a step whose event is `by` statechart (r3, a drive) says `by: statechart`.
 r14 (narrowing R3): every reason carries `asks` (bool), resolved from its transition's declaration
 `:sova/asks-overseer` (true, false, `:unwritten-false`: a closed gathering asks only when someone wrote in
-it; `:unless-auto-promoted`: drafted decisions ask unless the statechart promotes them itself, i.e. L2 in force
-at the request and every one in its author's area; or a map of kind → rule). The watch looks for statechart
+it; `:unless-auto-promoted`: drafted decisions ask unless the statechart promotes them itself, i.e. the
+requester's column had `promote` On with no brake at the request (`request-powers`) and every one in its author's area; or a map of kind → rule). The watch looks for statechart
 news only when it asks (then it wakes and counts, as on master); statechart news that asks nothing starts no
 look, uses none, and reaches the overseer as the next look's feed. item/answered-nothing and item/reopened are feed entries only, never sent (R4);
 their sentences stay in `reasons.cljc` for older rows.

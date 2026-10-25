@@ -5,12 +5,13 @@
 // overseer's notes, a goal, a profile or a contact. A throwaway PI_CODING_AGENT_DIR (with this
 // tree's pi-config extensions linked in) in the OS temp dir, deleted after; no model is called.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { Hono } from "hono";
 import type { ProjectUpdate } from "../shared/owner";
+import { linkPiConfigExtensions } from "./testing/agent-dir";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-owner-updates-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -18,7 +19,7 @@ process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
-symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
+linkPiConfigExtensions(agentDir);
 
 const orgs = await import("./orgs");
 const baton = await import("./baton");
@@ -28,7 +29,7 @@ const store = await import("./project-overseer-store");
 const { writeNotes } = await import("./overseer-store");
 const { registerOrgRoutes } = await import("./org-routes");
 const { disposeAllChats } = await import("./chat-manager");
-const { TOOL_NEEDS } = await import("./project-overseer-tools");
+const { TOOL_POWER } = await import("./project-overseer-tools");
 const { settled } = await import("./workspace-git");
 const { hostOf, setOrgClockForTest } = await import("./org-engine");
 
@@ -87,7 +88,7 @@ describe("sova_owner_update, as the project overseer's runtime builds it", async
   await po.patchProjectOverseer(pa.id, { autonomy: "L1" });
 
   test("L1; with no owner it refuses: there is no page to post to", async () => {
-    assert.equal(TOOL_NEEDS.sova_owner_update, "L1");
+    assert.equal(TOOL_POWER.sova_owner_update, "ownerUpdates");
     await assert.rejects(() => run("Hello."), /^Error: This organization has no owner, so there is no page to post to\.$/);
   });
 

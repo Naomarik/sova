@@ -15,6 +15,12 @@ with a guide of its own lists its contracts.
   README, and `extensions/spec/docs/` has a CHANGELOG. Read them; this guide doesn't repeat them.
 - `~/pi-config` is a compatibility symlink to this directory. `~/.pi/agent` symlinks `keybindings.json`,
   `models.json`, `vision-delegate.json` and every extension into it.
+- Not here: **Sova extensions** (`extensions.json`: a web app with its own backend, shown at
+  `#/ext/<id>`). They add nothing to pi. Their contract (ext-contract-v1.16: the manifest, the proxy,
+  the `offers` field, what an extension adds under replies and to the session ⋯ menu, and each
+  backend's own key in `server/extension-keys.ts`) is `docs/customization.md` "Sova
+  extensions" and `§app/extensions`; the places they add to are in
+  [agents/server/commands/overview.md](../server/commands/overview.md).
 
 | Extension | Guide | What Sova takes from it |
 |---|---|---|
@@ -68,6 +74,12 @@ Extensions with no guide, and the contract Sova parses where there is one:
   claude-code bridge, the provider-limits gate or `LoginUsers` included) reaches a chat when it reloads onto
   the new code after that restart, never before. Say a change is not live yet, and restart under AGENTS.md's
   restart rules.
+- **Plain-module imports.** In a Sova chat (Bun) pi imports each extension natively and translates it
+  only when that fails, at a cost in memory and open time (quirk P26). So an extension imports by name only
+  what Sova's `package.json` lists (`@earendil-works/pi-coding-agent`, `pi-ai`, `pi-tui`, `typebox`), and
+  only from an entry that exports the name: pi-ai's legacy names (`getApiProvider`, `getModel`, …) are on
+  `@earendil-works/pi-ai/compat`, not its root. A new dependency is added to Sova's `package.json` at pi's
+  own version. `server/harness/pi/extension-deps.integration.test.ts` fails on any extension pi translates.
 - **No new extension for Sova features.** A new Sova agent feature is never a new pi-config extension, and
   never a new call to an extension's command handler; the existing ones are grandfathered (see
   [the harness guide](../server/harness/overview.md)).

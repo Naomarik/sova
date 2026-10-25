@@ -29,6 +29,7 @@
     </div>
     <button class="button jump-latest">…chevron-down… Jump to Latest · 3 new</button>  <!-- conditional -->
   </section>
+  <button class="button focus-toggle" aria-pressed="false" aria-label="Focus" title="Focus">…expand…</button>  <!-- §chat.transcript/focus-view -->
 
   <footer class="composer">…§chat/composer…</footer>
 </main>
@@ -42,6 +43,7 @@
   chips, the `TUI` chip, a 44px **Share session** icon link (`.session-share-open`, icon `share`, to
   the share page `#/share/<id>`, §app.session-share/share-page) and Session details. No subagents or team chip (§app/insights). Nothing else: the model and the session's
   own facts moved into the composer (§chat/composer, §chat/images), which is where the session is acted on.
+  In Focus (§chat.transcript/focus-view) the head holds only Back (where it shows) and the title.
 - **Model.** Chat sessions read it off the composer's model indicator (§chat/composer) and change it in the
   flyout's Model row (§chat/images); neither is in the head. Watch sessions keep it in
   `.session-head-meta`, as plain mono text they can't change.
@@ -200,6 +202,12 @@ for an earlier revision of the same alignment its one-line change row, at the ca
 call's own tool card renders nothing once this result is there. A failed `align` call stays an
 ordinary tool-call and tool-result.
 
+**tour.** A valid compact `record_tour` or `show_tour` projection (§app.tours/editions) renders its tour/progress card at the call's position and suppresses the paired result's duplicate row. It remains visible outside compressed thinking/tool groups. Hide tools also keeps every tour request, progress and failure row visible, even before a valid card projection exists, so waiting and cancellation never disappear into hidden work. Only a checked edition opens as a readable tour; malformed or failed results remain safe ordinary tool rows, never plausible finished tours.
+
+**offer.** An `offer` call that showed a card (§chat.offers/card) renders the card at the call's
+position, and the paired result draws nothing; Hide tools keeps it. A refused `offer` call stays an
+ordinary tool-call and tool-result.
+
 **wake.** A fired wake-nudge (pi-config's `wake_nudge` tool): under the hood a real `role:"user"`
 message tagged `[wake_nudge n1] …` (shared/wake.ts `parseWakeNudge`), but it never reads as "You" —
 a machine event fired the turn, not the person. Same `.toolcard` shell as tool-call/tool-result
@@ -233,11 +241,12 @@ a machine event fired the turn, not the person. Same `.toolcard` shell as tool-c
   omitted for an on-time fire.
 - **Open.** The whole message exactly as it was sent — all four lines (the fire line, the optional
   overdue line, the reason line, the standing instruction) — in mono, never rewritten or hidden.
-- **Counts as an input.** A wake row is on every list that counts "your messages": the composer's
-  "N inputs" trigger, the Timeline's Inputs Only view (where it shows the reason, or "Wake nudge
-  n1" with none — §chat/timeline), rewind targets, and the "calls after the last user message" scan that
-  decides whether an open tool call may still be running. Only its rendering differs from an
-  ordinary user row.
+- **An input, never one you typed.** A wake row is a Timeline input row (where it shows the
+  reason, or "Wake nudge n1" with none — §chat/timeline), a rewind target, the newest message Undo
+  last turn may take back, and a turn start for the "calls after the last user message" scan that
+  decides whether an open tool call may still be running. It is not in what counts the messages
+  you typed: the composer's "N inputs" trigger and the Timeline's Inputs Only view leave it out
+  (§chat.timeline/inputs-only).
 - **Never hidden, never titles the session.** "Hide tool calls" leaves wake rows alone, and a wake
   row never joins a hidden-tool-call group (it isn't a tool row). The session list never titles a
   session from a wake message — it waits for the next real one.
@@ -382,6 +391,8 @@ If the date isn't today, prefix `Mar 4 `. Put the full ISO string in `title`.
 One strip of actions under each delivered message: `<div class="message-actions" role="group"
 aria-label="Actions for your message|this reply">`, holding `button.button-icon.button-ghost.message-action`
 icons. Under a message of yours it is end-aligned like the message head (`.message-actions-end`).
+The strip is Sova's built-in contribution to the reply place (§app.commands/reply-place); what
+extensions add under a reply comes after it, outside the strip, and never changes it.
 
 - **One strip per ENTRY, never per row.** An assistant message renders one row per content block
   (`<entryId>:<n>`), so the strip hangs off the entry's LAST row that shows text — never off a tool
@@ -435,6 +446,8 @@ icons. Under a message of yours it is end-aligned like the message head (`.messa
   icon flips to a check for 1.5s and the toast says "Copied message."
 - **Rewind** (your messages) moves the branch to just before that message and hands its text back
   to the composer — the same request the Timeline's input rows make (§chat/timeline), with the same refusals.
+  A message another session sent comes back without its `[from session …]` header line: the
+  composer gets the body alone.
   **Regenerate** (replies) walks back to the user message that started the turn, rewinds there and
   re-sends that message's own stored text and images with the session's CURRENT model, so
   switch-model-then-regenerate compares. The whole turn re-runs, tools included, and the composer
@@ -446,7 +459,11 @@ icons. Under a message of yours it is end-aligned like the message head (`.messa
   message of yours to send again, so Regenerate is off there with that as its reason — permanently,
   since no amount of waiting turns a nudge into something you sent. A reply that answered a topic
   batch (§chat.topics/row) is the same, with its own reason: "That reply answered notes other
-  sessions pushed to a topic, not a message you sent, so there's nothing to send again."
+  sessions pushed to a topic, not a message you sent, so there's nothing to send again.", and so
+  is a reply to a linked session's message: "That reply answered a linked session's message, not
+  one you sent, so there's nothing to send again." A reply that answered a tour's sign-in notice
+  (a "Tour sign-in" wake row, §app.tours/sites) is the same, with its own reason: "That reply
+  answered a tour's sign-in notice, not a message you sent, so there's nothing to send again."
 - **Both confirm inline, in place.** The first press arms: the strip becomes the sentence plus
   `Rewind Here` / `Regenerate Here` and `Cancel`. Focus follows into the confirm and back to the
   button that armed it on Cancel or Esc. The sentence says what survives as well as what goes:
@@ -467,8 +484,10 @@ icons. Under a message of yours it is end-aligned like the message head (`.messa
   rendered as-is rather than pre-empted.
 - **A live reply has no strip until it lands.** Streaming rows carry no entry ids, so nothing on
   them could be copied or regenerated by id; the resync after `agent_settled` replaces
-  them with canonical rows and the strip appears then. A disabled action that could never enable
-  itself is not drawn at all.
+  them with canonical rows and the strip appears then. The one action left out rather than drawn
+  off is a Copy with nothing to copy (above); every other blocked action is drawn `aria-disabled`
+  with its reason, a permanent one included (Regenerate on a reply to a wake nudge, a linked
+  session's message or a topic batch).
 
 ## §chat.transcript/a-queued-message — A queued message (§chat/composer, sending)
 
@@ -505,6 +524,10 @@ removal. The five reasons:
   model-policy extension does exactly this), so **no `message_start` will ever arrive**. Without
   this signal the row would sit on "Sending…" for the life of the pane over text the user has
   lost: the row goes and the text comes back.
+
+A click on an Overseer's card is the exception wherever text would come back (cleared, failed,
+dropped): the row goes, its text never reaches the composer, and its card's buttons come back with
+the note "Your click didn't reach the Overseer. Click again." (§app.overseer/confirm).
 
 A removal the server refuses because the agent already took the message says "Already sent. It
 can't be removed now.", and the row becomes the delivered message it turned out to be.
@@ -560,16 +583,13 @@ Driven by `ChatServerMessage.event`. Streaming working blocks follow the same br
   renders whenever any of the three has something to show,
   so an idle session with messages still has one. The subagents trigger follows the same two forms
   (words wide, its ring and a count narrow, §app/subagents-pane). The triggers never shrink, so none
-  runs its words into the next. The alignment chip doesn't either, except in the narrow form once
-  nothing else can give: its count then ends in an ellipsis ("1 align · 0/8…"), its full text still
-  its accessible name. At 344px that is every state with the subagents trigger and the inputs
-  trigger beside it; at 390px only a rare state's.
+  runs its words into the next. Open alignments and option cards are not in this row: they are the
+  waiting badge inside the message box (§chat.composer/waiting-badge).
   **Nothing moves.** The row is 20px tall whatever it carries (the triggers' net height) with its
   own 16px bottom margin, so the textarea and the composer keep their place between idle and
   working and as the step changes. The row's gap and each trigger's inline padding are 8px in the
   wide form; in the narrow one they are 6px and a trigger's parts sit 4px apart, so a working row
-  with the subagents trigger, the alignment chip and the inputs trigger stays on one line inside
-  the composer at 344px.
+  with the subagents trigger and the inputs trigger stays on one line inside the composer at 344px.
 - **End of turn** (`agent_settled`, or `agent_end` if that's all you get). Remove the live dots
   and the run status; the row's one dot stays while a subagent still works. Replace the optimistic items with the server's canonical ones if it sends
   them. Announce "Reply finished." in the polite live region; announce nothing per delta.
@@ -634,17 +654,21 @@ runaway reply there is capped: it can't write a line too long to read back or to
 - **Appends.** `append` items fade in (the rows' `.message` uses no transform, so no animation is
   needed).
 - **Auto-follow.**
-  - *Following* means the transcript's scroll bottom is within 80px of the end, by the reader's
-    own scroll: the browser taking a view to the end doesn't make it following; only the reader's
-    own scroll, a wheel down at the end, or Jump to Latest does
-    (§chat.transcript/turn-end-keeps-reader). While following,
-    every append or streamed delta scrolls to the bottom (`scrollTop = scrollHeight`, no smooth
-    scroll).
-  - When the user scrolls up past 80px, following stops and a `.button.jump-latest` appears:
-    "Jump to Latest · N new". Clicking it scrolls to the end, resumes following, and removes the
-    button. Only the view moving up stops following: content landing below a following view (a
-    reply, a queued message drawn again after a switch back), or the browser moving the view down
-    to keep a row in place, never does, and the view goes back to the end. A new session's empty
+  - *Following* starts when the reader's own scroll brings the transcript's scroll bottom within
+    80px of the end: the browser taking a view to the end doesn't make it following; only the
+    reader's own scroll, a wheel down at the end, or Jump to Latest does
+    (§chat.transcript/turn-end-keeps-reader). While following, every append, streamed delta or
+    row below growing (an image decoding) scrolls to the bottom (`scrollTop = scrollHeight`, no
+    smooth scroll). A change that adds no height (a control becoming available when the chat
+    connects, hidden text, a Copy button's checkmark) never moves the view, following or not.
+  - Any scroll up by the reader's own hand (a wheel, a trackpad, a touch, a key, a scrollbar
+    drag) that takes the view off the very end stops following at once, however small, and a
+    `.button.jump-latest` appears: "Jump to Latest · N new". Clicking it scrolls to the end,
+    resumes following, and removes the button. Any other scroll stops following only when it
+    takes the view up past 80px from the end (the browser's find landing on a row above, say).
+    Content landing below a following view (a reply, a queued message drawn again after a switch
+    back), the browser moving the view to keep a row in place or clamping it as rows below get
+    shorter, and a bounce at the end on a phone never do, and the view goes back to the end. A new session's empty
     state (§chat.transcript/states) opens at its top, doesn't follow, and never shows it.
   - It also appears, not following, when you switch back to a session left at the end that gained
     rows while you were away: the view stops at the last row read, and "N new" counts the rows
@@ -685,6 +709,65 @@ runaway reply there is capped: it can't write a line too long to read back or to
   A jump never turns following back on, even when it lands at the end (§chat.timeline/jumping):
   the reader keeps their place, with Jump to Latest showing.
 
+## §chat.transcript/focus-view — Focus: only the conversation
+
+Every single-chat screen (a chat, a watched session, the Overseer and its earlier conversations, a
+project overseer) has one **Focus** button, and turning it on leaves the conversation alone on
+screen: the head shrinks to its title, and the strips under it and the composer go away. It is a
+reading view, at every width, desktop included.
+
+```html
+<div class="transcript-wrap">
+  <section class="transcript pane">…</section>
+  <button class="button jump-latest">…</button>
+  <button class="button focus-toggle" type="button" aria-pressed="false|true" aria-label="Focus" title="Focus">
+    <span class="icon icon-sm" style="--icon: url(/icons/expand.svg)" aria-hidden="true"></span>
+  </button>
+</div>
+```
+
+- **The button.** Icon only (`expand`, four corners), named "Focus" by `aria-label` and `title`,
+  a `<button>` with `aria-pressed`, reached by Tab after Jump to Latest and before the composer. It
+  sits in the transcript's bottom-right corner, just above the composer, and stays in that corner
+  when Focus is on. On a screen wider than the conversation column, its right edge lines up with the
+  right edge of the composer column under it (the column the thread shares), never against the
+  scrollbar; where that column is full width, it sits a small inset from the transcript's right
+  edge. With Focus on it sits just above the bottom edge and its gesture bar
+  (`env(safe-area-inset-bottom)`, which the hidden composer no longer pays). It is round and drawn
+  32px, with a 44px target through an `::after` (the message actions' pattern). Off it is quiet:
+  the surface fill, a `--color-border` edge and muted ink, like the other icon buttons. On it is
+  filled with `--color-accent-tint` and edged in `--color-accent`, with ink: the state reads from
+  the fill and the edge, never from a hue alone. A workspace pane has no Focus button, and Focus
+  changes nothing in a workspace.
+- **What Focus hides.** In the head, everything but the title: the path line and Regenerate title,
+  the context readout, the profile, code and remote chips, the `TUI` chip, Share session and Session
+  details; on the Overseer's head its proactivity, Ideas, Todos, Schedules, History, Clear and ⋯;
+  on a project overseer's head its state chip, Without you, Run Now, ⋯ and Session details, and its
+  status strip. Back stays where it shows (below a 768px window), so the head is one line: Back and
+  the title. Under the head, the Current goal strip (§app.insights/insight-strip) and a baton
+  session's strip go. The whole composer goes: the run-status and workers row, staged answers, the
+  input row and the foot; on a watched session, its read-only composer and its reason with it.
+- **What it never hides.** The transcript's notices stay while something is wrong: a lost
+  connection, a failed model or login switch, a chat that couldn't start or open, a reload onto new
+  code that failed, and a project overseer's "Couldn't read its status". So do the thread's own rows,
+  Jump to Latest and the wait note. The sessions pane is untouched.
+- **The draft is kept.** The composer stays mounted, `inert` and hidden (no height, `visibility:
+  hidden`), so a half-written message, its attachments and the caret are exactly as they were when
+  Focus turns off. Focus inside the composer when Focus turns on moves to the Focus button.
+- **It moves, briefly.** What hides collapses over `--dur-base` with `--ease-standard`; under
+  `prefers-reduced-motion` it is instant. A view following the end stays at the end through it; a
+  reader scrolled up keeps the row at the top of the view (§chat.transcript/turn-end-keeps-reader).
+- **Nothing sits under the button.** The thread's end is padded by the button's height plus its
+  gaps (and the bottom inset, in Focus), so the last message and its actions scroll clear of it. Jump
+  to Latest and the wait note stay centred and leave the button's lane free, at a 344px screen too,
+  and in Focus they ride above the bottom inset as well.
+- **One choice per browser.** On or off is kept in this browser's `localStorage` (`sova:focus`,
+  `"true"` for on; anything else is off), for every session at once, never per session: switching
+  sessions (from the sidebar, or back to the list and into another) keeps it, and a reload brings
+  it back. Blocked or full storage keeps the choice for the page. Nothing turns it off but the
+  button; there is no gesture. The shell carries it as `data-focus="on"` on `.app` (§app/shell),
+  and the stylesheet does the hiding, on a `.app-main` that holds a transcript only.
+
 ## §chat.transcript/rendering — Opening and switching a long transcript
 
 A transcript opens on its newest rows, and fetches the older ones only when they're wanted: as
@@ -709,7 +792,12 @@ virtualized.
     whole entries, never opening on a tool
     result or inside a baton wrap-up. A list too short to fill that much fetches at once, until
     it's taller or reaches the top. While older rows remain, a line's height is held at the top
-    of the transcript, so what appears in it never moves the view. When a fetch (this one, or a
+    of the transcript, so what appears in it never moves the view. Whether that line is there is
+    settled before the first frame, from the rows the view opens with and what is known to be
+    above them (rows kept from the last visit, the file's newest rows, or the `hello`): a
+    transcript with older rows has it from its first frame, and one that opens on the whole
+    branch never has it; nothing learned later adds it. It goes with the build of the last rows
+    above, which keeps the view where it is. When a fetch (this one, or a
     jump's) takes longer than 0.4 s, a short bar sweeps in that line: the skeleton sweep, with no
     text; screen readers hear it as "Loading older messages" (a status region). The line sticks to
     the top of the view, over the rows, taking no pointer, so a jump fetching from the end shows
@@ -737,7 +825,7 @@ virtualized.
   and text selection reach every row built so far: the newest 400 or so, and every row the
   reader has scrolled up to or a jump has built. A row held but not built, or not fetched, is not
   in the page, so the browser's own find does not reach it; the Timeline, the outline's Jump to
-  Message, Open in Session, the card chip and a card reference still reach every row on the
+  Message, Open in Session, the waiting dialog's Show in Chat and a card reference still reach every row on the
   branch, since each jump builds (and if need be fetches) its target first (below). A row off
   screen is skipped by layout and paint
   (`content-visibility: auto`), at a height estimated from its kind, its text and its images
@@ -762,14 +850,16 @@ virtualized.
   the list, fetches every row down to it in one request and then lands; nothing is said while it
   waits, and a slow fetch shows the top edge's bar (above). A newer jump replaces a waiting one. "Isn't in
   the transcript" still means the thread has no row for the entry: said by a list that reaches
-  the top of the branch, or when the server finds no such row on it.
+  the top of the branch, or when the server finds no such row on it. It is also said when the
+  rows down to it can't be fetched (the server unreachable, the file unreadable), so a jump never
+  waits silently (§chat.timeline/jumping).
   Rows never drawn have estimated heights, so a jump lands once and holds its row in the middle
   while the rows around it are drawn (§chat.transcript/jump-landing).
 - **Counts of the whole branch.** The `hello` and the snapshot also say what the counts need of
-  the rows they don't carry: the ids of their inputs, how many messages they hold, whether
+  the rows they don't carry: the ids of their inputs and, apart, of those the user typed, how many messages they hold, whether
   any is a reply, and the alignments still open among them (each one's newest revision there,
   and its row); so does each fetch, of the rows above what it returns. The inputs count, Fan
-  Out's "up to message {n}", Undo last turn and the composer's alignment chip
+  Out's "up to message {n}", Undo last turn and the composer's waiting badge
   (§chat.alignment/chip) count the rows held plus those, so they're right from the first `hello`
   on, with no older row fetched. A newer revision among the rows held, or live, takes an
   alignment's place: one done or dropped there is no longer open.
@@ -804,7 +894,9 @@ virtualized.
   left at the end that gained rows while away, kept or brought by that `hello` or snapshot, stops
   at the last row read: that row's bottom at the bottom of the view, not following, with "Jump to
   Latest · N new" counting the rows below it, unless they're short enough that the view is still
-  within 80px of the end. One that gained none stays at the end, following, as does one whose last
+  within 80px of the end: a transcript that fits on screen with them, or overflows it by less than
+  80px, counts as within 80px and stays at the end, following, with no Jump to Latest. One that
+  gained none stays at the end, following, as does one whose last
   row read isn't among its rows, or one the reader has scrolled or touched first. A kept
   spot whose row the `hello` didn't keep is fetched and placed then, unless the view has moved
   from the end meanwhile. Any other open lands at the end. A reload keeps nothing. Rows kept this
@@ -853,6 +945,8 @@ what it did before.
 
 ## §chat.transcript/slim-rows — Rows carry what they draw
 
+Tour tools retain only a bounded card projection with job/tour/edition references and the small summary needed to draw the card (§app.tours/editions). Their large script, report and picture bytes never become eager row payloads; full authoring arguments stay lazy and authorized. A malformed or failed result cannot look like a complete checked tour.
+
 A transcript row carries what its folded form draws and no copy of the entry it came from, so a
 long session's rows weigh about what its text weighs, and opening, switching and reloading never
 wait on megabytes nobody looks at. Nothing on screen changes: every row, its time, its chips, the
@@ -879,9 +973,12 @@ shows exactly what it showed before.
   way to try again. The folded line's tooltip shows the whole line, as before. Cards that draw as cards rather than
   tool cards (`show_changes`, `sova_card`, `sova_confirm`, `sova_link`, `sova_unlink`, `align`,
   `session_send`, `sova_create_session`, `sova_navigate`) keep their whole content on the row.
-  While a reply streams, its rows show everything as they always did.
+  While a reply streams, its rows show everything as they always did. One exception holds everywhere, streaming
+  included: `record_tour`'s supplied credentials show as "[hidden]" and its arguments stream only once they end
+  (§app.tours/sites).
 - **Full content where it's needed.** Copying, the Changes viewer and every server-side reader
-  (the Overseer's session reads) still get every tool's whole arguments and output.
+  (the Overseer's session reads) still get every tool's whole arguments and output, except `record_tour`'s
+  supplied credentials, which every view shows as "[hidden]".
 
 ## §chat.transcript/recall-rows — Memory recalls are quiet rows
 
@@ -925,9 +1022,13 @@ view then reconciles them with its own `hello` or snapshot (§chat.transcript/re
 ## §chat.transcript/instant-open — A chat opens on its saved rows while it starts
 
 Opening a chat shows its newest rows at once, read from its saved session file and scrolled to the
-end, whether or not its process is running; when it isn't, the process starts behind them
-(§app.chat-processes/idle-stop). The Overseer, a project overseer, a baton session, a chat whose
-profile grants powers and a peer's chat open this way too, a peer's through that peer. Views that
+end, whether or not its process is running. Opening it starts it, as a send would: a click in the
+list, a reload, a tab the browser discarded coming back, a restored session and every pane of a
+workspace, hidden tabs included (§workspace.groups/layout-tabs), each connect, and the process starts
+behind the rows (§app.chat-processes/idle-stop); the chat's `hello` then brings its state (its
+modes, model and controls). Nothing opens a chat asleep. The Overseer, a project overseer, a baton
+session, a chat whose profile grants powers and a peer's chat open this way too, a peer's through
+that peer. Views that
 only watch (a TUI's session, a worker's or a hidden chat's file, an earlier conversation) are
 unchanged.
 
@@ -937,7 +1038,10 @@ unchanged.
   once instead; the file is read first only when it changed after they were kept (its
   `lastActiveAt`). A file read that fails opens the socket as before, and so does one that hasn't
   answered within about 1.5 s: the socket then names no row, and rows the read brings after the
-  chat's `hello` are not shown.
+  chat's `hello` are not shown. A load of older rows asked before the chat's `hello` (a scroll up,
+  a jump, §chat.timeline/jumping) doesn't wait for it: it reads the file's newest rows itself and
+  goes on from them, and a load that can't land says so (a jump shows its usual toast), so a slow or
+  failed start never leaves it waiting.
 - **Nothing downloaded twice.** The socket names the last row the view holds
   (`/ws/chat?…&have=<row id>`), and the chat's `hello` carries its state and only the rows after
   that one (its `after` names it). Rows after it (a reply streaming, entries written between the
@@ -946,6 +1050,7 @@ unchanged.
   so is it from a server, peer or chat process on older code, which ignores the name. Either way the
   rows on screen stay where they are: every row whose entry renders the same keeps its element
   (§chat.transcript/rendering, "Refetches keep rows"), and nothing flickers, jumps or is redrawn.
+  A reader who scrolls while it connects stays where they scrolled when the `hello` lands.
   A reconnect names the last row held the same way. A `hello` whose `after` the view doesn't hold
   is not applied to the rows: the view reads the file's newest rows again instead.
 - **While it starts.** Typing works. Send and the model, mode, sandbox and login controls wait
@@ -953,16 +1058,100 @@ unchanged.
   assistive technology only). Nothing is added to the composer: a small note floats over the end
   of the transcript, between its last row and the composer, taking no height: "Connecting to
   chat…", after about 300 ms (so a chat already running never flashes it), or "Reconnecting. Your
-  draft is kept." at once while the connection retries. It goes when the chat is ready.
+  draft is kept." at once while the connection retries. It goes when the chat is ready. A chat
+  this tab woke by asking something of it is the exception: until its `hello`, Send and the model
+  and thinking controls stay usable while the note floats, and what they ask goes to the server in
+  order behind what woke it (§chat.transcript/send-while-starting).
 - **Nothing typed or sent is lost, nor sent twice.** A message sent on a connection whose chat then
   fails to open comes back to the composer: the server refuses each message it held for the chat
   (`refused`), and the view hands back any sent on that connection it never had acknowledged when
-  the connection ends or reports an internal error before its `hello`. A message sent on an earlier
-  connection, after its `hello`, never comes back this way: that chat may have taken it.
+  the connection ends or reports an internal error before its `hello`. Before any of that, the
+  server tries a failed start once more, about a second later, still holding what the connection
+  sent: when that start works, the messages go to the chat in order and nothing shows, no refusal,
+  toast, banner or announcement. Only when the retry fails too are they refused, and those
+  refusals, before the connection's `hello`, come back to the composer on screen quietly (their
+  rows leave the thread), with no toast or announcement of their own: the "This chat didn't
+  start." banner says it (§chat.transcript/states). So a truly broken chat shows that banner after
+  two failed starts on the server, about 80 s at most when each start hangs until its boot wait
+  gives up, and the tab's own reconnects after it add no second banner. A message sent on an
+  earlier connection, after its `hello`, never comes back this way: that chat may have taken it. A
+  click on an Overseer's card is the one message that never comes back to the composer: its card's
+  buttons come back instead (§app.overseer/confirm). A message
+  handed to the server for a chat still starting is the server's to deliver from then on, whether
+  or not the tab stays (§chat.transcript/send-while-starting).
+- **A chat closed while its tab is open.** When the chat's process closes for being quiet
+  (§app.chat-processes/idle-stop), a tab showing it keeps its rows, draft and composer and closes
+  its socket without reconnecting: no note shows and Send stays usable. Nothing the tab does on its
+  own starts the chat again, neither a reconnect nor a server restart. Sending does: the message
+  shows at once, the "Connecting to chat…" note floats meanwhile, and the message goes to the
+  server the moment the tab's connection opens, before the chat's `hello`; the server holds it
+  while the chat starts and hands it to the chat once, when it is ready, even if the tab has left
+  by then (§chat.transcript/send-while-starting). So does a change of model, thinking level,
+  Claude login, mode or sandbox, or a rewind, regenerate, Remove of a queued message or
+  `/compact`: each goes to the server at once, in the order it was asked, and is applied before
+  anything asked after it. Opening the mode menu starts the chat too, and its lists load once the
+  chat is ready. A message for it from another chat or the Overseer (§app.chat-processes/idle-stop)
+  starts it the same way, and so does bringing its workspace tab to the front
+  (§workspace.groups/layout-tabs); moving focus between panes on screen doesn't. A jump to a row
+  the tab doesn't hold and scrolling up for older rows start nothing of their own: they load from
+  the file ("Rows from the file first", above).
+  When something else opens the chat meanwhile (another tab, a worker's report), the tab connects
+  to it. Reloading the page, or opening the chat again, starts it (above).
+  Archiving a chat tells its open tabs the same way (`closed`), so no tab reconnects and starts the
+  archived chat again; whatever the chat answered before it closed (a send it took) reaches the tab
+  first, so nothing it took comes back to the composer, and a server call it took is answered by it,
+  never failed as unreachable. The socket closes with a code the web app never retries (4422), so
+  a tab still on an older build, which doesn't know `closed`, stays down too. A person's own
+  action on a closed chat from anywhere else opens it the same way, never answering "open the chat
+  first": a mode switch or a save of its mode as the default, a sandbox switch, a subagent profile
+  pick, a restored worker's resume. What only reads it never opens it: its subagent profile
+  (`GET /api/settings/subagents?path=`) and its memory outline come from its file.
 - **Refusals after the paint.** A chat that turns out to be open in a TUI, or written by an unknown
   process, reopens read only over the rows already shown (§chat.transcript/live-watch). A chat that
-  can't open (its folder is gone) shows the open-failure banner (§app.shell/the-open-failure-banner)
-  over them. A start that fails for now keeps them and retries.
+  can't open (its remote placeholder folder is gone, its folder can't be reached; a local folder
+  that is gone opens in the home folder instead, §app.shell/missing-folder-home) shows the open-failure banner (§app.shell/the-open-failure-banner)
+  over them. A start that fails for now keeps them and retries: once on the server, quietly; if
+  that fails too, the tab shows "This chat didn't start." and keeps reconnecting.
+
+## §chat.transcript/send-while-starting — A message sent while its chat starts is the server's to deliver
+
+Pressing Send on a chat whose process isn't running (closed for being quiet while its tab is open,
+§chat.transcript/instant-open) hands the message to the server at once; the server holds it while
+the chat starts and delivers it once the chat is ready, whether the person stays on the chat,
+moves to another chat, home or Back, reloads the page or closes the tab.
+
+- **Straight to the server.** The tab writes the message, and anything asked of that chat before
+  it (a change of model, thinking level, Claude login, mode or sandbox, a rewind, regenerate,
+  Remove of a queued message or `/compact`), on the connection that wakes the chat as soon as it
+  opens, oldest first, without waiting for the chat's `hello`; Send and the model and thinking
+  controls stay usable meanwhile, so a model switch then Send goes in that order. A frame never goes on a connection
+  that is still connecting: until it opens, the tab keeps it, also in the browser's storage. When
+  the view closes first (another chat, home, Back), the tab opens a connection of its own just to
+  deliver it, and stays to hear the answer. When the page goes before its connection opened (a
+  reload, a closed tab), it hands what it kept to the server as it goes, with a request that
+  outlives the page (`POST /api/chat/frames`), and the server runs it as it runs that
+  connection's own frames: in order, each message once, a refusal back as the draft. Sova need
+  not be opened again. Only what that request can't carry (more than about 60 KB, a chat on a
+  peer) stays in the browser for the next page load of Sova, which delivers it within a day; a
+  message kept longer goes back to its chat's draft instead. A page never takes what another
+  open page still holds for its own connection, so nothing asked once runs twice.
+- **The server runs it after the tab has gone.** What a connection sent while its chat was
+  opening still reaches the chat, in order, when that connection closes before the chat is ready.
+  A model or thinking change, mode or sandbox switch sent before the message is applied before
+  it: a message that arrives while a model switch or a rewind is still under way waits for it.
+- **Exactly once.** The chat takes each message by its client id once: a prompt or steer whose
+  id it has already taken (a view coming back, a second tab, a retry) is answered as taken and
+  never runs again. A view that comes back to the chat while such a message is still on its way
+  connects at once and shows it as `Sending…` (§chat.transcript/a-queued-message) until the
+  chat's own rows say where it is.
+- **What can't be delivered comes back quietly.** When the chat can't take the message (it fails
+  to start, the server's one retry included (§chat.transcript/instant-open), or its model has been turned off in Settings → Models) and no tab is there to hear it,
+  the server puts the text back as that chat's saved draft, ahead of any draft already saved, so
+  the session list shows the chat's draft mark and its composer holds the text when it is opened.
+  An Overseer card's click is never put back as a draft, by the server or a tab (§app.overseer/confirm).
+  No toast or notice says so. A tab still on the chat gets it back through the usual refusal
+  (§chat.transcript/instant-open, "Nothing typed or sent is lost, nor sent twice"); a tab that
+  moved elsewhere in the app puts it back into that chat's draft itself.
 
 ## §chat.transcript/own-writes-across-restart — The server's own writes survive a restart
 
@@ -1010,8 +1199,8 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
 3. **The Sessions card**, always (at every width, with no sessions too), under a `Sessions`
    section eyebrow: one `.card.home-sessions`. It reads: `{n} session(s) across {m} folder(s)` as
    its title — main threads, archived included, and their distinct folders;
-   `{live} live · {working} working now` — live = the Live & web region's sessions (open in a
-   terminal, or a web session not archived; never an organization's, §app.session-list/ordinary-surfaces), working = a live record says `working`, or the
+   `{live} live · {working} working now` — live = every open session (open in a
+   terminal, or a web session not archived), whether Folders lists it or, for a session in a project's folder, its project's block; never an organization's, §app.session-list/ordinary-surfaces, working = a live record says `working`, or the
    server reports a web session busy; when the Needs-you region would list anything, a warn chip
    `Needs you · {n}`, a warn border and `Waiting on you: {title}, {title}[ and {k} more]` — the
    region's rows (§app.session-list/needs-you, from the attention digest the page already polls,
@@ -1037,7 +1226,8 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
    `a.card.ext-card` to `#/shares` (§app.session-share/shares-page) with the `external` icon, the
    title `Shares`, a count chip (`{n}`: every live public link counted on the line), and one line:
    `{n} session shares · {n} organization links · {n} preview links` (`1 session share`,
-   `1 organization link`, `1 preview link` at 1), then ` · {n} viewing now` only while anyone is
+   `1 organization link`, `1 preview link` at 1), then ` · {n} tour links` (`1 tour link`) only
+   when there are live standalone tour (`/t/`) links, then ` · {n} viewing now` only while anyone is
    (the Shares page's own viewing count). Session shares are the shares with a live link and
    organization links every live hand-off and owner link, both from `GET /api/shares-overview` on
    this host and each up peer; preview links are this host's active previews from
@@ -1128,7 +1318,8 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
 | Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then, in an ordinary session, the profile cards and what the picked profile changes (§chat.profiles/picker), then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title.", then, for a local folder in a git repository with linked worktrees, the worktrees line and its `Clean Up Merged` button (§chat.transcript/empty-worktrees). The composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows, the profile entry and a Claude login note (§app.claude-logins/switch-login) draw nothing and don't count (the login note is drawn where it sits once a message is on the branch), while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state. It opens at its top (the title, then the profile cards), not at its end, and doesn't follow the end; the first rendered row puts the view back to following. Jump to Latest never shows over it: scrolling the empty state (the cards, the setup card) has no latest to jump to |
-| Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow, so it stays in the record). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." |
+| Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." The same failure reported again (a reconnect loop) keeps the one banner. It goes once a newer turn starts: a failed turn whose error is in its own row keeps it there, so the thread then reads as a fresh load of the chat does. What else sits in that place stays when a turn starts: a transcript reload that failed, a model turned off in Settings → Models, a usage limit's row offering another subagent profile (§chat.subagent-profiles/limit-row) |
+| Chat didn't start (an `error` before this connection's `hello`, after the server's own retry, §chat.transcript/instant-open) | `.banner.banner-error` in the same place. Title: "This chat didn't start." Body: "{message}. Your message is back in the composer. Send again to retry." ("Your messages are back…" for more than one; only "{message}." when nothing came back). One banner, however often the start fails again while the tab keeps reconnecting: the newest reason replaces the old. It goes once a newer turn starts; one that gave nothing back also goes at the chat's next `hello`. Never "The turn stopped with an error.": no turn ran |
 
 ## §chat.transcript/setup-card — Setup card
 
@@ -1182,7 +1373,8 @@ main-pane rows.
 - **Read once.** It reads when it appears, and again only if it is asked about a different
   session; then it disappears until both new answers are in. An answer that arrives after the
   card has gone, or for a session it no longer shows, is dropped. Nothing on it polls or links: no
-  Refresh button, no timer, no anchors, and a commit's age is worked out when the card draws and
+  Refresh button, no timer, no anchors (a file's name is a button that reads that one file when
+  pressed, /setup-card-open-file), and a commit's age is worked out when the card draws and
   doesn't tick. The loadout is redrawn in two cases only, both from
   /setup-card-toggles: a flip of a row's switch draws the server's answer in place, and when the
   chat says the switch window has opened after the first read, the loadout is read again,
@@ -1271,8 +1463,10 @@ The files pi puts into the prompt, in the order it loads them.
   with no role. The APPEND_SYSTEM.md sources come last, in the order they are appended, each
   marked "appended to the system prompt". The role is muted caption text after the path, not a
   chip.
-- **The row.** The path with the home folder written `~` (the full path when it isn't under home,
-  or before home is known), on one line and cut with an ellipsis when it doesn't fit. The full
+- **The row.** A file inside the session's own folder is named by its path from that folder, with
+  no folder before it (`AGENTS.md`, `.pi/APPEND_SYSTEM.md`). Any other file is its path with the
+  home folder written `~` (the full path when it isn't under home, or before home is known). The
+  name is on one line and cut with an ellipsis when it doesn't fit. The full
   path is in the row's `title`. Then the role, if any, then its token estimate
   (/setup-card-figures).
 - **Where the list comes from.** The same read as Skills (/setup-card-skills): the session's own
@@ -1496,6 +1690,37 @@ skills it is offered, for this one session only.
 - **Accessibility.** Each switch is a checkbox labelled "Load {path}" (the path as the row shows
   it) for a file and "Offer {name}" for a skill, checked when on, reachable by keyboard.
 
+## §chat.transcript/setup-card-open-file — Setup card: reading a context file or skill
+
+Each row's name in Context and Skills (/setup-card-context, /setup-card-skills), the
+`SYSTEM.md` and `APPEND_SYSTEM.md` rows included, is a button that opens that file in the
+markdown viewer (§app/markdown-viewer), on Rendered: the whole text as it is on disk now.
+
+```html
+<span class="setup-name">
+  <button class="setup-path setup-open" type="button" aria-label="Read ~/AGENTS.md">~/AGENTS.md</button>
+</span>
+```
+
+- **What opens.** The viewer's title is the name as the row shows it (`~/AGENTS.md`, a skill's
+  name), its subtitle the full path. A skill opens its `SKILL.md` only, never the rest of its
+  folder. Source and Copy are the viewer's own, so Source shows the exact file, frontmatter
+  included.
+- **The look.** The name keeps its mono text and its place; it underlines on hover and takes the
+  standard focus ring. Its accessible name is "Read {name}". A row switched off
+  (/setup-card-toggles) still opens, and its switch stays a control of its own: pressing the name
+  never flips it.
+- **The read.** Pressing the name asks the server for that file's text,
+  `GET /api/sessions/context/file?path=<session file>&file=<listed path>`, then opens the viewer.
+  The server serves only a path that this session's own setup read lists (context, skills,
+  `SYSTEM.md`, `APPEND_SYSTEM.md`), so the request reads no other file on disk; any other path is a
+  404, "That file isn't in this session's system context." A remote session has no rows to press,
+  and its request is refused. A file over 1 MB is refused with "That file is over 1 MB, too big to
+  show here." Whatever goes wrong is a toast that starts "Couldn't open that file." and gives the
+  server's reason; the viewer doesn't open.
+- **Not cached, not pre-read.** Nothing is read until a name is pressed, and each press reads the
+  file again.
+
 ## §chat.transcript/empty-worktrees — The worktrees line under a new session
 
 A new session's empty state (the "Empty (new session)" row of States, above) ends, below its
@@ -1573,6 +1798,10 @@ Its words are the [copy deck](../design/copy-deck.md)'s §design.copy-deck/workt
     once per error (a reconnect loop's repeat of the same failure announces nothing), and instead
     of that turn's "Reply finished.": an errored turn still settles, and two endings would read
     as two turns.
+  - "This chat didn't start." when a chat's start fails on the server's retry too (States), then
+    "Your message is back in the composer." when one came back: once, however often the start
+    fails again, and nothing else is said for it (no "couldn't be sent"). A start that fails and
+    then works says nothing at all.
   - For watched sessions, "{n} new entries." throttled to at most once every 5s.
 - **Articles.** Each message is an `article` with an `aria-label` like "You, 14:06" or
   "claude-opus-5, 14:07".
@@ -1632,8 +1861,8 @@ whole row as the target, and its Arguments and Output.
 
 The timeline breaks at anything that is the message rather than the working — a user or assistant
 message, a report, a card tool (`sova_card`, `sova_confirm`, `sova_link`, `sova_unlink`, `align`,
-`session_send`, `sova_create_session`, or `show_changes` with valid successful details),
-a compaction, a topic, a wake, a worktree merge — so a card tool is never swallowed into a step.
+`session_send`, `sova_create_session`, `show_changes` with valid successful details, or `offer` with a card, §chat.offers/card),
+a compaction, a topic, a wake, a worktree merge — so a card tool is never swallowed into a step. Tour tools `record_tour` and `show_tour` also break the timeline, including their safe request/progress/failure rows before a valid card projection; Hide tools never conceals them (§app.tours/recording).
 No step summary draws as a card; the expanded thinking aside is the only subtly shaded content.
 
 A row that draws nothing is TRANSPARENT to the timeline: it is not a step and it never breaks a

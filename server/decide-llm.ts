@@ -1,6 +1,6 @@
 import { spawn as nodeSpawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // The provider-limits gate (node builtins only, see agents/extensions/provider-limits/overview.md): a one-shot waits for a slot of its
@@ -352,13 +352,29 @@ function runClaude(choice: WorkerChoice, prompt: string, req: DecisionRequest, d
   });
 }
 
+/** The largest command-line argument a Claude Code one-shot starts with (§app.decisions/providers): a
+    bigger one fails `too-large` without starting (Linux refuses one string over 128 KiB at exec). */
+export const CLAUDE_ARG_MAX = 64 * 1024;
+
+export interface ClaudeRunOptions {
+  /** The system prompt, handed over as a private file (`--system-prompt-file`, replacing Claude Code's own)
+      in the call's temporary folder, never on the command line: no size keeps the call from starting. */
+  systemPrompt?: string;
+}
+
+/** The file a call's system prompt is written to, inside its private temporary folder. */
+export const SYSTEM_PROMPT_FILE = "system-prompt.md";
+
 /**
- * The Claude Code CLI with `argv`, `input` on stdin, in an empty temporary folder that is removed
- * afterwards, without the variables that make it think it runs inside Claude Code: its stdout (the
- * JSON envelope, which a failed run prints too), or a DecisionError. Shared by decisions and the
- * session namer (server/session-autotitle.ts).
+ * The Claude Code CLI with `argv`, `input` on stdin, in a private temporary folder (empty but for the
+ * system prompt's file, when `opts.systemPrompt` is given) that is removed afterwards, without the
+ * variables that make it think it runs inside Claude Code: its stdout (the JSON envelope, which a failed
+ * run prints too), or a DecisionError. An argument over CLAUDE_ARG_MAX fails `too-large` before any
+ * wait or spawn. Shared by decisions, the session namer (server/session-autotitle.ts) and memory.
  */
-export async function claudeRun(argv: string[], input: string, deps: LlmProviderDeps, timeoutMs: number, fail: Fail, signal?: AbortSignal): Promise<string> {
+export async function claudeRun(argv: string[], input: string, deps: LlmProviderDeps, timeoutMs: number, fail: Fail, signal?: AbortSignal, opts: ClaudeRunOptions = {}): Promise<string> {
+  const big = argv.find((a) => Buffer.byteLength(a) > CLAUDE_ARG_MAX);
+  if (big !== undefined) throw fail("too-large", `argument too large for the command line (${Buffer.byteLength(big)} bytes, at most ${CLAUDE_ARG_MAX})`);
   // One slot of the `claude-code` limit for the whole run, when one is set; the wait counts toward the timeout.
   const started = Date.now();
   const waited = new AbortController();
@@ -383,7 +399,7 @@ export async function claudeRun(argv: string[], input: string, deps: LlmProvider
   const who = resolveUsageAttribution();
   const model = argv[argv.indexOf("--model") + 1];
   try {
-    const stdout = await claudeSpawn(argv, input, deps, Math.max(1, timeoutMs - (Date.now() - started)), fail, signal, call);
+    const stdout = await claudeSpawn(argv, input, deps, Math.max(1, timeoutMs - (Date.now() - started)), fail, signal, call, opts.systemPrompt);
     recordClaudeEnvelope(stdout, who, argv.includes("--model") ? model : undefined);
     return stdout;
   } finally {
@@ -392,15 +408,27 @@ export async function claudeRun(argv: string[], input: string, deps: LlmProvider
 }
 
 /** `exited` runs once the process is gone (or never started): the in-flight call's end. */
-function claudeSpawn(argv: string[], input: string, deps: LlmProviderDeps, timeoutMs: number, fail: Fail, signal: AbortSignal | undefined, exited: () => void): Promise<string> {
+function claudeSpawn(argv: string[], input: string, deps: LlmProviderDeps, timeoutMs: number, fail: Fail, signal: AbortSignal | undefined, exited: () => void, systemPrompt?: string): Promise<string> {
   return new Promise((resolve, reject) => {
     let cwd: string;
     try {
-      cwd = mkdtempSync(join(tmpdir(), "sova-decide-"));
+      cwd = mkdtempSync(join(tmpdir(), "sova-decide-")); // 0700: this user's only
     } catch (err) {
       exited();
       reject(fail("unavailable", `cannot create a temp dir: ${failureMessage(err)}`));
       return;
+    }
+    if (systemPrompt !== undefined) {
+      const file = join(cwd, SYSTEM_PROMPT_FILE);
+      try {
+        writeFileSync(file, systemPrompt, { mode: 0o600, flag: "wx" });
+      } catch (err) {
+        rmSync(cwd, { recursive: true, force: true });
+        exited();
+        reject(fail("unavailable", `cannot write the system prompt file: ${failureMessage(err)}`));
+        return;
+      }
+      argv = [...argv, "--system-prompt-file", file];
     }
     const env = { ...process.env, ...(deps.env?.() ?? {}), ...FIXED_CLAUDE_ENV } as Record<string, string | undefined>;
     delete env.CLAUDECODE;

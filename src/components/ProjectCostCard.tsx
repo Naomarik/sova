@@ -1,22 +1,62 @@
-import { createEffect, For, type JSX, on, Show } from "solid-js";
+import { createEffect, For, type JSX, on, onCleanup, Show } from "solid-js";
 import type { CostModelRow, CostTokens, ProjectCost } from "../../shared/costs";
 import { getProjectCost } from "../lib/api";
 import { costNotes, emptyLine, KIND_LABEL, moneyWord, modelRows, starterParts, TOKEN_KINDS, topMeta, usd } from "../lib/costs";
 import { projectSessionHref } from "../lib/projects-route";
 import { createPoll, type Poll } from "../lib/poll";
 import { tokens } from "../lib/project-overseer-view";
+import { relativeTime } from "../lib/format";
+import { Placeholder } from "./ui";
 
 const COST_POLL_MS = 60_000;
+/** The server recounts behind a count this old (server/project-costs.ts COST_RECOUNT_AFTER_MS)... */
+const COST_STALE_MS = 15_000;
+/** ...and a recount takes a few seconds: read again after this to show it. */
+const RECOUNT_FOLLOW_MS = 4_000;
 const TOKEN_HEAD: Record<(typeof TOKEN_KINDS)[number], string> = { input: "Input", output: "Output", cacheRead: "Cache read", cacheWrite: "Cache write" };
 
 /**
  * The project's cost, read on its own (it's heavier than the overseer's info): on open, with
- * Refresh Project (`tick`), and every 60 seconds while the tab shows. The page reads it once for
- * its summary chip and its Cost tab.
+ * Refresh Project (`tick`, which waits for a fresh count), and every 60 seconds while the tab shows.
+ * The page reads it once for its summary chip and its Cost tab. The server answers its last count
+ * at once and recounts behind it (§app.project-costs/card): an old count is read again a few seconds
+ * later, once, to pick the recount up.
  */
 export function createProjectCost(props: { projectId: string; tick(): number }): Poll<ProjectCost> {
-  const poll = createPoll(() => getProjectCost(props.projectId), COST_POLL_MS);
-  createEffect(on(props.tick, () => poll.refetch(), { defer: true }));
+  let fresh = false;
+  const poll = createPoll(
+    () => {
+      const f = fresh;
+      fresh = false;
+      return getProjectCost(props.projectId, f);
+    },
+    COST_POLL_MS,
+    { cacheKey: `project:${props.projectId}:cost` },
+  );
+  createEffect(
+    on(
+      props.tick,
+      () => {
+        fresh = true;
+        poll.refetch();
+      },
+      { defer: true },
+    ),
+  );
+  let followed: string | null = null;
+  let follow: ReturnType<typeof setTimeout> | undefined;
+  createEffect(
+    on(
+      () => poll.data()?.asOf,
+      (asOf) => {
+        if (!asOf || asOf === followed || Date.now() - Date.parse(asOf) < COST_STALE_MS) return;
+        followed = asOf;
+        clearTimeout(follow);
+        follow = setTimeout(() => poll.refetch(), RECOUNT_FOLLOW_MS);
+      },
+    ),
+  );
+  onCleanup(() => clearTimeout(follow));
   return poll;
 }
 
@@ -35,7 +75,21 @@ export function ProjectCostCard(props: { projectId: string; poll: Poll<ProjectCo
       <h2 class="orgs-h2" id="project-cost">
         Cost
       </h2>
-      <Show when={poll.data()} fallback={<p class="cost-lede">{poll.error() ? `Couldn't count this project's cost. ${poll.error()}` : "Counting…"}</p>}>
+      <Show
+        when={poll.data()}
+        fallback={
+          <Show when={poll.error()} fallback={<Placeholder lines={3} label="Cost" />}>
+            {(e) => (
+              <p class="field-error">
+                Couldn't count this project's cost. {e()}{" "}
+                <button type="button" class="button button-sm" onClick={() => poll.refetch()}>
+                  Retry
+                </button>
+              </p>
+            )}
+          </Show>
+        }
+      >
         {(c) => <CostBody cost={c()} projectId={props.projectId} />}
       </Show>
     </section>
@@ -54,6 +108,9 @@ function CostBody(props: { cost: ProjectCost; projectId: string }) {
         <p class="cost-headline">
           <span class="cost-figure">{usd(c().totalUsd)}</span>
           <span class="cost-headline-unit">at API prices</span>
+        </p>
+        <p class="cost-asof">
+          as of <time title={c().asOf}>{relativeTime(c().asOf)}</time>
         </p>
         <p class="cost-lede">What these sessions would cost at each provider's API prices. Your subscriptions bill differently.</p>
       </div>

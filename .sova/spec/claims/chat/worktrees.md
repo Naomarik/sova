@@ -32,17 +32,20 @@ by argument list with no shell, locally only (a remote session refuses it).
 
 - **create** `{name, base?, path?}`: `git worktree add -b feat/<name>` from the session repo's
   main checkout, at `<parent of the main checkout>/.worktrees/<repo>-<name>` unless `path` is
-  given, based on `base` or the session cwd's `HEAD` (whose branch becomes its default merge
-  target). It is tracked as `created`.
+  given, based on `base` or the session cwd's `HEAD`. The branch it is based on (`base` when it names a
+  branch, else the branch the cwd has checked out; none for a commit or a detached HEAD) is kept as
+  its base branch, which is where git first looks for it merged (§chat.worktrees/merged-state); it
+  is not the `merge` default. It is tracked as `created`.
 - **attach** `{path}`: tracks an existing worktree top level (a subdirectory, or a detached HEAD,
   is refused) as `attached`; its base is its fork point from `master` (else `main`). A worktree
   another session created may be attached.
 - **detach** `{path}`: marks it `dropped`. Nothing is deleted on disk.
 - **merge** `{path, target?}`: merges the worktree's branch into `target` (default `master`, or
-  `main` in a repository without `master`) and records the merge (§chat.worktrees/merge-card). Where `target` is checked out, that checkout
+  `main` in a repository without `master`, whatever its base branch) and records the merge (§chat.worktrees/merge-card). Where `target` is checked out, that checkout
   must have no tracked changes, and the merge runs there (fast-forward when possible, else a merge
   commit; a conflict is aborted and reported, changing nothing). Where it is not checked out, only
-  a fast-forward is done.
+  a fast-forward is done. No merge needs a recorded go-ahead, into `main` or `master` included
+  (§chat.worktrees/landing-answers).
 - **list**: the set with each worktree's status.
 
 `detach` and `merge` take the worktree's path or its branch name. Every answer lists the
@@ -135,8 +138,10 @@ in its answer, and its card's message carries the merge line alone; a merge seen
 them in its message. They are: the changed files no claim maps (spec any whose change a user
 sees); a draft with records never promoted, in the worktree or in another worktree whose branch
 the merge brings in, said once per draft in a session and again when its pending § change (into
-the repository's default branch, master or main: promote the landing's own drafts now; another
-session's are named); a merge commit that resolved § by hand (they differ from both parents); an
+a branch other than the repository's default: promote them on it before it lands; into the
+default branch, master or main: they didn't land with the code, and stay in the worktree's drafts
+folder until they are promoted on a fresh branch from the default branch, never on it directly;
+another session's are named); a merge commit that resolved § by hand (they differ from both parents); an
 evidence commit the branch no longer contains; and that the spec warnings could not be computed.
 No line names the § the merge changed, deleted or renamed, or the § whose mapped code changed
 under unchanged prose, and none asks for a line in the reply. Those lines never change the card. The message never starts a turn; one sent while a turn runs
@@ -195,7 +200,11 @@ chip and adds Removed or Cleaned up. A row with a readiness
 the digest's words), Waiting for your OK, In progress, Blocked or Stale, with the reason as its
 `title` — and none while merged or removed, which the status chip already says. Its tone follows
 mergeability, as the list row's lit worktree count does (§app.session-list/content-rules): Ready
-to merge and Waiting for your OK are success, In progress neutral, Blocked and Stale warn. Under the facts, one visible
+to merge and Waiting for your OK are success, In progress neutral, Blocked and Stale warn. A
+worktree that is Ready to land (§chat.worktrees/ready-to-land) reads **Ready to land** (success) in
+place of Ready to merge or Waiting for your OK, and its line starts "Ready to land"; one Landing
+specs reads **Landing specs** (info; warn, with the session's reason as its `title`, when it can't
+land them) with the line "Landing specs · 2 drafts" (and "· can't land them: <why>"). Under the facts, one visible
 muted line gives the reason, so a phone gets it without hover: the readiness's `reason` ("Ready to
 merge · checks passed · 19 commits ahead", "Conflicts with master · 17 files"), else the chip's
 word and the why joined by " · ", and no line when there is neither. It wraps; it never truncates. The section follows the
@@ -290,11 +299,27 @@ own light and `title` carry. An **empty leftover
 worktree** — no commit of its own, a clean tree, nothing running — never changes the count. Its `title` names each worktree with its state and every
 routine follow-up in words, one line each.
 The session's `readiness` travels with its row in the session list (`SessionSummary.readiness`),
-so the Overseer reads the same answer.
+so the Overseer reads the same answer. An open offer card (§chat.offers/card) is no reply that
+asks: it never makes a worktree wait for your OK. Offers' conditions read readiness as it will be
+once the turn ends (§chat.offers/conditions).
+
+**The branch status line**, counted in code with no model call, for the session's newest merge:
+"merged {sha7} · pushed (or not pushed) · live (or restart owed) · spec promoted (or {n} spec
+draft(s) not promoted)". Merged and the commit come from the merge card; pushed from the target's
+`origin` branch (left out when there is no `origin`); live when this server already runs the
+merge (it started after it, or the merge changed no server file), else restart owed; spec from
+the merged worktree's own `.sova/spec/drafts/`, while that folder still exists: a draft counts as
+promoted when every spec file it changed now reads the same in the worktree's current spec, or a
+promotion the draft records wrote that file after the draft's last edit to it (a promotion into a
+spec that had moved merges the two, so the current file is not the draft's copy). The
+line is the first line of the badge's `title` (§app.session-list/anatomy) and travels with the
+row (`SessionSummary.readiness.status`).
 
 Routine session-list and merge-readiness refreshes never query spec assessment status or
-recapture assessment inputs, including for idle merged worktrees. Readiness carries no spec
-observations, and the row and its title display none. Ordinary git readiness, bash checks,
+recapture assessment inputs, including for idle merged worktrees, and never run a spec tool.
+The one spec fact readiness carries is the status line's draft count, read from the drafts'
+files and kept until one of them changes. Readiness carries no other spec observation, and the
+row and its title display none. Ordinary git readiness, bash checks,
 attention items, and routine follow-ups keep the rules above. Explicit companion CLI
 assessments remain separate and available; their observations are not passed tests or release
 gates.
@@ -305,6 +330,66 @@ or a phone notification: "Ready to merge: {branch}" for a ready worktree and "Wa
 {cue}" for a merge the follow-up check calls significant; and one "Restart pending" item for the
 whole server, however many sessions' merges ask for it, naming how many merges and their
 branches.
+
+## §chat.worktrees/ready-to-land — Ready to land
+
+A worktree a session tracks is **Ready to land** at its head commit when, worked out with no model
+call beside its readiness (§chat.worktrees/readiness):
+
+- git can read it, it isn't merged, it has **no uncommitted files at all** (the one-or-two-file
+  caveat of ready doesn't apply), at least one commit ahead, no conflicts with its base and no
+  temporary commit subject;
+- the session's newest check run isn't failing, it has no open alignment question, and nothing
+  runs in it;
+- and **the work is finished**: the session's latest turn outcome (§app.decisions/attention-signals,
+  the turn card) says it did what was asked, which covers done and done-but-unverified. Whether the
+  last reply asks something doesn't matter: a finished reply that asks "shall I merge?" is still
+  Ready to land. When Decisions' attention signals are off, or turned off for the session's folder,
+  there is no outcome to read, and the code-only conditions above decide alone.
+
+Once a head commit is Ready to land it **stays** so for that commit, kept per session and worktree
+in `<state root>/ready-to-land.json`, even when a later reply asks nothing or its outcome says
+something else; it goes when the branch's head moves, the branch lands, or a live condition above
+stops holding (a new uncommitted file, a failing check, an open question, a turn running).
+
+**Specs land with the branch.** When the worktree holds spec drafts not yet promoted, the landing
+reads **Landing specs** instead (the Session tab's chip, its line "Landing specs · 2 drafts", and
+the merge board, §chat.worktrees/merge-board). Sova then tells the session once per head commit,
+as a message in its chat, to make its specs official on its own branch (promote its drafts) and
+commit them, or, when it can't, to answer with one line `Can't land specs: <why>`; the user is
+never asked. The session's newest reply with that line gives the why, shown on the chip and the
+Landing card (§chat.offers/sova-landing). Once the drafts are promoted and committed the new head
+is Ready to land by the same rule.
+
+**What still blocks the card.** When the session's latest turn outcome says its work is finished
+but a worktree it tracks isn't Ready to land at its head for reasons the session can fix itself
+(uncommitted files, spec drafts not promoted, conflicts with its base, a temporary commit subject,
+a failing check run), and the project's offers file has an offer shown only when Ready to land
+(`ready-to-land`, as Sova's own Landing offer), Sova tells the session once per head commit, as a
+message in its chat, what still blocks its landing card, each blocker counted ("1 uncommitted file,
+11 spec drafts to make official"): to fix them on its branch, and that the card shows only once
+nothing does. That message never mentions Land It. When spec drafts are the only thing left, the
+specs message above is sent instead. Nothing is sent while a turn runs, for an archived or
+terminal session, or when the outcome doesn't say the work is finished (or no outcome is ever
+recorded for the session).
+
+The Session tab's chip reads **Ready to land** (or **Landing specs**) in place of Ready to merge or
+Waiting for your OK while it holds; every other reader of readiness (the row's badge, the digest,
+the offers' `branch-ready`) is unchanged.
+
+## §chat.worktrees/landing-answers — Land It and Not Yet are kept, never enforced
+
+Sova keeps the user's answers on a branch's Landing card (§chat.offers/sova-landing) in
+`<state root>/landing.json`, outside every repository: a go-ahead (Land It, or Merge Without
+Specs… with the branch's spec drafts left behind) or a Not Yet, each for the branch at the commit
+the card was shown for, the newest 200 of each kept. Both may be recorded at one commit: the later
+recorded time wins, and Not Yet wins a tie or a time that can't be read. The merge round's driver
+reads them as the user's word (§chat.merge-round/driver); nothing else acts on them.
+
+Nothing enforces them. No merge needs a recorded go-ahead: the `worktree` tool's merge
+(§chat.worktrees/tool) and the Project Overseer's Merge Branch
+(§app.project-overseer/coding-worktrees) merge into `main` or `master` as into any other branch,
+from any session, whatever the project's offers file says, and Merge Branch records nothing.
 
 ## §chat.worktrees/cleanup — Removing merged worktrees
 
@@ -362,8 +447,14 @@ and a reading stands for a while before it is read again:
 - **5 minutes** while the session is idle and the tree's last answer was **merged** (merged and
   clean). A hand edit in an idle merged tree can therefore take up to 5 minutes to read "Stale ·
   merged, with uncommitted changes".
+- An idle session's other trees are read again with the session, every 5 minutes
+  (§app/idle-git-cache, "Idle sessions"). A hand edit in an idle tree that isn't merged can
+  therefore also take up to 5 minutes to show, as "In progress · 3 uncommitted files" or as a
+  caveat on ready.
 - Whatever the lifetime, a commit, `git add`, a checkout or a branch switch in the tree ends the
-  reading at once: the tree's index and HEAD are part of what it was read from.
+  reading at once: the tree's index and HEAD are part of what it was read from. While the session
+  feed runs (§app.decisions/push), such a change, or its base branch moving, is noticed within
+  5 s with no session-file write: that row alone is read again and the list says so.
 - A removal through Sova's cleanup (§chat.worktrees/cleanup: the Clean Up Merged button, its
   confirm, or `sova_archive`'s removal) ends the reading at once for every session that tracks
   the removed tree: the cleanup answers only once those sessions are read again, so the very next
@@ -372,8 +463,8 @@ and a reading stands for a while before it is read again:
   archived flag, open questions or attention answer) reads every tree's changes again at once.
 - An explicit look at the session's worktrees (the Session tab's Worktrees section, or
   `sova_session`'s Merge facts) re-reads every tree's changes when one of its readings may have
-  stood the 5 minutes, or when the session is settled (§app/idle-git-cache) and its answer is 10
-  seconds old: that look returns the answer it has at once, and the re-read shows on the next one. A look at an archived, idle session re-reads them under its own rule
+  stood the 5 minutes, or when the session is idle with its trees checked without Git
+  (§app/idle-git-cache) and its answer is 10 seconds old: that look returns the answer it has at once, and the re-read shows on the next one. A look at an archived, idle session re-reads them under its own rule
   (§app/idle-git-cache, "Archived-idle exception").
 
 ## §chat.worktrees/merge-board — The merge board file
@@ -387,7 +478,9 @@ and no HTTP call (the merge round's driver, §chat.merge-round/driver); the sche
   readiness has read and how many it hasn't yet (`pending`: while above 0, a missing row is
   unknown, never "no owner"). A row per worktree path: its canonical `path`, `branch`, `repo` (the
   common git directory, read from the worktree's `.git` entry without running git; null when
-  unreadable), readiness `state` and `reason`, `readAt`, and its `owner`: session id, status
+  unreadable), readiness `state` and `reason`, its `landing` when it is Ready to land or Landing
+  specs (§chat.worktrees/ready-to-land: `state`, the full head `commit`, the unpromoted `drafts`, the
+  session's `specsWhy`), `readAt`, and its `owner`: session id, title, status
   `idle` | `busy` | `archived`, profile id (null for Default) and last activity. Rows are sorted by
   path.
 - **Who owns a row.** Built only from readiness's own last answers, never by reading git or a
@@ -395,7 +488,9 @@ and no HTTP call (the merge round's driver, §chat.merge-round/driver); the sche
   as the merge captain's profile (`merge-captain`), which attach worktrees only to check them. When
   several sessions track one path, one not archived wins, then the most recently active. An owner
   is busy while its turn runs, a worker is working, or it holds a queued message.
-- **When it is written.** Every minute while the server runs (first about 10 seconds after start),
-  replaced whole by atomic rename, mode 0600. A rebuild lists the sessions and waits up to 20
+- **When it is written.** Rebuilt every minute while the server runs (first about 10 seconds after
+  start); the file is replaced whole by atomic rename, mode 0600, only when its content (all but
+  `at`) changed, and at least every 2 minutes, so a reader never takes a running server's board for
+  stale. A rebuild lists the sessions and waits up to 20
   seconds for the readiness reads that listing asked for; concurrent asks share one rebuild. A
   write that fails is logged and the board is still used in-process.

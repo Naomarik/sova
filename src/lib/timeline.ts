@@ -10,11 +10,10 @@
 
 import type { OutlineSnapshot, RewindInfo, SessionOutline, TranscriptItem } from "../../shared/protocol";
 import { duration, relativeTime, thousands } from "./format";
-import { inputPreview, type RowState, type ViewRow } from "./inputs";
+import { inputPreview, inputRows, typedByUser, type RowState, type Sender, type ViewRow } from "./inputs";
 import { SPAWN_TOOLS } from "./message";
 import { absoluteTime, firstLine, timelineEntries } from "./spend";
-import { isInput, isTurnStart } from "./turn";
-import { wakeTitle } from "../../shared/wake";
+import { isTurnStart } from "./turn";
 import { rowFacts } from "../../shared/wire-v1";
 
 /** A row's shape on the axis; the `data-kind` the stylesheet keys off. */
@@ -63,7 +62,15 @@ export interface TimelineRow {
   /** input rows only, and only when the axis was built with a `view`: where the message stands
       against the latest rewind (inputs.ts `viewRows`). "active" is on the branch and may rewind. */
   state?: RowState;
+  /** input rows only: who sent the message, when not the user (another session, the Overseer, a
+      teammate). The row draws a sender line for it, and Inputs Only leaves it out. */
+  sender?: Sender;
+  /** input rows only: a fired wake nudge. Not typed by the user, so Inputs Only leaves it out. */
+  wake?: boolean;
 }
+
+/** An input row the user typed: what Inputs Only keeps (inputs.ts `typedByUser`). */
+const typed = (row: TimelineRow): boolean => row.kind === "input" && typedByUser(row);
 
 /** Idle longer than this between two rows and the axis says so rather than pretending continuity. */
 export const GAP_MS = 10 * 60 * 1000;
@@ -99,9 +106,13 @@ export interface InputTurn {
   index: number;
   /** The first line, whitespace collapsed; "" when the message is images only. */
   preview: string;
-  /** The whole text, for the row's title attribute. */
+  /** The whole body, for the row's title attribute (without another session's header line). */
   text: string;
   images: number;
+  /** Who sent it, when not the user (inputs.ts `inputRows`). */
+  sender?: Sender;
+  /** A fired wake nudge. */
+  wake?: boolean;
   replies: number;
   tools: number;
   /** Input → the last stamped row of the turn; 0 when nothing stamped followed. */
@@ -111,25 +122,25 @@ export interface InputTurn {
 /** The session's turns, oldest first: each user message with the work it drew. */
 export function inputTurns(items: readonly TranscriptItem[]): InputTurn[] {
   const out: InputTurn[] = [];
+  // The rows' titles, bodies and senders are inputs.ts's, so the axis and the rewind rows agree.
+  const rows = new Map(inputRows(items).map((r) => [r.id, r]));
   items.forEach((it, index) => {
-    if (!isInput(it)) return;
-    const text = it.text ?? "";
+    const input = rows.get(it.id);
+    if (!input) return;
     const at = it.at;
-    const preview =
-      it.kind === "wake" && it.wake
-        ? (it.wake.reason ?? wakeTitle(it.wake))
-        : (text.trim().split("\n", 1)[0] ?? "").replace(/\s+/g, " ").trim();
     const turn: InputTurn = {
       id: it.id,
       at,
       index,
-      preview,
-      text,
-      images: it.images?.length ?? 0,
+      preview: input.preview,
+      text: input.text,
+      images: input.images,
       replies: 0,
       tools: 0,
       elapsedMs: 0,
     };
+    if (input.sender) turn.sender = input.sender;
+    if (input.wake) turn.wake = true;
     const start = at ? Date.parse(at) : NaN;
     let last = NaN;
     for (let i = index + 1; i < items.length; i++) {
@@ -171,6 +182,8 @@ export function inputRowsOf(items: readonly TranscriptItem[]): TimelineRow[] {
     .filter((t) => t.at)
     .map((t) => {
       const row: TimelineRow = { key: `input:${t.id}`, kind: "input", at: t.at!, entryId: t.id, title: turnPreview(t) };
+      if (t.sender) row.sender = t.sender;
+      if (t.wake) row.wake = true;
       if (t.text.trim() && t.text.trim() !== row.title) row.full = t.text;
       const density = densityLine(t);
       if (density) row.meta = density;
@@ -192,6 +205,9 @@ export function withRewindState(rows: readonly TimelineRow[], view: readonly Vie
   for (const v of view) {
     if (v.state === "active" || present.has(v.id) || !v.at) continue;
     const row: TimelineRow = { key: `input:${v.id}`, kind: "input", at: v.at, entryId: v.id, title: inputPreview(v), state: v.state };
+    // Rebuilt from the view, so the sender comes from it too: the transcript no longer has the marker.
+    if (v.sender) row.sender = v.sender;
+    if (v.wake) row.wake = true;
     if (v.text.trim() && v.text.trim() !== row.title) row.full = v.text;
     out.push(row);
   }
@@ -361,8 +377,9 @@ export interface AxisOptions {
   /** inputs.ts `viewRows` for this transcript: gives every input row its `state`, and brings back
       the rows a fresh rewind left behind. Absent, input rows carry no state. */
   view?: readonly ViewRow[];
-  /** The "Inputs Only" filter: your own messages, their density lines, and the idle gaps
-      between them — nothing else. The gaps are measured between the rows that remain. */
+  /** The "Inputs Only" filter: the messages the user typed, their density lines, and the idle gaps
+      between them — nothing else: no message another session, the Overseer or a teammate sent, and
+      no wake nudge. The gaps are measured between the rows that remain. */
   inputsOnly?: boolean;
 }
 
@@ -381,7 +398,7 @@ export function timelineRows(
 ): TimelineRow[] {
   const inputs = opts.view ? withRewindState(inputRowsOf(items), opts.view) : inputRowsOf(items);
   const merged = opts.inputsOnly
-    ? inputs
+    ? inputs.filter(typed)
     : [...inputs, ...chapterRows(outline, items), ...markerRows(items, rewinds), ...outlineRows(opts.outlines)];
   const rank = (row: TimelineRow) => {
     const i = anchorIndex(items, row.entryId);

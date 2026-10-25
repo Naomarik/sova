@@ -3,7 +3,7 @@
 // the `sandbox` custom entry it appends on every change. We import exactly its pure state.ts (node
 // builtins only), like mode-state.ts imports mode/state.ts, and never learn what a policy, a level
 // or a backend is beyond the status words in that entry. Without the extension nothing here runs.
-import { describeActive, LEVELS, type SandboxActive, type SandboxState, STATES, stateOf } from "../pi-config/extensions/sandbox/state.ts";
+import { describeActive, isStarting, LEVELS, type SandboxActive, type SandboxState, STATES, stateOf } from "../pi-config/extensions/sandbox/state.ts";
 import type { OwnedCommand, StateView } from "../shared/harness";
 import type { ChatServerMessage, SandboxApplyResult, SandboxInfo } from "../shared/protocol";
 import { stateViewOf } from "./harness/pi/state";
@@ -21,7 +21,7 @@ export const sandboxInfo = (branch: readonly Entry[]): SandboxInfo => sandboxInf
 /** The same, from a view of the branch's state. */
 export function sandboxInfoOf(state: StateView): SandboxInfo {
   const active = state.latest(SANDBOX)?.data ?? OFF;
-  return { on: active.on, state: stateOf(active), enforcement: active.enforcement, status: describeActive(active) };
+  return { on: active.on, state: stateOf(active), enforcement: active.enforcement, status: describeActive(active), ...(isStarting(active) ? { starting: true as const } : {}) };
 }
 
 export const sandboxMessage = (branch: readonly Entry[]): ChatServerMessage => ({ type: "sandbox", ...sandboxInfo(branch) });

@@ -435,7 +435,16 @@ test("info lists this gateway's kinds only when asked (?kinds=1); the plain answ
   setGateway(GATEWAY);
   const { a } = app("n1");
   assert.deepEqual(await (await a.request("/api/peer/share-gateway/info")).json(), { publicUrl: URL_, accepting: true, seq: null });
-  assert.deepEqual(await (await a.request("/api/peer/share-gateway/info?kinds=1")).json(), { publicUrl: URL_, accepting: true, seq: null, kinds: ["h", "i", "s", "x", "p"] });
+  assert.deepEqual(await (await a.request("/api/peer/share-gateway/info?kinds=1")).json(), { publicUrl: URL_, accepting: true, seq: null, kinds: ["h", "i", "s", "x", "p", "t"] });
+});
+
+test("info states this gateway's share protocol only when asked (proto=1)", async () => {
+  const { SHARE_PROTOCOL } = await import("../shared/public-links");
+  setGateway(GATEWAY);
+  const { a } = app("n1");
+  assert.deepEqual(await (await a.request("/api/peer/share-gateway/info?proto=1")).json(), { publicUrl: URL_, accepting: true, seq: null, shareProtocol: SHARE_PROTOCOL });
+  assert.deepEqual(await (await a.request("/api/peer/share-gateway/info?kinds=1&preview=1&proto=1")).json(), { publicUrl: URL_, accepting: true, seq: null, kinds: ["h", "i", "s", "x", "p", "t"], shareProtocol: SHARE_PROTOCOL });
+  assert.equal("shareProtocol" in (await (await a.request("/api/peer/share-gateway/info?kinds=1&preview=1")).json()), false);
 });
 
 test("an s row is a valid snapshot row, stored and looked up for kind s only", async () => {

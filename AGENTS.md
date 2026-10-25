@@ -53,7 +53,11 @@ also update Y" list live in its guide: read the guide of every area your task to
 - Feature work never edits `~/webapps/sova`, the live tree. Each feature session works in its own
   worktree and branch (`git worktree add ~/webapps/.worktrees/sova-<name> -b feat/<name>`; an agent uses
   the `worktree` tool, whose `create <name>` does exactly that and tracks it so its workers may start
-  there); only a release merges it into master. Uncommitted edits in the live tree block a release.
+  there); a branch lands through the merge captain, on the user's go-ahead (see
+  **Landing**). Uncommitted edits in the live tree block a release.
+  One exception: applying a Project Overseer's Settings change card on Sova's own project
+  (§app.project-overseer/settings) lands its settings files on master in the live tree as one commit,
+  at the operator's click; Sova refuses it when it would touch anything but settings files.
 - Test from the worktree with `pnpm run dev:hermetic` by default (`scripts/hermetic-agent-dir.mjs`
   builds `<worktree>/.agent`: this tree's pi-config, own sessions and state, nothing in `~/.pi`; port
   4810, `SOVA_PORT=<n>` for another; it copies no auth, copy `auth.json` in by hand). Create, archive,
@@ -71,6 +75,26 @@ also update Y" list live in its guide: read the guide of every area your task to
   landing gate the merge round runs.
 - Editing `statecharts/`: start `pnpm statecharts:watch` first and run `pnpm statecharts:test`; never
   cold-compile in a loop (statecharts guide).
+
+## Landing
+
+- **Ready to land** is Sova's own reading of a branch's head commit: no uncommitted files at all, no
+  conflicts with master, the newest checks not failing, no open alignment questions, the session
+  idle, and its latest turn outcome says the work is finished (with Decisions off: the code checks
+  alone). It holds for that commit until the branch changes or lands.
+- **Who merges.** In Sova's repo the merge captain queues a Ready to land branch and Sova shows its
+  session the Landing card: **Land It** is your go-ahead, a shortcut for telling the captain, and the
+  captain lands, pushes and restarts; **Not Yet** leaves it until a new commit. A card exists only once
+  the branch is Ready to land and queued: a session tells the user to press Land It only when its
+  chat shows that card, and otherwise says what still blocks it (Sova's note names it). A branch
+  with no owner chat gets no card: the captain asks for the user's typed OK instead. A Land It
+  survives the captain's clean master merge into the branch. No merge into master needs a
+  recorded go-ahead. A project without a captain declares its own landing offer, or none.
+- **Specs land with the branch.** Sova tells a finished session once per commit to promote its spec
+  drafts on its branch and commit them; the branch reads Landing specs until then. If it can't,
+  the card offers Merge Without Specs… behind a confirmation.
+- **The one exception:** a Project Overseer's settings change card on Sova's own project lands its
+  settings files on master at your Apply (§app.project-overseer/settings).
 
 ## Live server restart
 
@@ -175,6 +199,25 @@ messages and `§workspace.groups/decisions`):
   extension command call for a new Sova agent feature.
 - Every reach into pi's internals is a quirk row in `server/harness/pi/QUIRKS.md`, with its canary and
   sites, in the same change.
+
+## Commands and extensibility (detail: [agents/server/commands/overview.md](agents/server/commands/overview.md))
+
+- **New user-visible actions go on the catalogue by default** (`shared/commands-catalog.ts`), so Sova
+  stays extensible: a script, a later server list or an extension reaches them with no new code.
+  When you add or change a user-visible action, also update the catalogue and `shared/commands-ids.json`.
+- An entry points at the existing route and never re-implements it. Additions only add: nothing
+  intercepts, vetoes or rewrites one of Sova's actions.
+- Agents get an action only when it is opened to them on purpose; being listed opens nothing.
+- Each entry's `meshNeed` equals what `server/mesh/access.ts` `classifyRequest` gives its route.
+  Entries never point at the peer, share, auth or extension-proxy routes. Ids are append-only.
+- Extension content on Sova's screens is data Sova draws, or a walled-off frame; never markup in the page.
+- **Sova's own features use the same places on its screens as extensions**, so new work is extensible
+  from day one: a place draws Sova's built-ins first (trusted, interactive), then what extensions add
+  (walled). A new action under a message is a built-in of the reply place (`src/lib/reply-place.ts`),
+  never a strip of its own. A place asks only the extensions whose `offers` name it, never per item.
+  Held by `src/lib/reply-place-rule.test.ts` and `src/lib/reply-place.browser.test.ts`.
+- The ratchet: each rule has a test that fails when it breaks (the guide names them, and lists what
+  is not a command). Change a rule and its test together.
 
 ## Conventions
 

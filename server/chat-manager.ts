@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { closeSync, existsSync, openSync, readSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, readSync } from "node:fs";
+import { homedir } from "node:os";
 import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type ChatSpecialKind, type RunStartAnswer, type ServerToolCall, type ServerToolDecl, type ServerToolOutcome, type SpecialSpec, unsentRefusal, type WorkerHost, type WorkerSpec } from "../shared/chat-runtime";
 import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORKER_HOST_EVENT, type WorkerHostAnnouncement } from "../pi-config/extensions/subagents/worker-host.ts";
 import { prepareOwnerArea } from "../shared/decisions";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
-import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
+import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, ProjectModeApproval, ProjectModeApprovalNeeded, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 import { isLinkMessage, parseLinkMessage } from "../shared/link-message";
@@ -53,6 +54,7 @@ import { cutTail, helloAfterHave, type HistoryPart, pullFields } from "./tail-he
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
 import { targetOfCwd } from "./targets";
+import { cwdFallbackNote, probeFolder, type CwdFallback } from "./session-cwd";
 import { sovaToken } from "./auth";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
@@ -66,21 +68,39 @@ import { playbookHost } from "./playbook-host";
 import { ChatMemory } from "./memory/chat";
 import { readOverseerSettings } from "./overseer-store";
 
-/** The Overseer's memory choice as a record (overseer.json), or null: it then uses the saved default. */
-function overseerMemoryRecord(): { v: 1; type: "uniichat" | "zoomable"; size: number } | null {
-  const m = readOverseerSettings().memory;
-  return m ? { v: 1, type: m.type, size: m.size } : null;
+/** An overseer's own memory switch in force: the Overseer's from the state root's
+    overseer.json, a project overseer's from the file its loadout names; no saved choice = on, UniiChat 128 KB. */
+function overseerMemoryNow(file: string | undefined): OverseerMemorySetting {
+  if (!file) return overseerMemoryOf(readOverseerSettings().memory);
+  let raw: unknown;
+  try {
+    raw = (JSON.parse(readFileSync(file, "utf8")) as { memory?: unknown } | null)?.memory;
+  } catch {
+    raw = undefined;
+  }
+  return overseerMemoryOf(parseOverseerMemory(raw));
 }
 import { withWebMinors } from "./memory/permit";
-import { applyMemoryPatch, saveDefaultMemoryChoice } from "./memory/settings";
+import { approvalNeededText, checkProjectSwitch, listingFor, projectModesInfo } from "./project-mode-menu";
+import { isApproved, isApprovedByUser, recordApproval } from "./project-mode-approvals";
+import { ModeActions, notHereFor, type ModeCommandOutcome } from "./mode-commands";
+import { projectModesOf, restoreProjectSnapshots } from "../pi-config/extensions/mode/state.ts";
+import { PROJECT_MODE_PREFIX, type ProjectModeRef } from "../shared/project-modes";
+import { applyMemoryPatch, overseerMemoryOf, type OverseerMemorySetting, parseOverseerMemory, saveDefaultMemoryChoice } from "./memory/settings";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension, sessionInstanceNote } from "./project-services/tools";
-import { servedToolsExtension } from "./served-tools";
+import { servedToolsExtension, servedVisToolsExtension } from "./served-tools";
+import { TOUR_TOOLS } from "../shared/tour";
+import { tourTools } from "./tours/tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { QUEUE_OPEN_TOOL, queuePushExtension, topicStore } from "./topics";
+import { OFFER_NOTE_MESSAGE, OFFER_TOOL } from "../shared/session-offers";
+
+/** The offer note in this process (a chat the server hosts itself: tests). */
+const offerNoteHere = async (sessionId: string): Promise<string | null> => (await import("./session-offers")).offerNoteFor(sessionId);
 import { noteUsageSession, registerUsageSession, resolveUsageAttribution } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { reviewSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
@@ -146,6 +166,8 @@ export function setServedTools(decls: readonly ServerToolDecl[] | null): void {
 export interface ChatHosts {
   playbook?: PlaybookHost;
   instanceNote?: (ctx: HookCtx) => Promise<string | null>;
+  /** The offer tool's note of a run button's outcome (§chat.offers/card). */
+  offerNote?: (sessionId: string) => Promise<string | null>;
 }
 let chatHosts: ChatHosts = {};
 export function setChatHosts(h: ChatHosts): void {
@@ -243,9 +265,9 @@ const DEFAULT_EXTENSION_FACTORIES = [
 
 /** Register the Claude Code provider without waiting for the user to open a session: a throwaway
     session with the default extensions and the provider flag alone (server/harness/pi/open.ts).
-    Best-effort; never throws. */
-export function warmClaudeCodeProvider(modelRuntime: PiModelRuntime, cwd: string): Promise<void> {
-  return warmPiProvider(modelRuntime, cwd, DEFAULT_EXTENSION_FACTORIES);
+    Best-effort; never throws. `onStep` hears each step as it begins (§app.chat-processes/boot-log). */
+export function warmClaudeCodeProvider(modelRuntime: PiModelRuntime, cwd: string, onStep?: (step: string) => void): Promise<void> {
+  return warmPiProvider(modelRuntime, cwd, DEFAULT_EXTENSION_FACTORIES, onStep);
 }
 
 let runtimeWarm: Promise<void> | null = null;
@@ -254,11 +276,15 @@ let runtimeWarm: Promise<void> | null = null;
  * counts every call it makes) with the Claude Code provider registered in it, whatever extensions
  * the chats it opens load. A loadout that loads no extension (a project overseer, a baton) never
  * registers the provider itself, so once this has started its open waits for it. Best-effort; never
- * throws.
+ * throws. `onStep` hears Sova's name for each step as it begins: a chat process's start-up trail
+ * (§app.chat-processes/boot-log, recorded by server/chat-runtime/main.ts). By default nothing hears
+ * them, and the server's own warm-up passes none: it logs and sends nothing of a trail.
  */
-export function warmChatRuntime(): Promise<void> {
-  runtimeWarm ??= getModelRuntime().then(
-    (runtime) => warmClaudeCodeProvider(runtime, agentRoot()),
+export function warmChatRuntime(onStep: (step: string) => void = () => {}): Promise<void> {
+  if (runtimeWarm) return runtimeWarm;
+  onStep("model setup");
+  runtimeWarm = getModelRuntime().then(
+    (runtime) => warmClaudeCodeProvider(runtime, agentRoot(), onStep),
     (err) => console.warn("[chat] claude-code warm-up skipped:", err instanceof Error ? err.message : String(err)),
   );
   return runtimeWarm;
@@ -266,6 +292,8 @@ export function warmChatRuntime(): Promise<void> {
 
 /** pi's ThinkingLevel ladder (see server/models.ts, which mirrors the semantics). */
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+/** How many sends' client ids a chat remembers as taken (ChatSession.takenSends). */
+const TAKEN_SENDS_MAX = 1000;
 
 /** A refusal to write. code per shared/protocol.ts: busy = TUI owns it (force never helps),
  *  recent = unknown writer (reconnect with &force=1), reloaded = another client reloaded the runtime. */
@@ -318,13 +346,33 @@ export class ConfigError extends Error {
  */
 const configFailures = new Map<string, ConfigError>();
 
+/** The first line of a refusal for a stored folder that is gone (src/lib/open-failure.ts parses it). */
+const GONE_PREFIX = "Stored session working directory does not exist: ";
+const goneError = (path: string, cwd: string) => new ConfigError(`${GONE_PREFIX}${cwd}\nSession file: ${path}`, cwd);
+
+/** Where an open happens, and whether that is the home folder standing in for a stored folder that is gone. */
+export interface OpenCwd {
+  cwd: string;
+  fallback: CwdFallback | null;
+}
+
 /**
- * Where an open must happen: the stored cwd, which must exist. Throws the ConfigError with the
- * stored cwd, the name the user knows; the banner's restore advice is about it.
+ * Where an open must happen (§app.shell/missing-folder-home): the stored cwd when it is there. A
+ * local stored cwd that is genuinely missing opens in the home folder of THIS host (the one the
+ * chat runs on: `home` defaults to its os.homedir(), read at the call). Refused with a ConfigError,
+ * naming the stored cwd: a folder Sova chose for the chat (`overridden`: a baton's or a project
+ * overseer's), a remote session's placeholder (the home folder here is not the target's), a home
+ * folder that is itself gone, and a stored cwd that exists but can't be reached (permission).
  */
-export function resolveOpenCwd(path: string, sessionCwd: string): string {
-  if (!existsSync(sessionCwd)) throw new ConfigError(`Stored session working directory does not exist: ${sessionCwd}\nSession file: ${path}`, sessionCwd);
-  return sessionCwd;
+export function resolveOpenCwd(path: string, sessionCwd: string, opts: { overridden?: boolean; home?: string } = {}): OpenCwd {
+  const probe = probeFolder(sessionCwd);
+  if (probe.state === "present") return { cwd: sessionCwd, fallback: null };
+  if (probe.state === "unreachable")
+    throw new ConfigError(`Stored session working directory can't be reached (${probe.code}): ${sessionCwd}\nSession file: ${path}`, sessionCwd);
+  if (opts.overridden || targetOfCwd(sessionCwd)) throw goneError(path, sessionCwd);
+  const home = opts.home ?? homedir();
+  if (!home || home === sessionCwd || probeFolder(home).state !== "present") throw goneError(path, sessionCwd);
+  return { cwd: home, fallback: { original: sessionCwd, cwd: home } };
 }
 
 /** The cached permanent failure for `path`, if it still applies. Exported because it is the whole
@@ -334,8 +382,11 @@ export function resolveOpenCwd(path: string, sessionCwd: string): string {
 export function activeConfigFailure(path: string): ConfigError | undefined {
   const failure = configFailures.get(path);
   if (!failure) return undefined;
-  if (existsSync(failure.cwd)) {
-    configFailures.delete(path); // the directory came back: let the next open try for real
+  // The directory came back, or what is wrong with it changed (an unreachable folder that is now
+  // gone opens in the home folder): let the next open try for real.
+  const now = probeFolder(failure.cwd).state;
+  if (now === "present" || (now === "missing" && !failure.message.startsWith(GONE_PREFIX))) {
+    configFailures.delete(path);
     return undefined;
   }
   return failure;
@@ -353,11 +404,14 @@ export function assertOpenConfig(path: string): void {
   if (known) throw known;
   // Detect it cheaply on the first connect too: the header's cwd is all it takes, and the open
   // would otherwise build a model runtime before the SDK reached the same conclusion.
-  const cwd = cwdOverride(path) ?? storedCwd(path);
-  if (cwd && !existsSync(cwd)) {
-    const failure = new ConfigError(`Stored session working directory does not exist: ${cwd}\nSession file: ${path}`, cwd);
-    configFailures.set(path, failure);
-    throw failure;
+  const override = cwdOverride(path);
+  const cwd = override ?? storedCwd(path);
+  if (!cwd) return;
+  try {
+    resolveOpenCwd(path, cwd, { overridden: override !== undefined });
+  } catch (err) {
+    if (err instanceof ConfigError) configFailures.set(path, err);
+    throw err;
   }
 }
 
@@ -388,9 +442,10 @@ function storedCwd(path: string): string | null {
 }
 
 /** The SDK throws MissingSessionCwdError; match by name so we don't depend on its class identity. */
+const isMissingCwdError = (err: unknown) => err instanceof Error && err.name === "MissingSessionCwdError";
 function asConfigError(err: unknown, cwd: string): ConfigError | null {
   if (err instanceof ConfigError) return err;
-  if (err instanceof Error && err.name === "MissingSessionCwdError") return new ConfigError(err.message, cwd);
+  if (isMissingCwdError(err)) return new ConfigError((err as Error).message, cwd);
   return null;
 }
 
@@ -692,16 +747,30 @@ function workerHostExtension(pi: PiExtensionAPI): void {
 }
 
 /**
+ * A worker chat's own inline extensions: a worker or team member (never a hidden chat) gets project_verbs and its
+ * instance note, as an ordinary chat does (§app.project-services/callers), served when the server declared it, else
+ * in this process.
+ */
+export function workerExtensionFactories(w: Pick<WorkerSpec, "kind">, path: string) {
+  if (w.kind !== "worker") return [];
+  return [
+    servedDecls
+      ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
+      : projectVerbsExtension(projectEngine),
+  ];
+}
+
+/**
  * One build of a worker chat (design §2.3): its own extensions only, in its order, discovery off; its
  * flags; the built-ins outside its list excluded (extension tools never filtered); its appended
- * prompt; its model and thinking as a fresh session takes them. Nothing of an ordinary chat.
+ * prompt; its model and thinking as a fresh session takes them. Nothing of an ordinary chat but, for a worker or team member, project_verbs.
  */
-function workerBuild(w: WorkerSpec): PiBuild {
+function workerBuild(w: WorkerSpec, path: string): PiBuild {
   return {
     loader: {
       noExtensions: true,
       additionalExtensionPaths: [...w.extensions],
-      extensionFactories: [],
+      extensionFactories: workerExtensionFactories(w, path),
       ...(w.appendSystemPrompt ? { appendSystemPrompt: [w.appendSystemPrompt] } : {}),
     },
     flags: () => ({ extra: w.flags }),
@@ -809,8 +878,10 @@ export function resolveRegenerate(branch: readonly HEntry[], entryId: string): R
     // (kind "wake"). Replaying it would put the "[wake_nudge …] Scheduled wakeup fired (set 4m17s
     // ago)" preamble back on the branch as if the user had typed it, with an elapsed time that is
     // now a lie. Nothing here is the user's message, so there is nothing to send again.
-    if (parseWakeNudge(text))
-      return { ok: false, reason: "wake", message: "That reply answered a scheduled wake-up, not a message you sent, so there is nothing to send again." };
+    // A tour's sign-in notice (`[tour_sign_in tN]`, §app.tours/sites) parses as a wake too, under its own name.
+    const wake = parseWakeNudge(text);
+    if (wake)
+      return { ok: false, reason: "wake", message: wake.tour ? "That reply answered a tour's sign-in notice, not a message you sent, so there is nothing to send again." : "That reply answered a scheduled wake-up, not a message you sent, so there is nothing to send again." };
     // A partner's message over a link (kind "link", §mesh.links/transcript) is not the user's
     // either; replaying it would redeliver the partner's words as a fresh message.
     if (isLinkMessage(text))
@@ -949,6 +1020,8 @@ export const HELLO_WAIT_MS = 1500;
 class ChatSession {
   readonly clients = new Set<ChatClient>();
   private unsubscribe: (() => void) | null = null;
+  /** Its project modes' commands and hooks (§chat.mode-menu/project-mode-commands, …/project-mode-hooks). */
+  private modeActionsRef: ModeActions | undefined;
   /** Times each reply as it streams (§app.insights/reply-timing); a new one per bind. */
   private replyTimer = new ReplyTimer();
   /** This session's measured replies by entry id: one load at bind (the store, through the server)
@@ -993,9 +1066,18 @@ class ChatSession {
   specialSpec: SpecialSpec | null = null;
   /** A worker chat's loadout (§app.chat-processes/workers), else null. */
   workerSpec: WorkerSpec | null = null;
+  /** Set when this chat runs in the home folder because its stored local folder is gone (§app.shell/missing-folder-home). */
+  cwdFallback: CwdFallback | null = null;
   specialPort: SpecialPort | null = null;
   /** Composer messages a kind attributes (`@clientSend`), one at a time, in order. */
   private clientSends: Promise<void> = Promise.resolve();
+  /** The client ids of the prompts and steers this chat has taken (§chat.transcript/send-while-starting):
+      `true` once acknowledged, `false` while still being taken. One sent again (a view coming back,
+      a second tab, a retry) never runs twice. Bounded, oldest out. */
+  private readonly takenSends = new Map<string, boolean>();
+  /** The browser messages waiting behind a model switch or a rewind still under way, in arrival
+      order (§chat.transcript/send-while-starting); null when none is. */
+  private behind: Promise<void> | null = null;
   /** The person's turns, where the loadout tells them apart (SpecialLoadoutResult.attribution). */
   userTurns: UserTurns | null = null;
   /** Which keyed send each user message came from (§app.chat-processes/worker-instructions); watched on
@@ -1355,10 +1437,36 @@ class ChatSession {
    */
   private heldForCompaction(
     err: unknown,
-    item: { kind: WebQueueItem["kind"]; text: string; images?: QueueImage[]; origin: QueueItem["origin"]; id?: string; overseer?: WebQueueItem["overseer"]; baton?: WebQueueItem["baton"]; session?: WebQueueItem["session"]; key?: string },
+    item: {
+      kind: WebQueueItem["kind"];
+      text: string;
+      images?: QueueImage[];
+      origin: QueueItem["origin"];
+      id?: string;
+      overseer?: WebQueueItem["overseer"];
+      baton?: WebQueueItem["baton"];
+      session?: WebQueueItem["session"];
+      confirm?: WebQueueItem["confirm"];
+      byPerson?: WebQueueItem["byPerson"];
+      key?: string;
+    },
   ): boolean {
     if (!isCompactionInProgress(err) || this.disposed) return false;
-    this.queue.enqueue({ kind: item.kind, text: item.text, images: item.images, origin: item.origin, ...(item.id ? { id: item.id } : {}), ...(item.overseer ? { overseer: item.overseer } : {}), ...(item.baton ? { baton: item.baton } : {}), ...(item.session ? { session: item.session } : {}), ...(item.key !== undefined ? { key: item.key } : {}) });
+    // A confirm card's click keeps its mark, and a person's message stays theirs, through the hold
+    // (§app.overseer/org-people-facing); a keyed send keeps its key (§app.chat-processes/worker-instructions).
+    this.queue.enqueue({
+      kind: item.kind,
+      text: item.text,
+      images: item.images,
+      origin: item.origin,
+      ...(item.id ? { id: item.id } : {}),
+      ...(item.overseer ? { overseer: item.overseer } : {}),
+      ...(item.baton ? { baton: item.baton } : {}),
+      ...(item.session ? { session: item.session } : {}),
+      ...(item.confirm ? { confirm: item.confirm } : {}),
+      ...(item.byPerson ? { byPerson: true as const } : {}),
+      ...(item.key !== undefined ? { key: item.key } : {}),
+    });
     return true;
   }
 
@@ -1841,6 +1949,8 @@ class ChatSession {
       if (event.type === "run.start") {
         this.releaseLinks(true);
         emitChatEvent(this.path, "started");
+        // After the fact: schedules a mode's turn.started hooks (if any) and returns.
+        this.modeActions.turnStarted();
         // The runs in flight, for resuming what a restart cuts off (§app.overseer/auto-resume).
         runRecorder.started(this.path);
       }
@@ -1884,7 +1994,10 @@ class ChatSession {
           if (!this.harness.isRunning()) this.senderMarks = this.senderMarks.filter((s) => !stale.includes(s));
         }, 0);
       }
-      if (event.type === "run.settled") emitChatEvent(this.path, "settled");
+      if (event.type === "run.settled") {
+        emitChatEvent(this.path, "settled");
+        this.modeActions.turnSettled();
+      }
       if (event.type === "run.settled" && this.modeApplies === "after-turn") {
         // A mid-turn switch reaches the next prompt from here on.
         this.modeApplies = "now";
@@ -2067,7 +2180,59 @@ class ChatSession {
   modeMessage(): ChatServerMessage {
     const s = this.modeState;
     // `memory` only where the menu can turn it on (§chat.memory/where): its absence hides the row.
-    return { type: "mode", mode: s.mode, minorModes: [...s.minorModes], strict: s.strict, applies: this.modeApplies, ...(this.memoryOffered() ? { memory: this.memory.choiceNow() } : {}) };
+    return { type: "mode", mode: s.mode, minorModes: [...s.minorModes], strict: s.strict, applies: this.modeApplies, ...(this.memoryOffered() ? { memory: this.memory.choiceNow() } : {}), ...this.projectModesInfo() };
+  }
+
+  /** The project modes this chat has on (its newest mode entry's `projectModes`, turn-on order). */
+  projectOn(): ProjectModeRef[] {
+    const active = this.harness.state.branch().latest(MODE)?.data.active;
+    return active ? projectModesOf(active) : [];
+  }
+
+  /** This chat's mode commands and hooks: read accessors only, so nothing there can send or queue. */
+  private get modeActions(): ModeActions {
+    return (this.modeActionsRef ??= new ModeActions({
+      sessionId: () => this.harness.id,
+      cwd: () => this.harness.cwd || undefined,
+      projectOn: () => this.projectOn(),
+      copies: () => restoreProjectSnapshots(this.extensionBranch()),
+      sandboxOn: () => this.sandboxInfo()?.on === true,
+      notHere: () => notHereFor({ worker: this.workerSpec !== null, special: !!this.special, cwd: this.harness.cwd || undefined, remote: (cwd) => !!targetOfCwd(cwd) }),
+      approved: isApproved,
+      approvedByUser: isApprovedByUser,
+    }));
+  }
+
+  /** Run a command of a project mode on in this chat (POST /api/mode/command, §chat.mode-menu/project-mode-commands). */
+  runModeCommand(mode: string, name: string, args: unknown): Promise<ModeCommandOutcome> {
+    return this.modeActions.runCommand(mode, name, args);
+  }
+
+  /** The checkout this chat's project modes come from, read now: none for a remote (target) chat, the
+      Overseer, or a session that refuses mode switches. */
+  private projectListing() {
+    const cwd = this.harness.cwd || undefined;
+    const none = this.overseer || !!this.specialRefuses("mode") || (cwd !== undefined && !!targetOfCwd(cwd));
+    return listingFor(cwd, none);
+  }
+
+  /** The mode menu's project rows (§chat.mode-menu/project-modes), read from disk now. Empty (no keys) when
+      the chat has no checkout and nothing on; never throws. */
+  projectModesInfo() {
+    try {
+      return projectModesInfo(this.projectListing(), this.projectOn(), restoreProjectSnapshots(this.extensionBranch()), isApproved, {
+        approvedByUser: isApprovedByUser,
+        hookNotes: this.modeActionsRef?.hookNotes(),
+      });
+    } catch (err) {
+      console.error("[chat] project modes unreadable", err);
+      return {};
+    }
+  }
+
+  /** This chat's mode as POST /api/mode?path= answers it, the project rows read now. */
+  modeResult(): ChatModeResult {
+    return { ...modeInfo(this.modeState, this.memoryOffered() ? this.memory.choiceNow() : undefined), applies: this.modeApplies, ...this.projectModesInfo() };
   }
 
   /**
@@ -2089,21 +2254,64 @@ class ChatSession {
    * in the TUI, or a POST /api/mode with no ?path=. A new chat's switch stops being a side effect
    * of being new.
    */
-  async switchMode(patch: ModePatch): Promise<ChatModeResult> {
+  /**
+   * Your own approval of project modes' hooks (§chat.mode-menu/project-mode-hooks): records `user` for each exact
+   * version given, the one on in this chat or the one its checkout offers now, when that version has hooks. A hash
+   * that isn't that version's answers like a stale approval (nothing recorded). Switches nothing.
+   */
+  approveHooks(approvals: readonly ProjectModeApproval[]): ChatModeResult & Partial<ProjectModeApprovalNeeded> {
+    if (this.overseer || this.special) throw new ModeRefusedError("This chat's project modes have no hooks to approve.");
+    const listing = this.projectListing();
+    if (listing.root === null) throw new ModeRefusedError("This chat has no project modes.");
+    const copies = restoreProjectSnapshots(this.extensionBranch());
+    const on = this.projectOn();
+    const stale: string[] = [];
+    const record: { id: string; hash: string }[] = [];
+    for (const a of approvals) {
+      const ref = on.find((r) => r.id === a.id);
+      const version = (ref && copies.get(ref.sha)) || listing.modes.find((m) => m.id === a.id);
+      if (!version?.hooks?.length) throw new ModeRefusedError(`Project mode "${a.id}" has no hooks to approve here.`);
+      if (version.toolsHash !== a.hash) stale.push(a.id);
+      else record.push(a);
+    }
+    if (stale.length > 0) {
+      const info = this.modeResult();
+      const fresh = (info.projectMinors ?? []).filter((m) => stale.includes(m.id));
+      return { ...info, error: `The hooks of ${stale.join(", ")} changed since you looked; check them again.`, needsApproval: fresh };
+    }
+    for (const a of record) recordApproval(listing.root, a.id, a.hash, "user");
+    this.broadcast(this.modeMessage());
+    return this.modeResult();
+  }
+
+  async switchMode(patch: ModePatch): Promise<ChatModeResult & Partial<ProjectModeApprovalNeeded>> {
     if (this.overseer) throw new ModeRefusedError();
     const refused = this.specialRefuses("mode");
     if (refused) throw new ModeRefusedError(refused);
+    // Project modes (§chat.mode-menu/project-modes): every turn-on checked, and its approval stored, before
+    // anything switches; one needing the user's approval switches nothing.
+    if (patch.projectModes !== undefined) {
+      const listing = this.projectListing();
+      const check = checkProjectSwitch(listing, this.projectOn().map((r) => r.id), patch.projectModes, patch.approve ?? [], patch.approvedBy === "overseer", isApproved);
+      if ("error" in check) throw new ModeRefusedError(check.error);
+      if ("needsApproval" in check) {
+        return { ...this.modeResult(), error: approvalNeededText(check), needsApproval: check.needsApproval };
+      }
+      // Only the operator's own page records `user`, and only when the route says so: anything else is a caller's
+      // (fail closed). Hooks run on `user` alone.
+      for (const a of check.record) recordApproval(listing.root!, a.id, a.hash, patch.approvedBy ?? "caller");
+    }
     // Memory runs in an ordinary chat's runtime (§chat.memory/where): a special loadout has no engine.
     if (!this.memoryOffered() && (patch.memory || (patch.minorModes?.includes("memory") && !this.modeState.minorModes.includes("memory"))))
       throw new ModeRefusedError("Memory can't be turned on in this chat.");
     if (patch.memory) this.writeMemoryChoice(patch.memory);
     const wasOn = this.modeState.minorModes.includes("memory");
-    if (patch.mode !== undefined || patch.minorModes !== undefined) await this.applyMode(mergeMode(this.modeState, patch));
+    if (patch.mode !== undefined || patch.minorModes !== undefined || patch.projectModes !== undefined) await this.applyMode(mergeMode(this.modeState, patch), patch.projectModes);
     else this.broadcast(this.modeMessage());
     const isOn = this.modeState.minorModes.includes("memory");
     if (isOn && !wasOn) this.memory.turnedOn();
     else if (isOn !== wasOn) this.memory.changed();
-    return { ...modeInfo(this.modeState, this.memoryOffered() ? this.memory.choiceNow() : undefined), applies: this.modeApplies };
+    return this.modeResult();
   }
 
   /** This chat's memory (§chat/memory): its choice, engine and status. */
@@ -2113,12 +2321,23 @@ class ChatSession {
       sessionId: () => this.harness.id,
       cwd: () => this.harness.cwd || undefined,
       branch: () => this.harness.branch(),
-      // The Overseer has no mode entry: its switch, type and size are overseer.json's (§chat.memory/overseer).
-      record: () => (this.overseer ? overseerMemoryRecord() : (this.harness.state.branch().latest(MEMORY)?.data ?? null)),
-      on: () => (this.overseer ? (readOverseerSettings().memory?.on ?? false) : this.modeState.minorModes.includes("memory")),
+      // An overseer (the Overseer, a project overseer) has no mode entry: its switch, type and size are its own
+      // overseer.json's, on by default.
+      record: () => {
+        const o = this.overseerMemory();
+        return o ? { v: 1, type: o.type, size: o.size } : (this.harness.state.branch().latest(MEMORY)?.data ?? null);
+      },
+      on: () => this.overseerMemory()?.on ?? this.modeState.minorModes.includes("memory"),
       send: (msg) => this.broadcast(msg),
     });
     return this.memoryRef;
+  }
+
+  /** An overseer's own memory switch in force, or undefined for every other chat (its memory is its mode's). */
+  private overseerMemory(): OverseerMemorySetting | undefined {
+    if (this.overseer) return overseerMemoryNow(undefined);
+    if ((this.special === "project-overseer" || this.special === "project-assistant") && this.specialSpec?.memory && this.specialSpec.memorySettings) return overseerMemoryNow(this.specialSpec.memorySettings);
+    return undefined;
   }
 
   /** What the memory extension asks this chat (server/harness/pi/memory.ts). */
@@ -2155,6 +2374,19 @@ class ChatSession {
     this.flushDeferredAppends();
     this.harness.state.append(MEMORY, { v: 1, type: next.type, size: next.size, ...(prev?.on !== undefined ? { on: prev.on } : {}) });
     markOwned(this.path);
+  }
+
+  /** An overseer's runtime opened (its kind now set): its recall tools follow its switch, and with memory on the
+      engine syncs with the branch, preparing a conversation whose memory was never built. */
+  memoryOpened(): void {
+    if (this.disposed || !this.memoryAvailable()) return;
+    this.syncMemoryTools();
+    if (!this.memory.choice().on) return;
+    try {
+      this.memory.engine().sync(this.harness.branch());
+    } catch (err) {
+      console.warn(`[memory] sync at open failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /** The Overseer's switch moved (server/memory/routes.ts): its tools follow between runs. */
@@ -2243,7 +2475,7 @@ class ChatSession {
    * starts isn't awaited. Returns the plan that ran ("command" = taken, "skip" = a foreign writer
    * got it, "unsupported" = no /mode command loaded), so callers can decide what else to do.
    */
-  async applyMode(state: ModeState): Promise<"skip" | "unsupported" | "command"> {
+  async applyMode(state: ModeState, projectModes?: readonly string[]): Promise<"skip" | "unsupported" | "command"> {
     if (this.disposed) return "skip"; // a disposed runtime took nothing
     const streaming = this.harness.isRunning();
     let live = false;
@@ -2279,6 +2511,14 @@ class ChatSession {
             await cmd.handler(`${minor} ${on ? "on" : "off"}`, ctx);
           }
         });
+        // Project modes (§chat.mode-menu/project-modes), always by their prefixed name: off first, then each
+        // new one on in the order asked. A turn-on the extension refuses leaves it off; the menu reads the
+        // on set back from the branch (projectOn), never from what was asked.
+        if (projectModes !== undefined) {
+          const was = this.projectOn().map((r) => r.id);
+          for (const id of was) if (!projectModes.includes(id)) await cmd.handler(`${PROJECT_MODE_PREFIX}${id} off`, ctx);
+          for (const id of projectModes) if (!was.includes(id)) await cmd.handler(`${PROJECT_MODE_PREFIX}${id} on`, ctx);
+        }
         // Not awaited: after switching, setMode awaits the delegate routing probe (up to 15s).
         cmd.handler(state.mode, ctx).catch((err) => {
           console.error("[chat] /mode handler failed", err);
@@ -2311,12 +2551,12 @@ class ChatSession {
    */
   private syncVisCheckTool(): void {
     if (this.disposed || this.harness.isRunning()) return;
-    if (!this.harness.registeredTools().includes(VIS_CHECK_TOOL)) return;
-    const want = this.visToolsOn();
+    const registered = this.harness.registeredTools();
+    const names = [VIS_CHECK_TOOL, ...TOUR_TOOLS].filter(n => registered.includes(n));
+    const wanted = names.filter(n => n === VIS_CHECK_TOOL ? this.visToolsOn() : this.modeState.minorModes.includes("vis"));
     const current = this.harness.activeTools();
-    const has = current.includes(VIS_CHECK_TOOL);
-    if (want && !has) this.harness.setActiveTools([...current, VIS_CHECK_TOOL]);
-    else if (!want && has) this.harness.setActiveTools(current.filter((t) => t !== VIS_CHECK_TOOL));
+    const next = [...current.filter(n => !names.includes(n) || wanted.includes(n)), ...wanted.filter(n => !current.includes(n))];
+    if (next.length !== current.length) this.harness.setActiveTools(next);
   }
 
   /**
@@ -2423,7 +2663,7 @@ class ChatSession {
    * at once while idle, and it is context from the next turn on. False when this runtime may not
    * write (a foreign writer, the TUI) or is mid-turn.
    */
-  async appendNote(customType: string, text: string): Promise<boolean> {
+  async appendNote(customType: string, text: string, details?: unknown): Promise<boolean> {
     if (this.disposed || this.foreignWrite || this.hasForeignWrites() || this.harness.isRunning()) return false;
     try {
       assertNotLive(this.path);
@@ -2431,7 +2671,7 @@ class ChatSession {
       return false;
     }
     this.flushDeferredAppends(); // open-time entries go first, as in pinMode
-    await this.harness.appendNote(customType, text);
+    await this.harness.appendNote(customType, text, details);
     markOwned(this.path);
     return true;
   }
@@ -2539,6 +2779,7 @@ class ChatSession {
       thinking: harness.thinking(),
       context: toContextInfo(contextOfBranch(branch), this.host.models),
       ...(this.alignLaunch?.data ? { alignReview: this.alignLaunch.data.review } : {}),
+      ...(this.cwdFallback ? { cwdFallback: this.cwdFallback } : {}),
       ...(tail ? { live: tail } : {}),
     };
   }
@@ -3027,15 +3268,70 @@ class ChatSession {
       throw err;
     }
     const { queued, turn } = accepted;
-    if (clientId) client.send({ type: "send_ack", clientId, queued });
+    this.ackSend(client, clientId, queued);
     turn.catch(fail);
   }
 
+  /** A send taken: acknowledged to its sender, and remembered so the same id never runs again. */
+  private ackSend(client: ChatClient, clientId: string | undefined, queued: boolean): void {
+    if (!clientId) return;
+    this.takenSends.set(clientId, true);
+    client.send({ type: "send_ack", clientId, queued });
+  }
+
+  /** Whether a prompt or steer by this id was taken (or is being taken) already: a taken one is
+      acknowledged again, never run. Otherwise it is noted as being taken. */
+  private sentBefore(client: ChatClient, clientId: string): boolean {
+    const taken = this.takenSends.get(clientId);
+    if (taken === undefined) {
+      this.takenSends.set(clientId, false);
+      if (this.takenSends.size > TAKEN_SENDS_MAX) this.takenSends.delete(this.takenSends.keys().next().value!);
+      return false;
+    }
+    if (taken) client.send({ type: "send_ack", clientId, queued: this.queue.snapshot().some((it) => it.id === clientId) });
+    return true;
+  }
+
+  /** `msg` waits for `step` (a model switch, a rewind), and so does every browser message after it.
+      Only when it can go ahead: mid-run (or mid-compaction) both are refused at once, so nothing
+      waits and the refusals keep the order they always had (the session goldens' S14). */
+  private waitFor(step: Promise<unknown>): void {
+    if (this.harness.isRunning() || this.isCompacting()) {
+      void step;
+      return;
+    }
+    const tail = step.then(
+      () => {},
+      () => {},
+    );
+    this.behind = tail;
+    void tail.then(() => {
+      if (this.behind === tail) this.behind = null;
+    });
+  }
+
   handle(client: ChatClient, msg: ChatClientMessage): void {
+    // A message after a model switch or a rewind still under way waits for it, so what the person
+    // asked first is applied first (§chat.transcript/send-while-starting). A dialog's answer and a
+    // Stop never wait.
+    if (this.behind && msg.type !== "ui_response" && msg.type !== "abort") {
+      const tail = this.behind.then(() => this.handleNow(client, msg));
+      this.behind = tail;
+      void tail.then(() => {
+        if (this.behind === tail) this.behind = null;
+      });
+      return;
+    }
+    this.handleNow(client, msg);
+  }
+
+  private handleNow(client: ChatClient, msg: ChatClientMessage): void {
     // The failing send's own id rides along when it has one, so the client restores THAT draft and
     // no other; a chat-wide failure still reports without one, exactly as before.
     const clientId = "clientId" in msg && typeof msg.clientId === "string" && msg.clientId ? msg.clientId : undefined;
     const fail = (err: unknown) => {
+      // Refused before it was taken: the same id may be sent again.
+      if (clientId && this.takenSends.get(clientId) === false) this.takenSends.delete(clientId);
       const code = errorCode(err);
       client.send({ type: "error", code, message: err instanceof Error ? err.message : String(err), ...(clientId ? { clientId } : {}) });
     };
@@ -3057,12 +3353,14 @@ class ChatSession {
             return;
           }
           this.singletonCleared = true;
-          this.handle(client, msg);
+          this.handleNow(client, msg);
         },
         (err) => fail(err),
       );
       return;
     }
+    // Exactly once: a prompt or steer whose id this chat already took is answered as taken.
+    if ((msg.type === "prompt" || msg.type === "steer") && clientId && this.sentBefore(client, clientId)) return;
     try {
       switch (msg.type) {
         case "prompt":
@@ -3079,7 +3377,7 @@ class ChatSession {
           // reply; it never becomes a queue row. With images it is refused, not sent without them.
           const compact = compactCommand(String(msg.text ?? ""));
           if (compact) {
-            if (clientId) client.send({ type: "send_ack", clientId, queued: false });
+            this.ackSend(client, clientId, false);
             if (msg.images?.length) client.send({ type: "compact_refused", id: clientId ?? "", reason: "internal", message: COMPACT_IMAGES_REFUSAL });
             else this.compact(client, clientId ?? "", compact.instructions).catch(fail);
             return;
@@ -3117,7 +3415,7 @@ class ChatSession {
           const { queued, turn } = this.acceptPrompt(text, images, "client", clientId, confirm ? { confirm } : undefined);
           // The ack goes out NOW, not after the turn: it says whether a queue row exists, and a
           // client that learned that only at turn end would offer Remove for a sent message.
-          if (clientId) client.send({ type: "send_ack", clientId, queued });
+          this.ackSend(client, clientId, queued);
           turn.catch(fail);
           return;
         }
@@ -3161,7 +3459,7 @@ class ChatSession {
           this.setThinking(String(msg.level ?? ""), { save: true });
           return;
         case "set_model":
-          this.setModelRef(String(msg.ref ?? ""), { save: true }).catch(fail);
+          this.waitFor(this.setModelRef(String(msg.ref ?? ""), { save: true }).catch(fail));
           return;
         case "set_claude_login":
           try {
@@ -3175,7 +3473,7 @@ class ChatSession {
         case "rewind": {
           const refused = this.specialRefuses("rewind");
           if (refused) throw new Error(refused);
-          this.rewind(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail);
+          this.waitFor(this.rewind(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail));
           return;
         }
         case "compact": {
@@ -3273,7 +3571,7 @@ class ChatSession {
   private steer(client: ChatClient, msg: Extract<ChatClientMessage, { type: "steer" }>, clientId: string | undefined, fail: (err: unknown) => void): void {
     this.assertModelAllowed();
     const { queued, turn } = this.acceptPrompt(String(msg.text ?? ""), parseImages(msg.images), "client", clientId, { delivery: "steer" });
-    if (clientId) client.send({ type: "send_ack", clientId, queued });
+    this.ackSend(client, clientId, queued);
     turn.catch(fail);
   }
 
@@ -3562,6 +3860,7 @@ class ChatSession {
     for (const t of this.helloHeld.values()) clearTimeout(t);
     this.helloHeld.clear();
     this.memoryRef?.dispose();
+    this.modeActionsRef?.dispose();
     this.queue.close(); // nothing more is handed to a runtime that is going away
     if (this.guardTimer) clearInterval(this.guardTimer);
     if (this.workersTimer) clearInterval(this.workersTimer);
@@ -3990,7 +4289,7 @@ function hearRuns(
   });
 }
 
-async function openSession(path: string, onDisposed: () => void): Promise<ChatSession> {
+async function openSession(path: string, onDisposed: () => void, onStep: (step: string) => void): Promise<ChatSession> {
   if (!existsSync(path)) throw new Error(`Session file not found: ${path}`);
   // One writer per session file, across this server and its chat processes (§app.chat-processes/wire):
   // held from the open to the chat's dispose. Another live holder refuses as another writer does.
@@ -4002,20 +4301,37 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     throw err;
   }
   try {
-    return await openLocked(path, () => {
-      lock.release();
-      onDisposed();
-    });
+    return await openLocked(
+      path,
+      () => {
+        lock.release();
+        onDisposed();
+      },
+      onStep,
+    );
   } catch (err) {
     lock.release();
     throw err;
   }
 }
 
-async function openLocked(path: string, onDisposed: () => void): Promise<ChatSession> {
+async function openLocked(path: string, onDisposed: () => void, onStep: (step: string) => void, retried = false): Promise<ChatSession> {
   // Merely opening (browsing) a session never modifies its file: the model/thinking entries pi records
   // while building it wait in `file.deferred` for the first prompt (server/harness/pi/open.ts, P1).
-  const file = await openPiSession(path, cwdOverride(path));
+  onStep("open file");
+  const override = cwdOverride(path);
+  let file = await openPiSession(path, override, onStep);
+  const sessionCwd = file.read.cwd;
+  // The runtime cannot be built against a directory that is gone. Decided here, in the process the
+  // chat runs in, whatever the server saw before it started (§app.shell/missing-folder-home): a
+  // local folder that is gone opens in this host's home folder; what can't open is classified
+  // (ConfigError, not "internal") and cheap to repeat.
+  const where: OpenCwd = sessionCwd ? resolveOpenCwd(path, sessionCwd, { overridden: override !== undefined }) : { cwd: sessionCwd, fallback: null };
+  if (where.fallback) {
+    // pi takes the cwd when it opens the file; the header keeps the stored one (nothing is written).
+    file.restoreAppends();
+    file = await openPiSession(path, where.cwd, onStep);
+  }
   // The chat that hosts this runtime, once bound: the vis extension is built before it exists, and
   // until bind() has resolved the chat's mode it reads the mode from the branch itself.
   const visHost: { chat?: ChatSession } = {};
@@ -4037,7 +4353,7 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
   const build = async ({ cwd, read }: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
     // A worker chat (§app.chat-processes/workers) is its loadout and nothing else, its messages labelled
     // with the keys of the sends they came from (§app.chat-processes/worker-instructions).
-    if (worker) return { ...workerBuild(worker), built: (session) => sendKeys.watch(session) };
+    if (worker) return { ...workerBuild(worker, path), built: (session) => sendKeys.watch(session) };
     if (!launch.recorded) {
       const now = alignLaunchOf(read.state);
       if (now.recorded || launch.data === null) Object.assign(launch, now);
@@ -4064,6 +4380,12 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
       ? specialLoadout(path, special.spec, special.port, {
           tool: (decl) => toPiTool(serverToolSpec(path, decl)) as PiToolDefinition,
           memory,
+          // The vis retry with no mode to ask: always on for a spec that wants it; its tool never in the loadout.
+          visRetry: () =>
+            visCheckExtension(() => {
+              const h = visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null;
+              return h ? { ...h, visOn: () => true, visToolsOn: () => false } : null;
+            }),
           log: (line) => console.warn(`[chat] ${kind}: ${line}`),
         })
       : null;
@@ -4089,6 +4411,8 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
         ? [sessionPowersExtension({ sessionId: read.id, cwd, title: () => titleOf(read.branch()), profile: snap, run: profile.run, limits: profile.limits, path: () => path })]
         : [];
     const outline = special ? false : !isFanoutMember(read);
+    // The offer tool, served (its declaration came with the open) or, in this process, from the snapshot.
+    const offerSpecs: ToolSpec[] = special ? [] : servedDecls ? servedSpecs(path, (n) => n === OFFER_TOOL) : await (await import("./session-offers-tool")).sessionOfferTools(read.id, path, cwd);
     // A link member's tools are fixed by its creation marker, read at every build (§mesh.links/tools).
     const linkTools = isLinkMember(read) ? "member" : "legacy";
     return {
@@ -4115,8 +4439,11 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
                 : projectVerbsExtension(projectEngine),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
               servedDecls
-                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL))
+                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && !TOUR_TOOLS.has(n)))
                 : queuePushExtension({ sessionId: () => read.id, title: () => titleOf(read.branch()) }),
+              servedVisToolsExtension("sova-tours", servedDecls ? servedSpecs(path, n => TOUR_TOOLS.has(n)) : tourTools(read.id, path), () => visHost.chat ? visHost.chat.modeState.minorModes.includes("vis") : undefined),
+              // offer: this project's offers, from the session's snapshot (§chat.offers/tool). Most chats have none: no extension.
+              ...(offerSpecs.length ? [servedToolsExtension("sova-session-offers", offerSpecs, (ctx) => (chatHosts.offerNote ?? offerNoteHere)(ctx.sessionId), OFFER_NOTE_MESSAGE)] : []),
               ...powers,
             ],
             ...overrides,
@@ -4165,12 +4492,22 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
       },
     };
   };
-  const sessionCwd = file.read.cwd;
-  // The runtime cannot be built against a directory that is gone. Check before doing the work, so
-  // the failure is classified (ConfigError, not "internal") and cheap to repeat.
-  const openCwd = sessionCwd ? resolveOpenCwd(path, sessionCwd) : sessionCwd;
+  const openCwd = where.cwd;
+  // In the home folder for a stored folder that is gone: the agent is told (a note after its prompt's
+  // own appends), and the sandbox does not make the home folder a writable root (§app.shell/missing-folder-home).
+  const fallback = where.fallback;
+  const placed = fallback
+    ? async (o: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
+        const b = await build(o);
+        return {
+          ...b,
+          promptNotes: [...(b.promptNotes ?? []), cwdFallbackNote(fallback)],
+          ...(worker ? {} : { flags: () => ({ ...b.flags(), cwdNotWritable: true }) }),
+        };
+      }
+    : build;
   try {
-    const host = new PiChatHost(await file.start(openCwd, build));
+    const host = new PiChatHost(await file.start(openCwd, placed));
     let unregisterUsage: (() => void) | undefined;
     const chat = new ChatSession(path, host, () => {
       unregisterUsage?.();
@@ -4178,14 +4515,17 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
       onDisposed();
     });
     chat.sendKeys = sendKeys;
+    chat.cwdFallback = fallback;
     // A Stop pressed before a restart still pauses its topic batches (§chat.topics/delivery).
     chat.topicsPaused = topicStore().receiverPaused(path);
+    onStep("extensions start");
     try {
       await chat.bind();
     } catch (err) {
       await chat.dispose();
       throw err;
     }
+    onStep("finish");
     visHost.chat = chat;
     chat.deferredAppends = file.deferred;
     if (worker) {
@@ -4228,6 +4568,9 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
       chat.special = kind;
       chat.specialSpec = last.special.spec;
       chat.specialPort = last.special.port;
+      // An overseer's memory is its own switch, readable only once its kind is set: the recall tools and the
+      // engine follow it from the open, so a conversation on by default starts preparing now.
+      if (last.special.spec.memory) chat.memoryOpened();
     }
     // A chat process's kind is opened by its server, once the open is answered (server/chat-host.ts).
     const local = !presetSpecs.has(path);
@@ -4246,6 +4589,12 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
     sessionsChanged(); // its row now carries `chat` (heldChatState)
     return chat;
   } catch (err) {
+    // The folder went between the check above and pi's own (deleted while the open ran): opened again,
+    // once, so it gets the home folder like any open that finds it gone.
+    if (!retried && !fallback && isMissingCwdError(err) && sessionCwd && probeFolder(sessionCwd).state === "missing") {
+      file.restoreAppends();
+      return openLocked(path, onDisposed, onStep, true);
+    }
     const config = asConfigError(err, sessionCwd);
     throw config ?? err;
   } finally {
@@ -4274,9 +4623,10 @@ async function bringWorkerModel(chat: ChatSession, w: WorkerSpec): Promise<void>
 /**
  * Get (or open) the shared runtime for a session file. Throws BusyError when a TUI owns it,
  * or (unless `force`) when another process may be writing it. Concurrent callers share one
- * open attempt; failures are not cached.
+ * open attempt; failures are not cached. `onStep` hears a new open's steps as they begin (a chat
+ * process's open trail, §app.chat-processes/boot-log); an open already under way keeps its own.
  */
-export async function acquireChat(path: string, force = false): Promise<ChatSession> {
+export async function acquireChat(path: string, force = false, onStep: (step: string) => void = () => {}): Promise<ChatSession> {
   const existing = sessions.get(path);
   if (existing) {
     const chat = await existing.catch(() => null);
@@ -4303,7 +4653,7 @@ export async function acquireChat(path: string, force = false): Promise<ChatSess
   const forget = () => {
     if (sessions.get(path) === p) sessions.delete(path);
   };
-  const p = openSession(path, forget);
+  const p = openSession(path, forget, onStep);
   sessions.set(path, p);
   p.catch((err) => {
     // Transient failures are forgotten so the next connect retries; permanent ones are recorded so

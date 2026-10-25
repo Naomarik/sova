@@ -1,6 +1,10 @@
-import { createSignal, For, onCleanup, Show, untrack } from "solid-js";
+import { createEffect, createSignal, For, Index, onCleanup, Show, untrack } from "solid-js";
 import type { ExtensionInfo, SessionSummary } from "../../shared/protocol";
 import { extFrameSrc, extHref, extRouteFromHash, MAXIMIZED, parseExtMessage, subFromExtHash } from "../lib/ext-route";
+import { additionsMuted, additionsOff, slotPolicy } from "../lib/reply-place";
+import { rowAdditionsMuted, rowAdditionsOff, rowPolicy } from "../lib/row-place";
+import { offersPlace } from "../../shared/extension-offers";
+import { cardLineMuted, cardLineOff, cardLines, cardPolicy, createCardAdditions, type CardLine } from "../lib/card-place";
 import { Chip, Icon } from "./ui";
 import "../extensions.css";
 
@@ -28,11 +32,28 @@ function ExtStatus(props: { info: ExtensionInfo }) {
   );
 }
 
+const TONE_CLASS: Record<NonNullable<CardLine["tone"]>, string> = { ok: " chip-success", warn: " chip-warn", error: " chip-error", info: " chip-info", muted: "" };
+
+/** One line of the card place: Sova's reason line as it always was, or an extension's status line. */
+function CardLineView(props: { line: CardLine }) {
+  return (
+    <Show when={props.line.kind === "status"} fallback={<p class="ext-card-error">Its backend isn't answering: {props.line.reason}.</p>}>
+      <p class="ext-card-status">
+        <i class={`chip-dot${TONE_CLASS[props.line.tone ?? "muted"]}`} aria-hidden="true" />
+        <span>{props.line.text}</span>
+      </p>
+    </Show>
+  );
+}
+
 /**
  * The landing page's Extensions section: one card per installed extension, each a link to its
  * route. A card whose backend is down stays a link (its UI may still explain itself) and says why.
  */
 export function ExtensionCards(props: { extensions: ExtensionInfo[] }) {
+  // The card place's extension lane (lib/card-place): asks each extension once per drawing.
+  const card = createCardAdditions();
+  createEffect(() => card.sync(props.extensions));
   return (
     <section class="explain-section" aria-labelledby="ext-section-title">
       <h2 class="explain-section-head" id="ext-section-title">
@@ -51,9 +72,7 @@ export function ExtensionCards(props: { extensions: ExtensionInfo[] }) {
                 <Show when={ext.description}>
                   <p class="ext-card-body">{ext.description}</p>
                 </Show>
-                <Show when={ext.status === "down"}>
-                  <p class="ext-card-error">Its backend isn't answering: {ext.error ?? "no reason given"}.</p>
-                </Show>
+                <Index each={cardLines(ext, () => card.line(ext.id))}>{(line) => <CardLineView line={line()} />}</Index>
               </a>
             </li>
           )}
@@ -190,10 +209,37 @@ export function ExtensionView(props: {
                 <Show when={info().status === "down"} fallback={<Show when={info().description}><span>{info().description}</span></Show>}>
                   <span title={info().error}>Backend not answering: {info().error ?? "no reason given"}</span>
                 </Show>
+                <Show when={offersPlace(info().offers, "reply") && !additionsOff(info().id) && additionsMuted(info().id)}>
+                  <span>Hidden under replies until you reload: what it sent broke Sova's rules for them.</span>
+                </Show>
+                <Show when={offersPlace(info().offers, "row") && !rowAdditionsOff(info().id) && rowAdditionsMuted(info().id)}>
+                  <span>Hidden on session rows until you reload: what it sent broke Sova's rules for them.</span>
+                </Show>
+                <Show when={offersPlace(info().offers, "card") && !cardLineOff(info().id) && cardLineMuted(info().id)}>
+                  <span>Hidden on its home card until you reload: what it sent broke Sova's rules for it.</span>
+                </Show>
               </p>
             )}
           </Show>
         </div>
+        {/* The user's switch for what it adds under replies (lib/reply-place), only for one that does. */}
+        <Show when={offersPlace(props.info?.offers, "reply")}>
+          <button type="button" class="button button-sm button-ghost" onClick={() => slotPolicy.setOff(props.id, !additionsOff(props.id))}>
+            {additionsOff(props.id) ? "Show Under Replies" : "Hide Under Replies"}
+          </button>
+        </Show>
+        {/* The same switch for what it adds to session rows (lib/row-place), only for one that does. */}
+        <Show when={offersPlace(props.info?.offers, "row")}>
+          <button type="button" class="button button-sm button-ghost" onClick={() => rowPolicy.setOff(props.id, !rowAdditionsOff(props.id))}>
+            {rowAdditionsOff(props.id) ? "Show on Session Rows" : "Hide on Session Rows"}
+          </button>
+        </Show>
+        {/* The user's switch for its status line on the home card (lib/card-place), only for one that adds one. */}
+        <Show when={offersPlace(props.info?.offers, "card")}>
+          <button type="button" class="button button-sm button-ghost" onClick={() => cardPolicy.setOff(props.id, !cardLineOff(props.id))}>
+            {cardLineOff(props.id) ? "Show on Home Card" : "Hide on Home Card"}
+          </button>
+        </Show>
         <button type="button" class="button button-icon button-ghost" onClick={reload} aria-label="Reload Extension" title="Reload Extension">
           <Icon name="refresh" />
         </button>

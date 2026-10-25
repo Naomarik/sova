@@ -9,6 +9,8 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { CHAT_WIRE_PROTO, DEFAULT_RUNTIME_SETTINGS, encodeFrame, FrameDecoder } from "../../shared/chat-runtime-wire";
 import { awaitFrame, connectLink, type ControlFrame, type Link, LinkRefused, serveLink } from "./link";
+import { linkWaitReady } from "./rollout";
+import type { ChatRecord } from "./supervisor";
 
 const dir = mkdtempSync(join(tmpdir(), "crl-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -183,5 +185,54 @@ test("dialing waits for a socket that isn't there yet, when asked to", async () 
   const ok = await dialing;
   assert.equal(ok.hello.state, "booting");
   ok.link.close();
+  await srv.close();
+});
+
+test("a chat busy loading its code says hello late: the dial's budget waits for it, a dial with none doesn't", async () => {
+  const sock = join(dir, `s${++n}`, "c.sock");
+  const { mkdirSync } = await import("node:fs");
+  const { createServer } = await import("node:net");
+  mkdirSync(join(dir, `s${n}`), { recursive: true });
+  // Accepts at once, says hello 300 ms later (as a chat whose event loop is busy loading its code does).
+  const hello = encodeFrame({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_PROTO - 1, epoch: 0, build: "b", pid: 1, startedAt: 1, unit: "u", sessionId: "s", path: "/p", state: "booting", seq: 0 });
+  const conns: import("node:net").Socket[] = [];
+  const late = createServer((s) => {
+    conns.push(s);
+    s.on("error", () => {});
+    setTimeout(() => s.writable && s.write(hello), 300);
+  });
+  await new Promise<void>((r) => late.listen(sock, r));
+  await assert.rejects(connectLink(sock, { epoch: 1, build: "b", settings: DEFAULT_RUNTIME_SETTINGS, since: null, helloWithinMs: 50, log: quiet }), /didn't say hello in time/);
+  const ok = await connectLink(sock, { epoch: 1, build: "b", settings: DEFAULT_RUNTIME_SETTINGS, since: null, helloWithinMs: 50, retryForMs: 2_000, log: quiet });
+  assert.equal(ok.hello.state, "booting");
+  ok.link.close();
+  for (const c of conns) c.destroy();
+  await new Promise<void>((r) => late.close(() => r()));
+});
+
+test("a chat that greeted booting and says ready right after control: the server's wait for ready hears it", async () => {
+  // As a chat process whose start ended before its server's control came (host.ts onControl): its
+  // ready hello arrives in the same breath as the control, before the server listens for it. Both
+  // waits for ready, the start's (chat-host) and a reload's (rollout linkWaitReady), still hear it.
+  const sock = join(dir, `s${++n}`, "c.sock");
+  let state: "booting" | "ready" = "booting";
+  const hello = () => ({ build: "b", pid: 1, startedAt: 1, unit: "u", sessionId: "s", path: "/p", state, seq: 0 });
+  const srv = await serveLink(sock, {
+    hello,
+    onControl: (link, control) => {
+      state = "ready";
+      link.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: 1, epoch: control.epoch, ...hello() });
+    },
+    log: quiet,
+  });
+  const start = await dialAs(sock, 1);
+  assert.equal(start.hello.state, "booting");
+  await new Promise((r) => setTimeout(r, 50)); // the ready hello is in before anyone waits for it
+  assert.equal((await awaitFrame(start.link, "hello", 1_000, (h) => h.state !== "booting")).state, "ready");
+  start.link.close();
+  state = "booting";
+  const ready = await linkWaitReady({ epoch: 2, build: "b", settings: DEFAULT_RUNTIME_SETTINGS, log: quiet })({ sock } as ChatRecord, 1_000);
+  assert.equal(ready.ok, true, ready.ok ? "" : ready.error);
+  if (ready.ok) ready.link?.close();
   await srv.close();
 });

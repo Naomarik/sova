@@ -2,7 +2,7 @@
   "name": "sova",
   "private": true,
   "license": "Apache-2.0",
-  "version": "0.3.2",
+  "version": "0.8.0",
   "type": "module",
   "packageManager": "pnpm@12.6.0",
   "engines": {
@@ -19,7 +19,10 @@
     "e2e:transcript-drift": "node scripts/e2e/transcript-drift.mjs",
     "e2e:transcript-follow": "node scripts/e2e/transcript-follow.mjs",
     "e2e:instant-open": "node scripts/e2e/instant-open.mjs",
-    "dev:hermetic": "node scripts/hermetic-agent-dir.mjs --unlock-url && PORT=${SOVA_PORT:-4810} PI_CODING_AGENT_DIR=\"$PWD/.agent\" scripts/start-server.sh",
+    "e2e:transcript-jitter": "node scripts/e2e/transcript-jitter.mjs",
+    "e2e:focus-view": "node scripts/e2e/focus-view.mjs",
+    "scenario": "node scripts/sova-scenario.mjs",
+    "dev:hermetic": "node scripts/hermetic-agent-dir.mjs --unlock-url && PORT=${SOVA_PORT:-4810} SOVA_UPDATES_CHECK=${SOVA_UPDATES_CHECK:-off} PI_CODING_AGENT_DIR=\"$PWD/.agent\" scripts/start-server.sh",
     "dev:hermetic:node": "SOVA_RUNTIME=node pnpm run dev:hermetic",
     "prices:update": "tsx scripts/prices-update.mjs",
     "claude:catalog": "node scripts/claude-catalog.mjs",
@@ -38,12 +41,16 @@
     "test:all": "node scripts/nice.mjs node scripts/run-tests.mjs --all"
   },
   "dependencies": {
+    "@earendil-works/pi-ai": "1.0.3",
     "@earendil-works/pi-coding-agent": "1.0.3",
+    "@earendil-works/pi-tui": "1.0.3",
     "@hono/node-server": "^1.14.0",
     "highlight.js": "11.12.0",
     "hono": "^4.7.0",
     "markdown-it": "15.0.2",
+    "playwright-core": "1.58.2",
     "solid-js": "^1.9.5",
+    "typebox": "1.3.27",
     "ws": "^8.18.0"
   },
   "devDependencies": {

@@ -1,5 +1,5 @@
 /**
- * Steers land together (quirk P26 steer-all): pi takes every queued steer at the agent's next step,
+ * Steers land together (quirk P28 steer-all): pi takes every queued steer at the agent's next step,
  * each its own message, in the order queued, instead of one per step.
  *
  * pi reads the steering mode from its settings manager's getter when it builds a session

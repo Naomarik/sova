@@ -27,6 +27,7 @@ import {
   shownUserState,
   takeBackQueued,
   unsentRows,
+  type LiveEntry,
   type LiveEvent,
   type LiveState,
   type QueuedItem,
@@ -518,6 +519,24 @@ test("the live inputs: each message the agent took in this turn, never one still
   assert.ok(parseTopicBatch(batch));
   feed(set, userStart(batch));
   assert.equal(liveInputCount(s), 3, "a topic batch is a turn start, not an input");
+});
+
+test("the live inputs are only what you typed: never the Overseer's, another sender's, a brief or a wake nudge (shared/senders.ts isOwnInput)", () => {
+  const [s, set] = store();
+  feed(set, userStart("go"));
+  feed(set, messageStart());
+  assert.equal(liveInputCount(s), 1);
+  feed(set, userStart("[overseer-brief] Brief me"));
+  feed(set, userStart("[schedule s1] Scheduled run fired at 10:00\nReason: check"));
+  assert.equal(liveInputCount(s), 1, "a brief and a wake are not typed");
+  feed(set, userStart("from the operator"));
+  feed(set, { type: BATON_SENT_EVENT, by: "operator" });
+  feed(set, userStart("from Bob"));
+  feed(set, { type: BATON_SENT_EVENT, by: "p_bob00001" });
+  assert.equal(liveInputCount(s), 2, "the operator's own baton message counts; a teammate's doesn't");
+  const rows = s.entries.filter((e) => e.kind === "user") as Extract<LiveEntry, { kind: "user" }>[];
+  set("entries", s.entries.indexOf(rows[0]!), "overseer" as never, true as never);
+  assert.equal(liveInputCount(s), 1, "a row the Overseer queued isn't yours");
 });
 
 test("client ids are unique, and exist without a secure context", () => {

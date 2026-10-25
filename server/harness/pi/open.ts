@@ -55,6 +55,9 @@ export interface OpenFlags {
   review?: boolean;
   alignVisuals?: boolean;
   link?: { origin: string; token: string; tools: "member" | "legacy" };
+  /** The cwd is the home folder standing in for a stored folder that is gone: the sandbox must not
+      make it a writable root (§app.shell/missing-folder-home). */
+  cwdNotWritable?: boolean;
   /** A worker chat's own extension flags (`--name value` on an RPC worker's argv), set last. */
   extra?: Record<string, string | true>;
 }
@@ -71,6 +74,7 @@ export function extensionFlagValues(f: OpenFlags): Map<string, boolean | string>
     flags.set("sova-link-token", f.link.token);
     flags.set("sova-link-tools", f.link.tools);
   }
+  if (f.cwdNotWritable) flags.set("sandbox-cwd-not-writable", true);
   for (const [name, value] of Object.entries(f.extra ?? {})) flags.set(name, value);
   return flags;
 }
@@ -154,7 +158,7 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
     resourceLoaderOptions,
   });
   lowerToolCommands(services.settingsManager);
-  // Steers sent while the chat is busy land together, at the agent's next step (P26 steer-all).
+  // Steers sent while the chat is busy land together, at the agent's next step (P28 steer-all).
   steerAllAtOnce(services.settingsManager);
   return services;
 }
@@ -169,9 +173,13 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
  *
  * Best-effort by design: the CLI may be missing or unauthenticated, and neither is a reason to
  * fail startup. A failure just means the models are absent until a session opens.
+ *
+ * `onStep` hears Sova's own name for each step as it begins (a chat process's start-up trail,
+ * §app.chat-processes/boot-log); by default nothing does.
  */
-export async function warmClaudeCodeProvider(modelRuntime: ModelRuntime, cwd: string, extensionFactories: PiExtensionFactory[]): Promise<void> {
+export async function warmClaudeCodeProvider(modelRuntime: ModelRuntime, cwd: string, extensionFactories: PiExtensionFactory[], onStep: (step: string) => void = () => {}): Promise<void> {
   try {
+    onStep("extensions load");
     installOwnCode();
     // The provider flag alone: the throwaway session needs nothing else, and the link flags would
     // read the access token, which throws (and logs its problem again) when the token file is damaged.
@@ -188,8 +196,10 @@ export async function warmClaudeCodeProvider(modelRuntime: ModelRuntime, cwd: st
     // extension factory runs and registers nothing (verified: the factory logs, session_start
     // never fires). SessionManager.create() defers writing until the first user or assistant message
     // (P11; agents/server/harness/overview.md, "SDK surprises"), and this session never prompts, so no file is left behind.
+    onStep("warm session");
     const { session } = await createAgentSessionFromServices({ services, sessionManager: SessionManager.create(cwd) });
     currentTheme(); // extensions may read the theme singleton at session_start; initialize it first
+    onStep("extensions start");
     await session.bindExtensions({
       mode: "rpc",
       onError: (err) => console.warn(`[chat] claude-code warm-up extension error (${err.extensionPath}): ${err.error}`),
@@ -203,6 +213,7 @@ export async function warmClaudeCodeProvider(modelRuntime: ModelRuntime, cwd: st
     // then fire it against a disposed session: the sessions extension's focus-discovery timeout
     // did exactly that, throwing "This extension ctx is stale after session replacement or reload"
     // as an unhandledRejection on every warm-up.
+    onStep("extensions stop");
     if (session.extensionRunner.hasHandlers("session_shutdown")) {
       await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
     }
@@ -346,6 +357,16 @@ export interface PiBuild {
   /** Each session built, as a driving session over it, before anything runs on it (the profile's run state,
       a special kind's watch). */
   built?(session: HarnessSession): void;
+  /** Notes appended to the system prompt after every other append (the user's APPEND_SYSTEM.md and the
+      loadout's own parts), each as given. */
+  promptNotes?: string[];
+}
+
+/** The loader with `notes` appended to its system prompt appends, after whatever its own override keeps
+    (the override, not `appendSystemPrompt`, so the user's APPEND_SYSTEM.md is still discovered). */
+export function withPromptNotes(loader: PiLoaderOptions, notes: readonly string[]): PiLoaderOptions {
+  const own = loader.appendSystemPromptOverride;
+  return { ...loader, appendSystemPromptOverride: (base: string[]) => [...(own ? own(base) : base), ...notes] };
 }
 
 /** A session file opened for a hosted chat, its runtime not built yet. */
@@ -365,9 +386,10 @@ export interface PiOpenFile {
 /**
  * Open `path` for a hosted chat. Until `restoreAppends`, the model and thinking appends pi makes (for a
  * session with no messages yet, or no thinking entry on the branch) are queued on `deferred`, so merely
- * opening (browsing) a session never modifies its file (P1 open-writes-nothing).
+ * opening (browsing) a session never modifies its file (P1 open-writes-nothing). `onStep` hears each
+ * build's steps as they begin (§app.chat-processes/boot-log); by default nothing does.
  */
-export async function openPiSession(path: string, cwdOverride: string | undefined): Promise<PiOpenFile> {
+export async function openPiSession(path: string, cwdOverride: string | undefined, onStep: (step: string) => void = () => {}): Promise<PiOpenFile> {
   const modelRuntime = await getModelRuntime();
   const sessionManager = SessionManager.open(path, undefined, cwdOverride);
   const deferred: Array<() => void> = [];
@@ -392,8 +414,10 @@ export async function openPiSession(path: string, cwdOverride: string | undefine
   };
   const start = (cwd: string, build: (o: { cwd: string; read: OpenRead }) => Promise<PiBuild>) => {
     const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
+      onStep("loadout");
       const plan = await build({ cwd, read: openRead(sessionManager) });
-      const services = await servicesForCwd(cwd, modelRuntime, plan.flags, plan.loader);
+      onStep("extensions load");
+      const services = await servicesForCwd(cwd, modelRuntime, plan.flags, plan.promptNotes?.length ? withPromptNotes(plan.loader, plan.promptNotes) : plan.loader);
       const present = services.resourceLoader.getExtensions().extensions.flatMap((e) => [...e.tools.keys()]);
       const excluded = plan.exclude(present);
       for (const d of services.diagnostics) console.warn(`[chat] runtime ${d.type}: ${d.message}`);
@@ -406,6 +430,7 @@ export async function openPiSession(path: string, cwdOverride: string | undefine
       if (opening?.model) defaultModel = (await modelRuntime.getAvailable().catch(() => [])).find((m) => `${m.provider}/${m.id}` === opening.model);
       const model = opening?.fresh?.model ? defaultModel : modelForSessionOpen(sessionManager, modelRuntime, defaultModel);
       const thinking = (opening?.fresh?.thinking ? undefined : recordedThinkingForEmptyBranch(sessionManager)) ?? opening?.thinking;
+      onStep("session");
       const created = await createAgentSessionFromServices({
         services,
         sessionManager,

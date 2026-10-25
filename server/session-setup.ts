@@ -28,9 +28,9 @@
 // reads each of these files in full to build the prompt, so the read that decides a size is a read
 // pi has already done.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import type { HarnessResources } from "../shared/harness";
-import { CHARS_PER_TOKEN, type SessionSetup, type SessionSetupFile, type SessionSetupSkill } from "../shared/protocol";
+import { CHARS_PER_TOKEN, SETUP_FILE_MAX_BYTES, type SessionSetup, type SessionSetupFileText, type SessionSetupFile, type SessionSetupSkill } from "../shared/protocol";
 import { acquireChatHandle, assertNotLive, chatHandle, closeChat } from "./chat-handle";
 import { plan, readStoredCwd, type Plan } from "./git-summary";
 import { leavesOut, normalizeLoadout, type LoadoutEntryData } from "./session-loadout";
@@ -254,6 +254,32 @@ export async function getSessionSetup(sessionPath: string, opts: { fresh?: boole
     sw = { off: null, toggleable: false };
   }
   return withSwitches(folder, sw);
+}
+
+/** Every path this setup lists, in any of its groups: the only files /api/sessions/context/file reads. */
+export function listedPaths(setup: Loaded): Set<string> {
+  return new Set([...setup.context, ...setup.skills, ...(setup.systemPrompt ? [setup.systemPrompt] : []), ...(setup.appendSystemPrompt ?? [])].map((f) => f.path));
+}
+
+export type SetupFileResult = { ok: true; file: SessionSetupFileText } | { ok: false; status: 404 | 409 | 413; error: string };
+
+/**
+ * The text of one file the session's own setup read lists (§chat.transcript/setup-card-open-file),
+ * for the markdown viewer. The list is the gate: a path it doesn't name is refused before any read,
+ * so this never reads another file on disk. The setup read may be the folder's cached one (30s);
+ * the file itself is read now, never cached.
+ */
+export async function readSetupFile(sessionPath: string, file: string, deps: SetupDeps = {}): Promise<SetupFileResult> {
+  const setup = await getSessionSetup(sessionPath, {}, deps);
+  if (setup.state === "remote") return { ok: false, status: 409, error: "This session's files are on another machine." };
+  if (setup.state !== "ok") return { ok: false, status: 409, error: setup.reason };
+  if (!listedPaths(setup).has(file)) return { ok: false, status: 404, error: "That file isn't in this session's system context." };
+  try {
+    if (statSync(file).size > SETUP_FILE_MAX_BYTES) return { ok: false, status: 413, error: "That file is over 1 MB, too big to show here." };
+    return { ok: true, file: { path: file, text: readFileSync(file, "utf8") } };
+  } catch {
+    return { ok: false, status: 404, error: "That file can't be read any more." };
+  }
 }
 
 /** The folder's cached (or joined, or fresh) read. */

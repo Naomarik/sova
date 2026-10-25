@@ -1,10 +1,33 @@
-import { createMemo, createSignal, For, Show, type Accessor } from "solid-js";
-import type { ChatMemoryChoice, ChatServerMessage, MemoryType, ModeApplies, ModeInfo } from "../../shared/protocol";
+import { createEffect, createMemo, createSignal, For, on, Show, type Accessor } from "solid-js";
+import type { ChatMemoryChoice, ChatProjectModes, ChatServerMessage, MemoryType, ModeApplies, ModeInfo, ProjectMinorInfo, ProjectModeApprovalNeeded } from "../../shared/protocol";
 import { memoryRowText, sameMemoryChoice } from "../lib/memory-ui";
 import { focusPanel, MemoryTypePanel, panelKeys } from "./MemoryTypePanel";
-import { getMode, getSubagentProfiles, pickSubagentProfile, postMode, putSubagentProfiles, saveModeDefault } from "../lib/api";
+import { ApiError, getChatMode, getMode, getSubagentProfiles, pickSubagentProfile, postMode, putSubagentProfiles, saveModeDefault } from "../lib/api";
 import type { SubagentProfilesInfo } from "../../shared/subagent-profiles";
-import { filterProfiles, FOOT_NOTE, isDefaultAll, isDefaultMode, modeSummary, noProfileMatch, nextSetup, savedAnnounce, saveLabel, saveTitle, type ShownMode } from "../lib/mode-menu";
+import {
+  APPROVE_HOOKS_LABEL,
+  approvalFootFor,
+  approvalLeadFor,
+  hookWhen,
+  hooksLead,
+  APPROVE_LABEL,
+  bareProgramsNote,
+  commandLine,
+  filterProfiles,
+  FOOT_NOTE,
+  isDefaultAll,
+  isDefaultMode,
+  modeSummary,
+  nextProjectModes,
+  noProfileMatch,
+  nextSetup,
+  projectGroupLabel,
+  projectRowState,
+  savedAnnounce,
+  saveLabel,
+  saveTitle,
+  type ShownMode,
+} from "../lib/mode-menu";
 import { useHostScope } from "../lib/host-scope";
 import { usePaneId } from "../lib/pane-scope";
 import { openSettings, setSubagentSettingsPath } from "../lib/settings-nav";
@@ -23,10 +46,18 @@ export interface ModeControl {
   path: string;
   /** Why the switch waits (the chat connecting or starting, §chat.transcript/instant-open), or null. */
   blocked?: () => string | null;
+  /** Resolves once this chat is open: a chat closed while quiet wakes for what the menu asks of it
+      (§chat.transcript/instant-open); rejects when it doesn't start. Absent: always open. */
+  ready?: () => Promise<void>;
+  /** A switch is on its way to this chat: a chat closed while quiet starts for it, and the server
+      opens it for the request itself, so the request never waits for this view
+      (§chat.transcript/send-while-starting). Absent: nothing to start. */
+  wake?: () => void;
 }
 
-/** radio: the major mode; check: a minor mode; action: opens a settings screen or the picker, switches nothing. */
-type Item = { kind: "radio" | "check" | "action"; id: string; description: string; label?: string };
+/** radio: the major mode; check: a minor mode; project: one of this project's own minor modes;
+    action: opens a settings screen or the picker, switches nothing. */
+type Item = { kind: "radio" | "check" | "project" | "action"; id: string; description: string; label?: string };
 
 /** The gear actions: Delegate's row and spec's, since both settings live in Settings → Subagents. */
 const CONFIGURE_DELEGATE: Item = {
@@ -56,7 +87,18 @@ const SUBAGENTS: Item = {
   description: "Choose this chat's subagent profile",
 };
 
+/** The action beside a project mode's row while its hooks wait for your approval (§chat.mode-menu/project-mode-hooks). */
+const HOOKS_PREFIX = "approve-hooks:";
+const approveHooksItem = (id: string): Item => ({ kind: "action", id: `${HOOKS_PREFIX}${id}`, label: APPROVE_HOOKS_LABEL, description: `Review ${id}'s hooks` });
+
 const itemId = (it: Item) => `mode-${it.kind}-${it.id}`;
+
+/** A 409 refusal's fresh facts about one project mode, when that is what refused the switch. */
+function approvalNeeded(err: unknown, id: string): ProjectMinorInfo | null {
+  if (!(err instanceof ApiError) || err.status !== 409) return null;
+  const body = err.body as Partial<ProjectModeApprovalNeeded> | undefined;
+  return (Array.isArray(body?.needsApproval) ? body.needsApproval : []).find((m) => m?.id === id) ?? null;
+}
 
 // Lists of what exists (and the default for new sessions); fetched on first open, refreshed on
 // every open. Only `modes`/`minors` are read from it: what is checked comes from this chat.
@@ -80,6 +122,10 @@ const memoryOf = (m: ModeInfo): ChatMemoryChoice | null => (m.memory ? { type: m
  * flyout's panel pattern) and back. The mode and the pick are per chat: only this chat follows.
  */
 export function ModeMenu(props: { control: ModeControl }) {
+  /** This chat open for what the menu asks of it (ModeControl.ready). */
+  const chatReady = () => props.control.ready?.() ?? Promise.resolve();
+  /** A write goes now: the server opens the chat for it; the view connects meanwhile. */
+  const wakeChat = () => props.control.wake?.();
   const paneId = usePaneId();
   /** A peer session's profiles and library are its host's. */
   const host = useHostScope();
@@ -107,6 +153,13 @@ export function ModeMenu(props: { control: ModeControl }) {
   let memPanelEl: HTMLDivElement | undefined;
   const [memPanel, setMemPanel] = createSignal(false);
   const [memError, setMemError] = createSignal<string | null>(null);
+  // The approval panel: a project mode with tools asks before its first turn-on, and again when they change.
+  let approvalEl: HTMLDivElement | undefined;
+  const [approving, setApproving] = createSignal<ProjectMinorInfo | null>(null);
+  /** Set when the server refused the hash shown: the tools changed while the panel was open. */
+  const [approvalStale, setApprovalStale] = createSignal(false);
+  /** The panel approves an on mode's hooks only (the Overseer turned it on), switching nothing. */
+  const [hooksOnly, setHooksOnly] = createSignal(false);
   /** This chat's memory choice, as its "mode" message says it; absent where memory can't run. */
   const memChoice = createMemo(() => {
     const m = props.control.state()?.memory;
@@ -123,6 +176,16 @@ export function ModeMenu(props: { control: ModeControl }) {
   // this tab's last visit. With neither there is nothing to show: the default in `info()` is not
   // this chat's mode, so the label stays "Mode" and nothing is checked.
   const current = () => props.control.state();
+  /** This project's own minor modes, as this chat's mode message lists them (on, off, broken). */
+  /** The project rows as read on open or by the last switch: fresher than the mode message, which
+      the server sends only at connect and on a switch. Which modes are ON stays the message's. */
+  const [freshProject, setFreshProject] = createSignal<ChatProjectModes | null>(null);
+  // A mode message that arrives later (a switch here or in another tab) is newer than the read: it wins.
+  createEffect(on(() => current()?.projectMinors, () => setFreshProject(null), { defer: true }));
+  const projectName = () => (freshProject() ?? current())?.project?.name;
+  const projectMinors = createMemo(() => [...((freshProject() ?? current())?.projectMinors ?? [])].sort((a, b) => a.id.localeCompare(b.id, "en")));
+  const projectOn = () => current()?.projectModes ?? [];
+  const projectInfo = (id: string) => projectMinors().find((m) => m.id === id);
   const items = createMemo<Item[]>(() => {
     const i = info();
     if (!i) return [SUBAGENTS];
@@ -140,17 +203,27 @@ export function ModeMenu(props: { control: ModeControl }) {
               : []
             : [{ kind: "check" as const, ...m }],
       ),
+      ...projectMinors().flatMap((m) => {
+        const row = { kind: "project" as const, id: m.id, description: m.description };
+        return m.hooksNeedApproval && projectOn().includes(m.id) ? [row, approveHooksItem(m.id)] : [row];
+      }),
       SUBAGENTS,
     ];
   });
   const checked = (it: Item) => {
     const c = current();
     if (!c || it.kind === "action") return false;
+    if (it.kind === "project") return (c.projectModes ?? []).includes(it.id);
     return it.kind === "radio" ? c.mode === it.id : c.minorModes.includes(it.id);
+  };
+  /** The minor half of the trigger: built-in minors, then this project's. */
+  const minorLabel = () => {
+    const c = current();
+    return c ? [...c.minorModes, ...(c.projectModes ?? [])] : [];
   };
   const label = () => {
     const c = current();
-    return c ? [c.mode, ...c.minorModes].join(" · ") : "Mode";
+    return c ? [c.mode, ...minorLabel()].join(" · ") : "Mode";
   };
   const name = () => `Mode: ${label()}${current()?.applies === "after-turn" ? ", applies after this turn" : ""}`;
 
@@ -206,6 +279,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     setBusy(true);
     setMemError(null);
     try {
+      wakeChat();
       setInfo(await postMode({ memory: patch }, props.control.path));
     } catch (err) {
       const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
@@ -227,10 +301,13 @@ export function ModeMenu(props: { control: ModeControl }) {
     setPicker(false);
     setMemPanel(false);
     setMemError(null);
+    setApproving(null);
+    setFreshProject(null);
     setSearch("");
     setSaveName(null);
     menu.showPopover();
     try {
+      await chatReady();
       setProfiles(await getSubagentProfiles(props.control.path, host()));
     } catch (err) {
       setProfiles(null);
@@ -245,6 +322,15 @@ export function ModeMenu(props: { control: ModeControl }) {
       setDefaultMode(null);
       setDefaultMemory(null);
       if (!info()) setError({ title: "Couldn't load the modes.", body: "Your mode is unchanged. Close this and try again." });
+    }
+    // A peer's chat is read through its host's list only: this server can't read its folder.
+    if (!host()) {
+      try {
+        const read = await getChatMode(props.control.path);
+        if (read.projectMinors) setFreshProject({ project: read.project, projectMinors: read.projectMinors });
+      } catch {
+        // Keep the mode message's rows: they are older, never wrong about what is on.
+      }
     }
     const at = items().findIndex((it) => it.kind === "radio" && checked(it));
     focusItem(Math.max(0, at));
@@ -262,6 +348,11 @@ export function ModeMenu(props: { control: ModeControl }) {
       openMemPanel();
       return;
     }
+    if (it.id.startsWith(HOOKS_PREFIX)) {
+      const m = projectInfo(it.id.slice(HOOKS_PREFIX.length));
+      if (m?.hooksNeedApproval && m.toolsHash) openApproval(m, false, true);
+      return;
+    }
     if (it.kind === "action") {
       setSubagentSettingsPath(host() ? undefined : props.control.path);
       // Opens Settings at Subagents (→ the spec writer for spec's gear). This chat's mode is left as it is.
@@ -272,6 +363,18 @@ export function ModeMenu(props: { control: ModeControl }) {
     }
     const c = current();
     if (!c || busy()) return;
+    if (it.kind === "project") {
+      const m = projectInfo(it.id);
+      const on = checked(it);
+      if (!m || !projectRowState(m, on).canToggle) return;
+      // A turn-on whose tools aren't approved asks first, in place; a turn-off never asks.
+      if (!on && m.needsApproval) {
+        openApproval(m, false);
+        return;
+      }
+      await switchProject(it.id, nextProjectModes(projectOn(), it.id));
+      return;
+    }
     let patch: { mode?: string; minorModes?: string[] };
     // A pick, like a toggle, keeps the menu open: the check moves and focus stays on the row.
     if (it.kind === "radio") {
@@ -283,6 +386,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     setBusy(true);
     setError(null);
     try {
+      wakeChat();
       setInfo(await postMode(patch, props.control.path)); // this chat's "mode" message follows over the socket
     } catch (err) {
       const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
@@ -296,6 +400,85 @@ export function ModeMenu(props: { control: ModeControl }) {
         const at = items().findIndex((x) => x.id === it.id);
         if (at >= 0) focusItem(at);
       });
+    }
+  };
+
+  /** Put focus back on a row once the rows settle, unless the menu closed or focus moved within it. */
+  const refocus = (id: string) =>
+    requestAnimationFrame(() => {
+      if (!menu.matches(":popover-open") || menu.contains(document.activeElement)) return;
+      const at = items().findIndex((x) => x.id === id);
+      if (at >= 0) focusItem(at);
+    });
+
+  /** Switch this chat's project modes to `next` (the whole ON set), with an approval when one was given. */
+  const switchProject = async (id: string, next: string[], approval?: { id: string; hash: string }) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await postMode({ projectModes: next, ...(approval ? { approve: [approval] } : {}) }, props.control.path);
+      setInfo(r);
+      if ("projectMinors" in r && r.projectMinors) setFreshProject({ project: r.project, projectMinors: r.projectMinors });
+      if (approval) {
+        setApproving(null);
+        announce(`${id} approved and on.`);
+      }
+    } catch (err) {
+      // Its tools changed since they were shown (or since the row was drawn): show the new ones.
+      const fresh = approvalNeeded(err, id);
+      if (fresh) {
+        openApproval(fresh, !!approval);
+        return;
+      }
+      const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
+      if (approval) setApproving(null);
+      setError({ title: "Couldn't switch the mode.", body: `${why}. Your mode is unchanged.` });
+    } finally {
+      setBusy(false);
+      if (!approving()) refocus(id);
+    }
+  };
+
+  const openApproval = (m: ProjectMinorInfo, stale: boolean, hooks = false) => {
+    setApprovalStale(stale);
+    setHooksOnly(hooks);
+    setApproving(m);
+    // Focus starts on Back, first in reading order: the approval is read before it is pressed.
+    queueMicrotask(() => approvalEl?.querySelector<HTMLElement>("button")?.focus());
+  };
+  const closeApproval = () => {
+    const id = approving()?.id;
+    setApproving(null);
+    if (id) focusItem(items().findIndex((it) => it.kind === "project" && it.id === id));
+  };
+  const approve = () => {
+    const m = approving();
+    if (!m || busy() || !m.toolsHash) return;
+    if (hooksOnly()) return void approveHooks(m.id, m.toolsHash);
+    void switchProject(m.id, nextProjectModes(projectOn(), m.id), { id: m.id, hash: m.toolsHash });
+  };
+  /** Your approval of an on mode's hooks: records it, switches nothing. A changed version shows itself again. */
+  const approveHooks = async (id: string, hash: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await postMode({ approveHooks: [{ id, hash }] }, props.control.path);
+      setInfo(r);
+      if ("projectMinors" in r && r.projectMinors) setFreshProject({ project: r.project, projectMinors: r.projectMinors });
+      setApproving(null);
+      announce(`${id}'s hooks approved.`);
+    } catch (err) {
+      const fresh = approvalNeeded(err, id);
+      if (fresh?.hooksNeedApproval) {
+        openApproval(fresh, true, true);
+        return;
+      }
+      const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
+      setApproving(null);
+      setError({ title: "Couldn't approve the hooks.", body: `${why}. Nothing was approved.` });
+    } finally {
+      setBusy(false);
+      if (!approving()) refocus(id);
     }
   };
 
@@ -315,6 +498,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     setSaving(true);
     setError(null);
     try {
+      wakeChat();
       const written = await saveModeDefault(props.control.path); // the file as written, not this chat's copy
       setDefaultMode(shownOf(written));
       setDefaultMemory(memoryOf(written));
@@ -335,6 +519,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     setBusy(true);
     setError(null);
     try {
+      wakeChat();
       const r = await pickSubagentProfile(props.control.path, id, host());
       setProfiles(r);
       closePicker();
@@ -373,6 +558,7 @@ export function ModeMenu(props: { control: ModeControl }) {
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
+    if (approving()) return; // its buttons keep their own keys
     if (memPanel()) {
       if (memPanelEl) panelKeys(e, memPanelEl);
       return;
@@ -445,6 +631,12 @@ export function ModeMenu(props: { control: ModeControl }) {
     act();
   };
 
+  /** A project mode's row state, or null for every other row. */
+  const projectState = (it: Item) => {
+    if (it.kind !== "project") return null;
+    const m = projectInfo(it.id);
+    return m ? projectRowState(m, checked(it)) : null;
+  };
   const Row = (p: { it: Item; index: number }) => (
     <div
       class="popover-item popover-item-detail popover-item-mono"
@@ -452,7 +644,9 @@ export function ModeMenu(props: { control: ModeControl }) {
       id={itemId(p.it)}
       tabindex={active() === p.index ? 0 : -1}
       aria-checked={checked(p.it) ? "true" : "false"}
-      aria-disabled={busy() ? "true" : undefined}
+      aria-disabled={busy() || projectState(p.it)?.canToggle === false ? "true" : undefined}
+      aria-haspopup={projectState(p.it)?.kind === "approval" ? "true" : undefined}
+      data-project-state={projectState(p.it)?.kind}
       onClick={() => {
         setActive(p.index);
         void activate(p.it);
@@ -471,6 +665,7 @@ export function ModeMenu(props: { control: ModeControl }) {
             {(d) => <span class="popover-item-desc mode-menu-detail">{d()}</span>}
           </Show>
         </Show>
+        <Show when={projectState(p.it)?.note}>{(note) => <span class="popover-item-desc mode-menu-detail mode-menu-project-note">{note()}</span>}</Show>
       </span>
     </div>
   );
@@ -491,7 +686,7 @@ export function ModeMenu(props: { control: ModeControl }) {
       }}
       onFocus={() => setActive(p.index)}
     >
-      <Icon name={p.it.id === MEMORY_TYPE.id ? "chevron-right" : "settings"} small />
+      <Icon name={p.it.id === MEMORY_TYPE.id || p.it.id.startsWith(HOOKS_PREFIX) ? "chevron-right" : "settings"} small />
     </button>
   );
   /** A row, with its gear beside it when an action follows it in the roving order. */
@@ -532,8 +727,8 @@ export function ModeMenu(props: { control: ModeControl }) {
         <Icon name="sliders" small />
         {/* Two parts, so a narrow foot ellipsizes the minor modes before the major one. */}
         <span class="mode-trigger-label">{current()?.mode ?? "Mode"}</span>
-        <Show when={current()?.minorModes.length}>
-          <span class="mode-trigger-label mode-trigger-minor">· {current()!.minorModes.join(" · ")}</span>
+        <Show when={minorLabel().length}>
+          <span class="mode-trigger-label mode-trigger-minor">· {minorLabel().join(" · ")}</span>
         </Show>
         <Icon name="chevron-down" small />
       </button>
@@ -573,6 +768,85 @@ export function ModeMenu(props: { control: ModeControl }) {
         </Show>
         <Show when={error()}>{(e) => <Banner tone="error" title={e().title} body={e().body} />}</Show>
 
+        <Show when={approving()}>
+          {(m) => (
+            <div ref={approvalEl} class="mode-approval" role="group" aria-labelledby={paneId("mode-approval-title")}>
+              <div class="composer-flyout-head">
+                <button type="button" class="button button-sm button-ghost composer-flyout-back" disabled={busy()} onClick={closeApproval}>
+                  <Icon name="chevron-left" small />
+                  Back
+                </button>
+                <span class="model-menu-head-title" id={paneId("mode-approval-title")}>
+                  <Show when={hooksOnly()} fallback={<>Turn on <span class="text-mono">{m().id}</span>?</>}>
+                    Approve <span class="text-mono">{m().id}</span>'s hooks?
+                  </Show>
+                </span>
+              </div>
+              <Show when={approvalStale()}>
+                <Banner tone="warn" title="Its tools changed while this was open." body="These are the tools it has now. Check them again before you approve." />
+              </Show>
+              <p class="mode-approval-lead">{hooksOnly() ? hooksLead(m().id) : approvalLeadFor(m().id, projectName(), m())}</p>
+              <Show when={!hooksOnly() && m().tools.length > 0}>
+              <ul class="mode-approval-tools" aria-label={`${m().id}'s tools`}>
+                <For each={m().tools}>
+                  {(t) => (
+                    <li class="mode-approval-tool">
+                      <span class="mode-approval-tool-name text-mono">{t.name}</span>
+                      <Show when={t.description}>
+                        <span class="mode-approval-tool-desc">{t.description}</span>
+                      </Show>
+                      <code class="mode-approval-tool-cmd">{commandLine(t.command)}</code>
+                    </li>
+                  )}
+                </For>
+              </ul>
+              </Show>
+              <Show when={!hooksOnly() && (m().commands?.length ?? 0) > 0}>
+                <ul class="mode-approval-tools" aria-label={`${m().id}'s commands`}>
+                  <For each={m().commands}>
+                    {(t) => (
+                      <li class="mode-approval-tool">
+                        <span class="mode-approval-tool-name text-mono">mode.{m().id}.{t.name}</span>
+                        <Show when={t.description}>
+                          <span class="mode-approval-tool-desc">{t.description}</span>
+                        </Show>
+                        <code class="mode-approval-tool-cmd">{commandLine(t.command)}</code>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+              <Show when={(m().hooks?.length ?? 0) > 0}>
+                <ul class="mode-approval-tools" aria-label={`${m().id}'s hooks`}>
+                  <For each={m().hooks}>
+                    {(h) => (
+                      <li class="mode-approval-tool">
+                        <span class="mode-approval-tool-name">{hookWhen(h.on)}</span>
+                        <code class="mode-approval-tool-cmd">{commandLine(h.command)}</code>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+              <div class="mode-menu-foot">
+                <p class="mode-menu-foot-line">
+                  Runs from <span class="text-mono">{m().dir}</span>. {approvalFootFor(m())}
+                </p>
+                <Show when={bareProgramsNote([...(hooksOnly() ? [] : [...m().tools, ...(m().commands ?? [])]), ...(m().hooks ?? [])])}>{(note) => <p class="mode-menu-foot-line">{note()}</p>}</Show>
+                <div class="button-row">
+                  <button type="button" class="button button-primary button-sm" aria-disabled={busy() || !m().toolsHash ? "true" : undefined} onClick={approve}>
+                    {busy() ? (hooksOnly() ? "Approving…" : "Turning On…") : hooksOnly() ? APPROVE_HOOKS_LABEL : APPROVE_LABEL}
+                  </button>
+                  <button type="button" class="button button-ghost button-sm" disabled={busy()} onClick={closeApproval}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </Show>
+
+        <Show when={!approving()}>
         <Show
           when={!memPanel()}
           fallback={
@@ -746,6 +1020,14 @@ export function ModeMenu(props: { control: ModeControl }) {
                 <For each={group("check")}>{(x) => <WithGear it={x.it} index={x.index} />}</For>
               </div>
             </Show>
+            <Show when={group("project").length > 0}>
+              <div class="model-menu-group" role="group" aria-labelledby={paneId("mode-group-project")}>
+                <div class="list-group-label" id={paneId("mode-group-project")}>
+                  {projectGroupLabel(projectName())}
+                </div>
+                <For each={group("project")}>{(x) => <WithGear it={x.it} index={x.index} />}</For>
+              </div>
+            </Show>
             <div class="model-menu-group" role="group" aria-labelledby={paneId("mode-group-subagents")}>
               <div class="list-group-label" id={paneId("mode-group-subagents")}>
                 Subagents
@@ -788,6 +1070,7 @@ export function ModeMenu(props: { control: ModeControl }) {
               {saveLabel(saveState())}
             </button>
           </div>
+        </Show>
         </Show>
         </Show>
       </div>

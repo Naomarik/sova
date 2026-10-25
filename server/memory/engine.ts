@@ -4,17 +4,20 @@
 import type { HEntry } from "../../shared/harness";
 import type { MemoryLine, MemoryMessage, MemoryStatus } from "../../shared/protocol";
 import { memoryViewContent } from "../../pi-config/extensions/claude-code/provider/memory-view.ts";
+import { expandIds, uuidsIn } from "./ids";
 import { inputStart, messagesBefore, messagesOf, type LogMessage } from "./log";
 import { COMPACTION_GUIDE, leafTask, mergeTask, TURN_GUIDE, zoomableSummary } from "./prompts";
-import { MemoryStore, type MemoryFileState } from "./store";
+import { MemoryStore, type MemoryFileState, type MemoryPause, type NodeRetry } from "./store";
 import type { SummaryCall, SummaryResult } from "./summarizer";
-import { problemOf } from "./summarizer";
+import { failureScope, problemOf } from "./summarizer";
 import {
+  ACCEPT,
   acceptLine,
   builtPrefix,
   bytes,
   count,
   covered,
+  cutSentence,
   cutView,
   end,
   extendView,
@@ -23,6 +26,7 @@ import {
   LIMIT,
   lineOf,
   mergeView,
+  oneLine,
   parentReady,
   readyMerges,
   splitView,
@@ -41,8 +45,24 @@ export const CVIEW_MIN = 16_000;
     without memory (§chat.memory/preparing). */
 export const PREPARE_SLACK = 16;
 export const CONCURRENCY = 4;
-/** Consecutive failed summaries after which the queue pauses until the next message. */
-export const FAILURE_PAUSE = 3;
+/** One summary's context lines at most (§chat.memory/summarizer): past it the oldest are left out, in
+    CVIEW_STEP steps counted from the view's first line, so back-to-back summaries share one prefix. */
+export const CVIEW_HARD = 64_000;
+export const CVIEW_STEP = 16_000;
+/** A node's tries before its line is a clipped excerpt (§chat.memory/recovery). */
+export const NODE_TRIES = 3;
+/** How long a node waits after its first and its second failed try. */
+export const NODE_RETRY_MS: readonly number[] = [5 * 60_000, 2 * 60 * 60_000];
+/** The queue's pause after a failure that stops every summary: 5 minutes, doubling up to 60. */
+export const PAUSE_FIRST_MS = 5 * 60_000;
+export const PAUSE_MAX_MS = 60 * 60_000;
+/** Different nodes failing in a row, no success between, after which the summarizer counts as down. */
+export const FAILURE_STREAK = 8;
+
+/** A cancellable timer (tests inject their own clock). */
+export interface EngineTimer {
+  clear(): void;
+}
 
 export interface EngineDeps {
   summarize(call: SummaryCall): Promise<SummaryResult>;
@@ -53,6 +73,8 @@ export interface EngineDeps {
   now?(): number;
   /** The wait a turn allows (tests shorten it). */
   waitMs?: number;
+  /** One timer, for retries (default: an unref'd setTimeout). */
+  setTimer?(fn: () => void, ms: number): EngineTimer;
 }
 
 /** What a turn sends in place of its history (§chat.memory/turn). */
@@ -74,16 +96,26 @@ export class MemoryEngine implements Tree {
   private nodes = new Map<string, TreeNode>();
   private state: MemoryFileState;
   private log: LogMessage[] = [];
+  /** Each message's UUIDs, by its source, for showing lines with ids whole (§chat.memory/full-ids). */
+  private idCache = new Map<string, { text: string; ids: string[] }>();
   private leafQueue: number[] = [];
   private mergeQueue: NodeRef[] = [];
   private queued = new Set<string>();
   private running = new Set<string>();
   /** Bumped by every invalidation: a summary started before one is dropped. */
   private generation = 0;
-  private failures = 0;
-  private problem: string | undefined;
+  /** Failed nodes' tries and next try, saved in retry.json (§chat.memory/recovery). */
+  private retries = new Map<string, NodeRetry>();
+  /** The whole queue's pause after a failure that stops every summary, saved with them. */
+  private pause: MemoryPause | undefined;
+  /** Nodes failed since the last success. */
+  private streak = new Set<string>();
+  private timer: EngineTimer | undefined;
+  private timerAt = Infinity;
   private waiters = new Set<() => void>();
   private preparing = false;
+  /** Whether sync has run once (the first one decides whether a never-built chat starts preparing). */
+  private synced = false;
   private updating: number | undefined;
   private disposed = false;
 
@@ -94,6 +126,18 @@ export class MemoryEngine implements Tree {
   ) {
     for (const n of store.loadNodes()) this.nodes.set(key(n.l, n.i), n);
     this.state = store.loadState();
+    const retry = store.loadRetry();
+    for (const r of retry.nodes) if (!this.nodes.has(key(r.l, r.i))) this.retries.set(key(r.l, r.i), r);
+    this.pause = retry.pause;
+  }
+
+  private now(): number {
+    return this.deps.now?.() ?? Date.now();
+  }
+
+  /** Whether this engine builds (a held chat's), or only reads (the cold outline: concurrency 0). */
+  private get live(): boolean {
+    return (this.deps.concurrency ?? CONCURRENCY) > 0;
   }
 
   get(l: number, i: number): TreeNode | undefined {
@@ -106,6 +150,8 @@ export class MemoryEngine implements Tree {
 
   dispose(): void {
     this.disposed = true;
+    this.timer?.clear();
+    this.timer = undefined;
     for (const w of this.waiters) w();
     this.waiters.clear();
   }
@@ -118,18 +164,37 @@ export class MemoryEngine implements Tree {
    */
   sync(branch: readonly HEntry[]): void {
     if (this.disposed) return;
+    const before = this.log.length;
     this.log = messagesOf(branch);
+    if (this.idCache.size > 2 * this.log.length + 64) this.idCache.clear();
     let d = this.log.length;
     for (const n of this.nodes.values()) {
       if (n.l !== 0) continue;
       const m = this.log[n.i];
       if (!m || m.src !== n.src) d = Math.min(d, n.i);
     }
-    const stale = [...this.nodes.values()].some((n) => end([n.l, n.i]) > d);
+    // A failed leaf's tries are its message's: a changed message starts afresh.
+    for (const r of this.retries.values()) {
+      if (r.l !== 0) continue;
+      const m = this.log[r.i];
+      if (!m || m.src !== r.src) d = Math.min(d, r.i);
+    }
+    const stale = [...this.nodes.values(), ...this.retries.values()].some((n) => end([n.l, n.i]) > d);
     if (stale || covered(this.state.view) > this.log.length || covered(this.state.cview) > this.log.length) this.invalidate(d);
     for (let i = 0; i < this.log.length; i++) if (!this.get(0, i)) this.enqueueLeaf(i);
     for (const ref of readyMerges(this.nodes.values(), this)) this.enqueueMerge(ref);
-    this.failures = 0;
+    // A new message lifts the pause at once (§chat.memory/recovery); a node's own tries stay counted.
+    if (this.live && this.synced && this.log.length > before && this.paused()) {
+      this.pause = { ...this.pause!, until: this.now() };
+      this.saveRetry();
+    }
+    // The first sync of a chat whose view was never built (memory on by default in a chat with history, or a
+    // preparing a restart cut short): it is prepared as if memory were just turned on.
+    if (!this.synced) {
+      this.synced = true;
+      if (this.live) this.repair();
+      if (covered(this.state.view) === 0 && this.unbuiltLeaves(this.log.length) > PREPARE_SLACK) this.preparing = true;
+    }
     this.pump();
     this.emit();
   }
@@ -138,7 +203,8 @@ export class MemoryEngine implements Tree {
   private invalidate(d: number): void {
     this.generation++;
     for (const [k, n] of this.nodes) if (end([n.l, n.i]) > d) this.nodes.delete(k);
-    this.store.rewriteNodes(this.nodes.values());
+    // The cold outline (concurrency 0) only reads: the held chat's engine drops them from the files.
+    if (this.live) this.store.rewriteNodes(this.nodes.values());
     this.state = {
       ...this.state,
       view: cutView(this, this.state.view, d),
@@ -149,7 +215,11 @@ export class MemoryEngine implements Tree {
     delete this.state.prefix;
     delete this.state.prefixSent;
     delete this.state.cprefix;
-    this.store.saveState(this.state);
+    if (this.live) this.store.saveState(this.state);
+    let dropped = false;
+    for (const [k, r] of this.retries) if (end([r.l, r.i]) > d) dropped = this.retries.delete(k) || dropped;
+    if (dropped) this.saveRetry();
+    this.streak.clear();
     this.leafQueue = this.leafQueue.filter((i) => i < d);
     this.mergeQueue = this.mergeQueue.filter((r) => end(r) <= d);
     this.queued = new Set([...this.leafQueue.map((i) => key(0, i)), ...this.mergeQueue.map(([l, i]) => key(l, i))]);
@@ -163,9 +233,15 @@ export class MemoryEngine implements Tree {
 
   // ---- building -----------------------------------------------------------------------------------
 
+  /** Whether node `k` is waiting out its retry time. */
+  private backingOff(k: string): boolean {
+    const r = this.retries.get(k);
+    return r !== undefined && r.retryAt > this.now();
+  }
+
   private enqueueLeaf(i: number): void {
     const k = key(0, i);
-    if (this.queued.has(k) || this.running.has(k)) return;
+    if (this.queued.has(k) || this.running.has(k) || this.backingOff(k)) return;
     this.queued.add(k);
     // Leaves in message order: each one's context is the lines before it.
     if (!this.leafQueue.length || this.leafQueue[this.leafQueue.length - 1]! < i) this.leafQueue.push(i);
@@ -177,22 +253,38 @@ export class MemoryEngine implements Tree {
 
   private enqueueMerge(ref: NodeRef): void {
     const k = key(ref[0], ref[1]);
-    if (this.queued.has(k) || this.running.has(k) || this.get(ref[0], ref[1])) return;
+    if (this.queued.has(k) || this.running.has(k) || this.get(ref[0], ref[1]) || this.backingOff(k)) return;
     this.queued.add(k);
     this.mergeQueue.push(ref);
   }
 
+  /** Leaves first, except while the compaction view is over its size: then a merge that combines two of
+      its lines, else a leaf, else any merge (§chat.memory/tree). */
   private next(): NodeRef | undefined {
+    if (this.mergeQueue.length && this.cviewOver()) {
+      const inView = new Set(this.state.cview.map(([l, i]) => key(l, i)));
+      const k = this.mergeQueue.findIndex(([l, i]) => inView.has(key(l - 1, 2 * i)) && inView.has(key(l - 1, 2 * i + 1)));
+      if (k >= 0) return this.mergeQueue.splice(k, 1)[0];
+    }
     const leaf = this.leafQueue.shift();
     if (leaf !== undefined) return [0, leaf];
     return this.mergeQueue.shift();
+  }
+
+  private cviewOver(): boolean {
+    return this.state.cmerging || viewBytes(this, this.state.cview) > CVIEW_MAX;
+  }
+
+  /** The whole queue is paused after a failure that stops every summary, until its retry time. */
+  private paused(): boolean {
+    return this.pause !== undefined && this.pause.until > this.now();
   }
 
   /** Start ready nodes up to the concurrency; never a scan of the tree (Taelin §4). */
   pump(): void {
     if (this.disposed) return;
     const limit = this.deps.concurrency ?? CONCURRENCY;
-    while (this.running.size < limit && this.failures < FAILURE_PAUSE) {
+    while (this.running.size < limit && !this.paused()) {
       const ref = this.next();
       if (!ref) break;
       const k = key(ref[0], ref[1]);
@@ -201,13 +293,12 @@ export class MemoryEngine implements Tree {
       this.running.add(k);
       const generation = this.generation;
       this.build(ref, generation)
-        .then(() => {
-          this.failures = 0;
-          this.problem = undefined;
-        })
-        .catch((err) => {
-          this.failures++;
-          this.problem = problemOf(err);
+        .then(
+          () => this.succeeded(k),
+          (err) => this.failed(ref, k, generation, err),
+        )
+        .catch(() => {
+          /* a sidecar write failed: the node is tried again at the next sync */
         })
         .finally(() => {
           this.running.delete(k);
@@ -219,13 +310,142 @@ export class MemoryEngine implements Tree {
     this.wake();
   }
 
+  private succeeded(k: string): void {
+    this.streak.clear();
+    const had = this.retries.delete(k);
+    if (this.pause) this.pause = undefined;
+    else if (!had) return;
+    this.saveRetry();
+    this.armTimer();
+  }
+
+  /**
+   * A failed summary (§chat.memory/recovery): one that stops every summary pauses the queue and the node
+   * goes back in it; any other is the node's own: it waits, and after NODE_TRIES its line is an excerpt.
+   */
+  private failed(ref: NodeRef, k: string, generation: number, err: unknown): void {
+    if (generation !== this.generation || this.disposed) return;
+    this.running.delete(k);
+    const now = this.now();
+    if (failureScope(err) === "global") {
+      this.pauseFor(problemOf(err), now);
+      if (ref[0] === 0) this.enqueueLeaf(ref[1]);
+      else this.enqueueMerge(ref);
+      return;
+    }
+    this.streak.add(k);
+    const attempts = (this.retries.get(k)?.attempts ?? 0) + 1;
+    if (attempts >= NODE_TRIES) {
+      this.retries.delete(k);
+      this.putExcerpt(ref, generation);
+    } else {
+      const src = ref[0] === 0 ? this.log[ref[1]]?.src : undefined;
+      this.retries.set(k, { l: ref[0], i: ref[1], attempts, retryAt: now + NODE_RETRY_MS[Math.min(attempts, NODE_RETRY_MS.length) - 1]!, ...(src ? { src } : {}) });
+    }
+    if (this.streak.size >= FAILURE_STREAK) {
+      this.streak.clear();
+      this.pauseFor(problemOf(err), now);
+    }
+    this.saveRetry();
+    this.armTimer();
+  }
+
+  private pauseFor(problem: string, now: number): void {
+    if (this.pause && this.pause.until > now) this.pause = { ...this.pause, problem };
+    else {
+      const step = this.pause ? Math.min(this.pause.step * 2, PAUSE_MAX_MS) : PAUSE_FIRST_MS;
+      this.pause = { until: now + step, step, problem };
+    }
+    this.saveRetry();
+    this.armTimer();
+  }
+
+  /** A node whose summary failed every try: its own text clipped, flagged as an excerpt. */
+  private putExcerpt([l, i]: NodeRef, generation: number): void {
+    if (l === 0) {
+      const m = this.log[i];
+      if (!m) return;
+      const text = cutSentence(`${m.kind}: ${m.text}`, LIMIT);
+      return this.put({ l, i, text, size: bytes(text), src: m.src, excerpt: true }, generation);
+    }
+    const a = this.get(l - 1, 2 * i);
+    const b = this.get(l - 1, 2 * i + 1);
+    if (!a || !b) return;
+    const text = cutSentence(`${a.text}\n${b.text}`, ACCEPT);
+    this.put({ l, i, text, size: bytes(text), excerpt: true }, generation);
+  }
+
+  private saveRetry(): void {
+    if (!this.live) return;
+    this.store.saveRetry({ v: 1, nodes: [...this.retries.values()], ...(this.pause ? { pause: this.pause } : {}) });
+  }
+
+  /** One timer at the earliest retry time (the pause's or a node's); a held chat's only. */
+  private armTimer(): void {
+    if (!this.live || this.disposed) return;
+    const now = this.now();
+    let at = Infinity;
+    if (this.pause && this.pause.until > now) at = this.pause.until;
+    for (const r of this.retries.values()) if (r.retryAt > now && r.retryAt < at) at = r.retryAt;
+    if (at === this.timerAt && this.timer) return;
+    this.timer?.clear();
+    this.timer = undefined;
+    this.timerAt = at;
+    if (at === Infinity) return;
+    const fire = () => {
+      this.timer = undefined;
+      this.timerAt = Infinity;
+      if (this.disposed) return;
+      this.releaseDue();
+      this.pump();
+      this.emit();
+      this.armTimer();
+    };
+    if (this.deps.setTimer) this.timer = this.deps.setTimer(fire, at - now);
+    else {
+      const t = setTimeout(fire, at - now);
+      t.unref?.();
+      this.timer = { clear: () => clearTimeout(t) };
+    }
+  }
+
+  /** Nodes whose retry time has come go back in the queue. */
+  private releaseDue(): void {
+    const now = this.now();
+    for (const r of this.retries.values()) {
+      if (r.retryAt > now || this.get(r.l, r.i)) continue;
+      if (r.l === 0) {
+        if (r.i < this.log.length) this.enqueueLeaf(r.i);
+      } else this.enqueueMerge([r.l, r.i]);
+    }
+  }
+
+  /**
+   * The running chat's first read of its branch (§chat.memory/recovery): the compaction view merged down
+   * with what is built, a saved prefix over the cap thrown away, the retry timers set. Never for the cold
+   * outline (concurrency 0), which writes nothing.
+   */
+  private repair(): void {
+    if (this.state.cprefix && linesBytes(this.state.cprefix) > CVIEW_HARD) {
+      this.state = { ...this.state };
+      delete this.state.cprefix;
+      this.store.saveState(this.state);
+    }
+    this.extendCview();
+    this.releaseDue();
+    this.armTimer();
+  }
+
   private put(n: TreeNode, generation: number): void {
     if (generation !== this.generation || this.disposed) return;
-    this.nodes.set(key(n.l, n.i), n);
+    const k = key(n.l, n.i);
+    this.nodes.set(k, n);
     this.store.appendNode(n);
+    if (this.retries.delete(k)) this.saveRetry();
     const parent = parentReady(this, [n.l, n.i]);
     if (parent) this.enqueueMerge(parent);
     if (n.l === 0) this.extendCview();
+    else if (this.cviewOver()) this.compactCview();
   }
 
   private async build([l, i]: NodeRef, generation: number): Promise<void> {
@@ -248,10 +468,12 @@ export class MemoryEngine implements Tree {
     return this.put({ l, i, text, size: bytes(text) }, generation);
   }
 
-  /** One summary with the compaction view up to message `cut` as its context, cached by its stable prefix. */
+  /** One summary with the compaction view up to message `cut` as its context (at most CVIEW_HARD), cached by
+      its stable prefix. */
   private async summarizeNode(cut: number, task: string): Promise<string> {
-    const lines = this.state.cview.filter((r) => end(r) <= cut).map((r) => lineOf(this, r));
-    const { system, newer } = this.cviewSplit(lines);
+    this.compactCview();
+    const refs = this.state.cview.filter((r) => end(r) <= cut);
+    const { system, newer } = this.cviewSplit(capContext(refs, refs.map((r) => lineOf(this, r))));
     const prompt = newer.length ? `<chat> (continued: the newest lines)\n${newer.join("\n")}\n</chat>\n\n${task}` : `${task}`;
     const result = await this.deps.summarize({ system, prompt, sessionId: this.sessionId, ...(this.deps.cwd ? { cwd: this.deps.cwd } : {}) });
     const line = acceptLine(result.text);
@@ -278,12 +500,20 @@ export class MemoryEngine implements Tree {
 
   /** The compaction view takes each built leaf in order, and merges past CVIEW_MAX down to CVIEW_MIN. */
   private extendCview(): void {
-    let view = this.state.cview;
+    const view = this.state.cview;
     let T = covered(view);
     while (this.get(0, T) && T < this.log.length) T++;
-    if (T === covered(view)) return;
-    view = extendView(view, T);
-    const merged = mergeView(this, view, T, CVIEW_MAX, CVIEW_MIN, this.state.cmerging);
+    if (T === covered(view)) return this.compactCview();
+    this.state = { ...this.state, cview: extendView(view, T) };
+    this.compactCview(true);
+  }
+
+  /** The compaction view merged down with the merges already built (§chat.memory/summarizer); saved when
+      it changed. */
+  private compactCview(changed = false): void {
+    const view = this.state.cview;
+    const merged = mergeView(this, view, covered(view), CVIEW_MAX, CVIEW_MIN, this.state.cmerging);
+    if (!changed && !merged.merges && merged.merging === this.state.cmerging) return;
     this.state = { ...this.state, cview: merged.view, cmerging: merged.merging };
     this.store.saveState(this.state);
   }
@@ -304,8 +534,8 @@ export class MemoryEngine implements Tree {
     for (;;) {
       const left = this.unbuiltLeaves(T);
       if (left === 0 || this.disposed) return left;
-      // Nothing running and nothing queued: no summary will arrive (paused after failures).
-      if (this.running.size === 0 && (this.leafQueue.length === 0 || this.failures >= FAILURE_PAUSE)) return left;
+      // Nothing running and nothing queued: no summary will arrive (paused, or the rest waiting out retries).
+      if (this.running.size === 0 && (this.leafQueue.length === 0 || this.paused())) return left;
       const remaining = deadline - (this.deps.now?.() ?? Date.now());
       if (remaining <= 0) return left;
       await new Promise<void>((resolve) => {
@@ -319,6 +549,33 @@ export class MemoryEngine implements Tree {
         this.waiters.add(done);
       });
     }
+  }
+
+  // ---- ids shown whole ---------------------------------------------------------------------------
+
+  /** The UUIDs in messages first(ref)..end(ref)-1 as logged. */
+  private idsOf(ref: NodeRef): string[] {
+    const out = new Set<string>();
+    const to = Math.min(end(ref), this.log.length);
+    for (let k = first(ref); k < to; k++) {
+      const m = this.log[k]!;
+      let hit = this.idCache.get(m.src);
+      if (!hit || hit.text !== m.text) this.idCache.set(m.src, (hit = { text: m.text, ids: uuidsIn(m.text) }));
+      for (const id of hit.ids) out.add(id);
+    }
+    return [...out];
+  }
+
+  /** A node's stored text as it is shown: ids whole where its own messages make that certain. */
+  private shownText(n: TreeNode, ref: NodeRef): string {
+    return /[0-9a-fA-F]{8}/.test(n.text) ? expandIds(n.text, this.idsOf(ref)) : n.text;
+  }
+
+  /** A view line as the model (and the outline) is shown it (§chat.memory/full-ids). */
+  shownLine(ref: NodeRef): string {
+    const n = this.get(ref[0], ref[1]);
+    if (!n) return lineOf(this, ref);
+    return `${first(ref)}+${count(ref)}|${oneLine(this.shownText(n, ref))}`;
   }
 
   // ---- a turn -------------------------------------------------------------------------------------
@@ -350,7 +607,7 @@ export class MemoryEngine implements Tree {
     view = extendView(view, T);
     const max = sizeKB * 1024;
     const merged = mergeView(this, view, T, max, max / 2, this.state.merging);
-    const lines = merged.view.map((r) => lineOf(this, r));
+    const lines = merged.view.map((r) => this.shownLine(r));
     const cost = { fixed: promptBytes + bytes(TURN_GUIDE), sent: this.state.prefixSent ?? 0 };
     const split = splitView(lines, this.state.prefix, builtPrefix(this, merged.view).length, cost);
     this.state = { ...this.state, view: merged.view, merging: merged.merging, prefix: split.prefix, prefixSent: split.sent };
@@ -359,7 +616,7 @@ export class MemoryEngine implements Tree {
     return {
       content: memoryViewContent(TURN_GUIDE, split.prefix, split.tail),
       messages: T,
-      bytes: viewBytes(this, merged.view),
+      bytes: linesBytes(lines),
       lines: lines.length,
       rebased: split.rebased,
       merges: merged.merges,
@@ -390,7 +647,7 @@ export class MemoryEngine implements Tree {
     const merged = mergeView(this, extendView([], T), T, size, size, true);
     if (viewBytes(this, merged.view) > 2 * size) return undefined;
     this.emit();
-    return { summary: zoomableSummary(merged.view.map((r) => lineOf(this, r)), T), messages: T, lines: merged.view };
+    return { summary: zoomableSummary(merged.view.map((r) => this.shownLine(r)), T), messages: T, lines: merged.view };
   }
 
   // ---- recall -------------------------------------------------------------------------------------
@@ -401,8 +658,8 @@ export class MemoryEngine implements Tree {
     if (n === 1) return messageText(this.log[id]!);
     const half = n / 2;
     const l = Math.log2(n) - 1;
-    const out = [lineOf(this, [l, id / half])];
-    if (id + half < this.log.length) out.push(lineOf(this, [l, id / half + 1]));
+    const out = [this.shownLine([l, id / half])];
+    if (id + half < this.log.length) out.push(this.shownLine([l, id / half + 1]));
     return out.join("\n");
   }
 
@@ -426,7 +683,7 @@ export class MemoryEngine implements Tree {
     return {
       id: first(ref),
       n: count(ref),
-      text: n ? n.text : null,
+      text: n ? this.shownText(n, ref) : null,
       entryId: this.log[first(ref)]?.entryId ?? null,
       lastEntryId: this.log[lastAt]?.entryId ?? null,
     };
@@ -438,8 +695,9 @@ export class MemoryEngine implements Tree {
     return extendView(view, this.log.length);
   }
 
+  /** A view's size as it is shown (ids whole), each line with its newline. */
   viewBytesOf(view: readonly NodeRef[]): number {
-    return viewBytes(this, view);
+    return linesBytes(view.map((r) => this.shownLine(r)));
   }
 
   /** The two lines under line id+n, or message id whole, for the outline. */
@@ -456,8 +714,17 @@ export class MemoryEngine implements Tree {
     return { lines };
   }
 
+  /** The status's problem: only while the whole queue is paused, with its next try (§chat.memory/recovery). */
+  private problem(): string | undefined {
+    if (!this.pause) return undefined;
+    const p = this.pause.problem;
+    const head = /[.!?]$/.test(p) ? p : `${p}.`;
+    return this.pause.until > this.now() ? `${head} Retrying at ${clock(this.pause.until)}.` : `${head} Retrying now.`;
+  }
+
   status(): MemoryStatus {
-    const extra = this.problem ? { problem: this.problem } : {};
+    const problem = this.problem();
+    const extra = problem ? { problem } : {};
     if (this.preparing) {
       const total = this.log.length;
       return { state: "preparing", done: total - this.unbuiltLeaves(total), total, ...extra };
@@ -476,7 +743,7 @@ export class MemoryEngine implements Tree {
   idle(): Promise<void> {
     return new Promise((resolve) => {
       const check = () => {
-        if (this.disposed || (this.running.size === 0 && (this.queued.size === 0 || this.failures >= FAILURE_PAUSE))) {
+        if (this.disposed || (this.running.size === 0 && (this.queued.size === 0 || this.paused()))) {
           this.waiters.delete(check);
           resolve();
         }
@@ -485,6 +752,34 @@ export class MemoryEngine implements Tree {
       check();
     });
   }
+}
+
+/** A time of day as the status says it ("2:05 PM"). */
+function clock(t: number): string {
+  return new Date(t).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+
+/**
+ * One summary's context lines, at most CVIEW_HARD (§chat.memory/summarizer): past it the oldest lines are
+ * left out in CVIEW_STEP steps counted from the first line, behind a line naming the messages left out.
+ * The cut moves only when the lines grow past the next step, so back-to-back summaries share the prefix.
+ */
+export function capContext(refs: readonly NodeRef[], lines: string[]): string[] {
+  const total = linesBytes(lines);
+  if (total <= CVIEW_HARD) return lines;
+  const need = total - CVIEW_HARD + 128; // room for the note
+  const target = Math.ceil(need / CVIEW_STEP) * CVIEW_STEP;
+  let k = 0;
+  for (let acc = 0; k < lines.length && acc < target; k++) acc += bytes(lines[k]!) + 1;
+  const from = k < refs.length ? first(refs[k]!) : covered(refs);
+  return [`(messages 0 to ${from - 1} are left out of this reading)`, ...lines.slice(k)];
+}
+
+/** Lines' size, each with its newline. */
+function linesBytes(lines: readonly string[]): number {
+  let n = 0;
+  for (const l of lines) n += bytes(l) + 1;
+  return n;
 }
 
 /** A message whole, as zoom(id, 1) gives it. */

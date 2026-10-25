@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
 import { STATUS_CODES } from "node:http";
 import { isAbsolute, join, resolve, sep } from "node:path";
@@ -8,15 +8,17 @@ import { proxy } from "hono/proxy";
 import { getMimeType } from "hono/utils/mime";
 import { WebSocket } from "ws";
 import { cappedWebSocket, cappedWebSocketServer, connectionRefused, errorCode } from "./runtime-quirks";
-import type { ExtensionInfo } from "../shared/protocol";
+import type { ExtensionInfo, ExtensionOffers } from "../shared/protocol";
+import { offersOf } from "../shared/extension-offers";
+import { extCommandsFrom, type ExtCommandEntry } from "../shared/commands-ext";
 import { stateRoot } from "./state-root";
-import { sovaToken } from "./auth";
+import { isExtensionKey, sovaToken } from "./auth";
 
-// The generic extension host (ext-contract-v1.2). An extension is a static UI (`dist`) plus a
+// The generic extension host (ext-contract-v1.16: v1.15 plus each backend's own key, server/extension-keys.ts, and a command's optional `menu` key, src/lib/menu-place.ts). An extension is a static UI (`dist`) plus a
 // loopback HTTP backend (`api`), both named in a manifest the user installs; Sova never writes it.
 // Sova serves the UI at /ext/<id>/, proxies /ext/<id>/api/* and /ext/<id>/ws/* to the backend,
-// and lists the extensions (with a cached health probe) at GET /api/extensions. Sova knows
-// nothing about what any extension does.
+// and lists the extensions (with a cached health probe, and what each declares it offers) at
+// GET /api/extensions. Sova knows nothing about what any extension does.
 
 export interface ExtensionEntry {
   id: string;
@@ -37,6 +39,11 @@ const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost"]);
 /** The manifest: SOVA_EXTENSIONS_FILE (a test instance's own file), else `<state root>/extensions.json`.
     Read per call, like every state path. */
 export const extensionsFile = (): string => process.env.SOVA_EXTENSIONS_FILE || join(stateRoot(), "extensions.json");
+
+/** Where each backend's key is written (server/extension-keys.ts), and the file of their hashes:
+    never served as an extension's file. */
+export const extensionKeyDir = (): string => join(stateRoot(), "extension-keys");
+export const extensionKeyHashFile = (): string => join(stateRoot(), "extension-key-hashes.json");
 
 // Each distinct complaint is logged once per process: the manifest is re-read per request, and a
 // bad entry would otherwise log on every poll of the overview.
@@ -64,8 +71,11 @@ function checkApi(api: unknown): string | null {
   return null;
 }
 
-/** One manifest record → an entry, or the reason it is dropped. Unknown keys are ignored. */
-export function validateExtension(raw: unknown): { entry: ExtensionEntry } | { error: string } {
+/** One manifest record → an entry, or the reason it is dropped. Unknown keys are ignored. `offers`
+    is what its `commands` and `screens` validly declare (shared/extension-offers.ts), absent when
+    nothing; it is kept apart from the entry, which is also what the mesh publishes to peers, so
+    only this host's own list ever carries it. */
+export function validateExtension(raw: unknown): { entry: ExtensionEntry; offers?: ExtensionOffers } | { error: string } {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { error: "entry is not an object" };
   const r = raw as Record<string, unknown>;
   if (typeof r.id !== "string" || !EXTENSION_ID_RE.test(r.id) || r.id === "." || r.id === "..") {
@@ -82,33 +92,69 @@ export function validateExtension(raw: unknown): { entry: ExtensionEntry } | { e
   };
   if (typeof r.description === "string" && r.description.trim()) entry.description = r.description.trim();
   if (typeof r.icon === "string" && ICON_RE.test(r.icon)) entry.icon = r.icon;
-  return { entry };
+  // A bad `commands` or `screens` leaves out only what is bad, never the entry.
+  const { offers, dropped } = offersOf(r.id, r);
+  for (const why of dropped) warnOnce(`${r.id}: left out ${why}`);
+  return offers ? { entry, offers } : { entry };
 }
 
 /** The valid entries, in manifest order. A missing file is no extensions; a malformed one is too,
     logged. A later duplicate of an id is dropped. */
-export function readExtensions(): ExtensionEntry[] {
+export const readExtensions = (): ExtensionEntry[] => readManifest().map((m) => m.entry);
+
+/**
+ * Every installed extension's own catalogue entries (`ext.<id>.<name>`, §app.served-commands/route),
+ * in manifest order: for each entry this server keeps, exactly the commands its `offers` names, built
+ * whole (params included) by the same rule that made the offers. Reads the manifest, probes nothing.
+ */
+export function installedExtensionCommands(): ExtCommandEntry[] {
+  const out: ExtCommandEntry[] = [];
+  for (const { entry, offers, commands } of readManifest()) {
+    if (!offers?.commands) continue;
+    const named = new Set(offers.commands.map((c) => c.name));
+    for (const c of extCommandsFrom(entry.id, commands)) if (named.has(c.id.slice(`ext.${entry.id}.`.length))) out.push(c);
+  }
+  return out;
+}
+
+/** readExtensions, each entry with what it offers (and its raw `commands`, for the full entries). */
+function readManifest(): Array<{ entry: ExtensionEntry; offers?: ExtensionOffers; commands?: unknown }> {
+  return manifestEntries() ?? [];
+}
+
+/**
+ * The ids the keys follow (server/extension-keys.ts): the installed ids, `[]` when there is no
+ * manifest, and null when there is one that can't be read whole (unreadable, not JSON, not
+ * `{version: 1, extensions: [...]}`, a write caught half-done), so a bad save never revokes a key.
+ */
+export function installedIdsForKeys(): string[] | null {
+  return manifestEntries()?.map((m) => m.entry.id) ?? null;
+}
+
+/** The manifest's valid entries; [] when it is missing, null when it is there but unreadable. */
+function manifestEntries(): Array<{ entry: ExtensionEntry; offers?: ExtensionOffers; commands?: unknown }> | null {
   const file = extensionsFile();
   let text: string;
   try {
     text = readFileSync(file, "utf8");
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") warnOnce(`${file}: ${(err as Error).message}`);
-    return [];
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    warnOnce(`${file}: ${(err as Error).message}`);
+    return null;
   }
   let doc: unknown;
   try {
     doc = JSON.parse(text);
   } catch (err) {
     warnOnce(`${file}: not JSON (${(err as Error).message})`);
-    return [];
+    return null;
   }
   const d = doc as { version?: unknown; extensions?: unknown } | null;
   if (!d || d.version !== 1 || !Array.isArray(d.extensions)) {
     warnOnce(`${file}: expected {"version": 1, "extensions": [...]}`);
-    return [];
+    return null;
   }
-  const out: ExtensionEntry[] = [];
+  const out: Array<{ entry: ExtensionEntry; offers?: ExtensionOffers; commands?: unknown }> = [];
   const seen = new Set<string>();
   for (const raw of d.extensions) {
     const v = validateExtension(raw);
@@ -121,7 +167,7 @@ export function readExtensions(): ExtensionEntry[] {
       continue;
     }
     seen.add(v.entry.id);
-    out.push(v.entry);
+    out.push({ ...v, commands: (raw as { commands?: unknown }).commands });
   }
   return out;
 }
@@ -186,10 +232,11 @@ export const clearHealthCache = (): void => healthCache.clear();
 
 export async function listExtensions(): Promise<ExtensionInfo[]> {
   const local = await Promise.all(
-    readExtensions().map(async (e) => {
+    readManifest().map(async ({ entry: e, offers }) => {
       const info: ExtensionInfo = { id: e.id, title: e.title, ...(await health(e)) };
       if (e.description) info.description = e.description;
       if (e.icon) info.icon = e.icon;
+      if (offers) info.offers = offers;
       return info;
     }),
   );
@@ -236,10 +283,43 @@ export function serveExtensionFile(entry: ExtensionEntry, rest: string): Respons
     file = indexHtml;
   }
   if (!isFile(file)) return new Response(`Extension "${entry.id}" has no index.html in ${root}`, { status: 404 });
+  if (isKeyFile(file)) return new Response("Not found", { status: 404 });
   const type = getMimeType(file) ?? "application/octet-stream";
   const headers: Record<string, string> = { "Content-Type": type };
   if (type.startsWith("text/html")) headers["Cache-Control"] = "no-cache";
   return new Response(readFileSync(file), { headers });
+}
+
+/** Whether `file`, once links are followed (symbolic or hard), is a backend's key or the file of their hashes
+    (§app.extensions/backend-key): a `dist` that holds them, or links to them, never serves them. */
+function isKeyFile(file: string): boolean {
+  let real: string;
+  try {
+    real = realpathSync(file);
+  } catch {
+    return true; // it was a file a moment ago: unsure is not served
+  }
+  const real0 = (p: string): string => {
+    try {
+      return realpathSync(p);
+    } catch {
+      return p;
+    }
+  };
+  const dir = real0(extensionKeyDir());
+  if (real === real0(extensionKeyHashFile()) || real.startsWith(dir + sep)) return true;
+  // A hard link to a key under another name: only a file with more than one link is compared.
+  try {
+    const st = statSync(real);
+    if (st.nlink < 2) return false;
+    for (const name of readdirSync(dir)) {
+      const k = statSync(join(dir, name), { throwIfNoEntry: false });
+      if (k && k.ino === st.ino && k.dev === st.dev) return true;
+    }
+  } catch {
+    // no key folder: nothing to link to
+  }
+  return false;
 }
 
 // ---- HTTP proxy (ANY /ext/<id>/api/...) -------------------------------------------------------
@@ -259,12 +339,16 @@ const AUTH_COOKIE_RE = /^sova_token(_|$)/;
 /**
  * Drop Sova's own credentials from headers bound for an extension backend: every install's auth
  * cookie (other cookies stay), `x-sova-token`, and an `Authorization` that carries this install's
- * token (an extension's own Authorization passes). A backend is a separate program; one that
- * calls Sova back reads the token itself (docs/customization.md).
+ * token or any extension's key (an extension's own Authorization passes). A backend is a separate
+ * program; one that calls Sova back sends its own key (docs/customization.md). An extension's key
+ * rides in x-sova-token, so it is dropped with it.
  */
 export function stripSovaCredentials(headers: Headers): void {
   headers.delete("x-sova-token");
-  if (headers.get("authorization")?.includes(sovaToken())) headers.delete("authorization");
+  headers.delete("x-sova-caller"); // a chat's key (§app.command-audit/keys) never reaches a backend
+  const authorization = headers.get("authorization");
+  // The token, or any extension's key (§app.extensions/backend-key): one backend never gets another's.
+  if (authorization !== null && (authorization.includes(sovaToken()) || authorization.split(/[\s,]+/).some(isExtensionKey))) headers.delete("authorization");
   const cookie = headers.get("cookie");
   if (cookie === null) return;
   const kept = cookie

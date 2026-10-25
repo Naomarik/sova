@@ -1,6 +1,8 @@
 import { setProfileStartAdopt } from "./lib/profile-start";
+import { deliverStranded, handOverWhenGoing } from "./lib/chat-outbox";
+import { chatCourier } from "./lib/chat-courier";
 import { loadAlignment } from "./lib/alignment-draft";
-import { batch, createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
+import { batch, createEffect, createMemo, createResource, createSignal, lazy, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../shared/protocol";
@@ -27,11 +29,16 @@ import {
   setSessionArchived,
 } from "./lib/api";
 import { socketReconnects } from "./lib/socket";
+import { watchUpdates } from "./lib/updates";
 import { actSessionCount, setAppBadge } from "./lib/push";
-import { firstBaseline, helloStep, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
+import { firstBaseline, helloNews, weighHello, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
 import { noteSessionsHidden, sessionsHiddenBy } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
-import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
+import { bindKey, paletteKeyAction } from "./commands/keys";
+import { composerOf } from "./commands/composers";
+import { closePalette, paletteRequest, togglePaletteFromKey } from "./commands/palette-open";
+import { isOverseerHash, OVERSEER_HASH, overseerHistoryId } from "./lib/overseer";
+import { onFeedPush, sessionFeedOpen } from "./lib/session-feed";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
 import type { CostsQuery } from "./lib/cost-history";
 import type { PerfQuery } from "./lib/perf";
@@ -41,6 +48,8 @@ import { groupRouteFromHash } from "./lib/group-route";
 import { extHref, extRouteFromHash } from "./lib/ext-route";
 import { movedOrgHash, orgsRouteFromHash } from "./lib/orgs-route";
 import { projectsRouteFromHash } from "./lib/projects-route";
+import { projectSummaryKey, recall } from "./lib/page-cache";
+import type { ProjectSummary } from "../shared/projects";
 import { onListRefresh } from "./lib/list-refresh";
 import { OrgsView } from "./components/OrgsView";
 import { ProjectsView } from "./components/ProjectsView";
@@ -58,13 +67,13 @@ import { sessionsGlance } from "./lib/home-sessions";
 import { applySidebarWidth } from "./lib/sidebar-width";
 import { closeSettings, openSettings, settingsOpenAt, settingsTabFromHash } from "./lib/settings-nav";
 import type { RewindControl } from "./lib/inputs";
-import { activeTab, groupSendAll, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
+import { activeTab, focusMoving, focusView, groupSendAll, hideThinking, hideTools, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
 import { createPaneInsight } from "./lib/pane-insight";
 import { sessionWorking } from "./lib/workers";
 import { answeredPeers, workPeers } from "./lib/work-now";
 import { AgentsView } from "./components/AgentsView";
 import { NewSessionDialog } from "./components/NewSessionDialog";
-import { SettingsDialog } from "./components/SettingsDialog";
+import { SettingsDialog, TABS as SETTINGS_TAB_LABELS } from "./components/SettingsDialog";
 import { ExplanationsCard, ExplanationsView } from "./components/ExplanationsView";
 import { ExtensionCards, ExtensionView } from "./components/ExtensionView";
 import { HomeSessionsCard } from "./components/HomeSessionsCard";
@@ -89,6 +98,7 @@ import { BrandLink, sessionHref, Sidebar } from "./components/Sidebar";
 import { SidebarResizer } from "./components/SidebarResizer";
 import { UsageView } from "./components/UsageView";
 import { GlobalRegions, Icon } from "./components/ui";
+import { ExtensionsContext } from "./lib/reply-place";
 
 /** The session the hash names. A peer's (`#/p/<host>/s/<path>`) records its host first, so every
     request the view makes for it goes there even before the peer's list has loaded. */
@@ -125,9 +135,9 @@ function openSettingsFromHash() {
   openSettings(tab);
 }
 
-/** While a run is in flight, re-read the list often enough that the Busy chip clears itself when
-    the run settles in a session nobody is looking at. Idle costs nothing: the interval only
-    exists while something is busy. */
+/** While a run is in flight and the session feed is down, re-read the list often enough that the
+    Busy chip clears itself when the run settles in a session nobody is looking at. Idle costs
+    nothing: the interval only exists while something is busy with no feed. */
 const BUSY_POLL_MS = 5_000;
 
 /** Insights polling (paused while the tab is hidden). The usage file itself changes ≤ every 3 min. */
@@ -144,6 +154,10 @@ const EXTENSIONS_POLL_MS = 15_000;
 /** While a peer is configured, its status and its sessions are re-read this often. Never with none. */
 const MESH_POLL_MS = 15_000;
 const folded = () => window.matchMedia("(max-width: 767px)").matches;
+/** The command palette and the shortcut sheet: their own files, fetched on their first opening. */
+const CommandPalette = lazy(() => import("./components/CommandPalette"));
+const ShortcutSheet = lazy(() => import("./components/ShortcutSheet"));
+const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
 /** Live `matchMedia` (the ExplainTiles pattern): the spine is a desktop affordance, so it only
     shows while the viewport is unfolded, and a resize across 768px swaps it in or out. */
@@ -159,6 +173,11 @@ function createMediaQuery(query: string) {
 export function App() {
   // Settings → Alignment's saved review switch gates parts of the UI (adversarial review): read once.
   loadAlignment();
+  // What an earlier page couldn't hand the server as it went (a reload or a closed tab while its chat
+  // started) goes now (§chat.transcript/send-while-starting).
+  deliverStranded(chatCourier);
+  // …and what this page holds as it goes is handed to the server then, not left for a next load.
+  handOverWhenGoing(chatCourier);
   const [listError, setListError] = createSignal<string | null>(null);
   /** Bumped on every successful list load, so views can tell a fresh list from a stale one. */
   const [listVersion, setListVersion] = createSignal(0);
@@ -379,6 +398,12 @@ export function App() {
     return r;
   };
   const [projectsRoute, setProjectsRoute] = createSignal(projectsRouteOf(location.hash));
+  /** On a project's page (this host's), its root as this tab last read it: New Session opens on that project. */
+  const pageProjectRoot = (): string | null => {
+    const r = projectsRoute();
+    if (!r || r.kind === "list" || r.host) return null;
+    return recall<ProjectSummary>(projectSummaryKey(r.projectId))?.root ?? null;
+  };
   /** The extension on screen: the view is keyed by this, so a sub-route change never remounts it
       (which would reload the extension's iframe). */
   const extId = createMemo(() => extRoute()?.id ?? null);
@@ -401,10 +426,22 @@ export function App() {
   setAgentsFeedSource(agents.data);
   const explanations = createPoll(fetchExplanations, EXPLAIN_POLL_MS);
   setExplanationsFeedSource(explanations.data);
-  const overseer = createPoll(getOverseer, OVERSEER_POLL_MS);
-  /** The attention digest, read once for the page on the entry button's cadence: the sidebar's
-      Needs you region, the home card and the app badge all read it. */
-  const attention = createPoll(getAttention, OVERSEER_POLL_MS);
+  /** The Overseer's state and the attention digest (the sidebar's Needs you region, the home card
+      and the app badge all read it), one copy each for the page. Never on a timer: read at load,
+      when the tab is shown again (createPoll) and whenever the session feed (re)opens, then
+      replaced by each value the feed pushes on change (lib/session-feed). */
+  const overseer = createPoll(getOverseer, null);
+  const attention = createPoll(getAttention, null);
+  onCleanup(
+    onFeedPush({
+      resync: () => {
+        overseer.refetch();
+        attention.refetch();
+      },
+      attention: (d) => attention.set(d),
+      overseer: (o) => overseer.set(o),
+    }),
+  );
   // The app badge (an installed app, with notifications allowed): the sessions that need you, kept
   // current from the digest this page already reads; zero clears it (lib/push.ts).
   const badgeCount = createMemo(() => {
@@ -422,6 +459,9 @@ export function App() {
     return items && items.length > 0 ? items : null;
   });
   const [creating, setCreating] = createSignal(false);
+  /** The palette is open: by the key, or by a composer's "+" (commands/palette-open.ts). */
+  const paletteOpen = () => paletteRequest() !== null;
+  const [shortcutsOpen, setShortcutsOpen] = createSignal(false);
   // The Settings modal is opened from the sidebar foot's gear, and at Modes by the mode menu's
   // "Configure Delegate" (lib/settings-nav.ts holds which tab, so either can open it).
   /** Each open chat's rewind, for the Timeline's input rows. By path: a workspace has several
@@ -522,15 +562,27 @@ export function App() {
   };
   // A `#/sid/` route opened before the first list load resolves when the lists land.
   createEffect(on([list, peerLists, meshSettled, peersSettled], () => sessionIdFromHash(location.hash) && onHash(), { defer: true }));
-  /** Alt+O: the Overseer, from anywhere (lib/overseer `isOverseerShortcut`). */
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (!isOverseerShortcut(e)) return;
-    e.preventDefault();
+  /** Ctrl/⌘+K: the command palette; "?": the shortcut sheet (§app/command-palette). Each is a
+      separate file the browser fetches on its first opening. On a Mac, Ctrl+K in a text field is
+      the field's own (delete to the end of the line), so it's left to it there. */
+  const offPaletteKey = bindKey("palette.open", (e) => {
+    const act = paletteKeyAction(e, IS_MAC);
+    if (act === "field") return false; // the browser's: a Mac text field's delete-to-end
+    if (act === "toggle") togglePaletteFromKey();
+    return true; // a held key's repeats are swallowed: it toggles once
+  });
+  const offShortcutsKey = bindKey("shortcuts.open", () => {
+    if (paletteOpen()) return false;
+    setShortcutsOpen(true);
+    return true;
+  });
+  /** Alt+O: the Overseer, from anywhere (commands/keys). */
+  const offOverseerKey = bindKey("overseer.open", () => {
     if (location.hash !== OVERSEER_HASH) location.hash = OVERSEER_HASH;
-  };
+    return true;
+  });
   window.addEventListener("focus", onFocus);
   window.addEventListener("hashchange", onHash);
-  window.addEventListener("keydown", onKeyDown);
   // A view that changed a session's list fields (a baton strip's hand-off, take back, approve) asks
   // for the list and the Needs you digest now rather than at the next poll (lib/list-refresh.ts).
   const offListRefresh = onListRefresh(window, { list: refresh, attention: () => attention.refetch() });
@@ -538,22 +590,28 @@ export function App() {
   onCleanup(() => {
     window.removeEventListener("focus", onFocus);
     window.removeEventListener("hashchange", onHash);
-    window.removeEventListener("keydown", onKeyDown);
+    offOverseerKey();
+    offPaletteKey();
+    offShortcutsKey();
     offListRefresh();
     clearInterval(tick);
   });
 
-  // ---- The stale-tab check: the front door can move this tab to another host -----------------
-  // Only with the mesh on (no front door exists without it). The tab remembers the hello of the
-  // host it was loaded from and asks again whenever the server may have changed under it: a
-  // socket reconnect, the tab coming back into view, the mesh poll.
+  // ---- The stale-tab check: this tab's Sova changed, or the front door moved it ---------------
+  // Every tab, mesh on or off: it is how a tab learns Sova was updated (§app.updates/reload-note).
+  // The tab remembers the hello of the host it was loaded from (once GET /api/mesh settled, so it
+  // knows which host that was) and asks again whenever the server may have changed under it: a
+  // socket reconnect, the tab coming back into view, and with the mesh on the mesh poll. Only with
+  // the mesh on can a host change come of it (no front door exists without it; lib/mesh weighHello).
   const [helloBase, setHelloBase] = createSignal<HelloBaseline | null>(null);
   const [staleChange, setStaleChange] = createSignal<HelloChange | null>(null);
   let pendingHost: PendingHost | null = null;
+  /** What the hello said when the banner last rose for a build or protocol (lib/mesh helloNews). */
+  let raisedNews: string | null = null;
   let confirmTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(confirmTimer));
   const checkHello = async () => {
-    if (!meshOn()) return;
+    if (!meshSettled()) return; // the effect below takes the baseline once it has
     let hello;
     try {
       hello = await fetchMeshHello();
@@ -568,7 +626,8 @@ export function App() {
       base = firstBaseline(servedBy, now);
       setHelloBase(base);
     }
-    const step = helloStep(base, now, pendingHost, Date.now());
+    const mesh = meshOn();
+    const step = weighHello(mesh, base, now, pendingHost, Date.now());
     const firstSeen = step.pending && step.pending !== pendingHost;
     pendingHost = step.pending;
     // Another host answered once: ask again a little later, and only a second answer from it counts.
@@ -578,9 +637,14 @@ export function App() {
     }
     const change = step.change;
     if (!change) return;
+    // The same build or protocol news as last time is not raised again: a dismissed banner stays
+    // dismissed until Sova changes once more.
+    const news = helloNews(now);
+    if (!change.host && news === raisedNews) return;
+    raisedNews = news;
     // The tab's own code hasn't changed: its protocol and build stay the baseline's. Only the host
-    // it talks to moves.
-    setHelloBase({ ...base, id: now.id, label: now.label });
+    // it talks to moves (and without the mesh it never does).
+    if (change.host) setHelloBase({ ...base, id: now.id, label: now.label });
     setStaleChange((prev) => ({
       protocol: change.protocol || !!prev?.protocol,
       build: change.build || !!prev?.build,
@@ -612,7 +676,7 @@ export function App() {
     });
   };
   createEffect(() => {
-    if (meshOn() && !helloBase()) void checkHello();
+    if (meshSettled() && !helloBase()) void checkHello();
   });
   // A vanished host leaves the open socket silent: only asking notices the move. Mesh off: never.
   createEffect(() => {
@@ -627,6 +691,8 @@ export function App() {
   setHostCheck(() => void checkHello());
   onCleanup(() => setHostCheck(null));
   createEffect(on(socketReconnects, () => void checkHello(), { defer: true }));
+  // This machine's updates: the Settings dot and section (the stale-tab check above says it changed).
+  watchUpdates();
   const onVisible = () => {
     if (!document.hidden) void checkHello();
   };
@@ -662,6 +728,8 @@ export function App() {
     const p = focusedPath();
     return (p ? summaryOf(p) : undefined) ?? null;
   });
+  /** The chat the palette's rows act on: the one whose "+" opened it, else the focused one. */
+  const palettePath = () => paletteRequest()?.path ?? focusedPath();
   /** The group the route names, once its name is known; the workspace needs the group itself. */
   const openGroup = createMemo(() => {
     const id = groupRoute()?.id;
@@ -866,8 +934,9 @@ export function App() {
 
   /** Any row claiming a run in flight (the sidebar's Busy chip's fallback source). */
   const anyBusy = createMemo(() => (list() ?? []).some((s) => s.busy));
+  // Only while the session feed is down: open, its `list_changed` says when a run settles.
   createEffect(() => {
-    if (!anyBusy()) return;
+    if (!anyBusy() || sessionFeedOpen()) return;
     const t = setInterval(refresh, BUSY_POLL_MS);
     onCleanup(() => clearInterval(t));
   });
@@ -1031,7 +1100,9 @@ export function App() {
   };
 
   return (
-    <>
+    // The extension list this page polls anyway, for every place on Sova's screens extensions add to
+    // (lib/reply-place): no place makes a request of its own to learn which do.
+    <ExtensionsContext.Provider value={extensions.data}>
       {/*
         In a workspace the transcripts are the panes': the link points at the focused one, and its
         name and target move together.
@@ -1062,6 +1133,10 @@ export function App() {
         data-spine={collapsed() ? "on" : undefined}
         data-view={groupRoute() ? "workspace" : route() || accessRoute() || insightsRoute() || overseerRoute() || extRoute() || meshRoute() || sharesRoute() || shareRoute() || orgsRoute() || projectsRoute() || overviewRoute() ? "session" : "list"}
         data-ext-maximized={extMaximized() ? "1" : undefined}
+        /* Focus (§chat.transcript/focus-view): app.css hides the chat's chrome under it, on a
+           single-chat screen only; data-focus-moving is the moment its collapse animates. */
+        data-focus={focusView() ? "on" : undefined}
+        data-focus-moving={focusMoving() ? "" : undefined}
       >
         <Sidebar
           unfolded={unfolded()}
@@ -1226,7 +1301,7 @@ export function App() {
               </Match>
               {/* Projects, placed or not (#/projects[/<project>[/<tab>|/overseer]]). Not keyed: ProjectsView keys each page. */}
               <Match when={projectsRoute()}>
-                {(r) => <ProjectsView route={r()} titleRef={(el) => (projectsTitleEl = el)} />}
+                {(r) => <ProjectsView route={r()} titleRef={(el) => (projectsTitleEl = el)} sessions={list} />}
               </Match>
               {/* Organizations, their rosters and hand-off sessions (#/orgs[/<id>[/<tab>|/people/<person>]]). */}
               {/* Not keyed: a tab change on an org's page (#/orgs/<id>/<tab>) is a new route object,
@@ -1335,7 +1410,7 @@ export function App() {
       <Show when={creating()}>
         <Portal>
           <NewSessionDialog
-            prefill={newSessionCwd(summary(), list() ?? [], (cwd) => offersCwd(cwd, showHiddenFolders())) ?? ""}
+            prefill={newSessionCwd(summary(), list() ?? [], (cwd) => offersCwd(cwd, showHiddenFolders()), pageProjectRoot()) ?? ""}
             knownCwds={[...new Set((list() ?? []).filter((s) => !s.overseer && !s.org).map((s) => s.cwd))]}
             onCancel={() => setCreating(false)}
             onCreated={adoptCreated}
@@ -1358,7 +1433,49 @@ export function App() {
       <Show when={staleChange()}>
         {(change) => <StaleTabBanner change={change()} onDismiss={() => setStaleChange(null)} />}
       </Show>
+      <Show when={paletteOpen()}>
+        <CommandPalette
+          host={{
+            wide: unfolded,
+            collapsed,
+            extensions: () => (extensions.data() ?? []).map((x) => ({ id: x.id, title: x.title })),
+            openNewSessionDialog: () => setCreating(true),
+            openShortcuts: () => setShortcutsOpen(true),
+            settingsTabs: () => SETTINGS_TAB_LABELS,
+          }}
+          origin={paletteRequest()?.origin ?? "key"}
+          returnTo={paletteRequest()?.trigger ?? null}
+          context={() => {
+            // Opened from a pane's "+", every row about the chat acts on that pane's chat, which
+            // need not be the workspace's focused one (§app.command-palette/opening).
+            const path = palettePath();
+            const s = path ? (summaryOf(path) ?? null) : null;
+            const c = composerOf(path);
+            return {
+              session: s ? { path: s.path, id: s.id, title: s.title, terminal: !!s.live } : null,
+              composer:
+                c && path
+                  ? {
+                      commands: c.commands(),
+                      off: c.off(),
+                      hasDraft: c.hasDraft(),
+                      hideTools: hideTools(path),
+                      hideThinking: hideThinking(path),
+                      playbooks: c.canPlaybooks(),
+                      undo: c.undoBlocked(),
+                    }
+                  : null,
+            };
+          }}
+          chatPath={palettePath}
+          composer={() => composerOf(palettePath())}
+          onClose={closePalette}
+        />
+      </Show>
+      <Show when={shortcutsOpen()}>
+        <ShortcutSheet onClose={() => setShortcutsOpen(false)} />
+      </Show>
       <GlobalRegions />
-    </>
+    </ExtensionsContext.Provider>
   );
 }

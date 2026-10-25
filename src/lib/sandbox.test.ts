@@ -58,3 +58,12 @@ test("Off asked of an older host (no state in its answer) toasts that it has non
   assert.equal(sandboxOffMissing("off", info(false, "none", "s", "off")), null);
   assert.equal(sandboxOffMissing("subagents", info(false, "none", "s")), null);
 });
+
+test("turning on reads as Turning on…, a warning and never the Unavailable error look", () => {
+  const starting = sandboxBadge({ ...info(true, "unavailable", "Sandbox turning on…", "on"), starting: true })!;
+  assert.deepEqual(starting, { icon: "shield-on", tone: "warn", word: "Turning on…", label: "Sandbox turning on…" });
+  // Positive control: the same enforcement without the flag is the error look.
+  const broken = sandboxBadge(info(true, "unavailable", "s", "on"))!;
+  assert.equal(broken.tone, "error");
+  assert.equal(broken.word, "Unavailable");
+});

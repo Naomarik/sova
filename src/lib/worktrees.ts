@@ -73,6 +73,15 @@ export function readinessChip(w: Pick<SessionWorktreeInfo, "readiness">): Worktr
   const r = w.readiness;
   if (!r || r.state === "merged") return null;
   const why = r.why ? `${r.why[0]!.toUpperCase()}${r.why.slice(1)}.` : "";
+  // Finished at its head (§chat.worktrees/ready-to-land): said in place of Ready to merge / Waiting for your OK.
+  const l = r.landing;
+  if (l?.state === "ready") return { label: "Ready to land", tone: "success", title: `The work is finished and committed at ${l.commit.slice(0, 7)}. ${why}`.trim() };
+  if (l?.state === "specs")
+    return {
+      label: "Landing specs",
+      tone: l.specsWhy ? "warn" : "info",
+      title: l.specsWhy ? `Its specs can't land: ${l.specsWhy}` : `Finished; its spec drafts are being made official on the branch: ${(l.drafts ?? []).join(", ")}.`,
+    };
   switch (r.state) {
     case "ready":
       return { label: "Ready to merge", tone: "success", title: why || "Nothing stands in the way of a merge." };
@@ -95,10 +104,23 @@ export function readinessChip(w: Pick<SessionWorktreeInfo, "readiness">): Worktr
     state and why. None with neither: the chip alone already says the state. */
 export function readinessReason(w: Pick<SessionWorktreeInfo, "readiness">): string | null {
   const r = w.readiness;
+  const l = r?.landing;
+  if (l?.state === "ready") return r!.reason ? r!.reason.replace(/^(?:Ready to merge|Waiting for your OK)\b/, "Ready to land") : "Ready to land";
+  if (l?.state === "specs") {
+    const n = l.drafts?.length ?? 0;
+    return ["Landing specs", `${n} draft${n === 1 ? "" : "s"}`, ...(l.specsWhy ? [`can't land them: ${l.specsWhy}`] : [])].join(" · ");
+  }
   if (r?.reason) return r.reason;
   if (!r?.why) return null;
   const label = r.state === "merged" ? "Merged" : readinessChip(w)!.label;
   return `${label} · ${r.why}`;
+}
+
+/** A row offers Review Changes (§chat.changes/entry): an active worktree whose folder is there,
+    unless its readiness says the branch has no commit of its own (the fact behind "no commits
+    yet"). Commits that cancel out keep it; until readiness is read it shows. */
+export function canReviewChanges(w: Pick<SessionWorktreeInfo, "status" | "exists" | "readiness">): boolean {
+  return w.status === "active" && w.exists && !w.readiness?.noCommits;
 }
 
 /** The Session tab's line for a branch that tracks none: the section stays, and says so. */

@@ -98,6 +98,10 @@ const share = async (path: string, ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0
   const res = await fetch(base + path, { headers: { "user-agent": ua } });
   return { status: res.status, text: await res.text() };
 };
+const shareReq = async (method: string, path: string) => {
+  const res = await fetch(base + path, { method, headers: { "content-type": "application/json" }, body: method === "GET" ? undefined : "{}" });
+  return { status: res.status, text: await res.text() };
+};
 const tokenOf = (link: string) => link.slice(link.indexOf("/i/") + 3);
 
 describe("the share listener's /i/ (§app.owner-page/link)", () => {
@@ -140,9 +144,15 @@ describe("the share listener's /i/ (§app.owner-page/link)", () => {
     const none = await call<{ error: string }>("GET", `/api/orgs/${org.id}/owner/link`);
     assert.deepEqual([none.status, none.body.error], [400, "Pick an owner first."]);
     await call("PUT", `/api/orgs/${org.id}/owner`, { personId: alp.id });
-    const { token: old } = plinks.mintOwnerLink(org.id, alp.id, Date.now() - 91 * 86_400_000);
+    const { token: old } = plinks.mintOwnerLink(org.id, alp.id, Date.now() - 8 * 86_400_000);
     const expired = await share(`/api/i/${old}`);
-    assert.deepEqual([expired.status, JSON.parse(expired.text)], [410, { error: "This link has expired.", code: "gone", why: "expired" }]);
+    assert.deepEqual([expired.status, JSON.parse(expired.text)], [410, { error: "This link turned off after a week without use.", code: "gone", why: "expired" }]);
+    // Ask for a new link: once; the dead answer then says it was asked; a live link has nothing to ask.
+    const ask = await shareReq("POST", `/i/${old}/ask-link`);
+    assert.equal(ask.status, 202);
+    assert.equal(JSON.parse((await share(`/api/i/${old}`)).text).asked, true);
+    assert.equal((await shareReq("POST", `/i/${"B".repeat(43)}/ask-link`)).status, 404);
+    assert.equal((await shareReq("POST", `/i/${token}/ask-link`)).status, 410, "a turned-off link asks nothing");
     const unknown = await share(`/api/i/${"B".repeat(43)}`);
     assert.deepEqual([unknown.status, JSON.parse(unknown.text)], [404, { error: "This link doesn't open anything.", code: "not-found" }]);
     for (const t of [off.text, expired.text, unknown.text]) assert.ok(!t.includes("Gate") && !t.includes("Alperen"));

@@ -110,7 +110,7 @@ const fakeDeps: Record<string, unknown> = {
     const [, node, path] = m as unknown as [string, string, string];
     if (path === "/api/peer/hello") return helloReply(node);
     // The routed host asks with ?kinds=1 (GatewayInfo.kinds); the fake answers either.
-    if (path === "/api/peer/share-gateway/info" || path === "/api/peer/share-gateway/info?kinds=1" || path === "/api/peer/share-gateway/info?kinds=1&preview=1") return infoReply(node);
+    if (path === "/api/peer/share-gateway/info" || path === "/api/peer/share-gateway/info?kinds=1" || path === "/api/peer/share-gateway/info?kinds=1&preview=1" || path === "/api/peer/share-gateway/info?kinds=1&preview=1&proto=1") return infoReply(node);
     if (path === "/api/peer/share-gateway/links" && init?.method === "PUT") return pushReply(node, JSON.parse(String(init.body)));
     return null;
   },

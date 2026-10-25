@@ -4,7 +4,8 @@
    §app.organizations/portability's pause). The spike's project statechart, split from the portable
    project and made exact:
 
-   - attach ‹live · paused›: an attach on this host pauses it; any level set here resumes it.
+   - attach ‹live · paused›: an attach on this host pauses it (the attach brake: every power acts as Off);
+     Resume here (`operator/powers-set {resume: true}`) resumes it.
    - shelf ‹on-shelf · archived-fact›, exists ‹no-overseer · has-overseer›: facts from the watched
      project (`link/moved`).
    - switch ‹watch-on · watch-off›: the Watch setting.
@@ -18,8 +19,9 @@
    filter drops a reason only when the overseer made it while it runs (C2); reasons dedupe by typed
    key (C3); a held message allowance is released at the refusal (C12).
 
-   Facts the host sets (`facts/changed`): `ceiling` (`{:autonomy :reason}` or nil: a cap whoever places
-   the project contributes; none for a project nobody places) and `look-hint` (text a look adds after
+   Facts the host sets (`facts/changed`): `ceiling` (`{:reason}` or nil: the empty-roster brake whoever places
+   the project contributes; none for a project nobody places; Resume lifts it while the settings say
+   `empty-roster-resumed`) and `look-hint` (text a look adds after
    its re-read line; nil for none).
 
    Start data: `{:project-id :paused? :settings? :tick-origin? :tick-ms?}`."
@@ -31,10 +33,11 @@
     [sova.statecharts.base :as b]
     [sova.statecharts.reasons :as rs]
     [sova.statecharts.rules.levels :as lv]
+    [sova.statecharts.rules.powers :as pw]
     [sova.statecharts.rules.refusal :as r]
     [sova.statecharts.engine.dsl :as dsl]))
 
-(def version 1)
+(def version 2)
 
 (def watch-prefix "[project watch]")
 (def cut-off-detail "The server restarted during the run.")
@@ -44,7 +47,7 @@
 (def look-text-max 20)
 
 (def default-settings
-  {:autonomy "L1" :watch true :watch-gap-min 10 :soon-look-sec 60 :hold-min 10
+  {:powers {:overseer (pw/carry-over "L1") :assistant pw/all-off} :watch true :watch-gap-min 10 :soon-look-sec 60 :hold-min 10
    :caps {:gather-per-turn 3 :promote-per-turn 20 :create-per-turn 2 :prompts-per-turn 5
           :gather-per-day 6 :promote-per-day 60 :create-per-day 4 :prompts-per-day 12
           :unattended-per-day 12 :gatherings-open 5 :coding-running 2}})
@@ -63,19 +66,34 @@
         k    (if (= ledger "message") per-turn-key per-day-key)]
     (into {} (for [kind kinds] [(keyword kind) {:used (get-in data [:ledgers (keyword ledger) (keyword kind)] 0) :max (get caps (k kind))}]))))
 
-(defn effective [data]
-  (lv/effective-autonomy {:autonomy (:autonomy (settings data)) :paused (:paused data) :ceiling (:ceiling data)}))
+(defn brake
+  "The brake in force: the attach pause, then the empty-roster ceiling unless Resume lifted it."
+  [data]
+  (pw/brake {:paused (:paused data) :ceiling (when-not (true? (:empty-roster-resumed (settings data))) (:ceiling data))}))
+
+(defn powers-in-force
+  "The overseer column after the brake (every power Off under one)."
+  [data]
+  (if (brake data) pw/all-off (get-in (settings data) [:powers :overseer])))
+
+(defn powers-words
+  "What it may do on its own now, in the look text: the On powers' labels, or why nothing (a brake)."
+  [data]
+  (if-let [b (brake data)]
+    (str "nothing on its own: " (:reason b))
+    (let [on (filter #(pw/on? (powers-in-force data) %) pw/powers)]
+      (if (seq on) (str/join "; " (map #(:label (pw/info %)) on)) "nothing on its own: every power is Off"))))
 
 (defn watch-text
-  "watchText(reasons, autonomy, hint): the last 20 reasons; the look hint (when set) after \"Re-read the
-   project\"."
-  [reasons autonomy hint]
+  "watchText(reasons, powers, hint): the last 20 reasons; the look hint (when set) after \"Re-read the
+   project\"; what it may do on its own."
+  [reasons powers hint]
   (let [lst (if (seq reasons)
               (str/join "\n" (map #(str "- " %) (take-last look-text-max reasons)))
               "- (the operator asked for a look)")]
     (str watch-prefix " Since your last look:\n" lst "\n\n"
       "Re-read the project (sova_project). " (when-not (str/blank? hint) (str (str/trim hint) " "))
-      "Then act within your autonomy (" autonomy "): the tools tell you when something needs a higher level. Keep your reply to a few lines for the operator.")))
+      "Then act within what you may do on your own (" powers "): the tools tell you when a power is off. Keep your reply to a few lines for the operator.")))
 
 ;; ---- reasons -------------------------------------------------------------------------------------
 
@@ -258,8 +276,13 @@
         (when (and (contains? ca :unattended-per-day) (raised? (:unattended-per-day cb) (:unattended-per-day ca))) [["looks" "looks"]])))))
 
 (defn settings-ops [data]
-  (let [before (settings data)
-        after  (merge-with #(if (map? %1) (merge %1 %2) %2) before (:settings (b/evt data)))
+  (let [before   (settings data)
+        incoming (:settings (b/evt data))
+        after    (merge-with #(if (map? %1) (merge %1 %2) %2) before incoming)
+        ;; a level with no powers (an older host, a trace from before switches): the overseer column is its carry-over
+        after    (if (and (some? (:autonomy incoming)) (not (contains? incoming :powers)))
+                   (assoc-in after [:powers :overseer] (pw/carry-over (name (:autonomy incoming))))
+                   after)
         ks     (raised-keys before after)
         freed  (filter #(contains? ks (:key %)) (:held data))]
     [(ops/assign :settings after)
@@ -270,11 +293,11 @@
 (defn ms-to-midnight [_ data] (let [now (b/now-ms data)] (max 0 (- (b/next-midnight now) now))))
 
 (defn ledger-ops
-  "`ledger/take {kind n ledger by}`: the overseer's (or the statechart's own) act counted on its ledger;
-   the operator's clicks count nothing."
+  "`ledger/take {kind n ledger by}`: the overseer's, the statechart's own or the Project Assistant's act
+   counted on its ledger; the operator's clicks count nothing."
   [data]
   (let [{:keys [kind n ledger by]} (b/evt data)]
-    (when (contains? #{"overseer" "statechart"} (some-> by name))
+    (when (contains? #{"overseer" "statechart" "assistant"} (some-> by name))
       [(ops/assign [:ledgers (keyword ledger) (keyword kind)] (+ (get-in data [:ledgers (keyword ledger) (keyword kind)] 0) (or n 1)))])))
 
 (defn project-moved? [_ d] (= "project" (:statechart (b/moved d))))
@@ -297,10 +320,17 @@
                                     (ops/assign :has-overseer (b/moved-in? d :has-overseer))
                                     (ops/assign :project-name (get-in m [:exported :name]))]))}))
       (transition {:sova/feed :feed :event :org/attached-here} (script {:expr (fn [_ _] [(ops/assign :paused true)])}))
+      ;; Resume (and the switches set with it): `resume` ends the attach pause.
+      (transition {:sova/feed :feed :event :operator/powers-set}
+        (script {:expr (fn [_ d] (let [e (b/evt d)]
+                                   (cond-> []
+                                     (true? (:resume e)) (conj (ops/assign :paused false))
+                                     (map? (:powers e)) (conj (ops/assign :settings (assoc (:settings d) :powers (merge (:powers (settings d)) (:powers e))))))))}))
+      ;; A level set before switches (an old trace, an older host): Resume, with the overseer column its carry-over.
       (transition {:sova/feed :feed :event :operator/level-set}
-        (script {:expr (fn [_ d] [(ops/assign :paused false)
-                                  ;; `resume-at`, never `autonomy`: the envelope's autonomy is the level in force (paused: L0)
-                                  (ops/assign :settings (assoc (:settings d) :autonomy (or (:resume-at (b/evt d)) (:autonomy (settings d)))))])}))
+        (script {:expr (fn [_ d] (let [l (:resume-at (b/evt d))]
+                                   (cond-> [(ops/assign :paused false)]
+                                     l (conj (ops/assign :settings (assoc-in (assoc (:settings d) :powers (:powers (settings d))) [:powers :overseer] (pw/carry-over l)))))))}))
       (transition {:sova/feed :quiet :event :settings/changed}
         (script {:expr (fn [_ d] (settings-ops d))})
         (raise-released))
@@ -378,10 +408,10 @@
             (on-entry {} (script {:expr (fn [_ d] (conj (start-run-ops d) (ops/assign :loop-running true)))}))
             (on-exit {} (script {:expr (fn [_ _] [(ops/assign :loop-running false)])}))
             (invoke {:id :look :type :sova/look
-                     :params (fn [_ d] (let [eff (effective d)]
-                                         {:reasons (texts (:run-reasons d)) :autonomy (:autonomy eff)
-                                          :text (watch-text (texts (:run-reasons d)) (:autonomy eff) (:look-hint d))
-                                          :project-id (:project-id d)}))})
+                     :params (fn [_ d] {:reasons (texts (:run-reasons d))
+                                        :powers (powers-in-force d)
+                                        :text (watch-text (texts (:run-reasons d)) (powers-words d) (:look-hint d))
+                                        :project-id (:project-id d)})})
             (transition {:sova/feed :quiet :event :look/finished :cond (fn [_ d] (empty? (:reasons d))) :target :quiet}
               (script {:expr (fn [_ d] (end-run-ops d "finished" nil))}))
             (transition {:sova/feed :quiet :event :look/finished :target :waiting}
@@ -404,15 +434,25 @@
               (raise-released))))))))
 
 (def acts
-  {:operator/run-now   {:needs nil}
-   :operator/level-set {:needs nil}})
+  {:operator/run-now    {:power nil}
+   :operator/powers-set {:power nil}
+   :operator/level-set  {:power nil}})
+
+(defn migrate-v1
+  "v1 → v2 (al_3): the settings' level becomes the powers: the overseer column its carry-over, the
+   Project Assistant's all Off (the host re-sends overseer.json's own at its next sync)."
+  [s]
+  (update s :data (fn [d] (let [st (:settings d)]
+                            (if (and (map? st) (not (contains? st :powers)))
+                              (assoc d :settings (assoc st :powers {:overseer (pw/carry-over (or (some-> (:autonomy st) name) "L1")) :assistant pw/all-off}))
+                              d)))))
 
 (defn not-here [_ _ _] "That can't be done now.")
 
 (def entry
   {:statechart    statechart
    :version  version
-   :migrate  {}
+   :migrate  {1 migrate-v1}
    :storage  :host-local
    :exported [:paused :ceiling :look-hint :archived :looks-today :last-run :held :reasons :ledgers :settings]
    :acts     acts

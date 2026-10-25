@@ -77,6 +77,8 @@ Wrap every fenced block like this, except a `vis <kind>` fence, which is a drawi
 </div>
 ```
 
+- **Rendered.** A closed `markdown` or `md` block's head also carries a Rendered/Source toggle,
+  before Copy Code (§chat.markdown/view-rendered); no other block has it.
 - **Language label.** The first word of the fence's info string, lowercased, and shown in
   uppercase eyebrow type. No info string means "text".
 - **Highlighting.**
@@ -104,6 +106,27 @@ Wrap every fenced block like this, except a `vis <kind>` fence, which is a drawi
   - On failure the label becomes "Couldn't copy" for 1.5s.
 - **Block tokens.** `--color-sunken` ground, a 1px `--color-border` edge, `--r-sm` (monospace
   corners), and code in `--color-ink`. The head is `--control-sm` tall with a 1px rule under it.
+
+## §chat.markdown/view-rendered — Rendered on a markdown block
+
+A closed code block whose fence word is `markdown` or `md` (any case) carries a toggle in its head,
+before Copy Code, that switches the block between its source and the markdown it describes, in
+place, the way a `vis` drawing's Source toggle does (§chat.markdown/visuals). It is
+`.button-sm.button-ghost` with `aria-pressed`: it reads **Rendered** with the `eye` icon while the
+source shows, and **Source** with the `terminal` icon while the rendered markdown shows. A block
+opens on its source.
+
+- **Rendered** replaces the block's `pre` with the block's raw source drawn by this same renderer
+  (tables, headings, lists, links, images by §chat.markdown/images-in-markdown, code blocks with
+  their own Copy Code, `vis` drawings), inside the block's frame, under its head, with no second
+  bubble. Nothing opens over the page.
+- Copy Code copies the raw source whichever side shows. A button inside the rendered side acts on
+  its own block, never on the block around it.
+- The choice belongs to that block while it stays on screen; a block that is drawn again (its
+  message re-renders it, the page reloads) opens on its source.
+- Every other fence word, a `vis` fence's source fallback and an indented code block get no toggle.
+- A fence still open mid-stream has no toggle: half a document is never rendered. It appears when
+  the fence closes.
 
 ## §chat.markdown/highlight-theme — Highlight theme (dark and light, tokens only)
 
@@ -164,7 +187,7 @@ A fenced block whose info string is `vis <kind>` is a **drawing**, not code. Sov
 own Solid/SVG code (`src/vis/`): no diagram or chart dependency, and **model HTML or SVG never
 enters the app's DOM**. Assistant-text rows only (§chat/markdown's scope), and the replies on share
 and owner pages, which draw `chart`, `flow`, `matrix`, `timeline`, `tree`, `steps`, `wireframe`,
-`layers`, `state` and `sequence`, an `svg` as a static image, and an `html` in a frame only when the
+`layers`, `state` and `sequence`, an `svg` as a still image in the same figure, and an `html` in a frame only when the
 session allows it, with no Source or Copy, and show one quiet line instead of any other kind's or a
 broken block's source (§app.baton/outsider-view).
 
@@ -172,15 +195,15 @@ broken block's source (§app.baton/outsider-view).
 
   | Fence | Draws | `mark` targets |
   |---|---|---|
-  | `vis flow` | boxes and arrows, laid out by rank; frames around some nodes (§chat.markdown/vis-flow-groups) | node id or label |
-  | `vis state` | a state machine (flow's layout, round nodes, `start`/`end` dots; frames as in flow) | state id |
+  | `vis flow` | boxes and arrows, laid out by rank, questions as hexagons, no text cut (§chat.markdown/vis-flow-text); frames around some nodes (§chat.markdown/vis-flow-groups); tap a shape to follow it (§chat.markdown/vis-flow-focus) | node id or label |
+  | `vis state` | a state machine (flow's layout, round nodes, `start`/`end` dots; text, frames and tapping as in flow) | state id |
   | `vis sequence` | actors, lifelines and numbered messages, with step-through | actor id or label, message number or exact label |
   | `vis layers` | a stack of labelled layers | layer label |
   | `vis tree` | an indented hierarchy | item name |
   | `vis flow` sections | side-by-side panels (§chat.markdown/vis-flow-sections) | node id or label |
   | `vis chart` | bar (grouped via `series:`, stacked), line, scatter; linear or log axis; parts (§chat.markdown/vis-parts) | row label |
   | `vis timeline` | dated events in order | the row's date or label |
-  | `vis steps` | scenario chains with a status per row (§chat.markdown/vis-steps) | row label |
+  | `vis steps` | scenario chains with a status per row; up to 4 rows stand side by side, equal steps merged (§chat.markdown/vis-steps) | row label, or a step's text (every row with it) |
   | `vis wireframe` | low-fi screens: phone or desktop frames, wireflow arrows between screens (§chat.markdown/vis-wireframe) | a block's first text, a screen name or a block word |
   | `vis matrix` | a comparison grid (yes / no / partial / text cells, a text cell optionally toned: §chat.markdown/vis-matrix-tones) | row label or column label |
   | `vis code` | an annotated snippet: highlighted, numbered, marked lines with notes | line number or range |
@@ -215,7 +238,8 @@ broken block's source (§app.baton/outsider-view).
   cells carry an icon and a visually hidden word, flow frames carry a title.
 - **Step-through** (sequence). The drawing starts complete; nothing plays by itself.
   **Step Through** starts at the first item; Previous / Next walk it ("Step 3 of 8", "3/8" at phone
-  width, announced politely); later items are dimmed; **Show All** ends the walk.
+  width, announced politely); later items are dimmed; **Show All** ends the walk. A flow or state
+  drawing instead lets the reader pick one shape and follow its arrows (§chat.markdown/vis-flow-focus).
 - **Warnings (soft).** Where the intent is plain, a block draws instead of falling back: any one
   text (a label, a note, a `title:`, a `caption:`) over 200 characters is cut to 200, ending in "…"
   (the whole text stays in Source), and the marks above are dropped. The figure then draws with,
@@ -233,7 +257,8 @@ broken block's source (§app.baton/outsider-view).
   for a hard error. Only a hard error is a block that failed.
 - **Feedback to the model** (`server/vis-check.ts`). The model learns of a block that didn't draw
   through a hidden retry note, not through the reader's error line. In a chat Sova hosts (not the
-  Overseer's, a baton session's or a project overseer's) with the vis minor mode on, when a run is
+  Overseer's, a baton session's or a project overseer's) with the vis minor mode on, and in the
+  Project Assistant's chat always (§app.project-assistant/drawings), when a run is
   about to settle, Sova parses every `vis` fence in that run's assistant text with the same
   `parseVis`, finding fences as the reader's view does (per text block). If any block has a hard
   error, Sova adds one hidden note (a `sova-vis-retry` custom message, `display: false`: never in
@@ -244,10 +269,11 @@ broken block's source (§app.baton/outsider-view).
   above the fix. No retry when the run was stopped or failed, when a message is queued behind it
   (that message goes first), when the session's file is held by another writer, or when vis is
   off. A block that draws with warnings never triggers one.
+- **Tool-backed Tours.** The vis catalogue also lists `tour` (§app/tours), a recorded explanation of a real interface. It is not a fence kind and is not added to the pure renderer registry. `vis_guide {kind: "tour"}` returns the core of the tour authoring and recording workflow and points to `record_tour` and `show_tour`, not the shared drawing-fence grammar; `vis_guide` also takes the four parts that core names (`tour-signin`, `tour-sites`, `tour-sova`, `tour-sharing`) and returns each alone (§app.tours/authoring). The parts are no catalogue kind: the prompt's kind list is unchanged, and only the `tour` line names them. In ordinary chats, recording and showing require vis on; align's Visuals alone grants neither tour tool, even though the existing guide/check tools retain that availability. Scoped hand-off tour presentation is baseline conversation context. Opening a message never records a tour.
 - **`vis_guide`.** While vis is on, the model has a `vis_guide {kind}` tool. It returns the guide's
   shared rules (one statement per line, ids and quoting, tones, the strict parser, the "Not vis"
   pairs, the `mark` syntax) followed by that kind's file (its syntax, examples and `mark` targets);
-  `html` and `svg` return the same free-form file. `kind` is one of the kinds the prompt lists; a
+  `html` and `svg` return the same free-form file. `kind` is one of the kinds the prompt lists, or a tour part; a
   stub or unknown kind is refused. It runs in Sova's process, never on a remote target, so it
   answers in every session the mode reaches (`mcp__sova__vis_guide` on the claude-code provider).
   It enters and leaves the loadout where `vis_check` does (at a session's start, when a prompt starts
@@ -271,8 +297,10 @@ broken block's source (§app.baton/outsider-view).
   A drawing is never the scroll anchor, so one growing above the reader leaves their text in place.
 - **Size and phones.** SVG kinds draw at their natural size, shrink to 80 % to fit the pane, then
   scroll sideways inside a focusable region; the pane never widens (390 px included). Kinds that
-  can re-lay out do so first (flow turns `dir: right` downwards; bars turn horizontal when labels
-  can't fit). At a container width ≤ 420 px the head's buttons are icon-only.
+  can re-lay out do so first (flow turns `dir: right` downwards, then tightens its spacing, and
+  re-laying out never cuts its text: §chat.markdown/vis-flow-text; bars turn horizontal when labels
+  can't fit). A flow or state drawing's focusable region is its figure's one Tab stop, where the
+  arrow keys move between shapes and scroll them into view (§chat.markdown/vis-flow-focus). At a container width ≤ 420 px the head's buttons are icon-only.
 - **Tokens and theme.** Tokens only (`src/design/tokens.css`), through three tone variables
   (`--vis-fill`, `--vis-stroke`, `--vis-ink`) for `accent ok warn error info muted`. SVG is styled
   by classes, so a theme switch needs no re-render.
@@ -303,12 +331,12 @@ broken block's source (§app.baton/outsider-view).
   draw (at most 1–2 per reply, small, captioned, next to prose that says what to notice), that
   every kind has its own syntax, never guessed from another, so the first fence of each kind in the
   conversation follows a `vis_guide` call for it, never to nest a `vis` fence in another fence, and
-  one line per kind saying what it draws (`vis/overview.md`, about 1.6K characters). The shared rules (with
+  one line per kind saying what it draws (`vis/overview.md`, about 1.9K characters). The shared rules (with
   the 200-character text limit and the one-line caption) and each kind's syntax reach the model
   only through `vis_guide`, so a reply that draws nothing carries no grammar. A kind flagged `stub`
   in the registry is never taught: its line is dropped from the list and `vis_guide` refuses it.
-  The guide's files match the registry (one per kind, `html` and `svg` sharing one; a stub file
-  exactly for a stub kind; the list names exactly the kinds that aren't stubs), its examples draw
+  The fence guide's files match the renderer registry (one per fence kind, `html` and `svg` sharing one; a stub file
+  exactly for a stub kind; the fence list names exactly the kinds that aren't stubs). The separate tool-backed `tour` catalogue entry has its own workflow guide and no fence renderer. The drawing examples draw
   without warnings, and the flow and state examples are checked for what they mean, not only that
   they parse (`guide.test.ts`).
 - **No regression.** A block that drew before soft warnings, inline flow labels
@@ -408,12 +436,67 @@ called `group` or `frame` in a chain still parses as before.
 - **Look.** A frame is a rounded, dashed `--color-border-strong` rectangle with a `--color-sunken`
   fill, drawn under edges and nodes. Its title sits inside at the top (caption size, semibold),
   drawn over the edges with a halo in the frame's fill, so it stays legible where an edge enters.
-  In `dir: right` the title is cut to the frame's width with an ellipsis, the whole label as a
-  tooltip. Share and owner pages draw a flow's frames the same way; the phone re-lays out as any
-  flow does.
+  The title is never cut: it wraps to as many lines as it needs, and the strip above the members
+  grows to hold them. In `dir: right` it wraps at the frame's width; downwards at the wider of a
+  shape's text width and the room the frame's members take side by side, so a long title never
+  widens its frame past that and a phone still fits the drawing. Share and
+  owner pages draw a flow's frames the same way; the phone re-lays out as any flow does.
 - **No regression.** A fence without group lines parses and lays out exactly as before, and a
   chain line that uses the word as an id (`frame -> x`) is a chain, not a group.
 - **The guide** teaches it in one line under flow, and its main flow example draws one group.
+
+## §chat.markdown/vis-flow-text — `vis flow` text: questions as hexagons, nothing cut
+
+In a `vis flow` or `vis state` drawing every word the fence wrote is on the drawing.
+
+- **Questions are wide hexagons.** A `decision` node draws as a hexagon with a flat top and bottom
+  and pointed sides. It wraps its whole text at the width an ordinary box wraps at, so it is about
+  as wide as one, and its text sits inside the flat part. Every decision in every flow and state
+  drawing has this shape; the fence word stays `decision` and the guide is unchanged.
+- **Nothing is cut.** Shape text, a shape's note, an arrow's label (a self-loop's too) and a
+  frame's title (§chat.markdown/vis-flow-groups) wrap to as many lines as they need and never end
+  in "…", at natural size and at every re-fitted spacing for a narrow pane. The 200-character
+  limit per text (§chat.markdown/visuals, Warnings) is what keeps a shape from growing without end.
+- **Arrows meet the outline.** An arrow into or out of a hexagon touches its outline: its flat top
+  or bottom in a downward flow, its pointed side in a `dir: right` one.
+- **No hover text.** A shape carries no tooltip; its whole text is already drawn, and it is the
+  shape's accessible name (§chat.markdown/vis-flow-focus).
+- **No regression.** A flow with no decision and no text the old limits cut lays out exactly as
+  before (`layout-master.json`); only fences with a decision, or with text that was cut, change.
+
+## §chat.markdown/vis-flow-focus — `vis flow` focus: tap a shape to follow it
+
+In a `vis flow` or `vis state` drawing, tapping (or clicking) a shape **picks** it; nothing
+happens on hover.
+
+- **What lights up.** The picked shape gets an accent ring outside its outline and a heavier
+  outline. Its direct neighbours (one arrow away, in either direction) and the arrows between them
+  and it stay at full strength, those arrows darker and thicker in ink, never accent; every other
+  shape, arrow and arrow label fades. A self-loop adds no neighbour. A mark on a shape stays
+  visible underneath. Tapping the picked shape again clears the pick; tapping another moves it.
+  One shape is picked per figure: in a figure with panels (§chat.markdown/vis-flow-sections),
+  picking in one panel clears the other's.
+- **The reading panel.** While a shape is picked, a panel opens under the drawing (under the panel
+  that holds it, in a figure with panels), above the figure's numbered notes and caption. It shows
+  the shape's kind (Question, Start, Step, Outcome; in a state machine Start, State, End), its whole
+  text, its mark note with the note's number if it has one, a **From** row with one button per
+  shape an arrow comes from, and a **Leads to** row with one per shape an arrow goes to, an arrow's
+  label on its button ("yes → Project's login"). A row with no shapes is left out. Pressing a
+  button moves the pick to that shape. The panel closes when the pick clears. It is never part of
+  the height a drawing reserves (§chat.markdown/visuals, No layout shift): it opens only when the
+  reader asks.
+- **Keyboard and screen readers.** Each figure is one Tab stop, a panelled one included. While it
+  has focus the arrow keys move a focus ring from shape to shape in that direction (into the next
+  or previous panel at a panel's edge) and scroll the shape into view, Home and End go to the first
+  and last; Enter or Space picks the shape under the ring (or clears it if it is the picked one);
+  Escape clears the pick and, only when there was one, goes no further, so it closes nothing else
+  on the screen. Each shape is a button named by its kind and whole text, pressed while picked;
+  the panel is announced politely when it changes. Start and end dots take a tap area of at least
+  32px.
+- **Where.** The same in chat replies, on alignment cards (§chat.alignment/visuals), and on share
+  and owner pages (§app.baton/outsider-view). A sideways swipe of a drawing that scrolls is not a
+  tap. The docs site's examples are still pictures: their shapes are not buttons and do nothing
+  (§site.docs/vis-examples).
 
 ## §chat.markdown/vis-lenience — `vis` lines models get wrong: one reading, or a did-you-mean
 
@@ -654,8 +737,8 @@ is dropped, so no warning); where it has two, the error stands. Each rule below 
   stands.
 - **A tone on a row of several series** (`"/checkout" 80 2400 warn`) marks that row in that tone,
   as `mark "/checkout" warn` does, after the fence's own marks (none of which it displaces).
-- **Marks naming part of an item.** In `vis steps`, a target that names no row but a step of
-  exactly one row (`mark "Verify email"`) marks that row. In `vis layers`, a target that names no
+- **Marks naming part of an item.** In `vis steps`, a target that names no row but a step
+  (`mark "Verify email"`) marks every row with that step, written out the same or through `^`. In `vis layers`, a target that names no
   layer but an item of exactly one layer (`mark Redis`, `mark TLS 1.3`) marks that layer, and a
   number names the one layer whose label starts with that number (`mark 4` over `4 Transport | TCP,
   UDP`). In `vis tree`, a target that names no item names the one item whose name is the target with
@@ -724,13 +807,19 @@ is dropped, so no warning); where it has two, the error stands. Each rule below 
 - **Tree, an extension after the quotes.** In `vis tree`, a `.` then letters, digits, `_ . -` glued
   right after a quoted name are part of it, on item and mark lines: `"Nav Bar".tsx` is `Nav Bar.tsx`.
 - **Changes of meaning.** These lines drew before, wrongly: a `vis steps` row ending `| <tone>`
-  (with no tone after its label) takes that tone, where it drew a step "done | ok"; a steps chain
+  (with no tone after its label) takes that tone, where it drew a step "done | ok"; in `vis steps`,
+  a tone word after a quoted step that is not the last, or after the last step of a row whose label
+  has a tone, tones that step, where it drew the step as written (`"token expired" error`, quotes and
+  all); a step that is only `^` or `_` is the step above or an empty position (§chat.markdown/vis-steps),
+  where it drew a chip `^` or `_`; and a row's text after a second `|` that is not a lone tone word is
+  its outcome, where it drew as part of the last step ("b | 3 tries"); a steps chain
   joined by a wide arrow (`→`, `=>`, …) is that many steps, where it drew one chip; a labelled start
   or end dot is drawn as above, where the label was never shown; a row with a `|` inside a
   quoted field, split there before; a timeline label ending in a tone word or a quoted string,
   drawn as written before; a wireframe block's `right`, ignored before; and a `spacer` among a
   wireframe row's blocks, a divider before. These drew before with a warning that part of them was dropped,
-  and now draw it: a decision's branch string (the node's second label), a mark naming a step, a
+  and now draw it: a decision's branch string (the node's second label), a mark naming a step (in
+  `vis steps`, one that several rows share included), a
   layer's item or number or a tree item without its slash, a mark on a line inside a range, a
   timeline mark without its row's `(…)`, a wireframe block written after another's texts, a
   wireframe chart's type word, a wireframe block's `grow`, `end`, `trailing`, `fill`, `expand`,
@@ -756,28 +845,66 @@ A matrix text cell may end in a tone word (`accent ok warn error info muted`): `
 
 ## §chat.markdown/vis-steps — `vis steps`: scenario chains
 
-A kind for scenarios or journeys as chains, each with a status. HTML, `src/vis/kinds/steps/`.
+A kind for scenarios or journeys as chains, each with a status, drawn so the paths compare step by
+step. HTML, `src/vis/kinds/steps/`.
 
-- **Syntax.** One row per line: `"Label" [tone] | step -> step -> …`. The label is a "quoted label"
-  or bare words (a label mixing the two, such as `'"all"'`, is kept as written, quotes and all); a
-  step is a "quoted label" or bare words (one of each is kept as written, as a label is), and steps
-  join with `->` (or a wide arrow, `→` `=>` …: §chat.markdown/vis-lenience-content). A row whose
-  label has no tone may end `| <tone>` instead, or a tone word after its last quoted step.
+- **Syntax.** One row per line: `"Label" [tone] | step -> step -> … [| outcome]`. The label is a
+  "quoted label" or bare words (a label mixing the two, such as `'"all"'`, is kept as written, quotes
+  and all); a step is a "quoted label" or bare words (one of each is kept as written, as a label is),
+  and steps join with `->` (or a wide arrow, `→` `=>` …: §chat.markdown/vis-lenience-content).
   `== lane ==` lines group the rows under a heading. No ids. `mark` a row by its label (or by a
-  step no other row has: §chat.markdown/vis-lenience-content).
-- **Row.** A status mark, then the label (semibold), then the steps as chips (sunken, 1px border)
-  each after the first led by an arrow; the chips wrap with the pane, an arrow staying with the
-  chip it leads to. Beside a 144px label column; at a figure width of 420px or less the label sits
-  above its chain. Rows are bordered bands 4px apart; a marked row takes the shared emphasis tint
-  and the note's number before its label.
+  step's text: §chat.markdown/vis-lenience-content). Four additions are optional:
+  - **Step tone.** A tone word after a quoted step tones that step: `"token expired" error`. On the
+    last step of a row with no tone of its own, the tone is also the row's.
+  - **`^`.** A step written `^` is the step at the same position in the row above, in the same lane:
+    its text and its tone, as if written out.
+  - **`_`.** A step written `_` is nothing at that position: the row's later steps keep their
+    positions. It counts toward the 10 steps.
+  - **Outcome.** A second `|` ends the row with its outcome, its result or cost in a few words: a
+    "quoted label" or bare words, then optionally a tone (`| "3 tries"`). A lone tone word there is
+    the row's tone when its label has none (`… -> done | ok`); after a label with a tone, a lone tone
+    word stays part of the last step, as before (`"Pro" warn | a -> b | ok` draws a step "b | ok").
+- **Layout.** One rule picks the layout from the figure's content width, the same in the drawing and
+  in its height estimate:
+  - **Side by side** when the fence has 2 to 4 rows, no lanes, and at least 180px of content width
+    per row. Each row is a bordered column with its status mark and label on top; step N of every
+    row sits on one line. Neighbouring columns whose steps at a position have the same text and tone
+    share one chip spanning them, and an arrow runs into each chip from each chip above it, so where
+    paths split shows. A `_` is a dashed line carrying the column on. The outcomes sit on one line at
+    the bottom, one per column, in their tone. A marked row's column takes the shared emphasis tint
+    and the note's number before its label.
+  - **Aligned grid** otherwise, when the content is wider than 402px: each row a bordered band, its
+    label in a 144px column, then its steps in equal columns (as many as the longest row has, each at
+    least 128px; when they don't fit, fewer per line, the row going on below in the same columns), so
+    step N of every row lines up. Each step after the first is led by an arrow; a `_` is an empty
+    cell. When any row has an outcome, a column at the right holds the outcomes. Lane heads sit
+    between the rows as before.
+  - **Numbered list** at 402px or less: each row's label above its steps, numbered down a rail. A
+    start a row shares with the row above in its lane folds into one line, "Steps 1–2 as in
+    <label>"; a run of `_` folds into one dashed line numbered with its positions ("2–5"); the
+    outcome is the last line.
+  A marked row takes the shared emphasis tint and the note's number in every layout.
+- **Ids in steps.** A word in a step that is an id, a hash or a path is set in mono on its own, so
+  the words around it stay in the body font, and it breaks at its dashes rather than mid-id.
 - **Status.** `ok`, `warn`, `error` and `info` rows show their tone's icon (check, alert, x, info) in
   the tone's colour, so status never rests on hue alone; `accent` a filled dot, `muted` a dotted ring
-  (and a muted label), no tone an empty ring.
+  (and a muted label), no tone an empty ring. A toned step shows its tone's colour and, for those
+  four tones, its icon with the tone named for screen readers; so does a toned outcome.
+- **Accessibility.** Side by side is a table: a column header per row, and a shared chip names the
+  rows it stands for. The grid and the numbered list are lists. An empty position reads "no step
+  here".
 - **Lane heads.** Caption size, semibold, 8px more space above all but the first.
 - **Errors.** A row without `|`, an empty label or step, a step with two quoted labels, an arrow
-  other than `->` (or a wide one), an empty or unlabelled lane, more than 10 steps in
-  a row, 16 rows or 6 lanes.
-- **Height.** Estimated from steps.css' fixed metrics before it draws.
+  other than `->` (or a wide one), an empty or unlabelled lane, more than 10 steps in a row, 16 rows
+  or 6 lanes. And for the additions, each saying what to write instead: a `^` with no row above it in
+  its lane (the first row, or the first under a lane head), a `^` across a lane head, a `^` whose row
+  above has no step at that position or a `_` there, a `^` as an outcome, a row ending in `_`, a row
+  with no step but `_`, an empty outcome, and an outcome holding `->`.
+- **Existing fences.** Every fence that drew before draws the same rows, labels and steps, except
+  the changes of meaning in §chat.markdown/vis-lenience-content; it takes the layout the rule above
+  picks, wherever it is shown.
+- **Height.** Estimated before it draws, for the layout the rule picks at that width, from
+  steps.css' fixed metrics.
 
 ## §chat.markdown/vis-wireframe — `vis wireframe`: low-fi screens and wireflows
 

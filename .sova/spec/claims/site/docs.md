@@ -36,14 +36,15 @@ and the site's fonts and colour tokens.
 
 ## §site.docs/index — Sova docs (`/docs/`)
 
-The front page: what a mode is, a card per major and minor mode, and links to the feature and
-setup pages.
+The front page: what a mode is, a table with a row per major and minor mode (memory among them, a
+project's own modes as one row), and links to the feature and setup pages.
 
 ## §site.docs/modes — Modes (`/docs/modes/`)
 
 The major and minor modes side by side, switching them per chat from the composer's mode menu,
-the default for new sessions, strict, the terminal's commands, what workers get, and the sessions
-that choose their own mode.
+the default for new sessions (memory's type and size with it), strict, a short memory section that
+links to its own page (§site.docs/memory), the terminal's commands, what workers get (spec, and each
+project mode that says so), and the sessions that choose their own mode, and a project's own minor modes (§site.docs/project-modes).
 
 ## §site.docs/delegate — Delegate (`/docs/modes/delegate/`)
 
@@ -52,13 +53,14 @@ teams, watching workers, and workers after a restart.
 
 ## §site.docs/subagent-profiles — Subagent profiles (`/docs/subagent-profiles/`)
 
-What a subagent profile holds, how a chat picks one, editing them in Settings, switching a chat's
-profile after a usage limit, and Off.
+What a subagent profile holds (its alignment override included), how a chat picks one, editing them in Settings, switching a chat's
+profile after a usage limit, and Off. A profile never turns on a project mode.
 
 ## §site.docs/align — Align and alignments (`/docs/modes/align/`)
 
-The align minor mode: what an alignment holds, answering it, the card, chip and session mark,
-Needs you and notifications, and the terminal viewer.
+The align minor mode: what an alignment holds, answering it, Settings → Alignment (writing style,
+Visuals, review), the card, the composer's badge and session mark, Needs you and notifications, and the terminal
+viewer.
 
 ## §site.docs/align-review — Adversarial review (`/docs/modes/align/review/`)
 
@@ -68,10 +70,14 @@ route, when it runs, blockers, and what the card shows.
 ## §site.docs/spec-mode — Spec (`/docs/modes/spec/`)
 
 The spec minor mode: working from the project's spec, the census note and its one unread line before
-finishing, the Agree step when align is on too, drafts and promotion, the spec writer, what workers
-get, and project coding sessions.
+finishing, updating a claim the task didn't create without asking and listing it in the reply's one
+spec line ("Also updates …"), the Agree step when align is on too, drafts and promotion, the spec
+writer, what workers get (and the claims a finished worker's changes landed in), and project coding
+sessions.
 
 ## §site.docs/vis — Vis (`/docs/modes/vis/`)
+
+The page's catalogue includes tool-backed Tours (§app.tours/authoring), distinct from drawing fences: ask in chat, clarify audience and intended understanding, approve sources, dry-run, record desktop and phone, inspect the overview and suspicious captures, and present only a complete checked edition. It explains reviewed expiring edition-pinned links and hand-off availability; ordinary tour tools require vis on, not align's Visuals alone, while hand-off scoped presentation remains baseline context. Opening a message never records.
 
 The vis minor mode: the drawings the agent can put in a reply, where they render, and what is never
 trusted from the model. An Examples section at the end, which the kinds section points to, shows
@@ -86,9 +92,10 @@ rendered to static HTML when the examples are generated (`pnpm run vis-examples`
 a copy of the vis styles scoped to the examples, so the page matches the app, runs no script, and
 follows the site's light/dark toggle through the same tokens. Every example parses with no
 warnings, or the generator fails, and it writes the same bytes on every run. A kind that lays
-out for its pane's width (flow, state, sequence, chart, matrix) is drawn for the docs column and
+out for its pane's width (flow, state, sequence, chart, matrix, steps) is drawn for the docs column and
 for a 320px phone, and the page shows the one that fits its figure's width. Interactive parts
-show their first state and do nothing: a sequence's **Step Through** button is disabled. A `vis
+show their first state and do nothing: a sequence's **Step Through** button is disabled, and a
+flow's or state machine's shapes are not buttons and pick nothing. A `vis
 svg` example is drawn in place, as its frame would show it; a `vis html` example shows only its
 source, with a line saying that in the chat it runs in a sandboxed frame. A changed kind, View or
 style reaches the page only when the generator runs again.
@@ -98,10 +105,21 @@ style reaches the page only when the generator runs again.
 The codemode minor mode: the script tool it adds, what a script can call, the script's card, when a
 switch applies, and where it is available.
 
+## §site.docs/project-modes — Project modes (`/docs/modes/project-modes/`)
+
+Writing a project's own minor mode: the `.sova/minor-modes/<id>/` folder and its `MODE.md`, which
+checkout a chat reads it from, the instructions and reference files, declaring a tool and the
+program it runs, declaring a command (`sova run mode.<id>.<name>`) and a hook (what runs after a
+reply, its event and environment, its bounds), approval and when it is asked again, who approves
+hooks, the copy a chat keeps once a mode is on, what
+workers get, the menu's states, turning one on from a terminal, what makes a folder broken, and
+one worked example of a mode with a tool, a command and a hook.
+
 ## §site.docs/worktrees-and-changes — Worktrees and changes (`/docs/worktrees-and-changes/`)
 
 How a session keeps track of the git worktrees it works in (where workers may start, merging and
-cleaning up), and how you read what changed as numbered steps.
+cleaning up, and the project modes a chat in a worktree reads), and how you read what changed as
+numbered steps.
 
 ## §site.docs/needs-you — Needs you (`/docs/needs-you/`)
 
@@ -113,17 +131,21 @@ and lands it.
 ## §site.docs/overseer — The Overseer (`/docs/overseer/`)
 
 The session that reads every other session and acts on them through Sova: what it is, what it may
-do and when it asks first, its notes, ideas and to-dos, and its settings. Its news of branches
+do (organizations and cross-host links included) and when it asks first, the files it writes only in
+turns you start, its memory switch, its notes, ideas and to-dos, and its settings. Its news of branches
 ready to merge links to the Merge round, which in Sova's own repository picks those up by itself,
-asking each branch's owner first.
+asking each branch's owner first. Turning a project's own mode on for you counts as your approval
+of its tools.
 
 ## §site.docs/playbooks-and-schedules — Playbooks and schedules (`/docs/playbooks-and-schedules/`)
 
 Running a playbook from the composer's Playbooks dialog; a project playbook's schedule: who fires
 it, its triggers (times, intervals, `claude-limit-reset`, `merge-ready`) and their limits, how a
-`merge-ready` fire waits and collects branches, and approving or revoking it. Then the Merge round
+`merge-ready` fire waits and collects branches, and approving or revoking it (in the Playbooks
+dialog, or in the Overseer's Approvals & Schedules). Then the Merge round
 as the worked example: its schedule, the merge board, asking the owner, what comes to the user
-(branches with no live owner, once each) and the one-line quiet round.
+(branches with no live owner, once each) and the one-line quiet round. A schedule never turns on a
+project mode.
 
 ## §site.docs/phone — Check in from your phone (`/docs/phone/`)
 
@@ -133,12 +155,31 @@ app, and following sessions that are open in a terminal.
 ## §site.docs/change-direction — Change direction (`/docs/change-direction/`)
 
 Rewinding to before a message, regenerating a reply, forking from a reply, steering or stopping a
-running turn, and switching models mid-session.
+running turn, and switching models mid-session (favorites and the saved default).
 
 ## §site.docs/install — Install (`/docs/install/`)
 
 Installing Sova on a Mac or Linux machine with one command and its options, starting it and
 opening it unlocked, the app-launcher entry that opens it in its own window, the access token,
-the login service, running the installer again, removing it (the service, the extension links,
+the login service, running the installer again and the self-update from Settings it points to
+(§site.docs/updates), removing it (the service, the extension links,
 the install, the launcher, the app entry and its browser profile, and optionally pnpm's store and
 cache), and the Claude Code models.
+
+## §site.docs/memory — Memory (`/docs/modes/memory/`)
+
+The memory minor mode: what it does and that the transcript never changes, turning it on from the
+mode menu, the two types (UniiChat, credited to Victor Taelin with a link to his design, and
+zoomable compaction), the Memory type panel and Save as default, the `zoom` and `date` tools,
+updating, preparing and problems, rewind and fork, the Session pane's Memory outline, Settings →
+Memory and its help, where memory can't be on (the terminal, workers, coding sessions, session
+profiles), and the overseers' own switches, on by default.
+
+## §site.docs/updates — Updates (`/docs/updates/`)
+
+Keeping Sova current, in Setup after Install: running the install command again and how the
+`stable` tag moves, pinning with `SOVA_REF`, then Settings → General's Updates · this machine: what
+runs and the kind of copy, the source (stable, master or a branch), checking and what a check finds,
+the dot on Settings, upgrading with the previous version kept until the new one answers and put back
+when it doesn't, Upgrade automatically, the banner a page open across an upgrade
+shows ("A newer Sova is available.", mesh or not), and that only the operator can update.

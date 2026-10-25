@@ -1,18 +1,23 @@
+import { derivedAutonomy, type PowerColumn, type PowerMap } from "../shared/powers";
 import { PER_DAY, PER_TURN, PO_LIMIT_KINDS, type Allowance, type Autonomy, type PoLimitKind, type ProjectOverseerSettings } from "../shared/project-overseer";
 
 /**
  * The envelope the host stamps on every act it sends into an org's statecharts (design §4.1): who acts,
- * whether the turn is the operator's, the level chosen, and the facts the statecharts' guards read that
+ * whether the turn is the operator's, the caller's column of powers, and the facts the statecharts' guards read that
  * no statechart owns (the settings file, the ledgers' counts, the at-once counts). The engine stamps
- * nothing about autonomy; this module is the one place that builds it, inside the org's serialized
+ * nothing about powers; this module is the one place that builds it, inside the org's serialized
  * step, so what a guard reads cannot change between check and act.
  *
  * Pure: the caller reads the project's settings (overseer.json, as read now), the watch session's
  * ledgers and the statechart states it counts, and passes them in.
  */
 
-/** Who acts. `statechart`: the statecharts on their own (a drive, a released hold); `wrapup`: a wrap-up turn's profile writes; `model`: a gathering model's tool call; `sova`: Sova on its own (a settle session's reconcile). */
-export type ActBy = "operator" | "overseer" | "statechart" | "system" | "model" | "person" | "wrapup" | "sova";
+/** Who acts. `statechart`: the statecharts on their own (a drive, a released hold); `wrapup`: a wrap-up turn's profile writes; `model`: a gathering model's tool call; `sova`: Sova on its own (a settle session's reconcile);
+    `assistant`: an act the Project Assistant sets off from an owner's message (never the operator's: the client column of powers). */
+export type ActBy = "operator" | "overseer" | "statechart" | "system" | "model" | "person" | "wrapup" | "sova" | "assistant";
+
+/** The column of powers an act's caller is checked against: the Project Assistant's for `assistant`, else the overseer's. */
+export const columnOf = (by: ActBy): PowerColumn => (by === "assistant" ? "assistant" : "overseer");
 
 /** The confirm card a global Overseer act carries (§app.overseer/org-people-facing): every target it lists. */
 export interface EnvelopeCard {
@@ -27,11 +32,17 @@ export interface Envelope {
   overseerId?: string;
   /** The operator's turn (their message entered the run, or a confirm-card click started it). */
   attended: boolean;
-  /** The level chosen (overseer.json); the level in force is the statecharts' to derive from paused, ceiling and this. */
+  /** The caller's column of powers as set (overseer.json; `columnOf(by)`): the statecharts apply the brakes
+      (paused, ceiling) themselves. */
+  powers: PowerMap;
+  /** Which column `powers` is. */
+  column: PowerColumn;
+  /** The never-looser level of `powers`, for a bundle that still reads levels (one release). */
   autonomy: Autonomy;
-  /** The project's overseer is paused at L0 by an attach on this host. */
+  /** The attach brake: the project's overseer is paused by an attach on this host. */
   paused: boolean;
-  /** A cap on the level another layer contributes (server/projects/contributions.ts), or null: none. */
+  /** The empty-roster brake another layer contributes (server/projects/contributions.ts), or null: none, or
+      lifted by Resume until the roster has someone again. */
   ceiling: Ceiling | null;
   archived: boolean;
   /** The ledger this turn draws on: the operator's message's when attended, else today's on its own. */
@@ -43,7 +54,7 @@ export interface Envelope {
   card?: EnvelopeCard;
   /** How long a held act waits (the project's holdMin, in ms; 0 = no hold). */
   holdMs: number;
-  /** The act kinds whose held acts wait for the overseer's confirmation (overseer.json, r8(4)). */
+  /** Always empty: no held act waits for the overseer's confirmation any more (al_3 q2). For a bundle that still reads it. */
   confirmKinds: string[];
   turnId?: string;
   /** The project the act belongs to (the facts above are its); absent for an org-level act. The
@@ -72,7 +83,7 @@ export interface EnvelopeInput {
   via?: "overseer";
   overseerId?: string;
   attended: boolean;
-  settings: Pick<ProjectOverseerSettings, "autonomy" | "caps" | "holdMin" | "confirmKinds">;
+  settings: Pick<ProjectOverseerSettings, "powers" | "caps" | "holdMin">;
   paused: boolean;
   ceiling: Ceiling | null;
   archived: boolean;
@@ -92,15 +103,21 @@ export function buildEnvelope(i: EnvelopeInput): Envelope {
   const caps = i.settings.caps;
   const used = i.attended ? i.used.message : i.used.day;
   const keys = i.attended ? PER_TURN : PER_DAY;
+  const column = columnOf(i.by);
+  const powers = { ...i.settings.powers[column] };
+  // Resume on the empty-roster brake lifts it until the roster has someone again.
+  const ceiling = i.ceiling && !i.settings.powers.emptyRosterResumedAt ? i.ceiling : null;
   const allowance = Object.fromEntries(PO_LIMIT_KINDS.map((k) => [k, { used: count(used[k]), max: caps[keys[k]] as Allowance }])) as Envelope["allowance"];
   return {
     by: i.by,
     ...(i.via ? { via: i.via } : {}),
     ...(i.overseerId ? { overseerId: i.overseerId } : {}),
     attended: i.attended,
-    autonomy: i.settings.autonomy,
+    powers,
+    column,
+    autonomy: derivedAutonomy(powers),
     paused: i.paused,
-    ceiling: i.ceiling,
+    ceiling,
     archived: i.archived,
     ledger,
     allowance,
@@ -108,7 +125,7 @@ export function buildEnvelope(i: EnvelopeInput): Envelope {
     atOnce: { gatheringsOpen: i.gatheringsOpen, gatheringsCap: caps.gatheringsOpen, codingRunning: i.codingRunning, codingCap: caps.codingRunning },
     ...(i.card ? { card: i.card } : {}),
     holdMs: i.settings.holdMin * 60_000,
-    confirmKinds: [...i.settings.confirmKinds],
+    confirmKinds: [],
     ...(i.turnId ? { turnId: i.turnId } : {}),
     ...(i.projectId ? { projectId: i.projectId } : {}),
   };
@@ -135,7 +152,9 @@ export function atOnceCounts(sessions: readonly SessionRead[], projectId: string
     if (s.data.projectId !== projectId) continue;
     if (s.statechart === "baton") {
       const owner = s.data.owner as { overseerOf?: unknown } | undefined;
-      if (typeof owner === "object" && owner !== null && owner.overseerOf === projectId && s.configuration.includes("open")) gatheringsOpen++;
+      // The overseer's own gatherings, and the feature request chats the Project Assistant opened (§app.project-assistant/feature-chats).
+      const byAssistant = (s.data.started as { by?: unknown } | undefined)?.by === "assistant";
+      if (((typeof owner === "object" && owner !== null && owner.overseerOf === projectId) || byAssistant) && s.configuration.includes("open")) gatheringsOpen++;
     } else if (s.statechart === "build") {
       // `running` (exported by the build) is "working or workers > 0"; read the parts when it is absent.
       const workers = typeof s.data.workers === "number" ? s.data.workers : 0;

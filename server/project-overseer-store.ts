@@ -8,11 +8,6 @@ import {
   AT_ONCE_MAX,
   AUTONOMY_LEVELS,
   capProblem,
-  CONFIRM_KINDS,
-  CONFIRM_KINDS_BEFORE_KNOWN,
-  type ConfirmKind,
-  confirmKindsProblem,
-  DEFAULT_CONFIRM_KINDS,
   DEFAULT_AUTONOMY,
   DEFAULT_PO_CAPS,
   DEFAULT_HOLD_MIN,
@@ -33,6 +28,21 @@ import {
   type ProjectOverseerSettings,
 } from "../shared/project-overseer";
 import type { ProjectSummary } from "../shared/projects";
+import {
+  applyPowersPatch,
+  type Brake,
+  brakeOf,
+  PAUSED_BRAKE_REASON,
+  carryOver,
+  derivedAutonomy,
+  effectivePowers,
+  type PowerMap,
+  powersPatchProblem,
+  readStoredPowers,
+  stampedSettingsFile,
+  type StoredPowers,
+  WORK_KINDS,
+} from "../shared/powers";
 import type { OverseerState } from "../shared/protocol";
 import { setProjectSettingsSource } from "./org-engine";
 import { EXTRA_PROMPT_MAX, HISTORY_MAX, writeAtomic } from "./overseer-store";
@@ -40,6 +50,7 @@ import { OrgError } from "./org-error";
 import { engineOf, projectDir, projectHost, projectSid, readProject, watchSid } from "./projects/spaces";
 import { checkAbilitiesPatch, parseAbilities } from "./gathering-abilities";
 import { stateRoot } from "./state-root";
+import { parseOverseerMemory } from "./memory/settings";
 
 /**
  * The project overseer's files (§app.project-overseer/identity): per project, in the org's
@@ -90,9 +101,12 @@ export const projectOf = (projectId: string): ProjectSummary => readProject(proj
 export { DEFAULT_PO_CAPS };
 
 export function defaultPoSettings(): ProjectOverseerSettings {
+  // A new project: the overseer column carries over from L1, the Project Assistant's is all Off. No note: nothing carried over.
+  const powers = { ...readStoredPowers({ autonomy: DEFAULT_AUTONOMY }), note: null };
   return {
     version: 1,
-    autonomy: DEFAULT_AUTONOMY,
+    autonomy: powers.derivedAutonomy,
+    powers,
     model: null,
     thinking: null,
     codingModel: null,
@@ -105,7 +119,6 @@ export function defaultPoSettings(): ProjectOverseerSettings {
     soonLookSec: DEFAULT_SOON_LOOK_SEC,
     watch: true,
     holdMin: DEFAULT_HOLD_MIN,
-    confirmKinds: [...DEFAULT_CONFIRM_KINDS],
     extraSystemPrompt: "",
   };
 }
@@ -133,9 +146,13 @@ export function parsePoSettings(raw: unknown): ProjectOverseerSettings {
       if (isAtOnce(k) && typeof v === "number" && Number.isInteger(v) && v > AT_ONCE_MAX[k]) caps[k] = AT_ONCE_MAX[k];
       else if (capProblem(k, v) === null) Object.assign(caps, { [k]: v });
     }
+  // The powers (shared/powers.ts readStoredPowers: carry-over, an older Sova's re-derive, per-key defaults);
+  // the level is always the one derived from them, never looser.
+  const powers = readStoredPowers(raw);
   return {
     version: 1,
-    autonomy: isAutonomy(raw.autonomy) ? raw.autonomy : d.autonomy,
+    autonomy: powers.derivedAutonomy,
+    powers,
     model: typeof raw.model === "string" && raw.model.trim() ? raw.model.trim() : null,
     thinking: typeof raw.thinking === "string" && raw.thinking.trim() ? raw.thinking.trim() : null,
     codingModel: typeof raw.codingModel === "string" && raw.codingModel.trim() ? raw.codingModel.trim() : null,
@@ -149,25 +166,28 @@ export function parsePoSettings(raw: unknown): ProjectOverseerSettings {
     watch: typeof raw.watch === "boolean" ? raw.watch : d.watch,
     // Over the maximum still means "as long as allowed"; any other bad value, the default.
     holdMin: typeof raw.holdMin === "number" && Number.isInteger(raw.holdMin) && raw.holdMin > HOLD_MIN_MAX ? HOLD_MIN_MAX : holdProblem(raw.holdMin) === null ? (raw.holdMin as number) : d.holdMin,
-    // An unknown kind (a newer host's) is dropped; anything else unreadable, the default. A kind added
-    // since the list was saved (not in its confirmKindsKnown) is on, as every kind is by default.
-    confirmKinds: Array.isArray(raw.confirmKinds) ? confirmKindsOf(raw.confirmKinds, raw.confirmKindsKnown) : [...d.confirmKinds],
+    // confirmKinds / confirmKindsKnown: read and ignored (al_3 q2), never written again.
     extraSystemPrompt: typeof raw.extraSystemPrompt === "string" ? raw.extraSystemPrompt.slice(0, EXTRA_PROMPT_MAX) : "",
+    // Its memory switch, kept only as saved (absent: no choice made, on by default).
+    ...(parseOverseerMemory(raw.memory) ? { memory: parseOverseerMemory(raw.memory)! } : {}),
   };
-}
-
-/** A saved list, with every kind added since it was saved (per `known`, the kinds it could choose from) turned on. Pure. */
-export function confirmKindsOf(saved: unknown[], known: unknown): ConfirmKind[] {
-  const knew: readonly unknown[] = Array.isArray(known) ? known : CONFIRM_KINDS_BEFORE_KNOWN;
-  return CONFIRM_KINDS.filter((k) => saved.includes(k) || !knew.includes(k));
 }
 
 export const readPoSettings = (p: ProjectOverseerPaths): ProjectOverseerSettings => parsePoSettings(readJson(p.settings));
 
+/** The file as written: `autonomy` and `powers.derivedAutonomy` both the never-looser level of the
+    overseer column (an older Sova reading only the level is never looser); no confirmKinds; `powers.stamp`. */
+export function poSettingsFile(s: ProjectOverseerSettings): Record<string, unknown> {
+  const level = derivedAutonomy(s.powers.overseer);
+  const { confirmKinds: _gone, ...rest } = s;
+  // Stamped last (shared/powers.ts powersStamp): a later save by an older Sova is told by the stamp moving.
+  return stampedSettingsFile({ ...rest, autonomy: level, powers: { ...s.powers, derivedAutonomy: level } });
+}
+
 export function writePoSettings(p: ProjectOverseerPaths, s: ProjectOverseerSettings): ProjectOverseerSettings {
-  // confirmKindsKnown: the kinds this list could choose from, so a kind added later reads as on.
-  writeAtomic(p.settings, `${JSON.stringify({ ...s, confirmKindsKnown: [...CONFIRM_KINDS] }, null, 2)}\n`);
-  return s;
+  const file = poSettingsFile(s);
+  writeAtomic(p.settings, `${JSON.stringify(file, null, 2)}\n`);
+  return parsePoSettings(file);
 }
 
 /** pi's thinking ladder, lowest first (pi-ai's EXTENDED_THINKING_LEVELS). */
@@ -214,17 +234,44 @@ export const CODING_MODE_GONE = "Projects have no coding mode: coding sessions s
 /** A PATCH: strict (the first problem is the answer, as a sentence), then merged and written.
     `check` runs on the merged settings before anything is written (a throw writes nothing). */
 export function patchPoSettings(p: ProjectOverseerPaths, body: unknown, check?: (next: ProjectOverseerSettings, patch: ProjectOverseerPatch) => void): ProjectOverseerSettings {
+  const next = mergePoPatch(readPoSettings(p), body);
+  check?.(next, body as ProjectOverseerPatch);
+  return writePoSettings(p, next);
+}
+
+/** The settings `body` makes of `current`, checked as PATCH checks it (the first problem thrown as an OrgError). Pure: nothing is written. */
+export function mergePoPatch(current: ProjectOverseerSettings, body: unknown): ProjectOverseerSettings {
   if (!isObj(body)) throw new OrgError("Expected a JSON object body");
   const patch = body as ProjectOverseerPatch;
-  const next = readPoSettings(p);
+  const next: ProjectOverseerSettings = { ...current, caps: { ...current.caps } };
+  // One release only: an old client's level sets the overseer column by the carry-over (the caller ends the pause).
   if (patch.autonomy !== undefined) {
     if (!isAutonomy(patch.autonomy)) throw new OrgError(`autonomy must be one of ${AUTONOMY_LEVELS.join(", ")}`);
-    next.autonomy = patch.autonomy;
+    next.powers = { ...next.powers, overseer: carryOver(patch.autonomy) };
   }
+  if (patch.powers !== undefined) {
+    const why = powersPatchProblem(patch.powers);
+    if (why) throw new OrgError(why);
+    next.powers = applyPowersPatch(next.powers, patch.powers);
+  }
+  if (patch.powersNoteSeen !== undefined) {
+    if (patch.powersNoteSeen !== true) throw new OrgError("powersNoteSeen must be true");
+    if (next.powers.note) next.powers = { ...next.powers, note: { ...next.powers.note, seen: true } };
+  }
+  if (patch.resume !== undefined && patch.resume !== true) throw new OrgError("resume must be true");
+  if (patch.assistantModels !== undefined) {
+    const why = workModelsProblem(patch.assistantModels);
+    if (why) throw new OrgError(why);
+    const m = patch.assistantModels;
+    const { assistantModels: _old, ...rest } = next.powers;
+    next.powers = m === null || Object.keys(m).length === 0 ? rest : { ...rest, assistantModels: m };
+  }
+  next.autonomy = derivedAutonomy(next.powers.overseer);
   for (const k of ["model", "thinking", "codingModel", "codingThinking", "gatheringModel", "gatheringThinking"] as const) {
     const v = patch[k];
     if (v === undefined) continue;
     if (v !== null && typeof v !== "string") throw new OrgError(`${k} must be a string or null`);
+    if (typeof v === "string" && v.trim().length > 200) throw new OrgError(`${k} must be at most 200 characters`);
     next[k] = typeof v === "string" && v.trim() ? v.trim() : null;
   }
   // Projects have no coding mode (§app.project-overseer/coding-mode): a patch naming one is refused, never ignored.
@@ -253,11 +300,7 @@ export function patchPoSettings(p: ProjectOverseerPaths, body: unknown, check?: 
     if (why) throw new OrgError(why);
     next.holdMin = patch.holdMin;
   }
-  if (patch.confirmKinds !== undefined) {
-    const why = confirmKindsProblem(patch.confirmKinds);
-    if (why) throw new OrgError(why);
-    next.confirmKinds = CONFIRM_KINDS.filter((k) => patch.confirmKinds!.includes(k));
-  }
+  // confirmKinds: one release only, accepted and ignored (al_3 q2).
   if (patch.extraSystemPrompt !== undefined) {
     if (typeof patch.extraSystemPrompt !== "string" || patch.extraSystemPrompt.length > EXTRA_PROMPT_MAX)
       throw new OrgError(`extraSystemPrompt must be text of at most ${EXTRA_PROMPT_MAX} characters`);
@@ -272,13 +315,38 @@ export function patchPoSettings(p: ProjectOverseerPaths, body: unknown, check?: 
       next.caps = { ...next.caps, [k]: v };
     }
   }
-  check?.(next, patch);
-  return writePoSettings(p, next);
+  return next;
 }
 
-// ---- autonomy in force ------------------------------------------------------------------------
+/** Why a WorkModels value can't be saved, or null. Pure. */
+export function workModelsProblem(v: unknown): string | null {
+  if (v === null) return null;
+  if (!isObj(v)) return "assistantModels must be an object of reply, coding and gathering picks, or null.";
+  for (const [k, x] of Object.entries(v)) {
+    if (!(WORK_KINDS as readonly string[]).includes(k)) return `assistantModels has no kind of work "${k}": use ${WORK_KINDS.join(", ")}.`;
+    if (x === null) continue;
+    if (!isObj(x) || typeof x.model !== "string" || !x.model.trim()) return `assistantModels.${k} must be { model: "provider/model", thinking? } or null.`;
+    if (x.thinking !== undefined && x.thinking !== null && typeof x.thinking !== "string") return `assistantModels.${k}.thinking must be a thinking level or null.`;
+  }
+  return null;
+}
 
-export const PAUSED_REASON = "Paused at L0: this organization was attached on this host. Set its level to resume.";
+// ---- the powers in force ----------------------------------------------------------------------
+
+/** Both columns after the brake, the brake, and the never-looser level of the overseer column in force (old clients). Pure. */
+export function powersInForce(
+  powers: StoredPowers,
+  ceiling: { reason: string } | null,
+  pausedSince: string | null = null,
+): { overseer: PowerMap; assistant: PowerMap; brake: Brake | null; autonomy: Autonomy; reason?: string } {
+  const brake = brakeOf({ paused: !!pausedSince, ceiling, emptyRosterResumed: !!powers.emptyRosterResumedAt });
+  const overseer = effectivePowers(powers.overseer, brake);
+  return { overseer, assistant: effectivePowers(powers.assistant, brake), brake, autonomy: derivedAutonomy(overseer), ...(brake ? { reason: brake.reason } : {}) };
+}
+
+// ---- autonomy in force (older readers) ------------------------------------------------------------
+
+export const PAUSED_REASON = PAUSED_BRAKE_REASON;
 
 /**
  * The level in force: L0 while the overseer is paused by an attach on this host (`pausedSince`, until
@@ -367,8 +435,13 @@ export const dayKey = (d = new Date()): string => `${d.getFullYear()}-${String(d
 // ---- which files are project overseers ------------------------------------------------------------
 
 const markerMemo = new Map<string, { mtimeMs: number; data: ProjectOverseerMarkerData | null }>();
+/** Far above any install's session count: a listing asks for every file, and a memo smaller than that
+    would read them all again on each rebuild. Past it, the paths asked for longest ago go first. */
+export const MARKER_MEMO_MAX = 50_000;
+/** The one buffer every marker read uses (reads are synchronous, so never shared mid-read). */
+const markerBuf = Buffer.alloc(16 * 1024);
 
-/** The marker's data from a file's first 16KB (the marker is line 2), cached per mtime. */
+/** The marker's data from a file's first 16KB (the marker is line 2), cached per mtime: an unchanged file is never read again. */
 export function readPoMarker(path: string): ProjectOverseerMarkerData | null {
   let mtimeMs = -1;
   try {
@@ -378,14 +451,18 @@ export function readPoMarker(path: string): ProjectOverseerMarkerData | null {
     return null;
   }
   const hit = markerMemo.get(path);
-  if (hit && hit.mtimeMs === mtimeMs) return hit.data;
+  if (hit && hit.mtimeMs === mtimeMs) {
+    // Kept as the most recently asked for (a Map iterates in insertion order).
+    markerMemo.delete(path);
+    markerMemo.set(path, hit);
+    return hit.data;
+  }
   let data: ProjectOverseerMarkerData | null = null;
   let fd: number | undefined;
   try {
     fd = openSync(path, "r");
-    const buf = Buffer.alloc(16 * 1024);
-    const n = readSync(fd, buf, 0, buf.length, 0);
-    for (const line of buf.subarray(0, n).toString("utf8").split("\n")) {
+    const n = readSync(fd, markerBuf, 0, markerBuf.length, 0);
+    for (const line of markerBuf.subarray(0, n).toString("utf8").split("\n")) {
       if (!line.includes(PROJECT_OVERSEER_ENTRY)) continue;
       // A torn line reads as nothing: keep looking. Any other key is ignored: the project id is the identity.
       const h = lineEntry(line);
@@ -400,8 +477,9 @@ export function readPoMarker(path: string): ProjectOverseerMarkerData | null {
   } finally {
     if (fd !== undefined) try { closeSync(fd); } catch {}
   }
-  if (markerMemo.size > 500) markerMemo.clear();
+  markerMemo.delete(path);
   markerMemo.set(path, { mtimeMs, data });
+  while (markerMemo.size > MARKER_MEMO_MAX) markerMemo.delete(markerMemo.keys().next().value!);
   return data;
 }
 

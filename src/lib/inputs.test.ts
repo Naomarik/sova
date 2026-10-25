@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TranscriptItem } from "../../shared/protocol";
-import { displayRows, IDLE, inputPreview, inputRows, rewoundAt, rowAction, sentSince, stepRewind, viewRows, type InputRow, type RewindPhase, type ViewRow } from "./inputs";
+import { displayRows, handBackText, IDLE, inputPreview, inputRows, rewoundAt, rowAction, sentSince, stepRewind, viewRows, type InputRow, type RewindPhase, type ViewRow } from "./inputs";
 
 const user = (id: string, text?: string, images = 0): TranscriptItem => ({
   id,
@@ -147,4 +147,23 @@ test("newest first puts the rewind's abandoned rows ABOVE the boundary row", () 
 test("inputRows never lists a link message: a partner's words are no rewind target", () => {
   const link: TranscriptItem = { id: "l", kind: "link", text: "[link_msg …] from x (h/s)\nhi" };
   assert.deepEqual(inputRows([user("a", "mine"), link, other("r:0", "assistant-text")]).map((r) => r.id), ["a"]);
+});
+
+test("a rewind hands back the body alone: another session's header line stays behind", () => {
+  assert.equal(handBackText('[from session "Planner" (sid), hop 1]\nplease run it'), "please run it");
+  assert.equal(handBackText("my own words"), "my own words");
+});
+
+test("inputRows carries each row's sender and wake flag, its text the body", () => {
+  const rows = inputRows([
+    { id: "s1", kind: "user", text: '[from session "P" (sid), hop 1]\nrun it' },
+    { id: "m", kind: "info", sessionMark: { kind: "sent", targetId: "s1", from: { sessionId: "sid", title: "P" }, hop: 1 } },
+    { id: "w", kind: "wake", text: "[wake_nudge n1] fired", wake: { id: "n1" } },
+    { id: "u", kind: "user", text: "mine" },
+  ]);
+  assert.deepEqual(rows.map((r) => [r.id, r.preview, r.text, r.sender?.kind ?? null, r.wake ?? false]), [
+    ["s1", "run it", "run it", "session", false],
+    ["w", "Wake nudge n1", "[wake_nudge n1] fired", null, true],
+    ["u", "mine", "mine", null, false],
+  ]);
 });

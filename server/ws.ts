@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
@@ -16,6 +17,8 @@ import { idOf } from "./sessions-index";
 import { sessionsChanged } from "./list-generation";
 import { extensionSocketRoute, upgradeExtensionSocket } from "./extensions";
 import { meshUpgrade } from "./mesh";
+import { EVENTS_PATH } from "../shared/events";
+import { upgradeEventsSocket } from "./events-ws";
 import { type Normalize, SessionTail } from "./watch";
 import { sharedWorkerWindowResolver } from "./models";
 import { contextTally, type Format, type WindowResolver } from "./worker-context";
@@ -23,6 +26,12 @@ import { wireOf } from "./wire-rows";
 import { replyTimingsOf, sessionIdOfPath } from "./reply-facts";
 import { HAVE_MAX_CHARS, HAVE_PARAM, type WireVersion } from "../shared/protocol";
 import { unsentRefusal } from "../shared/chat-runtime";
+import { draftTexts, HeldSends, type Unsent } from "../shared/held-sends";
+import { putBackDraft } from "./drafts";
+
+/** How long a chat socket that closed stays in its chat to hear what became of the messages it
+    sent (§chat.transcript/send-while-starting): taken, or refused and put back as the draft. */
+export const GONE_LISTEN_MS = 120_000;
 
 function sendJson(ws: WebSocket, msg: ChatServerMessage | V2EventFrame | WatchServerMessage | SessionFeedMessage | LlmFeedMessage): void {
   if (ws.readyState !== ws.OPEN) return;
@@ -55,20 +64,57 @@ export function haveOf(params: URLSearchParams, ask: TailAsk): string | undefine
   return ask.tail && ask.pull && have && have.length <= HAVE_MAX_CHARS ? have : undefined;
 }
 
-async function handleChat(ws: WebSocket, path: string, force: boolean, ask: TailAsk, wire: WireVersion, have?: string): Promise<void> {
+/** `viewer: false`: a script's action (server/chat-actions.ts), not a pane on screen: the session
+    is not stamped seen and its marks are not nudged. Every other caller leaves it out. */
+interface ChatSocketOpts {
+  viewer?: boolean;
+}
+
+async function handleChat(ws: WebSocket, path: string, force: boolean, ask: TailAsk, wire: WireVersion, have?: string, opts: ChatSocketOpts = {}): Promise<void> {
+  const id = idOf(path);
+  const viewer = opts.viewer !== false;
+  // What this socket sent and the chat hasn't answered yet (§chat.transcript/send-while-starting).
+  // Once the socket is gone, a refusal can't reach any tab: its text goes back as the draft.
+  const held = new HeldSends();
+  let gone = false;
+  const heard = (back: Unsent[]) => {
+    if (gone && back.length) putBackDraft(id, draftTexts(back));
+    if (gone && held.size === 0) leave();
+  };
   const client: ChatClient = {
-    send: (msg) => sendJson(ws, msg),
-    sendRaw: (json) => sendRaw(ws, json),
+    send: (msg) => {
+      if (held.listening) heard(held.heard(msg));
+      sendJson(ws, msg);
+    },
+    sendRaw: (json) => {
+      if (held.listening) heard(held.heardJson(json));
+      sendRaw(ws, json);
+    },
     close: (code, reason) => ws.close(code, reason),
     ...(wire === 2 ? { wire: 2 as const } : {}),
     ...(ask.tail ? { tail: true } : {}),
     ...(ask.tail && ask.pull ? { pull: { prefetch: ask.prefetch } } : {}),
     ...(have ? { have } : {}),
   };
-  // Buffer messages that arrive while the runtime is still opening.
+  // Buffer messages that arrive while the runtime is still opening. They run, in order, once it
+  // is open, even when the socket has closed by then (a tab that left or reloaded).
   const early: ChatClientMessage[] = [];
   let chat: Awaited<ReturnType<typeof acquireChatHandle>> | null = null;
-  let gone = false;
+  /** Out of the chat for good: at the socket's close, or once what it sent is answered. */
+  let left = false;
+  let listen: NodeJS.Timeout | undefined;
+  const leave = () => {
+    if (left) return;
+    left = true;
+    clearTimeout(listen);
+    chat?.detach(client);
+  };
+  /** The socket closed with sends unanswered: stay to hear them, for a while. */
+  const stayToHear = () => {
+    if (held.size === 0) return leave();
+    listen = setTimeout(leave, GONE_LISTEN_MS);
+    listen.unref?.();
+  };
   ws.on("message", (data) => {
     let msg: ChatClientMessage;
     try {
@@ -78,22 +124,29 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
       return;
     }
     sessionsChanged(); // a prompt, abort or rename: the next listing is built afresh
+    held.sent(msg);
     if (chat) chat.clientMessage(client, msg);
     else early.push(msg);
   });
   // Seen: a pane is on screen while its socket is open (server/seen.ts). Stamped at attach and at
   // detach, whether or not the runtime opens — a refused chat is still a session the user looked at.
-  const id = idOf(path);
-  trackViewer(id, 1);
-  nudgeMarks(); // a mark clears once its session is on screen (server/session-feed.ts)
+  if (viewer) {
+    trackViewer(id, 1);
+    nudgeMarks(); // a mark clears once its session is on screen (server/session-feed.ts)
+  }
   ws.on("close", () => {
     gone = true;
-    trackViewer(id, -1);
-    chat?.detach(client);
+    if (viewer) trackViewer(id, -1);
+    if (chat) stayToHear();
   });
 
   try {
-    chat = await acquireChatHandle(path, force);
+    chat = await acquireWithRetry(
+      () => acquireChatHandle(path, force),
+      // Nobody left to hear and nothing to deliver: no reason to start it again.
+      () => gone && early.length === 0 && held.size === 0,
+      (err) => console.warn(`[ws/chat] ${id}: the chat didn't start (${err instanceof Error ? err.message : String(err)}); trying once more`),
+    );
   } catch (err) {
     // Three outcomes, three close codes, because the client's retry policy keys off them:
     // 4409 busy (another process owns it), 4422 config (permanent — do NOT reconnect), 4500
@@ -101,18 +154,133 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     const busy = err instanceof BusyError;
     const config = err instanceof ConfigError;
     const code = busy ? err.code : config ? "config" : "internal";
-    // What the pane sent meanwhile never reached a chat: each prompt goes back to its composer.
-    for (const refusal of heldRefusals(early.splice(0))) client.send(refusal);
+    // What the pane sent meanwhile never reached a chat: each prompt goes back to its composer,
+    // or, with no tab left to hear it, to the session's saved draft.
+    const refusals = heldRefusals(early.splice(0));
+    if (gone) putBackDraft(id, draftTexts(held.takeAll()));
+    else for (const refusal of refusals) client.send(refusal);
     client.send({ type: "error", code, message: err instanceof Error ? err.message : String(err) });
     ws.close(busy ? 4409 : config ? 4422 : 4500, busy ? "busy" : config ? "config" : "open failed");
     return;
   }
-  if (gone) {
-    chat.detach(client); // triggers idle disposal if nobody else is attached
+  if (gone && early.length === 0) {
+    chat.detach(client);
     return;
   }
+  // Gone or not, the chat takes what the socket sent while it opened, in order, and this socket
+  // stays in it until each send is answered (stayToHear).
   chat.attach(client);
   for (const msg of early.splice(0)) chat.clientMessage(client, msg);
+  if (gone) stayToHear();
+}
+
+/** The pause before a chat socket's one retry of a failed start (tests set it to 0). */
+export const openRetry = { ms: 1000 };
+
+/**
+ * Opens a chat, trying a failed start once more (§chat.transcript/instant-open): a start that fails
+ * for now (a process that hung at boot, a crash) usually works a second later, and the socket keeps
+ * holding what the pane sent meanwhile, so the messages then go through with nothing shown. This is
+ * the one quiet retry: when it fails too, the pane is told at once and shows "This chat didn't
+ * start." (src/lib/error-feed.ts), and its own reconnects add no second quiet round. A refusal no
+ * retry can change (busy, config) is not retried; nor is one `giveUp` says nobody needs.
+ */
+export async function acquireWithRetry<T>(acquire: () => Promise<T>, giveUp: () => boolean, onRetry?: (err: unknown) => void): Promise<T> {
+  try {
+    return await acquire();
+  } catch (err) {
+    if (err instanceof BusyError || err instanceof ConfigError || giveUp()) throw err;
+    onRetry?.(err);
+    if (openRetry.ms > 0) await new Promise((r) => setTimeout(r, openRetry.ms));
+    return acquire();
+  }
+}
+
+/** At most this many frames in one POST /api/chat/frames. */
+export const POSTED_FRAMES_MAX = 100;
+
+/**
+ * Frames a page handed over as it went (POST /api/chat/frames, §chat.transcript/send-while-starting):
+ * a tab closed or reloaded before its chat socket opened. They take the very path a chat socket's
+ * early frames take (handleChat), on a stand-in socket that is already gone: the chat opens, runs
+ * them in order, takes each client id once, and a refusal goes back as the session's draft.
+ */
+export function deliverFrames(path: string, frames: readonly ChatClientMessage[]): void {
+  const gone = Object.assign(new EventEmitter(), { readyState: 3, OPEN: 1, close() {}, send() {} });
+  const ws = gone as unknown as WebSocket;
+  handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2).catch((err) => console.error("[chat/frames]", err));
+  for (const f of frames) gone.emit("message", JSON.stringify(f));
+  gone.emit("close");
+}
+
+/** What recordFrame hands back: `close()` leaves the chat (idempotent); `emit()` hands the one
+    frame over, once (a second call does nothing), and says whether it did. */
+export interface RecordedChat {
+  /** Hand the frame over, once: false (and `before` never called) when the socket is closed or it
+      went already. `before` runs just before it goes, since a chat may answer from inside. */
+  emit(before?: () => void): boolean;
+  close(): void;
+}
+
+/**
+ * One action from a script (POST /api/chat/action, server/chat-actions.ts): a chat socket's own path
+ * (handleChat) on a recording socket that is open, so every frame the chat sends it reaches
+ * `onFrame`, parsed. Nothing is sent until `emit()`; the caller emits once it has the hello.
+ * Never a viewer (no seen stamp); never forced.
+ */
+export function recordFrame(path: string, frame: ChatClientMessage, onFrame: (msg: Record<string, unknown>) => void, onClose: () => void): RecordedChat {
+  let open = true;
+  let sent = false;
+  const rec = Object.assign(new EventEmitter(), {
+    readyState: 1,
+    OPEN: 1,
+    send(json: string) {
+      if (!open) return;
+      let msg: unknown;
+      try {
+        msg = JSON.parse(json);
+      } catch {
+        return;
+      }
+      if (msg && typeof msg === "object") onFrame(msg as Record<string, unknown>);
+    },
+    close() {
+      // The chat closed its client (4409 busy, 4422, 4500, closed): it is gone from this socket.
+      if (!open) return;
+      open = false;
+      rec.readyState = 3;
+      rec.emit("close");
+      onClose();
+    },
+  });
+  const ws = rec as unknown as WebSocket;
+  handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2, undefined, { viewer: false }).catch((err) => {
+    console.error("[chat/action]", err);
+    rec.close();
+  });
+  return {
+    emit: (before?: () => void) => {
+      if (sent || !open) return false;
+      sent = true;
+      before?.();
+      rec.emit("message", JSON.stringify(frame));
+      return true;
+    },
+    close: () => {
+      if (!open) return;
+      open = false;
+      rec.readyState = 3;
+      rec.emit("close");
+    },
+  };
+}
+
+/** The frames of a POST /api/chat/frames body (`{ frames: [...] }`), or null when malformed. */
+export function postedFrames(body: unknown): ChatClientMessage[] | null {
+  const frames = (body as { frames?: unknown } | null)?.frames;
+  if (!Array.isArray(frames) || frames.length === 0 || frames.length > POSTED_FRAMES_MAX) return null;
+  for (const f of frames) if (!f || typeof f !== "object" || Array.isArray(f) || typeof (f as { type?: unknown }).type !== "string") return null;
+  return frames as ChatClientMessage[];
 }
 
 /** The refusals for messages a pane sent while its chat was opening, when it didn't open. */
@@ -274,6 +442,8 @@ export function attachWebSockets(server: Server): void {
     // that directly, and a peer is answered by its Tailscale identity.
     if (refuseUpgrade(req, socket)) return;
     const url = new URL(req.url ?? "/", "http://localhost");
+    // Sova's event stream (server/events-ws.ts): this listener only, never the peer's.
+    if (url.pathname === EVENTS_PATH) return upgradeEventsSocket(req, socket, head);
     // An extension's own socket, forwarded to its backend (server/extensions.ts).
     const ext = extensionSocketRoute(url.pathname);
     if (ext) {

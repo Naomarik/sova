@@ -5,7 +5,7 @@
 //  - `groupByActivity` — "what moved last". The Archive's date sections and the rows inside a
 //    user's group read this way: they are looking back, and the last thing that happened is the
 //    handle you reach for. This is the ORIGINAL rule, moved here unchanged.
-//  - `groupByCreation` — "what did I start, and when". Live & web reads this way. A session's
+//  - `groupByCreation` — "what did I start, and when". Folders reads this way. A session's
 //    place in that region is then a fact about the session, not about the agent: a folder does not
 //    jump to the top because a background subagent wrote a line in it, and a session you started
 //    an hour ago stays an hour old however much output it produced since.
@@ -55,13 +55,13 @@ function bucketByCwd(sessions: readonly SessionSummary[], compare: (a: SessionSu
  * Folder sections by last activity, newest first: the Archive's order, and a group's.
  *
  * Deliberately NOT given `groupByCreation`'s tie-breaks. This is the order those regions have
- * always had, down to what two same-mtime folders do, and making Live & web answer a different
+ * always had, down to what two same-mtime folders do, and making Folders answer a different
  * question is no reason to move a row anywhere else in the sidebar.
  */
 export const groupByActivity = (sessions: readonly SessionSummary[]): CwdGroup[] => bucketByCwd(sessions, byActivityDesc);
 
 /**
- * Folder sections by session creation, newest first: Live & web's order.
+ * Folder sections by session creation, newest first: Folders' order.
  *
  * The sections are re-sorted rather than left in leader order, so that two folders whose newest
  * session shares a `createdAt` settle on `cwd` and cannot swap places between two polls — the same

@@ -24,9 +24,9 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   label, anyone?, createdAt, expiresAt, revokedAt?, revokedWhy?}]}`. A file that fails the strict
   parse serves no link and is never overwritten.
 - **Kept tokens.** Every link this host mints, a session share's `/s/`, a hand-off's `/h/`
-  (§app.baton/links) and an owner's `/i/` (§app.owner-page/link) alike, keeps its token in one
+  (§app.baton/links), an owner's `/i/` (§app.owner-page/link) and a reviewed tour's `/t/` (§app.tours/sharing) alike, keeps its token in one
   shared file, `<stateRoot>/link-tokens.json` (mode 0600, written atomically, host-local, never
-  synced or committed): `{version: 1, tokens: {<hash>: {kind: "s" | "h" | "i", token}}}`. It is
+  synced or committed): `{version: 1, tokens: {<hash>: {kind: "s" | "h" | "i" | "t", token}}}`. It is
   read tolerantly: a file that can't be read keeps no token and every link still opens, and an
   entry counts only when its token is well formed and its SHA-256 is the entry's key. A token is
   kept from its mint on and dropped when its link is turned off (deleted, relinked or replaced,
@@ -124,7 +124,7 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   this host keeps (§app.project-overseer/previews), in the title or any message, a person's own
   words included, becomes "[preview link]" before any text is cut, and every view, outline and
   socket frame passes that filter whole. Likewise a link of this host whose token is kept
-  (§app.session-share/link: `/s/`, `/h/` or `/i/`), in the title or any message, becomes
+  (§app.session-share/link: `/s/`, `/h/`, `/i/` or `/t/`), in the title or any message, becomes
   "[share link]" before any text is cut, in every session share's view, outline and socket frame.
   Hand-off pages are never filtered this way: a person holding a hand-off sees every link as
   written. A time goes out only as a canonical ISO time
@@ -165,9 +165,11 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   a `Live` chip. User messages are right-hand bubbles and each reply takes the column's width
   (§app.session-share/reading); neither is labelled with a name.
 - **Drawings.** A reply's `vis` fences draw as on the hand-off page (§app.baton/outsider-view),
-  plus `sequence` and `state`. `svg` draws as an image, which runs no script and fetches nothing;
-  `code` and `html` show as their source, escaped, under a caption. Any other kind, or one that
-  doesn't parse, is the one quiet line.
+  plus `sequence` and `state`. `svg` draws as a still image in the chat's figure (its title, the
+  drawing, its caption; no Source or Copy), at its own size, centred and shrunk only to fit the
+  column, in the page's colours and a sans-serif font, and it runs no script and fetches nothing
+  (§app.baton/outsider-view); `code` and `html` show as their source, escaped, under a caption.
+  Any other kind, or one that doesn't parse, is the one quiet line.
 - **Images** are thumbnails under their message's text, at most 320 by 240 pixels, each a link that
   opens the full image in a new tab.
 - The page reads the newest page first, from the top; **Show Earlier** reads the page before and
@@ -266,7 +268,7 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   `GET /api/shares-overview` on each host), then **Preview links** (this host's live previews,
   §mesh.public/preview-card; the people a preview was sent to on WhatsApp are on its **Sent to**
   line, and a person's own copy whose original isn't listed says "sent to {name}" before its
-  expiry). With the mesh on, each row names its host.
+  expiry). Standalone reviewed-tour links (`/t/`) are included too, identifying their pinned edition and expiry; their Visits disclosure shows only what the existing opt-in Log visitors switch recorded (§mesh.public/visitor-log). With the mesh on, each row names its host.
 - A session share row: its public title (a link to the session), its slice line or mode line (as
   the Sharing section), its recipients
   with presence and opened lines (each live one whose link is kept with **Copy Link**), and **Manage** (the Share sheet on it) and **Stop Sharing**
@@ -276,6 +278,13 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   underneath, **Copy Link** when its link is kept, and **Delete Link** asked twice, its confirm and the line under it saying the link
   stops working for good (the existing hand-off or owner revoke route). The
   page never changes those stores otherwise.
+- A tour link row (its own **Tour links** card, after Organization links, listing each live `/t/`
+  link whose source chat still owns it): the tour's public title (a link to its chat), its pinned
+  edition's check time as "Edition checked {time}", "Expires in {n} days", the opened line, its
+  visits folded underneath, **Copy Link** when its link is kept, and **Delete Link** asked twice,
+  its confirm and the line under it saying the link stops working for good (the tour's own revoke
+  route). A reader's resume link is never listed. The count line adds "· {n} tour links" when
+  there are any.
 - A visit's line adds what §mesh.public/visitor-log recorded for it, when anything: the address,
   the browser family (the raw user agent on hover), the language and, for a preview, "{n} pages"
   (the paths on hover). A session share recipient and a preview recipient with visits have their
@@ -329,7 +338,11 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   number and baton state (an owner link's state is "live"), its creation and expiry, its `link` when
   its token is kept (§app.session-share/link), and its own visits from the org's visit log (§app.baton/visits), with `opened` and `lastAt` counted as for a
   recipient. A hand-off link whose page has an open socket is `viewing` (hand-off pages send no
-  visibility); an owner link, which has no socket, carries no presence.
+  visibility); an owner link, which has no socket, carries no presence. Its **tour links** are
+  every live standalone `/t/` link whose source chat still owns it, newest first, each with the
+  tour's title, its pinned edition and that edition's check time, its creation and expiry, its
+  `link` when kept, and its opt-in visits (§app.tours/sharing); a tour link store that can't be
+  read lists none.
 - Each session share recipient also carries its own `visits`, and the answer carries
   `previewVisits`, this host's preview visits by preview id (§mesh.public/visitor-log). A visit
   with lines in the host's identity side file carries them: `ip`, `ua`, `lang`, and for a preview

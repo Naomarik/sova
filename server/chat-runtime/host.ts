@@ -97,6 +97,9 @@ export interface HostOptions {
   tickMs?: number;
   /** How long an ask may take before it reads as nothing. */
   askWithinMs?: number;
+  /** The open's trail (§app.chat-processes/boot-log): one per `open`, its steps sent on `send`. Only
+      a chat process records one (server/chat-runtime/main.ts); without it an open records nothing. */
+  openTrail?: (send: (frame: FrameOf<"boot">) => void) => { step(name: string): void; finish(ok?: boolean): void };
 }
 
 type State = HelloFrame["state"];
@@ -135,7 +138,7 @@ export const REPLY_TEXT_EVERY_MS = 100;
 const SPECIAL_PROTO = 2;
 
 /** The asks that read as nothing without a server (ASK_POLICY "nothing"). */
-type NothingAsk = "project.note" | "playbook.bundleFor" | "playbook.reprime" | "links" | "singleton" | "reply.timings";
+type NothingAsk = "project.note" | "playbook.bundleFor" | "playbook.reprime" | "links" | "singleton" | "reply.timings" | "offers.note";
 const NOTHING: { [M in NothingAsk]: ChatAsks[M]["result"] } = {
   "project.note": null,
   "playbook.bundleFor": null,
@@ -143,6 +146,7 @@ const NOTHING: { [M in NothingAsk]: ChatAsks[M]["result"] } = {
   links: [],
   singleton: null,
   "reply.timings": null,
+  "offers.note": null,
 };
 
 /** A call-back whose call is no longer pending (the link dropped, the call settled). */
@@ -229,13 +233,26 @@ export class ChatRuntimeHost {
     if (this.state === s) return;
     this.state = s;
     // Kernel: a hello again on every change of state (a rollout waits for "ready" on its link).
-    this.link?.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch: this.epoch, ...this.hello() });
+    if (this.link) this.sayHello(this.link, this.epoch);
   }
 
   // ---- the controller -----------------------------------------------------------------------------
 
   /** A server took control (link.ts serveLink's onControl). */
   onControl(link: Link, control: ControlFrame): void {
+    try {
+      this.takeControl(link, control);
+    } finally {
+      // The link's opening hello said another state (it came while the process booted, or before a
+      // change no controller heard): say the state now, once (kernel hello), even when taking control
+      // threw, or the server waiting for "ready" refuses the chat. setState says each later change on
+      // this link and records it, so the server hears "ready" exactly once, whether the boot ended
+      // before this control arrived or after.
+      if (link.isOpen && link.saidState !== null && link.saidState !== this.state) this.sayHello(link, control.epoch);
+    }
+  }
+
+  private takeControl(link: Link, control: ControlFrame): void {
     const before = this.link;
     if (before && before !== link) this.lostLink();
     this.link = link;
@@ -284,6 +301,10 @@ export class ChatRuntimeHost {
         this.orphanTimer.unref?.();
       }
     }
+  }
+
+  private sayHello(link: Link, epoch: number): void {
+    link.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch, ...this.hello() });
   }
 
   /** The controller's link ended: its panes become orphans (open dialogs wait), asks read as nothing. */
@@ -425,11 +446,12 @@ export class ChatRuntimeHost {
       setSpecialPort(this.o.path, this.specialPort());
     }
     this.wire(f.served);
+    const trail = this.o.openTrail?.((frame) => void (link.isOpen && link.compatible && link.send(frame))) ?? null;
     try {
       // The broken-deploy trial's failed open (T27): this build refuses every open.
       const failOpen = process.env.SOVA_CHAT_TEST_FAIL_OPEN;
       if (failOpen && failOpen === this.o.build) throw new Error(`SOVA_CHAT_TEST_FAIL_OPEN=${failOpen}: failing the open on purpose`);
-      const chat = await acquireChat(this.o.path, f.force);
+      const chat = await acquireChat(this.o.path, f.force, trail ? (step) => trail.step(step) : undefined);
       this.chat = chat;
       // A worker chat feeds its parent (through the server) from its first event.
       if (f.worker && !this.feed) {
@@ -439,9 +461,11 @@ export class ChatRuntimeHost {
       this.setState("open");
       this.quietSince = this.now();
       this.reloadQuietSince = this.quietSince;
+      trail?.finish(true);
       reply({ t: "opened", id: f.id, ok: true, mirror: this.mirror() });
       this.lastMirror = JSON.stringify(this.mirror());
     } catch (err) {
+      trail?.finish(false);
       const r = failureReply(f.id, err);
       reply({ t: "opened", id: f.id, ok: false, ...(r.ok === false && "refusal" in r ? { refusal: r.refusal } : { error: { message: err instanceof Error ? err.message : String(err) } }) });
       this.log(`open refused: ${err instanceof Error ? err.message : String(err)}`);
@@ -460,6 +484,7 @@ export class ChatRuntimeHost {
         reprime: (ctx) => this.ask("playbook.reprime", { sessionId: ctx.sessionId, leafId: this.chat?.leafId() ?? null }),
       },
       instanceNote: (ctx) => this.ask("project.note", { cwd: ctx.cwd, sessionId: ctx.sessionId, leafId: this.chat?.leafId() ?? null }),
+      offerNote: (sessionId) => this.ask("offers.note", { sessionId }),
     });
     setSingletonCheck((key, path) => this.ask("singleton", { key, path }));
     setLinksSource((sessionId, path) => this.ask("links", { sessionId, path }) as never);
@@ -997,7 +1022,8 @@ export class ChatRuntimeHost {
         }
         return void answer({ t: "drained", id: f.id, ok: false, why: "busy" });
       }
-      if (f.reason === "idle" && this.clientCount() > 0) return void answer({ t: "drained", id: f.id, ok: false, why: "attached" });
+      // An open tab doesn't keep a quiet chat running (§app.chat-processes/idle-stop): its panes are
+      // told it closed, and keep what they show until they need the chat again.
     }
     answer({ t: "drained", id: f.id, ok: true });
     const cause: ExitCause = f.reason;

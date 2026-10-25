@@ -3,13 +3,14 @@
 // memory choice kept on the branch. Messages are short, so every line is built without the summarizer: no
 // model, no process. One throwaway PI_CODING_AGENT_DIR; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { ChatServerMessage } from "../../shared/protocol";
 import { ScriptedModel, scriptedModelsJson } from "../harness/pi/testing/scripted-model";
 import { piSession } from "../harness/pi/testing/handle";
+import { linkPiConfigExtensions } from "../testing/agent-dir";
 
 for (const k of Object.keys(process.env)) if (/_API_KEY$|_AUTH_TOKEN$/.test(k)) delete process.env[k];
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-chat-memory-")));
@@ -24,7 +25,7 @@ mkdirSync(cwd, { recursive: true });
 // No summary model may run here: the policy turns Claude Code off, so a line that needs one waits.
 writeFileSync(join(agentDir, "model-policy.json"), JSON.stringify({ version: 1, disabledProviders: ["claude-code"], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }));
 // The tree's pi-config extensions (the mode extension among them), as a hosted runtime loads them.
-symlinkSync(resolve(import.meta.dirname, "..", "..", "pi-config", "extensions"), join(agentDir, "extensions"));
+linkPiConfigExtensions(agentDir);
 writeFileSync(join(agentDir, "models.json"), JSON.stringify(scriptedModelsJson()));
 // Keep almost nothing recent, so a compaction has messages to compact.
 writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ defaultProvider: "scripted", defaultModel: "scripted", retry: { enabled: false }, compaction: { keepRecentTokens: 8 } }));

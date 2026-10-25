@@ -5,7 +5,7 @@ import { engineOrThrow, projectDir } from "./projects/spaces";
 import { ledgerPaths } from "./project-costs-ledger";
 import { readBuilds } from "./build-loadout";
 import { projectOf, readPoMarker, sessionIdOfFile } from "./project-overseer-store";
-import { getSessionSummary } from "./sessions-index";
+import { displayTitleOf } from "./sessions-index";
 import { askUsage, type HelperAnswer } from "./usage-helper/client";
 import type { CostScopeSource, ProjectScope } from "./usage-helper/project";
 
@@ -21,8 +21,9 @@ import type { CostScopeSource, ProjectScope } from "./usage-helper/project";
  */
 
 export async function titleOf(path: string, fallback: string): Promise<string> {
-  const s = await getSessionSummary(path).catch(() => null);
-  return s?.title?.trim() || fallback;
+  // The list's title from the memoized summary (one stat per session), not a whole session row.
+  const t = await displayTitleOf(path).catch(() => undefined);
+  return t?.trim() || fallback;
 }
 
 /** The project's sessions on this host and its costs.json. Throws a 404 OrgError for an unknown project. */
@@ -77,6 +78,45 @@ export async function projectScope(projectId: string): Promise<ProjectScope> {
 /** GET /api/projects/:pid/costs: the helper's ProjectCost, as bytes. */
 export async function projectCostAnswer(projectId: string): Promise<HelperAnswer> {
   return askUsage("project", { scope: await projectScope(projectId) });
+}
+
+/** How old the last count may be before a read starts a recount behind it (§app.project-costs/card). */
+export const COST_RECOUNT_AFTER_MS = 15_000;
+/** Each project's last good count, in memory only: the page shows it at once. */
+const lastCounts = new Map<string, { answer: HelperAnswer; at: number }>();
+/** The recount running for a project: never two at once. */
+const counting = new Map<string, Promise<HelperAnswer>>();
+
+function recount(projectId: string): Promise<HelperAnswer> {
+  const running = counting.get(projectId);
+  if (running) return running;
+  const run = projectCostAnswer(projectId)
+    .then((a) => {
+      if (a.status === 200) lastCounts.set(projectId, { answer: a, at: Date.now() });
+      return a;
+    })
+    .finally(() => counting.delete(projectId));
+  counting.set(projectId, run);
+  return run;
+}
+
+/**
+ * GET /api/projects/:pid/costs as the page reads it: the last count at once (its `asOf` says when),
+ * and one recount behind it once that count is COST_RECOUNT_AFTER_MS old; the first read after a
+ * start, and `fresh` (Refresh Project), wait for a count. An unknown project is a 404 either way.
+ */
+export async function projectCostLatest(projectId: string, opts: { fresh?: boolean; now?: number } = {}): Promise<HelperAnswer> {
+  projectOf(projectId);
+  const hit = lastCounts.get(projectId);
+  if (!hit || opts.fresh) return recount(projectId);
+  if ((opts.now ?? Date.now()) - hit.at >= COST_RECOUNT_AFTER_MS) void recount(projectId).catch(() => {});
+  return hit.answer;
+}
+
+/** Tests: forget every last count. */
+export function resetCostCountsForTest(): void {
+  lastCounts.clear();
+  counting.clear();
 }
 
 /** GET /api/orgs/:id/costs: every placed project's total, as bytes. */

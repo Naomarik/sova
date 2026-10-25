@@ -302,3 +302,27 @@ export const FRONTS = Object.keys(FRONT_LABELS) as ShareFront[];
 
 /** The env variable pinning a field, when one does. */
 export const PIN_OF = { publicUrl: "SOVA_SHARE_PUBLIC_URL", sharePort: "SOVA_SHARE_PORT", previewUrl: "SOVA_SHARE_PREVIEW_URL" } as const;
+
+/** The via gateway is behind this host's share protocol (§mesh.public/panel): it answered its info
+    and stated no share-protocol number, or a lower one. Absent `gatewayProtocol`: not routed, or not
+    asked yet: nothing to say. */
+export function gatewayBehind(i: Pick<PublicLinksInfo, "gatewayProtocol"> | null | undefined): boolean {
+  const g = i?.gatewayProtocol;
+  return !!g && (g.theirs === null || g.theirs < g.ours);
+}
+
+/** The "Gateway behind" banner's words (§design.copy-deck/public-links). */
+export const gatewayBehindText = (gateway: string): { title: string; body: string } => ({
+  title: `${gateway} runs an older version of public links.`,
+  body: `Some pages of this host's links may not open until ${gateway} is updated.`,
+});
+
+/** The banner's Resync for the gateway's peer, as the host menu offers it (§mesh.peers/resync):
+    null when the host menu has no word about that peer (no resync answer, or the peer isn't in
+    it); `reason` set when it can't resync it now (the host menu's reason, else what it says under
+    the host). */
+export function gatewayResync(view: { line: string | null; button: { reason?: string } | null } | null): { reason?: string } | null {
+  if (!view) return null;
+  if (view.button) return view.button;
+  return view.line ? { reason: view.line } : null;
+}

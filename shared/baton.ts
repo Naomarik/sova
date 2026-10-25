@@ -14,7 +14,10 @@
  * POST /api/baton/:sid/take          -> BatonInfo (Take back: a hand-off to the operator)
  * POST /api/baton/:sid/close         -> BatonInfo
  * POST /api/baton/:sid/extend        body { by } -> BatonInfo (raises the message limit by `by`)
- * GET  /api/baton/settings           -> BatonSettings; PUT body BatonSettings -> BatonSettings (the host's defaults)
+ * GET  /api/baton/settings           -> BatonSettings; PUT body BatonSettings -> BatonSettings (the host's defaults;
+ *                                    GET carries the Project Assistant's default model, which a PUT here refuses)
+ * PUT  /api/settings/project-assistant  body { assistant: ModelPick | null } -> { assistant: PricedPick | null }
+ *                                    (the Project Assistant's default: mesh `admin`, as an org's own pick)
  *
  * Share listener (the only routes it has):
  * GET  /h/<token>                    the share page
@@ -31,6 +34,7 @@
 
 import type { LinkWarningCode, ShareState } from "./public-links";
 import type { Person } from "./orgs";
+import type { PricedPick } from "./project-assistant";
 
 /** `customType` of the marker a baton session's file carries (data `BatonMarkerData`). */
 export const BATON_ENTRY = "sova-baton";
@@ -108,6 +112,11 @@ export interface BatonDecisionData {
   /** For defer: when or on what condition to look again, and that date (ms) when it is one. */
   review?: string;
   reviewAt?: number;
+  /** A change to existing behaviour: the § id of the record it changes (record_decision's `changes`, a spec
+      look-up reference resolved on the server), and that record's prose hash when it was agreed
+      (§app.requirements/conversation-drafts). Absent: a new requirement. */
+  changes?: string;
+  changesHash?: string;
 }
 export interface BatonDoneData {
   v: 1;
@@ -280,9 +289,9 @@ export interface BatonSession {
   startedVia?: "overseer";
 }
 
-/** Who started a gathering session (§app.baton/told): you, the project's overseer, or you through the
-    global Overseer. */
-export type BatonStarter = "operator" | "overseer" | "project-overseer";
+/** Who started a gathering session (§app.baton/told): you, the project's overseer, you through the
+    global Overseer, or the Project Assistant (a feature request chat, §app.project-assistant/feature-chats). */
+export type BatonStarter = "operator" | "overseer" | "project-overseer" | "assistant";
 
 /** The strip's Started by line and its folded Why (operator only, §app.baton/told). */
 export interface BatonStarted {
@@ -367,6 +376,9 @@ export interface BatonSettings {
   photos: BatonPhotoSettings;
   /** Files in gathering chats that take them (§app.baton/files); absent on a PUT keeps what is stored. */
   files: BatonFileSettings;
+  /** The host's Project Assistant default model and thinking, every organization's unless it picks its own
+      (§app.project-assistant/models). GET: with its price, or null. Set only through PUT /api/settings/project-assistant. */
+  assistant?: PricedPick | null;
 }
 
 export interface BatonFileSettings {
@@ -497,6 +509,9 @@ export interface BatonInfo {
   wrapup: WrapupInfo | null;
   /** The org's owner, for the strip's Hide From {first} (`session.hiddenFromOwner`); null: none. */
   owner?: { name: string } | null;
+  /** A feature request chat (§app.project-assistant/feature-chats): the first name of the owner who opened it. The
+      strip says "Feature request · {first}" and offers no Hide From. */
+  featureChat?: { first: string };
   /** Who started it, when, and why (§app.baton/told). */
   started: BatonStarted;
   /** GET /api/baton only: photos are on, but the session's model can't see images, so people get no
@@ -542,10 +557,43 @@ export type BatonViewItem =
   | { kind: "handoff"; id: string; n: number; from: string; to: string; question: string; briefing?: string }
   | { kind: "decision"; id: string; by: string; area: string; statement: string }
   | { kind: "done"; id: string; summary: string }
+  /** Reviewed destination-owned presentation; the opaque handle authorizes no source access. */
+  | { kind: "tour"; id: string; handle: string; title: string; summary: string; steps: number }
   /** An offer. `to` = the invitees' names in the view with no viewer (the project overseer's) only;
       on a share page it is empty (no invitee learns who else was asked) and `invited` is the count.
       The briefing only for an invitee (or the view with no viewer). */
-  | { kind: "offer"; id: string; n: number; from: string; to: string[]; invited: number; question: string; briefing?: string };
+  | { kind: "offer"; id: string; n: number; from: string; to: string[]; invited: number; question: string; briefing?: string }
+  /** A feature request chat's plan (§app.project-assistant/feature-chats): the one tool result that crosses, built
+      field by field from an `align` result's document; each plan once, at its latest change. Never technical notes. */
+  | { kind: "plan"; id: string; plan: BatonPlan };
+
+/** A plan card's fields, each text filtered as a reply is (§app.baton/outsider-view). */
+export interface BatonPlan {
+  /** al_N: the plan's own id, so the page names it in an answer. */
+  doc: string;
+  title: string;
+  summary: string;
+  /** open while any question is open; agreed once every live question is decided; dropped. */
+  state: "open" | "agreed" | "dropped";
+  findings: string[];
+  approach: string[];
+  rejected: { option: string; why: string }[];
+  questions: BatonPlanQuestion[];
+  visual?: BatonPlanVisual;
+}
+export interface BatonPlanQuestion {
+  /** qN */
+  id: string;
+  topic: string;
+  ask: string;
+  context?: string;
+  options: { label: string; tradeoff: string }[];
+  recommendation: { choice: string; why: string };
+  decision?: string;
+  visual?: BatonPlanVisual;
+}
+/** A drawing on the plan; `withheld` when the markup backstop kept it off the page. */
+export type BatonPlanVisual = { kind: string; source: string } | { withheld: true };
 
 /** Why a link can't write now. "taken": another invitee of the same offer holds its lease (the page
     names nobody); "withdrawn": the offer is over; "newer-link": the viewer holds the baton, through a

@@ -359,6 +359,14 @@ function aboutLines(ctx, id, p) {
 export const BUILT_LABELS = new Set(["reviewed", "verified"]);
 export const isBuilt = (rec) => Array.isArray(rec?.code) && rec.code.length > 0 && BUILT_LABELS.has(rec.evidence);
 // A record's agreed {by, at}, and whether it is built. → {agreed} | {}
+// What an area's H1 says it does not own (its notOwned field), each owner with its heading title.
+// → {notOwned: [{id, title}]} | {} for an H2 or a record without the field.
+export const notOwnedOf = (ctx, id) => {
+  const rec = ctx.claims.get(id);
+  if (ctx.decls.get(id)?.level !== 1 || !Array.isArray(rec?.notOwned)) return {};
+  return { notOwned: rec.notOwned.map((o) => ({ id: o, title: ctx.decls.has(o) ? titleOf(ctx.decls.get(o)) : null })) };
+};
+export const notOwnedText = (list) => `doesn't own: ${list.length ? list.map((x) => (typeof x === "string" ? x : `${x.title ?? "(no passage)"} (${x.id})`)).join("; ") : "nothing declared"}`;
 export function agreedOf(rec) {
   const a = rec?.agreed;
   if (!a || typeof a !== "object" || typeof a.by !== "string" || typeof a.at !== "string") return {};
@@ -409,7 +417,7 @@ export function tocStream(ctx, id, dir, parentOf) {
     if (uninvestigated) unknowns.push({ code: "requires-uninvestigated", message: `${uninvestigated} of the ${of} H2s of ${id} have no requires key: their dependencies are unknown, not none` });
   }
   const otherDirections = Object.fromEntries(DIRS.filter((d) => d !== dir).map((d) => [d, neighbours(ctx, id, d, parentOf).length]));
-  return { seed: { id, title: titleOf(seed), kind: rec.kind, level: seed.level, ...labelsOf(rec), ...agreedOf(rec), codeFiles: Array.isArray(rec.code) ? rec.code.length : 0, file: seed.file, lines: seed.lines, ...sizeOf(ctx, id), ...whatOf(seed),
+  return { seed: { id, title: titleOf(seed), kind: rec.kind, level: seed.level, ...labelsOf(rec), ...agreedOf(rec), codeFiles: Array.isArray(rec.code) ? rec.code.length : 0, file: seed.file, lines: seed.lines, ...sizeOf(ctx, id), ...whatOf(seed), ...notOwnedOf(ctx, id),
     ...(dir === "out" ? { requires: rec.requires === undefined ? null : rec.requires.length } : {}), ...(childRequires ? { childRequires } : {}) }, list, unknowns, otherDirections };
 }
 
@@ -419,7 +427,7 @@ const lab = (e) => (e.labels ? ` · ${[e.labels.authority ?? "-", e.labels.evide
 
 export function renderToc(out) {
   const L = [], s = out.seed, D = out.dir.toUpperCase();
-  L.push(`${s.id} — ${s.title}  ${s.kind}${lab(s)} · ${sizeText(s)}${s.codeFiles ? ` · code ${s.codeFiles} file(s), read names them` : ""}${agreedText(s)}`, `  what: ${s.what}`);
+  L.push(`${s.id} — ${s.title}  ${s.kind}${lab(s)} · ${sizeText(s)}${s.codeFiles ? ` · code ${s.codeFiles} file(s), read names them` : ""}${agreedText(s)}`, `  what: ${s.what}`, ...(s.notOwned ? [`  ${notOwnedText(s.notOwned)}`] : []));
   if (out.dir === "out" && !out.counts.groups.requires && !out.counts.groups.embeds)
     L.push(`${D}: requires: ${s.requires === null && s.kind === "behavior" ? "dependencies uninvestigated (no requires key)" : "none declared"}`);
   if (s.childRequires) {

@@ -5,6 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { delegateDefaults } from "../mode/delegate.ts";
+import { ALIGN_STYLES } from "../mode/align-settings.ts";
 import { DEFAULT_TEAM_DEFAULTS, writeTeamDefaults } from "./team-defaults.ts";
 import {
 	footprint,
@@ -338,7 +339,7 @@ test("alignment (writing style, Visuals): optional, field by field over the host
 	// Strict: never empty, nothing unknown, each value checked, named under the profile.
 	for (const [alignment, error] of [
 		[{}, /^profiles\[0\]\.alignment must set style or visuals/m],
-		[{ style: "expert" }, /^profiles\[0\]\.alignment\.style must be one of default, simplified, pm/m],
+		[{ style: "expert" }, new RegExp(`^profiles\\[0\\]\\.alignment\\.style must be one of ${ALIGN_STYLES.join(", ")}$`, "m")],
 		[{ visuals: "on" }, /^profiles\[0\]\.alignment\.visuals must be true or false/m],
 		[{ review: true }, /^profiles\[0\]\.alignment: unknown field "review"/m],
 	] as const) {

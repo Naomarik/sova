@@ -20,21 +20,9 @@
 .ss-image img { display: block; max-width: min(100%, 320px); max-height: 240px; width: auto; height: auto; object-fit: contain; }
 .ss-image:focus-visible { outline: var(--focus-width) solid var(--focus-color); outline-offset: var(--focus-offset); }
 
-/* A vis drawing a session share can't draw as a figure: an svg as an image (no script, no
-   network), code and html as their source. */
-.share-vis-image,
+/* A vis drawing a session share can't draw: code and html as their source. */
 .share-vis-source { margin: var(--space-3) 0; display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
 .share-vis-caption { font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink-2); }
-.share-vis-image img {
-  display: block;
-  max-width: 100%;
-  height: auto;
-  padding: var(--space-3);
-  border-radius: var(--r-md);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  box-sizing: border-box;
-}
 .share-vis-source pre {
   margin: 0;
   padding: var(--space-3);

@@ -76,8 +76,10 @@ death: nothing is reported and nothing is resumed.
 
 ## §app.chat-processes/server-actions — Server actions from a chat process
 
-A few tools act on the server's own state: an ordinary chat's `project_verbs` (a project's running
-instances) and `queue_push` (a topic's queue); every tool of the Overseer, a project overseer and a
+An ordinary chat receives `record_tour` and `show_tour` only while vis is on; align's Visuals alone does not enable either tool. A hand-off's already-reviewed, scoped `show_tour` is separate baseline context, never recording access (§app.tours/authoring).
+
+A few tools act on the server's own state: `project_verbs` (a project's running instances) of an
+ordinary chat, a worker or a team member (§app.project-services/callers), `queue_push` (a topic's queue), `offer` (a project's offer cards, §chat.offers/tool) and the tool-backed tour actions `record_tour` and `show_tour` (§app.tours/authoring); every tool of the Overseer, a project overseer and a
 baton session, their file tools (`read`, `grep`, `find`, `ls`, `write`, `edit`) included; and a
 powers chat's `queue_open`. Some of what a chat does without a tool acts on it too: a baton
 composer's message (who sent it, and the statechart's note of it), saving the model or thinking a
@@ -91,7 +93,7 @@ before you try it again." Stopping the reply cancels the call on the server. The
 to the model as if they ran in the chat, so the chat's prompt and tool list don't change. A baton
 composer's message whose outcome is unknown fails with that sentence; a powers send whose outcome is
 unknown keeps what it spent of its limits. What else an ordinary chat reads of the server (a project's
-instance note, a schedule's playbook, its linked agents, the singleton check) is asked of the server
+instance note, an offer button's outcome note, a schedule's playbook, its linked agents, the singleton check) is asked of the server
 when needed; while no server is connected it reads as none. A special chat's run-start, compaction
 and reply-end hooks, and a powers chat's reads (sessions, a transcript, an insight, whether a session
 is busy, a project's root), wait for a server instead, and are asked again of the next one: after
@@ -108,7 +110,11 @@ whose socket path fits neither is refused, never given a path cut short. The cha
 4-byte big-endian length followed by that many bytes of UTF-8 JSON, one object with a type `t`. A
 frame above 64 MiB, an empty one, or one that isn't such an object closes the link. Every
 connection starts with the chat's `hello` (protocol, build, pid, state, last event number, highest
-controller epoch). The server answers `control` with its epoch, which never goes down across
+controller epoch). A later `hello` on the same link says only that the chat's state changed: once
+the link's `control` has come, whenever the chat's state differs from what the link's last `hello`
+said, the link hears one `hello` with the state now, and never another for the same state. A link
+opened while the chat boots thus hears exactly one `hello` saying ready, whether the boot ends
+before that `control` arrives or after. The server answers `control` with its epoch, which never goes down across
 restarts; a lower or equal epoch on a second link is refused, a higher one replaces the link before
 it, and a command carrying another epoch is refused unrun. Each side speaks protocol N and accepts
 N-1. The kernel frames (hello, control, refuse, ping, drain, drained, exit, bye) never change, so
@@ -149,12 +155,18 @@ nothing but the server ever starts a chat again.
   and `OLDPWD`, and the server's own `PORT` and `HOST`. On `PATH` come Sova's Bun first, then the
   directory of the Claude program the server resolved, then the server's `PATH`. It also gets
   `HOME`, `PI_CODING_AGENT_DIR` and the chat's own `SOVA_CHAT_*` (among them the checkout's and the
-  copies' places, `SOVA_CHAT_LIVE_ROOT` and `SOVA_CHAT_COPIES_ROOT`). A chat process's own
+  copies' places, `SOVA_CHAT_LIVE_ROOT` and `SOVA_CHAT_COPIES_ROOT`), and its own key,
+  `SOVA_CALLER_KEY` (§app.command-audit/keys). A chat process's own
   variables (`SOVA_CHAT_SOCK`, `_PATH`, `_ID`, `_UNIT`, `_BUILD`, `_STATE_ROOT`, `_LIVE_ROOT`,
-  `_COPIES_ROOT`) are never passed on from the server's environment, and a server deletes them from
+  `_COPIES_ROOT`, and `SOVA_CALLER_KEY`) are never passed on from the server's environment, and a server deletes them from
   its own at start, so a server started from a chat's tools never acts as that chat or its server. All of it is passed in a file only
   the user can read, never on a command line. A variable that file can't carry (a name that is no
   variable name, or a value on more than one line) is left out, and the server logs its name once.
+- **No periodic collection.** A chat's process runs without Bun's periodic garbage collection timer
+  (`BUN_GC_TIMER_DISABLE=1` in its environment), so an idle chat spends less CPU; its memory still
+  comes back down after a big reply, through the collections its own allocations start. The
+  process deletes that variable from its own environment as it starts, so the programs its tools
+  run (a test runner, a hermetic server) keep their timer.
 - **Records and adoption.** Each chat is recorded under `<state root>/chats/registry/`. At a server
   start, before chat sockets are served, the server takes charge of the recorded chats whose unit is
   running. A recorded chat whose unit is gone is a death, and a unit with this server's prefix that
@@ -165,7 +177,14 @@ nothing but the server ever starts a chat again.
   server recorded but could not deliver before it stopped is delivered at its next start. Exit 0
   without a stated cause reads as an operator stop, not a death. A process that ends, or doesn't answer in time,
   before it ever answered the server is a failed start, not a death: logged, never in the deaths log,
-  and the chat starts on the last good code, or its open is refused (§app/chat-processes).
+  and the chat starts on the last good code, or its open is refused (§app/chat-processes). In time
+  means, for every chat, its socket answers within 10 s of the start and its `hello` says it is ready
+  within 40 s after that: a start normally takes under a second, and the slowest measured under heavy
+  load took 34 s. A chat that finished starting after its first `hello` (which said it was still
+  starting) but before the server took control says it is ready at once, in a `hello` right after
+  the server's `control`, exactly once: the server never waits out the limit for a chat that is
+  ready, whether it is starting the chat or waiting for a reload's replacement
+  (§app.chat-processes/code-pickup).
 - **One process per chat.** Starting a chat whose previous process is still exiting waits up to
   10 s for that process and the session's writer lock to go.
 - **Claude programs.** Across all chat processes at most 4 idle Claude CLI children are kept
@@ -176,12 +195,22 @@ nothing but the server ever starts a chat again.
 
 ## §app.chat-processes/idle-stop — An idle chat process stops
 
-A chat's process with nobody attached and nothing in flight (no reply, compaction, queued message,
-open dialog, working worker or server action) is asked to close after 30 minutes like that
-(`SOVA_CHAT_IDLE_MIN`, in minutes, fractions allowed; 0 is never). The chat checks again that it is
-still quiet with nobody attached, and refuses otherwise, which restarts the clock. A chat that
-accepts but has not exited 30 s later is stopped. An idle stop is not a death and never gets a
-"continue". The chat stays closed until someone opens it, which starts a new process: its `hello`
+A chat's process with nothing in flight (no reply, compaction, queued message, open dialog,
+working worker or server action) is asked to close after 30 minutes like that
+(`SOVA_CHAT_IDLE_MIN`, in minutes, fractions allowed; 0 is never), whether or not a browser tab
+has it open: an open tab doesn't keep it running. The chat checks again that it is still quiet,
+and refuses otherwise, which restarts the clock. A chat that accepts but has not exited 30 s later
+is stopped. That stop only ever reaches the process that accepted: a chat started again while it
+closes (someone sent to it, say) waits, as for any previous process still exiting (up to 10 s,
+§app.chat-processes/supervision), until that close is done, and its new process is never stopped
+by it, under either driver. An idle stop is not a death and never gets a "continue". A tab that had it open keeps
+its rows and draft and doesn't reconnect: its socket, a reconnect or a server restart never starts
+the chat again; only something that needs the chat does, such as sending from that tab
+(§chat.transcript/instant-open, "A chat closed while its tab is open"). The chat stays closed until
+someone sends to it or acts on it, opens it (a click, a reload, every pane of a workspace), brings
+its workspace tab to the front (§workspace.groups/layout-tabs), or another chat or the Overseer
+sends it a message, which starts a new process; a jump in its Timeline or scrolling up for older
+rows doesn't, they read the file (§chat.transcript/instant-open). Its `hello`
 comes about 0.5 s after the socket opens for a 240 KB session and about 0.8 s for an 11 MB one
 (median on a hermetic server, detached chats, 2026-10-13), while its saved rows already show
 (§chat.transcript/instant-open). Its workers run on in their own processes; a waiting worker's process stops the same way, idle, and stays listed waiting (§app.chat-processes/workers).
@@ -277,6 +306,33 @@ last copy that uses it. No server removes copies under a place set with `SOVA_CH
 which several servers may share, unless `SOVA_CHAT_CODE_GC=on` says the place is that server's
 alone (tests).
 
+## §app.chat-processes/extension-loading — Extensions load as plain modules
+
+A chat process loads Sova's own extensions (`pi-config/`) as plain modules, never through pi's
+translating fallback: every package they import (pi-coding-agent, pi-ai, pi-tui, typebox) resolves
+from the extensions in the chat's copy of the code to the very copy pi itself runs. So the
+extensions share one instance of each file they have in common, and a chat's first open on a new
+copy of the code (after a release, or after a reboot emptied the translation cache) is as quick as
+a later one. Sova's own dependencies name pi-ai, pi-tui and typebox at exactly the versions its
+pi-coding-agent depends on, so they move with every pi upgrade; a check fails when any of the four,
+resolved from the copy's extensions, is another copy than pi's own (another version included), another
+fails when an extension can't be imported without the fallback, and another when an extension loads
+a pi package Sova's dependencies don't name. Installed npm and git packages resolve pi from their own
+dependencies, with their own copies, and are outside these checks.
+
+## §app.chat-processes/no-terminal-drawing — No terminal drawing code in a chat process
+
+A chat process never loads pi's terminal drawing code: pi-tui's screen and components, pi's own
+terminal components, its syntax highlighter and its markdown and diagram renderers are quiet
+stand-ins there, which draw nothing and do nothing. Text measuring, truncation and wrapping, key
+matching and the colour theme stay pi's own, since extensions use them for status text. Nothing a
+person sees in Sova changes: an extension's terminal screens, widgets and footers were never shown
+in Sova. The terminal pi, the server and every process other than a chat's load the real code.
+A check fails when the stand-ins lack a name pi-tui exports, and another when pi adds, drops or
+moves a file in the folders the stand-ins reach into, until a person classifies it as a stand-in or
+kept. Tests log every call that reaches a stand-in; a chat process logs the first one that isn't a
+construction, once.
+
 ## §app.chat-processes/special-kinds — The Overseer, project overseers and batons in a chat process
 
 The Overseer, a project overseer and a baton session run in a chat process like any chat, with the
@@ -325,7 +381,9 @@ included), a team member, coordinator, monitor or successor, and a resumed worke
 hidden chat: `/explain`'s fork, a compaction's hand-off fork and `/btw`'s side thread. The server
 starts each from the loadout its parent computed (model, effort, tools, extensions, flags, system
 prompt, sandbox, remote target, modes, team identity, agent dir), with nothing of an ordinary chat
-added (no profile, mode menu, memory, topics, links, Sova-served tools or session powers), and
+added (no profile, mode menu, memory, topics, links or session powers, and of the Sova-served tools
+only `project_verbs` with its instance note, which a worker or team member gets and a hidden chat
+doesn't, §app.project-services/callers), and
 opens it the way it opens any chat. The parent never starts a worker's process and never talks to
 it directly: the server passes it the parent's task, steers, follow-ups, aborts and stops, and
 passes its events back. A worker never runs inside the server's process.
@@ -406,3 +464,37 @@ sent.
 
 A server restart is never a death, nor is a stop the server asked for (idle, a code reload, an
 archive, a kill): nothing is reported and nothing is resumed.
+
+
+## §app.chat-processes/boot-log — A chat's start leaves a trail
+
+A chat process names each step of its start as it enters it, in two phases: starting, from its
+launch until its `hello` says ready (loading the chat's code, setting up the model list, loading
+the extensions, starting them in a trial session, closing that session), and opening, from the
+server's `open` until its answer (reading the session file, its loadout, loading and starting the
+extensions again). The steps are Sova's own; no extension is named. Workers and hidden chats start
+and open the same way and leave the same trail. Only a chat process keeps it: the server's own
+warm-up at its start logs and sends none of it.
+
+- **A healthy start, one line per phase.** When a phase ends, the chat's log gets one line: the phase's time,
+  each step's time and the processor time used, as `[chat-runtime] ready in 1.42 s (chat code
+  0.61 s, model setup 0.09 s, …; cpu 1.1 s)` and `[chat-runtime] opened in 0.80 s (…)`. Nothing
+  else is added.
+- **A slow phase leaves its step behind.** Every 10 s while a phase lasts, the chat logs
+  `[chat-runtime] still starting: <step> for N s (M s since start, cpu C s)` (`still opening:` while
+  opening), so the last log lines kept when the chat is stopped (§app.chat-processes/supervision)
+  name the step even when its process is killed.
+- **Stopped while starting.** A chat process stopped (SIGTERM or SIGINT) in either phase logs the
+  step it was in, how long it had been there, the time since its start, its processor time and, on
+  Linux, the programs it had started and not yet seen end: each one's name, pid and how long it has
+  run, at most 120 characters each and never its arguments. Its exit line says how long after the
+  stop it exits.
+- **The server hears the step.** The chat also sends the server each step as it enters it and at
+  each 10 s beat, in a frame of its own (§app.chat-processes/wire). When the server stops waiting
+  (40 s for the `hello` that says ready, 60 s for the open's answer; both as before), its log says
+  `stuck in <step> for N s` and how long after the start the chat's socket first answered, and so
+  does the detail recorded for a chat stopped for never saying ready; a chat on older code that
+  reports no step reads `no step reported`. The error the person sees doesn't change.
+- **Slow starts in the server's log.** A chat whose start, from its launch to its open's answer,
+  took 5 s or more gets one line in the server's log with that time and the times to its first
+  answer, to ready and to open; a faster start adds nothing there.

@@ -108,6 +108,8 @@ export function skippedText(r: CleanupResult): string | null {
 }
 
 export const sessionsWord = (n: number) => `${n} ${n === 1 ? "session" : "sessions"}`;
+/** "1 folder", "4 folders": the Folders spine door's count. */
+export const foldersWord = (n: number) => `${n} ${n === 1 ? "folder" : "folders"}`;
 
 /** What an action targets, for the confirm dialog body. */
 export function cleanupScope(req: CleanupRequest): string {

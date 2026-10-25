@@ -1,0 +1,15 @@
+[
+  { "id": "session.create", "case": "refused:null-body", "status": 500, "finding": "POST /api/sessions with the JSON body null: TypeError reading body.subagent_profile (app.ts, the route checks only that the body parses)" },
+  { "id": "session.archive", "case": "refused:null-body", "status": 500, "finding": "POST /api/sessions/archive with the JSON body null: TypeError reading body.archived" },
+  { "id": "session.archive", "case": "real:null-body", "status": 500, "finding": "POST /api/sessions/archive with the JSON body null: TypeError reading body.archived" },
+  { "id": "session.unarchive", "case": "refused:null-body", "status": 500, "finding": "POST /api/sessions/archive with the JSON body null: TypeError reading body.archived" },
+  { "id": "session.unarchive", "case": "real:null-body", "status": 500, "finding": "POST /api/sessions/archive with the JSON body null: TypeError reading body.archived" },
+  { "id": "project.verb.revoke", "case": "refused:link=proto-string", "status": 502, "finding": "revoke with link \"__proto__\": the link lookup (share.ts instanceOfLink/keptPreview) reads an inherited key, throws, and answers start-failed 502 instead of not-found 404" },
+  { "id": "session.draft.set", "case": "refused:null-body", "status": 500, "finding": "PUT /api/sessions/draft with the JSON body null: TypeError reading body.text" },
+  { "id": "session.draft.set", "case": "real:null-body", "status": 500, "finding": "PUT /api/sessions/draft with the JSON body null: TypeError reading body.text" },
+  { "id": "session.group.create", "case": "real:null-body", "status": 500, "finding": "POST /api/session-groups with the JSON body null: TypeError reading body.name" },
+  { "id": "session.group.rename", "case": "real:null-body", "status": 500, "finding": "PATCH /api/session-groups/:id with the JSON body null: TypeError reading patch.name (session-groups.ts updateGroup)" },
+  { "id": "session.group.assign", "case": "refused:null-body", "status": 500, "finding": "POST /api/session-groups/assign with the JSON body null: TypeError reading body.groupId" },
+  { "id": "session.group.assign", "case": "real:null-body", "status": 500, "finding": "POST /api/session-groups/assign with the JSON body null: TypeError reading body.groupId" },
+  { "id": "session.group.send", "case": "real:null-body", "status": 500, "finding": "POST /api/session-groups/:id/prompt with the JSON body null: TypeError reading body.text" }
+]

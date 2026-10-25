@@ -4,9 +4,10 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, beforeEach, test } from "node:test";
-import { envFileText, systemdRunArgv, type Exec } from "../project-services/drivers";
+import { envFileText, SystemdDriver, systemdRunArgv, type Exec } from "../project-services/drivers";
 import { FakeDriver } from "./fake-driver";
 import { CHAT_PROCESS_ENV, chatDriver, chatEnv, chatProcessAlive, chatSocketPath, ChatSupervisor, chooseChatHost, exitOfLog, sweepOldChildren, nextEpoch, scrubChatProcessEnv, supervisorConfig, type ChatDeath, type SupervisorDeps } from "./supervisor";
+import { GC_TIMER_OFF } from "./gc-timer";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-chat-supervisor-"));
 after(() => rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true }));
@@ -487,6 +488,290 @@ test("an accepted idle drain whose process doesn't exit within 30 s is stopped; 
   assert.equal(never.sup.list().length, 1);
 });
 
+/** A clock the test moves by hand: `sleep` waits until `advance` passes its time, so two waits run side by side. */
+function manualClock() {
+  const sleepers: { at: number; wake: () => void }[] = [];
+  const flush = () => new Promise<void>((r) => setImmediate(r));
+  return {
+    sleep: (ms: number) => new Promise<void>((wake) => void sleepers.push({ at: clock + ms, wake })),
+    flush,
+    /** Move `ms` ahead in `step`s, waking each sleeper due and letting what it starts run. */
+    async advance(ms: number, step = 100) {
+      for (const end = clock + ms; clock < end; ) {
+        clock += step;
+        for (const s of sleepers.filter((x) => x.at <= clock)) {
+          sleepers.splice(sleepers.indexOf(s), 1);
+          s.wake();
+        }
+        await flush();
+      }
+    },
+  };
+}
+
+test("a chat started again while its idle close is waited for is never stopped by that close (the unit name is reused)", async () => {
+  const d = new FakeDriver();
+  const time = manualClock();
+  const { sup } = make(d, {
+    sleep: time.sleep,
+    pollMs: 100,
+    // It accepts and starts stopping: still there at the first look.
+    drain: async (id) => {
+      d.exiting(sup.record(id)!.unit);
+      return { ok: true };
+    },
+  });
+  const first = await sup.start(chat);
+  sup.noteIdle("c1", true);
+  clock += 30 * 60_000;
+  let closed = false;
+  const ticking = sup.tick().then(() => void (closed = true));
+  await time.flush();
+  assert.equal(closed, false, "the idle close waits for the process to go");
+  // pid1 exits; the server sees its link close and looks; someone sends to the chat at once.
+  d.die(first.unit, [`[chat-runtime] exit idle (pid ${first.pid})`]);
+  await sup.check("c1");
+  const reopening = sup.start(chat);
+  await time.flush();
+  // The idle close's 30 s wait, and the reopen's, run on.
+  await time.advance(31_000);
+  await ticking;
+  const second = await reopening;
+  assert.notEqual(second.pid, first.pid);
+  assert.equal(second.unit, first.unit, "the same unit name");
+  assert.deepEqual(d.stopped, [], "no stop was sent: pid1 exited by itself, and pid2 is never stopped");
+  assert.deepEqual(await d.status(second.unit), { state: "active", pid: second.pid });
+  assert.equal(sup.record("c1")?.pid, second.pid);
+});
+
+test("a chat started again while its idle close's late stop is on its way waits until that stop is done", async () => {
+  const d = new FakeDriver();
+  const time = manualClock();
+  const { sup } = make(d, {
+    sleep: time.sleep,
+    pollMs: 100,
+    // It accepts, then hangs: still its unit's main process when the 30 s are up.
+    drain: async (id) => {
+      d.exiting(sup.record(id)!.unit);
+      return { ok: true };
+    },
+  });
+  const first = await sup.start(chat);
+  // The stop is slow to take effect (the service manager busy): pid1 exits by itself meanwhile, and the
+  // unit name is free for a moment before the stop lands on whatever then runs under it.
+  const stop = d.stop.bind(d);
+  let late = false;
+  d.stop = async (unit) => {
+    if (!late) {
+      late = true;
+      d.die(unit, [`[chat-runtime] exit idle (pid ${first.pid})`]);
+      await time.advance(500);
+    }
+    return stop(unit);
+  };
+  sup.noteIdle("c1", true);
+  clock += 30 * 60_000;
+  const ticking = sup.tick();
+  await time.flush();
+  await time.advance(25_000);
+  // Someone sends to it 25 s into the close's wait.
+  const reopening = sup.start(chat);
+  await time.advance(10_000);
+  await ticking;
+  const second = await reopening;
+  assert.ok(late, "the late stop was sent");
+  assert.notEqual(second.pid, first.pid);
+  assert.deepEqual(await d.status(second.unit), { state: "active", pid: second.pid }, "the reopened chat's process still runs");
+  assert.equal(sup.record("c1")?.pid, second.pid);
+});
+
+/** A chat whose process accepts its idle drain, then hangs (still its unit's main process when the 30 s
+    are up), on a manual clock; its first stop is slow to land: `during` runs (pid1 exits by itself by
+    default) and time moves `slowMs` on before the stop takes effect on whatever then runs under the name. */
+async function hungIdleChat(o: { slowMs?: number; during?: (unit: string) => void | Promise<void> } = {}) {
+  const d = new FakeDriver();
+  const time = manualClock();
+  const { sup } = make(d, {
+    sleep: time.sleep,
+    pollMs: 100,
+    drain: async (id) => {
+      d.exiting(sup.record(id)!.unit);
+      return { ok: true };
+    },
+  });
+  const first = await sup.start(chat);
+  const stop = d.stop.bind(d);
+  const sent = { late: false, landed: false };
+  d.stop = async (unit) => {
+    if (!sent.late) {
+      sent.late = true;
+      d.die(unit, [`[chat-runtime] exit idle (pid ${first.pid})`]);
+      await o.during?.(unit);
+      await time.advance(o.slowMs ?? 500);
+      sent.landed = true;
+    }
+    return stop(unit);
+  };
+  return { d, time, sup, first, sent };
+}
+
+/** `p`'s outcome so far, without an unhandled rejection. */
+function watchOutcome<T>(p: Promise<T>) {
+  const o: { done: boolean; value?: T; error?: Error } = { done: false };
+  p.then(
+    (v) => Object.assign(o, { done: true, value: v }),
+    (e: Error) => Object.assign(o, { done: true, error: e }),
+  );
+  return o;
+}
+
+test("two closes of one chat at once (an idle close and a worker stop's awaitExit): a start waits for both, and the later stop never reaches the new process", async () => {
+  const { d, time, sup, first, sent } = await hungIdleChat();
+  sup.noteIdle("c1", true);
+  clock += 30 * 60_000;
+  const ticking = sup.tick();
+  await time.flush();
+  await time.advance(25_000);
+  // A stop of the chat (stopWorker: drain, then awaitExit) joins the idle close, and someone reopens it.
+  const exiting = sup.awaitExit("c1");
+  await time.advance(1_000);
+  const reopening = watchOutcome(sup.start(chat));
+  await time.advance(10_000);
+  await ticking;
+  await exiting;
+  await time.advance(1_000);
+  assert.ok(sent.landed, "the idle close's late stop landed");
+  assert.ok(reopening.done && !reopening.error, `the reopen started: ${reopening.error?.message}`);
+  const second = reopening.value!;
+  assert.notEqual(second.pid, first.pid);
+  assert.deepEqual(await d.status(second.unit), { state: "active", pid: second.pid }, "the reopened chat's process still runs");
+  assert.equal(sup.record("c1")?.pid, second.pid);
+});
+
+test("an idle close's 30 s run out with pid1 still the unit's main process, and another process is there by the stop: not stopped", async () => {
+  const d = new FakeDriver();
+  const { sup } = make(d, {
+    // It accepts, then hangs.
+    drain: async (id) => {
+      d.exiting(sup.record(id)!.unit);
+      return { ok: true };
+    },
+  });
+  const first = await sup.start(chat);
+  sup.noteIdle("c1", true);
+  clock += 30 * 60_000;
+  const deadline = clock + 30_000;
+  const status = d.status.bind(d);
+  let swapped = false;
+  d.status = async (unit) => {
+    const st = await status(unit);
+    // The wait's last look still sees pid1; by the next, another process runs under the name.
+    if (!swapped && clock >= deadline && st.pid === first.pid) {
+      swapped = true;
+      d.table.get(unit)!.status = { state: "active", pid: 4242 };
+    }
+    return st;
+  };
+  await sup.tick();
+  assert.ok(swapped, "the wait ran its 30 s out on pid1");
+  assert.deepEqual(d.stopped, [], "the unit runs another process by the stop: not stopped");
+  assert.deepEqual(await d.status(first.unit), { state: "active", pid: 4242 });
+});
+
+test("a start held by a close still going after 10 s is refused as still closing, at 10 s, starting nothing", async () => {
+  const { d, time, sup } = await hungIdleChat();
+  sup.noteIdle("c1", true);
+  clock += 30 * 60_000;
+  const ticking = sup.tick();
+  await time.flush();
+  await time.advance(1_000);
+  const t0 = clock;
+  const reopening = watchOutcome(sup.start(chat));
+  await time.advance(10_500);
+  assert.ok(reopening.done, `refused within the 10 s wait (waited ${clock - t0} ms)`);
+  assert.match(reopening.error?.message ?? "", /still closing/);
+  assert.equal(d.started.length, 1, "nothing started");
+  await time.advance(20_000);
+  await ticking;
+  assert.equal(d.started.length, 1);
+});
+
+test("a reopen of a chat whose exited process's stop takes over 10 s to land is refused, never started under the stop", async () => {
+  let reopening: ReturnType<typeof watchOutcome<unknown>> | null = null;
+  const { d, time, sup, sent } = await hungIdleChat({
+    slowMs: 12_000,
+    // pid1 has exited and its link's end forgot it: no record holds the reopen, only the close in flight.
+    during: async () => {
+      await sup.check("c1");
+      reopening = watchOutcome(sup.start(chat));
+      await time.flush();
+    },
+  });
+  sup.noteIdle("c1", true);
+  clock += 30 * 60_000;
+  const ticking = sup.tick();
+  await time.flush();
+  await time.advance(31_000);
+  await ticking;
+  assert.ok(sent.landed);
+  const r = reopening as ReturnType<typeof watchOutcome<unknown>> | null;
+  assert.ok(r?.done, "the reopen was answered");
+  assert.match(r!.error?.message ?? "", /still closing/, "refused at 10 s, while the stop was still on its way");
+  assert.equal(d.started.length, 1, "no process was started under the late stop");
+});
+
+test("awaitExit (a reload, a worker stop) holds a start of the chat too: its late stop never reaches the new process", async () => {
+  const d = new FakeDriver();
+  const time = manualClock();
+  const { sup } = make(d, { sleep: time.sleep, pollMs: 100 });
+  const first = await sup.start(chat);
+  const stop = d.stop.bind(d);
+  let landed = false;
+  d.stop = async (unit) => {
+    if (!landed) {
+      d.die(unit, [`[chat-runtime] exit reload (pid ${first.pid})`]);
+      await time.advance(500);
+      landed = true;
+    }
+    return stop(unit);
+  };
+  // Its drain accepted; it hangs.
+  sup.expectExit("c1", "reload");
+  d.exiting(first.unit);
+  const exiting = sup.awaitExit("c1");
+  await time.flush();
+  await time.advance(25_000);
+  const reopening = watchOutcome(sup.start(chat));
+  await time.advance(10_000);
+  await exiting;
+  await time.advance(1_000);
+  assert.ok(landed, "awaitExit's late stop landed");
+  assert.ok(reopening.done && !reopening.error, `the reopen started: ${reopening.error?.message}`);
+  assert.deepEqual(await d.status(first.unit), { state: "active", pid: reopening.value!.pid }, "the reopened chat's process still runs");
+});
+
+test("an idle close's late stop never reaches another process found under the unit's name", async () => {
+  const d = new FakeDriver();
+  let other: number | null = null;
+  const { sup } = make(d, {
+    // pid1 exits as it accepts, and something else starts a process under the same unit name.
+    drain: async (id) => {
+      const unit = sup.record(id)!.unit;
+      d.die(unit);
+      await d.start({ unit, argv: [], cwd: "/", env: {} });
+      other = (await d.status(unit)).pid;
+      return { ok: true };
+    },
+  });
+  const first = await sup.start(chat);
+  sup.noteIdle("c1", true);
+  clock += 30 * 60_000;
+  await sup.tick();
+  assert.notEqual(other, first.pid);
+  assert.deepEqual(d.stopped, [], "the unit now runs another process: not stopped");
+  assert.deepEqual(await d.status(first.unit), { state: "active", pid: other });
+});
+
 test("beyond the cap, the Claude children idle longest are let go; busy ones never", async () => {
   const d = new FakeDriver();
   const reaped: string[] = [];
@@ -690,6 +975,12 @@ test("the chat env: the server's minus the deny list, Sova's bun and the resolve
   for (const k of ["INVOCATION_ID", "NOTIFY_SOCKET", "PORT", "HOST", "PWD"]) assert.equal(env[k], undefined, k);
 });
 
+test("the chat env turns Bun's GC timer off, whatever the server's own env says", () => {
+  const base = { bun: "/opt/bun/bin/bun", home: "/h", agentDir: "/h/a" };
+  assert.equal(chatEnv({ ...base, serverEnv: { LANG: "C" } })[GC_TIMER_OFF.name], GC_TIMER_OFF.value);
+  assert.equal(chatEnv({ ...base, serverEnv: { [GC_TIMER_OFF.name]: "0" } })[GC_TIMER_OFF.name], GC_TIMER_OFF.value);
+});
+
 test("a chat process's own variables: never inherited from its server, and deleted from a server's env at boot", () => {
   const leaked = { SOVA_CHAT_SOCK: "/s", SOVA_CHAT_PATH: "/p", SOVA_CHAT_ID: "x", SOVA_CHAT_UNIT: "u", SOVA_CHAT_BUILD: "b", SOVA_CHAT_STATE_ROOT: "/live/sova", SOVA_CHAT_LIVE_ROOT: "/live", SOVA_CHAT_COPIES_ROOT: "/live/sova/chats/code" };
   const env = chatEnv({ serverEnv: { ...leaked, SOVA_CHAT_CODE_ROOT: "/scratch", LANG: "C" }, bun: "/opt/bun/bin/bun", home: "/h", agentDir: "/h/a", extra: { SOVA_CHAT_ID: "c1" } });
@@ -859,3 +1150,152 @@ test("adoption says it stops only a running unrecorded unit; what is left of an 
   assert.deepEqual(lines.filter((l) => l.includes("no chat records it")), ["sova-chat-test01-live: no chat records it; stopping it"]);
 });
 
+
+// ---- the watch's fast look: no program for a healthy chat --------------------------------------------
+
+/**
+ * The real systemd driver over a scripted user manager: every program it would run is logged in
+ * `ran` and answered from `units`. A unit's cgroup (`owns`) holds its main pid while `alive` says the
+ * process runs; `isChatProcess` reads the same flag, as /proc would.
+ */
+function scriptedSystemd() {
+  const ran: string[][] = [];
+  const units = new Map<string, { pid: number; up: boolean; journal: string[] }>();
+  let nextPid = 4000;
+  const alive = new Set<number>();
+  const exec: Exec = async (file, args) => {
+    ran.push([file, ...args]);
+    if (file === "systemd-run") {
+      const unit = args.find((a) => a.startsWith("--unit="))!.slice("--unit=".length);
+      const pid = nextPid++;
+      units.set(unit, { pid, up: true, journal: [] });
+      alive.add(pid);
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    if (file === "systemctl" && args[1] === "show") {
+      const u = units.get(args[2]!.replace(/\.service$/, ""));
+      if (!u) return { code: 0, stdout: "LoadState=not-found\nActiveState=inactive\n", stderr: "" };
+      return { code: 0, stdout: u.up ? `LoadState=loaded\nActiveState=active\nSubState=running\nMainPID=${u.pid}\nExecMainStatus=0\nResult=success\n` : `LoadState=loaded\nActiveState=failed\nSubState=failed\nMainPID=0\nResult=failed\n`, stderr: "" };
+    }
+    if (file === "journalctl") {
+      const u = units.get(args[2]!.replace(/\.service$/, ""));
+      return { code: 0, stdout: (u?.journal ?? []).map((m) => JSON.stringify({ MESSAGE: m })).join("\n"), stderr: "" };
+    }
+    return { code: 0, stdout: "", stderr: "" };
+  };
+  class Driver extends SystemdDriver {
+    override owns(unit: string, pid: number) {
+      return units.get(unit)?.pid === pid && alive.has(pid);
+    }
+  }
+  const driver = new Driver(exec, {});
+  /** The unit's main process is killed: gone from /proc, its unit failed with the signal. */
+  const kill = (unit: string) => {
+    const u = units.get(unit)!;
+    alive.delete(u.pid);
+    u.up = false;
+    u.journal = ["Started x.", `${unit}.service: Main process exited, code=killed, status=9/KILL`, `${unit}.service: Failed with result 'signal'.`];
+  };
+  return { ran, units, alive, exec, driver, kill };
+}
+
+function makeScripted(extra: Partial<SupervisorDeps> = {}) {
+  const sys = scriptedSystemd();
+  const m = make(new FakeDriver(), { driver: sys.driver, platform: "linux", isChatProcess: (pid) => sys.alive.has(pid), ...extra });
+  return { ...m, ...sys };
+}
+
+test("a healthy chat's watch tick runs no program: its process is read directly, systemctl only at the slow reconcile", async () => {
+  const { sup, ran, deaths } = makeScripted();
+  await sup.start(chat);
+  await sup.tick(); // the first tick after a start may still ask: the start's own answer counts
+  ran.length = 0;
+  // 14 watch ticks, 2 s apart (28 s, inside the 30 s reconcile): nothing started, no death.
+  for (let i = 0; i < 14; i++) {
+    clock += 2_000;
+    await sup.tick();
+  }
+  assert.deepEqual(ran.map((c) => c.join(" ")), [], "a healthy chat's tick starts no program");
+  // The slow reconcile asks the manager once, then the fast look goes on.
+  clock += 2_000;
+  await sup.tick();
+  assert.deepEqual(ran.map((c) => c.slice(0, 2)), [["systemctl", "--user"]]);
+  assert.equal(ran[0]![2], "show");
+  ran.length = 0;
+  clock += 2_000;
+  await sup.tick();
+  assert.deepEqual(ran.map((c) => c.join(" ")), []);
+  assert.deepEqual(deaths, []);
+});
+
+test("a killed chat is reported at the very next tick, its death read from systemd as before", async () => {
+  const { sup, deaths, kill } = makeScripted();
+  const rec = await sup.start(chat);
+  sup.noteConnected("c1");
+  await sup.tick();
+  clock += 2_000;
+  await sup.tick(); // a fast-look tick
+  kill(rec.unit);
+  clock += 2_000;
+  await sup.tick();
+  assert.equal(deaths.length, 1, "noticed at the first tick after it died");
+  assert.deepEqual([deaths[0]!.cause, deaths[0]!.exit, deaths[0]!.signal, deaths[0]!.pid], ["crashed", null, "KILL", rec.pid]);
+});
+
+test("the fast look trusts no reused pid, no pid outside the unit, no unknown pid, and nothing off Linux: each asks systemd at once", async () => {
+  const shows = (ran: string[][]) => ran.filter((c) => c[0] === "systemctl" && c[2] === "show").length;
+  // The pid runs another program now (no chat-runtime/main.ts): systemd is asked, and its death reported.
+  {
+    let reused = false;
+    const s = makeScripted({ isChatProcess: () => !reused });
+    const rec = await s.sup.start(chat);
+    s.sup.noteConnected("c1");
+    await s.sup.tick();
+    s.units.get(rec.unit)!.up = false;
+    s.units.get(rec.unit)!.journal = [`${rec.unit}.service: Main process exited, code=exited, status=1/FAILURE`];
+    reused = true;
+    s.ran.length = 0;
+    clock += 2_000;
+    await s.sup.tick();
+    assert.equal(shows(s.ran), 1);
+    assert.equal(s.deaths.length, 1);
+    assert.equal(s.deaths[0]!.exit, 1);
+  }
+  // The pid is a chat process but no longer in the chat's unit (its cgroup): systemd is asked.
+  {
+    const s = makeScripted();
+    const rec = await s.sup.start({ ...chat, chatId: "c2" });
+    await s.sup.tick();
+    s.units.get(rec.unit)!.pid = 99_999;
+    s.ran.length = 0;
+    clock += 2_000;
+    await s.sup.tick();
+    assert.equal(shows(s.ran), 1);
+  }
+  // Not Linux: every tick asks the driver, as before.
+  {
+    const s = makeScripted({ platform: "darwin" });
+    await s.sup.start({ ...chat, chatId: "c3" });
+    s.ran.length = 0;
+    for (let i = 0; i < 3; i++) {
+      clock += 2_000;
+      await s.sup.tick();
+    }
+    assert.equal(shows(s.ran), 3);
+  }
+  // A start whose main process has no pid yet: asked each tick until it has one.
+  {
+    const d = new FakeDriver();
+    let asked = 0;
+    const status = d.status.bind(d);
+    d.status = async (u) => (asked++, status(u));
+    d.owns = () => true;
+    const { sup } = make(d, { platform: "linux", isChatProcess: () => true, startWaitMs: 0 });
+    d.slowNextStart = true;
+    await sup.start({ ...chat, chatId: "c4" });
+    asked = 0;
+    await sup.tick();
+    await sup.tick();
+    assert.equal(asked, 2);
+  }
+});

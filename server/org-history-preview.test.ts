@@ -18,7 +18,7 @@ mkdirSync(join(tmp, "agent", "sessions"), { recursive: true });
 
 const orgs = await import("./orgs");
 const po = await import("./project-overseer");
-const { envelopeFor, hostOf } = await import("./org-engine");
+const { envelopeFor, hostOf, setOrgClockForTest } = await import("./org-engine");
 const { fakeLooks } = await import("./org-test-fixtures");
 const { targetOfPerson } = await import("./baton");
 const { projectSid } = await import("./projects/sids");
@@ -102,26 +102,27 @@ describe("a preview link made, captured through the engine", () => {
     assert.equal(host().history.event(OPERATOR, made.id)!.rationale?.what, `Preview link made: ${minted.at(-1)}`);
   });
 
-  test("an unattended overseer: held, then released by its review; preview.started under the release, and its answer", async () => {
+  test("an unattended overseer: held, then released at its hold's end; preview.started under the release, and its answer", async () => {
     const before = ids();
     const out = await start("overseer", false);
     assert.ok(out.held, JSON.stringify(out));
     const held = newest("hold.created", before);
     assert.equal(held.length, 1);
     assert.equal(newest("preview.started", before).length, 0, "nothing asked for while it waits");
-    // a confirm-required hold waits past its end for a review: the overseer's own, in a later unattended look
-    const ref = out.held!.id;
-    const approved = await host().act(projectSid(project.id), "hold/approve", { id: ref, reason: "The shop is ready" }, envelopeFor(org.id, project.id, { by: "overseer", attended: false }), { settle: true });
-    assert.ok(approved.taken, JSON.stringify(approved.refusal));
+    // al_3 q2: no review; the hold ends and the act goes ahead through every guard
+    const h = host().holds().find((x) => `${x.sessionId}:${x.id}` === out.held!.id || x.id === out.held!.id)!;
+    setOrgClockForTest(() => h.until + 1);
+    try {
+      await host().fireDue();
+    } finally {
+      setOrgClockForTest(null);
+    }
     await host().idle();
     const { req } = pair(before);
-    const approval = newest("hold.released", before).find((r) => r.source.key.startsWith("step:"));
-    assert.ok(approval, "the review is recorded");
     assert.equal((req.actors.decidedBy as { kind: string }).kind, "project-overseer");
     assert.equal((req.actors.initiatedBy as { unknown?: boolean }).unknown, true, "an unattended act's start is its trigger");
     assert.equal((req.actors.authorization as { kind: string }).kind, "hold-release");
-    assert.deepEqual((req.actors.authorization as { by?: unknown }).by, approval!.actors.decidedBy);
-    assert.deepEqual(req.triggeredBy, [{ event: approval!.id, via: "operator-act" }]);
+    assert.equal((req.actors.authorization as { by?: unknown }).by, undefined, "no review released it: its hold ended");
   });
 
   test("the operator: all the operator's, never held", async () => {

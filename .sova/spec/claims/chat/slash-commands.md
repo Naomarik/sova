@@ -5,7 +5,7 @@ pi's slash commands, offered while you type. The server sends the list once per 
 `{type:"commands", commands}`. Names come without the slash (`sessions`, `skill:omarchy`).
 Sending `/name args` as a normal prompt runs the command.
 
-Owns: when the menu opens, its markup, filtering, keys and announcements, the flyout's Commands row,
+Owns: when the menu opens, its markup, filtering, keys and announcements, where its tap target went (the Commands row),
 what a sent command leaves in the thread, the bare commands Sova answers itself, `/compact-handoff`, `/btw` and its side chat,
 the commands that need the terminal UI, and the terminal's own `/subagents` and palette. Not here:
 the composer it opens in (§chat/composer), the dialogs a command may raise
@@ -131,47 +131,19 @@ textarea.
 | `Shift+Enter` | Newline as usual. The newline ends the token, so the menu closes |
 | Mouse down on a row | Inserts, the same as `Enter`. Use `mousedown` + `preventDefault()` so the textarea keeps focus. Hover makes a row active |
 
+The command palette's **Slash commands** rows (§app.command-palette/picking) put the same `/{name} ` in an
+empty textarea, with the caret after the space, and focus it; the menu stays closed, and nothing is sent
+until the composer's own `Enter`.
+
 ## §chat.slash-commands/commands-row — Commands row
 
-A tap target for the same menu, for phones (where nobody types `/` from habit) and for
-discoverability. It's the flyout's **Commands** row, second in the flyout's menu panel, right under Attach
-images (§chat.composer/composer-flyout):
-
-```html
-<div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-commands"
-     tabindex="-1" title="Commands">
-  <span class="icon icon-sm composer-flyout-icon" style="--icon: url(/icons/command.svg)" aria-hidden="true"></span>
-  <span class="composer-flyout-label">Commands</span>
-</div>
-```
-
-- **Icon.** `/icons/command.svg` is a `/` inside a rounded square, drawn on the system grid
-  (24 viewBox, 1.5 stroke, round caps).
-- **Tap.** It closes the flyout first, then does what the old button did:
-  - It **inserts `/` at the caret**, with a space before it if the character before the caret
-    isn't whitespace, and focuses the textarea. The existing trigger rule then opens the menu
-    with an **empty query**, so nothing new is needed in the menu logic.
-  - If the caret is already inside a `/` token, it just refocuses the textarea and reopens.
-  - Focus stays in the textarea, and `aria-activedescendant` works as before.
-- **Undo on dismiss.** If the menu closes with `Esc` or blur while the token is **still exactly
-  the bare `/` this button inserted**, remove that `/` (and the space it added). Opening and
-  dismissing leaves the text as it was. A `/` the user typed is never removed.
-- **`aria-expanded`** belongs to the textarea's combobox, not to this row: the menu it opens is
-  the textarea's autocomplete, and the flyout is closed by the time it appears.
-- **Disabled.** The row takes `aria-disabled="true"` exactly when the menu couldn't open:
-  - the composer is disabled (it shares `aria-describedby="composer-reason"`, like Attach);
-  - there's no command list yet, or it's empty. Then its `title` becomes "No commands
-    available", and there's no composer reason.
-
-  A tap on it does nothing.
-- **Unchanged.** Typing `/`, and all the keyboard and touch behavior above, stay as they are.
-- **Width budget.** The flyout trigger is 44, and Send collapses to 44 under 480px of composer
-  width (§chat/images), with 8px gaps:
-
-  | Composer width | Idle textarea | Streaming (adds Stop 44) |
-  |---|---|---|
-  | 390 viewport (358 composer) | about 246px | about 194px |
-  | 320 viewport (288 composer) | about 176px | 132px, with nothing hidden — one flyout replaced two buttons |
+The composer has no Commands button or row any more. Its tap target for the same commands, for
+phones (where nobody types `/` from habit) and for discoverability, is the Commands palette the
+composer's `plus` button opens (§app.command-palette/opening): its **Slash commands** group lists
+the commands this menu lists, each as `/name` with its description (§app.command-palette/rows),
+and picking one puts `/name ` in the textarea and focuses it, sending nothing
+(§app.command-palette/picking). Typing `/`, and all the keyboard and touch behavior above, stay
+as they are.
 
 ## §chat.slash-commands/announcements — Announcements
 

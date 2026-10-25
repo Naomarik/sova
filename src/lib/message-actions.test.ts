@@ -11,12 +11,14 @@ import {
   queueGoneEffect,
   REGENERATE_CONFIRM,
   REGENERATE_LINK_REASON,
+  REGENERATE_TOUR_NOTICE_REASON,
   REGENERATE_WAKE_REASON,
   SHARED_QUEUE_REASON,
   queueRemoveRefusalText,
   stripsByRow,
   type ActionState,
 } from "./message-actions";
+import { parseWakeNudge, TOUR_SIGN_IN_TAG } from "../../shared/wake";
 
 const row = (id: string, kind: TranscriptItem["kind"], text?: string, extra: Partial<TranscriptItem> = {}): TranscriptItem => ({
   id,
@@ -233,6 +235,26 @@ test("Regenerate is off for a wake reply, and the reason outlives every transien
   // And it says nothing about rewinding or copying that message.
   assert.equal(actionReason("rewind", state({ wake: true })), null);
   assert.equal(actionReason("copy", state({ wake: true })), null);
+});
+
+test("a reply to a tour's sign-in notice is refused under the notice's own name; a wake nudge's keeps its own", () => {
+  // The notice as Sova writes it (server/tours/sign-in-notice.ts), parsed by the same predicate the transcript uses.
+  const notice = parseWakeNudge(`${TOUR_SIGN_IN_TAG} t1] A tour recording is waiting for a sign-in.\nReason: Sign in to https://app.example on the tour card.`);
+  assert.equal(notice?.tour, true, "the fixture really is a tour notice");
+  const rows = [
+    user("u1", "record a tour"),
+    row("t1", "wake", "Tour sign-in", { wake: notice! }),
+    block("a1", 0, "sign in on the card"),
+    row("w1", "wake", "wake nudge n1", { wake: { id: "n1", reason: "check the build" } }),
+    block("a2", 0, "answering the nudge"),
+  ];
+  const byEntry = new Map(messageStrips(rows).map((s) => [s.entryId, s]));
+  assert.equal(byEntry.get("a1")!.fromWake, true);
+  assert.equal(byEntry.get("a1")!.fromTourNotice, true, "the notice's own reply");
+  assert.equal(byEntry.get("a2")!.fromTourNotice, undefined, "control: a later wake nudge's reply is not a tour notice's");
+  assert.equal(actionReason("regenerate", state({ wake: true, tourNotice: true, streaming: true })), REGENERATE_TOUR_NOTICE_REASON);
+  assert.equal(REGENERATE_TOUR_NOTICE_REASON, "That reply answered a tour's sign-in notice, not a message you sent, so there's nothing to send again.");
+  assert.equal(actionReason("regenerate", state({ wake: true })), REGENERATE_WAKE_REASON, "control: a wake nudge keeps its reason");
 });
 
 test("the regenerate confirm names the message that started this REPLY, not the turn", () => {

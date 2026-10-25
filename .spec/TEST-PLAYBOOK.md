@@ -53,9 +53,10 @@ verdict's `reason`.
 
 The system in one paragraph each:
 
-- **Docs.** A project's documentation is `.sova/spec/manifest.json` (records keyed by `§` IDs: `kind`
+- **Docs.** A project's documentation is its records (keyed by `§` IDs: `kind`
   surface/behavior/section/note, `requires`, `members`, `code`, `incumbent`, labels `authority`
-  candidate/migrated/accepted and `evidence` unreviewed/reviewed/verified) plus `claims/<ns>/<name>.md` prose
+  candidate/migrated/accepted and `evidence` unreviewed/reviewed/verified; in format 2, Sova's, each claim
+  file's in the `.json` beside it, in format 1 all in `.sova/spec/manifest.json`) plus `claims/<ns>/<name>.md` prose
   whose H1/H2 headings declare the IDs. Labels are declared, never derived and never proof.
 - **Core** (`sova-spec.mjs`, never writes): `check`, `census`, `foreign`, the reading path `map`, `where`,
   `toc '<§id>' --dir …`, `read '<§id>'` and `impact '<§id>' --near` (§tools.spec/spec-map, /where-lookup,

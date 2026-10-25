@@ -1,0 +1,161 @@
+{
+  "_": "Lines allowed to name the spec's records file (manifest.json) or read a claims key directly, outside core/layout.mjs. Exact trimmed text + rule, with a reason. This list only shrinks: see tests/layout/guard-scan.mjs.",
+  "paths": [
+    {
+      "glob": "server/overseer-ideas.ts",
+      "reason": "the Overseer's ideas backlog (ideas/manifest.json), not the spec"
+    },
+    {
+      "glob": "server/tours/**",
+      "reason": "tour attachment snapshots have their own manifest.json, not the spec"
+    },
+    {
+      "glob": "scripts/perf-pi/run.mjs",
+      "reason": "perf data set manifest under its own work dir, not the spec"
+    },
+    {
+      "glob": "site/scripts/screens/**",
+      "reason": "the site's screenshot manifest (site/src/assets/screens/manifest.json), not the spec"
+    },
+    {
+      "glob": "site/src/data/screens.ts",
+      "reason": "imports the site's screenshot manifest, not the spec"
+    },
+    {
+      "glob": ".sova/marketing/**",
+      "reason": "marketing playbooks' screenshot and video manifests, not the spec"
+    }
+  ],
+  "lines": {
+    ".sova/playbooks/merge-round/scripts/round.mjs": [
+      {
+        "rule": "names-manifest",
+        "text": "export const specConflicts = (files) => files.filter((f) => f === \".sova/spec/manifest.json\" || f.startsWith(\".sova/spec/claims/\"));",
+        "reason": "conflict path filter over git's unmerged list; reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const MANIFEST = \".sova/spec/manifest.json\";",
+        "reason": "the path constant used by the existence probes and the conflict step below; reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (conflicted.includes(MANIFEST)) {",
+        "reason": "conflict step: the manifest path is in git's unmerged list; it then runs the draft tool's merge-manifest, which reads through layout.mjs"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "await gitOut(tree, [\"add\", \"--\", MANIFEST], \"add\");",
+        "reason": "conflict step: git add of the file merge-manifest wrote; reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "lines.push(\"manifest.json conflict merged by the spec tool's merge-manifest --write.\");",
+        "reason": "conflict step's report line; names the file, reads nothing"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "} else lines.push(`manifest.json: merge-manifest --write didn't resolve it (${mm.timedOut ? \"timed out\" : `exit ${mm.code}`}).`);",
+        "reason": "conflict step's report line; names the file, reads nothing"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (!existsSync(join(tree, MANIFEST))) return { lines: [\"spec: none in this project.\", ...drafted], statuses };",
+        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (!existsSync(join(tree, MANIFEST)) || !existsSync(join(this.specCore, \"sova-spec-draft.mjs\"))) return drafts.map((name) => ({ name, pending: null }));",
+        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (!existsSync(join(main, MANIFEST)) || !existsSync(join(this.specCore, \"sova-spec-draft.mjs\"))) return [\"Kept draft copies: not pruned (no spec or spec tools in the main checkout), all kept.\"];",
+        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record"
+      }
+    ],
+    "scripts/sim/contracts.mjs": [
+      {
+        "rule": "names-manifest",
+        "text": "const name = names.find((n) => existsSync(join(ctx.projectRoot, \".sova/spec/drafts\", n, \"spec\", \"manifest.json\")));",
+        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record (a draft's spec dir)"
+      }
+    ],
+    "scripts/sim/lib/checks.mjs": [
+      {
+        "rule": "names-manifest",
+        "text": "const m = join(spec, \"manifest.json\");",
+        "reason": "hashes manifest.json and every claims/** file byte for byte (record files included in v2); parses no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const names = execFileSync(\"git\", [\"-C\", root, \"ls-tree\", \"-r\", \"--name-only\", rev, \"--\", \".sova/spec/claims\", \".sova/spec/manifest.json\"], { encoding: \"utf8\" }).split(\"\\n\").filter(Boolean);",
+        "reason": "lists manifest.json and claims/** at a revision to hash them; parses no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (n === \"spec\" && d.split(\"/\").at(-2) === \"drafts\" && existsSync(join(p, \"manifest.json\"))) out.push(p);",
+        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record (finds draft spec dirs)"
+      }
+    ],
+    "server/spec-draft-writer.ts": [
+      {
+        "rule": "names-manifest",
+        "text": "const manifest = JSON.parse(readFileSync(join(specDirOf(root), \"manifest.json\"), \"utf8\")) as { claimsRoot?: string };",
+        "reason": "meta-only read of the top-level claimsRoot (a pre-existing gap the plan leaves out of scope); reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const m = JSON.parse(readFileSync(join(specDir, \"manifest.json\"), \"utf8\")) as { claimsRoot?: string };",
+        "reason": "meta-only read of the top-level claimsRoot (a pre-existing gap the plan leaves out of scope); reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (!existsSync(join(dir, \"manifest.json\"))) return \"\";",
+        "reason": "specHash: hashes manifest.json and walks claims/ (record files included in v2); parses no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "walk(\"manifest.json\");",
+        "reason": "specHash: hashes manifest.json and walks claims/ (record files included in v2); parses no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "export const specExists = (root: string): boolean => existsSync(join(specDirOf(root), \"manifest.json\"));",
+        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (baseRoot !== null && existsSync(join(specDirOf(baseRoot), \"manifest.json\"))) {",
+        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const m = JSON.parse(readFileSync(join(from, \"manifest.json\"), \"utf8\")) as { claimsRoot?: string };",
+        "reason": "meta-only read of the top-level claimsRoot (a pre-existing gap the plan leaves out of scope); reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "cpSync(join(from, \"manifest.json\"), join(spec, \"manifest.json\"));",
+        "reason": "copies manifest.json and the whole claims tree byte for byte, so either layout is copied whole; parses no record"
+      }
+    ],
+    "server/spec-lookup.ts": [
+      {
+        "rule": "names-manifest",
+        "text": "if (existsSync(join(dir, \".sova\", \"spec\", \"manifest.json\"))) return dir;",
+        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const has = existsSync(join(root, \".sova\", \"spec\", \"manifest.json\"));",
+        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const has = await git(top, [\"cat-file\", \"-e\", `${t}:manifest.json`]);",
+        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record (git cat-file -e at a revision)"
+      }
+    ]
+  }
+}

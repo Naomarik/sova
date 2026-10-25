@@ -1,0 +1,42 @@
+{
+  "_": "Lines allowed to name the spec's records file (manifest.json) or read a claims key directly, outside core/layout.mjs. Exact trimmed text + rule, with a reason. This list only shrinks: see tests/layout/guard-scan.mjs.",
+  "paths": [],
+  "lines": {
+    "pi-config/extensions/mode/prompt.ts": [
+      {
+        "rule": "names-manifest",
+        "text": "return `Spec writer: draft claims and evidence records are written by one worker, spawned with agent_spawn on exactly this backend, model and effort → ${routeTarget(route, \"handing off spec writing\")} Give it the relevant spec passages quoted literally, the files the task changed, and the verification you did. It writes only under \\`.sova/spec/drafts/\\`, never current \\`claims/\\` or \\`manifest.json\\`; you check its draft, run the checks and the census, and promote yourself.${retry}`;",
+        "reason": "prompt text telling the spec writer which current files it never writes; names the file, reads nothing"
+      }
+    ],
+    "pi-config/extensions/mode/spec-guard.ts": [
+      {
+        "rule": "names-manifest",
+        "text": "return view?.unmerged?.find((p) => p === `${SPEC_REL}/manifest.json` || p.endsWith(`/${SPEC_REL}/manifest.json`));",
+        "reason": "merge-conflict detection: matches the path in git's unmerged list (a globals or cross-layout conflict in v2); reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (await exists(join(dir, SPEC_REL, \"manifest.json\"))) return dir;",
+        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const has = async (name: string) => Boolean(await io.exists(join(root, specOf(name), \"manifest.json\")));",
+        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const r = await io.exec(\"git\", [\"status\", \"--porcelain=v1\", \"-z\", \"--untracked-files=all\", \"--\", `:(glob)**/${SPEC_REL}/manifest.json`, `:(glob)**/${SPEC_REL}/claims/**`], {",
+        "reason": "git status pathspec for current-spec files (manifest.json and claims/**, record files included); reads no record"
+      }
+    ],
+    "pi-config/extensions/worktrees/spec.ts": [
+      {
+        "rule": "names-manifest",
+        "text": "const hasSpec = async (rev: string) => (await git([\"cat-file\", \"-e\", `${rev}:.sova/spec/manifest.json`], top)).code === 0;",
+        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record (git cat-file -e at a revision)"
+      }
+    ]
+  }
+}

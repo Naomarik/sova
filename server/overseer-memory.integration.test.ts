@@ -155,7 +155,7 @@ describe("a project overseer's memory", async () => {
 
     // Clear keeps the choice; the new conversation runs without memory.
     const cleared = await po.clearProjectOverseer(project.id);
-    assert.deepEqual(cleared.settings.memory, { on: false, type: "uniichat", size: 128 });
+    assert.deepEqual(cleared.settings.memory, { on: false, type: "uniichat" }, "no size written: the size is Settings'");
     assert.equal((await req("GET")).body.on, false, "still off after Clear");
     const next = await open(cleared.path!);
     assert.equal(next.chat.memory.choice().on, false);

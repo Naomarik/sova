@@ -233,13 +233,17 @@ shell and under a timeout.
 - **`check <branch>`** refuses a branch with no worktree, no commit ahead, uncommitted files or a
   TEMP-style subject. It merges master into the branch in its worktree, never on master. On
   conflicts it stops and leaves them to the captain, except the spec's: a conflicting
-  `.sova/spec/manifest.json` first goes through the spec tool's `merge-manifest --write`, and when a
-  spec file is still conflicted after that (any `claims/*.md` file, or a manifest `merge-manifest`
-  refuses) it aborts the merge, so the worktree is as it was, records the branch as handed back, and
-  prints the hand-back for the owner: merge master in itself, recover the spec as PROMOTE.md says
-  (master's whole spec, the merge committed, its drafts promoted again with the same `--id`s, the
-  claims committed), then answer READY again. It exits 1 and never says to resolve a spec conflict
-  itself. It then
+  `.sova/spec/manifest.json` or per-area record file (`claims/**/*.json`, §tools.spec/record-layout)
+  first goes through the spec tool's `merge-manifest --write`, which stages the files it wrote, and
+  when a spec file is still conflicted after that (any `claims/*.md` file, or a record
+  `merge-manifest` refuses) it aborts the merge, so the worktree is as it was, records the branch as
+  handed back, and prints the hand-back for the owner: merge master in itself, recover the spec as
+  PROMOTE.md says (master's whole spec, or with records beside each claim file only the areas that
+  clashed, the merge committed, its drafts promoted again with the same `--id`s, the claims
+  committed), then answer READY again. It exits 1 and never says to resolve a spec conflict itself.
+  After every merge of master, before the merge commit, it asks the spec tool whether the spec now
+  holds records both ways (`layout-mixed`): if so it finishes it with `merge-manifest --write`, and
+  when that can't, it aborts the merge and says so. It then
   runs the typecheck, `pnpm test` and then `pnpm test:int` (§app.server-runtime/test-tiers; a tree
   whose package.json has no `test:int` script skips it and says so), both without
   `CLAUDE_CONFIG_DIR`, each touched pi-config extension's

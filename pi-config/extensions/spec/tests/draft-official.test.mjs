@@ -77,3 +77,19 @@ test("(b) draft A promoted, then a catch-up merge takes master's bytes: not offi
   assert.deepEqual(run(root, "prune", "--official", "--write").deleted, []);
   assert.deepEqual(names(root), ["a"]);
 });
+
+test("one verdict: a draft changing only a top-level manifest key, current holding a third value, reads not official in drafts too", async () => {
+  const { draftOfficial } = await import("../core/official.mjs");
+  const root = project();
+  const manifest = (x) => JSON.stringify({ formatVersion: 1, x, claims: CLAIMS }, null, 2) + "\n";
+  write(root, ".sova/spec/manifest.json", manifest("base"));
+  assert.equal(run(root, "new", "k", "--write").exit, 0);
+  write(root, ".sova/spec/drafts/k/spec/manifest.json", manifest("draft"));
+  write(root, ".sova/spec/manifest.json", manifest("master"));
+  const off = draftOfficial(join(root, ".sova/spec"), join(root, ".sova/spec/drafts/k"), join(root, ".sova/spec/drafts"));
+  assert.deepEqual([off.official, off.changed, off.notOfficial], [false, 1, []]);
+  const k = entry(root, "k");
+  assert.equal(k.official, off.official, `drafts row and the rule disagree: ${JSON.stringify(k)}`);
+  assert.notEqual(k.state, "promoted");
+  assert.deepEqual(run(root, "prune", "--official", "--write").deleted, []);
+});

@@ -839,6 +839,23 @@ would list master's changes instead.
     on §app.session-list/content-rules and /search. 62 drafts across Sova's worktrees: about 70 ms each.
   - Upgrade: see UPGRADING step 12.
 
+- **One verdict: `drafts` reports the rule's `official`, and every reader holds on it.**
+  - Commit: on branch `feat/landing-dependable`; not on master yet: the merge round folds it in.
+  - Why: `drafts` turned the rule into per-id lists and dropped a claim outside any § (a manifest key,
+    a claim file's lines outside its declarations), so a draft the rule called not official read with
+    nothing pending, and the merge round's check passed what Sova's readiness held (review F1).
+  - Changed:
+    - `drafts`: each row carries `official` (false for an unreadable draft); its ids sort by the verdict, and
+      one made unofficial only outside any § reads `active` with a reason. The default-branch shortcut that
+      counted an id current when it was byte-equal on the default branch is gone.
+    - `prune --official` reads each folder by the rule directly, in the project as with `--from`: one loop,
+      `kept` states `pending`, `empty` or `unreadable`, and no `draftSha256`.
+  - §: §tools.spec/draft-official, §tools.spec/draft-hygiene (draft `landing-dependable-2`).
+  - Goal 4 (code and spec agree after building): `tests/draft-official.test.mjs` "one verdict" (a draft
+    changing only a manifest key, current holding a third value) failed before (`drafts` gave no verdict,
+    `pending: []`) and passes after. Tool tests 587 pass, 0 fail.
+  - Upgrade: see UPGRADING step 12.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -1017,4 +1034,6 @@ The tools are Node standard library only. Nothing is installed.
 12. **One rule for official drafts** (branch `feat/landing-dependable`). Copy `core/official.mjs` with the
     tools (step 1). Promotions now record `claims` in their receipt; nothing else changes shape. A merge
     process of your own that judged drafts by `promotedConflict` gets fewer false hand-backs; one that reads
-    `draftSha256` from `prune --official --from` reads the name instead.
+    `draftSha256` from `prune --official --from` reads the name instead. A process that holds work until a
+    draft is official reads the `drafts` row's `official`, never its state or lists; `prune --official`
+    without `--from` now keeps drafts as `pending`, `empty` or `unreadable`, without `draftSha256`.

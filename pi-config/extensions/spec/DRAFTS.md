@@ -339,11 +339,12 @@ a catch-up merge overwrote with the base branch's text, or a hand edit changed, 
 changed only other claims of the same file, or other blocks of the same claim, changes nothing. A receipt from before `claims` counts,
 for the ids it names, what its draft says now.
 
-In `drafts`, an id current says differently counts as current when the draft is official there.
-Each draft also lists `promotedConflict`: the ids in conflict it promoted before, which are not
-official (counted in `current`, so its state may still be `promoted`). A merge process that holds
-a branch until its drafts are official counts them as not promoted, and `prune --official` keeps
-such a draft. The default branch is the one `promote` uses: origin's HEAD, else `master`, else `main`. A
+In `drafts`, each draft carries the rule's verdict, `official` (true or false; false for one it
+can't read), and the ids sort by it: an id the rule calls official counts as current; the others are
+`pending`, `conflict`, or `promotedConflict` (in conflict, promoted by this draft before; counted
+in `current` too, so its state may still be `promoted`). A draft made unofficial only by a manifest
+key or lines outside any § names no id, and reads `active`. A merge process that holds a branch
+until its drafts are official reads `official`. The default branch is the one `promote` uses: origin's HEAD, else `master`, else `main`. A
 project without Git gets no `landed`. The exit is 1 when any draft is other than `active`.
 A promotion preview or write adds one line (`staleDrafts`) when other drafts in its project had
 no activity for longer than the age limit, with the `drafts` command to run.
@@ -355,12 +356,11 @@ A name with no draft, a hash that no longer matches, or an interrupted promotion
 refuses the whole prune and deletes nothing. It deletes nothing it was not given.
 
 `prune --official` needs no list: it deletes only drafts the tool confirms are already official
-and keeps every other one, listed with why (`kept`). Without `--from` it reads the project's own
-drafts as `drafts` does and deletes those it reads `promoted` with no `promotedConflict`, under the same lock and the same
-refusal of an interrupted promotion. With `--from DIR` it reads each draft folder directly in `DIR`
-(copies kept outside the project, such as the ones a merge round keeps when it removes a landed
-worktree) against the project's current spec alone by the same rule, without Git: a copy that
-changes at least one claim, every one official, is deleted; one with a record pending or in conflict, one that
+and keeps every other one, listed with why (`kept`). It reads each draft folder of the project's
+own drafts folder, or with `--from DIR` of `DIR` (copies kept outside the project, such as the ones
+a merge round keeps when it removes a landed worktree), against the project's current spec by the
+rule, without Git; in the project, under the same lock and the same refusal of an interrupted
+promotion. A draft that changes at least one claim, every one official, is deleted; one not official yet, one that
 changes nothing, and one it can't read are kept. Without `--write` it lists what it would delete.
 No other command deletes a draft.
 

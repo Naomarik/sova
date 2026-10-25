@@ -1561,32 +1561,18 @@ async function draftReport(root, name, now, days, tip, branch) {
     let d = null; try { d = JSON.parse(raw.buf.toString("utf8")); } catch {}
     const last = lastActivity(d);
     return { ...row, createdAt: d?.createdAt ?? null, lastActivity: last && new Date(last).toISOString(), ageDays: last && Math.floor((now - last) / DAY_MS),
-      state: "unreadable", reasons: [`${e.code}: ${e.message}`], suggest: "keep", pending: [], conflict: [], current: [], promotedConflict: [], draftSha256: await draftHash(root, name) };
+      state: "unreadable", reasons: [`${e.code}: ${e.message}`], suggest: "keep", official: false, pending: [], conflict: [], current: [], promotedConflict: [], draftSha256: await draftHash(root, name) };
   }
   const s = await statusOut(root, a);
   const promoted = new Set(a.d.promotions.flatMap((p) => p.ids ?? []));
-  // The one rule (official.mjs) decides each id current doesn't already say: official ones count current.
-  const off = draftOfficial(join(root, SPEC), join(root, draftRel(name)), join(root, DRAFTS));
-  const isOff = (i) => i.current === "already-current" || (off && !off.notOfficial.includes(i.id));
-  let pending = s.ids.filter((i) => i.current === "pending" && !isOff(i)).map((i) => i.id);
-  const conflict = s.ids.filter((i) => i.current === "conflict" && !isOff(i) && !promoted.has(i.id)).map((i) => i.id);
-  const current = s.ids.filter((i) => isOff(i) || (i.current === "conflict" && promoted.has(i.id))).map((i) => i.id);
-  // Promoted by this draft before, and not official now: counted current here, but a caller that must know the
-  // draft's own text is still what the tree says (a merge round's hold-back) reads them apart.
-  const promotedConflict = s.ids.filter((i) => i.current === "conflict" && !isOff(i) && promoted.has(i.id)).map((i) => i.id);
-  // Pending here but already on the default branch, byte for byte (its record, and every claim file it is in): this work
-  // tree's current lags the branch it was merged into. Any other difference keeps it pending.
-  const onBranch = [];
-  if (pending.length && tip) {
-    const g = await gitInfo(root), m = git(root, ["show", `${tip}:${g.prefix ? `${g.prefix}/` : ""}${SPEC}/manifest.json`]);
-    let tipClaims = null; try { tipClaims = m.status === 0 ? JSON.parse(m.out)?.claims ?? {} : null; } catch {}
-    if (tipClaims) for (const id of pending) {
-      const c = a.changed.get(id);
-      if (canon(recOf(a.prop, id)) === canon(tipClaims[id]) && c.files.every((f) => (blobAt(root, g, tip, `${SPEC}/${f}`).sha256 ?? null) === (a.prop.files.get(f)?.sha256 ?? null))) onBranch.push(id);
-    }
-    pending = pending.filter((id) => !onBranch.includes(id));
-    current.push(...onBranch);
-  }
+  // The one verdict (official.mjs), `official`, is what a reader that holds a branch reads; the lists sort its ids.
+  const off = draftOfficial(join(root, SPEC), join(root, draftRel(name)), join(root, DRAFTS)) ?? { official: false, notOfficial: [] };
+  const not = new Set(off.notOfficial), ids = (f) => s.ids.filter(f).map((i) => i.id);
+  const pending = ids((i) => not.has(i.id) && i.current !== "conflict");
+  const conflict = ids((i) => not.has(i.id) && i.current === "conflict" && !promoted.has(i.id));
+  // Promoted by this draft before, and not official now: counted current here, so its state may read promoted.
+  const promotedConflict = ids((i) => not.has(i.id) && i.current === "conflict" && promoted.has(i.id));
+  const current = ids((i) => !not.has(i.id) || promotedConflict.includes(i.id));
   const last = lastActivity(a.d), age = last === null ? null : Math.floor((now - last) / DAY_MS), old = age !== null && age > days;
   const reasons = [];
   // Landed: a commit the evidence for a pending id names is on the default branch, or this work tree's own branch
@@ -1606,7 +1592,8 @@ async function draftReport(root, name, now, days, tip, branch) {
   }
   const landed = reasons.length > 0;
   const state = pending.length ? (landed ? "landed" : old ? "old" : "active")
-    : conflict.length ? "superseded" : current.length ? "promoted" : old ? "empty" : "active";
+    : conflict.length ? "superseded" : !off.official && !promotedConflict.length ? "active" : current.length ? "promoted" : old ? "empty" : "active";
+  if (!off.official && !off.notOfficial.length) reasons.push("not official yet: a manifest key or lines outside any §");
   if (state === "landed") {
     reasons.push(`pending: ${pending.join(", ")}`);
     const stale = s.ids.filter((i) => pending.includes(i.id) && i.evidence.state !== "valid").map((i) => `${i.id} (${i.evidence.state})`);
@@ -1614,15 +1601,13 @@ async function draftReport(root, name, now, days, tip, branch) {
   }
   if (state === "old") reasons.push(`pending: ${pending.join(", ")}`, `no activity for ${age} days (limit ${days})`);
   if (state === "superseded") reasons.push(`current changed differently: ${conflict.join(", ")}`, ...(current.length ? [`already current: ${current.join(", ")}`] : []));
-  const here = current.filter((id) => !onBranch.includes(id));
-  if (state === "promoted" && here.length) reasons.push(`already current: ${here.join(", ")}`);
-  if (onBranch.length) reasons.push(`already on ${branch} as this draft says it: ${onBranch.join(", ")}`);
+  if (state === "promoted" && current.length) reasons.push(`already current: ${current.join(", ")}`);
   if (state === "empty") reasons.push(`changes nothing, and no activity for ${age} days (limit ${days})`);
   if (conflict.length && pending.length) reasons.push(`also in conflict: ${conflict.join(", ")}`);
   if (s.proposedGraph.exit === 2) reasons.push("the draft graph does not load (exit 2)");
   const suggest = state === "landed" ? "promote" : ["promoted", "superseded", "empty"].includes(state) ? "delete" : "keep";
   return { ...row, purpose: a.d.purpose ?? null, createdAt: a.d.createdAt, lastActivity: last && new Date(last).toISOString(), ageDays: age,
-    state, reasons, suggest, pending, conflict, current, promotedConflict, draftSha256: await draftHash(root, name) };
+    state, reasons, suggest, official: off.official, pending, conflict, current, promotedConflict, draftSha256: await draftHash(root, name) };
 }
 async function cmdDrafts(root, o) {
   const g = await gitInfo(root), days = daysOf(o), now = Date.now();
@@ -1666,7 +1651,7 @@ async function approvedList(file) {
   return [...list.values()];
 }
 async function cmdPrune(root, o) {
-  if (o.official) return o.from === undefined ? pruneOfficialHere(root, o) : pruneOfficialFrom(root, o);
+  if (o.official) return pruneOfficial(root, o);
   const list = await approvedList(o.approved);
   const inspect = async () => {
     const refusals = [], targets = [];
@@ -1700,59 +1685,43 @@ async function cmdPrune(root, o) {
   });
 }
 
-// Deletes a draft folder whole or not at all: out of its name first, then removed.
-async function removeDraftDir(dir, name) {
-  const gone = join(dir, `.prune-${randomBytes(6).toString("hex")}`);
-  await rename(join(dir, name), gone);
-  await rm(gone, { recursive: true, force: true });
-}
-// `prune --official`: the project's own drafts that `drafts` reads `promoted` (every id already official); the rest kept.
-async function pruneOfficialHere(root, o) {
-  const inspect = async () => {
-    const refusals = [], targets = [], kept = [];
-    if (await exists(join(root, TXN))) refusals.push({ code: "pending-transaction", message: `${TXN} exists: a promotion was interrupted; run recover first` });
-    const g = await gitInfo(root), branch = g.git ? defaultBranch(root) : null, tip = branch && resolveCommit(root, `refs/heads/${branch}`);
-    for (const name of await draftNames(root)) {
-      const r = await draftReport(root, name, Date.now(), daysOf(o), tip, branch);
-      // A § it promoted that current now says differently is no longer confirmed official: kept.
-      if (r.state === "promoted" && !r.promotedConflict.length) targets.push({ name, draft: draftRel(name), draftSha256: r.draftSha256 });
-      else kept.push({ name, draft: draftRel(name), state: r.state, reasons: r.state === "promoted" ? [...r.reasons, `promoted before, now different in current: ${r.promotedConflict.join(", ")}`] : r.reasons });
-    }
-    return { refusals, targets, kept };
-  };
-  if (!o.write) {
-    const p = await inspect();
-    return { exit: p.refusals.length ? 1 : 0, mode: "official", written: false, deleted: [], wouldDelete: p.targets, kept: p.kept, refusals: p.refusals };
-  }
-  return withLock(root, async () => {
-    const p = await inspect();
-    if (p.refusals.length) throw new Fail(1, p.refusals[0].code, `prune refused (${p.refusals.length} reason(s)); nothing was deleted`, { mode: "official", written: false, deleted: [], wouldDelete: p.targets, kept: p.kept, refusals: p.refusals });
-    const dir = await ownDir(root, DRAFTS, false), deleted = [];
-    for (const t of p.targets) { await removeDraftDir(dir, t.name); deleted.push(t); }
-    return { exit: 0, mode: "official", written: true, deleted, kept: p.kept, refusals: [] };
-  });
-}
-// `prune --official --from DIR`: each draft folder in DIR (copies kept outside the project) read against the project's
-// current spec by the one rule (official.mjs), with no Git: deleted only when it changes at least one claim and every
-// one is official. Anything else, or anything unreadable, is kept.
-async function pruneOfficialFrom(root, o) {
-  const from = resolve(o.from);
-  const st = await lstat(from).catch(() => null);
-  if (!st?.isDirectory()) throw new Fail(2, "usage", `--from ${o.from}: not a directory`);
+// `prune --official [--from DIR]`: each draft folder in the project's own drafts folder, or in DIR (copies kept outside
+// the project), read against the project's current spec by the one rule (official.mjs), with no Git: deleted only when
+// it changes at least one claim and every one is official. Anything else, or anything unreadable, is kept. In the
+// project it runs under the lock and refuses an interrupted promotion.
+async function pruneOfficial(root, o) {
+  const here = o.from === undefined, from = here ? join(root, DRAFTS) : resolve(o.from);
+  if (!here && !(await lstat(from).catch(() => null))?.isDirectory()) throw new Fail(2, "usage", `--from ${o.from}: not a directory`);
   const specDir = await ownDir(root, SPEC, false);
-  const targets = [], kept = [];
-  for (const e of (await readdir(from, { withFileTypes: true })).sort((a, b) => (a.name < b.name ? -1 : 1))) {
-    if (!NAME_RE.test(e.name)) continue;
-    const where = join(from, e.name), r = e.isDirectory() ? draftOfficial(specDir, where, from) : undefined;
-    if (!r) kept.push({ name: e.name, draft: where, state: "unreadable", reasons: [e.isDirectory() ? "draft.json is missing or unreadable" : "not a plain directory"] });
-    else if (r.official && r.changed) targets.push({ name: e.name, draft: where });
-    else kept.push({ name: e.name, draft: where, state: r.changed ? "pending" : "empty",
-      reasons: r.changed ? [`not official yet: ${r.notOfficial.join(", ") || "bytes outside any §"}`] : ["changes nothing, so nothing confirms it"] });
-  }
-  if (!o.write) return { exit: 0, mode: "official", from, written: false, deleted: [], wouldDelete: targets, kept, refusals: [] };
-  const deleted = [];
-  for (const x of targets) { await removeDraftDir(from, x.name); deleted.push(x); }
-  return { exit: 0, mode: "official", from, written: true, deleted, kept, refusals: [] };
+  const inspect = async () => {
+    const refusals = here && (await exists(join(root, TXN))) ? [{ code: "pending-transaction", message: `${TXN} exists: a promotion was interrupted; run recover first` }] : [];
+    const targets = [], kept = [], dir = here ? await ownDir(root, DRAFTS, false) : from;
+    for (const e of dir ? (await readdir(dir, { withFileTypes: true })).sort((a, b) => (a.name < b.name ? -1 : 1)) : []) {
+      if (!NAME_RE.test(e.name)) continue;
+      const where = join(dir, e.name), draft = here ? draftRel(e.name) : where, r = e.isDirectory() ? draftOfficial(specDir, where, dir) : undefined;
+      if (!r) kept.push({ name: e.name, draft, state: "unreadable", reasons: [e.isDirectory() ? "draft.json is missing or unreadable" : "not a plain directory"] });
+      else if (r.official && r.changed) targets.push({ name: e.name, draft });
+      else kept.push({ name: e.name, draft, state: r.changed ? "pending" : "empty",
+        reasons: r.changed ? [`not official yet: ${r.notOfficial.join(", ") || "a manifest key or lines outside any §"}`] : ["changes nothing, so nothing confirms it"] });
+    }
+    return { refusals, targets, kept, dir };
+  };
+  const out = (p, written, deleted) => ({ exit: p.refusals.length ? 1 : 0, mode: "official", ...(here ? {} : { from }), written, deleted, ...(written ? {} : { wouldDelete: p.targets }), kept: p.kept, refusals: p.refusals });
+  if (!o.write) return out(await inspect(), false, []);
+  const go = async () => {
+    const p = await inspect();
+    if (p.refusals.length) throw new Fail(1, p.refusals[0].code, `prune refused (${p.refusals.length} reason(s)); nothing was deleted`, out(p, false, []));
+    const deleted = [];
+    for (const t of p.targets) {
+      // Out of the name first, so a draft is either whole under its name or gone.
+      const gone = join(p.dir, `.prune-${randomBytes(6).toString("hex")}`);
+      await rename(join(p.dir, t.name), gone);
+      await rm(gone, { recursive: true, force: true });
+      deleted.push(t);
+    }
+    return out(p, true, deleted);
+  };
+  return here ? withLock(root, go) : go();
 }
 
 // ---------------------------------------------------------------- merge-manifest

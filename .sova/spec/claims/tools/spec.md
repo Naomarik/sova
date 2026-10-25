@@ -143,7 +143,10 @@ The spec-conflict note comes first, once per conflict, when Git holds spec files
 conflicted `manifest.json` gets the `merge-manifest --write` command to run first and, if it
 refuses, §tools.spec/conflict-recovery's recovery; claim files in conflict with the manifest merged
 get that recovery alone (from "take"). Both name the project's default branch where the recovery says
-`master`. When a claim file conflicts and the `merge-claims` driver (§tools.spec/git-merge) isn't
+`master`. With records beside each claim file, a conflicted record file is treated like the
+manifest, and the recovery is per area (§tools.spec/conflict-recovery). Each time HEAD moves (and at
+the first look), the note asks the core whether the spec now holds records both ways, and if so says
+once, with the core's own words, the one command that finishes it (§tools.spec/record-layout). When a claim file conflicts and the `merge-claims` driver (§tools.spec/git-merge) isn't
 set up for it in that clone, the note ends with the one-time setup. During a rebase it says to abort
 the rebase instead.
 
@@ -374,11 +377,18 @@ merged block by block shows its markers around whole blocks), and Git reports th
 conflicted; its refusal (`claims-conflict`) then gives §tools.spec/conflict-recovery's
 recovery in the same words, with the project's default branch.
 
-A record's place in `manifest.json` doesn't depend on the order changes landed in. Promotion and
-`merge-manifest` put a record that is new to the manifest right before the first record of its own
-area (its identifier up to the `/`) that sorts after it, or else right after that area's last
-record; the first record of an area goes right before the first record whose area sorts after its
-own, or last. Records already in the manifest keep their place.
+A record's place doesn't depend on the order changes landed in. With every record in
+`manifest.json` (format version 1, §tools.spec/record-layout), promotion and `merge-manifest` put a
+record that is new to the manifest right before the first record of its own area (its identifier up
+to the `/`) that sorts after it, or else right after that area's last record; the first record of an
+area goes right before the first record whose area sorts after its own, or last. Records already in
+the manifest keep their place. With records beside each claim file (format version 2), a record's
+place is its area's record file, in identifier order; Git's own line merge merges those files, so
+two branches changing different fields of one record combine, and `foreign --landing` lists that
+record as hand-resolved. As a driver, `merge-manifest` refuses sides in different layouts
+(`layout-mismatch`), leaving Git's conflict; run by hand during the merge, it merges a format 2 side,
+a conflicted record file or a mixed tree per record from the merge's own commits (merge base, ours,
+theirs) and writes the default branch's layout.
 
 ## §tools.spec/conflict-recovery — A spec conflict has one recovery, said the same way everywhere
 
@@ -394,11 +404,60 @@ merged the manifest, and the branch's other claim files would then lack their re
 merge, promote the branch's drafts again with the same `--id`s (re-recording evidence that `status`
 calls stale; a draft that is gone is re-applied in a new draft from current), then commit the
 claims. Followed literally, it leaves a spec whose graph loads and a re-promotion that lands on the
-first try. The refusal names the project's own default branch where PROMOTE.md says `master`.
+first try. With records beside each claim file (format version 2, §tools.spec/record-layout), where a
+conflicted record file goes through `merge-manifest --write` first like the manifest, the recovery
+is per area instead: take the default branch's copy of only the areas that clashed, each claim file
+with its record file (`git checkout --no-overlay master -- <area>.md <area>.json`, never `--ours` and
+never one of the pair alone), commit the merge, and promote again only the branch's changes to those
+areas, the same way; the branch's other areas keep their changes. The refusal names the project's own default branch where PROMOTE.md says `master`.
 `merge-manifest`'s `manifest-conflict` refusal carries it, so does `merge-claims`' `claims-conflict`
 (§tools.spec/git-merge), and so does a promotion refused because
 spec files are still unmerged in Git's index (`spec-merge-conflict`) or because the current spec's
 graph does not load (`current-invalid`).
+
+## §tools.spec/record-layout — A spec's records live in one list or beside each area's file, and every tool reads both
+
+A spec keeps each promise's record (its kind, labels, links, code and agreement) in one of two layouts,
+named by `formatVersion` in `manifest.json`. In version 1, `manifest.json` holds the project settings
+and every record under `claims`. In version 2, `manifest.json` holds the same settings and a `claims`
+string saying where the records went, never an object, and each area's records sit beside its claim
+file, `claims/<path>.json` beside `claims/<path>.md`, placed by identifier exactly as its declaration
+is: a plain JSON object of § identifier to record, identifiers in code-point order, two-space indent
+and a trailing newline. An area with no record has no record file. A record holds the same value in
+either layout, so evidence recorded against one stays valid in the other.
+
+Every spec tool reads and writes records through one shared module, `core/layout.mjs`: the core's
+commands, the draft tool, the review and assessment tools, Sova's own spec readers and the merge
+round. Each gives the same answers on the same spec in either layout. A promotion writes in the layout
+of the tree it promotes into, and a draft keeps its own. A script that can't import the module runs
+`sova-spec.mjs records [--at REV] [--id §x]… --json`, which prints `{layout, meta, records}` and never
+writes. A guard test fails any new code outside the module that reads records from `manifest.json`
+itself; its allowlist only shrinks.
+
+A spec that holds records both ways is mixed: a version 2 `manifest.json` whose `claims` is an
+object, or a version 1 one with `claims/**/*.json` record files beside it. Every command refuses a
+mixed spec with `layout-mixed` (exit 2; the bounded views as their `cause`, with the fix as their
+`message`) and names the one command that finishes it: `merge-manifest --write` while a Git merge is
+in progress, else `migrate --write` (with `--draft NAME` for a draft); a `manifest.json` a Git merge
+left unparsed (its conflict markers) names `merge-manifest --write` the same way. A record file is read whatever
+its name when its claim file sits beside it (an area may be called `secrets`), by the core, the draft
+tool and the review policy too; its directories are still checked as before.
+In version 2, `check` also refuses a record in a file its identifier doesn't place it in
+(`record-misfiled`), an identifier with a record in two files (`record-duplicate`), a record file
+with no claim file beside it (`records-orphaned`) and a record file that isn't a JSON object
+(`records-unreadable`). Because version 2's `claims` is a string, an older branch's `merge-manifest`
+driver refuses it and Git reports a conflict, instead of quietly merging a version 2 default branch
+into a version 1 branch.
+
+`sova-spec-draft.mjs migrate [--reverse] [--drafts | --draft NAME] [--write]` converts a spec from
+version 1 to version 2, or back with `--reverse`. Without `--write` it only previews. It refuses while
+`.sova/spec` has uncommitted changes, a promotion is pending or the drafts lock is held, and refuses
+to finish unless every record, the project settings, and `check`'s declarations, counts and graph
+are the same before and after. With `--drafts` it converts every draft too, and each draft's
+`status` and `diff` stay as they were; it keeps each draft's old files so `--reverse` can restore
+them. On a mixed spec it finishes the move, and refuses a record that differs between the two places.
+No project is converted unless someone runs it; Sova's own spec stays in version 1 until a later
+change converts it.
 
 ## §tools.spec/agreed-promotion — An agreed promise lands in the main spec before it is built
 

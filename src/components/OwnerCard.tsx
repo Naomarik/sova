@@ -2,7 +2,7 @@ import { createMemo, createSignal, onMount, Show, For } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { OfferLink } from "../../shared/baton";
 import type { OrgDetail } from "../../shared/orgs";
-import { ApiError, ownerLink, previewAssistant, previewOwnerPage, revokeOwnerLink, setOrgOwner } from "../lib/api";
+import { ApiError, ownerLink, previewAssistant, previewAssistantOlder, previewConversationOlder, previewOwnerPage, revokeOwnerLink, setOrgOwner } from "../lib/api";
 import { OwnerCardAssistant } from "./OwnerCardAssistant";
 import { useMinuteNow } from "../lib/minute-clock";
 import { DELETE_OWNER_LINK, DELETE_OWNER_LINK_ASK, OWNER_LINK_DELETED } from "../lib/link-delete";
@@ -254,7 +254,8 @@ export function OwnerPreview(props: { orgId: string; orgName: string; ownerName:
               body.scrollTop = 0;
             }}
             preview
-            assistant={{ load: () => previewAssistant(props.orgId), photo: (n) => `/api/orgs/${encodeURIComponent(props.orgId)}/owner/preview?assistant=1&img=${n}` }}
+            assistant={{ load: () => previewAssistant(props.orgId), older: (before) => previewAssistantOlder(props.orgId, before), photo: (n) => `/api/orgs/${encodeURIComponent(props.orgId)}/owner/preview?assistant=1&img=${n}` }}
+            olderItems={(c, before) => previewConversationOlder(props.orgId, c, before)}
           />
         </div>
         <div class="modal-foot">

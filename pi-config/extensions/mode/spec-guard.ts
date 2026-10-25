@@ -142,8 +142,21 @@ export function claimsConflicts(view: GitView | undefined): string[] {
 /** The spec directory (top-relative) a conflicted spec path sits in. */
 const specDirOf = (path: string): string => path.slice(0, path.lastIndexOf(`${SPEC_REL}/`) + SPEC_REL.length);
 
-/** The one recovery for a spec conflict a Git merge leaves, in the draft tool's words (its mergeRecovery). */
-export function mergeRecovery(branch: string, specDir: string = SPEC_REL): string {
+/** The spec record files (layout 2: `claims/**\/*.json` beside each claim file) Git holds in conflict, top-relative. */
+export const recordConflicts = (claims: string[]): string[] => claims.filter((p) => p.endsWith(".json"));
+
+/**
+ * The one recovery for a spec conflict a Git merge leaves, in the draft tool's words (its mergeRecovery): with one
+ * record list (layout 1) the whole spec; with records beside each claim file (layout 2) only the areas that clashed.
+ */
+export function mergeRecovery(branch: string, specDir: string = SPEC_REL, layout: 1 | 2 = 1, paths: string[] = []): string {
+	if (layout === 2) {
+		const areas = [...new Set(paths.filter((p) => /\.(md|json)$/.test(p) && p.startsWith(`${specDir}/claims/`)).map((p) => p.replace(/\.(md|json)$/, "")))].sort();
+		const files = areas.length ? areas.flatMap((a) => [`${a}.md`, `${a}.json`]).join(" ") : `${specDir}/claims/<area>.md ${specDir}/claims/<area>.json`;
+		return `take ${branch}'s copy of only the areas that clashed, each claim file with its record file, with \`git checkout --no-overlay ${branch} -- ${files}\` ` +
+			"(never `--ours`, and never a claim file without its record file), commit the merge, promote again only the branch's changes to those areas with the same `--id`s " +
+			"(re-record evidence that `status` calls stale; re-apply a draft that is gone in a new draft from current), then commit the claims";
+	}
 	return `take ${branch}'s whole spec with \`git checkout --no-overlay ${branch} -- ${specDir}/manifest.json ${specDir}/claims\` ` +
 		"(never `--ours` and never one file at a time: the merge driver may already have merged the manifest, and the branch's other claim files would then lack their records), " +
 		"commit the merge, promote the branch's drafts again with the same `--id`s (re-record evidence that `status` calls stale; re-apply a draft that is gone in a new draft from current), then commit the claims";
@@ -159,12 +172,17 @@ export function claimsDriverSetup(core: string, specDir: string, attr: boolean, 
 }
 
 /** What to do about spec files Git holds in conflict: merge-manifest first when the manifest is, then the one recovery. */
-export function specConflictNote(top: string, conflict: { manifest?: string; claims: string[] }, core: string, branch = "master", setup?: string): string {
+export function specConflictNote(top: string, conflict: { manifest?: string; claims: string[]; layout?: 1 | 2 }, core: string, branch = "master", setup?: string): string {
 	const { manifest, claims } = conflict;
+	const records = recordConflicts(claims), layout = conflict.layout ?? (records.length ? 2 : 1);
 	const tail = setup ? ` ${setup}` : "";
-	if (!manifest) return `${DIGEST_TAG} ${capped(claims, FILE_CAP)} ${claims.length === 1 ? "is" : "are"} in conflict: ${mergeRecovery(branch, specDirOf(claims[0]))}.${tail}`;
-	const root = join(top, dirname(dirname(dirname(manifest))) === "." ? "" : dirname(dirname(dirname(manifest))));
-	return `${DIGEST_TAG} ${manifest} is in conflict: run \`node "${join(core, "sova-spec-draft.mjs")}" merge-manifest --root ${root} --write --json\` first, then stage it. If it refuses (manifest-conflict), or a claims file is in conflict: ${mergeRecovery(branch, specDirOf(manifest))}. Never take a side before merge-manifest has run.${tail}`;
+	if (!manifest && !records.length) return `${DIGEST_TAG} ${capped(claims, FILE_CAP)} ${claims.length === 1 ? "is" : "are"} in conflict: ${mergeRecovery(branch, specDirOf(claims[0]), layout, claims)}.${tail}`;
+	// The records (the one records list, or layout 2's per-area record files) merge per record with merge-manifest, across layouts too.
+	const first = manifest ?? records[0], specDir = specDirOf(first);
+	const root = join(top, specDir === SPEC_REL ? "" : specDir.slice(0, -SPEC_REL.length - 1));
+	const what = manifest && !records.length ? manifest : capped([...(manifest ? [manifest] : []), ...records], FILE_CAP);
+	const one = !!manifest !== !!records.length ? (manifest ? true : records.length === 1) : false;
+	return `${DIGEST_TAG} ${what} ${one ? "is" : "are"} in conflict: run \`node "${join(core, "sova-spec-draft.mjs")}" merge-manifest --root ${root} --write --json\` first, then stage ${layout === 2 ? "what it wrote" : "it"}. If it refuses (manifest-conflict), or a claims file is in conflict: ${mergeRecovery(branch, specDir, layout, claims)}. Never take a side before merge-manifest has run.${tail}`;
 }
 
 /** Whether the merge-claims driver routes `claimsFile` in the work tree at `top`: [attribute set, driver configured]. */
@@ -352,6 +370,8 @@ export interface CensusState {
 	conflict?: boolean;
 	/** Orphaned evidence commits already said (by the census or the write guard). */
 	orphans?: string[];
+	/** HEAD when the spec was last probed for a mixed record layout (absent in older state files). */
+	layoutHead?: string | null;
 	/** Revs the task's own claims are absent at (ownBasesFor at the first look): census --own-base. */
 	ownBases?: string[];
 	/** What the digest printed once and holds back after (absent in older state files). */
@@ -699,7 +719,8 @@ function underRoot(top: string, root: string, path: string): string | undefined 
  */
 export async function censusStep(state: CensusState, call: CensusCall, core: string, io: SpecIO = localIO): Promise<{ state: CensusState; result: CensusResult }> {
 	const seen: { view?: GitView } = {};
-	const step = await censusDelta(state, call, core, io, seen);
+	const step0 = await censusDelta(state, call, core, io, seen);
+	const step = await withLayoutProbe(step0, seen.view, call, core, io);
 	const manifest = manifestConflict(seen.view), claims = claimsConflicts(seen.view);
 	if ((!manifest && !claims.length) || !seen.view) return step.state.conflict ? { state: { ...step.state, conflict: false }, result: step.result } : step;
 	if (step.state.conflict) return step;
@@ -713,9 +734,50 @@ export async function censusStep(state: CensusState, call: CensusCall, core: str
 		const branch = (await defaultBranch(top, io).catch(() => undefined)) ?? "master";
 		const [attr, driver] = claims.length ? await claimsDriverState(top, claims[0], io, call.signal).catch((): [boolean, boolean] => [true, true]) : [true, true];
 		const setup = attr && driver ? undefined : claimsDriverSetup(core, specDirOf(claims[0]), attr, driver);
-		note = specConflictNote(top, { manifest, claims }, core, branch, setup);
+		// The spec's layout as committed at HEAD, through the core (the working tree's copy may hold conflict markers).
+		const specDir = specDirOf(manifest ?? claims[0]!);
+		const layout = await layoutAt(join(top, specDir === SPEC_REL ? "" : specDir.slice(0, -SPEC_REL.length - 1)), "HEAD", core, io, call.signal);
+		note = specConflictNote(top, { manifest, claims, ...(layout ? { layout } : {}) }, core, branch, setup);
 	}
 	return { state: { ...step.state, conflict: true }, result: { ...step.result, text: step.result.text ? `${note}\n${step.result.text}` : note } };
+}
+
+/**
+ * After every merge (each time HEAD moves, and at the first look), whether the spec now holds records both ways: in
+ * the one records list and in per-area `claims/**\/*.json` files. No spec tool reads such a spec, so the note gives the
+ * one command that finishes it, once per HEAD, from the core's own refusal (`records`). Never throws.
+ */
+async function withLayoutProbe(step: { state: CensusState; result: CensusResult }, view: GitView | undefined, call: CensusCall, core: string, io: SpecIO): Promise<{ state: CensusState; result: CensusResult }> {
+	if (!view || step.state.layoutHead === view.head) return step;
+	const state = { ...step.state, layoutHead: view.head };
+	try {
+		const root = await findSpecRoot(call.cwd, (p) => io.exists(p));
+		const mixed = root ? await mixedLayout(root, core, io, call.signal) : false;
+		if (!root || !mixed) return { state, result: step.result };
+		// The core's refusal names the one command (merge-manifest while a merge is in progress, else migrate).
+		const note = `${DIGEST_TAG} ${mixed.replace(/sova-spec-draft\.mjs /g, `node "${join(core, "sova-spec-draft.mjs")}" `)}`;
+		return { state, result: { ...step.result, text: step.result.text ? `${note}\n${step.result.text}` : note } };
+	} catch {
+		return { state, result: step.result };
+	}
+}
+
+/** The core's `records` reading of the spec at `root` (at `at`, a revision, when given), or undefined when it can't run. */
+async function recordsOf(root: string, core: string, io: SpecIO, signal?: AbortSignal, at?: string): Promise<{ layout?: unknown; findings?: { code?: string; message?: string }[] } | undefined> {
+	const tool = join(core, "sova-spec.mjs");
+	if (!(await io.exists(tool))) return undefined;
+	const r = await io.exec("node", [tool, "records", "--root", root, ...(at ? ["--at", at] : []), "--json"], { cwd: root, timeout: TOOL_TIMEOUT_MS, signal });
+	try { return JSON.parse(r.stdout); } catch { return undefined; }
+}
+/** The spec's record layout at a revision (1 or 2), or undefined when the core can't say. */
+export async function layoutAt(root: string, at: string, core: string, io: SpecIO = localIO, signal?: AbortSignal): Promise<1 | 2 | undefined> {
+	const out = await recordsOf(root, core, io, signal, at).catch(() => undefined);
+	return out?.layout === 2 ? 2 : out?.layout === 1 ? 1 : undefined;
+}
+/** Whether the spec at `root` mixes both record layouts: the core's refusal (it names the fix), or false. */
+export async function mixedLayout(root: string, core: string, io: SpecIO = localIO, signal?: AbortSignal): Promise<string | false> {
+	const out = await recordsOf(root, core, io, signal).catch(() => undefined);
+	return out?.findings?.find((f) => f.code === "layout-mixed")?.message ?? false;
 }
 
 async function censusDelta(state: CensusState, call: CensusCall, core: string, io: SpecIO, seen: { view?: GitView }): Promise<{ state: CensusState; result: CensusResult }> {

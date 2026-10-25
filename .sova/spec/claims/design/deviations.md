@@ -3,7 +3,7 @@
 
 | What | Why |
 |---|---|
-| Dark by default instead of following `prefers-color-scheme` | Requested for this dev tool. Light is still complete and equal, via `data-theme="light"` |
+| Dark by default instead of following `prefers-color-scheme` | Requested for this dev tool. Light is still complete and equal, via `data-theme="light"`. The share build's pages (owner page, hand-off pages) follow the device instead, with a single light/dark toggle on the owner page, the device's setting until clicked (§app.owner-page/page) |
 | App shell uses `@media`, not a container query | The shell is the window. It's the same exception the skill makes for `.toast-stack` |
 | No rail and no bottom bar, and no three-pane desktop band | Sova has one destination. The skill's "sidebar left, main right" at ≥768 is kept |
 | `.modal` restyles itself into a sheet under 768 | The skill requires a sheet at folded width. Doing it in CSS means the frontend writes one markup |

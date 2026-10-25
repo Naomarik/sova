@@ -1,8 +1,9 @@
 # spec: the `.sova/spec` tools
 
 Standalone command-line tools over a project's `.sova/spec/` directory: the
-project's documentation, as a `manifest.json` of claim records plus
-`claims/*.md` prose, keyed by `§` IDs (the foldaidev identifier convention).
+project's documentation, as claim records (one list in `manifest.json`, or, in
+format version 2, a list beside each claim file) plus `claims/*.md` prose, keyed
+by `§` IDs (the foldaidev identifier convention).
 They work in any language, with or without Git, and need no existing docs and
 no source annotations. They are not a pi extension. There is no
 `index.ts`, so pi's loader skips this directory. They need only the Node
@@ -25,7 +26,8 @@ to assert that those decisions have been implemented.
 
 | Path | What it is |
 | --- | --- |
-| `core/sova-spec.mjs` | The read-only core: `map`, `where`, `toc`, `read`, `impact` (and `impact --near`), `packet`, `scope`, `graph`, `check`, `census`, `foreign` |
+| `core/sova-spec.mjs` | The read-only core: `map`, `where`, `toc`, `read`, `impact` (and `impact --near`), `packet`, `scope`, `graph`, `check`, `census`, `foreign`, `records` |
+| `core/layout.mjs`, `core/layout.d.mts` | The one reader and writer of records, in both layouts (one list in `manifest.json`, or one beside each claim file); every tool and Sova reader goes through it (`core/README.md`, "Record layouts") |
 | `core/packet.mjs` | The standalone core's bounded packet serialization and stateless navigation module |
 | `core/toc.mjs`, `core/read.mjs` | Pull: `toc`, a one-hop contents view (what, why, size per line), and `read`, one exact passage without its chain |
 | `core/fields.mjs` | The optional record fields `embeds`, `core` (the always-on frame stream, capped at 12,000 bytes), `about` and `notOwned` (what an area does not own, by owner) |
@@ -176,6 +178,7 @@ node core/sova-spec-draft.mjs promote NAME (--id '<§id>' | --all) [--meta KEY] 
 node core/sova-spec-draft.mjs recover --root DIR [--write] [--json]
 node core/sova-spec-draft.mjs merge-manifest --root DIR [--write] [--json]
 node core/sova-spec-draft.mjs merge-claims --base F --ours F --theirs F [--path P] --root DIR [--write] [--json]
+node core/sova-spec-draft.mjs migrate [--reverse] [--drafts | --draft NAME] --root DIR [--write] [--json]
 ```
 
 1. **`new`** copies the whole current manifest and claims tree into
@@ -224,11 +227,19 @@ node core/sova-spec-draft.mjs merge-claims --base F --ours F --theirs F [--path 
 6. **`merge-manifest`** resolves a Git merge conflict in `manifest.json` record
    by record (index stages base, ours, theirs) and refuses any key both sides
    changed differently. It is the only sanctioned way to settle that conflict;
-   [PROMOTE.md](PROMOTE.md) has the rule.
+   [PROMOTE.md](PROMOTE.md) has the rule. In format version 2 it also merges
+   conflicted `claims/**/*.json` record files, and a merge across the two
+   layouts, from the merge's commits (DRAFTS.md).
 7. **`merge-claims`** is a Git merge driver for `claims/*.md`: the promotion's
    per-declaration merge; a declaration both sides changed merges block by block
    (list item, table row, paragraph), and only the same block changed on both
    sides still conflicts, with Git's markers around those blocks.
+8. **`migrate`** converts the records between one list in `manifest.json`
+   (format 1) and one list beside each claim file (format 2), and with
+   `--drafts` every draft too; it previews unless `--write`, and refuses to
+   finish unless the result reads back as the same records, settings and check
+   (DRAFTS.md, "Record layouts and `migrate`"). Nothing converts a project
+   unless someone runs it.
 
 When to draft, and how to keep a baseline apart from a feature, is in
 [`../mode/spec-mode.md`](../mode/spec-mode.md). Evidence is bytes, revisions and the recorder's statement.

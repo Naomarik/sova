@@ -808,6 +808,59 @@ would list master's changes instead.
 
 ### 2026-10-26
 
+- **Each area's records may live beside its claim file; every tool reads both layouts** (al_6, landing 1:
+  the tools; the conversion of Sova's own spec is a later landing).
+  - Commit: on branch `feat/spec-store`; not on master yet.
+  - Why: one 787 KB `manifest.json` holds all 1,165 records, so 304 of 678 merges since 2026-09-23 changed
+    it on both sides; a merge driver, about 100 re-apply commits and 4 take-master's-whole-spec merges
+    followed. With a record list per area, the same replay puts both-sides changes at 98 of 678 (14%) and
+    Git conflicts at 30 (from 118). This landing ships the tools only: Sova's spec stays in format 1.
+  - Changed:
+    - format version 2: `manifest.json` keeps every setting (`grammar`, `boundary`, `_`, …) and
+      `"claims": "records live beside each claim file, in claims/**/*.json"` (a string, so an older
+      branch's `merge-manifest` driver refuses it and Git reports a conflict instead of merging a format 2
+      master quietly); records move to `claims/<path>.json` beside `<path>.md`, placed by id, sorted,
+      2-space JSON. Format 1 is unchanged and stays the default (`new` on a project with no spec still
+      starts format 1);
+    - `core/layout.mjs` (+ `layout.d.mts`) is the one reader and writer of records in both layouts; the
+      core, the draft tool, review, assessment, Sova's spec lookup, draft writer and conversation drafts,
+      the merge round, the release check (`docs-drift.mjs`) and the simulation's look-up probe go through
+      it or through the new read-only `sova-spec.mjs records [--at REV] [--id §x]… --json`; a guard test
+      (`tests/layout-guard.test.mjs`, `server/spec-layout-boundary.test.ts`) fails new code that reads the
+      records file directly, against an allowlist that only shrinks;
+    - a spec holding records both ways is refused by every command (`layout-mixed`, exit 2) with the one
+      command that finishes it (`merge-manifest --write` during a merge, else `migrate --write`); new
+      format 2 check findings `record-misfiled`, `record-duplicate`, `records-orphaned`,
+      `records-unreadable`;
+    - `sova-spec-draft.mjs migrate [--reverse] [--drafts | --draft NAME] [--write]`: previews, converts
+      under the drafts lock as one journalled write, and refuses unless ids, records, settings and the
+      core's check read back the same (it undoes a write that doesn't); drafts keep their old files in
+      `.layout-backup/` and `--reverse` restores them while their records match;
+    - `merge-manifest`: as a driver, sides in different layouts exit 1 (`layout-mismatch`) and write
+      nothing; in index mode a format 2 side, a conflicted record file, or a mixed tree during a merge is
+      merged per record from the merge's commits and written in the default branch tip's layout;
+    - a spec conflict in a format 2 spec recovers per area (take master's copy of only the clashing areas,
+      claim file and record file together, and promote again only those areas), in the draft tool's
+      refusals, the census note, the merge round's hand-back and PROMOTE.md; format 1 keeps the whole-spec
+      recovery word for word;
+    - the census note asks the core whether the spec is mixed each time HEAD moves (once per HEAD); the
+      merge round merges master with `--no-commit`, finishes a mixed result with `merge-manifest --write`
+      before the merge commit, stages the record files merge-manifest wrote, and aborts the merge (the
+      worktree as it was) when the records don't read or the tool gives no answer;
+    - `.sova/spec/.gitignore` admits `claims/**/*.json`.
+  - §: + §tools.spec/record-layout; §tools.spec/git-merge, §tools.spec/conflict-recovery,
+    §tools.spec/census-note, §chat.merge-round/driver reworded, §tools/spec (its new child) (drafts
+    `spec-store`, `spec-store-2`, promoted on the branch at 9eca2773, and `spec-store-3` at ede39a14;
+    `foreign --base 9b7297f8 --head ede39a14` gives the same list).
+  - Numbers: every read command (check, map, map app, graph, where by words and by path, toc out/in/down,
+    read, read --whole, scope, impact, impact --near, packet, census, foreign) gives byte-identical JSON on
+    Sova's spec at 9b7297f8 in format 1 and converted to format 2 at the same path (17 of 17); `migrate`
+    converts it into 101 record files (1,167 records) with every identity check passing, and back.
+    Median latency over 15 runs, old core on format 1 → new core on format 1 → new core on format 2:
+    check 125 → 132 → 138 ms, map 175 → 180 → 177, where (3 words) 465 → 452 → 474, read 78 → 79 → 86,
+    census 131 → 127 → 137. Merge-collision numbers after the conversion: at 1 and 2 weeks after landing 2.
+  - Upgrade: see UPGRADING step 12.
+
 - **The mode text splits: finding your way for everyone, the writing steps when behavior changes.**
   - Commit: on branch `feat/spec-slim` (alignment al_3); not on master yet. Round 3 passed its
     pre-registered rule (KEEP), the condition for landing.
@@ -857,7 +910,7 @@ would list master's changes instead.
     - Constraint 5 (light): 964 → 306 words ride every turn; the 976-word procedure is sent once per
       chat. The verdict holds for spec-mode.md sha256 bd4831dc… and WRITING.md 95381eb5… only: a
       change to either needs a new measured run.
-  - Upgrade: see UPGRADING step 12.
+  - Upgrade: see UPGRADING step 13.
 
 ## Integration → master
 
@@ -1033,7 +1086,15 @@ The tools are Node standard library only. Nothing is installed.
     committing them. A merge process of your own that promoted drafts at landing stops doing so; one that
     removed worktrees should keep a copy of their unpromoted drafts first. New: `prune --official [--from
     DIR]` deletes only drafts the tool confirms are already official.
-12. **The 2026-10-26 split mode text** (branch `feat/spec-slim`). The spec extension ships a new file,
+12. **Records beside each claim file** (2026-10-26, branch `feat/spec-store`). Copy every `core/*.mjs` again,
+    `layout.mjs` (and `layout.d.mts` for TypeScript callers) included. Nothing else is required: format 1
+    specs keep working, byte for byte. To move to per-area records, run `sova-spec-draft.mjs migrate
+    --root . --json`, then `--write` (and `--drafts` to convert open drafts) in a tree with `.sova/spec`
+    committed, add `!/claims/**/*.json` to `.sova/spec/.gitignore`, and commit `.sova/spec` as one commit.
+    Scripts that read records from `manifest.json` switch to `sova-spec.mjs records --json` (or import
+    `layout.mjs`). A merge process of your own that runs `merge-manifest --write` on a `manifest.json`
+    conflict should also run it on a conflicted `claims/**/*.json`, and stage the `files` it lists.
+13. **The 2026-10-26 split mode text** (branch `feat/spec-slim`). The spec extension ships a new file,
     `spec/WRITING.md`, beside `PROMOTE.md`; `install.sh` links the whole `spec` directory, so it arrives
     with the tools. A project that points its agents at `mode/spec-mode.md` now gets only the short
     finding-your-way part. Its own agent instructions must also name the writing procedure, before

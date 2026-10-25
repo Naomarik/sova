@@ -237,15 +237,27 @@ async function everyAnswer(): Promise<[string, string][]> {
   assert.equal(home.status, 200, home.text);
   const h = JSON.parse(home.text) as OwnerHome;
   const projects = new Set([...h.projects.map((p) => p.id), plinks.handleOf("q", pa.id), plinks.handleOf("q", pb.id)]);
-  const conversations = new Set([...h.waiting.map((w) => w.conversation), ...[s1, s2, s3, s4, s5].map((s) => plinks.handleOf("k", s.sessionId))]);
+  // Home's Conversations rows (§app.owner-page/content) name every shown conversation too.
+  const conversations = new Set([...h.waiting.map((w) => w.conversation), ...(h.conversations ?? []).map((c) => c.id), ...[s1, s2, s3, s4, s5].map((s) => plinks.handleOf("k", s.sessionId))]);
   for (const q of projects) {
     const r = await get(`/api/i/${token}/p/${q}`);
     if (r.status === 200) for (const c of (JSON.parse(r.text) as OwnerProject).conversations) conversations.add(c.id);
   }
-  for (const k of conversations) await get(`/api/i/${token}/c/${k}`);
-  // The Project Assistant's conversation and the versions' route (§app.project-assistant/never).
+  for (const k of conversations) {
+    await get(`/api/i/${token}/c/${k}`);
+    // Its earlier items (§app.owner-page/content, paged): from its very start.
+    await get(`/api/i/${token}/c/${k}/older?before=1000`);
+  }
+  // The Project Assistant's conversation, its earlier messages, and the versions' route (§app.project-assistant/never).
   await get(`/api/i/${token}/assistant`);
-  for (const p of [`/api/orgs/${org.id}/owner/preview`, `/api/orgs/${org.id}/owner/preview?assistant=1`, ...[...projects].map((q) => `/api/orgs/${org.id}/owner/preview?project=${q}`), ...[...conversations].map((k) => `/api/orgs/${org.id}/owner/preview?c=${k}`)]) {
+  await get(`/api/i/${token}/assistant/older?before=1000`);
+  for (const p of [
+    `/api/orgs/${org.id}/owner/preview`,
+    `/api/orgs/${org.id}/owner/preview?assistant=1`,
+    `/api/orgs/${org.id}/owner/preview?assistant=1&before=1000`,
+    ...[...projects].map((q) => `/api/orgs/${org.id}/owner/preview?project=${q}`),
+    ...[...conversations].flatMap((k) => [`/api/orgs/${org.id}/owner/preview?c=${k}`, `/api/orgs/${org.id}/owner/preview?c=${k}&before=1000`]),
+  ]) {
     const res = await app.request(p);
     out.push([`${res.status} preview ${p}`, await res.text()]);
   }
@@ -276,6 +288,15 @@ describe("nothing private reaches the owner (§app.owner-page/never)", async () 
     assert.equal(home.waiting.length, 1, "the owner's own question shows");
     assert.deepEqual(home.requests?.map((r) => r.title), ["The booking form is slow"], "control: the owner's request shows, by its title");
     assert.ok(answers.some(([l]) => l === `200 GET /api/i/${token}/assistant`), "control: the assistant's view answered");
+    // Home's Conversations rows and the paged reads answered, so their absence of markers means something.
+    assert.ok((home.conversations ?? []).length >= 1, "control: Home lists the shown conversations");
+    assert.ok((home.conversations ?? []).every((c) => c.project === home.projects[0]!.id && c.projectName && c.since), "control: each row names its project and since when");
+    assert.ok(answers.some(([l]) => l.startsWith("200 GET") && l.includes("/older?before=") && l.includes("/c/")), "control: a conversation's earlier items answered");
+    assert.ok(answers.some(([l]) => l === `200 GET /api/i/${token}/assistant/older?before=1000`), "control: the chat's earlier messages answered");
+    assert.ok(
+      answers.some(([l, t]) => l.includes("/older?before=") && t.includes("We open at nine.")),
+      "control: a person's own words reach the owner through a paged read too",
+    );
     assert.equal(home.projects[0]!.latestNews?.text.includes("Opening hours are agreed."), true, "the update shows");
     assert.ok(
       answers.some(([, t]) => t.includes("We open at nine.")),

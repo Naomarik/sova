@@ -55,6 +55,22 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   being written, an Enter or `Send` sends nothing and says "Wait for the answer first.", a line
   that goes once the answer is done; the box keeps the text, so the next Enter sends it.
   Hand-off pages keep their own keys (§app.baton/outsider-view).
+- **A send shows at once.** The moment Enter or `Send` sends, the message shows at the end of the
+  conversation as the owner's, marked `Sending…`, with their attached photos as the device's own
+  previews; the box empties and the page goes to the end. Once the chat accepted it (202) the
+  assistant shows it is writing, and the row is replaced by the conversation's own copy as soon as
+  a read or a pushed update holds it. A refused message leaves the conversation, and its words and
+  photos go back in the box (before anything typed since), with the reason under it in the lines
+  below; a staged photo that expired is uploaded again once and sent again, as before. A refusal
+  never uses up a staged photo: the server checks that the chat is ready and not answering before
+  it reads a staged photo, and keeps every staged photo until a message carrying it is in the
+  conversation, so the same send succeeds once the answer is done.
+- **Paged.** The chat's view (`GET /api/i/<token>/assistant`, each push of `/ws/i` and the
+  operator's Preview as) carries only the newest 50 messages and `older`, how many come before
+  them; `GET /api/i/<token>/assistant/older?before=<n>` answers the up to 50 before message `n`
+  and their own `older`. A message's `n` and a photo's number count from the conversation's first
+  message, so a page merges by them and keeps what it loaded (§app.owner-page/content). A read
+  that finds the conversation file unchanged since the last one reuses its parsed messages.
 - **Nothing runs on a model nobody chose.** Its replies run on the org's resolved reply model, its
   own pick or else the host's default (§app.project-assistant/models), set on the chat with its
   thinking level at each owner message; with none resolved, one this host can't run, or one

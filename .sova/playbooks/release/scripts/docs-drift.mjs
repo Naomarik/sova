@@ -4,7 +4,7 @@
 // For each §site.docs/* record at <root>, compares the text of the record and of each claim in its
 // `requires` at <base> with <root>, using the trusted spec tools. Reads only the spec. Exits 0.
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -36,9 +36,15 @@ try {
     } catch { return null; }
   };
 
+  // The records in either layout, through the trusted tools' read-only `records` command.
   const claims = (dir) => {
-    const c = JSON.parse(readFileSync(join(dir, ".sova/spec/manifest.json"), "utf8")).claims;
-    return Array.isArray(c) ? c : Object.entries(c).map(([id, v]) => ({ id, ...v }));
+    let out;
+    try { out = execFileSync("node", [tool, "records", "--root", dir, "--json"], { encoding: "utf8", maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] }); }
+    catch (e) { out = e.stdout; }
+    const j = JSON.parse(out);
+    if (!j.records) { console.error(`docs-drift: ${tool} records gave no records (${j.findings?.[0]?.message ?? "an older core without the records command?"})`); process.exit(2); }
+    const c = j.records;
+    return Object.entries(c).map(([id, v]) => ({ id, ...v }));
   };
   const docs = claims(root).filter((r) => r.id.startsWith("§site.docs/") && (r.code ?? []).some((p) => p.startsWith("site/src/content/docs/")));
 

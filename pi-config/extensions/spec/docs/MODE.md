@@ -29,7 +29,7 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
 | Worker brief | `subagents/spec-brief.ts` | A fixed excerpt of both parts (`spec-mode.md`, then `WRITING.md`) for a code-writing worker whose prompt doesn't already carry the spec block. Each rule is found by an anchor and quoted whole, so the brief is generated, never hand-copied; it keeps every writing rule up front. |
 | Merge note | `worktrees/spec.ts` | When a worktree merge is recorded, it adds the landing's warnings to the merge note: changed files no claim maps, draft records left behind, hand-resolved §, orphaned evidence. This applies in any project with a spec, mode on or off. |
 | Spec writer setting | `mode/spec.ts`, `server/spec-settings.ts` | Which worker (backend · model · effort) writes draft claims and evidence while spec is on. The legacy file is `<agent dir>/mode-spec.json`; Sova's Settings → Subagents now edits it per profile. `null` means the session writes the spec itself. |
-| The tools | `spec/core/*.mjs` | Read-only `sova-spec.mjs`, `sova-spec-draft.mjs` (drafts, evidence, promotion, `merge-manifest`), the review and assessment companions, and the modules they load. |
+| The tools | `spec/core/*.mjs` | Read-only `sova-spec.mjs`, `sova-spec-draft.mjs` (drafts, evidence, promotion, `merge-manifest`, `migrate`), the review and assessment companions, and the modules they load. `layout.mjs` is the one reader and writer of records, in both layouts (one list in `manifest.json`, or one beside each claim file); Sova's server readers, the merge round and the release check use it or `sova-spec.mjs records`. |
 | Manifest merge driver | `.gitattributes`, `sova-spec-draft.mjs merge-manifest` | `.sova/spec/manifest.json` merges record by record in Git, through a driver each clone defines once (below). |
 
 ## How they connect
@@ -93,7 +93,11 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
    left behind.
    - Git merges `manifest.json` and `claims/*.md` through the drivers.
    - If a driver refuses, the procedure in `../PROMOTE.md` applies: take master's whole spec with
-     `git checkout --no-overlay`, then promote the branch's drafts again.
+     `git checkout --no-overlay`, then promote the branch's drafts again (with records beside each claim
+     file, format 2: only the areas that clashed).
+   - After every merge (each time HEAD moves) the census note asks the core (`records`) whether the spec
+     now holds records both ways, and if so gives the one command that finishes it (`layout-mixed`); the
+     merge round checks the same before each merge commit and finishes it with `merge-manifest --write`.
 
 ## The merge driver, once per clone
 

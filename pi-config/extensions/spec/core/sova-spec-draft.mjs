@@ -44,7 +44,7 @@ import { assemble, serialize, isRecordFile, readSpecGit, readSpecFs, fixFor, mix
 
 const CORE = join(dirname(fileURLToPath(import.meta.url)), "sova-spec.mjs");
 const FORMAT = "sova-spec-draft/1";
-const SPEC = ".sova/spec", DRAFTS = `${SPEC}/drafts`, LOCK = `${DRAFTS}/.lock`, TXN = `${DRAFTS}/.txn`;
+const SPEC = ".sova/spec", DRAFTS = `${SPEC}/drafts`, LOCK = `${DRAFTS}/.lock`, TXN = `${DRAFTS}/.txn`, LAND = `${DRAFTS}/.land`;
 const MAX_FILE_BYTES = 2 * 1024 * 1024, MAX_TOTAL_BYTES = 64 * 1024 * 1024, MAX_CORE_STDOUT = 64 * 1024 * 1024;
 const NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const ID_RE = /^§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?\/[a-z][a-z-]*$/;
@@ -74,12 +74,13 @@ const uniqSorted = (a) => [...new Set(a)].sort();
 
 // ---------------------------------------------------------------- args
 const FLAGS = { new: ["purpose", "write", "all"], status: [], diff: ["against"], check: ["base", "all"],
-  evidence: ["id", "by", "verification", "commit", "snapshot", "doc-only", "path", "log", "write"],
+  evidence: ["id", "by", "verification", "commit", "snapshot", "doc-only", "note", "path", "log", "write"],
+  land: ["commit", "by", "verification", "write"],
   agree: ["id", "by", "verification", "at", "source", "write"],
   promote: ["id", "all", "meta", "file", "plan", "write", "own-base", "days"], recover: ["write"],
   drafts: ["days", "worktrees"], prune: ["approved", "official", "from", "write"], "merge-manifest": ["base", "ours", "theirs", "write"],
   "merge-claims": ["base", "ours", "theirs", "path", "write"], migrate: ["reverse", "drafts", "draft", "write"] };
-const BOOL = new Set(["json", "write", "snapshot", "doc-only", "all", "worktrees", "official", "reverse", "drafts"]), MULTI = new Set(["id", "path", "meta", "file", "own-base"]);
+const BOOL = new Set(["json", "write", "snapshot", "doc-only", "note", "all", "worktrees", "official", "reverse", "drafts"]), MULTI = new Set(["id", "path", "meta", "file", "own-base"]);
 function parseArgs(argv) {
   const o = { pos: [], id: [], path: [], meta: [], file: [], "own-base": [], seen: new Set() };
   for (let i = 0; i < argv.length; i++) {
@@ -117,6 +118,13 @@ function parseArgs(argv) {
     if (o.draft !== undefined && !NAME_RE.test(o.draft)) throw new Fail(2, "usage", `draft name must match ${NAME_RE}`);
     return o;
   }
+  if (cmd === "land") {
+    if (name !== undefined) throw new Fail(2, "usage", "land takes no draft NAME: it lands every draft of the project");
+    if (o.commit === undefined || !/^[A-Za-z0-9][A-Za-z0-9._/~^@{}-]{0,199}$/.test(o.commit)) throw new Fail(2, "usage", "land needs --commit REV, a plain revision name: the commit that lands");
+    for (const [k, max] of [["by", 128], ["verification", 8000]])
+      if (typeof o[k] !== "string" || !o[k].trim() || o[k].length > max || /[\0-\x08\x0b-\x1f\x7f]/.test(o[k])) throw new Fail(2, "usage", `--${k} needs 1-${max} characters of text`);
+    return o;
+  }
   if (cmd === "merge-claims") {
     if (name !== undefined) throw new Fail(2, "usage", `${cmd} takes no arguments`);
     if (o.path.length > 1 || o.path.some((p) => !p || p.length > 4096 || /[\0-\x1f\x7f]/.test(p))) throw new Fail(2, "usage", "merge-claims takes at most one --path (the driver's %P)");
@@ -133,8 +141,9 @@ function parseArgs(argv) {
   if (cmd === "evidence") {
     if (!o.id.length) throw new Fail(2, "usage", "evidence needs at least one --id");
     text("by", 128); text("verification", 8000);
-    const modes = [o.commit !== undefined, !!o.snapshot, !!o["doc-only"]].filter(Boolean).length;
-    if (modes !== 1) throw new Fail(2, "usage", "evidence needs exactly one of --commit REV, --snapshot, --doc-only");
+    const modes = [o.commit !== undefined, !!o.snapshot, !!o["doc-only"], !!o.note].filter(Boolean).length;
+    if (modes !== 1) throw new Fail(2, "usage", "evidence needs exactly one of --commit REV, --snapshot, --doc-only, --note");
+    if (o.note && (o.path.length || o.log !== undefined)) throw new Fail(2, "usage", "--note records the chat's verification note alone: no --path or --log");
     if (o.commit !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._/~^@{}-]{0,199}$/.test(o.commit)) throw new Fail(2, "usage", "--commit is not a plain revision name");
     if (o["doc-only"] && o.path.length) throw new Fail(2, "usage", "--doc-only takes no --path");
   }
@@ -154,7 +163,8 @@ function parseArgs(argv) {
   return o;
 }
 const USAGE = "usage: sova-spec-draft <new NAME [--purpose T] | status NAME | diff NAME [--against base|current] | check NAME | " +
-  "evidence NAME --id §x --by WHO --verification T (--commit REV|--snapshot|--doc-only) [--path P] [--log FILE] | " +
+  "evidence NAME --id §x --by WHO --verification T (--commit REV|--snapshot|--doc-only|--note) [--path P] [--log FILE] | " +
+  "land --commit REV --by WHO --verification T | " +
   "agree NAME --id §x --by WHO --verification T [--source REF] [--at ISO] | " +
   "promote NAME (--id §x|--all) [--meta K] [--file P] [--plan SHA] [--own-base REV]... [--days N] | check NAME [--base REV] | recover | " +
   "drafts [--days N] [--worktrees] | prune (--approved FILE | --official [--from DIR]) | " +
@@ -452,7 +462,7 @@ function draftSchema(d, name) {
   if (d.base.commit !== undefined && !/^[0-9a-f]{40,64}$/.test(d.base.commit)) return "base commit";
   if (!Array.isArray(d.evidence) || !Array.isArray(d.promotions)) return "evidence/promotions";
   for (const e of d.evidence) {
-    if (!obj(e) || !["commit", "snapshot", "doc-only"].includes(e.mode) || typeof e.by !== "string" || typeof e.verification !== "string") return "evidence entry";
+    if (!obj(e) || !["commit", "snapshot", "doc-only", "note"].includes(e.mode) || typeof e.by !== "string" || typeof e.verification !== "string") return "evidence entry";
     if (!Array.isArray(e.ids) || !e.ids.length || !e.ids.every((x) => obj(x) && ID_RE.test(x.id) && (x.recordSha === null || HEX.test(x.recordSha)) && (x.textSha256 === null || HEX.test(x.textSha256)))) return "evidence ids";
     if (!Array.isArray(e.inputs) || !e.inputs.every((i) => obj(i) && normRel(i.path) === i.path && (i.state === "absent" ? i.sha256 === undefined : i.state === "present" && HEX.test(i.sha256 ?? "")))) return "evidence inputs";
     if (e.mode === "commit" ? !/^[0-9a-f]{40,64}$/.test(e.commit ?? "") : e.commit !== undefined) return "evidence commit";
@@ -486,6 +496,7 @@ async function withLock(root, fn, { takeOverDead = false } = {}) {
 }
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
 async function refusePending(root) {
+  if (await exists(join(root, LAND))) throw new Fail(1, "pending-transaction", `${LAND} exists: a land was interrupted. Run \`recover\` (preview) then \`recover --write\` before anything else writes`);
   if (await exists(join(root, TXN))) throw new Fail(1, "pending-transaction", `${TXN} exists: a promotion was interrupted. Run \`recover\` (preview) then \`recover --write\` before anything else writes`);
 }
 
@@ -799,9 +810,10 @@ async function evidenceProblems(root, g, e, draftRelDir) {
   }
   return out;
 }
-// Latest evidence entry naming the id, and whether it still applies to what the draft now proposes.
+// Latest evidence entry naming the id, and whether it still applies to what the draft now proposes. A chat's
+// verification note (`--note`) is never evidence: it binds no implementation.
 async function evidenceState(root, a, g, c) {
-  const e = [...a.d.evidence].reverse().find((x) => x.ids.some((y) => y.id === c.id));
+  const e = [...a.d.evidence].reverse().find((x) => x.mode !== "note" && x.ids.some((y) => y.id === c.id));
   if (!e) return { state: "none", reasons: ["no evidence recorded"] };
   const bound = e.ids.find((y) => y.id === c.id);
   const reasons = [];
@@ -1078,6 +1090,8 @@ async function cmdEvidence(root, o) {
       if (!c) throw new Fail(1, "not-changed", `${id} is not changed by draft ${o.name}; evidence binds to a proposed change`);
       return c;
     });
+    // The chat's own note on what it verified: bound to the record and prose as they are, no implementation.
+    if (o.note) return { a, targets, inputs: [], commit: undefined, log: undefined };
     if (o["doc-only"]) {
       const bad = targets.filter((c) => docOnlyRefusal(c)), bundled = bad.filter((c) => docOnlyRefusal(c) === bundledOf(c));
       if (bundled.length) throw new Fail(1, "doc-only-bundled", `--doc-only covers a change to ${FIELD_KEYS.join("/")} alone; ${bundled.map((c) => `${c.id} (${docOnlyRefusal(c)})`).join(", ")} — record --commit or --snapshot evidence, or split the field change into its own draft`);
@@ -1120,7 +1134,7 @@ async function cmdEvidence(root, o) {
     }
     return { a, targets, inputs, commit, log };
   };
-  const show = ({ targets, inputs, commit, log }) => ({ name: o.name, mode: o.commit !== undefined ? "commit" : o.snapshot ? "snapshot" : "doc-only",
+  const show = ({ targets, inputs, commit, log }) => ({ name: o.name, mode: o.note ? "note" : o.commit !== undefined ? "commit" : o.snapshot ? "snapshot" : "doc-only",
     ids: targets.map((c) => ({ id: c.id, kind: c.kind, deleted: c.deleted, ...c.binding })), ...(commit ? { commit } : {}),
     inputs: inputs.map(({ buf, ...i }) => i), ...(log ? { log: { sha256: log.sha256, bytes: log.bytes } } : {}) });
   const first = await build();
@@ -1251,6 +1265,9 @@ const IN_TREE_RECOVERY = "revert those declarations in the draft's spec/ to thei
 
 async function plan(root, o) {
   const a = await analyze(root, o.name), g = await gitInfo(root);
+  // land's own plan: the evidence it would record at the landing commit, held in memory; ids already current need none.
+  if (o.landing?.entries?.length) a.d = { ...a.d, evidence: [...a.d.evidence, ...o.landing.entries] };
+  const landed = (id) => !!o.landing?.current?.has(id);
   const refusals = [];
   const refuse = (code, message) => refusals.push({ code, message });
   if (a.bc.exit === 2) refuse("base-untrusted", "the draft's baseline graph does not load (exit 2); changes cannot be attributed to identifiers");
@@ -1284,7 +1301,7 @@ async function plan(root, o) {
 
   // Every selected ID that stays current must say, explicitly, that it is not a proposal.
   const notes = [];
-  for (const id of [...ids].filter((x) => a.changed.has(x) && !a.changed.get(x).deleted).sort()) {
+  for (const id of [...ids].filter((x) => a.changed.has(x) && !a.changed.get(x).deleted && !landed(x)).sort()) {
     const auth = recOf(a.prop, id)?.authority;
     if (auth === "candidate") refuse("candidate-label", `${id} is still labelled authority "candidate" in the draft; a promoted record is current, so relabel it ("accepted" once the user adopted it) before recording evidence`);
     else if (auth !== "accepted" && auth !== "migrated") refuse("authority-missing", `${id} declares no authority label; set "authority": "accepted" (or keep "migrated" for ported text) in the draft record before recording evidence`);
@@ -1309,7 +1326,7 @@ async function plan(root, o) {
     }
   }
   const evidence = [];
-  for (const id of [...ids].filter((x) => a.changed.has(x)).sort()) {
+  for (const id of [...ids].filter((x) => a.changed.has(x) && !landed(x)).sort()) {
     const ev = await evidenceState(root, a, g, a.changed.get(id));
     evidence.push({ id, ...ev });
     const gone = ev.reasons.find((r) => /is not an ancestor of HEAD|no longer exists/.test(r));
@@ -1473,6 +1490,194 @@ async function cmdPromote(root, o) {
   });
 }
 
+// ---------------------------------------------------------------- land
+// Landing makes every draft official in one go: each pending record with its chat's verification note, its evidence
+// bound at the landing commit (doc-only where that applies), all drafts or none. It never commits; it says what it
+// wrote and the message to commit it with.
+const LAND_FIX = {
+  "verification-missing": (d, id) => `record your note on what you verified: evidence ${d} --id '${id}' --by <you> --verification "<what you checked>" --note --write`,
+  "verification-stale": (d, id) => `the promise changed after its note: record the note again (evidence ${d} --id '${id}' --by <you> --verification "<what you checked>" --note --write)`,
+  conflict: () => `the current spec changed this promise since the draft was made: ${IN_TREE_RECOVERY}`,
+  "candidate-label": (d, id) => `relabel ${id} "accepted" in draft ${d}, or label every record the draft changes "candidate" to keep the whole draft a proposal`,
+  "authority-missing": (d, id) => `set "authority": "accepted" on ${id} in draft ${d}`,
+  "drafts-overlap": () => "two drafts change the same file or record: move one draft's change into the other, or delete it",
+};
+const idOf = (message) => /^(§[^\s:,;]+)/.exec(message ?? "")?.[1] ?? null;
+// One hash over every file under every draft's spec/ (draft.json apart: notes, evidence and receipts go there), so
+// Land It can say which drafts it was given. server/spec-drafts-state.ts and the merge round compute the same one.
+// → {hash, names} | null (no drafts)
+async function draftsHashOf(root) {
+  const names = await draftNames(root).catch(() => []);
+  if (!names.length) return null;
+  const lines = [];
+  const walk = async (abs, rel) => {
+    let list;
+    try { list = await readdir(abs, { withFileTypes: true }); } catch { return; }
+    for (const e of list) {
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) await walk(join(abs, e.name), r);
+      else if (e.isFile()) { const b = await readOpen(join(abs, e.name)); if (b.state === "present") lines.push(`${r} ${b.sha256}`); }
+    }
+  };
+  for (const n of names) await walk(join(root, DRAFTS, n, "spec"), `${n}`);
+  return { hash: sha(lines.sort().join("\n")), names };
+}
+// The files a land may write (manifest.json and the claims tree), as bytes. → Map(rel → Buffer)
+async function specSnapshot(root) {
+  const t = await readTree(root, SPEC, true, undefined, undefined, { raw: true });
+  return new Map([...t.files].map(([p, f]) => [`${SPEC}/${p}`, f.buf]));
+}
+// Put the spec and the drafts' draft.json back as `files` says (rel → Buffer | null); spec files it doesn't list go.
+async function restoreSnapshot(root, files) {
+  for (const rel of (await specSnapshot(root)).keys()) if (!files.has(rel)) await unlink(join(root, rel)).catch((e) => { if (e.code !== "ENOENT") throw e; });
+  for (const [rel, buf] of files) {
+    const now = await readFileSafe(root, rel, { secrets: false });
+    if (buf === null) { if (now.state === "present") await unlink(join(root, rel)); continue; }
+    if (now.sha256 === sha(buf)) continue;
+    await writeAtomic(await ownDir(root, dirname(rel), true), posix.basename(rel), buf);
+  }
+}
+async function readLandJournal(root) {
+  const dir = await ownDir(root, LAND, false);
+  if (!dir) return null;
+  const j = await readOpen(join(dir, "journal.json"));
+  if (j.state === "absent") return { dir, files: null };
+  let journal;
+  try { journal = JSON.parse(j.buf.toString("utf8")); } catch { throw new Fail(2, "journal-corrupt", `${LAND}/journal.json is unreadable; inspect it by hand`); }
+  if (!obj(journal) || journal.format !== FORMAT || !Array.isArray(journal.files)) throw new Fail(2, "journal-corrupt", `${LAND}/journal.json is not a ${FORMAT} land journal`);
+  const files = new Map();
+  for (const f of journal.files) {
+    if (!obj(f) || typeof f.rel !== "string" || normRel(f.rel) !== f.rel || !f.rel.startsWith(`${SPEC}/`) || !Number.isInteger(f.i) || !(f.sha256 === null || HEX.test(f.sha256))) throw new Fail(2, "journal-corrupt", "land journal entry malformed");
+    if (f.sha256 === null) { files.set(f.rel, null); continue; }
+    const b = await readOpen(join(dir, `f-${f.i}`));
+    if (b.state !== "present" || b.sha256 !== f.sha256) throw new Fail(2, "backup-corrupt", `${LAND}/f-${f.i} (${f.rel}) is missing or corrupt`);
+    files.set(f.rel, b.buf);
+  }
+  return { dir, files, startedAt: journal.startedAt ?? null };
+}
+
+async function cmdLand(root, o) {
+  const g = await gitInfo(root);
+  if (!g.git) throw new Fail(1, "not-git", "land binds evidence at a commit, and this is not a Git project: promote each draft by hand (PROMOTE.md)");
+  const commit = resolveCommit(root, o.commit);
+  if (!commit) throw new Fail(1, "commit-missing", `${o.commit} is not an existing commit`);
+  if (!isAncestor(root, commit)) throw new Fail(1, "commit-not-ancestor", `${commit} is not an ancestor of HEAD: land at the commit the branch is at`);
+  const at = new Date().toISOString();
+  // Everything one draft would land: its pending ids, the evidence it would record, and promote's own plan with it.
+  const survey = async (name) => {
+    const a = await analyze(root, name);
+    const s = await statusOut(root, a);
+    const current = new Set(s.ids.filter((i) => i.current === "already-current").map((i) => i.id));
+    const ids = s.ids.filter((i) => !current.has(i.id)).map((i) => i.id);
+    const meta = a.meta.some((m) => m.merge === "apply" || m.merge === "conflict"), files = a.files.some((f) => f.merge !== "unchanged" && f.merge !== "same" && !f.ids.length);
+    if (!ids.length && !meta && !files) return { name, ids: [] };
+    const auth = (id) => recOf(a.prop, id)?.authority;
+    if (ids.length && ids.every((id) => !a.changed.get(id).deleted && auth(id) === "candidate")) return { name, ids, left: "proposals" };
+    const problems = [], entries = [];
+    for (const id of ids) {
+      const c = a.changed.get(id);
+      // The chat's own word on what it verified: the newest entry naming the id, a note or evidence recorded the old way.
+      const e = [...a.d.evidence].reverse().find((x) => x.ids.some((y) => y.id === id) && typeof x.verification === "string" && x.verification.trim() && !x.landing);
+      const bound = e?.ids.find((y) => y.id === id);
+      if (!e) { problems.push({ code: "verification-missing", id, message: `${id} has no verification note from its chat` }); continue; }
+      if (bound.recordSha !== c.binding.recordSha || bound.textSha256 !== c.binding.textSha256) { problems.push({ code: "verification-stale", id, message: `${id} changed in the draft after its verification note (${e.recordedAt})` }); continue; }
+      const docOnly = !docOnlyRefusal(c);
+      const inputs = [];
+      if (!docOnly) {
+        for (const p of c.code) {
+          if (p === SPEC || p.startsWith(`${SPEC}/`)) { problems.push({ code: "path-refused", id, message: `${id} maps ${p}, a spec file, as its code` }); continue; }
+          const r = await readFileSafe(root, p), b = blobAt(root, g, commit, p);
+          if (r.state === "refused") { problems.push({ code: "path-refused", id, message: `${id} maps ${p}: ${r.why}` }); continue; }
+          if (b.state !== r.state || b.sha256 !== r.sha256) { problems.push({ code: "input-uncommitted", id, message: `${id}: ${p} in the working tree differs from ${commit.slice(0, 12)}: commit it first` }); continue; }
+          inputs.push({ path: p, state: r.state, ...(r.state === "present" ? { sha256: r.sha256, bytes: r.bytes } : {}) });
+        }
+        const missing = c.deleted ? [] : c.code.filter((p) => !inputs.some((i) => i.path === p && i.state === "present"));
+        if (missing.length) problems.push({ code: "evidence-code-missing", id, message: `${id} maps ${missing.join(", ")}, which does not exist at ${commit.slice(0, 12)}` });
+        else if (!c.deleted && !inputs.some((i) => i.state === "present")) problems.push({ code: "evidence-no-code", id, message: `${id} maps no implementation file: map its code in the draft record, or make it a note` });
+      }
+      entries.push({ recordedAt: at, by: o.by, verification: `${o.verification} | the chat's note (${e.by}, ${e.recordedAt}): ${e.verification}`.slice(0, 8000), mode: docOnly ? "doc-only" : "commit",
+        ids: [{ id, kind: c.kind, deleted: c.deleted, ...c.binding }], ...(docOnly ? {} : { commit }), inputs, landing: true });
+    }
+    const p = await plan(root, { name, id: [], all: true, meta: [], file: [], "own-base": [], landing: { entries, current } });
+    for (const r of p.refusals) if (!/^evidence-/.test(r.code) || !problems.length) problems.push({ code: r.code, id: idOf(r.message), message: r.message });
+    const isNew = (id) => recOf(a.cur, id) === undefined && !a.changed.get(id).deleted;
+    return { name, ids, entries, problems, current, plan: p,
+      added: ids.filter(isNew), changed: ids.filter((id) => !isNew(id) && !a.changed.get(id).deleted), removed: ids.filter((id) => a.changed.get(id).deleted),
+      units: [...p.out.files.filter((f) => f.merge !== "unchanged" && f.merge !== "same").map((f) => `file ${f.path}`), ...p.out.records.filter((r) => r.merge !== "unchanged" && r.merge !== "same").map((r) => `record ${r.id}`)] };
+  };
+  const surveyAll = async () => {
+    const out = [];
+    for (const name of await draftNames(root)) {
+      try { out.push(await survey(name)); }
+      catch (e) { if (!(e instanceof Fail)) throw e; out.push({ name, ids: [], problems: [{ code: e.code, id: null, message: e.message }], unreadable: true }); }
+    }
+    // Two drafts landing the same unit would land one over the other: never silently.
+    const seen = new Map();
+    for (const s of out) for (const u of s.units ?? []) {
+      if (seen.has(u) && seen.get(u) !== s.name) s.problems.push({ code: "drafts-overlap", id: u.startsWith("record ") ? u.slice(7) : null, message: `${u} is changed by drafts ${seen.get(u)} and ${s.name}` });
+      else seen.set(u, s.name);
+    }
+    return out;
+  };
+  const report = (all, hashed) => {
+    const landing = all.filter((s) => s.ids.length && !s.left && !s.unreadable);
+    const findings = all.flatMap((s) => (s.problems ?? []).map((p) => ({ severity: "warn", draft: s.name, id: p.id, code: p.code, message: p.message,
+      fix: (LAND_FIX[p.code] ?? (() => p.message))(s.name, p.id ?? "<§id>") })));
+    const drafts = landing.map((s) => ({ name: s.name, ids: s.ids, added: s.added, changed: s.changed, removed: s.removed }));
+    const counts = { drafts: drafts.length, added: drafts.reduce((n, d) => n + d.added.length, 0), changed: drafts.reduce((n, d) => n + d.changed.length, 0), removed: drafts.reduce((n, d) => n + d.removed.length, 0) };
+    const list = (xs) => xs.length > 6 ? `${xs.slice(0, 6).join(", ")} and ${xs.length - 6} more` : xs.join(", ");
+    const subject = `Spec: land ${counts.drafts === 1 ? `draft ${drafts[0]?.name}` : `${counts.drafts} drafts`} at ${commit.slice(0, 7)}` +
+      ` (${[counts.added && `${counts.added} new`, counts.changed && `${counts.changed} changed`, counts.removed && `${counts.removed} removed`].filter(Boolean).join(", ") || "no promise"})`;
+    const body = [...drafts.map((d) => `- ${d.name}: ${[d.added.length && `adds ${list(d.added)}`, d.changed.length && `changes ${list(d.changed)}`, d.removed.length && `removes ${list(d.removed)}`].filter(Boolean).join("; ") || "its files"}`),
+      "", `Evidence at ${commit}, by ${o.by}: ${o.verification}`, "Each promise carries its chat's own verification note."].join("\n");
+    return { commit, drafts, left: all.filter((s) => s.left).map((s) => ({ draft: s.name, why: s.left, ids: s.ids })), findings, counts,
+      draftsHash: hashed?.hash ?? null, commitMessage: { subject, body } };
+  };
+  const first = await surveyAll(), hashed = await draftsHashOf(root);
+  const r0 = report(first, hashed);
+  const done = (r, extra) => ({ exit: r.findings.length ? 1 : 0, ...r, ...extra });
+  if (!r0.drafts.length && !r0.findings.length) return { exit: 0, written: false, nothingToLand: true, ...r0, paths: [] };
+  if (r0.findings.length || !o.write) return done(r0, { written: false, nothingToLand: false, paths: [] });
+  return withLock(root, async () => {
+    await refusePending(root);
+    const all = await surveyAll(), now = report(all, await draftsHashOf(root));
+    if (now.findings.length) return done(now, { written: false, nothingToLand: false, paths: [] });
+    if (JSON.stringify(now.drafts) !== JSON.stringify(r0.drafts) || now.draftsHash !== r0.draftsHash) throw new Fail(1, "race", "the drafts changed while the landing was prepared; nothing was written, retry");
+    // The journal first: every byte this land may change, so a failure, or an interrupted land, puts it all back.
+    const before = await specSnapshot(root);
+    const landing = all.filter((s) => s.ids.length && !s.left && !s.unreadable);
+    for (const s of landing) before.set(`${draftRel(s.name)}/draft.json`, (await readFileSafe(root, `${draftRel(s.name)}/draft.json`)).buf);
+    await mkdir(join(root, LAND));
+    const listed = [...before].map(([rel, buf], i) => ({ rel, i, sha256: buf ? sha(buf) : null }));
+    for (const f of listed) if (f.sha256) await writeFile(join(root, LAND, `f-${f.i}`), before.get(f.rel), { flag: "wx" });
+    await writeAtomic(join(root, LAND), "journal.json", JSON.stringify({ format: FORMAT, kind: "land", startedAt: at, pid: process.pid, commit, files: listed }, null, 2) + "\n");
+    try {
+      for (const s of landing) {
+        const cur = await loadDraft(root, s.name);
+        cur.d.evidence.push(...s.entries);
+        await saveDraft(root, cur.rel, cur.d);
+        const p = await plan(root, { name: s.name, id: [], all: true, meta: [], file: [], "own-base": [], landing: { entries: [], current: s.current } });
+        if (p.refusals.length) throw new Fail(1, p.refusals[0].code, `${s.name}: ${p.refusals.map((r) => r.message).join("; ")}`);
+        if (!p.targets.length) continue;
+        const d = structuredClone(p.a.d);
+        d.promotions.push({ at: new Date().toISOString(), plan: p.planSha, ids: p.out.ids.filter((id) => !s.current.has(id)), meta: p.out.meta, files: p.targets.map((t) => t.path), landing: { commit, by: o.by },
+          after: Object.fromEntries(p.targets.filter((t) => t.storage !== "draft").map((t) => [t.path, t.after])) });
+        await applyTxn(root, s.name, p.targets, p.cand, { before: p.a.sha, buf: Buffer.from(JSON.stringify(d, null, 2) + "\n") });
+      }
+    } catch (e) {
+      try { await restoreSnapshot(root, before); await rm(join(root, TXN), { recursive: true, force: true }); }
+      catch (r) { throw new Fail(2, "rollback-failed", `land failed (${e.message}) and putting it back failed (${r.message}); ${LAND} is kept: run recover --write`, { pending: true }); }
+      await rm(join(root, LAND), { recursive: true, force: true });
+      const f = e instanceof Fail ? e : new Fail(2, "write-failed", `${e.code ?? ""} ${e.message}`.trim());
+      return done({ ...now, findings: [{ severity: "warn", draft: null, id: null, code: f.code, message: `${f.message}; everything it wrote was put back`, fix: "run land again; if it refuses the same way, fix what it names" }] }, { exit: f.exit, written: false, nothingToLand: false, paths: [] });
+    }
+    const after = await specSnapshot(root);
+    const paths = uniqSorted([...before.keys(), ...after.keys()].filter((rel) => rel.startsWith(`${SPEC}/`) && !rel.startsWith(`${DRAFTS}/`) && (before.get(rel) ? sha(before.get(rel)) : null) !== (after.get(rel) ? sha(after.get(rel)) : null)));
+    await rm(join(root, LAND), { recursive: true, force: true });
+    return done(now, { written: true, nothingToLand: false, paths });
+  });
+}
+
 // ---------------------------------------------------------------- transaction
 // Journal first (with old and new bytes), then each file by rename; any failure rolls back what was
 // applied. A journal left behind (crash, failed rollback) blocks every write until `recover`.
@@ -1564,6 +1769,16 @@ async function cmdRecover(root, o) {
     const foreign = x.targets.filter((t) => t.state === "foreign");
     if (foreign.length) throw new Fail(1, "recover-conflict", `${foreign.map((t) => t.path).join(", ")} match neither the pre- nor post-promotion bytes; nothing restored — resolve by hand using ${TXN}/old-* and new-*`, { pending: true, ...view(x) });
   };
+  // An interrupted land is put back whole, from its own journal: the spec and the drafts it touched as they were.
+  const land = await readLandJournal(root);
+  if (land && !o.write) return { exit: 0, pending: true, written: false, draft: null, startedAt: land.startedAt ?? null, targets: [...(land.files ?? new Map()).keys()].map((path) => ({ path, state: "journal" })), action: "put the spec and the drafts back as they were before the land" };
+  if (land) return withLock(root, async () => {
+    const again = await readLandJournal(root);
+    if (again?.files) await restoreSnapshot(root, again.files);
+    await rm(join(root, TXN), { recursive: true, force: true });
+    await rm(join(root, LAND), { recursive: true, force: true });
+    return { exit: 0, pending: false, written: true, draft: null, targets: [...(again?.files ?? new Map()).keys()].map((path) => ({ path, state: "restored" })), action: "rolled back the interrupted land" };
+  }, { takeOverDead: true });
   if (!o.write) {
     const x = await inspectTxn();
     if (!x) return { exit: 0, pending: false, written: false };
@@ -1656,7 +1871,7 @@ async function draftReport(root, name, now, days, tip, branch) {
     const onTip = (c) => git(root, ["merge-base", "--is-ancestor", c, tip]).status === 0;
     const by = new Map();
     for (const id of pending) {
-      const e = [...a.d.evidence].reverse().find((x) => x.ids.some((y) => y.id === id));
+      const e = [...a.d.evidence].reverse().find((x) => x.mode !== "note" && x.ids.some((y) => y.id === id));
       if (e?.mode === "commit" && resolveCommit(root, e.commit) === e.commit && onTip(e.commit)) by.set(e.commit, [...(by.get(e.commit) ?? []), id]);
     }
     for (const [c, ids] of by) reasons.push(`evidence commit ${c.slice(0, 12)} is on ${branch} (${ids.length === 1 ? ids[0] : `${ids.length} ids`})`);
@@ -2271,6 +2486,13 @@ function human(out) {
     for (const r of out.refusals ?? []) L.push(`  refused ${r.code}: ${r.message}`);
     if (!out.written && !(out.refusals ?? []).length) L.push("preview; nothing deleted — pass --write");
   }
+  if (out.command === "land" && out.counts) {
+    L.push(out.nothingToLand ? "land: nothing to land" : `land at ${out.commit.slice(0, 12)}: ${out.counts.drafts} draft(s), ${out.counts.added} new, ${out.counts.changed} changed, ${out.counts.removed} removed ${out.written ? "(written; commit the paths below)" : out.findings.length ? "(refused; nothing written)" : "(preview; nothing written: pass --write)"}`);
+    for (const d of out.drafts) L.push(`  ${d.name}: ${d.ids.join(", ")}`);
+    for (const l of out.left ?? []) L.push(`  left ${l.draft} (${l.why}): ${l.ids.join(", ")}`);
+    for (const f of out.findings) if (f.fix) L.push(`  fix ${f.draft ?? ""} ${f.id ?? ""}: ${f.fix}`);
+    for (const p of out.paths ?? []) L.push(`  wrote ${p}`);
+  }
   if (out.command === "recover") L.push(out.pending === false ? "no pending promotion" : `pending promotion of draft ${out.draft}: ${(out.targets ?? []).map((t) => `${t.path} ${t.state}`).join(", ")}${out.action ? ` → ${out.action}` : ""}`);
   for (const f of out.findings) L.push(`${f.severity} ${f.code}: ${f.message}`);
   L.push(`note: ${NOTICE}`, `exit ${out.exit}`);
@@ -2292,7 +2514,7 @@ async function evaluate(argv, readPolicy, inputSources) {
     out.root = root;
     if (await ownDir(root, SPEC, false).catch(() => { throw new Fail(2, "symlink-refused", `${SPEC} or .sova is not a plain directory`); }) === null && o.cmd !== "new")
       throw new Fail(2, "draft-missing", `no ${SPEC} under ${root}`);
-    const cmds = { new: cmdNew, status: cmdStatus, diff: cmdDiff, check: cmdCheck, evidence: cmdEvidence, agree: cmdAgree, promote: cmdPromote, recover: cmdRecover, drafts: cmdDrafts, prune: cmdPrune, "merge-manifest": cmdMergeManifest, "merge-claims": cmdMergeClaims, migrate: cmdMigrate };
+    const cmds = { new: cmdNew, status: cmdStatus, diff: cmdDiff, check: cmdCheck, evidence: cmdEvidence, agree: cmdAgree, promote: cmdPromote, land: cmdLand, recover: cmdRecover, drafts: cmdDrafts, prune: cmdPrune, "merge-manifest": cmdMergeManifest, "merge-claims": cmdMergeClaims, migrate: cmdMigrate };
     out = { ...out, ...(await cmds[o.cmd](root, o)) };
   } catch (e) {
     if (!(e instanceof Fail)) e = new Fail(2, "internal", e.stack ?? String(e));

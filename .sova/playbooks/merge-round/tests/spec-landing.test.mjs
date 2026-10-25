@@ -287,10 +287,10 @@ test("a14: a draft changed after Land It holds the branch, naming that draft onl
   const held = await run(["check", b]);
   assert.equal(held.code, 1, held.out);
   const needs = state().branches[b]?.check?.needs ?? [];
-  const need = needs.find((n) => n.startsWith("docs changed since Land It ("));
+  const need = needs.find((n) => n.startsWith("docs changed since Land It: "));
   assert.ok(need, `the need says the docs changed since Land It: ${JSON.stringify(needs)}`);
   assert.ok(need.includes("rewritten"), need);
-  assert.ok(!/\bkept\b/.test(need), `only the changed draft is named: ${need}`);
+  assert.deepEqual(need.slice("docs changed since Land It: ".length).split(", "), ["rewritten"], `only the changed draft is named: ${need}`);
   assert.ok(held.out.includes(need), "the round prints it");
   assert.equal(head(b), P, "held: nothing committed");
   assert.deepEqual(docsEntries(`master..${b}`), []);
@@ -316,18 +316,20 @@ test("a14: the drafts hash: the core's land, round.mjs and this test's own readi
   assert.equal(preview.written, false);
   assert.equal(preview.draftsHash, mine, "the core's land reads the same hash");
   const round = await import(ROUND);
-  assert.equal(typeof round.draftsHash, "function", "round.mjs exports draftsHash");
-  assert.equal(await round.draftsHash(tree), mine, "round.mjs reads the same hash");
+  assert.equal(typeof round.draftsHashOf, "function", "round.mjs exports draftsHashOf");
+  const roundHash = (t) => round.draftsHashOf(t)?.hash ?? null;
+  assert.deepEqual(round.draftsHashOf(tree), { hash: mine, names: ["one", "two"] }, "round.mjs reads the same hash and names");
   // draft.json (evidence, notes) is not in it.
   const ev = draftTool(tree, "evidence", ids[0].draft, "--id", ids[0].id, "--by", OWNER, "--verification", "again", "--note", "--write");
   assert.equal(ev.exit, 0, JSON.stringify(ev));
   assert.equal(draftsHashOf(tree), mine);
-  assert.equal(await round.draftsHash(tree), mine);
+  assert.equal(roundHash(tree), mine);
   // One byte in a draft's spec/ moves it; so does a draft's name.
   const md = join(tree, ".sova/spec/drafts/two/spec/claims", `${ids[1].id.slice(1)}.md`);
   writeFileSync(md, readFileSync(md, "utf8") + " ");
-  assert.notEqual(await round.draftsHash(tree), mine);
-  assert.equal(await round.draftsHash(tree), draftsHashOf(tree));
+  assert.notEqual(roundHash(tree), mine);
+  assert.equal(roundHash(tree), draftsHashOf(tree));
+  assert.equal(round.draftsHashOf(main), null, "a tree with no drafts: null");
 });
 
 // ---------------------------------------------------------------- (3) a15: the carry walk
@@ -403,6 +405,7 @@ test("a7: a record without the chat's verification note holds the branch and not
     assert.ok(mine.some((e) => e.mode === "note"), `${id}: the chat's own note is kept`);
     const landing = mine.at(-1);
     assert.equal(landing.mode, "commit", `${id}: the landing binds it at the checked head`);
+    assert.equal(landing.landing, true);
     assert.equal(landing.commit, P, `${id}: at the landed commit`);
     assert.match(landing.verification, /Land It/, "who gave the go-ahead");
     assert.match(landing.verification, /\bbuild\b/, "the checks that passed");

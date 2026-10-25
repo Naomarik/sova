@@ -82,6 +82,11 @@
         "rule": "names-manifest",
         "text": "if (!existsSync(join(main, MANIFEST)) || !existsSync(join(this.specCore, \"sova-spec-draft.mjs\"))) return [\"Kept draft copies: not pruned (no spec or spec tools in the main checkout), all kept.\"];",
         "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (!existsSync(join(tree, MANIFEST)) || !existsSync(join(this.specCore, \"sova-spec.mjs\"))) return { state: \"ok\" };",
+        "reason": "existence probe before the post-merge records check (no spec, nothing to check); the records themselves are read by `sova-spec.mjs records`"
       }
     ],
     "scripts/sim/contracts.mjs": [

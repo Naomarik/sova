@@ -17,6 +17,8 @@ export interface TreeNode {
   size: number;
   /** A leaf's message source (log.ts LogMessage.src): whether it still matches the branch. */
   src?: string;
+  /** The line is a clipped excerpt, not a summary: its summary failed every try (§chat.memory/recovery). */
+  excerpt?: true;
 }
 
 export type NodeRef = readonly [l: number, i: number];

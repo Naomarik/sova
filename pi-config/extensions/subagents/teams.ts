@@ -5,8 +5,7 @@
  */
 import * as path from "node:path";
 import { roleSlug } from "./coordination.ts";
-import { MCP_SERVER_NAME } from "./member-mcp.ts";
-import { memberToolNames, type MemberDuty } from "./mailbox.ts";
+import type { MemberDuty } from "./mailbox.ts";
 import type { AgentStatus, TaskOutcome } from "./runner.ts";
 import type { CoordinatorDefaults, MonitorDefaults, TeamDefaultsFile, TeamDefaultsState, WorkerTuple } from "./team-defaults.ts";
 
@@ -38,7 +37,7 @@ export interface TeamDefaults {
 	effort?: string;
 	backendOptions?: Record<string, unknown>;
 }
-/** One member as accepted by team_create/team_add (one role, no count/fork/extensions/agentType). */
+/** One member as accepted by team_create/team_add (one role, no count/fork/agentType). */
 export interface TeamMemberInput {
 	role: string;
 	prompt: string;
@@ -53,6 +52,8 @@ export interface TeamMemberInput {
 	cwd?: string;
 	wake?: boolean;
 	backendOptions?: Record<string, unknown>;
+	/** Extension sources the member loads beside its team tools (agent_spawn's rules). */
+	extensions?: string[];
 	/** Caller choices, separate from the tuple filled by a subagent profile. Internal only. */
 	modelOverride?: Pick<TeamDefaults, "backend" | "model" | "effort">;
 	/** Set by the manager only (never a tool argument): a standing role from team defaults. */
@@ -76,6 +77,7 @@ export interface ComposedMemberSpec {
 	cwd?: string;
 	wake?: boolean;
 	backendOptions?: Record<string, unknown>;
+	extensions?: string[];
 }
 export interface PersistedMember {
 	/** Explicit member/call choices; absent on older records. */
@@ -182,7 +184,9 @@ export type TeamActionKind =
 	// Coordinated teams (team defaults): a coordinator's team_report, a successor start and the
 	// old member's retirement, and the monitor's notices.
 	| "eject"
-	| "report" | "handover" | "retire" | "wrap-up" | "pause" | "resume";
+	| "report" | "handover" | "retire" | "wrap-up" | "pause" | "resume"
+	// The team inbox: a member's wake that did not get through (retried while it is live).
+	| "wake retry";
 /** member = a sibling's team_msg/team_ask; orchestrator = a sibling orchestrator's team_steer (a coordinator is one); monitor = the monitor's notices; system = this extension on its own (a handover timeout, an automatic eject). */
 export type TeamActionSource = "parent" | "user" | "member" | "orchestrator" | "monitor" | "system";
 /** A coordinated team's fixed facts, set at team_create. */
@@ -294,12 +298,11 @@ function checkPaths(role: string, paths: unknown): string[] {
 
 const ownership = (paths: readonly string[]) => (paths.length ? paths.join(", ") : "none declared");
 /**
- * Which member tools the worker will actually have: pi members load member.ts;
- * claude-code members get the same tools from the member MCP server (member-mcp.ts,
- * seen as mcp__team__<tool>); any other backend loads nothing.
+ * Which member tools the worker will actually have: pi members load member.ts, and so do
+ * claude-code members (a pi worker on the Claude Code provider); any other backend loads nothing.
  */
-export type MemberTooling = "pi" | "mcp" | "none";
-export const memberTooling = (backend: string): MemberTooling => (backend === "pi" ? "pi" : backend === "claude-code" ? "mcp" : "none");
+export type MemberTooling = "pi" | "none";
+export const memberTooling = (backend: string): MemberTooling => (backend === "pi" || backend === "claude-code" ? "pi" : "none");
 export interface HeaderMember { role: string; ownedPaths: readonly string[]; orchestrator?: boolean; duty?: MemberDuty; successorOf?: string; task?: string; steers?: readonly string[] }
 /** What a coordinated team's headers need: who coordinates, where notes go, the standing instructions. */
 export interface CoordinationHeader {
@@ -312,18 +315,20 @@ export interface CoordinationHeader {
 
 const OWNERSHIP_LINE =
 	"Declared ownership is advisory coordination, not a lock: all members share one filesystem, so avoid editing paths another member owns unless your task says to.";
+/** How team messages travel today: queued in the recipient's inbox, listed in a wake (§app.teams/inbox). */
+const MSG_TOOL =
+	"team_msg sends a message to a teammate by role or worker ID (or \"all\"): it is queued in their inbox, and an idle teammate is woken with a list of what waits (set needsReply when you need an answer).";
+/** The inbox-zero norm every member's header carries (§app.teams/inbox-zero). */
+export const INBOX_NORM =
+	"Your inbox works the same way: a wake lists your items by id, kind, sender and subject; open one with team_inbox open <ids> to read it. Handle each item and close it in the same step as the work: a team_msg reply with replyTo set to the item closes it; otherwise team_inbox done <ids> with a short note on what you did. End each turn with nothing you have handled left open.";
 const COMMON_TOOLS =
-	"team_msg sends a message to a teammate by role or worker ID (or \"all\"); the parent session delivers it into their session, so they see it at their next step or wake up if idle. team_inbox re-reads what was delivered to you. team_ask sends a question to the operator (the parent session and its user); the answer arrives later as a new message in your session, so keep working on what does not depend on it or end your turn.";
+	`${MSG_TOOL} ${INBOX_NORM} team_ask sends a question to the operator (the parent session and its user); the answer arrives later as a new message in your session, so keep working on what does not depend on it or end your turn.`;
 const COORDINATED_TOOLS =
-	"team_msg sends a message to a teammate by role or worker ID (or \"all\"); the parent session delivers it into their session, so they see it at their next step or wake up if idle. team_inbox re-reads what was delivered to you. team_ask sends a question to your team's coordinator; the answer arrives later as a new message in your session, so keep working on what does not depend on it or end your turn.";
+	`${MSG_TOOL} ${INBOX_NORM} team_ask sends a question to your team's coordinator; the answer arrives later in your inbox, so keep working on what does not depend on it or end your turn.`;
 /** A long final answer is cut in the parent's completion message and in a Claude parent's history; a file survives both. */
 export const LONG_REPORT_LINE =
 	"If your final answer would run past about 3,500 characters, write the full report to a file and make your final message that file's path plus a short summary.";
 const NO_SPAWN = "You cannot spawn, add or stop workers, and nothing you do reaches outside this team; the parent session remains the authority.";
-const mcpName = (tool: string) => `mcp__${MCP_SERVER_NAME}__${tool}`;
-/** Claude sees MCP tools under the server prefix; the header spells out the exact call names once. */
-const mcpNamesLine = (member: HeaderMember) =>
-	`Your team tools come from the "${MCP_SERVER_NAME}" MCP server, so call them as ${memberToolNames(member).map(mcpName).join(", ")}; below they are named without the mcp__${MCP_SERVER_NAME}__ prefix.`;
 
 /** The monitor's standing instruction, with the thresholds as read now. */
 export function monitorStanding(m: MonitorDefaults, coordinatorRole: string): string[] {
@@ -335,6 +340,7 @@ export function monitorStanding(m: MonitorDefaults, coordinatorRole: string): st
 			? `3. If the roster marks any usage window AT/OVER the pause threshold (it marks one only when no login of that provider has headroom — a non-weekly window such as 5h at ${m.usage.pausePct}% or more, or a 7d window at 100%; a 7d window below 100% is informational, and a provider with headroom on any login is never a reason to pause): team_msg ${coordinatorRole} with notice "pause" (which window, when it resets) so the whole team wraps up and goes idle; then wake_nudge schedule at that reset time plus ${m.usage.resumeMarginMinutes} min (if that is more than 24h away, schedule 24h and re-check) and end your turn. When woken after a pause: once that window's reset time plus ${m.usage.resumeMarginMinutes} min has passed, team_msg ${coordinatorRole} with notice "resume"; otherwise schedule again. The parent refuses a resume before then, and its refusal says when to try.`
 			: "3. Provider usage is not watched for this team.",
 		`4. Otherwise wake_nudge schedule delay "${m.everyMinutes}m" and end your turn. Never sleep or poll in a shell: your turn must end between checks. Keep each turn short. While no teammate is working (and the team is not paused), the parent holds your next check and delivers it when someone starts working again.`,
+		`5. Each check arrives as an item in your inbox. Before you end each turn, close that check's item and every other item you handled with team_inbox done <ids> (a short note on what you did), so your inbox is at zero.`,
 		"The roster's thresholds line is re-read from team defaults each time; where it differs from this header, follow the roster.",
 		...(m.instructions ? [`Additional instructions from team defaults: ${m.instructions}`] : []),
 	];
@@ -369,18 +375,16 @@ function coordinationLines(member: HeaderMember, tooling: MemberTooling, coordin
 				: "Messages from teammates, an orchestrator or the parent session can arrive as new instructions in your session. You have no tool to reply to teammates directly, so put anything meant for them in your final answer; the parent session coordinates, and your final answer is your report.",
 		];
 	}
-	const prefix = tooling === "mcp" ? [mcpNamesLine(member)] : [];
 	if (member.duty === "monitor" && coordination?.defaults) {
-		return [...prefix, ...monitorStanding(coordination.defaults.monitor, coordination.coordinatorRole), ...successor];
+		return [...monitorStanding(coordination.defaults.monitor, coordination.coordinatorRole), ...successor];
 	}
 	if (member.duty === "coordinator" && coordination) {
 		const extra = coordination.defaults?.coordinator.instructions;
 		return [
-			...prefix,
 			"You are this team's coordinator. You do no implementation yourself: never edit project files or do the objective's work; route and unblock the work the main thread assigned, check results, and keep the team moving.",
 			"The main thread (the parent session) assigns the work: each teammate's assigned task is listed above under its role, and team_roster lists them with the main thread's later instructions. Never invent tasks, never reassign or cancel a teammate's assigned work, and never tell a teammate that its task was not assigned: the main thread's steers and follow-ups to a member are legitimate assignments you must not countermand. You never tell a member that work from the main thread is not its work, and that includes the instructions a successor inherited from its predecessor, which are the successor's assignment; check team_roster before you tell a member what not to do. Direct a teammate only where its assignment leaves a gap or it is blocked; if the objective seems to need work nobody was given, ask the operator with team_ask.",
 			`You are the only member who talks to the operator. Teammates' final answers and team_ask questions are delivered to you. team_report tells the operator about a milestone or a concern and asks for nothing; team_ask is for a question or decision you need. Your own final answer goes to the operator, and wakes them only once no teammate is working, so while you wait end your turn with a one-line status.`,
-			`team_roster shows your teammates' live state, context and assignments; team_steer sends instructions to one teammate by role (mode followUp queues after their current task, redirect replaces it). team_msg, team_inbox as for everyone.`,
+			`team_roster shows your teammates' live state, context and assignments; team_steer sends instructions to one teammate by role (mode followUp queues after their current task, redirect replaces it). ${MSG_TOOL} Teammates' reports and questions arrive as items in your inbox. Keep it at zero: close each report, question and notice in the same step as handling it, a question by answering it with team_msg and replyTo set to it, anything else with team_inbox done <ids> and a short note. A wake lists items by id, kind, sender and subject; open one with team_inbox open <ids> to read it.`,
 			`When the monitor flags a member over its context threshold and that member's assigned work is not verifiably finished, call team_succeed { role }. Decline only if the member has already completed its assigned task. A working member is first told to write its handover note and end its turn; its successor (same model) starts once the note exists and that turn has ended, or at the handover timeout, and you get a message naming it. The successor calls team_ready once briefed, and the old member is then retired. A monitor has no note: its successor starts at once and is briefed over team_msg.`,
 			`On a monitor "pause" notice: tell every working teammate to wrap up and end its turn, report the pause to the operator with team_report (which window, when it resets, what stopped), then end yours. On "resume": restart them with team_steer and report the resume with team_report.`,
 			`You cannot spawn, add or stop members except through team_succeed, and nothing you do reaches outside this team. Acceptance of a steer or message is not execution: verify with team_roster. ${handoff}`,
@@ -390,14 +394,12 @@ function coordinationLines(member: HeaderMember, tooling: MemberTooling, coordin
 	}
 	if (member.orchestrator) {
 		return [
-			...prefix,
 			`You are this team's orchestrator: coordinate your teammates toward the objective. team_roster shows their live state and ownership; team_steer sends instructions to one teammate by role (mode followUp queues after their current task, redirect replaces it). ${COMMON_TOOLS}`,
 			`${NO_SPAWN} Acceptance of a steer or message is not execution: verify with team_roster. Your final answer is your report of the team's outcome.`,
 		];
 	}
 	if (coordination) {
 		return [
-			...prefix,
 			`Team tools: ${COORDINATED_TOOLS}`,
 			`This team has a coordinator, ${coordination.coordinatorRole}: report to it, not to the operator. Your final answer and your team_ask questions are delivered to the coordinator. ${handoff} If you are told to wrap up (your context is running high), finish the step you are in, write a handover note there (state, decisions, open work, files touched) and end your turn.`,
 			`${NO_SPAWN} Your final answer is your report.`,
@@ -405,7 +407,6 @@ function coordinationLines(member: HeaderMember, tooling: MemberTooling, coordin
 		];
 	}
 	return [
-		...prefix,
 		`Team tools: ${COMMON_TOOLS}`,
 		`${NO_SPAWN} Your final answer is your report.`,
 	];
@@ -415,7 +416,7 @@ function coordinationLines(member: HeaderMember, tooling: MemberTooling, coordin
  * Deterministic header prepended to each member's task before backend validation, so
  * length limits apply to exactly what the worker receives. Existing workers are
  * never told about later additions. `tooling` states what the worker will really
- * have: pi members load member.ts, claude-code members the member MCP server.
+ * have: pi and claude-code members load member.ts.
  */
 export function composeMemberPrompt(
 	team: { id: string; name: string; objective: string },
@@ -458,6 +459,8 @@ export interface TeamDefaultsPlan {
 	existingCoordinator?: number;
 	synthesizeCoordinator?: CoordinatorDefaults;
 	synthesizeMonitor?: MonitorDefaults;
+	/** The team_create result's one line naming the standing roles Sova adds and each one turned off, and by what. */
+	standing: string;
 }
 
 export const malformedWarning = (state: { file: string; errors: string[] }): string =>
@@ -470,33 +473,43 @@ export const malformedWarning = (state: { file: string; errors: string[] }): str
  * two orchestrators, or a caller member on a synthesized role's name, are refused.
  */
 export function planTeamDefaults(state: TeamDefaultsState, members: readonly TeamMemberInput[], escape: { coordinator?: boolean; monitor?: boolean } = {}): TeamDefaultsPlan {
-	if (state.state === "absent") return { notes: [] };
-	if (state.state === "malformed") return { notes: [], warning: malformedWarning(state) };
+	if (state.state === "absent") return { notes: [], standing: "Standing roles: none; this chat's subagent settings give teams no coordinator or monitor." };
+	if (state.state === "malformed") return { notes: [], warning: malformedWarning(state), standing: "Standing roles: none; this chat's team defaults are malformed (see the warning)." };
 	const d = state.value;
-	if (!d.coordinator.enabled) return { notes: [`Team defaults: coordinator off in ${state.file}; no coordinator or monitor.`] };
-	if (escape.coordinator === false) return { notes: ["Team defaults: coordinator turned off for this team (defaults.coordinator: false); no coordinator or monitor."] };
+	if (!d.coordinator.enabled) return { notes: [`Team defaults: coordinator off in ${state.file}; no coordinator or monitor.`], standing: "Standing roles: none; the coordinator, and with it the monitor, is off in this chat's subagent settings." };
+	if (escape.coordinator === false) return { notes: ["Team defaults: coordinator turned off for this team (defaults.coordinator: false); no coordinator or monitor."], standing: "Standing roles: none; the coordinator and monitor are off for this team (defaults.coordinator: false)." };
 	const key = (role: string) => normalizeLabel(role).toLowerCase();
 	const orchestrators = members.flatMap((m, i) => (m.orchestrator === true ? [i] : []));
 	if (orchestrators.length > 1)
-		throw new Error(`Team defaults give this team one coordinator, so at most one member may have orchestrator: true (got ${orchestrators.map((i) => members[i].role).join(", ")}). Pass defaults.coordinator: false for a team without one.`);
-	const plan: TeamDefaultsPlan = { notes: [], coordination: { defaults: d } };
+		throw new Error(`Team defaults give this team one coordinator, and only the coordinator is a team's orchestrator, so at most one member may have orchestrator: true (got ${orchestrators.map((i) => members[i].role).join(", ")}). Mark only the member that should coordinate: it becomes the coordinator, and hands members (itself included) over to successors with team_succeed. A member that only watches or reports needs no orchestrator mark. Pass defaults.coordinator: false for a team without a coordinator.`);
+	const plan: TeamDefaultsPlan = { notes: [], coordination: { defaults: d }, standing: "" };
 	const reserve = (role: string, what: string) => {
 		const clash = members.find((m, i) => typeof m.role === "string" && key(m.role) === key(role) && i !== plan.existingCoordinator);
 		if (clash) throw new Error(`Role ${normalizeLabel(clash.role)} is the team-defaults ${what}'s role (${normalizeLabel(role)}); rename that member, or pass defaults.${what}: false.`);
 	};
+	let coordinatorPart: string;
 	if (orchestrators.length === 1) {
 		plan.existingCoordinator = orchestrators[0];
 		plan.notes.push(`Team defaults: orchestrator ${normalizeLabel(members[orchestrators[0]].role)} is this team's coordinator.`);
+		coordinatorPart = `coordinator: your orchestrator ${normalizeLabel(members[orchestrators[0]].role)} (none added)`;
 	} else {
 		reserve(d.coordinator.role, "coordinator");
 		plan.synthesizeCoordinator = d.coordinator;
+		coordinatorPart = `coordinator: "${d.coordinator.role}", added by Sova`;
 	}
-	if (!d.monitor.enabled) plan.notes.push(`Team defaults: monitor off in ${state.file}.`);
-	else if (escape.monitor === false) plan.notes.push("Team defaults: monitor turned off for this team (defaults.monitor: false).");
-	else {
+	let monitorPart: string;
+	if (!d.monitor.enabled) {
+		plan.notes.push(`Team defaults: monitor off in ${state.file}.`);
+		monitorPart = "monitor: off in this chat's subagent settings";
+	} else if (escape.monitor === false) {
+		plan.notes.push("Team defaults: monitor turned off for this team (defaults.monitor: false).");
+		monitorPart = "monitor: off for this team (defaults.monitor: false)";
+	} else {
 		reserve(d.monitor.role, "monitor");
 		plan.synthesizeMonitor = d.monitor;
+		monitorPart = `monitor: "${d.monitor.role}", added by Sova`;
 	}
+	plan.standing = `Standing roles — ${coordinatorPart}; ${monitorPart}.`;
 	return plan;
 }
 
@@ -505,8 +518,10 @@ export const COORDINATOR_TASK =
 export const MONITOR_TASK =
 	"Run your standing instruction now: call team_roster once, act on anything over a threshold, then schedule your next check with wake_nudge and end your turn.";
 /** A monitor's successor runs the standing instruction, not a worker's "continue the work" task. */
-export const monitorSuccessorTask = (oldRole: string, oldId: string): string =>
-	`You take over from the monitor ${oldRole} (${oldId}). Ask it with team_msg for anything you need (pending checks, notices sent, whether a usage pause is in force), call team_ready once you have taken over, then: ${MONITOR_TASK}`;
+export const monitorSuccessorTask = (oldRole: string, oldId: string, oldLive = true): string =>
+	oldLive
+		? `You take over from the monitor ${oldRole} (${oldId}). Ask it with team_msg for anything you need (pending checks, notices sent, whether a usage pause is in force), call team_ready once you have taken over, then: ${MONITOR_TASK}`
+		: `You take over from the monitor ${oldRole} (${oldId}), which has already ended: there is nobody to ask and no team_ready to call. ${MONITOR_TASK}`;
 
 /**
  * A worker's successor's task (N4, N5): start from the note, never redo what it marks done,
@@ -517,6 +532,8 @@ export const monitorSuccessorTask = (oldRole: string, oldId: string): string =>
 export function workerSuccessorTask(o: {
 	oldRole: string; oldId: string; note: string; oldLive: boolean; missing?: string;
 	assignment?: string; steers: readonly string[]; steersOmitted: number;
+	/** The successor is the team's coordinator: its own team_ask reaches the main thread. */
+	coordinator?: boolean;
 }): string {
 	const later = inheritedSteersText(o.steers, o.steersOmitted, o.oldRole);
 	return [
@@ -533,7 +550,7 @@ export function workerSuccessorTask(o: {
 				"",
 				`Its assignment from the main thread:\n${o.assignment}`,
 			]
-			: [o.oldLive ? `Its original assignment is not known here: ask ${o.oldRole} for it with team_msg.` : "Its original assignment is not known here: ask the coordinator with team_ask."]),
+			: [o.oldLive ? `Its original assignment is not known here: ask ${o.oldRole} for it with team_msg.` : `Its original assignment is not known here: ask ${o.coordinator ? "the main thread" : "the coordinator"} with team_ask.`]),
 		...(later ? ["", later] : []),
 	].join("\n");
 }
@@ -568,6 +585,7 @@ export function resolveMemberSpec(member: TeamMemberInput, role: string, prompt:
 	if (member.systemPrompt !== undefined) spec.systemPrompt = member.systemPrompt;
 	if (member.cwd !== undefined) spec.cwd = member.cwd;
 	if (member.wake !== undefined) spec.wake = member.wake;
+	if (member.extensions !== undefined) spec.extensions = [...member.extensions];
 	return spec;
 }
 
@@ -860,7 +878,7 @@ export class TeamStore {
 	}
 
 	/**
-	 * A history team whose workers were re-adopted from detached hosts is live
+	 * A history team whose workers were reattached or resumed is live
 	 * again: it moves to the session teams (create-time defaults are not
 	 * persisted, so team_add then applies none). True if the team is live now.
 	 */
@@ -931,6 +949,8 @@ export class TeamStore {
 		if (this.session.length + this.pendingTeams >= MAX_SESSION_TEAMS)
 			throw new Error(`Team limit reached (${MAX_SESSION_TEAMS} per session). Use team_add on an existing team.`);
 		const checked = this.checkMembers(input.members, new Set(), input.defaults);
+		if (checked.length > MAX_TEAM_MEMBERS)
+			throw new Error(`A team seats ${MAX_TEAM_MEMBERS} members, and this one would have ${checked.length}, any coordinator and monitor included. Create it with fewer members.`);
 		const coordinators = checked.filter((m) => m.duty === "coordinator");
 		if (input.coordination && coordinators.length !== 1) throw new Error("A coordinated team needs exactly one coordinator.");
 		if (!input.coordination && checked.some((m) => m.duty)) throw new Error("Only a coordinated team has a coordinator or monitor.");
@@ -980,8 +1000,20 @@ export class TeamStore {
 			);
 		}
 		if (!team.coordination && checked.some((m) => m.duty)) throw new Error(`Team ${team.id} has no coordinator; only a coordinated team has a coordinator or monitor.`);
-		if (team.coordination && checked.some((m) => m.orchestrator && m.duty !== "coordinator"))
-			throw new Error(`Team ${team.id} has a coordinator; it cannot take another orchestrator.`);
+		const second = team.coordination ? checked.find((m) => m.orchestrator && m.duty !== "coordinator") : undefined;
+		if (second) {
+			const isLive = (workerId: string) => BUSY_STATES.has(memberState(observe?.(workerId)));
+			const live = this.routingCoordinatorRecord(team, isLive);
+			const newest = this.routingCoordinatorRecord(team);
+			throw new Error([
+				`Team ${team.id} has a coordinator${newest ? `, ${newest.role} (${newest.workerId})` : ""}, and only the coordinator is a team's orchestrator: ${second.role} can't join with orchestrator: true.`,
+				"The coordinator hands a member, itself included, over to a successor with its own team_succeed step.",
+				`A member that only watches or reports needs no orchestrator mark: add ${second.role} without it.`,
+				live
+					? `The coordinator ${live.role} (${live.workerId}) is live, so it hands over itself; tell it with agent_steer if it should.`
+					: `No coordinator is live now: the main chat can start a replacement with team_succeed { team: "${team.id}", role: "${newest?.role ?? "coordinator"}" }.`,
+			].join(" "));
+		}
 		const existing = team.members.filter((m) => m.ejectedAt === undefined).map((m): HeaderMember => ({ role: m.role, ownedPaths: m.ownedPaths, orchestrator: m.orchestrator === true, ...(m.duty ? { duty: m.duty } : {}), ...(m.task ? { task: m.task } : {}), ...(m.steers?.length ? { steers: [...m.steers] } : {}) }));
 		const coordinatorRole = checked.find((m) => m.duty === "coordinator" && m.successorOf)?.role ?? this.routingCoordinatorRecord(team)?.role;
 		const header = team.coordination && coordinatorRole ? coordinationHeader({ ...team.coordination, defaults: teamDefaults }, coordinatorRole) : undefined;
@@ -1121,6 +1153,36 @@ export class TeamStore {
 	private routingCoordinatorRecord(team: TeamRecord, isLive: (workerId: string) => boolean = () => true): MemberRecord | undefined {
 		const coordinators = team.members.filter((m) => m.duty === "coordinator" && isLive(m.workerId));
 		return coordinators.sort((a, b) => b.addedAt - a.addedAt || idOrder(b.workerId) - idOrder(a.workerId))[0];
+	}
+
+	/**
+	 * The main chat's team_succeed: the ended coordinator or monitor it may replace. Only a member
+	 * with that duty, only the newest one with it, and only while no member of the team with that
+	 * duty is live (`isLive`), so two coordinators are never live at once.
+	 */
+	checkReplacement(ref: string, memberRef: string, isLive: (workerId: string) => boolean): { team: { id: string; name: string }; target: PersistedMember } {
+		const team = this.find(ref);
+		if (team.origin === "history") throw new Error(historyRefusal(team));
+		const trimmed = memberRef.trim();
+		const found = team.members.find((m) => (WORKER_ID.test(trimmed) ? m.workerId === trimmed : labelKey(m.role) === labelKey(trimmed)));
+		if (!found) throw new Error(`No member ${trimmed} in ${team.id}. Members: ${team.members.map((m) => `${m.workerId} (${m.role}${m.duty ? `, ${m.duty}` : ""})`).join(", ") || "none"}.`);
+		if (found.ejectedAt !== undefined) throw new Error(`${found.role} (${found.workerId}) was ejected from ${team.id} at ${ejectedStamp(found.ejectedAt)}; name the team's current ${found.duty ?? "member"} instead.`);
+		if (!found.duty) {
+			const routing = this.routingCoordinatorRecord(team, isLive);
+			throw new Error(`${found.role} is not ${team.id}'s coordinator or monitor: the main chat replaces only those, once none is live. ${
+				routing ? `The coordinator ${routing.role} (${routing.workerId}) succeeds other members with its own team_succeed step; tell it with agent_steer if ${found.role} needs a successor.`
+				: team.coordination ? `No coordinator is live: replace the coordinator first, and it can then succeed ${found.role}.`
+				: `${team.id} has no coordinator; to carry on ${found.role}'s work, add a member with team_add.`}`);
+		}
+		const sameDuty = team.members.filter((m) => m.duty === found.duty && m.ejectedAt === undefined);
+		const live = sameDuty.find((m) => isLive(m.workerId));
+		if (live)
+			throw new Error(`${live.role} (${live.workerId}) is ${team.id}'s live ${found.duty}. ${found.duty === "coordinator"
+				? "A live coordinator hands over itself with its own team_succeed step (tell it with agent_steer if it should), so two coordinators are never live at once."
+				: "The coordinator succeeds a live monitor with its team_succeed step."} The main chat can start a replacement only once no ${found.duty} is live.`);
+		const newest = [...sameDuty].sort((a, b) => b.addedAt - a.addedAt || idOrder(b.workerId) - idOrder(a.workerId))[0];
+		if (newest !== found) throw new Error(`${found.role} (${found.workerId}) is not ${team.id}'s newest ${found.duty}; replace ${newest.role} (${newest.workerId}) instead.`);
+		return { team: { id: team.id, name: team.name }, target: copyMember(found) };
 	}
 
 	/** Every role in a session team (for successor naming). */

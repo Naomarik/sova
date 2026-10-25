@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ExplanationInfo, SessionSummary, TranscriptItem } from "../../shared/protocol";
+import type { ExplanationInfo, SessionSummary, TranscriptItem, WorkerStatus } from "../../shared/protocol";
 import { inputsPending, knownExplanations, knownInputs, knownOutline, knownWorkers, workersShown } from "./known-before-mount";
 
 const row = (id: string, kind: TranscriptItem["kind"] = "assistant-text"): TranscriptItem => ({ id, kind, text: id }) as TranscriptItem;
@@ -47,10 +47,21 @@ test("the inputs trigger's box is held only while its count is unknown and an in
   assert.equal(inputsPending(0, [], true), false, "the hello said none (a rewind): the row goes");
 });
 
-test("the settled-workers count: the list's until the socket names workers", () => {
-  assert.equal(workersShown(false, 0, 4), 4, "before any workers message");
-  assert.equal(workersShown(true, 0, 4), 4, "a runtime still restoring says none: the record's count holds");
-  assert.equal(workersShown(true, 3, 4), 3, "once it lists any, the socket's");
-  assert.equal(workersShown(true, 0, 0), 0);
-  assert.equal(workersShown(true, 2, 0), 2);
+const listed = (...statuses: WorkerStatus[]) => statuses.map((status) => ({ status }));
+
+test("the trigger's count: the list's until the socket names workers, then the live ones", () => {
+  assert.deepEqual(workersShown(false, [], 0, 4), { total: 4, tally: null }, "before any workers message: the list's, no ended note");
+  assert.deepEqual(workersShown(true, [], 0, 4), { total: 4, tally: null }, "a runtime still restoring says none: the record's count holds");
+  assert.equal(workersShown(true, listed("running", "waiting", "waiting"), 3, 4).total, 3, "once it lists any, the socket's");
+  assert.deepEqual(workersShown(true, [], 0, 0), { total: 0, tally: { live: 0, ended: 0, kinds: { stopped: 0, failed: 0, done: 0 } } });
+  assert.equal(workersShown(true, listed("running", "starting"), 2, 0).total, 2);
+});
+
+test("the socket's count leaves the ended workers out and tallies them", () => {
+  const list = listed("running", ...Array<WorkerStatus>(6).fill("waiting"), ...Array<WorkerStatus>(16).fill("killed"), "error", "error");
+  const { total, tally } = workersShown(true, list, 25, 25);
+  assert.equal(total, 7, "1 running and 6 waiting are live; the list count (25) gives way");
+  assert.deepEqual(tally, { live: 7, ended: 18, kinds: { stopped: 16, failed: 2, done: 0 } });
+  const allEnded = workersShown(true, listed("killed", "done"), 2, 2);
+  assert.deepEqual(allEnded, { total: 0, tally: { live: 0, ended: 2, kinds: { stopped: 1, failed: 0, done: 1 } } }, "a list of only ended workers counts 0 live, not the list's 2");
 });

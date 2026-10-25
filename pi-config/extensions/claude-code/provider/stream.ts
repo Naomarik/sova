@@ -37,6 +37,13 @@ import {
 /** The diagnostic a rejected tool call leaves on its pi message (never shown, never sent to a model). */
 export const INVALID_TOOL_INPUT_DIAGNOSTIC = "claude-code.invalid-tool-input";
 
+/**
+ * The neutral mark a message carries when its timing is no measurement of one model reply: the CLI asked
+ * the model again inside it (a retry after rejected tool calls), so its time holds the rejected attempt.
+ * A host that times replies (Sova's reply timing) records nothing for it. `details.reason` says why.
+ */
+export const MEASUREMENT_INVALID_DIAGNOSTIC = "measurement-invalid";
+
 /** Anthropic stop reasons the CLI passes through, mapped onto pi's ladder. */
 function mapStopReason(reason: string): StopReason {
 	switch (reason) {
@@ -399,6 +406,9 @@ export function streamClaudeCode(
 						// always does (its input already holds the rejected attempt), so
 						// the superseded counts go on that attempt's diagnostic.
 						if (rejectedOnly()) attempt.rejected[0]!.details = { ...attempt.rejected[0]!.details, usage: usageDetails(output.usage) };
+						// Its time holds the rejected attempt's: no measurement of one reply.
+						if (!output.diagnostics?.some((d) => d.type === MEASUREMENT_INVALID_DIAGNOSTIC))
+							output.diagnostics = [...(output.diagnostics ?? []), { type: MEASUREMENT_INVALID_DIAGNOSTIC, timestamp: Date.now(), details: { reason: "invalid-tool-retry" } }];
 						// A split left from the previous message is not this one's.
 						delete output.usage.cacheWrite1h;
 						attempt = { rejected: [], accepted: 0, started: true };

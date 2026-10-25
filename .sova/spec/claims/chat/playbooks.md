@@ -108,17 +108,17 @@ placeholder must never be read as a local folder.
 
 ## §chat.playbooks/entry-point — Entry point
 
-The composer flyout's menu panel has a **Playbooks** row after Commands (§chat.composer/composer-flyout).
-It closes the flyout and opens the dialog on step 1, or on step 2 of the playbook you left text
-in (below).
+The Commands palette's This chat group has a **Playbooks** row, after Hide thinking
+(§app.command-palette/rows); the composer's `plus` opens the palette. It closes the palette and
+opens the dialog on step 1, or on step 2 of the playbook you left text in (below).
 
-- **Present only where `onPlaybooks` is passed**, which means chat sessions (`ChatView`).
-  `WatchView` doesn't pass it, so the row is **absent** there. That covers TUI-live sessions and
-  every other watch view.
-- **Disabled while the composer is blocked.** The row is `aria-disabled`, with
-  `aria-describedby="composer-reason"` pointing at the composer's own reason line. That covers
-  connecting, reconnecting, not connected, an archived pane, saving a turn, and a model switch in
-  flight (§chat.composer/disabled-states). It is the same treatment Attach images gets.
+- **Only a chat open in Sova sends one** (`ChatView` passes `onPlaybooks`). In a watch view (a
+  TUI-live session included) the row is there but `aria-disabled`, with the composer's own reason
+  as its description, or "Only a chat open in Sova can send a playbook." where it gives none.
+- **Disabled while the composer is blocked.** The row is `aria-disabled`, with the composer's own
+  reason as its description (§app.command-palette/disabled). That covers connecting,
+  reconnecting, not connected, an archived pane, saving a turn, and a model switch in flight
+  (§chat.composer/disabled-states). It is the same treatment Attach images gets.
 
 ## §chat.playbooks/the-modal — The modal
 
@@ -230,8 +230,7 @@ these **per session for the page's lifetime**, in memory only, so a reload loses
 ## §chat.playbooks/what-gets-sent — What gets sent
 
 `playbookTurnText()` in `shared/playbooks.ts` (re-exported by `src/lib/playbooks.ts` and pinned
-by `src/lib/playbooks.test.ts`; a profile's linked playbook uses the same one,
-§chat.profiles/playbook) builds exactly:
+by `src/lib/playbooks.test.ts`) builds exactly:
 
 ```
 Playbook: <title> — <absolute dir>
@@ -263,8 +262,8 @@ The transcript shows the result as your message (§chat/transcript), with no spe
 
 **Mid-turn it is a follow-up, never a steer.** The dialog always sends a `prompt` frame
 (`ChatView.send(text, false, [])`), even while a turn is streaming. The server's `acceptPrompt`
-queues a streaming-time prompt as `kind: "followUp"`, which shows as a **removable queue row**.
-`handOffQueued` then hands it to `session.prompt(text, { streamingBehavior: "followUp" })` while
+queues a streaming-time prompt as `kind: "followUp"`, which shows as a **queue row**, removable
+until it is handed to the agent (§chat.transcript/a-queued-message). `handOffQueued` then hands it to `session.prompt(text, { streamingBehavior: "followUp" })` while
 the turn is still streaming, or starts it as the next turn once that one has ended, so it
 **runs after the current turn**. That is the opposite of the composer's own mid-turn Send, which
 becomes `Steer` and sends `{type:"steer"}` into the running turn (§chat/composer "While streaming"). The

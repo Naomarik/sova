@@ -124,22 +124,6 @@
         "id": "o0000009",
         "parentId": "o0000008",
         "timestamp": "2026-09-01T10:00:09.000Z"
-      },
-      {
-        "type": "custom",
-        "customType": "subagents-worker-registry",
-        "data": {
-          "version": 1,
-          "workers": [
-            {
-              "id": "ag_09",
-              "name": "legacy"
-            }
-          ]
-        },
-        "id": "o000000b",
-        "parentId": "o000000a",
-        "timestamp": "2026-09-01T10:00:11.000Z"
       }
     ],
     "active": [
@@ -195,22 +179,6 @@
         "id": "o0000009",
         "parentId": "o0000008",
         "timestamp": "2026-09-01T10:00:09.000Z"
-      },
-      {
-        "type": "custom",
-        "customType": "subagents-worker-registry",
-        "data": {
-          "version": 1,
-          "workers": [
-            {
-              "id": "ag_09",
-              "name": "legacy"
-            }
-          ]
-        },
-        "id": "o000000b",
-        "parentId": "o000000a",
-        "timestamp": "2026-09-01T10:00:11.000Z"
       }
     ]
   },

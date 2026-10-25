@@ -4,6 +4,7 @@
 #   - `tailscale serve` of the main listener on the tailnet (http, port LAB_SERVE_PORT)
 #   - its own hermetic agent dir (/sova/.agent, a volume) built by scripts/hermetic-agent-dir.mjs,
 #     with only the api_key entries of the mounted auth.json copied in, once
+#   - PID 1 is docker-init (compose `init: true`): it reaps the detached chats a restarted Sova leaves behind
 #   - Sova on 127.0.0.1:$PORT, supervised (restarted if it dies unless /run/lab/sova-off exists), with the
 #     extra environment in /run/lab/sova.env if present; on Bun through scripts/start-server.sh, on Node
 #     when that environment says SOVA_RUNTIME=node (`lab sova-env <node> SOVA_RUNTIME=node`)
@@ -101,7 +102,7 @@ if [ "$LAB_SOVA" = 1 ]; then
 fi
 
 echo "ready" > /run/lab/state
-trap 'log "stopping"; kill $(jobs -p) 2>/dev/null; pkill -f "[s]erver/index.ts" 2>/dev/null; exit 0' TERM INT
+trap 'log "stopping"; kill $(jobs -p) 2>/dev/null; [ -r /run/lab/sova.pid ] && kill "$(cat /run/lab/sova.pid)" 2>/dev/null; exit 0' TERM INT
 
 if [ "$LAB_SOVA" != 1 ]; then
   while :; do sleep 3600 & wait $!; done
@@ -114,9 +115,14 @@ while :; do
   # `lab sova-env <node> K=V…` writes /run/lab/sova.env (SOVA_* only); it applies from the next Sova start
   extra=$( [ -r /run/lab/sova.env ] && cut -d= -f1 /run/lab/sova.env | tr '\n' ' ' )
   log "sova starting on $HOST:$PORT${extra:+ (sova.env: $extra)}"
+  # The server's pid (setpriv and start-server.sh exec, so it stays this subshell's): `lab sova-restart` and
+  # `sova-stop` signal it alone. Chats are setsid children with their own log files, so they never hold
+  # the tee pipe open and outlive the server.
   ( cd /sova && if [ -r /run/lab/sova.env ]; then set -a; . /run/lab/sova.env; set +a; fi
+    echo "$BASHPID" > /run/lab/sova.pid
     exec "${SOVA_EXEC[@]}" scripts/start-server.sh ) 2>&1 | tee -a /var/log/lab/sova.log &
-  wait $! 
+  wait $!
+  rm -f /run/lab/sova.pid
   log "sova exited"
   sleep 1 & wait $!
 done

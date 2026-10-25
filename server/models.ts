@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PiModelRuntime } from "./harness/pi/extension-types";
 import type { ContextInfo, ModelInfo } from "../shared/protocol";
-import { getModelRuntime } from "./chat-manager";
+import { getModelRuntime } from "./chat-handle";
 import { readFavorites } from "./model-favorites";
 import { agentRoot } from "./state-root";
 import type { BranchContext } from "./harness/pi/usage";

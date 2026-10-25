@@ -2,7 +2,8 @@
 // it: how many rows it shows.
 //
 // Recent is a SHORTCUT, not a region in the pane rule's sense. It is additive the way a group is:
-// every session it lists is still in Live & web or the Archive underneath (never an org session), so nothing here decides
+// every session it lists is still in Folders or the Archive underneath, or in its project's block for the operator's own
+// coding session (never an org session), so nothing here decides
 // where a session lives — only which few rows get said twice, at the top, because they are the
 // ones the user is most likely to want back.
 //
@@ -11,14 +12,14 @@
 
 import { createSignal } from "solid-js";
 import type { SessionSummary } from "../../shared/protocol";
-import { isOrdinarySession } from "./regions";
+import { isOperatorBuild, isOrdinarySession } from "./regions";
 import { readKey, writeKey } from "./storage-keys";
 
 /** The settings dialog spec's "General" tab: the count lives in localStorage, like the theme. It is this browser's, not the
     machine's — there is no server endpoint for it, and the server list is unchanged by it. */
 export const RECENT_COUNT_KEY = "sova:recent-count";
 
-/** Enough rows to be worth a region, few enough that Groups and Live & web stay above the fold. */
+/** Enough rows to be worth a region, few enough that Groups, Projects and Folders stay above the fold. */
 export const DEFAULT_RECENT_COUNT = 5;
 /**
  * Below 3 the region stops being a list and starts being a single row with neighbours, which the
@@ -80,15 +81,18 @@ export const recentCountValid = (raw: unknown): boolean => {
  * only in the Organizations region, as the Overseer's file lives only behind its door. The rule is
  * here, not in the sidebar, so the spine's tiles and the overview's "Last active" get it too.
  *
- * A profile session (`profile` set, custom picks included) never is either: the Profiles region
- * lists exactly those (components/ProfileShelf), so Recent would only repeat it. A capability-neutral
- * profile's session (`profile.neutral`) is the exception: the shelf leaves it out, so it is eligible.
+ * A session's profile plays no part: a profile session is eligible like any other.
  *
- * A server that predates `archived`, `workerSession` or `org` sends none, which counts as not
- * archived and an ordinary main thread (protocol.ts).
+ * Of the sessions a project owns, one kind is eligible: a coding session the operator started
+ * (`project.operator`: New Session in the project's folder, New Coding Session). It is the user's own
+ * thread, listed in its project's block, and Recent says it once more like any other row. A build the
+ * project's overseer started on its own never is.
+ *
+ * A server that predates `archived`, `workerSession`, `org` or `project.operator` sends none, which counts as not
+ * archived, an ordinary main thread, and a build the overseer started (protocol.ts).
  */
-export const recentEligible = (s: Pick<SessionSummary, "archived" | "workerSession" | "overseer" | "org" | "project" | "profile">): boolean =>
-  s.archived !== true && isOrdinarySession(s) && (!s.profile || s.profile.neutral === true);
+export const recentEligible = (s: Pick<SessionSummary, "archived" | "workerSession" | "overseer" | "org" | "project">): boolean =>
+  s.archived !== true && (isOrdinarySession(s) || isOperatorBuild(s));
 
 /**
  * Recent's order: most recently ACTIVE first.

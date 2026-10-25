@@ -47,6 +47,70 @@ The policy is saved in `~/.pi/agent/model-policy.json`. The optional
 restrictions in the terminal. Model favorites are read from the command palette's
 `~/.pi/agent/model-favorites.json`.
 
+## Offers: button cards for your project's chats
+
+A project can give its chats a few named **offers**: button cards the agent shows under its reply,
+so you answer "merge it" or "go on" with a click. Declare them in `.sova/offers.json` on the
+project's main checkout (a branch's own copy is never read, so a branch can't give itself offers):
+
+```json
+{ "version": 1, "offers": { "merge": {
+  "when": "The branch's work is finished, committed and its checks passed.",
+  "why": "Saves typing 'merge it'.",
+  "onlyIf": ["branch-ready", "no-open-alignment"],
+  "repeat": "once-per-commit",
+  "title": "Merge {branch} into {base}?",
+  "buttons": [
+    { "label": "Merge", "about": "Sova merges this branch into main now.", "run": "project.worktree.merge" },
+    { "label": "Not yet", "about": "Keep working on this branch.", "send": "Not yet, keep going." } ] } } }
+```
+
+- **The agent picks an offer by name**, with at most a one-sentence note; it never writes a button.
+  It learns each offer only from its `when`, `why` and the buttons' `about` lines. Only ordinary chats
+  get the `offer` tool (pi and Claude Code alike), never workers or the overseers, and only in a
+  project whose file has an offer the agent may show; every other chat's tools are unchanged.
+- **Buttons** either `send` a message as you (`{branch}`, `{base}`, `{commit}`, `{project}` are
+  filled in) or `run` one of Sova's own actions on the session's branch (today only
+  `project.worktree.merge`, for a coding session a project's overseer tracks). A file with any run
+  button needs your approval on the project page (Settings tab, **Offers**): **Approve Run Buttons**.
+  Changing a run button asks again.
+- **Limits**: at most 8 offers and 4 buttons each; `onlyIf` takes `branch-ready`,
+  `waiting-for-ok`, `tree-clean`, `no-open-alignment` and `has-merge-captain`; `repeat` is
+  `once-per-commit` (the default), `once-per-reply` or `once-per-session`. `"disabled": true` turns
+  one off; `"shownBy": "another-chat"` keeps it for another chat to show
+  (`sova run session.offers.show --session <path> --offer <name> --from <its own session>`). A
+  broken offer is listed with its reason on the project page and never hides the others.
+- **The file is the only switch.** Sova reads it again at every show and click, so removing an
+  offer stops it at once, in running chats too. A chat's tool keeps the offers it started with: new
+  ones reach new chats. **Not Now** on a card hides that offer for the rest of that session.
+
+## The Project Overseer sets up the project for you
+
+The Project Overseer (Open Overseer on a project page) knows every setting of its project and can
+change any of them for you: its own (Watch, what may happen without you, models, limits, the hold,
+extra instructions, its memory), the project's name, and the project's files: services
+(`.sova/project.json`), session profiles (`.sova/profiles/`), playbooks and their schedules, project
+modes (`.sova/minor-modes/`) and offers (`.sova/offers.json`). Ask it in plain words ("add an offer
+that asks to carry on", "let the Reviewer profile read other sessions").
+
+- **What narrows it applies at once.** Turning a power off, lowering a limit or picking a model
+  applies in your turn, with **Undo** on its card and in the Settings history.
+- **Everything else waits for your click.** A change that widens what can happen without you (a
+  power on, a limit raised, the hold shortened, a profile, schedule, mode or offer that needs
+  approval, the services file) and every change to the project's files waits on a **Settings change
+  card**: each setting with its before and after, what approving it allows, and **Show File Changes**.
+  **Apply and Approve** applies it, lands the file changes on the project folder's branch as one
+  commit (settings files only, Sova's own project included) and records the approvals of exactly
+  what the card showed. The overseer never approves anything itself, and on its own looks it only
+  prepares cards.
+- **Uncommitted settings edits** in the project folder show as one card too: **Land** commits them,
+  **Discard Edits** puts them back.
+- **The Settings tab** lists every project setting under **All settings**, with its state and where
+  it is changed or approved, the cards waiting, and the **Settings history** with **Undo**. From a
+  script: `sova run project.settings.get --pid <id>`, `project.settings.history`,
+  `project.settings.undo`, `project.settings.propose.withdraw` and `project.overseer.settings.set`;
+  applying a card is yours, on the page.
+
 ## Optional extensions
 
 Parallel web sessions, shared prompts, branching, and transcript browsing are Sova features.
@@ -119,13 +183,157 @@ The UI is served from Sova's own origin, so it can call every Sova API (for exam
 only extensions you trust.
 
 Proxied requests carry `X-Sova-Origin`, the address the backend can use to call Sova back. They
-never carry Sova's own credential: Sova's `sova_token_*` cookies, `x-sova-token` and an
-`Authorization` holding Sova's token are dropped on the way to the backend (other cookies and
-headers, the extension's own `Authorization` included, pass through). A backend that calls Sova
-back sends the token itself as `x-sova-token: <token>`, reading it from the `SOVA_TOKEN`
-environment variable if you start the backend with it set, else from the token file,
-`~/.pi/agent/sova/auth-token` (or `$PI_CODING_AGENT_DIR/sova/auth-token`). Where the installer's
-launcher is present, `sova token` prints it; from the Sova checkout, `pnpm run auth:token` does.
+never carry Sova's own credential or any extension's key: Sova's `sova_token_*` cookies,
+`x-sova-token` and an `Authorization` holding Sova's token or an extension's key are dropped on the
+way to the backend (other cookies and headers, the extension's own `Authorization` included, pass
+through).
+
+### Your backend's key (extension contract v1.16)
+
+Each installed extension has a key of its own, which its backend uses to call Sova back. Within a few
+seconds of Sova reading your entry, the key is in
+`~/.pi/agent/sova/extension-keys/<file>` (or under `$PI_CODING_AGENT_DIR/sova/`). Only your user can
+read it. `<file>` is your id in lower case, `-`, the first 8 hex digits of the SHA-256 of your id as
+written, and `.key`, so `notes` is `notes-` plus the first 8 hex of `sha256("notes")` plus `.key`:
+
+```sh
+id=notes; f="$(printf %s "$id" | tr A-Z a-z)-$(printf %s "$id" | sha256sum | cut -c1-8).key"
+key=$(cat ~/.pi/agent/sova/extension-keys/"$f")   # macOS: shasum -a 256 for sha256sum
+```
+
+Send it as `x-sova-token: <key>`, as you would the token. `sova` from a Sova checkout takes it the
+same way: `SOVA_TOKEN=$key node scripts/sova.mjs list` (or `run <id>`, or `watch`).
+
+- It opens what the token opens, sockets included, behind the same host and cross-site checks. Your
+  backend can run any of Sova's commands, keep `/ws/events` open to hear what happens (a rename, a
+  turn that ends), and run its own `ext.<id>.*` actions. The only exception is `/api/auth/*`, which
+  answers `403`: a key never pairs a device, reveals the token or unlocks a browser.
+- Sova accepts it only in that header: never as a cookie and never as an `Authorization`.
+- Every call your backend makes with it is recorded as `ext:<id>` in Sova's record of who ran what
+  (`node scripts/sova.mjs run audit.list --caller ext:<id>`). `x-sova-caller` is ignored beside it.
+- **Rotate** it by deleting the file: Sova refuses the old key at once and writes a new one within a
+  few seconds. **Uninstall** (remove the entry, or change its id) and the key is refused at once. Its
+  file goes once Sova has found the entry missing twice in a row (within about 6 seconds), and so
+  does every socket it opened. A manifest that Sova can't read whole (a typo, a save caught
+  half-written) or that is gone for a moment refuses your key while it lasts but never replaces it.
+- Sova may also replace a key on its own, for example after a crash left the file half-written. So on
+  a `401`, read the file again before you give up, and retry with what it holds.
+- Sova never puts the key in a page, an answer or a proxied request, and never serves it from a
+  `dist`. Do the same: never hand the key to your extension's page, never put it in a response or a
+  log, and keep it out of your `dist`. Sova can't enforce that for you. Full power includes starting
+  a chat, so revoking a key stops the key, not what it already did.
+
+Reading Sova's token instead still works as before: `x-sova-token: <token>` from the `SOVA_TOKEN`
+environment variable or the token file, `~/.pi/agent/sova/auth-token` (where the installer's launcher
+is present, `sova token` prints it; from the Sova checkout, `pnpm run auth:token` does). Those calls
+are not recorded as your extension's.
+
+An entry may also list actions of its own under `commands`, for the command line in a Sova
+checkout (`node scripts/sova.mjs list` shows them) and for what it adds under replies (below):
+
+```json
+"commands": [
+  { "name": "snapshot", "label": "Take Snapshot", "summary": "Saves the current notes",
+    "params": { "note": { "type": "string", "description": "A note", "required": true } } }
+]
+```
+
+Each is listed as `ext.<id>.<name>`, and `node scripts/sova.mjs run ext.notes.snapshot --note hi`
+sends `POST /ext/<id>/api/commands/<name>` with `{"note":"hi"}` through the proxy above, so your
+backend answers it at `<api>/api/commands/<name>`. `name` is lowercase letters, digits and `-`;
+a param's `type` is `string`, `number`, `integer`, `boolean`, `array` or `object`. A command that
+isn't valid is left out on its own. The running Sova also serves the list, yours included, at
+`GET /api/commands` (this machine only); it lists your commands only while your entry is one it
+installs, and it never calls your backend to answer.
+
+What an entry offers is in `GET /api/extensions` as its `offers` field (since extension contract
+v1.15):
+`commands` as `{name, label, summary?}` and `screens`, each only when something valid is declared.
+An entry that declares neither has no `offers` field, as before.
+
+**Under replies.** With `"screens": ["reply"]`, Sova shows what your backend says under the replies
+of a chat on this machine, after Sova's own buttons. It asks once when the chat opens, once when a
+run ends, and after one of your actions ran, never once per reply:
+`GET /ext/<id>/api/screens/reply?session=<session id>`, through the proxy. Answer within 2 seconds,
+with at most 1 MB of JSON keyed by entry id: the reply's `id` in the session file, which is a
+transcript row's `id` up to its first `:`:
+
+```json
+{ "entries": {
+    "<entry id>": {
+      "chips": [ { "label": "2 unverified claims", "tone": "warn", "href": "https://…" },
+                 { "label": "Create Issue", "tone": "info", "icon": "external", "action": "create",
+                   "confirm": "File this reply as an issue?" } ],
+      "content": { "html": "<p>Lint report</p>", "height": 64 } } } }
+```
+
+- A chip is data Sova draws: a label of at most 24 plain characters, a `tone` (`ok`, `warn`,
+  `error`, `info` or `muted`), an optional Sova icon name, and either an `http(s)` `href` (opened in
+  a new tab) or an `action`, one of your declared `commands`. Sova asks the `confirm` sentence, if
+  any, then sends `POST /ext/<id>/api/commands/<action>` with `{"session", "entry"}`. At most 3 chips
+  from one extension and 6 under one reply. A label that is one of Sova's own button names is dropped.
+- `content` is a picture: drawn in a frame with no scripts, no network, no pointer and no focus,
+  32 to 320 px high, at most 64 KB.
+- A late, malformed or oversized answer is dropped. After 3 in a row Sova stops asking until the
+  page reloads. The user can hide what an extension adds from its page (`Hide Under Replies`).
+
+**In a session's ⋯ menu** (extension contract v1.16). A command with `"menu": "session"`
+is also an entry in the ⋯ menu of each Agents board row for a session on this machine, after
+Sova's own items, under a heading with your extension's title:
+
+```json
+"commands": [ { "name": "file", "label": "File Issue", "summary": "Opens an issue for it", "menu": "session" } ]
+```
+
+- The row shows `label`, with `summary` under it, and its tooltip says `File Issue · From
+  <title>`. Choosing it sends `POST /ext/<id>/api/commands/<name>` with `{"session": "<session
+  id>"}` through the proxy, and Sova tells the user `Sent to <title>.` on a 2xx answer, or the
+  HTTP status, or that your backend isn't answering (no answer within 10 seconds counts as none).
+- `menu` takes only `"session"`. Any other value leaves the command out of the menu (logged once),
+  never out of `commands`. The menu shows at most 8 extension rows in all, first extensions first.
+  A `label` that is one of Sova's own item names in that menu (`Archive`, `Copy Path`, `Rename…`
+  and the rest; case, spacing and a trailing `…` are ignored) is left out of the menu too.
+- While your backend's health check fails, your rows are hidden.
+
+**On session rows** (extension contract v1.16). With `"screens": ["row"]`, Sova shows what your
+backend says on line 3 of the rows in the sessions pane, after Sova's own merge-readiness badge and
+before the model. It asks for the whole list at once, never once per row: when the pane has its
+list, when your extension appears or its title changes, and again after the list changes, at most
+once every 10 seconds: `GET /ext/<id>/api/screens/row`, with no query, through the proxy. Answer
+within 2 seconds, with at most 1 MB of JSON keyed by session id (a session's `id` in the list):
+
+```json
+{ "sessions": {
+    "<session id>": { "chips": [ { "label": "CI green", "tone": "ok", "title": "All 12 checks passed" } ] } } }
+```
+
+- A row chip is data Sova draws as text: a `label` of at most 16 plain characters, a `tone` (`ok`,
+  `warn`, `error`, `info` or `muted`) shown as a dot before the label, and an optional `title` of
+  at most 120 plain characters for its tooltip, which ends `· From <title>`. It does nothing when
+  pressed (the row opens its session), so a chip with an `href` or an `action` is dropped. A label
+  that is one of Sova's own words on a row (`TUI`, `Draft`, `restart pending`, `2 follow-ups`, `2 of 3`, a
+  worktree state such as `merged` or `ready to merge`, a host state such as `down` or `hidden`) is
+  dropped too.
+- One chip from your extension on a row, at most 2 on a row from every extension, first extensions
+  first. Only rows of sessions on this machine show chips.
+- A late, malformed or oversized answer is dropped, and your last good answer stays drawn. After 3
+  bad answers in a row Sova stops asking until the page reloads. The user can hide your chips from
+  your extension's page (`Hide on Session Rows`), kept apart from `Hide Under Replies`.
+
+**On your home card** (extension contract v1.16). With `"screens": ["card"]`, your card on the
+landing page gets one status line, under Sova's own (the reason a down card gives). Sova asks
+`GET /ext/<id>/api/screens/card` through the proxy once each time the Extensions section is drawn,
+never on a later poll, and draws what you answer as data:
+
+```json
+{ "status": { "text": "This week: 12 h", "tone": "ok" } }
+```
+
+- `text` is at most 60 plain characters (no `<`, `>`, quotes, `&` or backticks); `tone` is a reply
+  chip's (`ok`, `warn`, `error`, `info`, `muted`; `muted` when left out). No `status`: no line.
+- Answer within 2 seconds, with at most 64 KB. A late, malformed or oversized answer draws nothing;
+  after 3 in a row Sova stops asking until the page reloads. The user can hide the line from your
+  page (`Hide on Home Card`). While your backend is down, Sova doesn't ask.
 
 To open a session the extension just created, hand it to Sova rather than setting the page's
 hash. A new session has no messages yet, so it isn't in Sova's list, and `#/s/<path>` would find

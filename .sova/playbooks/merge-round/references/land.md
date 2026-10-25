@@ -1,0 +1,8 @@
+# Merge round: land and clean up
+
+Step 5 of each round. Paths here are relative to the playbook's folder (`references/` is beside `PLAYBOOK.md`).
+
+5. **Land.** `round.mjs land <branch>` scans again and prints the `worktree` merge call; make it exactly. On a hit it lands nothing: report the commit, file and line. Then `round.mjs landed <branch>`: it needs only the branch's head in master, and works out the restart need.
+   **Clean up**, once the owner is done with the worktree (idle, and not carrying on with that branch); otherwise leave it and say why. Run the two git commands `landed` printed as its `next:` line, exactly, from the main checkout: `git worktree remove -- <path>`, then `git branch -d -- <branch>`. Never `--force`, never `-D`, never `rm`. When git refuses (uncommitted or untracked files, a lock, a branch it doesn't find merged), put its words in the report and leave the folder; never retry or work around it. When `landed` says the clean up can't run here, leave it and say so. Then send the owner the notice `landed` printed, adding "Its worktree folder was removed." only when the remove succeeded. When the worktree still held drafts not confirmed promoted (a branch its owner merged itself), `landed` keeps a copy first (it says where) and the notice names them for the owner to promote on a fresh branch from master, never on master; if it couldn't keep one, it prints no clean up. Each `landed` also deletes earlier copies the draft tool confirms are already official in master, and keeps every other one; it says which.
+
+Go back to `status` after each landing. When nothing is left to land: `references/push-restart.md`.

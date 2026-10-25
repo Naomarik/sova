@@ -874,7 +874,7 @@ test("census --changed --related: touched ids carry requires, consumers, files",
   assert.deepEqual(j.census.touched, [{
     id: "§chat.input/draft", kind: "behavior", created: false, file: ".sova/spec/claims/chat/input.md", lines: [9, 11],
     files: ["lib/claimed.js"], requires: [], consumers: [{ id: "§chat.input/note", depth: 1 }],
-    rank: 1, score: 0, reason: [], stale: [],
+    rank: 1, score: 0, fanIn: 1, relevance: 0, reason: [], stale: [],
   }]);
   assert.equal(j.exit, 0, JSON.stringify(j.findings));
 });

@@ -14,8 +14,8 @@ launched with no built-in tools (`--tools ''`), so every tool the model can call
 served through Sova's in-process MCP server (`sdkMcpServers: ["sova"]`, `provider/mcp-host.ts`).
 Each call's history is the one pi hands the provider after its extensions' `context` hooks have
 run, so whatever an extension adds to a chat (tools, rewritten context, modes) reaches Claude Code
-chats too. Claude Code workers are the opposite case: they run the CLI with its own built-in tools
-(§app.subagents-pane/claude-code-workers).
+chats too. Claude Code workers run the same way: each is a pi worker on this provider, so the tools
+it calls are Sova's too (§app.subagents-pane/claude-code-workers).
 
 ## §app.claude-code-provider/continuity — When the Claude process restarts
 
@@ -102,6 +102,9 @@ in order, the text and thinking of the rejected attempt and then everything the 
   later CLI message's usage replaces that of an attempt whose calls were all rejected, the
   attempt's token counts go on its diagnostic (`usage`), never into the message's usage. A
   project's cost therefore does not price that API call.
+- **No timing.** When the retry continues the pi message, the message also carries a
+  `measurement-invalid` diagnostic (reason `invalid-tool-retry`), so reply timing
+  (§app.insights/reply-timing) records nothing for it: its time includes the rejected attempt.
 
 ## §app.claude-code-provider/always-on — The provider is always on
 
@@ -210,9 +213,9 @@ once. The usage ledger records the id passed as the model asked for.
 ## §app.claude-code-provider/no-memory — Claude Code's auto-memory is always off
 
 Every `claude` process Sova or its extensions start runs with Claude Code's auto-memory off,
-whatever the user's own Claude Code settings say: the chat provider's child, Claude Code workers
-(confined or not), the summary line's summarizer, decisions, session titles, model discovery and a
-login's token refresh. Such a process never reads a project's memory folder
+whatever the user's own Claude Code settings say: the chat provider's child (a Claude Code
+worker's included), the summary line's summarizer, decisions, session titles and model discovery.
+Such a process never reads a project's memory folder
 (`<config dir>/projects/<project>/memory/`, its `MEMORY.md` and notes) into a request and never
 writes to it. The setting rides in the one `--settings` object each process is given, merged last,
 so a caller's settings (a sandboxed worker's included) cannot turn it back on. Each such process's
@@ -220,6 +223,32 @@ environment also sets `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` over anything inherite
 since Claude Code reads that variable before the setting and a `0` or `false` would force memory
 on. `claude auth` and
 `claude --version` runs make no model request and are left as they are.
+
+## §app.claude-code-provider/one-program — Every `claude` process runs the one Claude program
+
+Every `claude` process Sova starts runs the same Claude program, found from Sova's own environment,
+never from the folder a chat or worker works in: the chat provider's child, model discovery, a
+login's sign-in check, the topic outline's Claude Code summarizer, and the server's own runs (decisions, session titles,
+`claude --version`, signing a login in). The server looks it up on first use: the first `claude` on
+its own `PATH` (absolute directories only); a version-manager shim found there (mise) is resolved
+once to the program it stands for, asked from the server's own folder, else from Sova's own tree;
+with no `claude` on `PATH`, `~/.local/bin/claude`, where Claude Code's installer puts it. Every
+spawn is given that absolute path, kept while it stays executable, so a project whose `mise.toml`
+or `PATH` shim names another `claude`, or none, changes nothing. A `claudeBin` set in
+topic-outline.json still overrides it for the summarizer; without one, nothing runs
+`~/.local/bin/claude` directly. The path is kept as found, not
+followed through its link, so a Claude Code update that moves the link reaches the next launch.
+When no Claude program is found, the launch fails with "Claude program not found", naming the
+`PATH` directories and the location it looked in; a chat shows that as its turn's error. A caller
+given an explicit executable uses that one.
+
+## §app.claude-code-provider/death-reason — A Claude process that dies says why
+
+When a chat's Claude child exits before finishing a turn, or fails its `initialize` handshake, the
+error the turn ends with (shown in the chat as the turn's error) is `Claude exited (<code or
+signal>) before finishing the turn` (or the handshake's failure) followed by the last lines that
+process wrote on stderr: at most 20 lines and 2 KB, the newest kept. With nothing on stderr it is
+the bare message.
 
 ## §app.claude-code-provider/model-identity — Which model answered, and a mismatch
 

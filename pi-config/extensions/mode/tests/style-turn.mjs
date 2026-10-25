@@ -74,6 +74,8 @@ const mode = (session, args) => session.extensionRunner.getCommand("mode").handl
 const notes = (session) => session.sessionManager.getEntries().filter((e) => e.type === "custom_message" && e.customType === "mode-note");
 const setAlign = (style, visuals) => {
 	const file = path.join(agentDir, "mode-align.json");
+	// null: no saved style (a new user, a new device): the file is missing.
+	if (style === null) return rmSync(file, { force: true });
 	writeFileSync(`${file}.tmp`, JSON.stringify({ version: 1, style, visuals }));
 	renameSync(`${file}.tmp`, file);
 };
@@ -81,8 +83,19 @@ const styleNotes = (users) => users.filter((u) => u.startsWith("Writing style ch
 
 try {
 	// ── The style ─────────────────────────────────────────────────────────────────────────────────
+	// No saved style (a missing file): Project manager, its paragraph in the head.
+	setAlign(null);
+	let session = await open(SessionManager.inMemory(cwd));
+	try {
+		await mode(session, "align on");
+		await session.prompt("fresh");
+		assert.ok(requests.at(-1).prompt.includes(`${ALIGN_INSTRUCTIONS}\n\n${ALIGN_STYLE_PARAGRAPHS.pm}`), "a missing file means Project manager: its paragraph opens the head");
+	} finally {
+		session.dispose();
+	}
+
 	setAlign("pm", false);
-	let session = await open(SessionManager.create(cwd, sessionDir));
+	session = await open(SessionManager.create(cwd, sessionDir));
 	let file;
 	let head;
 	try {
@@ -122,20 +135,23 @@ try {
 		assert.equal(styleNotes(request.users).length, 1, "the earlier note, nothing new");
 		assert.equal(notes(session).length, 1);
 
-		// Back to Default: one note saying the paragraph no longer applies.
+		// To Technical (stored "default"): one note saying the paragraph no longer applies.
 		setAlign("default", false);
 		await session.prompt("five");
 		assert.equal(requests.at(-1).prompt, head);
-		assert.match(requests.at(-1).users.at(-1), /^Writing style change: the user set the align writing style back to Default\. The earlier "Writing style: Simplified" paragraph no longer applies/);
+		assert.match(requests.at(-1).users.at(-1), /^Writing style change: the user set the align writing style to Technical\. The earlier "Writing style: Simplified" paragraph no longer applies; write alignments with the files, code and technical trade-offs they need from now on\.$/);
 		assert.equal(notes(session).length, 2);
 	} finally {
 		session.dispose();
 	}
 
-	// A head no note speaks for: started in Default, the style changed with no message since, then a reopen.
-	// The head keeps Default (nothing records a Default head) and the change goes out as one note.
-	// And the other way: a Project manager head, recorded when it was fixed, survives a change back to Default.
-	for (const [from, to] of [["default", "pm"], ["pm", "default"]]) {
+	// A head no note speaks for: started in Technical, the style changed with no message since, then a reopen.
+	// The head keeps Technical (nothing records a Technical head) and the change goes out as one note.
+	// The same when the file goes missing (a user who saved nothing): the old head stays byte-identical and
+	// the new default, Project manager, arrives as the one note. And the other way: a Project manager head,
+	// recorded when it was fixed, survives a change to Technical.
+	for (const [from, to] of [["default", "pm"], ["default", null], ["pm", "default"]]) {
+		const toldStyle = to ?? "pm";
 		setAlign(from, false);
 		session = await open(SessionManager.create(cwd, sessionDir));
 		let first;
@@ -156,11 +172,11 @@ try {
 			assert.equal(request.prompt, first, `${from} → ${to}: the reopened head is byte-identical to the first run's`);
 			assert.equal(styleNotes(request.users).length, 1, `${from} → ${to}: one hidden note`);
 			const told = request.users.find((u) => u.startsWith("Writing style change:"));
-			if (to === "pm") assert.ok(told.endsWith(ALIGN_STYLE_PARAGRAPHS.pm), "carrying the Project manager paragraph");
-			else assert.match(told, /back to Default/);
+			if (toldStyle === "pm") assert.ok(told.endsWith(ALIGN_STYLE_PARAGRAPHS.pm), "carrying the Project manager paragraph");
+			else assert.match(told, /to Technical\. /);
 			assert.equal(notes(session).length, 1);
 			assert.equal(notes(session)[0].display, false);
-			assert.deepEqual(notes(session)[0].details, { v: 1, minorModes: ["align"], guides: [], style: to, headStyle: from });
+			assert.deepEqual(notes(session)[0].details, { v: 1, minorModes: ["align"], guides: [], style: toldStyle, headStyle: from });
 			await session.prompt("again");
 			assert.equal(requests.at(-1).prompt, first);
 			assert.equal(notes(session).length, 1, "told once");
@@ -196,7 +212,7 @@ try {
 		await mode(session, "align on");
 		await session.prompt("draw");
 		const first = requests.at(-1);
-		assert.ok(first.prompt.includes(`${ALIGN_INSTRUCTIONS}\n\n${ALIGN_VISUALS_PARAGRAPH}`), "Default style, Visuals on: the visuals paragraph right after the align block");
+		assert.ok(first.prompt.includes(`${ALIGN_INSTRUCTIONS}\n\n${ALIGN_VISUALS_PARAGRAPH}`), "Technical style, Visuals on: the visuals paragraph right after the align block");
 		const tools = session.getActiveToolNames();
 		assert.ok(tools.includes("vis_guide"), "align on with Visuals: vis_guide is in the loadout, vis off");
 		const align = session.getAllTools().find((t) => t.name === "align");

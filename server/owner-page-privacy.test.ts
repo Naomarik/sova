@@ -78,6 +78,8 @@ const M = {
   tokens: "987654321",
   routeReason: "MK-ROUTE-q7x self-asserted",
   proposed: "MK-PROPOSED-q7x",
+  // The Project Assistant's models (§app.project-assistant/never): the operator's, never the owner's.
+  assistantModel: "mkprov/MK-MODEL-q7x",
   hiddenTitle: "MK-HIDDENTITLE-q7x",
   hiddenText: "MK-HIDDENTEXT-q7x",
   offProject: "MK-OFFPROJECT-q7x",
@@ -213,6 +215,14 @@ const ids = (): string[] => [
   "Firefox",
 ];
 
+// The Project Assistant's records: its models (a marker), one owner request (its id must never show).
+const paStore = await import("./project-assistant-store");
+paStore.setAssistantModels(org.id, { models: { reply: { model: M.assistantModel }, coding: { model: M.assistantModel } } });
+// Readiness asks whether this host runs the reply model: here it does (no real model runtime in this test).
+(await import("./project-assistant-ready")).setAssistantModelListForTests(async () => [{ ref: M.assistantModel }]);
+const ownerReq = paStore.fileRequest(org.id, { projectId: pa.id, kind: "bug", title: "The booking form is slow", text: "It takes a minute." });
+const idsWithRequest = () => [...ids(), ownerReq.id];
+
 /** Everything the owner can fetch, and the operator's preview of it: [label, body]. */
 async function everyAnswer(): Promise<[string, string][]> {
   const out: [string, string][] = [];
@@ -233,7 +243,9 @@ async function everyAnswer(): Promise<[string, string][]> {
     if (r.status === 200) for (const c of (JSON.parse(r.text) as OwnerProject).conversations) conversations.add(c.id);
   }
   for (const k of conversations) await get(`/api/i/${token}/c/${k}`);
-  for (const p of [`/api/orgs/${org.id}/owner/preview`, ...[...projects].map((q) => `/api/orgs/${org.id}/owner/preview?project=${q}`), ...[...conversations].map((k) => `/api/orgs/${org.id}/owner/preview?c=${k}`)]) {
+  // The Project Assistant's conversation and the versions' route (§app.project-assistant/never).
+  await get(`/api/i/${token}/assistant`);
+  for (const p of [`/api/orgs/${org.id}/owner/preview`, `/api/orgs/${org.id}/owner/preview?assistant=1`, ...[...projects].map((q) => `/api/orgs/${org.id}/owner/preview?project=${q}`), ...[...conversations].map((k) => `/api/orgs/${org.id}/owner/preview?c=${k}`)]) {
     const res = await app.request(p);
     out.push([`${res.status} preview ${p}`, await res.text()]);
   }
@@ -262,6 +274,8 @@ describe("nothing private reaches the owner (§app.owner-page/never)", async () 
     const home = JSON.parse(answers.find(([l]) => l === `200 GET /api/i/${token}`)![1]) as OwnerHome;
     assert.equal(home.projects.length, 1);
     assert.equal(home.waiting.length, 1, "the owner's own question shows");
+    assert.deepEqual(home.requests?.map((r) => r.title), ["The booking form is slow"], "control: the owner's request shows, by its title");
+    assert.ok(answers.some(([l]) => l === `200 GET /api/i/${token}/assistant`), "control: the assistant's view answered");
     assert.equal(home.projects[0]!.latestNews?.text.includes("Opening hours are agreed."), true, "the update shows");
     assert.ok(
       answers.some(([, t]) => t.includes("We open at nine.")),
@@ -273,13 +287,36 @@ describe("nothing private reaches the owner (§app.owner-page/never)", async () 
   test("no marker, id, token, hash or path in any answer", () => {
     for (const [label, body] of answers) {
       for (const [field, mark] of Object.entries(M)) assert.ok(!body.includes(mark), `${field} leaked in ${label}`);
-      for (const id of ids()) assert.ok(!body.includes(id), `${id} leaked in ${label}`);
+      for (const id of idsWithRequest()) assert.ok(!body.includes(id), `${id} leaked in ${label}`);
       assert.ok(!body.includes(token), `the owner's own token echoed in ${label}`);
       if (label.includes(" GET /i/")) continue; // the static shell: markers and ids only
       // Keys that would carry a cost, a model, a visit or a profile field.
       const keys = [...body.matchAll(/"([A-Za-z]+)":/g)].map((m) => m[1]!);
       for (const bad of ["cost", "tokens", "model", "thinking", "device", "lastSeenAt", "language", "role", "voice", "contact", "skills", "decides", "competence", "goal", "sessionId", "personId", "path", "file", "branch", "routeReason"])
         assert.ok(!keys.includes(bad), `key ${bad} in ${label}`);
+    }
+  });
+
+  test("what the assistant can do reaches the owner as outcome words only: no power id, label, level or brake reason (§app.owner-page/never)", async () => {
+    const { POWER_INFO, POWERS, PAUSED_BRAKE_REASON, EMPTY_ROSTER_BRAKE_REASON } = await import("../shared/powers");
+    const home = JSON.parse(answers.find(([l]) => l === `200 GET /api/i/${token}`)![1]) as OwnerHome;
+    // Control: the card's answers are there (the assistant is ready), as enum words only.
+    assert.ok(home.abilities, "control: abilities on Home");
+    assert.deepEqual(Object.keys(home.abilities!).sort(), ["photos", "projects"]);
+    for (const a of home.abilities!.projects) {
+      assert.deepEqual(Object.keys(a).sort(), ["feature", "fix", "project", "release", "version"]);
+      for (const k of ["fix", "release"] as const) assert.ok(["now", "held", "team"].includes(a[k]), `${k}: ${a[k]}`);
+      assert.ok(["now", "team"].includes(a.feature ?? ""), `feature: ${a.feature}`);
+      assert.ok(["now", "held", "team", "none"].includes(a.version));
+    }
+    // Control: the operator's own view of the switches carries the ids and labels.
+    const powers = await (await app.request(`/api/projects/${pa.id}/overseer`)).text();
+    const op = powers + everyFile();
+    assert.ok(op.includes("codingStart") && op.includes("copiesRun"), "control: the power ids are in the operator's records");
+    const banned = [...POWERS.filter((p) => p !== "deploy" && p !== "share" && p !== "gather" && p !== "promote" && p !== "roster"), ...POWERS.map((p) => POWER_INFO[p].label), PAUSED_BRAKE_REASON, EMPTY_ROSTER_BRAKE_REASON, "L0", "L1", "L2", "L3"];
+    for (const [label, body] of answers) {
+      if (label.includes(" GET /i/")) continue; // the static shell (the share build's own code)
+      for (const w of banned) assert.ok(!body.includes(w), `${w} in ${label}`);
     }
   });
 

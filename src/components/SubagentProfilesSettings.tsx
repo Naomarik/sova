@@ -1,7 +1,8 @@
-import { createEffect, createResource, createSignal, For, Show, untrack, type JSX } from "solid-js";
-import type { SubagentProfile, TeamsSetting } from "../../shared/subagent-profiles";
+import { createEffect, createResource, createSignal, For, on, Show, untrack, type JSX } from "solid-js";
+import type { SubagentProfile, SubagentProfilesInfo, TeamsSetting } from "../../shared/subagent-profiles";
 import type { WorkerChoice } from "../../shared/protocol";
-import { getDelegateOptions, getDelegateSettings, getSubagentProfiles, getTeamDefaults } from "../lib/api";
+import { getDelegateOptions, getDelegateSettings, getSubagentProfiles, getTeamDefaults, restoreSubagentProfiles } from "../lib/api";
+import { replacedNotice } from "../lib/subagent-replaced";
 import { cloneProfiles, profilesDraft as store, savedOf } from "../lib/subagent-profiles-draft";
 import { claudeDriftNotes, fallbackFor } from "../lib/delegate-form";
 import { filterProfiles, nextSetup } from "../lib/mode-menu";
@@ -88,9 +89,38 @@ export function SubagentProfilesSettings() {
 
   /** The resource read only when it isn't in an error state. */
   const safeInfo = () => (info.error ? undefined : info());
-  /** What the last save wrote (the draft store's PUT answer) or the load: display facts follow writes at once. */
-  const shown = () => store.result() ?? safeInfo();
+  /** A restore's answer, until the next save answers instead (§chat.subagent-profiles/replaced). */
+  const [restoredInfo, setRestoredInfo] = createSignal<SubagentProfilesInfo | null>(null);
+  createEffect(on(store.result, () => setRestoredInfo(null), { defer: true }));
+  /** What the last write answered (a save's PUT, or a restore) or the load: display facts follow writes at once. */
+  const shown = () => restoredInfo() ?? store.result() ?? safeInfo();
   const footprintOf = (id: string) => shown()?.profiles.find((x) => x.id === id)?.footprint;
+
+  // Another device's copy changed the library in the last day (§chat.subagent-profiles/replaced).
+  // The load says so; a restore here ends it at once, whatever answer is still on screen.
+  const [restoredFile, setRestoredFile] = createSignal<string | null>(null);
+  const [restoring, setRestoring] = createSignal(false);
+  const [restoreError, setRestoreError] = createSignal<string | null>(null);
+  const replaced = () => {
+    const r = safeInfo()?.replaced;
+    return r && r.file !== restoredFile() ? r : undefined;
+  };
+  const restore = async (file: string) => {
+    if (store.dirty() || restoring()) return;
+    setRestoring(true);
+    setRestoreError(null);
+    try {
+      const next = await restoreSubagentProfiles(file);
+      setRestoredFile(file);
+      setRestoredInfo(next);
+      // The restored library is what is saved now; the (clean) draft follows it.
+      store.acceptSave(savedOf(next));
+    } catch (e) {
+      setRestoreError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRestoring(false);
+    }
+  };
 
   const edit = () => store.draft()?.profiles.find((p) => p.id === editing());
   /** The editor shows only while its profile exists in the draft: a discarded new profile returns to the list. */
@@ -358,6 +388,32 @@ export function SubagentProfilesSettings() {
           when={inEditor() && edit()}
           fallback={
             <>
+              <Show when={restoreError()}>
+                {(e) => <Banner tone="error" title="Couldn't restore your previous library." body={`${sentence(e())} Your library is unchanged.`} />}
+              </Show>
+              <Show when={replaced()}>
+                {(r) => {
+                  const notice = () => replacedNotice(r());
+                  return (
+                    <Banner
+                      tone="info"
+                      title={notice().title}
+                      body={notice().body}
+                      action={
+                        <button
+                          type="button"
+                          class="button button-sm"
+                          disabled={store.dirty() || store.saving() || restoring()}
+                          title={store.dirty() ? "Save or discard your Subagents changes first" : undefined}
+                          onClick={() => void restore(r().file)}
+                        >
+                          {restoring() ? "Restoring…" : "Restore Previous Library"}
+                        </button>
+                      }
+                    />
+                  );
+                }}
+              </Show>
               <div class="button-row subagent-editor-list-actions">
                 <button type="button" class="button button-sm" disabled={store.dirty() || store.saving()} onClick={() => newProfile()}>
                   <Icon name="plus" small />
@@ -505,7 +561,7 @@ export function SubagentProfilesSettings() {
                 () => (
                   <>
                     <Show when={coordinatorOn(p())}>
-                      <p class="field-hint settings-delegate-desc">Without a fallback, a team isn't created when a role's primary can't run.</p>
+                      <p class="field-hint settings-delegate-desc">Without a fallback, a team isn't created when a role's primary can't run. With one, a role whose primary runs out of usage during the team moves to it.</p>
                     </Show>
                     <For each={["coordinator", "monitor"] as const}>
                       {(role) => {
@@ -732,7 +788,7 @@ export function SubagentProfilesSettings() {
                               <option value="host" selected={p().alignment?.style === undefined}>
                                 Use host default
                               </option>
-                              <For each={["default", "simplified", "pm"] as const}>
+                              <For each={["pm", "simplified", "default"] as const}>
                                 {(s) => (
                                   <option value={s} selected={p().alignment?.style === s}>
                                     {ALIGN_STYLE_NAMES[s]}

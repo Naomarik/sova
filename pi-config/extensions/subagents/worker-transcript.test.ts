@@ -4,7 +4,6 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-	LEGACY_REGISTRY_ENTRY_TYPE,
 	UnsupportedCapabilityError,
 	WORKER_MANIFEST_ENTRY_TYPE,
 	WorkerProtocolVersionError,
@@ -281,9 +280,9 @@ test("sumWorkerUsage: rows merge by model; source is the weakest seen", () => {
 
 const custom = (customType: string, data: unknown, id?: string) => ({ type: "custom", customType, data, ...(id ? { id } : {}) });
 
-test("readWorkerManifests: newest wins per field; spec/team merge one level; legacy registry records fold in", () => {
+test("readWorkerManifests: newest wins per field; spec/team merge one level; the older registry records are not read", () => {
 	const entries = [
-		custom(LEGACY_REGISTRY_ENTRY_TYPE, {
+		custom("subagents-worker-registry", {
 			v: 1, kind: "worker-registry", workerId: "ag_01", backend: "claude-code", groupId: "run_01", at: 1,
 			backendSessionId: "0b7a2b8e-6d0e-4a4e-9f55-3f0b6b1e2a11", spec: { name: "old", cwd: "/w", task: "t", taskChars: 1, wake: true, teamId: "team_01", role: "r" },
 		}, "l1"),
@@ -300,17 +299,10 @@ test("readWorkerManifests: newest wins per field; spec/team merge one level; leg
 	];
 	const { manifests, refused } = readWorkerManifests(entries, { activeEntryIds: new Set(["m1", "z"]) });
 	assert.equal(refused, 1);
-	assert.deepEqual([...manifests.keys()], ["ag_01", "ag_02"]);
-	const legacy = manifests.get("ag_01")!;
-	assert.equal(legacy.name, "old");
-	assert.deepEqual(legacy.ref, { v: 1, backend: "claude-code", kind: "claude-session-id", locator: "0b7a2b8e-6d0e-4a4e-9f55-3f0b6b1e2a11", cwd: "/w" });
-	assert.deepEqual(legacy.team, { teamId: "team_01", role: "r" });
-	assert.equal(legacy.spec?.taskPreview, "t");
-	assert.equal(legacy.onActiveBranch, false);
+	assert.deepEqual([...manifests.keys()], ["ag_02"], "a worker only an older registry entry names has no record");
 	const w = manifests.get("ag_02")!;
 	assert.equal(w.at, 4);
 	assert.equal(w.firstAt, 2, "the first record's time (its spawn) survives the newest-wins fold");
-	assert.equal(legacy.firstAt, 1);
 	assert.equal(w.status, "waiting");
 	assert.equal(w.spec?.model, "ollama-cloud/kimi-k3");
 	assert.equal(w.spec?.effort, "high");
@@ -322,13 +314,13 @@ test("readWorkerManifests: newest wins per field; spec/team merge one level; leg
 	assert.equal("kind" in w, false);
 	// Without activeEntryIds no branch flag is set.
 	assert.equal(readWorkerManifests(entries).manifests.get("ag_02")?.onActiveBranch, undefined);
-	// A timeless (legacy, at 0) first record gives no firstAt of its own; a later timed one does.
+	// A timeless (at 0) first record gives no firstAt of its own; a later timed one does.
 	const timeless = readWorkerManifests([
-		custom(LEGACY_REGISTRY_ENTRY_TYPE, { v: 1, kind: "worker-registry", workerId: "ag_09", backend: "pi" }, "t1"),
+		custom(WORKER_MANIFEST_ENTRY_TYPE, { v: 1, kind: "worker-manifest", workerId: "ag_09", backend: "pi", at: 0 }, "t1"),
 	]).manifests.get("ag_09")!;
 	assert.equal("firstAt" in timeless, false);
 	const later = readWorkerManifests([
-		custom(LEGACY_REGISTRY_ENTRY_TYPE, { v: 1, kind: "worker-registry", workerId: "ag_09", backend: "pi" }, "t1"),
+		custom(WORKER_MANIFEST_ENTRY_TYPE, { v: 1, kind: "worker-manifest", workerId: "ag_09", backend: "pi", at: 0 }, "t1"),
 		custom(WORKER_MANIFEST_ENTRY_TYPE, { v: 1, kind: "worker-manifest", workerId: "ag_09", backend: "pi", at: 7 }, "t2"),
 		custom(WORKER_MANIFEST_ENTRY_TYPE, { v: 1, kind: "worker-manifest", workerId: "ag_09", backend: "pi", at: 9 }, "t3"),
 	]).manifests.get("ag_09")!;

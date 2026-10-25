@@ -1,85 +1,33 @@
 #!/usr/bin/env node
-// dev-server: tsx watch, gated on live subagents.
+// dev-server: tsx watch, on the runtime the launcher would pick.
 //
-// Restarts the server on watched-file changes like `tsx watch`, but HOLDS the restart while
-// any hosted session has subagents working or a turn in flight (read from the sessions
-// extension's live records for this server's pid). A restart kills spawned workers and wipes
-// the in-memory subagent registry (see CLAUDE.md "Dev-server restart pitfall"); this gate
-// makes that opt-in again: press `r` (or SIGUSR2) to force.
+// Restarts the server on watched-file changes like `tsx watch`, after a short debounce. Nothing
+// holds it: every chat, worker and team member runs in a process of its own and keeps running
+// through a restart (see AGENTS.md "Live server restart" and agents/server/overview.md "Dev watcher").
 //
 //   node scripts/dev-server.mjs            # pnpm run dev:server
-//   r                                      # force a pending restart now
-//   kill -USR2 <watcher pid>               # same, for agents
+//   r                                      # restart now
 //
 // Watches: server/, shared/, pi-config/extensions/mode/ (the server's import graph).
-// Ignores: *.test.ts, dotfiles. Live-record contract: pi-config/extensions/sessions SCHEMA.md.
+// Ignores: *.test.ts, dotfiles.
 //
 // Runtime: Bun, or Node with SOVA_RUNTIME=node, decided per (re)start exactly as
 // scripts/start-server.sh decides (server/runtime-choice.ts). Bun missing: the watcher exits 1.
 
 import { spawn } from "node:child_process";
 import { watch } from "node:fs";
-import { readdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join, relative } from "node:path";
-import { createInterface } from "node:readline";
+import { join } from "node:path";
 import { launch } from "../server/runtime-choice.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 const WATCH_DIRS = ["server", "shared", join("pi-config", "extensions", "mode")];
 const DEBOUNCE_MS = 300;
-const BUSY_POLL_MS = 1000;
-const HEARTBEAT_FRESH_MS = 30_000;
 const TERM_GRACE_MS = 8000;
-
-const agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
-const liveDir = join(agentDir, "sessions", "live");
-
-/** Names of live workers shown while a restart is held ("ag_08, ag_09"). */
-function busyReasons(pid) {
-  let names = [];
-  let working = 0;
-  let activity = false;
-  let stale = false;
-  try {
-    const now = Date.now();
-    for (const name of readdirSync(liveDir)) {
-      if (!name.startsWith(`p${pid}-`) || !name.endsWith(".json")) continue;
-      let rec;
-      try {
-        rec = JSON.parse(readFileSync(join(liveDir, name), "utf8"));
-      } catch {
-        continue; // mid-write
-      }
-      const beat = typeof rec?.heartbeat === "number" ? rec.heartbeat : 0;
-      if (now - beat > HEARTBEAT_FRESH_MS) {
-        stale = true;
-        continue;
-      }
-      const wc = rec?.presence?.workerCounts;
-      if (typeof wc?.working === "number") {
-        working += wc.working;
-        for (const w of rec?.presence?.workers ?? [])
-          if (typeof w?.name === "string" && !["waiting", "done", "error", "killed", "restored"].includes(w.status)) names.push(w.name);
-      }
-      if (rec?.presence?.activity?.state === "working") activity = true;
-    }
-  } catch {
-    return { busy: false, detail: "live dir unreadable", names: [], working: 0 };
-  }
-  const busy = working > 0 || activity;
-  const bits = [];
-  if (working > 0) bits.push(`${working} working${names.length ? ` (${names.join(", ")})` : ""}`);
-  if (activity) bits.push("turn in flight");
-  if (stale && !busy) bits.push("(stale records ignored)");
-  return { busy, detail: bits.join(" · ") || "idle", names, working };
-}
 
 let child = null;
 let restarting = false; // WE asked the child to exit (planned restart)
-let pending = false; // a restart is queued behind busy workers
+let pending = false; // changes came while the child was cycling
 let pendingFiles = new Set();
-let announced = false;
 let shuttingDown = false;
 
 function start() {
@@ -103,7 +51,7 @@ function start() {
     if (restarting) {
       restarting = false;
       start();
-      tryRestart(); // more changes may have queued while we cycled
+      restart(); // more changes may have queued while we cycled
     } else {
       console.log(`\n[dev-server] server exited (code ${code}, ${signal}); restarting`);
       start();
@@ -111,20 +59,10 @@ function start() {
   });
 }
 
-function tryRestart() {
+function restart() {
   if (!pending || restarting || !child) return;
-  const { busy, detail } = busyReasons(child.pid);
-  if (busy) {
-    if (!announced) {
-      announced = true;
-      console.log(`\n⏸ [dev-server] restart pending (${pendingFiles.size} file${pendingFiles.size === 1 ? "" : "s"}) — ${detail} · r=force`);
-    }
-    setTimeout(tryRestart, BUSY_POLL_MS).unref?.();
-    return;
-  }
-  announced = false;
   pending = false;
-  console.log(`\n[dev-server] restarting (${[...pendingFiles].map((f) => relative(ROOT, f)).join(", ")})`);
+  console.log(`\n[dev-server] restarting (${[...pendingFiles].join(", ")})`);
   pendingFiles = new Set();
   restarting = true;
   child.kill("SIGTERM");
@@ -140,39 +78,24 @@ for (const dir of WATCH_DIRS) {
     clearTimeout(timer);
     timer = setTimeout(() => {
       pending = true;
-      pendingFiles.add(join(ROOT, dir, f));
-      tryRestart();
+      pendingFiles.add(join(dir, f));
+      restart();
     }, DEBOUNCE_MS);
   });
 }
 
-// Force key (interactive terminals only).
+// `r`: restart now (interactive terminals only).
 if (process.stdin.isTTY) {
   process.stdin.setRawMode(true);
   process.stdin.resume();
-  const rl = createInterface({ input: process.stdin, terminal: true });
-  rl.on("line", () => {});
   process.stdin.on("data", (buf) => {
     if (buf.toString("utf8").trim().toLowerCase() === "r") {
-      console.log("\n[dev-server] forced restart");
-      announced = false;
       pending = true;
-      restarting = true;
-      pendingFiles = new Set(["(forced)"]);
-      child?.kill("SIGTERM");
-      setTimeout(() => child?.kill("SIGKILL"), TERM_GRACE_MS).unref?.();
+      pendingFiles.add("(r)");
+      restart();
     }
   });
 }
-process.on("SIGUSR2", () => {
-  console.log("\n[dev-server] forced restart (SIGUSR2)");
-  announced = false;
-  pending = true;
-  restarting = true;
-  pendingFiles = new Set(["(forced)"]);
-  child?.kill("SIGTERM");
-  setTimeout(() => child?.kill("SIGKILL"), TERM_GRACE_MS).unref?.();
-});
 
 process.on("SIGINT", () => {
   shuttingDown = true;
@@ -183,5 +106,5 @@ process.on("SIGTERM", () => {
   child?.kill("SIGTERM");
 });
 
-console.log("[dev-server] gated watcher: restarts hold while subagents work · r or SIGUSR2 forces");
+console.log("[dev-server] watching the server's import graph · r restarts now");
 start();

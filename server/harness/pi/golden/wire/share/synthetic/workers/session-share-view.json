@@ -4,7 +4,7 @@
     "title": "Golden share",
     "sharedAt": "2026-10-05T00:00:00.000Z",
     "mode": "live",
-    "through": "2026-09-01T10:00:13.000Z",
+    "through": "2026-09-01T10:00:12.000Z",
     "items": [
       {
         "kind": "user",
@@ -16,7 +16,7 @@
         "kind": "reply",
         "n": 1,
         "text": "The team finished.",
-        "at": "2026-09-01T10:00:13.000Z"
+        "at": "2026-09-01T10:00:12.000Z"
       }
     ],
     "images": 0

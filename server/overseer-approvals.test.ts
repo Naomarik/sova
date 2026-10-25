@@ -14,6 +14,7 @@ const agentDir = mkdtempSync(join(tmpdir(), "sova-overseer-approvals-"));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { overseerTools, TurnLimits, UNATTENDED_REFUSAL } = await import("./overseer-tools");
 const { clearOverseer, ensureOverseer, overseerAutonomy, permitOnClick, permitLabel } = await import("./overseer");
 const { DEFAULT_CAPS } = await import("./overseer-store");

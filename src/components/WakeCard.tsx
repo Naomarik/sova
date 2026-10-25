@@ -1,6 +1,7 @@
 import { Show } from "solid-js";
 import type { WakeInfo } from "../../shared/wake";
 import { wakeTitle } from "../../shared/wake";
+import { LOAD_WORDS } from "../../shared/playbook-delivery";
 import { clockTime } from "../lib/format";
 import { Icon } from "./ui";
 
@@ -22,6 +23,9 @@ export function WakeCard(props: { nudge: WakeInfo; text: string; time?: string }
         <span class="toolcard-arg" title={reason() || undefined}>
           {reason()}
         </span>
+        <Show when={props.nudge.playbook}>
+          {(pb) => <span class="chip" title={`The playbook ${pb().id} went with this run`}>{LOAD_WORDS[pb().load]}</span>}
+        </Show>
         <Show when={fired()}>
           <span class="toolcard-wake-time">
             fired {fired()}

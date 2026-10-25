@@ -8,8 +8,8 @@
 // PI_CODING_AGENT_DIR (with this tree's pi-config extensions linked in), an org workspace and a project
 // root in the OS temp dir, deleted after; every model is a stub that records what it was sent.
 import assert from "node:assert/strict";
-import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { Hono } from "hono";
 import { BATON_SENT_ENTRY } from "../shared/baton";
@@ -17,6 +17,7 @@ import type { HistoryInput } from "../shared/org-history";
 import type { DecisionProvider, DecisionRequest } from "./decide";
 import { piSession } from "./harness/pi/testing/handle";
 import { scratchRoot } from "./test-scratch";
+import { linkPiConfigExtensions } from "./testing/agent-dir";
 
 // In no repository: the project is a plain folder, so its coding session cuts no worktree.
 const root = scratchRoot("sova-history-surfaces-");
@@ -24,8 +25,9 @@ process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
-symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
+linkPiConfigExtensions(agentDir);
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const orgs = await import("./orgs");
 const baton = await import("./baton");
 const loadout = await import("./baton-loadout");
@@ -173,6 +175,9 @@ describe("an org's history reaches its readers and none of the surfaces that nev
   const ana = await orgs.addPerson(org.id, { name: "Ana Ruiz", role: "Sales" });
   await owner.setOwner(org.id, maria.id);
   await po.ensureProjectOverseer(project.id);
+  // No unattended looks: a never-run watch looks at the next 20 s wall-clock tick, and that look's turn
+  // makes the overseer's memory summarize it through a real `claude -p` (a spawn the unit tier refuses).
+  await po.patchProjectOverseer(project.id, { watch: false });
   const host = hostOf(org.id);
 
   /** A person's decision recorded with its private words (the history's own record, as a capture writes it). */

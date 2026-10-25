@@ -3,8 +3,9 @@ import { existsSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { Hono } from "hono";
 import { agentRoot } from "./state-root";
+import { claudeExecutable } from "../pi-config/extensions/claude-code/claude-executable.ts";
 // The claude-code extension's own registry (node built-ins only): the file, each login's
-// directory, this host's standing of each login and the order. See CLAUDE.md.
+// directory, this host's standing of each login and the order. See agents/extensions/claude-code/overview.md.
 import {
   ClaudeLogins,
   DEFAULT_LOGIN_ID,
@@ -94,7 +95,7 @@ export type ServiceResult = { status: 200; body: ClaudeAccountsInfo | ClaudeLogi
 export class ClaudeAccountsService {
   private readonly agentDir: string;
   private readonly env: NodeJS.ProcessEnv;
-  private readonly executable: string;
+  private readonly executableOption: string | undefined;
   private readonly timeouts: { url: number; finish: number; flow: number; logout: number };
   private readonly logins: ClaudeLogins;
   private readonly pool: () => PoolAgent | null;
@@ -104,7 +105,7 @@ export class ClaudeAccountsService {
   constructor(options: ClaudeAccountsOptions = {}) {
     this.agentDir = options.agentDir ?? agentRoot();
     this.env = options.env ?? process.env;
-    this.executable = options.executable ?? "claude";
+    this.executableOption = options.executable;
     this.timeouts = { url: URL_TIMEOUT_MS, finish: FINISH_TIMEOUT_MS, flow: FLOW_TIMEOUT_MS, logout: LOGOUT_TIMEOUT_MS, ...options.timeouts };
     this.logins = new ClaudeLogins({ agentDir: this.agentDir, env: this.env, ...(options.now ? { now: options.now } : {}) });
     this.pool = options.pool ?? poolAgent;
@@ -281,6 +282,11 @@ export class ClaudeAccountsService {
     return env;
   }
 
+  /** The Claude program each spawn runs: the one given, else the host's own (looked up at the spawn, never at start). */
+  private get executable(): string {
+    return this.executableOption ?? claudeExecutable();
+  }
+
   private run(args: string[], dir: string, timeoutMs: number): Promise<number | null> {
     return new Promise((resolve) => {
       let child: ChildProcess;
@@ -411,7 +417,7 @@ export class ClaudeAccountsService {
       this.endFlow(flow, { state: "failed", error: reason.slice(0, 300) });
       return;
     }
-    const identity: ClaudeLoginIdentity | null = readIdentityFile(claudeJsonPath(flow.dir, false)) ?? readIdentityFromStatus(flow.dir, this.executable);
+    const identity: ClaudeLoginIdentity | null = readIdentityFile(claudeJsonPath(flow.dir, false)) ?? readIdentityFromStatus(flow.dir, this.executableOption);
     if (flow.target) { this.signedInAgain(flow, flow.target, identity); return; }
     const existing = readAccounts(this.agentDir).value;
     const sharedAccount = !!identity?.accountUuid && (

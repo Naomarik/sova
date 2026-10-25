@@ -27,7 +27,7 @@ ignores the arguments and opens its terminal monitor (§chat.slash-commands/tui-
 
 The subagents row was plain text: `.run-status`, shown whenever at least 1 worker runs — the
 parent's own turn included (§chat/transcript "Run status") — and, once the parent is idle, also when the
-session has settled workers. It becomes a control. The `<p>` stays, and a
+session has workers it offers (below). It becomes a control. The `<p>` stays, and a
 button takes its contents. The row is no longer only this: §chat/timeline's inputs trigger sits at its
 right end, and the row renders whenever any of streaming, workers or inputs has something:
 
@@ -36,8 +36,9 @@ right end, and the row renders whenever any of streaming, workers or inputs has 
   <!-- the row's one live dot, while anything works (§chat.transcript/streaming); never the trigger's -->
   <span class="live-dot" aria-hidden="true"></span>
   <button type="button" class="run-status-link" aria-expanded="false" aria-controls="session-pane"
-          aria-label="2 of 5 subagents working — show subagents" title="2 of 5 subagents working — show subagents">
-    <!-- the ring: working of all, filled clockwise from 12 o'clock; empty once all have settled -->
+          aria-label="2 of 5 subagents working · 18 ended: 16 stopped, 2 failed — show subagents"
+          title="2 of 5 subagents working · 18 ended: 16 stopped, 2 failed — show subagents">
+    <!-- the ring: working of the live ones, filled clockwise from 12 o'clock; empty while none works -->
     <svg class="workers-ring" viewBox="0 0 14 14" aria-hidden="true">
       <circle class="workers-ring-track" cx="7" cy="7" r="6" fill="none"></circle>
       <circle class="workers-ring-fill" cx="7" cy="7" r="6" fill="none" transform="rotate(-90 7 7)"
@@ -57,10 +58,22 @@ right end, and the row renders whenever any of streaming, workers or inputs has 
   live dot: the row's one dot, before everything else in it, says work is in flight, whether the
   parent's turn or only its workers. What the trigger shows instead is a **ring meter**: a static
   14px ring, its arc in ink over a muted track, filled clockwise from 12 o'clock by the share of
-  the session's workers that are working now (2 of 5: two fifths), and **empty** once every one
-  has settled. Wide, the ring, the words — "2 of 5 subagents working", "5 subagents" once all have
-  settled — and the chevron; narrow, the ring and the count, "2/5" while any work, else every one
-  the session has, "5". The words are the same whether or not the parent's own turn runs. With
+  the session's **live** workers that are working now (2 of 5: two fifths), and **empty** while
+  none works. A worker is live until it has ended: one that is done, failed or stopped (status
+  `done`, `error`, `killed`) has ended; every other one — starting, running, stopping, waiting (an
+  idle team member is one) or restored (settled, with no process, but not ended: it can be
+  resumed, §app.worker-restore/restore) — is live for this count. The session's worker list keeps every worker it
+  ever started, so the ended ones are left out of the figure and named in the tooltip instead.
+  Wide, the ring, the words — "2 of 5 subagents working", "5 subagents" while none works, with 5
+  the live ones — and the chevron; narrow, the ring and the count, "2/5" while any work, else the
+  live ones, "5". When none is live but some have ended, the row stays so the pane is still one
+  click away: "18 subagents, all ended" (one: "1 subagent, ended") wide, "18" narrow, the ring empty. The words are the same
+  whether or not the parent's own turn runs. Ended workers are told in the accessible name and
+  tooltip, after the words and a " · ": "18 ended: 16 stopped, 2 failed" — stopped, failed, then
+  done, a kind at 0 left out — or, all ended, "18 subagents, all ended: 16 stopped, 2 failed".
+  When the list doesn't name every ended worker (a live record lists at most 40, the live ones
+  first), the note is the count alone, "18 ended", never a split that doesn't add up; no note
+  when none has ended, or before this view has the session's worker list. With
   team members among the working ones the noun follows them — "2 of 5 team members working", or
   "3 of 5 workers working" for a mix — and the tooltip adds the split, "1 subagent · 2 team
   members", on its own line. A working worker is a team member when the session's teams list
@@ -77,8 +90,8 @@ right end, and the row renders whenever any of streaming, workers or inputs has 
   start are the row's gap — 8px wide, 6px narrow, where its parts also sit 4px apart — so its ring
   sits one gap after the row's dot, as the Working state's icon does.
 - **The count changes in place.** The accessible name, which is also the tooltip, is the words
-  plus what the control does: "2 of 5 subagents working — show subagents" ("— show workers" once
-  team members are among them); with one team behind the count, the tooltip adds "Team · {name}"
+  plus the ended note and what the control does: "2 of 5 subagents working · 18 ended: 16
+  stopped, 2 failed — show subagents" ("— show workers" once team members are among the working); with one team behind the count, the tooltip adds "Team · {name}"
   on another line. A watched session with no pane to open shows the same thing as plain text: the
   ring and the words wide; the ring and count narrow, the words visually hidden.
 
@@ -86,8 +99,9 @@ right end, and the row renders whenever any of streaming, workers or inputs has 
 |---|---|
 | Parent turn running (or Stopping, a rare state, a compaction), ≥ 1 working | The run status (§chat/transcript) after the row's one dot, **and** this trigger beside it, with no dot of its own: the ring at 2 of 5, "2 of 5 subagents working" wide, "2/5" narrow; labelled "2 of 5 subagents working — show subagents". This is how the pane is one click away mid-turn |
 | Idle, 0 workers ever | No row, no trigger. `/agents` still opens the pane, which says so |
-| Idle, ≥ 1 working | The row's one dot, then the trigger: the ring at 2 of 5, "2 of 5 subagents working" wide, "2/5" narrow; labelled "2 of 5 subagents working — show subagents" |
-| Idle, none working, ≥ 1 settled | The trigger, **no dot in the row**: the empty ring, "5 subagents" wide, "5" narrow; labelled "5 subagents — show subagents". The per-worker counts and the Σ are what it's for, and they outlive the work |
+| Idle, ≥ 1 working | The row's one dot, then the trigger: the ring at 2 of 5, "2 of 5 subagents working" wide, "2/5" narrow; labelled "2 of 5 subagents working — show subagents" (with ended ones: "2 of 5 subagents working · 18 ended: 16 stopped, 2 failed — show subagents") |
+| Idle, none working, ≥ 1 live | The trigger, **no dot in the row**: the empty ring, "5 subagents" wide, "5" narrow (5 live, ended ones left out); labelled "5 subagents — show subagents" (with ended ones: "5 subagents · 18 ended: 16 stopped, 2 failed — show subagents"). The per-worker counts and the Σ are what it's for, and they outlive the work |
+| Idle, none live, ≥ 1 ended | The trigger, no dot: the empty ring, "18 subagents, all ended" wide, "18" narrow; labelled "18 subagents, all ended: 16 stopped, 2 failed — show subagents" |
 | Hover · active | Sunken fill, ink words or count, icons to ink · active also moves 1px down, like `.button` |
 | Focus-visible | The 2px accent ring, at `--r-md` |
 | Pane open | `aria-expanded="true"`. **No pressed styling**: the open pane beside it is the state, and a tinted trigger would be one more accent-adjacent thing in a composer that has Send. Clicking again closes the pane |
@@ -97,15 +111,19 @@ parent runs, the trigger stays in the row beside its run status, so watching the
 is one click rather than a wait for the turn to settle.
 
 Opening a chat shows the settled trigger from the view's first frame, with the count the session
-list has for it (its live record's worker total) whenever the chat's
-socket hasn't said otherwise: the socket's count shows while its latest `workers` message since the
-`hello` lists any, or when the list counts none; a `workers` message listing none never takes a
-count the list has down to nothing. The `hello`
-alone changes nothing on the trigger — its runtime's first `workers` can come well after it, or
-not at all while the runtime has no live record yet, or list none while its extension is still
-restoring its workers — so the count never blinks off and back at the `hello`. A working trigger (a filled
-arc) comes only from this chat's own `workers` messages. A watched session's
-trigger reads the same list count until its insight lands.
+list has for it (its live record's worker total, which still counts ended workers, with no ended
+note) whenever the chat's socket hasn't said otherwise: the socket's live count and ended note
+show while its latest `workers` message since the `hello` lists any, or when the list counts
+none; a `workers` message listing none never takes a count the list has down to nothing. The
+socket's first list can lower that figure once, to the live ones. The ended count is the
+message's total less the live ones it lists. The `hello` alone changes nothing on the trigger —
+its runtime's first `workers` can come well after it, or not at all while the runtime has no live
+record yet, or list none while its extension is still restoring its workers — so the row never
+blinks off and back at the `hello`. A working trigger (a filled arc) comes only from this chat's
+own `workers` messages, and it never draws more working than its figure: a figure below the
+working count reads as the working count. A watched session's trigger reads the same list count
+until its insight lands, then the live ones and the ended note from the insight's worker list and
+worker total.
 
 ## §app.subagents-pane/shell-a-third-column — Shell: a third column
 
@@ -209,11 +227,15 @@ strip, empty or not: a tab that came and went would move the strip under the rea
   tracked worktree, still add their height when they land.
 - **Usage** is what the session has spent, from the usage ledger (§app.insights/usage-ledger,
   `GET /api/usage/session`, polled while the tab shows). First the headline,
-  `{n} tokens in and out · $x` (input + output; cache in its `title`; dollars at API prices,
-  subscriptions included). Under it, when the session's own conversation re-sent its history, the
+  `{n} tokens in and out · $x · {p}% from cache` (input + output; cache in its `title`; dollars at API prices,
+  subscriptions included; the cache hit rate, below, left out when the session reported no cache use). Under it, when the session's own conversation re-sent its history, the
   re-sent line (§app.insights/usage-resend-display). Then a table with one row per model × origin, the main thread first and
   then the biggest spender: Model · Where (Main thread, Side calls, Subagents) · In · Out ·
-  Cache read · Cache write · Cost, with a **Main thread Σ** footer. Every branch counts, retries
+  Cache read · Cache write · Hit rate · Cost, with a **Main thread Σ** footer. The **cache hit rate** is the
+  share of input tokens read from cache: cache read ÷ (input + cache read + cache write), output
+  left out, in whole percent (`<1%` and `>99%` at the edges, never a rounded `0%` or `100%` that
+  isn't exact). A row with no cache read or write shows `—`, its `title` "No cache use reported
+  for this model."; such rows still count their input in the headline's and Σ's rates. Every branch counts, retries
   and housekeeping included; a fork counts only its own calls. Then this session's workers:
   `{n} subagents · {w} working`. Under 400px of pane the table stacks, one block per row: Model and
   Where on its first line, each count labelled under it. Before anything is spent the tab says
@@ -313,7 +335,8 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
 
 - **Anatomy.** The whole row is the button, 44px minimum. Line 1 is the name (the team role when
   the worker is a team member, else its own name), with the context ring and the status chip at
-  the right. Line 2 is the meta. Every line ellipsizes. **There's no excerpt of the worker's reply**, whether that's
+  the right; a team member with open inbox items also shows its `{n} open` count chip
+  (§app.subagents-pane/member-inbox). Line 2 is the meta. Every line ellipsizes. **There's no excerpt of the worker's reply**, whether that's
   "No response yet." or the reply itself: one clipped line of a reply said little and cost every
   row a line. The transcript says it whole, one tap away.
 - **The meta line ranks its facts** (`.meta-line`, shared with the transcript view's meta). It is
@@ -347,6 +370,7 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
   | `running`, its model request waiting on its provider's limit (§app.provider-limits/waiting-shown) | `.chip` + dot, Queued, the waiting text in `title` | `{provider}` · `{model}` · `{tokens}` |
   | `restored`, mid-task at the restart (`interruptedAt`) | `.chip.chip-warn` Interrupted | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
   | a team member whose `ejectedAt` is set (§app.teams/seats) | `.chip` + dot, Ejected, **before** the status chip, which stays | unchanged |
+  | its newest report says done but not that it ran tests or checks (§app.decisions/worker-report) | `.chip.chip-warn` + dot, Untested, **before** the status chip, which stays; the source in `title` | unchanged |
 
   **Tokens** are that worker's spend from the usage ledger (§app.insights/usage-ledger: its own
   calls and its own workers', at any depth; input + output, mono, the same §chat/context-window
@@ -422,13 +446,14 @@ When the record's worker count is larger than the list, the end of the list says
 ## §app.subagents-pane/transcript-view — Transcript view
 
 A nested, read-only session view: **no composer, no Send, no Steer, no Stop, no attach**, and
-no disabled composer with a reason either. The one exception is a restored worker
+no disabled composer with a reason either. A team member's view puts it under a Transcript tab
+beside its Inbox (§app.subagents-pane/member-inbox). The one exception is a restored worker
 (§app.worker-restore/restore). Under its view head, a `usage-note` says what happened: a
 `restored` one reads "Not running since a server restart." (interrupted: "Not running since a
 server restart; it was mid-task at {HH:MM}, and that turn never finished."). The pane offers no
 resume: that is the parent agent's `agent_resume` or `/agent-resume` (§app.worker-restore/resume).
 A worker that had ended shows no note. The transcript itself stays read-only. A worker's session belongs to its worker, and the
-webapp never writes to it (CLAUDE.md: no file locking).
+webapp never writes to it (AGENTS.md: no file locking).
 
 ```html
 <div class="subagents-view">
@@ -457,7 +482,7 @@ webapp never writes to it (CLAUDE.md: no file locking).
   when it has them), then a meta line of four short facts, so it holds one row at a normal pane
   width: **the model** leads, bare and in mono, the only fact that clips
   (`.meta-line-shrink`); its `title` carries the route that serves it and the full id
-  (`{provider} · {model id}`, e.g. "claude code · claude-haiku-4-5-20251001"). Then **the
+  (`{provider} · {model id}`, e.g. an older native Claude Code worker's "claude code · claude-haiku-4-5-20251001"). Then **the
   effort**, as the bare level in mono (`low`, `title` "effort low"; a worker that reports none
   shows nothing here), then the worker's tokens as `{n} tok` (the usage breakdown in its `title`),
   and last the **context readout**
@@ -500,8 +525,8 @@ webapp never writes to it (CLAUDE.md: no file locking).
 | Workers list couldn't be fetched | `.banner-warn`: **Couldn't load this session's subagents.** {message} Your workers keep running. We'll retry on our own. Whatever is shown stays |
 | Selected, file empty (just started) | View head, then `.empty.subagents-empty`: **0 entries in {name}'s session so far.** Entries show up here as it writes them. |
 | Loading (after 300ms) | View head, then §chat/transcript's loading skeletons in the thread. `aria-busy="true"` on the section |
-| Selected, no session yet (Claude Code worker) | View head, then `.empty.subagents-empty`: **Its transcript isn't available in Sova.** `{name}` is starting — no Claude session yet. Latest: {preview, mono}. (Pi worker from an older pi-config: …runs on a pi that doesn't publish its session file yet.) |
-| File gone, first load | View head, then `.empty.subagents-empty`: **Couldn't find this worker's transcript.** `{path}` is gone (a claude-code worker reads `Claude session {id}`). Nothing else changed. |
+| Selected, no session yet (older native Claude Code worker) | View head, then `.empty.subagents-empty`: **Its transcript isn't available in Sova.** `{name}` is starting — no Claude session yet. Latest: {preview, mono}. (Pi worker from an older pi-config: …runs on a pi that doesn't publish its session file yet.) |
+| File gone, first load | View head, then `.empty.subagents-empty`: **Couldn't find this worker's transcript.** `{path}` is gone (an older native claude-code worker reads `Claude session {id}`). Nothing else changed. |
 | File gone after loading | Keep what's shown. `.banner-warn` in the banner slot: **This transcript's file is gone.** What's shown is up to `{HH:MM}`. |
 | Connection lost, retrying | Keep what's shown. `.banner-warn`: **Stopped watching. The connection dropped.** What's shown is up to `{HH:MM}`. Reconnecting… (§design.copy-deck/live-watch). Pulses stop |
 | Gave up | `.banner-error`: **Lost the connection to the Sova server.** Nothing in the session changed. Check `pnpm run dev:server` is running, then retry. · `Reconnect` |
@@ -510,6 +535,73 @@ webapp never writes to it (CLAUDE.md: no file locking).
 A settled worker's transcript stays readable: Done, Failed and Stopped workers keep their rows
 for as long as the parent lists them, and a selected one stays shown after that (sticky
 selection, above).
+
+## §app.subagents-pane/member-inbox — A team member's inbox
+
+The Session detail pane's Agents tab shows each team member's inbox (§app.teams/inbox), read-only.
+A worker that belongs to no team, or a member with no inbox file yet, shows none of this.
+
+```html
+<button class="subagent-row" type="button">
+  …name · ring · status chip…
+  <span class="chip chip-count" title="3 open items in its inbox">3 open</span>   <!-- n > 0 only -->
+  …meta line…
+</button>
+<div class="subagents-view">
+  <header class="subagents-view-head">…as in the transcript view…</header>
+  <div class="subagents-view-tabs" role="tablist" aria-label="builder">
+    <button role="tab" aria-selected="true">Transcript</button>
+    <button role="tab" aria-selected="false">Inbox · 3 open</button>
+  </div>
+  <section class="subagents-inbox pane" role="tabpanel" aria-label="builder inbox">
+    <ul class="inbox-list">
+      <li class="inbox-item" data-status="new">
+        <button class="inbox-item-line" aria-expanded="false">
+          <span class="chip chip-warn"><i class="chip-dot"></i>Urgent</span>   <!-- urgent items only -->
+          <span class="inbox-item-subject">Wrap up: context 78%</span>
+          <span class="meta-line">Notice · from monitor · <span class="chip">New</span> · 5m ago</span>
+        </button>
+        <p class="inbox-item-note">…the member's note, when it set one…</p>
+        <div class="inbox-item-body">…the message, once opened…</div>
+      </li>
+    </ul>
+  </section>
+</div>
+```
+
+- **The count on the row.** A team member's worker row (§app.subagents-pane/worker-rows) shows a
+  quiet count chip, `{n} open`, when it has open items (new or read, not returned, never an
+  instruction copy); none at 0.
+- **Two tabs.** A team member's transcript view (§app.subagents-pane/transcript-view) gets two
+  tabs under its head: Transcript (today's view, the default) and Inbox, labelled `Inbox · {n}
+  open` when it has open items, else `Inbox`.
+- **Each item.** Newest first, one row each: the urgent mark when urgent (a warn chip, dot and
+  the word "Urgent"), the subject, then a meta line: its kind (Message, Question, Report,
+  Handover, Notice, Instruction) · who sent it (`from builder`, `from main thread`, `from Sova`)
+  · its status as a chip with its word (New, Read, Addressed, "Closed automatically" for an item
+  addressed by Sova's safety net (§app.teams/inbox-zero), a plain chip unlike Addressed's, or
+  "Returned to sender") · when it
+  was sent, in relative time with the full time in `title`. An item that came from another
+  member's inbox (moved at a handover or forwarded) says "Moved from {role}"; an item that moved
+  away no longer shows in the old member's inbox. The member's note, when it set one, is on its
+  own line.
+- **The summary line.** Above the list, one line counts the inbox: `{o} open · {m} closed by
+  {role} · {a} closed automatically` (a reply counts as closed by the member; a part at 0 is
+  left out; no line when every part is 0). A server that doesn't send the split shows no summary line, and every closed item
+  reads Addressed.
+- **Opening.** A press on an item opens it (`aria-expanded`) and shows its whole message, read
+  from the server only then; a second press closes it. Opening an item here never changes its
+  status: only the member marks its items.
+- **Read-only.** The user reads every inbox and changes nothing: no marking, no sending, no
+  deleting. The server only reads the inbox files the main chat's extension writes and never
+  writes them. The read is a looks entry on the commands catalogue.
+- **Fresh while open.** The tab is polled while it is open, at the pane's own poll, so a new or
+  addressed item shows without reopening.
+- **How many.** The newest 500 items show; past that, a line under the list says "The newest
+  500 of {total} items."
+- **Empty and failed.** An inbox with no items reads "0 items in {role}'s inbox." over "Messages
+  and notices sent to it show up here." A read that fails shows an error banner, "Couldn't read
+  {role}'s inbox." with "Nothing in it changed." and the reason, and a Retry button.
 
 ## §app.subagents-pane/context-fill — Each worker's context fill
 
@@ -522,7 +614,7 @@ nothing before its first such reply. Never 0 for unknown. It rides the wire as
 (a fill, `"compacted"` stated explicitly, or `null` before the first reply).
 
 - **Both backends, one rule.** A pi worker's reply carries `usage.input`, `cacheRead`,
-  `cacheWrite`; a Claude Code worker's `input_tokens`, `cache_read_input_tokens`,
+  `cacheWrite` (a Claude Code worker's included); an older native Claude Code worker's `input_tokens`, `cache_read_input_tokens`,
   `cache_creation_input_tokens`, on every line the CLI repeats a reply on. Claude Code's
   `isApiErrorMessage` and `<synthetic>` replies count as failed, a `compact_boundary` as a
   compaction, and nested agents' (`isSidechain`) lines are their own context, so they are skipped.
@@ -547,21 +639,43 @@ nothing before its first such reply. Never 0 for unknown. It rides the wire as
 
 ## §app.subagents-pane/claude-code-workers — Claude Code workers
 
-A worker on the claude-code backend writes no pi session file; it writes its own Claude Code
-transcript at `~/.claude/projects/<cwd-slug>/<sessionId>.jsonl`, and the live record gives us the
-session id (`WorkerInfo.sessionId`). Its meta line's provider reads `claude code`: this backend
-names its own route rather than an LLM provider. The viewer opens `/ws/watch?claude=<uuid>` instead of
+A worker started with `backend: "claude-code"` (by `agent_spawn`, a team member, a team's
+coordinator or monitor, Delegate or any other caller) runs a Claude model on Sova's tools: it is a
+pi worker whose model is the Claude Code provider's (`claude-code-cli/<catalog id>`), the same path
+a Claude Code chat runs on (§app/claude-code-provider). Its CLI runs with no built-in tools; every
+tool it calls is pi's, so its transcript is its pi session file, read, restored and resumed like any
+pi worker's, and it is recorded with backend `pi`. What the spawn asks for maps onto that worker:
+
+- **Model.** A Claude catalog id (an old id read as its catalog model,
+  §app.claude-code-provider/legacy-ids), or Sonnet's current id when none is given.
+- **Effort.** `low`, `medium` (the default), `high`, `xhigh` or `max`, kept as the worker's
+  thinking level after its model is set; the provider passes it to the CLI as its effort.
+- **Tools.** Claude's names map to Sova's: `Read` → `read`, `Bash` → `bash`, `Edit` → `edit`,
+  `Write` → `write`, `Grep` → `grep`, `Glob` → `find`, `LS` → `ls`; Sova's own names are accepted
+  as they are. Any other name (`WebFetch`, `Task`, …) is refused at spawn with that list. With no
+  `tools`, the worker gets all seven.
+- **`backendOptions`.** `permissionMode` `bypassPermissions` or `dontAsk` change nothing (the
+  worker has exactly the tools it was given, with no approval step); `plan` leaves it only `read`,
+  `grep`, `find` and `ls`. `acceptEdits` and `manual`, `allowedTools` and `maxBudgetUsd` are refused
+  at spawn with the reason: Sova's tools have no per-call approval and no spend ceiling.
+- **Team tools, sandbox, remote targets, spec mode, failover.** As for any pi worker: a member
+  loads the member tools, the session's sandbox confines each tool call (§chat.sandbox/workers), a
+  remote session's worker gets the remote tools, and a turn moves to another Claude login the way a
+  chat's turn does (§app.claude-logins/failover).
+
+A worker that ran before this change, on the Claude Code CLI's own tools, wrote no pi session file;
+it wrote its own Claude Code transcript at `~/.claude/projects/<cwd-slug>/<sessionId>.jsonl`, and
+its record holds the session id (`WorkerInfo.sessionId`). It stays readable; resuming it continues
+on Sova's tools in a new pi session under the same id (§app.worker-restore/resume), whose first
+message names this transcript's file. Its meta line's provider reads `claude code`: that
+backend names its own route rather than an LLM provider. The viewer opens `/ws/watch?claude=<uuid>` instead of
 `?path=`; the server finds the file by scanning the project dirs (id must be a UUID, the resolved
 file must stay inside `~/.claude/projects`; `server/claude-transcript.ts`) and tails it read-only
 like any other. CC's JSONL is normalized into the same `TranscriptItem` rows, each carrying a
 pi-shaped synthetic `raw`, so every row renders through the existing components: prose, thinking
 (redacted signature-only blocks are dropped), tool calls paired with their results (CC's `Bash`,
 `Read`, `Edit`, `Write`, `Glob`, `Grep` map to pi's names and icons; anything else keeps CC's
-name), compaction boundaries as info rows. A worker whose Claude login leaves the device
-(§app.claude-logins/drain) moves to the next login with `--resume` of its own session, so this
-view keeps following the same file (every login keeps its transcripts in Claude Code's own
-`projects/`); the worker's own transcript gets the line `Claude: moved {A} → {B} (the login left
-this device)`. Image blocks (`{type:"image", source:{type:"base64",
+name), compaction boundaries as info rows. Image blocks (`{type:"image", source:{type:"base64",
 media_type, data}}`), in a tool result or a prompt, become the row's `images` as data URLs, the
 same field a pi row fills, so a worker's image results show in its tool cards as a pi session's
 do (§chat.images/thread-thumbnails); they never become placeholder text. Sidechains (a

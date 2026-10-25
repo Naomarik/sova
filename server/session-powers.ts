@@ -11,6 +11,7 @@ import { redactingTool, serverRedactor } from "./overseer-redact";
 import { auditedAct, cut, hiddenFromProfiles, Refusal, readBounds, renderTranscript, sessionRef, text, writableRefusal, type AuditRecord } from "./session-guards";
 import { stateRoot } from "./state-root";
 import { UserTurns, type TurnEvent, userMessageText } from "./user-turns";
+import { lockOwned } from "./write-guard";
 import { inviteFromSend, queueOpenTool } from "./topics";
 
 /**
@@ -20,22 +21,44 @@ import { inviteFromSend, queueOpenTool } from "./topics";
  * can send is ever taken for them.
  */
 
-/** What the tools need from the server, bound late (server/session-powers-host.ts sets it). */
+/** How a send went: `unknown`, the server stopped while it ran (al_3 q5), so it may have happened. */
+export type PowersSendResult = { ok: true; queued: boolean; kind: string } | { ok: false; error: string; unknown?: true };
+
+/** A session message's hand-off, as data (a chat in its own process sends it to the server as the
+    `@powers.send` action). `invite`: the text the sender wrote, for the topics it names (inviteFromSend). */
+export interface PowersSend {
+  path: string;
+  text: string;
+  delivery: "followUp" | "steer" | undefined;
+  from: { sessionId: string; title: string; hop: number };
+  invite: { target: string; text: string };
+}
+
+/** What the tools need from the server, bound late: session-profile-routes.ts in the server's
+    process, the chat's socket in a chat process of its own (server/chat-runtime/host.ts). */
 export interface PowersHost {
   sessions(): Promise<SessionSummary[]>;
   session(id: string): Promise<SessionSummary | null>;
   transcript(path: string): Promise<TranscriptItem[]>;
   insight(path: string): Promise<SessionInsight | null>;
-  held(path: string): { streaming: boolean; queued: number } | null;
+  held(path: string): Promise<{ streaming: boolean; queued: number } | null> | { streaming: boolean; queued: number } | null;
   /** The project root of a folder (§chat.profiles/projects), null when it has none. */
   projectRoot?(cwd: string): Promise<string | null>;
-  /** Hand `text` (already carrying its header line) to the target, marked as `from`'s. */
-  send(
-    path: string,
-    text: string,
-    delivery: "followUp" | "steer" | undefined,
-    from: { sessionId: string; title: string; hop: number },
-  ): Promise<{ ok: true; queued: boolean; kind: string } | { ok: false; error: string }>;
+  /** Hand `text` (already carrying its header line) to the target, marked as `from`'s, inviting it
+      to the sender's topics the text names (kept only if the send is accepted). */
+  send(a: PowersSend): Promise<PowersSendResult>;
+  /** `queue_open` as this chat registers it: served by the server for a chat in its own process.
+      Absent: the tool runs here. */
+  queueOpen?(): ToolSpec | null;
+}
+
+/** A send with its topic invitations: recorded before the hand-off, kept only if it is accepted. */
+export async function sendInviting(a: PowersSend, send: (a: PowersSend) => Promise<PowersSendResult>): Promise<PowersSendResult> {
+  const invites = inviteFromSend(a.from.sessionId, a.invite.target, a.invite.text);
+  const r = await send(a).catch((err): PowersSendResult => ({ ok: false, error: err instanceof Error ? err.message : String(err) }));
+  if (r.ok) invites.accepted();
+  else invites.refused();
+  return r;
 }
 let host: PowersHost | null = null;
 export function setPowersHost(h: PowersHost): void {
@@ -94,32 +117,43 @@ export class SessionLimits {
     return { turn, day: today, own };
   }
   private mem: Counts | undefined;
-  private write(c: Counts): void {
+  /**
+   * Change this session's counts as they stand in the file now: the read and the write are one step
+   * under the file's lock, since the server and every chat process with powers rewrite the whole
+   * file (two at once would each drop the other's counts).
+   */
+  private update(change: (c: Counts) => Counts | null): void {
     if (!this.file) {
-      this.mem = c;
+      const next = change(this.read());
+      if (next) this.mem = next;
       return;
     }
-    let all: { version: 1; sessions: Record<string, Counts> } = { version: 1, sessions: {} };
-    try {
-      const raw = JSON.parse(readFileSync(this.file, "utf8"));
-      if (raw && typeof raw.sessions === "object") all = { version: 1, sessions: raw.sessions };
-    } catch {
-      // missing or unreadable: start over
-    }
-    all.sessions[this.sessionId] = c;
+    let unlock: (() => void) | null = null;
     try {
       mkdirSync(dirname(this.file), { recursive: true });
+      unlock = lockOwned(`${this.file}.lock`);
+      const next = change(this.read());
+      if (!next) return;
+      let all: { version: 1; sessions: Record<string, Counts> } = { version: 1, sessions: {} };
+      try {
+        const raw = JSON.parse(readFileSync(this.file, "utf8"));
+        if (raw && typeof raw.sessions === "object") all = { version: 1, sessions: raw.sessions };
+      } catch {
+        // missing or unreadable: start over
+      }
+      all.sessions[this.sessionId] = next;
       const tmp = `${this.file}.${process.pid}.tmp`;
       writeFileSync(tmp, `${JSON.stringify(all)}\n`);
       renameSync(tmp, this.file);
     } catch (err) {
       console.warn("[session-powers] limits not saved:", err instanceof Error ? err.message : String(err));
+    } finally {
+      unlock?.();
     }
   }
   /** A message the user sent entered: the per-message allowance starts over. */
   userMessage(): void {
-    const c = this.read();
-    if (c.turn !== 0) this.write({ ...c, turn: 0 });
+    this.update((c) => (c.turn !== 0 ? { ...c, turn: 0 } : null));
   }
   /** A run started: the per-run targets start over. */
   runStarted(): void {
@@ -151,15 +185,13 @@ export class SessionLimits {
   }
   /** Spend one send; returns what `give` needs to hand it back. */
   take(target: string, attended: boolean): () => void {
-    const c = this.read();
-    this.write(attended ? { ...c, turn: c.turn + 1 } : { ...c, own: c.own + 1 });
+    this.update((c) => (attended ? { ...c, turn: c.turn + 1 } : { ...c, own: c.own + 1 }));
     const newTarget = !this.runTargets.has(target);
     this.runTargets.add(target);
     const at = this.now();
     pairSends.set(this.pairKey(target), [...this.pairRecent(target), at]);
     return () => {
-      const n = this.read();
-      this.write(attended ? { ...n, turn: Math.max(0, n.turn - 1) } : { ...n, own: Math.max(0, n.own - 1) });
+      this.update((n) => (attended ? { ...n, turn: Math.max(0, n.turn - 1) } : { ...n, own: Math.max(0, n.own - 1) }));
       if (newTarget) this.runTargets.delete(target);
       const list = pairSends.get(this.pairKey(target)) ?? [];
       const i = list.lastIndexOf(at);
@@ -182,12 +214,14 @@ export class SessionLimits {
  */
 export class RunState {
   readonly turns = new UserTurns();
-  private hops = new Map<string, number>();
+  /** Hops of session messages handed in and not seen yet, per text, oldest first: several can be in pi
+      at once (steers land together), and they enter in the order they were handed in. */
+  private hops = new Map<string, number[]>();
   hop = 0;
   constructor(private readonly limits: SessionLimits) {}
   /** The chat runtime is about to hand in a message another session sent. */
   expectHop(text: string, hop: number): void {
-    this.hops.set(text, hop);
+    this.hops.set(text, [...(this.hops.get(text) ?? []), hop]);
   }
   observe(event: TurnEvent): void {
     if (event.type === "run.start") {
@@ -197,9 +231,10 @@ export class RunState {
     if (event.type === "message.start") {
       const t = userMessageText(event.handle);
       if (t !== null) {
-        const h = this.hops.get(t);
+        const waiting = this.hops.get(t);
+        const h = waiting?.shift();
+        if (waiting && !waiting.length) this.hops.delete(t);
         if (h !== undefined) {
-          this.hops.delete(t);
           this.hop = h;
         } else if (!parseWakeNudge(t.trim())) this.hop = 0;
       }
@@ -303,12 +338,14 @@ export function sessionPowersTools(ctx: PowersContext, actionsFile?: () => strin
     if (!s || !(await visibleTo(ctx, s))) throw new Refusal(`No session with id ${id} that this session can see.`);
     return s;
   }
-  const busyBits = (s: SessionSummary) => {
-    const bits = [need().held(s.path) ? "hosted here" : "", workersWorking(s)].filter(Boolean);
+  type Held = Awaited<ReturnType<PowersHost["held"]>>;
+  const busyBits = (s: SessionSummary, held: Held) => {
+    const bits = [held ? "hosted here" : "", workersWorking(s)].filter(Boolean);
     return bits.length ? ` · ${bits.join(" · ")}` : "";
   };
-  const row = (s: SessionSummary) =>
-    `- ${s.id} · "${cut(s.title, 70)}" · ${whereOf(s)} · ${stateOf(s)}${s.profile ? ` · ${s.profile.label}` : ""} · active ${s.lastActiveAt}${busyBits(s)}${s.live ? " · TUI-live (read-only)" : ""}${s.archived ? " · archived" : ""}`;
+  /** A session's row; `held`: what this server hosts of it (PowersHost.held). */
+  const row = (s: SessionSummary, held: Held) =>
+    `- ${s.id} · "${cut(s.title, 70)}" · ${whereOf(s)} · ${stateOf(s)}${s.profile ? ` · ${s.profile.label}` : ""} · active ${s.lastActiveAt}${busyBits(s, held)}${s.live ? " · TUI-live (read-only)" : ""}${s.archived ? " · archived" : ""}`;
   const where = g.has("sessions.all") ? "every session Sova lists on this host" : `sessions in this session's project (${ctx.cwd}'s repository: its main checkout and worktrees) and its folder`;
 
   const tools: Tool[] = [
@@ -333,16 +370,18 @@ export function sessionPowersTools(ctx: PowersContext, actionsFile?: () => strin
           .sort((a, b) => Date.parse(b.lastActiveAt) - Date.parse(a.lastActiveAt));
         const limit = Math.min(50, Math.max(1, p?.limit ?? 25));
         const shown = rows.slice(0, limit);
+        const shownHeld = await Promise.all(shown.map((s) => need().held(s.path)));
         // What a restart of this server would also stop, though these tools never show it: counts by kind only.
         const busy = new Map<string, number>();
-        for (const s of all) {
-          if (s.id === ctx.sessionId || !hiddenFromProfiles(s)) continue;
-          const held = need().held(s.path);
+        const hiddenOnes = all.filter((s) => s.id !== ctx.sessionId && hiddenFromProfiles(s));
+        const hiddenHeld = await Promise.all(hiddenOnes.map((s) => need().held(s.path)));
+        hiddenOnes.forEach((s, i) => {
+          const held = hiddenHeld[i];
           if (held && (held.streaming || (s.workers?.working ?? 0) > 0)) busy.set(hiddenKind(s), (busy.get(hiddenKind(s)) ?? 0) + 1);
-        }
+        });
         const hidden = busy.size ? [`Also busy on this server, not listed: ${[...busy].map(([k, n]) => `${n} ${k}`).join(", ")}.`] : [];
         return {
-          content: text([`${rows.length} session${rows.length === 1 ? "" : "s"}${rows.length > limit ? `, showing ${limit}` : ""}.`, ...shown.map(row), ...hidden].join("\n")),
+          content: text([`${rows.length} session${rows.length === 1 ? "" : "s"}${rows.length > limit ? `, showing ${limit}` : ""}.`, ...shown.map((s, i) => row(s, shownHeld[i] ?? null)), ...hidden].join("\n")),
           details: { ids: shown.map((s) => s.id) },
         };
       },
@@ -355,13 +394,13 @@ export function sessionPowersTools(ctx: PowersContext, actionsFile?: () => strin
       parameters: obj({ session: str("Session id.") }, ["session"]),
       execute: async (_id: string, p: any) => {
         const s = await resolve(p?.session);
-        const lines = [row(s)];
+        const held = await need().held(s.path);
+        const lines = [row(s, held)];
         const o = (await need().insight(s.path).catch(() => null))?.outline;
         if (o?.overall) lines.push(`Purpose: ${cut(o.overall, 300)}`);
         if (o?.now) lines.push(`Now: ${cut(o.now, 300)}`);
         if (s.align?.openQuestions) lines.push(`Open alignment questions: ${s.align.openQuestions}`);
         for (const w of s.readiness?.trees ?? []) lines.push(`Worktree ${w.branch}: ${w.reason ?? w.state}`);
-        const held = need().held(s.path);
         if (held) lines.push(`Hosted here: ${held.streaming ? "mid-turn" : "idle"}${held.queued ? `, ${held.queued} queued` : ""}`);
         return { content: text(lines.join("\n")), details: { id: s.id } };
       },
@@ -424,18 +463,17 @@ export function sessionPowersTools(ctx: PowersContext, actionsFile?: () => strin
           if (over) throw new Refusal(over);
           const give = ctx.limits.take(s.id, attended);
           const from = { sessionId: ctx.sessionId, title: ctx.title(), hop };
-          // A topic of this session's that the text names invites the target to answer there
-          // as well: recorded before the hand-off, kept only if the send is accepted.
-          const invites = inviteFromSend(ctx.sessionId, s.id, params.text);
+          // A topic of this session's that the text names invites the target to answer there as
+          // well (the host records it before the hand-off and keeps it only if the send is accepted).
           const r = await need()
-            .send(s.path, `${sessionSentHeader(from, hop)}\n${params.text}`, params.delivery, from)
-            .catch((err) => ({ ok: false as const, error: err instanceof Error ? err.message : String(err) }));
+            .send({ path: s.path, text: `${sessionSentHeader(from, hop)}\n${params.text}`, delivery: params.delivery, from, invite: { target: s.id, text: params.text } })
+            .catch((err): PowersSendResult => ({ ok: false, error: err instanceof Error ? err.message : String(err) }));
           if (!r.ok) {
-            give();
-            invites.refused();
+            // An outcome the server couldn't tell (it stopped mid-send) keeps what it spent: the
+            // message may have gone (al_3 q5).
+            if (!r.unknown) give();
             throw new Refusal(r.error);
           }
-          invites.accepted();
           const link = `[${s.title.replace(/[[\]]/g, "")}](sova://s/${s.id})`;
           const said = !r.queued ? `Sent to ${link} (hop ${hop}).` : r.kind === "steer" ? `Queued as a steer in ${link} (hop ${hop}).` : `Queued in ${link} behind its running turn (hop ${hop}).`;
           return { content: text(said), details: { v: 1, target: { id: s.id, title: s.title }, queued: r.queued, kind: r.kind, hop } };
@@ -447,7 +485,7 @@ export function sessionPowersTools(ctx: PowersContext, actionsFile?: () => strin
   // A return address other sessions answer on (§chat.topics/open): only where session_send is.
   if (ctx.path) {
     const path = ctx.path;
-    tools.push(queueOpenTool({ sessionId: ctx.sessionId, path, project: () => need().projectRoot?.(ctx.cwd) ?? Promise.resolve(null) }));
+    tools.push(need().queueOpen?.() ?? queueOpenTool({ sessionId: ctx.sessionId, path, project: () => need().projectRoot?.(ctx.cwd) ?? Promise.resolve(null) }));
   }
   return tools;
 }

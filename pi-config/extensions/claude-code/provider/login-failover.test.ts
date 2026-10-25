@@ -103,7 +103,7 @@ function setup(t: { after: (fn: () => void) => void }, replyFor: (login: string,
 	const children: FakeCli[] = [];
 	const loginOf = (child: FakeCli) => child.env.CLAUDE_CONFIG_DIR === loginDir(agentDir, A) ? A : child.env.CLAUDE_CONFIG_DIR === loginDir(agentDir, B) ? B : "default";
 	const bridge = new SessionBridge({
-		cwd: root, projectsRoot: path.join(claudeDir, "projects"), logins,
+		cwd: root, projectsRoot: path.join(claudeDir, "projects"), logins, executable: "claude",
 		spawnImpl: ((_c: string, _argv: string[], options: any) => {
 			const n = children.length;
 			let child!: FakeCli;

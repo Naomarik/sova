@@ -9,7 +9,7 @@ export type IconName =
   | "alert-circle" | "archive" | "arrow-right" | "attach" | "branch" | "command" | "image" | "attention" | "chat" | "check" | "chevron-down" | "chevron-left"
   | "chevron-right" | "bell" | "clock" | "close" | "copy" | "external" | "eye" | "file" | "folder" | "info" | "more" | "stop"
   | "panel-collapse" | "panel-expand" | "pencil" | "plus" | "refresh" | "search" | "shield" | "shield-on" | "shield-partial" | "shield-off" | "star" | "trash" | "undo" | "settings" | "sliders" | "terminal" | "gauge" | "worker" | "network" | "grid" | "building" | "activity"
-  | "bulb" | "wrench" | "mic" | "share" | "code";
+  | "bulb" | "wrench" | "mic" | "share" | "code" | "expand";
 
 /** A shipped SVG as a mask over currentColor (base.css `span.icon`). Decorative unless labelled. */
 export function Icon(props: { name: IconName; small?: boolean; class?: string }) {
@@ -87,6 +87,23 @@ export function CountChip(props: { href?: string; title?: string; children: JSX.
         {props.children}
       </a>
     </Show>
+  );
+}
+
+/**
+ * Wordless placeholder shapes for a part still loading (the design system's skeleton): `lines` bars,
+ * the last one shorter. Shown only after ~300 ms, so a read that answers at once never flashes one.
+ */
+export function Placeholder(props: { lines?: number; class?: string; label?: string }) {
+  const [shown, setShown] = createSignal(false);
+  const t = setTimeout(() => setShown(true), 300);
+  onCleanup(() => clearTimeout(t));
+  return (
+    <div class={`placeholder${props.class ? ` ${props.class}` : ""}`} aria-busy="true" aria-label={props.label}>
+      <Show when={shown()}>
+        <For each={Array.from({ length: props.lines ?? 3 }, (_, i) => i)}>{(i) => <span class="skeleton skeleton-line" style={i === (props.lines ?? 3) - 1 && i > 0 ? { width: "60%" } : undefined} />}</For>
+      </Show>
+    </div>
   );
 }
 

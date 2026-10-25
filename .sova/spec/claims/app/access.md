@@ -37,7 +37,9 @@ except `sova token`, which exists to be read by its owner.
 ## §app.access/gate — What the gate answers, and what it never asks
 
 The main listener answers a request when it presents the token as either this install's cookie
-or an `x-sova-token: <token>` header, and refuses it otherwise with `401`. The cookie is named
+or an `x-sova-token: <token>` header, or an installed extension's own key in that header
+(§app.extensions/backend-key; never as a cookie, and `403` on `/api/auth/*`), and refuses it
+otherwise with `401`. The cookie is named
 per install, `sova_token_<8 hex>`, so two Sovas on one host name (the live one beside a hermetic
 one: cookies ignore ports) never overwrite each other's; it is `HttpOnly`, `SameSite=Strict`,
 `Path=/`, kept a year, and `Secure` when the app was reached over https. A request carrying
@@ -103,12 +105,23 @@ script cannot set, is answered and given the cookie instead of the unlock screen
 above unchanged: a request carrying proxy headers (which is how the tailnet reaches this listener,
 through loopback), a cross-site request, a page on another port of this host, a foreign Host, and
 any caller that sets no fetch metadata at all still needs the token. The rule is a convenience for
-the person at the keyboard, never a licence for the network.
+the person at the keyboard, never a licence for the network. A guided-tour recorder is not that
+person (§app.tours/sites): every request it makes carries `X-Sova-Tour-Recorder: 1`, and silent
+local sign-in, unlock, /api/auth/token and pairing all refuse a request carrying it; a recorder
+signs in to its own managed test copy only by a cookie Sova sets for that exact address. A request carrying the header, whatever its value, also has every method but GET and HEAD refused,
+and so is its upgrade to any live connection other than `/ws/watch` (the chat socket `/ws/chat`
+included), each logged as one fixed line. A recording of a test
+copy also carries an HTTP-only recorder marker cookie for that copy's origin, because browsers send
+no added headers on a live-connection handshake. The copy treats the marker exactly as it treats
+the recorder header: no silent sign-in, token, pairing or unlock, no write, and no live connection
+other than `/ws/watch`. `/ws/watch` ignores
+every client frame anyway.
 
 Every answer on the main listener, a refusal and the static shell included, carries
 `X-Sova-Server: sova`, which a preview link refuses to pass on, so no preview can front a Sova
 port (§mesh.public/preview). A request forwarded to a peer (`/peer/<id>/…`) carries none of this
-host's credentials — no cookie, no `x-sova-token`, no `Authorization` — and a peer's answer can
+host's credentials — no cookie, no `x-sova-token`, no `Authorization`, no chat's key in
+`x-sova-caller` (§app.command-audit/keys) — and a peer's answer can
 set no cookie here.
 
 The **sockets** are checked the same way and for the same reasons: every upgrade on the main
@@ -158,6 +171,18 @@ alternative for someone who has that launcher.
 - **The phone.** A device reaching the app through `tailscale serve` gets in with a pairing code
   read off a browser that is already unlocked, or with the token its owner copies to it; its host
   name counts as reachable by the rule above.
+- **Its copy.** Heading "Unlock Sova"; "This browser hasn't been let into this Sova yet."; "A pairing
+  code is the way in: on any browser that's already in, open Access to make a code, then open this
+  address with `#c=<code>` after it, or paste the code here." The choice, legend **What are you
+  pasting?**, is two radios, starting on the token (the recovery path that always works): **Pairing
+  code** ("Made in Access on a browser that's already in. Works once, for 5 minutes.") and **Access
+  token** ("This install's long-lived credential, from its token file."). The field is labelled by
+  the choice and masked; its hint is, for a code, "Paste it whole, exactly as Access shows it.", and
+  for the token, the token file's path (`~/.pi/agent/sova/auth-token`, or `sova/auth-token` under the
+  server's `PI_CODING_AGENT_DIR`) with `sova token` and `sova open` as the launcher's alternative.
+  **Unlock** is disabled while the field is empty or a try is under way; a refusal shows its reason
+  under the field. The foot: "Unlocking covers this address only: `127.0.0.1`, `localhost` and a
+  tailnet name each need their own, while two ports of one host share one."
 
 ## §app.access/callers — Everything that is not a browser
 
@@ -169,21 +194,30 @@ Every caller keeps working with no new step for the person:
   runtime without the flag sends none, as before.
 - **Extension UIs** served at `/ext` are the same origin as the app and ride the same cookie.
 - **Extension backends** never see it: a request proxied to one loses every `sova_token_*`
-  cookie, `x-sova-token`, and an `Authorization` that carries the token, while its other cookies
-  and headers (an extension's own `Authorization` included) pass through. A backend that calls
-  this server back reads the token itself, from `SOVA_TOKEN` if started with it or from the token
-  file, as docs/customization.md tells its author.
+  cookie, `x-sova-token`, a chat's key in `x-sova-caller`, and an `Authorization` that carries
+  the token, while its other cookies and headers (an extension's own `Authorization` included,
+  unless it carries an extension's key) pass through. A backend that calls this server back sends
+  its own key (§app.extensions/backend-key), and every such call is recorded as its extension's;
+  reading the token itself, from `SOVA_TOKEN` if started with it or from the token file, still
+  works as before.
 - **Scripts and documented commands** that talk to the main listener send `x-sova-token`, read
   from `SOVA_TOKEN`, else the target's own token file (`scripts/sova-token.mjs` for Node scripts, which
   `pnpm run auth:token` runs from the checkout, and `$(sova token)` in the docs' curl lines for a
-  host that installed the launcher); a rig that starts its own servers pins one token for
-  them with `SOVA_TOKEN`, or reads each server's file.
+  host that installed the launcher; the command line `scripts/sova.mjs`, §app.commands/cli, sends it
+  the same way on its requests and on its `/ws/watch` upgrade); a rig that starts its own servers pins one token for
+  them with `SOVA_TOKEN`, or reads each server's file. From a chat Sova runs, the same helper also
+  sends the chat's key in `x-sova-caller`, beside the token and never instead of it: the key only
+  says which chat called (§app.command-audit/attribution), and a request carrying it can't approve
+  a project mode's hooks (§chat.mode-menu/project-mode-hooks).
 - **`sova token` and `sova open`** are the installed launcher's: `token` prints the token from the
-  agent dir (`$PI_CODING_AGENT_DIR`, else the one the install used), and `open` opens
-  `http://127.0.0.1:<PORT, else the install's port>/#t=<token>` in the browser; neither starts the
-  server, and before the server ever minted a token both say to start it once and exit nonzero.
-  Plain `sova` serves on that same port. With no browser opener (`open` on macOS, `xdg-open`),
-  `open` says to paste the token from `sova token` into the page and exits nonzero.
+  agent dir (`$PI_CODING_AGENT_DIR`, else the one the install used), and before the server ever
+  minted a token says to start it once and exits nonzero; it never starts the server. `open` is
+  `sova app`, what the app entry runs (§app.installer/app-entry): it starts the server when nothing
+  answers on the port, then opens `http://127.0.0.1:<PORT, else the install's port>/#t=<token>` in
+  a bare app window of a Chromium-family browser, or as a tab of the default browser when there is
+  none. Plain `sova` serves on that same port. With neither such a browser nor a browser opener
+  (`open` on macOS, `xdg-open`), `open` says to paste the token from `sova token` into the page
+  and exits nonzero.
 - **A local development server** that proxies to the app presents its own page as the app: it
   forwards the cookie, names the app's own host, and replaces an `Origin` naming the dev server
   itself (a loopback name, as the browser addressed it) with the app's, on requests and socket
@@ -230,6 +264,30 @@ own cookie. The code is a secret in its own right and is treated as one.
   page; that page shows the code, the exact URL to open on the other device, and a copy control.
   It is the only entry point — Settings has no access tab. Nothing here is written to a log, and
   the code and the token never appear in a session file or a tool result.
+- **Its copy.** The Overview's **Access** action ("Get a code to unlock Sova on another browser,
+  another address, or your other device.") opens `#/access`: **Back to Overview**, heading
+  **Access**, then "Let another browser or device into this Sova — a different browser or address
+  on this machine, or your phone — with a one-use code. You never see or share this install's access
+  token." The **Bring a device in** card explains the code ("The code expires in 5 minutes and works
+  once. …") and has **Make a Code** (while minting **Making Code…**, then **Make Another Code**),
+  with a status line: "No code made yet. Make one when your other device is ready.", "Making a code
+  for your other device…", "Your code is ready. Keep the code and link private." or "The code
+  couldn't be made. Try making a code again." A made code shows:
+  - the QR of the first link, when that link is reachable from another device (not loopback),
+    with "Scan with your phone's camera. Keep this QR and its link private." ("This link is too long
+    for an easy-to-scan QR. Copy the link to your other device instead." when it won't fit); with no
+    such link, "Sova has to be reached by its tailnet address for a phone to pair. Open Sova at that
+    address, then make another code.";
+  - the **Pairing code** field, read-only, and a countdown ("4:59 left"; then "This code has
+    expired. Make another code.");
+  - one read-only field per link, labelled **Phone · Tailscale** (the tailnet HTTPS address),
+    **This address** (the page's own origin) or **This machine only** (the page's origin when it is
+    `localhost`), each with **Copy Link** ("Link copied." / "The link wasn't copied. Select it and
+    copy it yourself."), disabled once the code expired.
+  The **If the code path isn't working** section warns that the token is a long-lived credential
+  and that a screenshot shares it, and offers **Reveal Install Token** (**Revealing Token…**), which
+  shows it in an **Install token** field; a failure says to try again or read the token file on the
+  machine Sova runs on.
 - **The token, in full, only where it is needed.** The same page may show the install's token
   behind a second, deliberate step — for the case where the exchange route itself is what is broken
   — and never by default.

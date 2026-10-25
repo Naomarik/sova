@@ -15,13 +15,15 @@ import {
   SOON_CHOICES,
   type ProjectOverseerCaps,
 } from "../../shared/project-overseer";
-import { AUTONOMY_LEVELS, autonomyMeaning, CONFIRM_KINDS, type ConfirmKind, type Autonomy, type CodingStartResult, type ItemCodeInput, type ItemCodeResult, type ItemSendResult, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch } from "../../shared/project-overseer";
+import { type CodingStartResult, type ItemCodeInput, type ItemCodeResult, type ItemSendResult, type CodingSession, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch, type ProjectWorktrees } from "../../shared/project-overseer";
+import type { SessionSummary } from "../../shared/protocol";
 import {
   addProjectOverseerIdea,
   addProjectOverseerTodo,
   ApiError,
   codeProjectItem,
   getProjectOverseer,
+  getProjectWorktrees,
   getSessionSummaryById,
   listModels,
   mergeCodingWorktree,
@@ -37,21 +39,25 @@ import {
 } from "../lib/api";
 import type { GatheringAbilities } from "../../shared/baton";
 import { ABILITIES_KEYS, abilitiesKey, abilitiesLabel, abilitiesOfKey, abilitiesWords, drawHtmlSavedToast, drawHtmlSettable, type AbilitiesKey } from "../lib/gathering-abilities";
-import { codingModeHint, folderNote, mergeGate, mergeNote, offersMerge, offersRemove, removeGate, startedBy, worktreeOrder } from "../lib/coding-worktrees";
+import { codingFromList, codingModeHint, codingRows, folderNote, mergeNote, rowGestures, startedBy, type CodingRow } from "../lib/coding-worktrees";
 import { relativeTime, tildePath } from "../lib/format";
 import { hostLabel, projectHostOf } from "../lib/mesh";
 import { unchangedError } from "../lib/unchanged-error";
 import { createPoll, type Poll } from "../lib/poll";
-import { ACTIVITY_SHOWN, confirmSummary, levelWords, LIMIT_COLUMN_LABEL, LIMIT_COLUMNS, LIMIT_ROWS, limitCell, paceLine, type LimitColumn } from "../lib/project-page";
-import { actionLine, allowanceLine, confirmKindDone, confirmKindLabel, gapArea, gapWords, holdHint, holdWords, toggleConfirmKind, confirmKindsFor, isGap, IDEA_TITLE_MAX, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
+import { ACTIVITY_SHOWN, LIMIT_COLUMN_LABEL, LIMIT_COLUMNS, LIMIT_ROWS, limitCell, paceLine, type LimitColumn } from "../lib/project-page";
+import { actionLine, allowanceLine, gapArea, gapWords, holdHint, holdWords, isGap, IDEA_TITLE_MAX, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
 import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { ActionMenu } from "./ActionMenu";
 import { LinksBanner, type Links } from "./LinksBanner";
-import { Banner, Chip, Icon } from "./ui";
+import { Banner, Chip, Icon, Placeholder } from "./ui";
+import { PowersPanel } from "./PowersGrid";
+import { brakeDone } from "../lib/powers-view";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 const sessionHref = (path: string) => `#/s/${encodeURIComponent(path)}`;
 const POLL_MS = 10_000;
+/** The coding sessions' branch facts (git): read after the list, and less often. */
+const WORKTREES_POLL_MS = 20_000;
 
 /** One item the operator can pass on: an idea or a to-do item. */
 interface Item {
@@ -74,6 +80,10 @@ export interface ProjectOverseer {
   /** The peer that holds the project (null: this host): its models, and the host its words name. */
   host(): string | null;
   info: Poll<ProjectOverseerInfo>;
+  /** The coding sessions with git's facts: the slower second read, merged into `info.coding` by session. */
+  worktrees: Poll<ProjectWorktrees>;
+  /** The project's coding sessions this browser already holds from the session list: rows before any read answers. */
+  listed(): CodingSession[];
   actions: Poll<OverseerAction[]>;
   ideas: Poll<{ ideas: IdeaRecord[] }>;
   todos: Poll<OverseerTodosInfo>;
@@ -87,15 +97,21 @@ export interface ProjectOverseer {
 
 export function createProjectOverseer(props: {
   projectId: string;
+  /** The session list the sidebar holds (App's): the Coding sessions card lists from it until its own read answers. */
+  sessions?: () => readonly SessionSummary[] | undefined;
   /** Whether the overseer is working now, after every read: its acts (a promotion) change the page around it. */
   onBusy?(busy: boolean): void;
 }): ProjectOverseer {
   const p = () => props.projectId;
   const host = () => projectHostOf(p());
-  const info = createPoll(() => getProjectOverseer(p()), POLL_MS);
-  const actions = createPoll(() => projectOverseerActions(p(), 30), POLL_MS);
-  const ideas = createPoll(() => projectOverseerIdeas(p()), POLL_MS * 3);
-  const todos = createPoll(() => projectOverseerTodos(p()), POLL_MS * 3);
+  // Each read is its own (no part waits on another) and starts from what this tab last saw of it.
+  const key = (what: string) => ({ cacheKey: `project:${p()}:${what}` });
+  const info = createPoll(() => getProjectOverseer(p()), POLL_MS, key("overseer"));
+  const worktrees = createPoll(() => getProjectWorktrees(p()), WORKTREES_POLL_MS, key("worktrees"));
+  const actions = createPoll(() => projectOverseerActions(p(), 30), POLL_MS, key("actions"));
+  const ideas = createPoll(() => projectOverseerIdeas(p()), POLL_MS * 3, key("ideas"));
+  const todos = createPoll(() => projectOverseerTodos(p()), POLL_MS * 3, key("todos"));
+  const listed = createMemo(() => codingFromList(props.sessions?.() as SessionSummary[] | undefined, p()));
   const busyNow = createMemo(() => !!info.data()?.busy);
   createEffect(on(busyNow, (b) => props.onBusy?.(b)));
   const [error, setError] = createSignal<string | null>(null);
@@ -120,10 +136,10 @@ export function createProjectOverseer(props: {
       setBusy(false);
     }
   };
-  return { projectId: p, host, info, actions, ideas, todos, error, links, setLinks, busy, run };
+  return { projectId: p, host, info, worktrees, listed, actions, ideas, todos, error, links, setLinks, busy, run };
 }
 
-const setAutonomy = (po: ProjectOverseer, autonomy: Autonomy) => void po.run(() => patchProjectOverseer(po.projectId(), { autonomy }), `Autonomy: ${autonomy}.`);
+const resume = (po: ProjectOverseer) => void po.run(() => patchProjectOverseer(po.projectId(), { resume: true }), brakeDone);
 
 /**
  * The summary's overseer line (§app.organizations/project-page): the level in force, watching, the
@@ -140,14 +156,18 @@ export function OverseerSummary(props: { po: ProjectOverseer; archived?: boolean
       return next;
     });
   const cantOpen = () => !!props.archived && !i()?.exists;
+  // Open Overseer or Start Overseer: which one is the overseer's own state's, so it waits for that (no git) read.
+  const unread = () => !i();
   return (
     <section class="project-summary-overseer" aria-label="Overseer">
       <div class="project-summary-line">
-        <p class="project-summary-status">
-          <Show when={i()} fallback={po().info.pending() ? "Reading the overseer." : "The overseer didn't answer."}>
-            {(x) => <StatusWords info={x()} placed={props.placed} />}
-          </Show>
-        </p>
+        <Show when={i()} fallback={<Placeholder lines={1} class="placeholder-inline" label="Overseer" />}>
+          {(x) => (
+            <p class="project-summary-status">
+              <StatusWords info={x()} placed={props.placed} />
+            </p>
+          )}
+        </Show>
         <div class="cluster project-summary-actions">
           <Show when={i()?.busy}>
             <Chip tone="accent" live>
@@ -157,35 +177,55 @@ export function OverseerSummary(props: { po: ProjectOverseer; archived?: boolean
           <button
             type="button"
             class="button button-sm button-ghost"
-            aria-disabled={po().busy() || i()?.busy || props.archived ? "true" : undefined}
-            title={props.archived ? "Archived" : i()?.busy ? "Working now" : "Look at the project now, as the watch loop would."}
-            onClick={() => !props.archived && !i()?.busy && void po().run(() => runProjectOverseer(po().projectId()), "The overseer is looking now.")}
+            aria-disabled={po().busy() || !i() || i()?.busy || props.archived ? "true" : undefined}
+            title={props.archived ? "Archived" : !i() ? "Not read yet" : i()?.busy ? "Working now" : "Look at the project now, as the watch loop would."}
+            onClick={() => !props.archived && i() && !i()!.busy && void po().run(() => runProjectOverseer(po().projectId()), "The overseer is looking now.")}
           >
             Run Now
           </button>
-          <button type="button" class="button button-sm" aria-disabled={po().busy() || cantOpen() ? "true" : undefined} title={cantOpen() ? "Archived" : undefined} onClick={() => !cantOpen() && openChat()}>
+          <button
+            type="button"
+            class="button button-sm"
+            aria-disabled={po().busy() || unread() || cantOpen() ? "true" : undefined}
+            title={cantOpen() ? "Archived" : unread() ? "Not read yet" : undefined}
+            onClick={() => !cantOpen() && !unread() && openChat()}
+          >
             <Icon name="eye" small />
             {i()?.exists ? "Open Overseer" : "Start Overseer"}
             <Show when={i()?.unread}>{(n) => <span class="chip chip-count">{n()}</span>}</Show>
           </button>
         </div>
       </div>
-      <Show when={po().error() ?? (i() ? null : po().info.error())}>{(e) => <Banner tone="error" title="The overseer didn't answer." body={e()} />}</Show>
+      <Show when={po().error()}>{(e) => <Banner tone="error" title="The overseer didn't answer." body={e()} />}</Show>
+      <Show when={!i() && po().info.error()}>
+        {(e) => (
+          <Banner
+            tone="error"
+            title="Couldn't read the overseer."
+            body={e()}
+            action={
+              <button type="button" class="button button-sm" onClick={() => po().info.refetch()}>
+                Retry
+              </button>
+            }
+          />
+        )}
+      </Show>
       <Show when={po().links()}>{(l) => <LinksBanner links={l()} onDismiss={() => po().setLinks(null)} />}</Show>
       <Show when={i()}>
         {(x) => (
           <>
             <StatusMore info={x()} />
-            {/* Attached on its host from a clone (a restore or a move): nothing runs on its own until the operator says so there. */}
-            <Show when={x().paused}>
-              {(since) => (
+            {/* A brake (an attach on this host, an empty roster): every switch acts as Off until Resume. */}
+            <Show when={x().settings.powers.brake}>
+              {(b) => (
                 <Banner
                   tone="warn"
-                  title={`Paused at L0 on ${po().host() ? hostLabel(po().host()!) : "this host"}`}
-                  body={`${props.attachedWho ?? "It"} was attached ${po().host() ? `on ${hostLabel(po().host()!)}` : "here"} ${relativeTime(since())}. Until you set its level, the overseer only proposes and its watch loop waits.`}
+                  title={b().kind === "paused" ? `Paused on ${po().host() ? hostLabel(po().host()!) : "this host"}` : "Paused"}
+                  body={b().kind === "paused" && x().paused ? `${props.attachedWho ?? "It"} was attached ${po().host() ? `on ${hostLabel(po().host()!)}` : "here"} ${relativeTime(x().paused!)}. Until you resume, every switch acts as Off: the overseer only proposes and its watch loop waits.` : b().reason}
                   action={
-                    <button type="button" class="button button-sm" aria-disabled={po().busy() ? "true" : undefined} onClick={() => setAutonomy(po(), x().settings.autonomy)}>
-                      Resume at {x().settings.autonomy}
+                    <button type="button" class="button button-sm" aria-disabled={po().busy() ? "true" : undefined} onClick={() => !po().busy() && resume(po())}>
+                      Resume
                     </button>
                   }
                 />
@@ -198,17 +238,23 @@ export function OverseerSummary(props: { po: ProjectOverseer; archived?: boolean
   );
 }
 
-/** "L3 Build · Watching · Last looked on its own 2h ago, after …. 0 runs today." */
+/** "Paused · Watching · Last looked on its own 2h ago, after …. 0 runs today." */
 function StatusWords(props: { info: ProjectOverseerInfo; placed: boolean }) {
   const i = () => props.info;
   const u = () => i().usage;
-  const eff = () => i().effective.autonomy;
+  const brake = () => i().settings.powers.brake;
   return (
     <>
-      <span class="project-level" title={autonomyMeaning(eff(), props.placed)}>
-        {levelWords(eff())}
-      </span>
-      {" · "}
+      <Show when={brake()}>
+        {(b) => (
+          <>
+            <span class="project-level" title={b().reason}>
+              Paused
+            </span>
+            {" · "}
+          </>
+        )}
+      </Show>
       {i().settings.watch ? "Watching" : "Not watching"}
       {" · "}
       <Show when={i().lastRun} fallback="It hasn't looked on its own yet.">
@@ -242,8 +288,8 @@ function StatusMore(props: { info: ProjectOverseerInfo }) {
 }
 
 /**
- * The Settings tab's overseer settings (§app.organizations/project-page): watch, the level, what
- * waits for its approval, the sessions it starts, extra instructions and limits. Every control
+ * The Settings tab's overseer settings (§app.organizations/project-page): watch, what may happen
+ * without you (§design.copy-deck/project-powers), the sessions it starts, extra instructions and limits. Every control
  * saves as it always has: a pick, tick or switch at once; Extra instructions and Limits on Save.
  */
 export function OverseerSettings(props: { po: ProjectOverseer; /** An organization places the project: its gathering sessions and limits show. */ placed: boolean }) {
@@ -251,7 +297,26 @@ export function OverseerSettings(props: { po: ProjectOverseer; /** An organizati
   const p = () => po().projectId();
   const patch = (x: ProjectOverseerPatch) => patchProjectOverseer(p(), x);
   return (
-    <Show when={po().info.data()} fallback={<Show when={po().info.pending()}><p class="orgs-empty">Reading the overseer.</p></Show>}>
+    <Show
+      when={po().info.data()}
+      fallback={
+        <section class="card orgs-section">
+          <Show
+            when={!po().info.error()}
+            fallback={
+              <p class="field-error">
+                Couldn't read the overseer. {po().info.error()}{" "}
+                <button type="button" class="button button-sm" onClick={() => po().info.refetch()}>
+                  Retry
+                </button>
+              </p>
+            }
+          >
+            <Placeholder lines={4} label="Overseer settings" />
+          </Show>
+        </section>
+      }
+    >
       {(i) => (
         <>
           <section class="card orgs-section" aria-labelledby="project-settings-overseer">
@@ -273,13 +338,12 @@ export function OverseerSettings(props: { po: ProjectOverseer; /** An organizati
                 {watchHint(i().settings.watchGapMin, i().settings.soonLookSec, props.placed)}
               </p>
             </div>
-            <AutonomyPicker info={i()} placed={props.placed} busy={po().busy()} onPick={(a) => setAutonomy(po(), a)} />
-            <ConfirmKindsPicker
-              info={i()}
-              kinds={confirmKindsFor(CONFIRM_KINDS, props.placed)}
-              busy={po().busy()}
-              onPick={(kind, checked) => void po().run(() => patch({ confirmKinds: toggleConfirmKind(CONFIRM_KINDS, i().settings.confirmKinds, kind, checked) }), confirmKindDone(kind, checked))}
-            />
+          </section>
+          <section class="card orgs-section" aria-labelledby="project-settings-powers">
+            <h2 class="orgs-h2" id="project-settings-powers">
+              What may happen without you
+            </h2>
+            <PowersPanel info={i()} busy={po().busy()} idPrefix="project-powers" save={(x, done) => void po().run(() => patch(x), done)} />
           </section>
           <section class="card orgs-section" aria-labelledby="project-settings-sessions">
             <h2 class="orgs-h2" id="project-settings-sessions">
@@ -317,77 +381,11 @@ export function OverseerSettings(props: { po: ProjectOverseer; /** An organizati
   );
 }
 
-/** The level as a segmented control: one radio per level, the chosen level's sentence under it. Saves on pick. */
-function AutonomyPicker(props: { info: ProjectOverseerInfo; placed: boolean; busy: boolean; onPick(a: Autonomy): void }) {
-  const chosen = () => props.info.settings.autonomy;
-  const eff = () => props.info.effective;
-  return (
-    <fieldset class="project-autonomy">
-      <legend class="field-label">On its own, it may</legend>
-      <div class="project-segments" role="radiogroup" aria-label="Autonomy level">
-        <For each={AUTONOMY_LEVELS}>
-          {(level) => (
-            <label class="project-segment" classList={{ "project-segment-on": chosen() === level }} title={autonomyMeaning(level, props.placed)}>
-              <input type="radio" name="project-autonomy" value={level} checked={chosen() === level} disabled={props.busy} onChange={() => props.onPick(level)} />
-              <span class="orgs-mono">{level}</span>
-            </label>
-          )}
-        </For>
-      </div>
-      <p class="project-autonomy-meaning">
-        <span class="orgs-mono">{chosen()}</span> {autonomyMeaning(chosen(), props.placed)}
-      </p>
-      <Show when={eff().autonomy !== chosen() || props.info.paused}>
-        <p class="field-hint project-autonomy-note">
-          In force now: {eff().autonomy}. {eff().reason ?? ""}
-        </p>
-      </Show>
-      <p class="field-hint">Your own messages to it can always use every tool.</p>
-    </fieldset>
-  );
-}
-
-/**
- * The confirm list (r8, q14): the act kinds that, once held, wait for the overseer to approve
- * them. The rest go ahead when their hold ends. A summary line until Edit; each tick saves at once, like the level.
- */
-function ConfirmKindsPicker(props: { info: ProjectOverseerInfo; /** The kinds this project offers (a standalone one: none of an organization's). */ kinds: readonly ConfirmKind[]; busy: boolean; onPick(kind: ConfirmKind, checked: boolean): void }) {
-  const on = () => new Set<string>(props.info.settings.confirmKinds ?? []);
-  const [editing, setEditing] = createSignal(false);
-  return (
-    <fieldset class="project-confirm">
-      <legend class="field-label">Waits for the overseer's approval</legend>
-      <div class="project-confirm-summary">
-        <span>{confirmSummary(props.info.settings.confirmKinds ?? [], props.kinds, confirmKindLabel)}</span>
-        <button type="button" class="button button-sm button-ghost" aria-expanded={editing()} aria-controls="project-confirm-list" onClick={() => setEditing(!editing())}>
-          {editing() ? "Done" : "Edit"}
-        </button>
-      </div>
-      <Show when={editing()}>
-        <p class="field-hint project-confirm-hint">
-          When one of these is held, it goes ahead only once the overseer approves it; you can cancel it in Needs you. The rest go ahead when their hold ends.
-        </p>
-        <div class="project-confirm-list" id="project-confirm-list">
-          <For each={props.kinds}>
-            {(kind) => (
-              <label class="toggle project-confirm-row">
-                <input type="checkbox" checked={on().has(kind)} disabled={props.busy} onChange={(e) => props.onPick(kind, e.currentTarget.checked)} />
-                <span class="toggle-box" />
-                <span>{confirmKindLabel(kind)}</span>
-              </label>
-            )}
-          </For>
-        </div>
-      </Show>
-    </fieldset>
-  );
-}
-
 const SAME = "";
 
 /**
  * The model and thinking level of the sessions it starts: gathering (the model a roster person
- * talks to) or coding (L3). Empty = the overseer's own (null in the settings). A level the model
+ * talks to) or coding. Empty = the overseer's own (null in the settings). A level the model
  * doesn't offer is refused under the select (§app.project-overseer/identity); a model change that
  * leaves the saved level unsupported moves it to the level pi would run, and says so.
  */
@@ -905,20 +903,20 @@ function Started(props: { info: ProjectOverseerInfo }) {
  * Every coding session the project started, the overseer's and the operator's (§app.project-overseer/
  * coding-worktrees): each runs in a worktree and branch of its own, cut from the root's branch, or
  * in the root when it can't. Merging the branch back, and removing the worktree, are the operator's.
+ * The heading and New Coding Session show at once; the rows come from the overseer read (no git),
+ * else the session list, and each row's branch facts from the branch read, a moment later
+ * ("Read in two steps"): until then its branch gestures are disabled.
  */
 function CodingSessions(props: {
-  info: ProjectOverseerInfo;
+  po: ProjectOverseer;
   /** The project is archived: New Coding Session is disabled, "Archived". */
   archived?: boolean;
-  /** New Coding Session (§app.project-overseer/new-coding-session): tied to no item, nothing sent. */
-  start(): Promise<CodingStartResult>;
-  merge(w: CodingWorktree): Promise<ProjectOverseerInfo>;
-  remove(w: CodingWorktree): Promise<ProjectOverseerInfo>;
-  onInfo(i: ProjectOverseerInfo): void;
-  onStarted(): void;
 }) {
-  const wt = () => props.info.worktrees;
-  const rows = createMemo(() => worktreeOrder(wt().sessions));
+  const po = () => props.po;
+  const wt = () => po().worktrees.data();
+  const rows = createMemo(() => codingRows(po().info.data()?.coding, po().listed(), wt()?.sessions));
+  /** Nothing to list yet, and nothing read: placeholders, not "None yet". */
+  const unknown = () => !rows().length && !po().info.data() && !wt();
   const [confirming, setConfirming] = createSignal<string | null>(null);
   const [working, setWorking] = createSignal<string | null>(null);
   const [starting, setStarting] = createSignal(false);
@@ -928,8 +926,9 @@ function CodingSessions(props: {
     if (starting() || props.archived) return;
     setStarting(true);
     try {
-      const r = await props.start();
-      props.onStarted();
+      const r = await startProjectCoding(po().projectId());
+      po().info.refetch();
+      po().worktrees.refetch();
       // Started, but its mode isn't set: it stays on this page, listed, to be opened and set by hand.
       if (r.modeNotSet) {
         setStartError(r.modeNotSet);
@@ -948,11 +947,12 @@ function CodingSessions(props: {
   };
   /** A refusal stays under its own row. */
   const [errors, setErrors] = createSignal<Record<string, string>>({});
-  const act = async (w: CodingWorktree, fn: () => Promise<ProjectOverseerInfo>, done: string) => {
-    if (working()) return;
+  const act = async (w: CodingRow, fn: () => Promise<ProjectWorktrees>, done: string) => {
+    if (working() || !po().worktrees.fresh()) return;
     setWorking(w.sessionId);
     try {
-      props.onInfo(await fn());
+      po().worktrees.set(await fn());
+      po().info.refetch();
       setErrors(({ [w.sessionId]: _, ...rest }) => rest);
       toast(done);
       announce(done);
@@ -963,6 +963,10 @@ function CodingSessions(props: {
       setConfirming(null);
       setWorking(null);
     }
+  };
+  const retry = () => {
+    po().info.refetch();
+    po().worktrees.refetch();
   };
   return (
     <>
@@ -981,8 +985,29 @@ function CodingSessions(props: {
         </button>
       </div>
       <Show when={startError()}>{(e) => <p class="field-error">{e()}</p>}</Show>
-      <Show when={!wt().available && wt().reason}>{(r) => <p class="orgs-line project-muted">Coding sessions run in the project root: {r()}</p>}</Show>
-      <Show when={!rows().length}>
+      <Show when={!po().info.data() && po().info.error()}>
+        <p class="field-error">
+          Couldn't read the coding sessions.{" "}
+          <button type="button" class="button button-sm" onClick={retry}>
+            Retry
+          </button>
+        </p>
+      </Show>
+      <Show when={po().info.data() && !wt() && po().worktrees.error()}>
+        {(_) => (
+          <p class="field-error">
+            Couldn't read the branches. {po().worktrees.error()}{" "}
+            <button type="button" class="button button-sm" onClick={() => po().worktrees.refetch()}>
+              Retry
+            </button>
+          </p>
+        )}
+      </Show>
+      <Show when={wt() && !wt()!.available && wt()!.reason}>{(r) => <p class="orgs-line project-muted">Coding sessions run in the project root: {r()}</p>}</Show>
+      <Show when={unknown() && !po().info.error()}>
+        <Placeholder lines={3} label="Coding sessions" />
+      </Show>
+      <Show when={!rows().length && !unknown()}>
         <p class="orgs-empty">None yet. Yours and the overseer's are listed here.</p>
       </Show>
       <ul class="list project-worktrees">
@@ -991,6 +1016,9 @@ function CodingSessions(props: {
             const armed = () => confirming() === row.sessionId;
             const folder = () => (row.worktree ? tildePath(row.worktree, home()) : "");
             const title = () => row.title || UNTITLED_CODING;
+            // Remembered branch facts (a reopened project) show at once, but no gesture acts on them.
+            const gestures = () => rowGestures(row, po().worktrees.fresh());
+            const facts = () => (row.facts && row.state !== undefined ? (row as CodingRow & CodingWorktree) : null);
             return (
               <li class="list-row orgs-row project-worktree">
                 <span class="list-main project-worktree-main">
@@ -1014,39 +1042,45 @@ function CodingSessions(props: {
                       )}
                     </Show>
                   </span>
-                  <Show when={row.state === "root" && row.inRoot}>{(why) => <span class="list-meta">In the project root: {why()}</span>}</Show>
-                  <Show when={row.state === "root" && !row.inRoot && row.later}>
+                  <Show when={!row.branch && row.inRoot}>{(why) => <span class="list-meta">In the project root: {why()}</span>}</Show>
+                  <Show when={!row.branch && !row.inRoot && row.later}>
                     <span class="list-meta">In the project root until it makes a worktree.</span>
                   </Show>
-                  <Show when={mergeNote(row)}>
-                    {(lead) => (
-                      <span class="list-meta">
-                        {lead()} <span class="orgs-mono">{row.target}</span>
-                        <Show when={row.mergedAt}>{(at) => <> <time title={at()}>{relativeTime(at())}</time></>}</Show>
-                      </span>
+                  <Show when={facts()}>
+                    {(f) => (
+                      <>
+                        <Show when={mergeNote(f())}>
+                          {(lead) => (
+                            <span class="list-meta">
+                              {lead()} <span class="orgs-mono">{f().target}</span>
+                              <Show when={f().mergedAt}>{(at) => <> <time title={at()}>{relativeTime(at())}</time></>}</Show>
+                            </span>
+                          )}
+                        </Show>
+                        <Show when={folderNote(f())}>{(note) => <span class="list-meta">{note()}</span>}</Show>
+                      </>
                     )}
                   </Show>
-                  <Show when={folderNote(row)}>{(note) => <span class="list-meta">{note()}</span>}</Show>
                 </span>
-                <Show when={offersMerge(row) || offersRemove(row)}>
+                <Show when={gestures().merge !== false || gestures().remove !== false}>
                   <ActionMenu label={`Actions · ${title()}`} title="Actions" icon="more">
                     {(menu) => (
                       <>
-                        <Show when={offersMerge(row)}>
+                        <Show when={gestures().merge !== false}>
                           <menu.Item
                             label="Merge Branch"
                             aria={`Merge Branch: ${row.branch} into ${row.target}`}
                             icon={<Icon name="branch" small />}
                             description={`${row.branch} into ${row.target}`}
-                            disabled={mergeGate(row) ?? (working() ? "Working" : undefined)}
-                            onRun={() => void act(row, () => props.merge(row), `Merged ${row.branch} into ${row.target}.`)}
+                            disabled={(gestures().merge || undefined) ?? (working() ? "Working" : undefined)}
+                            onRun={() => void act(row, () => mergeCodingWorktree(po().projectId(), row.sessionId), `Merged ${row.branch} into ${row.target}.`)}
                           />
                         </Show>
-                        <Show when={offersRemove(row)}>
+                        <Show when={gestures().remove !== false}>
                           <menu.Item
                             label="Remove Worktree…"
                             aria={`Remove Worktree: ${title()}`}
-                            disabled={removeGate(row) ?? (working() ? "Working" : undefined)}
+                            disabled={(gestures().remove || undefined) ?? (working() ? "Working" : undefined)}
                             onRun={() => setConfirming(row.sessionId)}
                           />
                         </Show>
@@ -1055,7 +1089,7 @@ function CodingSessions(props: {
                   </ActionMenu>
                 </Show>
                 <Show when={errors()[row.sessionId]}>{(e) => <p class="field-error project-worktree-note">{e()}</p>}</Show>
-                <Show when={armed()}>
+                <Show when={armed() && facts() && po().worktrees.fresh()}>
                   <div class="person-confirm project-worktree-note" role="group" aria-label="Remove worktree">
                     <p class="orgs-line">
                       <Show
@@ -1074,7 +1108,7 @@ function CodingSessions(props: {
                         type="button"
                         class="button button-sm button-destructive"
                         aria-disabled={working() ? "true" : undefined}
-                        onClick={() => void act(row, () => props.remove(row), "Worktree removed.")}
+                        onClick={() => void act(row, () => removeCodingWorktree(po().projectId(), row.sessionId), "Worktree removed.")}
                       >
                         Remove Worktree
                       </button>
@@ -1093,37 +1127,13 @@ function CodingSessions(props: {
   );
 }
 
-/** Overview's Coding sessions card: every coding session, then the gathering sessions it started. */
+/** Overview's Coding sessions card: every coding session, then the gathering sessions it started. Its heading and
+    New Coding Session are there from the first moment, whatever the reads answer. */
 export function CodingSessionsCard(props: { po: ProjectOverseer; archived?: boolean }) {
-  const po = () => props.po;
   return (
     <section class="card orgs-section" aria-labelledby="project-coding">
-      <Show
-        when={po().info.data()}
-        fallback={
-          <>
-            <h2 class="orgs-h2" id="project-coding">
-              Coding sessions
-            </h2>
-            <p class="orgs-empty">{po().info.pending() ? "Reading the overseer." : "The overseer didn't answer."}</p>
-          </>
-        }
-      >
-        {(i) => (
-          <>
-            <CodingSessions
-              info={i()}
-              archived={props.archived}
-              start={() => startProjectCoding(po().projectId())}
-              merge={(w) => mergeCodingWorktree(po().projectId(), w.sessionId)}
-              remove={(w) => removeCodingWorktree(po().projectId(), w.sessionId)}
-              onInfo={po().info.set}
-              onStarted={() => po().info.refetch()}
-            />
-            <Started info={i()} />
-          </>
-        )}
-      </Show>
+      <CodingSessions po={props.po} archived={props.archived} />
+      <Show when={props.po.info.data()}>{(i) => <Started info={i()} />}</Show>
     </section>
   );
 }
@@ -1165,7 +1175,14 @@ export function ActivityCard(props: { po: ProjectOverseer }) {
         </Show>
       </div>
       <Show when={props.po.actions.error()}>{(e) => <p class="field-error">{e()}</p>}</Show>
-      <Show when={actions()?.length} fallback={<p class="orgs-empty">{props.po.actions.pending() ? "Reading its activity." : "Nothing yet. Every act it takes, refused or not, lists here."}</p>}>
+      <Show
+        when={actions()?.length}
+        fallback={
+          <Show when={!props.po.actions.pending() || props.po.actions.data()} fallback={<Placeholder lines={3} label="Activity" />}>
+            <p class="orgs-empty">Nothing yet. Every act it takes, refused or not, lists here.</p>
+          </Show>
+        }
+      >
         <ul class="orgs-history-list project-activity" id="project-activity-list">
           <For each={shown()}>
             {(a) => (
@@ -1294,7 +1311,7 @@ export function IdeasCard(props: { po: ProjectOverseer; title: string; empty: st
           }}
         />
       </Show>
-      <Show when={ideas()?.length} fallback={<p class="orgs-empty">{props.empty}</p>}>
+      <Show when={ideas()?.length} fallback={<Show when={ideas() || po().ideas.error()} fallback={<Placeholder lines={2} label={props.title} />}><p class="orgs-empty">{props.empty}</p></Show>}>
         <ul class="project-items">
           <For each={ideas()}>
             {(idea) => (
@@ -1350,7 +1367,14 @@ export function TodosCard(props: { po: ProjectOverseer; send?: ItemSendForm; arc
           add={async (text) => po().todos.set(await addProjectOverseerTodo(po().projectId(), text))}
         />
       </Show>
-      <Show when={open().length} fallback={<p class="orgs-empty">{info()?.done ? `${info()!.done} done. Nothing open.` : "Nothing to do yet."}</p>}>
+      <Show
+        when={open().length}
+        fallback={
+          <Show when={info() || po().todos.error()} fallback={<Placeholder lines={2} label="To-do" />}>
+            <p class="orgs-empty">{info()?.done ? `${info()!.done} done. Nothing open.` : "Nothing to do yet."}</p>
+          </Show>
+        }
+      >
         <ul class="project-items">
           <For each={open()}>
             {(t) => (

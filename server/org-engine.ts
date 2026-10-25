@@ -31,7 +31,7 @@ export type OrgHostApi = Pick<
 /** Where a project's settings (overseer.json, as read now) come from: server/project-overseer-store.ts
     registers it as it loads. Injected, so this module imports nothing that imports server/orgs.ts
     (orgs registers its change listener here as it loads). */
-type SettingsPart = Pick<ProjectOverseerSettings, "autonomy" | "caps" | "holdMin" | "confirmKinds">;
+type SettingsPart = Pick<ProjectOverseerSettings, "powers" | "caps" | "holdMin">;
 let settingsSource: { read(projectId: string, workspaceDir: string): SettingsPart; defaults(): SettingsPart } | null = null;
 export function setProjectSettingsSource(source: NonNullable<typeof settingsSource>): void {
   settingsSource = source;
@@ -122,6 +122,9 @@ export function setOrgClockForTest(fn: (() => number) | null): void {
 
 /** Open the org's engine (once; a second call waits for the first). */
 export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
+  // One statechart engine per org, the server's (§app.chat-processes/special-kinds): a chat process
+  // (its unit named in SOVA_CHAT_UNIT) never opens one, so no act runs twice.
+  if (process.env.SOVA_CHAT_UNIT) throw new Error("An organization's engine opens only in the Sova server.");
   const have = hosts.get(opts.orgId);
   if (have) return have;
   const pending = opening.get(opts.orgId);

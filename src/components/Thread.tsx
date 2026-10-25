@@ -1,26 +1,29 @@
-import { children, createContext, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, useContext, type JSX } from "solid-js";
+import { children, createContext, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, untrack, useContext, type JSX } from "solid-js";
 import type { RowFacts } from "../../shared/harness-wire";
 import type { HandoffRunInfo, TmpAttachment, TranscriptItem } from "../../shared/protocol";
 import { rowFacts } from "../../shared/wire-v1";
 import type { BatonMark } from "../../shared/baton";
 import { wrapupRowIds } from "../lib/wrapup-rows";
-import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState } from "../lib/live";
+import { readHoldTop } from "../lib/read-hold";
+import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState, shownUserState } from "../lib/live";
 import { agoTime, modelLabel, modelMismatch, prettyJson, stampTime, thousands, tildePath } from "../lib/format";
 import { useMinuteNow } from "../lib/minute-clock";
 import { isObj, resultDetails as detailsOf, str, toolCallArgs, toolResultView } from "../lib/message";
 import { toolContent, type ToolSource } from "../lib/tool-content";
 import { stripPastedPaths } from "../lib/path-attachments";
-import { home } from "../lib/ui-state";
+import { focusView, home, setFocusView } from "../lib/ui-state";
 import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, registerRows, registerTranscript, transcriptRoot } from "../lib/jump";
 import type { RowTarget } from "../lib/older-rows";
 import type { ScrollSpot } from "../lib/transcript-cache";
+import { anchorCorrection, anchorIndex } from "../lib/scroll-anchor";
 import { carriedStart, chunkStart, fillStops, FIRST_CHUNK, type ImagesAt, initialStart, jumpStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
-import { usePaneId } from "../lib/pane-scope";
-import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, CARD_TOOLS } from "../lib/hidden-rows";
+import { usePaneId, usePaneScope } from "../lib/pane-scope";
+import { isHiddenBlock, isTourResult, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, CARD_TOOLS } from "../lib/hidden-rows";
 import { chainRuns, type ChainRun } from "../lib/chain-rows";
 import { compressWork } from "../lib/work-compression";
 import { isChangeRow, isLoginNoteRow } from "../lib/change-rows";
 import { stripSessionHeader } from "../../shared/profiles";
+import { sendersOf } from "../../shared/senders";
 import { profileIconName } from "../lib/profiles";
 import { profileToolCard, ProfileToolCardView } from "./ProfileCards";
 import { isTurnStart } from "../lib/turn";
@@ -36,36 +39,40 @@ import { ExplainCard } from "./ExplainCard";
 import { alignOf, alignRowFromDetails, latestAlignId, newestAlignRows } from "../lib/align";
 import { explainOf } from "../lib/explain";
 import { Markdown } from "./Markdown";
+import { ReplyTimingHead } from "./ReplyTiming";
+import type { ReplyTiming } from "../../shared/usage/perf";
+import { replyHovers } from "../lib/perf";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { WakeCard } from "./WakeCard";
 import { TopicCard } from "./TopicCard";
 import { WorktreeMergeCard } from "./WorktreeMergeCard";
+import { OwnerRequestNote } from "./OwnerRequestNote";
 import { ShowChangesCard } from "./ChangesViewer";
+import { TourCard } from "./TourCard";
+import { liveTourCalls, newestTourRows, tourFold, tourLine } from "../lib/tour-rows";
+import { normalizeTourCardDetails, TOUR_TOOLS } from "../../shared/tour";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { rowProvider } from "../lib/subagent-limit";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
+import { normalizeOfferDetails, OFFER_TOOL } from "../../shared/session-offers";
+import { OfferCardView } from "./OfferCard";
+import { SettingsToolCard } from "./SettingsChangeCard";
+import { isSettingsToolDetails } from "../../shared/project-settings";
+/** The project overseer's settings tool: a propose draws its Settings change card. */
+const SETTINGS_TOOL = "sova_settings";
 import { Banner, Chip, Icon } from "./ui";
 import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow, useOverseerThread } from "./OverseerCards";
 import { cardFold, confirmAnswer, confirmDetails, isBriefText } from "../lib/overseer";
 import { CARD_TOOL, LEGACY_CONFIRM_TOOL, normalizeCardDetails } from "../../shared/overseer-card";
 import { MessageActions, type MessageActionItem } from "./MessageActions";
-import { type MessageStrip, sameStrip, stripLabel, stripsByRow } from "../lib/message-actions";
+import { type MessageStrip, sameStrip, stripsByRow } from "../lib/message-actions";
+import { backWords } from "../lib/error-feed";
+import type { ReplyPlace } from "../lib/reply-place";
+import { ReplyPlaceView } from "./ReplyPlace";
 
 /** Whose transcript the rows inside are (lib/tool-content): a tool card asks it for the content its
     row doesn't carry. Absent: the rows carry all they draw. */
 export const ToolSourceContext = createContext<ToolSource | null>(null);
-
-/**
- * What a view hangs under each delivered message. The thread decides
- * WHERE a strip goes — once per entry, never once per rendered block — and the view decides what
- * it holds: a chat offers Copy · Rewind/Regenerate, a watch offers Copy with the others'
- * reasons, and a transcript rendered with no provider (a subagent's) shows no strip at all.
- */
-export interface MessageActionsProvider {
-  items(strip: MessageStrip): MessageActionItem[];
-  /** The last refusal for that entry, kept on its row after the announcement. */
-  note?(entryId: string): string | null;
-}
 
 /** "1:43 PM · 5m ago": the clock in mono, then its age, kept current by the one minute clock
     every head shares. The age drops once it would only repeat the date (past 7 days). */
@@ -162,7 +169,11 @@ function AssistantText(props: {
   streaming?: boolean;
   showHead: boolean;
   attachments?: TmpAttachment[];
+  /** The reply's own measurement (its entry's `reply` fact): the head's time shows it. Absent: the
+      head is as it always was. */
+  timing?: ReplyTiming;
 }) {
+  const author = () => <span class="message-author text-mono" title={props.model}>{props.author}</span>;
   return (
     <article
       class="message"
@@ -170,13 +181,20 @@ function AssistantText(props: {
       aria-label={props.time ? `${props.author}, ${stampTime(props.time)}` : props.author}
     >
       <Show when={props.showHead || props.streaming}>
-        <div class="message-head">
-          <span class="message-author text-mono" title={props.model}>{props.author}</span>
-          <Show when={props.streaming}>
-            <span class="live-dot" />
-          </Show>
-          <Stamp iso={props.time} />
-        </div>
+        <Show
+          when={!props.streaming && !!props.time && props.timing}
+          fallback={
+            <div class="message-head">
+              {author()}
+              <Show when={props.streaming}>
+                <span class="live-dot" />
+              </Show>
+              <Stamp iso={props.time} />
+            </div>
+          }
+        >
+          {(t) => <ReplyTimingHead timing={t()} author={author()} stamp={<Stamp iso={props.time} />} />}
+        </Show>
       </Show>
       <Markdown text={props.text} streaming={props.streaming} attachments={props.attachments} />
     </article>
@@ -465,6 +483,18 @@ export function TurnError(props: { message: string }) {
   );
 }
 
+/** "This chat didn't start." The chat's start failed, its server-side retry too (§chat.transcript/states):
+    no turn ran, so never "The turn stopped…". `back`: messages that went back to the composer. */
+export function StartError(props: { message: string; back: number }) {
+  return (
+    <Banner
+      tone="error"
+      title="This chat didn't start."
+      body={`${props.message.replace(/\.$/, "")}.${backWords(props.back, " ")}${props.back > 0 ? " Send again to retry." : ""}`}
+    />
+  );
+}
+
 /** A transcript row that ends a turn on an error (the `${entryId}:stop` info row): the error's own
     words sit in its text, its producer's model on the row. The server words it "Error…" for a
     stop reason of "error" and "Aborted…" otherwise. */
@@ -529,9 +559,11 @@ export function HistoryItems(props: {
   limitPath?: string;
   /** Index from which a call without a result may still be running; after the last user row by default. */
   openFrom?: number;
-  /** Per-message actions. Absent: no strips at all (a subagent transcript, the hidden-rows
-      disclosure) — an action is about the chat you are in, not about every transcript on screen. */
-  actions?: MessageActionsProvider;
+  /** What hangs under each delivered message: the reply place (src/lib/reply-place.ts). The
+      thread decides WHERE it goes (once per entry, never once per rendered block) and the view
+      what it holds. Absent: no strips at all (a subagent transcript, the hidden-rows disclosure)
+      — an action is about the chat you are in, not about every transcript on screen. */
+  actions?: ReplyPlace;
   /** Build every row at once, even inside a transcript (the hidden-rows disclosure's own list). */
   whole?: boolean;
   /** Rows above the list that the view doesn't hold yet (lib/older-rows): fetched as the reader
@@ -543,6 +575,9 @@ export function HistoryItems(props: {
   /** Cards this streaming run already changed: their settled rows read as one line until the
       refetch brings the new snapshot (§app.overseer/confirm). */
   liveCardIds?: ReadonlySet<string>;
+  /** Tours this streaming run already finished a call for: their settled card reads as a line until
+      the refetch, since the live call draws the card (§app.tours/one-card). */
+  liveTourIds?: ReadonlySet<string>;
 }) {
   /**
    * The items the thread may render: the settings-change rows are dropped before anything else,
@@ -562,6 +597,8 @@ export function HistoryItems(props: {
   );
   /** The rows rendered: all of them, or everything but tool rows while they're hidden. */
   const rows = () => split()?.shown ?? renderable();
+  /** Measured replies: their first reply-text row's head shows the figures (its entry's `reply` fact). */
+  const timings = createMemo(() => replyHovers(props.items, entryIdOf, (r) => rowFacts(r)?.reply));
   const results = createMemo(() => {
     const byCall = new Map<string, TranscriptItem>();
     for (const it of props.items) if (it.kind === "tool-result" && it.toolCallId) byCall.set(it.toolCallId, it);
@@ -571,6 +608,28 @@ export function HistoryItems(props: {
   const showChangesOf = (callId: string | undefined) => {
     const r = callId ? results().get(callId) : undefined;
     return r && !toolResultView(r).isError ? normalizeShowChangesDetails(detailsOf(r)) : undefined;
+  };
+  /** An offer call's card, once it succeeded (§chat.offers/card). */
+  const offerOf = (callId: string | undefined) => {
+    const r = callId ? results().get(callId) : undefined;
+    return r && !toolResultView(r).isError ? normalizeOfferDetails(detailsOf(r)) : undefined;
+  };
+  /** A sova_settings propose's card, once it succeeded (§app.project-overseer/settings). */
+  const settingsOf = (callId: string | undefined) => {
+    const r = callId ? results().get(callId) : undefined;
+    const d = r && !toolResultView(r).isError ? detailsOf(r) : undefined;
+    return isSettingsToolDetails(d) && (d.card || d.appliedNow.length) ? d : undefined;
+  };
+  /** Each successful tour call's card, and which call draws it: the newest of its tour (§app.tours/one-card). */
+  const tours = createMemo(() => tourFold(props.items));
+  const tourCards = createMemo(() => newestTourRows(props.items, props.liveTourIds));
+  /** The full card, for the call that draws it. */
+  const tourCardOf = (item: TranscriptItem) => (tourCards().has(item.id) ? tours().rows.get(item.id) : undefined);
+  /** An earlier call's one line: what it reported then, as its row carries it. */
+  const tourEarlier = (item: TranscriptItem): string | undefined => {
+    const d = tours().rows.get(item.id);
+    if (!d || tourCards().has(item.id)) return undefined;
+    return (item.toolCallId ? results().get(item.toolCallId)?.tool?.output : undefined) || tourLine(d);
   };
   const calls = createMemo(() => {
     const ids = new Set<string>();
@@ -603,6 +662,11 @@ export function HistoryItems(props: {
   const asCard = (it: TranscriptItem): boolean => {
     if (it.kind !== "tool-call") return false;
     if (it.text === SHOW_CHANGES_TOOL) return !!showChangesOf(it.toolCallId);
+    if (it.text === OFFER_TOOL) return !!offerOf(it.toolCallId);
+    if (it.text === SETTINGS_TOOL) return !!settingsOf(it.toolCallId);
+    // Every tour call breaks the timeline (§chat.transcript/work-chain): its card, an earlier
+    // call's one line (§app.tours/one-card) and a failure row alike stay outside compressed groups.
+    if (TOUR_TOOLS.has(it.text ?? "")) return true;
     return cardRow(it) !== undefined || CARD_RENDER_NAMES.has(it.text ?? "");
   };
 
@@ -617,7 +681,7 @@ export function HistoryItems(props: {
       (it) =>
         it.kind === "thinking" ||
         (it.kind === "tool-call" && !asCard(it)) ||
-        (it.kind === "tool-result" && !(it.toolCallId && callIds.has(it.toolCallId))),
+        (it.kind === "tool-result" && !isTourResult(it) && !(it.toolCallId && callIds.has(it.toolCallId))),
     );
     const skip = list.map((it) => it.kind === "tool-result" && !!it.toolCallId && callIds.has(it.toolCallId));
     const runs = chainRuns(working, skip, compressWork());
@@ -653,25 +717,12 @@ export function HistoryItems(props: {
     );
   });
 
-  /** User rows a baton participant sent: target id → their ref, in any order (§app.baton/attribution). */
-  const batonSent = createMemo(() => {
-    const by = new Map<string, string>();
-    for (const it of props.items) if (it.batonMark?.kind === "sent") by.set(it.batonMark.targetId, it.batonMark.by);
-    return by;
-  });
+  /** Who sent each user row, when its marker says (another session §chat.profiles/delivery, the
+      Overseer, a baton participant §app.baton/attribution): target id → sender, in any order. The
+      Timeline reads the same helper, so the two never disagree (shared/senders.ts). */
+  const senders = createMemo(() => sendersOf(props.items));
+  const senderOf = (id: string) => senders().get(entryIdOf(id));
   const nameOf = (ref: string) => props.names?.[ref] ?? (ref === "operator" ? "You" : "Someone");
-  /** User rows the Overseer sent: its markers name them by id, in any order. */
-  const overseerSent = createMemo(() => {
-    const ids = new Set<string>();
-    for (const it of props.items) if (it.overseerMark?.kind === "sent") ids.add(it.overseerMark.targetId);
-    return ids;
-  });
-  /** User rows another session sent (§chat.profiles/delivery): target id → sender, in any order. */
-  const sessionSent = createMemo(() => {
-    const by = new Map<string, { sessionId: string; title: string; hop: number }>();
-    for (const it of props.items) if (it.sessionMark?.kind === "sent") by.set(it.sessionMark.targetId, { ...it.sessionMark.from, hop: it.sessionMark.hop });
-    return by;
-  });
   /** The profile row shows once a message is on the branch (§chat.profiles/after-first-message). */
   const hasUserRow = createMemo(() => props.items.some((it) => it.kind === "user"));
   /**
@@ -713,12 +764,34 @@ export function HistoryItems(props: {
       if (rows().length > 0 && (id === null || !rowAt().has(id))) setFirstId(idAt(start()));
     });
   const built = createMemo(() => (start() === 0 ? rows() : rows().slice(start())));
+  /**
+   * Whether the older-edge line is at the top, settled before the first frame with rows, from those
+   * rows and what is known to be above them (lib/older-rows-view `known`): with older rows held or
+   * not yet fetched it is there from the first frame; a list that opens on the whole branch never
+   * has it, whatever is learned later. Appearing after the rows were painted, it pushed them down
+   * by its height for a frame. It goes only with the build of the last rows above (`buildFrom`).
+   */
+  const edge = createMemo<boolean | null>((prev) => prev ?? (rows().length > 0 ? (props.older?.known() ?? 0) > 0 || start() > 0 : null), null);
+  const [edgeGone, setEdgeGone] = createSignal(false);
   const indexOf = scroller ? createMemo(() => new Map(rows().map((r, i) => [r, i] as const))) : null;
   if (scroller) {
     const root = scroller.root();
     const ids = createMemo(() => rows().map((r) => (r.kind === "link" ? null : r.id)));
-    /** Builds from row `i` down, keeping the view where it is (`hold`: to the pixel while they draw). */
-    const buildFrom = (i: number, hold = false) => scroller.prepend(() => setFirstId(idAt(i)), hold);
+    /** Builds from row `i` down, keeping the view where it is (`hold`: to the pixel while they draw).
+        The build that reaches the top of the branch takes the older-edge line away with it, so the
+        view is kept through its going too. */
+    const buildFrom = (i: number, hold = false) =>
+      scroller.prepend(() => {
+        setFirstId(idAt(i));
+        if (i <= 0 && props.older?.left() === 0) setEdgeGone(true);
+      }, hold);
+    // The build of the last rows above can come before this connection says they are the last (rows
+    // kept from the last visit, built before the hello, or a chat closed while quiet that sends
+    // none): the line then goes once what is known says nothing is above (`known`: the hello's or
+    // paint's count, before them the one kept with the rows), kept through its going as a build's is.
+    createEffect(() => {
+      if (edge() && !edgeGone() && start() === 0 && props.older?.known() === 0) untrack(() => scroller.prepend(() => setEdgeGone(true)));
+    });
     let chunk = FIRST_CHUNK;
     let cancel: (() => void) | null = null;
     /** One chunk above the built rows, timed for the next one's size. */
@@ -781,12 +854,13 @@ export function HistoryItems(props: {
 
   return (
     <>
-      {/* Held while there are older rows to fetch, so its indicator appearing never moves the view;
-          the indicator (no text; its name is for screen readers) shows only while a fetch is slow,
-          a scroll-up chunk or a jump's range, and sticks to the top of the view so a jump from the
-          end sees it too. It goes with the fill's last build, not before: that build keeps the view
-          where it is (ScrollerApi.prepend), its going included. */}
-      <Show when={scroller && props.older && ((props.older.left() ?? 0) > 0 || start() > 0)}>
+      {/* Held while there are older rows to fetch, so its indicator appearing never moves the view
+          (`edge`: decided before the first frame); the indicator (no text; its name is for screen
+          readers) shows only while a fetch is slow, a scroll-up chunk or a jump's range, and sticks
+          to the top of the view so a jump from the end sees it too. It goes with the build of the
+          last rows above, not before: that build keeps the view where it is (ScrollerApi.prepend),
+          its going included. */}
+      <Show when={scroller && props.older && edge() && !edgeGone()}>
         <div class="older-edge" role="status">
           <Show when={props.older!.slow()}>
             <span class="older-edge-bar skeleton" role="img" aria-label="Loading older messages" />
@@ -830,9 +904,9 @@ export function HistoryItems(props: {
                 <UserTurn
                   text={item.text ?? ""}
                   time={item.at}
-                  overseer={overseerSent().has(entryIdOf(item.id))}
-                  sender={batonSent().has(entryIdOf(item.id)) ? nameOf(batonSent().get(entryIdOf(item.id))!) : undefined}
-                  fromSession={sessionSent().get(entryIdOf(item.id))}
+                  overseer={senderOf(item.id)?.kind === "overseer"}
+                  sender={((s) => (s?.kind === "baton" ? nameOf(s.by) : undefined))(senderOf(item.id))}
+                  fromSession={((s) => (s?.kind === "session" ? { sessionId: s.sessionId, title: s.title, hop: s.hop } : undefined))(senderOf(item.id))}
                   images={item.images}
                   attachments={item.attachments}
                 />
@@ -880,6 +954,7 @@ export function HistoryItems(props: {
                     rows()[index() - 1]?.kind !== "assistant-text" || rows()[index() - 1]?.model !== item.model
                   }
                   attachments={item.attachments}
+                  timing={timings().get(item.id)}
                 />
               </Match>
               <Match when={item.kind === "thinking"}>
@@ -902,6 +977,8 @@ export function HistoryItems(props: {
               <Match when={item.kind === "report" && item.report}>
                 {(report) => <ReportRow report={report()} attachments={item.attachments} />}
               </Match>
+              {/* An owner request a Start Chat put at the top (§app.project-assistant/request-chat). */}
+              <Match when={item.kind === "info" && item.ownerRequest}>{(card) => <OwnerRequestNote card={card()} />}</Match>
               <Match when={item.kind === "info" && item.handoffRun}>
                 {(run) => <HandoffRunRow run={run()} text={item.text ?? ""} />}
               </Match>
@@ -925,8 +1002,17 @@ export function HistoryItems(props: {
               </Match>
               {/* A show_changes result whose details check out reads as a card that opens the
                   changes viewer (§chat.changes/show-changes-card); anything else, a tool card. */}
+              <Match when={item.kind === "tool-call" && tourCardOf(item)}>
+                {(details) => <TourCard details={details()} />}
+              </Match>
               <Match when={item.kind === "tool-call" && item.text === SHOW_CHANGES_TOOL && showChangesOf(item.toolCallId)}>
                 {(details) => <ShowChangesCard details={details()} />}
+              </Match>
+              <Match when={item.kind === "tool-call" && item.text === OFFER_TOOL && offerOf(item.toolCallId)}>
+                {(card) => <OfferCardView card={card()} />}
+              </Match>
+              <Match when={item.kind === "tool-call" && item.text === SETTINGS_TOOL && settingsOf(item.toolCallId)}>
+                {(details) => <SettingsToolCard details={details()} />}
               </Match>
               <Match when={item.kind === "tool-call"}>
                 {(() => {
@@ -982,7 +1068,7 @@ export function HistoryItems(props: {
                     <ToolCard
                       name={item.text ?? "tool"}
                       args={toolCallArgs(item)}
-                      summary={item.tool?.summary}
+                      summary={tourEarlier(item) ?? item.tool?.summary}
                       stats={(item.text === "edit" || item.text === "write") && item.toolCallId ? results().get(item.toolCallId)?.tool?.stats : undefined}
                       calls={item.toolCallId ? results().get(item.toolCallId)?.tool?.calls : undefined}
                       lazy={lazy()}
@@ -1033,17 +1119,8 @@ export function HistoryItems(props: {
                 </Show>
               </Match>
             </Switch>
-            {/* Under the bubble, once per entry (see `strips`). */}
-            <Show when={strip()}>
-              {(strip) => (
-                <MessageActions
-                  label={stripLabel(strip().role)}
-                  align={strip().role === "user" ? "end" : "start"}
-                  items={props.actions!.items(strip())}
-                  note={props.actions!.note?.(strip().entryId) ?? null}
-                />
-              )}
-            </Show>
+            {/* Under the bubble, once per entry (see `strips`): the reply place. */}
+            <Show when={strip()}>{(strip) => <ReplyPlaceView place={props.actions!} strip={strip()} />}</Show>
           </div>
           </Show>
           )
@@ -1061,14 +1138,14 @@ export function HistoryItems(props: {
   );
 }
 
-function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: string; model?: string; streaming: boolean; showHead: boolean }) {
+function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: string; model?: string; streaming: boolean; showHead: boolean; timing?: ReplyTiming; time?: string }) {
   const overseerThread = useOverseerThread();
   return (
     <Switch>
       <Match when={props.block.type === "text" && props.block}>
         {(b) => (
           <Show when={b().text}>
-            <AssistantText text={b().text} author={props.author} model={props.model} streaming={props.streaming} showHead={props.showHead} />
+            <AssistantText text={b().text} author={props.author} model={props.model} streaming={props.streaming} showHead={props.showHead} timing={props.timing} time={props.timing ? props.time : undefined} />
           </Show>
         )}
       </Match>
@@ -1108,7 +1185,28 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
           });
           /** An align result that changed an alignment: its card, as soon as the result lands. */
           const aligned = () => (b().name === "align" && status() === "done" ? alignRowFromDetails(tool()?.details) : undefined);
+          /** A show_changes result: its card, as soon as the call finishes (§chat.changes/show-changes-card). */
+          const changes = () => (b().name === SHOW_CHANGES_TOOL && status() === "done" ? normalizeShowChangesDetails(tool()?.details) : undefined);
+          const tourDone = () => (TOUR_TOOLS.has(b().name) && status() === "done" ? normalizeTourCardDetails(tool()?.details) : undefined);
+          /** The card only on this run's newest call for its tour; an earlier one reads as its line (§app.tours/one-card). */
+          const tour = () => {
+            const d = tourDone();
+            return d && liveTourCalls(props.live.tools).get(d.tourId) === b().id ? d : undefined;
+          };
+          const tourEarlier = () => {
+            const d = tourDone();
+            return d && !tour() ? tourLine(d) : undefined;
+          };
+          const offer = () => (b().name === OFFER_TOOL && status() === "done" ? normalizeOfferDetails(tool()?.details) : undefined);
+          const settingsCard = () => {
+            const d = b().name === SETTINGS_TOOL && status() === "done" ? tool()?.details : undefined;
+            return isSettingsToolDetails(d) && (d.card || d.appliedNow.length) ? d : undefined;
+          };
           return (
+            <Show when={!settingsCard()} fallback={<SettingsToolCard details={settingsCard()!} />}>
+            <Show when={!offer()} fallback={<OfferCardView card={offer()!} />}>
+            <Show when={!tour()} fallback={<TourCard details={tour()!} />}>
+            <Show when={!changes()} fallback={<ShowChangesCard details={changes()!} />}>
             <Show when={!aligned()} fallback={<div class="entry-live-align" data-align-live={aligned()?.doc?.id}><AlignRow row={aligned()!} newest /></div>}>
             <Show
               when={!card()?.card}
@@ -1123,6 +1221,7 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
                   fallback={
                     <ToolCard
                       name={b().name}
+                      summary={tourEarlier()}
                       args={b().args ?? tool()?.args}
                       argsText={b().argsText}
                       details={tool()?.details}
@@ -1135,6 +1234,10 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
                 >
                   {(d) => <LinkCard details={d()} ended={b().name === "sova_unlink"} />}
                 </Show>
+            </Show>
+            </Show>
+            </Show>
+            </Show>
             </Show>
             </Show>
           );
@@ -1159,7 +1262,7 @@ export function LiveEntries(props: {
   /** What a message of ours that hasn't been delivered offers — one Remove, from the chat. A row
       the server has already taken (`delivered`) is never asked: nothing can be recalled then, and
       a disabled Remove under every message you ever sent is an affordance that lies. */
-  queueActions?: (row: { id?: string; state: LiveUserState; text: string }) => MessageActionItem[];
+  queueActions?: (row: { id?: string; state: LiveUserState; text: string; handed?: boolean }) => MessageActionItem[];
 }) {
   const hide = () => ({ tools: !!props.hideTools, thinking: !!props.hideThinking });
   const shows = (b: LiveBlock | undefined) => !!b && !isHiddenBlock(b, hide()) && (!compressWork() || b.type !== "text" || !!b.text);
@@ -1168,6 +1271,8 @@ export function LiveEntries(props: {
     for (let j = i - 1; j >= 0; j--) if (!isHiddenBlock(blocks[j], hide())) return blocks[j];
     return undefined;
   };
+  /** A finished reply's first text block: its head carries the reply's measurement. */
+  const firstText = (blocks: LiveBlock[]) => blocks.findIndex((b) => b.type === "text" && !!b.text);
   const hiddenBlocks = () => props.live.entries.flatMap((e) => (e.kind === "assistant" ? e.blocks.filter((b) => isHiddenBlock(b, hide())) : []));
   /** A hidden block streams (live dot) as it would shown: thinking until a later block starts. */
   const hiddenStreams = (b: LiveBlock) => {
@@ -1196,6 +1301,11 @@ export function LiveEntries(props: {
         const tool = props.live.tools[b.id];
         return !(tool?.status === "done" && normalizeShowChangesDetails(tool.details));
       }
+      if (b.name === OFFER_TOOL) {
+        const tool = props.live.tools[b.id];
+        return !(tool?.status === "done" && normalizeOfferDetails(tool.details));
+      }
+      if (TOUR_TOOLS.has(b.name)) return false;
       return !CARD_RENDER_NAMES.has(b.name);
     });
     const skip = blocks.map((b) => b !== null && !shows(b));
@@ -1248,7 +1358,7 @@ export function LiveEntries(props: {
                     <div class="message-actions-host">
                       <UserTurn
                         text={e().attachments ? stripPastedPaths(e().text) : e().text}
-                        state={e().state}
+                        state={shownUserState(e())}
                         origin={e().origin}
                         overseer={e().overseer}
                         fromSession={e().fromSession}
@@ -1286,6 +1396,8 @@ export function LiveEntries(props: {
                           model={e().model}
                           streaming={blockStreams(e(), i())}
                           showHead={shownBefore(e().blocks, i())?.type !== "text"}
+                          timing={e().done && e().reply && firstText(e().blocks) === i() ? e().reply : undefined}
+                          time={e().endedAt}
                         />
                       );
                       return (
@@ -1347,6 +1459,10 @@ export function LiveEntries(props: {
 export interface OlderRowsApi {
   /** How many; null until the view's hello or snapshot says. */
   left(): number | null;
+  /** How many as far as is known now: `left`, or before the hello or snapshot what was known with
+      the rows the view opened on (kept from the last visit or fetched ahead); null when nothing
+      says. Only for what the page lays out before the hello (the older-edge line), never a count. */
+  known(): number | null;
   /** The next chunk above, unless one is on its way. */
   more(): void;
   /** The rows down to a jump's target, in one request. */
@@ -1382,6 +1498,8 @@ function whenIdle(fn: () => void): () => void {
   return () => clearTimeout(id);
 }
 
+/** How long a build's anchor is kept for the next build above it (ThreadScroller `anchorOf`). */
+const PIN_MS = 2000;
 /** Within this distance of the end, the transcript follows new content. */
 const FOLLOW_PX = 80;
 /** A jump's row is held until it has needed no correction for this many frames in a row... */
@@ -1428,8 +1546,13 @@ export function ThreadScroller(props: {
   current?: boolean;
   /** The thread shows a new session's empty state: there is no latest to jump to. */
   empty?: boolean;
+  /** Floats over the transcript's end, taking no height (a chat connecting or starting,
+      §chat.transcript/instant-open). */
+  note?: JSX.Element;
 }) {
   const paneId = usePaneId();
+  /** THE view, not a workspace pane: only it has the Focus button. */
+  const single = usePaneScope().id === null;
   let el!: HTMLElement;
   let follow = true;
   const [away, setAway] = createSignal<number | null>(null); // count when the user scrolled away
@@ -1527,8 +1650,10 @@ export function ThreadScroller(props: {
       held = null;
       return;
     }
-    const delta = offsetOf(held.row) - held.offset;
-    if (Math.abs(delta) >= 1) {
+    // Never under the reader's own scroll: writing the position stops a fling or a smooth scroll.
+    if (readerInput()) return;
+    const delta = anchorCorrection(held.offset, offsetOf(held.row), devicePixelRatio);
+    if (delta) {
       el.scrollTop += delta;
       if (held.jump) held.jump.moved = true;
     }
@@ -1610,6 +1735,15 @@ export function ThreadScroller(props: {
       scrolledWidth = width;
       if (!first && follow) return;
       reflowed = !first;
+    }
+    // Any scroll up by the reader's own hand that takes the view off the very end stops following,
+    // however small. More than 2px off it: a browser clamp or its
+    // scroll anchoring inside INPUT_MS, and a bounce at the end on a phone (scrollTop falling back
+    // to its maximum), leave the view at the end. A disclosure the reader toggled is re-read below.
+    if (follow && reader && up && lastGap > 2 && !held?.jump && !toggled) {
+      follow = false;
+      setAway(props.count);
+      return;
     }
     const near = lastGap < FOLLOW_PX;
     // A jump never brings following back, even one landing at the end right after a press in the
@@ -1781,8 +1915,9 @@ export function ThreadScroller(props: {
     if (!added) return false;
     const id = row.dataset.entry ?? "";
     readTo = null;
-    const top = el.scrollTop + row.getBoundingClientRect().bottom - el.getBoundingClientRect().bottom;
-    if (el.scrollHeight - top - el.clientHeight < FOLLOW_PX) return false;
+    // Clamped to what the view can scroll to: a transcript that fits stays following.
+    const top = readHoldTop(el, row.getBoundingClientRect().bottom - el.getBoundingClientRect().bottom, FOLLOW_PX);
+    if (top === null) return false;
     endJumpHold();
     el.scrollTop = top;
     lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -1812,26 +1947,38 @@ export function ThreadScroller(props: {
     ),
   );
 
-  /** Content was added or changed: back to the bottom while following. */
-  const settle = () => {
+  /** Content was added or changed: back to the bottom while following. A change in the rows
+      (`grownOnly`, the MutationObserver) moves a view off the end only when it added height below
+      it, so the gap to the end grew since it was last read: a change that adds nothing (a
+      control's state when the chat connects, hidden text, a checkmark) never moves the view. */
+  const settle = (grownOnly = false) => {
     // Before following: a scroll event between the rows landing and this frame may have read the
     // view they grew as the reader's own.
     if (holdAtRead()) return;
     if (!follow) return;
     if (toggled) return onScroll();
+    if (grownOnly) {
+      const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (gap > 2 && gap - lastGap < 1) return;
+    }
     toBottom();
   };
   // A mutation's settle waits for the frame (still before its paint), so the write to `scrollTop`
   // no longer forces a layout of the whole thread inside the task that changed it, once per change.
+  // Any caller in that frame asking for a settle whatever grew (`onScroll`) wins over a mutation's.
   let settleFrame = 0;
-  const settleSoon = () => {
+  let settleAlways = false;
+  const settleSoon = (always = true) => {
+    if (always) settleAlways = true;
     if (settleFrame) return;
     settleFrame = requestAnimationFrame(() => {
       settleFrame = 0;
-      settle();
+      const whatever = settleAlways;
+      settleAlways = false;
+      settle(!whatever);
     });
   };
-  const observer = new MutationObserver(settleSoon);
+  const observer = new MutationObserver(() => settleSoon(false));
   onCleanup(() => {
     observer.disconnect();
     cancelAnimationFrame(settleFrame);
@@ -1864,18 +2011,41 @@ export function ThreadScroller(props: {
         })
       : null;
   onCleanup(() => measured?.disconnect());
+  /**
+   * The row the view holds through a build above it, and where it is to stay: the one its top is in
+   * (lib/scroll-anchor), where it is now. Or, when the last build's correction is the last thing
+   * that moved the view (`pinned`), that build's row and target again: the view can only scroll by
+   * whole device pixels, so each correction leaves the row up to half of one off its target, and
+   * measured afresh from where the last one left it, those remainders would add up chunk by chunk.
+   */
+  const anchorOf = (): { row: HTMLElement; top: number } | null => {
+    if (pinned && pinned.row.isConnected && el.scrollTop === pinned.at && performance.now() < pinned.until) return pinned;
+    const rows = el.querySelectorAll<HTMLElement>(".thread > .entry");
+    const i = anchorIndex(rows.length, (k) => rows[k]!.getBoundingClientRect(), el.getBoundingClientRect().top);
+    return i < 0 ? null : { row: rows[i]!, top: rows[i]!.getBoundingClientRect().top };
+  };
+  /** The last build's anchor and target, the scroll position it left, and until when it is kept: a
+      fill's next chunk comes within a moment. */
+  let pinned: { row: HTMLElement; top: number; at: number; until: number } | null = null;
   const api: ScrollerApi = {
     root: () => el,
     prepend(build, hold) {
-      const fromEnd = el.scrollHeight - el.scrollTop;
+      const anchor = anchorOf();
       build();
-      // The rows just added are above the view: not new content to follow. The view keeps its
-      // distance from the end, which at the bottom is the bottom. The browser's own scroll
-      // anchoring usually has done this already; then nothing is written, and a scroll under way
-      // carries on.
+      // The rows just added are above the view: not new content to follow. The view keeps the line
+      // it shows (and so its distance from the end, which at the bottom is the bottom): the row at
+      // its top is measured again and the view scrolled by exactly as far as it moved, never by a
+      // distance derived from `scrollHeight`, which is rounded to a whole pixel and left a
+      // different fraction behind at every build (a device pixel's step at a ratio like 1.25). The
+      // browser's own scroll anchoring usually has done this already; then nothing is written.
+      // Nor is anything under the reader's own scroll: a write would stop it.
       observer.takeRecords();
-      const want = el.scrollHeight - fromEnd;
-      if (Math.abs(el.scrollTop - want) >= 1) el.scrollTop = want;
+      pinned = null;
+      if (anchor?.row.isConnected && !readerInput()) {
+        const delta = anchorCorrection(anchor.top, anchor.row.getBoundingClientRect().top, devicePixelRatio);
+        if (delta) el.scrollTop += delta;
+        pinned = { row: anchor.row, top: anchor.top, at: el.scrollTop, until: performance.now() + PIN_MS };
+      }
       const jump = held?.jump;
       if (!jump) {
         if (hold && !follow) holdView();
@@ -2031,7 +2201,32 @@ export function ThreadScroller(props: {
         <Icon name="chevron-down" small />
         {newCount() > 0 ? `Jump to Latest · ${newCount()} new` : "Jump to Latest"}
       </button>
+      {/* The single view only: a workspace pane has no Focus (§chat.transcript/focus-view). */}
+      <Show when={single}>
+        <FocusToggle />
+      </Show>
+      {props.note}
     </div>
+  );
+}
+
+/**
+ * Focus (§chat.transcript/focus-view): one round icon button in the transcript's bottom-right
+ * corner. On, the stylesheet hides the head's extras, the strips under it and the composer (kept
+ * mounted, inert, so its draft survives); the button stays in its corner.
+ */
+export function FocusToggle() {
+  return (
+    <button
+      type="button"
+      class="button focus-toggle"
+      aria-pressed={focusView() ? "true" : "false"}
+      aria-label="Focus"
+      title="Focus"
+      onClick={() => setFocusView(!focusView())}
+    >
+      <Icon name="expand" small />
+    </button>
   );
 }
 

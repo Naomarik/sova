@@ -20,9 +20,10 @@ Installed globally through this symlink:
 ```
 
 `install.sh` links every `extensions/*/` directory, so nothing extension-specific
-is needed. Run `/reload` to pick up changes. The command works in the TUI and in
-Sova's embedded runtimes (extension commands appear in the web composer's slash
-menu on their own).
+is needed. Run `/reload` to pick up changes. The command works in Sova (extension
+commands appear in the web composer's slash menu on their own); the child is a hidden
+chat Sova's worker host starts, so a pi TUI with no Sova server behind it refuses
+with "a background fork needs Sova's chat runtime".
 
 **Nothing here ever opens a browser.** The page is read in Sova — a thread row,
 the per-session strip, the gallery — or by opening the file yourself. A background
@@ -83,7 +84,7 @@ is busy or gone, or the transcripts don't line up, it folds as before (no cache)
 Web search/fetch is there **only** when `pi-web-access` is already installed in
 `~/.pi/agent/npm/node_modules` — "trivially available", never an install on the
 critical path of a slash command — and the parent declared its tools. The first
-extension the child loads, on top of `--no-extensions`, is the subagents worker
+extension the child loads, with discovery off, is the subagents worker
 marker, `../subagents/worker-mark.ts`: at its own session_start the child writes one
 `subagents-worker-session` custom entry into its session, and Sova keeps sessions
 carrying it out of its Recent list. Nothing else of the subagents extension comes
@@ -92,6 +93,7 @@ along, so it cannot spawn workers of its own.
 The child forks a byte-copy of the parent's session, cut after its last newline
 (`explanations/.forks/<id>.jsonl`, deleted when the run ends): pi's fork appends a
 newline to a source whose last line is partial, and the parent may be mid-append.
+The child's own session goes beside it (`explanations/.forks/<id>/`), deleted with it.
 
 ## The store (kept forever)
 
@@ -175,8 +177,11 @@ supersedes the running one:
 is no `"done"`), so every entry written before the field existed is already a
 final one. The TUI renders a running entry as `[explaining] <topic> — working…`.
 
-`status: "interrupted"` is a final entry too: a run whose parent stopped (restart,
-`/reload`, crash) before it settled. It is appended at the session's next prompt or
+`status: "interrupted"` is a final entry too: a run whose child's chat is gone (the
+server stopped it, or its process died for good) before it settled; a `/reload`, a
+crash of the parent or a server restart with chats in their own processes leaves
+the child running, and the reopened session watches it again and records its end.
+It is appended at the session's next prompt or
 `/explain` — never when a session is merely opened — with `note` when a complete page
 was on disk anyway (it links) or `error` when not. The TUI shows
 `[explain interrupted]`, Sova an Interrupted chip.
@@ -223,15 +228,17 @@ and the user still sees the `explain-doc` entry and the answer.
 
 ## Limits
 
-- At most 3 explanations run at once; each one is a whole pi process.
+- At most 3 explanations run at once; each one is a chat process of its own.
 - A brand-new session has no conversation to fork: either no file on disk yet,
   or a file that is only pi's header line (its first input was `/explain`). The
   parent forks only a file holding at least one `"type":"message"` line;
   otherwise the child starts fresh and works from the topic and the working
   directory. Everything else is identical.
-- Session shutdown or `/reload` stops live children and records nothing then; the
-  running entry is settled as `interrupted` at the session's next prompt. Their
-  store directories stay; an unfinished one simply has no page in it.
+- Session shutdown or `/reload` records nothing and leaves live children running:
+  the next session over the same file reattaches them (session_start) and records
+  their end. A running entry whose child is gone is settled as `interrupted` at the
+  session's next prompt. Store directories stay; an unfinished one simply has no
+  page in it.
 - The cache hit needs the parent's cache still warm: providers keep it for minutes
   (zai's expired within ~7 minutes in testing), and a claude-code parent must be
   idle with a live CLI child.
@@ -244,16 +251,16 @@ and the user still sees the `explain-doc` entry and the answer.
 | `prompt.ts` | The child's instructions |
 | `explain.ts` | Run lifecycle: start, record running, settle, validate, record final, wake; the child's policy; web search detection |
 | `identity.ts` | Which session is the parent, and which file the child forks |
-| `index.ts` | Pi wiring only: the command, the entry renderer, shutdown |
+| `index.ts` | Pi wiring only: the command, the entry renderer, reattach and detach |
 
 The forked child itself — the session copy, cache identity, request mirror, call
-gate and the runner — is the shared background fork in `../subagents/fork/`
+gate and the start — is the shared background fork in `../subagents/fork/`
 (`copy.ts`, `cache.ts`, `mirror.ts`, `child.ts`, `background.ts`; tested by the
-subagents runner, live-proved by its `tests/fork-cache-live.mjs`). Its runner uses
-the subagents extension's `SubagentRunner` **as a class** (`--fork`,
-`--no-extensions`, `-e <worker marker>`, `-e <installed package>`, then
-`-e child.ts`). No manager, no registry, no `agent_*` tools: these children never
-appear in `/agents`, and this extension stops its own.
+subagents runner). It starts the child through Sova's worker host
+(`../subagents/worker-host.ts`) as a hidden chat of kind `explain`: a fork of the copy,
+extensions the worker marker, the installed package, then `child.ts`. No manager, no
+registry, no `agent_*` tools: these children never appear in `/agents`, and this
+extension stops its own once their run is recorded.
 
 ## Verification
 

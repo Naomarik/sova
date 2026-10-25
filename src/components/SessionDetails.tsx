@@ -2,9 +2,9 @@ import { createEffect, createMemo, createResource, createSignal, For, Match, on,
 import type { CompactionInfo, ContextInfo, GitFileChange, GitRepoSummary, GitSummary, SessionInsight, SessionSummary, SessionWorktreeInfo, TranscriptItem } from "../../shared/protocol";
 import { contextSentence, contextStateFor } from "../lib/context";
 import { relativeTime, thousands, tildePath } from "../lib/format";
-import { readinessChip, readinessReason, type WorktreeChip, worktreeChips, worktreesSummary, worktreeStatus } from "../lib/worktrees";
+import { canReviewChanges, readinessChip, readinessReason, type WorktreeChip, worktreeChips, worktreesSummary, worktreeStatus } from "../lib/worktrees";
 import { absoluteTime, firstLine, timelineEntries } from "../lib/spend";
-import { orgProjectOf } from "../lib/drag-archive";
+import { archivedProjectOf, unarchivedProjectOf } from "../lib/drag-archive";
 import { archiveSession } from "../lib/session-actions";
 import { cwdLabel, remotePlaceOf } from "../lib/remote-session";
 import { addProject, ApiError, listProjects } from "../lib/api";
@@ -658,7 +658,7 @@ function WorktreeRow(props: { worktree: SessionWorktreeInfo; path: string; cwd?:
         </div>
         <Show when={readinessReason(w())}>{(line) => <p class="list-meta worktree-reason">{line()}</p>}</Show>
       </div>
-      <Show when={w().status === "active" && w().exists}>
+      <Show when={canReviewChanges(w())}>
         <button
           type="button"
           class="button button-sm worktree-row-action"
@@ -796,7 +796,7 @@ function ArchiveAction(props: { session: SessionSummary; archived: boolean; work
     const next = !props.archived;
     setPending(true);
     try {
-      if (await archiveSession(props.session.path, next, orgProjectOf(props.session))) props.onDone(next);
+      if (await archiveSession(props.session.path, next, next ? archivedProjectOf(props.session) : unarchivedProjectOf(props.session, hostOf(props.session.path) === null))) props.onDone(next);
     } finally {
       setPending(false);
     }

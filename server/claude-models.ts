@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { claudeBaseSpawnEnv, claudeLoginEnv } from "./claude-accounts";
 import { FIXED_CLAUDE_ENV, fixedSettingsJson } from "../pi-config/extensions/claude-code/fixed-settings.ts";
+import { claudeExecutable } from "../pi-config/extensions/claude-code/claude-executable.ts";
 import { randomUUID } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 
@@ -100,9 +101,15 @@ export function discoverClaudeModels(options: ClaudeDiscoveryOptions = {}): Prom
   const eofGraceMs = options.eofGraceMs ?? 500;
   const termGraceMs = options.termGraceMs ?? 1000;
   const timers = options.timers ?? GLOBAL_TIMERS;
+  let executable: string;
+  try {
+    executable = options.executable ?? claudeExecutable();
+  } catch (error) {
+    return Promise.reject(error);
+  }
   let child: ChildProcess;
   try {
-    child = (options.spawnImpl ?? spawn)(options.executable ?? "claude", [...CLAUDE_DISCOVERY_ARGV], {
+    child = (options.spawnImpl ?? spawn)(executable, [...CLAUDE_DISCOVERY_ARGV], {
       shell: false,
       detached: group,
       env,

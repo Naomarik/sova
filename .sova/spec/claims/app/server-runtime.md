@@ -1,7 +1,9 @@
 # §app/server-runtime — The server's runtime: Bun, or Node on request
 
 Sova's server runs on Bun. It runs on Node only when the operator asks for it explicitly
-(§app.server-runtime/choice), and the test suite, both its tiers, follows the same switch. A launcher starts the
+(§app.server-runtime/choice), and the test suite, both its tiers, follows the same switch. A server
+on Node runs no chats and no workers, since they run on the server's own Bun: a host with chats runs
+on Bun. A launcher starts the
 server on that runtime; when Bun is wanted but missing or the server fails to start on it, that is
 an error, never a quiet start on Node (§app.server-runtime/fallback). The server says which
 runtime it is on in `GET /api/health` (§app.server-runtime/health). There is no picker in Settings
@@ -18,8 +20,10 @@ takes effect at the server's next start.
   server is the launcher's own process (a service manager's main pid stays the server's). A
   leading `--node` is taken by the launcher and the server gets `SOVA_RUNTIME=node`, so it and
   what it starts see the same choice. `pnpm start` runs the launcher.
-- `pnpm run dev:server` (the gated watcher) and `pnpm run dev:hermetic` follow the same choice:
-  each (re)start spawns `bun server/index.ts`, or the Node command when Node is asked for.
+- `pnpm run dev:server` (the dev watcher) and `pnpm run dev:hermetic` follow the same choice:
+  each (re)start spawns `bun server/index.ts`, or the Node command when Node is asked for. The dev
+  watcher restarts the server 300 ms after the last edit to its import graph, whatever the sessions
+  are doing: nothing holds the restart, since chats and workers run in processes of their own.
   `pnpm run dev:hermetic:node` is the hermetic server on Node.
 - The test suite follows it too: `pnpm test`, `pnpm test:int`, `pnpm test:all`
   (§app.server-runtime/test-tiers) and the project's test verb run on Bun, and on Node with
@@ -27,6 +31,10 @@ takes effect at the server's next start.
   wins over the environment; `pnpm run test:bun` runs Bun whatever the environment says.
 - The Bun binary is `$SOVA_BUN` when set, else `bun` on `PATH`, else what `mise which bun`
   answers. The Node binary the launcher uses is `$SOVA_NODE`, else `node` on `PATH`.
+- On Node the server serves everything but chats: every chat open is refused with "Chats need Bun
+  to run Sova's chat runtime" and every worker start with "Workers need Bun to run Sova's chat
+  runtime" (§app.server-runtime/pi-workers), whatever Bun the machine has. Node is for tooling and
+  tests; a host with chats runs on Bun.
 
 ## §app.server-runtime/fallback — No fallback to Node
 
@@ -37,21 +45,10 @@ test runner does the same, exiting 2 with one line that names `pnpm run test:nod
 file runs. A Bun server that fails to start fails like any other: nothing counts its boots and
 nothing switches to Node, and no `runtime-fallback.json` or `runtime-bun-boots` file is written.
 
-## §app.server-runtime/pi-workers — Pi workers run pi on Bun, the same from every folder
+## §app.server-runtime/pi-workers — Workers run on Sova's chat runtime on Bun, the same from every folder
 
-- A pi worker (a subagent on the pi backend) starts the same pi on the same runtime whatever folder
-  it works in. The host finds pi once, at its first pi worker, and keeps it for its lifetime: pi's
-  own package as Sova's code installs it (that package's `pi` script), run on Bun. The Bun is the
-  server's own runtime when the server runs on Bun; otherwise `$SOVA_BUN`, else `bun` on the
-  server's `PATH`, a version-manager shim there resolved once from the server's own folder, else from
-  Sova's own tree; with no Bun at all, the server's own runtime runs the script.
-- The worker's folder never decides which pi or which runtime runs: a project whose version manager
-  selects another Node (one without pi, say) gets the same pi as any other. On Bun, pi reads neither
-  that folder's `bunfig.toml` nor its `.env`, as on Node.
-- `$SOVA_PI_CLI` names another pi entry: a script (`.js`, `.mjs`, `.cjs`, `.ts`) runs on the same
-  runtime, anything else runs as it is. A host that is pi itself (the TUI) re-runs its own pi
-  script on its own runtime. Only when pi's package can't be found does a worker run `pi` from the
-  server's `PATH`, looked up once in the same way.
+- Every worker (a subagent on any backend, a team member, a hidden chat) runs Sova's chat runtime (`server/chat-runtime/main.ts`, §app.chat-processes/workers) on the same Bun whatever folder it works in. That Bun is the server's own runtime. A server on Node starts no workers, whatever Bun the machine has: each start is refused with "Workers need Bun to run Sova's chat runtime". Every other chat runs on that Bun too, and with none each open is refused with "Chats need Bun to run Sova's chat runtime" (§app/chat-processes).
+- The worker's folder never decides which runtime runs: the chat process starts in Sova's own folder, so a project's version manager, `bunfig.toml` and `.env` never pick or configure it.
 - A change to any of this takes effect at the server's next start.
 
 ## §app.server-runtime/health — The runtime in /api/health
@@ -60,7 +57,16 @@ nothing switches to Node, and no `runtime-fallback.json` or `runtime-bun-boots` 
 (§chat.profiles/live-commit): `name` is the runtime this process runs on (`"bun"` when
 `process.versions.bun` is set, else `"node"`), `version` that runtime's version, `chosen` the
 runtime the choice asks for (`"node"` when its environment has `SOVA_RUNTIME=node`, else `"bun"`),
-read once at start. The answer's other fields, `unknownEntries` among them (a number only, never an
+read once at start. It also adds `chatHost: {driver}`: how chat processes run (§app/chat-processes),
+`"systemd"` (user units) or `"detached"` (sessions the server records), or `"starting"` before it
+is decided, with `bun: false` added when the server runs on Node (it has no Bun for chats, so every chat open
+is then refused); the
+full reason for the choice is in the server's log. Once decided, `chatHost` also has `code`:
+`"copy"` when chat processes run from a code generation (§app.chat-processes/code-generations),
+with `codeWhy` `full node_modules copy (another filesystem)` when its dependencies could not be
+hardlinked, and `"live"` when they run from the checkout, with `codeWhy`, one fixed short reason
+(`copy failed`, `test switch`); the full reason is in the server's log. `code` is absent while the choice is `starting`, and while the server is still making or finding its copy
+(a new commit's first start can take seconds). The answer's other fields, `unknownEntries` among them (a number only, never an
 entry's type or content: the route needs no sign-in), are §chat.profiles/live-commit's.
 
 ## §app.server-runtime/quirks — Runtime differences, worked around in one place
@@ -145,3 +151,11 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   `server/tier-guard.test.ts` proves each refusal on both runtimes: an ESM named-import `spawn`,
   `execFileSync`, `net.connect`, `http.createServer().listen`, a `fetch` to localhost (and Bun's
   `Bun.connect`, `Bun.spawn`, `Bun.serve`), and a dynamic import of `server/index.ts`.
+- **No real Claude program.** Every test process the runner starts, in either tier and on either
+  runtime, finds a stand-in `claude` (`scripts/fake-claude.mjs`) first on its `PATH`, so code under
+  test that runs the Claude program (§app.claude-code-provider/one-program) never reaches the
+  installed CLI or a paid model, whichever file starts it. A test that needs another `claude` sets
+  its own `PATH`. A unit file whose in-process chats load this tree's pi-config extensions links
+  them through `server/testing/agent-dir.ts`, whose topic-outline settings run the outline's check
+  at once after each turn and never call a summarizer model on their own: a summary is a model
+  call, and the unit tier starts no program.

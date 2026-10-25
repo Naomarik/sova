@@ -29,6 +29,7 @@ for (const name of ["alpha-skill", "beta-skill"]) {
   writeFileSync(join(agentDir, "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: The ${name} description.\n---\n\nbody\n`);
 }
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { acquireChat, disposeAllChats, heldChat } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { applyLoadout, clearSetupCache, getSessionSetup } = await import("./session-setup");

@@ -200,7 +200,6 @@ export class FakeHost {
       containerExec: async () => 0,
       containerQuery: async () => ({ code: 1, stdout: "" }),
       selfCheckout: () => null,
-      hostBusy: () => null,
       projectIdOf: async () => null,
       sovaPorts: async () => new Set<number>(),
       adoptedStatus: async () => ({ state: "missing", pid: null, startedAt: null, rssBytes: null }),

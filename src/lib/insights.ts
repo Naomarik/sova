@@ -5,6 +5,7 @@ import type { AgentsInsight, TeamEvent, TeamInfo, TeamMember, UsageAuth, UsageBa
 import type { Tone } from "../components/ui";
 import { accountGroups, type LoginFacts, loginName } from "./claude-login-groups";
 import { costsRouteFromHash, type CostsQuery } from "./cost-history";
+import { type PerfQuery, perfRouteFromHash } from "./perf";
 import { clockTime, duration, relativeTime, shortDate, stampTime, thousands } from "./format";
 import { isHostSession } from "./workers";
 import { currentIncluded, includedCreditPct } from "./ollama-usage";
@@ -803,10 +804,11 @@ export const explanationsHref = (sessionId?: string | null) =>
 
 /** The insights page in the hash, if any: `#/usage`, `#/agents`, `#/agents/<teamKey>` (a bare team
     id from older links too), `#/agents/costs[?…]` (the Agents page's Costs tab: `costs` set),
+    `#/agents/performance[?…]` (its Performance tab: `performance` set),
     `#/explanations`, `#/explanations/<sessionId>`. */
 export type InsightsRoute =
   | { page: "usage" }
-  | { page: "agents"; team: string | null; costs?: CostsQuery }
+  | { page: "agents"; team: string | null; costs?: CostsQuery; performance?: PerfQuery }
   | { page: "explanations"; session: string | null };
 
 export function insightsRouteFromHash(hash: string): InsightsRoute | null {
@@ -819,9 +821,11 @@ export function insightsRouteFromHash(hash: string): InsightsRoute | null {
       return { page: "explanations", session: null };
     }
   }
-  // Before the team key: "costs" is the tab, never a team.
+  // Before the team key: "costs" and "performance" are tabs, never teams.
   const costs = costsRouteFromHash(hash);
   if (costs) return { page: "agents", team: null, costs };
+  const performance = perfRouteFromHash(hash);
+  if (performance) return { page: "agents", team: null, performance };
   const m = /^#\/agents(?:\/(.+))?$/.exec(hash);
   if (!m) return null;
   try {

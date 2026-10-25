@@ -99,7 +99,7 @@ describe("rewindSession", () => {
   test("a rewind is REFUSED while a message is still on its way out, and writes nothing", async () => {
     // The window this exists for is NOT covered by the isStreaming check: `steer()` awaits the
     // extension `input` handlers before queueing, so a steer carrying images on a non-vision model
-    // can still be in flight after the turn it meant to interrupt has ended (CLAUDE.md). Rewinding
+    // can still be in flight after the turn it meant to interrupt has ended (agents/server/harness/overview.md). Rewinding
     // then moves the leaf, and the queued message is delivered into the NEW branch on the next
     // run — the abandoned message resurrecting on the branch the user rewound TO.
     const f = fake(twoTurns(), { streaming: false, queued: true });

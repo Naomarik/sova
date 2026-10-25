@@ -78,6 +78,13 @@ export interface Target {
 	/** Default remote working directory (absolute). */
 	cwd?: string;
 	env?: Record<string, string>;
+	/**
+	 * Seconds ssh may take to connect (1-300), for hosts that are slow to reach cold (aws-ssm with an
+	 * Instance Connect key push can take 10-30 s). Omitted = ssh's ConnectTimeout=10 and the fixed
+	 * timers built on it. Set: ssh's ConnectTimeout (unless `ssh.options` sets its own, which wins) and
+	 * the timers derived from it (`connectTimeoutMs`). Read from the ssh-bearing target of a `via` chain.
+	 */
+	connectTimeoutS?: number;
 }
 
 export interface TargetsFile {
@@ -90,6 +97,11 @@ export const DEFAULT_SSH_OPTIONS: readonly string[] = [
 	"ControlPath=~/.ssh/cm-%C",
 	"ControlPersist=10m",
 	"ConnectTimeout=10", "ServerAliveInterval=15", "ServerAliveCountMax=2"];
+
+/** ssh's ConnectTimeout when the entry sets neither `connectTimeoutS` nor its own option. */
+export const DEFAULT_CONNECT_TIMEOUT_S = 10;
+/** Upper bound of `connectTimeoutS`: past five minutes a host is down, not slow. */
+export const MAX_CONNECT_TIMEOUT_S = 300;
 
 // ---------------------------------------------------------------------------
 // quoting
@@ -161,6 +173,8 @@ export function validateTarget(t: unknown): string[] {
 		if (x.docker.user !== undefined && (typeof x.docker.user !== "string" || !WORD_RE.test(x.docker.user))) errs.push("docker.user is malformed");
 	}
 	if (x.cwd !== undefined && (typeof x.cwd !== "string" || !(x.cwd.startsWith("/") || x.cwd === "~" || x.cwd.startsWith("~/")))) errs.push("cwd must be absolute (or ~/…)");
+	if (x.connectTimeoutS !== undefined && !(Number.isInteger(x.connectTimeoutS) && x.connectTimeoutS >= 1 && x.connectTimeoutS <= MAX_CONNECT_TIMEOUT_S))
+		errs.push(`connectTimeoutS must be an integer 1-${MAX_CONNECT_TIMEOUT_S}`);
 	if (x.env !== undefined) {
 		if (!x.env || typeof x.env !== "object") errs.push("env must be an object");
 		else for (const [k, v] of Object.entries(x.env)) if (!ENV_KEY_RE.test(k) || typeof v !== "string") errs.push(`env.${k} is not NAME=string`);
@@ -231,6 +245,56 @@ export function awsSsmProxyCommand(proxy: TargetProxy, key?: string): string {
 	return `sh -c ${pct(shQuote(script))} sh ${args.join(" ")}`;
 }
 
+// ---------------------------------------------------------------------------
+// connect timeout
+
+/** The target whose ssh block carries `target`: itself, or the first ssh hop along `via` (undefined: none). */
+export function sshHop(target: Target, registry: readonly Target[] | undefined): Target | undefined {
+	const seen = new Set<string>();
+	let t: Target | undefined = target;
+	while (t && !t.ssh && t.via && !seen.has(t.name)) {
+		seen.add(t.name);
+		t = registry?.find((x) => x.name === t!.via);
+	}
+	return t?.ssh ? t : undefined;
+}
+
+/** The `ConnectTimeout=<s>` value an entry's own `ssh.options` set, if any (ssh takes the first). */
+function ownConnectTimeoutS(t: Target): number | undefined {
+	for (const o of t.ssh?.options ?? []) {
+		const m = /^ConnectTimeout[= ]\s*(\d+)\s*$/i.exec(o);
+		if (m) return Number(m[1]);
+		if (/^ConnectTimeout[= ]/i.test(o)) return undefined; // malformed: ssh decides, we don't guess
+	}
+	return undefined;
+}
+
+/** The `ConnectTimeout=` option we add after the entry's own options (theirs, first, wins). */
+export function connectTimeoutOption(t: Target): string {
+	return `ConnectTimeout=${t.connectTimeoutS ?? DEFAULT_CONNECT_TIMEOUT_S}`;
+}
+
+/**
+ * The connect time a JS timer must allow for, in seconds, or undefined when the chain's ssh-bearing
+ * target doesn't set `connectTimeoutS` (callers then keep their fixed constants, unchanged). When it
+ * is set and the entry's `ssh.options` also sets ConnectTimeout, ssh uses the option, so this does too.
+ */
+export function effectiveConnectTimeoutS(target: Target, registry?: readonly Target[]): number | undefined {
+	const hop = sshHop(target, registry);
+	if (hop?.connectTimeoutS === undefined) return undefined;
+	return ownConnectTimeoutS(hop) ?? hop.connectTimeoutS;
+}
+
+/**
+ * A timer built on ssh's connect: `fixedMs` (today's constant) when the chain sets no
+ * `connectTimeoutS`, else the connect time plus `marginMs`, never below `fixedMs` (a short connect
+ * timeout fails fast through ssh itself; it doesn't shrink the budget of the command after it).
+ */
+export function connectTimeoutMs(target: Target, registry: readonly Target[] | undefined, fixedMs: number, marginMs: number): number {
+	const s = effectiveConnectTimeoutS(target, registry);
+	return s === undefined ? fixedMs : Math.max(fixedMs, s * 1000 + marginMs);
+}
+
 /** ssh argv up to and including the destination (the far command string is appended by the caller). */
 export function sshPrefix(t: Target): string[] {
 	const s = t.ssh;
@@ -238,7 +302,7 @@ export function sshPrefix(t: Target): string[] {
 	const argv = ["ssh", "-T", "-o", "BatchMode=yes"];
 	for (const o of s.options ?? []) if (!/^ProxyCommand[= ]/i.test(o) || !t.proxy) argv.push("-o", o);
 	if (t.proxy) argv.push("-o", `ProxyCommand=${awsSsmProxyCommand(t.proxy, s.key)}`);
-	for (const o of DEFAULT_SSH_OPTIONS) argv.push("-o", o);
+	for (const o of DEFAULT_SSH_OPTIONS) argv.push("-o", /^ConnectTimeout=/.test(o) ? connectTimeoutOption(t) : o);
 	if (s.port) argv.push("-p", String(s.port));
 	if (s.key) argv.push("-i", expandHome(s.key));
 	argv.push("--", s.user ? `${s.user}@${s.host}` : s.host);

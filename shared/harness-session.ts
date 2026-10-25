@@ -109,11 +109,37 @@ interface HarnessMessageEvent {
   handle: object | undefined;
 }
 
-/** A piece of a streaming reply (the runaway-stream guard counts them): a tool call starting, or the
-    characters of a tool call's arguments, of text or of thinking. `index` is the content block's. */
+/** A piece of a streaming reply: a part (thinking, text, a tool call) starting or ending, or the characters
+    of a tool call's arguments, of text or of thinking (the runaway-stream guard counts those; reply timing,
+    server/reply-timing.ts, times each part from its start to its end). `index` is the content block's. */
 export type HarnessStreamDelta =
-  | { kind: "tool-call.start"; index?: number }
+  | { kind: HarnessPartEdge; index?: number }
   | { kind: "tool-call" | "text" | "thinking"; index?: number; delta: string };
+
+/** A part of a streaming reply starting or ending. */
+export type HarnessPartEdge = "tool-call.start" | "tool-call.end" | "text.start" | "text.end" | "thinking.start" | "thinking.end";
+
+/**
+ * How a finished assistant reply ended and what it was, read at its `message.end` (reply timing reads it;
+ * nothing else needs the harness's message shape for it). `stop`: `stop`, `length`, `toolUse` (finished),
+ * `error`, `aborted`, or `other`. `output` counts every output token, thinking included; `reasoning` is the
+ * provider's thinking-token count exactly as reported: absent when the provider reports none (a 0 may
+ * still mean "not reported" for some providers: the reader decides). `effort`: the thinking level the
+ * reply was requested at (`off` when none), `providerEffort` the provider-native level it ran at, when
+ * known. `invalid`: why the reply's timing is not a measurement (a provider retried inside it: the
+ * rejected attempt's time is in it), absent when it is one.
+ */
+export interface HarnessReplySummary {
+  provider: string;
+  model: string;
+  responseModel?: string;
+  stop: "stop" | "length" | "toolUse" | "error" | "aborted" | "other";
+  output: number;
+  reasoning?: number;
+  effort?: string;
+  providerEffort?: string;
+  invalid?: string;
+}
 
 /**
  * One live event of the session, in Sova's words: exactly one per harness event, delivered inside the
@@ -126,12 +152,16 @@ export type HarnessEvent = { frame(): HarnessFrame } & (
   | { type: "run.settled" }
   | { type: "turn.start" }
   | { type: "turn.end" }
+  /** The agent's own model request is about to go out (after any wait for a provider slot), at `at` (ms
+      epoch). Only the conversation's requests, never a side call's (a title, a compaction summary, a cache
+      warm). Not a pi event: its `frame()` is never forwarded (no wire carries it). */
+  | { type: "request.start"; at: number }
   | ({ type: "message.start" } & HarnessMessageEvent)
   /** A streaming message changed: its role, the message so far (`handle`, read with the transcript's
       text helpers) and the piece that arrived, when it is one the stream guard counts. */
   | { type: "message.update"; role: "user" | "assistant" | "other"; handle: object | undefined; stream?: HarnessStreamDelta }
   /** Listeners run before the message's entry is written; one microtask later it is (persistedId). */
-  | ({ type: "message.end" } & HarnessMessageEvent)
+  | ({ type: "message.end"; reply?: HarnessReplySummary } & HarnessMessageEvent)
   /** `nested`: a call another tool made (a codemode script's), which writes no entry of its own. */
   | { type: "tool.start"; nested?: true }
   | { type: "tool.update"; nested?: true }
@@ -257,8 +287,9 @@ export interface HarnessSession extends SessionRead {
   appendUserMessage(text: string, images?: readonly ImageInput[]): EntryId;
   /** Re-read the agent's context from the session after writes outside a run. */
   refreshContext(): void;
-  /** A note for the model, shown in the chat, that starts no turn (idle: written now). */
-  appendNote(noteType: string, text: string): Promise<void>;
+  /** A note for the model, shown in the chat, that starts no turn (idle: written now). `details`: data the
+      transcript reads (HEntry note `details`), never sent to the model. */
+  appendNote(noteType: string, text: string, details?: unknown): Promise<void>;
 
   // ── attribution
   /** `claim` sees the input each user-message entry point hands the agent (prompt, steer, follow-up)

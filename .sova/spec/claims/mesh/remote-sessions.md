@@ -29,8 +29,11 @@ peer's answer for its own lock-out. WebSocket frames are not changed.
 
 While the mesh is on, the session list shows every host's sessions together. Which host a row
 belongs to is stamped by the serving host from where it fetched it, never taken from the peer's
-answer. A host that is down keeps its last known rows, marked host offline, and they can't be
-opened until it returns. A host that withholds its sessions from this host (it answers `denied`,
+answer. A host that is down (not answering; a host on another version answers and is not down)
+keeps its last known rows, but the list leaves them out everywhere, in every region, count and
+search hit, unless the host filter names that host (§mesh.remote-sessions/host-filter): there they
+show, marked down, and can't be opened until it returns. Once it answers again its rows are back
+everywhere with the next list. A host that withholds its sessions from this host (it answers `denied`,
 §mesh.peers/grants) keeps no rows, and the list filtered to it says "Hidden by {host}". The existing
 session list route is unchanged.
 
@@ -85,7 +88,8 @@ word; on another version (`skewed`) an amber dot and "other version"; not answer
 (§mesh.peers/grants) an amber dot and "hidden". A host on another version also says, under its
 name, where its build sits against this host's, and one that is behind has `Resync` beside it
 (§mesh.peers/resync). Exactly one is chosen.
-`All hosts` is the default and shows every host's sessions; a host shows only that host's sessions.
+`All hosts` is the default and shows every host's sessions but a down host's; a host shows only
+that host's sessions, and a down host its last known ones (§mesh.remote-sessions/list).
 It narrows together with the text filter, and the choice is remembered across reloads; a remembered
 host that is no longer known reads as `All hosts`. The menu ends with `Mesh details…`. With the
 mesh off, or only one host known, nothing is shown.
@@ -105,7 +109,7 @@ people, projects, decisions, conflicts, the project overseer and its settings, i
 worktrees, the models its session pickers offer, starting a hand-off session, a person's links and
 preview, Commit Now and the remote — goes to that host through `/peer/<id>/api/…`, which answers
 exactly as it answers its own page. Where such a page names a host, it names that one: a project
-paused by an attach reads "Paused at L0 on <peer>" and "This organization was attached on <peer>
+paused by an attach reads "Paused on <peer>" and "This organization was attached on <peer>
 …", the daily limits "Resets at midnight on <peer>.", and a decision whose session isn't there says
 it isn't on <peer>. A local org's addresses and
 words are unchanged. `#/orgs` still lists this host's orgs only.

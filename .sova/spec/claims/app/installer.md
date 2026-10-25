@@ -7,13 +7,19 @@ downloads into the install directory (§app.installer/bun), it installs no toolc
 package, and it never uses sudo. It
 clones the requested ref (§app.installer/ref) into an install directory of its own (default `~/.local/share/sova`),
 installs its dependencies and builds it in a staging directory beside it, promotes the build only
-after it succeeded (the previous install kept until then, and restored on failure), and writes a
+after it succeeded (the previous install kept until then, and restored on failure; with
+`SOVA_KEEP_PREVIOUS=<path>` the replaced install is moved to that path instead of deleted, which is
+how an upgrade from Settings keeps it until the new version answers, §app.updates/upgrade), and writes a
 `sova` launcher (default `~/.local/bin/sova`). The launcher runs the server on that Bun (`sova
 --node` runs it on Node instead), on `PORT` when set, else the install's port (`--port`, default
-`4800`, the port its closing message names), except `sova token`,
-which prints the install's access token, and `sova open`, which opens the browser at the app
-already unlocked (§app.access/callers); its closing message says both. An install directory that
-is not a clean clone of Sova, or a launcher this script did not write, is refused and left alone.
+`4800`, the port its closing message names), and tells the server its own path in
+`SOVA_LAUNCHER` (§app.updates/running), except `sova token`,
+which prints the install's access token, and `sova app` (or `sova open`), which opens the app
+already unlocked in a window of its own, starting the server first when it is not running
+(§app.access/callers); its closing message says both. Beside the launcher it writes an entry in
+the desktop's app launcher that runs `sova app` (§app.installer/app-entry). An install directory
+that is not a clean clone of Sova, or a launcher or app entry this script did not write, is
+refused and left alone.
 
 Beyond that it links Sova's pi extensions into the agent directory (§app.installer/pi-extensions),
 says what Claude Code's models need (§app.installer/claude-code-provider), and offers a login
@@ -80,7 +86,73 @@ systemd user unit on Linux (`~/.config/systemd/user/sova.service`, or under
 - **One instance.** Before starting a service that is not running, the installer checks the
   port; when something already listens there (for example a `sova` started by hand), it installs
   the definition, does not start it, and says so.
-- Where neither launchd nor a systemd user manager is available, it says so and installs none.
+- **No service manager.** Where there is neither launchd nor `systemctl` (a Linux without systemd,
+  a container), it asks nothing and installs none, and its closing message says only how to run
+  `sova`, without the hint to re-run with `--service`; `--service` there stops the install before
+  anything is written: "--service: this machine has neither launchd nor systemctl; run the launcher
+  yourself (pass --no-service)."
+- **No user manager.** Where `systemctl` exists but no systemd user manager answers (`systemctl
+  --user show-environment` fails: no login session, say), a service it was told to install, or that
+  it installed before, is written but neither enabled nor started, and the closing message says so
+  with the command to start it: "service: wrote <unit path>, but there is no systemd user manager to
+  load it (no login session?); start it with: systemctl --user enable --now sova.service".
+
+## §app.installer/app-entry — An app-launcher entry that opens Sova in its own window
+
+On Linux and macOS, every run writes, along with the `sova` launcher, an entry in the desktop's
+app launcher named **Sova**, with Sova's icon, that runs `<bin dir>/sova app`: Sova opens in a
+bare app window of a Chromium-family browser — no tabs, no address bar, no toolbar — already
+unlocked. `--no-app-entry`
+(or `SOVA_NO_APP_ENTRY=1` in the installer's environment) writes none and leaves an existing one
+as it is.
+
+- **Linux.** `${XDG_DATA_HOME:-~/.local/share}/applications/sova.desktop` (`Exec=<bin dir>/sova
+  app`, `Icon=sova`, `Terminal=false`), and the install's 512px icon (`public/icons/pwa-512.png`)
+  at `.../icons/hicolor/512x512/apps/sova.png`. `update-desktop-database` and
+  `gtk-update-icon-cache` run after a change only when they are installed.
+- **macOS.** `~/Applications/Sova.app`, a bundle (`io.github.naomarik.sova.app`) whose executable
+  runs `<bin dir>/sova app`, with an icon built from the same PNG by `sips` and `iconutil` (no icon
+  when either is missing). It shows no Dock icon of its own: the window is the browser's. Its
+  executable is a script, which macOS would start under Rosetta, and the browser with it; the
+  bundle puts Apple silicon (`arm64`) first (`LSArchitecturePriority`), so both run natively. Sova
+  supports Apple silicon Macs only: Intel Macs are not supported. Nothing refuses one, though: the
+  installer runs there and fetches Bun's x64 build (§app.installer/bun), untested.
+- **Ours, or refused.** The `.desktop` file and the bundle's `Info.plist` carry a marker. A file
+  at either path that this script did not write, or any file at the icon's path while no
+  `.desktop` of ours is there, is refused before anything is installed, named, and left alone, with a
+  pointer to `--no-app-entry`. Ours is rewritten only when its content would change
+  (§app.installer/idempotent).
+- **The browser.** `sova app` picks, on Linux, the default browser (`xdg-settings get
+  default-web-browser`) when it is Chrome, Chromium, Brave, Edge, Vivaldi or Helium, run as its
+  `.desktop` file's `Exec` names it; else the first of `google-chrome-stable`, `google-chrome`,
+  `chromium`, `chromium-browser`, `brave`, `brave-browser`, `microsoft-edge` and `vivaldi` on
+  `PATH`. On macOS it picks the default https handler when it is one of Google Chrome, Chromium,
+  Brave Browser, Microsoft Edge, Vivaldi or Helium, else the first of those found in
+  `/Applications` or `~/Applications`, and runs the bundle's executable itself. It opens
+  `--app=http://127.0.0.1:<port>/#t=<token>` with `--no-first-run --no-default-browser-check`
+  and no debugging port, and returns while the window stays open.
+- **A profile of its own.** The browser runs with `--user-data-dir` set to a folder reserved for
+  Sova — `${XDG_CONFIG_HOME:-~/.config}/sova-browser` on Linux, `~/Library/Application
+  Support/sova-browser` on macOS — so it never shares the person's browsing profile, and the
+  window opens as its own app even while that browser is already running. On Linux a new profile
+  is seeded to use the system title bar (`custom_chrome_frame` off) and to skip the first-run page.
+- **No such browser.** With none of them installed, `sova app` opens the same unlocked URL as a
+  tab in the default browser (`open` on macOS, `xdg-open`), and the installer's closing message
+  says an app window needs Chrome, Chromium, Brave, Edge or Vivaldi — only when none is found.
+  Browsers installed only as a Flatpak are not found.
+- **Starting the server.** When nothing answers `GET /api/health` on the port, `sova app` starts
+  the server before opening the window: through the login service when the installer's is
+  installed and the port is the install's (`systemctl --user start sova.service`; `launchctl
+  kickstart` of the agent, or `launchctl bootstrap` when it is not loaded), else — or when that
+  command fails — the launcher itself in the background, with its output in
+  `<agent dir>/sova/app-server.log` and the directories the installer found its tools in added to
+  its `PATH`. It waits up to 20 seconds for the health check to answer, then reads the token
+  (which a first start mints) and opens the window. A server it started keeps running after the window closes. When it does
+  not answer in time, or the background server exits first, it says so with where its output is —
+  a desktop notification (`notify-send` on Linux, `osascript` on macOS) as well as on stderr — and
+  exits nonzero, opening nothing.
+- **Removing it.** Deleting the entry (`sova.desktop` and the icon, or `Sova.app`) and the
+  profile folder removes everything it added; the uninstall steps in the docs list them.
 
 ## §app.installer/idempotent — Re-running changes nothing
 
@@ -89,8 +161,8 @@ Running the installer again with the same inputs leaves the machine as it was.
 - **Same commit, no rebuild.** When the install directory already holds the commit the ref
   resolves to, with its build and dependencies in place, it is not cloned, installed or built
   again. `--reinstall` rebuilds anyway.
-- **Files rewritten only when they differ.** The launcher, the extension links and the service
-  definition are written only when their content would change.
+- **Files rewritten only when they differ.** The launcher, the app entry and its icon, the
+  extension links and the service definition are written only when their content would change.
 - **The service reloads only on a change.** A service whose definition is unchanged and running
   is left running; a changed definition is updated in place and reloaded; a code update restarts
   it. A second instance is never started.
@@ -98,10 +170,15 @@ Running the installer again with the same inputs leaves the machine as it was.
 ## §app.installer/ref — The ref it installs
 
 The installer installs `SOVA_REF` when set: a tag, a branch or a commit of the repository. Unset,
-it installs the script's own default ref: `master` on master until the first release is tagged, so
-the published command `curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash`
-installs master's latest commit and a re-run updates to it. A release commit sets the default to
-its own tag, so the installer fetched from that tag installs that tag.
+it installs the `stable` tag, so the published command
+`curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/install.sh | bash`
+installs the newest stable release. `stable` is the one tag that moves: each release points it at
+its own numbered tag (`vX.Y.Z`), and numbered tags never move. A re-run installs the commit
+`stable` points at then: the newer release once it moves forward, and the older one again when it
+is moved back, each rebuilt from a fresh clone. The default is the same in every commit, so the
+installer fetched from a numbered tag, or from any branch, also installs whatever `stable` points
+at; installing or staying on one release takes `SOVA_REF=vX.Y.Z`, and a re-run with a branch
+named updates to that branch's latest commit.
 
 - **Checked before anything is written.** A name that is neither a tag nor a branch of the
   repository, and is not a commit (seven or more hex digits), stops the install before anything
@@ -131,7 +208,7 @@ The installer downloads the Bun release the cloned ref's `mise.toml` pins (`bun 
 Bun's GitHub releases into `<install dir>/.bun/bin/bun`, through the clone's `scripts/fetch-bun.sh`,
 and checks it against the sha256 the clone's `scripts/bun-release.txt` records for that build.
 The build is chosen like Bun's own installer chooses it: macOS arm64 (also from an x64 shell under
-Rosetta) or x64, Linux x64 or aarch64, the musl build on a musl libc, the Android build in Termux,
+Rosetta) or x64 (an Intel Mac, which installs but is not supported, §app.installer/app-entry), Linux x64 or aarch64, the musl build on a musl libc, the Android build in Termux,
 and the `-baseline` build on an x64 CPU without AVX2. A checksum that does not match, a ref that
 records no checksum for its pinned build, a machine with no such build, or a download that does
 not run there stops the install before anything is promoted, with "could not install Bun; nothing
@@ -142,7 +219,7 @@ rebuilt even at the same commit.
 - **The launcher.** `sova` sets `SOVA_BUN` to that Bun unless the caller set one, and runs the
   clone's `scripts/start-server.sh` with its arguments, so the server runs on Bun
   (§app.server-runtime/choice). `sova --node`, or `SOVA_RUNTIME=node` in its environment, runs it
-  on Node instead.
+  on Node instead, with no chats or workers.
 - **Why a download.** Bun lives and goes with the install directory, at the version Sova is
   tested on, with no version manager installed and no shell rc file edited.
 - Its closing message names the runtime: "runtime: Bun x.y.z in <install dir>/.bun (sova --node

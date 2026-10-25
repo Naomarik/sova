@@ -2,10 +2,12 @@ import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "s
 import { createStore, reconcile } from "solid-js/store";
 import { SHARE_TEXT_MAX, type BatonView, type GoneWhy, type ShareServerMessage } from "../../shared/baton";
 import { HOP_LOST_CLOSE, RECONNECT_BACKOFF_MS } from "../../shared/public-links";
-import { PhotoFormatError, processPhoto, sizeLabel, uploadPhoto, type UploadRefusal } from "./photos";
-import { filesWord, uploadFile } from "./files";
+import { uploadPhoto } from "./photos";
+import { uploadFile } from "./files";
+import { ShareComposer, type Attachment, type SendOutcome } from "./ShareComposer";
 import { batonKinds } from "./markdown";
 import { Item, LinkedText, MessageFiles, MessagePhotos, Reply } from "./thread";
+import { prefillTourDraft, TOUR_PREFILL_LINES, tourPrefillMessage } from "../lib/tour-draft";
 import { visitTab } from "./visit-tab";
 
 /**
@@ -37,22 +39,6 @@ const gone = (why: unknown): Problem => (typeof why === "string" && Object.hasOw
     the page stays, the draft stays, and it keeps trying (§mesh.public/offline). */
 const RECONNECTING = "Reconnecting. Your draft is kept.";
 const NOT_SENT_OFFLINE = "Not sent. The page is offline; your message is still here.";
-/** A photo in the composer (§app.baton/images): processed on the device, then uploaded at once; or
-    a file (§app.baton/files): uploaded as it is. */
-interface Attachment {
-  cid: string;
-  kind: "photo" | "file";
-  name: string;
-  size: number;
-  /** The processed bytes, kept for a retry or a re-upload after `photo-expired`; null once refused on the device. */
-  blob: Blob | null;
-  thumb: string | null;
-  state: "processing" | "uploading" | "ready" | "failed";
-  progress: number;
-  id?: string;
-  reason?: string;
-  abort?: () => void;
-}
 /** A sent message not in the view yet: dropped once the view holds `expect` messages of the viewer's own. */
 interface Pending {
   cid: string;
@@ -63,9 +49,6 @@ interface Pending {
 }
 let seq = 0;
 const cid = () => `c${++seq}`;
-const photosWord = (n: number) => (n === 1 ? "1 photo" : `${n} photos`);
-/** The composer shows its character count only from here on: 80% of the limit. */
-const COUNT_FROM = 3200;
 
 const UNKNOWN: Problem = { title: "This link doesn't open a conversation.", body: "Check that you copied the whole link, or ask the person who sent it for a new one." };
 
@@ -76,10 +59,6 @@ export function ShareApp() {
   const [problem, setProblem] = createSignal<Problem | null>(TOKEN ? null : UNKNOWN);
   const [streaming, setStreaming] = createSignal("");
   const [pending, setPending] = createSignal<Pending[]>([]);
-  const [atts, setAtts] = createStore<Attachment[]>([]);
-  const [announce, setAnnounce] = createSignal("");
-  const [dropping, setDropping] = createSignal(false);
-  let fileInput: HTMLInputElement | undefined;
   const [draft, setDraft] = createSignal("");
   const [sending, setSending] = createSignal(false);
   const [sendError, setSendError] = createSignal<string | null>(null);
@@ -102,109 +81,7 @@ export function ShareApp() {
   const photos = () => (view()?.viewer?.canWrite ? (view()?.viewer?.photos ?? null) : null);
   /** Files (§app.baton/files): while the link writes and the session takes them. */
   const files = () => (view()?.viewer?.canWrite ? (view()?.viewer?.files ?? null) : null);
-  const canAttach = () => !!photos() || !!files();
   const photoSrc = (n: number) => `/api/h/${TOKEN}/img/${n}`;
-
-  // ---- photos in the composer (§app.baton/images) ----
-  const patch = (id: string, p: Partial<Attachment>) => setAtts((a) => a.cid === id, p);
-  const find = (id: string) => atts.find((a) => a.cid === id);
-  const live = () => atts.filter((a) => a.state !== "failed" || a.blob !== null);
-  const uploading = () => atts.some((a) => a.state === "processing" || a.state === "uploading");
-  const ready = () => atts.filter((a) => a.state === "ready" && a.id);
-  const readyOf = (kind: Attachment["kind"]) => ready().filter((a) => a.kind === kind);
-  const uploadingFiles = () => atts.some((a) => a.kind === "file" && (a.state === "processing" || a.state === "uploading"));
-  const upload = async (id: string): Promise<boolean> => {
-    const a = find(id);
-    if (!a?.blob || !TOKEN) return false;
-    const up = a.kind === "file" ? uploadFile(TOKEN, a.blob, a.name, (p) => patch(id, { progress: p })) : uploadPhoto(TOKEN, a.blob, (p) => patch(id, { progress: p }));
-    patch(id, { state: "uploading", progress: 0, reason: undefined, id: undefined, abort: up.abort });
-    try {
-      const staged = await up.done;
-      if (!find(id)) return false;
-      patch(id, { state: "ready", id: staged.id, progress: 1, abort: undefined });
-      return true;
-    } catch (err) {
-      const r = err as UploadRefusal;
-      if (!find(id) || r.code === "aborted") return false;
-      if (r.status === 410) setProblem(gone(undefined));
-      patch(id, { state: "failed", reason: r.status ? r.error : "Upload failed.", abort: undefined });
-      setAnnounce(`${a.name} wasn't attached. ${r.status ? r.error : "Upload failed."}`);
-      return false;
-    }
-  };
-  const addFiles = async (picked: readonly File[], pasted = false) => {
-    if (!canAttach() || !picked.length) return;
-    let added = 0;
-    let addedFiles = 0;
-    // One announcement for the whole pick: a later one would replace a refusal before it is read.
-    const refused: string[] = [];
-    for (const file of picked) {
-      const id = cid();
-      // An image goes the photo path while photos can be sent; anything else is a file (§app.baton/files).
-      const limits = photos();
-      if (!file.type.startsWith("image/") || !limits) {
-        const fl = files();
-        const name = file.name || (pasted ? "Pasted file" : "File");
-        if (!fl) continue;
-        const reason = live().filter((a) => a.kind === "file").length >= fl.perMessage ? `Up to ${fl.perMessage} files per message.` : file.size > fl.maxBytes ? `Over ${Math.round(fl.maxBytes / (1024 * 1024))} MB.` : null;
-        if (reason) {
-          setAtts(atts.length, { cid: id, kind: "file", name, size: file.size, blob: null, thumb: null, state: "failed", progress: 0, reason });
-          refused.push(`${name} wasn't attached. ${reason}`);
-          continue;
-        }
-        setAtts(atts.length, { cid: id, kind: "file", name, size: file.size, blob: file, thumb: null, state: "uploading", progress: 0 });
-        addedFiles++;
-        void upload(id);
-        continue;
-      }
-      const name = pasted ? "Pasted photo" : file.name || "Photo";
-      if (live().filter((a) => a.kind === "photo").length >= limits.perMessage) {
-        const reason = `Up to ${limits.perMessage} photos per message.`;
-        setAtts(atts.length, { cid: id, kind: "photo", name, size: file.size, blob: null, thumb: null, state: "failed", progress: 0, reason });
-        refused.push(`${name} wasn't attached. ${reason}`);
-        continue;
-      }
-      setAtts(atts.length, { cid: id, kind: "photo", name, size: file.size, blob: null, thumb: null, state: "processing", progress: 0 });
-      let blob: Blob;
-      let preview: string;
-      try {
-        ({ blob, preview } = await processPhoto(file));
-      } catch (err) {
-        const reason = err instanceof PhotoFormatError ? err.message : "This photo's format can't be sent.";
-        patch(id, { state: "failed", reason });
-        refused.push(`${name} wasn't attached. ${reason}`);
-        continue;
-      }
-      if (!find(id)) continue;
-      if (blob.size > limits.maxBytes) {
-        const reason = `Over ${Math.round(limits.maxBytes / (1024 * 1024))} MB.`;
-        patch(id, { state: "failed", reason });
-        refused.push(`${name} wasn't attached. ${reason}`);
-        continue;
-      }
-      patch(id, { blob, size: blob.size, thumb: preview });
-      added++;
-      void upload(id);
-    }
-    setAnnounce([...(added ? [`${photosWord(added)} attached.`] : []), ...(addedFiles ? [`${filesWord(addedFiles)} attached.`] : []), ...refused].join(" "));
-  };
-  const remove = (id: string) => {
-    const a = find(id);
-    a?.abort?.();
-    setAtts((list) => list.filter((x) => x.cid !== id));
-  };
-  /** What a pick, paste or drop may attach: any file while files can be sent, else images only. */
-  const imageFiles = (list: FileList | null | undefined): File[] => [...(list ?? [])].filter((f) => !!files() || f.type.startsWith("image/"));
-  // A stray drop anywhere else on the page must not navigate away to the file.
-  const stray = (e: DragEvent) => {
-    if (canAttach() && e.dataTransfer?.types.includes("Files")) e.preventDefault();
-  };
-  window.addEventListener("dragover", stray);
-  window.addEventListener("drop", stray);
-  onCleanup(() => {
-    window.removeEventListener("dragover", stray);
-    window.removeEventListener("drop", stray);
-  });
 
   const load = async () => {
     if (!TOKEN) return;
@@ -272,63 +149,75 @@ export function ShareApp() {
   // item then ends just above it. scrollIntoView on the thread's end would tuck it under the
   // sticky composer.
   createEffect(on([() => view()?.items.length, pending, streaming], () => queueMicrotask(() => window.scrollTo(0, document.documentElement.scrollHeight)), { defer: true }));
-  // The textarea grows with its text from one line up to its CSS max-height, then scrolls.
-  let input: HTMLTextAreaElement | undefined;
-  const fit = () => {
-    if (!input) return;
-    input.style.height = "auto";
-    input.style.height = `${input.scrollHeight}px`;
-  };
-  createEffect(on(draft, () => queueMicrotask(fit)));
+  // The composer's text box, once it exists (a tour's Ask puts its words in it).
+  let box: { input: HTMLTextAreaElement; fit(): void } | undefined;
 
-  const send = async (e?: Event) => {
-    e?.preventDefault();
-    const text = draft().trim();
-    if ((!text && !ready().length) || sending() || uploading() || !TOKEN) return;
+  const prefillTour = async (question: string) => {
+    const outcome = await prefillTourDraft(question, {
+      canWrite: () => !!TOKEN && view()?.viewer?.canWrite === true,
+      // A click must not reuse a turn that ended since the last socket view.
+      recheck: async () => {
+        const response = await fetch(`/api/h/${TOKEN}`, { cache: "no-store" }).catch(() => null);
+        if (!response?.ok) return null;
+        const latest = (await response.json()) as BatonView;
+        apply(latest);
+        return { canWrite: latest.viewer?.canWrite === true };
+      },
+      draft,
+    });
+    if (outcome.status !== "ready") {
+      if (outcome.status === "failed") console.warn(`[tours] Ask not added (${outcome.reason}).`);
+      setSendError(tourPrefillMessage(outcome));
+      return;
+    }
+    setSendError((e) => (e !== null && TOUR_PREFILL_LINES.includes(e) ? null : e));
+    setDraft(outcome.draft);
+    queueMicrotask(() => { box?.fit(); box?.input.focus(); box?.input.setSelectionRange(outcome.draft.length, outcome.draft.length); });
+  };
+
+  /** One send of the composer's text and attachments; the composer uploads expired ones again once. */
+  const send = async (text: string, photos: Attachment[], files: Attachment[], again: boolean): Promise<SendOutcome> => {
+    if (sending() || !TOKEN) return "kept";
     setSending(true);
     setSendError(null);
     const expect = ownCount() + pending().length + 1;
     try {
-      const post = () =>
-        fetch(`/api/h/${TOKEN}/message`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text,
-            ...(readyOf("photo").length ? { images: readyOf("photo").map((a) => a.id) } : {}),
-            ...(readyOf("file").length ? { files: readyOf("file").map((a) => a.id) } : {}),
-          }),
-        });
-      let res = await post();
-      // A staged photo or file expired (a restart, a day's wait): upload them again, once, and resend.
-      if (res.status === 409 && ready().length) {
+      const res = await fetch(`/api/h/${TOKEN}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          ...(photos.length ? { images: photos.map((a) => a.id) } : {}),
+          ...(files.length ? { files: files.map((a) => a.id) } : {}),
+        }),
+      });
+      // A staged photo or file expired (a restart, a day's wait): the composer uploads them again, once.
+      if (res.status === 409 && !again && (photos.length || files.length)) {
         const body = (await res.clone().json().catch(() => ({}))) as { code?: string };
-        const again = body.code === "photo-expired" ? readyOf("photo") : body.code === "file-expired" ? readyOf("file") : [];
-        if (again.length) {
-          const ok = await Promise.all(again.map((a) => upload(a.cid)));
-          if (ok.every(Boolean)) res = await post();
-        }
+        if (body.code === "photo-expired" && photos.length) return { expired: "photo" };
+        if (body.code === "file-expired" && files.length) return { expired: "file" };
       }
-      if (res.status === 410) return setProblem(gone(((await res.json().catch(() => ({}))) as { why?: unknown }).why));
+      if (res.status === 410) {
+        setProblem(gone(((await res.json().catch(() => ({}))) as { why?: unknown }).why));
+        return "kept";
+      }
       // Never resent on its own: the text stays in the composer for the person to send again.
       if (res.status === 503) {
         setOffline(true);
         setSendError(NOT_SENT_OFFLINE);
-        return;
+        return "kept";
       }
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         setSendError(body.error ?? "Your message didn't go through. Try again.");
         void load();
-        return;
+        return "kept";
       }
-      const sent = ready();
-      setPending((p) => [...p, { cid: cid(), text, thumbs: sent.flatMap((a) => (a.kind === "photo" && a.thumb ? [a.thumb] : [])), files: sent.filter((a) => a.kind === "file").map((a) => ({ name: a.name, size: a.size })), expect }]);
-      // The previews now belong to the sending echo; the strip empties.
-      setAtts([]);
-      setDraft("");
+      setPending((p) => [...p, { cid: cid(), text, thumbs: photos.flatMap((a) => (a.thumb ? [a.thumb] : [])), files: files.map((a) => ({ name: a.name, size: a.size })), expect }]);
+      return "sent";
     } catch {
       setSendError("We couldn't reach the conversation. Check your connection and send again; your text is still here.");
+      return "kept";
     } finally {
       setSending(false);
     }
@@ -378,7 +267,7 @@ export function ShareApp() {
           </Show>
         </header>
         <section class="share-thread" aria-label="Conversation">
-          <For each={view()?.items ?? []}>{(it) => <Item item={it} photo={photoSrc} viewer={view()?.viewer?.name} drawings={view()?.drawings} />}</For>
+          <For each={view()?.items ?? []}>{(it) => <Item item={it} photo={photoSrc} viewer={view()?.viewer?.name} drawings={view()?.drawings} tour={{ base: handle => `/api/h/${TOKEN}/tours/${encodeURIComponent(handle)}`, progress: true, onAsk: view()?.viewer?.canWrite ? question => void prefillTour(question) : undefined, onRequestCoverage: view()?.viewer?.canWrite ? question => void prefillTour(question) : undefined }} />}</For>
           <For each={pending()}>
             {(t) => (
               <article class="share-msg share-msg-own" aria-label="You, sending">
@@ -405,158 +294,24 @@ export function ShareApp() {
           </Show>
         </section>
         <Show when={view()?.viewer?.canWrite}>
-          <form
-            class="share-composer"
-            onSubmit={send}
-            onDragOver={(e) => {
-              if (!canAttach() || !e.dataTransfer?.types.includes("Files")) return;
-              e.preventDefault();
-              setDropping(true);
-            }}
-            onDragLeave={(e) => {
-              if (e.currentTarget === e.target) setDropping(false);
-            }}
-            onDrop={(e) => {
-              if (!canAttach()) return;
-              e.preventDefault();
-              setDropping(false);
-              void addFiles(imageFiles(e.dataTransfer?.files));
-            }}
-          >
-            {/* One field: the pending photos, then attach · text · Send in a row. A click on its
-                padding focuses the text, as a plain input would. */}
-            <div
-              class="share-field"
-              classList={{ "share-composer-drop": dropping() }}
-              onClick={(e) => {
-                if (e.target === e.currentTarget) input?.focus();
-              }}
-            >
-              <Show when={atts.length}>
-                <ul class="share-atts" aria-label={atts.some((a) => a.kind === "file") ? "Files to send" : "Photos to send"}>
-                  <For each={atts}>
-                    {(a) => (
-                      <li class="share-att" classList={{ "share-att-failed": a.state === "failed" }}>
-                        <Show
-                          when={a.thumb}
-                          fallback={<span class="icon share-att-icon" classList={{ "share-icon-alert": a.state === "failed", "share-icon-file": a.state !== "failed" }} aria-hidden="true" />}
-                        >
-                          <img class="share-att-thumb" src={a.thumb!} alt="" />
-                        </Show>
-                        <span class="share-att-text">
-                          <span class="share-att-name" title={a.name}>
-                            {a.name}
-                          </span>
-                          <span class="share-att-meta">
-                            {a.state === "failed"
-                              ? a.reason
-                              : a.state === "processing"
-                                ? "Preparing"
-                                : a.state === "uploading"
-                                  ? `Uploading ${Math.round(a.progress * 100)}%`
-                                  : sizeLabel(a.size)}
-                          </span>
-                          <Show when={a.state === "uploading"}>
-                            <progress class="share-att-progress" max="1" value={a.progress} aria-hidden="true" />
-                          </Show>
-                        </span>
-                        <Show when={a.state === "failed" && a.blob}>
-                          <button type="button" class="button button-ghost share-att-retry" aria-label={`Retry ${a.name}`} onClick={() => void upload(a.cid)}>
-                            Retry
-                          </button>
-                        </Show>
-                        <button type="button" class="button button-icon button-ghost" aria-label={`Remove ${a.name}`} onClick={() => remove(a.cid)}>
-                          <span class="icon share-icon-close" aria-hidden="true" />
-                        </button>
-                      </li>
-                    )}
-                  </For>
-                </ul>
-              </Show>
-              <label class="visually-hidden" for="share-text">
-                Your reply
-              </label>
-              <div class="share-compose-row">
-                <Show when={canAttach()}>
-                  <button
-                    type="button"
-                    class="button button-icon button-ghost share-clip"
-                    aria-label={files() ? "Attach Files" : "Attach Photos"}
-                    title={files() ? "Attach Files" : "Attach Photos"}
-                    onClick={() => fileInput?.click()}
-                  >
-                    <span class="icon share-icon-attach" aria-hidden="true" />
-                  </button>
-                  <input
-                    ref={fileInput}
-                    class="visually-hidden"
-                    type="file"
-                    accept={files() ? undefined : "image/*"}
-                    multiple
-                    tabindex="-1"
-                    aria-hidden="true"
-                    onChange={(e) => {
-                      const files = imageFiles(e.currentTarget.files);
-                      e.currentTarget.value = "";
-                      void addFiles(files);
-                    }}
-                  />
-                </Show>
-                <textarea
-                  ref={input}
-                  id="share-text"
-                  class="share-input"
-                  rows={1}
-                  maxlength={SHARE_TEXT_MAX}
-                  placeholder="Write your reply"
-                  aria-describedby="share-hint"
-                  value={draft()}
-                  onInput={(e) => setDraft(e.currentTarget.value)}
-                  onPaste={(e) => {
-                    const pasted = canAttach() ? imageFiles(e.clipboardData?.files) : [];
-                    if (!pasted.length) return;
-                    // A paste with text keeps its text and attaches the image too.
-                    if (!e.clipboardData?.types.includes("text/plain")) e.preventDefault();
-                    void addFiles(pasted, true);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void send();
-                  }}
-                />
-                <button
-                  type="submit"
-                  class="button button-icon share-send"
-                  aria-label={sending() ? "Sending" : "Send"}
-                  title={sending() ? "Sending" : "Send"}
-                  aria-disabled={sending() || uploading() || (!draft().trim() && !ready().length) ? "true" : undefined}
-                >
-                  <span class="icon share-icon-send" aria-hidden="true" />
-                </button>
-              </div>
-            </div>
-            <Show when={sendError()}>
-              <p class="field-error" role="alert">
-                {sendError()}
-              </p>
-            </Show>
-            {/* Quiet: the keys only where there is a keyboard to press them (CSS), the count only near the limit. */}
-            <p id="share-hint" class="field-hint share-composer-foot">
-              <Show
-                when={!uploading()}
-                fallback={<span>{uploadingFiles() ? "Waiting for files to finish." : "Waiting for photos to finish."}</span>}
-              >
-                <span class="share-hint-keys">Ctrl+Enter sends</span>
-                <Show when={draft().length >= COUNT_FROM}>
-                  <span class="share-hint-count">
-                    {draft().length.toLocaleString("en-US")} of {SHARE_TEXT_MAX.toLocaleString("en-US")} characters
-                  </span>
-                </Show>
-              </Show>
-            </p>
-            <p class="visually-hidden" aria-live="polite">
-              {announce()}
-            </p>
-          </form>
+          <ShareComposer
+            id="share-text"
+            label="Your reply"
+            placeholder="Write your reply"
+            maxLength={SHARE_TEXT_MAX}
+            sendKey="mod-enter"
+            draft={draft}
+            setDraft={setDraft}
+            error={sendError}
+            photos={photos}
+            files={files}
+            uploadPhoto={(blob, progress) => uploadPhoto(`/api/h/${TOKEN}/image`, blob, progress)}
+            uploadFile={(blob, name, progress) => uploadFile(TOKEN!, blob, name, progress)}
+            onUploadRefused={(r) => r.status === 410 && setProblem(gone(undefined))}
+            sending={sending}
+            send={send}
+            ref={(b) => (box = b)}
+          />
         </Show>
       </Show>
     </main>

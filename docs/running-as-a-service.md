@@ -39,6 +39,11 @@ any other. The launcher replaces itself with the server (`exec`), so a service m
 server process itself. The unit tests follow the same switch: `pnpm test` runs on Bun, and
 `pnpm run test:node` (or `SOVA_RUNTIME=node pnpm test`) on Node.
 
+**A server on Node runs no chats.** Chats and workers run on the server's own Bun, so on Node
+every chat open and worker start is refused ("Chats need Bun to run Sova's chat runtime") and
+`/api/health` says `chatHost.bun: false`. Node is for tooling and tests; run a host with chats on
+Bun.
+
 **Check what runs:** `curl -s http://127.0.0.1:4800/api/health` answers
 `"runtime": {"name": "bun", "version": "1.4.2", "chosen": "bun"}`.
 
@@ -73,8 +78,8 @@ ExecStart=%h/path/to/sova/scripts/start-server.sh
 Environment=PATH=%h/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin
 Restart=always
 RestartSec=2
-# A stop drains hosted chat runtimes and their subagent workers before it exits, which can take a
-# while; SIGKILLing it early would kill workers mid-task.
+# A stop lets the server finish its own work before it exits. Chats and their workers run in
+# processes of their own and keep running (bun scripts/stop-chats.ts stops them for good).
 TimeoutStopSec=90
 
 [Install]
@@ -125,7 +130,8 @@ the label and the file `sova-runtime`.
   <!-- Restart=always: `launchctl bootout` is the stop you ask for. -->
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>2</integer>
-  <!-- TimeoutStopSec: a stop drains hosted runtimes and workers (launchd's default is 20 s, and it
+  <!-- TimeoutStopSec: a stop lets the server finish its own work; chats run in processes of their
+       own and keep running (launchd's default is 20 s, and it
        caps an agent's at 60 s). -->
   <key>ExitTimeOut</key><integer>60</integer>
   <!-- No App Nap timer throttling for a server. -->

@@ -1,7 +1,7 @@
 # Bun quirks
 
-Sova's server runs on Bun, and on Node only on request (see "Server runtime (Bun; Node on request)"
-in `CLAUDE.md`). This page lists
+Sova's server runs on Bun, and on Node only on request (see "Runtime: Bun; Node on request"
+in `agents/server/overview.md`). This page lists
 every place where Bun behaves differently from Node and Sova depends on the difference.
 
 The rules:
@@ -201,4 +201,4 @@ canary because they are test-harness or tooling facts, not bugs Sova works aroun
   (`TEST_BUN_JOBS=<n>` sets the width). Arguments that start with `-` go to the runner. Wrap it in
   `node scripts/test-sentinel.mjs -- …` to prove it touched nothing real.
 - The server runs on Bun by default; for Node and the launcher's details, see README's "Run on
-  Bun (or Node)" and the "Server runtime (Bun; Node on request)" section of `CLAUDE.md`.
+  Bun (or Node)" and the "Runtime: Bun; Node on request" section of `agents/server/overview.md`.

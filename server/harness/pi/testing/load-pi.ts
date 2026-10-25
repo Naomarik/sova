@@ -1,8 +1,8 @@
 // Loads the pi a test pins (§app.harness/boundary): the repo's copy, or the one PI_PACKAGE_DIR names (e.g.
 // the global pi the TUI runs), so one suite proves either. Only server/harness/pi/ tests import pi, and they
 // do it through here, never statically. pi-ai and typebox are resolved from the package's real path, the way
-// Node would from inside it: under pnpm they sit beside it, in an npm global install under it (CLAUDE.md
-// "pi SDK facts"; the sandbox suites' harness.mjs does the same with jiti).
+// Node would from inside it: under pnpm they sit beside it, in an npm global install under it (agents/server/harness/overview.md;
+// the sandbox suites' harness.mjs does the same with jiti).
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";

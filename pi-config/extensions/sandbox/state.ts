@@ -67,15 +67,15 @@ export interface WorkerLaunchRequest {
  * How a worker must start, from the one sandbox call both kinds of worker go through.
  * - `pi`: load `extensionPath` with `flags` (`--sandbox on`, `--sandbox-parent <scope>`); the worker's
  *   own extension confines its tools.
- * - `confine`: run the worker's process inside the sandbox. `scope` is opaque, serializable data (it
- *   may cross into a hosting process); pass it to `confineLaunch(scope, needs, launch)` exported by
- *   `module` (the sandbox's `launch.ts`, pi-runtime-free) at every launch of that process.
+ * - `confine`: the worker's whole process would have to run inside the sandbox, under `scope`
+ *   (opaque, serializable: launch.ts). Nothing launches one: the subagents extension refuses any
+ *   backend but pi when the answer is not `none`.
  * - `refused`: the worker must not start; the spawner throws `reason` as is.
  * - `none`: nothing to apply (the sandbox is off and the worker is not in a tracked worktree).
  */
 export type WorkerLaunch =
 	| { kind: "pi"; extensionPath: string; flags: Record<string, string> }
-	| { kind: "confine"; scope: string; module: string }
+	| { kind: "confine"; scope: string }
 	| { kind: "refused"; reason: string }
 	| { kind: "none" };
 
@@ -179,8 +179,21 @@ export function restoreActive(entries: readonly { type: string; customType?: str
 	return undefined;
 }
 
+/**
+ * The one reason a provisional entry carries: On, enforcement `unavailable` (tools refuse), recorded
+ * before the confined tools are registered and followed by the real state (index.ts apply). Readers
+ * key on this constant, never on free text.
+ */
+export const SANDBOX_STARTING = "starting";
+
+/** A provisional entry: the sandbox is turning on and nothing is enforced yet. */
+export function isStarting(active: Pick<SandboxActive, "on" | "enforcement" | "reasons">): boolean {
+	return active.on && active.enforcement === "unavailable" && active.reasons?.length === 1 && active.reasons[0] === SANDBOX_STARTING;
+}
+
 /** One status line, the same words in the TUI and Sova: "Sandbox on · workspace-write · full enforcement". */
 export function describeActive(active: Pick<SandboxActive, "on" | "level" | "enforcement" | "reasons" | "workers">): string {
+	if (isStarting(active)) return "Sandbox turning on…";
 	if (!active.on) return active.workers === "off" ? "Sandbox off · workers unconfined" : "Sandbox subagents only · workers in tracked worktrees write only there";
 	// On but enforced nowhere (a remote target runs the tools on its host): say why, never "none enforcement".
 	if (active.enforcement === "none") return `Sandbox on · ${active.reasons?.length ? active.reasons.join("; ") : "not enforced"}`;
@@ -192,6 +205,7 @@ export function describeActive(active: Pick<SandboxActive, "on" | "level" | "enf
 
 /** The transcript marker for one change (copy deck): "Sandbox → on · workspace-write · full enforcement". */
 export function markerText(active: Pick<SandboxActive, "on" | "level" | "enforcement" | "reasons" | "workers">): string {
+	if (isStarting(active)) return "Sandbox → turning on…";
 	if (!active.on) return active.workers === "off" ? "Sandbox → off" : "Sandbox → subagents only";
 	if (active.enforcement === "none") return `Sandbox → on · ${active.reasons?.length ? active.reasons.join("; ") : "not enforced"}`;
 	const reason = active.reasons?.length && active.enforcement !== "full" ? ` · ${active.reasons.join("; ")}` : "";

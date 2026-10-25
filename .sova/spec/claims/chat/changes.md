@@ -17,10 +17,28 @@ remembered on this device, and the diff's header still names the file or step it
 
 Picking a file row shows that file's whole diff, and marks that row as current. Each of its
 hunks is headed by the step that made it, which opens that step. Picking a step, or a step number
-on a file row, shows that step: its title, the agent's why when it wrote one, "Builds on" links
-to the steps it builds on, and its hunks across files, each file under a header that names it,
-with its status and counts, and opens that file. The viewer opens on the first step, or on the
-first file when there are no steps.
+on a file row, shows that step: its title, the agent's why when it wrote one, the commits its
+changes came from, and its hunks across files, each file under a header that names it, with its
+status and counts, and opens that file; a file of the step with no line changes (renamed only,
+its mode changed only, or a new empty file) is listed under its header as "renamed, no line
+changes" (or "mode changed, no line changes", "empty file"). The viewer opens on the first step
+that holds something, or on the first file when there are no steps.
+
+**Commits.** On a branch, merge or fast-forward comparison each step names the commits its hunks
+came from (§chat.changes/steps). In the steps list a step's row adds a caption: "<sha7> · 1
+commit", or "<first sha7> → <last sha7> · n commits", oldest first. The open step has a "From N
+commits · <first sha7> → <last sha7>" row ("From 1 commit · <sha7>" for one), collapsed by
+default; expanding it lists each commit, oldest first, with its short id, subject and how long ago
+it was authored. Short ids are selectable text and open nothing. An uncommitted comparison has no
+commits, and a single-commit comparison shows none since its header names the commit: neither
+shows a caption or the row. Until a step's commits are read its caption and row are absent; when
+the history could not be read in time, the row reads "commits unknown" and the diff still shows.
+
+**Empty steps.** An agent step left with nothing to show keeps its number and place, greyed, with
+the reason under its title: "Nothing left to show: step K already holds these changes" or
+"Nothing left to show: these changes are no longer in the diff" (with several holders, "steps 1 and
+2 already hold these changes"). It can still be opened, and
+shows only that reason and its why. No later step is renumbered.
 
 The diff's header names the path (a rename reads "old → new"), its lines added and removed, and a
 Unified / Split switch; Split is available while the diff pane is at least 520px wide, and the
@@ -59,19 +77,32 @@ The diff is told as numbered steps, and every hunk of it lands in exactly one st
 **Other changes**, which is listed last and unnumbered. A hunk is a unit: a step never holds
 part of one.
 
+A file with no line changes (renamed only, its mode changed only, or a new empty file) is one
+unit, as a binary file is, and is named by its path.
+
 Without agent-written steps, each agent turn that edited or wrote files is a step, in turn order,
 titled from the first line of the prompt that started it. A hunk belongs to the turn whose
 successful edit and write calls added or removed the most of its lines (a later turn wins a
 tie); a hunk whose lines are too short to tell is matched by the line range the edit recorded.
 Hunks no turn made (edits by hand, by a tool other than edit and write, or by another session)
-go under Other changes. A turn none of whose edits remain in the diff is not a step. A step
-builds on each earlier step that changed one of its files.
+go under Other changes. A turn none of whose edits remain in the diff is not a step.
 
 With agent-written steps (§chat.changes/show-changes-card), those are the steps, in the agent's
-order and words, checked against the real diff the same way: each hunk goes to the first step
-that names it (by file, or by file and the hunk's starting line), a step that names nothing in
-the diff is left out and listed as unmatched, "builds on" keeps only earlier steps that remain,
-and what no step names goes under Other changes.
+order, numbers and words, checked against the real diff the same way: each hunk goes to the first
+step that names it (by file, or by file and the hunk's starting line), and what no step names goes
+under Other changes. Every agent step keeps its number. A step left holding nothing is empty, for
+one of two reasons: every unit it names is already held by earlier steps (it names them),
+or nothing it names is in today's diff (an older card, or uncommitted work that changed since).
+The agent's own "builds on" in older cards is ignored; no step shows which steps it builds on.
+
+On a branch, merge or fast-forward comparison, Sova works out each step's commits from the
+branch's history, never from the agent: a hunk's commits are those that last wrote its added
+lines within the comparison (lines older than its base count for none); a hunk that only removes
+lines takes the commit that removed them; a whole-file unit (binary, too large, no line changes, or
+deleted) takes every commit in the comparison that touched the file, following renames. A step's
+commits are its hunks' commits together, without repeats, oldest first. The same holds for steps
+from turns and for Other changes. An uncommitted comparison has no commits; a single-commit
+comparison has only that one.
 
 ## §chat.changes/entry — Where the viewer opens
 
@@ -101,40 +132,67 @@ no Review Changes control.
 A `show_changes` tool result renders as a card, not a tool row: the comparison it names, its
 title when it has one, how many steps the agent wrote, how many paths the agent limited it to
 ("· limited to N path(s)", only when it named any), and a **Review Changes** control that opens
-the viewer on that comparison with the agent's steps. A result whose details Sova can't read
-stays an ordinary tool row.
+the viewer on that comparison with the agent's steps. The card shows as soon as the call
+finishes, while the agent's reply is still streaming, with its Review Changes control. For a
+branch the viewer opens pinned to the base and head commits the card saved, the diff the tool
+checked, even after the branch moved on or its base changed (§chat.changes/endpoint); an
+uncommitted card can only show what is on disk now. A card limited to paths opens limited to the
+same paths. A result whose details Sova can't read stays an ordinary tool row; a saved card
+whose steps carry the agent's old "builds on" still opens, and it is not shown.
 
 ## §chat.changes/show-changes-tool — The `show_changes` tool
 
 The agent opens the viewer with one tool, `show_changes` (pi-config's `show-changes`
 extension), when the user asks to see or review changes; it replies in a sentence or two instead of
-pasting a diff. The tool is read-only. It takes a scope: `dirty` (the index
+pasting a diff. Its instructions say it shows only git changes in the session's checkout or its
+tracked worktrees: a change anywhere else or not in git yet is first written into a tracked
+worktree as uncommitted edits (the worktree tool can create one), or the agent tells the user there
+is no diff to show, and it never shows a different change instead. They tell the agent to read the
+diff first with plain `git diff` (for a branch, three dots: `git diff master...<branch>`) or
+`git show`, at default context. The tool is read-only. It takes a scope: `dirty` (the index
 and working tree, untracked files included, against HEAD), `worktree` (a branch against its
-merge-base with its base branch: the tracked worktree's base branch, else `master`, else `main`,
-else the branch `origin/HEAD` names, else the tracked base commit; once the branch is merged, what
-its merge brought in, chosen as the viewer's worktree comparison chooses it, §chat.changes/endpoint) or `commit` (one commit, which it names, against its first parent).
+base, chosen by the same rule and limits as the viewer's worktree comparison,
+§chat.changes/endpoint: one rule both share, so a card never opens a viewer that refuses it) or
+`commit` (one commit, which it names, against its first parent).
 For `dirty` and `worktree` it reads the tracked worktree named by branch or path, else the tracked
 worktree holding the session's cwd, else (for `worktree`) the only tracked one, else the cwd. It
 may also take a title, a list of repo-relative files or directories to limit the view to, and
-steps: each a title, an optional why, the earlier steps it builds on, and the hunks it holds,
-named by file (every hunk of it) or by file and the start line of the hunk's old or new side.
+steps: each a title, an optional why, and the hunks it holds, named by file (every hunk of it, or
+the file itself when it has no line changes) or by file and the start line of the hunk's old or
+new side. It takes no "builds on": a call that still sends one fails the argument check and is
+resent without it.
 
 The tool refuses, changing and showing nothing, a malformed call with a sentence saying what to
-fix: a path that is absolute or climbs out with `..`, a step building on itself or a later step,
-the same hunk named twice, a commit that does not resolve, a checkout on its own base branch for
-`worktree`, a folder outside git, and any call in a session whose tools run on a remote target.
+fix: a path that is absolute or climbs out with `..`, the same hunk named twice, a commit that
+does not resolve, a checkout on its own base branch for `worktree`, a branch with no base to
+compare against, a folder outside git, and any call in a session whose tools run on a remote
+target. It also refuses a folder the viewer would not open for the session, by the one rule the
+viewer's own check uses (§chat.changes/endpoint: not inside the session's folder, its workers'
+folders, a worktree it tracked or a merged worktree's folder), saying "<folder> is outside this
+session's folder and its worktrees, so the viewer can't open it. Put the changes in a worktree (the
+worktree tool) and show that", so a card never claims a viewer that refuses it.
+
+A comparison with no changed file (within the paths given) is refused too, with no card: "No
+changes in this comparison (<comparison>), so nothing was shown. Tell the user nothing changed
+there." For a `worktree` comparison whose folder has uncommitted files (within the paths given),
+the refusal instead names how many and says that scope `dirty` shows them.
 
 It then reads the hunks of the diff the viewer shows (the same comparison, files, rename detection
-and default context; an untracked file is one added hunk, a binary file or one whose patch is too
-large to draw is one whole-file unit), within the paths given, and places them the way the viewer
-does (§chat.changes/steps). It refuses, showing nothing, a diff of more than one hunk sent without
-steps, and steps that leave a hunk unplaced or hold a ref naming no hunk. The refusal says how to
+and default context; an untracked file is one added hunk, a binary file, a file with no line
+changes, or one whose patch is too large to draw or to read in time is one whole-file unit), within
+the paths given, under the viewer's limits: every git read but the whole patch stops after 5 s,
+and a change of more than 3,000 files (counted within the paths given) is refused with a sentence
+telling the agent to narrow it with paths. It places the hunks the way the viewer does
+(§chat.changes/steps). It refuses, showing nothing, a diff of more than one hunk sent without
+steps, steps that leave a hunk unplaced or hold a ref naming no hunk, and a step whose refs name
+only hunks earlier steps already hold ("step N names only hunks earlier steps already hold (step
+K)", or "(steps K and L)"). The refusal says how to
 fix it in one retry: for no steps, to resend with steps, and for a change that is one idea, one
 step naming every file by path; it lists every hunk still to place, grouped by file, as its new
 start and line count and its first changed line (past 150 hunks, the files with their hunk counts
 instead, since a ref by path places all of a file's hunks), and each ref naming no hunk with the
 file's hunk ranges or that the file is not in the diff; it stays under about 12 KB. A diff of one
-hunk or none needs no steps.
+hunk needs no steps.
 
 Its result's text names the comparison, lists the changed files (the first 40), and says how many
 hunks there are and, when steps were given, that every hunk is placed in a step. Its result's
@@ -144,11 +202,18 @@ Sova ignores a result whose details are malformed.
 
 ## §chat.changes/endpoint — Reading a diff from git
 
-The server reads every diff itself, read-only, and the client never names a ref: it names a
-session and one of four comparisons, and the server resolves the rest. A **worktree** comparison
-is the worktree's committed branch against its merge-base with its base branch (the tracked
-worktree's base branch when that branch still exists, else master, else main, else the remote's
-default). Once the branch is merged, its tip is already in the base branch and that merge-base is
+The server reads every diff itself, read-only: the client names a session and one of four
+comparisons, and the server resolves the rest; the only refs a client names are a pinned branch
+card's two full commit ids, below. A **worktree** comparison is the worktree's committed branch
+against its merge-base with its base branch, chosen by one rule the `show_changes` tool shares
+(§chat.changes/show-changes-tool): the tracked worktree's base branch when that branch still
+exists, is not the branch itself and shares history with it, else master, else main, else the
+branch the remote's default names, each skipped when it is the branch itself or shares no history
+with it; with none of those, the tracked base commit the worktree was created from when that is an
+ancestor of the tip and not the tip itself, named as "<commit> (created from)"; else the
+comparison is refused with a reason. A worktree comparison may be **pinned**: it then also names a base and a head commit
+(an agent card's saved ones), each checked to be a commit in that repository before anything is
+read, and is that head against that base, named as the card named it. Once the branch is merged, its tip is already in the base branch and that merge-base is
 the tip itself; then, when the branch has commits beyond the tracked worktree's base commit, the
 comparison is what the merge brought in: the tip against its merge-base with the parent, before
 it, of the commit that brought it in (the first commit on the base branch's first-parent history
@@ -167,17 +232,29 @@ the branch's commits show, when that commit is an ancestor of the tip and not th
 **uncommitted** comparison is the working tree, staged changes included, against HEAD,
 with untracked files shown as added and a file whose content did not change never listed. The
 folder named must be one the session already knows (its folder, its workers' folders, a
-worktree it tracked, a merged worktree's folder) or inside one; the diff covers that folder's whole
-repository. Anything else is refused with a reason, before git runs there. A commit or merge whose
+worktree it tracked, a merged worktree's folder) or inside one, by the one rule the `show_changes`
+tool applies too; the diff covers that folder's whole repository. Anything else is refused with a
+reason, before git runs there. A commit or merge whose
 folder is gone, as a merged worktree's often is, is read from the first folder the session knows whose
-repository still has it, the session's own folder first.
+repository still has it, the session's own folder first; so is one whose folder is still on disk
+but no longer in a git work tree (a removed worktree's leftover files), and only when no known
+folder has the commit is it refused as not in a git work tree.
+
+Any comparison may be narrowed to paths (repo-relative files or folders, each checked as the
+`show_changes` tool checks its paths, at most as many as it takes): the file list and every read
+then hold only files under them, and the narrowing applies before the 3,000-file cut.
 
 A diff comes in two reads: the file list (each file's path, its old path when renamed, whether it
 was modified, added, deleted, renamed, retyped or is binary, and its lines added and removed, with
 totals over every file); and one file's patch, which, when asked, also carries the file's whole old
 side, so folded context can be expanded. That old side is the one the patch itself names; no read
 takes a path or an object name from the client, so nothing outside the diff (an ignored file, say)
-is ever sent. Reading never writes the repository, its index or the working tree. Each is bounded: a
+is ever sent. A patch read may also ask for the file's commits: for a branch, merge or
+fast-forward comparison, the commits each hunk came from (as §chat.changes/steps defines), each
+with its full id, subject and author time, read from the history (blame and log, read-only); a
+commit comparison names its one commit without reading its history, and an uncommitted one has none. That read
+shares the patch's limits; when it runs out of time the patch still comes, marked commits
+unknown. Reading never writes the repository, its index or the working tree. Each is bounded: a
 list past 3,000 files says it was cut and still counts every file; a patch past 1 MB is not sent,
 and says how far it got; an old side past 8 MB or binary is not sent, and its folds stay closed;
 every git stops after 5 s. An untracked file is read only up to 1 MB: past that it is not diffed,
@@ -225,7 +302,7 @@ A binary file says "Binary file, not shown."; a rename with no line changes says
 
 ## §chat.changes/tool-card-diff — Edits and writes as diffs in tool cards
 
-An `edit` or `write` tool card (pi's, and a Claude Code worker's `Edit`, `MultiEdit` and `Write`,
+An `edit` or `write` tool card (pi's, and an older native Claude Code worker's `Edit`, `MultiEdit` and `Write`,
 which read as `edit` and `write`) shows what it changed as a diff (§chat.changes/diff-renderer)
 under a "Changes" label (`edit`) or "Content" (`write`), with Copy Code for the text written: a
 `write`'s whole content, or an `edit`'s new text (several replacements joined by a blank line). Its

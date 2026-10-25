@@ -533,20 +533,6 @@
         hold (get-in wm [data-key :sova/holds id])]
     (cond
       (not hold) []                                         ; cancelled meanwhile: nothing to do
-      (and (:act hold) (policy/waits-unreviewed? hold))
-      ;; q12: a confirm-required hold waits past its end for the overseer (stall clock from :until)
-      (if (:waiting hold)
-        []
-        (do (swap! (sessions* eng) assoc-in [sid data-key :sova/holds id] (assoc hold :waiting true))
-            (let [steps (run-step! eng sid (evts/new-event {:name :hold/waiting
-                                                            :data (cond-> {:id id :event (:event hold) :kind (:kind hold)
-                                                                           :what (:what hold) :at ((:clock (engine eng))) :by "system"}
-                                                                    ;; an org-level statechart (the person's) routes its review by it
-                                                                    (:project-id hold) (assoc :project-id (:project-id hold)))}))]
-              (if (some :saved steps)
-                steps
-                (do (save! eng sid (wmem-of eng sid))
-                    (into [(assoc (first steps) :saved true :ignored false :feed :feed)] (rest steps)))))))
       (:act hold)
       (do (swap! (sessions* eng) update-in [sid data-key :sova/holds] dissoc id)
           (release-act-hold! eng sid hold))
@@ -611,9 +597,9 @@
 (defn- hold-act!
   "Put act `event` on hold: no transition now; the engine re-delivers it at the hold's end. opts:
    `:wait` \"hours\" and `:until` (r7: until the person's window opens), `:wait` \"outage\" and `:until`
-   (its channel is down: until it comes back, at most `policy/outage-wait-ms` from `:sova/outage-since`),
-   `:confirm` (q12: it waits past its end for the overseer's approval, per the switch)."
-  [eng sid event orig act {:keys [wait until confirm]}]
+   (its channel is down: until it comes back, at most `policy/outage-wait-ms` from `:sova/outage-since`).
+   No hold waits for anyone's approval (al_3 q2): it goes ahead at its end unless cancelled."
+  [eng sid event orig act {:keys [wait until]}]
   (let [now    ((:clock (engine eng)))
         wm0    (wmem-of eng sid)
         d0     (get wm0 data-key)
@@ -626,7 +612,6 @@
                         :since now :until (or until (+ now (policy/hold-ms payload d0)))
                         :by (id-str (:by payload)) :scope (scope-of payload)}
                  wait (assoc :wait wait)
-                 confirm (assoc :confirm true)
                  (:overseer-id payload) (assoc :overseer-id (:overseer-id payload))
                  (:project-id payload) (assoc :project-id (:project-id payload))
                  (:counts act) (assoc :counts (:counts act)
@@ -647,7 +632,7 @@
       (remove :ignored
         (run-step! eng sid (evts/new-event {:name :hold/held
                                             :data (cond-> (select-keys hold [:id :event :kind :what :until :project-id])
-                                                    true (assoc :confirm (boolean (:confirm hold)) :by "system")
+                                                    true (assoc :by "system")
                                                     (:wait hold) (assoc :wait (:wait hold)))}))))))
 
 (defn- rewindow-hold!
@@ -716,10 +701,7 @@
               (if-let [r (explain-refusal eng sid ename d {:stages #{:state :check}})]
                 [(refused-step eng sid event r)]
                 (cond
-                  held? (hold-act! eng sid event orig act
-                          {:confirm (policy/confirm-required?
-                                      (let [ck (:confirm-kind act)] (cond (fn? ck) (ck view) (some? ck) ck :else (id-str ename)))
-                                      d)})
+                  held? (hold-act! eng sid event orig act {})
                   waits? (hold-act! eng sid event orig act {:wait "hours" :until off})
                   :else (hold-act! eng sid event (-> orig (dissoc :outage) (assoc :sova/outage-since (:since outage))) act
                           {:wait "outage" :until (:until outage)})))
@@ -1027,6 +1009,11 @@
     (when-not (cond-holds? penv (:cond t))
       {:sentence (or (:sova/refusal t) dsl/generic-refusal) :stage :cond})))
 
+(defn act-need
+  "What an act's check is asked for: its `:power` (the registry's), else a test statechart's `:needs`."
+  [act]
+  (if (contains? act :power) (:power act) (:needs act)))
+
 (defn explain-refusal
   "Why act `event-name` with `envelope` (+ payload) would be refused on `sid`, as a refusal map
    `{:sentence :stage :check :tail :status :code}`, or nil. Stages in order: :final, :level (the
@@ -1046,8 +1033,8 @@
     (or
         (when (and (stage? :final) (not run?))
           {:sentence (or (:final-refusal entry) "This has ended.") :stage :final})
-        (when (and (stage? :level) act (:needs act) level-check)
-          (dsl/as-refusal (level-check (:tool act) (:needs act) envelope) :level nil))
+        (when-let [need (and (stage? :level) act level-check (act-need act))]
+          (dsl/as-refusal (level-check (:tool act) need envelope) :level nil))
         (when (stage? :pre) (dsl/first-refusal (:pre act) edata :pre skip-payload?))
         (when (or (stage? :state) (stage? :check))
           (let [event (evts/new-event {:name event-name :data envelope})
@@ -1238,6 +1225,13 @@
                   cut  (mapv (fn [[run v]] {:run-id run :type (id-str (:type v)) :invoke-id (id-str (:invoke-id v))}) (sort-by key invs))
                   _    (swap! (sessions* eng) assoc-in [sid data-key :sova/invocations] {})
                   steps (process-one eng sid (evts/new-event {:name :sova/resumed :data {:cut-off cut :by "system"}}))
+                  ;; al_3 q2: a hold saved while it waited for the overseer's review (its timer spent) goes ahead
+                  ;; now, through every guard, as any hold does at its end
+                  steps (into (vec steps)
+                          (mapcat (fn [[id _]]
+                                    (swap! (sessions* eng) update-in [sid data-key :sova/holds id] dissoc :waiting :confirm)
+                                    (release-hold! eng sid (evts/new-event {:name :sova/hold-due :data {:id id}}))))
+                          (sort-by key (filter (fn [[_ h]] (:waiting h)) (:sova/holds (data eng sid)))))
                   mine  (first steps)]
               (when-not (:notified mine)
                 (notify! eng sid (:sova/watchers (data eng sid))))

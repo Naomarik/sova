@@ -30,7 +30,7 @@ const list = [
   session("o", { overseer: true }),
 ];
 
-test("counts main threads only; live is Live & web; working is a working record or a busy web run", () => {
+test("counts main threads only; live is every open session; working is a working record or a busy web run", () => {
   const g = sessionsGlance(list, undefined, "badge");
   assert.equal(g.total, 4, "no worker, no overseer; archived counts");
   assert.equal(g.folders, 2);
@@ -53,19 +53,42 @@ test("an empty list", () => {
   assert.deepEqual(sessionsGlance([], undefined, "badge"), { total: 0, folders: 0, live: 0, working: 0, needsYou: 0, needsYouFirst: [], last: null });
 });
 
-test("org sessions: counted in the total, never Live & web, Last active or Needs you", () => {
+test("org sessions: counted in the total, never live, Last active or Needs you", () => {
   const org = { orgId: "o", orgName: "O", kind: "gathering" } as SessionSummary["org"];
   const withOrg = [...list, session("g", { org, origin: "web", lastActiveAt: "2026-02-01T00:00:00Z" })];
   const g = sessionsGlance(withOrg, { items: [act("g", 99), act("a", 1)] }, "badge");
   assert.equal(g.total, 5, "the org row is still a session");
-  assert.equal(g.live, 3, "a web org session is not Live & web");
+  assert.equal(g.live, 3, "a web org session is not live");
   assert.equal(g.last?.id, "a", "the newest org row is not Last active");
   assert.equal(g.needsYou, 1, "the global Needs you leaves the org row to its region");
   assert.deepEqual(g.needsYouFirst.map((s) => s.id), ["a"]);
 });
 
-test("Last active skips a profile session, however new: Profiles lists it", () => {
+test("Last active is a profile session when it moved last, like any other", () => {
   const profile = { id: "reviewer", label: "Reviewer", icon: "eye" } as SessionSummary["profile"];
   const withProfile = [...list, session("p", { profile, origin: "web", lastActiveAt: "2026-02-01T00:00:00Z" })];
-  assert.equal(sessionsGlance(withProfile, undefined, "badge").last?.id, "a");
+  assert.equal(sessionsGlance(list, undefined, "badge").last?.id, "a");
+  assert.equal(sessionsGlance(withProfile, undefined, "badge").last?.id, "p");
+});
+
+test("a session in a project's folder: live (though Folders leaves it to its project), Last active and Needs you count it, a build does not", () => {
+  const folder = { projectId: "p", projectName: "P", kind: "folder" } as SessionSummary["project"];
+  const coding = { projectId: "p", projectName: "P", kind: "coding" } as SessionSummary["project"];
+  const rows = [
+    ...list,
+    session("f", { project: folder, live: { pid: 2, status: "idle" } as SessionSummary["live"], lastActiveAt: "2026-02-01T00:00:00Z" }),
+    session("k", { project: coding, origin: "web", lastActiveAt: "2026-03-01T00:00:00Z" }),
+  ];
+  const g = sessionsGlance(rows, { items: [act("f", 50), act("k", 60), act("a", 1)] }, "badge");
+  assert.equal(g.live, 4, "the live folder session counts as live (with a, b and c); the web build does not");
+  assert.equal(g.last?.id, "f");
+  assert.equal(g.needsYou, 2, "the waiting folder session is in Needs you; the build waits in its region");
+  assert.deepEqual(g.needsYouFirst.map((s) => s.id), ["f", "a"]);
+});
+
+test("Last active is Recent's first row: the operator's own build counts, live still does not", () => {
+  const mine = { projectId: "p", projectName: "P", kind: "coding", operator: true } as SessionSummary["project"];
+  const g = sessionsGlance([...list, session("k", { project: mine, origin: "web", lastActiveAt: "2026-03-01T00:00:00Z" })], undefined, "badge");
+  assert.equal(g.last?.id, "k");
+  assert.equal(g.live, 3, "a, b and c: the build lives in its project's block");
 });

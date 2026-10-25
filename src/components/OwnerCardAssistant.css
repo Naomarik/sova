@@ -1,0 +1,13 @@
+/* The Owner card's Project Assistant part (§app.owner-page/controls). Token values only. */
+.orgs-assistant { display: flex; flex-direction: column; gap: var(--space-4); padding-top: var(--space-4); border-top: var(--stroke-thin) solid var(--color-border); }
+.orgs-h4 { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); font-weight: var(--fw-semibold); color: var(--color-ink-2); }
+.orgs-assistant-requests,
+.orgs-assistant-models,
+.orgs-assistant-powers { display: flex; flex-direction: column; gap: var(--space-2); }
+
+/* Its models as rows (§app.owner-page/controls): where the model comes from, the model and thinking, its
+   price, then Change and Use Default. The buttons wrap under the text where the card is narrow. */
+.orgs-assistant-model-rows { display: flex; flex-direction: column; gap: var(--space-3); }
+.orgs-assistant-model-row { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-2) var(--space-3); }
+.orgs-assistant-model-main { display: flex; flex-direction: column; gap: var(--space-1); min-width: 14rem; flex: 1 1 14rem; }
+.orgs-assistant-model-source { font-weight: var(--fw-medium); color: var(--color-ink); }

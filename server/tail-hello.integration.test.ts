@@ -22,6 +22,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { cutTail, historyRanges, pullFields, tailStart, TAIL_CHARS, HISTORY_CHUNK_CHARS } = await import("./tail-hello");
 const { normalizeEntries } = await import("./transcript");
 const { activeBranch, parseLines } = await import("./harness/pi/reader");
@@ -128,6 +129,41 @@ describe("/ws/chat", () => {
     const list = chunks.reduce((l: TranscriptItem[], c) => [...c.items, ...l], hello.items);
     assert.deepEqual(list, whole);
     assert.equal(chunks.reduce((n, c) => n + c.items.length, 0), hello.older);
+  });
+});
+
+describe("/ws/chat?tail=rest&have= (§chat.transcript/instant-open)", () => {
+  const path = bigSession("chat3");
+  const q = `path=${encodeURIComponent(path)}&force=1&tail=rest`;
+  const whole = normalizeEntries(activeBranch(parseLines(readFileSync(path, "utf8"))));
+  const helloOf = async (route: string) => JSON.parse((await frames(route, (g) => types(g).includes("claude_login")))[0]!);
+
+  test("naming the last row held: the hello carries the state and no rows, `after` names it, the summary counts every row", async () => {
+    const usual = await helloOf(`/ws/chat?${q}`);
+    const last = whole.at(-1)!.id;
+    const hello = await helloOf(`/ws/chat?${q}&have=${encodeURIComponent(last)}`);
+    assert.equal(hello.after, last);
+    assert.deepEqual(hello.items, []);
+    assert.equal(hello.older, whole.length);
+    assert.equal(hello.olderSummary.inputs.length, whole.filter((r) => r.kind === "user").length);
+    for (const k of ["isStreaming", "model", "thinking", "context"]) assert.deepEqual(hello[k], usual[k], k);
+  });
+
+  test("naming a row inside the usual hello: only the rows after it", async () => {
+    const at = whole.length - 3;
+    const hello = await helloOf(`/ws/chat?${q}&have=${encodeURIComponent(whole[at]!.id)}`);
+    assert.deepEqual(hello.items, whole.slice(at + 1));
+    assert.equal(hello.older, at + 1);
+  });
+
+  test("an unknown row, or one above the usual hello's first: the usual hello", async () => {
+    const usual = await helloOf(`/ws/chat?${q}`);
+    for (const have of ["not-on-this-branch", whole[0]!.id]) {
+      const hello = await helloOf(`/ws/chat?${q}&have=${encodeURIComponent(have)}`);
+      assert.equal(hello.after, undefined, have);
+      assert.deepEqual(hello.items, usual.items, have);
+      assert.equal(hello.older, usual.older, have);
+    }
   });
 });
 

@@ -321,7 +321,8 @@ export function summarizeClaudeEntries(main: readonly unknown[], nested: readonl
 	return summary;
 }
 
-const CAPABILITIES: WorkerTranscriptCapabilities = { read: true, usage: "tokens-only", perModel: true, cost: false, items: true, resume: "native" };
+/** Resume none: such a worker ran the Claude Code CLI's own tools, which Sova no longer runs (a claude-code worker is now a pi worker); its transcript stays readable. */
+const CAPABILITIES: WorkerTranscriptCapabilities = { read: true, usage: "tokens-only", perModel: true, cost: false, items: true, resume: "none" };
 
 export interface ClaudeTranscriptAdapterOptions {
 	/** The projects root; defaults to claudeProjectsRoot() at each call (tests set CLAUDE_CONFIG_DIR). */

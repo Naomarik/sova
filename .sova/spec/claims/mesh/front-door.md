@@ -19,6 +19,10 @@ seconds.
 A tab that reconnects to a different host or a different Sova version notices it on reconnect and
 offers to reload, rather than running old code against a new server. A host change is announced only
 once it is confirmed, never on one request answered by another host during a network stall.
+The version check is not the mesh's alone: every tab makes it, with the mesh off too, at load, on
+every reconnect and when it comes back into view, and shows the same banner for a different build or
+protocol (§app.updates/reload-note). Only a tab with the mesh on also asks every 5 seconds, and only
+it can see a host change: with the mesh off a hello never moves the tab to another host.
 
 ## §mesh.front-door/config — The order and the configuration
 

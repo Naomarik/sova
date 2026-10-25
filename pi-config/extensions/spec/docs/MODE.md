@@ -20,11 +20,10 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
 | Prompt composition | `mode/prompt.ts` | `composePrompt` appends minor blocks after the major mode's in registry order; with a spec writer set, the spec block gains the writer paragraph (`buildSpecWriterPrompt`). `composeWorkerPrompt` gives a worker the spec block plus `SPEC_WORKER_NOTE`. |
 | Agree step | `mode/align-tool.ts` (`alignSpecAgreeText`), `mode/index.ts` (`specOn`) | With align on too, the `align` call that sets an alignment implementing ends its result text (never its `details`) with the Agree step: write the decisions as promises in a draft, `agree` them (which promotes the ones that map no code). Neither mode's prompt block changes. |
 | Session hooks | `mode/index.ts` | `before_agent_start` injects the block. `tool_call`/`tool_result` run the census. Worker modes are published on an event. |
-| The census note | `mode/spec-guard.ts` (`CensusHook`, `CENSUS_SKIP_TOOLS`) | After a tool call that can write, it compares the work tree's `git status` with the last look. On the first changed file in the spec boundary, and on each new file, it runs `sova-spec.mjs census --changed` and appends a short `[spec census]` digest to that tool result. At the first call after the session's last edit it runs `census --changed --related` once and adds one line, `Unread § your change landed in`, naming the foreign § the session's own files landed in that it hasn't `read` (`specReads` over its shell commands), at most 5 marked read first, the rest named. |
+| The census note | `mode/spec-guard.ts` (`CensusHook`, `CENSUS_SKIP_TOOLS`) | After a tool call that can write, it compares the work tree's `git status` with the last look. On the first changed file in the spec boundary, and on each new file, it runs `sova-spec.mjs census --changed` and appends a short `[spec census]` digest to that tool result. At the first call after the session's last edit it runs `census --changed --related` once and adds one line, `Unread § your change landed in`, naming the foreign § the session's own files landed in that it hasn't `read` (`specReads` over its shell commands), at most 10 marked read first (census relevance 0.036 or more, or a stale literal), the rest left, uncounted, to the census command that lists them ("lower-ranked: <command>"). |
 | Forbidden writes | `mode/spec-guard.ts` (`SpecWriteGuard`) | It says so, in the same digest, when the current spec is written by hand, or when commits that a draft's evidence names are rewritten. |
-| pi worker checks | `mode/spec-worker.ts` | The same census for a pi worker. Workers start with `--no-extensions`, so the spawn path loads this file with `-e`. |
+| pi worker checks | `mode/spec-worker.ts` | The same census for a pi worker, a Claude Code worker included (it is a pi worker on the Claude Code provider). Workers start with `--no-extensions`, so the spawn path loads this file with `-e`. |
 | Worker brief | `subagents/spec-brief.ts` | A fixed excerpt of `spec-mode.md` for a code-writing worker whose prompt doesn't already carry the spec block. Each rule is found by an anchor and quoted whole, so the brief is generated, never hand-copied. |
-| Claude Code worker checks | `claude-code/spec-hooks.ts` | The worker half of the guard for Claude Code workers. `UserPromptSubmit` marks the turn's baseline and `PostToolUse` runs the census step. Each hook is a fresh process, so state lives in one file per Claude session. |
 | Merge note | `worktrees/spec.ts` | When a worktree merge is recorded, it adds the landing's warnings to the merge note: changed files no claim maps, draft records left behind, hand-resolved §, orphaned evidence. This applies in any project with a spec, mode on or off. |
 | Spec writer setting | `mode/spec.ts`, `server/spec-settings.ts` | Which worker (backend · model · effort) writes draft claims and evidence while spec is on. The legacy file is `<agent dir>/mode-spec.json`; Sova's Settings → Subagents now edits it per profile. `null` means the session writes the spec itself. |
 | The tools | `spec/core/*.mjs` | Read-only `sova-spec.mjs`, `sova-spec-draft.mjs` (drafts, evidence, promotion, `merge-manifest`), the review and assessment companions, and the modules they load. |
@@ -43,8 +42,8 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
    - its `--doc-only` cases are the draft tool's own;
    - its word count is capped.
 3. **Find the tools.** The guide's `sh` line resolves `$core` to `<agent dir>/extensions/spec/core`, where
-   `pi-config/install.sh` links these tools. The agent runs only that trusted copy. A project's own
-   vendored copy under `.sova/spec/tools/` is foreign code, read before it is run.
+   `pi-config/install.sh` links these tools. The agent runs only that trusted copy. A copy inside a
+   project is foreign code, never run without asking; the installed extension is the only supported way to run the tools.
 4. **Census while working.** After each tool call (bash included), `CensusHook` compares `git status`.
    - Tools that cannot write are skipped by name (`CENSUS_SKIP_TOOLS`). A skipped call doesn't move the
      baseline.
@@ -60,16 +59,23 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
    - `PI_SPEC_CENSUS_HOOK=0` turns the census off.
 5. **Agree, with align on too.** The user's go-ahead on an alignment is the spec's Agree step. The
    `align` result that records status implementing tells the agent to write each decision that changes
-   behavior as a promise in a draft and run `sova-spec-draft.mjs agree` (it stamps `agreed: {by, at}`
+   behavior as a promise in a draft and run `sova-spec-draft.mjs agree` (it stamps `agreed: {by, at, source}`
    and, for records with no code, records doc-only evidence and promotes them when promote's plan is
    clean), before any code. The build updates the same records. `promote` notes `agreed-kept-on-change` when a later
    change edits an agreed record's numbers or backticked tokens and keeps the old `agreed`.
+5a. **Where the go-ahead is.** `spec-agree.ts`: before each tool call of a session that is not a worker,
+   the mode extension sets `SPEC_AGREE_SOURCE` to `pi-session:<session id>#<entry id>` of the latest user
+   message while spec is on (and clears it while off), so the bash tool's `agree` records it as
+   `agreed.source` (the tool refuses a `--source` that differs from a set variable, and a description). The subagents spawn path puts the same reference in each spec-on worker's environment,
+   in `SPEC_AGREE_SOURCE` and in `SPEC_AGREE_GIVEN` (empty when it has none). Only `SPEC_AGREE_GIVEN`, which no
+   session writes for itself, makes a process a worker: after an in-process `/reload` a session's own
+   `SPEC_AGREE_SOURCE` is never read back as a given reference. A worker relays what it was given unchanged
+   and never derives one from its own messages; the draft tool refuses any `--source` from a worker given none.
 6. **Workers.** The subagents extension listens for the session's mode event. While spec is on, a
    code-writing worker gets these:
    - its mode prompt: the spec block plus `SPEC_WORKER_NOTE`, or, when that prompt doesn't carry the
      block, the generated brief;
-   - its census: `spec-worker.ts` for a pi worker, or `spec-hooks.ts` through `--settings` for a Claude
-     Code worker.
+   - its census: `spec-worker.ts` (every worker is a pi worker, a Claude Code one included).
    - a finished code-writing worker's completion ends with one line naming the § its own changes landed
      in.
 7. **Merge.** A recorded worktree merge names the changed files no claim maps and any draft records

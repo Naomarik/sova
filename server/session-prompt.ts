@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { acquireChat } from "./chat-manager";
+import { acquireChatHandle } from "./chat-handle";
 import { readOverseerState } from "./overseer-store";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { getSessionSummary, idOf, indexedSessionPaths, listSessionFiles } from "./sessions-index";
@@ -67,6 +67,8 @@ export async function promptSession(
   sentBy?: string,
   delivery: PromptDelivery = "followUp",
   opts?: { projectOverseer: string | undefined },
+  /** The send's key (§app.chat-processes/server-messages): sent again, it is accepted once. */
+  key?: string,
 ): Promise<PromptResult> {
   if (!text.trim()) return { ok: false, status: 400, error: "text must not be blank" };
   const s = await getSessionSummary(path);
@@ -79,18 +81,16 @@ export async function promptSession(
   if (s.live) return { ok: false, status: 409, error: `It is open in a terminal (pid ${s.live.pid}), so this server must not write to it.` };
   let chat;
   try {
-    chat = await acquireChat(path);
+    chat = await acquireChatHandle(path);
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
   }
-  // Queue or start is decided by acceptPrompt from the runtime's own state, in one synchronous step.
+  // Queue or start is decided by the chat from its own state, in one step (its send).
   let queued: boolean;
-  const compacting = !chat.harness.isRunning() && chat.isCompacting();
+  const compacting = !chat.mirror.running && chat.mirror.compacting;
   try {
-    chat.assertModelAllowed();
-    const r = chat.acceptPrompt(text, undefined, "server", undefined, { delivery, ...(overseerId ? { sentByOverseer: { overseerId } } : opts ? { sentByOverseer: opts.projectOverseer ? { overseerId: opts.projectOverseer } : {} } : {}) });
+    const r = await chat.send({ text, origin: "server", checkModel: true, delivery, ...(key ? { key } : {}), ...(overseerId ? { sentByOverseer: { overseerId } } : opts ? { sentByOverseer: opts.projectOverseer ? { overseerId: opts.projectOverseer } : {} } : {}) });
     queued = r.queued;
-    void r.turn.catch((err) => chat.reportTurnFailure(err));
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
   }

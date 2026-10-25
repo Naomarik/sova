@@ -345,8 +345,8 @@ export function runningEntryData(known: KnownMeta): ExplainEntryData {
 }
 
 /** The note or error of an interrupted run; the wording says which case the reader is in. */
-export const INTERRUPTED_WITH_PAGE = "Interrupted: the session stopped (a restart or /reload) before this run finished. The page was written, but may be unfinished.";
-export const INTERRUPTED_NO_PAGE = "Interrupted: the session stopped (a restart or /reload) before this run wrote its page.";
+export const INTERRUPTED_WITH_PAGE = "Interrupted: its worker stopped (the server stopped it, or its process died) before this run finished. The page was written, but may be unfinished.";
+export const INTERRUPTED_NO_PAGE = "Interrupted: its worker stopped (the server stopped it, or its process died) before this run wrote its page.";
 
 /**
  * The final entry of an interrupted run (see ExplainEntryData). `hasPage`: the store validated,

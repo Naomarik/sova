@@ -33,6 +33,31 @@ function testFile() {
 }
 
 const file = testFile();
+// A file's process never outlives its runner: started by run-tests.mjs (SOVA_TEST_RUNNER_PID), it ends
+// its own process group, children included, once its parent is another (the runner killed by SIGKILL,
+// which can't stop the groups itself). Polled every 2 s; whatever the guard's mode.
+// Its run's own chat slice (run-tests.mjs's SOVA_CHAT_SLICE) is stopped first, which that runner can't do
+// either: by the name the runner gave, never another slice; with the spawn taken before the guard wraps it.
+const runner = Number(process.env.SOVA_TEST_RUNNER_PID);
+const runSlice = process.env.SOVA_CHAT_SLICE ?? "";
+const spawnRaw = cp.spawnSync;
+if (runner > 0 && process.ppid === runner)
+  setInterval(() => {
+    if (process.ppid === runner) return;
+    if (/^sova_test_[A-Za-z0-9_]+\.slice$/.test(runSlice)) {
+      try {
+        spawnRaw("systemctl", ["--user", "stop", runSlice], { stdio: "ignore", timeout: 30_000 });
+      } catch {
+        // no user manager: nothing to stop
+      }
+    }
+    try {
+      process.kill(-process.pid, "SIGKILL");
+    } catch {
+      // not a group leader: only this process goes
+    }
+    process.exit(1);
+  }, 2000).unref();
 // A unit file's project engine takes the detached driver rather than probing systemd (a
 // `systemctl` child); integration files keep the real probe. Set whatever the guard's mode.
 if (file && !isIntegration(file)) process.env.SOVA_PROJECT_NO_SYSTEMD ??= "1";

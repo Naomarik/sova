@@ -11,7 +11,7 @@ standard library and import nothing from pi, Sova or the rest of pi-config.
 The `spec` minor mode (`../mode/`) uses these tools for coding work. Its text,
 [`../mode/spec-mode.md`](../mode/spec-mode.md), is the discipline: when to run
 them and what to do with the output. A project may point its agents at that
-file without the mode, as Sova's `CLAUDE.md` does; that instruction alone does
+file without the mode, as Sova's `AGENTS.md` does; that instruction alone does
 not activate the mode's automatic checks. With the mode on, its hooks run
 census and change checks. Sova's requirements reconciler is another consumer:
 it uses drafts and doc-only evidence to publish accepted decision notes, not
@@ -24,8 +24,8 @@ to assert that those decisions have been implemented.
 | `core/sova-spec.mjs` | The read-only core: `map`, `where`, `toc`, `read`, `impact` (and `impact --near`), `packet`, `scope`, `graph`, `check`, `census`, `foreign` |
 | `core/packet.mjs` | The standalone core's bounded packet serialization and stateless navigation module |
 | `core/toc.mjs`, `core/read.mjs` | Pull: `toc`, a one-hop contents view (what, why, size per line), and `read`, one exact passage without its chain |
-| `core/fields.mjs` | The optional record fields `embeds`, `core` (the always-on frame stream, capped at 12,000 bytes) and `about` |
-| `core/graph.mjs`, `core/map.mjs`, `core/where.mjs` | Look: `map` (every area on one page), `where` (the claims for a file or a name), `impact --near` (one reverse hop) and `graph --json` (the computed graph, paged) |
+| `core/fields.mjs` | The optional record fields `embeds`, `core` (the always-on frame stream, capped at 12,000 bytes), `about` and `notOwned` (what an area does not own, by owner) |
+| `core/graph.mjs`, `core/map.mjs`, `core/where.mjs` | Look: `map` (every area on one page), `where` (the claims for a file or a name, plus claims ranked by a topic's words; `core/topic.mjs` ranks), `impact --near` (one reverse hop) and `graph --json` (the computed graph, paged) |
 | `core/README.md` | The core's reference: commands, exit codes, the manifest format it reads, evidence states |
 | `core/sova-spec-draft.mjs` | Drafts: full-copy proposals of `.sova/spec`, their evidence, and guarded promotion into the current docs |
 | `DRAFTS.md` | The draft workflow's reference |
@@ -38,7 +38,7 @@ to assert that those decisions have been implemented.
 ## Core (read-only)
 
 ```sh
-node core/sova-spec.mjs <map [namespace | '<§id>'] | where <path|name> [--token] [--all] | graph --json> [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]
+node core/sova-spec.mjs <map [namespace | '<§id>'] | where <path|name|topic words…> [--token] [--all] | graph --json> [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]
 node core/sova-spec.mjs toc '<§id>' --dir out|in|down|up|mentions [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]
 node core/sova-spec.mjs <read '<§id>' [--whole] [--no-frame] | read --frame> [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]
 node core/sova-spec.mjs impact '<§id>' --near [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]
@@ -84,11 +84,16 @@ untracked file's lines all count as added) it takes code-shaped names (an inner
 capital, `_`, `-`, `.` or `$`, or all capitals), short string literals and
 numbers of two or more digits, and scores each § by the ones its passage holds,
 each weighted by how rare it is across the spec's passages. A string or number
-the change removed and didn't add back that a § still states is `stale`, and a
-§ with one ranks first. `census.rank` lists each foreign touched § once with
-`rank`, `score`, `reason` (the matched names) and `stale` (also set on its
-`touched` entry); `census.readFirst` is the first 5 that score or are stale,
-`census.named` the rest, so none is dropped. Human output prints `read first:`
+the change removed and didn't add back that a § still states is `stale`. Each
+score is divided by the §'s `fanIn` (of its changed files, the fewest foreign
+touched § any one lands in), so a § that lands only through a broad file ranks
+low, and by the heaviest weight a name can have (ln of the passage count + 1);
+that quotient is its `relevance` (1: one name only it holds, through a file only
+it maps), and `census.rank` lists each foreign
+touched § once, best relevance first, with `rank`, `score`, `fanIn`,
+`relevance`, `reason` (the matched names) and `stale` (also set on its
+`touched` entry); `census.readFirst` is the first 10 at relevance 0.036 or more
+or with a stale literal, `census.named` the rest, so none is dropped. Human output prints `read first:`
 and `named:` lines. The ranking is a literal match, never proof; nothing in it
 knows a project.
 
@@ -159,7 +164,7 @@ node core/sova-spec-draft.mjs diff NAME [--against base|current] --root DIR [--j
 node core/sova-spec-draft.mjs check NAME --root DIR [--json]
 node core/sova-spec-draft.mjs evidence NAME --id '<§id>' --by WHO --verification TEXT \
   (--commit REV | --snapshot | --doc-only) [--path P] [--log FILE] --root DIR [--write] [--json]
-node core/sova-spec-draft.mjs agree NAME --id '<§id>' --by WHO --verification TEXT [--at ISO] \
+node core/sova-spec-draft.mjs agree NAME --id '<§id>' --by WHO --verification TEXT [--source REF] [--at ISO] \
   --root DIR [--write] [--json]
 node core/sova-spec-draft.mjs promote NAME (--id '<§id>' | --all) [--meta KEY] [--file PATH] \
   [--plan SHA] --root DIR [--write] [--json]
@@ -182,12 +187,12 @@ node core/sova-spec-draft.mjs merge-claims --base F --ours F --theirs F [--path 
    `migrated` stays only on text still as ported, as provenance. Then run **`evidence`**. A
    behavior or surface needs at least one implementation file, from the
    record's `code` or `--path` (unless it is agreed and not built yet, or the change is to its
-   `embeds` or `core` field alone and it is not an agreed record that maps code: both take
+   `embeds`, `core` or `notOwned` field alone and it is not an agreed record that maps code: both take
    `--doc-only`, below), and every `code` path must exist. In a Git project it needs `--commit`, an existing commit, ancestor
    of `HEAD`, whose files match the working tree for the mapped code. Without Git, `--snapshot` keeps the
    exact bytes. `--doc-only` covers `note` and `section` records, an `agreed` behavior or
    surface with no code (DRAFTS.md, "Agreed, not built"), and a change to an existing behavior's or
-   surface's `embeds` or `core` field alone, unless the record is agreed and maps code: that is
+   surface's `embeds`, `core` or `notOwned` field alone, unless the record is agreed and maps code: that is
    refused (`doc-only-refused`) and needs `--commit` or `--snapshot` (DRAFTS.md, "Field-only
    changes"). `about` belongs on notes, which take `--doc-only` anyway.
    Evidence binds to the record and prose as they are now, so a later edit
@@ -202,7 +207,11 @@ node core/sova-spec-draft.mjs merge-claims --base F --ours F --theirs F [--path 
    touch are kept. A changed number or backticked token in an agreed record
    whose `agreed` stays as current has it gets an `agreed-kept-on-change` note,
    never a refusal.
-   **`agree`** stamps `agreed: {by, at}` on draft records the person agreed to,
+   **`agree`** stamps `agreed: {by, at, source}` on draft records the person agreed to
+   (`source`: `SPEC_AGREE_SOURCE`, else `--source`, a reference never a description;
+   a `--source` other than a set variable is refused; a `pi-session:` reference must
+   resolve to a user message in pi's session files, other schemes are checked for form only;
+   with neither it stamps nothing),
    and, for those that map no code, records `--doc-only` evidence and promotes
    them when promote's plan is clean ([PROMOTE.md](PROMOTE.md)).
 5. **`recover`** rolls back an interrupted promotion. Until it runs, every
@@ -212,8 +221,9 @@ node core/sova-spec-draft.mjs merge-claims --base F --ours F --theirs F [--path 
    changed differently. It is the only sanctioned way to settle that conflict;
    [PROMOTE.md](PROMOTE.md) has the rule.
 7. **`merge-claims`** is a Git merge driver for `claims/*.md`: the promotion's
-   per-declaration merge, with Git's own line merge and markers for what it
-   can't merge, so the same declaration changed on both sides still conflicts.
+   per-declaration merge; a declaration both sides changed merges block by block
+   (list item, table row, paragraph), and only the same block changed on both
+   sides still conflicts, with Git's markers around those blocks.
 
 When to draft, and how to keep a baseline apart from a feature, is in
 [`../mode/spec-mode.md`](../mode/spec-mode.md). Evidence is bytes, revisions and the recorder's statement.
@@ -388,8 +398,9 @@ that shows a first changed file in the boundary, or a new one, runs
 `census --changed` and appends a short `[spec census]` digest to that tool
 result, saying so when the session has no draft yet. At the first call after
 the session's last edit it runs `census --changed --related` once and adds one
-line, `Unread § your change landed in: read first …; +N more: <census command>`: the foreign §
-the session's own files landed in, in rank order, minus those it ran
+line, `Unread § your change landed in: read first …; lower-ranked: <census command>`: the
+foreign § the session's own files landed in, in rank order (at most 10 read first: relevance 0.036
+or more, or a stale literal), minus those it ran
 `sova-spec.mjs read` on; it says nothing again until an edit changes that set.
 That line replaces the census the guide used to ask for by hand before
 finishing. Nothing runs at the end of a turn: a reply carries no spec lines, and
@@ -419,11 +430,9 @@ asking.
 ignores `PI_AGENT_DIR`. If `PI_AGENT_DIR` points somewhere else, the links land
 where pi, and this path, never look.
 
-A project may vendor its own copies, for example under `.sova/spec/tools/`. The
-companion and the draft tool run the `sova-spec.mjs` in their own directory,
-so vendor the files together. Vendored copies are the project's code, not these
-tools. The minor mode reads them, or compares their hashes with the trusted copies, and asks
-before running them. It never runs any other project script, install or
+The installed extension is the only supported way to run these tools. A copy
+inside a project is that project's code, not these tools, and is never run without
+asking: the minor mode reads it and asks first. It never runs any other project script, install or
 network command to get a spec tool. When no trusted copy is reachable, the
 agent says so and reads the manifest and claim files directly. That happens on
 a remote target, for example, where tools run on a machine without the agent

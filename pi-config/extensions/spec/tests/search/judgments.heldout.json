@@ -1,0 +1,723 @@
+{
+  "version": 1,
+  "set": "heldout",
+  "about": "Topic searches for `sova-spec where`, from real asks (user prompts to sessions, paraphrased; commit subjects on master) fixed before their targets were labelled. Targets: primary = the claim a builder on that ask should open first; acceptable = also a good first open.",
+  "spec": {
+    "commit": "a9b87037a6fd443bcc7aebeb96634ceab4e6bb18",
+    "note": "targets, leak and vocabularyGap were judged against the spec at this commit"
+  },
+  "split": {
+    "rule": "Stratified by source (user ask / commit subject) x leak band (0 / under 0.5 / 0.5 and up). Within each stratum, queries sort by sha256 of their text (lowercased, whitespace collapsed) and alternate dev, held-out, dev, ...; the two known failures (\"summary tree\", \"UniiChat\") are pinned to dev and lead their stratum."
+  },
+  "leak": {
+    "measure": "fraction of the query's distinct stems (tests/search/text.mjs) found in its first primary target's title or what, as toc reports them; vocabularyGap = 0 overlap",
+    "median": 0.4,
+    "mean": 0.452,
+    "buckets": {
+      "0": 6,
+      "(0,0.25]": 5,
+      "(0.25,0.5)": 16,
+      "[0.5,0.75)": 16,
+      "[0.75,1]": 5
+    },
+    "vocabularyGap": 6
+  },
+  "queries": [
+    {
+      "id": "a03",
+      "query": "recent section no subagents",
+      "source": "ask 2026-09-23: the recent section should hold only main threads, no subagents or team members",
+      "targets": {
+        "primary": [
+          "§app.session-list/recent"
+        ],
+        "acceptable": [
+          "§app.session-list/ordinary-surfaces"
+        ]
+      },
+      "leak": 0.333,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a06",
+      "query": "folders collapsed by default",
+      "source": "ask 2026-09-23: folders always collapsed by default in the session pane",
+      "targets": {
+        "primary": [
+          "§app.session-list/content-rules"
+        ],
+        "acceptable": [
+          "§app.session-list/groups"
+        ]
+      },
+      "leak": 0,
+      "vocabularyGap": true
+    },
+    {
+      "id": "a07",
+      "query": "model switch notice toast",
+      "source": "ask 2026-09-25: model switching should be a toast, not a transcript line",
+      "targets": {
+        "primary": [
+          "§chat.model-menu/states"
+        ],
+        "acceptable": [
+          "§chat.transcript/transcript-items"
+        ]
+      },
+      "leak": 0.5,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a14",
+      "query": "reauth claude code another sub",
+      "source": "ask 2026-09-25: re-auth Claude Code with another subscription while agents run",
+      "targets": {
+        "primary": [
+          "§app/claude-logins"
+        ],
+        "acceptable": [
+          "§app.claude-logins/drain",
+          "§app.claude-logins/spawn-selection"
+        ]
+      },
+      "leak": 0.4,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a16",
+      "query": "session title truncated mid-sentence",
+      "source": "ask 2026-09-25: a session title is its first message truncated mid-sentence",
+      "targets": {
+        "primary": [
+          "§app.session-list/auto-titles"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.4,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a17",
+      "query": "pile ideas onto overseer",
+      "source": "ask 2026-09-25: pile ideas onto the watcher agent and have them saved",
+      "targets": {
+        "primary": [
+          "§app.overseer/ideas"
+        ],
+        "acceptable": [
+          "§app.overseer/ideas-panel"
+        ]
+      },
+      "leak": 1,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a19",
+      "query": "team defaults in settings",
+      "source": "ask 2026-09-25: configure team defaults in settings",
+      "targets": {
+        "primary": [
+          "§teams/defaults"
+        ],
+        "acceptable": [
+          "§teams.defaults/file"
+        ]
+      },
+      "leak": 0.667,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a23",
+      "query": "projects autoregister git projects",
+      "source": "ask 2026-09-26: a projects abstraction that auto-registers git projects",
+      "targets": {
+        "primary": [
+          "§app.projects/registration"
+        ],
+        "acceptable": [
+          "§app/projects"
+        ]
+      },
+      "leak": 0.333,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a24",
+      "query": "groups indentation hierarchy",
+      "source": "ask 2026-09-26: expanded groups show no hierarchy, need indentation",
+      "targets": {
+        "primary": [
+          "§app.session-list/groups"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.333,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a25",
+      "query": "claude login expires usage",
+      "source": "ask 2026-09-26: show the Claude login expiry in usage",
+      "targets": {
+        "primary": [
+          "§app.insights/usage-refresh"
+        ],
+        "acceptable": [
+          "§app.insights/usage-cards"
+        ]
+      },
+      "leak": 0.25,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a27",
+      "query": "explanations into gallery card",
+      "source": "ask 2026-09-26: explanations become a card in a gallery linking to the session",
+      "targets": {
+        "primary": [
+          "§app.insights/explanations-page"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.667,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a29",
+      "query": "ready to commit merge classifier icon",
+      "source": "ask 2026-09-26: a classifier that shows when a session is ready to commit/merge",
+      "targets": {
+        "primary": [
+          "§chat.worktrees/readiness"
+        ],
+        "acceptable": [
+          "§app.decisions/push"
+        ]
+      },
+      "leak": 0.4,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a30",
+      "query": "summary newest on top",
+      "source": "ask 2026-09-26: reverse the summary sort so newest is on top",
+      "targets": {
+        "primary": [
+          "§app.insights/insight-strip"
+        ],
+        "acceptable": [
+          "§app.insights/summary-sections"
+        ]
+      },
+      "leak": 0.667,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a31",
+      "query": "PWA notifications to phone",
+      "source": "ask 2026-09-27: PWA notifications to the phone for briefs",
+      "targets": {
+        "primary": [
+          "§app/notifications"
+        ],
+        "acceptable": [
+          "§app.notifications/delivery"
+        ]
+      },
+      "leak": 0.667,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a34",
+      "query": "accept recommended answer checkbox",
+      "source": "ask 2026-09-28: a checkbox to accept the recommended answer per decision",
+      "targets": {
+        "primary": [
+          "§chat.alignment/card"
+        ],
+        "acceptable": [
+          "§chat.alignment/document"
+        ]
+      },
+      "leak": 0,
+      "vocabularyGap": true
+    },
+    {
+      "id": "a37",
+      "query": "merge diff same for all",
+      "source": "ask 2026-09-28: the merge diff is the same for every entry",
+      "targets": {
+        "primary": [
+          "§chat.worktrees/merge-card"
+        ],
+        "acceptable": [
+          "§chat.changes/endpoint"
+        ]
+      },
+      "leak": 0.25,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a39",
+      "query": "inline git diff viewer",
+      "source": "ask 2026-09-28: an inline git diff viewer",
+      "targets": {
+        "primary": [
+          "§chat.changes/viewer"
+        ],
+        "acceptable": [
+          "§chat/changes"
+        ]
+      },
+      "leak": 0.25,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a40",
+      "query": "align flyout open questions count",
+      "source": "ask 2026-09-28: the align flyout should show which session has open questions and how many",
+      "targets": {
+        "primary": [
+          "§chat.alignment/session-mark"
+        ],
+        "acceptable": [
+          "§chat.alignment/card"
+        ]
+      },
+      "leak": 0.4,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a43",
+      "query": "cap merge reviewer height",
+      "source": "ask 2026-09-30: cap the height of the merge git reviewer",
+      "targets": {
+        "primary": [
+          "§chat.worktrees/merge-card"
+        ],
+        "acceptable": [
+          "§chat.changes/show-changes-card"
+        ]
+      },
+      "leak": 0.25,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a46",
+      "query": "how to start and stop the project",
+      "source": "ask 2026-09-30: register for each project how to start and stop the actual thing",
+      "targets": {
+        "primary": [
+          "§app.project-services/contract"
+        ],
+        "acceptable": [
+          "§app/project-services",
+          "§app.project-services/up"
+        ]
+      },
+      "leak": 0.333,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a47",
+      "query": "slash menu what works",
+      "source": "ask 2026-09-30: which slash menu commands work in the web app",
+      "targets": {
+        "primary": [
+          "§chat.slash-commands/commands-that-need-the-terminal-ui"
+        ],
+        "acceptable": [
+          "§chat/slash-commands"
+        ]
+      },
+      "leak": 0,
+      "vocabularyGap": true
+    },
+    {
+      "id": "a49",
+      "query": "share links log visits IP",
+      "source": "ask 2026-10-01: two ways of sharing links, log visits and IP address",
+      "targets": {
+        "primary": [
+          "§mesh.public/visitor-log"
+        ],
+        "acceptable": [
+          "§app.baton/visits",
+          "§app.session-share/visits"
+        ]
+      },
+      "leak": 0.4,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a50",
+      "query": "presets for default models",
+      "source": "ask 2026-10-01: presets for default models, delegate mode, team mode",
+      "targets": {
+        "primary": [
+          "§chat/profiles"
+        ],
+        "acceptable": [
+          "§chat.profiles/model"
+        ]
+      },
+      "leak": 0,
+      "vocabularyGap": true
+    },
+    {
+      "id": "a51",
+      "query": "group models by provider",
+      "source": "ask 2026-10-01: model selector groups each provider before its models",
+      "targets": {
+        "primary": [
+          "§chat.model-menu/content-and-order"
+        ],
+        "acceptable": [
+          "§chat.model-menu/menu"
+        ]
+      },
+      "leak": 0.667,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a52",
+      "query": "hide hidden folders new session",
+      "source": "ask 2026-10-01: a new session should not start in hidden folders by default",
+      "targets": {
+        "primary": [
+          "§app/new-session-dialog"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.4,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a55",
+      "query": "claude code usage 100%",
+      "source": "ask 2026-10-02: the Claude Code usage showing 100% went away",
+      "targets": {
+        "primary": [
+          "§app.insights/sidebar-foot"
+        ],
+        "acceptable": [
+          "§app.insights/usage-cards"
+        ]
+      },
+      "leak": 0,
+      "vocabularyGap": true
+    },
+    {
+      "id": "a56",
+      "query": "costs over time tab",
+      "source": "ask 2026-10-02: track all costs over time across providers and models in a new tab",
+      "targets": {
+        "primary": [
+          "§app.insights/cost-history"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.5,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a57",
+      "query": "teammate messages delivered twice",
+      "source": "ask 2026-10-03: teammates' messages are delivered twice to the orchestrator",
+      "targets": {
+        "primary": [
+          "§app.teams/wait-completion"
+        ],
+        "acceptable": [
+          "§teams.defaults/routing"
+        ]
+      },
+      "leak": 0,
+      "vocabularyGap": true
+    },
+    {
+      "id": "a59",
+      "query": "toggle skills and context",
+      "source": "ask 2026-10-03: toggle skills and context on the new session screen",
+      "targets": {
+        "primary": [
+          "§chat.transcript/setup-card-toggles"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.667,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a61",
+      "query": "0 agents when working",
+      "source": "ask 2026-10-03: bottom left says 0 agents while 3 are working",
+      "targets": {
+        "primary": [
+          "§app.session-list/working-now"
+        ],
+        "acceptable": [
+          "§app.insights/aggregate-chips-live-vs-working"
+        ]
+      },
+      "leak": 0.333,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a66",
+      "query": "queued messages each own turn",
+      "source": "ask 2026-10-04: consecutive queued messages each produce their own turn",
+      "targets": {
+        "primary": [
+          "§chat.transcript/a-queued-message"
+        ],
+        "acceptable": [
+          "§chat.composer/behavior"
+        ]
+      },
+      "leak": 0.4,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a71",
+      "query": "session pane minimum width",
+      "source": "ask 2026-10-06: the session pane's minimum drag width on a foldable phone",
+      "targets": {
+        "primary": [
+          "§app.shell/resizing-the-sessions-pane"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.5,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a73",
+      "query": "shares store the link",
+      "source": "ask 2026-10-07: shares do not store the link to copy again",
+      "targets": {
+        "primary": [
+          "§app.session-share/shares-page"
+        ],
+        "acceptable": [
+          "§app.session-share/link"
+        ]
+      },
+      "leak": 0.333,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a75",
+      "query": "ollama cloud usage",
+      "source": "ask 2026-10-07: usage says Ollama Cloud does not report usage",
+      "targets": {
+        "primary": [
+          "§app.insights/ollama-activity"
+        ],
+        "acceptable": [
+          "§app.insights/ollama-credits",
+          "§app.insights/usage-refresh"
+        ]
+      },
+      "leak": 1,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a76",
+      "query": "archived sessions in needs me",
+      "source": "ask 2026-10-08: an archived session shows on the needs-me list",
+      "targets": {
+        "primary": [
+          "§app.insights/team-cards"
+        ],
+        "acceptable": [
+          "§app.session-list/needs-you"
+        ]
+      },
+      "leak": 0.333,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a81",
+      "query": "usage stats as rows",
+      "source": "ask 2026-10-09: usage stats as rows instead of a grid",
+      "targets": {
+        "primary": [
+          "§app.insights/usage-cards"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.667,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a86",
+      "query": "claude told it is pi harness",
+      "source": "ask 2026-09-24: on Claude models do we inject a prompt saying it is the pi harness",
+      "targets": {
+        "primary": [
+          "§app.claude-code-provider/system-prompt"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.5,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a87",
+      "query": "auth gate",
+      "source": "ask 2026-10-01: a defect right after the auth gate went live",
+      "targets": {
+        "primary": [
+          "§app.access/gate"
+        ],
+        "acceptable": [
+          "§app/access"
+        ]
+      },
+      "leak": 0.5,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a89",
+      "query": "share page formatting",
+      "source": "ask 2026-10-07: the share page's formatting needs polish",
+      "targets": {
+        "primary": [
+          "§app.session-share/page"
+        ],
+        "acceptable": [
+          "§app.session-share/reading"
+        ]
+      },
+      "leak": 0.667,
+      "vocabularyGap": false
+    },
+    {
+      "id": "c02",
+      "query": "topic queues",
+      "source": "commit 1e427373: topic queues, batches delivered at idle or turn end",
+      "targets": {
+        "primary": [
+          "§chat/topics"
+        ],
+        "acceptable": [
+          "§chat.topics/delivery"
+        ]
+      },
+      "leak": 1,
+      "vocabularyGap": false
+    },
+    {
+      "id": "c06",
+      "query": "workers inherit sandbox",
+      "source": "commit 119c4846: workers inherit the parent's sandbox",
+      "targets": {
+        "primary": [
+          "§chat.sandbox/workers"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.667,
+      "vocabularyGap": false
+    },
+    {
+      "id": "c07",
+      "query": "share sheet copy link",
+      "source": "commit 2b55609c: share sheet hides Copy Link once the link was turned off",
+      "targets": {
+        "primary": [
+          "§app.session-share/sheet"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.5,
+      "vocabularyGap": false
+    },
+    {
+      "id": "c12",
+      "query": "context ring token count",
+      "source": "commit 5fa27381: session heads get a context ring and token count",
+      "targets": {
+        "primary": [
+          "§chat.context-window/plain-text-not-a-meter"
+        ],
+        "acceptable": [
+          "§chat.context-window/sidebar-ring"
+        ]
+      },
+      "leak": 1,
+      "vocabularyGap": false
+    },
+    {
+      "id": "c17",
+      "query": "gathering chats take photos",
+      "source": "commit 60892767: gathering chats take photos",
+      "targets": {
+        "primary": [
+          "§app.baton/images"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.25,
+      "vocabularyGap": false
+    },
+    {
+      "id": "c18",
+      "query": "schedules approve revoke",
+      "source": "commit 91c39374: schedules listed with Approve/Revoke",
+      "targets": {
+        "primary": [
+          "§chat/schedules"
+        ],
+        "acceptable": [
+          "§chat.schedules/where-shown"
+        ]
+      },
+      "leak": 0.333,
+      "vocabularyGap": false
+    },
+    {
+      "id": "c23",
+      "query": "workers get parent modes",
+      "source": "commit d7567c44: workers get their parent's worker-safe modes",
+      "targets": {
+        "primary": [
+          "§chat.mode-menu/workers"
+        ],
+        "acceptable": []
+      },
+      "leak": 1,
+      "vocabularyGap": false
+    },
+    {
+      "id": "c28",
+      "query": "agents board row opens session",
+      "source": "commit 62b3560a: agents board row opens its session",
+      "targets": {
+        "primary": [
+          "§app.insights/team-cards"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.6,
+      "vocabularyGap": false
+    },
+    {
+      "id": "c30",
+      "query": "share page one-field composer",
+      "source": "commit d8e824c0: share page one-field composer, newest reply above it",
+      "targets": {
+        "primary": [
+          "§app.baton/outsider-view"
+        ],
+        "acceptable": [
+          "§app.session-share/page"
+        ]
+      },
+      "leak": 0.4,
+      "vocabularyGap": false
+    }
+  ]
+}

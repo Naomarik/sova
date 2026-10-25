@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { ListedProfile } from "../../shared/profiles";
-import { CARD_FILTER_AFTER, cardCount, cardMatches, profileCaption, profileIconName, type pickerProfiles } from "../lib/profiles";
+import { CARD_FILTER_AFTER, cardCount, cardMatches, pickerSections, profileCaption, profileIconName, type pickerProfiles } from "../lib/profiles";
 import { Icon } from "./ui";
 
 /** Where focus goes when the grid mounts again after a pick (the runtime reopens and remounts the
@@ -9,10 +9,12 @@ const focusAfterPick = new Map<string, string>();
 const CUSTOM_KEY = "custom";
 
 /**
- * The empty screen's profile cards: one radio group, a card per profile in the picker's groups,
- * then Custom…. Arrow keys move focus between cards (Home and End to the ends); Enter, Space or a
- * click picks. A card that can't be used here is disabled with its reason, and picking it does
- * nothing. A Find a profile field shows past CARD_FILTER_AFTER cards.
+ * The empty screen's profile cards: one radio group, My settings first under no label, a card per
+ * profile in the picker's groups, then Custom…. Arrow keys move focus between cards (Home and End
+ * to the ends); Enter, Space or a click picks. A card that can't be used here is disabled with its
+ * reason, and picking it does nothing. A One at a time profile live in another session is a link
+ * to that session instead (no radio: Tab reaches it, the arrow keys skip it). A Find a profile
+ * field shows past CARD_FILTER_AFTER cards.
  */
 export function ProfileGrid(props: {
   path: string;
@@ -20,7 +22,10 @@ export function ProfileGrid(props: {
   /** The checked card's key: a profile's, CUSTOM for a board pick. */
   checked: string | null;
   subagents: readonly { id: string; footprint: string }[];
-  running: (p: ListedProfile) => boolean;
+  /** My settings' caption (mySettingsCaption). */
+  mineCaption: string;
+  /** The live session holding a One at a time profile elsewhere, or null. */
+  holder: (p: ListedProfile) => { id: string; title: string } | null;
   unusable: (p: ListedProfile) => string | null;
   onPick: (p: ListedProfile) => void;
   onCustom: () => void;
@@ -31,15 +36,13 @@ export function ProfileGrid(props: {
   const filtering = () => cardCount(props.groups) > CARD_FILTER_AFTER;
   const q = () => (filtering() ? query() : "");
   const sections = createMemo(() =>
-    [
-      { id: "builtins", label: "Built in", cards: props.groups.builtins },
-      { id: "project", label: `This project (${props.groups.projectName ?? "this folder"})`, cards: props.groups.project },
-      { id: "yours", label: "Yours", cards: props.groups.yours },
-    ]
+    pickerSections(props.groups)
       .map((s) => ({ ...s, cards: s.cards.filter((p) => cardMatches(p, q())) }))
       .filter((s) => s.cards.length > 0),
   );
-  const keys = createMemo(() => [...sections().flatMap((s) => s.cards.map((p) => p.key)), CUSTOM_KEY]);
+  const active = (p: ListedProfile) => (p.singleton ? props.holder(p) : null);
+  // The radios only: an active One at a time card is a link, never in the radio group's order.
+  const keys = createMemo(() => [...sections().flatMap((s) => s.cards.filter((p) => !active(p)).map((p) => p.key)), CUSTOM_KEY]);
   // One card is in the tab order: the one focus last moved to, else the checked one, else the first.
   const tabbable = () => {
     const k = keys();
@@ -94,28 +97,38 @@ export function ProfileGrid(props: {
       <div class="profile-grid-groups" role="radiogroup" aria-label="Profile" ref={root} onKeyDown={move} onFocusIn={(e) => setFocused((e.target as HTMLElement).dataset.key ?? null)}>
         <For each={sections()}>
           {(s) => (
-            <div class="profile-grid-group" role="group" aria-labelledby={`profile-grid-${s.id}`}>
-              <p class="profile-grid-label" id={`profile-grid-${s.id}`}>
-                {s.label}
-              </p>
+            <div class="profile-grid-group" {...(s.label ? { role: "group", "aria-labelledby": `profile-grid-${s.id}` } : {})}>
+              <Show when={s.label}>
+                {(l) => (
+                  <p class="profile-grid-label" id={`profile-grid-${s.id}`}>
+                    {l()}
+                  </p>
+                )}
+              </Show>
               <div class="profile-grid">
                 <For each={s.cards}>
                   {(p) => (
-                    <ProfileTile
-                      key={p.key}
-                      icon={profileIconName(p.icon)}
-                      label={p.label}
-                      caption={profileCaption(p, props.subagents)}
-                      checked={props.checked === p.key}
-                      tabbable={tabbable() === p.key}
-                      why={props.unusable(p)}
-                      chips={[
-                        ...(props.running(p) ? [{ text: "Running" }] : []),
-                        ...(p.approval === "needed" ? [{ text: "Needs approval", tone: "warn" as const }] : []),
-                        ...(p.singleton ? [{ text: "One at a time" }] : []),
-                      ]}
-                      onPick={() => pick(p)}
-                    />
+                    <Show
+                      when={active(p)}
+                      fallback={
+                        <ProfileTile
+                          key={p.key}
+                          icon={profileIconName(p.icon)}
+                          label={p.label}
+                          caption={s.id === "mine" ? props.mineCaption : profileCaption(p, props.subagents)}
+                          checked={props.checked === p.key}
+                          tabbable={tabbable() === p.key}
+                          why={props.unusable(p)}
+                          chips={[
+                            ...(p.approval === "needed" ? [{ text: "Needs approval", tone: "warn" as const }] : []),
+                            ...(p.singleton ? [{ text: "One at a time" }] : []),
+                          ]}
+                          onPick={() => pick(p)}
+                        />
+                      }
+                    >
+                      {(h) => <ActiveTile key={p.key} icon={profileIconName(p.icon)} label={p.label} holder={h()} />}
+                    </Show>
                   )}
                 </For>
               </div>
@@ -179,6 +192,28 @@ function ProfileTile(props: {
         </span>
       </Show>
     </button>
+  );
+}
+
+/** A One at a time profile live in another session (§chat.profiles/singleton): a link that opens
+    that session, never a pick, so no radio. */
+function ActiveTile(props: { key: string; icon: ReturnType<typeof profileIconName>; label: string; holder: { id: string; title: string } }) {
+  const caption = () => `Opens the running session: ${props.holder.title}`;
+  return (
+    <a class="profile-tile profile-tile-active" href={`#/sid/${encodeURIComponent(props.holder.id)}`} title={caption()} data-key={props.key}>
+      <span class="profile-tile-head">
+        <Icon name={props.icon} small />
+        <span class="profile-tile-label">{props.label}</span>
+        <Icon name="arrow-right" small class="profile-tile-check" />
+      </span>
+      <span class="profile-tile-caption">{caption()}</span>
+      <span class="profile-tile-chips">
+        <span class="chip chip-accent">
+          <i class="chip-dot" />
+          Active
+        </span>
+      </span>
+    </a>
   );
 }
 

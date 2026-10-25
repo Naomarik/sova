@@ -4,6 +4,33 @@
 // effects read, field by field, and the facts the row predicates read. shared/wire-v1.ts maps today's
 // (v1) shapes onto these, on the server and in the browser alike.
 
+/**
+ * One finished reply's measured timing (shared/usage/perf.ts has its rules), as the reply hover reads
+ * it. Times are ms; tokens are the reply's own output. `reasoning` is present only where the split is
+ * real: absent when the provider reports no thinking count, and absent when it reported 0 for a reply
+ * that had a thinking window (a count not reported, never "no thinking").
+ */
+export interface ReplyTiming {
+  /** The effort level the reply ran at ("off" when none). Absent when not recorded. */
+  effort?: string;
+  /** Request sent to the first token of any kind. */
+  ttftMs: number;
+  /** Thinking parts' windows, summed. 0 may still mean it thought: a part whose characters came in one
+      chunk, or Claude's hidden thinking ending in the tick it started (`thinkingParts`). */
+  thinkingMs: number;
+  /** Thinking parts the reply wrote, when any (absent: it didn't think). */
+  thinkingParts?: number;
+  /** Reply text and tool-call parts' windows, summed. */
+  replyMs: number;
+  /** Tool-call parts the reply wrote, when any (absent: none). Their tokens are part of `output`, so
+      a reply with any has no reply-text speed. */
+  toolCalls?: number;
+  /** Every output token (thinking included). */
+  output: number;
+  /** The provider's thinking-token count, when the split is real. */
+  reasoning?: number;
+}
+
 /** One block of an assistant message, as the live view holds it. */
 export type SovaPart =
   | { kind: "text"; text: string }
@@ -45,6 +72,8 @@ export type SovaEvent =
       stop: "ok" | "error" | "aborted";
       error?: string;
       contextTokens?: number;
+      /** The reply's measured timing (shared/usage/perf.ts), when it was measured. */
+      reply?: ReplyTiming;
     }
   /** `parentCallId` (on tool.start, .update and .end): a call another tool made (a codemode script's), by the
       calling tool's id. It has no row and no live tool of its own: its caller's result records it. */
@@ -71,4 +100,7 @@ export interface RowFacts {
   contextTokens?: number;
   /** A tool result: its tool, its call, and whether it failed. */
   tool?: { name?: string; callId?: string; isError?: boolean };
+  /** An assistant reply's measured timing (shared/usage/perf.ts), on its entry's first row; absent
+      when the reply was not measured (wire 2 only: a wire-1 row's meta never carries it). */
+  reply?: ReplyTiming;
 }

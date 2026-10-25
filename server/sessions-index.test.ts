@@ -25,6 +25,12 @@ const { isArchived, setArchived } = await import("./archived-sessions");
 const { addWebSession, isWebSession } = await import("./web-sessions");
 const { setDraft } = await import("./drafts");
 const { canonicalPath } = await import("./paths");
+const { stateRoot } = await import("./state-root");
+const { ensureTourToolRuntime } = await import("./tours/runtime");
+const { tourShares } = await import("./tours/shares");
+const { removeSessionTours } = await import("./tours/lifecycle");
+const { isTourSessionDeleted } = await import("./tours/deleted");
+const { tourEditionFixture, tourEditionAssetsFixture, tourScriptFixture } = await import("../shared/tour-fixtures");
 
 // A live record's pid must be alive for readLive to see it, like archived-sessions.test.ts fakes it.
 // The runner that started this file, alive for all of it, stands in for another live process.
@@ -235,13 +241,116 @@ test("archive: a husk this server didn't spawn is still refused, never deleted",
   assert.equal(r.ok, false);
   assert.ok(existsSync(path), "an external session file is never touched");
 });
+function seedTours(id: string) {
+  const runtime = ensureTourToolRuntime(), shares = tourShares(), edition = tourEditionFixture();
+  edition.sessionId = id;
+  runtime.store.publishEdition(edition, tourEditionAssetsFixture());
+  const job = runtime.queue.enqueue({ sessionId: id, tourId: edition.manifest.id, title: "A saved draft", total: 2, requirements: { origins: ["https://example.test"] } }, async () => { throw new Error("A blocked fixture job must never run."); });
+  runtime.artifacts.save({ v: 1, sessionId: id, jobId: job.id, tourId: job.tourId, script: tourScriptFixture(), mode: "dry-run", suspicious: [], receipts: [], report: job });
+  const reviewed = shares.previewFor(edition);
+  const link = shares.create(id, edition.manifest.id, edition.manifest.editionId, reviewed.previewId, new Date(Date.now() + 60_000).toISOString());
+  const pending = shares.previewFor(edition, "baton:reviewer");
+  return { runtime, shares, edition, job, link, pending };
+}
+
+function assertToursRemoved(id: string, fixture: ReturnType<typeof seedTours>) {
+  const root = stateRoot(), { runtime, shares, edition, job, link, pending } = fixture;
+  assert.equal(isTourSessionDeleted(root, id), true, "deletion remains durable after request completion");
+  assert.equal(existsSync(join(root, "tours", id)), false, "source editions are removed");
+  assert.equal(existsSync(join(root, "tour-private", id)), false, "private scripts and receipts are removed");
+  assert.equal(existsSync(join(root, "tour-jobs", `${job.id}.json`)), false, "durable jobs are removed");
+  assert.deepEqual(runtime.queue.list(id), []);
+  assert.equal(shares.access(link.token), null, "standalone authority is revoked");
+  assert.equal(existsSync(join(root, "tour-share-snapshots", `${link.link.id}.json`)), false);
+  assert.equal(shares.consumePreview(pending.previewId, id, edition.manifest.id, edition.manifest.editionId, "baton:reviewer"), null, "unused review cannot attach after deletion");
+}
+
+test("actual transcript cleanup removes default tour stores and authority but preserves reusable operator state", async () => {
+  const id = "01234567-89ab-7cde-8f01-234567890d01", path = session(id, "remove my tours");
+  setArchived(id, true);
+  const fixture = seedTours(id), { runtime } = fixture;
+  runtime.approvals.approve("https://example.test");
+  const account = runtime.accounts.save({ origin: "https://example.test", username: "made-up-reviewer", password: "fake-pw-01", testAccount: true });
+  const result = await cleanupSessions({ mode: "paths", paths: [path], dryRun: false });
+  assert.equal(result.deletedCount, 1); assert.deepEqual(result.deletedIds, [id]); assert.equal(result.skipped.failed, 0);
+  assert.equal(existsSync(path), false);
+  assertToursRemoved(id, fixture);
+  assert.equal(runtime.approvals.isApproved("https://example.test"), true);
+  assert.ok(runtime.accounts.resolve(account.id, account.origin), "another chat may reuse the approved test account");
+});
+
+test("archive, dry-run, refused and recent deletions retain real tour pictures, jobs and reviewed snapshots", async () => {
+  for (const [n, mode] of ["archive", "dry-run", "refused", "recent"] .entries()) {
+    const id = `01234567-89ab-7cde-8f01-234567890d1${n}`, path = session(id, mode), fixture = seedTours(id);
+    addWebSession(id);
+    if (mode === "archive") assert.ok((await archiveSession(path, true)).ok);
+    else {
+      if (mode !== "refused") setArchived(id, true);
+      if (mode === "recent") utimesSync(path, new Date(), new Date());
+      const result = await cleanupSessions({ mode: "paths", paths: [path], dryRun: mode === "dry-run" });
+      assert.equal(result.deletedCount, 0);
+    }
+    assert.ok(existsSync(path));
+    assert.equal(isTourSessionDeleted(stateRoot(), id), false);
+    assert.ok(fixture.runtime.store.readEdition(id, fixture.edition.manifest.id, fixture.edition.manifest.editionId));
+    assert.ok(fixture.runtime.artifacts.read(id, fixture.job.id));
+    assert.ok(fixture.runtime.queue.get(id, fixture.job.id));
+    assert.ok(existsSync(join(stateRoot(), "tour-share-snapshots", `${fixture.link.link.id}.json`)), "archive may revoke access, but must not delete retained pictures");
+    if (mode !== "archive") {
+      assert.ok(fixture.shares.access(fixture.link.token));
+      assert.ok(fixture.shares.consumePreview(fixture.pending.previewId, id, fixture.edition.manifest.id, fixture.edition.manifest.editionId, "baton:reviewer"));
+    }
+  }
+});
+
+test("archive's actual empty-husk unlink also removes its real tour stores", async () => {
+  const id = "01234567-89ab-7cde-8f01-234567890d20", path = husk(id), fixture = seedTours(id);
+  addWebSession(id);
+  const result = await archiveSession(path, true);
+  assert.ok(result.ok); assert.equal(result.summary.deleted, true); assert.equal(existsSync(path), false);
+  assertToursRemoved(id, fixture);
+});
+
+test("post-unlink tour failures preserve truthful delete results and log no nested private errors; retry removes leftovers", async () => {
+  const runtime = ensureTourToolRuntime(), original = runtime.artifacts.removeSession, originalLog = console.error;
+  const logs: unknown[][] = [], secretPath = "/private/made-up-account/profile", token = "fake-tok-02";
+  console.error = (...args: unknown[]) => { logs.push(args); };
+  try {
+    for (const [n, mode] of ["cleanup", "husk"].entries()) {
+      const id = `01234567-89ab-7cde-8f01-234567890d3${n}`, path = mode === "husk" ? husk(id) : session(id, "cleanup failure"), fixture = seedTours(id);
+      addWebSession(id); setArchived(id, true);
+      runtime.artifacts.removeSession = current => {
+        if (current === id) throw new AggregateError([new Error(secretPath, { cause: new Error(token) })], `Private cleanup ${secretPath}`);
+        original.call(runtime.artifacts, current);
+      };
+      if (mode === "husk") {
+        const result = await archiveSession(path, true);
+        assert.ok(result.ok); assert.equal(result.summary.deleted, true);
+      } else {
+        const result = await cleanupSessions({ mode: "paths", paths: [path], dryRun: false });
+        assert.equal(result.deletedCount, 1); assert.deepEqual(result.deletedIds, [id]); assert.equal(result.skipped.failed, 0);
+      }
+      assert.equal(existsSync(path), false);
+      assert.equal(isTourSessionDeleted(stateRoot(), id), true);
+      assert.ok(existsSync(join(stateRoot(), "tour-private", id)), "failed artifact removal really leaves retryable files");
+      assert.equal(fixture.shares.access(fixture.link.token), null);
+      assert.equal(fixture.runtime.store.latestEdition(id, fixture.edition.manifest.id), null);
+      runtime.artifacts.removeSession = original;
+      await removeSessionTours(id);
+      assertToursRemoved(id, fixture);
+    }
+    assert.deepEqual(logs, Array.from({ length: 2 }, () => ["[sessions] Deleted chat tour cleanup is pending; a later sweep will retry."]), "constant-only logging cannot expose Error, stack, cause or AggregateError.errors");
+    assert.equal(JSON.stringify(logs).includes(secretPath), false); assert.equal(JSON.stringify(logs).includes(token), false);
+  } finally { runtime.artifacts.removeSession = original; console.error = originalLog; }
+});
+
 test("workerSession: a file its owner names as a worker is flagged in the list and the single summary; the owner is not", async () => {
   const ID_W = "01234567-89ab-7cde-8f01-2345678900a1";
   const ID_O = "01234567-89ab-7cde-8f01-2345678900a2";
   const worker = session(ID_W, "worker task");
   const owner = session(ID_O, "owner thread");
-  const registry = JSON.stringify({ type: "custom", customType: "subagents-worker-registry", data: { v: 1, backendSessionId: ID_W } });
-  appendFileSync(owner, `${registry}\n`);
+  const completion = JSON.stringify({ type: "custom_message", customType: "subagent-complete", display: true, content: `### ag_01 (worker) — done\nSession: ${ID_W}\nModel: m\nthe answer` });
+  appendFileSync(owner, `${completion}\n`);
 
   const byId = new Map((await listSessions()).map((s) => [s.id, s]));
   assert.equal(byId.get(ID_W)?.workerSession, true);

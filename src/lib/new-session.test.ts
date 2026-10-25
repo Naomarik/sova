@@ -2,11 +2,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ApiError } from "./api";
-import { createThenArchive, dropArchived, hiddenRecentNote, MAX_RECENT, NEW_SESSION_TABS, newSessionCwd, offersCwd, PROJECT_TAB_START, projectAt, projectChoices, recentFolders, recentRemoteFolders, startInProject, tabsForHost, whereForHost } from "./new-session";
+import { createThenArchive, dropArchived, folderProjectHint, folderStart, folderStartedToast, hiddenRecentNote, MAX_RECENT, NEW_SESSION_TABS, newSessionCwd, offersCwd, PROJECT_TAB_START, projectAt, projectChoices, recentFolders, recentRemoteFolders, startInProject, tabsForHost, whereForHost } from "./new-session";
 import type { ProjectSummary } from "../../shared/projects";
 
 test("newSessionCwd prefers the chat's own folder", () => {
   assert.equal(newSessionCwd({ cwd: "/a" }, [{ cwd: "/b", lastActiveAt: "2026-01-02T00:00:00Z" }]), "/a");
+});
+
+test("newSessionCwd on a project's page: the project's root, after the open session's folder, before the latest session's", () => {
+  const sessions = [{ cwd: "/latest", lastActiveAt: "2026-01-02T00:00:00Z" }];
+  assert.equal(newSessionCwd(undefined, sessions, undefined, "/src/acme"), "/src/acme");
+  assert.equal(newSessionCwd({ cwd: "/a" }, sessions, undefined, "/src/acme"), "/a");
+  // A hidden root is skipped as any hidden prefill is.
+  assert.equal(newSessionCwd(undefined, sessions, (cwd) => !cwd.includes("/."), "/src/.hidden"), "/latest");
+  assert.equal(newSessionCwd(undefined, sessions, undefined, null), "/latest");
 });
 
 test("newSessionCwd falls back to the most recently active session, then to nothing", () => {
@@ -240,4 +249,41 @@ test("the Project tab's start: a summary hands the session over; a refused start
   const refused = new ApiError("demo is archived.", 409);
   await assert.rejects(startInProject("prj_a", { start: async () => { throw refused; }, summary: async () => ({}) }, { toast: (t) => toasts.push(t), created: (s) => created.push(s), open: (h) => opened.push(h) }), (e) => e === refused);
   assert.deepEqual([created.length, opened.length, toasts.length], [1, 0, 1]);
+});
+
+test("the folder tab: a folder in a project starts that project's coding session there; any other folder, or another Host, a plain session", () => {
+  const rows = projectChoices([
+    proj("prj_w", "web", "/w/web"),
+    proj("prj_api", "api", "/w/web/api"),
+    proj("prj_x", "x", "/w/web-x"),
+    proj("prj_o", "site", "/w/site", { space: { kind: "org", orgId: "o1", orgName: "Acme Corp" } }),
+    proj("prj_old", "old", "/w/old", { archived: { at: "2026-10-02T00:00:00Z" } }),
+  ]);
+  const at = (cwd: string, host: string | null = null) => {
+    const r = folderStart(rows, cwd, host);
+    return r.kind === "project" ? [r.project.id, r.cwd] : ["plain", r.cwd];
+  };
+  assert.deepEqual(at("/w/web"), ["prj_w", "/w/web"]);
+  assert.deepEqual(at("/w/web/server"), ["prj_w", "/w/web/server"], "the subfolder is kept");
+  assert.deepEqual(at("/w/web/api/routes"), ["prj_api", "/w/web/api/routes"], "the deepest root wins");
+  assert.deepEqual(at("/w/.worktrees/web-feat/src"), ["prj_w", "/w/.worktrees/web-feat/src"], "a worktree as Sova names it");
+  assert.deepEqual(at("/w/.worktrees/web-x-feat"), ["prj_x", "/w/.worktrees/web-x-feat"], "the longest worktree prefix wins");
+  assert.deepEqual(at("/w/site/app"), ["prj_o", "/w/site/app"], "a project an organization places too");
+  assert.deepEqual(at("/w/old/a"), ["plain", "/w/old/a"], "an archived project is not offered");
+  assert.deepEqual(at("/w"), ["plain", "/w"], "a folder above the root");
+  assert.deepEqual(at("/w/web-y"), ["plain", "/w/web-y"], "a sibling sharing a prefix");
+  assert.deepEqual(at("/w/.worktrees/web-"), ["plain", "/w/.worktrees/web-"]);
+  assert.deepEqual(at("/w/web/server", "laptop"), ["plain", "/w/web/server"], "projects are this host's: another Host starts a plain session");
+  assert.equal(folderProjectHint("web"), "This folder is in web: the session starts as one of its coding sessions.");
+});
+
+test("the folder tab's project start posts the folder with the Project tab's start, and says where it started", async () => {
+  const toasts: string[] = [];
+  const inputs: unknown[] = [];
+  const ui = { toast: (t: string) => toasts.push(t), created: () => {}, open: () => {} };
+  const api = { start: async (_pid: string, input: unknown) => (inputs.push(input), { path: "/p.jsonl", sessionId: "s1" }), summary: async () => ({}) };
+  await startInProject("prj_w", api, ui, { cwd: "/w/web/server", started: folderStartedToast("web", "~/web/server", false) });
+  await startInProject("prj_w", api, ui, { cwd: "/w/web", started: folderStartedToast("web", "~/web", true) });
+  assert.deepEqual(inputs, [{ worktree: "later", cwd: "/w/web/server" }, { worktree: "later", cwd: "/w/web" }]);
+  assert.deepEqual(toasts, ["Coding session of web started in ~/web/server.", "Coding session started in the project root."]);
 });

@@ -12,6 +12,7 @@ import {
   type TranscriptItem,
 } from "../shared/protocol";
 import type { HEntry } from "../shared/harness";
+import { normalizeTourCardDetails, redactTourToolArgs, TOUR_TOOLS, tourCardArgs } from "../shared/tour";
 import { joinedText, rawOf, toHEntry, typedText } from "./harness/pi/reader";
 import { metaOf, withoutSignatures } from "./harness/pi/wire";
 import { PROFILE_ENTRY, SESSION_SENT_ENTRY } from "../shared/profiles";
@@ -43,6 +44,7 @@ import { parseWakeNudge } from "../shared/wake";
 import { inlineTmpImages } from "./attachments";
 import { isReport, parseReport, parseTeamMessage, previewLine, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
 import { mergeInfoOf, WORKTREE_MERGE_MESSAGE } from "./worktrees-state";
+import { OWNER_REQUEST_NOTE, ownerRequestCardOf } from "../shared/project-assistant";
 import { alignResultOf } from "../pi-config/extensions/mode/align.ts";
 // The folded tool card's own readers (src/lib/message.ts, src/lib/tool-diff-stats.ts, both DOM- and
 // import-free): a slim row's line and "+n −m" are what the card would compute from the whole entry.
@@ -198,14 +200,18 @@ function slimTool(it: TranscriptItem, h: HEntry | undefined): void {
     const name = it.text ?? "tool";
     const args = callBlock(h, it.toolCallId)?.arguments;
     const tool: ToolRowInfo = {};
-    const summary = argsSummary(args, name);
+    const summary = argsSummary(TOUR_TOOLS.has(name) ? tourCardArgs(args) : args, name);
     // Whole: the folded line's tooltip shows all of it (a heredoc's, at times, many KB).
     if (summary) tool.summary = summary;
     if (SPAWN_TOOLS.has(name)) {
       const spawn = spawnName(args);
       if (spawn) tool.spawn = spawn;
     }
-    if (EAGER_TOOLS.has(name)) {
+    if (TOUR_TOOLS.has(name)) {
+      tool.args = tourCardArgs(args);
+      tool.lazy = true;
+      tool.bytes = sizeOf(args);
+    } else if (EAGER_TOOLS.has(name)) {
       if (args !== undefined) tool.args = args;
     } else {
       tool.lazy = true;
@@ -226,7 +232,17 @@ function slimTool(it: TranscriptItem, h: HEntry | undefined): void {
   if (stats) tool.stats = stats;
   const script = name === CODEMODE_TOOL ? codemodeDetails(details) : null;
   if (script) tool.calls = codemodeTally(script.calls);
-  if (EAGER_TOOLS.has(name)) {
+  if (TOUR_TOOLS.has(name)) {
+    const card = r?.isError ? undefined : normalizeTourCardDetails(details);
+    tool.lazy = true;
+    tool.bytes = output.length + sizeOf(details);
+    if (card) {
+      tool.details = card;
+      tool.output = `${card.title} · ${card.steps} steps · ${card.status}`;
+    } else tool.output = "This tour result is unavailable. Open the tool report to check what happened.";
+    delete it.text;
+    delete it.images;
+  } else if (EAGER_TOOLS.has(name)) {
     tool.output = output;
     if (details !== undefined) tool.details = details;
   } else {
@@ -272,6 +288,10 @@ export function toolContents(rows: readonly TranscriptItem[], ids: readonly stri
     const t = resultEntry(h);
     const out: NonNullable<ToolContent["result"]> = { output: resultOutput(h, r.text ?? fullCut(h)), isError: t?.isError === true };
     if (t && t.details !== undefined) out.details = t.details;
+    if (t && TOUR_TOOLS.has(t.tool ?? "")) {
+      const images = contentImages(t.blocks);
+      if (images) out.images = images;
+    }
     // A pi entry that recorded its edit as Claude Code's own `toolUseResult` beside the message (the
     // Changes viewer's fallback when the message has no details object).
     const raw = h && rawOf(h);
@@ -284,7 +304,7 @@ export function toolContents(rows: readonly TranscriptItem[], ids: readonly stri
     if (it.kind === "tool-call") {
       const c: ToolContent = {};
       const args = callBlock(sources.get(it), it.toolCallId)?.arguments;
-      if (args !== undefined) c.args = args;
+      if (args !== undefined) c.args = redactTourToolArgs(it.text, args);
       const r = it.toolCallId ? results.get(it.toolCallId) : undefined;
       if (r) c.result = resultOf(r);
       out[it.id] = c;
@@ -429,22 +449,26 @@ function toolResultRow(id: string, h: Extract<HEntry, { kind: "tool-result" }>):
 }
 
 /**
- * pi-config mode extension marker: `{mode}` for a major switch, `{minor, on}` for a minor one,
+ * pi-config mode extension marker: `{mode}` for a major switch, `{minor, on}` for a minor one, `{project, on}`
+ * for a project minor mode,
  * `{strict}` for the strict toggle. Newer entries also carry an `active` snapshot (what the
  * session restores from); it is state, not a message, so it is never rendered.
  */
 function modeMarker(h: StateEntry, id: string): TranscriptItem[] {
   const d: any = h.data;
   if (d && typeof d.minor === "string" && typeof d.on === "boolean") return [item(id, "info", h, `Minor mode: ${d.minor} ${d.on ? "on" : "off"}`)];
+  // A project minor mode (§chat.mode-menu/project-modes): `{project, on}`, the same row as a built-in's.
+  if (d && typeof d.project === "string" && typeof d.on === "boolean") return [item(id, "info", h, `Minor mode: ${d.project} ${d.on ? "on" : "off"}`)];
   if (d && typeof d.mode === "string") return [item(id, "info", h, `Mode → ${d.mode}`)];
   if (d && typeof d.strict === "boolean") return [item(id, "info", h, `Strict mode ${d.strict ? "on" : "off"}`)];
   return [];
 }
 
 /** A pi-btw side-channel exchange. Hidden custom state in the TUI (it lives in the overlay);
-    the web has no overlay, so show it as a report row or /btw answers would be silent. */
-function btwRow(id: string, h: StateEntry): TranscriptItem[] {
-  const d: any = h.data;
+    the web has no overlay, so show it as a report row or /btw answers would be silent. The
+    headless /btw's `btw-note` message carries the same details and gets the same row. */
+function btwRow(id: string, h: HEntry, data: unknown): TranscriptItem[] {
+  const d: any = data;
   const answer = typeof d?.answer === "string" ? d.answer : "";
   if (!answer.trim()) return []; // still running or malformed: stay hidden like the TUI
   const question = typeof d.question === "string" ? d.question.replace(/\s+/g, " ").trim().slice(0, 80) : "";
@@ -757,6 +781,20 @@ function entryRows(h: HEntry, fallbackId: string, state?: { model?: string }): T
           return [it];
         }
       }
+      // An owner request Start Chat put in the chat (§app.project-assistant/request-chat): its card.
+      if (h.noteType === OWNER_REQUEST_NOTE) {
+        const card = ownerRequestCardOf(h.details);
+        if (card) {
+          const it = item(id, "info", h, contentText(h.content));
+          it.ownerRequest = card;
+          return [it];
+        }
+      }
+      // Sova's headless /btw (pi-config/extensions/btw): the question and answer in its details.
+      if (h.noteType === "btw-note") {
+        const btw = btwRow(id, h, h.details);
+        if (btw.length) return btw;
+      }
       return [customRow(id, h)];
     case "summary":
       return [item(id, "info", h, `${h.of === "branch" ? "Branch" : "Compaction"} summary: ${h.summary ?? ""}`)];
@@ -791,7 +829,7 @@ function entryRows(h: HEntry, fallbackId: string, state?: { model?: string }): T
     a team event. Older sessions' `spec-turn` and `spec-check-error` records give no row. */
 function stateRows(id: string, h: StateEntry): TranscriptItem[] {
   if (h.key === "mode") return modeMarker(h, id);
-  if (h.key === "btw-thread-entry") return btwRow(id, h);
+  if (h.key === "btw-thread-entry") return btwRow(id, h, h.data);
   if (h.key === ALIGN_DOC) return alignRow(id, h);
   if (h.key === EXPLAIN_DOC) return explainRow(id, h);
   if (h.key === HANDOFF_RUN) return handoffRunRow(id, h);

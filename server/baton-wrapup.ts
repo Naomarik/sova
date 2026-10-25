@@ -10,7 +10,7 @@ import {
 } from "../shared/baton";
 import type { Person } from "../shared/orgs";
 import { batonById, sessionPathOf } from "./baton";
-import { acquireChat } from "./chat-manager";
+import { acquireChatHandle } from "./chat-handle";
 import { BATON_WRAPUP } from "./harness/state-kinds";
 import { aboutSomeoneElse, detectLanguage } from "./baton-guards";
 import { withoutAuthorNotes } from "./baton-view";
@@ -287,39 +287,56 @@ export async function inferLanguages(sessionId: string, row: Pick<BatonSession, 
 export const wantsWrapup = (row: BatonSession): boolean =>
   (row.state === "done" || row.state === "closed") && !row.wrapup && row.participants.some((p) => p !== OPERATOR);
 
+/** Where a wrap-up that began and never ended starts on `branch` (its start entry), or -1. */
+function openWrapupAt(branch: readonly HEntry[]): number {
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const h = branch[i]!;
+    if (h.kind !== "state" || h.key !== BATON_WRAPUP_ENTRY) continue;
+    return (h.data as { phase?: unknown } | null)?.phase === "start" ? i : -1;
+  }
+  return -1;
+}
+
 /**
  * The wrap-up's turn (the baton statechart's `:sova/wrapup` invocation, server/baton-loadout.ts): the
  * `sova-baton-wrapup` start entry, one unattended turn with only its tool, the languages inferred,
  * the end entry. Returns what it wrote and why it stopped, for the statechart (`wrapup/finished` or
  * `wrapup/stopped`). The statechart decides when it runs and whether it is skipped (nobody wrote).
  */
-export async function runWrapup(sessionId: string, normalTools: readonly string[]): Promise<{ applied: number; refused: WrapupRefusal[]; error?: string }> {
+export async function runWrapup(sessionId: string, normalTools: readonly string[], invokeId?: string): Promise<{ applied: number; refused: WrapupRefusal[]; error?: string; cutOff?: true }> {
   const hit = batonById(sessionId);
   if (!hit) return { applied: 0, refused: [], error: "The session is no longer registered." };
   if (active.has(sessionId)) return { applied: 0, refused: [], error: "The wrap-up is already running." };
-  const chat = await acquireChat(sessionPathOf(hit.dir, hit.row));
+  const chat = await acquireChatHandle(sessionPathOf(hit.dir, hit.row));
+  const sid = chat.mirror.sessionId;
   const row = hit.row;
   let run: Run = { applied: [], refused: [], called: false };
   let error: string | undefined;
+  // A wrap-up the next server resumes while its turn runs on in the chat's own process (or ended
+  // there meanwhile) is picked up, not begun again (§app.chat-processes/special-kinds): its start
+  // entry is already there, and the keyed send answers with the first receipt.
+  const key = invokeId ? `wrapup:${invokeId}` : undefined;
+  const begun = key && chat.where === "process" ? openWrapupAt(await chat.branch()) : -1;
   try {
-    chat.appendStateRow(BATON_WRAPUP, { v: 1, phase: "start" } satisfies BatonWrapupData);
+    if (begun < 0) await chat.appendStateRow(BATON_WRAPUP, { v: 1, phase: "start" } satisfies BatonWrapupData);
     run = beginWrapupRun(sessionId);
-    chat.harness.setActiveTools([WRAPUP_TOOL]);
+    await chat.setActiveTools([WRAPUP_TOOL]);
     // The usage ledger records this turn's calls as the session's wrap-up (the project card's split).
-    setUsageSessionPurpose(chat.harness.id, "wrapup");
-    const from = chat.harness.branch().length;
-    const { turn } = chat.acceptPrompt(wrapupPrompt(row, readRoster(row.orgId)), undefined, "server");
-    await turn;
+    setUsageSessionPurpose(sid, "wrapup");
+    const from = begun >= 0 ? begun : (await chat.branch()).length;
+    const receipt = await chat.send({ text: wrapupPrompt(row, readRoster(row.orgId)), origin: "server", report: false, track: true, ...(key ? { key } : {}) });
+    const ended = await chat.turnEnd(receipt);
+    if (!ended.ok) throw new Error(ended.error);
     // Only this turn's answer counts: a stop that wrote none must not read as the session's own
     // earlier turn (goal_done, an ordinary tool call).
-    const last = chat.harness
-      .branch()
+    const last = (await chat.branch())
       .slice(from)
       .reverse()
       .find((h): h is HEntry & { kind: "assistant" } => h.kind === "assistant");
     const stop = last?.stop;
     if (!last || stop === "error" || stop === "aborted") {
-      if (chat.lastStreamTrip) error = `${chat.lastStreamTrip.detail.replace(/^./, (c) => c.toUpperCase())}, so the stream guard ended the turn.`;
+      const trip = chat.mirror.streamTrip;
+      if (trip) error = `${trip.detail.replace(/^./, (c) => c.toUpperCase())}, so the stream guard ended the turn.`;
       else if (shuttingDown()) error = "The server shut down during the wrap-up.";
       else error = last?.error ? String(last.error) : "The wrap-up turn ended without an answer.";
     }
@@ -327,12 +344,14 @@ export async function runWrapup(sessionId: string, normalTools: readonly string[
     error = err instanceof Error ? err.message : String(err);
   } finally {
     endWrapupRun(sessionId);
-    setUsageSessionPurpose(chat.harness.id, undefined);
-    chat.harness.setActiveTools([...normalTools]);
+    setUsageSessionPurpose(sid, undefined);
   }
-  await inferLanguages(sessionId, row, chat.harness.branch(), run);
+  // This server is stopping while the turn runs on in the chat's own process: the next server picks it up.
+  if (error && shuttingDown() && chat.where === "process") return { applied: run.applied.length, refused: run.refused, cutOff: true };
+  await chat.setActiveTools([...normalTools]);
+  await inferLanguages(sessionId, row, await chat.branch(), run);
   try {
-    chat.appendStateRow(BATON_WRAPUP, {
+    await chat.appendStateRow(BATON_WRAPUP, {
       v: 1,
       phase: "end",
       applied: run.applied,

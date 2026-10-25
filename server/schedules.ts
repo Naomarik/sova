@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { permissionsOfProfile, pin2Source, type Automation } from "../shared/automations";
+import { deliveryInstruction, type BundleRef, type Load } from "../shared/playbook-delivery";
 import { playbookTurnText } from "../shared/playbooks";
 import { keyOf, type ListedProfile } from "../shared/profiles";
 import type { PlaybookCatalog, PlaybookInfo, PlaybookSchedule, ScheduleFire, ScheduleInfo, SessionSummary } from "../shared/protocol";
@@ -23,6 +25,7 @@ import {
   wakeInstruction,
   type ReadyBranch,
   type ScheduleHeader,
+  type Trigger,
 } from "../shared/schedules";
 import type { BoardRow } from "./merge-board";
 import { singletonHolder } from "./session-profile";
@@ -32,16 +35,22 @@ import { stateRoot } from "./state-root";
  * Playbook schedules (§chat/schedules): the one keeper that fires them, the store of what the user
  * approved, and each schedule's state for the Playbooks dialog and the Overseer's permits panel.
  *
- * A schedule is a project playbook's `when:` line (shared/schedules.ts parses it). The keeper ticks
- * every 30 s, re-reads each approved schedule's header, and fires what is due: a wake of the
- * profile's live One at a time session, or a new session, with a `[schedule sN]` message. It also
- * watches this host's Claude logins, and on a limit's reset continues the schedule's sessions that
- * stopped at it (§chat.schedules/limit-reset), and wakes it when a branch in its project turns
- * ready to merge on Sova's merge board (§chat.schedules/merge-ready). Nothing fires unapproved, and an approval is pinned
- * to the `when:` and `tz:` lines and the linked profile's identity and powers.
+ * A schedule is declared two ways: a project's automation file `.sova/automations/<id>.json`
+ * (§chat.schedules/automation-file: triggers, playbook, its session's own settings and permissions),
+ * or, the older way, a project playbook's `when:` line (shared/schedules.ts parses both grammars).
+ * When a file names a playbook whose header also has `when:`, the file wins and the header's row is
+ * carried over to it (§chat.schedules/store): same `sN`, approval, fires and next fire.
  *
- * Everything that touches sessions, profiles, logins or the clock is injected (`KeeperDeps`), so the
- * rules are testable; server/index.ts wires the real ones.
+ * The keeper ticks every 30 s, re-reads each approved schedule's declaration, and fires what is due:
+ * a wake of the schedule's session (an automation's own pointer, or the header profile's live One at
+ * a time session), or a new session, with a `[schedule sN]` message that carries the playbook itself
+ * (§chat.schedules/delivery). It also watches this host's Claude logins, and on a limit's reset
+ * continues the schedule's sessions that stopped at it (§chat.schedules/limit-reset), and wakes it
+ * when a branch in its project turns ready to merge on Sova's merge board
+ * (§chat.schedules/merge-ready). Nothing fires unapproved.
+ *
+ * Everything that touches sessions, profiles, files, logins or the clock is injected (`KeeperDeps`),
+ * so the rules are testable; server/schedule-routes.ts wires the real ones.
  */
 
 export const MAX_APPROVED = 20;
@@ -50,6 +59,7 @@ export const MAX_LATE_MS = 3600_000;
 export const DEFAULT_TICK_MS = 30_000;
 export const PAUSED_UNOPENED = `Paused after ${UNOPENED_PAUSE} runs nobody opened.`;
 export const CHANGED = "Changed since you approved it";
+export const OTHER_DEVICE = "Runs on another device: this one fires nothing for it.";
 /** A branch fires again no sooner than this after it last fired (§chat.schedules/merge-ready). */
 export const MERGE_READY_QUIET_MS = 30 * 60_000;
 /** A branch remembered this long after it was last seen ready, then forgotten. */
@@ -68,11 +78,27 @@ export interface StoredFire {
   path?: string;
 }
 
+export interface StoredApproval {
+  /** What was approved: a header's pin, or (for an automation approved as one) its v2 pin. */
+  pin: string;
+  at: number;
+  /** An automation's v2 pin, approved or carried over (§chat.schedules/store). */
+  pin2?: string;
+  /** A header schedule's approval in automation terms, recorded while its pin was verified equal,
+      so a later automation file can carry it even once the header is gone. */
+  carry2?: string;
+  /** When its approval carried over to the automation file (keeper clock). */
+  carried?: number;
+}
+
 export interface StoredSchedule {
   id: string;
   root: string;
+  /** The playbook it runs (an automation's `playbook`; for a header, the playbook declaring it). */
   playbook: string;
-  approved?: { pin: string; at: number };
+  /** An automation file's id, once the row is the file's (§chat.schedules/store). */
+  automation?: string;
+  approved?: StoredApproval;
   /** Only the automatic pause is stored; every other pause is read from the files each time. */
   paused?: { reason: string; at: number };
   next?: { at: number; trigger: string };
@@ -81,6 +107,10 @@ export interface StoredSchedule {
   /** merge-ready: each worktree path that fired, with its branch, when (keeper clock), and `out`
       once it was seen not ready since (§chat.schedules/merge-ready). */
   ready?: Record<string, { branch: string; at: number; out?: true }>;
+  /** A long-running schedule's own session (§chat.schedules/store). */
+  session?: { id: string; path: string };
+  /** The device that runs it (its host id). */
+  host?: string;
 }
 
 export type LoginState = "ready" | "limited" | "auth";
@@ -101,33 +131,72 @@ export interface ScheduleStore {
 
 export const schedulesFile = () => join(stateRoot(), "schedules.json");
 export const scheduleRunsFile = () => join(stateRoot(), "schedule-runs.jsonl");
+/** The one copy of the store as it was before its first automation write (§chat.schedules/store). */
+export const backupFileOf = (file: string) => `${file}.bak-automations`;
 
+/** A store that exists but can't be read as version 1: refused, never read as empty. */
+export class StoreRefused extends Error {}
+
+/** The store: missing is empty; unparseable or another version is refused (§chat.schedules/store). */
 export function readStore(file: string): ScheduleStore {
+  let text: string;
   try {
-    const raw = JSON.parse(readFileSync(file, "utf8")) as Partial<ScheduleStore>;
-    if (raw?.version !== 1 || !Array.isArray(raw.schedules)) throw new Error("not a store");
-    return {
-      version: 1,
-      seq: typeof raw.seq === "number" ? raw.seq : 0,
-      schedules: raw.schedules.filter((s) => s && typeof s.id === "string" && typeof s.root === "string" && typeof s.playbook === "string").map((s) => ({ ...s, fires: Array.isArray(s.fires) ? s.fires : [] })),
-      logins: raw.logins && typeof raw.logins === "object" ? raw.logins : {},
-    };
-  } catch {
-    return { version: 1, seq: 0, schedules: [], logins: {} };
+    text = readFileSync(file, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, seq: 0, schedules: [], logins: {} };
+    throw new StoreRefused(`${file} can't be read: ${err instanceof Error ? err.message : String(err)}`);
   }
+  let raw: Partial<ScheduleStore>;
+  try {
+    raw = JSON.parse(text) as Partial<ScheduleStore>;
+  } catch (err) {
+    throw new StoreRefused(`${file} is not JSON (${err instanceof Error ? err.message : String(err)}); nothing is read or written until it is fixed.`);
+  }
+  if (!raw || typeof raw !== "object" || raw.version !== 1 || !Array.isArray(raw.schedules))
+    throw new StoreRefused(`${file} is not a version 1 schedule store; nothing is read or written until it is fixed.`);
+  return {
+    version: 1,
+    seq: typeof raw.seq === "number" ? raw.seq : 0,
+    schedules: raw.schedules.filter((s) => s && typeof s.id === "string" && typeof s.root === "string" && typeof s.playbook === "string").map((s) => ({ ...s, fires: Array.isArray(s.fires) ? s.fires : [] })),
+    logins: raw.logins && typeof raw.logins === "object" ? raw.logins : {},
+  };
 }
+
+/** A store holding any of the fields the automation migration adds. */
+const migrated = (store: { schedules?: unknown }): boolean =>
+  Array.isArray(store.schedules) &&
+  (store.schedules as StoredSchedule[]).some((s) => s && (s.automation !== undefined || s.session !== undefined || s.host !== undefined || s.approved?.pin2 !== undefined || s.approved?.carry2 !== undefined));
 
 function writeStore(file: string, store: ScheduleStore): void {
   mkdirSync(dirname(file), { recursive: true });
+  // One backup, before the first write that adds the migration's fields.
+  if (migrated(store) && !existsSync(backupFileOf(file)) && existsSync(file)) {
+    let before: { schedules?: unknown } | null = null;
+    try {
+      before = JSON.parse(readFileSync(file, "utf8")) as { schedules?: unknown };
+    } catch {
+      before = null;
+    }
+    if (before && !migrated(before)) copyFileSync(file, backupFileOf(file));
+  }
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(store, null, 2)}\n`);
   renameSync(tmp, file);
 }
 
+const hash16 = (src: string) => createHash("sha256").update(src).digest("hex").slice(0, 16);
+
 /** The pin an approval records: a hash of what it covers (§chat.schedules/approval). */
 export function pinOf(header: Pick<ScheduleHeader, "tz"> & { triggers: NonNullable<ScheduleHeader["triggers"]> }, profile: ListedProfile): string {
-  const src = pinSource(header, { key: profile.key, remove: profile.remove, grant: profile.grant, singleton: profile.singleton, overseerMayStart: profile.overseerMayStart });
-  return createHash("sha256").update(src).digest("hex").slice(0, 16);
+  return hash16(pinSource(header, { key: profile.key, remove: profile.remove, grant: profile.grant, singleton: profile.singleton, overseerMayStart: profile.overseerMayStart }));
+}
+
+/** An automation's v2 pin: its triggers, playbook, session kind and permissions. */
+export const pin2Of = (a: Pick<Automation, "triggers" | "tz" | "playbook" | "session" | "permissions">): string => hash16(pin2Source(a));
+
+/** A header schedule's approval in automation terms (§chat.schedules/store). */
+export function legacyPin2(header: { triggers: readonly Trigger[]; tz?: string }, playbook: string, profile: ListedProfile): string {
+  return hash16(pin2Source({ triggers: header.triggers, tz: header.tz, playbook, session: profile.singleton ? "long-running" : "per-fire", permissions: permissionsOfProfile(profile) }));
 }
 
 /** One login as the keeper sees it at a tick. */
@@ -141,6 +210,13 @@ export interface LoginNow {
 
 export type SendResult = { ok: true } | { ok: false; error: string };
 
+/** An automation file as read: parsed, or its exact error. */
+export interface AutomationRead {
+  id: string;
+  automation?: Automation;
+  error?: string;
+}
+
 export interface KeeperDeps {
   file: string;
   logFile: string;
@@ -152,6 +228,8 @@ export interface KeeperDeps {
   lateAfterMs: number;
   readPlaybook(root: string, id: string): Promise<{ info: PlaybookInfo; fields: Record<string, string> } | null>;
   findProfile(id: string, root: string): Promise<ListedProfile | null>;
+  /** The project's automation files, each parsed or with its error; [] without the folder. */
+  automations?(root: string): Promise<AutomationRead[]>;
   sessions(): Promise<SessionSummary[]>;
   /** The session runs a turn or holds a queued message. */
   busy(path: string): boolean;
@@ -161,6 +239,14 @@ export interface KeeperDeps {
   started(path: string): void;
   wake(path: string, text: string): Promise<SendResult>;
   create(root: string, profile: { source: ListedProfile["source"]; id: string }, text: string, title: string): Promise<{ ok: true; id: string; path: string } | { ok: false; error: string }>;
+  /** A new session for an automation: its settings and permissions from the file itself. */
+  createForAutomation?(root: string, automation: Automation, text: string, title: string): Promise<{ ok: true; id: string; path: string } | { ok: false; error: string }>;
+  /** Set a session's model, effort, mode and minor modes to the automation's, where they differ. */
+  configure?(path: string, automation: Automation): Promise<SendResult>;
+  /** The playbook block for a session (null: a new one), §chat.schedules/delivery. */
+  payload?(path: string | null, bundle: BundleRef): Promise<{ block: string; load: Load; sha: string }>;
+  /** This device's host id (§chat.schedules/store). */
+  hostId?(): string;
   /** When the user last looked at a session (real ms; 0 = never). */
   seenAt(sessionId: string): number;
   logins(): LoginNow[];
@@ -178,25 +264,47 @@ export interface KeeperDeps {
 
 /** What a schedule is now, read from its files and the store. */
 interface Evaluated {
+  kind: "header" | "automation";
   pb: { info: PlaybookInfo; fields: Record<string, string> } | null;
   header: ScheduleHeader | null;
   profile: ListedProfile | null;
+  automation?: Automation;
+  /** The triggers and zone it fires on, and its task (either declaration). */
+  triggers?: Trigger[];
+  tz?: string;
+  task?: string;
+  title: string;
   pin?: string;
   view: PlaybookSchedule;
 }
 
 const iso = (t: number) => new Date(t).toISOString();
+const bundleOf = (info: PlaybookInfo): BundleRef => ({ id: info.id, dir: info.dir, entry: info.entry });
 
 export class ScheduleKeeper {
   private chain: Promise<unknown> = Promise.resolve();
   /** An active merge-ready schedule was seen (the first tick reads the board to find out). */
   private wantsBoard = true;
+  /** The refusal last logged, so a broken store is said once, not every tick. */
+  private refusedSaid = "";
   constructor(readonly deps: KeeperDeps) {}
 
-  /** Every store change runs here, one at a time: a tick's awaits never interleave with an approve. */
+  /** Every store change runs here, one at a time: a tick's awaits never interleave with an approve.
+      A store that can't be read refuses the whole step: nothing runs, nothing is written. */
   private locked<T>(fn: (store: ScheduleStore) => Promise<T>): Promise<T> {
     const run = this.chain.then(async () => {
-      const store = readStore(this.deps.file);
+      let store: ScheduleStore;
+      try {
+        store = readStore(this.deps.file);
+        this.refusedSaid = "";
+      } catch (err) {
+        if (err instanceof StoreRefused && err.message !== this.refusedSaid) {
+          this.refusedSaid = err.message;
+          console.warn(`[schedules] store refused: ${err.message}`);
+        }
+        throw err;
+      }
+      await this.syncAutomations(store);
       const out = await fn(store);
       writeStore(this.deps.file, store);
       return out;
@@ -205,24 +313,113 @@ export class ScheduleKeeper {
     return run;
   }
 
-  private log(s: Pick<StoredSchedule, "id" | "root" | "playbook">, trigger: string, outcome: string, extra: { why?: string; session?: string } = {}): void {
+  private log(s: Pick<StoredSchedule, "id" | "root" | "playbook"> & { automation?: string }, trigger: string, outcome: string, extra: { why?: string; session?: string } = {}): void {
     try {
       mkdirSync(dirname(this.deps.logFile), { recursive: true });
-      appendFileSync(this.deps.logFile, `${JSON.stringify({ at: iso(this.deps.realNow()), id: s.id, playbook: s.playbook, root: s.root, trigger, outcome, ...extra })}\n`);
+      appendFileSync(this.deps.logFile, `${JSON.stringify({ at: iso(this.deps.realNow()), id: s.id, playbook: s.playbook, ...(s.automation ? { automation: s.automation } : {}), root: s.root, trigger, outcome, ...extra })}\n`);
     } catch (err) {
       console.warn("[schedules] log not written:", err instanceof Error ? err.message : String(err));
     }
   }
 
-  private zone(h: ScheduleHeader | null): string {
-    return h?.tz ?? (this.deps.zone ?? hostZone)();
+  private zone(ev: Pick<Evaluated, "tz"> | null): string {
+    return ev?.tz ?? (this.deps.zone ?? hostZone)();
   }
+
+  private host(): string | undefined {
+    return this.deps.hostId?.();
+  }
+
+  // ── Automation files and the carry-over (§chat.schedules/store) ───────────────────────────────
+
+  /** The automation files of `root`, never throwing. */
+  private async automationsIn(root: string): Promise<AutomationRead[]> {
+    if (!this.deps.automations) return [];
+    return this.deps.automations(root).catch(() => []);
+  }
+
+  /** The automation file `id` in `root`, or null when it's gone. */
+  private async automationOf(root: string, id: string): Promise<AutomationRead | null> {
+    return (await this.automationsIn(root)).find((a) => a.id === id) ?? null;
+  }
+
+  /**
+   * Bring the store in step with the automation files of the roots it knows (and `extra`): a file
+   * naming the playbook of a header schedule takes that row over (same `sN`, approval, fires), and
+   * any other file gets its own row. Run in every store step, before the step reads anything.
+   */
+  private async syncAutomations(store: ScheduleStore, extra: readonly string[] = []): Promise<void> {
+    if (!this.deps.automations) return;
+    const roots = [...new Set([...store.schedules.map((s) => s.root), ...extra])];
+    for (const root of roots) {
+      for (const a of await this.automationsIn(root)) {
+        if (store.schedules.some((s) => s.root === root && s.automation === a.id)) continue;
+        const playbook = a.automation?.playbook;
+        const legacy = playbook ? store.schedules.find((s) => s.root === root && !s.automation && s.playbook === playbook) : undefined;
+        if (legacy && a.automation) await this.adopt(legacy, a.automation);
+        else {
+          const s: StoredSchedule = { id: `s${++store.seq}`, root, playbook: playbook ?? a.id, automation: a.id, fires: [] };
+          store.schedules.push(s);
+          this.log(s, "", "found");
+          if (a.automation) this.deps.brief?.(`The automation ${a.automation.label} in ${basename(root)} wants to run the playbook ${a.automation.playbook} (${scheduleText(a.automation.triggers)}). It fires only once the user approves it on your permits chip.`);
+        }
+      }
+    }
+  }
+
+  /**
+   * A header schedule's row becomes the automation's: everything kept, its approval carried only
+   * when the header's approved pin still holds (now, or as recorded while it held) and says what
+   * the file says. Never approve(): a mismatch stays approved-but-changed until the user approves.
+   */
+  private async adopt(s: StoredSchedule, a: Automation): Promise<void> {
+    const carry = (await this.verifiedLegacyPin2(s)) ?? s.approved?.carry2;
+    s.automation = a.id;
+    s.host ??= this.host();
+    if (s.approved) {
+      if (carry && carry === pin2Of(a)) {
+        s.approved = { ...s.approved, pin2: carry, carried: this.deps.now() };
+        this.log(s, "", "carried");
+      } else this.log(s, "", "adopted", { why: `${CHANGED}: the file's triggers, playbook, session kind or permissions differ from what was approved` });
+    } else this.log(s, "", "adopted");
+    if (!s.session) {
+      const sessions = await this.deps.sessions().catch(() => [] as SessionSummary[]);
+      const last = [...s.fires].reverse().find((f) => f.sessionId && f.path && sessions.some((x) => x.id === f.sessionId && !x.archived));
+      if (last) s.session = { id: last.sessionId!, path: last.path! };
+    }
+  }
+
+  /** The header's approval in automation terms, when its stored pin is the one its files give now. */
+  private async verifiedLegacyPin2(s: StoredSchedule): Promise<string | null> {
+    if (!s.approved) return null;
+    const pb = await this.deps.readPlaybook(s.root, s.playbook);
+    const header = pb ? scheduleOf(pb.fields) : null;
+    if (!header?.triggers || !header.profile) return null;
+    const profile = await this.deps.findProfile(header.profile, s.root);
+    if (!profile || profile.approval === "needed") return null;
+    if (pinOf({ tz: header.tz, triggers: header.triggers }, profile) !== s.approved.pin) return null;
+    return legacyPin2({ triggers: header.triggers, tz: header.tz }, s.playbook, profile);
+  }
+
+  // ── What a schedule is now ──────────────────────────────────────────────────────────────────
 
   /** The schedule's state now (§chat.schedules/approval): its files first, then what the store holds. */
   private async evaluate(s: Pick<StoredSchedule, "root" | "playbook"> & Partial<StoredSchedule>): Promise<Evaluated> {
+    const ev = s.automation ? await this.evaluateAutomation(s as StoredSchedule) : await this.evaluateHeader(s);
+    // A row this device doesn't run fires nothing here (§chat.schedules/store).
+    const host = this.host();
+    if (s.approved && s.host && host && s.host !== host && ev.view.state === "active") {
+      ev.view.state = "paused";
+      ev.view.reason = OTHER_DEVICE;
+      delete ev.view.next;
+    }
+    return ev;
+  }
+
+  private async evaluateHeader(s: Pick<StoredSchedule, "root" | "playbook"> & Partial<StoredSchedule>): Promise<Evaluated> {
     const pb = await this.deps.readPlaybook(s.root, s.playbook);
     const header = pb ? scheduleOf(pb.fields) : null;
-    const out: Evaluated = { pb, header, profile: null, view: { when: header?.when ?? "", state: "invalid" } };
+    const out: Evaluated = { kind: "header", pb, header, profile: null, title: pb?.info.title ?? s.playbook, view: { when: header?.when ?? "", state: "invalid" } };
     if (!pb || !header) {
       out.view.reason = !pb ? `The playbook ${s.playbook} is gone from ${basename(s.root)}.` : "The playbook no longer has a when: line.";
       if (s.approved) out.view.state = "paused";
@@ -233,6 +430,9 @@ export class ScheduleKeeper {
       out.view.reason = header.error;
       return out;
     }
+    out.triggers = header.triggers;
+    out.tz = header.tz;
+    out.task = header.task;
     out.view.text = scheduleText(header.triggers);
     const profile = await this.deps.findProfile(header.profile!, s.root);
     if (!profile) {
@@ -253,6 +453,55 @@ export class ScheduleKeeper {
     out.view.state = "paused";
     if (s.approved.pin !== out.pin) out.view.reason = CHANGED;
     else if (profileNeeds) out.view.reason = profileNeeds;
+    else {
+      // Verified equal now: record it in automation terms, so a later automation file can carry it.
+      const carry2 = legacyPin2({ triggers: header.triggers, tz: header.tz }, s.playbook, profile);
+      if (s.approved.carry2 !== carry2) s.approved.carry2 = carry2;
+      if (!s.host && this.host()) s.host = this.host();
+      if (s.paused) out.view.reason = s.paused.reason;
+      else {
+        out.view.state = "active";
+        if (s.next) out.view.next = iso(s.next.at);
+      }
+    }
+    return out;
+  }
+
+  private async evaluateAutomation(s: StoredSchedule): Promise<Evaluated> {
+    const read = await this.automationOf(s.root, s.automation!);
+    const out: Evaluated = { kind: "automation", pb: null, header: null, profile: null, title: read?.automation?.label ?? s.automation!, view: { when: "", state: "invalid" } };
+    if (!read) {
+      out.view.reason = `The automation file ${s.automation}.json is gone from ${basename(s.root)}.`;
+      if (s.approved) out.view.state = "paused";
+      return out;
+    }
+    const a = read.automation;
+    if (!a) {
+      out.view.reason = read.error;
+      return out;
+    }
+    out.automation = a;
+    out.view.when = a.when;
+    out.view.text = scheduleText(a.triggers);
+    out.view.profileLabel = `${a.label}'s own settings`;
+    if (a.tz) out.view.tz = a.tz;
+    out.triggers = a.triggers;
+    out.tz = a.tz;
+    out.task = a.task;
+    out.pin = pin2Of(a);
+    out.view.pin = out.pin;
+    out.pb = await this.deps.readPlaybook(s.root, a.playbook);
+    if (!out.pb) {
+      out.view.reason = `The playbook ${a.playbook} is gone from ${basename(s.root)}.`;
+      out.view.state = s.approved ? "paused" : "invalid";
+      return out;
+    }
+    if (!s.approved) {
+      out.view.state = "needs-approval";
+      return out;
+    }
+    out.view.state = "paused";
+    if (s.approved.pin2 !== out.pin) out.view.reason = CHANGED;
     else if (s.paused) out.view.reason = s.paused.reason;
     else {
       out.view.state = "active";
@@ -262,12 +511,23 @@ export class ScheduleKeeper {
   }
 
   private register(store: ScheduleStore, root: string, playbook: string): { s: StoredSchedule; fresh: boolean } {
-    const found = store.schedules.find((x) => x.root === root && x.playbook === playbook);
+    const found = store.schedules.find((x) => x.root === root && x.playbook === playbook && !x.automation);
     if (found) return { s: found, fresh: false };
     const s: StoredSchedule = { id: `s${++store.seq}`, root, playbook, fires: [] };
     store.schedules.push(s);
     this.log(s, "", "found");
     return { s, fresh: true };
+  }
+
+  /** The schedule's sessions for the Automations group, newest first: its own, then its fires'. */
+  private sessionsOf(s: StoredSchedule): string[] {
+    const ids: string[] = [];
+    if (s.session) ids.push(s.session.id);
+    for (let i = s.fires.length - 1; i >= 0; i--) {
+      const id = s.fires[i]!.sessionId;
+      if (id && !ids.includes(id)) ids.push(id);
+    }
+    return ids;
   }
 
   private info(s: StoredSchedule, ev: Evaluated): ScheduleInfo {
@@ -277,9 +537,35 @@ export class ScheduleKeeper {
       root: s.root,
       projectName: basename(s.root),
       playbook: s.playbook,
-      title: ev.pb?.info.title ?? s.playbook,
+      title: ev.title,
       fires: s.fires.slice(-5).map((f) => ({ at: iso(f.at), trigger: f.trigger, kind: f.kind, ...(f.sessionId ? { sessionId: f.sessionId } : {}) })),
+      ...(s.automation ? { automation: s.automation } : {}),
+      sessions: this.sessionsOf(s),
     };
+  }
+
+  /**
+   * The playbook a session's schedule runs (§chat.schedules/playbook-read): the schedule whose own
+   * session it is, or whose fires went to it, or (a new session whose fire isn't recorded yet) the
+   * approved schedule running the playbook `hint` names, delivered there from that very folder. A
+   * session keeps reading what it was delivered after a revoke. Read only.
+   */
+  async bundleFor(sessionId: string, hint?: { id: string; dir?: string }): Promise<(BundleRef & { title: string }) | null> {
+    let store: ScheduleStore;
+    try {
+      store = readStore(this.deps.file);
+    } catch {
+      return null;
+    }
+    const mine = store.schedules.filter((s) => s.session?.id === sessionId || s.fires.some((f) => f.sessionId === sessionId));
+    const candidates = mine.length ? mine : hint ? store.schedules.filter((s) => s.approved && s.playbook === hint.id) : [];
+    for (const s of candidates) {
+      const pb = await this.deps.readPlaybook(s.root, s.playbook).catch(() => null);
+      if (!pb) continue;
+      if (!mine.length && hint?.dir !== pb.info.dir) continue;
+      return { ...bundleOf(pb.info), title: pb.info.title };
+    }
+    return null;
   }
 
   /** Every schedule Sova knows of, with its state (the permits panel, GET /api/schedules). */
@@ -291,6 +577,11 @@ export class ScheduleKeeper {
     });
   }
 
+  /** The playbooks an automation file in `root` names: their headers are no second schedule. */
+  private async claimedPlaybooks(root: string): Promise<Set<string>> {
+    return new Set((await this.automationsIn(root)).map((a) => a.automation?.playbook).filter((x): x is string => !!x));
+  }
+
   /**
    * The Playbooks catalog with each project schedule's state, registering the ones Sova hadn't seen
    * (they read Needs approval). `root`: the catalog's project.
@@ -299,11 +590,15 @@ export class ScheduleKeeper {
     const scheduled = catalog.playbooks.filter((p) => p.source === "project" && p.schedule && p.schedule.state !== "not-project");
     if (!root || !scheduled.length) return Promise.resolve(catalog);
     return this.locked(async (store) => {
+      await this.syncAutomations(store, [root]);
+      const claimed = await this.claimedPlaybooks(root);
       for (const p of scheduled) {
-        const { s, fresh } = this.register(store, root, p.id);
+        // A playbook an automation file runs shows that automation's row.
+        const own = claimed.has(p.id) ? store.schedules.find((x) => x.root === root && x.automation && x.playbook === p.id) : undefined;
+        const { s, fresh } = own ? { s: own, fresh: false } : this.register(store, root, p.id);
         if (fresh) this.announce(s, p);
         const ev = await this.evaluate(s);
-        p.schedule = { ...ev.view, id: s.id };
+        p.schedule = { ...ev.view, id: s.id, ...(s.automation ? { automation: s.automation } : {}) };
       }
       return catalog;
     });
@@ -315,44 +610,59 @@ export class ScheduleKeeper {
   }
 
   /**
-   * Find schedules in the projects of `roots` (the keeper's discovery): new ones read Needs approval;
-   * an unapproved one whose playbook no longer declares a schedule is forgotten.
+   * Find schedules in the projects of `roots` (the keeper's discovery): automation files and
+   * playbook headers; new ones read Needs approval. An unapproved one whose header no longer
+   * declares a schedule, or whose automation file is gone, is forgotten.
    */
   discover(roots: readonly string[], list: (root: string) => Promise<PlaybookInfo[]>): Promise<void> {
     return this.locked(async (store) => {
+      await this.syncAutomations(store, roots);
       for (const root of new Set(roots)) {
+        const claimed = await this.claimedPlaybooks(root);
         const pbs = await list(root).catch(() => [] as PlaybookInfo[]);
         for (const p of pbs) {
-          if (!p.schedule || p.schedule.state === "not-project") continue;
+          if (!p.schedule || p.schedule.state === "not-project" || claimed.has(p.id)) continue;
           const { s, fresh } = this.register(store, root, p.id);
           if (fresh) this.announce(s, p);
         }
       }
       const keep: StoredSchedule[] = [];
       for (const s of store.schedules) {
-        if (!s.approved && roots.includes(s.root) && !(await this.deps.readPlaybook(s.root, s.playbook).then((pb) => pb && scheduleOf(pb.fields)))) continue;
+        if (!s.approved && roots.includes(s.root)) {
+          if (s.automation && !(await this.automationOf(s.root, s.automation))) continue;
+          if (!s.automation && !(await this.deps.readPlaybook(s.root, s.playbook).then((pb) => pb && scheduleOf(pb.fields)))) continue;
+        }
         keep.push(s);
       }
       store.schedules = keep;
     });
   }
 
-  /** POST /api/schedules/approve: the user's click, for exactly the pin they were shown. */
-  approve(root: string, playbook: string, pin: string): Promise<{ ok: true; schedule: ScheduleInfo } | { ok: false; status: 404 | 409; error: string }> {
+  /** POST /api/schedules/approve: the user's click, for exactly the pin they were shown. `ref` names
+      a header's playbook or an automation file. */
+  approve(root: string, ref: string | { playbook?: string; automation?: string }, pin: string): Promise<{ ok: true; schedule: ScheduleInfo } | { ok: false; status: 404 | 409; error: string }> {
+    const r = typeof ref === "string" ? { playbook: ref } : ref;
     return this.locked(async (store) => {
-      const existing = store.schedules.find((x) => x.root === root && x.playbook === playbook);
-      const ev = await this.evaluate(existing ?? { root, playbook });
-      if (!ev.pb || !ev.header) return { ok: false as const, status: 404 as const, error: ev.view.reason ?? `No schedule in ${playbook}.` };
-      if (!ev.pin || !ev.profile || !ev.header.triggers) return { ok: false as const, status: 409 as const, error: ev.view.reason ?? "This schedule can't be approved." };
+      await this.syncAutomations(store, [root]);
+      const match = (x: StoredSchedule) => x.root === root && (r.automation ? x.automation === r.automation : !x.automation && x.playbook === r.playbook);
+      const existing = store.schedules.find(match);
+      if (r.automation && !existing) return { ok: false as const, status: 404 as const, error: `No automation ${r.automation} in ${basename(root)}.` };
+      if (!r.automation && r.playbook && (await this.claimedPlaybooks(root)).has(r.playbook))
+        return { ok: false as const, status: 409 as const, error: `An automation file runs ${r.playbook}: approve the automation instead.` };
+      const ev = await this.evaluate(existing ?? { root, playbook: r.playbook ?? "" });
+      if (ev.kind === "header" && (!ev.pb || !ev.header)) return { ok: false as const, status: 404 as const, error: ev.view.reason ?? `No schedule in ${r.playbook}.` };
+      if (!ev.pin || !ev.triggers || (ev.kind === "header" && !ev.profile) || (ev.kind === "automation" && !ev.pb)) return { ok: false as const, status: 409 as const, error: ev.view.reason ?? "This schedule can't be approved." };
       if (ev.pin !== pin) return { ok: false as const, status: 409 as const, error: "The schedule or its profile changed since it was shown. Look at it again, then approve." };
-      if (ev.profile.approval === "needed") return { ok: false as const, status: 409 as const, error: `Its profile ${ev.profile.label} needs your approval first (Settings → Profiles).` };
-      const others = store.schedules.filter((x) => x.approved && !(x.root === root && x.playbook === playbook)).length;
+      if (ev.profile?.approval === "needed") return { ok: false as const, status: 409 as const, error: `Its profile ${ev.profile.label} needs your approval first (Settings → Profiles).` };
+      const others = store.schedules.filter((x) => x.approved && !match(x)).length;
       if (others >= MAX_APPROVED) return { ok: false as const, status: 409 as const, error: `Sova runs at most ${MAX_APPROVED} schedules. Revoke one first.` };
-      const { s } = this.register(store, root, playbook);
+      const s = existing ?? this.register(store, root, r.playbook!).s;
       const now = this.deps.now();
-      s.approved = { pin, at: now };
+      s.approved = ev.kind === "automation" ? { pin, at: now, pin2: pin } : { pin, at: now };
+      const host = this.host();
+      if (host) s.host = host;
       delete s.paused;
-      s.next = nextFire(ev.header.triggers, now, this.zone(ev.header)) ?? undefined;
+      s.next = nextFire(ev.triggers, now, this.zone(ev)) ?? undefined;
       if (!s.next) delete s.next;
       this.log(s, "", "approved");
       return { ok: true as const, schedule: this.info(s, await this.evaluate(s)) };
@@ -400,9 +710,25 @@ export class ScheduleKeeper {
     return s.day?.key === dayKey(this.deps.now(), tz) && s.day.n >= MAX_FIRES_PER_DAY;
   }
 
+  /** The block for a session (null: new), or why it can't be had. Without a payload dep, the
+      wake's old instruction (tests that predate delivery). */
+  private async block(bundle: BundleRef, path: string | null): Promise<{ ok: true; block: string; load?: Load } | { ok: false; error: string }> {
+    if (!this.deps.payload) return { ok: true, block: "" };
+    try {
+      const p = await this.deps.payload(path, bundle);
+      return { ok: true, block: p.block, load: p.load };
+    } catch (err) {
+      return { ok: false, error: `the playbook couldn't be read: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  }
+
+  private message(head: string, title: string, block: string, before?: string): string {
+    return [head, ...(before ? [before] : []), ...(block ? [deliveryInstruction(title), block] : [])].join("\n");
+  }
+
   /** One fire of an active schedule (§chat.schedules/fire): a time, or a merge-ready transition with its own reason. */
   private async fire(s: StoredSchedule, ev: Evaluated, trigger: string, lateMs: number | undefined, reason?: string): Promise<void> {
-    const tz = this.zone(ev.header);
+    const tz = this.zone(ev);
     const skip = (why: string) => this.log(s, trigger, "skipped", { why });
     if (this.dayFull(s, tz)) return skip(`it fired ${MAX_FIRES_PER_DAY} times today`);
     const last = [...s.fires].reverse().find((f) => f.path);
@@ -413,20 +739,59 @@ export class ScheduleKeeper {
     }
     if (this.deps.freeSlots() <= 0) return skip("the running-at-once limit was reached");
     const pb = ev.pb!.info;
+    const bundle = bundleOf(pb);
+    const head = fireHead(s.id, trigger, ev.automation?.id ?? pb.id, reason ?? ev.task ?? DEFAULT_TASK, lateMs, ev.automation ? "automation" : "playbook");
+    const wakeText = async (path: string): Promise<string | { error: string }> => {
+      const b = await this.block(bundle, path);
+      if (!b.ok) return { error: b.error };
+      return b.block ? this.message(head, pb.title, b.block) : `${head}\n${wakeInstruction(pb.title, pb.dir, pb.entry)}`;
+    };
+
+    if (ev.automation) {
+      const a = ev.automation;
+      const sessions = await this.deps.sessions();
+      const own = s.session ? sessions.find((x) => x.id === s.session!.id && !x.archived) : undefined;
+      if (own) {
+        if (own.live) return skip(`${a.label}'s session is open in a terminal`);
+        const configured = this.deps.configure ? await this.deps.configure(own.path, a).catch((err) => ({ ok: false as const, error: String(err) })) : ({ ok: true } as const);
+        const text = await wakeText(own.path);
+        if (typeof text !== "string") return this.log(s, trigger, "refused", { why: text.error, session: own.id });
+        const r = await this.deps.wake(own.path, text);
+        if (!r.ok) return this.log(s, trigger, "refused", { why: r.error, session: own.id });
+        this.record(s, { trigger, kind: "wake", sessionId: own.id, path: own.path }, tz);
+        return this.log(s, trigger, "fired", { session: own.id, ...(configured.ok ? {} : { why: `its settings were not applied: ${configured.error}` }) });
+      }
+      if (!this.deps.createForAutomation) return this.log(s, trigger, "refused", { why: "this Sova can't start an automation's session" });
+      const b = await this.block(bundle, null);
+      if (!b.ok) return this.log(s, trigger, "refused", { why: b.error });
+      const r = await this.deps.createForAutomation(s.root, a, this.message(head, pb.title, b.block), `${a.label} (automation)`);
+      if (!r.ok) return this.log(s, trigger, "refused", { why: r.error });
+      s.session = { id: r.id, path: r.path };
+      this.record(s, { trigger, kind: "new", sessionId: r.id, path: r.path }, tz);
+      return this.log(s, trigger, "fired", { session: r.id });
+    }
+
     const profile = ev.profile!;
-    const head = fireHead(s.id, trigger, pb.id, reason ?? ev.header!.task ?? DEFAULT_TASK, lateMs);
     if (profile.singleton) {
       const holder = singletonHolder(keyOf(profile), await this.deps.sessions());
       if (holder) {
         if (holder.live) return skip(`${profile.label} is open in a terminal`);
-        const r = await this.deps.wake(holder.path, `${head}\n${wakeInstruction(pb.title, pb.dir, pb.entry)}`);
+        const text = await wakeText(holder.path);
+        if (typeof text !== "string") return this.log(s, trigger, "refused", { why: text.error, session: holder.id });
+        const r = await this.deps.wake(holder.path, text);
         if (!r.ok) return this.log(s, trigger, "refused", { why: r.error, session: holder.id });
+        // The schedule's own session, seeded from the header's One at a time session (§chat.schedules/store).
+        if (s.session?.id !== holder.id) s.session = { id: holder.id, path: holder.path };
         this.record(s, { trigger, kind: "wake", sessionId: holder.id, path: holder.path }, tz);
         return this.log(s, trigger, "fired", { session: holder.id });
       }
     }
-    const r = await this.deps.create(s.root, { source: profile.source, id: profile.id }, `${head}\n\n${playbookTurnText(pb, "")}`, `${pb.title} (scheduled)`);
+    const b = await this.block(bundle, null);
+    if (!b.ok) return this.log(s, trigger, "refused", { why: b.error });
+    const text = b.block ? this.message(head, pb.title, b.block) : `${head}\n\n${playbookTurnText(pb, "")}`;
+    const r = await this.deps.create(s.root, { source: profile.source, id: profile.id }, text, `${pb.title} (scheduled)`);
     if (!r.ok) return this.log(s, trigger, "refused", { why: r.error });
+    if (profile.singleton) s.session = { id: r.id, path: r.path };
     this.record(s, { trigger, kind: "new", sessionId: r.id, path: r.path }, tz);
     this.log(s, trigger, "fired", { session: r.id });
   }
@@ -465,18 +830,20 @@ export class ScheduleKeeper {
     for (const s of store.schedules) {
       if (!s.approved) continue;
       const ev = await this.evaluate(s);
-      if (ev.view.state !== "active" || !ev.header?.triggers?.some((t) => t.kind === "limit-reset")) continue;
+      if (ev.view.state !== "active" || !ev.triggers?.some((t) => t.kind === "limit-reset")) continue;
       if (late >= MAX_LATE_MS) {
         this.log(s, LIMIT_RESET, "skipped", { why: `the reset of ${reset.name} was ${lateText(late)} ago, while Sova was not running` });
         continue;
       }
-      const tz = this.zone(ev.header);
-      // The sessions this schedule may target: those its own fires started, and its One at a time profile's live one.
+      const tz = this.zone(ev);
+      // The sessions this schedule may target: those its own fires started, its One at a time
+      // profile's live one, and an automation's own session.
       const paths = new Set(s.fires.filter((f) => f.kind === "new" && f.path).map((f) => f.path!));
       if (ev.profile?.singleton) {
         const holder = singletonHolder(keyOf(ev.profile), sessions);
         if (holder) paths.add(holder.path);
       }
+      if (ev.automation && s.session) paths.add(s.session.path);
       for (const path of paths) {
         const sum = sessions.find((x) => x.path === path);
         if (!sum || sum.archived || sum.live || this.deps.busy(path)) continue;
@@ -486,8 +853,23 @@ export class ScheduleKeeper {
           this.log(s, LIMIT_RESET, "skipped", { why: `it fired ${MAX_FIRES_PER_DAY} times today`, session: sum.id });
           continue;
         }
-        const head = fireHead(s.id, LIMIT_RESET, s.playbook, `Claude login ${reset.name} is ready again.`, late >= this.deps.lateAfterMs ? late : undefined);
-        const r = await this.deps.wake(path, `${head}\n${LIMIT_RESET_INSTRUCTION}`);
+        // The running-at-once cap holds for a continue as for any fire.
+        if (this.deps.freeSlots() <= 0) {
+          this.log(s, LIMIT_RESET, "skipped", { why: "the running-at-once limit was reached", session: sum.id });
+          continue;
+        }
+        const head = fireHead(s.id, LIMIT_RESET, ev.automation?.id ?? s.playbook, `Claude login ${reset.name} is ready again.`, late >= this.deps.lateAfterMs ? late : undefined, ev.automation ? "automation" : "playbook");
+        let block = "";
+        if (ev.pb) {
+          const b = await this.block(bundleOf(ev.pb.info), path);
+          if (!b.ok) {
+            this.log(s, LIMIT_RESET, "refused", { why: b.error, session: sum.id });
+            continue;
+          }
+          block = b.block;
+        }
+        if (ev.automation && this.deps.configure) await this.deps.configure(path, ev.automation).catch(() => undefined);
+        const r = await this.deps.wake(path, [head, LIMIT_RESET_INSTRUCTION, ...(block ? [block] : [])].join("\n"));
         if (!r.ok) {
           this.log(s, LIMIT_RESET, "refused", { why: r.error, session: sum.id });
           continue;
@@ -533,8 +915,8 @@ export class ScheduleKeeper {
     fresh.sort((a, b) => a.branch.localeCompare(b.branch));
     for (const f of fresh) seen[f.path] = { branch: f.branch, at: now };
     // The day's timed fires keep their room under the cap: merge-ready never takes it.
-    const tz = this.zone(ev.header);
-    const reserved = maxFiresPerDay(ev.header!.triggers!).n;
+    const tz = this.zone(ev);
+    const reserved = maxFiresPerDay(ev.triggers!).n;
     if (s.day?.key === dayKey(now, tz) && s.day.n >= MAX_FIRES_PER_DAY - reserved) {
       this.log(s, MERGE_READY, "skipped", { why: `merge-ready leaves today's last ${reserved} of ${MAX_FIRES_PER_DAY} fires to the timed triggers` });
       return;
@@ -554,7 +936,7 @@ export class ScheduleKeeper {
       for (const s of store.schedules) {
         if (!s.approved) continue;
         const ev = await this.evaluate(s);
-        if (ev.view.state !== "active" || !ev.header?.triggers?.some((t) => t.kind === "merge-ready")) continue;
+        if (ev.view.state !== "active" || !ev.triggers?.some((t) => t.kind === "merge-ready")) continue;
         wants = true;
         if (board) await this.mergeReady(s, ev, board);
       }
@@ -562,9 +944,9 @@ export class ScheduleKeeper {
       for (const s of store.schedules) {
         if (!s.approved) continue;
         const ev = await this.evaluate(s);
-        const triggers = ev.header?.triggers;
+        const triggers = ev.triggers;
         if (ev.view.state !== "active" || !triggers) continue;
-        const tz = this.zone(ev.header);
+        const tz = this.zone(ev);
         if (!s.next) {
           const n = nextFire(triggers, now, tz);
           if (n) s.next = n;
@@ -595,5 +977,5 @@ export const setScheduleKeeper = (k: ScheduleKeeper | null) => {
 };
 export const scheduleKeeper = () => keeper;
 
-/** Every schedule for the Overseer's permits panel; none before the keeper starts. */
-export const schedulesForWire = (): Promise<ScheduleInfo[]> => keeper?.list() ?? Promise.resolve([]);
+/** Every schedule for the Overseer's permits panel; none before the keeper starts (or with its store refused). */
+export const schedulesForWire = (): Promise<ScheduleInfo[]> => keeper?.list().catch(() => [] as ScheduleInfo[]) ?? Promise.resolve([]);

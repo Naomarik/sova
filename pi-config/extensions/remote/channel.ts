@@ -15,13 +15,13 @@
  * it down: a killed command's late output would otherwise be attributed to the next request.
  *
  * Node builtins + argv.ts only (and exec.ts's RunResult type). It must also stay loadable by
- * `node <file>.ts` (strip-only type stripping, how workers' MCP servers are launched): no
+ * `node <file>.ts` (strip-only type stripping): no
  * parameter properties, enums or namespaces here, or in anything it imports.
  */
 import { type ChildProcessWithoutNullStreams, spawn as nodeSpawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { awsSsmProxyCommand, buildTargetArgv, shPath, shQuote, type Target } from "./argv.ts";
+import { awsSsmProxyCommand, buildTargetArgv, connectTimeoutMs, connectTimeoutOption, shPath, shQuote, sshHop, type Target } from "./argv.ts";
 import type { RunResult } from "./exec.ts";
 
 export const CHANNEL_MARKER = "@@pi-ch@@";
@@ -39,6 +39,8 @@ export const CHANNEL_STDERR_CAP = 64 * 1024;
 export const CHANNEL_IDLE_MS = 120_000;
 /** ssh's ConnectTimeout (10 s) + 5 s for the far loop to print its ready line. */
 export const CHANNEL_START_TIMEOUT_MS = 15_000;
+/** With a target's `connectTimeoutS`: its connect time + this, for the ready line (see channelStartTimeoutMs). */
+export const CHANNEL_START_MARGIN_MS = 5_000;
 export const CHANNEL_WRITE_TIMEOUT_MS = 5_000;
 export const CHANNEL_MAX_OUTPUT = 16 * 1024 * 1024;
 
@@ -94,17 +96,6 @@ function expandHome(p: string): string {
 	return p === "~" ? homedir() : p.startsWith("~/") ? join(homedir(), p.slice(2)) : p;
 }
 
-/** The target whose ssh block carries `target` (itself, or the first ssh hop along `via`). */
-function sshHop(target: Target, registry: readonly Target[] | undefined): Target | undefined {
-	const seen = new Set<string>();
-	let t: Target | undefined = target;
-	while (t && !t.ssh && t.via && !seen.has(t.name)) {
-		seen.add(t.name);
-		t = registry?.find((x) => x.name === t!.via);
-	}
-	return t?.ssh ? t : undefined;
-}
-
 /**
  * The channel's own ssh connection. Ours go first because ssh takes the FIRST value of an option:
  * ControlMaster/ControlPath can't be overridden by the entry (its Control* options are dropped),
@@ -119,7 +110,7 @@ function channelSshPrefix(t: Target): string[] {
 		argv.push("-o", o);
 	}
 	if (t.proxy) argv.push("-o", `ProxyCommand=${awsSsmProxyCommand(t.proxy, s.key)}`);
-	argv.push("-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2");
+	argv.push("-o", connectTimeoutOption(t), "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2");
 	if (s.port) argv.push("-p", String(s.port));
 	if (s.key) argv.push("-i", expandHome(s.key));
 	argv.push("--", s.user ? `${s.user}@${s.host}` : s.host);
@@ -137,6 +128,11 @@ export function buildChannelArgv(target: Target, registry?: readonly Target[]): 
 	const argv = buildTargetArgv(target, { command: CHANNEL_PROGRAM, cwd: "", registry });
 	if (argv[0] !== "ssh") return null;
 	return [...channelSshPrefix(hop), argv[argv.length - 1]!];
+}
+
+/** The channel's start timeout for `target`: CHANNEL_START_TIMEOUT_MS, or its `connectTimeoutS` + CHANNEL_START_MARGIN_MS. */
+export function channelStartTimeoutMs(target: Target, registry?: readonly Target[]): number {
+	return connectTimeoutMs(target, registry, CHANNEL_START_TIMEOUT_MS, CHANNEL_START_MARGIN_MS);
 }
 
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -381,7 +377,7 @@ export class Channel {
 	/** A channel for a target (not started), or null when it isn't reached over ssh. */
 	static forTarget(target: Target, registry?: readonly Target[], opts: Omit<ChannelOptions, "argv"> = {}): Channel | null {
 		const argv = buildChannelArgv(target, registry);
-		return argv ? new Channel({ ...opts, argv }) : null;
+		return argv ? new Channel({ startTimeoutMs: channelStartTimeoutMs(target, registry), ...opts, argv }) : null;
 	}
 
 	constructor(opts: ChannelOptions) {

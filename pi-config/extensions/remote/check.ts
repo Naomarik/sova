@@ -6,6 +6,7 @@
  *
  * <entry.json> holds ONE target object (the would-be entry), `-` reads it from stdin. `--registry`
  * resolves `via` against an existing targets.json (default: $PI_CODING_AGENT_DIR or ~/.pi/agent).
+ * `--timeout` defaults to 30 s (longer for an entry whose `connectTimeoutS` needs it).
  * Default command: the probe (user, hostname, $HOME, cwd, tools). Prints validation errors, the
  * argv, wall time, exit code, stdout and stderr. Exit 0 only if the entry is valid and the command
  * succeeded. Changes nothing, locally or remotely (unless --cmd does).
@@ -13,7 +14,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { buildListDirsArgv, buildTargetArgv, parseListDirsOutput, parseTargetsFile, shJoin, type Target, targetsFilePath, validateTarget } from "./argv.ts";
+import { buildListDirsArgv, buildTargetArgv, connectTimeoutMs, parseListDirsOutput, parseTargetsFile, shJoin, type Target, targetsFilePath, validateTarget } from "./argv.ts";
 import { runArgv } from "./exec.ts";
 
 const PROBE = [
@@ -53,7 +54,9 @@ async function main() {
 	const argv = list !== undefined ? buildListDirsArgv(entry, list, registry) : buildTargetArgv(entry, { command: arg("--cmd") ?? PROBE, registry });
 	console.log(`argv: ${shJoin(argv)}`);
 	const t0 = performance.now();
-	const r = await runArgv(argv, { timeoutMs: Number(arg("--timeout") ?? 30) * 1000 });
+	// Default 30 s, or more when the entry's ssh hop allows a longer connect (connectTimeoutS + 20 s).
+	const timeoutMs = arg("--timeout") !== undefined ? Number(arg("--timeout")) * 1000 : connectTimeoutMs(entry, registry, 30_000, 20_000);
+	const r = await runArgv(argv, { timeoutMs });
 	const ms = Math.round(performance.now() - t0);
 	console.log(`time: ${ms} ms${r.timedOut ? " (TIMED OUT)" : ""}\nexit: ${r.exitCode}`);
 	const out = r.stdout.toString("utf8");

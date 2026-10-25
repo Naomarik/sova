@@ -80,15 +80,9 @@ test("composed member header is exact and deterministic", () => {
 	// A pi header never claims the worker cannot message; a none header never claims tools.
 	assert.doesNotMatch(pi, /cannot message/);
 	assert.doesNotMatch(alone, /team_msg/);
-	// A claude-code member has the same tools through the "team" MCP server: the header names the prefixed call names once, then reuses the pi text.
-	const mcp = composeMemberPrompt(team, { role: "dev", ownedPaths: [] }, [{ role: "lead", ownedPaths: ["src"], orchestrator: true }], "x", "creation", "mcp");
-	assert.equal(mcp.replace(/^Your team tools come from the "team" MCP server, so call them as mcp__team__team_msg, mcp__team__team_inbox, mcp__team__team_ask; below they are named without the mcp__team__ prefix\.\n/m, ""), pi, "identical apart from the naming line");
-	assert.doesNotMatch(mcp, /mcp__team__team_roster|mcp__team__team_steer/);
-	const mcpLead = composeMemberPrompt(team, { role: "lead", ownedPaths: ["src"], orchestrator: true }, [{ role: "dev", ownedPaths: [] }], "x", "creation", "mcp");
-	assert.match(mcpLead, /^Your team tools come from the "team" MCP server, so call them as mcp__team__team_roster, mcp__team__team_steer, mcp__team__team_msg, mcp__team__team_inbox, mcp__team__team_ask; .*\nYou are this team's orchestrator: /m);
-	assert.equal(mcpLead.replace(/^Your team tools come from .*\n/m, ""), lead);
+	// A claude-code member is a pi worker on the Claude Code provider: the same member extension, the same header.
 	assert.equal(memberTooling("pi"), "pi");
-	assert.equal(memberTooling("claude-code"), "mcp");
+	assert.equal(memberTooling("claude-code"), "pi");
 	assert.equal(memberTooling("codex"), "none");
 });
 
@@ -105,11 +99,12 @@ test("orchestrator flag: pi or claude-code only, carried through prepare, persis
 	);
 	assert.throws(() => store.prepareCreate({ ...base, members: [{ role: "lead", prompt: "t", orchestrator: "yes" as any }] }), /must be a boolean/);
 	assert.equal(store.teamCounter, 0);
-	// A claude-code orchestrator is accepted (it gets the tools through the MCP server) and its header uses the prefixed names.
+	// A claude-code orchestrator is accepted (it loads the member extension like a pi member) and its header is a pi member's.
 	const claude = new TeamStore().prepareCreate({ ...base, defaults: { backend: "claude-code" }, members: [{ role: "lead", prompt: "t", orchestrator: true }, { role: "dev", prompt: "t" }] });
 	assert.deepEqual(claude.members.map((m) => [m.orchestrator, m.spec.backend]), [[true, "claude-code"], [false, "claude-code"]]);
-	assert.match(claude.members[0].spec.prompt, /mcp__team__team_roster.*\nYou are this team's orchestrator/);
-	assert.match(claude.members[1].spec.prompt, /mcp__team__team_msg.*\nTeam tools: team_msg/);
+	assert.match(claude.members[0].spec.prompt, /\nYou are this team's orchestrator/);
+	assert.match(claude.members[1].spec.prompt, /\nTeam tools: team_msg/);
+	assert.doesNotMatch(claude.members[0].spec.prompt + claude.members[1].spec.prompt, /mcp__team__/);
 	claude.release();
 	// An explicit pi member under Claude defaults is fine; the flag survives into the prepared member and its header.
 	const prepared = store.prepareCreate({
@@ -119,7 +114,7 @@ test("orchestrator flag: pi or claude-code only, carried through prepare, persis
 	assert.deepEqual(prepared.members.map((m) => [m.role, m.orchestrator, m.spec.backend]), [["lead", true, "pi"], ["dev", false, "claude-code"], ["qa", false, "pi"]]);
 	assert.match(prepared.members[0].spec.prompt, /Your role: lead \(orchestrator\)/);
 	assert.match(prepared.members[1].spec.prompt, /- lead \(orchestrator\): none declared/);
-	assert.match(prepared.members[1].spec.prompt, /mcp__team__team_msg.*\nTeam tools: team_msg/, "Claude member header names its MCP tools");
+	assert.match(prepared.members[1].spec.prompt, /\nTeam tools: team_msg/, "a Claude member's header is a pi member's");
 	assert.doesNotMatch(prepared.members[1].spec.prompt, /no tool to reply/);
 	assert.match(prepared.members[2].spec.prompt, /Team tools: team_msg/);
 	const members = prepared.members.map((m, i) => member(i + 1, { role: m.role, backend: m.spec.backend, ...(m.orchestrator ? { orchestrator: true } : {}) }));
@@ -588,4 +583,53 @@ test("contract: subagents-team-v1 members keep an optional successorOf worker ID
 	assert.equal(ok?.members[0].successorOf, "ag_02");
 	assert.equal(decodeTeamEntry({ version: 1, op: "add", teamId: "team_01", members: [member(4, { role: "dev-2" })] })?.members[0].successorOf, undefined);
 	assert.equal(decodeTeamEntry({ version: 1, op: "add", teamId: "team_01", members: [{ ...member(4), successorOf: "dev" }] }), undefined);
+});
+
+test("planTeamDefaults names the standing roles Sova adds and each one turned off, and by what", async () => {
+	const { planTeamDefaults } = await import("./teams.ts");
+	const file = {
+		version: 1,
+		coordinator: { enabled: true, role: "lead", primary: { backend: "pi", model: "a/b" }, fallback: null, instructions: "" },
+		monitor: { enabled: true, role: "watch", primary: { backend: "pi", model: "a/b" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "" },
+		handover: { retireTimeoutMinutes: 10 },
+	} as any;
+	const ok = (value: any) => ({ state: "ok", file: "f.json", value } as any);
+	const members = [{ role: "dev", prompt: "p" }];
+	assert.equal(planTeamDefaults({ state: "absent" } as any, members).standing, "Standing roles: none; this chat's subagent settings give teams no coordinator or monitor.");
+	assert.equal(planTeamDefaults(ok(file), members).standing, `Standing roles — coordinator: "lead", added by Sova; monitor: "watch", added by Sova.`);
+	assert.equal(planTeamDefaults(ok(file), members, { monitor: false }).standing, `Standing roles — coordinator: "lead", added by Sova; monitor: off for this team (defaults.monitor: false).`);
+	assert.equal(planTeamDefaults(ok({ ...file, monitor: { ...file.monitor, enabled: false } }), members).standing, `Standing roles — coordinator: "lead", added by Sova; monitor: off in this chat's subagent settings.`);
+	assert.equal(planTeamDefaults(ok(file), members, { coordinator: false }).standing, "Standing roles: none; the coordinator and monitor are off for this team (defaults.coordinator: false).");
+	assert.equal(planTeamDefaults(ok({ ...file, coordinator: { ...file.coordinator, enabled: false } }), members).standing, "Standing roles: none; the coordinator, and with it the monitor, is off in this chat's subagent settings.");
+	assert.equal(planTeamDefaults(ok(file), [{ role: "boss", prompt: "p", orchestrator: true }]).standing, `Standing roles — coordinator: your orchestrator boss (none added); monitor: "watch", added by Sova.`);
+	assert.throws(() => planTeamDefaults(ok(file), [{ role: "a", prompt: "p", orchestrator: true }, { role: "b", prompt: "p", orchestrator: true }]),
+		/only the coordinator is a team's orchestrator, so at most one member may have orchestrator: true \(got a, b\)\. Mark only the member that should coordinate: it becomes the coordinator, and hands members \(itself included\) over to successors with team_succeed\. A member that only watches or reports needs no orchestrator mark\./);
+});
+
+test("checkReplacement: only the newest coordinator or monitor, only while none with that duty is live", () => {
+	const store = new TeamStore("/tmp/teams", () => "s");
+	const prepared = store.prepareCreate({
+		name: "Crew", objective: "o", coordination: {},
+		members: [{ role: "lead", prompt: "c", orchestrator: true, duty: "coordinator" }, { role: "dev", prompt: "d" }, { role: "watch", prompt: "m", duty: "monitor", tools: [] }],
+	});
+	store.commitCreate(prepared, 1, [
+		member(1, { role: "lead", orchestrator: true, duty: "coordinator" }), member(2, { role: "dev" }), member(3, { role: "watch", duty: "monitor" }),
+	]);
+	const live = new Set(["ag_01", "ag_02", "ag_03"]);
+	const isLive = (id: string) => live.has(id);
+	assert.throws(() => store.checkReplacement("Crew", "lead", isLive), /lead \(ag_01\) is team_01's live coordinator/);
+	assert.throws(() => store.checkReplacement("Crew", "dev", isLive), /dev is not team_01's coordinator or monitor/);
+	assert.throws(() => store.checkReplacement("Crew", "nobody", isLive), /No member nobody in team_01\. Members: ag_01 \(lead, coordinator\), ag_02 \(dev\), ag_03 \(watch, monitor\)\./);
+	live.delete("ag_01");
+	assert.deepEqual(store.checkReplacement("team_01", "ag_01", isLive).target.role, "lead");
+	assert.throws(() => store.checkReplacement("Crew", "dev", isLive), /No coordinator is live: replace the coordinator first, and it can then succeed dev\./);
+	assert.throws(() => store.checkReplacement("Crew", "watch", isLive), /watch \(ag_03\) is team_01's live monitor/);
+	// A newer coordinator (a successor) that has ended too: only it may be replaced.
+	const add = store.prepareAdd("Crew", [{ role: "lead-2", prompt: "c", orchestrator: true, duty: "coordinator", successorOf: "lead", successorOfId: "ag_01" }]);
+	store.commitAdd(add, [member(4, { role: "lead-2", orchestrator: true, duty: "coordinator", successorOf: "ag_01", addedAt: 2 })]);
+	add.release();
+	assert.throws(() => store.checkReplacement("Crew", "lead", isLive), /lead \(ag_01\) is not team_01's newest coordinator; replace lead-2 \(ag_04\) instead\./);
+	assert.equal(store.checkReplacement("Crew", "lead-2", isLive).target.workerId, "ag_04");
+	live.add("ag_04");
+	assert.throws(() => store.checkReplacement("Crew", "lead", isLive), /lead-2 \(ag_04\) is team_01's live coordinator/);
 });

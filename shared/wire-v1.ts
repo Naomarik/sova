@@ -136,12 +136,12 @@ function partEvent(ev: Record<string, unknown>): SovaEvent[] {
 }
 
 /**
- * A wire-1 event frame (pi's event as server/harness/pi/wire.ts toV1Event sends it, plus the `entryId` a message_end may
- * carry) as wire-2 events, in order. Every event the live view acts on today maps to one; the ones
+ * A wire-1 event frame (pi's event as server/harness/pi/wire.ts toV1Event sends it, plus the `entryId` and the
+ * measured `reply` a message_end may carry; `reply` only on a reply that ended ok) as wire-2 events, in order. Every event the live view acts on today maps to one; the ones
  * it ignores (turn_start, turn_end, agent_end, queue_update, a message of any other role, …) map to
  * none.
  */
-export function fromV1(frame: Pick<V1EventFrame, "event" | "entryId">): SovaEvent[] {
+export function fromV1(frame: Pick<V1EventFrame, "event" | "entryId" | "reply">): SovaEvent[] {
   const event = frame.event;
   if (!isObj(event)) return [];
   switch (str(event.type)) {
@@ -182,6 +182,7 @@ export function fromV1(frame: Pick<V1EventFrame, "event" | "entryId">): SovaEven
           stop,
           ...(error !== undefined ? { error } : {}),
           ...(tokens !== null ? { contextTokens: tokens } : {}),
+          ...(frame.reply && stop === "ok" ? { reply: frame.reply } : {}),
         },
       ];
     }

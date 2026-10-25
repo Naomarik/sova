@@ -52,12 +52,23 @@ export interface Worker {
 	 */
 	isStopping?(): boolean;
 	finalOutput(): string;
+	/**
+	 * The inbox's turn record (§app.teams/inbox-zero): the task running now, and the newest accepted
+	 * steer whose run has not begun. Optional: without it the manager counts settles instead.
+	 */
+	inboxTurn?(): { task: number; steer?: number };
+	/** The task a numbered steer (inboxTurn's `steer`) was delivered in, once its run began. */
+	steerTask?(no: number): number | undefined;
 	steer(message: string, signal?: AbortSignal, mode?: SteerMode): Promise<SteerResult>;
+
 	/**
 	 * Termination contract: whenClosed resolves (and isFinished() becomes true)
 	 * only after the owned process is confirmed gone. kill()/dispose() should
 	 * resolve at that point too, but the manager does not rely on it: it releases
-	 * ownership (live-cap slot, shutdown disposal) only at whenClosed.
+	 * ownership (live-cap slot, shutdown disposal) only at whenClosed. A worker
+	 * whose process the host keeps (a chat worker, chat-worker.ts) resolves
+	 * whenClosed on dispose() once it lets go: its process runs on, and the next
+	 * manager picks it back up.
 	 */
 	kill(reason?: string): Promise<void>;
 	dispose(): Promise<void>;

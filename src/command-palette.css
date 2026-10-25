@@ -1,0 +1,94 @@
+/* The command palette and the shortcut sheet (§app/command-palette). Loaded with them, never
+   before. The rows are listbox options you type to filter (the system's combobox rows, not menu
+   rows), drawn as the slash menu draws its options: sunken and a focus ring when active. */
+
+.palette { width: min(640px, calc(100vw - var(--space-8))); }
+@media (max-width: 767px) {
+  .palette { width: auto; }
+}
+
+.palette-search { padding: var(--space-3) var(--space-4) var(--space-2); }
+.palette-search .input { width: 100%; }
+
+.palette-list {
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  max-height: min(60dvh, 520px);
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+.palette-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-md);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.palette-option[data-active] { background: var(--color-sunken); outline: var(--focus-ring); outline-offset: calc(var(--focus-width) * -1); }
+.palette-option[aria-disabled="true"] { cursor: not-allowed; }
+.palette-option[aria-disabled="true"] .palette-option-label { color: var(--color-ink-muted); }
+.palette-option-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
+.palette-option-label { font-size: var(--fs-body); color: var(--color-ink); }
+.palette-option-desc { font-size: var(--fs-caption); color: var(--color-ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-option-mono { font-family: var(--font-mono); font-size: var(--fs-mono); }
+.palette-option-keys {
+  flex: none;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink-muted);
+  white-space: nowrap;
+}
+
+.palette-note { padding: var(--space-2) var(--space-3); margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.palette-foot {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-top: var(--stroke-thin) solid var(--color-border);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+}
+/* The help line is about keys: a phone (a coarse pointer, or under 768px) has none to press. */
+@media (max-width: 767px), (pointer: coarse) {
+  .palette-foot { display: none; }
+}
+
+.palette-panel-head { display: flex; flex-direction: column; gap: var(--space-1); }
+.palette-panel-head p { margin: 0; }
+.palette-panel-title { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.palette-panel-id,
+.palette-param { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
+.palette-form { display: flex; flex-direction: column; gap: var(--space-3); }
+.palette-session { margin: 0; color: var(--color-ink); }
+.palette-toggle { justify-content: flex-start; }
+.palette-actions { display: flex; gap: var(--space-2); justify-content: flex-end; }
+.palette-answer { display: flex; flex-direction: column; gap: var(--space-2); }
+.palette-answer-title { margin: 0; color: var(--color-ink); }
+.palette-answer[data-state="refused"] .palette-answer-title { color: var(--status-error); }
+.palette-answer-body {
+  margin: 0;
+  max-height: 40dvh;
+  overflow: auto;
+  padding: var(--space-3);
+  border-radius: var(--r-sm);
+  background: var(--color-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.shortcut-list { margin: 0; display: flex; flex-direction: column; }
+.shortcut-row {
+  display: grid;
+  grid-template-columns: 9em 1fr;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.shortcut-row:last-child { border-bottom: 0; }
+.shortcut-row dt, .shortcut-row dd { margin: 0; }
+.shortcut-row dd { color: var(--color-ink-2); }

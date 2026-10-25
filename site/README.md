@@ -3,12 +3,17 @@
 A static [Astro](https://astro.build) site for Sova, styled with the app's own design system:
 `src/styles/tokens.css` is a copy of `src/design/tokens.css`, and `src/styles/components.css` is a
 subset of `.claude/skills/fold-ai-dev-design/fold-ai-dev.css`. The home page's product screens
-and its session video are real Sova, captured on demo data (see Screens and video below); the
+and its hero video are real Sova, captured on demo data (see Screens and video below); the
 Mesh and Organizations pages, and the phone lock screen beside the Overseer, are CSS
 illustrations built from those classes.
 
 It ships static HTML and one stylesheet. The only JavaScript is two small inline scripts in
-`src/layouts/Base.astro` (the theme toggle and the copy button). No UI framework, no analytics,
+`src/layouts/Base.astro` (the theme toggle and the copy button) and the hero video's caption script in
+`src/components/screens/VideoCaption.astro`: under the video, a chapter bar (each segment a button
+that jumps to its chapter) and the chapter's name and caption say what it shows at that moment,
+from the cue list the recorder writes, following the video's own clock. Without JavaScript, with
+reduced motion or when the video can't play, the still shows with one fixed line and no bar;
+screen readers get the scene list once. No UI framework, no analytics,
 no web fonts from a CDN: Inter and JetBrains Mono are served from `public/fonts/` with their
 licenses.
 
@@ -39,9 +44,12 @@ Set `SOVA_SITE_URL` to the address the site is served from so link previews get 
 
 ## What to update
 
-- **A new release:** `release` in `src/data/site.ts` sets the install command, the version pill
-  and the footer. Re-check every claim on the page against that tag, then update `verified`
-  (the revision and date the footer names).
+- **A new release:** set `release` in `src/data/site.ts` to the new numbered tag; it sets the
+  version pill, its release-page link and the footer. The install command, URL and script link
+  stay on `stable` (`installRef`), the tag each release moves to itself. Re-check every claim on
+  the page against the release commit, then update `verified` (the revision and date the footer
+  names). The repository's release playbook, `.sova/playbooks/release/PLAYBOOK.md`, runs this
+  and the deploy below.
 - **The design tokens:** re-copy `src/design/tokens.css` into `src/styles/tokens.css`; don't edit
   values here.
 - **The Vis page's examples:** after a change to an example (`scripts/vis-examples/examples.mjs`)
@@ -57,8 +65,13 @@ Set `SOVA_SITE_URL` to the address the site is served from so link previews get 
   reply are in one plain-JSON file, `scripts/screens/story.json`; edit only that, then:
   `pnpm run screens:check` (names each problem by line and column), `pnpm run screens` (the
   screenshots whose inputs changed, as lossless WebP masters in `src/assets/screens/` with their
-  `manifest.json`), `pnpm run screens:video` (the session video in `public/video/`) and
-  `pnpm run screens:verify`. Commit the story with what they wrote. The pages take each image's
+  `manifest.json`), `pnpm run screens:video` (the hero video in `public/video/`, AV1
+  with an H.264 fallback, checked before it replaces the old one; nothing but the pointer is drawn
+  into it, its captions are page text from the cue list in the manifest; the phone section shows
+  stills only) and
+  `pnpm run screens:verify`. A reworded caption or chapter needs only `pnpm run screens:video -- --cues`, no new
+  recording. The video shows real provider and model names; the footer says the replies are
+  scripted and Sova isn't affiliated with the model makers. Commit the story with what they wrote. The pages take each image's
   alt text and size from the manifest; the build turns the masters into AVIF and WebP and never
   runs the capture, so a stale image builds without complaint. The capture needs the
   repository's root install and build, the playwright skill's browser and, for the video,
@@ -81,7 +94,7 @@ origin, or some crawlers ignore the image.
 
 ## Deploy: Cloudflare Pages
 
-Static output, no Functions and no adapter.
+Static output, no Functions and no adapter. The site is live at https://sova.naomarik.com/.
 
 | Setting | Value |
 | --- | --- |
@@ -92,3 +105,18 @@ Static output, no Functions and no adapter.
 | Environment variable | `NODE_VERSION` = `22.19.0` or later |
 
 Leave Cloudflare Web Analytics off: the page promises no analytics.
+
+The Pages project is not connected to Git: a push to master deploys nothing. Deploy by hand with
+wrangler, from a build of the commit you mean to publish (a `git archive` of it, so no checkout
+is touched):
+
+```sh
+cd site
+pnpm install --frozen-lockfile
+SOVA_SITE_URL=https://sova.naomarik.com/ pnpm run build
+node scripts/check-docs-leaks.mjs
+wrangler pages deploy dist --project-name <the Pages project> --branch main --commit-hash <sha>
+```
+
+`--branch main` is the project's production branch; any other branch name makes a preview
+deploy. Then check the live pages (the release playbook's publish step lists the checks).

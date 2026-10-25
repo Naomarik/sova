@@ -39,8 +39,9 @@ the dependencies are installed, so Bun swaps in and out with the app. A failed B
 the deploy with "bun: install failed: the running app is unchanged". The service's environment
 names that Bun (`SOVA_BUN`), and `run-sova.sh` starts the server through `scripts/start-server.sh`,
 so it runs on Bun. `SOVA_RUNTIME=node` in the site settings writes `SOVA_RUNTIME=node` into the
-service's environment at the next deploy, and the host then runs on the bundled Node instead; any
-other value but empty or `bun` stops the deploy before it starts. An internet relay's accept process
+service's environment at the next deploy, and the host then runs on the bundled Node instead, with
+no chats or workers (§app.server-runtime/choice): the deploy says so in a warning line ("WARNING:
+SOVA_RUNTIME=node: …"). Any other value but empty or `bun` stops the deploy before it starts. An internet relay's accept process
 (§mesh.vps/internet-relay) always runs on the bundled Node, whatever `SOVA_RUNTIME` says; Bun only
 bundles it at deploy.
 

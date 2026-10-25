@@ -1,0 +1,147 @@
+/* The Agents page's Performance tab (#/agents/performance, PerformanceTab.tsx). It rides the Costs
+   tab's card, table and stacking rules (costs-tab.css, projects.css: tables stack under 560px of
+   the insights pane) and adds the sort, the figure cells, the main row's range bar, the opened
+   row's level switch and spread charts, and the phone cards. Token values only; figures are mono
+   with tabular digits (.cost-figure). No accent: bars are ink on a sunken track
+   (§design.ground-rules/color-budget). */
+
+/* The card's head: the title and its one sentence, the Sort menu at the right (wrapping under it). */
+.perf-card-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-2) var(--space-3); }
+.perf-card-title { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+
+/* A figure: the median, then one short muted line under it that never wraps. */
+.perf-fig { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.perf-fig-sub { color: var(--color-ink-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); font-family: var(--font-body); white-space: nowrap; }
+/* Overall speed is the headline: one step up and heavier than the other figures. */
+.perf-headline { font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.perf-open-name > .text-mono, .perf-name-plain > .text-mono, .perf-effort-table th[scope="row"] { white-space: nowrap; }
+.perf-table td, .perf-effort-table td { vertical-align: top; }
+
+/* The main row's range bar: 10–90% of replies with a mark at the median, on the scale every row shares. */
+.perf-rangebar-line { display: inline-flex; align-items: center; gap: var(--space-2); }
+.perf-rangebar { position: relative; display: inline-block; flex: none; width: 96px; height: 6px; border-radius: var(--r-full); background: var(--color-sunken); }
+.perf-rangebar-fill { position: absolute; top: 0; bottom: 0; min-width: 2px; border-radius: var(--r-full); background: var(--color-ink-muted); }
+.perf-rangebar-median { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--color-ink); }
+
+/* Under 900px of pane a count line may wrap (right-aligned, in its own column) rather than push the
+   table into sideways scrolling; the range bar narrows. */
+@container insights (max-width: 899px) {
+  .perf-fig-sub { white-space: normal; text-align: right; max-width: 16ch; }
+  .perf-rangebar { width: 64px; }
+  .md .perf-table > * > tr:not(.perf-detail-row) > :is(th, td), .md .perf-effort-table > * > tr > :is(th, td) { padding-left: var(--space-2); padding-right: var(--space-2); }
+}
+@container insights (max-width: 699px) {
+  .perf-rangebar { width: 56px; }
+  .perf-rangebar-line { gap: var(--space-1); }
+  .perf-fig-sub { max-width: 13ch; }
+  .md .perf-table > * > tr:not(.perf-detail-row) > :is(th, td), .md .perf-effort-table > * > tr > :is(th, td) { padding-left: var(--space-1); padding-right: var(--space-1); }
+}
+
+/* The row's open control: the whole name is the 44px target, the chevron turns when open. */
+.perf-open {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-min);
+  margin: calc(var(--space-2) * -1) 0;
+  padding: 0 var(--space-1) 0 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.perf-open:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.perf-open > .icon { flex: none; color: var(--color-ink-muted); transition: transform var(--dur-fast) var(--ease-standard); }
+.perf-open[aria-expanded="true"] > .icon { transform: rotate(90deg); }
+.perf-open-name, .perf-name-plain { display: inline-flex; flex-direction: column; min-width: 0; }
+.perf-open:hover .perf-open-name > .text-mono { text-decoration: underline; }
+/* The phone's name (no button) and its full-width Show Effort Levels button: phone only. */
+.perf-name-plain { display: none; }
+.md .perf-table td.perf-toggle-cell { display: none; }
+
+/* The opened row: the effort levels on the sunken fill, so they read as inside the model's row. */
+.md .perf-detail-row > td { padding: var(--space-3); background: var(--color-sunken); }
+.perf-detail-row[hidden] { display: none !important; }
+/* The panel takes the table's width and never widens it: its own content wraps inside. */
+.perf-efforts { display: flex; flex-direction: column; gap: var(--space-3); width: 0; min-width: 100%; }
+.perf-effort-table { width: 100%; }
+.perf-h3 { margin: 0; font-size: var(--fs-body); line-height: var(--lh-body); font-weight: var(--fw-semibold); }
+.perf-speed-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); margin: 0; }
+.perf-speed-label { color: var(--color-ink-2); }
+.perf-speed-value { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+/* The picked level's line: the selected-row tint, and aria-current, never the tint alone. */
+.md .perf-effort-table tr.perf-level-on > :is(th, td) { background: var(--color-accent-tint); }
+.perf-levels { align-items: center; }
+
+/* The spread charts: side by side from 768 of pane, stacked under it. */
+.perf-charts { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
+@container insights (min-width: 768px) {
+  .perf-charts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.perf-chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-3);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+}
+.perf-chart-gap { color: var(--color-ink-2); font-size: var(--fs-caption); line-height: var(--lh-caption); }
+p.perf-chart-gap:not(.perf-chart) { margin: 0; }
+.perf-chart-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: var(--space-2); }
+.perf-chart-title { font-weight: var(--fw-semibold); }
+.perf-chart-stats { color: var(--color-ink-muted); font-family: var(--font-mono); font-size: var(--fs-mono); line-height: var(--lh-mono); font-variant-numeric: tabular-nums; }
+.perf-chart-plot { position: relative; height: 56px; border-bottom: var(--stroke-thin) solid var(--color-border-strong); }
+@container insights (min-width: 768px) {
+  .perf-chart-plot { height: 72px; }
+}
+.perf-bars { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; }
+.perf-bar { position: absolute; top: 0; bottom: 0; display: flex; align-items: flex-end; padding: 0 1px; border-radius: var(--r-xs) var(--r-xs) 0 0; cursor: default; }
+.perf-bar:hover { background: var(--color-sunken); }
+.perf-bar:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); background: var(--color-sunken); }
+.perf-bar-fill { display: block; width: 100%; min-height: 2px; border-radius: 1px 1px 0 0; background: var(--color-ink-2); }
+.perf-median { position: absolute; top: 0; bottom: 0; width: 1.5px; margin-left: -0.75px; background: var(--color-ink); pointer-events: none; }
+.perf-median-label { position: absolute; top: 0; left: 4px; padding: 0 2px; border-radius: var(--r-xs); background: var(--color-surface); color: var(--color-ink); font-family: var(--font-mono); font-size: var(--fs-micro); line-height: var(--lh-micro); white-space: nowrap; }
+/* The 10–90% bracket, under the axis. */
+.perf-bracket { position: relative; height: 6px; }
+.perf-bracket-span { position: absolute; top: 2px; height: 4px; border: var(--stroke-thin) solid var(--color-border-strong); border-top: 0; }
+.perf-chart-axis { display: flex; justify-content: space-between; gap: var(--space-2); white-space: nowrap; color: var(--color-ink-muted); font-family: var(--font-mono); font-size: var(--fs-micro); line-height: var(--lh-micro); font-variant-numeric: tabular-nums; }
+.perf-chart-readout { margin: 0; min-height: var(--lh-caption); color: var(--color-ink-2); font-family: var(--font-mono); font-size: var(--fs-caption); line-height: var(--lh-caption); font-variant-numeric: tabular-nums; }
+
+/* ---- Phone (under 560px of pane): every model is a card. Name and reply count, the overall speed
+   as the headline with its bar across the card, the other 3 figures side by side with their labels
+   above, then a full-width Show Effort Levels. ---- */
+@container insights (max-width: 559px) {
+  .perf-table tbody.perf-model { border-bottom: var(--stroke-thin) solid var(--color-border); }
+  .perf-table tbody.perf-model:last-child { border-bottom: 0; }
+  .cost-table-stack.perf-table tr.perf-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); padding: var(--space-3); border-bottom: 0; }
+  .perf-open { display: none; }
+  .perf-name-plain { display: flex; }
+  /* Stacked cells carry no gutter of their own (the card's padding is the gutter), as on Costs. */
+  .md .perf-table > * > tr:not(.perf-detail-row) > :is(th, td), .md .perf-effort-table > * > tr > :is(th, td) { padding-left: 0; padding-right: 0; }
+  .md .cost-table-stack.perf-table tr.perf-row > td[data-label] { flex-direction: column; justify-content: flex-start; align-items: flex-start; gap: 2px; text-align: left; }
+  .cost-table-stack.perf-table tr.perf-row > td[data-label]::before { margin-right: 0; font-size: var(--fs-caption); }
+  .cost-table-stack.perf-table tr.perf-row > td.perf-overall { grid-column: 1 / -1; }
+  .perf-row .perf-fig { align-items: flex-start; min-width: 0; }
+  /* Three to a line: a count line wraps inside its own column rather than run into the next. */
+  .perf-row .perf-fig-sub, .perf-effort-table .perf-fig-sub { white-space: normal; text-align: left; max-width: none; }
+  .perf-overall .perf-fig { width: 100%; }
+  .perf-overall .perf-rangebar-line { display: flex; width: 100%; }
+  .perf-overall .perf-rangebar { flex: 1; width: auto; }
+  .md .perf-table td.perf-toggle-cell { display: block; grid-column: 1 / -1; }
+  .perf-toggle { width: 100%; min-height: var(--tap-min); justify-content: center; }
+  .perf-detail-row { display: block; }
+  .md .perf-detail-row > td { display: block; padding: var(--space-3); }
+  /* The effort lines as a short list: the level, then its figures two to a line. */
+  .cost-table-stack.perf-effort-table tr { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1) var(--space-3); padding: var(--space-2); }
+  .md .cost-table-stack.perf-effort-table td[data-label] { flex-direction: column; justify-content: flex-start; align-items: flex-start; gap: 0; text-align: left; }
+  .cost-table-stack.perf-effort-table td[data-label]::before { margin-right: 0; font-size: var(--fs-caption); }
+  .perf-effort-table .perf-fig { align-items: flex-start; }
+  .md .cost-table-stack.perf-effort-table tr.perf-level-on { background: var(--color-accent-tint); }
+}

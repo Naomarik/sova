@@ -16,7 +16,6 @@ import {
   portsFor,
   READ_VERBS,
   render,
-  scratchSlots as scratchSlotsOf,
   selectorsProblem,
   serviceOrder,
   FAILURE_MESSAGE_MAX,
@@ -39,6 +38,9 @@ import {
   type TestsReport,
   type VerbResult,
 } from "../../shared/project-contract";
+import { numberedPorts, overLimitSentence, slotLayoutOf, unavailableSentence, type CopyLimit } from "../../shared/project-slots";
+import { COPY_SLOT_TOP } from "../../shared/project-contract";
+import { countsAsRunning, limitInForce, runningCopies } from "./copy-limit";
 import type { PortOwner } from "../port-owner";
 import { startStaticServe, staticServes, StaticServeError, stopStaticServe } from "../preview-serve";
 import { projectOf } from "../project-root";
@@ -46,7 +48,7 @@ import { copyContentsArgv } from "./copy-tree";
 import { adoptedLogs, adoptedPids, adoptedStatus, DriverError, rssOf, type AdoptedStatus, type Driver, type OnceSpec, type UnitSpec } from "./drivers";
 import { hostPortOwner } from "./proctable";
 import type { NoteFacts } from "./note";
-import { hostedBusy, restartGateLog, RESTART_DELAY_SEC, scheduleRestart, serverCheckout, serverStart } from "./self-host";
+import { RESTART_DELAY_SEC, scheduleRestart, serverCheckout, serverStart } from "./self-host";
 import { checkShare, instanceOfLink, linksOf, OVERSEER_SHARE_REFUSAL, revokeLinks, ShareFailure, shareInstance, shareRefusal } from "./share";
 import { publishedPorts, publisherOf, type ContainerQuery } from "./container-ports";
 import {
@@ -79,7 +81,13 @@ export type Caller =
   | { kind: "overseer"; id: string }
   /** `act`: its project statechart's act for a verb that is not a read (§app.project-overseer/tools), which holds the
       level; the engine checks none. */
-  | { kind: "project-overseer"; id: string; root: string; act: VerbAct }
+  | { kind: "project-overseer"; id: string; root: string; act: VerbAct; deployAct?: true }
+  /** The client's Project Assistant (al_1, al_3): deploy.request any time; deploy.plan and deploy.run only from inside its
+      project's released `deploy/run` act (`deployAct`), checked against its column of powers. `up`: only `up` of that one
+      instance (a copy the owner's versions list holds, which its start_version checked); `upMain`: only a bare `up` of
+      the main checkout while it has no copy (the Current version's, made then); either only once `act` (its project
+      statechart's `services/run`) is taken. */
+  | { kind: "assistant"; id: string; root: string; deployAct?: true; up?: string; upMain?: true; act?: VerbAct }
   | { kind: "session"; id: string; root: string | null; own: string[] }
   | { kind: "conform"; id: string }
   /** Sova itself, on no one's request: `on-merge` reloads the main checkout's copy when main moves (§app.project-services/on-merge). Apply only. */
@@ -103,9 +111,11 @@ class ActRefused extends Error {
 /** The project overseer's act for `verb`, after the engine's own checks and before anything changes. */
 export async function actFor(caller: Caller, verb: AnyVerb, instance: string | null, detail?: { endpoint: string; days?: number }): Promise<void | VerbActOutcome> {
   // revoke only takes something away: no act, never held (§app.project-services/share).
-  if (caller.kind !== "project-overseer" || (READ_VERBS as readonly string[]).includes(verb) || verb === "revoke") return;
+  if ((READ_VERBS as readonly string[]).includes(verb) || verb === "revoke") return;
+  const act = caller.kind === "project-overseer" ? caller.act : caller.kind === "assistant" ? caller.act : undefined;
+  if (!act) return;
   try {
-    return await caller.act(verb, instance, detail);
+    return await act(verb, instance, detail);
   } catch (err) {
     throw new ActRefused(err);
   }
@@ -313,16 +323,14 @@ export interface EngineDeps {
   dial?: (port: number) => Promise<boolean>;
   /** The checkout the running server was loaded from (§app.project-services/self-host); tests set it. */
   selfCheckout?: () => string | null;
-  /** Why this server's hosted sessions are busy, or null; tests fake it. */
-  hostBusy?: () => string | null;
   /** The registered project whose root this is, or null (§app.project-services/share); tests fake it. */
   projectIdOf?: (root: string) => Promise<string | null>;
   /** Every port this Sova process binds or names (server/project-previews.ts sovaPorts); tests fake it. */
   sovaPorts?: () => Promise<ReadonlySet<number>>;
   /** An adopted unit's status, read only (§app.project-services/adopt); tests fake it. */
   adoptedStatus?: (unit: string) => Promise<AdoptedStatus>;
-  /** Schedule an adopted unit's gated restart: null when scheduled, else why not; tests fake it. */
-  scheduleRestart?: (unit: string, mainPid: number | null) => Promise<string | null>;
+  /** Schedule an adopted unit's delayed restart: null when scheduled, else why not; tests fake it. */
+  scheduleRestart?: (unit: string) => Promise<string | null>;
 }
 
 /** Everything one verb run knows. */
@@ -383,11 +391,10 @@ export class ProjectEngine {
   private readonly clock: EngineClock;
   private readonly dial: ((port: number) => Promise<boolean>) | undefined;
   private readonly selfCheckout: () => string | null;
-  private readonly hostBusy: () => string | null;
   private readonly projectIdOf: (root: string) => Promise<string | null>;
   private readonly sovaPorts: () => Promise<ReadonlySet<number>>;
   private readonly adoptedStatus: (unit: string) => Promise<AdoptedStatus>;
-  private readonly scheduleRestart: (unit: string, mainPid: number | null) => Promise<string | null>;
+  private readonly scheduleRestart: (unit: string) => Promise<string | null>;
   private sharedChain = new Map<string, Promise<unknown>>();
   /** The conformance runner (server/project-services/conform.ts), wired at startup. */
   conformer: ((body: unknown, caller: Caller) => Promise<VerbResult>) | null = null;
@@ -417,7 +424,6 @@ export class ProjectEngine {
     this.clock = deps.clock ?? wallClock;
     this.dial = deps.dial;
     this.selfCheckout = deps.selfCheckout ?? serverCheckout;
-    this.hostBusy = deps.hostBusy ?? (() => hostedBusy());
     this.projectIdOf =
       deps.projectIdOf ??
       (async (root) => {
@@ -426,7 +432,7 @@ export class ProjectEngine {
       });
     this.sovaPorts = deps.sovaPorts ?? (async () => (await import("../project-previews")).sovaPorts());
     this.adoptedStatus = deps.adoptedStatus ?? ((unit) => adoptedStatus(unit));
-    this.scheduleRestart = deps.scheduleRestart ?? ((unit, pid) => scheduleRestart(unit, pid));
+    this.scheduleRestart = deps.scheduleRestart ?? ((unit) => scheduleRestart(unit));
   }
 
   unitOf(scopeId: string, service: string): string {
@@ -616,7 +622,8 @@ export class ProjectEngine {
 
   /**
    * Sova hosting itself (§app.project-services/self-host): on the server's own checkout, a verb that
-   * stops or restarts slot 0 is the operator's, confirmed, and never while a hosted session is busy.
+   * stops or restarts slot 0 is the operator's, confirmed. Busy chats don't hold it: each runs in a
+   * process of its own and outlives the server (§app/chat-processes).
    */
   private selfHosted(run: Run): void {
     this.adoptedSlot0(run);
@@ -627,8 +634,6 @@ export class ProjectEngine {
     const what = `${run.verb} of the main checkout stops or restarts the Sova server's own checkout (${self})`;
     if (run.caller.kind !== "operator") throw new VerbFailure("needs-confirm", `${what}: the operator does it, confirmed (sova-project ${run.verb} … --confirm)`);
     if (!run.req.confirm) throw new VerbFailure("needs-confirm", `${what}: confirm it (sova-project ${run.verb} … --confirm)`);
-    const busy = this.hostBusy();
-    if (busy) throw new VerbFailure("busy", `${what}, and ${busy}: try again once they are idle`);
   }
 
   /** The service slot 0 adopts when `run` aims at slot 0 (its instance, or the main checkout before one exists), else null (§app.project-services/adopt). */
@@ -642,7 +647,7 @@ export class ProjectEngine {
   /**
    * An adopted slot 0 (§app.project-services/adopt): Sova never starts or stops its unit, so up, down,
    * reset and teardown are refused; apply, which schedules its restart, keeps the self-host rule for
-   * every caller and project: the operator, confirmed, and never while a hosted session is busy.
+   * every caller and project: the operator, confirmed.
    */
   private adoptedSlot0(run: Run): void {
     const s = this.adoptedIn(run);
@@ -654,8 +659,6 @@ export class ProjectEngine {
     const what = `apply of slot 0 restarts the adopted unit ${unit}`;
     if (run.caller.kind !== "operator") throw new VerbFailure("needs-confirm", `${what}: the operator does it, confirmed (sova-project apply … --confirm, or Apply on the project's Branches tab)`);
     if (!run.req.confirm) throw new VerbFailure("needs-confirm", `${what}: confirm it (sova-project apply … --confirm)`);
-    const busy = this.hostBusy();
-    if (busy) throw new VerbFailure("busy", `${what}, and ${busy}: try again once they are idle`);
   }
 
   private authorize(run: Run): void {
@@ -703,9 +706,23 @@ export class ProjectEngine {
         throw new VerbFailure("needs-confirm", `${verb} of an instance you did not create (${run.rec.createdBy}'s) is the operator's: ask them to run it`);
       return;
     }
+    // The Project Assistant runs no verb on running copies but `up` of the one listed copy its start_version named, once
+    // its project's services/run act is taken (actFor, after these checks).
+    if (caller.kind === "assistant") {
+      if (verb === "up" && caller.up && caller.act && run.rec && run.rec.id === caller.up && run.rec.project === caller.root && !run.req.checkout && !run.req.branch) return;
+      // The Current version's copy, when the main checkout has none (§app.project-assistant/tools): a bare up makes it.
+      const target = (run as Run & { target?: string }).target;
+      if (verb === "up" && caller.upMain && caller.act && !run.rec && project === caller.root && target === project && !run.req.instance && !run.req.checkout && !run.req.branch) return;
+      throw new VerbFailure("forbidden", "the Project Assistant runs no verb on running copies but up of the version it was asked to start");
+    }
     // A coding session.
     if (verb === "conform") return;
     const checkout = run.rec?.checkout ?? (run as Run & { target?: string }).target ?? null;
+    // A bare create/up/test from the main checkout: name the session's own worktrees rather than refuse it blind.
+    const bare = !run.req.instance && !run.req.checkout && !run.req.branch && (verb === "create" || verb === "up" || verb === "test");
+    const trees = caller.own.filter((c) => c !== project);
+    if (bare && checkout === project && trees.length)
+      throw new VerbFailure("invalid-request", `${verb} names no checkout and this session runs in the main checkout, which is never a session's: name one of its worktrees with checkout (${trees.join(", ")})`);
     if (!checkout || checkout === project || !caller.own.includes(checkout))
       throw new VerbFailure("forbidden", "a session acts only on instances of its own worktrees (never the main checkout)");
     if ((verb === "reset" || verb === "teardown") && run.rec && !createdByCaller) throw new VerbFailure("needs-confirm", `${verb} of an instance this session did not create is the operator's`);
@@ -898,17 +915,47 @@ export class ProjectEngine {
     const main = target.checkout === project;
     if (!main && run.req.slot === 0) throw new VerbFailure("refused-slot0", "slot 0 is the main checkout's");
     if (main && run.req.slot !== undefined && run.req.slot !== 0) throw new VerbFailure("invalid-request", "the main checkout is slot 0");
-    if (run.req.slot !== undefined && run.req.slot > def.slots.cap + 2) throw new VerbFailure("invalid-request", `slot is at most ${def.slots.cap + 2}`);
-    const checkoutPorts = (slot: number) => def.services.filter((s) => s.scope === "checkout").flatMap((s) => Object.values(portsFor(def, slot)[s.name] ?? {}));
-    const listening = (p: number) => this.portOwner(p) !== "none";
+    // Places come from the fixed range; the limit counts running copies only; the port numbering is the
+    // main checkout's saved definition's (§app.project-services/instances).
+    const limit = limitInForce(project, def);
+    const conforming = run.caller.kind === "conform";
+    // This definition's places: the usable slots of 1 to 16 and its scratch slots (§app.project-services/instances).
+    const layout = slotLayoutOf(def, limit.numbering);
+    const [scratchA, scratchB] = layout.scratch;
+    const scratchWords = `slots ${scratchA} and ${scratchB} are conformance's scratch slots`;
+    if (!main && !conforming && run.req.slot !== undefined) {
+      if (layout.scratch.includes(run.req.slot)) throw new VerbFailure("invalid-request", `slot ${run.req.slot} is not given to a copy: ${scratchWords}; copies take 1 to ${COPY_SLOT_TOP}`);
+      if (run.req.slot > COPY_SLOT_TOP) throw new VerbFailure("invalid-request", `slot is at most ${COPY_SLOT_TOP}: copies take 1 to ${COPY_SLOT_TOP}, and ${scratchWords}`);
+      const off = layout.unavailable.find((u) => u.slot === run.req.slot);
+      if (off) throw new VerbFailure("invalid-request", `${unavailableSentence(off)} No copy takes it; ask for another slot, or none`);
+    }
+    const numbered = (slot: number) => numberedPorts(def, limit.numbering, slot);
+    const checkoutPorts = (slot: number) => def.services.filter((s) => s.scope === "checkout").flatMap((s) => Object.values(numbered(slot)[s.name] ?? {}));
+    // No slot's allocation gives an adopted unit's port (§app.project-services/adopt).
+    const adopted = adoptedService(def);
+    const adoptedPorts = new Set(adopted ? Object.values(adopted.adopt!.ports) : []);
+    const listening = (p: number): boolean | string => {
+      if (adoptedPorts.has(p)) return `slot 0's adopted unit ${adopted!.adopt!.unit}`;
+      const o = this.portOwner(p);
+      return o === "none" ? false : o === "unknown" ? "a process this user can't read" : `pid ${o.pid}${o.cwd ? ` (${o.cwd})` : ""}`;
+    };
     const rec = await this.step(run, "slot", "slot", async () => {
       const made = mutateRegistry((r) => {
         const dup = r.instances.find((i) => i.project === project && i.checkout === target.checkout);
         if (dup) return { rec: dup, fresh: false };
-        const range = Array.from({ length: def.slots.cap }, (_, i) => i + 1);
-        const pick = main ? pickSlot(r, project, checkoutPorts, [], () => false, 0) : pickSlot(r, project, checkoutPorts, range, listening, run.req.slot);
-        if ("refused" in pick) throw new VerbFailure("cap-reached", pick.refused);
-        const all = portsFor(def, pick.slot);
+        // Only running copies count; the main checkout's and conformance's scratch copies never do.
+        if (!main && !conforming) this.refuseOverLimit(runningCopies(r, project), limit);
+        const copies = r.instances.filter((i) => i.project === project && i.slot !== 0 && !i.createdBy.startsWith("conform:")).sort((x, y) => x.slot - y.slot);
+        const held = copies.length ? copies.map((i) => `slot ${i.slot} (${i.id}, ${i.checkout})`).join(", ") : "none";
+        const pick = main ? pickSlot(r, project, checkoutPorts, [], () => false, 0) : pickSlot(r, project, checkoutPorts, layout.ordinary, listening, run.req.slot);
+        if ("refused" in pick)
+          throw new VerbFailure(
+            "slots-blocked",
+            run.req.slot !== undefined
+              ? `${pick.refused} (the project's copies hold: ${held})`
+              : `no usable slot of 1 to ${COPY_SLOT_TOP} is free for a copy (${scratchWords}${layout.unavailable.length ? `; ${layout.unavailable.map(unavailableSentence).join(" ").replace(/\.$/, "")}` : ""}; the project's copies hold: ${held}): ${pick.refused.replace(/^no free slot: /, "")}. Free one of those ports, or tear down a copy`,
+          );
+        const all = numbered(pick.slot);
         const ports: Record<string, Record<string, number>> = {};
         for (const s of def.services) if (s.scope === "checkout" && Object.keys(s.ports).length) ports[s.name] = all[s.name] ?? {};
         const rec: InstanceRecord = {
@@ -952,6 +999,17 @@ export class ProjectEngine {
     }
     await this.provisionUnlessAdopted(run, def, run.rec);
     return run.rec;
+  }
+
+  /**
+   * Refuse `cap-reached` when `running` (the project's running copies, the one about to start left out)
+   * already number the limit in force (§app.project-services/instances): at it, or above it after a lowering.
+   */
+  private refuseOverLimit(running: InstanceRecord[], limit: CopyLimit): void {
+    const sentence = overLimitSentence(running.length, limit.cap);
+    if (!sentence) return;
+    const names = running.map((i) => `slot ${i.slot} (${i.branch ?? i.id}, ${i.id})`).join(", ");
+    throw new VerbFailure("cap-reached", `${sentence} Running: ${names}. The limit of ${limit.cap} is ${limit.from}; the Branches tab changes it.`);
   }
 
   /** An adopted slot 0 runs no setup and no data step: its unit is set up outside Sova (§app.project-services/adopt). */
@@ -1426,6 +1484,18 @@ export class ProjectEngine {
     const scope = scopeOf(rec);
     const own = wanted.filter((s) => s.scope === "checkout");
     const anyRunning = (await Promise.all(def.services.filter((s) => s.scope === "checkout").map((s) => this.isActive(this.unitOf(rec.id, s.name), s)))).some((a) => a.active);
+    // A copy that runs nothing yet starts only under the limit (§app.project-services/instances): the count
+    // and its claim (its services wanted running) are one registry write, so two callers can't both pass.
+    if (own.length && rec.slot !== 0 && run.caller.kind !== "conform" && !rec.createdBy.startsWith("conform:")) {
+      const limit = limitInForce(rec.project, def);
+      mutateRegistry((r) => {
+        const mine = r.instances.find((i) => i.id === rec.id);
+        if (!mine || countsAsRunning(mine)) return;
+        this.refuseOverLimit(runningCopies(r, rec.project, rec.id), limit);
+        for (const s of own) mine.desired[s.name] = "running";
+        Object.assign(rec.desired, mine.desired);
+      });
+    }
     let bumped = false;
     for (const s of own) {
       rec.desired[s.name] = "running";
@@ -1595,7 +1665,7 @@ export class ProjectEngine {
 
   /**
    * apply on an adopted slot 0 (§app.project-services/adopt): its build when declared and changed, then,
-   * in place of a reload, the unit's gated restart scheduled RESTART_DELAY_SEC from now. Nothing is
+   * in place of a reload, the unit's restart scheduled RESTART_DELAY_SEC from now. Nothing is
    * waited for: the server can't watch a restart that may be its own.
    */
   private async applyAdopted(run: Run, def: ProjectDef, rec: InstanceRecord, s: ServiceDecl): Promise<void> {
@@ -1618,9 +1688,9 @@ export class ProjectEngine {
       });
     }
     await this.step(run, `restart:${s.name}`, "reload", async () => {
-      const why = await this.scheduleRestart(unit, st.pid);
-      if (why) throw new VerbFailure("unsupported", `the restart of ${unit} could not be scheduled (${why}): nothing restarts; restart it outside Sova once nothing is busy`, { service: s.name });
-      return { result: "done", detail: `restart scheduled: ${unit} restarts in ${RESTART_DELAY_SEC} s unless a session this server hosts is busy then (${restartGateLog()})` };
+      const why = await this.scheduleRestart(unit);
+      if (why) throw new VerbFailure("unsupported", `the restart of ${unit} could not be scheduled (${why}): nothing restarts; restart it outside Sova`, { service: s.name });
+      return { result: "done", detail: `restart scheduled: ${unit} restarts in ${RESTART_DELAY_SEC} s` };
     });
   }
 
@@ -2062,7 +2132,7 @@ export class ProjectEngine {
 
   /** The folders `def`'s dir resources copy, as the main checkout would render them. */
   dataSources(def: ProjectDef, project: string): string[] {
-    const scope: Scope = { id: "conform", project, checkout: project, branch: null, slot: scratchSlotsOf(def)[0], ports: {}, data: {} };
+    const scope: Scope = { id: "conform", project, checkout: project, branch: null, slot: slotLayoutOf(def, limitInForce(project, def).numbering).scratch[0], ports: {}, data: {} };
     return def.data.flatMap((d) => (d.kind === "dir" && d.from !== "empty" ? [render(d.from, this.vars(def, scope))] : []));
   }
 

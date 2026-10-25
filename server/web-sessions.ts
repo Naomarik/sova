@@ -4,11 +4,12 @@ import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
 
 /** Persistent set of session ids spawned via POST /api/sessions (SessionSummary.origin = "web"). */
-const FILE = join(stateRoot(), "web-sessions.json");
+/** Read at each use, never at import: the state root is the process's current one. */
+const file = (): string => join(stateRoot(), "web-sessions.json");
 
 function load(): Set<string> {
   try {
-    const v = JSON.parse(readFileSync(FILE, "utf8"));
+    const v = JSON.parse(readFileSync(file(), "utf8"));
     return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
   } catch {
     return new Set(); // missing or corrupt: start empty
@@ -29,10 +30,10 @@ export function isWebSession(id: string): boolean {
 export function addWebSession(id: string): void {
   const next = load();
   next.add(id);
-  mkdirSync(dirname(FILE), { recursive: true });
-  const tmp = `${FILE}.${process.pid}.tmp`;
+  mkdirSync(dirname(file()), { recursive: true });
+  const tmp = `${file()}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify([...next]));
-  renameSync(tmp, FILE);
+  renameSync(tmp, file());
   sessionsChanged();
   ids = next;
 }
@@ -41,10 +42,10 @@ export function addWebSession(id: string): void {
 export function removeWebSession(id: string): void {
   const next = load();
   if (!next.delete(id)) return; // absent: the in-memory set already matches the file
-  mkdirSync(dirname(FILE), { recursive: true });
-  const tmp = `${FILE}.${process.pid}.tmp`;
+  mkdirSync(dirname(file()), { recursive: true });
+  const tmp = `${file()}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify([...next]));
-  renameSync(tmp, FILE);
+  renameSync(tmp, file());
   sessionsChanged();
   ids = next;
 }

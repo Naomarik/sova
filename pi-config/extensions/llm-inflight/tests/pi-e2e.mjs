@@ -5,8 +5,6 @@
 //    before any response byte; 0 while the tool runs; 1 again for the follow-up; 0 at the end.
 //    A probe extension records the counts from its own copy of tracker.ts (the singleton holds
 //    across jiti's per-extension module copies).
-// 2. RPC mode as a pi worker (worker-mark first): the worker reports its counts on stdout as
-//    setStatus("sova-llm-inflight", …) only when they change, and ends at 0.
 import "../../claude-code/tests/hermetic-env.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -21,7 +19,6 @@ if (!packageDir) throw new Error("run through tests/run.mjs (PI_PACKAGE_DIR)");
 const CLI = path.join(packageDir, "dist/bundle/cli.js");
 const EXT = fileURLToPath(new URL("../index.ts", import.meta.url));
 const TRACKER = fileURLToPath(new URL("../tracker.ts", import.meta.url));
-const MARK = fileURLToPath(new URL("../../subagents/worker-mark.ts", import.meta.url));
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "llm-inflight-e2e-"));
 const log = path.join(work, "probe.jsonl");
@@ -55,7 +52,7 @@ const server = http.createServer((req, res) => {
 		// Nothing sent back yet: the count must already say 1.
 		setTimeout(() => {
 			res.writeHead(200, { "content-type": "text/event-stream" });
-			if (n === 1 && process.env.LLM_E2E_PHASE !== "rpc") {
+			if (n === 1) {
 				res.write(chunk({ ...base, choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "bash", arguments: JSON.stringify({ command: "sleep 0.5" }) } }] }, finish_reason: null }] }));
 				res.write(chunk({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } }));
 			} else {
@@ -112,42 +109,6 @@ try {
 	// The first change is the process starting to count (its runtime instrumented), at 0.
 	assert.deepEqual(events.filter((e) => e.ev === "change").map((e) => e.active), [0, 1, 0, 1, 0], "two calls, each one change up and one down");
 	console.log("✔ pi e2e (print): counted from issue, before the first byte; 0 while the tool ran; 0 at the end");
-
-	// 2. rpc mode as a worker: counts reported on stdout, only on change
-	requests = 0;
-	seenAtRecv.length = 0;
-	process.env.LLM_E2E_PHASE = "rpc";
-	let sent = false;
-	const rpc = await run(["--mode", "rpc", "-e", MARK, "-e", EXT], (out, p) => {
-		if (!sent && out.includes('"sova-llm-inflight"')) {
-			sent = true;
-			p.stdin.write(JSON.stringify({ id: "p1", type: "prompt", message: "hi" }) + "\n");
-		}
-		if (/"type":"agent_settled"/.test(out) && !p.stdin.writableEnded) p.stdin.end();
-	});
-	const reports = rpc.out
-		.split("\n")
-		.filter(Boolean)
-		.map((l) => {
-			try {
-				return JSON.parse(l);
-			} catch {
-				return null;
-			}
-		})
-		.filter((e) => e?.type === "extension_ui_request" && e.method === "setStatus" && e.statusKey === "sova-llm-inflight")
-		.map((e) => JSON.parse(e.statusText));
-	assert.ok(sent, `the worker reported at session start: ${rpc.err}`);
-	assert.deepEqual(reports.map((r) => r.active), [0, 1, 0], "one report per change: idle, the call, idle again");
-	const { producer, tokens, ...last } = reports.at(-1);
-	assert.deepEqual(last, { v: 1, active: 0, approximate: 0, claudeTurns: 0, degraded: false, folded: [] });
-	assert.equal(tokens.bucketMs, 30_000);
-	assert.equal(tokens.out.length, 60);
-	assert.equal(tokens.out.reduce((a, b) => a + b, 0), 1, "the call's one completion token, never its prompt's");
-	assert.equal(reports.at(-2).tokens.out.reduce((a, b) => a + b, 0), 0, "and it lands with the call's end, in the same report");
-	assert.match(producer, /^[\w-]{8,64}$/, "the worker says who it is, so a record of its own is never counted again");
-	assert.ok(reports.every((r) => r.producer === producer), "one producer for the worker's lifetime");
-	console.log("✔ pi e2e (rpc worker): the worker reports its count to its parent on change only, ending at 0");
 } finally {
 	server.close();
 	fs.rmSync(work, { recursive: true, force: true });

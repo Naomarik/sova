@@ -24,6 +24,7 @@ export const PUSH_KIND_LABEL: Record<PushKind, string> = {
   "worker-error": "Subagent error",
   "playbook-review": "Playbook needs you",
   "whatsapp-down": "WhatsApp down",
+  "owner-outage": "App down",
 };
 
 const isPushKind = (k: string): k is PushKind => (PUSH_KINDS as readonly string[]).includes(k);

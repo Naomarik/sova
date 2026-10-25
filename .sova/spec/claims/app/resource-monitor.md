@@ -4,8 +4,8 @@
 What this server and everything it started are costing the machine, right now and over the last
 hour, **charged to the session and worker that started it**. A load spike is only worth measuring
 if it can be traced to a session afterwards, so attribution is the point of the surface, not a
-detail of it: every process a Sova session or worker starts — pi and claude workers, the Claude
-Code provider process, member-mcp helpers, and their tool children such as a JVM test REPL, `tsc`,
+detail of it: every process a Sova session or worker starts — pi workers (a Claude Code worker
+included), the Claude Code provider process, and their tool children such as a JVM test REPL, `tsc`,
 `vite` or a test run — counts against that worker and its session.
 
 It is **read-only**. Its only actions are **Open Session** links; it never stops a worker or
@@ -50,12 +50,16 @@ is.
 - **Tick.** Every **5s**. A tick that finds the previous one still running is **skipped**, never
   queued; the skip count is reported (`sampler.skipped`).
 - **Ring.** The last **1 hour** of ticks (720) in memory, as compact numeric records: the totals,
-  each session's and worker's CPU% and memory, and the **top 5 processes by CPU** in that tick. A
+  Sova's memory with its four parts (§app.resource-monitor/attribution), each session's and
+  worker's CPU% and memory, and the **top 5 processes by CPU** in that tick. A
   process's label (its short command) is stored once per process, not per tick. The ring stays
   near **2 MB**.
 - **On disk.** Every **30s** one line is appended to `<stateRoot>/monitor/YYYY-MM-DD.jsonl`:
   the window's mean and maximum CPU, its maximum memory, the per-session and per-worker rollups,
-  and the window's top processes, attributed. So a spike survives a server restart or crash.
+  and the window's top processes, attributed. Sova's memory is the window's highest, and its four
+  parts are all taken from **the tick where it peaked**, so they always add up to it. Lines are
+  version 2. Version-1 lines, written before memory meant each process's own memory, still give
+  their CPU, but they carry no Sova memory, so the memory line never draws from them. So a spike survives a server restart or crash.
   When the server stops (SIGTERM, SIGINT or exit), the 30s window in progress is written at once,
   best effort, so a restart loses at most what that last write missed. Files older than **3 days** are deleted at startup and once a day. Nothing is ever written into
   a session file or a live record.
@@ -64,10 +68,17 @@ is.
   from the disk log, with the labels for every group once in `groups`.
 - **Client polling.** The modal polls `GET /api/monitor` every 5s **only while it is open**, and
   stops on close. There is no WebSocket for it.
-- **Units.** CPU% is of **one core** (100 = one core busy), averaged over the tick. Memory is RSS;
-  swap is `VmSwap`.
+- **Units.** CPU% is of **one core** (100 = one core busy), averaged over the tick. Memory is
+  **each process's own memory**: on Linux its private resident memory (`RssAnon`, from
+  `/proc/<pid>/statm`: resident less shared pages), so program code that processes share (Bun's,
+  the Claude Code binary's) is counted in none of them; on macOS its resident memory (RSS), which
+  counts shared code in every process and so runs high. Swap is `VmSwap`. A snapshot's processes
+  also keep their RSS (`rssBytes`) beside it (`privBytes`); a history point's group, worker and
+  process memory is own memory when the point carries Sova's memory, RSS before.
 
 ## §app.resource-monitor/attribution — Attribution
+
+A server-orchestrated tour's recording controller and browser process tree are explicitly charged to the requesting session and worker (§app.tours/resources), rather than appearing as an unnamed server task. Their attribution survives the server launching them on the chat's behalf.
 
 Who is burning the machine is the question; every number on the screen is charged to someone, or
 says that it isn't.
@@ -79,8 +90,8 @@ says that it isn't.
 - **Joins, strongest first** (`MonitorVia`). Exact: the subagents runtime's own worker pid,
   published in process on the `subagents:workers-snapshot` event and **never written to disk**
   (`worker-pid`); a `claude --resume` / `--session-id` uuid — a worker's session id, or a hosted
-  session's Claude Code provider (`session-id`); a pi worker's own live record (`live-record`); a
-  member-mcp helper's team env (`team-env`); the environment the agent itself puts on its tool
+  session's Claude Code provider (`session-id`); a
+  team member's env (`PI_SUBAGENTS_TEAM_MEMBER`, on the member and everything it starts; `team-env`); the environment the agent itself puts on its tool
   children — pi's bash tool sets `PI_SESSION_FILE`, Claude Code sets `CLAUDE_CODE_SESSION_ID` and
   `CLAUDE_PID` — read once per process, ignoring values the server inherited itself (`env`); anything below a charged process
   (`descendant`); and **sid memory** — a session id seen under a charged process keeps its owner
@@ -91,12 +102,31 @@ says that it isn't.
   exited between two ticks (seen only through the server's `cutime`), charged to the one hosted
   session that was running a tool in that window, else to nobody (`exited-tools`); and a process
   whose cwd lies in exactly one hosted session's cwd (`cwd`).
+- **A chat in a process of its own** (§app/chat-processes) is not under the server. It is measured
+  all the same: a chat in a unit of its own with that unit's whole cgroup, so what it started and
+  then lost (a `setsid`'d, reparented dev server) is still its; a chat in a detached session
+  (no unit) with its process tree. What it measures is charged to its session through that
+  process's pid (`descendant`), never counted as escaped from the server's unit, and its workers,
+  title and tool activity come from what the chat process reports to the server. A **worker's or
+  hidden chat's** process is charged to its parent session as that worker, never as a session of
+  its own: the process itself by its pid (`worker-pid`), its Claude Code CLI by the chat's provider
+  session ids (`session-id`), the rest of its unit or tree through it (`descendant`), and a process
+  carrying its session file by that (`env`). The `cwd` heuristic never matches a worker's chat.
+- **Sova's memory, four ways.** Every measured process falls in exactly one part, so the four
+  add up to Sova's memory (`memory.total`): **Backend**, the server and its usage helper (the
+  server's long-lived child running `server/usage-helper/main.ts`, which is never Not attributed);
+  **Sova runtime**, each chat's own process (the pid its chat reports, else a process running
+  `server/chat-runtime/main.ts`); **Claude Code**, each Claude Code CLI; and **Tools and work**,
+  everything else measured (a session's or worker's tools, escaped and unattributed processes).
+  Each session splits its own processes the same way (`runtimeBytes`, `wrappedBytes`,
+  `toolsBytes`), and each worker its subtree; a session's parts plus its workers make its memory.
 - **A worker row** shows its **whole subtree's** CPU% and memory, and opens to its heaviest
   descendants by short command (`java … clojure.main`).
-- **What is left over is named, not dropped.** `unownedWorkers` are workers whose session no join
-  found; `unattributed` are server descendants charged to nobody (an esbuild, a git probe); and,
+- **What is left over is named, not dropped.** `unownedWorkers` are worker-looking children of the
+  server (a Claude Code CLI) that no join tied to a session; `unattributed` are server descendants charged to nobody (an esbuild, a git probe); and,
   under a systemd unit, `escaped` are the unit's processes no longer under the server (a
-  Playwright browser, a dev server, a benchmark run), each charged by sid memory or cwd where that
+  Playwright browser, a dev server, a benchmark run; a chat's own unit is not the server's, so
+  nothing in it is escaped), each charged by sid memory or cwd where that
   can say.
 - **The limits are said.** Short-lived processes are visible only through their parent's CPU,
   never by name, unless a tick caught them alive; a process reaped by the subreaper after it
@@ -111,25 +141,39 @@ A `.scrim` plus `.modal.modal-wide` (§design/deviations's Settings precedent) w
 `aria-modal="true"` and focus trapped (`trapFocus`), closed by Esc, the scrim, or its Close
 button, focus returning to the opener. Under 768px the same markup is a sheet with its grip.
 
-- **Head.** The title "Resource monitor", what is measured ("Everything in
-  `sova-runtime.service`", or "This server's process tree only"), and the time of the reading in
+- **Head.** The title "Resource monitor", what is measured ("Sova's server and its chats", or
+  "Sova's server and its chats, process trees only" outside a unit, or "This server's own numbers
+  only" where nothing can list processes), and the time of the reading in
   mono, 24-hour: "as of `14:06:05`".
-- **Meters, number first** (§design/ground-rules, never a bar alone): load against cores, memory
-  — under a unit, its `anon` against total RAM, never `memory.current`, which counts page cache;
-  the context line gives both — swap (a ghost meter saying so when the machine has none), CPU
-  pressure, and the server's event-loop p99.
+- **Meters, number first** (§design/ground-rules, never a bar alone): load against cores,
+  **Sova memory** — the server, its helper, every chat and everything they wrap and start, each
+  process's own memory (§app.resource-monitor/sampling-and-history), against total RAM, its
+  context line the RAM still available — swap (a ghost meter saying so when the machine has none;
+  absent on macOS, which reports no per-process swap), CPU pressure, and the server's event-loop
+  p99. Where no process can be listed, the memory meter is the server's own ("Server memory").
+- **Sova memory, split.** Under the meters, one row of four figures that add up to Sova memory:
+  **Backend** ("server and helper"), **Sova runtime** ("3 chats"), **Claude Code** ("2 CLIs") and
+  **Tools and work**.
 - **One strip chart** of the last hour: plain inline SVG, no animation, no chart library. CPU is
   stacked by session in neutral steps, never hue — the legend and the table carry the names — and
-  memory is one dashed line. Pressing or dragging picks a moment; the arrow keys step through
+  memory is one dashed line, Sova memory, drawn only from readings that carry it (older readings
+  counted memory another way, so the line starts where they end rather than showing a false
+  drop). The reading beside the title names Sova memory and its four parts for the moment shown.
+  Pressing or dragging picks a moment; the arrow keys step through
   ticks, Home and End jump to the ends. A picked moment re-draws the table as that tick ("At
   `14:06:05`", with **Back to Now**).
-- **Sessions → workers table.** One table whose rows add up to the total: each session with its
-  totals and an **Open Session** link, its own tools (a hosted session's bash tools, its Claude
-  Code provider) on one expandable line, then its workers — backend, status, how long idle,
-  process count, CPU%, memory, swap — each expanding to its heaviest descendants. After the
-  sessions come the **Sova server** itself, **Workers of no known session**, **Escaped
-  processes** (under a unit: each with who it is charged to, how, and its cwd) and **Not
-  attributed**. Idle workers are summed above the table ("2 idle workers hold 600 MB; 2
+- **Sessions → workers table.** One table whose rows add up to the total. First **Backend**,
+  "the Sova server and its helper", opening to **Sova server** ("web app, sessions, monitor") and
+  **Usage helper** ("prices and usage"). Then each session with its totals, its backend as its
+  caption ("Claude Code", or "pi model · nothing wrapped") and an **Open Session** link, opening to
+  its parts: **Sova runtime** ("this chat's own process"), **Claude Code** ("the wrapped CLI";
+  absent for a pi-model chat, whose caption already says nothing is wrapped), **Tools** (its
+  process count, expanding to its heaviest tools), then its workers — backend, status, how long
+  idle, process count, CPU%, memory, swap, and the same split in its caption ("runtime 120 MB ·
+  Claude Code 150 MB") — each expanding to its heaviest descendants. After the sessions come
+  **Workers of no known session**, **Escaped processes** (under a unit: each with who it is
+  charged to, how, and its cwd) and **Not attributed**. A picked moment shows each group's total
+  as that tick recorded it, without the parts. Idle workers are summed above the table ("2 idle workers hold 600 MB; 2
   working."). A heuristic match carries a **Guess** chip, its reason in the chip's title. Under
   520px of table the Swap column goes, rather than stacking the rows: the session → worker →
   process indent is the information.
@@ -141,7 +185,10 @@ button, focus returning to the opener. Under 768px the same markup is a sheet wi
 - **Transient work in this window.** Processes that were among a tick's busiest and aren't running
   now, attributed, with their peak CPU and when last seen; repeated runs of one command by one
   owner fold into one row ("`vite build` ×8").
-- **What this can't see.** The snapshot's `notes`, as a short list.
+- **What this can't see.** The snapshot's `notes`, as a short list, including how memory is
+  counted: "Memory is each process's own memory. Program code that processes share is not counted
+  per process." (on macOS: resident memory, which counts shared code in each process, so the
+  numbers run high).
 - **This tab.** Where the browser exposes `performance.memory` (Chrome), one client-only line with
   this tab's JS heap; elsewhere the line is absent, not zero.
 - **Footer.** The sampler's own cost in small type: "Sampling every 5s · last tick 2.1 ms ·
@@ -161,17 +208,26 @@ button, focus returning to the opener. Under 768px the same markup is a sheet wi
   without being its main process): only the server's
   process tree is measured; the unit panel is absent and the screen says the numbers cover this
   server's process tree only.
-- **No `/proc`** (`scope: "none"`, not Linux): only the server's own Node numbers (memory, heap,
-  event-loop delay, load average where the OS has one); the screen says process details need
-  Linux.
+- **macOS** (`scope: "ps"`): no `/proc`, so each tick runs one `ps -A -o pid=,ppid=,rss=,time=`,
+  and a process's command is read once, with `ps`, when it first appears. The server's process
+  tree and each chat's tree are measured and charged as on Linux by pids and commands (no
+  environment joins, no units, so nothing is escaped), with Sova memory and its four parts.
+  Memory is **resident memory**, which counts program code that processes share in each of them,
+  so the numbers run high; the screen and the notes say so. CPU comes from each process's
+  cumulative CPU time; there is no per-process swap.
+- **No `/proc` and no `ps`** (`scope: "none"`, neither Linux nor macOS): only the server's own
+  Node numbers (memory, heap, event-loop delay, load average where the OS has one); the screen
+  says process details need Linux or macOS.
 - Each limit a snapshot has is also listed in its `notes`.
 
 ## §app.resource-monitor/lightness-budget — Lightness budget
 
 "Should not cause any additional strain on resources."
 
-- **Per tick, only cheap reads:** `/proc/<pid>/stat` for the measured processes plus a few cgroup,
-  pressure and loadavg files. **Never** `smaps` or PSS. In tree scope each tick follows each
+- **Per tick, only cheap reads:** `/proc/<pid>/stat` and `/proc/<pid>/statm` (own memory) for
+  the measured processes, read together in the same batch, plus a few cgroup,
+  pressure and loadavg files, and each chat process's unit's `cgroup.procs` (its cgroup path read
+  once per process). **Never** `smaps` or PSS. In tree scope each tick follows each
   process's main-thread `children` file, and every 30s every thread's, for children forked off
   the main thread.
 - **Nothing is read twice that needn't be.** Processes are keyed by `(pid, starttime)`. A new pid
@@ -184,12 +240,19 @@ button, focus returning to the opener. Under 768px the same markup is a sheet wi
   spent meanwhile lands at its next read, so totals stay exact and only the moment an idle
   process wakes is coarser. `VmSwap` is read only while the host has swap in use, and then at most
   every 30s per process.
-- **The event loop never waits long:** `stat` and `status` reads are synchronous into one reused
+- **On macOS** a tick spawns one `ps` for the whole process table (asynchronous: the event loop
+  never waits on it), and one more only when new processes need their command read. Measured on
+  a Mac with about 775 processes: `ps` takes about 10 ms of wall time and almost no CPU, and the
+  sampler's own share of a tick averages about 2.4 ms.
+- **The event loop never waits long:** `stat`, `statm` and `status` reads are synchronous into one reused
   buffer, in batches of 48 that yield between them. Reads that can hang on a stuck process (argv,
   environment, `cwd`) are asynchronous. The event-loop delay is sampled at 200 ms resolution: by the runtime's histogram where it measures
   whole timer intervals, else by a timer-drift sampler (§app.server-runtime/quirks).
 - **Measured cost:** at 131 processes, an average tick of **3.6–4.0 ms**, and the whole server
-  at **~0.12% ± 0.03 of one core** over an idle baseline, across 6 runs. The tick stays at 5s; if
+  at **~0.12% ± 0.03 of one core** over an idle baseline, across 6 runs. Own memory (the `statm`
+  read) adds about **0.3 ms a tick at 180 processes** (≈2 µs a process, fewer for idle ones),
+  about 0.007% of one core: over the real `/proc`, 6 interleaved runs against the code before it
+  moved the average tick from 2.8–4.1 ms to 3.8–4.3 ms at 107–197 processes on a loaded host. The tick stays at 5s; if
   the cost ever has to fall, a 10s tick is the lever, before anything else is cut. The snapshot
   reports the sampler's own cost (`sampler.lastTickMs`, `avgTickMs`), and the screen shows it.
 - **Client:** no polling while the modal is closed; no new dependency anywhere.

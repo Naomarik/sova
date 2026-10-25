@@ -1,8 +1,8 @@
 import type { Hono } from "hono";
 import { agentRoot } from "./state-root";
-// The claude-code extension's login standing (node built-ins only). See CLAUDE.md.
+// The claude-code extension's login standing (node built-ins only). See agents/extensions/claude-code/overview.md.
 import { defaultClaudeDir, loginDir, readAccountsState, readiness } from "../pi-config/extensions/claude-code/accounts.ts";
-import { heldChat } from "./chat-manager";
+import { chatHandle } from "./chat-handle";
 import { chatClaudeLogin, loginName } from "./claude-login-state";
 import { briefOverseer, countStarted, freeRunSlots } from "./overseer";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
@@ -14,10 +14,16 @@ import { DEFAULT_TICK_MS, ScheduleKeeper, scheduleKeeper, scheduleRunsFile, sche
 import { readSeen } from "./seen";
 import { writeAutoTitle } from "./session-titles";
 import { listSessions } from "./sessions-index";
+import { sessionFeed } from "./session-feed";
 import { BOARD_EVERY_MS, BoardSource, mergeBoardFile, rowsIn } from "./merge-board";
 import { readinessCovers, readinessIdle, readinessReading } from "./merge-readiness";
 import type { HEntry } from "../shared/harness";
 import { readBranch } from "./harness/pi/reader";
+import { configureAutomationSession, createAutomationSession } from "./automation-session";
+import { hostIdentity } from "./org-holder";
+import { playbookPayload } from "./playbook-payload";
+import { getSessionSummary } from "./sessions-index";
+import { readAutomations } from "./automation-files";
 
 /**
  * The playbook schedules' keeper, wired to the real server (§chat/schedules), and their routes.
@@ -28,6 +34,8 @@ import { readBranch } from "./harness/pi/reader";
  */
 
 const DISCOVER_MS = 5 * 60_000;
+/** The feed's clean list while windows hold it (no change since, under a minute old), else a fresh one. */
+const feedOrList = () => sessionFeed()?.cleanList() ?? listSessions();
 
 type AppRequest = (path: string, init?: RequestInit) => Response | Promise<Response>;
 
@@ -68,10 +76,19 @@ export async function lastTurn(path: string): Promise<{ failed: boolean; at: num
   return null;
 }
 
+/** The playbook block for a session (§chat.schedules/delivery): its held branch, else its file. */
+async function payloadFor(path: string | null, bundle: { id: string; dir: string; entry: string }) {
+  if (!path) return playbookPayload(bundle, null);
+  const held = chatHandle(path);
+  const branch = held ? await held.branch() : await readBranch(path);
+  const cwd = held?.mirror.cwd || (await getSessionSummary(path))?.cwd || bundle.dir;
+  return playbookPayload(bundle, { branch, cwd });
+}
+
 /** Held and running a turn, or holding a queued message. */
 function heldBusy(path: string): boolean {
-  const chat = heldChat(path);
-  return !!chat && (chat.harness.isRunning() || chat.queue.size > 0 || chat.harness.queue.hasQueued());
+  const chat = chatHandle(path);
+  return !!chat && (chat.mirror.running || chat.mirror.pendingSends);
 }
 
 /**
@@ -84,7 +101,7 @@ export function startScheduleKeeper(request: AppRequest): ScheduleKeeper {
   const speed = Math.max(1, Number(process.env.SOVA_SCHEDULE_SPEED) || 1);
   const t0 = Date.now();
   const board = new BoardSource({
-    list: () => listSessions(),
+    list: feedOrList,
     idle: readinessIdle,
     inputs: { reading: readinessReading, covers: readinessCovers, queued: heldBusy },
     file: mergeBoardFile(),
@@ -98,6 +115,11 @@ export function startScheduleKeeper(request: AppRequest): ScheduleKeeper {
     lateAfterMs: Math.max(60_000, 2 * tickMs * speed),
     readPlaybook: readProjectPlaybook,
     findProfile: (id, root) => findProfile(id, root),
+    automations: readAutomations,
+    createForAutomation: (root, a, text, title) => createAutomationSession(request, root, a, text, title),
+    configure: configureAutomationSession,
+    payload: payloadFor,
+    hostId: () => hostIdentity().id,
     sessions: () => listSessions(),
     busy: heldBusy,
     freeSlots: freeRunSlots,
@@ -128,7 +150,7 @@ export function startScheduleKeeper(request: AppRequest): ScheduleKeeper {
   setScheduleKeeper(keeper);
   const tick = () => void keeper.tick().catch((err) => console.warn("[schedules] tick failed:", err instanceof Error ? err.message : String(err)));
   const discover = async () => {
-    const cwds = new Set((await listSessions()).filter((s) => !s.archived).map((s) => s.cwd));
+    const cwds = new Set((await feedOrList()).filter((s) => !s.archived).map((s) => s.cwd));
     const roots: string[] = [];
     for (const cwd of cwds) {
       const root = await projectRootOf(cwd).catch(() => null);
@@ -157,28 +179,36 @@ export function registerScheduleRoutes(app: Hono): void {
     const catalog = await listPlaybooks(cwd);
     const keeper = scheduleKeeper();
     if (!keeper || catalog.project.state !== "ok" || !cwd) return c.json(catalog);
-    return c.json(await keeper.decorate(catalog, await projectRootOf(cwd)));
+    return c.json(await keeper.decorate(catalog, await projectRootOf(cwd)).catch(() => catalog));
   });
-  app.get("/api/schedules", async (c) => c.json({ schedules: (await scheduleKeeper()?.list()) ?? [] }, 200, { "Cache-Control": "no-store" }));
+  app.get("/api/schedules", async (c) => {
+    try {
+      return c.json({ schedules: (await scheduleKeeper()?.list()) ?? [] }, 200, { "Cache-Control": "no-store" });
+    } catch (err) {
+      // A store that can't be read is refused, never shown as empty (§chat.schedules/store).
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 503);
+    }
+  });
   // Approve: the user's click only, never the Overseer (§chat.schedules/approval).
   app.post("/api/schedules/approve", async (c) => {
     if (overseerSender(c.req.header(OVERSEER_SENDER_HEADER))) return c.json({ error: "Only the user approves a schedule, in Sova." }, 403);
-    const body = (await c.req.json().catch(() => null)) as { cwd?: unknown; playbook?: unknown; pin?: unknown } | null;
+    const body = (await c.req.json().catch(() => null)) as { cwd?: unknown; playbook?: unknown; automation?: unknown; pin?: unknown } | null;
     const cwd = str(body?.cwd);
     const playbook = str(body?.playbook);
+    const automation = str(body?.automation);
     const pin = str(body?.pin);
-    if (!cwd || !playbook || !pin) return c.json({ error: "Expected {cwd, playbook, pin}" }, 400);
+    if (!cwd || !(playbook || automation) || !pin) return c.json({ error: "Expected {cwd, playbook, pin} or {cwd, automation, pin}" }, 400);
     const root = await projectRootOf(cwd);
     const keeper = scheduleKeeper();
     if (!root || !keeper) return c.json({ error: `${cwd} is not a local project.` }, 404);
-    const r = await keeper.approve(root, playbook, pin);
+    const r = await keeper.approve(root, automation ? { automation } : { playbook }, pin).catch((err: unknown) => ({ ok: false as const, status: 409 as const, error: err instanceof Error ? err.message : String(err) }));
     return r.ok ? c.json(r.schedule) : c.json({ error: r.error }, r.status);
   });
   app.post("/api/schedules/revoke", async (c) => {
     const body = (await c.req.json().catch(() => null)) as { id?: unknown } | null;
     const id = str(body?.id);
     if (!id) return c.json({ error: "Expected {id}" }, 400);
-    const r = (await scheduleKeeper()?.revoke(id)) ?? { ok: false as const, status: 404 as const, error: `No schedule ${id}.` };
+    const r = (await scheduleKeeper()?.revoke(id).catch((err: unknown) => ({ ok: false as const, status: 409 as const, error: err instanceof Error ? err.message : String(err) }))) ?? { ok: false as const, status: 404 as const, error: `No schedule ${id}.` };
     return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);
   });
 }

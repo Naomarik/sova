@@ -9,7 +9,7 @@ The install script is safe to pipe from `curl`, needs no `sudo`, and installs no
 
 ## What you need
 
-- macOS, or Linux on x64 or arm64 (glibc or musl). Tested on Debian, Fedora and Alpine.
+- macOS on Apple silicon (Intel Macs aren't supported), or Linux on x64 or arm64 (glibc or musl). Tested on Debian, Fedora and Alpine.
 - bash (Alpine has none until you `apk add bash`)
 - Git
 - Node.js 22.19 or later
@@ -17,22 +17,23 @@ The install script is safe to pipe from `curl`, needs no `sudo`, and installs no
 - curl
 - unzip or python3
 
-The server runs on Bun. The installer downloads the Bun version Sova pins into Sova's own folder and checks it against a recorded checksum. It doesn't install a version manager or edit your shell profile.
+The server runs on Bun, and so does every chat and worker, each in a process of its own. The installer downloads the Bun version Sova pins into Sova's own folder and checks it against a recorded checksum; if it can't, it stops and changes nothing. It doesn't install a version manager or edit your shell profile.
 
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/install.sh | bash
 ```
 
-Until the first release is tagged, this installs Sova's `master` branch, which changes from day to day; running it again updates to master's latest commit.
+This installs Sova's newest stable release (the `stable` tag, which each release moves to itself); running it again updates to the newest stable release then.
 
-The whole script is one function that runs only after bash has read its last line, so a download cut short runs nothing. To install another tag, branch or commit, end the command with `| SOVA_REF=<ref> bash` instead; one that doesn't exist stops it before it changes anything. It builds Sova in a staging folder and only replaces your install once the build has succeeded; if anything fails, the previous install stays.
+The whole script is one function that runs only after bash has read its last line, so a download cut short runs nothing. To install another tag, branch or commit, end the command with `| SOVA_REF=<ref> bash` instead (`SOVA_REF=v0.8.0` stays on that release, `SOVA_REF=master` follows the latest commit); one that doesn't exist stops it before it changes anything. It builds Sova in a staging folder and only replaces your install once the build has succeeded; if anything fails, the previous install stays.
 
 What it puts on your machine:
 
 - **Sova itself** in `~/.local/share/sova`, with its Bun inside it.
 - **A launcher**, `~/.local/bin/sova`.
+- **Sova in your app launcher**, with its icon: `~/.local/share/applications/sova.desktop` on Linux, `~/Applications/Sova.app` on macOS. It's written on every run, and a file of the same name the installer didn't write stops it before it changes anything (`--no-app-entry` leaves the entry out).
 - **Sova's pi extensions**, linked one by one into `~/.pi/agent/extensions/` (or your `$PI_CODING_AGENT_DIR`). They're links, not copies, so an update brings them along. Anything already there that isn't Sova's own link is left alone, and the installer tells you which extension it skipped.
 - **A login service**, only if you say yes.
 
@@ -40,26 +41,27 @@ It writes none of pi's configuration: no `settings.json`, `models.json`, `auth.j
 
 ## Start it and open it
 
-```sh
-sova
-```
-
-Keep it running while you use the app; `Ctrl+C` stops it. Then, in another terminal:
+Click **Sova** in your app launcher, or run:
 
 ```sh
 sova open
 ```
 
-That opens your browser at Sova, already signed in. Sessions you already have in `~/.pi/agent` show up right away.
+Either one starts the server in the background if it isn't running (through the login service, if you installed one), waits for it, and opens Sova already signed in, in a window of its own with no tabs or address bar. Sessions you already have in `~/.pi/agent` show up right away. The server keeps running after you close the window.
+
+The window is Chrome, Chromium, Brave, Edge, Vivaldi or Helium (your default browser if it's one of them), with a browser profile kept for Sova alone: `~/.config/sova-browser` on Linux, `~/Library/Application Support/sova-browser` on macOS. Without any of them, Sova opens as a tab of your default browser instead, and the installer tells you so. A browser installed only as a Flatpak isn't found.
+
+To run the server in a terminal yourself, run `sova`; `Ctrl+C` stops it.
 
 | Command | Does |
 |---|---|
 | `sova` | Runs the server, on Bun. |
-| `sova --node` | Runs the server on Node instead. |
-| `sova open` | Opens the app in your browser, signed in. |
+| `sova --node` | Runs the server on Node instead, with no chats or workers: they need Bun. |
+| `sova open` | Starts the server if needed, then opens the app in its own window, signed in. |
+| `sova app` | The same as `sova open`; what the app launcher's Sova runs. |
 | `sova token` | Prints this install's access token. |
 
-`sova open` and `sova token` don't start the server. Before the server has run once there's no token yet, and both tell you to start it first. On a machine with no browser opener, such as a server you reach over SSH, `sova open` says so; open the page yourself and paste the token from `sova token`.
+A server `sova open` starts writes its output to `~/.pi/agent/sova/app-server.log`. If it doesn't answer within 20 seconds, you get a notification naming that log, and nothing opens. `sova token` never starts the server; before it has run once there's no token yet, and it tells you to start it first. On a machine with no browser opener, such as a server you reach over SSH, `sova open` says so; open the page yourself and paste the token from `sova token`.
 
 ## The access token
 
@@ -72,7 +74,7 @@ There's no account, password, or expiry: anyone with the token has the same acce
 Pass options to the script after `bash -s --`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash -s -- --service
+curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/install.sh | bash -s -- --service
 ```
 
 | Option | Does |
@@ -81,6 +83,7 @@ curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/instal
 | `--no-service` | Doesn't install it, and doesn't ask. |
 | `--port <n>` | The port `sova` and the login service run Sova on. 4800 by default. |
 | `--no-extensions` | Links no pi extensions (links already there stay). |
+| `--no-app-entry` | Adds no Sova to your app launcher (an entry already there stays). `SOVA_NO_APP_ENTRY=1` does the same. |
 | `--dir <path>` | Installs Sova there instead of `~/.local/share/sova`. |
 | `--bin <path>` | Puts the launcher there instead of `~/.local/bin`. |
 | `--reinstall` | Rebuilds even when the install is already up to date. |
@@ -89,15 +92,17 @@ curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/instal
 
 With your yes, or `--service`, the installer adds a per-user service that starts Sova when you log in and restarts it if it exits: a launchd agent on macOS, a systemd user unit on Linux. Neither needs `sudo`. On macOS its output goes to `~/Library/Logs/sova.log`; on Linux, to the journal.
 
-With neither option it asks, defaulting to no. With no terminal to ask on, it installs none and says how to add one. If something already listens on the port, such as a `sova` you started by hand, it installs the service without starting it, and says so.
+With neither option it asks, defaulting to no. With no terminal to ask on, it installs none and says how to add one. A service it installed before is kept and updated without asking, unless you pass `--no-service`, which leaves it as it is. If something already listens on the port, such as a `sova` you started by hand, it installs the service without starting it, and says so.
 
 The service restarts Sova whenever it exits, but a stop you ask for stays stopped, and a stop gives Sova up to 90 seconds (60 on macOS) to let running agents finish. On Linux it stops at logout unless lingering is on (`loginctl enable-linger`).
 
-It needs launchd or a systemd user manager. In a container or on another machine without `systemctl`, `--service` stops with an error; run `sova` yourself instead. Where `systemctl` exists but no user manager runs (a container, an SSH login without lingering), it writes the unit and prints the command to start it later.
+It needs launchd or systemd. Where there's neither (a container, say), the installer doesn't ask and installs none; run `sova` yourself instead. `--service` there stops the install before it changes anything. Where `systemctl` exists but no systemd user manager is running (no login session, say), the installer writes the unit but doesn't enable or start it, and its closing message gives the command to start it: `systemctl --user enable --now sova.service`. To remove such a unit, see the note under Remove it.
 
 ## Run it again
 
-Running the install command again updates to master's latest commit (or the latest of the `SOVA_REF` you set); pass the same options as before, since a run without `--port` goes back to 4800. Running it with the same inputs changes nothing. An install already at the requested version isn't rebuilt (`--reinstall` rebuilds it anyway), files are rewritten only when they'd change, and a service is reloaded only when its definition changed and restarted only when the code did. A second copy is never started.
+Running the install command again updates to the newest stable release (or the latest of the `SOVA_REF` you set); pass the same options as before, since a run without `--port` goes back to 4800 and a run without `--no-app-entry` writes the app entry. Running it with the same inputs changes nothing. An install already at the requested version isn't rebuilt (`--reinstall` rebuilds it anyway), files are rewritten only when they'd change, and a service is reloaded only when its definition changed and restarted only when the code did. A second copy is never started.
+
+Once Sova runs, it can also update itself: the **Updates · this machine** section at the bottom of Settings → General checks for a newer stable release (or the branch you choose there) and upgrades when you say so, or by itself if you turn on Upgrade automatically. The version that runs keeps running until the new one answers; if it doesn't start within a minute, the previous one is put back. See [Updates](/docs/updates/).
 
 ## Remove it
 
@@ -122,6 +127,19 @@ Then remove the extension links (use your `$PI_CODING_AGENT_DIR` in place of `~/
 ```sh
 find ~/.pi/agent/extensions -maxdepth 1 -lname "$HOME/.local/share/sova/*" -delete
 rm -rf ~/.local/share/sova ~/.local/bin/sova
+```
+
+Then the app entry and the browser profile its window uses. On Linux:
+
+```sh
+rm -f ~/.local/share/applications/sova.desktop ~/.local/share/icons/hicolor/512x512/apps/sova.png
+rm -rf ~/.config/sova-browser
+```
+
+On macOS:
+
+```sh
+rm -rf ~/Applications/Sova.app ~/Library/Application\ Support/sova-browser
 ```
 
 Your pi sessions and credentials, and Sova's own state in `~/.pi/agent/sova/`, stay. So do pnpm's package store and cache, which other projects may share. If nothing else on the machine uses pnpm, you can remove them too (on Linux):

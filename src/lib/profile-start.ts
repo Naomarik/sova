@@ -4,9 +4,9 @@ import { startProfileSession } from "./api";
 import { toast } from "./ui-state";
 
 /**
- * Run / Start / Run Again (§app.session-list/profile-shelf): a new session in `cwd` with the profile
- * picked, opened on its empty screen, where the picker (and a linked playbook's card) show it.
- * Nothing is sent. The shelf and the head chip share this one path.
+ * Run Again (§chat.profiles/after-first-message): a new session in `cwd` with the profile picked,
+ * opened on its empty screen, where the picker (and a linked playbook's card) show it. Nothing is
+ * sent.
  */
 
 /** What opens a session made here (App's adopt: route, list refresh, composer focus). */

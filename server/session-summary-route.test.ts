@@ -14,6 +14,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 const sessionsDir = join(agentDir, "sessions", "--tmp-summary--");
 mkdirSync(sessionsDir, { recursive: true });
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { buildApp } = await import("./app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
 // The Overseer's tools call the routes in-process, wired as server/index.ts wires them.

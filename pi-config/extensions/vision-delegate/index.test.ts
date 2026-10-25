@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import visionDelegate from "./index.ts";
 import { SETTINGS_FILE } from "./settings.ts";
@@ -9,7 +9,7 @@ import { SETTINGS_FILE } from "./settings.ts";
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 
 /** Wires the extension against a fake registry and a throwaway agent dir. */
-function harness(options: { vision?: boolean; fallbacks?: string[]; complete?: () => Promise<any>; activeTools?: string[] } = {}) {
+function harness(options: { vision?: boolean; fallbacks?: string[]; complete?: () => Promise<any>; activeTools?: string[]; extraModels?: any[] } = {}) {
 	const agentDir = mkdtempSync(join(tmpdir(), "vision-agent-"));
 	writeFileSync(join(agentDir, SETTINGS_FILE), JSON.stringify({ fallbacks: options.fallbacks ?? ["seer/eye"], contextChars: 200 }));
 	const tools = new Map<string, any>();
@@ -20,6 +20,7 @@ function harness(options: { vision?: boolean; fallbacks?: string[]; complete?: (
 	const catalog = [
 		{ provider: "seer", id: "eye", name: "Eye", input: ["text", "image"] },
 		{ provider: "blind", id: "ear", name: "Ear", input: ["text"] },
+		...(options.extraModels ?? []),
 	];
 	const ctx: any = {
 		cwd: agentDir,
@@ -72,6 +73,25 @@ test("the tool sends the image plus conversation context and attributes the answ
 	assert.equal(image.mimeType, "image/png");
 	assert.equal(image.data, PNG.toString("base64"));
 	assert.equal(request.opts.cacheRetention, "none");
+});
+
+test("the usage cache is the active agent dir's, never ~/.pi/agent's: an exhausted provider there is skipped", async () => {
+	const h = harness({ fallbacks: ["zai/glm-v", "seer/eye"], extraModels: [{ provider: "zai", id: "glm-v", name: "GLM-V", input: ["text", "image"] }] });
+	const exhausted = { zai: { state: "ok", fiveHour: { pct: 100 } } };
+	mkdirSync(join(h.agentDir, "cache"), { recursive: true });
+	writeFileSync(join(h.agentDir, "cache", "usage-status.json"), JSON.stringify(exhausted));
+	const homeCache = join(homedir(), ".pi", "agent", "cache", "usage-status.json");
+	const hadHomeCache = existsSync(homeCache);
+	if (!hadHomeCache) {
+		mkdirSync(join(homeCache, ".."), { recursive: true });
+		writeFileSync(homeCache, JSON.stringify({ zai: { state: "ok", fiveHour: { pct: 0 } } }));
+	}
+	try {
+		const result = await h.call({ path: h.image(), question: "what is this?" });
+		assert.equal(result.details.model, "seer/eye");
+	} finally {
+		if (!hadHomeCache) rmSync(homeCache, { force: true });
+	}
 });
 
 test("relative paths resolve against the working directory", async () => {

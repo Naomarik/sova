@@ -8,9 +8,9 @@ import type { CommitNowOutcome, OrgDetail, OrgNeedsYou, OrgsInfo, PersonInput } 
 import { attentionChanged } from "./attention-memo";
 import { unroutedConflicts } from "./decisions";
 import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, handoffTo, keepLink, keptLinks, linkTimes, liveLinkCount, nameOf, namesOf, offerTo, revokeCurrent, rotateLink, sessionPathOf, setAbilities, setHiddenFromOwner, takeBack, withdrawOffer } from "./baton";
-import { readBatonSettings, writeBatonSettings } from "./baton-settings";
+import { readBatonSettings } from "./baton-settings";
 import { sessionSeesImages } from "./baton-images";
-import { BusyError } from "./chat-manager";
+import { BusyError } from "./chat-handle";
 import {
   addPerson,
   addProject,
@@ -60,11 +60,17 @@ import { findLink, linksOfOrg, revokePersonLinks } from "./baton-links";
 import { lastVisits } from "./visits";
 import type { OwnerLinkResult } from "../shared/owner";
 import { ownerLinkFor, ownerLinkNeeds, ownerPageInfo, revokeOwnerLinks, setOwner } from "./owner";
+import { featureChatOwnerFirst } from "./feature-chats";
 import { ownerView } from "./owner-page";
+import { orgRequests } from "./project-assistant-store";
+import { batonSettingsView, registerAssistantRoutes, saveBatonSettings } from "./project-assistant-routes";
+import { assistantPhoto, assistantView } from "./project-assistant";
 import { readUpdates, withdrawUpdate } from "./project-updates";
 import { setRemote } from "./workspace-git";
 import { actOrThrow, hostOf } from "./org-engine";
 import { registerOrgHistoryRoutes } from "./org-history-routes";
+import { mountTourPreviewRoutes } from "./tours/bindings-routes";
+import { mountTourDestinationRoutes } from "./tours/bindings-destination-routes";
 import { registerOrgHistoryAnnotationRoutes } from "./org-history-annotations";
 
 /**
@@ -104,7 +110,9 @@ export function batonInfo(row: BatonSession): BatonInfo {
         createdAt: last.createdAt,
       }
     : null;
+  const featureFirst = featureChatOwnerFirst(row.sessionId);
   return {
+    ...(featureFirst ? { featureChat: { first: featureFirst } } : {}),
     session: row,
     orgName: readOrgOrPlaceholder(row.orgId).name,
     projectName: readProjects(row.orgId).find((p) => p.id === row.projectId)?.name ?? "",
@@ -187,6 +195,8 @@ function waitingIn(orgId: string, dir: string, rows: readonly BatonSession[]): W
     // Acts waiting in a hold, one each as in Needs you (the same held-act items).
     w.needsYou.held = engineHeldActs(orgId).length;
     w.needsYou.proposals = readRoster(orgId).filter((p) => p.status === "proposed").length;
+    // The owner's requests with the team: the same items Needs you raises (only while the org has an owner).
+    w.needsYou.requests = readOrgOrPlaceholder(orgId).owner ? orgRequests(orgId).filter((r) => r.status === "with-team").length : 0;
     for (const project of readProjects(orgId)) {
       if (project.stakeholderCleared) w.needsYou.stakeholders = (w.needsYou.stakeholders ?? 0) + 1;
       const n = unroutedConflicts(orgId, project.id);
@@ -264,7 +274,19 @@ export async function orgPage(orgId: string): Promise<OrgDetail> {
     projectConflicts: w.projectConflicts,
     ...lastOpenedOf(orgId),
     ownerPage: ownerPageInfo(orgId),
+    ...ownerRequestsOf(orgId),
   };
+}
+
+/** The Requests tab's presence and count (§app.project-assistant/requests-tab): never fails the page. */
+function ownerRequestsOf(orgId: string): { ownerRequests?: { open: number; withTeam: number; total: number } } {
+  try {
+    const all = orgRequests(orgId);
+    const withTeam = all.filter((r) => r.status === "with-team").length;
+    return { ownerRequests: { open: withTeam + all.filter((r) => r.status === "started").length, withTeam, total: all.length } };
+  } catch {
+    return {};
+  }
 }
 
 /** The People cards' "Last opened" (§app.baton/visits): never fails the page. */
@@ -331,6 +353,8 @@ export function registerOrgRoutes(app: Hono<any>): void {
   // The org's History tab: its reads and Purge Reason…, on this listener only.
   registerOrgHistoryRoutes(app);
   registerOrgHistoryAnnotationRoutes(app);
+  // The Owner card's Project Assistant part (§app/project-assistant).
+  registerAssistantRoutes(app);
   app.get("/api/orgs", (c) => c.json(withOrgActivity(orgsInfo())));
   app.post(
     "/api/orgs",
@@ -637,12 +661,25 @@ export function registerOrgRoutes(app: Hono<any>): void {
       return c.json(await orgPage(id));
     }),
   );
+  mountTourPreviewRoutes(app);
+  mountTourDestinationRoutes(app);
   // Preview Owner Page: the same function the owner's link calls; no token, no visit.
   app.get(
     "/api/orgs/:id/owner/preview",
     handle(async (c) => {
       const project = c.req.query("project");
       const conversation = c.req.query("c");
+      // The Project Assistant's conversation as the owner sees it (§app.project-assistant/chat).
+      if (c.req.query("assistant") === "1") {
+        // One of the owner's photos in it, as Preview as shows them (§app.project-assistant/photos).
+        const img = c.req.query("img");
+        if (img !== undefined) {
+          const got = /^(?:0|[1-9][0-9]{0,4})$/.test(img) ? await assistantPhoto(p(c, "id"), Number(img)) : null;
+          if (!got || !/^image\/(?:jpeg|png|webp|gif)$/.test(got.mimeType)) throw new OrgError("No such photo.", 404);
+          return c.body(new Uint8Array(Buffer.from(got.data, "base64")), 200, { "Content-Type": got.mimeType, "Content-Security-Policy": "default-src 'none'; sandbox", "Cache-Control": "no-store" });
+        }
+        return c.json(await assistantView(p(c, "id")));
+      }
       return c.json(await ownerView(p(c, "id"), { ...(project !== undefined ? { project } : {}), ...(conversation !== undefined ? { conversation } : {}) }));
     }),
   );
@@ -687,14 +724,11 @@ export function registerOrgRoutes(app: Hono<any>): void {
       );
     }),
   );
-  app.get("/api/baton/settings", (c) => c.json(readBatonSettings()));
+  // The host's defaults, the Project Assistant's default model among them (§app.settings-dialog/organizations).
+  app.get("/api/baton/settings", (c) => c.json(batonSettingsView()));
   app.put(
     "/api/baton/settings",
-    handle(async (c) => {
-      const result = writeBatonSettings(await body(c));
-      if ("error" in result) throw new OrgError(result.error, 400);
-      return c.json(result);
-    }),
+    handle(async (c) => c.json(saveBatonSettings(await body(c)))),
   );
   // What it can do, the operator's change from the strip (§app.baton/abilities): from its next run.
   app.post(

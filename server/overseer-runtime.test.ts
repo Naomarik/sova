@@ -73,6 +73,7 @@ writeFileSync(
 mkdirSync(join(agentDir, "prompts"), { recursive: true });
 writeFileSync(join(agentDir, "prompts", "mk.md"), "---\ndescription: make a session\n---\nCreate one empty session titled $1.\n");
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { acquireChat, disposeAllChats, heldChat } = await import("./chat-manager");
 const { parseModeRequest } = await import("./mode-state");
 const { SessionManager } = await import("@earendil-works/pi-coding-agent");
@@ -83,10 +84,18 @@ const { getSessionSummary } = await import("./sessions-index");
 const overseer = await import("./overseer");
 const sessionPrompt = await import("./session-prompt");
 const sender_ = await import("./overseer-sender");
-const { DEFAULT_CAPS, defaultSettings, overseerTurnFile, readOverseerSettings, writeNotes, writeOverseerSettings } = await import("./overseer-store");
+const overseerStore = await import("./overseer-store");
+const { DEFAULT_CAPS, overseerActionsFile, overseerTurnFile, readOverseerSettings, writeNotes, writeOverseerSettings } = overseerStore;
+/** The Overseer's memory is on by default; this file's turns run it off (a summary
+    would spawn the summarizer, which the unit tier refuses), except where a test says otherwise. */
+const MEMORY_OFF = { on: false, type: "uniichat" as const, size: 128 };
+const defaultSettings = () => ({ ...overseerStore.defaultSettings(), memory: { ...MEMORY_OFF } });
+writeOverseerSettings(defaultSettings());
 const { OVERSEER_BRIEF_PREFIX } = await import("../shared/protocol");
+const { MEMORY_TOOLS } = await import("../shared/memory");
 const { addIdea, getIdea } = await import("./overseer-ideas");
-const { UNATTENDED_REFUSAL } = await import("./overseer-tools");
+const { UNATTENDED_REFUSAL, UNATTENDED_WRITE_REFUSAL } = await import("./overseer-tools");
+const { STATE_WRITE_REFUSAL } = await import("./overseer-deny");
 
 after(async () => {
   await disposeAllChats();
@@ -238,6 +247,18 @@ describe("per-turn caps follow the user's messages", () => {
   });
 });
 
+describe("a brief's key (§app.chat-processes/server-messages)", () => {
+  test("a retry of the brief not yet sent is the same message; once sent, the same blockers later are a new one", () => {
+    const { key, sent } = overseer.briefKeyForTest;
+    sent();
+    const first = key("d1", 1000);
+    assert.equal(key("d1", 21_000), first, "the next check retries the same brief");
+    assert.notEqual(key("d2", 21_000), first, "other blockers, another brief");
+    sent();
+    assert.notEqual(key("d1", 7_200_000), first, "the same blockers briefed again later: a new key, whatever the chat remembers");
+  });
+});
+
 describe("the running-at-once cap under parallel calls", () => {
   test("parallel creates each see the others' reservations: with a cap of 1, one passes", async () => {
     writeOverseerSettings({ ...defaultSettings(), caps: { ...DEFAULT_CAPS, createPerTurn: 10, promptsPerTurn: 10, concurrentSessions: 1 } });
@@ -286,6 +307,8 @@ describe("the composer's model switch writes back the level it clamped to", () =
 describe("turns the user did not start are read-only", () => {
   // Every tool, classified. A tool added later fails the first test until it is placed here.
   const ACTING: Record<string, Record<string, unknown>> = {
+    sova_draft_approve: { project: "any", session: "some-id" },
+    sova_draft_build: { project: "any", session: "some-id" },
     sova_create_session: { cwd: agentDir },
     sova_send: { session: "some-id", text: "hi" },
     sova_set_session: { session: "some-id", title: "t" },
@@ -327,7 +350,7 @@ describe("turns the user did not start are read-only", () => {
     sova_card: { ops: [{ op: "create", title: "Archive these?", options: [{ label: "Yes" }, { label: "No" }] }] },
     sova_navigate: { page: "usage" },
   };
-  const READS = ["sova_attention", "sova_list_sessions", "sova_session", "sova_alignment", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_subagent_profiles", "sova_list_folders", "sova_ideas", "sova_todos", "sova_links", "sova_public_links", "sova_orgs", "sova_org_person", "sova_projects"];
+  const READS = ["sova_attention", "sova_list_sessions", "sova_outstanding", "sova_search_sessions", "sova_session", "sova_alignment", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_subagent_profiles", "sova_list_folders", "sova_ideas", "sova_todos", "sova_links", "sova_public_links", "sova_orgs", "sova_org_person", "sova_projects", "spec_lookup", "sova_draft_specs"];
   /** Reads with a rule of their own: the organization's history only in a turn the operator started
 , refused with its own sentence otherwise, never the generic read-only one. */
   const OPERATOR_TURN_READS: Record<string, { params: Record<string, unknown>; refusal: string }> = {
@@ -1109,5 +1132,80 @@ describe("the id check after a run (§app.overseer/id-check)", () => {
     await userSends(chat, "thanks");
     assert.ok(entered.at(-1)!.attended, "the note never made the user's run read-only");
     assert.ok(JSON.stringify(contexts.slice(seen)).includes(`${typo} is no session here`));
+  });
+});
+
+describe("write and edit run only in a turn the user started (§app.overseer/tools)", () => {
+  const work = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-write-")));
+  after(() => rmSync(work, { recursive: true, force: true }));
+  /** What each tool the SDK ran answered, in order. */
+  function answers(chat: Chat): { list: string[]; off: () => void } {
+    const list: string[] = [];
+    const off = piSession(chat).subscribe((e) => {
+      if (e.type !== "tool_execution_end") return;
+      const r = (e as { result?: { content?: { type: string; text?: string }[] } }).result;
+      list.push((r?.content ?? []).map((c) => c.text ?? "").join(""));
+    });
+    return { list, off };
+  }
+  const writes = () =>
+    readFileSync(overseerActionsFile(), "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((a: { tool: string }) => a.tool === "write" || a.tool === "edit");
+
+  test("the user's turn writes, logged with its path and bytes; a brief's turn refuses; Sova's own state refuses in any turn", async () => {
+    writeOverseerSettings({ ...defaultSettings() });
+    const chat = await overseerChat();
+    const said = answers(chat);
+    const mine = join(work, ".sova", "automations", "merge-round.json");
+    modelCalls.push(() => ({ toolCall: { name: "write", arguments: { path: mine, content: "{\"when\":\"9:00\"}" } } }));
+    await userSends(chat, "write the automation");
+    await settled(chat);
+    assert.equal(readFileSync(mine, "utf8"), "{\"when\":\"9:00\"}");
+
+    const theirs = join(work, "from-a-brief.json");
+    modelCalls.push(() => ({ toolCall: { name: "write", arguments: { path: theirs, content: "x" } } }));
+    await chat.acceptPrompt(`${OVERSEER_BRIEF_PREFIX} fix the file`, undefined, "server").turn;
+    await settled(chat);
+    assert.equal(existsSync(theirs), false, "nothing written in a brief's turn");
+
+    const settings = join(agentDir, "sova", "overseer.json");
+    const before = readFileSync(settings, "utf8");
+    modelCalls.push(() => ({ toolCall: { name: "edit", arguments: { path: settings, edits: [{ oldText: "{", newText: "{\"caps\":{}," }] } } }));
+    await userSends(chat, "raise your own limits");
+    await settled(chat);
+    said.off();
+    assert.equal(readFileSync(settings, "utf8"), before, "its own settings are never written");
+
+    assert.deepEqual(said.list, [`Successfully wrote to ${mine}`, UNATTENDED_WRITE_REFUSAL, STATE_WRITE_REFUSAL]);
+    const logged = writes().slice(-3).map((a: { tool: string; args: unknown; outcome: string; error?: string }) => [a.tool, a.args, a.outcome, a.error ?? null]);
+    assert.deepEqual(logged, [
+      ["write", { path: mine, bytes: 15 }, "ok", null],
+      ["write", { path: theirs }, "refused", UNATTENDED_WRITE_REFUSAL],
+      ["edit", { path: settings }, "refused", STATE_WRITE_REFUSAL],
+    ]);
+    assert.doesNotMatch(JSON.stringify(writes()), /9:00/, "no content in the log");
+  });
+});
+
+describe("the Overseer's memory (§chat.memory/overseer)", () => {
+  test("its runtime runs the same memory engine as a chat's, bound to its own chat", async () => {
+    const chat = await overseerChat();
+    assert.equal(chat.memoryAvailable(), true, "the engine's recall tools are registered");
+    assert.ok(chat.memoryHost(), "the engine's host is the chat's own");
+  });
+
+  test("with no saved choice it is on, UniiChat at Settings' size (128 KB), whatever the chats' saved default; an explicit off stays off", async () => {
+    const { saveDefaultMemoryType } = await import("./memory/settings");
+    saveDefaultMemoryType("zoomable");
+    writeOverseerSettings(overseerStore.defaultSettings());
+    assert.equal(readOverseerSettings().memory, undefined, "no memory key");
+    const chat = await overseerChat();
+    assert.deepEqual(chat.memory.choice(), { on: true, type: "uniichat", size: 128 });
+    assert.equal(chat.memoryOffered(), false, "no mode-menu row");
+    chat.memorySwitched();
+    for (const t of MEMORY_TOOLS) assert.ok(piSession(chat).getActiveToolNames().includes(t), `${t} active`);
+    writeOverseerSettings(defaultSettings());
+    assert.deepEqual(chat.memory.choice(), { on: false, type: "uniichat", size: 128 }, "switched off: off");
+    chat.memorySwitched();
+    for (const t of MEMORY_TOOLS) assert.ok(!piSession(chat).getActiveToolNames().includes(t), `${t} gone`);
   });
 });

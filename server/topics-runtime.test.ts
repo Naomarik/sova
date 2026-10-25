@@ -23,6 +23,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { acquireChat, disposeAllChats, disposeHeldChat, onReceiverIdle, resolveRegenerate, TOPIC_DELIVERED_ENTRY } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { archiveSession, getSessionSummary, onSessionArchived } = await import("./sessions-index");
@@ -34,6 +35,7 @@ const { setTopicStore, topicStore, QUEUE_PUSH_DESCRIPTION, pushNote, namesTopic 
 const { setArchived } = await import("./archived-sessions");
 const { TopicStore, TOPIC_PENDING_CAP } = await import("./topic-store");
 const { TopicDelivery, receiverSpecial } = await import("./topic-delivery");
+const { acquireChatHandle, onChatEvent } = await import("./chat-handle");
 const { projectOverseerOfPath } = await import("./project-overseer-store");
 const { addWebSession } = await import("./web-sessions");
 const { markOwned } = await import("./write-guard");
@@ -155,11 +157,11 @@ const delivery = (waits: { debounceMs?: number; maxWaitMs?: number } = {}) => {
         return s ? { archived: s.archived, live: s.live, special: receiverSpecial(s, projectOverseerOfPath(path)) } : null;
       },
       acquire: async (path) => {
-        const chat = await acquireChat(path, true);
-        fakeRuns(chat);
-        return chat;
+        fakeRuns(await acquireChat(path, true));
+        return acquireChatHandle(path, true);
       },
       onIdle: onReceiverIdle,
+      onChatEvent,
       onArchived: onSessionArchived,
     },
     { debounceMs: 40, settleMs: 20, maxWaitMs: 120, ...waits, onDrain: (topic, outcome) => void log.push({ topic, outcome }) },

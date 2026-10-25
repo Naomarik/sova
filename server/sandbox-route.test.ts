@@ -24,6 +24,7 @@ process.on("exit", () => rmSync(cwd, { recursive: true, force: true }));
 mkdirSync(join(dir, "extensions"), { recursive: true });
 if (!absent) symlinkSync(resolve(here, "../pi-config/extensions/sandbox"), join(dir, "extensions", "sandbox"));
 process.env.PI_CODING_AGENT_DIR = dir;
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { buildApp } = await import("./app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
@@ -61,6 +62,13 @@ if (absent) {
     assert.equal((await post(join(dir, "sessions", "--x--", "nope.jsonl"), { on: true })).status, 404);
   });
 
+  /** Every sandbox state clients heard, in order. The server pushes the newest state once per stored
+      entry (server/sandbox-state.ts onSandboxAppend) and once more when the route's change settles
+      (applySandbox): Off and Subagents only are heard twice, On as "turning on", then the real state
+      twice. */
+  const heard = (sent: { type: string; on?: unknown; state?: unknown; starting?: unknown }[]) =>
+    sent.filter((m) => m.type === "sandbox").map((m) => `${String(m.state)}${m.starting ? " (starting)" : ""}`);
+
   test("present: attach says off, a flip reaches every client and the branch, and off again", async () => {
     const { path, chat, sent } = await openChat();
     // No entry yet: Subagents only, the default (§chat.sandbox/states).
@@ -73,8 +81,15 @@ if (absent) {
     // Whatever this machine can enforce (no policy file here: unavailable), it is on and says so.
     assert.ok(["full", "partial", "unavailable"].includes(body.sandbox.enforcement));
     assert.ok(sent.some((m) => m.type === "sandbox" && m.on));
-    const entries = piSession(chat).sessionManager.getBranch().filter((e) => e.type === "custom" && e.customType === "sandbox");
-    assert.equal(entries.length, 1);
+    // Turning On records a provisional On entry (reason "starting") before the confined tools exist,
+    // then the real state (§chat.sandbox/states "Turning on"): two entries, the real one newest.
+    const entries = piSession(chat).sessionManager.getBranch().filter((e) => e.type === "custom" && e.customType === "sandbox").map((e) => (e as { data: { on: boolean; enforcement?: string; reasons?: string[] } }).data);
+    assert.equal(entries.length, 2);
+    assert.deepEqual({ on: entries[0]!.on, enforcement: entries[0]!.enforcement, reasons: entries[0]!.reasons }, { on: true, enforcement: "unavailable", reasons: ["starting"] });
+    assert.equal(entries[1]!.on, true);
+    assert.notDeepEqual(entries[1]!.reasons, ["starting"], "the real state is newest");
+    // Clients hear "turning on" (the provisional entry), then the real state (its entry, then the settled change).
+    assert.deepEqual(heard(sent), ["on (starting)", "on", "on"]);
     // No transcript row for it: nothing was appended to the pane.
     assert.ok(!sent.some((m) => m.type === "append"));
 
@@ -86,7 +101,7 @@ if (absent) {
     assert.ok(sent.some((m) => m.type === "sandbox" && !m.on));
   });
 
-  test("three states: { state } sets Off, Subagents only and On, each an entry of its own, and every client hears it", async () => {
+  test("three states: { state } sets Off, Subagents only and On, each a real entry of its own (On after its provisional entry), and every client hears it", async () => {
     const { path, chat, sent } = await openChat();
     const entries = () => piSession(chat).sessionManager.getBranch().filter((e) => e.type === "custom" && e.customType === "sandbox").map((e) => (e as { data: Record<string, unknown> }).data);
     sent.length = 0;
@@ -100,11 +115,19 @@ if (absent) {
     assert.equal(entries().at(-1)?.workers, undefined);
     const on = (await (await post(path, { state: "on" })).json()) as { sandbox: { on: boolean; state: string } };
     assert.deepEqual([on.sandbox.on, on.sandbox.state], [true, "on"]);
-    assert.equal(entries().length, 3, "one entry per change");
+    // One real state per change; turning On also records its provisional entry first, never left
+    // newest (§chat.sandbox/states "Turning on"). A dropped provisional entry or a doubled change
+    // breaks this sequence.
+    assert.deepEqual(heard(sent), ["off", "off", "subagents", "subagents", "on (starting)", "on", "on"], "one push per stored entry plus one as each change settles, in order");
+    const shape = () => entries().map((e) => `${e.on ? "on" : e.workers === "off" ? "off" : "subagents"}${(e.reasons as string[] | undefined)?.[0] === "starting" ? " (starting)" : ""}`);
+    assert.deepEqual(shape(), ["off", "subagents", "on (starting)", "on"], "one real entry per change, On preceded by its provisional entry");
     // A body whose state and on disagree changes nothing.
     const bad = await post(path, { state: "off", on: true });
     assert.equal(bad.status, 400);
     assert.deepEqual(await bad.json(), { error: "state and on disagree" });
-    assert.equal(entries().length, 3);
+    assert.deepEqual(shape(), ["off", "subagents", "on (starting)", "on"]);
+    // Asking for On again while On records nothing new: no second provisional entry.
+    await post(path, { state: "on" });
+    assert.deepEqual(shape(), ["off", "subagents", "on (starting)", "on"], "a repeated On records nothing new");
   });
 }

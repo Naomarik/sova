@@ -4,7 +4,7 @@
 // refuses; a TUI-live session refuses whatever was recorded.
 // Throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -107,4 +107,24 @@ test("a TUI-live session is refused even when its file is recorded as ours", asy
   }));
   await assert.rejects(acquireChat(path), (err: unknown) => err instanceof BusyError && /open in another pi process/.test(String((err as Error).message)));
   await assert.rejects(acquireChat(path, true), BusyError, "force never helps against a TUI");
+});
+
+test("owned writes are recorded under a lock: a dead writer's lock is cleared, another process's record is kept", () => {
+  const owned = join(agentDir, "sova", "owned-writes.json");
+  const lock = `${owned}.lock`;
+  const a = session();
+  const b = session();
+  writeFileSync(a, "x\n");
+  writeFileSync(b, "y\n");
+  markOwnedStat(a, { size: 2, mtimeMs: 1 });
+  // A chat process recorded b meanwhile (the file changed under this process).
+  const now = JSON.parse(readFileSync(owned, "utf8"));
+  writeFileSync(owned, JSON.stringify({ ...now, [b]: { size: 2, mtimeMs: 2, at: Date.now() } }));
+  // …and died holding the lock: older than a record ever takes.
+  writeFileSync(lock, "");
+  utimesSync(lock, new Date(Date.now() - 60_000), new Date(Date.now() - 60_000));
+  markOwnedStat(a, { size: 3, mtimeMs: 3 });
+  const after = JSON.parse(readFileSync(owned, "utf8"));
+  assert.deepEqual([after[a].size, after[b].size], [3, 2], "both records kept");
+  assert.equal(existsSync(lock), false, "the lock is let go");
 });

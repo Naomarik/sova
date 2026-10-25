@@ -1,4 +1,4 @@
-import { batch, createEffect, createSignal, on, onCleanup, Show, type JSX } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, on, onCleanup, Show, type JSX } from "solid-js";
 import type { SessionSummary, TranscriptItem, WatchContext, WatchServerMessage } from "../../shared/protocol";
 import { fetchTranscriptRows, wsUrl } from "../lib/api";
 import { contextFromItems, contextStateFor } from "../lib/context";
@@ -7,16 +7,16 @@ import { landExplainJump } from "../lib/jump";
 import { newestOnly, newRows } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
 import { hostOf, sessionViewKey } from "../lib/mesh";
-import { cachedTranscript, cacheItems, cacheSpot, transcripts } from "../lib/transcript-cache";
+import { cachedTranscript, cacheItems, cacheSpot, keptOlder, transcripts } from "../lib/transcript-cache";
 import { copyText, hideThinking, hideTools, setSessionContext, toast } from "../lib/ui-state";
 import { usePaneAnnounce } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
-import type { WorkingSplit } from "../lib/workers";
+import type { WorkerTally, WorkingSplit } from "../lib/workers";
 import { Composer, type ComposerReason } from "./Composer";
-import { FlyoutSession } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { ChangesSession } from "./ChangesViewer";
-import { HistoryItems, type MessageActionsProvider, ThreadScroller, ToolSourceContext, TranscriptSkeleton } from "./Thread";
+import { HistoryItems, ThreadScroller, ToolSourceContext, TranscriptSkeleton } from "./Thread";
+import { type ReplyPlace, useReplyAdditions } from "../lib/reply-place";
 import type { MessageActionItem } from "./MessageActions";
 import {
   actionReason,
@@ -41,6 +41,8 @@ export function WatchView(props: {
   path: string;
   /** The session's id: what an "Open in Session" jump names when it linked by id. */
   sessionId?: string;
+  /** The session's folder (its header cwd): where a merge card's turn steps resolve paths. */
+  cwd?: string;
   author: string;
   /** A TUI is running this session, so tools without results may still be running. */
   streaming: boolean;
@@ -52,8 +54,11 @@ export function WatchView(props: {
   onAppend?(): void;
   /** Subagents working now (live record); the composer shows them as a status row. */
   workersWorking?: number;
-  /** Every subagent the session has, so that row survives all of them settling. */
+  /** The session's live subagents (before its insight lands, the list count), so that row
+      survives all of them settling. */
   workersTotal?: number;
+  /** Its workers, live and ended: the trigger's ended note. Null: not known yet. */
+  workersTally?: WorkerTally | null;
   /** How that count divides into team members and plain subagents; null: it can't be split. */
   workersSplit?: WorkingSplit | null;
   /** Makes that row a button that toggles the subagents pane. */
@@ -67,7 +72,7 @@ export function WatchView(props: {
   onCleanup(transcripts.show(cacheKey));
   const [items, setItems] = createSignal<TranscriptItem[] | null>(cached?.items ?? null);
   /** The rows above the list that it doesn't hold (lib/older-rows, as ChatView's). */
-  const olderRows = createOlderRows({ path: props.path, items, setItems, prefetch: props.prefetch });
+  const olderRows = createOlderRows({ path: props.path, items, setItems, kept: () => keptOlder(cached, items()), prefetch: props.prefetch });
   const { older, whole } = olderRows;
   createEffect(on([items, older], ([list, o]) => list && cacheItems(cacheKey, list, o)));
   /** The last snapshot's first row: rows that arrive above it are history, never "N new". */
@@ -129,7 +134,7 @@ export function WatchView(props: {
    * reason rather than disappearing — a control that vanishes in one view and exists in another
    * teaches nothing about why.
    */
-  const watchState = (wake = false, link = false, topic = false): ActionState => ({
+  const watchState = (wake = false, link = false, topic = false, tourNotice = false): ActionState => ({
     chat: false,
     live: props.streaming,
     streaming: false,
@@ -137,12 +142,16 @@ export function WatchView(props: {
     pending: false,
     paused: null,
     wake,
+    tourNotice,
     link,
     topic,
   });
 
-  const watchActions: MessageActionsProvider = {
-    items(strip) {
+  /** What extensions add under its replies: asked once when the view opens (a watch has no run
+      of its own to end; lib/reply-place). */
+  const additions = useReplyAdditions({ session: () => props.sessionId, local: createMemo(() => !hostOf(props.path)), running: () => false });
+  const watchActions: ReplyPlace = {
+    builtIns: [{ id: "sova.message-actions", items(strip) {
       return actionsFor(strip.role, { copyable: copyable(strip) }).map((kind): MessageActionItem => {
         switch (kind) {
           case "copy":
@@ -152,10 +161,12 @@ export function WatchView(props: {
             return { kind, reason: id ? null : SHARE_WAIT_REASON, run: () => void (id && (location.hash = shareHref(id, { host: hostOf(props.path), from: strip.entryId }))) };
           }
           default:
-            return { kind, reason: actionReason(kind, watchState(!!strip.fromWake, !!strip.fromLink, !!strip.fromTopic)), run: () => {} };
+            return { kind, reason: actionReason(kind, watchState(!!strip.fromWake, !!strip.fromLink, !!strip.fromTopic, !!strip.fromTourNotice)), run: () => {} };
         }
       });
-    },
+    } }],
+    added: additions.added,
+    runChip: additions.runChip,
   };
 
   const socket = createReconnectingSocket<WatchServerMessage>(newestOnly(wsUrl("/ws/watch", props.path)), {
@@ -236,7 +247,7 @@ export function WatchView(props: {
                 </div>
               }
             >
-              <ChangesSession.Provider value={{ get path() { return props.path; } }}>
+              <ChangesSession.Provider value={{ get path() { return props.path; }, get cwd() { return props.cwd; } }}>
               <ToolSourceContext.Provider value={{ kind: "pi", path: props.path }}>
               <HistoryItems
                 items={list()}
@@ -253,7 +264,6 @@ export function WatchView(props: {
           )}
         </Show>
       </ThreadScroller>
-      <FlyoutSession.Provider value={() => props.path}>
         <Composer
           path={props.path}
           readOnly={props.readOnly}
@@ -262,13 +272,13 @@ export function WatchView(props: {
           detail={null}
           workersWorking={props.workersWorking}
           workersTotal={props.workersTotal}
+          workersTally={props.workersTally}
           workersSplit={props.workersSplit}
           onShowWorkers={props.onShowWorkers}
           workersOpen={props.workersOpen}
           onSend={() => false}
           onAbort={() => {}}
         />
-      </FlyoutSession.Provider>
     </>
   );
 }

@@ -6,13 +6,13 @@
     [sova.statecharts.refit.feed-golden :as fg]
     [sova.statecharts.refit.feed-table :as ft]
     [sova.statecharts.registry :as registry]
-    [sova.statecharts.rules.levels :as lv]
+    [sova.statecharts.rules.powers :as pw]
     [sova.statecharts.engine.core :as core]))
 
 (def t0 1000000)
 (def op {:by "operator"})
 
-(defn- eng [] (core/new-engine registry/statecharts {:level-check lv/level-check :absorb-unknown true}))
+(defn- eng [] (core/new-engine registry/statecharts {:level-check pw/power-check :absorb-unknown true}))
 
 (defn- feed-of
   "The class of `sid`'s own step for `event` (sent with `payload`)."
@@ -105,5 +105,5 @@
         ks  (into (set (keys now)) (keys fg/golden))
         bad (for [k (sort ks) :when (not= (get now k ::none) (get fg/golden k ::none))]
               [k :now (get now k ::none) :golden (get fg/golden k ::none)])]
-    (is (= 492 (count fg/golden)))
+    (is (= 486 (count fg/golden)))
     (is (empty? bad) (str (count bad) " differ: " (pr-str (take 20 bad))))))

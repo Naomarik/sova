@@ -1,8 +1,10 @@
+import { powersView, type PowersView } from "../shared/powers";
+import type { ThinkingLevel } from "../shared/profiles";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { agentRoot } from "./state-root";
-import { toolCtx, toPiTool } from "./harness/pi/tools";
+import { fromPiToolDefinition } from "./harness/pi/tools";
 import { createSessionFile } from "./harness/pi/state";
 import { PROJECT_OVERSEER } from "./harness/state-kinds";
 import {
@@ -18,19 +20,22 @@ import {
   type CodingStartResult,
   type ItemCodeInput,
   type ItemCodeResult,
+  type CodingSession,
   type CodingWorktree,
   type CodingModeNow,
+  type ProjectWorktrees,
   type ProjectCodingMode,
   type ProjectOverseerInfo,
   type ProjectMessageResult,
   type ProjectOverseerMarkerData,
   type StartedSession,
 } from "../shared/project-overseer";
-import type { HarnessSession } from "../shared/harness";
 import type { OverseerState } from "../shared/protocol";
 import { noteBuildMerged } from "./build-merged";
-import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath } from "./build-loadout";
-import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, onAgentStarted, registerSpecialLoadout, type ChatSession, type SessionMarks } from "./chat-manager";
+import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, buildStartedBy, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath, type BuildRow } from "./build-loadout";
+import { acquireChatHandle, BusyError, chatHandle, closeChat, isSessionBusy, onAgentSettled, onAgentStarted, declOfTool, registerSpecialHost, serverToolCall, serveTools, type SessionMarks, specialComposersChanged } from "./chat-handle";
+import type { ChatStreamTrip } from "../shared/chat-runtime";
+import type { HEntry, ToolSpec } from "../shared/harness";
 import { shuttingDown } from "./wrapup-recovery";
 import { listModels } from "./models";
 import { workingSubagents } from "./live";
@@ -38,7 +43,8 @@ import { checkedCodingModeChoice, codingModeSwitch, describeCodingMode, hostDefa
 import { subagentProfilesInfo } from "./subagent-profiles";
 import { baseAbilities } from "./gathering-abilities";
 import { gitRootOf, readWorktree } from "./project-worktrees";
-import { hostOf, isOrgHostOpen, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
+import { readCodingPass } from "./project-coding-read";
+import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
 import { pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
 import { CARDS_NOTE_MESSAGE, cardsNote } from "../shared/overseer-card";
 import { cardsOnBranch, nowLine } from "./overseer-run-note";
@@ -48,18 +54,20 @@ import { sessionAttachmentsDir } from "./attachments";
 import { overseerFileTools } from "./overseer-file-tools";
 import { getIdea, promptToc, readManifest, readProse, updateIdea } from "./overseer-ideas";
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
-import { readNotes } from "./overseer-store";
+import { logAction, readNotes } from "./overseer-store";
 import { readTodos, updateTodo } from "./overseer-todos";
-import { UserTurns } from "./user-turns";
 import { canonicalPath } from "./paths";
+import { startableIn } from "./project-folder";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
-import { getSessionSummary, idOf, indexedSessionPaths, listSessions } from "./sessions-index";
+import { displayTitleOf, getSessionSummary, idOf, indexedSessionPaths, listSessions } from "./sessions-index";
 import { setArchived } from "./archived-sessions";
 import { actOrThrow, heldAt, holdByRef, holdRef, refusalError } from "./org-engine";
+import { MEMORY_TOOLS } from "../shared/memory";
 import { listPreviews, PreviewRefused } from "./preview-links";
 import { makePreview, previewViews, resolvePreview, sovaPorts, turnOffPreview as turnOffPreviewLink } from "./project-previews";
 import { shareFromAct } from "./project-services/share";
+import type { Caller } from "./project-services/engine";
 import { readRegistry } from "./project-services/store";
 import { previewAddress } from "./share/preview-address";
 import { heldActs, projectOfHold } from "./project-holds";
@@ -67,8 +75,8 @@ import type { ActResult } from "./org-host";
 import type { Envelope, LedgerCounts } from "./org-envelope";
 import { ledgerOf } from "./org-stamp";
 import { rowsOf } from "./transcript";
-import { readBranch } from "./harness/pi/reader";
-import { UnreadReplies } from "./unread-replies";
+import { joinedText, readBranch } from "./harness/pi/reader";
+import { projectOverseerUnread } from "./project-overseer-unread";
 import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
 import { markOwned } from "./write-guard";
@@ -101,15 +109,16 @@ import {
   projectEnvelope,
   projectHost,
   projectSid,
+  editProject,
   resumeOverseer,
   watchSid,
 } from "./projects/spaces";
 import {
   dayKey,
-  effectiveAutonomy,
   fitThinking,
   isPoId,
   patchPoSettings,
+  powersInForce,
   projectOf,
   projectOverseerOfPath,
   projectOverseerPaths,
@@ -120,7 +129,11 @@ import {
   writePoSettings,
   type ProjectOverseerPaths,
 } from "./project-overseer-store";
-import { PO_BUILTINS, projectOverseerTools, type PoToolHost } from "./project-overseer-tools";
+import { PO_BUILTINS, PO_UNATTENDED_WRITE_REFUSAL, powersLine, projectOverseerTools, type PoToolHost } from "./project-overseer-tools";
+import { settingsIndex } from "../shared/settings-reference";
+import { appendHistory, recordKept, setSettingsDeps } from "./project-settings";
+import type { SettingsBy, SettingsHistoryRow } from "../shared/project-settings";
+import { putOverseerMemorySwitch } from "./memory/routes";
 
 /**
  * The project overseer (§app/project-overseer): one special session per project. Like the
@@ -140,15 +153,17 @@ const PROMPT_FILE = join(import.meta.dirname, "project-overseer-prompt.md");
 
 interface Rt {
   projectId: string;
-  turns: UserTurns;
-  session: HarnessSession | null;
-  /** A look's message was just handed in: the run it starts is the look's (the watch hears `turn/started {look}`). */
-  lookStarting?: boolean;
-  /** The run id of the look whose message was just handed in, and of the look whose turn runs now: an act the
-      overseer makes in it names it (`lookRun`), so the history links it to that look. */
-  lookPending?: string;
+  /** The chat of its current conversation, once its runtime was built. */
+  chatId?: string;
+  /** Whether the run in progress answers a message the operator sent (UserTurns, in the chat). */
+  attended(): boolean;
+  /** The run id of the look whose turn runs now: an act the overseer makes in it names it (`lookRun`),
+      so the history links it to that look. */
   lookRun?: string;
 }
+/** A look's message names its run (`ChatSendInput.runTag`): the run it starts is the look's (the watch
+    hears `turn/started {look}`), with the look's run id after the prefix. */
+const LOOK_TAG = "look:";
 const rts = new Map<string, Rt>();
 /** The clock the watch loop, the counters and held items read (tests move it to another day). */
 let clock = (): number => Date.now();
@@ -156,11 +171,18 @@ export function setClockForTest(fn: (() => number) | null): void {
   clock = fn ?? (() => Date.now());
   setOrgClockForTest(fn);
 }
+/** The operator's turn as the chat tells it: a server-hosted tool reads it as its call carried it;
+    anything else reads the chat. A runtime not built yet is unattended (fail closed). */
+function attendedOf(rt: Rt): boolean {
+  const run = serverToolCall();
+  if (run && run.call.chatId === rt.chatId) return run.call.attended;
+  return (rt.chatId ? chatHandle(rt.chatId)?.mirror.attended : false) ?? false;
+}
 function rtOf(projectId: string): Rt {
   let rt = rts.get(projectId);
   if (!rt) {
-    rt = { projectId, turns: new UserTurns(), session: null };
-    rts.set(projectId, rt);
+    const made: Rt = { projectId, attended: () => attendedOf(made) };
+    rts.set(projectId, (rt = made));
   }
   return rt;
 }
@@ -263,12 +285,10 @@ export async function clearProjectOverseer(projectId: string): Promise<ProjectOv
   const st = readPoState(p);
   const oldPath = st ? await pathOfId(st.current) : null;
   if (oldPath) {
-    const chat = heldChat(oldPath);
-    if (chat?.harness.isRunning()) await drainQueueThenAbort(chat.harness, (m) => chat.broadcast(m), chat.queue).catch(() => {});
-    await disposeHeldChat(oldPath, "The project overseer was cleared. Opening the new conversation.");
+    const chat = chatHandle(oldPath);
+    if (chat?.mirror.running) await chat.drainAndAbort().catch(() => {});
+    await closeChat(oldPath, "The project overseer was cleared. Opening the new conversation.");
   }
-  const rt = rtOf(projectId);
-  rt.turns.reset();
   const made = createPoFile(projectId);
   await tellProjectStatechart(projectId, "overseer/clear", made.id);
   await dropHistory(droppedSince(st, readPoState(p)));
@@ -276,15 +296,6 @@ export async function clearProjectOverseer(projectId: string): Promise<ProjectOv
 }
 
 // ---- info ------------------------------------------------------------------------------------------
-
-/** Each project overseer's unread count, kept between polls (server/unread-replies). */
-const unread = new Map<string, UnreadReplies>();
-function unreadReplies(projectId: string, path: string, since: number | undefined): Promise<number> {
-  const key = projectId;
-  let counter = unread.get(key);
-  if (!counter) unread.set(key, (counter = new UnreadReplies()));
-  return counter.count(path, since);
-}
 
 function codingOf(projectId: string): { sessionId: string; path: string | null; running: boolean; createdAt: string; title?: string }[] {
   return readBuilds(projectId)
@@ -298,66 +309,126 @@ function codingOf(projectId: string): { sessionId: string; path: string | null; 
 /** A listing's title, or "" for a session nobody has written in yet (its derived "Untitled"). */
 const listedTitle = (t: string | undefined): string => (t && t !== "Untitled" ? t : "");
 
-/** Every coding session the project started (both kinds), with its worktree or why it runs in the root, newest first. */
-async function codingWorktrees(projectId: string, root: string): Promise<CodingWorktree[]> {
-  const out: CodingWorktree[] = [];
-  for (const b of readBuilds(projectId)) {
-    // A `later` build adopts the worktree its session made on this read too (one run in a terminal never tells Sova its turn ended).
-    const r = b.later && (await adoptWorktree(projectId, buildSid(projectId, b.sessionId), b.sessionId)) ? (readBuild(projectId, b.sessionId) ?? b) : b;
-    const path = r.path ?? null;
-    const common = {
-      sessionId: r.sessionId,
-      path,
-      // A title given here (a rename, Start coding session's) first; then the one it started with,
-      // which travels in the repo (another host has no file and no title store for it); then the
-      // listing's own (the first message, which ends with Sova's commit paragraph); none before the
-      // first message (New Coding Session), and the page says "Untitled coding session".
-      title: readSessionTitles()[r.sessionId] || r.title || (path ? listedTitle((await getSessionSummary(path).catch(() => null))?.title) : ""),
-      // A Project verbs run is listed by who really started it (its statechart's kind is neither of the two).
-      startedBy: r.onboard ? r.onboard.startedBy : r.kind === "coding" ? ("overseer" as const) : ("operator" as const),
-      ...(r.kind === "operator-coding" && r.via === "overseer" ? { via: "overseer" as const } : {}),
-      ...(r.onboard ? { playbook: true as const } : {}),
-      running: path ? isSessionBusy(path) : false,
-      workers: path ? workingSubagents(path) : 0,
-      createdAt: r.createdAt,
-    };
-    const row = await withWorktreePath(r, root);
-    if (!row) {
-      // Started in a root that can't have one.
-      out.push({ ...common, branch: null, ...(r.inRoot ? { inRoot: r.inRoot } : {}), ...(r.later ? { later: true as const } : {}), worktree: null, base: null, target: null, state: "root", merged: false, ahead: 0, dirty: false });
-      continue;
-    }
-    const w = await readWorktree(row.worktree, root);
-    const merged = w.branch && !w.error ? w.merged : w.merged || !!r.merged || !!r.branchDeleted;
-    // The session list's Builds read the same answer (build-merged.ts): a fresh one is shared.
-    noteBuildMerged(r.sessionId, merged);
-    // Git's facts reach the statechart (its tree and branch states) as the page reads them.
-    await probeBuild(projectId, buildSid(projectId, r.sessionId), r, w).catch(() => {});
-    out.push({
-      ...common,
-      branch: row.worktree.branch,
-      worktree: w.worktree,
-      base: row.worktree.base,
-      target: row.worktree.target,
-      state: r.removed ? "removed" : w.state,
-      // Git decides, on every read (a branch merged once may have new commits); the recorded merge,
-      // or removal with its branch (only ever a merged one), only when the branch is gone or git can't be read.
-      merged,
-      ...(!w.branch ? { branchGone: true } : {}),
-      ...(r.merged ? { mergedAt: r.merged.at } : {}),
-      ...(r.merged && w.branch && !w.error && !w.merged && w.unmerged > 0 ? { newSinceMerge: w.unmerged } : {}),
-      ...(r.removed ? { removedAt: r.removed } : {}),
-      ahead: w.ahead,
-      dirty: w.dirty,
-      ...(w.error ? { error: w.error } : {}),
-    });
-  }
-  return out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+/** One coding session as the project records it: no git (the page's first read, §app.project-overseer/coding-worktrees). */
+async function codingRow(r: BuildRow, titles: Record<string, string>): Promise<CodingSession> {
+  const path = r.path ?? null;
+  return {
+    sessionId: r.sessionId,
+    path,
+    // A title given here (a rename, Start coding session's) first; then the one it started with,
+    // which travels in the repo (another host has no file and no title store for it); then the
+    // listing's own (the first message, which ends with Sova's commit paragraph); none before the
+    // first message (New Coding Session), and the page says "Untitled coding session".
+    // The listing's title from its memoized summary (one stat), not a whole session row: this read is the page's fast one.
+    title: titles[r.sessionId] || r.title || (path ? listedTitle(await displayTitleOf(path).catch(() => undefined)) : ""),
+    startedBy: buildStartedBy(r),
+    ...(r.kind === "operator-coding" && r.via === "overseer" ? { via: "overseer" as const } : {}),
+    ...(r.onboard ? { playbook: true as const } : {}),
+    branch: r.worktree?.branch ?? null,
+    ...(r.inRoot ? { inRoot: r.inRoot } : {}),
+    ...(r.later && !r.worktree ? { later: true as const } : {}),
+    base: r.worktree?.base ?? null,
+    target: r.worktree?.target ?? null,
+    ...(r.merged ? { mergedAt: r.merged.at } : {}),
+    ...(r.removed ? { removedAt: r.removed } : {}),
+    running: path ? isSessionBusy(path) : false,
+    workers: path ? workingSubagents(path) : 0,
+    createdAt: r.createdAt,
+  };
 }
 
-/** The level in force now: paused, then a contributed ceiling, then the setting. */
-export function effectiveOf(projectId: string, settings: Pick<ProjectOverseerSettings, "autonomy"> = readPoSettings(projectOverseerPaths(projectId))): { autonomy: ProjectOverseerSettings["autonomy"]; reason?: string } {
-  return effectiveAutonomy(settings, ceilingOf(engineOrThrow(projectId), projectId), overseerPausedSince(projectId));
+const newestFirst = <T extends { createdAt: string }>(rows: T[]): T[] => rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+/** Every coding session the project started (both kinds), as recorded, newest first: no git. */
+async function codingSessions(projectId: string): Promise<CodingSession[]> {
+  const titles = readSessionTitles();
+  const out: CodingSession[] = [];
+  for (const r of readBuilds(projectId)) out.push(await codingRow(r, titles));
+  return newestFirst(out);
+}
+
+/** Git's reading of one worktree; tests stand in a slow one (the page's first read must never wait on it). */
+let worktreeReader: typeof readWorktree = readWorktree;
+export function setWorktreeReaderForTest(fn: typeof readWorktree | null): void {
+  worktreeReader = fn ?? readWorktree;
+}
+
+/**
+ * Every coding session the project started (both kinds), with its worktree or why it runs in the root, newest first:
+ * the page's second read. `later` builds adopt one at a time; the git reads run side by side (at most
+ * WORKTREE_READS_AT_ONCE), the repository's top read once; the statechart and the merged cache hear each reading one at a time.
+ */
+async function codingWorktrees(projectId: string, root: string, repo?: Awaited<ReturnType<typeof gitRootOf>>): Promise<CodingWorktree[]> {
+  const titles = readSessionTitles();
+  const top = (r => ("reason" in r ? root : r.top))(repo ?? (await gitRootOf(root)));
+  const out = await readCodingPass(readBuilds(projectId), {
+    // A `later` build adopts the worktree its session made on this read too (one run in a terminal never tells Sova its turn ended).
+    adopt: async (b) => (b.later && (await adoptWorktree(projectId, buildSid(projectId, b.sessionId), b.sessionId)) ? (readBuild(projectId, b.sessionId) ?? b) : b),
+    locate: (r) => withWorktreePath(r, root, top),
+    read: (row) => worktreeReader(row.worktree, root),
+    finish: async (r, row, w): Promise<CodingWorktree> => {
+      const common = await codingRow(r, titles);
+      if (!row || !w) {
+        // Started in a root that can't have one.
+        return { ...common, branch: null, worktree: null, base: null, target: null, state: "root", merged: false, ahead: 0, dirty: false };
+      }
+      const merged = w.branch && !w.error ? w.merged : w.merged || !!r.merged || !!r.branchDeleted;
+      // The session list's Builds read the same answer (build-merged.ts): a fresh one is shared.
+      noteBuildMerged(r.sessionId, merged);
+      // Git's facts reach the statechart (its tree and branch states) as the page reads them.
+      await probeBuild(projectId, buildSid(projectId, r.sessionId), r, w).catch(() => {});
+      return {
+        ...common,
+        branch: row.worktree.branch,
+        worktree: w.worktree,
+        base: row.worktree.base,
+        target: row.worktree.target,
+        state: r.removed ? "removed" : w.state,
+        // Git decides, on every read (a branch merged once may have new commits); the recorded merge,
+        // or removal with its branch (only ever a merged one), only when the branch is gone or git can't be read.
+        merged,
+        ...(!w.branch ? { branchGone: true } : {}),
+        ...(r.merged && w.branch && !w.error && !w.merged && w.unmerged > 0 ? { newSinceMerge: w.unmerged } : {}),
+        ahead: w.ahead,
+        dirty: w.dirty,
+        ...(w.error ? { error: w.error } : {}),
+      };
+    },
+  });
+  return newestFirst(out);
+}
+
+/** GET …/overseer/worktrees: the coding sessions with git's facts, and whether the root can have worktrees. */
+export async function projectWorktrees(projectId: string): Promise<ProjectWorktrees> {
+  const project = projectOf(projectId);
+  engineOrThrow(projectId);
+  const repo = await gitRootOf(project.root);
+  const sessions = await codingWorktrees(projectId, project.root, repo);
+  return { available: !("reason" in repo), ...("reason" in repo ? { reason: repo.reason } : {}), sessions };
+}
+
+/** The powers in force now (both columns after the brake, the brake), and the never-looser level of the overseer's
+    column in force with the brake's reason (older readers). */
+export function powersOf(projectId: string, settings: Pick<ProjectOverseerSettings, "powers"> = readPoSettings(projectOverseerPaths(projectId))): ReturnType<typeof powersInForce> {
+  return powersInForce(settings.powers, ceilingOf(engineOrThrow(projectId), projectId), overseerPausedSince(projectId));
+}
+
+/** The level in force now (older readers, one release): the never-looser level of the overseer's column after the brake. */
+export function effectiveOf(projectId: string, settings: Pick<ProjectOverseerSettings, "powers"> = readPoSettings(projectOverseerPaths(projectId))): { autonomy: ProjectOverseerSettings["autonomy"]; reason?: string } {
+  const f = powersOf(projectId, settings);
+  return { autonomy: f.autonomy, ...(f.reason ? { reason: f.reason } : {}) };
+}
+
+/** GET's powers view: both columns, after the brake, the note, the models per kind of work. */
+export function powersViewOf(projectId: string, settings: ProjectOverseerSettings): PowersView {
+  const f = powersOf(projectId, settings);
+  const pick = (model: string | null, thinking: string | null) => (model ? { model, ...(thinking ? { thinking: thinking as ThinkingLevel } : {}) } : null);
+  const am = settings.powers.assistantModels ?? {};
+  return powersView(settings.powers, f.brake, isPlaced(projectId), {
+    overseer: { reply: pick(settings.model, settings.thinking), coding: pick(settings.codingModel, settings.codingThinking), gathering: pick(settings.gatheringModel, settings.gatheringThinking) },
+    assistant: am,
+    assistantSource: { reply: "org", coding: am.coding ? "project" : "org", gathering: am.gathering ? "project" : "org" },
+  });
 }
 
 export async function projectOverseerInfo(projectId: string): Promise<ProjectOverseerInfo> {
@@ -377,18 +448,28 @@ export async function projectOverseerInfo(projectId: string): Promise<ProjectOve
   }
   const memo = readMemo(p);
   const known = indexedSessionPaths();
+  // No git here (§app.project-overseer/coding-worktrees, Read in two steps): git's facts are GET …/overseer/worktrees.
+  const coding = await codingSessions(projectId);
+  const builds = new Map(readBuilds(projectId).map((b) => [b.sessionId, b]));
   const started: StartedSession[] = [
     ...contributedStarted(engine, projectId),
-    ...codingOf(projectId).map((c) => ({ sessionId: c.sessionId, path: c.path, title: c.path ? "" : (c.title ?? "(not on this host)"), kind: "coding" as const, state: c.running ? "working" : "idle", createdAt: c.createdAt })),
+    ...coding
+      .filter((c) => builds.get(c.sessionId)?.kind === "coding")
+      .map((c): StartedSession => {
+        const b = builds.get(c.sessionId)!;
+        return {
+          sessionId: c.sessionId,
+          path: c.path,
+          title: c.path ? c.title : b.title || c.title || "(not on this host)",
+          kind: "coding",
+          state: c.running || c.workers > 0 ? "working" : "idle",
+          createdAt: c.createdAt,
+          ...(c.branch ? { worktree: { branch: c.branch, state: c.removedAt ? "removed" : c.mergedAt ? "merged" : "open" } } : {}),
+        };
+      }),
   ];
-  for (const s of started) if (s.kind === "coding" && s.path) s.title = (await getSessionSummary(s.path).catch(() => null))?.title || s.title;
+  for (const s of started) if (s.kind === "coding" && s.path && !s.title) s.title = (await displayTitleOf(s.path).catch(() => undefined)) || s.title;
   started.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const repo = await gitRootOf(project.root);
-  const trees = await codingWorktrees(projectId, project.root);
-  for (const s of started) {
-    const t = trees.find((x) => x.sessionId === s.sessionId);
-    if (t?.branch) s.worktree = { branch: t.branch, state: t.state };
-  }
   return {
     projectId,
     projectName: project.name,
@@ -396,16 +477,16 @@ export async function projectOverseerInfo(projectId: string): Promise<ProjectOve
     path: exists ? path : null,
     id: exists ? st!.current : null,
     history,
-    settings,
+    settings: { ...settings, powers: powersViewOf(projectId, settings) },
     codingModeNow: codingModeNow(),
     gatheringAbilitiesNow: baseAbilities(settings.gatheringAbilities),
-    worktrees: { available: !("reason" in repo), ...("reason" in repo ? { reason: repo.reason } : {}), sessions: trees },
+    coding,
     effective: effectiveOf(projectId, settings),
     paused: overseerPausedSince(projectId),
     busy: exists && path ? isSessionBusy(path) : false,
     lastRun: memo.lastRun,
     started,
-    unread: exists && path && !isViewing(st!.current) ? await unreadReplies(projectId, path, readSeen()[st!.current]) : 0,
+    unread: exists && path && !isViewing(st!.current) ? await projectOverseerUnread(projectId, path, readSeen()[st!.current]) : 0,
     usage: {
       allowance: allowanceUse(projectId, settings.caps),
       held: memo.held,
@@ -416,32 +497,72 @@ export async function projectOverseerInfo(projectId: string): Promise<ProjectOve
   };
 }
 
+/** The project overseer's current conversation as this server holds it (its chat handle), else undefined. */
+export async function projectOverseerChat(projectId: string): Promise<ReturnType<typeof chatHandle>> {
+  const st = readPoState(projectOverseerPaths(projectId));
+  const path = st ? await pathOfId(st.current) : null;
+  return path ? chatHandle(path) : undefined;
+}
+
 /** PATCH …/overseer: settings, then the held idle runtime brought to the model/thinking. */
-export async function patchProjectOverseer(projectId: string, body: unknown): Promise<ProjectOverseerInfo> {
+export async function patchProjectOverseer(projectId: string, body: unknown, by: SettingsBy = { kind: "operator", via: "page" }): Promise<ProjectOverseerInfo> {
+  await patchProjectOverseerRows(projectId, body, by);
+  return projectOverseerInfo(projectId);
+}
+
+/** PATCH …/overseer, with each changed field one line of the settings history as `by` (§app.project-overseer/settings): the rows written. */
+export async function patchProjectOverseerRows(projectId: string, body: unknown, by: SettingsBy, meta: { card?: string; revertOf?: string } = {}): Promise<SettingsHistoryRow[]> {
   projectOf(projectId);
   const p = projectOverseerPaths(projectId);
   // A thinking level the model doesn't offer: refused when the patch names it, else brought to pi's level and saved.
   const models = await listModels().catch(() => []);
   const before = readPoSettings(p);
   const s = patchPoSettings(p, body, (next, patch) => fitThinking(next, patch, models, loadDefaults().model ?? null));
+  const rows = recordKept(projectId, before, s, by, { ...meta, resumed: (body as { resume?: unknown }).resume === true });
   // The watch runs on the settings as saved: a raised limit releases what it held (the statechart's).
   await syncWatchSettings(projectId);
-  // Setting the level on this host (any level, the same one too) ends the pause an attach put on it.
-  if ((body as { autonomy?: unknown }).autonomy !== undefined) await resumeOverseer(projectId, s.autonomy);
+  // Resume (or, one release, an old client's level) lifts the brake: it ends the pause an attach put on it; on an
+  // empty roster it holds until the roster has someone again. A powers patch alone never does.
+  const b = body as { autonomy?: unknown; resume?: unknown };
+  if (b.resume === true || b.autonomy !== undefined) {
+    await resumeOverseer(projectId, s.autonomy);
+    if (ceilingOf(engineOrThrow(projectId), projectId) && !s.powers.emptyRosterResumedAt) {
+      writePoSettings(p, { ...s, powers: { ...s.powers, emptyRosterResumedAt: new Date().toISOString() } });
+      await syncWatchSettings(projectId);
+    }
+  }
   const st = readPoState(p);
   const path = st ? await pathOfId(st.current) : null;
-  const chat = path ? heldChat(path) : undefined;
-  if (chat && !chat.harness.isRunning()) {
-    const cur = chat.harness.model()?.ref ?? null;
+  const chat = path ? chatHandle(path) : undefined;
+  if (chat && !chat.mirror.running) {
+    const cur = chat.mirror.model?.ref ?? null;
     try {
-      if (s.model && s.model !== cur) await chat.setModelRef(s.model);
-      if (s.thinking && s.thinking !== chat.harness.thinking()) chat.setThinking(s.thinking);
+      if (s.model && s.model !== cur) await chat.setModel(s.model);
+      if (s.thinking && s.thinking !== chat.mirror.thinking) await chat.setThinking(s.thinking);
     } catch (err) {
       throw new OrgError(err instanceof Error ? err.message : String(err));
     }
   }
-  return projectOverseerInfo(projectId);
+  return rows;
 }
+
+// The settings cards apply through the same writes as the page (server/project-settings.ts; set here: no import cycle).
+setSettingsDeps({
+  patch: (projectId, body, by, meta) => patchProjectOverseerRows(projectId, body, by, meta),
+  async memory(projectId, body, by, meta = {}) {
+    const p = projectOverseerPaths(projectId);
+    const before = readPoSettings(p);
+    const out = await putOverseerMemorySwitch(before.memory, body, (memory) => writePoSettings(p, { ...readPoSettings(p), memory }), await projectOverseerChat(projectId));
+    if ("error" in out) throw new OrgError(out.error);
+    return recordKept(projectId, before, readPoSettings(p), by, meta);
+  },
+  async rename(projectId, name, by, meta = {}) {
+    const from = projectOf(projectId).name;
+    await editProject(projectId, { name });
+    const to = projectOf(projectId).name;
+    return from === to ? [] : appendHistory(projectId, [{ field: "project.name", from, to, by, ...(meta.card ? { card: meta.card } : {}), ...(meta.revertOf ? { revertOf: meta.revertOf } : {}) }]);
+  },
+});
 
 // ---- the prompt ------------------------------------------------------------------------------------
 
@@ -463,8 +584,10 @@ export function projectOverseerValues(projectId: string, now = new Date()): Reco
   const values: Record<string, string> = {
     NOW: now.toString(),
     PROJECT: project.name,
-    AUTONOMY: `${eff.autonomy} — ${autonomyMeaning(eff.autonomy, placed)}`,
-    AUTONOMY_REASON: eff.reason ? ` (${eff.reason})` : "",
+    // What it may do on its own: the powers in force (the brake's reason when one holds them all Off).
+    AUTONOMY: powersLine(powersOf(projectId, settings), placed),
+    AUTONOMY_REASON: "",
+    SETTINGS: settingsIndex(placed),
     CAPS: limitsText(settings, placed),
     ROOT: project.root,
     CODING_MODE: codingModeNowWords(),
@@ -495,7 +618,7 @@ export function projectLiveParts(values: Readonly<Record<string, string>>): Live
   const v = (k: string) => values[k] ?? "";
   return [
     { key: "PROJECT", title: "The project's name", text: v("PROJECT") },
-    { key: "AUTONOMY", title: "Level in force now", text: `${v("AUTONOMY")}${v("AUTONOMY_REASON")}` },
+    { key: "AUTONOMY", title: "What you may do on your own now", text: `${v("AUTONOMY")}${v("AUTONOMY_REASON")}` },
     { key: "CAPS", title: "Limits", text: v("CAPS") },
     { key: "CODING_MODE", title: "The mode a coding session you start with no mode named starts in", text: v("CODING_MODE") },
     { key: "ROOT", title: "Root", text: v("ROOT") },
@@ -539,16 +662,16 @@ function partCtx(rt: Rt, paths: ProjectOverseerPaths): OverseerPartCtx {
     project: () => projectOf(projectId),
     settings: () => readPoSettings(paths),
     effective: () => effectiveOf(projectId),
-    attended: () => rt.turns.attended(),
+    attended: () => rt.attended(),
     overseerId: () => readPoState(paths)?.current ?? "",
-    envelope: () => overseerEnvelope(projectId, paths, rt.turns.attended()),
+    envelope: () => overseerEnvelope(projectId, paths, rt.attended()),
     gatheringChoice: (input) => gatheringChoice(projectId, input),
     limitRefused: (kind) => limitRefused(rt, paths, kind),
   };
 }
 
 async function limitRefused(rt: Rt, paths: ProjectOverseerPaths, kind: PoLimitKind): Promise<void> {
-  const e = overseerEnvelope(rt.projectId, paths, rt.turns.attended());
+  const e = overseerEnvelope(rt.projectId, paths, rt.attended());
   const a = e.allowance[kind];
   if (a.max !== null) await watchFact(rt.projectId, "limit/refused", { kind, ledger: e.ledger, used: a.used, max: a.max });
 }
@@ -557,15 +680,15 @@ function toolHost(rt: Rt): PoToolHost {
   const { projectId } = rt;
   const paths = projectOverseerPaths(projectId);
   const settings = () => readPoSettings(paths);
-  const envelope = () => overseerEnvelope(projectId, paths, rt.turns.attended());
+  const envelope = () => overseerEnvelope(projectId, paths, rt.attended());
   const engine = () => engineOrThrow(projectId);
   const projectSessionSid = projectSid(projectId);
   return {
     paths,
     project: () => projectOf(projectId),
     settings,
-    effective: () => effectiveOf(projectId, settings()),
-    attended: () => rt.turns.attended(),
+    effective: () => powersOf(projectId, settings()),
+    attended: () => rt.attended(),
     overseerId: () => readPoState(paths)?.current ?? "",
     engine,
     gaps: () => gapsOf(engine(), projectId),
@@ -740,7 +863,21 @@ function toolHost(rt: Rt): PoToolHost {
         if (typeof id !== "string") throw new Error("The link was made, but it can't be read back.");
         return { done: { id } };
       }
-      await actOrThrow(engine(), projectSessionSid, verb === "down" ? "services/down" : "services/run", { verb, ...(instance ? { instance } : {}) }, envelope(), { settle: true });
+      // down: always; reset and teardown: copiesReset (services/reset); the rest: copiesRun (services/run)
+      const event = verb === "down" ? "services/down" : verb === "reset" || verb === "teardown" ? "services/reset" : "services/run";
+      await actOrThrow(engine(), projectSessionSid, event, { verb, ...(instance ? { instance } : {}) }, envelope(), { settle: true });
+    },
+    async deployAct(q) {
+      const out = await actOrThrow(engine(), projectSessionSid, "deploy/run", q, envelope(), { settle: true });
+      const to = q.target ? ` to ${q.target}` : "";
+      if (out.held) {
+        const h = heldAt(projectSessionSid, out.held);
+        return `Held: a deploy${to} through the project's own recipe waits until ${new Date(h.until).toISOString()} so the operator can cancel it; it goes ahead then unless cancelled (held act ${h.id}). The recipe decides by itself whether it ships.`;
+      }
+      const fx = out.effects?.find((e) => e.kind === "deploy-run");
+      if (fx?.error) throw new OrgError(fx.error, 409);
+      const r = (fx?.result ?? {}) as { deployId?: string; target?: string; state?: string };
+      return `Deploy ${r.deployId ?? ""} to ${r.target ?? q.target ?? "its target"} is ${r.state ?? "running"}: the project's own recipe runs it and decides whether it ships. deploy.status follows it.`;
     },
     async software() {
       const { readRuntime, softwareLines } = await import("./projects/runtime");
@@ -829,8 +966,8 @@ export async function gatheringChoice(projectId: string, input: { model?: string
 async function overseerRunning(projectId: string): Promise<{ model: string | null; thinking: string | null }> {
   const st = readPoState(projectOverseerPaths(projectId));
   const path = st ? await pathOfId(st.current) : null;
-  const chat = path ? heldChat(path) : undefined;
-  return { model: chat?.harness.model()?.ref ?? null, thinking: chat?.harness.thinking() ?? null };
+  const chat = path ? chatHandle(path) : undefined;
+  return { model: chat?.mirror.model?.ref ?? null, thinking: chat?.mirror.thinking ?? null };
 }
 
 export interface StartedCoding {
@@ -1006,21 +1143,21 @@ async function worktreeAct(projectId: string, sessionId: unknown, event: "build/
 }
 
 /** POST …/worktrees/merge: Merge Branch, into its target in the project root's checkout. */
-export async function mergeCodingWorktree(projectId: string, sessionId: unknown): Promise<ProjectOverseerInfo> {
+export async function mergeCodingWorktree(projectId: string, sessionId: unknown): Promise<ProjectWorktrees> {
   projectOf(projectId);
   // The branch reached its target: the build statechart tells the overseer (build/merged), which can't see the
-    // operator merge otherwise; git's refusal too (build/merge-refused), unless the root's own checkout is the operator's.
-    await worktreeAct(projectId, sessionId, "build/merge");
-  return projectOverseerInfo(projectId);
+  // operator merge otherwise; git's refusal too (build/merge-refused), unless the root's own checkout is the operator's.
+  await worktreeAct(projectId, sessionId, "build/merge");
+  return projectWorktrees(projectId);
 }
 
 /** POST …/worktrees/remove: Remove Worktree; the branch goes too only when merged. The session stays. */
-export async function removeCodingWorktree(projectId: string, sessionId: unknown): Promise<ProjectOverseerInfo> {
+export async function removeCodingWorktree(projectId: string, sessionId: unknown): Promise<ProjectWorktrees> {
   projectOf(projectId);
   const path = await worktreeAct(projectId, sessionId, "build/remove-worktree");
   // Its cwd is gone: a held runtime would run tools in nothing.
-  if (path) await disposeHeldChat(path, "Its worktree was removed, so it has no folder to work in.").catch(() => {});
-  return projectOverseerInfo(projectId);
+  if (path) await closeChat(path, "Its worktree was removed, so it has no folder to work in.").catch(() => {});
+  return projectWorktrees(projectId);
 }
 
 // ---- the runtime loadout ------------------------------------------------------------------------------
@@ -1049,7 +1186,39 @@ export function projectContextFiles<T extends { path: string }>(files: T[], root
     and Sova's state (the host's link store, every session). */
 const confinedOut = () => [...reservedRoots(), agentRoot(), join(homedir(), ".pi")];
 
-registerSpecialLoadout({
+/** Each conversation's opening values (overseer-opening.ts), once a run has read or set them. */
+const openedValues = new Map<string, Record<string, string>>();
+/** Each conversation's tools and prompt template, as its loadout was last built. */
+const builtFor = new Map<string, { tools: ToolSpec[]; template: string }>();
+
+/** The project overseer's file tools, served (§app.chat-processes/server-actions): read/grep/find/ls
+    in the project root only, never a secret file, a reserved folder or Sova's own state
+    (overseer-deny.ts), whatever the root holds; read also opens this conversation's own attachments
+    folder (what the operator pastes into it). write/edit the same, never into the attachments
+    folder, and only in a run the operator started. */
+function poFileSpecs(path: string, rt: Rt): ToolSpec[] {
+  const p = projectOverseerPaths(rt.projectId);
+  return overseerFileTools(
+    projectOf(rt.projectId).root,
+    undefined,
+    undefined,
+    () => {
+      const own = sessionAttachmentsDir(idOf(path));
+      return new RootConfinement(projectOf(rt.projectId).root, confinedOut(), own ? [own] : []);
+    },
+    {
+      protectedRoots: confinedOut,
+      attended: () => rt.attended(),
+      unattended: PO_UNATTENDED_WRITE_REFUSAL,
+      log: (line) => logAction({ at: new Date().toISOString(), overseerId: readPoState(p)?.current ?? "", ...line }, p.actions),
+    },
+  ).map((def) => fromPiToolDefinition(def, def.prepareArguments ? "pi-edit" : undefined));
+}
+
+// An org's change may archive or unarchive a project: its overseer's composer, in a process of its own, is told.
+onOrgChange(() => specialComposersChanged());
+
+registerSpecialHost({
   kind: "project-overseer",
   // The project's root on THIS host, not the one the file's header recorded where it was created.
   cwd(path) {
@@ -1073,107 +1242,103 @@ registerSpecialLoadout({
       return false;
     }
   },
-  async loadout(path) {
+  async spec(path) {
     const rt = rtOfPath(path);
     const p = projectOverseerPaths(rt.projectId);
     if (readPoState(p)?.current !== sessionIdOfFile(path))
       throw new BusyError("This is a previous conversation of the project overseer. It is read-only; open the current one from the project page.", "busy");
+    rt.chatId = path;
     const project = projectOf(rt.projectId);
     const tools = projectOverseerTools(toolHost(rt));
-    const template = readFileSync(PROMPT_FILE, "utf8");
     const settings = readPoSettings(p);
     const defaults = loadDefaults();
-    /** This conversation's opening values (overseer-opening.ts), once a run has read or set them. */
-    let opened: Record<string, string> | undefined;
+    // This build's conversation: its opening values once a run reads or sets them.
+    openedValues.delete(path);
+    builtFor.set(path, { tools, template: readFileSync(PROMPT_FILE, "utf8") });
+    serveTools(path, tools);
+    const files = poFileSpecs(path, rt);
+    serveTools(path, files);
     return {
-      resourceLoaderOptions: {
-        // None of the operator's pi-config extensions, skills or templates: no mode, no subagents,
-        // no input rewriting. The project's own context files (AGENTS.md) stay; the host's (the
-        // agent dir's, and those of folders above the root, like the home folder's) don't.
-        agentsFilesOverride: ({ agentsFiles }) => ({ agentsFiles: projectContextFiles(agentsFiles, project.root) }),
-        noExtensions: true,
-        noSkills: true,
-        noPromptTemplates: true,
-        noThemes: true,
-        appendSystemPromptOverride: () => [],
-        extensionFactories: [
-          {
-            name: "sova-project-overseer",
-            factory: (pi) => {
-              for (const t of tools) pi.registerTool(toPiTool(t));
-              pi.on("before_agent_start", (event, ctx) => {
-                const branch = toolCtx(ctx).branch();
-                const recorded = openingOn(branch);
-                // The prompt stays as the conversation opened (§app.project-overseer/identity): the
-                // values its first run note recorded, or now's for a conversation that has none yet.
-                opened = recorded ?? opened ?? projectOverseerValues(rt.projectId);
-                event.systemPromptOptions.appendSystemPrompt = projectOverseerPromptFrom(opened, tools, template);
-                // The hidden run note: the time now, what changed since the prompt, the open cards (§app.overseer/confirm).
-                const now = new Date();
-                const changed = changedText(projectLiveParts(projectOverseerValues(rt.projectId, now)), toldOn(branch, projectLiveParts(opened)));
-                const cards = cardsNote(cardsOnBranch(branch), false, sessionActivity());
-                const content = [nowLine(now), changed.text, cards].filter((x): x is string => !!x).join("\n\n");
-                const details = { v: 1, ...(recorded ? {} : { opening: opened }), ...(Object.keys(changed.told).length ? { told: changed.told } : {}) };
-                return { message: { customType: CARDS_NOTE_MESSAGE, content, display: false as const, details } };
-              });
-              pi.on("session_compact", (_event, ctx) => {
-                const note = cardsNote(cardsOnBranch(toolCtx(ctx).branch()), true, sessionActivity());
-                if (note) pi.sendMessage({ customType: CARDS_NOTE_MESSAGE, content: note, display: false });
-              });
-              pi.on("context", (event) => {
-                const messages = redactExtensionMessages(event.messages, serverRedactor());
-                return messages === event.messages ? undefined : { messages };
-              });
-            },
-          },
-        ],
-      },
-      tools: [...tools.map((t) => t.name), ...PO_BUILTINS],
-      // read/grep/find/ls in the project root only, never a secret file, a reserved folder or
-      // Sova's own state (overseer-deny.ts), whatever the root holds; read also opens this
-      // conversation's own attachments folder (what the operator pastes into it). This loadout is
-      // this conversation's: a clear opens the next one with its own.
-      customTools: overseerFileTools(project.root, undefined, undefined, () => {
-        const own = sessionAttachmentsDir(idOf(path));
-        return new RootConfinement(projectOf(rt.projectId).root, confinedOut(), own ? [own] : []);
-      }),
+      kind: "project-overseer",
+      extension: "sova-project-overseer",
+      cwd: this.cwd!(path),
+      tools: tools.map(declOfTool),
+      customTools: files.map(declOfTool),
+      allow: [...tools.map((t) => t.name), ...PO_BUILTINS, ...MEMORY_TOOLS],
+      // None of the operator's pi-config extensions, skills or templates: no mode, no subagents,
+      // no input rewriting. The project's own context files (AGENTS.md) stay; the host's (the
+      // agent dir's, and those of folders above the root, like the home folder's) don't.
+      loader: { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, append: "none", contextFilesWithin: { root: project.root, out: confinedOut() } },
       model: settings.model ?? defaults.model ?? null,
       thinking: settings.thinking ?? defaults.thinking ?? null,
+      // Its memory, by its own switch in its overseer.json, on by default: the
+      // same engine as a chat's, its summaries in this host's agent dir.
+      memory: true,
+      memorySettings: p.settings,
+      // An operator's message makes the run theirs: the watch's message allowance, the write rule.
+      attribution: true,
+      usage: "overseer",
+      hooks: { compact: true },
+      context: "redact",
+      refuses: { mode: "The project overseer has no modes." },
+      saveChoice: true,
+      composerClosed: this.composerClosed!(path),
+      start: { prompt: {} },
     };
   },
-  watchSession(session, path) {
+  async adopt(path) {
     const rt = rtOfPath(path);
-    rt.session = session;
-    rt.turns.watch(session);
-    session.subscribe((event) => {
-      // The watch hears the runtime's turns: a look's, another run, the operator's message entering it.
-      if (event.type === "run.start") {
-        const look = !!rt.lookStarting;
-        rt.lookStarting = false;
-        rt.lookRun = look ? rt.lookPending : undefined;
-        rt.lookPending = undefined;
-        void watchFact(rt.projectId, "turn/started", { look });
-      }
-      if (rt.turns.observe(event)) {
-        // The watch starts a fresh message allowance (its ledger/reset-message).
-        void watchFact(rt.projectId, "turn/user-entered");
-      }
-      if (event.type === "run.settled") {
-        rt.lookRun = undefined;
-        void watchFact(rt.projectId, "turn/ended");
-      }
-    });
+    rt.chatId = path;
+    serveTools(path, [...projectOverseerTools(toolHost(rt)), ...poFileSpecs(path, rt)]);
   },
-  userSend(path, send) {
-    return rtOfPath(path).turns.send(send);
+  async runStart(path, ctx) {
+    const rt = rtOfPath(path);
+    let built = builtFor.get(path);
+    if (!built) builtFor.set(path, (built = { tools: projectOverseerTools(toolHost(rt)), template: readFileSync(PROMPT_FILE, "utf8") }));
+    const { tools, template } = built;
+    const branch = ctx.branch();
+    const recorded = openingOn(branch);
+    // The prompt stays as the conversation opened (§app.project-overseer/identity): the values its
+    // first run note recorded, or now's for a conversation that has none yet.
+    const opened = recorded ?? openedValues.get(path) ?? projectOverseerValues(rt.projectId);
+    openedValues.set(path, opened);
+    const appendSystemPrompt = projectOverseerPromptFrom(opened, tools, template);
+    // The hidden run note: the time now, what changed since the prompt, the open cards (§app.overseer/confirm).
+    const now = new Date();
+    const changed = changedText(projectLiveParts(projectOverseerValues(rt.projectId, now)), toldOn(branch, projectLiveParts(opened)));
+    const cards = cardsNote(cardsOnBranch(branch), false, sessionActivity());
+    const content = [nowLine(now), changed.text, cards].filter((x): x is string => !!x).join("\n\n");
+    const details = { v: 1, ...(recorded ? {} : { opening: opened }), ...(Object.keys(changed.told).length ? { told: changed.told } : {}) };
+    return { prompt: { appendSystemPrompt }, message: { customType: CARDS_NOTE_MESSAGE, content, display: false as const, details } };
+  },
+  async compact(_path, ctx) {
+    const note = cardsNote(cardsOnBranch(ctx.branch()), true, sessionActivity());
+    return note ? { customType: CARDS_NOTE_MESSAGE, content: note, display: false as const } : null;
+  },
+  runEvent(path, event) {
+    const rt = rtOfPath(path);
+    rt.chatId = path;
+    // The watch hears the runtime's turns: a look's, another run, the operator's message entering it.
+    if (event.type === "run.start") {
+      const look = event.tag?.startsWith(LOOK_TAG) ?? false;
+      rt.lookRun = look ? event.tag!.slice(LOOK_TAG.length) || undefined : undefined;
+      void watchFact(rt.projectId, "turn/started", { look });
+    }
+    // The watch starts a fresh message allowance (its ledger/reset-message).
+    if (event.type === "user.entered") void watchFact(rt.projectId, "turn/user-entered");
+    if (event.type === "run.settled") {
+      rt.lookRun = undefined;
+      void watchFact(rt.projectId, "turn/ended");
+    }
+  },
+  closed(path) {
+    openedValues.delete(path);
+    builtFor.delete(path);
   },
   saveChoice(path, patch) {
     const rt = rtOfPath(path);
     const p = projectOverseerPaths(rt.projectId);
     writePoSettings(p, { ...readPoSettings(p), ...(patch.model ? { model: patch.model } : {}), ...(patch.thinking ? { thinking: patch.thinking } : {}) });
-  },
-  refuses(gesture) {
-    return gesture === "mode" ? "The project overseer has no modes." : null;
   },
   // An archived project's overseer is paused: its composer takes nothing (§app.organizations/archive).
   composerClosed(path) {
@@ -1187,14 +1352,13 @@ export const toolsForTest = (projectId: string, opts: { attended?: boolean } = {
   const rt = rtOf(projectId);
   if (opts.attended === undefined) return projectOverseerTools(toolHost(rt));
   // As in a turn the operator started (or not), whatever the runtime's own turn says.
-  const turns = Object.create(rt.turns) as typeof rt.turns;
-  turns.attended = () => opts.attended!;
-  const as = { ...rt, turns };
-  return projectOverseerTools(toolHost(as));
+  return projectOverseerTools(toolHost({ ...rt, attended: () => opts.attended! }));
 };
 
 /** Whether the project's overseer is answering the operator right now (tests). */
-export const attendedForTest = (projectId: string) => rtOf(projectId).turns.attended();
+export const attendedForTest = (projectId: string) => rtOf(projectId).attended();
+/** The look whose run is in progress (tests). */
+export const lookRunForTest = (projectId: string) => rtOf(projectId).lookRun;
 
 // ---- idea / to-do items → people and sessions ------------------------------------------------------------
 
@@ -1250,7 +1414,7 @@ function overseerEnvelope(projectId: string, paths: ProjectOverseerPaths, attend
  * linked to nothing, and no reason to look: the overseer sees it when it next looks.
  */
 export async function startCoding(projectId: string, body: CodingStartInput): Promise<CodingStartResult> {
-  projectOf(projectId);
+  const project = projectOf(projectId);
   if (body && typeof body === "object" && "prompt" in body) throw new OrgError("This starts a session with no first prompt. To send one, start it from a to-do or idea (items/code).", 400);
   const worktree = body && typeof body === "object" && "worktree" in body ? body.worktree : "now";
   if (worktree !== "now" && worktree !== "later") throw new OrgError('worktree is "now" or "later".', 400);
@@ -1258,7 +1422,12 @@ export async function startCoding(projectId: string, body: CodingStartInput): Pr
   const title = str(body?.title);
   const model = str(body?.model);
   const thinking = str(body?.thinking);
+  // A folder in the project (New Session's folder tab): the root, inside it, or inside one of its worktrees.
+  const cwd = body && typeof body === "object" && "cwd" in body ? body.cwd : undefined;
+  if (cwd !== undefined && (typeof cwd !== "string" || !startableIn(project.root, cwd)))
+    throw new OrgError(`${typeof cwd === "string" ? cwd : "cwd"} is not a folder in ${project.name}: give the project root, a folder inside it, or one inside its worktrees.`, 400);
   const made = await startCodingSession(projectId, {
+    ...(cwd ? { cwd: canonicalPath(cwd) } : {}),
     ...(title ? { title: title.slice(0, 80) } : {}),
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),
@@ -1320,6 +1489,180 @@ export async function codeItem(projectId: string, body: ItemCodeInput, via?: "ov
   };
 }
 
+/**
+ * A coding session the operator starts from a conversation's spec draft (§4.4 build route): no item, an operator
+ * caller (kind `operator-coding`, never counted on the overseer's caps), its first prompt the draft and its diff.
+ */
+export async function startDraftBuild(
+  projectId: string,
+  input: { title: string; prompt: string; model?: string; thinking?: string; extra?: { conversationDraft: string } },
+): Promise<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; note?: string; notPrompted?: string }> {
+  const prompt = input.prompt.trim();
+  const title = input.title.trim().slice(0, 80);
+  if (!prompt || !title) throw new OrgError("A build from a draft needs a title and a prompt.");
+  const made = await startCodingSession(projectId, {
+    prompt,
+    title,
+    ...(input.model ? { model: input.model } : {}),
+    ...(input.thinking ? { thinking: input.thinking } : {}),
+    kind: "operator-coding",
+    ...(input.extra ? { extra: input.extra } : {}),
+  });
+  return {
+    path: made.path,
+    sessionId: made.sessionId,
+    ...(made.worktree ? { worktree: made.worktree } : {}),
+    ...(made.note ? { note: made.note } : {}),
+    ...(made.notPrompted ? { notPrompted: made.notPrompted } : {}),
+  };
+}
+
+// ---- the Project Assistant's acts (al_1, al_3: its column of powers) -------------------------------------------
+
+export type AssistantActInput =
+  | { act: "build/start"; basis: { kind: "owner-request"; id: string }; prompt: string; title?: string; model?: { model: string; thinking?: string | null } | null }
+  | { act: "deploy/run"; basis?: { kind: "owner-request"; id: string }; target?: string; commit?: string; why?: string }
+  /** start_version: `up` of one copy the owner's versions list holds (its instance id; start_version checked it). */
+  | { act: "services/run"; instance: string; root: string; waitMs?: number }
+  /** start_version's Current version when the main checkout has no copy yet: a bare `up` of the main checkout makes it. */
+  | { act: "services/run"; main: true; root: string; waitMs?: number };
+/** `services/run` taken: `up` goes on; `done` settles once it ends (ok, or the engine's failure code). */
+export type CopyStart = Promise<{ ok: true } | { ok: false; code: string; message: string }>;
+export type AssistantActResult = { taken: true; held: boolean; holdRef?: string; until?: string; sessionId?: string; done?: CopyStart } | { taken: false; code: string; sentence: string };
+
+/**
+ * An act the client's Project Assistant sets off from an owner's message: the project statechart's `build/start`
+ * (a fix on its own branch, from an owner request, power codingStart) or `deploy/run` (power deploy), stamped
+ * `by: "assistant"` and checked against the assistant column; held for the waiting period unless `attended` (the
+ * operator's own turn in the assistant's chat, never restricted). A refusal comes back as `{taken: false}` with its
+ * code (`power-off`, `brake`, a limit's), never thrown; the caller files it as a request for the operator.
+ */
+export async function assistantAct(projectId: string, a: AssistantActInput, o: { attended: boolean; sessionId?: string }): Promise<AssistantActResult> {
+  const envelope = projectEnvelope(projectId, { by: "assistant", attended: o.attended });
+  const refused = (err: unknown): AssistantActResult => {
+    if (err instanceof OrgError) return { taken: false, code: err.code ?? "refused", sentence: err.message };
+    throw err;
+  };
+  try {
+    if (a.act === "services/run") return await assistantCopyStart(projectId, a, envelope);
+    if (a.act === "build/start") {
+      const prompt = a.prompt.trim();
+      if (!prompt) return { taken: false, code: "invalid", sentence: "Say what the fix is for." };
+      const made = await startCodingSession(projectId, {
+        prompt,
+        title: (a.title?.trim() || `Fix: ${prompt.split("\n")[0]!}`).slice(0, 80),
+        ...(a.model?.model ? { model: a.model.model } : {}),
+        ...(a.model?.thinking ? { thinking: a.model.thinking } : {}),
+        kind: "coding",
+        envelope,
+        extra: { basis: { kind: "owner-request", id: a.basis.id } },
+      });
+      if (made.held) return { taken: true, held: true, holdRef: made.held.id, until: new Date(made.held.until).toISOString(), sessionId: made.sessionId };
+      return { taken: true, held: false, sessionId: made.sessionId };
+    }
+    const out = await actOrThrow(engineOrThrow(projectId), projectSid(projectId), "deploy/run", { ...(a.target ? { target: a.target } : {}), ...(a.commit ? { commit: a.commit } : {}), ...(a.why ? { why: a.why } : {}) }, envelope, { settle: true });
+    if (out.held) {
+      const h = heldAt(projectSid(projectId), out.held);
+      return { taken: true, held: true, holdRef: h.id, until: new Date(h.until).toISOString() };
+    }
+    return { taken: true, held: false };
+  } catch (err) {
+    return refused(err);
+  }
+}
+
+/**
+ * start_version's start (§app.project-services/callers): the engine's `up` of exactly that instance as the `assistant`
+ * caller, whose act is the project statechart's `services/run` (copiesRun in the assistant column, never held), taken
+ * only after the engine's own checks. Answers within `waitMs`: a refusal (the act's, or the engine's before or during
+ * a quick up) as `{taken: false}`; the act taken, with `done` following the up that goes on.
+ */
+async function assistantCopyStart(projectId: string, a: { instance: string; root: string; waitMs?: number } | { main: true; root: string; waitMs?: number }, envelope: Envelope): Promise<AssistantActResult> {
+  let wasTaken = false;
+  let taken!: () => void;
+  const actTaken = new Promise<"taken">((r) => (taken = () => r("taken")));
+  const act = async (verb: string, instance: string | null) => {
+    await actOrThrow(engineOrThrow(projectId), projectSid(projectId), "services/run", { verb, ...(instance ? { instance } : {}) }, envelope, { settle: true });
+    wasTaken = true;
+    taken();
+  };
+  const { projectEngine } = await import("./project-services/routes");
+  const ran =
+    "main" in a
+      ? projectEngine().run("up", { project: a.root }, { kind: "assistant", id: "project-assistant", root: a.root, upMain: true, act })
+      : projectEngine().run("up", { instance: a.instance }, { kind: "assistant", id: "project-assistant", root: a.root, up: a.instance, act });
+  const done: CopyStart = ran.then(
+    (r) => (r.error ? { ok: false as const, code: r.error.code, message: r.error.message } : { ok: true as const }),
+    (err) => ({ ok: false as const, code: err instanceof OrgError ? (err.code ?? "refused") : "start-failed", message: err instanceof Error ? err.message : String(err) }),
+  );
+  // A refused act rejects the run with the statechart's refusal, as thrown (assistantAct answers it `{taken: false}`).
+  await Promise.race([actTaken, ran]);
+  if (!wasTaken) {
+    // The engine refused before the act (forbidden, refused-slot0, busy, …): nothing was set off.
+    const r = await done;
+    return r.ok ? { taken: true, held: false, done } : { taken: false, code: r.code, sentence: r.message };
+  }
+  // Taken: a quick up's failure is part of the answer; a slow up goes on after it.
+  const waited = await Promise.race([done, new Promise<null>((r) => setTimeout(() => r(null), a.waitMs ?? 3000).unref?.())]);
+  if (waited && !waited.ok) return { taken: false, code: waited.code, sentence: waited.message };
+  return { taken: true, held: false, done };
+}
+
+type FixStarted = { projectId: string; orgId: string; basisId: string; sessionId: string };
+const fixStartedHooks: ((e: FixStarted) => void)[] = [];
+const fixesNoted = new Set<string>();
+/** Told once per build when a coding session the Project Assistant started for an owner request is set up (at once,
+    or when its hold ended): the request is then "started" with its sessionId. */
+export function onOwnerFixStarted(fn: (e: FixStarted) => void): void {
+  fixStartedHooks.push(fn);
+}
+onOrgChange((engine, change) => {
+  if (!fixStartedHooks.length) return;
+  for (const sid of change.sessions) {
+    if (!sid.startsWith("build/") || fixesNoted.has(sid)) continue;
+    const d = hostOf(engine).data(sid) as { basis?: { kind?: unknown; id?: unknown }; path?: unknown; projectId?: unknown; sessionId?: unknown } | null;
+    if (!d || d.basis?.kind !== "owner-request" || typeof d.basis.id !== "string") continue;
+    // Set up once its session file exists: the build's own record holds the path (its statechart data never did).
+    const [, pid = "", bid = ""] = sid.split("/");
+    const sessionId = String(d.sessionId ?? bid);
+    const projectId = String(d.projectId ?? pid);
+    const path = typeof d.path === "string" && d.path ? d.path : (readBuild(projectId, sessionId)?.path ?? "");
+    if (!path) continue;
+    fixesNoted.add(sid);
+    const e = { projectId, orgId: engine, basisId: d.basis.id, sessionId };
+    for (const fn of fixStartedHooks)
+      try {
+        fn(e);
+      } catch (err) {
+        console.warn(`[project-overseer] owner fix started: ${err instanceof Error ? err.message : String(err)}`);
+      }
+  }
+});
+
+/**
+ * The project statechart's `deploy/run`, taken (or released from its hold): the project's own recipe plans and runs
+ * as its caller (an overseer's or the Project Assistant's deploy act, `deployAct`; the operator's own click), and
+ * decides by itself whether it ships. A plan that needs an override is refused: overrides are the operator's alone.
+ */
+async function runDeployAct(projectId: string, e: Record<string, unknown>): Promise<{ deployId: string; target: string; state: string }> {
+  const root = projectOf(projectId).root;
+  const by = String(e.by ?? "");
+  const caller: Caller =
+    by === "operator" ? { kind: "operator", confirm: true }
+    : by === "assistant" ? { kind: "assistant", id: "project-assistant", root, deployAct: true }
+    : { kind: "project-overseer", id: readPoState(projectOverseerPaths(projectId))?.current ?? "", root, act: async () => {}, deployAct: true };
+  const { projectEngine } = await import("./project-services/routes");
+  const eng = projectEngine();
+  const planned = await eng.run("deploy.plan", { project: root, ...(typeof e.target === "string" ? { target: e.target } : {}), ...(typeof e.commit === "string" ? { commit: e.commit } : {}) }, caller);
+  if (planned.error) throw new Error(`Not deployed: ${planned.error.code}: ${planned.error.message}`);
+  const plan = planned.deploy?.plan;
+  if (!plan) throw new Error("Not deployed: the recipe gave no plan.");
+  const ran = await eng.run("deploy.run", { project: root, plan: plan.planId, confirm: true }, caller);
+  if (ran.error) throw new Error(`Not deployed: ${ran.error.code}: ${ran.error.message}`);
+  const rec = ran.deploy?.record;
+  return { deployId: rec?.id ?? "", target: rec?.target ?? plan.target, state: rec?.state ?? "running" };
+}
+
 // ---- archive: what must stop first (§app.organizations/archive) -------------------------------------------
 
 /**
@@ -1359,10 +1702,10 @@ export async function messageProjectOverseer(projectId: string, text: unknown, o
   const st = readPoState(p);
   const path = st ? await pathOfId(st.current) : null;
   if (!st || !path || !projectOverseerOfPath(path)) throw new OrgError(`${project.name} has no overseer yet. Start it first (op start).`, 409);
-  const chat = await acquireChat(path);
-  chat.assertModelAllowed();
-  const { queued, turn } = chat.acceptPrompt(t, undefined, "client", undefined, { sentByOverseer: { overseerId } });
-  void turn.catch((err) => chat.reportTurnFailure(err));
+  const chat = await acquireChatHandle(path);
+  // Keyed by the Overseer's tool call: delivered again (a dropped link), it is one message.
+  const effectId = serverToolCall()?.call.effectId;
+  const { queued } = await chat.send({ text: t, origin: "client", checkModel: true, sentByOverseer: { overseerId }, ...(effectId ? { key: `po-msg:${effectId}` } : {}) });
   return { queued, sessionId: st.current, path };
 }
 
@@ -1383,7 +1726,7 @@ async function watchFact(projectId: string, event: string, payload: Record<strin
 }
 
 /** The settings the watch runs on (overseer.json as read): its level, the Watch switch, the pace, the hold, the caps. */
-const watchSettings = (s: ProjectOverseerSettings) => ({ autonomy: s.autonomy, watch: s.watch, watchGapMin: s.watchGapMin, soonLookSec: s.soonLookSec, holdMin: s.holdMin, caps: s.caps });
+const watchSettings = (s: ProjectOverseerSettings) => ({ autonomy: s.autonomy, powers: { overseer: s.powers.overseer, assistant: s.powers.assistant }, emptyRosterResumed: !!s.powers.emptyRosterResumedAt, watch: s.watch, watchGapMin: s.watchGapMin, soonLookSec: s.soonLookSec, holdMin: s.holdMin, caps: s.caps });
 
 /** overseer.json as read now, to the project's watch (a PATCH, an open). */
 export async function syncWatchSettings(projectId: string): Promise<void> {
@@ -1410,14 +1753,15 @@ export async function lookNow(projectId: string, _force = true): Promise<{ start
 
 export const CUT_OFF_DETAIL = "The server restarted during the run.";
 
-/** How an unattended run ended, from its own part of the branch (entries past `from`). */
-function runEnd(chat: ChatSession, from: number, err?: unknown): { outcome: "finished" | "stopped" | "cut-off"; detail?: string } {
-  const mine = chat.harness.branch().slice(from);
+/** How an unattended run ended, from its own part of the branch (entries past `from`) and the stream
+    guard's trip, if it ended the run. */
+function runEnd(branch: readonly HEntry[], trip: ChatStreamTrip | null, from: number, err?: unknown): { outcome: "finished" | "stopped" | "cut-off"; detail?: string } {
+  const mine = branch.slice(from);
   const last = [...mine].reverse().find((e) => e.kind === "assistant");
   const stop = last?.stop;
   const failed = !last || stop === "error" || stop === "aborted" || err !== undefined;
   if (!failed) return { outcome: "finished" };
-  if (chat.lastStreamTrip) return { outcome: "stopped", detail: chat.lastStreamTrip.detail };
+  if (trip) return { outcome: "stopped", detail: trip.detail };
   if (shuttingDown()) return { outcome: "cut-off", detail: CUT_OFF_DETAIL };
   if (stop === "aborted") return { outcome: "stopped", detail: "Stopped." };
   if (stop === "error") return { outcome: "stopped", detail: last?.error || "The model failed." };
@@ -1460,38 +1804,52 @@ async function runLook(projectId: string, text: string, report: InvocationReport
     const st = readPoState(projectOverseerPaths(projectId));
     const path = st ? await pathOfId(st.current) : null;
     if (!path) return report("not-started", "no conversation yet");
-    const po = await acquireChat(path);
-    po.assertModelAllowed();
-    const from = po.harness.branch().length;
-    const rt = rtOf(projectId);
-    rt.lookStarting = true;
-    rt.lookPending = runId;
-    const { queued, turn } = po.acceptPrompt(`${text}${lookAppendix(projectId)}`, undefined, "server");
-    const end = (err?: unknown) => {
-      const e = runEnd(po, from, err);
+    const po = await acquireChatHandle(path);
+    await po.assertModelAllowed();
+    const before = (await po.branch()).length;
+    // Keyed by the run (§app.chat-processes/server-messages): a look the next server resumes while its
+    // turn still runs in the chat's own process (or ended there meanwhile) gets the first receipt back
+    // and waits for that turn; it is never sent twice.
+    const receipt = await po.send({ text: `${text}${lookAppendix(projectId)}`, origin: "server", track: true, runTag: `${LOOK_TAG}${runId ?? ""}`, ...(runId ? { key: `look:${runId}` } : {}) });
+    const end = async (err?: string) => {
+      const branch = await po.branch();
+      const e = runEnd(branch, po.mirror.streamTrip, lookFrom(branch, text, before), err);
       // Cut off by this process's shutdown: the next start's resume records it (the statechart's `sova/resumed`).
       if (e.outcome === "cut-off") return;
       report(e.outcome === "finished" ? "finished" : "stopped", e.detail);
     };
-    if (queued) {
+    if (receipt.queued) {
       // Held behind a start or a compaction: it runs as the next turn, which ends at the next settle.
       const off = onAgentSettled((settledPath) => {
         if (canonicalPath(settledPath) !== canonicalPath(path)) return;
         off();
-        end();
+        void end();
       });
     } else
-      void turn.then(
-        () => end(),
+      void po.turnEnd(receipt).then(
+        (t) => end(t.ok ? undefined : t.error),
         (err) => {
-          po.reportTurnFailure(err);
-          end(err);
+          // This server is stopping: the next one resumes the look (a chat in its own process runs on).
+          if (shuttingDown()) return;
+          report("stopped", po.where === "process" && po.closed ? LOOK_PROCESS_DIED : err instanceof Error ? err.message : String(err));
         },
       );
   } catch (err) {
-    rtOf(projectId).lookStarting = false;
     report("not-started", err instanceof Error ? err.message : String(err));
   }
+}
+
+/** A look whose project overseer's process died before its turn ended (§app.chat-processes/special-kinds). */
+export const LOOK_PROCESS_DIED = "The project overseer's process stopped unexpectedly.";
+
+/** Where a look's run begins on `branch`: its message (the latest user entry with the look's text), or
+    the branch's length before it was sent (a message the branch doesn't show). */
+function lookFrom(branch: readonly HEntry[], text: string, before: number): number {
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const h = branch[i]!;
+    if (h.kind === "user" && joinedText(h, { images: false }).startsWith(text)) return Math.min(i, before);
+  }
+  return before;
 }
 
 onOrgHostOpened((host, engine) => {
@@ -1510,6 +1868,8 @@ onOrgHostOpened((host, engine) => {
   });
   // The project statechart's services/share, taken (or released from its hold): the services engine shares the copy
   // again as the project overseer, every check again, and keeps the link host-local; the result names the link only.
+  // The project statechart's deploy/run, taken or released: the project's own recipe plans and runs (power deploy).
+  host.effects.register("deploy-run", async (e) => runDeployAct(String(host.data(String(e.sessionId))?.projectId ?? host.data(String(e.sessionId))?.id ?? ""), e as Record<string, unknown>));
   host.effects.register("services-share", async (e) =>
     shareFromAct({
       projectId: String(host.data(String(e.sessionId))?.projectId ?? ""),
@@ -1550,11 +1910,22 @@ export async function syncWatchFacts(engine: string): Promise<void> {
     if (!projectId) continue;
     const ceiling = ceilingOf(engine, projectId);
     const lookHint = lookHintOf(engine, projectId);
+    // The roster has someone again: a Resume pressed on the empty-roster brake is spent (the brake comes back if it empties).
+    if (!ceiling) await clearRosterResume(projectId).catch(() => {});
     if (sameCeiling(s.data.ceiling, ceiling) && (s.data.lookHint ?? null) === lookHint) continue;
     await watchFact(projectId, "facts/changed", { ceiling, lookHint });
   }
 }
 onWatchFactsChanged(syncWatchFacts);
+
+async function clearRosterResume(projectId: string): Promise<void> {
+  const p = projectOverseerPaths(projectId);
+  const s = readPoSettings(p);
+  if (!s.powers.emptyRosterResumedAt) return;
+  const { emptyRosterResumedAt: _spent, ...powers } = s.powers;
+  writePoSettings(p, { ...s, powers });
+  await syncWatchSettings(projectId);
+}
 
 /**
  * A hosted session finished a turn: when it is one of the project's builds, its statechart hears the turn
@@ -1567,14 +1938,8 @@ export function noteCodingSettled(path: string): Promise<void> {
 
 /** Whether the held chat's last assistant message ended in an error or an abort. */
 function lastTurnFailed(path: string): boolean {
-  const chat = heldChat(path);
-  if (!chat) return false;
-  const branch = chat.harness.branch();
-  for (let i = branch.length - 1; i >= 0; i--) {
-    const e = branch[i]!;
-    if (e.kind === "assistant") return e.stop === "error" || e.stop === "aborted";
-  }
-  return false;
+  const stop = chatHandle(path)?.mirror.lastStop;
+  return stop === "error" || stop === "aborted";
 }
 
 let started = false;

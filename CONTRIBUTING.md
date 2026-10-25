@@ -59,7 +59,7 @@ plans. Don't run the installer against your real home merely to validate its doc
 | `scripts/install.sh` | Published-release installer |
 | `.sova/spec/` | Product documentation; verify implementation before claiming a feature. Propose changes in a draft ([USAGE](.sova/spec/USAGE.md)) |
 
-Use strict TypeScript and ESM; ask before adding dependencies. Read [CLAUDE.md](CLAUDE.md) for
+Use strict TypeScript and ESM; ask before adding dependencies. Read [AGENTS.md](AGENTS.md) and the guide of each area you touch (its "Areas of work" table) for
 architecture, ownership, and session-write safety before changing backend code. Treat live TUI
 sessions as read-only: pi's SDK does not provide file locking.
 
@@ -78,20 +78,23 @@ App state is written under `~/.pi/agent/sova/`.
 self-contained: its `install.sh` must work on a plain copy of the directory, with no imports from
 Sova.
 
-## Release tags
+## Releases
 
-A tag is the record of a state the server actually ran, never a marker of "we merged
-something". A tag `v0.1.0-alpha.N` means all three of:
+A release is a numbered tag, `vX.Y.Z`, on a commit the server actually ran: every check suite
+passed on it and `sova-runtime.service` reported it as its `head` (`GET /api/health`) before it
+was published. What changed is in [CHANGELOG.md](CHANGELOG.md).
 
-- the tagged commit is both `master` and `origin/master`;
-- the whole check suite passed on that commit (`pnpm run typecheck`, `pnpm test`,
-  `pnpm run build`, and the extensions' own tests);
-- `sova-runtime.service` was restarted onto it and `GET /api/health` reports that commit as its
-  `head`.
+- **Numbered tags never move.** Each is annotated, created once, and never re-pointed or deleted,
+  even for a bad release.
+- **`stable` is the only tag that moves**, and moving it is the only force-push allowed: always
+  `--force-with-lease` on `refs/tags/stable`, naming the value read from GitHub. It points at the
+  newest release, and the installer installs it by default, so the published install command
+  follows it; `SOVA_REF=vX.Y.Z` pins a release. Rolling back moves `stable` to the previous
+  release.
+- **One atomic push** carries the release commit to master with `vX.Y.Z` and `stable`; a release
+  branch is never landed on its own first. Push refs by name; `--tags`, `--all` and a bare
+  `--force` are never used.
 
-`N` counts tags and nothing else: `alpha.7` is always the seventh tag ever cut, numbers are
-never reused and never skip, and they do not follow the number of landings. Tags are cut at
-milestones, not on every landing: the merge captain cuts one when the user calls a milestone, on
-whatever live head exists then, with an annotated message naming what is new since the previous
-tag. Push a tag by name (`git push origin v0.1.0-alpha.1`); `--tags`, `--all` and `--force` are
-never used.
+An agent cuts a release by following the release playbook,
+[.sova/playbooks/release/PLAYBOOK.md](.sova/playbooks/release/PLAYBOOK.md): checks, release
+commit and notes, then it stops until the maintainer says to publish.

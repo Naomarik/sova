@@ -32,9 +32,9 @@ and every process on the device reads and writes them the same way.
   extension beside its worker mark), and Sova's own pi one-shots (decisions and session titles).
   Compaction, branch summaries and cache warms are requests of the session that makes them.
 - For `claude-code`, a slot is one Claude Code model call of a chat session on the
-  Claude Code provider, or one Claude Code one-shot of Sova's (a decision or a session title).
-  Claude Code workers and the topic outline's Claude summarizer start the CLI themselves and are
-  not counted.
+  Claude Code provider (a Claude Code worker is one: a pi worker on that provider), or one Claude
+  Code one-shot of Sova's (a decision or a session title). The topic outline's Claude summarizer
+  starts the CLI itself and is not counted.
 - A request that already holds its provider's slot (a Sova one-shot passing through a runtime that
   also loads the extension) is not counted twice.
 
@@ -74,7 +74,12 @@ and every process on the device reads and writes them the same way.
   turn: the request gives its slot back, waits a cooldown (the reply's `Retry-After` when the
   provider sends one, else 10 s) and queues again, at most 5 times. After the fifth, the error
   reaches pi as it would have, and pi's own retry runs as before. A 429 that says the quota or
-  balance is exhausted is not retried here.
+  balance is exhausted is not retried here, nor one that says a usage limit was reached (a monthly
+  or weekly one included, such as Ollama's "you have reached your monthly usage limit") or that
+  credits or billing ran out: the one out-of-usage classifier the standing team roles use decides
+  it (§teams.defaults/runtime-fallback). A quota or limit over a short window (per minute, second
+  or hour, RPM, TPM, "requests per", "tokens per", such as "429 RESOURCE_EXHAUSTED: Quota exceeded
+  for metric x, limit: 15 per minute") is a rate limit and is re-queued like one.
 - A 429 also **lowers** that provider's limit for 5 minutes, to one below the limit the rejected
   request was sent under, never below 1. The lowering is shared by every process on the device
   (`<agent dir>/provider-limits/<provider>/lowered.json`, `{v, limit, until}`). Another 429 on a
@@ -104,8 +109,8 @@ and every process on the device reads and writes them the same way.
   `Requests at once for zai`. `claude-code` has it too. A provider the file names that has no
   models on this machine is listed as well, with `No models on this machine`, so its limit can
   still be seen and cleared.
-- Like the switches it is staged: the dialog's **Save Changes** writes it, **Discard Changes** puts
-  it back. Save reads the file again first and applies only the providers whose field you changed,
+- Like the switches it is staged: the dialog's **Save Changes** writes it, **Cancel** discards
+  it and closes the dialog. Save reads the file again first and applies only the providers whose field you changed,
   so a limit another device's sync wrote while the form was open is kept. A value outside 1–999
   or not a whole number keeps Save from writing and says why.
 - A failed save keeps every field as you left it and says so in an error banner:

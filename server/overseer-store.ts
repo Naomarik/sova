@@ -285,3 +285,8 @@ export function logAction(action: OverseerAction, file = overseerActionsFile(), 
     console.warn("[overseer] audit log write failed:", err instanceof Error ? err.message : String(err));
   }
 }
+
+/** A crash resume's decision, logged as a chat's is (`tool: "auto_resume"`): `why` when it was refused. */
+export function logAutoResume(args: Record<string, unknown>, why?: string, file = overseerActionsFile()): void {
+  logAction({ at: new Date().toISOString(), overseerId: readOverseerState()?.current ?? "", toolCallId: "", tool: "auto_resume", args, outcome: why ? "refused" : "ok", ...(why ? { error: why } : {}) }, file);
+}

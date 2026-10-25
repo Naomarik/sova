@@ -33,7 +33,7 @@ let project = "";
 let engine: ProjectEngine;
 
 before(async () => {
-  const base = await reservePorts(15);
+  const base = await reservePorts(40);
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-conform-static-proj-")));
   project = join(parent, "demo");
   mkdirSync(join(project, ".sova"), { recursive: true });
@@ -46,7 +46,7 @@ before(async () => {
     slots: { cap: 2 },
     services: {
       site: { static: "public", ports: { http: { base } } },
-      repl: { cmd: ["node", "repl.mjs"], start: "on-demand", ports: { nrepl: { base: base + 10 } }, ready: { tcp: "nrepl", timeout: 10 } },
+      repl: { cmd: ["node", "repl.mjs"], start: "on-demand", ports: { nrepl: { base: base + 20 } }, ready: { tcp: "nrepl", timeout: 10 } },
     },
     test: { run: ["node", "runner.mjs"], requires: ["repl"], timeout: 20, smoke: ["unit/a", "unit/b"] },
   };

@@ -4,7 +4,7 @@ import { parseVis } from "../../parse";
 import { unweighted } from "../tree/measure";
 import { estimateHeight, fitStrip, frameWidth, MIN_STRIP_SCALE, stripWidth } from "./layout";
 import type { WireframeSpec } from "./parse";
-import { PREVIEWS as PREVIEWS_FENCE } from "./previews.fixture";
+import { PREVIEWS as PREVIEWS_FENCE, ROWS as ROWS_FENCES } from "./previews.fixture";
 
 const spec = (body: string) => {
   const r = parseVis("wireframe", body);
@@ -207,6 +207,7 @@ heading "Archived"
   link "Show all"`);
 
 const PREVIEWS = spec(PREVIEWS_FENCE);
+const ROWS = Object.fromEntries(Object.entries(ROWS_FENCES).map(([k, v]) => [k, spec(v)])) as Record<keyof typeof ROWS_FENCES, WireframeSpec>;
 const SQUEEZED = spec(`title: Squeezed badges
 screen "Phone" phone
 list
@@ -361,6 +362,36 @@ test("wireframe layout: a row's chip goes under its blocks when each would keep 
   assert.equal(phone('row -> "Nowhere"'), 18);
 });
 
+test("wireframe layout: a row laid out by content keeps its blocks at their own width and wraps them, 8px apart", () => {
+  // A phone page at 676 is 277px wide. With 7px a character a growing search keeps 12ch (84px) and an
+  // "Export" button is 31 + 42 = 73px.
+  const one = (body: string) => estimateHeight(spec(body), 676, flat) - 12 - 18 - 3 - 20;
+  assert.equal(one('row\n  search "Find" grow\n  button "Export" right\n  button "Export"'), 34);
+  // A third button (84 + 3 × 73 + 3 × 8 = 327px) no longer fits: it wraps onto a line of its own. The same blocks in
+  // a row without the words share it, as before: one line.
+  assert.equal(one('row\n  search "Find" grow\n  button "Export" right\n  button "Export"\n  button "Export"'), 34 + 8 + 34);
+  assert.equal(one('row\n  search "Find"\n  button "Export"\n  button "Export"\n  button "Export"'), 34);
+  // `row right`, a thumbnail beside a growing column, and a chip after the last block while it fits, else under.
+  assert.equal(one('row right\n  button "Cancel"\n  button "Save"'), 34);
+  assert.equal(one('row\n  image "Photo"\n  col grow\n    heading "Name"\n    text "Short"'), 96);
+  assert.equal(one('row -> "Nowhere"\n  button "A" right'), 34);
+  assert.equal(one('row -> "Nowhere"\n  button "Export" right\n  button "Export"\n  button "Export"'), 34 + 8 + 18);
+});
+
+test("wireframe layout: a row's shares set its blocks' widths; right outside a row, middle and bottom keep the height", () => {
+  const one = (body: string) => estimateHeight(spec(body), 676, flat) - 12 - 18 - 3 - 20;
+  const long = `text "${"word ".repeat(16).trim()}"`;
+  // 1:1 is the even split; a smaller share is a narrower block, so its text takes more lines.
+  assert.equal(one(`row 1:1\n  ${long}\n  ${long}`), one(`row\n  ${long}\n  ${long}`));
+  assert.ok(one(`row 1:3\n  ${long}\n  text "x"`) > one(`row 3:1\n  ${long}\n  text "x"`));
+  // Five blocks with shares stay on one line (a row of five without them wraps into rows of 4).
+  assert.equal(one('row 1:1:1:1:1\n  button "A"\n  button "B"\n  button "C"\n  button "D"\n  button "E"'), 34);
+  assert.equal(one('row\n  button "A"\n  button "B"\n  button "C"\n  button "D"\n  button "E"'), 34 + 8 + 34);
+  assert.equal(one('button "Go" right'), one('button "Go"'));
+  assert.equal(one('card "A"\n  link "Forgot password?" right'), one('card "A"\n  link "Forgot password?"'));
+  for (const w of ["middle", "bottom"]) assert.equal(one(`row ${w}\n  input "Name"\n  button "Go"`), one('row\n  input "Name"\n  button "Go"'), w);
+});
+
 test("wireframe layout: the screen buttons are one line at any width", () => {
   const six = spec(Array.from({ length: 6 }, (_, i) => `screen "Step number ${i + 1} of the flow"\ntext "x"`).join("\n"));
   // Scrolling (six phones would go below 3/4): 36px of buttons and 8px under them, over the strip.
@@ -410,6 +441,21 @@ const RENDERED: [string, WireframeSpec, number, number][] = [
   ["the same on a desktop", CATEGORIES_DESKTOP, 296, 222],
   ["a col's, a heading's and a row's chips", TITLED, 676, 372],
   ["a col's, a heading's and a row's chips", TITLED, 296, 444],
+  // Captured 2026-10-12 on feat/wireframe-layout in headless Chromium, light theme, the figure sized so its body's
+  // content is 676px or 296px wide (.scratch harness: Figure and WireframeView as the chat draws them); the rows
+  // above re-measured unchanged there (the fences without the row words draw exactly as before).
+  ["a dialog's buttons at its end, a spacer in a row", ROWS.dialog, 676, 209],
+  ["a dialog's buttons at its end, a spacer in a row", ROWS.dialog, 296, 295],
+  ["a toolbar: a growing search, actions at the end", ROWS.toolbar, 676, 234],
+  ["a toolbar: a growing search, actions at the end", ROWS.toolbar, 296, 315],
+  ["a form beside its summary, row 2:1", ROWS.checkout, 676, 498],
+  ["a form beside its summary, row 2:1", ROWS.checkout, 296, 316],
+  ["three-pane mail, row 1:3:2", ROWS.mail, 676, 271],
+  ["three-pane mail, row 1:3:2", ROWS.mail, 296, 146],
+  ["a field and its button, row bottom", ROWS.apply, 676, 218],
+  ["a field and its button, row bottom", ROWS.apply, 296, 334],
+  ["a link at a card's right edge, a thumbnail beside text", ROWS.signin, 676, 420],
+  ["a link at a card's right edge, a thumbnail beside text", ROWS.signin, 296, 420],
 ];
 
 test("wireframe layout: the estimate is within 15% of the rendered height", () => {
@@ -420,7 +466,7 @@ test("wireframe layout: the estimate is within 15% of the rendered height", () =
 });
 
 test("wireframe layout: deterministic, and positive at every width", () => {
-  for (const s of [INVOICES, CHECKOUT, SETTINGS, OVERLAYS, LONG_NAMES, WIDE, CHIPS, TILES, WIDE_TILES, RAGGED, SHELL, PREVIEWS, SQUEEZED, CATEGORIES, CATEGORIES_DESKTOP, TITLED]) {
+  for (const s of [INVOICES, CHECKOUT, SETTINGS, OVERLAYS, LONG_NAMES, WIDE, CHIPS, TILES, WIDE_TILES, RAGGED, SHELL, PREVIEWS, SQUEEZED, CATEGORIES, CATEGORIES_DESKTOP, TITLED, ...Object.values(ROWS)]) {
     for (let w = 280; w <= 1000; w += 3) {
       const h = estimateHeight(s, w);
       assert.equal(h, estimateHeight(s, w));

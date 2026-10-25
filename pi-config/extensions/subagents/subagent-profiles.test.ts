@@ -5,6 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { delegateDefaults } from "../mode/delegate.ts";
+import { ALIGN_STYLES } from "../mode/align-settings.ts";
 import { DEFAULT_TEAM_DEFAULTS, writeTeamDefaults } from "./team-defaults.ts";
 import {
 	footprint,
@@ -22,6 +23,7 @@ import {
 	readSubagentProfiles,
 	resolveSubagents,
 	restorePick,
+	SEEDED_MTIME_MS,
 	SEEDED_PROFILE_ID,
 	shortModel,
 	subagentProfileDefaultPath,
@@ -128,6 +130,7 @@ test("seed: an absent library and default file are written once from the legacy 
 	assert.equal(seeded.profiles[0]!.teams?.coordinator.role, "coordinator");
 	assert.equal(seeded.profiles[0]!.members, null);
 	assert.equal(readSubagentProfiles(dir).state, "ok", "the library seed is on disk");
+	assert.equal(fs.statSync(subagentProfilesPath(dir)).mtimeMs, SEEDED_MTIME_MS, "the seed is dated as old, so any library edited elsewhere wins over it on the mesh");
 	const def = readProfilesDefault(dir);
 	assert.equal(def.state === "ok" && def.value.default, SEEDED_PROFILE_ID, "the seeded default names the seeded profile");
 	// A second read never re-seeds over what is there now.
@@ -336,7 +339,7 @@ test("alignment (writing style, Visuals): optional, field by field over the host
 	// Strict: never empty, nothing unknown, each value checked, named under the profile.
 	for (const [alignment, error] of [
 		[{}, /^profiles\[0\]\.alignment must set style or visuals/m],
-		[{ style: "expert" }, /^profiles\[0\]\.alignment\.style must be one of default, simplified, pm/m],
+		[{ style: "expert" }, new RegExp(`^profiles\\[0\\]\\.alignment\\.style must be one of ${ALIGN_STYLES.join(", ")}$`, "m")],
 		[{ visuals: "on" }, /^profiles\[0\]\.alignment\.visuals must be true or false/m],
 		[{ review: true }, /^profiles\[0\]\.alignment: unknown field "review"/m],
 	] as const) {

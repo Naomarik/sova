@@ -43,6 +43,8 @@ test("an unknown actor says the why recorded for it; with none, Not recorded; a 
   assert.equal(authorizationWord({ kind: "person-decision", by: { kind: "person", id: "p_9" } }, names), "A person's decision · by a person not named here");
   assert.equal(authorizationWord({ kind: "confirm-card", by: { kind: "operator" }, ref: "card_1" }), "A confirm card · by the operator · card_1");
   assert.equal(authorizationWord({ kind: "autonomy-level", level: "L2", attended: false }), "Autonomy level L2 · unattended");
+  assert.equal(authorizationWord({ kind: "power", power: "codingStart", column: "assistant", attended: false }), "Start coding sessions (the Project Assistant's switch) · unattended");
+  assert.equal(authorizationWord({ kind: "hold-release", power: "deploy", column: "overseer", ref: "h1", attended: false }), "A released hold · Deploy (the project's own recipe) (the overseer's switch) · unattended · h1");
   assert.equal(RELATION_WORDS.about, "is about");
 });
 

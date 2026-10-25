@@ -11,7 +11,7 @@ import ScreenFrame from "../components/screens/ScreenFrame.astro";
 import Overseer from "../components/screens/Overseer.astro";
 import Phones from "../components/screens/Phones.astro";
 import { themes } from "../data/themes";
-import { video } from "../data/screens";
+import { hasVideo } from "../data/screens";
 import * as site from "../data/site";
 
 const cards = [
@@ -163,7 +163,7 @@ const beyond = [
             <div class="prose">
               <p>The Needs you list shows every session waiting on you: a question, an error, a failed worker. The Overseer, a session that reads all the others, can tell you what needs you, start sessions, or send them prompts.</p>
             </div>
-            <p class="limit"><Icon name="info" size={18} /><span>The list costs no tokens. The Overseer has no shell and edits no files.</span></p>
+            <p class="limit"><Icon name="info" size={18} /><span>The list costs no tokens. The Overseer has no shell, and writes files only when you ask.</span></p>
             <p class="feature-more"><a href="/docs/needs-you/">Needs you docs<Icon name="arrow-right" size={14} /></a><a href="/docs/overseer/">Overseer docs<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><Overseer /></div>
@@ -298,6 +298,7 @@ const beyond = [
           </div>
           <dl class="touches">
             <div class="touch"><dt>Install</dt><dd><code>~/.local/share/sova</code> and a <code>~/.local/bin/sova</code> launcher. No <code>sudo</code>, no system packages, no shell-profile edits, no settings.</dd></div>
+            <div class="touch"><dt>App entry</dt><dd>A <strong>Sova</strong> entry in your app launcher that runs <code>sova app</code>: <code>sova.desktop</code> and its icon on Linux, <code>~/Applications/Sova.app</code> on macOS. Its window keeps a browser profile of its own, in <code>~/.config/sova-browser</code> (macOS: <code>~/Library/Application Support/sova-browser</code>). <code>--no-app-entry</code> skips the entry.</dd></div>
             <div class="touch"><dt>pi extensions</dt><dd>One link per Sova extension in <code>~/.pi/agent/extensions/</code>. <code>--no-extensions</code> skips this.</dd></div>
             <div class="touch"><dt>Login service</dt><dd>Only if you say yes, or pass <code>--service</code>.</dd></div>
             <div class="touch"><dt>Access</dt><dd>Loopback by default, and <strong>one token per install</strong>. Delete <code>~/.pi/agent/sova/auth-token</code> and restart to sign every browser out.</dd></div>
@@ -359,8 +360,8 @@ const beyond = [
       </div>
       <div class="footer-meta">
         <p>pi is a separate project; Sova is not affiliated with it. Sova is Apache-2.0; <code>pi-config/</code> is licensed separately.</p>
-        <p>Fonts: Inter and JetBrains Mono, SIL OFL 1.1. {video ? "The screenshots and the video" : "The screenshots"} on this page are Sova running on demo data, and the model replies in them are scripted. The phone lock screen beside the Overseer is an illustration.</p>
-        <p>Checked against <code>{site.verified.ref}</code> at <code>{site.verified.rev}</code> on {site.verified.date}; installs <code>{site.installRef}</code>{site.release ? "" : " until the first release is tagged"}.</p>
+        <p>Fonts: Inter and JetBrains Mono, SIL OFL 1.1. {hasVideo ? "The screenshots and the video" : "The screenshots"} on this page are Sova running on demo data, and the model replies in them are scripted. The model and provider names in them are real; Sova isn't affiliated with the companies that make those models. The phone lock screen beside the Overseer is an illustration.</p>
+        <p>Checked against <code>{site.verified.ref}</code> at <code>{site.verified.rev}</code> on {site.verified.date}; installs <code>{site.installRef}</code>, the newest release (<code>{site.release}</code>).</p>
       </div>
     </div>
   </footer>

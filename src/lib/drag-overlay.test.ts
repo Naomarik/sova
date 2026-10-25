@@ -1,5 +1,5 @@
 // Run: npx tsx --test src/lib/drag-overlay.test.ts
-// The row's press (lift, select on release, drag) and what the drop overlay offers and hits.
+// The row's press (lift, drag; a release in place does nothing) and what the drop overlay offers and hits.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionGroup } from "../../shared/protocol";
@@ -27,7 +27,7 @@ import {
 import { HOLD_MS, HOLD_SUPPRESS_MS } from "./hold-select";
 
 /** A press on a fake clock: `advance` runs the hold timer when its time comes. */
-function rig(opts: { drag?: boolean; pointer?: string } = {}) {
+function rig(opts: { pointer?: string } = {}) {
   let t = 0;
   let pending: { fn: () => void; at: number } | null = null;
   const log: string[] = [];
@@ -50,11 +50,11 @@ function rig(opts: { drag?: boolean; pointer?: string } = {}) {
       p.fn();
     }
   };
-  const down = (at: Point = { x: 100, y: 100 }) => press.start(at, opts.pointer ?? "touch", opts.drag ?? true);
+  const down = (at: Point = { x: 100, y: 100 }) => press.start(at, opts.pointer ?? "touch");
   return { press, log, drags, advance, down };
 }
 
-test("a thumb held still lifts the row, and the release in place selects", () => {
+test("a thumb held still lifts the row, and the release in place only settles it", () => {
   const r = rig();
   r.down();
   r.advance(HOLD_MS - 1);
@@ -63,7 +63,8 @@ test("a thumb held still lifts the row, and the release in place selects", () =>
   assert.deepEqual(r.log, ["lift"]);
   assert.equal(r.press.phase(), "lifted");
   r.press.move({ x: 104, y: 97 }); // a thumb is never perfectly still
-  assert.equal(r.press.finish(), true, "the release is the selection");
+  assert.equal(r.press.finish(), true, "it had lifted");
+  assert.deepEqual(r.log, ["lift"], "the release in place starts nothing: no drag, no other act");
   assert.equal(r.press.phase(), "idle");
   // The lift's echo (the click, the contextmenu) is swallowed for a while after the release.
   assert.equal(r.press.suppressed(), true);
@@ -71,7 +72,7 @@ test("a thumb held still lifts the row, and the release in place selects", () =>
   assert.equal(r.press.suppressed(), false);
 });
 
-test("a lifted row that moves past 10px becomes a drag, and its release selects nothing", () => {
+test("a lifted row that moves past 10px becomes a drag, and its release is the drag's", () => {
   const r = rig();
   r.down();
   r.advance(HOLD_MS);
@@ -83,7 +84,7 @@ test("a lifted row that moves past 10px becomes a drag, and its release selects 
   assert.equal(r.press.suppressed(), true, "the drag's click never reaches the row");
 });
 
-test("a thumb that moves before the lift is a scroll: no lift, no drag, no selection", () => {
+test("a thumb that moves before the lift is a scroll: no lift, no drag", () => {
   const r = rig();
   r.down();
   r.advance(200);
@@ -105,15 +106,21 @@ test("a mouse drags after 6px with no hold; 6px itself is still a press", () => 
   assert.deepEqual(r.log, ["drag"], "the hold timer is gone with the press");
 });
 
-test("a still mouse held 500ms lifts and selects on release, as a thumb does", () => {
+test("a still mouse held 500ms lifts, as a thumb does, and then drags on a move", () => {
   const r = rig({ pointer: "mouse" });
   r.down();
   r.advance(HOLD_MS);
   assert.deepEqual(r.log, ["lift"]);
   assert.equal(r.press.finish(), true);
+  assert.deepEqual(r.log, ["lift"], "released in place: nothing more");
+  const m = rig({ pointer: "mouse" });
+  m.down();
+  m.advance(HOLD_MS);
+  m.press.move({ x: 100, y: 111 });
+  assert.deepEqual(m.log, ["lift", "drag"]);
 });
 
-test("a tap is a tap: no lift, no selection, nothing suppressed", () => {
+test("a tap is a tap: no lift, nothing suppressed", () => {
   const r = rig();
   r.down();
   r.advance(120);
@@ -122,7 +129,7 @@ test("a tap is a tap: no lift, no selection, nothing suppressed", () => {
   assert.deepEqual(r.log, []);
 });
 
-test("a cancel after the lift selects nothing and still swallows the lift's echo", () => {
+test("a cancel after the lift does nothing and still swallows the lift's echo", () => {
   const r = rig();
   r.down();
   r.advance(HOLD_MS);
@@ -130,20 +137,6 @@ test("a cancel after the lift selects nothing and still swallows the lift's echo
   assert.equal(r.press.phase(), "idle");
   assert.equal(r.press.finish(), false, "a finish after the cancel is not a release in place");
   assert.equal(r.press.suppressed(), true);
-});
-
-test("in selection mode nothing drags: a mouse move past the tolerance just ends the press", () => {
-  const r = rig({ pointer: "mouse", drag: false });
-  r.down();
-  r.press.move({ x: 120, y: 100 });
-  assert.deepEqual(r.log, []);
-  assert.equal(r.press.phase(), "idle");
-  const t = rig({ drag: false });
-  t.down();
-  t.advance(HOLD_MS);
-  t.press.move({ x: 100, y: 140 });
-  assert.deepEqual(t.log, ["lift"], "a lifted row in selection mode doesn't drag either");
-  assert.equal(t.press.finish(), false);
 });
 
 // ---------------------------------------------------------------------------
@@ -160,6 +153,7 @@ const info = (over: Partial<DragInfo> = {}): DragInfo => ({
   groupId: null,
   org: false,
   orgProject: null,
+  archivedProject: null,
   peer: null,
   archive: { kind: "archive" },
   archived: false,

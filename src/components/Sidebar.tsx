@@ -1,6 +1,8 @@
-import { ProfileShelf } from "./ProfileShelf";
+import { AutomationsShelf } from "./AutomationsShelf";
 import type { ArchiveMutation } from "../lib/optimistic-archive";
 import { profileIconName } from "../lib/profiles";
+import { builtOnceOpen } from "../lib/built-once";
+import { projectSummaryKey, remember } from "../lib/page-cache";
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { Dynamic, Portal } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
@@ -8,10 +10,10 @@ import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
 import { autoTitleSessions, fetchTargets, listProjects, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
 import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../lib/auto-title";
-import { type ArchiveGroupId, groupByArchiveDate, sessionsWord, startOfDay } from "../lib/archive";
+import { type ArchiveGroupId, foldersWord, groupByArchiveDate, sessionsWord, startOfDay } from "../lib/archive";
 import { modelLabel, relativeTime, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, glanceLabel, glanceTitle, usageGlance, usageHref } from "../lib/insights";
-import { isMainThread, isOrdinarySession, isOrgSession, isTopSession } from "../lib/regions";
+import { archiveDateOpen as archiveDateOpenRule, archiveOpen as archiveOpenRule, foldersOpen as foldersOpenRule, inFolders, isMainThread, isOrdinarySession, isOrgSession, isOwnedSession, isTopSession, listedWithLocalProject, storedFoldersOpen } from "../lib/regions";
 import {
   eyeLabel,
   doneOpen as doneOpenRule,
@@ -28,6 +30,7 @@ import {
   ORGS_KEY,
   orgSearchText,
   orgSectionOpen as orgSectionOpenRule,
+  isOrgFolderSession,
   orgSections,
   orgsRegionOpen as orgsRegionOpenRule,
   orgTitle,
@@ -38,7 +41,7 @@ import {
 } from "../lib/org-region";
 import { groupRemotePlaceOf, remoteMarkOf, remoteMarkSuffix, remoteMarkTitle } from "../lib/remote-mark";
 import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
-import { archiveDragOf, archivedDropToast, blockedDropSentence, orgProjectOf, unarchivedToast } from "../lib/drag-archive";
+import { archiveDragOf, archivedDropToast, archivedProjectOf, blockedDropSentence, unarchivedProjectOf, unarchivedToast } from "../lib/drag-archive";
 import { cwdLabel, remotePlaceOf, type TargetInfo } from "../lib/remote-session";
 import { recentCount, recentSessions } from "../lib/recent";
 import { NEEDS_YOU_KEY, needsYouCut, needsYouItems, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "../lib/needs-you";
@@ -56,31 +59,25 @@ import {
 } from "../lib/session-groups";
 import { announce, hasLocalDraft, home, localRunning, localWorking, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
-import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, stalledPaths, tagSearchText, tagsTitle, turnErrorTitle } from "../lib/signals";
-import { readinessBadge, readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
-import { requestListRefresh } from "../lib/list-refresh";
+import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTooltip, signalWords, stalledPaths, tagSearchText, turnErrorTitle } from "../lib/signals";
+import { readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
+import { ROW_BUILT_INS, RowPlaceContext, useRowAdditions } from "../lib/row-place";
+import { RowPlaceView } from "./RowPlace";
 import { orgHref } from "../lib/orgs-route";
-import { inProjectsRegion, projectBlocks, projectRowCount, PROJECTS_KEY } from "../lib/project-region";
-import { projectHref, PROJECTS_HREF } from "../lib/projects-route";
-import { AddProjectDialog } from "./AddProjectDialog";
+import { inLocalProjectsRegion, projectBlocks, projectOpenCount, PROJECTS_KEY } from "../lib/project-region";
+import { projectHref, projectSessionHref, PROJECTS_HREF } from "../lib/projects-route";
+import { hasOverseerRows, overseerMenu, overseerMenuDot, overseerMenuLabel, rowEnd, rowLabel } from "../lib/overseer-menu";
 import { llmInflight, marksOverlay, openSessionFeed } from "../lib/session-feed";
 import { reuseUnchanged } from "../lib/summary-diff";
-import { readKey, removeKey, writeKey } from "../lib/storage-keys";
+import { FOLDERS_KEY, readKey, removeKey, writeKey } from "../lib/storage-keys";
 import { monogram, setSpine, spine } from "../lib/spine";
 import { ARCHIVE_TILE, createRowPress, type DragInfo, dropAction, dropTiles, type TileId } from "../lib/drag-overlay";
-import {
-  clearSelection,
-  isSelected,
-  isTextEntry,
-  selectionBusy,
-  pruneSelection,
-  selectedPaths,
-  selectionMode,
-  startSelection,
-  toggleSelection,
-} from "../lib/session-selection";
+import { bindKey } from "../commands/keys";
 import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
 import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
+import { createDismissals, createSectionReveal } from "../lib/section-reveal";
+import { ForKey } from "../lib/for-key";
+import { holdListScroll, rowOnScreen } from "../lib/list-scroll-hold";
 import { sessionWorking } from "../lib/workers";
 import {
   columnAtX,
@@ -100,7 +97,6 @@ import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
 import { ActionMenu } from "./ActionMenu";
 import { ArchiveCleanup } from "./ArchiveCleanup";
-import { SelectionToolbar } from "./SelectionToolbar";
 import { ContextRing } from "./ContextRing";
 import { CancelHeldButton } from "./HeldAct";
 import { MergeRunButton } from "./PlaybookReview";
@@ -115,11 +111,13 @@ import { RemoteGroupDot } from "./RemoteStatus";
 import { Banner, Icon, trapFocus } from "./ui";
 import { showSummaries } from "../lib/summary-line";
 import {
+  downPeerIds,
   effectiveHostFilter,
   HOST_FILTER_KEY,
   hostFilterShown,
   hostLabel,
   hostOf,
+  listedWhileDown,
   meshPeers,
   passesHostFilter,
   peerInfo,
@@ -131,6 +129,11 @@ import {
 import { MeshHostMenu } from "./MeshHostMenu";
 import { connectedCount, hostFilterAsk, rowHostState } from "../lib/mesh-details";
 import { openMonitor } from "../lib/monitor-nav";
+import { updateAvailable } from "../lib/updates";
+import { GUIDE_LINE, collapseFromLine } from "../lib/guide-line";
+
+/** The Settings buttons' name: it says when the last check found an update. */
+const settingsLabel = () => (updateAvailable() ? "Settings · update available" : "Settings");
 
 const ARCHIVE_KEY = "sova:archive-open";
 /** One key per Archive date section, same "1"/"0" values as ARCHIVE_KEY. */
@@ -151,6 +154,11 @@ const [openFolders, setOpenFolders] = createSignal<Record<string, boolean>>({});
     closed: memory only, module state for the same reason as the groups — rebuilt on every poll. */
 const [openOrgs, setOpenOrgs] = createSignal<Record<string, boolean>>({});
 const [openDone, setOpenDone] = createSignal<Record<string, boolean>>({});
+/** Which standalone projects (by id) the user folded or unfolded in the Projects region: memory only, as above. */
+const [openProjects, setOpenProjects] = createSignal<Record<string, boolean>>({});
+/** The visit (lib/section-reveal) on which the user collapsed a section that held the open session, by section key:
+    while it is the current visit that section stays shut over the open session. Memory only, module state as above. */
+const dismissals = createDismissals();
 
 /** Collapsed on every page load, and never persisted (`lib/group-open`): the module state above
     holds the user's choice for as long as the page lives, and a reload starts closed again. */
@@ -264,7 +272,7 @@ function OverseerEye(props: { session: SessionSummary; project: string; selected
  * out of the tab order on purpose (a long list must not add two tab stops per row), so the link
  * keeps the same state in its accessible name that the old right-hand chips exposed.
  */
-function SessionRow(props: {
+export function SessionRow(props: {
   session: SessionSummary;
   selected: string | null;
   now: number;
@@ -296,8 +304,6 @@ function SessionRow(props: {
   const needsYou = createMemo(() => rowNeedsYou(s(), { selected: props.selected, busy: isBusy(), stalled: stalled().has(s().path) }));
   /** Line 1's leading state mark (src/lib/signals.ts): the turn-error mark, else the unread dot. */
   const leadMark = () => rowLeadMark(s(), props.selected);
-  /** Line 3's merge-readiness badge (src/lib/readiness.ts): the server's answer, worded. */
-  const badge = () => readinessBadge(s().readiness);
   /** Line 3's worktree count, "2 of 3", after the time: muted, lit while one is ready to merge. */
   const trees = () => readinessCount(s().readiness);
   const tuiTitle = () => `Open in a TUI · pid ${s().live!.pid} · ${s().live!.status}`;
@@ -313,18 +319,13 @@ function SessionRow(props: {
   };
   /**
    * Press-and-hold — a mouse button held down, a thumb held on the row — lifts the row; letting go
-   * in place selects this session and turns the sidebar into selection mode. A lifted row that
-   * moves, or a mouse press that moves 6px, is a drag instead: it opens the drop overlay
-   * (§app.session-list/drop-overlay), which owns the gesture from then on. The press is off the
-   * moment it stops being a press in place: a scroll (the list moving under a still finger is
-   * `pointercancel` on touch and a `scroll` event on a mouse wheel), or the row going away. What a
-   * lift or a drag leaves behind — a `click`, and on touch a `contextmenu` — is swallowed below, or
-   * the row would navigate on top of what the gesture just did.
+   * in place does nothing. A lifted row that moves, or a mouse press that moves 6px, is a drag: it
+   * opens the drop overlay (§app.session-list/drop-overlay), which owns the gesture from then on.
+   * The press is off the moment it stops being a press in place: a scroll (the list moving under a
+   * still finger is `pointercancel` on touch and a `scroll` event on a mouse wheel), or the row
+   * going away. What a lift or a drag leaves behind — a `click`, and on touch a `contextmenu` — is
+   * swallowed below, or the row would navigate on top of what the gesture just did.
    */
-  const select = () => {
-    startSelection(s().path);
-    announce(`Selecting sessions. ${s().title} selected.`);
-  };
   let shell: HTMLLIElement | undefined;
   let pointerId = 0;
   let pointerKind = "mouse";
@@ -338,8 +339,10 @@ function SessionRow(props: {
       path: row.path,
       title: row.title,
       groupId: row.groupId ?? null,
-      org: isOrgSession(row) || !!row.project,
-      orgProject: orgProjectOf(row),
+      // A session only in a project's folder is ordinary: it can be grouped.
+      org: isOwnedSession(row),
+      orgProject: unarchivedProjectOf(row, host === null),
+      archivedProject: archivedProjectOf(row),
       peer: host ? hostLabel(host) : null,
       // Busy as the row shows it: this tab's own run is newer than the last fetched list.
       archive: archiveDragOf({ ...row, busy: localRunning()[row.path] ?? row.busy }),
@@ -363,12 +366,11 @@ function SessionRow(props: {
     setLifted(false);
     watchPress(false);
   };
-  /** The press ended in place: a lifted row is selected. */
+  /** The press ended in place: a lifted row settles back, and nothing else happens. */
   const releasePress = () => {
-    const wasLifted = press.finish();
+    press.finish();
     setLifted(false);
     watchPress(false);
-    if (wasLifted) select();
   };
   const movePress = (e: PointerEvent) => e.pointerId === pointerId && press.move({ x: e.clientX, y: e.clientY });
   const cancelOwn = (e: PointerEvent) => e.pointerId === pointerId && cancelPress();
@@ -397,10 +399,8 @@ function SessionRow(props: {
   };
   onMount(() => shell?.addEventListener("touchmove", holdStill, { passive: false }));
   onCleanup(() => shell?.removeEventListener("touchmove", holdStill));
-  /** The rail's own controls (the state pills, the checkbox) are pressed, not held. */
+  /** The rail's own controls (the state pills) are pressed, not held. */
   const onOwnControl = (e: PointerEvent) => e.target instanceof Element && !!e.target.closest("button, input, label");
-  const selecting = () => selectionMode();
-  const chosen = () => isSelected(s().path);
 
   return (
     <li
@@ -410,16 +410,13 @@ function SessionRow(props: {
         "session-row-shell-current": props.selected === s().path,
         "session-row-dragging": draggingPath() === s().path,
         "session-row-lifted": lifted(),
-        "session-row-shell-selecting": selecting(),
-        "session-row-shell-selected": selecting() && chosen(),
       }}
       onPointerDown={(e) => {
         if (e.pointerType === "mouse" && e.button !== 0) return; // right-click is not a hold
         if (onOwnControl(e) || draggingPath()) return;
         pointerId = e.pointerId;
         pointerKind = e.pointerType;
-        // In selection mode there is no drag at all: a press there is a hold or a toggle.
-        press.start({ x: e.clientX, y: e.clientY }, e.pointerType, !selecting());
+        press.start({ x: e.clientX, y: e.clientY }, e.pointerType);
         watchPress(true);
       }}
       onPointerCancel={cancelPress}
@@ -427,7 +424,7 @@ function SessionRow(props: {
       // that may still drag, whose moves the window keeps watching (6px is a drag, wherever it goes).
       onPointerLeave={(e) => {
         if (press.phase() !== "pressed") return;
-        if (e.pointerType === "mouse" && !selecting()) return;
+        if (e.pointerType === "mouse") return;
         cancelPress();
       }}
       // Capture went to someone else (a scrollbar, another element grabbing it), so the pointerup
@@ -438,68 +435,47 @@ function SessionRow(props: {
       onContextMenu={(e) => (press.suppressed() || draggingPath()) && e.preventDefault()}
     >
       <div class="session-rail">
-        {/* The rail is where a row's state lives, so it is where the row is picked too: one 44px
-            checkbox at the top of it, in selection mode only. Every copy of this row — Recent, a
-            group, Live & web — reads the same selection, so all of them check together. */}
-        <Show when={selecting()}>
-          <label class="toggle session-select">
-            <input
-              type="checkbox"
-              checked={chosen()}
-              aria-label={`Select ${s().title}`}
-              // An action in flight owns the selection it started with; the box says so rather
-              // than silently ignoring the press (the store refuses it either way).
-              disabled={selectionBusy()}
-              onChange={() => toggleSelection(s().path)}
-            />
-            <span class="toggle-box" />
-          </label>
+        {/* At most one state: live wins over busy. TUI is a static word; Busy is a pulsing dot. */}
+        <Show when={s().live}>
+          <button
+            type="button"
+            tabindex="-1"
+            class="session-rail-item session-rail-state session-rail-tui chip chip-accent"
+            aria-label={`Open in a TUI. Pid ${s().live!.pid}, status ${s().live!.status}.`}
+            title={tuiTitle()}
+            onClick={() => toast(tuiTitle())}
+          >
+            TUI
+          </button>
         </Show>
-        {/* At most one state: live wins over busy. TUI is a static word; Busy is a pulsing dot.
-            The wrapper is layout-neutral outside selection mode; in it, it hangs the state under
-            the checkbox so the box alone decides where the row's middle is. */}
-        <div class="session-rail-states">
-          <Show when={s().live}>
+        <Show when={isBusy()}>
+          <button
+            type="button"
+            tabindex="-1"
+            class="session-rail-item session-rail-state chip chip-info chip-live"
+            aria-label={busyWords()}
+            title={busyWords()}
+            onClick={() => toast(busyWords())}
+          >
+            <span class="session-rail-dot" />
+          </button>
+        </Show>
+        <Show when={working()}>
+          {(n) => (
             <button
               type="button"
               tabindex="-1"
-              class="session-rail-item session-rail-state session-rail-tui chip chip-accent"
-              aria-label={`Open in a TUI. Pid ${s().live!.pid}, status ${s().live!.status}.`}
-              title={tuiTitle()}
-              onClick={() => toast(tuiTitle())}
+              class="session-rail-item session-rail-count"
+              // One moving thing per row: the figure only pulses when Busy isn't already pulsing.
+              classList={{ "session-rail-count-live": !isBusy() }}
+              aria-label={workingNow(n())}
+              title={workingNow(n())}
+              onClick={() => toast(workingNow(n()))}
             >
-              TUI
+              <span class="text-num">{n()}</span>
             </button>
-          </Show>
-          <Show when={isBusy()}>
-            <button
-              type="button"
-              tabindex="-1"
-              class="session-rail-item session-rail-state chip chip-info chip-live"
-              aria-label={busyWords()}
-              title={busyWords()}
-              onClick={() => toast(busyWords())}
-            >
-              <span class="session-rail-dot" />
-            </button>
-          </Show>
-          <Show when={working()}>
-            {(n) => (
-              <button
-                type="button"
-                tabindex="-1"
-                class="session-rail-item session-rail-count"
-                // One moving thing per row: the figure only pulses when Busy isn't already pulsing.
-                classList={{ "session-rail-count-live": !isBusy() }}
-                aria-label={workingNow(n())}
-                title={workingNow(n())}
-                onClick={() => toast(workingNow(n()))}
-              >
-                <span class="text-num">{n()}</span>
-              </button>
-            )}
-          </Show>
-        </div>
+          )}
+        </Show>
       </div>
       <a
         class="list-row list-row-interactive session-row"
@@ -508,14 +484,7 @@ function SessionRow(props: {
         aria-current={props.selected === s().path ? "page" : undefined}
         onClick={(e) => {
           // A hold or a drag already acted on this row; its click is the gesture's echo, not a choice.
-          if (press.suppressed() || dragSuppressesClick(s().path)) {
-            e.preventDefault();
-            return;
-          }
-          // In selection mode a row is picked, not opened. Outside it, a click is a click.
-          if (!selecting()) return;
-          e.preventDefault();
-          toggleSelection(s().path);
+          if (press.suppressed() || dragSuppressesClick(s().path)) e.preventDefault();
         }}
       >
         <div class="list-main">
@@ -549,7 +518,7 @@ function SessionRow(props: {
             <Show when={needsYou()}>
               {(m) => (
                 <>
-                  <span class="session-signal-wrap" title={signalTitle(m())}>
+                  <span class="session-signal-wrap" title={signalTooltip(m())}>
                     {/* Open questions show as the accent count alone; its color is the mark. */}
                     <Show
                       when={m().kind === "questions" && m().align}
@@ -642,7 +611,7 @@ function SessionRow(props: {
                 </span>
               )}
             </Show>
-            <p class="list-meta" title={tagsTitle(s().tags) ?? undefined}>
+            <p class="list-meta">
               {relativeTime(s().lastActiveAt, props.now)}
               {/* The worktrees this session tracks: "2 of 3" merged, after the time, before the
                   badge and the model. Muted, and lit while one of them is ready to merge. The
@@ -665,17 +634,9 @@ function SessionRow(props: {
                   </>
                 )}
               </Show>
-              {/* The merge-readiness badge, between the count and the model. The topic is search-only. */}
-              <Show when={badge()}>
-                {(w) => (
-                  <>
-                    {" · "}
-                    <span class="session-readiness" title={readinessTitle(s().readiness) ?? undefined}>
-                      {w()}
-                    </span>
-                  </>
-                )}
-              </Show>
+              {/* The row place (lib/row-place): its built-in, the merge-readiness badge, between the
+                  count and the model, then the chips extensions add. The topic is search-only. */}
+              <RowPlaceView session={s()} builtIns={ROW_BUILT_INS} />
               {/* The region's Needs you says where the row lives in the model's place. */}
               <Show
                 when={props.place}
@@ -716,30 +677,29 @@ function SessionRow(props: {
   );
 }
 
-/** `<For>` keyed by a string the caller names rather than by object identity. Folder sections,
-    date sections and rows are rebuilt as new objects on every poll, so a plain `<For>` over them
-    tore down and rebuilt every node each time; keyed by cwd, id or path, each one is built once
-    and its item accessor updates in place. The last item is held while a removed key is being
-    disposed, so an accessor read in that gap never sees `undefined`. */
-function ForKey<T>(props: { each: readonly T[]; by: (item: T) => string; children: (item: () => T, index: () => number) => JSX.Element }) {
-  const byKey = createMemo(() => new Map(props.each.map((x) => [props.by(x), x])));
-  const keys = createMemo(() => props.each.map(props.by));
-  return (
-    <For each={keys()}>
-      {(k, i) => {
-        let last = byKey().get(k)!;
-        return props.children(() => (last = byKey().get(k) ?? last), i);
-      }}
-    </For>
-  );
-}
-
 /** Sessions grouped by folder: the markup of the session list "Anatomy". The ORDER is the
-    caller's — `groupByCreation` for Live & web, `groupByActivity` for the Archive and for a group
+    caller's — `groupByCreation` for Folders, `groupByActivity` for the Archive and for a group
     (src/lib/session-order.ts) — so this component never decides what "newest" means.
     `level` is the heading level a folder label takes: h3 directly under a region, h4 inside a
     group, where the group's own label already sits at h3. Every folder collapses (the session list "Folder
     open/closed state"), so `searching` — which forces every one of them open — comes in too. */
+/**
+ * A group's guide line (§app.session-list/guide-lines): a direct child of the group it draws beside, after its head.
+ * Pressing it closes the group the way its head would (lib/guide-line). It runs down from the head's chevron: beside
+ * the contents, or (a folder, a Projects-region project) down its rows' state rail, where app.css places the chevron.
+ * Hidden from AT and never a Tab stop: the head is the control.
+ */
+function GuideLine(props: { name: string; fold?: () => void }) {
+  return (
+    <div
+      class={GUIDE_LINE}
+      aria-hidden="true"
+      title={`Collapse ${props.name}`}
+      onClick={(e) => collapseFromLine(e.currentTarget, props.fold)}
+    />
+  );
+}
+
 function GroupList(props: {
   groups: CwdGroup[];
   selected: string | null;
@@ -832,6 +792,7 @@ function GroupList(props: {
                 </ForKey>
               </Show>
             </ul>
+            <GuideLine name={remote()?.remoteCwd ?? tildePath(cwd, home())} />
           </details>
         );
       }}
@@ -840,7 +801,7 @@ function GroupList(props: {
 }
 
 /**
- * One user-made group: a collapsible section above Live & web that holds the same folder groups and
+ * One user-made group: a collapsible section above Projects and Folders that holds the same folder groups and
  * rows as every other region. It keeps its own Rename and Delete, and
  * it is a drop target while a row is being dragged. An empty group stays visible — that is what a
  * group is when the user makes it, and dragging a row in is how it fills.
@@ -979,6 +940,7 @@ function GroupBlock(props: {
           level={4}
         />
       </Show>
+      <GuideLine name={group().name} />
     </details>
   );
 }
@@ -1288,13 +1250,9 @@ export function Sidebar(props: {
   };
   // "Open Through This Host" in the mesh details: the filter takes that host (a fresh ask each time).
   createEffect(on(hostFilterAsk, (ask) => ask && chooseHostFilter(ask.value), { defer: true }));
-  /** The one toolbar line (both widths) has the search open: opened by its icon or "/", and
-      held open by a query, so a row tapped and left finds it as it was. */
-  const [searchOpen, setSearchOpen] = createSignal(false);
   const [showSkeleton, setShowSkeleton] = createSignal(false);
   const skeletonTimer = setTimeout(() => setShowSkeleton(true), 300);
   let search!: HTMLInputElement;
-  let searchToggle: HTMLButtonElement | undefined;
   let aside!: HTMLElement;
   // The tab's copy of the group list: the pane's region and the session pane's menu share it.
   onMount(() => void loadSessionGroups());
@@ -1334,7 +1292,7 @@ export function Sidebar(props: {
       return;
     }
     mutation.commit(deleted);
-    const done = archivedDropToast(deleted, d.orgProject);
+    const done = archivedDropToast(deleted, d.archivedProject);
     // Keyed: the next archive's toast replaces this one, so only the latest Undo is on screen.
     toast(done.text, done.undo ? { key: "archive-undo", action: { label: "Undo", run: () => undoArchive(d.path, d.orgProject) } } : undefined);
     announce(done.text);
@@ -1369,59 +1327,35 @@ export function Sidebar(props: {
     announce(on ? "Sessions pane collapsed." : "Sessions pane expanded.");
     if (refocus && hadFocus) queueMicrotask(() => (on ? expandToggle : collapseToggle)?.focus());
   };
-  /** The spine's Search, and "/" while collapsed: open the pane and its search line, cursor in
-      the field. The field exists only while the line is open, so the line opens here too. */
+  /** The spine's Search, and "/" while collapsed: open the pane, cursor in its search field. */
   const expandToSearch = () => {
     setCollapsed(false, false);
-    setSearchOpen(true);
     queueMicrotask(() => search.focus());
   };
 
-  // "/" anywhere outside a text field focuses search; Escape leaves selection mode; Ctrl/⌘+B
-  // collapses or expands the pane.
-  const onKey = (e: KeyboardEvent) => {
-    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "b") {
-      if (!props.unfolded) return; // collapse is a desktop affordance
-      e.preventDefault();
-      setCollapsed(!spine());
-      return;
-    }
-    const t = e.target as HTMLInputElement | null;
-    // Typing, not merely focused on a control: a row's checkbox is an <input> too, and Escape on
-    // one has to leave selection mode like Escape anywhere else (src/lib/session-selection.ts).
-    const inText = isTextEntry(t);
-    // Escape is the way OUT of selection mode, on every keyboard, with no control to find first.
-    // Not while a field has focus: there Escape belongs to the field (search clears, rename cancels).
-    if (e.key === "Escape" && selectionMode() && !inText) {
-      e.preventDefault();
-      // Not while an action is running: leaving the mode under a run in flight is what let a
-      // finished run put its leftovers back over a selection that had moved on.
-      if (selectionBusy()) {
-        announce("Something is still running. It'll be a moment.");
-        return;
-      }
-      clearSelection();
-      announce("Selection off.");
-      return;
-    }
-    if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (inText) return;
-    e.preventDefault();
+  // "/" anywhere outside a text field focuses search; Ctrl/⌘+B collapses or expands the pane.
+  // (commands/keys holds both chords and their scope: "/" never fires while typing in a field.)
+  const offToggleKey = bindKey("sidebar.toggle", () => {
+    if (!props.unfolded) return false; // collapse is a desktop affordance
+    setCollapsed(!spine());
+    return true;
+  });
+  const offSearchKey = bindKey("sidebar.search", () => {
     if (collapsed()) expandToSearch();
-    else openSearch();
-  };
-  document.addEventListener("keydown", onKey);
+    else search.focus();
+    return true;
+  });
   onCleanup(() => {
-    document.removeEventListener("keydown", onKey);
+    offToggleKey();
+    offSearchKey();
     clearTimeout(skeletonTimer);
   });
 
   // Decision marks arrive over the session feed as they change, and so does word that the list itself
-  // changed (a session a TUI just started): that re-reads it, and the attention digest with it (App,
-  // lib/list-refresh.ts), since the Organizations region's Needs you lists the digest's items: a reply
-  // or a Get Link in another tab clears its row at once, not at the digest's next 10 s read. The list
-  // poll stays the fallback.
-  openSessionFeed(requestListRefresh);
+  // changed (a session a TUI just started): that re-reads the list only. The attention digest (the
+  // Organizations region's Needs you lists its items) is pushed whole by the same feed as it changes
+  // (App), so a reply or a Get Link in another tab clears its row at once with no read of its own.
+  openSessionFeed(() => props.onRefresh());
   /** The one live figure the toolbar line, the foot, the phone bar and the spine all show: the
       sessions whose turn runs plus the subagents working, this host's from the Agents poll, the
       peers' from their lists, the open chat's from its socket — independent of the search and the
@@ -1453,14 +1387,19 @@ export function Sidebar(props: {
   const agentsLabel = () => `Agents: ${workSentence()}`;
   /** Main threads only (src/lib/regions.ts): every region, search hit and count reads this. Each row
       carries the feed's marks over the list's (a peer's row keeps its own); `reuseUnchanged` keeps a
-      row's object across feed messages that don't touch it, so rows update in place. */
-  const all = createMemo<SessionSummary[]>((prev) =>
-    reuseUnchanged(
+      row's object across feed messages that don't touch it, so rows update in place. A down
+      peer's rows are left out unless the host filter names it (lib/mesh.ts `listedWhileDown`). */
+  const all = createMemo<SessionSummary[]>((prev) => {
+    const down = downPeerIds(meshPeers());
+    const filter = hostFilter();
+    return reuseUnchanged(
       // A cleared project overseer conversation is drawn nowhere: its overseer's History opens it.
-      (props.sessions ?? []).filter((s) => isMainThread(s) && !isClearedOverseer(s)).map((s) => overlaid(s, marksOverlay(), !!hostOf(s.path))),
+      (props.sessions ?? [])
+        .filter((s) => isMainThread(s) && !isClearedOverseer(s) && listedWhileDown(hostOf(s.path), filter, down))
+        .map((s) => overlaid(s, marksOverlay(), !!hostOf(s.path))),
       prev,
-    ),
-  );
+    );
+  });
   /** The folder the server lists sessions from (its own agent dir's), read once the list is empty. */
   const isEmpty = createMemo(() => !!props.sessions && all().length === 0);
   const [dirInfo] = createResource(
@@ -1471,24 +1410,17 @@ export function Sidebar(props: {
     const d = dirInfo();
     return d ? tildePath(d.sessionsDir, d.home) : null;
   };
-  /**
-   * The selection lives in module state and is keyed by PATH, so a background poll can neither
-   * reset it nor unpick a row whose object was rebuilt. The one thing a poll may change about it:
-   * a session that is no longer in the list is no longer selected. `undefined` is a fetch in
-   * flight, not an empty list — pruning against that would clear everything every few seconds.
-   * Pruned against the UNFILTERED list: a worker session is still in the list, just not drawn.
-   */
-  createEffect(() => {
-    const list = props.sessions;
-    if (!list) return;
-    pruneSelection(list.map((s) => s.path));
-  });
   // Labels for remote groups: refetched only when the set of targets the list uses changes.
   const usedTargets = createMemo(
     () => [...new Set(all().map((s) => remotePlaceOf(s)?.target).filter(Boolean))].sort().join("\n") || false,
   );
   const [targetsRes] = createResource(usedTargets, () => fetchTargets().catch(() => [] as TargetInfo[]));
   const targets = () => targetsRes.latest ?? [];
+  /** `all()` narrowed by the host filter only (no query): what each region's "of {total}" counts. */
+  const hostPool = createMemo(() => {
+    const h = hostFilter();
+    return h === null ? all() : all().filter((s) => passesHostFilter(h, s.path));
+  });
   const hits = createMemo(() => {
     const q = query().trim().toLowerCase();
     // A remote session is found by its target and remote folder, not by its placeholder path.
@@ -1497,30 +1429,37 @@ export function Sidebar(props: {
       return r ? `${r.target} ${targets().find((t) => t.name === r.target)?.label ?? ""} ${r.remoteCwd}` : s.cwd;
     };
     // The host filter narrows first; with the mesh off it is always All and changes nothing.
-    const h = hostFilter();
-    const pool = h === null ? all() : all().filter((s) => passesHostFilter(h, s.path));
+    const pool = hostPool();
     // An org row is also found by its org, its project and the baton holder (lib/org-region); it
     // only ever shows in the Organizations region, so that is the only place such a hit appears.
     return q
       ? pool.filter((s) => `${s.title} ${where(s)} ${s.model ?? ""} ${tagSearchText(s.tags)} ${orgSearchText(s)}`.toLowerCase().includes(q))
       : pool;
   });
-  /** Every ordinary surface — Needs you, Recent, Groups, Live & web, the Archive and its cleanup —
+  /** Every ordinary surface — Needs you, Recent, Groups, Folders, the Archive and its cleanup —
       reads these, never `all()`/`hits()`: an organization's session lives only in its own region. */
   const ordinary = createMemo(() => all().filter(isOrdinarySession));
   /** Each group's session count, as its section counts them, for its tile in the overlay. */
   const groupCounts = createMemo(() => new Map(groupSections(ordinary(), sessionGroups(), false).map((x) => [x.group.id, x.sessions.length])));
   const ordinaryHits = createMemo(() => hits().filter(isOrdinarySession));
-  const orgHits = createMemo(() => hits().filter(isOrgSession));
-  // Pane rule: live, or web-spawned and not archived, stays on top (src/lib/regions.ts).
+  /** The row is this computer's, not a mesh peer's: only this computer's sessions are listed under its projects. */
+  const here = (s: SessionSummary) => hostOf(s.path) === null;
+  /** The Organizations region's rows: org sessions, and the sessions in a placed project's folder on this computer, which
+      are ordinary too (a peer's stays in Folders). */
+  const inOrgs = (s: SessionSummary) => isOrgSession(s) || (isOrgFolderSession(s) && here(s));
+  const orgHits = createMemo(() => hits().filter(inOrgs));
+  // Pane rule: live, or web-spawned and not archived, stays on top (src/lib/regions.ts). Folders, the top region, leaves
+  // out a session a project of this computer lists: its project's block is its place.
   const isTop = isTopSession;
-  const topHits = createMemo(() => ordinaryHits().filter(isTop));
+  const topHits = createMemo(() => ordinaryHits().filter((s) => inFolders(s, here(s))));
   const archiveHits = createMemo(() => ordinaryHits().filter((s) => !isTop(s)));
   // Each region groups by cwd on its own, so a folder can appear in both.
   const topGroups = createMemo(() => groupByCreation(topHits()));
+  /** Folders' head counts folders: all of them with no query, the "of {total}" while searching. */
+  const folderTotal = createMemo(() => groupByCreation(hostPool().filter((s) => inFolders(s, here(s)))).length);
   /**
    * Recent: the handful of sessions that moved last, said once more at the very top.
-   * Purely additive, like a group — every row here is still in Live & web or the Archive below —
+   * Purely additive, like a group — every row here is still in Folders or the Archive below, or in its project's block —
    * and built from `hits()`, so it narrows with the search and can never carry a row the rest of
    * the sidebar is hiding. How many rows is `recentCount()`, and the settings dialog spec's General tab is the only
    * place that writes it: this region has no controls of its own.
@@ -1535,6 +1474,9 @@ export function Sidebar(props: {
   /** Its items of no session: a project's failed deploy or an overseer's request to deploy (§app.project-services/deploy-status). */
   const needsYouProject = createMemo(() => needsYouItems(props.attention, query()));
   const needsYouCount = () => needsYou().length + needsYouProject().length;
+  /** The blockers, then the softer tier (the turn card's guesses) under its own label. */
+  const needsYouHard = createMemo(() => needsYou().filter((r) => !r.soft));
+  const needsYouSoft = createMemo(() => needsYou().filter((r) => r.soft));
   createEffect(() => setStalled(stalledPaths(props.attention)));
   /** ONE rule for the region and its spine door: rows, and proactivity known and not Off. */
   const showNeedsYou = () => !!props.sessions && needsYouShown(props.overseer?.proactivity, needsYouCount());
@@ -1566,6 +1508,9 @@ export function Sidebar(props: {
   // group can hold a TUI-live session and an archived one — so they read the whole search-hit list,
   // not one region's slice.
   const searching = () => !!query().trim();
+  /** One stay on the open session (lib/section-reveal): a new number each time the open session changes, never on a
+      refresh. A section holding the open session opens for it until the user collapses it on this visit. */
+  const { dismissed, noteToggle } = createSectionReveal(() => props.selected, dismissals);
   // Org sessions are never grouped, so an assignment made before that rule is kept but not drawn.
   const sections = createMemo(() => groupSections(ordinaryHits(), sessionGroups(), searching()));
   /** A group's rows, from the same hit list the sections were built from. */
@@ -1606,14 +1551,28 @@ export function Sidebar(props: {
   // Collapsed by default; the user's own choice persists for the tab.
   const [storedOpen, setStoredOpen] = createSignal(readKey(sessionStorage, ARCHIVE_KEY) === "1");
   /** Forced open while searching, when the top is empty, or when the open session is archived. */
-  const forcedOpen = () =>
-    !!query().trim() || topHits().length === 0 || archiveHits().some((s) => s.path === props.selected);
-  const archiveOpen = () => forcedOpen() || storedOpen();
+  const archiveHolds = () => archiveHits().some((s) => s.path === props.selected);
+  const archiveOpen = () =>
+    archiveOpenRule({ stored: storedOpen(), searching: searching(), topEmpty: topHits().length === 0, holdsSelected: archiveHolds(), dismissed: dismissed("archive") });
   const onArchiveToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
     if (open === archiveOpen()) return; // our own `open` update, not the user's
+    noteToggle("archive", open, archiveHolds());
     setStoredOpen(open);
     writeKey(sessionStorage, ARCHIVE_KEY, open ? "1" : "0");
+  };
+  // Folders: OPEN by default, like Projects; a collapse is remembered for the tab. Forced open, the stored choice left alone,
+  // while a search has matches in it or it holds the open session.
+  const [foldersStored, setFoldersStored] = createSignal(storedFoldersOpen(readKey(sessionStorage, FOLDERS_KEY)));
+  const foldersHold = () => topHits().some((s) => s.path === props.selected);
+  const foldersOpen = () =>
+    foldersOpenRule({ stored: foldersStored(), searching: searching(), hits: topHits().length, holdsSelected: foldersHold(), dismissed: dismissed("folders") });
+  const onFoldersToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
+    const open = e.currentTarget.open;
+    if (open === foldersOpen()) return; // our own `open` update, not the user's
+    noteToggle("folders", open, foldersHold());
+    setFoldersStored(open);
+    writeKey(sessionStorage, FOLDERS_KEY, open ? "1" : "0");
   };
   // Needs you: OPEN by default, unlike the Archive; a collapse is remembered for the tab the same way.
   const [needsYouStored, setNeedsYouStored] = createSignal(storedNeedsYouOpen(readKey(sessionStorage, NEEDS_YOU_KEY)));
@@ -1627,12 +1586,20 @@ export function Sidebar(props: {
   };
   /**
    * Organizations (lib/org-region): the only place org sessions are listed. Its own Needs you first,
-   * then org → project → groups (Conversations, Conflicts to settle, Builds), each with a Done tail. Open by default, a collapse remembered for the tab.
+   * then org → project → groups (Conversations, Conflicts to settle, Sessions), each with a Done tail. Open by default, a collapse remembered for the tab.
    */
   // The registered projects, read again with the session list (a project added or archived moves
   // both), at most every 15 seconds: the list reloads on every live event. The Organizations
   // region lists each org's placed projects from it, sessions or not; Projects, the standalone ones.
-  const [projectList, { refetch: refetchProjects }] = createResource(() => listProjects().catch(() => null));
+  const [projectList, { refetch: refetchProjects }] = createResource(() =>
+    listProjects()
+      .then((r) => {
+        // A project's page opens on what this tab knows of it (lib/page-cache), and New Session on its root.
+        for (const p of r.projects) remember(projectSummaryKey(p.id), p);
+        return r;
+      })
+      .catch(() => null),
+  );
   let projectsReadAt = Date.now();
   createEffect(
     on(
@@ -1653,7 +1620,7 @@ export function Sidebar(props: {
   const orgs = createMemo(() => orgSections(orgHits(), orgProjects()));
   /** The region counts rows: a project's eye is not one. */
   const orgRowCount = () => regionCount(orgs());
-  const orgTotal = () => regionCount(orgSections(all().filter(isOrgSession)));
+  const orgTotal = () => regionCount(orgSections(all().filter(inOrgs)));
   const orgNeedsYou = createMemo(() => orgNeedsYouRows(props.attention, orgHits()));
   /** Its Needs you items that are no session: projects to pick a main stakeholder for. */
   const orgItems = createMemo(() => orgProjectItems(props.attention, query()));
@@ -1681,35 +1648,44 @@ export function Sidebar(props: {
     orgsRegionOpenRule({
       stored: orgsStored(),
       searching: searching(),
-      holdsSelected: orgHits().some((s) => s.path === props.selected),
+      holdsSelected: holds(orgHits()),
+      dismissed: dismissed("orgs"),
     });
   const onOrgsToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
     if (open === orgsOpen()) return; // our own `open` update, not the user's
+    noteToggle("orgs", open, holds(orgHits()));
     setOrgsStored(open);
     writeKey(sessionStorage, ORGS_KEY, open ? "1" : "0");
   };
-  const holds = (rows: readonly SessionSummary[]) => rows.some((r) => r.path === props.selected);
-  const orgOpen = (o: OrgSection) => orgSectionOpenRule({ chosen: openOrgs()[o.id], searching: searching(), holdsSelected: holds(orgRows(o)) });
+  /** The open session is one of these rows and lives only here: a folder session of this computer's project lives only
+      with its project too; one Folders still lists (a peer's, an archived one) forces nothing open. */
+  const holds = (rows: readonly SessionSummary[]) =>
+    rows.some((r) => r.path === props.selected && (r.project?.kind !== "folder" || listedWithLocalProject(r, here(r))));
+  const orgOpen = (o: OrgSection) =>
+    orgSectionOpenRule({ chosen: openOrgs()[o.id], searching: searching(), holdsSelected: holds(orgRows(o)), dismissed: dismissed(`org\n${o.id}`) });
   const onOrgToggle = (o: OrgSection, e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
     if (open === orgOpen(o)) return;
+    noteToggle(`org\n${o.id}`, open, holds(orgRows(o)));
     setOpenOrgs((m) => ({ ...m, [o.id]: open }));
   };
-  /** A group's Done tail, keyed by org, project and group: collapsed by default, forced open by a search or the open session. */
+  /** A group's Done tail, keyed by org, project and group: collapsed by default, forced open by a search, opened for the
+      open session inside unless collapsed on this visit. */
   const groupDoneOpen = (key: string, rows: readonly SessionSummary[]) =>
-    doneOpenRule({ chosen: openDone()[key], searching: searching(), holdsSelected: holds(rows) });
+    doneOpenRule({ chosen: openDone()[key], searching: searching(), holdsSelected: holds(rows), dismissed: dismissed(`done\n${key}`) });
   const onGroupDoneToggle = (key: string, rows: readonly SessionSummary[], e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
     if (open === groupDoneOpen(key, rows)) return;
+    noteToggle(`done\n${key}`, open, holds(rows));
     setOpenDone((m) => ({ ...m, [key]: open }));
   };
   /**
    * Projects (lib/project-region, §app.projects/list): every standalone project's sessions, and only
    * here, right before Organizations — each registered project's heading with its overseer's eye,
-   * then its Builds. Open by default, a collapse remembered for the tab.
+   * then its Sessions. Open by default, a collapse remembered for the tab.
    */
-  const projectHits = createMemo(() => hits().filter(inProjectsRegion));
+  const projectHits = createMemo(() => hits().filter((s) => inLocalProjectsRegion(s, here(s))));
   const projectsFound = createMemo(() => {
     const q = query().trim().toLowerCase();
     const list = projectList()?.projects;
@@ -1720,13 +1696,25 @@ export function Sidebar(props: {
     // A search keeps a project whose name matched, and any project with a row that did.
     return searching() ? blocks.filter((b) => projectsFound()?.some((p) => p.id === b.id) || b.builds.active.length + b.builds.done.length > 0 || b.overseer) : blocks;
   });
-  const projRowCount = () => projectRowCount(projBlocks());
-  const [addingProject, setAddingProject] = createSignal(false);
+  /** The head counts projects; while searching, "of" every project the region lists with no query. */
+  const projTotal = createMemo(() => projectBlocks(hostPool().filter((s) => inLocalProjectsRegion(s, here(s))), projectList()?.projects ?? undefined).length);
+  /** A project's fold in the Projects region: open by default, the user's choice kept in memory; forced open by a search,
+      opened for the open session among its rows (a folder session's too: Folders no longer lists it) unless folded on
+      this visit. */
+  const projectFoldOpen = (id: string, rows: readonly SessionSummary[]) =>
+    orgSectionOpenRule({ chosen: openProjects()[id], searching: searching(), holdsSelected: holds(rows), dismissed: dismissed(`project\n${id}`) });
+  const onProjectFold = (id: string, rows: readonly SessionSummary[]) => {
+    const open = !projectFoldOpen(id, rows);
+    noteToggle(`project\n${id}`, open, holds(rows));
+    setOpenProjects((m) => ({ ...m, [id]: open }));
+  };
   const [projectsStored, setProjectsStored] = createSignal(storedOrgsOpen(readKey(sessionStorage, PROJECTS_KEY)));
-  const projectsOpen = () => orgsRegionOpenRule({ stored: projectsStored(), searching: searching(), holdsSelected: projectHits().some((s) => s.path === props.selected) });
+  const projectsOpen = () =>
+    orgsRegionOpenRule({ stored: projectsStored(), searching: searching(), holdsSelected: holds(projectHits()), dismissed: dismissed("projects") });
   const onProjectsToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
     if (open === projectsOpen()) return; // our own `open` update, not the user's
+    noteToggle("projects", open, holds(projectHits()));
     setProjectsStored(open);
     writeKey(sessionStorage, PROJECTS_KEY, open ? "1" : "0");
   };
@@ -1738,32 +1726,41 @@ export function Sidebar(props: {
     const line = () => rowLine(r.session);
     return <SessionRow session={r.session} selected={props.selected} now={props.now} targets={targets()} detail={line() ? { text: line()!, title: line()! } : null} />;
   };
-  const rowList = (rows: readonly SessionSummary[]) => (
+  /** Rows keyed by path (lib/for-key): a refresh updates each in place, never rebuilds it. A component, so the list it
+      draws is built once and follows `rows` as it changes. */
+  const RowList = (r: { rows: readonly SessionSummary[] }) => (
     <ul class="list">
-      <For each={rows}>{(s) => <ProjectRow session={s} />}</For>
+      <ForKey each={r.rows} by={(s) => s.path}>
+        {(s) => <ProjectRow session={s()} />}
+      </ForKey>
     </ul>
   );
-  /** One group of a project: its label and count, the live states, then its collapsed Done. */
-  const ProjectGroup = (g: { key: string; label: string; title: string; doneTitle: string; states: { label: string; rows: SessionSummary[] }[]; done: SessionSummary[] }) => {
-    const count = () => g.states.reduce((n, x) => n + x.rows.length, 0) + g.done.length;
+  /** One group of a project: its label and count, the live states, then its collapsed Done. `openCount`: the label counts
+      the open rows only (the Projects region), Done keeping its own; else every row, Done included (Organizations). */
+  const ProjectGroup = (g: { key: string; label: string; title: string; doneTitle: string; states: { label: string; rows: SessionSummary[] }[]; done: SessionSummary[]; openCount?: boolean }) => {
+    const open = () => g.states.reduce((n, x) => n + x.rows.length, 0);
+    const count = () => open() + g.done.length;
+    const shown = () => (g.openCount ? open() : count());
+    // Done can hold hundreds of a folder's finished sessions: its rows are built only once it opens.
+    const doneBuilt = builtOnceOpen(() => groupDoneOpen(g.key, g.done));
     return (
       <Show when={count() > 0}>
-        <section class="org-group" aria-label={`${g.label}, ${count()}`}>
+        <section class="org-group" aria-label={`${g.label}, ${shown()}`}>
           <h5 class="list-group-label org-group-label" title={g.title}>
-            {g.label} <span class="text-num">{count()}</span>
+            {g.label} <span class="text-num">{shown()}</span>
           </h5>
-          <For each={g.states}>
+          <ForKey each={g.states} by={(x) => x.label}>
             {(st) => (
-              <Show when={st.rows.length > 0}>
-                <Show when={st.label}>
+              <Show when={st().rows.length > 0}>
+                <Show when={st().label}>
                   <h6 class="org-state-label">
-                    {st.label} <span class="text-num">{st.rows.length}</span>
+                    {st().label} <span class="text-num">{st().rows.length}</span>
                   </h6>
                 </Show>
-                {rowList(st.rows)}
+                <RowList rows={st().rows} />
               </Show>
             )}
-          </For>
+          </ForKey>
           <Show when={g.done.length > 0}>
             <details class="archive-date org-done" open={groupDoneOpen(g.key, g.done)} onToggle={(e) => onGroupDoneToggle(g.key, g.done, e)}>
               <summary class="list-group-label archive-date-label" title={g.doneTitle}>
@@ -1771,7 +1768,10 @@ export function Sidebar(props: {
                 <span class="archive-date-name">Done</span>
                 <span class="text-num">{g.done.length}</span>
               </summary>
-              {rowList(g.done)}
+              <Show when={doneBuilt()}>
+                <RowList rows={g.done} />
+              </Show>
+              <GuideLine name="Done" />
             </details>
           </Show>
         </section>
@@ -1781,12 +1781,14 @@ export function Sidebar(props: {
   // Date sections: collapsed by default, each remembering its own choice the same way.
   const [storedDateOpen, setStoredDateOpen] = createSignal<Partial<Record<ArchiveGroupId, boolean>>>({});
   const dateStored = (id: ArchiveGroupId) => storedDateOpen()[id] ?? readKey(sessionStorage, archiveDateKey(id)) === "1";
-  /** Forced open while searching, or when it holds the open session. */
+  /** Forced open while searching; opened for the open session inside it unless collapsed on this visit. */
+  const dateHolds = (d: { items: SessionSummary[] }) => d.items.some((s) => s.path === props.selected);
   const dateOpen = (d: { id: ArchiveGroupId; items: SessionSummary[] }) =>
-    !!query().trim() || d.items.some((s) => s.path === props.selected) || dateStored(d.id);
+    archiveDateOpenRule({ stored: dateStored(d.id), searching: searching(), holdsSelected: dateHolds(d), dismissed: dismissed(`date\n${d.id}`) });
   const onDateToggle = (d: { id: ArchiveGroupId; items: SessionSummary[] }, e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
     if (open === dateOpen(d)) return; // our own `open` update, not the user's
+    noteToggle(`date\n${d.id}`, open, dateHolds(d));
     setStoredDateOpen((m) => ({ ...m, [d.id]: open }));
     writeKey(sessionStorage, archiveDateKey(d.id), open ? "1" : "0");
   };
@@ -1800,17 +1802,13 @@ export function Sidebar(props: {
     setQuery("");
     search.focus();
   };
-  const toolbarOpen = () => searchOpen() || query() !== "";
-  /** The folded line's search icon (and "/"): the field takes the line, with the cursor in it. */
-  const openSearch = () => {
-    setSearchOpen(true);
-    queueMicrotask(() => search.focus());
-  };
-  /** Close Search, or Escape on an empty field: the query goes, and the line folds back. */
-  const closeSearch = () => {
-    setQuery("");
-    setSearchOpen(false);
-    queueMicrotask(() => searchToggle?.focus());
+  /** Escape on an empty field: leave it for the list without moving it — the open session's row if it is on screen,
+      else the first row on screen; with no row on screen the field just lets go of the focus. */
+  const leaveSearch = () => {
+    const list = aside.querySelector<HTMLElement>(".sidebar-list");
+    const row = list ? rowOnScreen(list) : null;
+    if (row) row.focus({ preventScroll: true });
+    else search.blur();
   };
 
 
@@ -1835,77 +1833,23 @@ export function Sidebar(props: {
   const tuiSentence = () => `${liveCount()} ${liveCount() === 1 ? "session" : "sessions"} open in a TUI`;
 
   /**
-   * The toolbar's working-now line (§app.session-list/working-now): the breakdown the foot's figure
-   * sums, a link to the Agents page. No words on the line — a chat icon before the sessions, the
-   * foot's person before the subagents — the words are its name. Where even that won't fit the gap
-   * (figures of three digits beside `Select` in a 320px pane), the icons go and the figures stay.
+   * The spine's Overseer door, with the count of Overseer messages you haven't read: the bare eye
+   * with the corner pill (the toolbar has the split button, below). Its name and tooltip carry the words.
+   * Who needs you is the Needs you region's to say, not the eye's. Alt+O does the same (App).
    */
-  const WorkingLine = () => {
-    let link!: HTMLAnchorElement;
-    const fit = () => {
-      const bar = link?.parentElement;
-      if (!bar) return;
-      delete link.dataset.fit;
-      if (bar.scrollWidth > bar.clientWidth) link.dataset.fit = "bare";
-    };
-    onMount(() => {
-      // The toolbar, not the link: the link's own size moves with the fit, the line's doesn't.
-      const ro = new ResizeObserver(fit);
-      ro.observe(link.parentElement!);
-      onCleanup(() => ro.disconnect());
-    });
-    createEffect(() => {
-      work().parts.forEach((p) => p.n);
-      fit();
-    });
-    return (
-      <a
-        ref={link}
-        class="sidebar-working"
-        href={agentsHref()}
-        aria-current={props.insightsPage === "agents" ? "page" : undefined}
-        title={work().lineLabel}
-        aria-label={work().lineLabel}
-      >
-        <For each={work().parts}>
-          {(p, i) => (
-            <>
-              <Show when={i() > 0}>
-                <span class="sidebar-working-sep" aria-hidden="true">
-                  ·
-                </span>
-              </Show>
-              <span class="sidebar-working-part">
-                <Icon name={p.kind === "sessions" ? "chat" : "worker"} small />
-                <span class="text-num">{p.n}</span>
-              </span>
-            </>
-          )}
-        </For>
-      </a>
-    );
-  };
-
-  /**
-   * The Overseer's door, with the count of Overseer messages you haven't read. In the toolbar it
-   * is a labelled button (`labelled`): the eye, the word, then the count as an inline pill; on the
-   * spine it is the bare eye with the corner pill. Who needs you is the Needs you region's to say,
-   * not the eye's. Alt+O does the same (App).
-   */
-  const OverseerButton = (p: { class: string; labelled?: boolean }) => {
+  const OverseerButton = (p: { class: string }) => {
     // The Overseer's own messages, so it shows whatever the proactivity; moot while it is open.
     const unread = () => (props.overseerOpen ? 0 : (props.overseer?.unread ?? 0));
     const label = () => overseerButtonLabel(unread());
     return (
       <a
-        class={`button overseer-entry ${p.labelled ? "button-sm overseer-entry-word" : "button-icon"} ${p.class}`}
+        class={`button button-icon overseer-entry ${p.class}`}
         href={OVERSEER_HASH}
         aria-current={props.overseerOpen ? "page" : undefined}
         aria-label={label()}
         title={`${label()} · Alt+O`}
       >
-        <Icon name="eye" small={p.labelled || undefined} />
-        <Show when={p.labelled}>Overseer</Show>
+        <Icon name="eye" />
         <Show when={unread() > 0}>
           <span class="overseer-entry-count text-num" aria-hidden="true">
             {unread() > 99 ? "99+" : unread()}
@@ -1915,7 +1859,84 @@ export function Sidebar(props: {
     );
   };
 
-  /** The session filter, in the toolbar line while the search is open (both widths). */
+  /**
+   * The toolbar's Overseer split button (§app.overseer/entry-button): the eye, the word and the
+   * unread pill link to the Overseer; ▾, once a project overseer has started, lists them. The list
+   * reads every listed session and this host's project list (lib/overseer-menu), never the hits.
+   */
+  const ovMenu = createMemo(() => overseerMenu(all(), projectList()?.projects, { selected: props.selected, busy: sessionBusy }));
+  const OverseerSplit = () => {
+    const unread = () => (props.overseerOpen ? 0 : (props.overseer?.unread ?? 0));
+    const label = () => overseerButtonLabel(unread());
+    const menuLabel = () => overseerMenuLabel(ovMenu());
+    return (
+      <div class="button-split overseer-split">
+        <a class="button overseer-entry" href={OVERSEER_HASH} aria-current={props.overseerOpen ? "page" : undefined} aria-label={label()} title={`${label()} · Alt+O`}>
+          <Icon name="eye" />
+          <span>Overseer</span>
+          <Show when={unread() > 0}>
+            <span class="overseer-entry-count text-num" aria-hidden="true">
+              {unread() > 99 ? "99+" : unread()}
+            </span>
+          </Show>
+        </a>
+        <Show when={hasOverseerRows(ovMenu())}>
+          <ActionMenu
+            label={menuLabel()}
+            title={menuLabel()}
+            icon="chevron-down"
+            ghost={false}
+            class="overseer-split-menu"
+            panelClass="overseer-menu"
+            menuName="Project overseers"
+            contain
+            returnFocus
+            span={() => aside}
+            badge={
+              <Show when={overseerMenuDot(ovMenu())}>
+                <span class="overseer-split-dot" aria-hidden="true" />
+              </Show>
+            }
+          >
+            {(menu) => (
+              <>
+                <p class="popover-label" aria-hidden="true">
+                  Project overseers
+                </p>
+                <For each={ovMenu().rows}>
+                  {(r) => (
+                    <menu.Item
+                      label={r.name}
+                      description={r.org ? `In ${r.org}` : undefined}
+                      aria={rowLabel(r)}
+                      title={rowLabel(r)}
+                      checked={r.current}
+                      end={rowEnd(r).words}
+                      endBadge={
+                        rowEnd(r).pill ? (
+                          <span class="overseer-entry-count text-num" aria-hidden="true">
+                            {rowEnd(r).pill}
+                          </span>
+                        ) : undefined
+                      }
+                      href={projectSessionHref(r.projectId, r.path)}
+                    />
+                  )}
+                </For>
+                <div class="popover-sep" role="separator" />
+                <menu.Item label="All Projects" aria="All Projects" href={PROJECTS_HREF} />
+              </>
+            )}
+          </ActionMenu>
+        </Show>
+      </div>
+    );
+  };
+  /** Focus widens the field over the whole line, and a query keeps it there until cleared. */
+  const [searchFocused, setSearchFocused] = createSignal(false);
+  const searchWide = () => searchFocused() || query() !== "";
+
+  /** The session filter: on the toolbar line's left, the whole line while focused or holding a query. */
   const SearchField = () => (
     <div class="search">
       <Icon name="search" />
@@ -1929,12 +1950,14 @@ export function Sidebar(props: {
         autocomplete="off"
         spellcheck={false}
         value={query()}
+        onFocus={() => setSearchFocused(true)}
+        onBlur={() => setSearchFocused(false)}
         onInput={(e) => setQuery(e.currentTarget.value)}
         onKeyDown={(e) => {
           if (e.key !== "Escape") return;
           e.preventDefault();
           if (query()) setQuery("");
-          else closeSearch();
+          else leaveSearch();
         }}
       />
       <Show when={query()}>
@@ -1954,25 +1977,6 @@ export function Sidebar(props: {
       </Show>
     </p>
   );
-  /** The keyboard's (and the unsure pointer's) door into selection mode: press-and-hold is the
-      accelerator, never the only way in. */
-  const SelectStart = () => (
-    <Show when={props.sessions && all().length > 0 && !selectionMode()}>
-      <button
-        type="button"
-        class="button button-sm button-ghost sidebar-select-start"
-        title="Select several sessions to rename, group or archive them"
-        onClick={() => {
-          startSelection();
-          announce("Selecting sessions. Pick rows with their checkboxes.");
-        }}
-      >
-        <Icon name="check" small />
-        Select
-      </button>
-    </Show>
-  );
-
   /** The foot's rows, as §app.insights/sidebar-foot draws them: the host filter (mesh only), the
       Usage glance with its monitor button, and Agents with its Settings gear. On the
       desktop they sit in `.sidebar-foot`; on a phone the foot bar's sheet holds them, verbatim. */
@@ -2151,11 +2155,14 @@ export function Sidebar(props: {
         <button
           type="button"
           class="button button-icon sidebar-settings"
-          title="Settings"
-          aria-label="Settings"
+          title={settingsLabel()}
+          aria-label={settingsLabel()}
           onClick={() => props.onOpenSettings()}
         >
           <Icon name="settings" small />
+          <Show when={updateAvailable()}>
+            <span class="update-dot" aria-hidden="true" />
+          </Show>
         </button>
         <Show when={reading()}>
           {(r) => <VelocityScrubCard reading={r()} x={pick()?.x ?? 0} y={pick()?.y ?? 0} touch={pick()?.touch ?? false} />}
@@ -2330,17 +2337,17 @@ export function Sidebar(props: {
               <button
                 type="button"
                 class="button button-icon spine-item spine-region"
-                title={`Live & web · ${sessionsWord(topHits().length)}`}
-                aria-label={`Live & web · ${sessionsWord(topHits().length)}`}
+                title={`Folders · ${foldersWord(topGroups().length)}`}
+                aria-label={`Folders · ${foldersWord(topGroups().length)}`}
                 onClick={() =>
                   expandToRegion(
-                    () => document.getElementById("r-top")?.closest("section"),
-                    (el) => el.querySelector<HTMLElement>("summary, a"),
+                    () => aside.querySelector<HTMLElement>(".sidebar-folders > summary"),
+                    (el) => el,
                   )
                 }
               >
                 <Icon name="chat" />
-                <span class="spine-count text-num">{topHits().length}</span>
+                <span class="spine-count text-num">{topGroups().length}</span>
               </button>
             </Show>
             <Show when={showOrgs()}>
@@ -2351,7 +2358,7 @@ export function Sidebar(props: {
                 aria-label={orgsDoorLabel()}
                 onClick={() =>
                   expandToRegion(
-                    () => aside.querySelector<HTMLElement>(".sidebar-orgs > summary"),
+                    () => document.getElementById("r-orgs")?.closest("summary"),
                     (el) => el,
                   )
                 }
@@ -2429,15 +2436,22 @@ export function Sidebar(props: {
           >
             <Icon name="worker" />
           </a>
-          <button type="button" class="button button-icon spine-item" title="Settings" aria-label="Settings" onClick={() => props.onOpenSettings()}>
+          <button type="button" class="button button-icon spine-item" title={settingsLabel()} aria-label={settingsLabel()} onClick={() => props.onOpenSettings()}>
             <Icon name="settings" />
+            <Show when={updateAvailable()}>
+              <span class="update-dot" aria-hidden="true" />
+            </Show>
           </button>
         </div>
       </div>
     );
   };
 
+  /** Line 3's place: what extensions add to rows, asked per list (never per row), handed to every row. */
+  const rowChips = useRowAdditions({ sessions: () => props.sessions });
+
   return (
+    <RowPlaceContext.Provider value={rowChips}>
     <aside ref={aside} class="app-sidebar" aria-label="Sessions">
       {/* Collapsed, the pane's own body is not in the DOM at all — nothing hidden-but-readable. */}
       <Show when={!collapsed()} fallback={<Spine />}>
@@ -2473,49 +2487,21 @@ export function Sidebar(props: {
           <label class="visually-hidden" for="session-search">
             Search sessions
           </label>
-          {/* One toolbar line at every width. At rest: the count, Select, the search icon, and the
-              labelled Overseer at the right end. Open: only the field and Close Search — the count
-              stays in the DOM, visually hidden, as the field's description and the live count. */}
+          {/* One toolbar line at every width: the search field on the left, the Overseer split
+              button on the right; focus or a query gives the field the whole line. The count stays
+              in the DOM, visually hidden, as the field's description and the live count. */}
           <div class="sidebar-toolbar">
             <SearchCount />
-            <Show
-              when={toolbarOpen()}
-              fallback={
-                <>
-                  <SelectStart />
-                  <button
-                    ref={searchToggle}
-                    type="button"
-                    class="button button-icon button-ghost"
-                    aria-label="Search sessions"
-                    title="Search sessions · /"
-                    onClick={openSearch}
-                  >
-                    <Icon name="search" small />
-                  </button>
-                  {/* Only while work runs: the breakdown the foot's figure sums, in the gap the
-                      line already has — its words give way, its figures never do. */}
-                  <Show when={work().parts.length > 0}>
-                    <WorkingLine />
-                  </Show>
-                  <OverseerButton class="button-ghost" labelled />
-                </>
-              }
-            >
-              <SearchField />
-              <button type="button" class="button button-icon" aria-label="Close Search" title="Close Search" onClick={closeSearch}>
-                <Icon name="close" />
-              </button>
+            <SearchField />
+            <Show when={!searchWide()}>
+              <OverseerSplit />
             </Show>
           </div>
         </div>
 
-        {/* Inside the sidebar, above the list: the rows it acts on stay on screen, on a phone too. */}
-        <Show when={selectionMode()}>
-          <SelectionToolbar sessions={all()} onRefresh={props.onRefresh} />
-        </Show>
-
-        <nav class="sidebar-list pane" aria-label="Session list" aria-busy={props.sessions === undefined && props.loading ? "true" : undefined}>
+        {/* Only the user scrolls this list (lib/list-scroll-hold): the first row on screen holds still through every
+            refresh and every section that opens or closes on its own. */}
+        <nav ref={(el) => onCleanup(holdListScroll(el))} class="sidebar-list pane" aria-label="Session list" aria-busy={props.sessions === undefined && props.loading ? "true" : undefined}>
           {/* A host that keeps its sessions from this one has no rows here (§mesh.peers/grants). */}
           <Show when={hiddenHost()}>{(h) => <p class="sidebar-region-note">Hidden by {hostLabel(h())}.</p>}</Show>
           <Show when={props.error}>
@@ -2588,14 +2574,13 @@ export function Sidebar(props: {
                 </h2>
               </summary>
               <ul class="list">
-                {/* Keyed on the session objects, which `hits()` keeps across polls: a row is updated
-                    in place, never remounted, when only the digest changed. */}
-                <For each={needsYou().map((r) => r.session)}>
-                  {(s) => (
+                {/* Keyed by path (lib/for-key): a row is updated in place, never remounted, by a refresh. */}
+                <ForKey each={needsYouHard()} by={(r) => r.session.path}>
+                  {(r) => (
                     <>
-                      <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(s.path)} />
+                      <SessionRow session={r().session} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(r().session.path)} />
                       {/* A proposed playbook run: its one button, under its row (§app.project-runtime/review). */}
-                      <Show when={needsYouPlaybook(s.path)}>
+                      <Show when={needsYouPlaybook(r().session.path)}>
                         {(pb) => (
                           <li class="needs-you-playbook">
                             <MergeRunButton projectId={pb().projectId} run={pb()} />
@@ -2604,32 +2589,43 @@ export function Sidebar(props: {
                       </Show>
                     </>
                   )}
-                </For>
+                </ForKey>
                 {/* A project's deploy item, of no session: the row opens the project page, where its Deploy panel is.
                     WhatsApp sending down: the row and its one button open Settings → Outreach (#/settings/outreach). */}
-                <For each={needsYouProject()}>
+                <ForKey each={needsYouProject()} by={(x) => x.id}>
                   {(it) => (
                     <>
                       <li>
-                        <a class="list-row list-row-interactive org-needs-item" href={it.href} title={it.detail}>
+                        <a class="list-row list-row-interactive org-needs-item" href={it().href} title={it().detail}>
                           <span class="list-main">
-                            <span class="list-title">{it.title}</span>
-                            <span class="list-meta org-needs-item-detail">{it.detail}</span>
-                            <span class="list-meta">{it.where}</span>
+                            <span class="list-title">{it().title}</span>
+                            <span class="list-meta org-needs-item-detail">{it().detail}</span>
+                            <span class="list-meta">{it().where}</span>
                           </span>
                         </a>
                       </li>
-                      <Show when={it.kind === "whatsapp-down"}>
+                      <Show when={it().kind === "whatsapp-down"}>
                         <li class="needs-you-playbook">
-                          <a class="button button-sm" href={it.href}>
+                          <a class="button button-sm" href={it().href}>
                             Open Outreach Settings
                           </a>
                         </li>
                       </Show>
                     </>
                   )}
-                </For>
+                </ForKey>
               </ul>
+              {/* The softer tier: guesses from the last reply (§app.overseer/attention-digest), under the blockers. */}
+              <Show when={needsYouSoft().length > 0}>
+                <p class="sidebar-region-note" id="r-needs-you-soft">
+                  Maybe waiting on you
+                </p>
+                <ul class="list" aria-labelledby="r-needs-you-soft">
+                  <ForKey each={needsYouSoft()} by={(r) => r.session.path}>
+                    {(r) => <SessionRow session={r().session} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(r().session.path)} />}
+                  </ForKey>
+                </ul>
+              </Show>
               <Show when={needsYouCutNote()}>
                 <p class="sidebar-region-note">Some sessions may not be listed: this list stops at the 30 most urgent items.</p>
               </Show>
@@ -2638,7 +2634,7 @@ export function Sidebar(props: {
 
           {/* Recent, above everything else: a flat list, no folder sections — with 5 rows a
               folder head per row would be the region. It is a shortcut, not a place a session lives,
-              so every row appears again in Live & web or the Archive below, and the region carries
+              so every row appears again in Folders, its project's block or the Archive below, and the region carries
               no controls: the count is Settings › General's, and only its. */}
           <Show when={props.sessions && recent().length > 0}>
             <section class="sidebar-region sidebar-recent" aria-labelledby="r-recent">
@@ -2646,9 +2642,9 @@ export function Sidebar(props: {
                 Recent <span class="sidebar-region-count">· {recent().length}</span>
               </h2>
               <ul class="list">
-                <For each={recent()}>
-                  {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
-                </For>
+                <ForKey each={recent()} by={(s) => s.path}>
+                  {(s) => <SessionRow session={s()} selected={props.selected} now={props.now} targets={targets()} />}
+                </ForKey>
               </ul>
             </section>
           </Show>
@@ -2670,7 +2666,7 @@ export function Sidebar(props: {
                   </span>
                   {/* The region's one action, at the head's right end: the group picker, which
                       only opens workspaces. Groups are made where sessions are filed (the drop
-                      overlay, Move into group, the selection toolbar, the Overseer). Its click
+                      overlay, Move into group, the Overseer). Its click
                       and keydown stop here, as the group head's `⋯` does, so a press is never
                       read as a press on the summary. */}
                   <button
@@ -2695,72 +2691,32 @@ export function Sidebar(props: {
               <Show when={!searching() && sessionGroups().length === 0}>
                 <p class="sidebar-region-note">{NO_GROUPS_NOTE}</p>
               </Show>
-              <For each={sections().map((s) => s.group)}>
+              <ForKey each={sections().map((s) => s.group)} by={(g) => g.id}>
                 {(group) => (
-                  <GroupBlock group={group} sessions={rowsOf(group.id)} selected={props.selected} now={props.now} targets={targets()} searching={searching()} onChanged={props.onRefresh} />
+                  <GroupBlock group={group()} sessions={rowsOf(group().id)} selected={props.selected} now={props.now} targets={targets()} searching={searching()} onChanged={props.onRefresh} />
                 )}
-              </For>
+              </ForKey>
             </details>
           </Show>
 
-          {/* Profiles, under Groups and above Live & web (§app.session-list/profile-shelf): a shortcut, grouped by profile. Never in Recent (lib/recent). */}
-          <ProfileShelf
-            sessions={all()}
-            cwd={props.sessions?.find((x) => x.path === props.selected)?.cwd ?? null}
-            searching={!!query().trim()}
-            row={(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
-          />
+          {/* Automations, under Groups (§app.session-list/automations): the sessions Sova's schedules run, a shortcut. */}
+          <AutomationsShelf sessions={all()} searching={!!query().trim()} row={(s) => <SessionRow session={s()} selected={props.selected} now={props.now} targets={targets()} />} />
 
-          {/* Hidden when a search empties it            </details>
-          </Show>
-
-          {/* Hidden when a search empties it; kept with a note when there's simply nothing on top. */}
-          <Show when={showTop()}>
-            <section class="sidebar-region" aria-labelledby="r-top">
-              <h2 class="sidebar-region-head" id="r-top">
-                Live &amp; web{" "}
-                <span class="sidebar-region-count">
-                  · {query().trim() ? `${topHits().length} of ${ordinary().length - archiveTotal()}` : topHits().length}
-                </span>
-                <NameSessionsButton section="t" rows={topHits()} onDone={props.onRefresh} />
-              </h2>
-              <Show
-                when={topHits().length > 0}
-                fallback={<p class="sidebar-region-note">0 sessions open in a TUI, or started here and not archived. The archive below has the rest.</p>}
-              >
-                <GroupList groups={topGroups()} selected={props.selected} now={props.now} idPrefix="t" targets={targets()} searching={searching()} />
-              </Show>
-            </section>
-          </Show>
-
-          {/* Projects, right before Organizations (lib/project-region): the only place a standalone
-              project's sessions are listed, each project's heading with its overseer's eye, then Builds. */}
+          {/* Projects, above Folders and Organizations (lib/project-region): the only place a standalone project's own sessions
+              are listed, and the place of the sessions in its folder; each project's heading with its overseer's eye, then
+              Sessions. */}
           <Show when={showProjects()}>
             <details class="sidebar-region sidebar-orgs sidebar-projects" aria-labelledby="r-projects" open={projectsOpen()} onToggle={onProjectsToggle}>
               <summary class="sidebar-orgs-summary">
                 <h2 class="sidebar-region-head" id="r-projects" title="Your projects that no organization places: their overseers and coding sessions.">
                   <Icon name="chevron-right" small class="icon-twist" />
-                  Projects <span class="sidebar-region-count">· {projRowCount()}</span>
+                  Projects <span class="sidebar-region-count">· {searching() ? `${projBlocks().length} of ${projTotal()}` : projBlocks().length}</span>
                   <Show when={!projectsOpen() && folderActive(projectHits(), localRunning())}>
                     <span class="session-group-active" title="An agent is working in one of these sessions">
                       <span class="session-rail-dot" />
                       <span class="visually-hidden">, an agent is working here</span>
                     </span>
                   </Show>
-                  <button
-                    type="button"
-                    class="button button-icon button-ghost org-link"
-                    aria-label="Add Project"
-                    title="Add Project"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setAddingProject(true);
-                    }}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
-                    <Icon name="plus" small />
-                  </button>
                   <a
                     class="button button-icon button-ghost org-link"
                     href={PROJECTS_HREF}
@@ -2773,42 +2729,103 @@ export function Sidebar(props: {
                   </a>
                 </h2>
               </summary>
-              <Show when={projBlocks().length} fallback={<p class="sidebar-region-note">No projects yet. Add a folder or a GitHub repository with +.</p>}>
-                <For each={projBlocks()}>
-                  {(p) => (
-                    <div class="org-project">
-                      <div class="org-project-head">
-                        <h4 class="list-group-label org-project-label" title={p.name}>
-                          <a class="org-project-name project-region-link" href={projectHref(p.id)}>
-                            <Icon name="folder" small class="org-project-icon" />
-                            <bdi>{p.name}</bdi>
-                          </a>
-                          <span class="text-num">{p.builds.active.length + p.builds.done.length}</span>
-                        </h4>
-                        <Show when={p.overseer}>{(po) => <OverseerEye session={po()} project={p.name} selected={props.selected} />}</Show>
+              <Show
+                when={projBlocks().length}
+                fallback={
+                  <p class="sidebar-region-note">
+                    No projects yet. Add one on the <a href={PROJECTS_HREF}>Projects page</a>.
+                  </p>
+                }
+              >
+                {/* Keyed by project id (lib/for-key): a refresh mints every block afresh, and each must stay the node it was. */}
+                <ForKey each={projBlocks()} by={(b) => b.id}>
+                  {(p) => {
+                    // The id is the key, so it never changes for this block: everything else is read through `p()`.
+                    const id = p().id;
+                    const doneKey = `projects\n${id}\nbuilds`;
+                    const rows = () => [...p().builds.active, ...p().builds.done];
+                    const open = () => projectFoldOpen(id, rows());
+                    const fold = () => `${open() ? "Hide" : "Show"} ${p().name}'s sessions`;
+                    const hasRows = () => p().builds.active.length + p().builds.done.length > 0;
+                    // Done can hold hundreds of a folder's finished sessions: its rows are built only once it opens.
+                    const doneBuilt = builtOnceOpen(() => groupDoneOpen(doneKey, p().builds.done));
+                    return (
+                      <div class="org-project">
+                        <div class="org-project-head">
+                          <h4 class="list-group-label org-project-label" title={p().name}>
+                            <Show when={hasRows()}>
+                              <button
+                                type="button"
+                                class="button button-icon button-ghost project-fold"
+                                aria-expanded={open()}
+                                aria-controls={`proj-rows-${id}`}
+                                aria-label={fold()}
+                                title={fold()}
+                                onClick={() => onProjectFold(id, rows())}
+                              >
+                                <Icon name="chevron-right" small class="icon-twist" />
+                              </button>
+                            </Show>
+                            <a class="org-project-name project-region-link" href={projectHref(id)}>
+                              <Icon name="folder" small class="org-project-icon" />
+                              <bdi>{p().name}</bdi>
+                            </a>
+                            <span class="text-num">{projectOpenCount(p())}</span>
+                          </h4>
+                          <Show when={p().overseer}>{(po) => <OverseerEye session={po()} project={p().name} selected={props.selected} />}</Show>
+                        </div>
+                        <Show when={hasRows() && open()}>
+                          <div class="project-rows" id={`proj-rows-${id}`}>
+                            <Show when={p().builds.active.length > 0}>
+                              <RowList rows={p().builds.active} />
+                            </Show>
+                            <Show when={p().builds.done.length > 0}>
+                              <details class="archive-date org-done project-done" open={groupDoneOpen(doneKey, p().builds.done)} onToggle={(e) => onGroupDoneToggle(doneKey, p().builds.done, e)}>
+                                <summary class="list-group-label archive-date-label project-done-label" title="Merged, or ended in a terminal.">
+                                  <Icon name="chevron-right" small class="icon-twist" />
+                                  <span class="archive-date-name">{p().builds.done.length} done</span>
+                                </summary>
+                                <Show when={doneBuilt()}>
+                                  <RowList rows={p().builds.done} />
+                                </Show>
+                                <GuideLine name={`${p().builds.done.length} done`} />
+                              </details>
+                            </Show>
+                          </div>
+                          <GuideLine name={p().name} fold={() => onProjectFold(id, rows())} />
+                        </Show>
                       </div>
-                      <ProjectGroup
-                        key={`projects\n${p.id}\nbuilds`}
-                        label="Builds"
-                        title="Coding sessions this project started."
-                        doneTitle="Merged, and the ones you archived."
-                        states={[{ label: "", rows: p.builds.active }]}
-                        done={p.builds.done}
-                      />
-                    </div>
-                  )}
-                </For>
+                    );
+                  }}
+                </ForKey>
               </Show>
             </details>
           </Show>
-          <Show when={addingProject()}>
-            <AddProjectDialog
-              onCancel={() => setAddingProject(false)}
-              onAdded={() => {
-                projectsReadAt = Date.now();
-                void refetchProjects();
-              }}
-            />
+
+          {/* Folders, the top region, right under Projects: open in a terminal or started here and not archived, but not
+              what a project of this computer lists. Hidden when a search empties it; kept with a note when there's simply
+              nothing in it. Open by default, a collapse remembered for the tab. */}
+          <Show when={showTop()}>
+            <details class="sidebar-region sidebar-folders" aria-labelledby="r-top" open={foldersOpen()} onToggle={onFoldersToggle}>
+              {/* The Projects head's pattern: the <summary> toggles, the <h2> is what the outline reads. */}
+              <summary class="sidebar-folders-summary">
+                <h2 class="sidebar-region-head" id="r-top">
+                  <Icon name="chevron-right" small class="icon-twist" />
+                  Folders{" "}
+                  <span class="sidebar-region-count">· {searching() ? `${topGroups().length} of ${folderTotal()}` : topGroups().length}</span>
+                  <Show when={!foldersOpen() && folderActive(topHits(), localRunning())}>
+                    <span class="session-group-active" title="An agent is working in one of these sessions">
+                      <span class="session-rail-dot" />
+                      <span class="visually-hidden">, an agent is working here</span>
+                    </span>
+                  </Show>
+                  <NameSessionsButton section="t" rows={topHits()} onDone={props.onRefresh} />
+                </h2>
+              </summary>
+              <Show when={topHits().length > 0} fallback={<p class="sidebar-region-note">No sessions outside your projects. The archive below has the rest.</p>}>
+                <GroupList groups={topGroups()} selected={props.selected} now={props.now} idPrefix="t" targets={targets()} searching={searching()} />
+              </Show>
+            </details>
           </Show>
 
           {/* Organizations, last before the Archive (lib/org-region): the only place an org's
@@ -2849,59 +2866,66 @@ export function Sidebar(props: {
                     <span class="text-num">{orgWaitingCount()}</span>
                   </h3>
                   <ul class="list">
-                    <For each={orgNeedsYou().map((r) => r.session)}>
-                      {(s) => (
+                    <ForKey each={orgNeedsYou()} by={(r) => r.session.path}>
+                      {(r) => (
                         <SessionRow
-                          session={s}
+                          session={r().session}
                           selected={props.selected}
                           now={props.now}
                           targets={targets()}
-                          detail={orgNeedsYouDetail(s.path)}
-                          place={orgPlaceLabel(s)}
+                          detail={orgNeedsYouDetail(r().session.path)}
+                          place={orgPlaceLabel(r().session)}
                         />
                       )}
-                    </For>
+                    </ForKey>
                     {/* A project's own item (a held act, a conflict to settle, a stakeholder to pick): no
                         session, the row opens the project page. A held act recounts its minutes and has Cancel. */}
-                    <For each={orgItems()}>
+                    <ForKey each={orgItems()} by={(x) => x.id}>
                       {(it) => {
                         // Recounted on the list's clock, read at the real time: the clock lags up to a tick, and a count must never run high.
-                        const detail = () => (it.held ? heldWaitLine(it.held, Math.max(props.now, Date.now())) : it.detail);
+                        const detail = () => {
+                          const held = it().held;
+                          return held ? heldWaitLine(held, Math.max(props.now, Date.now())) : it().detail;
+                        };
                         return (
-                          <li classList={{ "org-needs-held": !!it.held }}>
-                            <a class="list-row list-row-interactive org-needs-item" href={it.href} title={detail()}>
+                          <li classList={{ "org-needs-held": !!it().held }}>
+                            <a class="list-row list-row-interactive org-needs-item" href={it().href} title={detail()}>
                               <span class="list-main">
-                                <span class="list-title">{it.title}</span>
+                                <span class="list-title">{it().title}</span>
                                 <span class="list-meta org-needs-item-detail">{detail()}</span>
-                                <span class="list-meta">{it.where}</span>
+                                <span class="list-meta">{it().where}</span>
                               </span>
                             </a>
-                            <Show when={it.held && it.org?.projectId ? { held: it.held, projectId: it.org.projectId } : null}>
+                            <Show when={it().held && it().org?.projectId ? { held: it().held!, projectId: it().org!.projectId! } : null}>
                               {(h) => <CancelHeldButton projectId={h().projectId} holdId={h().held.id} what={h().held.what} class="org-needs-cancel" />}
                             </Show>
                           </li>
                         );
                       }}
-                    </For>
+                    </ForKey>
                   </ul>
                 </section>
               </Show>
-              <For each={orgs()}>
+              {/* Keyed by org id, its projects by project id (lib/for-key): a refresh mints every section afresh, and each must
+                  stay the node it was, or the clicked row loses its focus and the list's scroll position moves. */}
+              <ForKey each={orgs()} by={(x) => x.id}>
                 {(o) => {
-                  const count = () => orgCount(o);
-                  const waiting = () => waitingIn(orgRows(o));
+                  // The id is the key, so it never changes for this section: everything else is read through `o()`.
+                  const oid = o().id;
+                  const count = () => orgCount(o());
+                  const waiting = () => waitingIn(orgRows(o()));
                   return (
-                    <details class="group-section org-section" open={orgOpen(o)} onToggle={(e) => onOrgToggle(o, e)}>
-                      <summary class="list-group-label group-label org-label" title={orgTitle(o.name, count(), waiting())}>
+                    <details class="group-section org-section" open={orgOpen(o())} onToggle={(e) => onOrgToggle(o(), e)}>
+                      <summary class="list-group-label group-label org-label" title={orgTitle(o().name, count(), waiting())}>
                         <Icon name="chevron-right" small class="icon-twist" />
                         <span class="group-name">
-                          <bdi>{o.name}</bdi>
+                          <bdi>{o().name}</bdi>
                         </span>
                         <Show when={waiting() > 0}>
                           <span class="org-needs-dot" aria-hidden="true" />
                           <span class="visually-hidden">, {waiting()} waiting on you</span>
                         </Show>
-                        <Show when={folderActive(orgRows(o), localRunning())}>
+                        <Show when={folderActive(orgRows(o()), localRunning())}>
                           <span class="session-group-active" title="An agent is working in one of these sessions">
                             <span class="session-rail-dot" />
                             <span class="visually-hidden">, an agent is working here</span>
@@ -2910,78 +2934,84 @@ export function Sidebar(props: {
                         <span class="text-num">{count()}</span>
                         <a
                           class="button button-icon button-ghost org-link"
-                          href={orgHref(o.id)}
-                          aria-label={`Open the ${o.name} page`}
-                          title={`Open the ${o.name} page`}
+                          href={orgHref(oid)}
+                          aria-label={`Open the ${o().name} page`}
+                          title={`Open the ${o().name} page`}
                           onClick={(e) => e.stopPropagation()}
                           onKeyDown={(e) => e.stopPropagation()}
                         >
                           <Icon name="arrow-right" small />
                         </a>
                       </summary>
-                      <For each={o.projects}>
-                        {(p) => (
+                      <ForKey each={o().projects} by={(x) => x.id}>
+                        {(p) => {
+                          const pid = p().id;
+                          return (
                           <div class="org-project">
                             <div class="org-project-head">
-                              <h4 class="list-group-label org-project-label" title={projectTitle(p)}>
+                              <h4 class="list-group-label org-project-label" title={projectTitle(p())}>
                                 {/* Its page is one click away; "Other" (no project) has no page. */}
                                 <Show
-                                  when={p.id}
+                                  when={pid}
                                   fallback={
                                     <span class="org-project-name">
-                                      <bdi>{p.name}</bdi>
+                                      <bdi>{p().name}</bdi>
                                     </span>
                                   }
                                 >
                                   {(id) => (
                                     <a class="org-project-name project-region-link" href={projectHref(id())}>
                                       <Icon name="folder" small class="org-project-icon" />
-                                      <bdi>{p.name}</bdi>
+                                      <bdi>{p().name}</bdi>
                                     </a>
                                   )}
                                 </Show>
-                                <span class="text-num">{projectCount(p)}</span>
+                                <span class="text-num">{projectCount(p())}</span>
                               </h4>
-                              <Show when={p.overseer}>{(po) => <OverseerEye session={po()} project={p.name} selected={props.selected} />}</Show>
+                              <Show when={p().overseer}>{(po) => <OverseerEye session={po()} project={p().name} selected={props.selected} />}</Show>
                             </div>
                             <ProjectGroup
-                              key={`${o.id}\n${p.id}\nconversations`}
+                              key={`${oid}\n${pid}\nconversations`}
                               label="Conversations"
                               title="Gathering sessions and offers sent to people."
                               doneTitle="Done or closed, and the ones you archived."
                               states={[
-                                { label: "Not started", rows: p.conversations.notStarted },
-                                { label: "In progress", rows: p.conversations.inProgress },
+                                { label: "Not started", rows: p().conversations.notStarted },
+                                { label: "In progress", rows: p().conversations.inProgress },
                               ]}
-                              done={p.conversations.done}
+                              done={p().conversations.done}
                             />
                             <ProjectGroup
-                              key={`${o.id}\n${p.id}\nconflicts`}
+                              key={`${oid}\n${pid}\nconflicts`}
                               label="Conflicts to settle"
                               title="Sessions asking someone to settle two decisions that disagree."
                               doneTitle="Done or closed, and the ones you archived."
                               states={[
-                                { label: "Not started", rows: p.conflicts.notStarted },
-                                { label: "In progress", rows: p.conflicts.inProgress },
+                                { label: "Not started", rows: p().conflicts.notStarted },
+                                { label: "In progress", rows: p().conflicts.inProgress },
                               ]}
-                              done={p.conflicts.done}
+                              done={p().conflicts.done}
                             />
                             <ProjectGroup
-                              key={`${o.id}\n${p.id}\nbuilds`}
-                              label="Builds"
-                              title="Coding sessions this project started."
-                              doneTitle="Merged, and the ones you archived."
-                              states={[{ label: "", rows: p.builds.active }]}
-                              done={p.builds.done}
+                              key={`${oid}\n${pid}\nbuilds`}
+                              label="Sessions"
+                              title="Coding sessions this project started, and the other sessions in its folder."
+                              doneTitle="Merged, archived, or ended in a terminal."
+                              states={[{ label: "", rows: p().builds.active }]}
+                              done={p().builds.done}
                             />
-                            <Show when={p.other.length > 0}>{rowList(p.other)}</Show>
+                            <Show when={p().other.length > 0}>
+                              <RowList rows={p().other} />
+                            </Show>
                           </div>
-                        )}
-                      </For>
+                          );
+                        }}
+                      </ForKey>
+                      <GuideLine name={o().name} />
                     </details>
                   );
                 }}
-              </For>
+              </ForKey>
             </details>
           </Show>
 
@@ -3004,6 +3034,7 @@ export function Sidebar(props: {
                       <span class="text-num">{d().items.length}</span>
                     </summary>
                     <GroupList groups={d().groups} selected={props.selected} now={props.now} idPrefix={`a-${d().id}`} targets={targets()} searching={searching()} />
+                    <GuideLine name={d().label} />
                   </details>
                 )}
               </ForKey>
@@ -3031,5 +3062,6 @@ export function Sidebar(props: {
         </Show>
       </Show>
     </aside>
+    </RowPlaceContext.Provider>
   );
 }

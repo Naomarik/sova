@@ -11,9 +11,10 @@
 //      session_shutdown clears the widget and disposes workers.
 //
 // --live: additionally runs ONE real, deliberately bounded Claude team member:
-// haiku, tools: [], effort: low, wake: false, backendOptions.maxBudgetUsd: 0.5,
-// whose whole task is a trivial fixed reply. This is a paid task and only runs
-// when explicitly requested; everything it touches lives in a temp cwd.
+// haiku, tools: [], effort: low, wake: false, whose whole task is a trivial fixed
+// reply. A claude-code member is a pi worker on the Claude Code provider, so this
+// starts a real pi child with the claude-code extension. This is a paid task and only
+// runs when explicitly requested; everything it touches lives in a temp cwd.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -272,7 +273,7 @@ async function deadline(promise, ms, label) {
 
 // ── 3. opt-in bounded live team smoke (ONE paid haiku member) ────────────────
 if (!LIVE) {
-	console.log("SKIP: live team smoke deferred (pass --live to run one bounded haiku member: tools [], effort low, maxBudgetUsd 0.5, wake false).");
+	console.log("SKIP: live team smoke deferred (pass --live to run one bounded haiku member: tools [], effort low, wake false).");
 } else {
 	const { registerSubagents } = await jiti.import(path.join(root, "index.ts"));
 	const { registerClaudeCode } = await jiti.import(path.resolve(root, "..", "claude-code", "index.ts"));
@@ -307,8 +308,7 @@ if (!LIVE) {
 		sendMessage: (m, o) => messages.push([m, o]),
 	};
 	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-team-smoke-live-"));
-	// No UI at all: a permission prompt would be denied outright, so nothing here
-	// may ask for one (tools: [] and the default bypassPermissions ensure that).
+	// No UI at all; tools: [] keeps the member from touching anything.
 	// RPC mode (not print) so worker completions take the normal sendMessage path.
 	const ctx = {
 		cwd,
@@ -318,7 +318,7 @@ if (!LIVE) {
 		sessionManager: { getEntries: () => [], getBranch: () => [], getSessionFile: () => undefined },
 		modelRegistry: {
 			find() {
-				throw new Error("Claude members must not consult the Pi registry");
+				throw new Error("a claude-code-cli model is registered by the child, never looked up here");
 			},
 		},
 	};
@@ -330,11 +330,11 @@ if (!LIVE) {
 		const created = await call("team_create", {
 			name: "live-smoke",
 			objective: "Answer a fixed token (bounded smoke; nothing else).",
-			defaults: { backend: "claude-code", model: "haiku", effort: "low", backendOptions: { maxBudgetUsd: 0.5 } },
+			defaults: { backend: "claude-code", model: "haiku", effort: "low" },
 			members: [{ role: "echo", prompt: "Reply with exactly TEAM_SMOKE_OK and no other text, then stop.", tools: [], wake: false }],
 		});
 		const memberId = created.details.members[0].workerId;
-		assert.equal(created.details.members[0].model, "haiku");
+		assert.equal(created.details.members[0].model, "claude-code-cli/claude-haiku-4-5");
 		const waited = await deadline(call("agent_wait", { ids: [memberId], timeoutSeconds: 120 }), 150000, "live member settle");
 		assert.equal(waited.details.waited[0].taskOutcome, "success", waited.content[0].text);
 		const transcript = await call("agent_transcript", { id: memberId });
@@ -348,7 +348,7 @@ if (!LIVE) {
 		await call("agent_kill", { id: memberId });
 		const listed = await call("team_list");
 		assert.equal(listed.details.teams[0].members[0].processAlive, false, "own worker stopped");
-		console.log("PASS: one bounded live Claude member ran through team_create and was stopped (haiku, tools [], effort low, maxBudgetUsd 0.5, wake false).");
+		console.log("PASS: one bounded live Claude member ran through team_create and was stopped (haiku, tools [], effort low, wake false).");
 	} finally {
 		for (const fn of hooks.get("session_shutdown") ?? []) await Promise.resolve(fn({}, ctx)).catch(() => {});
 		fs.rmSync(cwd, { recursive: true, force: true });

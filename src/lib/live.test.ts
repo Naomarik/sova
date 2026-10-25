@@ -15,14 +15,19 @@ import {
   blockStreams,
   emptyLive,
   liveEventsOf,
+  liveInputCount,
   markDelivered,
   markQueued,
   markRemoved,
   newClientId,
+  offersRemove,
   queuedText,
   runDetail,
+  seedLive,
+  shownUserState,
   takeBackQueued,
   unsentRows,
+  type LiveEntry,
   type LiveEvent,
   type LiveState,
   type QueuedItem,
@@ -47,15 +52,15 @@ function feed(set: SetStoreFunction<LiveState>, ev: Record<string, unknown>): vo
     applyEvent(set, ev as LiveEvent);
     return;
   }
-  const { entryId, ...event } = ev;
-  // As the server sends it: the entry id on the frame, through JSON.
-  const v1: V1EventFrame = JSON.parse(JSON.stringify({ type: "event", event, ...(typeof entryId === "string" ? { entryId } : {}) }));
+  const { entryId, reply, ...event } = ev;
+  // As the server sends it: the entry id and a measured reply's timing on the frame, through JSON.
+  const v1: V1EventFrame = JSON.parse(JSON.stringify({ type: "event", event, ...(typeof entryId === "string" ? { entryId } : {}), ...(reply ? { reply } : {}) }));
   const events =
     path === "v1"
       ? liveEventsOf(v1)
       : path === "v2"
         ? fromV1(v1).flatMap((e) => liveEventsOf(JSON.parse(JSON.stringify({ type: "event", v: 2, event: e }))))
-        : fromV1({ event: ev });
+        : fromV1({ event: { ...event, ...(entryId !== undefined ? { entryId } : {}) }, ...(reply ? { reply: reply as V1EventFrame["reply"] } : {}) });
   for (const e of events) applyEvent(set, e);
 }
 
@@ -181,6 +186,17 @@ test("a snapshot turns our sent rows into queued ones, by id", () => {
   ]);
 });
 
+test("a row the server has handed to the agent shows Sending again: no longer removable on its own", () => {
+  const [s, set] = store();
+  addPendingPrompt(set, "one", [], [], "c1");
+  addPendingPrompt(set, "two", [], [], "c2");
+  applyQueue(set, [queued("c1", "one", { state: "sending" }), queued("c2", "two")]);
+  const shown = s.entries.flatMap((e) => (e.kind === "user" ? [[e.id, shownUserState(e)]] : []));
+  assert.deepEqual(shown, [["c1", "sending"], ["c2", "queued"]], "handed: Sending (no Remove); held: Queued");
+  assert.equal(shownUserState({ state: "delivered", handed: true }), "delivered");
+  assert.equal(shownUserState({ state: "sending" }), "sending");
+});
+
 test("a row the server never acknowledged stays sending, and is never offered as removable", () => {
   const [s, set] = store();
   addPendingPrompt(set, "one", [], [], "c1");
@@ -286,11 +302,12 @@ test("message_start delivers the row with THAT text, not whichever came first", 
   addPendingPrompt(set, "follow up", [], [], "c1");
   addPendingPrompt(set, "steer me", [], [], "c2");
   applyQueue(set, [queued("c1", "follow up", { kind: "followUp" }), queued("c2", "steer me")]);
-  // Steers go before follow-ups in the loop: the SECOND row is delivered first.
+  // Steers go before follow-ups in the loop: the SECOND row is delivered first, and moves above the
+  // one still waiting, as the session file has them.
   feed(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: "steer me" }] } });
   assert.deepEqual(userRows(s).map((r) => [r.id, r.state]), [
-    ["c1", "queued"],
     ["c2", "delivered"],
+    ["c1", "queued"],
   ]);
 });
 
@@ -383,8 +400,8 @@ test("a start whose text was rewritten on the way claims the row the server deli
   applyQueue(set, [queued("t2", "theirs", { state: "sending" }), queued("c1", "mine")]);
   deliverMidTurn(set, "t2", "theirs\n\n[image: a chart]", [queued("c1", "mine")]);
   assert.deepEqual(userRows(s).map((r) => [r.id, r.state]), [
-    ["c1", "queued"],
     ["t2", "delivered"],
+    ["c1", "queued"],
   ]);
 });
 
@@ -415,6 +432,111 @@ test("a message sent while a reply streams doesn't split the reply in two", () =
   assert.ok(reply?.kind === "assistant");
   assert.equal(reply.done, true); // no half of it left streaming for ever
   assert.deepEqual(reply.blocks.map((b) => (b.type === "toolCall" ? b.name : b.text)), ["Definitive timeline for today", "bash"]);
+});
+
+/** The live rows in drawn order: a user row by its id (or text), an assistant entry by its blocks. */
+const drawn = (s: LiveState) =>
+  s.entries.map((e) => (e.kind === "user" ? `you:${e.id ?? e.text}` : `agent:${e.blocks.map((b) => (b.type === "toolCall" ? b.name : b.type)).join("+")}`));
+
+test("steers sent before the reply's first step are drawn where they land: after that step, as the file has them", () => {
+  const [s, set] = store();
+  addPendingPrompt(set, "go", [], [], "c0");
+  feed(set, userStart("go"));
+  feed(set, { type: "agent_start" });
+  // Both steers go out before the reply's first message_start (the model is still connecting).
+  addPendingPrompt(set, "s1", [], [], "c1");
+  addPendingPrompt(set, "s2", [], [], "c2");
+  applyQueue(set, [queued("c1", "s1", { state: "sending" }), queued("c2", "s2", { state: "sending" })]);
+  feed(set, messageStart("zai", "glm-5.3"));
+  // The waiting rows sit below the step that is running, not above it.
+  assert.deepEqual(drawn(s), ["you:c0", "agent:", "you:c1", "you:c2"]);
+  feed(set, {
+    type: "message_end",
+    message: { role: "assistant", content: [{ type: "thinking", thinking: "plan" }, { type: "toolCall", id: "t1", name: "bash", arguments: {} }], stopReason: "toolUse" },
+  });
+  feed(set, { type: "tool_execution_start", toolCallId: "t1", toolName: "bash", args: {} });
+  feed(set, { type: "tool_execution_end", toolCallId: "t1", toolName: "bash", result: { content: [] } });
+  assert.deepEqual(drawn(s), ["you:c0", "agent:thinking+bash", "you:c1", "you:c2"]);
+  // They land together at the next step, then the agent goes on.
+  deliverMidTurn(set, "c1", "s1", [queued("c2", "s2", { state: "sending" })]);
+  deliverMidTurn(set, "c2", "s2");
+  feed(set, messageStart("zai", "glm-5.3"));
+  feed(set, { type: "message_update", assistantMessageEvent: { type: "toolcall_start", contentIndex: 0, id: "t2", toolName: "read" } });
+  // The session file's order: prompt, first step, both steers, the steps after them.
+  assert.deepEqual(drawn(s), ["you:c0", "agent:thinking+bash", "you:c1", "you:c2", "agent:read"]);
+});
+
+test("a row the agent takes ahead of an older waiting one moves above it; the waiting one stays last", () => {
+  const [s, set] = store();
+  feed(set, messageStart());
+  addPendingPrompt(set, "follow up", [], [], "c1");
+  addPendingPrompt(set, "steer me", [], [], "c2");
+  applyQueue(set, [queued("c1", "follow up", { kind: "followUp" }), queued("c2", "steer me", { state: "sending" })]);
+  deliverMidTurn(set, "c2", "steer me", [queued("c1", "follow up", { kind: "followUp" })]);
+  assert.deepEqual(drawn(s), ["agent:", "you:c2", "you:c1"]);
+  // A start that claims no row (a topic batch) lands above the waiting row too.
+  const batch = formatTopicBatch({
+    topic: "merge-k7m4qz",
+    batch: "tb_0123456789ab",
+    notes: [{ id: "qi_0123456789ab", from: { sessionId: "s1", title: "Fix login" }, at: "2026-10-01T10:00:00.000Z", text: "READY feat/x 0123456" }],
+  });
+  feed(set, userStart(batch));
+  assert.deepEqual(drawn(s), ["agent:", "you:c2", `you:${batch}`, "you:c1"]);
+});
+
+test("only a row the server holds offers Remove: never one still Sending, before the server's answer or after the hand-off", () => {
+  const [s, set] = store();
+  addPendingPrompt(set, "typed", [], [], "c1");
+  const row = () => s.entries.find((e) => e.kind === "user" && e.id === "c1") as Extract<LiveState["entries"][number], { kind: "user" }>;
+  assert.equal(shownUserState(row()), "sending");
+  assert.equal(offersRemove(row()), false, "Sending… before the server answers: no Remove, not even a disabled one");
+  applyQueue(set, [queued("c1", "typed", { kind: "followUp" })]);
+  assert.equal(offersRemove(row()), true, "held behind the turn: Queued, with its Remove");
+  applyQueue(set, [queued("c1", "typed", { kind: "followUp", state: "sending" })]);
+  assert.equal(offersRemove(row()), false, "handed to the agent: Sending… again, no Remove");
+  markDelivered(set, "c1");
+  assert.equal(offersRemove(row()), false);
+  assert.equal(offersRemove({ state: "queued" }), false, "a row with no id can't be named to the server");
+});
+
+test("the live inputs: each message the agent took in this turn, never one still waiting nor a topic batch", () => {
+  const [s, set] = store();
+  addPendingPrompt(set, "go", [], [], "c0");
+  assert.equal(liveInputCount(s), 0, "not on the branch until the agent takes it");
+  feed(set, userStart("go"));
+  feed(set, messageStart());
+  addPendingPrompt(set, "s1", [], [], "c1");
+  addPendingPrompt(set, "s2", [], [], "c2");
+  assert.equal(liveInputCount(s), 1);
+  deliverMidTurn(set, "c1", "s1", [queued("c2", "s2", { state: "sending" })]);
+  deliverMidTurn(set, "c2", "s2");
+  assert.equal(liveInputCount(s), 3, "both steers count the moment they land");
+  const batch = formatTopicBatch({
+    topic: "merge-k7m4qz",
+    batch: "tb_0123456789ab",
+    notes: [{ id: "qi_0123456789ab", from: { sessionId: "s1", title: "Fix login" }, at: "2026-10-01T10:00:00.000Z", text: "READY feat/x 0123456" }],
+  });
+  assert.ok(parseTopicBatch(batch));
+  feed(set, userStart(batch));
+  assert.equal(liveInputCount(s), 3, "a topic batch is a turn start, not an input");
+});
+
+test("the live inputs are only what you typed: never the Overseer's, another sender's, a brief or a wake nudge (shared/senders.ts isOwnInput)", () => {
+  const [s, set] = store();
+  feed(set, userStart("go"));
+  feed(set, messageStart());
+  assert.equal(liveInputCount(s), 1);
+  feed(set, userStart("[overseer-brief] Brief me"));
+  feed(set, userStart("[schedule s1] Scheduled run fired at 10:00\nReason: check"));
+  assert.equal(liveInputCount(s), 1, "a brief and a wake are not typed");
+  feed(set, userStart("from the operator"));
+  feed(set, { type: BATON_SENT_EVENT, by: "operator" });
+  feed(set, userStart("from Bob"));
+  feed(set, { type: BATON_SENT_EVENT, by: "p_bob00001" });
+  assert.equal(liveInputCount(s), 2, "the operator's own baton message counts; a teammate's doesn't");
+  const rows = s.entries.filter((e) => e.kind === "user") as Extract<LiveEntry, { kind: "user" }>[];
+  set("entries", s.entries.indexOf(rows[0]!), "overseer" as never, true as never);
+  assert.equal(liveInputCount(s), 1, "a row the Overseer queued isn't yours");
 });
 
 test("client ids are unique, and exist without a secure context", () => {
@@ -544,7 +666,7 @@ test("a noted message_start claims the row whose typed text it carries, not the 
   feed(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: NOTED }, PNG, PNG] } });
   assert.deepEqual(
     s.entries.map((e) => (e.kind === "user" ? [e.text, !!e.started] : e.kind)),
-    [["earlier words", false], ["Two images. Reply with just OK.", true]],
+    [["Two images. Reply with just OK.", true], ["earlier words", false]], // the taken row above the waiting one
   );
 });
 
@@ -578,11 +700,12 @@ test("a topic batch's start claims none of this tab's pending rows and adds its 
   feed(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: batch }] } });
   const users = s.entries.filter((e) => e.kind === "user") as { text: string; started?: boolean }[];
   assert.equal(users.length, 2, "the batch is its own row, never a claim");
-  assert.equal(users[0]!.text, "my own");
-  assert.notEqual(users[0]!.started, true, "still waiting for its own start");
-  assert.equal(users[1]!.text, batch);
-  assert.equal(users[1]!.started, true);
-  assert.ok(parseTopicBatch(users[1]!.text), "the live row still parses as a batch, so the thread draws the Queue card");
+  // The batch is in the file; the pending row still waits, below it.
+  assert.equal(users[1]!.text, "my own");
+  assert.notEqual(users[1]!.started, true, "still waiting for its own start");
+  assert.equal(users[0]!.text, batch);
+  assert.equal(users[0]!.started, true);
+  assert.ok(parseTopicBatch(users[0]!.text), "the live row still parses as a batch, so the thread draws the Queue card");
 });
 
 test("a link message's start draws no row and claims none of this tab's pending rows", () => {
@@ -657,14 +780,29 @@ test("a message_end's entry id names the live row it becomes: the reply, and the
   feed(set, { type: "message_end", message: { role: "user", content: "first" }, entryId: "u1" });
   feed(set, messageStart("zai", "glm-5.3"));
   feed(set, { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "hi" }], stopReason: "stop" }, entryId: "a1" });
-  const [first, second, reply] = s.entries;
+  // The waiting prompt stays below the reply that ran before it was taken.
+  const [first, reply, second] = s.entries;
   assert.equal(first?.kind === "user" && first.entryId, "u1");
   assert.equal(second?.kind === "user" && second.entryId, undefined, "the prompt no start has taken stays unnamed");
   assert.equal(reply?.kind === "assistant" && reply.entryId, "a1");
   // An end with no id (an older server) names nothing.
   feed(set, { type: "message_start", message: { role: "user", content: "second" } });
   feed(set, { type: "message_end", message: { role: "user", content: "second" } });
-  assert.equal(s.entries[1]?.kind === "user" && s.entries[1].entryId, undefined);
+  assert.equal(s.entries[2]?.kind === "user" && s.entries[2].text === "second" && s.entries[2].entryId, undefined);
+});
+
+test("a measured reply's end carries its timing to the live row, with the time it ended; an unmeasured one carries neither", () => {
+  const [s, set] = store();
+  const timing = { effort: "high", ttftMs: 900, thinkingMs: 0, replyMs: 2000, output: 300 };
+  feed(set, messageStart("zai", "glm-5.3"));
+  feed(set, { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "hi" }], stopReason: "stop" }, entryId: "a1", reply: timing });
+  const measured = s.entries.at(-1);
+  assert.deepEqual(measured?.kind === "assistant" && measured.reply, timing);
+  assert.ok(measured?.kind === "assistant" && measured.endedAt && !Number.isNaN(Date.parse(measured.endedAt)));
+  feed(set, messageStart("zai", "glm-5.3"));
+  feed(set, { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "again" }], stopReason: "stop" }, entryId: "a2" });
+  const plain = s.entries.at(-1);
+  assert.equal(plain?.kind === "assistant" && (plain.reply ?? plain.endedAt), undefined);
 });
 
 test("a codemode script's own calls are no live tools; the script's updates carry its calls as details", () => {
@@ -680,4 +818,78 @@ test("a codemode script's own calls are no live tools; the script's updates carr
   assert.deepEqual(JSON.parse(JSON.stringify(s.tools.c1?.details)), calls, "the script's calls so far, live");
   feed(set, { type: "tool_execution_end", toolCallId: "c1", toolName: "codemode", result: { content: [{ type: "text", text: "Script completed" }], details: { calls: [] } }, isError: false });
   assert.equal(s.tools.c1?.status, "done");
+});
+
+// A hello's `live` snapshot is wire 2 only, so these run once, on SovaEvents.
+nodeTest("seedLive shows the reply so far, and the deltas after the hello continue it by index", () => {
+  const [s, set] = store();
+  seedLive(set, {
+    message: {
+      model: "zai/glm-5.3",
+      parts: [
+        { kind: "thinking", text: "Look at the file" },
+        { kind: "text", text: "The bug is in " },
+      ],
+    },
+  });
+  applyEvent(set, { type: "part.delta", index: 1, kind: "text", delta: "parse.ts" });
+  applyEvent(set, { type: "part.start", index: 2, kind: "toolCall", id: "t1", name: "read" });
+  assert.equal(s.entries.length, 1, "one reply, not a second one for the deltas");
+  const e = s.entries[0]!;
+  assert.equal(e.kind, "assistant");
+  if (e.kind !== "assistant") return;
+  assert.equal(e.model, "zai/glm-5.3");
+  assert.equal(e.done, false);
+  assert.deepEqual({ ...e.blocks[0] }, { type: "thinking", text: "Look at the file" });
+  assert.deepEqual({ ...e.blocks[1] }, { type: "text", text: "The bug is in parse.ts" }, "the text so far, then the new delta, once");
+  assert.equal(e.blocks[2]?.type, "toolCall");
+  assert.deepEqual(runDetail(s), { step: "tool", text: "running read" });
+});
+
+nodeTest("seedLive carries the running tools' output, and their end replaces it", () => {
+  const [s, set] = store();
+  seedLive(set, {
+    message: { parts: [{ kind: "toolCall", id: "b1", name: "bash", args: { command: "pnpm test" } }] },
+    tools: [
+      { callId: "b1", name: "bash", args: { command: "pnpm test" }, output: "38 of 214", images: [] },
+      { callId: "c1", name: "read", output: "inner", images: [], parentCallId: "b1" },
+    ],
+  });
+  assert.deepEqual(Object.keys(s.tools), ["b1"], "a call another tool made has no live tool of its own");
+  assert.equal(s.tools.b1?.status, "running");
+  assert.equal(s.tools.b1?.output, "38 of 214");
+  const e = s.entries[0];
+  assert.equal(e?.kind, "assistant");
+  if (e?.kind === "assistant") assert.deepEqual(JSON.parse(JSON.stringify(e.blocks[0])), { type: "toolCall", id: "b1", name: "bash", argsText: "", args: { command: "pnpm test" } });
+  applyEvent(set, { type: "tool.end", callId: "b1", isError: false, output: "214 passed", images: [] });
+  assert.equal(s.tools.b1?.status, "done");
+  assert.equal(s.tools.b1?.output, "214 passed");
+});
+
+nodeTest("a tool call joined mid-arguments shows no argument tail, and its end brings them whole", () => {
+  const [s, set] = store();
+  seedLive(set, { message: { parts: [{ kind: "text", text: "Running it." }, { kind: "toolCall", id: "b1", name: "bash" }] } });
+  applyEvent(set, { type: "part.delta", index: 1, kind: "toolCall", delta: 'test"}' });
+  const e = s.entries[0];
+  assert.equal(e?.kind, "assistant");
+  if (e?.kind !== "assistant") return;
+  const b = e.blocks[1];
+  assert.equal(b?.type === "toolCall" && b.argsText, "", "the tail of JSON whose head the hello never had is left out");
+  applyEvent(set, { type: "part.end", index: 1, kind: "toolCall", id: "b1", name: "bash", args: { command: "pnpm test" } });
+  const end = e.blocks[1];
+  assert.equal(end?.type, "toolCall");
+  if (end?.type === "toolCall") {
+    assert.deepEqual({ ...(end.args as object) }, { command: "pnpm test" });
+    assert.equal(end.joined, undefined);
+  }
+});
+
+nodeTest("seedLive with tools only, or nothing, draws no reply", () => {
+  const [s, set] = store();
+  seedLive(set, undefined);
+  seedLive(set, {});
+  assert.equal(s.entries.length, 0);
+  seedLive(set, { tools: [{ callId: "b1", name: "bash", output: "", images: [] }] });
+  assert.equal(s.entries.length, 0, "a tool between messages draws no empty reply");
+  assert.equal(s.tools.b1?.status, "running");
 });

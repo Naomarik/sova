@@ -1,0 +1,44 @@
+/* The org's Requests tab (§app.project-assistant/requests-tab). Token values only. */
+.org-requests-filters { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* A filter is a toggle: a button with aria-pressed, round like a chip; a set one carries a check as
+   well as the tint, never tint alone (the Sessions board's filters, agents-board.css). */
+.org-requests-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-min);
+  padding: 0 var(--space-4);
+  border: var(--stroke-thin) solid var(--color-border-strong);
+  border-radius: var(--r-full);
+  background: var(--color-surface);
+  color: var(--color-ink-2);
+  font: inherit;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.org-requests-filter:hover { background: var(--color-sunken); color: var(--color-ink); }
+.org-requests-filter:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.org-requests-filter[aria-pressed="true"] { background: var(--color-accent-tint); border-color: var(--color-accent); color: var(--color-ink); font-weight: var(--fw-medium); }
+.org-requests-filter-count { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
+.org-requests-group { display: flex; flex-direction: column; gap: var(--space-1); }
+.org-requests-project { padding-top: var(--space-2); }
+.org-requests-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.org-request { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3); border-top: var(--stroke-thin) solid var(--color-border); overflow-wrap: anywhere; scroll-margin: var(--space-5); }
+.org-request:first-child { border-top: 0; }
+/* The request an address named: tinted, with an accent edge so it reads from a shape too. */
+.org-request-focus { background: var(--color-accent-tint); box-shadow: inset 3px 0 0 var(--color-accent); border-radius: var(--r-md); }
+.org-request-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.org-request-title { font-weight: var(--fw-medium); color: var(--color-ink); min-width: 0; }
+.org-request-text { margin: 0; color: var(--color-ink-2); white-space: pre-wrap; }
+/* `.button-row` has no rule in base.css: the row lays out here. */
+.org-request-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding-top: var(--space-1); }
+/* Mark Done and Decline stay together, apart from the chat button. */
+.org-request-answers { display: inline-flex; flex-wrap: wrap; gap: var(--space-2); }
+
+/* The request card at the top of a chat Start Chat opened (§app.project-assistant/request-chat). */
+.owner-request-note { padding: var(--space-3) var(--space-4); display: grid; gap: var(--space-1); overflow-wrap: anywhere; }
+.owner-request-note-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.owner-request-note-from { font-weight: var(--fw-semibold); color: var(--color-ink); }
+.owner-request-note-meta { margin: 0; }
+.owner-request-note-title { margin: 0; font-weight: var(--fw-medium); color: var(--color-ink); }

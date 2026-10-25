@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { parseShow, SystemdDriver, systemdRunArgv, type Exec } from "./drivers";
+import { DetachedDriver, parseShow, SystemdDriver, systemdRunArgv, type Exec } from "./drivers";
+import type { ProcEntry, ProcTable } from "./proctable";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-drivers-"));
 after(() => rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true }));
@@ -99,3 +100,74 @@ test("systemd: a hook that ran and failed keeps its exit and its journal, and pe
   assert.deepEqual((await driver.logs("sova-hook-h-i-setup-deps", 80)).map((l) => l.text), ["npm ERR! missing package-lock.json"]);
 });
 
+
+test("detached: a recorded pid now someone else's (another start) is never signalled by a stop; a gone leader's own orphans still are (the restart watch: drivers.integration.test.ts)", async () => {
+  const root = mkdtempSync(join(tmpdir(), "sova-detached-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  const procs = join(root, "procs");
+  mkdirSync(procs, { recursive: true });
+  const record = (unit: string, pid: number) =>
+    writeFileSync(join(procs, `${unit}.json`), JSON.stringify({ pid, start: "S0", clock: "ps", argv: ["true"], cwd: root, env: {}, at: "" }));
+  // Without session ids (macOS): a unit is its leader's tree and groups.
+  let entries: ProcEntry[] = [];
+  const starts = new Map<number, string>();
+  const table: ProcTable = {
+    kind: "ps",
+    sessions: false,
+    list: () => entries,
+    get: (pid) => entries.find((e) => e.pid === pid) ?? null,
+    startOf: (pid) => starts.get(pid) ?? null,
+  };
+  // Signals are recorded, never sent (the pids are made up).
+  const sent: [number, string][] = [];
+  const realKill = process.kill;
+  process.kill = ((pid: number, sig: NodeJS.Signals) => {
+    sent.push([pid, sig]);
+    entries = entries.filter((e) => e.pid !== pid);
+    return true;
+  }) as typeof process.kill;
+  after(() => void (process.kill = realKill));
+  const d = new DetachedDriver(200, { table, procsDir: () => procs, logsDir: () => join(root, "logs") });
+  // pid 4242 was the unit's; now an unrelated process (another start) leads its own tree there.
+  entries = [
+    { pid: 4242, ppid: 1, pgid: 4242, sid: null, zombie: false },
+    { pid: 4243, ppid: 4242, pgid: 4242, sid: null, zombie: false },
+  ];
+  starts.set(4242, "S9");
+  record("u-reused", 4242);
+  assert.equal((await d.status("u-reused")).state === "active", false, "not taken for the unit");
+  await d.stop("u-reused");
+  assert.deepEqual(sent, [], "nothing signalled");
+  assert.equal(existsSync(join(procs, "u-reused.json")), false, "the stale record goes");
+  // The leader is gone, its group's members remain (the pid can't be reused while its group lives): they go.
+  entries = [{ pid: 5001, ppid: 1, pgid: 5000, sid: null, zombie: false }];
+  record("u-orphans", 5000);
+  await d.stop("u-orphans");
+  assert.deepEqual(sent, [[5001, "SIGTERM"]]);
+  // The recorded process itself (same start): signalled.
+  sent.length = 0;
+  entries = [{ pid: 6000, ppid: 1, pgid: 6000, sid: null, zombie: false }];
+  starts.set(6000, "S0");
+  record("u-own", 6000);
+  await d.stop("u-own");
+  assert.deepEqual(sent, [[6000, "SIGTERM"]]);
+  process.kill = realKill;
+});
+
+test("detached, with session ids: a process in the session of a recorded pid now someone else's is not the unit's", () => {
+  const root = mkdtempSync(join(tmpdir(), "sova-detached-own-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  const procs = join(root, "procs");
+  mkdirSync(procs, { recursive: true });
+  writeFileSync(join(procs, "u.json"), JSON.stringify({ pid: 7000, start: "S0", clock: "procfs", argv: ["true"], cwd: root, env: {}, at: "" }));
+  const entries: ProcEntry[] = [
+    { pid: 7000, ppid: 1, pgid: 7000, sid: 7000, zombie: false },
+    { pid: 7001, ppid: 7000, pgid: 7000, sid: 7000, zombie: false },
+  ];
+  let start = "S9";
+  const table: ProcTable = { kind: "procfs", sessions: true, list: () => entries, get: (pid) => entries.find((e) => e.pid === pid) ?? null, startOf: (pid) => (pid === 7000 ? start : null) };
+  const d = new DetachedDriver(200, { table, procsDir: () => procs, logsDir: () => join(root, "logs") });
+  assert.equal(d.owns("u", 7001), false, "a later session leader's member");
+  start = "S0";
+  assert.equal(d.owns("u", 7001), true, "the unit's own");
+});

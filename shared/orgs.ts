@@ -212,8 +212,10 @@ export interface OwnerPageInfo {
   /** The owner now, or null. */
   person: NamedRef | null;
   /** Their newest owner link on this host: live, expired, or off (turned off, replaced); null: none yet.
-      `url`: the link itself, while it is live and its token is kept (Copy Owner Link). */
-  link: { state: "live" | "expired" | "off"; createdAt: string; expiresAt: string; url?: string } | null;
+      `url`: the link itself, while it is live and its token is kept (Copy Owner Link). `expiresAt`
+      is when it turns off unused (7 days after its last use); `expired` means it did. `askedAt`:
+      the owner, holding it after it turned off, asked for a new one. */
+  link: { state: "live" | "expired" | "off"; createdAt: string; expiresAt: string; url?: string; askedAt?: string } | null;
   /** Visits to the Owner page by a person (not scanners or previews), all time. */
   opened: number;
   lastOpenedAt?: string;
@@ -287,6 +289,8 @@ export interface OrgNeedsYou {
   ownerLink?: number;
   /** Acts waiting in a hold before they reach a person or the code (§app.project-overseer/holds); absent: none, or an older server. */
   held?: number;
+  /** The owner's requests still with the team (§app.project-assistant/requests); absent: an older server. */
+  requests?: number;
 }
 
 /** One baton session of the org, for its page. */
@@ -340,6 +344,9 @@ export interface OrgDetail extends OrgSummary {
   lastOpened?: Record<string, { at?: string; minted: boolean }>;
   /** From the org routes: the owner card (absent: an older server). */
   ownerPage?: OwnerPageInfo;
+  /** From the org routes: the owner's requests (§app.project-assistant/requests-tab): `open` = with the team or
+      being worked on, `withTeam` = with the team, `total` = all of them. Absent: an older server. */
+  ownerRequests?: { open: number; withTeam: number; total: number };
 }
 
 // ---- a person's page (§app.organizations/person-page) -------------------------------------------------

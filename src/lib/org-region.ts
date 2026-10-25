@@ -1,7 +1,8 @@
 // The sidebar's Organizations region (§app.session-list/organizations): every organizational session
-// (`SessionSummary.org`), and only here. Last before the Archive: its own Needs you list first, then
+// (`SessionSummary.org`), and only here; and, among its project's Sessions, every session in a placed project's
+// folder (`folderOrg`) but an archived one, which is listed on the ordinary surfaces too. Last before the Archive: its own Needs you list first, then
 // org → project, each project's rows in groups — Conversations and Conflicts to settle (Not started /
-// In progress / Done) and Builds (active / Done). A project's current overseer is not a row but the
+// In progress / Done) and Sessions (active / Done). A project's current overseer is not a row but the
 // eye on its heading; its cleared conversations are in no region (its History).
 //
 // Pure on purpose, like `needs-you` and `group-open`: the grouping, order, counts, forced-open rules
@@ -12,7 +13,7 @@ import type { ProjectSummary } from "../../shared/projects";
 import type { AttentionDigest, AttentionItem, SessionSummary } from "../../shared/protocol";
 import { needsYouRows, type NeedsYouRow } from "./needs-you";
 import { byRecentActivity } from "./recent";
-import { isOrgSession } from "./regions";
+import { isOrgSession, isTopSession } from "./regions";
 import { rowLeadMark } from "./signals";
 
 /** Open by default; a collapse is remembered for the tab (the Needs-you pattern). */
@@ -41,7 +42,8 @@ export interface OrgProject {
   conversations: StateSplit;
   /** Settle sessions: a conflict's baton session, whoever started it. */
   conflicts: StateSplit;
-  /** Coding sessions the project started: running or waiting, then Done (merged per git, or archived). */
+  /** The Sessions group: coding sessions the project started and the unarchived sessions in its folder; running or
+      waiting, then Done (a build merged per git, or archived; a folder session that is neither live nor a web session). */
   builds: { active: SessionSummary[]; done: SessionSummary[] };
   /** Rows in no group: a workspace file no project claims, a second "current" overseer. */
   other: SessionSummary[];
@@ -66,8 +68,13 @@ export const isClearedOverseer = (s: Pick<SessionSummary, "org">): boolean => s.
 /** The project's current overseer (archived or not): the eye on its heading. */
 const isCurrentOverseer = (s: Pick<SessionSummary, "org">): boolean => s.org?.kind === "overseer" && !s.org.finished;
 
-/** What the region holds: every org session but a cleared overseer conversation. */
-export const inOrgRegion = (s: Pick<SessionSummary, "org">): boolean => !!s.org && !isClearedOverseer(s);
+/** A session in a placed project's folder: an ordinary session the region lists under its project too. */
+export const isOrgFolderSession = (s: Pick<SessionSummary, "org" | "folderOrg" | "project">): boolean => !s.org && !!s.folderOrg && s.project?.kind === "folder";
+
+/** What the region holds: every org session but a cleared overseer conversation, and the placed projects' folder sessions
+    but an archived one (the Archive lists it; an archived org session stays here, in its group's Done). */
+export const inOrgRegion = (s: Pick<SessionSummary, "org" | "folderOrg" | "project"> & { archived?: boolean }): boolean =>
+  (!!s.org && !isClearedOverseer(s)) || (isOrgFolderSession(s) && s.archived !== true);
 
 /** A session of an archived project (§app.organizations/archive): in no org → project list, no
     heading, no eye, not counted; only the region's own Needs you still shows it while it waits. */
@@ -145,14 +152,19 @@ export function orgSections(sessions: readonly SessionSummary[], projects: reado
     projectOf(orgOf(pr.space.orgId, pr.space.orgName), pr.id, pr.name, pr.root);
   }
   for (const s of sessions) {
-    const o = s.org;
-    if (!o || !inOrgRegion(s) || inArchivedProject(s)) continue;
+    const o = s.org ?? (isOrgFolderSession(s) ? s.folderOrg : undefined);
+    if (!o || !inOrgRegion(s) || o.projectArchived) continue;
     const p = projectOf(orgOf(o.orgId, o.orgName), o.projectId ?? "", o.projectName);
     if (isCurrentOverseer(s)) {
       // Only one is current; should the list ever carry two, the newest is the eye and the other stays a row.
       const [eye, row] = !p.overseer ? [s, null] : byRecentActivity(s, p.overseer) < 0 ? [s, p.overseer] : [p.overseer, s];
       p.overseer = eye;
       if (row) p.other.push(row);
+      continue;
+    }
+    // A folder session (never archived here) is open while it runs (live, or a web session); otherwise Done.
+    if (!s.org) {
+      (isTopSession(s) ? p.builds.active : p.builds.done).push(s);
       continue;
     }
     const g = rowGroup(s);
@@ -243,7 +255,7 @@ export function orgNeedsYouRows(digest: Pick<AttentionDigest, "items"> | undefin
   for (const s of org) {
     if (listed.has(s.path) || orgDone(s)) continue;
     const w = batonWaitDetail(s);
-    if (w) rows.push({ session: s, detail: w.text, details: [w.text], since: w.since });
+    if (w) rows.push({ session: s, detail: w.text, details: [w.text], since: w.since, soft: false });
   }
   return rows.sort((a, b) => b.since - a.since || a.session.path.localeCompare(b.session.path));
 }
@@ -289,19 +301,22 @@ export const orgSearchText = (s: Pick<SessionSummary, "org" | "baton">): string 
 export const storedOrgsOpen = (raw: string | null): boolean => raw !== "0";
 
 /**
- * Whether the region is open: forced open (the stored choice left alone) while searching and while
- * the open session is inside it. Otherwise the tab's choice.
+ * Whether the region is open: forced open (the stored choice left alone) while searching, and opened for the open
+ * session inside it unless the user collapsed it on this visit (`dismissed`, lib/section-reveal). Otherwise the tab's
+ * choice.
  */
-export const orgsRegionOpen = (input: { stored: boolean; searching: boolean; holdsSelected: boolean }): boolean =>
-  input.searching || input.holdsSelected || input.stored;
+export const orgsRegionOpen = (input: { stored: boolean; searching: boolean; holdsSelected: boolean; dismissed: boolean }): boolean =>
+  input.searching || (input.holdsSelected && !input.dismissed) || input.stored;
 
-/** An org section: open by default (memory only), forced open by a search or the open session inside. */
-export const orgSectionOpen = (input: { chosen: boolean | undefined; searching: boolean; holdsSelected: boolean }): boolean =>
-  input.searching || input.holdsSelected || (input.chosen ?? true);
+/** An org section: open by default (memory only), forced open by a search, opened for the open session inside unless
+    collapsed on this visit. */
+export const orgSectionOpen = (input: { chosen: boolean | undefined; searching: boolean; holdsSelected: boolean; dismissed: boolean }): boolean =>
+  input.searching || (input.holdsSelected && !input.dismissed) || (input.chosen ?? true);
 
-/** A group's Done tail: collapsed by default (memory only), forced open by a search or the open session inside. */
-export const doneOpen = (input: { chosen: boolean | undefined; searching: boolean; holdsSelected: boolean }): boolean =>
-  input.searching || input.holdsSelected || (input.chosen ?? false);
+/** A group's Done tail: collapsed by default (memory only), forced open by a search, opened for the open session inside
+    unless collapsed on this visit. */
+export const doneOpen = (input: { chosen: boolean | undefined; searching: boolean; holdsSelected: boolean; dismissed: boolean }): boolean =>
+  input.searching || (input.holdsSelected && !input.dismissed) || (input.chosen ?? false);
 
 /** The org head's title: its count, and who is waiting. */
 export const orgTitle = (name: string, n: number, waiting: number): string =>

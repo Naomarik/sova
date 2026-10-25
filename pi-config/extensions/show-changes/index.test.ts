@@ -6,7 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "./details.ts";
-import showChanges, { renderShowChangesResult } from "./index.ts";
+import { runGit } from "./git.ts";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import showChanges, { renderShowChangesResult, serverAgentDir } from "./index.ts";
 
 const sh = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 
@@ -54,13 +56,19 @@ test("registers show_changes with its prompt snippet and guidelines", () => {
 	showChanges(f.pi);
 	const t = f.tool();
 	assert.equal(t.name, SHOW_CHANGES_TOOL);
-	assert.match(t.promptSnippet, /diff viewer/);
-	assert.ok(t.promptGuidelines.some((g: string) => /refuses the call otherwise/.test(g)));
-	assert.ok(t.promptGuidelines.some((g: string) => /read the diff yourself/.test(g)));
-	assert.doesNotMatch(t.description, /computes no diff/);
-	assert.match(t.description, /checks the steps against the diff/);
-	assert.ok(t.promptGuidelines.some((g: string) => /instead of pasting diffs/.test(g)));
+	assert.match(t.promptSnippet, /changes viewer/);
+	assert.match(t.description, /every hunk must be in exactly one step, or the call is refused/);
+	assert.match(t.description, /Read the diff first/);
+	assert.ok(t.promptGuidelines.some((g: string) => /rather than pasting a diff/.test(g)));
+	// The viewer opens only the session's checkout and its worktrees: no text may invite another folder.
+	assert.ok(t.promptGuidelines.some((g: string) => /only git changes in this session's checkout or its tracked worktrees/.test(g)));
+	assert.match(t.parameters.properties.worktree.description, /The viewer opens no other folder/);
+	assert.doesNotMatch(JSON.stringify([t.description, t.promptGuidelines, t.parameters]), /or a directory/);
 	assert.equal(t.parameters.additionalProperties, false);
+	// The agent no longer sends "builds on": not in the schema, the description, the guidelines or the example.
+	assert.doesNotMatch(JSON.stringify(t.parameters), /buildsOn/);
+	assert.doesNotMatch(t.description, /buildsOn/);
+	assert.ok(t.promptGuidelines.every((g: string) => !/buildsOn/.test(g)));
 });
 
 test("dirty scope: whole-file refs place every hunk; details Sova can read and the files in the text", async () => {
@@ -73,7 +81,7 @@ test("dirty scope: whole-file refs place every hunk; details Sova can read and t
 		const out = await f.call(f.ctx(r.main), {
 			scope: "dirty",
 			title: "Edits",
-			steps: [{ title: "Change a", hunks: [{ path: "a.txt" }] }, { title: "Add b", buildsOn: [1], hunks: [{ path: "b.txt" }] }],
+			steps: [{ title: "Change a", hunks: [{ path: "a.txt" }] }, { title: "Add b", hunks: [{ path: "b.txt" }] }],
 		});
 		assert.deepEqual(normalizeShowChangesDetails(out.details), out.details);
 		assert.deepEqual(out.details.scope, { kind: "dirty", cwd: r.main, root: r.main, head: sh(r.main, "rev-parse", "HEAD") });
@@ -181,6 +189,110 @@ test("worktree scope follows the tracked worktree from the session cwd; paths fi
 	}
 });
 
+test("a folder the viewer won't open is refused, nothing shown; a tracked worktree by branch, or a folder inside the cwd, opens", async () => {
+	const r = repo();
+	try {
+		// The real failure: a scratch repository outside the session's folders, with the change uncommitted.
+		const scratch = join(r.root, "scratch");
+		mkdirSync(scratch);
+		sh(scratch, "init", "-q", "-b", "master");
+		writeFileSync(join(scratch, "a.txt"), "new\n");
+		const wt = join(r.root, "wt");
+		sh(r.main, "worktree", "add", "-q", "-b", "feat/x", wt);
+		writeFileSync(join(wt, "a.txt"), "two\n");
+		const base = sh(r.main, "rev-parse", "HEAD");
+		const entries = [{ type: "custom", customType: "worktrees", data: { version: 1, trees: [{ path: wt, branch: "feat/x", base, status: "active", session: "s1", how: "created", at: 1_790_000_000_000 }] } }];
+		const f = fakePi(entries);
+		showChanges(f.pi);
+		await assert.rejects(
+			f.call(f.ctx(r.main), { scope: "dirty", worktree: scratch }),
+			(e: Error) => {
+				assert.equal(e.message, `${scratch} is outside this session's folder and its worktrees, so the viewer can't open it. Put the changes in a worktree (the worktree tool) and show that. Nothing was shown.`);
+				return true;
+			},
+		);
+		const byBranch = await f.call(f.ctx(r.main), { scope: "dirty", worktree: "feat/x" });
+		assert.equal(byBranch.details.scope.cwd, wt);
+		assert.match(byBranch.content[0].text, /^Opened the changes viewer/);
+		// The branch has no commits past its base, but its folder has an uncommitted edit: the refusal points at scope dirty.
+		await assert.rejects(
+			f.call(f.ctx(r.main), { scope: "worktree", worktree: "feat/x" }),
+			/^Error: No changes in this comparison \(feat\/x vs .+\), so nothing was shown\. Its folder has 1 uncommitted file: scope dirty shows them\.$/,
+		);
+		mkdirSync(join(r.main, "sub"));
+		writeFileSync(join(r.main, "sub", "s.txt"), "s\n");
+		const inside = await f.call(f.ctx(r.main), { scope: "dirty", worktree: "sub" });
+		assert.equal(inside.details.scope.cwd, join(r.main, "sub"));
+	} finally {
+		r.done();
+	}
+});
+
+test("the folders the viewer opens: the header's cwd (not the process cwd), workers' folders, never a remote placeholder", async () => {
+	const r = repo();
+	try {
+		// Two other repositories: one a worker runs in, one a worker on a remote target maps to locally.
+		const agentDir = join(r.root, "agent");
+		const mk = (dir: string) => {
+			mkdirSync(dir, { recursive: true });
+			sh(dir, "init", "-q", "-b", "master");
+			sh(dir, "config", "user.email", "t@example.invalid");
+			sh(dir, "config", "user.name", "t");
+			sh(dir, "config", "commit.gpgsign", "false");
+			writeFileSync(join(dir, "w.txt"), "w\n");
+			sh(dir, "add", ".");
+			sh(dir, "commit", "-q", "-m", "w");
+			writeFileSync(join(dir, "w.txt"), "w2\n");
+			return dir;
+		};
+		const worker = mk(join(r.root, "worker"));
+		const placeholder = mk(join(agentDir, "sova", "targets", "box", "repo"));
+		const manifest = (workerId: string, cwd: string) => ({ type: "custom", customType: "subagents-worker-manifest", data: { v: 1, kind: "worker-manifest", workerId, backend: "pi", at: 1, spec: { cwd } } });
+		const entries = [manifest("w1", worker), manifest("w2", placeholder)];
+		const f = fakePi(entries);
+		showChanges(f.pi, { agentDir: () => agentDir });
+		const ctx = (cwd: string, headerCwd: string) => ({ ...f.ctx(cwd), sessionManager: { getHeader: () => ({ type: "session", cwd: headerCwd }), getEntries: () => entries, getBranch: () => entries } });
+		const inWorker = await f.call(ctx(r.main, r.main), { scope: "dirty", worktree: worker });
+		assert.equal(inWorker.details.scope.cwd, worker);
+		await assert.rejects(f.call(ctx(r.main, r.main), { scope: "dirty", worktree: placeholder }), /is outside this session's folder and its worktrees/);
+		// The viewer knows the session by its header's cwd: a process cwd elsewhere (pi's cwd override) is not known.
+		const elsewhere = mk(join(r.root, "elsewhere"));
+		await assert.rejects(f.call(ctx(elsewhere, r.main), { scope: "dirty" }), new RegExp(`^Error: ${elsewhere} is outside`));
+		assert.equal((await f.call(ctx(elsewhere, elsewhere), { scope: "dirty" })).details.scope.cwd, elsewhere);
+	} finally {
+		r.done();
+	}
+});
+
+test("a worktree recorded on another branch of the session is known: the viewer reads the whole file, not the branch", async () => {
+	const r = repo();
+	try {
+		const wt = join(r.root, "wt");
+		sh(r.main, "worktree", "add", "-q", "-b", "feat/x", wt);
+		writeFileSync(join(wt, "a.txt"), "two\n");
+		const base = sh(r.main, "rev-parse", "HEAD");
+		const set = { type: "custom", id: "b1", parentId: "root", customType: "worktrees", data: { version: 1, trees: [{ path: wt, branch: "feat/x", base, status: "active", session: "s1", how: "created", at: 1_790_000_000_000 }] } };
+		const here = { type: "custom", id: "c1", parentId: "root", customType: "note", data: {} };
+		// The file holds both branches; the current branch (c1) never saw the worktree entry (b1).
+		const all = [set, here];
+		const f = fakePi();
+		showChanges(f.pi, { agentDir: () => join(r.root, "agent") });
+		const ctx = { ...f.ctx(r.main), sessionManager: { getHeader: () => ({ type: "session", cwd: r.main }), getEntries: () => all, getBranch: () => [here] } };
+		const out = await f.call(ctx, { scope: "dirty", worktree: wt });
+		assert.equal(out.details.scope.cwd, wt);
+		// The branch alone would not know it.
+		const branchOnly = { ...ctx, sessionManager: { getHeader: () => ({ type: "session", cwd: r.main }), getEntries: () => [here], getBranch: () => [here] } };
+		await assert.rejects(f.call(branchOnly, { scope: "dirty", worktree: wt }), /is outside this session's folder/);
+	} finally {
+		r.done();
+	}
+});
+
+test("placeholders are the hosting server's: a worker with its own agent dir uses SOVA_CHAT_STATE_ROOT", () => {
+	assert.equal(serverAgentDir({ SOVA_CHAT_STATE_ROOT: "/srv/agent/sova", PI_CODING_AGENT_DIR: "/loadout/agent" }), "/srv/agent");
+	assert.equal(serverAgentDir({ PI_CODING_AGENT_DIR: "/srv/agent" }), getAgentDir());
+});
+
 test("refusals: bad input, no repository, a remote session; nothing is shown", async () => {
 	const r = repo();
 	try {
@@ -193,12 +305,40 @@ test("refusals: bad input, no repository, a remote session; nothing is shown", a
 		} finally {
 			rmSync(empty, { recursive: true, force: true });
 		}
-		const clean = await f.call(f.ctx(r.main), { scope: "dirty" });
-		assert.match(clean.content[0].text, /There are no changes in this scope\./);
+		// No changed file: refused, no card, and the agent is told to say so.
+		await assert.rejects(
+			f.call(f.ctx(r.main), { scope: "dirty" }),
+			/^Error: No changes in this comparison \(uncommitted changes vs HEAD [0-9a-f]{7} in .+\), so nothing was shown\. Tell the user nothing changed there\.$/,
+		);
+		// Changes outside the paths given count as none.
+		writeFileSync(join(r.main, "a.txt"), "two\n");
+		await assert.rejects(f.call(f.ctx(r.main), { scope: "dirty", paths: ["docs"] }), /No changes in this comparison \(.+, limited to docs\), so nothing was shown\./);
+		assert.match((await f.call(f.ctx(r.main), { scope: "dirty" })).content[0].text, /^Opened the changes viewer/);
 		await f.fire("session_start", f.ctx(r.main));
 		assert.ok(f.emitted.includes("remote:discover"));
 		f.pi.events.emit("remote:session", { version: 1 });
 		await assert.rejects(f.call(f.ctx(r.main), { scope: "dirty" }), /local only/);
+	} finally {
+		r.done();
+	}
+});
+
+test("past 3,000 files, counted within the paths given, the call is refused with a hint to narrow it", async () => {
+	const r = repo();
+	try {
+		writeFileSync(join(r.main, "a.txt"), "two\n");
+		// A git that lists 3,001 changed files under big/ besides a.txt.
+		const many = Array.from({ length: 3001 }, (_, i) => `big/f${i}.txt`);
+		const git = async (args: string[], cwd: string, opts?: any) => {
+			const out = await runGit(args, cwd, opts);
+			return args.includes("--name-only") ? { ...out, stdout: `${out.stdout}${many.join("\0")}\0` } : out;
+		};
+		const f = fakePi();
+		showChanges(f.pi, { git });
+		await assert.rejects(f.call(f.ctx(r.main), { scope: "dirty" }), /^Error: 3002 files changed, more than the 3000 the viewer shows: narrow it with paths .*Nothing was shown\.$/);
+		await assert.rejects(f.call(f.ctx(r.main), { scope: "dirty", paths: ["big"] }), /3001 files changed within the paths given, more than the 3000/);
+		const narrowed = await f.call(f.ctx(r.main), { scope: "dirty", paths: ["a.txt"] });
+		assert.match(narrowed.content[0].text, /1 changed file:\n {2}a\.txt\n/);
 	} finally {
 		r.done();
 	}

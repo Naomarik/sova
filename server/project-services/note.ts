@@ -64,10 +64,10 @@ export function instanceNote(f: NoteFacts, sandboxed: boolean): string {
 export const noteDigest = (text: string) => `sha256:${createHash("sha256").update(text).digest("hex").slice(0, 32)}`;
 
 /** The digest of the last instance note on the branch, or null. */
-export function lastNoteDigest(branch: readonly HEntry[]): string | null {
+export function lastNoteDigest(branch: readonly HEntry[], type: string = NOTE_MESSAGE): string | null {
   for (let i = branch.length - 1; i >= 0; i--) {
     const h = branch[i]!;
-    if (h.kind === "note" && !h.inMessage && h.noteType === NOTE_MESSAGE) {
+    if (h.kind === "note" && !h.inMessage && h.noteType === type) {
       const d = (h.details as { digest?: unknown } | undefined)?.digest;
       return typeof d === "string" ? d : null;
     }
@@ -79,7 +79,7 @@ export function lastNoteDigest(branch: readonly HEntry[]): string | null {
 export const sandboxedOf = (state: StateView): boolean => sandboxInfoOf(state).on;
 
 /** The hidden message for `text`, carrying its digest. */
-export const noteMessage = (text: string) => ({ customType: NOTE_MESSAGE, content: text, display: false as const, details: { v: 1, digest: noteDigest(text) } });
+export const noteMessage = (text: string, type: string = NOTE_MESSAGE) => ({ customType: type, content: text, display: false as const, details: { v: 1, digest: noteDigest(text) } });
 
 /** The note of every checkout in `checkouts` that has one, joined; null when none does. */
 export async function currentNote(engine: ProjectEngine, checkouts: readonly string[], state: StateView): Promise<string | null> {
@@ -110,21 +110,28 @@ export async function resultNote(engine: ProjectEngine, r: VerbResult, state: St
  * its text differs from the last one on the branch; after a compaction, again. Never in the system prompt.
  */
 export function registerInstanceNote(pi: PiExtensionAPI, engine: () => ProjectEngine, own: (ctx: HookCtx) => Promise<string[]>): void {
-  const render = async (ctx: HookCtx): Promise<string | null> => {
-    try {
-      return await currentNote(engine(), await own(ctx), ctx.state());
-    } catch {
-      return null;
-    }
-  };
+  registerNoteHooks(pi, (ctx) => sessionNote(engine, own, ctx));
+}
+
+/** The session's note now (null: none, or it could not be read). */
+export async function sessionNote(engine: () => ProjectEngine, own: (ctx: HookCtx) => Promise<string[]>, ctx: HookCtx): Promise<string | null> {
+  try {
+    return await currentNote(engine(), await own(ctx), ctx.state());
+  } catch {
+    return null;
+  }
+}
+
+/** The note's delivery, whatever renders it: in a chat process (§app/chat-processes) the server does. */
+export function registerNoteHooks(pi: PiExtensionAPI, render: (ctx: HookCtx) => Promise<string | null>, type: string = NOTE_MESSAGE): void {
   pi.on("before_agent_start", async (_event, ctx) => {
     const c = toolCtx(ctx);
     const text = await render(c);
-    if (!text || lastNoteDigest(c.branch()) === noteDigest(text)) return undefined;
-    return { message: noteMessage(text) };
+    if (!text || lastNoteDigest(c.branch(), type) === noteDigest(text)) return undefined;
+    return { message: noteMessage(text, type) };
   });
   pi.on("session_compact", async (_event, ctx) => {
     const text = await render(toolCtx(ctx));
-    if (text) pi.sendMessage(noteMessage(text));
+    if (text) pi.sendMessage(noteMessage(text, type));
   });
 }

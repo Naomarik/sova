@@ -25,6 +25,7 @@ writeFileSync(join(dir, "settings.json"), JSON.stringify({ extensions: [resolve(
 const DEFAULT = { version: 1, mode: "delegate", strict: false, minorModes: ["align", "spec"] };
 writeFileSync(join(dir, "mode.json"), JSON.stringify(DEFAULT));
 process.env.PI_CODING_AGENT_DIR = dir;
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { buildApp } = await import("./app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { acquireChat, disposeAllChats, disposeHeldChat, ModeRefusedError } = await import("./chat-manager");

@@ -7,13 +7,14 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import { MAX_TEXT } from "./core/grammar";
+import { normalizeTourScript, tourScriptProblem, type TourAction } from "../../shared/tour";
 import type { FlowSpec } from "./kinds/flow/parse";
 import type { MatrixSpec } from "./kinds/matrix/parse";
 import { FRAME_HARD_CHARS, FRAME_SOFT_CHARS } from "./kinds/frame/parse";
 import { parseVis, visKindWord } from "./parse";
 import { KIND_WORDS, KINDS } from "./registry";
 import { gatheringVisGuide, SHARE_VIS_KINDS } from "../../server/baton-vis-guide";
-import { stripVisComments, VIS_INSTRUCTIONS, VIS_KINDS, visGuide } from "../../pi-config/extensions/mode/minor.ts";
+import { stripVisComments, VIS_INSTRUCTIONS, VIS_KINDS, VIS_TOOL_ENTRIES, VIS_TOOL_PARTS, visGuide } from "../../pi-config/extensions/mode/minor.ts";
 
 const VIS_DIR = new URL("../../pi-config/extensions/mode/vis/", import.meta.url);
 /** Every file in vis/ by its name without `.md`, as written. */
@@ -27,7 +28,7 @@ const GUIDE = Object.values(FILES).join("\n");
 
 /** Each kind's file: its name, its `# vis <kind>` heading's words, its text. overview and shared are no kind's. */
 const kindFiles = Object.entries(FILES)
-  .filter(([name]) => name !== "overview" && name !== "shared")
+  .filter(([name]) => name !== "overview" && name !== "shared" && !VIS_TOOL_ENTRIES.includes(name) && !VIS_TOOL_PARTS.includes(name))
   .map(([name, text]) => ({ name, heading: /^# vis (.*)$/m.exec(text)?.[1]?.trim() ?? "", text }));
 const wordsOf = (heading: string) => heading.split(/\s*\/\s*/);
 const isStub = (word: string) => !!KINDS[word]!.stub;
@@ -135,18 +136,18 @@ test("a stub kind in the registry is a stub file in the guide, and only then", (
 test("the overview lists every kind file once, and the prompt exactly the registry's kinds that aren't stubs", () => {
   const listed = (text: string) => [...text.matchAll(/^- ([a-z]+(?: \/ [a-z]+)*): /gm)].map((m) => m[1]!);
   // As written: one line per kind file, stubs included, in the registry's order.
-  assert.deepEqual(listed(FILES.overview!).flatMap(wordsOf), KIND_WORDS);
-  assert.deepEqual(listed(FILES.overview!).map((h) => h.replace(" / ", "-")).sort(), kindFiles.map((f) => f.name).sort());
+  assert.deepEqual(listed(FILES.overview!).flatMap(wordsOf), [...KIND_WORDS, ...VIS_TOOL_ENTRIES]);
+  assert.deepEqual(listed(FILES.overview!).filter(h => !VIS_TOOL_ENTRIES.includes(h)).map((h) => h.replace(" / ", "-")).sort(), kindFiles.map((f) => f.name).sort());
   // As sent: the stubs' lines dropped, no owner notes; vis_guide takes exactly these words.
-  assert.deepEqual(listed(VIS_INSTRUCTIONS).flatMap(wordsOf), KIND_WORDS.filter((w) => !isStub(w)));
-  assert.deepEqual(VIS_KINDS, KIND_WORDS.filter((w) => !isStub(w)));
+  assert.deepEqual(listed(VIS_INSTRUCTIONS).flatMap(wordsOf), [...KIND_WORDS.filter((w) => !isStub(w)), ...VIS_TOOL_ENTRIES]);
+  assert.deepEqual(VIS_KINDS, [...KIND_WORDS.filter((w) => !isStub(w)), ...VIS_TOOL_ENTRIES]);
   assert.doesNotMatch(VIS_INSTRUCTIONS, /<!--/);
   assert.match(VIS_INSTRUCTIONS, /call `vis_guide` with that kind/);
 });
 
 test("vis_guide returns the shared rules, then that kind's file, owner notes stripped", () => {
   const shared = stripVisComments(FILES.shared!);
-  for (const word of VIS_KINDS) {
+  for (const word of VIS_KINDS.filter(w => !VIS_TOOL_ENTRIES.includes(w))) {
     const file = kindFiles.find((f) => wordsOf(f.heading).includes(word))!;
     assert.equal(visGuide(word), `${shared}\n\n${stripVisComments(file.text)}`, word);
     assert.doesNotMatch(visGuide(word), /<!--/);
@@ -157,6 +158,42 @@ test("vis_guide returns the shared rules, then that kind's file, owner notes str
 });
 
 // The emphasis section's one line of every kind's targets moved into the kinds' files.
+test("tour is a tool-backed workflow, not a renderer kind; its core's one worked example validates", () => {
+  assert.deepEqual(VIS_TOOL_ENTRIES, ["tour"]);
+  assert.deepEqual(VIS_TOOL_PARTS, ["tour-signin", "tour-sites", "tour-sova", "tour-sharing"]);
+  assert.ok(!KIND_WORDS.includes("tour"));
+  const guide = visGuide("tour");
+  assert.equal(guide, stripVisComments(FILES.tour!));
+  assert.match(guide, /^# tour: explain a real interface/);
+  assert.doesNotMatch(guide, /^# vis: rules for every kind/m);
+  assert.match(guide, /Never write a `vis tour` fence/);
+  assert.match(guide, /Nothing is ever submitted/);
+  assert.match(guide, /can't see pictures/);
+  for (const part of VIS_TOOL_PARTS) assert.equal(visGuide(part), stripVisComments(FILES[part]!), part);
+  const blocks = [...guide.matchAll(/^```json\n([\s\S]*?)^```$/gm)].map(m => JSON.parse(m[1]!));
+  assert.equal(blocks.length, 1, "one worked example");
+  const raw = blocks[0]!;
+  assert.equal(tourScriptProblem(raw), null, "the worked example passes the script validator");
+  const example = normalizeTourScript(raw);
+  assert.ok(example, "the worked example is accepted by the actual strict script validator");
+  assert.ok(example.signIn, "it signs in");
+  const page = example.steps[0]!.views[0]!;
+  const reference = example.steps[0]!.views[1]!;
+  assert.equal(page.kind, "page");
+  if (page.kind === "page") {
+    assert.deepEqual(page.sizes, ["desktop", "phone"]);
+    const mark = page.marks[0]!;
+    assert.equal(mark.target.kind, "role", "its mark is named by role");
+    for (const size of page.sizes) {
+      const first: TourAction = page.actions[size]![0]!;
+      assert.equal(first.op, "reveal", `${size}: reveal comes before the mark`);
+      assert.deepEqual("target" in first ? first.target : null, mark.target, `${size}: it reveals the marked control`);
+    }
+  }
+  assert.equal(reference.kind, "reference", "the unsafe state is reference text, never a fabricated image");
+  if (reference.kind === "reference") assert.equal(reference.reference.split("\n\n").length, 3, "reference text in three short paragraphs");
+});
+
 test("each kind's file says what its marks target", () => {
   for (const f of kindFiles) {
     if (f.name === "html-svg") continue; // emphasis does not apply to frames
@@ -184,6 +221,24 @@ test("the guide quotes a mark target with spaces, and its timeline example marks
   assert.ok(r.ok && r.warnings.length === 0);
   const spec = r.spec as { items: { label?: string }[]; emphasis?: { key: string }[] };
   assert.deepEqual(spec.emphasis!.map((e) => spec.items[Number(e.key)]!.label), ["Vue 2"], "the mark lands on the Vue 2 row");
+});
+
+test("the steps guide teaches step tones, outcomes, ^ and _, with an example that means it", () => {
+  assert.match(GUIDE, /A tone after a quoted step marks that step: `"token expired" error`\./);
+  assert.match(GUIDE, /End a row with `\| "outcome"`, its result or cost in a few words \(`\| "3 tries"`\)/);
+  assert.match(GUIDE, /`\^` repeats the step at that position in the row above \(same lane\) and `_` leaves it empty/);
+  assert.match(GUIDE, /Up to 4 rows with no lanes stand side by side/);
+  assert.match(GUIDE, /`\|` separates the label, the chain and an optional outcome: never put one inside a label or step\./);
+  const body = /^```vis steps\n([\s\S]*?)^```$/m.exec(GUIDE)![1]!;
+  const r = parseVis("steps", body);
+  assert.ok(r.ok && r.warnings.length === 0, "the steps example draws cleanly");
+  const rows = (r.spec as { items: { type: string; steps?: string[]; stepTones?: unknown[]; outcome?: { text: string } }[] }).items.filter((i) => i.type === "row");
+  // `^` is the first row's first step; the outcomes and the step tone are read as such.
+  assert.deepEqual(rows.map((x) => [x.steps![0], x.outcome?.text]), [["You", "1 day"], ["You", "6 days"]]);
+  assert.deepEqual(rows[1]!.stepTones, [null, null, "warn", null]);
+  // The bullet's own example row is a valid row under a first one.
+  const ex = /`("Fix" ok \| [^`]+)`/.exec(GUIDE)![1]!;
+  assert.ok(parseVis("steps", `"Bug" error | a -> b -> c -> d\n${ex}`).ok, ex);
 });
 
 test("the guide teaches several targets per mark and matrix cell tones, with examples that mean it", () => {
@@ -241,6 +296,6 @@ for (const html of [false, true]) {
 // round's rule fixes then changed it). A deliberate edit to shared.md or a share kind's file changes
 // it: check the new text reads right for a gathering session, then put its hash here.
 test("the gathering guide is the text last reviewed", () => {
-  assert.equal(createHash("sha256").update(gatheringVisGuide()).digest("hex"), "010b137f57e9284700d1022a020b19c71a6d603eaa17c35e43f67f03bcd377eb");
-  assert.equal(createHash("sha256").update(gatheringVisGuide(undefined, { html: true })).digest("hex"), "efe2c73178eb893a4e00fb103ab569b2436e5f322dbfc74826e0d4b7f99fdf58");
+  assert.equal(createHash("sha256").update(gatheringVisGuide()).digest("hex"), "150b02a33827be06cac38ab1727a2059825f7e346499b0e457fbcfaae0fae6fd");
+  assert.equal(createHash("sha256").update(gatheringVisGuide(undefined, { html: true })).digest("hex"), "7df8845c8af7ff0d544d86f15c61986bf0e2ba09ae7891dc93d15ab499a8bc9c");
 });

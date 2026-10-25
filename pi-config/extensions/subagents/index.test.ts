@@ -5,22 +5,26 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
-import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxProvider, fauxToolCall, validateToolArguments } from "@earendil-works/pi-ai";
 import * as os from "node:os";
-import { CLAUDE_CODE_EXTENSION, LLM_INFLIGHT_EXTENSION, MARKER_EXTENSION, MODEL_LEVELS_EXTENSION, PROVIDER_LIMITS_EXTENSION, SPEC_CORE_DIR, SPEC_WORKER_EXTENSION, SPEC_HOOK_STATE, MEMBER_EXTENSION, MEMBER_MCP, REMOTE_EXTENSION, REMOTE_MCP, REMOTE_MCP_TOOL_TIMEOUT_MS, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
+import { CLAUDE_CODE_EXTENSION, MARKER_EXTENSION, MODEL_LEVELS_EXTENSION, PROVIDER_LIMITS_EXTENSION, SPEC_CORE_DIR, SPEC_WORKER_EXTENSION, SPEC_HOOK_STATE, MEMBER_EXTENSION, PROJECT_TOOLS_WORKER_EXTENSION, REMOTE_EXTENSION, registerSubagents, boundedText, installedPackageDir, resolveExtensionSource, type SubagentsOptions } from "./index.ts";
 import { CLAUDE_PROVIDER_FLAG } from "../claude-code/provider/index.ts";
+import { claudeOffer } from "../claude-code/catalog.ts";
 import { placeholderDir } from "../remote/argv.ts";
-import { REMOTE_MCP_ENV, REMOTE_MCP_SERVER_NAME, REMOTE_SESSION_EVENT, decodeRemoteMcpIdentity } from "../remote/workers.ts";
+import { REMOTE_SESSION_EVENT } from "../remote/workers.ts";
 import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT } from "../mode/state.ts";
-import { SPEC_HOOK_SCRIPT } from "../claude-code/spec-hooks.ts";
 /** The retired worker-ledger variable: no worker is given it now. */
 const LEDGER_ENV = "SOVA_SPEC_LEDGER";
 import { workerSpecBrief } from "./spec-brief.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent, type WorkerLaunch } from "../sandbox/state.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type ModeWorkerEvent } from "../mode/events.ts";
 import workerMarkExtension from "./worker-mark.ts";
-import { CLAUDE_CODE_PROVIDER_FLAG, SubagentRunner } from "./runner.ts";
+import { CLAUDE_CODE_PROVIDER_FLAG } from "./runner.ts";
+import { ChatWorker } from "./chat-worker.ts";
+import type { WorkerHost } from "./worker-host.ts";
 import { MEMBER_ENV, awaitResponse, decodeMemberContext, memberPaths, memberToolNames, readInbox, requestId, writeRequest, type MailboxRequest } from "./mailbox.ts";
+import { readMemberItems, writeInboxCaps, type InboxItem } from "./inbox.ts";
+import { WAKE_FOOTER } from "./delivery.ts";
 
 import { BACKEND_DIALOG_EVENT, BACKEND_REGISTER_EVENT, BACKEND_DISCOVER_EVENT, registerBackend, type BackendRegistration } from "./contracts.ts";
 
@@ -102,6 +106,7 @@ function harness(bus = eventBus(), options: SubagentsOptions = {}) {
 				change() { handlers.onChange(); },
 				async steer(message: string, signal?: AbortSignal, mode?: string) {
 					this.lastSteer = { message, signal, mode };
+					(this.steered ??= []).push({ message, mode });
 					this.steerCount++;
 					this.status = "running";
 					return { ok: true };
@@ -152,7 +157,7 @@ function harness(bus = eventBus(), options: SubagentsOptions = {}) {
 function fakeBackend(created: any[]): BackendRegistration {
 	return {
 		version: 1,
-		id: "claude-code",
+		id: "native-cli",
 		validate(spec) {
 			if (spec.fork || spec.extensions !== undefined || spec.agentType !== undefined) throw new Error("Unsupported Claude option");
 			if (spec.model === "invalid") throw new Error("Invalid Claude model");
@@ -356,12 +361,12 @@ test("worker snapshots include Claude and do not depend on working UI methods", 
 	try {
 		await h.call("agent_spawn", { agents: [
 			{ prompt: "Pi background task", wake: false },
-			{ prompt: "Claude background task", backend: "claude-code", wake: false },
+			{ prompt: "Claude background task", backend: "native-cli", wake: false },
 		] });
 		assert.equal(snapshots.at(-1).workers.length, 2);
 		assert.equal(snapshots.at(-1).workers[1].model, "claude-sonnet-5-5");
 		assert.equal(snapshots.at(-1).workers[1].preview, "Claude result");
-		assert.equal(snapshots.at(-1).workers[1].backend, "claude-code");
+		assert.equal(snapshots.at(-1).workers[1].backend, "native-cli");
 		assert.equal(snapshots.at(-1).workers[0].backend, "pi");
 		created[0].settle();
 		await new Promise(resolve => setTimeout(resolve, 150));
@@ -382,7 +387,7 @@ test("worker snapshots never publish an uncommitted failed spawn batch", async (
 	const snapshots: any[] = [];
 	const off = h.bus.on("subagents:workers-snapshot", data => snapshots.push(data));
 	try {
-		await assert.rejects(h.call("agent_spawn", { prompt: "task", backend: "claude-code", count: 2 }), /factory failed/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "task", backend: "native-cli", count: 2 }), /factory failed/);
 		h.bus.emit("subagents:workers-request", { version: 1 });
 		assert.ok(snapshots.length);
 		assert.ok(snapshots.every(snapshot => snapshot.workers.length === 0));
@@ -400,13 +405,15 @@ test("agent_models discovers active Pi and native backend models with explicit e
 		assert.equal(pi.details.models[0].id, "ollama-cloud/deepseek-v4.1-flash");
 		assert.equal(cliCalls, 0);
 		const all = await h.call("agent_models", {});
-		assert.equal(all.details.models.length, 2);
-		assert.equal(all.details.models.find((m: any) => m.backend === "claude-code").efforts[0], "low");
+		assert.equal(all.details.models.length, 2 + claudeOffer().length, "pi, the registered backend, and claude-code's catalog");
+		assert.equal(all.details.models.find((m: any) => m.backend === "native-cli").efforts[0], "low");
+		assert.deepEqual(all.details.models.filter((m: any) => m.backend === "claude-code").map((m: any) => m.id).sort(), claudeOffer().map((m) => m.id).sort());
+		assert.ok(all.details.backends.includes("claude-code"));
 		assert.equal(cliCalls, 1);
 		assert.equal((await h.call("agent_models", { backend: "missing" })).details.errors[0].backend, "missing");
 		const limited = await h.call("agent_models", { limit: 1 });
 		assert.equal(limited.details.models.length, 1);
-		assert.equal(limited.details.totalMatches, 2);
+		assert.equal(limited.details.totalMatches, 2 + claudeOffer().length);
 	} finally { await h.close(); }
 });
 
@@ -433,41 +440,53 @@ test("/subagents and /agents only open the monitor: arguments are ignored, no mo
 	} finally { await h.close(); }
 });
 
-test("team_create against the real Claude backend rejects an oversized composed prompt before any worker starts", async () => {
+test("a claude-code team member is a pi worker on the Claude Code provider: its model, effort, tools and the member extension", async () => {
 	const h = harness();
-	const claudePi = {
-		events: h.bus,
-		registerTool: (_t: any) => {},
-		on: (e: string, f: any) => (e === "session_shutdown" ? (() => { (h.shutdownHooks ??= []).push(f); return f; })() : (() => {})()),
-		registerCommand: (_n: string, _c: any) => {},
-		registerShortcut() {},
-		appendEntry: () => {},
-		getActiveTools: () => [],
-		sendMessage: () => {},
-		sendUserMessage: () => {},
-		registerFlag: () => {},
-		getFlag: () => undefined,
-	};
-	const { registerClaudeCode } = await import("../claude-code/index.ts");
-	const { MAX_CLAUDE_INPUT_CHARS } = await import("../claude-code/runner.ts");
-	registerClaudeCode(claudePi as any);
 	try {
-		await assert.rejects(
-			h.call("team_create", {
-				name: "oversized",
-				objective: "Validate header composition reaches the real length limit",
-				defaults: { backend: "claude-code" },
-				members: [{ role: "builder", prompt: "x".repeat(MAX_CLAUDE_INPUT_CHARS), tools: [] }],
-			}),
-			/Claude prompt is \d+ characters/,
-		);
-		const listed = await h.call("team_list");
-		assert.equal(listed.details.teams.length, 0);
-		assert.equal(h.workers.length, 0);
-	} finally {
-		for (const f of h.shutdownHooks ?? []) await f({}, h.ctx);
-		await h.close();
-	}
+		await h.call("team_create", {
+			name: "claude",
+			objective: "Claude members run on Sova's tools",
+			defaults: { backend: "claude-code" },
+			members: [{ role: "builder", prompt: "build", tools: ["Read", "Glob", "bash"], effort: "xhigh" }],
+		});
+		const w = h.workers[0];
+		assert.equal(w.backend, "pi");
+		assert.equal(w.model, "claude-code-cli/claude-sonnet-5-5");
+		assert.equal(w.effort, "xhigh");
+		assert.deepEqual(w.tools, ["read", "find", "bash"]);
+		assert.ok(w.extensions.includes(MEMBER_EXTENSION));
+		assert.ok(w.extensions.includes(CLAUDE_CODE_EXTENSION));
+		assert.equal(w.flags[CLAUDE_CODE_PROVIDER_FLAG], true);
+		assert.ok(decodeMemberContext(w.env?.[MEMBER_ENV]), "the member identity rides the pi worker's env");
+		assert.equal(w.mcpServers, undefined);
+	} finally { await h.close(); }
+});
+
+test("claude-code spawns: catalog ids, Claude tool names, effort and backendOptions map onto the pi worker, or are refused with the reason", async () => {
+	const h = harness();
+	try {
+		h.ctx.modelRegistry.find = () => undefined; // the child registers the provider itself
+		await h.call("agent_spawn", { prompt: "old id", backend: "claude-code", model: "opus[1m]", wake: false });
+		assert.equal(h.workers[0].model, "claude-code-cli/claude-opus-5-5", "an old id runs as its catalog id");
+		assert.equal(h.workers[0].effort, "medium");
+		assert.deepEqual(h.workers[0].tools, ["read", "bash", "edit", "write", "grep", "find", "ls"]);
+		await h.call("agent_spawn", { prompt: "plan", backend: "claude-code", backendOptions: { permissionMode: "plan" }, wake: false });
+		assert.deepEqual(h.workers[1].tools, ["read", "grep", "find", "ls"]);
+		await h.call("agent_spawn", { prompt: "unknown", backend: "claude-code", model: "claude-opus-6", wake: false });
+		assert.equal(h.workers[2].model, "claude-code-cli/claude-opus-6");
+		assert.equal(h.workers[2].flags["claude-code-model"], "claude-opus-6", "an id the catalog doesn't know is registered by the child");
+		const r = await h.call("agent_spawn", { prompt: "unknown again", backend: "claude-code", model: "claude-opus-6", wake: false });
+		assert.match(r.content[0].text, /Not verified: claude-opus-6 is not in Sova's Claude catalog\. It will still be used\./);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code", tools: ["WebFetch"] }), /Claude workers run on Sova's tools: .*"WebFetch" has no equivalent/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code", backendOptions: { permissionMode: "manual" } }), /permissionMode manual is not supported/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code", backendOptions: { maxBudgetUsd: 1 } }), /maxBudgetUsd is not supported/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code", backendOptions: { allowedTools: ["Bash(git:*)"] } }), /allowedTools is not supported/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code", effort: "minimal" }), /Claude effort must be low, medium, high, xhigh, or max/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code", model: "zai/glm-5.3" }), /Claude model must be a Claude model ID/);
+		assert.equal(h.workers.length, 4, "a refused spec starts nothing");
+		const listed = await h.call("agent_list");
+		assert.equal(listed.details.agents[0].backend, "pi");
+	} finally { await h.close(); }
 });
 
 for (const order of ["backend-first", "host-first"] as const) {
@@ -482,18 +501,18 @@ for (const order of ["backend-first", "host-first"] as const) {
 		try {
 			h.ctx.modelRegistry.find = () => { throw new Error("Pi registry must not be consulted"); };
 			await h.start();
-			const r = await h.call("agent_spawn", { prompt: "task", backend: "claude-code", backendOptions: { permissionMode: "plan" } });
+			const r = await h.call("agent_spawn", { prompt: "task", backend: "native-cli", backendOptions: { permissionMode: "plan" } });
 			assert.equal(h.workers.length, 0);
 			assert.equal(created.length, 1);
 			assert.equal(created[0].model, "claude-sonnet-5-5");
 			assert.equal(created[0].effort, undefined);
 			assert.equal(created[0].tools, undefined);
 			assert.equal(created[0].backendOptions.permissionMode, "plan");
-			assert.equal(r.details.spawned[0].backend, "claude-code");
+			assert.equal(r.details.spawned[0].backend, "native-cli");
 			created[0].settle();
 			assert.equal(h.messages.length, 1);
 			const listed = await h.call("agent_list");
-			assert.equal(listed.details.agents[0].backend, "claude-code");
+			assert.equal(listed.details.agents[0].backend, "native-cli");
 			const signal = new AbortController().signal;
 			await h.call("agent_steer", { id: "ag_01", message: "next", mode: "followUp" }, signal);
 			assert.deepEqual(created[0].lastSteer, { message: "next", signal, mode: "followUp" });
@@ -689,17 +708,17 @@ test("backend validation is atomic across mixed batches and fails closed without
 	const h = harness();
 	const created: any[] = [];
 	try {
-		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code" }), /unavailable backend/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "native-cli" }), /unavailable backend/);
 		h.bus.emit(BACKEND_REGISTER_EVENT, { ...fakeBackend(created), version: 2 });
-		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code" }), /unavailable backend/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "native-cli" }), /unavailable backend/);
 		h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
-		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "pi" }, { prompt: "claude", backend: "claude-code", model: "invalid" }] }), /Invalid Claude model/);
-		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "claude", backend: "claude-code" }, { prompt: "pi", model: "missing/model" }] }), /Unknown model/);
+		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "pi" }, { prompt: "claude", backend: "native-cli", model: "invalid" }] }), /Invalid Claude model/);
+		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "claude", backend: "native-cli" }, { prompt: "pi", model: "missing/model" }] }), /Unknown model/);
 		assert.equal(h.workers.length, 0); assert.equal(created.length, 0);
-		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "x" }], backend: "pi" }), /Shorthand/);
+		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "x", backend: "native-cli" }], backend: "pi" }), /^Error: backend is set beside agents and differently in agents\[0\]/);
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", backendOptions: {} }), /not supported/);
-		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code", fork: true }), /Unsupported/);
-		await h.call("agent_spawn", { agents: [{ prompt: "pi" }, { prompt: "claude", backend: "claude-code", model: "claude-opus-5-5" }] });
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "native-cli", fork: true }), /Unsupported/);
+		await h.call("agent_spawn", { agents: [{ prompt: "pi" }, { prompt: "claude", backend: "native-cli", model: "claude-opus-5-5" }] });
 		assert.equal(h.workers.length, 1); assert.equal(created.length, 1);
 	} finally { await h.close(); }
 });
@@ -710,17 +729,15 @@ test("model policy disables providers and models for spawns, teams and discovery
 	const writePolicy = (providers: string[], models: string[]) =>
 		fs.writeFileSync(policyFile, JSON.stringify({ version: 1, disabledProviders: providers, disabledModels: models }));
 	const h = harness(eventBus(), { policyFile });
-	const created: any[] = [];
 	h.ctx.modelRegistry.getAvailable = () => [
 		{ provider: "test", id: "model", name: "Test Model" },
 		{ provider: "zai", id: "glm-5.3", name: "GLM" },
 	];
-	const backend = { ...fakeBackend(created), listModels: async () => [{ id: "claude-sonnet-5-5", name: "Sonnet" }, { id: "claude-opus-5-5", name: "Opus" }] };
-	h.bus.emit(BACKEND_REGISTER_EVENT, backend);
+	const catalog = claudeOffer().map((m) => m.id);
 	try {
 		// No policy file yet: everything is spawnable and discoverable.
 		let models = await h.call("agent_models", {});
-		assert.deepEqual(models.details.models.map((m: any) => m.id).sort(), ["claude-opus-5-5", "claude-sonnet-5-5", "test/model", "zai/glm-5.3"]);
+		assert.deepEqual(models.details.models.map((m: any) => m.id).sort(), [...catalog, "test/model", "zai/glm-5.3"].sort());
 		await h.call("agent_spawn", { prompt: "control", wake: false });
 		assert.equal(h.workers.length, 1);
 
@@ -733,7 +750,7 @@ test("model policy disables providers and models for spawns, teams and discovery
 		writePolicy(["zai"], []);
 		await assert.rejects(h.call("agent_spawn", { prompt: "provider gone", model: "zai/glm-5.3", wake: false }), /Provider zai is disabled/);
 		models = await h.call("agent_models", {});
-		assert.deepEqual(models.details.models.map((m: any) => m.id).sort(), ["claude-opus-5-5", "claude-sonnet-5-5", "test/model"]);
+		assert.deepEqual(models.details.models.map((m: any) => m.id).sort(), [...catalog, "test/model"].sort());
 
 		// Backend-level rules: a disabled backend id rejects model-less specs (their default is
 		// still that provider's model) and explicit ones; single backend models can be disabled
@@ -744,8 +761,9 @@ test("model policy disables providers and models for spawns, teams and discovery
 		writePolicy([], ["claude-code/claude-opus-5-5"]);
 		await assert.rejects(h.call("agent_spawn", { prompt: "opus gone", backend: "claude-code", model: "Claude-Opus-5-5", wake: false }), /claude-opus-5-5 is disabled/i, "the policy matches whatever the case; the catalog id runs");
 		await h.call("agent_spawn", { prompt: "sonnet stays", backend: "claude-code", model: "claude-sonnet-5-5", wake: false });
+		assert.equal(h.workers.at(-1).model, "claude-code-cli/claude-sonnet-5-5");
 		models = await h.call("agent_models", { backend: "claude-code" });
-		assert.deepEqual(models.details.models.map((m: any) => m.id), ["claude-sonnet-5-5"]);
+		assert.deepEqual(models.details.models.map((m: any) => m.id).sort(), catalog.filter((id) => id !== "claude-opus-5-5").sort());
 
 		// The team path shares spawnBatch, so a disabled member model is rejected there too.
 		writePolicy([], ["claude-code/claude-sonnet-5-5"]);
@@ -755,8 +773,7 @@ test("model policy disables providers and models for spawns, teams and discovery
 		);
 
 		// Nothing but the two allowed controls ever started.
-		assert.equal(h.workers.length, 1);
-		assert.equal(created.length, 1);
+		assert.equal(h.workers.length, 2);
 	} finally {
 		fs.rmSync(dir, { recursive: true, force: true });
 		await h.close();
@@ -821,7 +838,8 @@ for (const throwsAfterCallback of [false, true]) test(`constructor settlement wa
 	const h = harness();
 	const backend = fakeBackend([]);
 	backend.create = (options, handlers) => {
-		const worker = new SubagentRunner({ ...options, spawnImpl: () => { throw new Error("synchronous spawn failure"); } }, handlers);
+		const refusing = { start: () => { throw new Error("synchronous spawn failure"); } } as unknown as WorkerHost;
+		const worker = new ChatWorker(options, handlers, { host: refusing, parent: { sessionId: "s", path: "/s.jsonl" }, start: { key: "k", defaultSessionDir: () => "/d" } });
 		assert.equal(worker.status, "error");
 		assert.equal(h.messages.length, 0, "no wake before registration");
 		assert.equal(h.notices.length, 0);
@@ -883,8 +901,8 @@ test("backend prepare receives the same resolved cwd as its worker", async () =>
 	backend.prepare = (spec) => { preparedCwds.push(spec.cwd!); return {}; };
 	h.bus.emit(BACKEND_REGISTER_EVENT, backend);
 	try {
-		await h.call("agent_spawn", { prompt: "task", backend: "claude-code", cwd: "extensions" });
-		await h.call("agent_spawn", { prompt: "task", backend: "claude-code" });
+		await h.call("agent_spawn", { prompt: "task", backend: "native-cli", cwd: "extensions" });
+		await h.call("agent_spawn", { prompt: "task", backend: "native-cli" });
 		assert.deepEqual(preparedCwds, [path.resolve(h.ctx.cwd, "extensions"), h.ctx.cwd]);
 		assert.deepEqual(created.map(w => w.cwd), preparedCwds);
 	} finally { await h.close(); }
@@ -1365,7 +1383,7 @@ test("exit-only completion prunes finished workers and failed factories leave no
 	h.bus.emit(BACKEND_REGISTER_EVENT, backend);
 	try {
 		for (let i = 0; i < 55; i++) {
-			await assert.rejects(h.call("agent_spawn", { prompt: "bad", backend: "claude-code" }), /factory failed/);
+			await assert.rejects(h.call("agent_spawn", { prompt: "bad", backend: "native-cli" }), /factory failed/);
 			await h.call("agent_spawn", { prompt: "task" });
 			h.workers.at(-1).exit();
 		}
@@ -1474,7 +1492,7 @@ test("backend registration cannot replace Pi or hijack another backend", async (
 		h.bus.emit(BACKEND_REGISTER_EVENT, { ...fakeBackend(second), id: "pi" });
 		h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(first));
 		h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(second));
-		await h.call("agent_spawn", { agents: [{ prompt: "pi" }, { prompt: "claude", backend: "claude-code" }] });
+		await h.call("agent_spawn", { agents: [{ prompt: "pi" }, { prompt: "claude", backend: "native-cli" }] });
 		assert.equal(h.workers.length, 1); assert.equal(first.length, 1); assert.equal(second.length, 0);
 	} finally { await h.close(); }
 });
@@ -1539,11 +1557,12 @@ test("reject ambiguous spawn modes, fractions, missing definitions and blank tas
 			{},
 			{ prompt: "x", agents: [{ prompt: "x" }] },
 			{ prompt: "x", count: 1.5 },
-			{ prompt: "x", count: 9 },
+			{ prompt: "x", count: 0 },
 			{ prompt: " " },
 			{ agents: [{ prompt: "x", agentType: "../outside" }] },
 			{ agents: [{ prompt: "x", agentType: "definitely-does-not-exist-734892" }] },
-			{ agents: [{ prompt: "x" }], model: "test/model" },
+			{ agents: [{ prompt: "x", model: "other/model" }], model: "test/model" },
+			{ agents: [{ prompt: "x" }], name: "shared" },
 		]) {
 			await assert.rejects(h.call("agent_spawn", params));
 		}
@@ -1556,10 +1575,10 @@ test("reject ambiguous spawn modes, fractions, missing definitions and blank tas
 test("live cap includes waiting workers", async () => {
 	const h = harness();
 	try {
+		await h.call("agent_spawn", { prompt: "x", count: 16 });
 		await h.call("agent_spawn", { prompt: "x", count: 8 });
-		await h.call("agent_spawn", { prompt: "x", count: 4 });
 		h.workers.forEach((w) => w.settle());
-		await assert.rejects(h.call("agent_spawn", { prompt: "x" }), /cap/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x" }), /A chat runs at most 24 workers at once/);
 	} finally {
 		await h.close();
 	}
@@ -1830,11 +1849,17 @@ test("fork needs a persisted parent session and passes its file to the child", a
 	}
 });
 
-test("child extensions: remote sources pass, missing paths fail, this extension is refused", async () => {
+test("child extensions: uninstalled remote sources and missing paths fail, this extension is refused", async () => {
 	const h = harness();
 	try {
-		await h.call("agent_spawn", { prompt: "task", extensions: ["npm:definitely-not-installed-xyz", "git:github.com/x/y"] });
-		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, "npm:definitely-not-installed-xyz", "git:github.com/x/y"]);
+		for (const source of ["npm:definitely-not-installed-xyz", "git:github.com/x/definitely-not-installed"]) {
+			await assert.rejects(
+				h.call("agent_spawn", { prompt: "task", extensions: [source] }),
+				(err: Error) => err.message.includes(`${source} isn't installed: install it first (\`pi install ${source}\`)`),
+			);
+		}
+		assert.equal(h.workers.length, 0);
+		await h.call("agent_spawn", { prompt: "task" });
 		await assert.rejects(
 			h.call("agent_spawn", { prompt: "task", extensions: ["./definitely-missing-extension.ts"] }),
 			/not found/,
@@ -1857,7 +1882,7 @@ test("child extensions: remote sources pass, missing paths fail, this extension 
 	}
 });
 
-test("installed npm and git sources map to Pi's user-scope directories; others pass through", () => {
+test("installed npm and git sources map to Pi's user-scope directories; others refuse the spawn", () => {
 	const dir = fs.mkdtempSync(path.join(process.cwd(), ".pkg-test-"));
 	try {
 		fs.mkdirSync(path.join(dir, "npm", "node_modules", "@scope", "name"), { recursive: true });
@@ -1890,6 +1915,14 @@ test("installed npm and git sources map to Pi's user-scope directories; others p
 		assert.equal(installedPackageDir("git:github.com/owner/other", dir), undefined);
 		assert.equal(installedPackageDir("npm:../escape", dir), undefined);
 		assert.equal(installedPackageDir("git:github.com/../x", dir), undefined);
+		// At spawn validation: an installed exact pin and a checkout resolve to their directories;
+		// an uninstalled package, a range pin and a git ref pin refuse the spawn.
+		fs.writeFileSync(path.join(dir, "npm", "node_modules", "plain", "package.json"), JSON.stringify({ name: "plain", version: "1.2.3" }));
+		assert.equal(resolveExtensionSource("npm:plain@1.2.3", dir, dir), path.join(dir, "npm", "node_modules", "plain"));
+		assert.equal(resolveExtensionSource("git:github.com/owner/repo", dir, dir), path.join(dir, "git", "github.com", "owner", "repo"));
+		for (const source of ["npm:missing", "npm:plain@^1", "git:github.com/owner/repo@v1"]) {
+			assert.throws(() => resolveExtensionSource(source, dir, dir), { message: `${source} isn't installed: install it first (\`pi install ${source}\`)` }, source);
+		}
 	} finally {
 		fs.rmSync(dir, { recursive: true, force: true });
 	}
@@ -1919,10 +1952,10 @@ test("cancelled rollback wait returns promptly but ownership lasts until confirm
 		await assert.rejects(spawning, /factory failure; rollback termination wait cancelled for ag_01, ag_02 \(still owned/);
 		assert.ok(created.every((w) => w.killCalls === 1));
 		assert.equal((await h.call("agent_list")).details.agents.length, 0, "never published");
-		await h.call("agent_spawn", { prompt: "fill", count: 8 });
-		await assert.rejects(h.call("agent_spawn", { prompt: "over", count: 3 }), /Live-agent cap is 12 \(10 alive/);
+		await h.call("agent_spawn", { prompt: "fill", count: 20 });
+		await assert.rejects(h.call("agent_spawn", { prompt: "over", count: 3 }), /This request starts 3 workers\. A chat runs at most 24 workers at once .*; 22 are live now, so 2 more fit\. Stop 1 with agent_kill first/);
 		const killed = await h.call("agent_kill", { all: true });
-		assert.equal(killed.details.killed.length, 8, "unpublished IDs are not public targets");
+		assert.equal(killed.details.killed.length, 20, "unpublished IDs are not public targets");
 		assert.ok(!killed.details.killed.some((id: string) => ["ag_01", "ag_02"].includes(id)));
 		assert.equal(killed.details.rollbackPending, 2);
 		assert.match(killed.content[0].text, /2 unpublished worker\(s\) from a failed spawn are still terminating/);
@@ -1960,7 +1993,7 @@ test("team_create composes headers before backend validation, commits membership
 		const r = await h.call("team_create", {
 			name: "Alpha",
 			objective: "Ship the thing",
-			defaults: { backend: "claude-code", model: "claude-opus-5-5", effort: "high" },
+			defaults: { backend: "native-cli", model: "claude-opus-5-5", effort: "high" },
 			members: [
 				{ role: "builder", prompt: "Implement it.", ownedPaths: ["src/api"] },
 				{ role: "reviewer", prompt: "Review it.", backend: "pi", wake: false },
@@ -1969,7 +2002,7 @@ test("team_create composes headers before backend validation, commits membership
 		assert.equal(r.details.teamId, "team_01");
 		assert.equal(r.details.groupId, "run_01");
 		assert.deepEqual(r.details.members, [
-			{ workerId: "ag_01", role: "builder", backend: "claude-code", model: "claude-opus-5-5" },
+			{ workerId: "ag_01", role: "builder", backend: "native-cli", model: "claude-opus-5-5" },
 			{ workerId: "ag_02", role: "reviewer", backend: "pi", model: "test/model" },
 		]);
 		assert.match(r.content[0].text, /Created team_01 \(Alpha\) with 2 member\(s\) in run_01/);
@@ -2011,7 +2044,7 @@ test("team_create composes headers before backend validation, commits membership
 		);
 		assert.deepEqual(
 			teamEntries[0].data.members.map((m: any) => [m.workerId, m.role, m.backend, m.model, m.groupId, m.ownedPaths]),
-			[["ag_01", "builder", "claude-code", "claude-opus-5-5", "run_01", ["src/api"]], ["ag_02", "reviewer", "pi", "test/model", "run_01", []]],
+			[["ag_01", "builder", "native-cli", "claude-opus-5-5", "run_01", ["src/api"]], ["ag_02", "reviewer", "pi", "test/model", "run_01", []]],
 		);
 		assert.equal(h.appended.findIndex((e) => e.customType === "subagents-counters-v2") > -1, true);
 		assert.ok(h.appended.findIndex((e) => e.customType === "subagents-counters-v2") < h.appended.indexOf(teamEntries[0]));
@@ -2045,14 +2078,14 @@ test("team_create rejects cleanly: no team, no entry, no worker; reserved IDs ar
 	try {
 		// Whole-batch schema/shape validation happens inside TeamStore before any spec resolves.
 		await assert.rejects(h.call("team_create", { name: "Dup", objective: "o", members: [{ role: "a", prompt: "x" }, { role: " A ", prompt: "y" }] }), /Duplicate role/);
-		await assert.rejects(h.call("team_create", { name: "Count", objective: "o", members: [{ role: "a", prompt: "x", count: 2 }] }), /Unsupported team member option count/);
+		await assert.rejects(h.call("team_create", { name: "Count", objective: "o", members: [{ role: "a", prompt: "x", count: 2 }] }), /^Error: members\[0\] \(a\): count is not a member setting; a member is one role/);
 		await assert.rejects(h.call("team_create", { name: "Keys", objective: "o", members: [{ role: "a", prompt: "x" }], defaults: { count: 2 } }), /Unsupported team default count/);
 		assert.equal(h.workers.length, 0);
 		assert.equal(created.length, 0);
 		// Backend validation rejects before any factory runs (pi and claude mixed).
 		await assert.rejects(h.call("team_create", {
 			name: "Mixed", objective: "o",
-			members: [{ role: "one", prompt: "a", backend: "claude-code" }, { role: "two", prompt: "b", model: "missing/model" }],
+			members: [{ role: "one", prompt: "a", backend: "native-cli" }, { role: "two", prompt: "b", model: "missing/model" }],
 		}), /Unknown model/);
 		assert.equal(h.workers.length, 0);
 		assert.equal(created.length, 0);
@@ -2060,7 +2093,7 @@ test("team_create rejects cleanly: no team, no entry, no worker; reserved IDs ar
 		// no team, no entry, no group; the created worker is confirmed terminated.
 		await assert.rejects(h.call("team_create", {
 			name: "Doomed", objective: "o",
-			defaults: { backend: "claude-code" },
+			defaults: { backend: "native-cli" },
 			members: [{ role: "one", prompt: "a" }, { role: "two", prompt: "b" }],
 		}), /factory failed for second member/);
 		assert.equal(created.length, 1);
@@ -2076,13 +2109,13 @@ test("team_create rejects cleanly: no team, no entry, no worker; reserved IDs ar
 		assert.equal(next.details.teamId, "team_03");
 		assert.equal(next.details.members[0].workerId, "ag_03");
 		// The shared live cap applies to team batches before any worker starts.
-		await h.call("agent_spawn", { prompt: "slot", count: 8 });
-		assert.equal(h.workers.length, 9);
+		await h.call("agent_spawn", { prompt: "slot", count: 20 });
+		assert.equal(h.workers.length, 21);
 		await assert.rejects(h.call("team_create", {
 			name: "Over", objective: "o",
 			members: Array.from({ length: 4 }, (_, i) => ({ role: `m${i}`, prompt: "p" })),
-		}), /Live-agent cap is 12 \(9 alive/);
-		assert.equal(h.workers.length, 9);
+		}), /^Error: This team needs 4 workers running: the 4 members you named\. A chat runs at most 24 workers at once .*; 21 are live now, so 3 more fit\. Stop 1 with agent_kill first/);
+		assert.equal(h.workers.length, 21);
 	} finally { await h.close(); }
 });
 
@@ -2093,14 +2126,14 @@ test("team_add extends a session team in another run, reuses defaults and persis
 	try {
 		await h.call("team_create", {
 			name: "Core", objective: "obj",
-			defaults: { backend: "claude-code", model: "claude-opus-5-5" },
+			defaults: { backend: "native-cli", model: "claude-opus-5-5" },
 			members: [{ role: "lead", prompt: "start" }],
 		});
 		const add = await h.call("team_add", { team: "core", members: [{ role: "docs", prompt: "write docs", ownedPaths: ["docs/"] }] });
 		assert.equal(add.details.teamId, "team_01");
 		assert.equal(add.details.groupId, "run_02", "teams span independent run groups");
 		assert.match(add.content[0].text, /Added 1 member\(s\) to team_01 \(Core\) in run_02/);
-		assert.deepEqual(add.details.members, [{ workerId: "ag_02", role: "docs", backend: "claude-code", model: "claude-opus-5-5" }]);
+		assert.deepEqual(add.details.members, [{ workerId: "ag_02", role: "docs", backend: "native-cli", model: "claude-opus-5-5" }]);
 		// The joiner's header lists the create-time roster; existing members are never rewritten.
 		assert.match(created[1].task, /Other members when you joined:\n- lead: none declared/);
 		assert.match(created[1].task, /Your declared ownership: docs\//);
@@ -2115,8 +2148,8 @@ test("team_add extends a session team in another run, reuses defaults and persis
 		await assert.rejects(h.call("team_add", { team: "team_09", members: [{ role: "x", prompt: "p" }] }), /No such team: team_09/);
 		const list = await h.call("team_list", { team: "team_01" });
 		assert.match(list.content[0].text, /team_01 — Core \[this session\] · 2 working/);
-		assert.match(list.content[0].text, /ag_01 lead \[claude-code\] working \(running\) · context — · owns: none declared/);
-		assert.match(list.content[0].text, /ag_02 docs \[claude-code\] working \(running\) · context — · owns: docs\//);
+		assert.match(list.content[0].text, /ag_01 lead \[native-cli\] working \(running\) · context — · owns: none declared/);
+		assert.match(list.content[0].text, /ag_02 docs \[native-cli\] working \(running\) · context — · owns: docs\//);
 		assert.deepEqual(list.details.teams.map((t: any) => t.id), ["team_01"]);
 	} finally { await h.close(); }
 });
@@ -2298,7 +2331,8 @@ test("/team <objective> while streaming queues the identical followUp and says s
 		const longObjective = `edge ${"x".repeat(6000)}`;
 		await h.commands.get("team").handler(longObjective, h.ctx);
 		const longContent = h.messages.at(-1)[0].content;
-		assert.ok(longContent.length < longObjective.length, "objective is truncated");
+		const objectiveLine = longContent.split("\n").find((line: string) => line.startsWith("Objective: "));
+		assert.ok(objectiveLine && objectiveLine.length < longObjective.length, "objective is truncated");
 		assert.match(longContent, /truncated to the 4000-character team objective limit/);
 		// Without a UI the planning message is still sent; notices are skipped.
 		h.ctx.mode = "print";
@@ -2405,9 +2439,22 @@ test("team widget installs on refresh with fresh detached views, follows member 
 // ── Team member mailbox: cross-communication, orchestrator powers, operator questions ──
 
 /** A team harness with a fast-polled mailbox in a private root the test owns. */
-function teamHarness() {
+/** Poll until `pred` holds (inbox wakes are asynchronous: stored first, listed by the scheduler). */
+async function waitFor(pred: () => unknown, what: string, ms = 2000): Promise<void> {
+	const deadline = Date.now() + ms;
+	while (!pred()) {
+		if (Date.now() > deadline) assert.fail(`timed out waiting for ${what}`);
+		await new Promise((r) => setTimeout(r, 5));
+	}
+}
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** One member's inbox as [id, kind, from role, status] rows. */
+const itemRows = (dir: string) => readMemberItems(dir).map((i) => [i.id, i.kind, i.from.role, i.status]);
+const INBOX_FOOT = WAKE_FOOTER;
+
+function teamHarness(extra: SubagentsOptions = {}) {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-index-mailbox-"));
-	const h = harness(eventBus(), { mailboxRoot: root, mailboxPollMs: 10 });
+	const h = harness(eventBus(), { mailboxRoot: root, mailboxPollMs: 10, inboxDebounceMs: 30, inboxRetryMs: [30, 60], ...extra });
 	/** Identity of any worker: pi members carry it in env, Claude members in their MCP server's env. */
 	const memberOf = (id: string, claude: any[] = []) => {
 		const w = [...h.workers, ...claude].find((w: any) => w.id === id);
@@ -2425,7 +2472,7 @@ function teamHarness() {
 	return { ...h, root, memberOf, ask, cleanup: async () => { await h.close(); fs.rmSync(root, { recursive: true, force: true }); } };
 }
 
-test("team members get a parent-issued identity, private mailbox and only the member extension; Claude members get the tools through an MCP server", async () => {
+test("team members get a parent-issued identity, private mailbox and only the member extension; Claude members are pi workers with the same tools", async () => {
 	const h = teamHarness();
 	const created: any[] = [];
 	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
@@ -2448,24 +2495,25 @@ test("team members get a parent-issued identity, private mailbox and only the me
 		assert.deepEqual(r.details.members.map((m: any) => [m.workerId, m.orchestrator]), [["ag_01", true], ["ag_02", undefined], ["ag_03", undefined]]);
 		const lead = h.workers.find((w: any) => w.id === "ag_01");
 		const dev = h.workers.find((w: any) => w.id === "ag_02");
-		assert.deepEqual(lead.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, MEMBER_EXTENSION], "the marker, then member.ts, never the manager");
+		assert.deepEqual(lead.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, MEMBER_EXTENSION], "the marker, then member.ts, never the manager");
 		assert.deepEqual(lead.tools, ["read"], "the built-in allowlist is unchanged; the runner restricts by exclusion when extensions are present");
 		const me = h.memberOf("ag_01")!;
 		assert.deepEqual({ ...me, dir: undefined }, { version: 1, teamId: "team_01", teamName: "Crew", workerId: "ag_01", role: "lead", orchestrator: true, dir: undefined });
 		assert.equal(me.dir, path.join(h.root, "team_01", "ag_01"));
 		assert.ok(fs.statSync(memberPaths(me.dir).requests).isDirectory() && fs.statSync(memberPaths(me.dir).responses).isDirectory());
 		assert.equal(h.memberOf("ag_02")!.orchestrator, false);
-		// The Claude worker's own environment never carries the identity; the MCP server's does.
-		assert.equal(created[0].env, undefined, "the CLI process gets no identity");
-		assert.equal(created[0].extensions.length, 0);
-		const server = created[0].mcpServers.team;
-		assert.deepEqual([server.command, server.args], [process.execPath, [MEMBER_MCP]]);
-		const writer = decodeMemberContext(server.env[MEMBER_ENV])!;
+		// A Claude member is a pi worker on the Claude Code provider: the member extension, the identity in its env.
+		assert.equal(created.length, 0, "no native Claude process");
+		const claude = h.workers.find((w: any) => w.id === "ag_03");
+		assert.equal(claude.model, "claude-code-cli/claude-sonnet-5-5");
+		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, MEMBER_EXTENSION, CLAUDE_CODE_EXTENSION]);
+		assert.equal(claude.mcpServers, undefined);
+		const writer = h.memberOf("ag_03")!;
 		assert.deepEqual({ ...writer, dir: undefined }, { version: 1, teamId: "team_01", teamName: "Crew", workerId: "ag_03", role: "writer", orchestrator: false, dir: undefined });
 		assert.equal(writer.dir, path.join(h.root, "team_01", "ag_03"));
 		assert.ok(fs.statSync(memberPaths(writer.dir).requests).isDirectory(), "a Claude member has a mailbox too");
-		assert.match(created[0].task, /call them as mcp__team__team_msg, mcp__team__team_inbox, mcp__team__team_ask; .*\nTeam tools: team_msg/);
-		assert.doesNotMatch(created[0].task, /no tool to reply/);
+		assert.match(claude.task, /Team tools: team_msg/);
+		assert.doesNotMatch(claude.task, /mcp__team__|no tool to reply/);
 		assert.match(dev.task, /Team tools: team_msg/);
 		assert.equal(dev.mcpServers, undefined, "pi members load member.ts instead");
 		// Persisted with the flag; team_list marks the orchestrator.
@@ -2476,7 +2524,7 @@ test("team members get a parent-issued identity, private mailbox and only the me
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", extensions: [MEMBER_EXTENSION] }), /do not nest/);
 		await h.call("agent_spawn", { prompt: "plain", wake: false });
 		assert.equal(h.workers.at(-1).env, undefined);
-		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION]);
+		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION]);
 		await assert.rejects(
 			h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "t", orchestrator: true, backend: "other" }] }),
 			/must use the pi or claude-code backend/,
@@ -2484,16 +2532,16 @@ test("team members get a parent-issued identity, private mailbox and only the me
 		await h.call("team_add", { team: "Crew", members: [{ role: "qa", prompt: "test" }] });
 		assert.equal(h.memberOf("ag_05")!.role, "qa");
 		assert.match(h.workers.find((w: any) => w.id === "ag_05").task, /- lead \(orchestrator\): none declared/);
-		// A Claude orchestrator is accepted; its MCP identity carries the flag and its header names the sibling powers with the prefix.
+		// A Claude orchestrator is accepted; its identity carries the flag and its header names the sibling powers.
 		await h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "t", orchestrator: true, backend: "claude-code" }] });
-		const boss = decodeMemberContext(created.at(-1).mcpServers.team.env[MEMBER_ENV])!;
+		const boss = h.memberOf("ag_06")!;
 		assert.deepEqual([boss.workerId, boss.role, boss.orchestrator], ["ag_06", "boss", true]);
-		assert.match(created.at(-1).task, /call them as mcp__team__team_roster, mcp__team__team_steer, mcp__team__team_msg, .*\nYou are this team's orchestrator/);
-		assert.match((await h.call("team_list")).content[0].text, /ag_06 boss \(orchestrator\) \[claude-code\]/);
+		assert.match(h.workers.at(-1).task, /You are this team's orchestrator/);
+		assert.match((await h.call("team_list")).content[0].text, /ag_06 boss \(orchestrator\) \[pi\]/, "recorded as the pi worker it is");
 	} finally { await h.cleanup(); }
 });
 
-test("member messages are delivered through the steer path with provenance, inbox copies and action records", async () => {
+test("member messages are queued as inbox items: answered at once, listed when a turn ends, with provenance and action records", async () => {
 	const h = teamHarness();
 	const created: any[] = [];
 	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
@@ -2507,49 +2555,79 @@ test("member messages are delivered through the steer path with provenance, inbo
 		});
 		const dev = h.workers.find((w: any) => w.id === "ag_02");
 		const lead = h.workers.find((w: any) => w.id === "ag_01");
-		// dev → lead by role (normalized), pi recipient: default steering, reply hint, inbox copy.
+		const writerWorker = h.workers.find((w: any) => w.id === "ag_03");
+		const leadDir = h.memberOf("ag_01")!.dir;
+		// dev → lead by role (normalized): stored and answered at once; lead is busy, so nothing interrupts it.
 		const one = await h.ask("ag_02", { type: "message", to: " LEAD ", message: "API is ready" });
 		assert.equal(one.ok, true);
-		assert.match(one.text, /^Delivered \(accepted or queued; not proof they acted\)\.\nlead \(ag_01\): accepted or queued$/);
+		assert.equal(one.text, "Queued for lead (ag_01): item i_1");
+		assert.deepEqual(itemRows(leadDir), [["i_1", "message", "dev", "new"]]);
+		await pause(60);
+		assert.equal(lead.steerCount, 0, "a busy member is never interrupted for a normal item");
+		// Its turn ends: one list, sent as a plain steer (a prompt to the now idle member).
+		lead.settle();
+		await waitFor(() => lead.steerCount === 1 && readMemberItems(leadDir)[0].listedAt, "the list at the end of lead's turn");
 		assert.equal(lead.lastSteer.mode, undefined);
-		assert.equal(lead.lastSteer.message, "[Team message from dev (ag_02), team_01]\nAPI is ready\n(Reply with team_msg to \"dev\" if needed; team_inbox lists delivered messages.)");
-		assert.deepEqual(readInbox(h.memberOf("ag_01")!.dir).map((r) => [r.kind, r.from, r.fromId, r.text]), [["message", "dev", "ag_02", "API is ready"]]);
-		// lead → Claude member by ID: queued as a follow-up with a reply hint naming the MCP tools, plus an inbox copy.
-		const two = await h.ask("ag_01", { type: "message", to: "ag_03", message: "Document the API" });
-		assert.equal(two.ok, true);
-		assert.equal(created[0].lastSteer.mode, "followUp");
-		assert.equal(created[0].lastSteer.message, "[Team message from lead, orchestrator (ag_01), team_01]\nDocument the API\n(Reply with the mcp__team__team_msg tool to \"lead\" if needed; mcp__team__team_inbox lists delivered messages.)");
-		const writerDir = decodeMemberContext(created[0].mcpServers.team.env[MEMBER_ENV])!.dir;
-		assert.deepEqual(readInbox(writerDir).map((r) => [r.kind, r.from, r.text]), [["message", "lead", "Document the API"]]);
+		assert.equal(lead.lastSteer.message, ["[Team inbox: 1 new — team_inbox open <ids> to read, done <ids> to mark addressed]", "- i_1 message from dev — API is ready", INBOX_FOOT].join("\n"));
+		assert.deepEqual(itemRows(leadDir), [["i_1", "message", "dev", "read"]], "shown in full counts as read");
+		assert.ok(readMemberItems(leadDir)[0].listedAt, "listed");
+		assert.deepEqual(readInbox(leadDir), [], "no legacy copy for a member on inbox-aware code");
+		// lead → the Claude member (a pi worker) by ID while it is idle: items gathered for the debounce, then one list.
+		writerWorker.settle();
+		const writerDir = h.memberOf("ag_03")!.dir;
+		assert.equal((await h.ask("ag_01", { type: "message", to: "ag_03", message: "Document the API" })).text, "Queued for writer (ag_03): item i_2");
+		assert.equal((await h.ask("ag_01", { type: "message", to: "writer", subject: "Docs", message: "Second\nline" })).text, "Queued for writer (ag_03): item i_3");
+		await waitFor(() => writerWorker.steerCount === 1, "one list for both items");
+		assert.equal(writerWorker.lastSteer.message, [
+			"[Team inbox: 2 new — team_inbox open <ids> to read, done <ids> to mark addressed]",
+			"- i_2 message from lead — Document the API",
+			"- i_3 message from lead — Docs",
+			"[Open your inbox first: team_inbox open i_2 i_3 — other tools are refused until you open one]",
+			INBOX_FOOT,
+		].join("\n"), "two items: subjects only (a member must open an item to see it); the wake starts its turn, so it is gated");
+		assert.deepEqual(itemRows(writerDir).map((r) => r[3]), ["new", "new"], "listed is not opened");
+
+		await pause(60);
+		assert.equal(writerWorker.steerCount, 1, "one wake for the gathered items");
 		// The Claude member answers through the same mailbox: sender identity comes from its directory.
-		const back = await h.ask("ag_03", { type: "message", to: "lead", message: "Done" }, created);
-		assert.equal(back.ok, true);
-		assert.equal(lead.lastSteer.message, "[Team message from writer (ag_03), team_01]\nDone\n(Reply with team_msg to \"writer\" if needed; team_inbox lists delivered messages.)");
-		// Broadcast reaches every sibling, never the sender; partial failure is reported per recipient.
-		created[0].status = "killed";
+		const back = await h.ask("ag_03", { type: "message", to: "lead", message: "Done", urgent: true });
+		assert.equal(back.text, "Queued for lead (ag_01): item i_4");
+		// lead is busy (the first list started a turn): an urgent item reaches it at its next step.
+		await waitFor(() => lead.steerCount === 2, "the urgent item at lead's next step");
+		assert.equal(lead.lastSteer.mode, undefined, "a mid-turn steer");
+		assert.match(lead.lastSteer.message, /^\[Team inbox: 1 new \(1 urgent\) — .*\]\n! i_4 message from writer — Done\n/);
+		// Broadcast: one copy per live member, never the sender; a stopped member is named, not a failure.
+		writerWorker.status = "killed";
 		const all = await h.ask("ag_02", { type: "message", to: "all", message: "sync" });
-		assert.equal(all.ok, true, "one delivery succeeded");
-		assert.match(all.text, /^Partially delivered\.\nlead \(ag_01\): accepted or queued\nwriter \(ag_03\): failed — writer \(ag_03\) is no longer live$/);
+		assert.equal(all.ok, true);
+		assert.equal(all.text, "Queued for lead (ag_01): item i_5\nskipped (stopped): writer (ag_03)");
+		assert.deepEqual((all.details as any).skipped, ["ag_03"]);
 		assert.equal(dev.steerCount, 0, "a broadcast never loops back to the sender");
-		// Scope errors are answered, never delivered.
+		// A direct message to a stopped member with no successor is refused, naming how it comes back.
+		const stopped = await h.ask("ag_02", { type: "message", to: "writer", message: "hello?" });
+		assert.equal(stopped.ok, false);
+		assert.match(stopped.text, /writer \(ag_03\) has stopped \(killed\) and has no live successor\. agent_resume \{ id: "ag_03" \} in the main chat brings it back/);
+		// Scope errors are answered, never stored.
 		for (const [to, pattern] of [["dev", /cannot address yourself/], ["ag_02", /cannot address yourself/], ["ghost", /No member with role ghost in team_01\. Known roles: lead, writer\./], ["ag_42", /not a member of team_01/]] as const) {
 			const bad = await h.ask("ag_02", { type: "message", to, message: "x" });
 			assert.equal(bad.ok, false);
 			assert.match(bad.text, pattern);
 		}
 		assert.equal((await h.ask("ag_02", { type: "message", to: "lead", message: "  " })).ok, false);
-		assert.equal(lead.steerCount, 3);
-		// Records: recipient-keyed actions with source member and kind message.
+		assert.equal((await h.ask("ag_02", { type: "message", to: "lead", message: "x", replyTo: "i_99" })).ok, false, "replyTo must name an existing item");
+		assert.equal(readMemberItems(leadDir).length, 3, "nothing refused was stored");
+		// Records: recipient-keyed actions with source member and kind message, queued with their item.
 		const listed = await h.call("team_list");
 		const actions = listed.details.teams[0].actions;
 		assert.deepEqual(actions.map((a: any) => [a.source, a.kind, a.workerId, a.state]), [
 			["member", "message", "ag_01", "accepted-or-queued"],
 			["member", "message", "ag_03", "accepted-or-queued"],
+			["member", "message", "ag_03", "accepted-or-queued"],
 			["member", "message", "ag_01", "accepted-or-queued"],
 			["member", "message", "ag_01", "accepted-or-queued"],
 			["member", "message", "ag_03", "failed"],
 		]);
-		assert.match(listed.content[0].text, /#1 member message → ag_01 \(lead\): accepted-or-queued/);
+		assert.match(listed.content[0].text, /#1 member message → ag_01 \(lead\): accepted-or-queued — queued as i_1/);
 		// A finished sender and a forged directory are refused; malformed files are dropped silently.
 		dev.status = "done";
 		const dead = await h.ask("ag_02", { type: "message", to: "lead", message: "late" });
@@ -2563,10 +2641,29 @@ test("member messages are delivered through the steer path with provenance, inbo
 		const answer = await awaitResponse(forged, forgedId, 3000, undefined, 5);
 		assert.equal(answer?.ok, false);
 		assert.match(answer!.text, /not a live member/);
-		fs.writeFileSync(path.join(memberPaths(h.memberOf("ag_01")!.dir).requests, "zz.json"), "{broken");
-		await new Promise((r) => setTimeout(r, 60));
-		assert.deepEqual(fs.readdirSync(memberPaths(h.memberOf("ag_01")!.dir).requests), []);
-		assert.equal(lead.steerCount, 3, "nothing forged or malformed was delivered");
+		fs.writeFileSync(path.join(memberPaths(leadDir).requests, "zz.json"), "{broken");
+		await pause(60);
+		assert.deepEqual(fs.readdirSync(memberPaths(leadDir).requests), []);
+		assert.equal(readMemberItems(leadDir).length, 3, "nothing forged or malformed was stored");
+	} finally { await h.cleanup(); }
+});
+
+test("a member whose turn ends with items waiting: its completion reports that turn's answer, then the list wakes it (never a 'still working' copy)", async () => {
+	const h = teamHarness();
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "alpha", prompt: "ask" }, { role: "beta", prompt: "talk" }] });
+		const alpha = h.workers.find((w: any) => w.id === "ag_01");
+		// beta writes to the busy alpha: the item waits for alpha's turn end.
+		assert.equal((await h.ask("ag_02", { type: "message", to: "alpha", message: "HELLO from beta" })).ok, true);
+		alpha.transcript.push({ kind: "tool", toolName: "team_ask", text: '{"question":"ASK-MARK"}' });
+		h.messages.length = 0;
+		alpha.output = "ALPHA-FINAL";
+		alpha.settle();
+		await waitFor(() => alpha.steerCount === 1, "the list at the end of alpha's turn");
+		const done = h.messages.filter(([m]: any[]) => m.customType === "subagent-complete").map(([m]: any[]) => m.content as string);
+		assert.equal(done.length, 1, "one completion for the turn that ended");
+		assert.match(done[0], /^### ag_01 \(alpha\) — waiting\n[\s\S]*ALPHA-FINAL/, "the settle as it was: waiting, with its final answer");
+		assert.doesNotMatch(done[0], /Still working|ASK-MARK/, "never the next run's activity");
 	} finally { await h.cleanup(); }
 });
 
@@ -2592,7 +2689,8 @@ test("orchestrator powers are sibling-scoped: roster and steer for orchestrators
 		assert.equal(steered.ok, true);
 		assert.match(steered.text, /Accepted or queued for dev \(ag_02\); this is not execution/);
 		assert.deepEqual([dev.lastSteer.mode, dev.lastSteer.message], ["followUp", "[Instruction from orchestrator lead (ag_01), team_01]\nRun the tests first."]);
-		assert.deepEqual(readInbox(h.memberOf("ag_02")!.dir).map((r) => [r.kind, r.text]), [["instruction", "Run the tests first."]]);
+		await waitFor(() => readMemberItems(h.memberOf("ag_02")!.dir).length === 1, "the instruction's history copy");
+		assert.deepEqual(readMemberItems(h.memberOf("ag_02")!.dir).map((i) => [i.kind, i.from.role, i.status, i.body]), [["instruction", "lead", "read", "Run the tests first."]], "an instruction copy: history, never open");
 		const plain = await h.ask("ag_01", { type: "steer", to: "ag_02", message: "Now fix lint." });
 		assert.equal(plain.ok, true);
 		assert.equal(dev.lastSteer.mode, undefined);
@@ -2613,7 +2711,7 @@ test("orchestrator powers are sibling-scoped: roster and steer for orchestrators
 		dev.status = "killed";
 		const gone = await h.ask("ag_01", { type: "steer", to: "dev", message: "x" });
 		assert.equal(gone.ok, false);
-		assert.match(gone.text, /no longer live/);
+		assert.match(gone.text, /^Cannot steer: dev \(ag_02\) has stopped \(killed\) and has no live successor\. agent_resume/);
 		const actions = (await h.call("team_list", { team: "Crew" })).details.teams[0].actions;
 		assert.deepEqual(actions.map((a: any) => [a.source, a.kind, a.state]), [["orchestrator", "followUp", "accepted-or-queued"], ["orchestrator", "steer", "accepted-or-queued"], ["orchestrator", "steer", "failed"]]);
 	} finally { await h.cleanup(); }
@@ -2654,18 +2752,23 @@ test("team_ask surfaces a team-question message that starts an idle parent turn 
 	} finally { await h.cleanup(); }
 });
 
-test("the mailbox root is created only for teams, and an owned root is removed on shutdown", async () => {
-	const h = harness(eventBus(), { mailboxPollMs: 10 });
+test("the mailbox root is created only for teams, beside the session's handover notes, and kept at shutdown", async () => {
+	const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-agent-"));
 	let root: string | undefined;
 	try {
-		await h.call("agent_spawn", { prompt: "plain", wake: false });
-		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
-		const me = decodeMemberContext(h.workers[1].env[MEMBER_ENV])!;
-		root = path.dirname(path.dirname(me.dir));
-		assert.ok(path.basename(root).startsWith("pi-subagents-teams-"));
-		assert.ok(fs.existsSync(me.dir));
-	} finally { await h.close(); }
-	assert.ok(root && !fs.existsSync(root), "owned root removed at shutdown");
+		const h = harness(eventBus(), { mailboxPollMs: 10, agentDir });
+		try {
+			await h.call("agent_spawn", { prompt: "plain", wake: false });
+			assert.ok(!fs.existsSync(path.join(agentDir, "sova", "teams")), "no team, no mailbox");
+			await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+			const me = decodeMemberContext(h.workers[1].env[MEMBER_ENV])!;
+			root = path.dirname(path.dirname(me.dir));
+			assert.equal(path.basename(root), "mailbox");
+			assert.equal(path.dirname(path.dirname(root)), path.join(agentDir, "sova", "teams"));
+			assert.ok(fs.existsSync(me.dir));
+		} finally { await h.close(); }
+		assert.ok(root && fs.existsSync(root), "kept for the next manager");
+	} finally { fs.rmSync(agentDir, { recursive: true, force: true }); }
 	// An injected root belongs to the caller and survives.
 	const injected = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-injected-"));
 	try {
@@ -2688,7 +2791,7 @@ function remoteHarness(agentDir: string, announce: boolean) {
 	return h;
 }
 
-test("a remote session's workers run on the target: pi loads the remote extension with --target, claude gets the remote MCP server and no built-in tools", async () => {
+test("a remote session's workers run on the target: pi and claude-code workers load the remote extension with --target", async () => {
 	const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-remote-agent-"));
 	const prev = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -2701,43 +2804,37 @@ test("a remote session's workers run on the target: pi loads the remote extensio
 		assert.match(spawned.content[0].text, /^Remote session: workers run on target box in \/srv\/app\.$/m, "the parent can see it runs the remote wiring");
 		assert.match((await h.call("agent_list")).content[0].text, /Remote session: workers run on target box in \/srv\/app\./);
 		const piWorker = h.workers[0];
-		assert.deepEqual(piWorker.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION], "the marker and the remote extension, nothing else");
+		assert.deepEqual(piWorker.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION], "the marker and the remote extension, nothing else");
 		assert.deepEqual(piWorker.flags, { target: "box" });
 		assert.equal(piWorker.cwd, h.ctx.cwd, "the session's placeholder is the local cwd");
 		assert.deepEqual(piWorker.tools, ["read", "bash"], "the allowlist is unchanged; the runner restricts by exclusion when extensions are present");
 		assert.equal(piWorker.mcpServers, undefined);
 
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", tools: ["Read"], systemPrompt: "be terse", cwd: "sub/dir" });
-		const claude = created[0];
-		assert.deepEqual(claude.tools, [], "every built-in tool is gone (--tools \"\")");
-		assert.equal(claude.extensions.length, 0);
-		assert.deepEqual(claude.env, { MCP_TOOL_TIMEOUT: String(REMOTE_MCP_TOOL_TIMEOUT_MS) }, "claude's own env carries only the MCP deadline");
-		assert.deepEqual(Object.keys(claude.mcpServers), [REMOTE_MCP_SERVER_NAME]);
-		const server = claude.mcpServers.remote;
-		assert.deepEqual([server.command, server.args], [process.execPath, [REMOTE_MCP]]);
-		const identity = decodeRemoteMcpIdentity(server.env[REMOTE_MCP_ENV])!;
-		assert.deepEqual(identity, { version: 1, target: "box", farCwd: "/srv/app/sub/dir", agentDir, label: "The box" }, "a relative worker cwd is resolved on the target");
+		const claude = h.workers[1];
+		assert.equal(created.length, 0, "no native Claude process");
+		assert.equal(claude.model, "claude-code-cli/claude-sonnet-5-5");
+		assert.deepEqual(claude.tools, ["read"], "Claude's names map to Sova's, which run on the target");
+		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION, CLAUDE_CODE_EXTENSION]);
+		assert.deepEqual(claude.flags, { target: "box", [CLAUDE_CODE_PROVIDER_FLAG]: true });
 		assert.equal(claude.cwd, placeholderDir(agentDir, "box", "/srv/app/sub/dir"), "its local cwd is the placeholder of that far directory");
-		assert.ok(fs.statSync(claude.cwd).isDirectory(), "created so the CLI can start there");
-		assert.match(claude.systemPrompt, /^be terse\n\n/);
-		assert.match(claude.systemPrompt, /remote target "The box \(box\)" in \/srv\/app\/sub\/dir/);
-		assert.match(claude.systemPrompt, /no local file or shell tools/);
-		assert.equal(claude.model, "claude-sonnet-5-5", "the backend's own preparation is kept");
+		assert.equal(claude.systemPrompt, "be terse");
+		assert.equal(claude.mcpServers, undefined);
 
-		// A team member of a remote session gets both servers; a pi member both extensions.
+		// A team member of a remote session gets both extensions, on either backend.
 		await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true }, { role: "writer", prompt: "w", backend: "claude-code" }] });
 		const lead = h.workers.find((w: any) => w.id === "ag_03");
-		assert.deepEqual(lead.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION, MEMBER_EXTENSION]);
+		assert.deepEqual(lead.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION, MEMBER_EXTENSION]);
 		assert.deepEqual(lead.flags, { target: "box" });
-		const writer = created[1];
-		assert.deepEqual(Object.keys(writer.mcpServers).sort(), [REMOTE_MCP_SERVER_NAME, "team"]);
-		assert.equal(decodeRemoteMcpIdentity(writer.mcpServers.remote.env[REMOTE_MCP_ENV])!.farCwd, "/srv/app");
-		assert.ok(decodeMemberContext(writer.mcpServers.team.env[MEMBER_ENV]));
+		const writer = h.workers.find((w: any) => w.id === "ag_04");
+		assert.deepEqual(writer.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION, MEMBER_EXTENSION, CLAUDE_CODE_EXTENSION]);
+		assert.ok(decodeMemberContext(writer.env[MEMBER_ENV]));
 
 		// A cwd the parent cannot resolve, and a backend without remote tooling, are refused before any worker starts.
 		await assert.rejects(h.call("agent_spawn", { prompt: "t", cwd: "~/x" }), /absolute path on the target/);
 		await assert.rejects(h.call("agent_spawn", { prompt: "t", backend: "other" }), /cannot run workers of a remote session/);
 		assert.equal(h.workers.length + created.length, 4);
+		assert.equal(created.length, 0);
 	} finally {
 		await h.close();
 		if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
@@ -2752,7 +2849,7 @@ test("the placeholder cwd alone identifies a remote session when the remote exte
 	const h = remoteHarness(agentDir, false);
 	try {
 		await h.call("agent_spawn", { prompt: "pi task" });
-		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION]);
+		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION]);
 		assert.deepEqual(h.workers[0].flags, { target: "box" });
 		// The announcement wins over the placeholder, and carries what the placeholder cannot say.
 		h.bus.emit(REMOTE_SESSION_EVENT, { version: 1, target: "box", farCwd: "/srv/app", channelOff: true });
@@ -2781,23 +2878,21 @@ test("a local session's workers are untouched by the remote wiring", async () =>
 		assert.doesNotMatch(spawned.content[0].text, /Remote session/);
 		assert.doesNotMatch((await h.call("agent_list")).content[0].text, /Remote session/);
 		assert.equal(h.workers[0].flags, undefined);
-		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION]);
-		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code" });
+		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION]);
+		await h.call("agent_spawn", { prompt: "claude task", backend: "native-cli" });
 		assert.equal(created[0].mcpServers, undefined);
 		assert.equal(created[0].env, undefined);
 		assert.equal(created[0].tools, undefined, "the backend's default tool list applies");
 	} finally { await h.close(); }
 });
 
-test("worker session marker: every pi worker loads worker-mark.ts first; claude-code workers never do", async () => {
+test("worker session marker: every pi worker loads worker-mark.ts first; another backend's workers never do", async () => {
 	assert.equal(path.basename(MARKER_EXTENSION), "worker-mark.ts");
 	assert.ok(fs.existsSync(MARKER_EXTENSION));
 	assert.equal(path.dirname(MARKER_EXTENSION), path.dirname(MEMBER_EXTENSION), "a sibling of member.ts, under this extension's own directory");
 	assert.ok(fs.existsSync(PROVIDER_LIMITS_EXTENSION), "the request limits load right after the marker");
 	assert.equal(path.basename(path.dirname(PROVIDER_LIMITS_EXTENSION)), "provider-limits");
-	assert.ok(fs.existsSync(LLM_INFLIGHT_EXTENSION), "the LLM-call counter loads right after the limits");
-	assert.equal(path.basename(path.dirname(LLM_INFLIGHT_EXTENSION)), "llm-inflight");
-	assert.ok(fs.existsSync(MODEL_LEVELS_EXTENSION), "the model levels load right after the counter");
+	assert.ok(fs.existsSync(MODEL_LEVELS_EXTENSION), "the model levels load right after the limits (a worker chat counts its own model calls)");
 	assert.equal(path.basename(path.dirname(MODEL_LEVELS_EXTENSION)), "model-levels");
 	const h = harness();
 	const created: any[] = [];
@@ -2806,15 +2901,16 @@ test("worker session marker: every pi worker loads worker-mark.ts first; claude-
 		const plain = await h.call("agent_spawn", { prompt: "plain", tools: ["read"] });
 		assert.equal(h.workers[0].extensions[0], MARKER_EXTENSION, "a plain worker");
 		assert.doesNotMatch(plain.content[0].text, /extensions=/, "the spawn summary does not list the marker");
-		const given = await h.call("agent_spawn", { prompt: "given", extensions: ["npm:definitely-not-installed-xyz"] });
-		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, "npm:definitely-not-installed-xyz"], "a worker with its own extensions");
-		assert.match(given.content[0].text, /  extensions=npm:definitely-not-installed-xyz(  |$)/m, "only the user's extensions are listed");
-		await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true }, { role: "writer", prompt: "w", backend: "claude-code" }] });
+		const btw = path.resolve(fileURLToPath(new URL("../btw", import.meta.url)));
+		const given = await h.call("agent_spawn", { prompt: "given", extensions: ["extensions/btw"] });
+		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, btw], "a worker with its own extensions");
+		assert.ok(given.content[0].text.split("\n").some((line: string) => line.includes(`  extensions=${btw}`) && !line.includes("worker-mark")), "only the user's extensions are listed");
+		await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true }, { role: "writer", prompt: "w", backend: "native-cli" }] });
 		const member = h.workers.at(-1);
-		assert.deepEqual(member.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, MEMBER_EXTENSION], "a team member");
-		await h.call("agent_spawn", { prompt: "claude", backend: "claude-code" });
+		assert.deepEqual(member.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, MEMBER_EXTENSION], "a team member");
+		await h.call("agent_spawn", { prompt: "claude", backend: "native-cli" });
 		assert.equal(created.length, 2);
-		for (const claude of created) assert.equal(claude.extensions.length, 0, "claude-code workers are untouched");
+		for (const other of created) assert.equal(other.extensions.length, 0, "another backend's workers are untouched");
 		// The marker is spawn plumbing, never a user-facing source.
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", extensions: [MARKER_EXTENSION] }), /do not nest/);
 	} finally {
@@ -2917,14 +3013,14 @@ test("a pi worker on a claude-code-cli model gets the claude-code extension and 
 		await h.call("agent_spawn", { prompt: "1M task", model: "claude-code-cli/claude-opus-5-5", effort: "low" });
 		const scoped = h.workers[0];
 		assert.equal(scoped.model, "claude-code-cli/claude-opus-5-5", "the ref reaches the runner unchanged; the runner sets it over RPC");
-		assert.deepEqual(scoped.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, CLAUDE_CODE_EXTENSION], "the marker, then the claude-code extension");
+		assert.deepEqual(scoped.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, CLAUDE_CODE_EXTENSION], "the marker, then the claude-code extension");
 		assert.deepEqual(scoped.flags, { "claude-code-provider": true });
 		assert.equal(CLAUDE_CODE_EXTENSION, path.join(fs.realpathSync(path.resolve(fileURLToPath(new URL("../claude-code", import.meta.url)))), "index.ts"), "the sibling directory, by real path");
 		assert.equal(CLAUDE_CODE_PROVIDER_FLAG, CLAUDE_PROVIDER_FLAG, "the switch the provider extension registers");
 		await h.call("agent_spawn", { prompt: "plain task", model: "ollama-cloud/kimi-k3" });
 		const plain = h.workers[1];
 		assert.equal(plain.model, "ollama-cloud/kimi-k3");
-		assert.deepEqual(plain.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION]);
+		assert.deepEqual(plain.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION]);
 		assert.equal(plain.flags, undefined);
 	} finally { await h.close(); }
 });
@@ -2933,34 +3029,32 @@ test("a pi worker on a claude-code-cli model gets the claude-code extension and 
 const SANDBOX_DIR = fs.realpathSync(path.resolve(fileURLToPath(new URL("../sandbox", import.meta.url))));
 const SANDBOX_OFF: SandboxStateEvent = { version: 1, on: false, extensionPath: SANDBOX_DIR, enforcement: "none" };
 const WORKER_FLAGS = { sandbox: "on", "sandbox-parent": '{"version":1}' };
-/** The sandbox's launch module as workerLaunch names it (the fake backend never loads it). */
-const LAUNCH_MODULE = path.join(SANDBOX_DIR, "launch.ts");
 /** The one call, faked: pi gets flags (narrowed ones for a root), any other backend a confinement named by its owner and root. */
 const workerLaunchOf = (flagsIn: (root: string) => Record<string, string> = (root) => ({ sandbox: "on", "sandbox-parent": root }), top = WORKER_FLAGS) =>
 	(req: { cwd: string; root?: string; backend: string; owner: string }): WorkerLaunch => req.backend === "pi"
 		? { kind: "pi", extensionPath: SANDBOX_DIR, flags: req.root ? flagsIn(req.root) : top }
-		: { kind: "confine", scope: JSON.stringify({ owner: req.owner, root: req.root ?? null }), module: LAUNCH_MODULE };
+		: { kind: "confine", scope: JSON.stringify({ owner: req.owner, root: req.root ?? null }) };
 const SANDBOX_ON: SandboxStateEvent = { version: 1, on: true, extensionPath: SANDBOX_DIR, enforcement: "full", workerLaunch: workerLaunchOf() };
 /** A worker's launch options without the per-worker identity or the fake worker's own closures. */
 const launchShape = ({ id, groupId, name, ...rest }: any) => Object.fromEntries(Object.entries(rest).filter(([, v]) => typeof v !== "function"));
 
-test("pin: with the sandbox off and no worktree, a claude worker's create() options are exactly these", async () => {
+test("pin: with the sandbox off and no worktree, a claude-code worker's launch options are exactly these", async () => {
 	const h = harness();
-	const created: any[] = [];
-	const capture = fakeBackend(created);
-	const options: any[] = [];
-	h.bus.emit(BACKEND_REGISTER_EVENT, { ...capture, create(o: any, handlers: any) { options.push(o); return capture.create(o, handlers); } });
 	try {
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "be terse", wake: false });
 		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_OFF);
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "be terse", wake: false });
 		const want = {
-			model: "claude-sonnet-5-5", effort: undefined, tools: undefined, systemPrompt: "be terse", extensions: undefined, forkSession: undefined,
-			backendOptions: { permissionMode: "default" }, backend: "claude-code", groupId: "run_01", name: "agent", task: "claude task", cwd: h.ctx.cwd, wake: false,
+			model: "claude-code-cli/claude-sonnet-5-5", effort: "medium", tools: ["read", "bash", "edit", "write", "grep", "find", "ls"], systemPrompt: "be terse",
+			extensions: [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, CLAUDE_CODE_EXTENSION], forkSession: undefined,
+			backendOptions: undefined, flags: { [CLAUDE_CODE_PROVIDER_FLAG]: true }, backend: "pi", groupId: "run_01", name: "agent", task: "claude task", cwd: h.ctx.cwd, wake: false,
 		};
-		assert.deepEqual(Object.keys(options[0]).sort(), [...Object.keys(want), "id"].sort(), "no sandbox, env, settings, confinement or mcp key");
-		assert.deepEqual({ ...options[0], id: undefined }, { ...want, id: undefined });
-		assert.deepEqual({ ...options[1], id: undefined, groupId: "run_01" }, { ...want, id: undefined }, "an off sandbox changes nothing");
+		const shape = (w: any) => ({ ...launchShape(w), id: undefined });
+		for (const w of h.workers) for (const key of Object.keys(want)) if (key !== "groupId") assert.deepEqual(w[key], (want as any)[key], key);
+		assert.equal(h.workers[0].env, undefined, "no env, settings, confinement or mcp key");
+		assert.equal(h.workers[0].mcpServers, undefined);
+		assert.equal(h.workers[0].confine, undefined);
+		assert.deepEqual({ ...shape(h.workers[1]), groupId: undefined }, { ...shape(h.workers[0]), groupId: undefined }, "an off sandbox changes nothing");
 	} finally { await h.close(); }
 });
 
@@ -2970,23 +3064,23 @@ test("sandbox off: workers launch exactly as without the sandbox extension; on: 
 	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
 	try {
 		await h.call("agent_spawn", { prompt: "pi task" });
-		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", backendOptions: { permissionMode: "bypassPermissions" } });
+		await h.call("agent_spawn", { prompt: "claude task", backend: "native-cli", backendOptions: { permissionMode: "bypassPermissions" } });
 		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_OFF);
 		await h.call("agent_spawn", { prompt: "pi task" });
-		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", backendOptions: { permissionMode: "bypassPermissions" } });
+		await h.call("agent_spawn", { prompt: "claude task", backend: "native-cli", backendOptions: { permissionMode: "bypassPermissions" } });
 		assert.deepEqual(launchShape(h.workers[1]), launchShape(h.workers[0]), "an off parent's pi worker is today's");
-		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION]);
+		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION]);
 		assert.equal(h.workers[1].flags, undefined);
 		assert.deepEqual(launchShape(created[1]), launchShape(created[0]), "an off parent's claude worker is today's");
 		assert.ok(!("settingsJson" in created[1]) && !("permissionMode" in created[1]));
 
 		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
 		await h.call("agent_spawn", { prompt: "pi task" });
-		assert.deepEqual(h.workers[2].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR]);
+		assert.deepEqual(h.workers[2].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR]);
 		assert.deepEqual(h.workers[2].flags, WORKER_FLAGS, "the extension's flags, as is");
 		// Naming the extension itself neither loads it twice nor drops the flag.
 		await h.call("agent_spawn", { prompt: "pi task", extensions: [path.join(SANDBOX_DIR, "index.ts")] });
-		assert.deepEqual(h.workers[3].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR]);
+		assert.deepEqual(h.workers[3].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR]);
 		assert.deepEqual(h.workers[3].flags, WORKER_FLAGS);
 		await h.call("agent_spawn", { prompt: "pi task", model: "test/model" });
 		assert.deepEqual(h.workers[4].flags, WORKER_FLAGS);
@@ -2998,83 +3092,33 @@ test("sandbox off: workers launch exactly as without the sandbox extension; on: 
 	} finally { await h.close(); }
 });
 
-test("sandbox on: a claude worker is confined by the sandbox under its own session-qualified owner, with no settings of the sandbox's and the spec's permission mode; a refusal or another backend fails the spawn", async () => {
+test("sandbox on: a claude-code worker is sandboxed as a pi worker (the extension and its flags); a refusal or another backend fails the spawn", async () => {
 	const h = harness();
 	const created: any[] = [];
-	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
 	h.bus.emit(BACKEND_REGISTER_EVENT, { ...fakeBackend(created), id: "other" });
 	const asked: any[] = [];
 	try {
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: (req: any) => (asked.push(req), workerLaunchOf()(req)) });
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", backendOptions: { permissionMode: "bypassPermissions" } });
-		const claude = created[0];
-		const key = `unsaved-${process.pid}-`;
-		assert.equal(asked.length, 2, "asked once to validate the batch, once under the worker's own id");
-		assert.equal(asked[1].backend, "claude-code");
-		assert.ok(asked[1].owner.startsWith(key) && asked[1].owner.endsWith("-ag_01"), asked[1].owner);
-		assert.deepEqual(claude.confine, { scope: JSON.stringify({ owner: asked[1].owner, root: null }), module: LAUNCH_MODULE, key: asked[1].owner, agentDir: NO_AGENT_DIR, writable: [], describe: "the session's sandbox" });
-		assert.ok(!("settingsJson" in claude), "the sandbox gives no Claude settings; the runner turns Claude's own sandbox off");
-		assert.equal(claude.permissionMode, undefined, "no forced mode: the runner's default bypassPermissions, or the spec's own");
-		assert.deepEqual(claude.backendOptions, { permissionMode: "bypassPermissions" });
-		assert.deepEqual(claude.extensions, []);
+		const claude = h.workers[0];
+		assert.equal(asked.length, 1, "asked once, as for any pi worker");
+		assert.equal(asked[0].backend, "pi");
+		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR, CLAUDE_CODE_EXTENSION]);
+		assert.deepEqual(claude.flags, { ...WORKER_FLAGS, [CLAUDE_CODE_PROVIDER_FLAG]: true });
+		assert.equal(claude.confine, undefined);
+		assert.equal(claude.backendOptions, undefined);
 
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, enforcement: "partial", workerLaunch: () => ({ kind: "refused", reason: "Sandbox enforcement is partial (x); set acceptPartial." }) });
 		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "claude-code" }), { message: "Sandbox enforcement is partial (x); set acceptPartial." });
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: undefined });
 		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "claude-code" }), /gave no worker launch/);
-		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: () => ({ kind: "pi", extensionPath: SANDBOX_DIR, flags: {} }) });
-		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "claude-code" }), /gave the claude-code worker no confinement/);
 		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
 		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "other" }), /cannot run workers while this session's sandbox is on/);
 		// A mixed batch fails as a whole: the pi worker never starts either.
 		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "p" }, { prompt: "c", backend: "other" }] }), /sandbox is on/);
-		assert.equal(created.length, 1);
-		assert.equal(h.workers.length, 0);
+		assert.equal(created.length, 0);
+		assert.equal(h.workers.length, 1);
 	} finally { await h.close(); }
-});
-
-test("confined claude: a team member's mailbox is writable; a hosted worker gets the host's own tmp; session_start sweeps the private dirs of workers no longer recorded, never a recorded one", async () => {
-	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-confined-")));
-	const agentDir = path.join(root, "agent");
-	const sessionFile = path.join(agentDir, "sessions", "--cwd--", "2026-09-30T00-00-00-000Z_sess-1.jsonl");
-	fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
-	fs.writeFileSync(sessionFile, "");
-	const mailboxRoot = path.join(root, "mailbox");
-	const h = harness(eventBus(), { agentDir, mailboxRoot, mailboxPollMs: 10, hosting: { root: path.join(root, "workers"), enabled: true } });
-	h.ctx.sessionManager.getSessionId = () => "sess-1";
-	h.ctx.sessionManager.getSessionFile = () => sessionFile;
-	const created: any[] = [];
-	const fake = fakeBackend(created);
-	// Hosted workers are bound to their registry entry until they close.
-	h.bus.emit(BACKEND_REGISTER_EVENT, { ...fake, create: (o: any, handlers: any) => Object.assign(fake.create(o, handlers), { whenClosed: new Promise(() => {}) }) });
-	h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
-	try {
-		await h.start();
-		await h.call("team_create", { name: "T", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true, backend: "claude-code" }] });
-		const member = created[0];
-		assert.equal(member.confine.key, "sess-1-ag_01");
-		assert.equal(member.confine.writable.length, 1);
-		assert.ok(member.confine.writable[0].endsWith(path.join("team_01", "ag_01")) && fs.statSync(member.confine.writable[0]).isDirectory(), "its own mailbox");
-		assert.equal(decodeMemberContext(member.mcpServers.team.env[MEMBER_ENV])!.dir, member.confine.writable[0]);
-		assert.equal(member.confine.hostedTmpDir, path.join(member.tmpDir, "tmp"), "hosted: the host's own tmp, inside its worker dir");
-		assert.ok(fs.statSync(member.confine.hostedTmpDir).isDirectory());
-
-		// The sweep: an old dir of a recorded worker stays, one of an unrecorded worker goes.
-		const old = (Date.now() - 2 * 24 * 3600_000) / 1000;
-		const dirOf = (key: string) => path.join(agentDir, "sova", "sandbox", "claude", key);
-		for (const key of ["sess-1-ag_01", "sess-1-ag_07", "gone-session-ag_01"]) {
-			fs.mkdirSync(dirOf(key), { recursive: true });
-			fs.utimesSync(dirOf(key), old, old);
-		}
-		h.ctx.sessionManager.getEntries = () => h.appended.map((e: any) => ({ type: "custom", ...e }));
-		await h.start();
-		assert.ok(fs.existsSync(dirOf("sess-1-ag_01")), "a recorded worker keeps its state for a resume");
-		assert.ok(!fs.existsSync(dirOf("sess-1-ag_07")), "no record of it left");
-		assert.ok(!fs.existsSync(dirOf("gone-session-ag_01")), "its owner session's file is gone");
-	} finally {
-		await h.close();
-		fs.rmSync(root, { recursive: true, force: true });
-	}
 });
 
 test("sandbox: the state is asked for at load, malformed announcements are ignored, and a remote session's workers never load the extension", async () => {
@@ -3100,7 +3144,7 @@ test("sandbox: the state is asked for at load, malformed announcements are ignor
 	try {
 		r.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
 		await r.call("agent_spawn", { prompt: "pi task" });
-		assert.deepEqual(r.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION]);
+		assert.deepEqual(r.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION]);
 		assert.deepEqual(r.workers[0].flags, { target: "box" });
 	} finally {
 		await r.close();
@@ -3123,7 +3167,7 @@ test("sandbox on: every worker is checked by the extension first, and its refusa
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch });
 		await h.call("agent_spawn", { prompt: "p", cwd: "extensions" });
 		await h.call("agent_spawn", { prompt: "c", backend: "claude-code" });
-		assert.deepEqual(asked, [{ cwd: path.join(h.ctx.cwd, "extensions"), backend: "pi" }, { cwd: h.ctx.cwd, backend: "claude-code" }, { cwd: h.ctx.cwd, backend: "claude-code" }], "the resolved cwd and the backend (a claude worker is asked again under its own id)");
+		assert.deepEqual(asked, [{ cwd: path.join(h.ctx.cwd, "extensions"), backend: "pi" }, { cwd: h.ctx.cwd, backend: "pi" }], "the resolved cwd and the backend (a claude-code worker is a pi worker)");
 		for (const backend of [undefined, "claude-code"]) {
 			await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "fine" }, { prompt: "p", cwd: outside, backend }] }), { message: `Sandbox: worker cwd ${outside} is outside the parent's sandbox` });
 		}
@@ -3134,7 +3178,7 @@ test("sandbox on: every worker is checked by the extension first, and its refusa
 		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "claude-code" }), /gave no worker launch/);
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: () => ({ kind: "none" }) });
 		await assert.rejects(h.call("agent_spawn", { prompt: "p" }), /gave no worker launch/);
-		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: () => ({ kind: "confine", scope: "s", module: LAUNCH_MODULE }) });
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: () => ({ kind: "confine", scope: "s" }) });
 		await assert.rejects(h.call("agent_spawn", { prompt: "p" }), /gave a pi worker no extension flags/);
 		assert.equal(h.workers.length + created.length, 2);
 
@@ -3155,8 +3199,7 @@ test("team_eject: parent-only, refuses occupied members, persists the op, frees 
 	try {
 		// Members and orchestrators never get the tool.
 		const { MEMBER_TOOLS, ORCHESTRATOR_TOOLS } = await import("./member.ts");
-		const mcp = await import("./member-mcp.ts");
-		for (const list of [MEMBER_TOOLS, ORCHESTRATOR_TOOLS, mcp.MEMBER_TOOLS, mcp.ORCHESTRATOR_TOOLS]) assert.ok(!(list as readonly string[]).includes("team_eject"));
+		for (const list of [MEMBER_TOOLS, ORCHESTRATOR_TOOLS]) assert.ok(!(list as readonly string[]).includes("team_eject"));
 		assert.ok(h.tools.has("team_eject"));
 		await h.call("team_create", {
 			name: "Crew", objective: "Ship", members: [
@@ -3194,13 +3237,13 @@ test("team_eject: parent-only, refuses occupied members, persists the op, frees 
 
 		// Broadcast skips the ejected member (no failed delivery); a direct message says it was ejected.
 		const all = await h.ask("ag_01", { type: "message", to: "all", message: "sync" });
-		assert.match(all.text, /^Delivered \(accepted or queued; not proof they acted\)\.\nwriter \(ag_03\): accepted or queued$/);
+		assert.equal(all.text, "Queued for writer (ag_03): item i_1\nskipped (stopped): dev (ag_02, ejected)", "an ejected member is skipped, never a failure");
 		for (const request of [{ type: "message", to: "dev", message: "x" }, { type: "steer", to: "ag_02", message: "x" }] as const) {
 			const direct = await h.ask("ag_01", request);
 			assert.equal(direct.ok, false);
 			assert.match(direct.text, /dev \(ag_02\) was ejected from team_01 at .*; it no longer receives team messages/);
 		}
-		assert.equal(writer.steerCount, 1);
+		assert.deepEqual(itemRows(h.memberOf("ag_03")!.dir), [["i_1", "message", "lead", "new"]], "queued for the busy writer; nothing for dev");
 		// An ejected member cannot be resumed back into a seat.
 		await assert.rejects(h.call("agent_resume", { id: "ag_02" }), /Cannot resume ag_02: it was ejected from its team/);
 
@@ -3236,6 +3279,17 @@ const DEFAULTS_FILE = {
 const SESSION_ID = "0199aaaa-0000-7000-8000-00000000c0de";
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** A team harness whose agent dir holds `file` as team-defaults.json (omit it: no file), with timers fired by hand. */
+/** A member's inbox has an item of `kind` whose body matches (waits for it to be stored). */
+async function assertItem(h: { memberOf(id: string): { dir: string } | undefined }, workerId: string, kind: string, re: RegExp): Promise<InboxItem> {
+	let found: InboxItem | undefined;
+	const bodies = () => readMemberItems(h.memberOf(workerId)!.dir).filter((i) => i.kind === kind);
+	try {
+		await waitFor(() => (found = bodies().find((i) => re.test(i.body))), `a ${kind} item for ${workerId} matching ${re}`);
+	} catch {
+		assert.fail(`no ${kind} item for ${workerId} matches ${re}; have:\n${bodies().map((i) => i.body).join("\n---\n")}`);
+	}
+	return found!;
+}
 function coordinatedHarness(file?: unknown, opts: { claude?: boolean; sessionId?: string } = {}) {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-team-defaults-"));
 	const agentDir = path.join(root, "agent");
@@ -3243,7 +3297,7 @@ function coordinatedHarness(file?: unknown, opts: { claude?: boolean; sessionId?
 	if (file !== undefined) fs.writeFileSync(path.join(agentDir, "team-defaults.json"), typeof file === "string" ? file : JSON.stringify(file));
 	const timers: { fn: () => void; ms: number }[] = [];
 	const h = harness(eventBus(), {
-		mailboxRoot: path.join(root, "mail"), mailboxPollMs: 10, agentDir,
+		mailboxRoot: path.join(root, "mail"), mailboxPollMs: 10, agentDir, inboxDebounceMs: 30, inboxRetryMs: [30, 60],
 		setTimer: (fn, ms) => { const t = { fn, ms }; timers.push(t); return t as any; },
 	});
 	h.ctx.sessionManager.getSessionId = () => opts.sessionId ?? SESSION_ID;
@@ -3281,7 +3335,8 @@ test("team defaults: no file changes nothing; a malformed file turns them off vi
 	const none = coordinatedHarness();
 	try {
 		const r = await none.call("team_create", { name: "Plain", objective: "o", members: [{ role: "dev", prompt: "p" }] });
-		assert.doesNotMatch(r.content[0].text, /Team defaults|coordinator/);
+		assert.doesNotMatch(r.content[0].text, /Team defaults/);
+		assert.match(r.content[0].text, /Standing roles: none; this chat's subagent settings give teams no coordinator or monitor\./);
 		assert.equal(none.workers.length, 1);
 		assert.equal(none.workers[0].wake, true);
 		assert.equal(none.memberOf("ag_01")!.coordinated, undefined);
@@ -3310,7 +3365,7 @@ test("team defaults synthesize a coordinator and a monitor in code, with role he
 		const handoffs = path.join(h.agentDir, "sova", "teams", SESSION_ID, "team_01", "handoffs");
 		assert.match(text, new RegExp(`Handover notes: ${handoffs.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
 		assert.ok(fs.statSync(handoffs).isDirectory());
-		assert.match(text, /ag_01 {2}coordinator \(coordinator\) {2}running {2}backend=claude-code {2}model=claude-opus-5-5 {2}effort=medium/);
+		assert.match(text, /ag_01 {2}coordinator \(coordinator\) {2}running {2}backend=pi {2}model=claude-code-cli\/claude-opus-5-5 {2}effort=medium/);
 		assert.match(text, /ag_04 {2}monitor \(monitor\) .* wake=false/);
 		assert.match(text, /Coordinated team: only the coordinator reaches you/);
 		assert.deepEqual(r.details.members.map((m: any) => [m.workerId, m.role, m.duty]), [["ag_01", "coordinator", "coordinator"], ["ag_02", "dev", undefined], ["ag_03", "writer", undefined], ["ag_04", "monitor", "monitor"]]);
@@ -3319,19 +3374,19 @@ test("team defaults synthesize a coordinator and a monitor in code, with role he
 		const coordinator = h.worker("ag_01"), dev = h.worker("ag_02"), writer = h.worker("ag_03"), monitor = h.worker("ag_04");
 		assert.deepEqual([coordinator.wake, dev.wake, writer.wake, monitor.wake], [true, false, false, false], "only the coordinator wakes the parent");
 		assert.deepEqual(monitor.tools, [], "the monitor has no built-in tools");
-		assert.equal(coordinator.tools, undefined);
+		assert.deepEqual(coordinator.tools, ["read", "bash", "edit", "write", "grep", "find", "ls"], "a claude-code coordinator's default: Sova's seven tools");
 		assert.deepEqual(h.memberOf("ag_01"), { ...h.memberOf("ag_01")!, orchestrator: true, duty: "coordinator" });
 		assert.equal(h.memberOf("ag_01")!.coordinated, undefined);
 		assert.equal(h.memberOf("ag_02")!.coordinated, true);
 		assert.deepEqual([h.memberOf("ag_04")!.duty, h.memberOf("ag_04")!.coordinated, h.memberOf("ag_04")!.orchestrator], ["monitor", true, false]);
-		assert.match(coordinator.task, /call them as mcp__team__team_roster, mcp__team__team_steer, mcp__team__team_msg, mcp__team__team_inbox, mcp__team__team_ask, mcp__team__team_report, mcp__team__team_succeed;/);
+		assert.doesNotMatch(coordinator.task, /mcp__team__/, "a claude-code coordinator loads the member extension like a pi member");
 		assert.match(coordinator.task, /Your role: coordinator \(coordinator\)/);
 		assert.match(coordinator.task, /You are this team's coordinator\. You do no implementation yourself/);
 		assert.match(coordinator.task, /- monitor \(monitor\): none declared/);
 		assert.match(dev.task, /This team has a coordinator, coordinator: report to it, not to the operator\./);
 		assert.match(dev.task, new RegExp(`Your handover note path: ${path.join(handoffs, "dev.md").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.`));
 		assert.match(dev.task, /team_ask sends a question to your team's coordinator/);
-		assert.match(monitor.task, /call them as mcp__team__team_msg, mcp__team__team_inbox, mcp__team__team_roster, mcp__team__wake_nudge;/);
+		assert.doesNotMatch(monitor.task, /mcp__team__/);
 		assert.match(monitor.task, /at or over 60% of its context window: team_msg it with notice "wrap-up"/);
 		assert.match(monitor.task, /AT\/OVER the pause threshold \(it marks one only when no login of that provider has headroom — a non-weekly window such as 5h at 90% or more, or a 7d window at 100%; a 7d window below 100% is informational[^)]*\): team_msg coordinator with notice "pause".*plus 5 min/);
 		assert.match(monitor.task, /wake_nudge schedule delay "10m" and end your turn\. Never sleep or poll in a shell/);
@@ -3341,23 +3396,23 @@ test("team defaults synthesize a coordinator and a monitor in code, with role he
 		assert.doesNotMatch(monitor.task, /handover note path|read its handover note/, "a monitor has no file tools: it hands over by team_msg");
 		const list = (await h.call("team_list")).content[0].text;
 		assert.match(list, /Coordinated \(team defaults\)/);
-		assert.match(list, /ag_01 coordinator \(coordinator\) \[claude-code\]/);
-		assert.match(list, /ag_04 monitor \(monitor\) \[claude-code\]/);
+		assert.match(list, /ag_01 coordinator \(coordinator\) \[pi\]/);
+		assert.match(list, /ag_04 monitor \(monitor\) \[pi\]/);
 		// team_add into a coordinated team: routed and wake:false; another orchestrator is refused.
 		await h.call("team_add", { team: "Crew", members: [{ role: "qa", prompt: "test", wake: true }] });
 		assert.equal(h.worker("ag_05").wake, false);
 		assert.equal(h.memberOf("ag_05")!.coordinated, true);
 		assert.match(h.worker("ag_05").task, /This team has a coordinator, coordinator/);
-		await assert.rejects(h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "t", orchestrator: true }] }), /has a coordinator; it cannot take another orchestrator/);
+		await assert.rejects(h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "t", orchestrator: true }] }), /^Error: Team team_01 has a coordinator, coordinator \(ag_01\), and only the coordinator is a team's orchestrator: boss can't join with orchestrator: true\. The coordinator hands a member, itself included, over to a successor with its own team_succeed step\. A member that only watches or reports needs no orchestrator mark: add boss without it\. The coordinator coordinator \(ag_01\) is live, so it hands over itself/);
 	} finally { await h.cleanup(); }
 });
 
 test("team defaults pick the fallback when the primary cannot run, and refuse the team when neither can", async () => {
-	const withFallback = { ...DEFAULTS_FILE, coordinator: { ...DEFAULTS_FILE.coordinator, primary: { backend: "claude-code", model: "invalid" }, fallback: { backend: "pi", model: "test/model", effort: "high" } } };
+	const withFallback = { ...DEFAULTS_FILE, coordinator: { ...DEFAULTS_FILE.coordinator, primary: { backend: "claude-code", model: "zai/glm-5.3" }, fallback: { backend: "pi", model: "test/model", effort: "high" } } };
 	const h = coordinatedHarness(withFallback);
 	try {
 		const r = await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "dev", prompt: "p" }] });
-		assert.match(r.content[0].text, /coordinator coordinator added on pi\/test\/model\/high \(fallback; primary claude-code\/invalid refused: Invalid Claude model\)/);
+		assert.match(r.content[0].text, /coordinator coordinator added on pi\/test\/model\/high \(fallback; primary claude-code\/zai\/glm-5\.3 refused: Claude model must be a Claude model ID/);
 		assert.equal(h.worker("ag_01").backend, "pi");
 		assert.equal(h.memberOf("ag_01")!.duty, "coordinator");
 	} finally { await h.cleanup(); }
@@ -3366,7 +3421,7 @@ test("team defaults pick the fallback when the primary cannot run, and refuse th
 	try {
 		await assert.rejects(
 			n.call("team_create", { name: "Crew", objective: "o", members: [{ role: "dev", prompt: "p" }] }),
-			/Team not created: team defaults require a coordinator \(coordinator\), but no configured model can run — primary claude-code\/invalid: Invalid Claude model; fallback pi\/nope\/x: unknown model nope\/x .*defaults\.coordinator: false/,
+			/Team not created: team defaults require a coordinator \(coordinator\), but no configured model can run — primary claude-code\/zai\/glm-5\.3: Claude model must be a Claude model ID.*; fallback pi\/nope\/x: unknown model nope\/x .*defaults\.coordinator: false/,
 		);
 		assert.equal(n.workers.length + n.created.length, 0, "nothing started");
 		assert.equal(n.appended.filter((e) => e.customType === "subagents-team-v1").length, 0, "nothing recorded");
@@ -3375,10 +3430,12 @@ test("team defaults pick the fallback when the primary cannot run, and refuse th
 		assert.match(ok.content[0].text, /coordinator turned off for this team \(defaults\.coordinator: false\); no coordinator or monitor/);
 		assert.equal(n.workers[0].wake, true);
 	} finally { await n.cleanup(); }
-	const noClaude = coordinatedHarness(DEFAULTS_FILE, { claude: false });
+	// claude-code is built in: a harness with no registered backend still runs the Claude defaults.
+	const noBackend = coordinatedHarness(DEFAULTS_FILE, { claude: false });
 	try {
-		await assert.rejects(noClaude.call("team_create", { name: "Crew", objective: "o", members: [{ role: "dev", prompt: "p" }] }), /primary claude-code\/claude-opus-5-5\/medium: backend claude-code is not loaded; fallback: no fallback is configured/);
-	} finally { await noClaude.cleanup(); }
+		const r = await noBackend.call("team_create", { name: "Crew", objective: "o", members: [{ role: "dev", prompt: "p" }] });
+		assert.match(r.content[0].text, /coordinator coordinator added on claude-code\/claude-opus-5-5\/medium \(primary\)/);
+	} finally { await noBackend.cleanup(); }
 	// The model policy is a denial like any other.
 	const policyDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-td-policy-"));
 	const policyFile = path.join(policyDir, "policy.json");
@@ -3398,7 +3455,7 @@ async function registerAgain(p: ReturnType<typeof coordinatedHarness>, policyFil
 	} finally { await h.close(); }
 }
 
-test("team defaults: the caller's orchestrator is the coordinator; conflicts and the per-call limit are refused; monitor escape hatch", async () => {
+test("team defaults: the caller's orchestrator is the coordinator; conflicts are refused; no per-call limit; monitor escape hatch", async () => {
 	const h = coordinatedHarness(DEFAULTS_FILE);
 	try {
 		const r = await h.call("team_create", { name: "Led", objective: "o", members: [{ role: "lead", prompt: "lead", orchestrator: true }, { role: "dev", prompt: "p" }] });
@@ -3409,12 +3466,16 @@ test("team defaults: the caller's orchestrator is the coordinator; conflicts and
 		await assert.rejects(h.call("team_create", { name: "Two", objective: "o", members: [{ role: "a", prompt: "p", orchestrator: true }, { role: "b", prompt: "p", orchestrator: true }] }), /at most one member may have orchestrator: true \(got a, b\)/);
 		await assert.rejects(h.call("team_create", { name: "Clash", objective: "o", members: [{ role: "Coordinator", prompt: "p" }] }), /Role Coordinator is the team-defaults coordinator's role \(coordinator\); rename that member, or pass defaults\.coordinator: false/);
 		await assert.rejects(h.call("team_create", { name: "Clash2", objective: "o", members: [{ role: "monitor", prompt: "p" }] }), /team-defaults monitor's role/);
-		await assert.rejects(
-			h.call("team_create", { name: "Big", objective: "o", members: Array.from({ length: 8 }, (_, i) => ({ role: `m${i}`, prompt: "p" })) }),
-			/Team defaults add 2 member\(s\) \(coordinator\/monitor\), making 10; at most 8 members start per call/,
-		);
+		// No per-call limit: 10 named members start with the coordinator and monitor Sova adds.
+		const before = h.workers.length + h.created.length;
+		const big = await h.call("team_create", { name: "Big", objective: "o", members: Array.from({ length: 10 }, (_, i) => ({ role: `m${i}`, prompt: "p" })) });
+		assert.equal(big.details.members.length, 12);
+		assert.deepEqual(big.details.members.filter((m: any) => m.duty).map((m: any) => m.duty), ["coordinator", "monitor"]);
+		assert.equal(h.workers.length + h.created.length, before + 12);
+		assert.match(big.content[0].text, /Standing roles — coordinator: "coordinator", added by Sova; monitor: "monitor", added by Sova\./);
 		const noMonitor = await h.call("team_create", { name: "Quiet", objective: "o", defaults: { monitor: false }, members: [{ role: "dev", prompt: "p" }] });
 		assert.match(noMonitor.content[0].text, /monitor turned off for this team \(defaults\.monitor: false\)/);
+		assert.match(noMonitor.content[0].text, /Standing roles — coordinator: "coordinator", added by Sova; monitor: off for this team \(defaults\.monitor: false\)\./);
 		assert.deepEqual(noMonitor.details.members.map((m: any) => m.role), ["coordinator", "dev"]);
 		const workers = h.workers.length + h.created.length;
 		await assert.rejects(h.call("team_create", { name: "X", objective: "o", defaults: { coordinator: "no" }, members: [{ role: "dev", prompt: "p" }] }), /^Error: defaults\.coordinator must be true or false\.$/);
@@ -3428,26 +3489,33 @@ test("routing: members report to the coordinator, the monitor stays silent, and 
 		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
 		const coordinator = h.worker("ag_01"), dev = h.worker("ag_02"), qa = h.worker("ag_03"), monitor = h.worker("ag_04");
 		h.messages.length = 0;
+		coordinator.status = "waiting"; // idle: a normal item is listed after the debounce
 		dev.output = "built it";
 		dev.settle();
 		await h.tick();
 		assert.equal(h.parentMessages("subagent-complete").length, 0, "a member's completion never reaches the parent");
-		assert.match(coordinator.lastSteer.message, /^\[Team report from dev \(ag_02\), team_01: finished — routed to you as coordinator\]\n### ag_02 \(dev\) — waiting[\s\S]*built it[\s\S]*mcp__team__team_msg tool to "dev"/);
-		assert.equal(coordinator.lastSteer.mode, "followUp");
+		// A report item, listed to the idle coordinator with its short body in full.
+		await waitFor(() => coordinator.lastSteer?.message.includes("report from dev"), "the report listed to the coordinator");
+		assert.match(coordinator.lastSteer.message, /^\[Team inbox: 1 new — [^\n]*\]\n- (i_\w+) report from dev — finished: built it\n    \[Team report from dev \(ag_02\), team_01: finished — routed to you as coordinator\]\n    ### ag_02 \(dev\) — waiting[\s\S]*built it/);
+		const report = readMemberItems(h.memberOf("ag_01")!.dir).find((i) => i.kind === "report")!;
+		assert.deepEqual([report.from, report.urgent], [{ role: "dev", workerId: "ag_02" }, false]);
 		const steers = coordinator.steerCount;
 		monitor.settle();
 		await h.tick();
+		await pause(80);
 		assert.equal(coordinator.steerCount, steers, "a monitor check settles silently");
 		monitor.status = "running";
-		monitor.error = "rate limited";
-		monitor.settle();
+		monitor.settle("rate limited");
 		await h.tick();
+		await waitFor(() => coordinator.lastSteer.message.includes("report from monitor"), "the failed report listed");
+		assert.match(coordinator.lastSteer.message, /^\[Team inbox: 1 new \(1 urgent\) — [^\n]*\]\n! i_\w+ report from monitor — failed: /);
 		assert.match(coordinator.lastSteer.message, /Team report from monitor \(ag_04\), team_01: failed/);
 		monitor.error = undefined;
 		// A killed member's completion goes nowhere.
 		const before = coordinator.steerCount;
 		qa.settle(undefined, "killed");
 		await h.tick();
+		await pause(80);
 		assert.equal(coordinator.steerCount, before);
 		assert.equal(h.parentMessages("subagent-complete").length, 0);
 		// The coordinator's own completion: no wake while a teammate works, a wake once none does.
@@ -3463,8 +3531,11 @@ test("routing: members report to the coordinator, the monitor stays silent, and 
 		h.messages.length = 0;
 		const q = await h.ask("ag_02", { type: "question", message: "Which schema?" });
 		assert.equal(q.ok, true);
-		assert.match(q.text, /delivered to your coordinator coordinator \(ag_01\)/);
-		assert.match(coordinator.lastSteer.message, /^\[Team question from dev \(ag_02\), team_01 — routed to you as coordinator\]\nWhich schema\?\nAnswer with team_msg to "dev"\./);
+		const qid = /^Question queued for your coordinator coordinator \(ag_01\): item (i_\w+)\. The answer arrives in your inbox/.exec(q.text)?.[1];
+		assert.ok(qid, q.text);
+		await waitFor(() => coordinator.lastSteer.message.includes(qid!), "the question listed to the idle coordinator");
+		assert.match(coordinator.lastSteer.message, new RegExp(`^\\[Team inbox: 1 new — [^\\n]*\\]\\n- ${qid} question from dev — Which schema\\?\\n`));
+		assert.equal(h.memberOf("ag_01") && readMemberItems(h.memberOf("ag_01")!.dir).find((i) => i.id === qid)?.kind, "question");
 		assert.equal(h.parentMessages("team-question").length, 0);
 		const up = await h.ask("ag_01", { type: "question", message: "Ship now?" });
 		assert.equal(up.ok, true);
@@ -3510,14 +3581,15 @@ test("routing: a parent agent_wait returns the coordinator's completion instead 
 		const coordinator = h.worker("ag_01"), dev = h.worker("ag_02");
 		h.messages.length = 0;
 		const onCoordinator = h.call("agent_wait", { ids: ["ag_01"] });
+		coordinator.output = "Claude result";
 		coordinator.settle();
 		assert.match((await onCoordinator).content[0].text, /### ag_01 \(coordinator\) — waiting[\s\S]*Claude result/);
 		assert.equal(h.parentMessages("subagent-complete").length, 0, "the wait returned the coordinator's completion");
 		const onDev = h.call("agent_wait", { ids: ["ag_02"] });
 		dev.output = "built it";
 		dev.settle();
-		await h.tick();
-		assert.match(coordinator.lastSteer.message, /^\[Team report from dev \(ag_02\), team_01: finished — routed to you as coordinator\][\s\S]*built it/);
+		await waitFor(() => coordinator.lastSteer?.message.includes("report from dev"), "the report listed to the idle coordinator");
+		assert.match(coordinator.lastSteer.message, /- i_\w+ report from dev — finished: built it\n    \[Team report from dev \(ag_02\), team_01: finished — routed to you as coordinator\][\s\S]*built it/);
 		assert.match((await onDev).content[0].text, /built it/);
 		assert.equal(h.parentMessages("subagent-complete").length, 0);
 	} finally { await h.cleanup(); }
@@ -3530,12 +3602,29 @@ test("routing: a member's settle during the parent's run still reaches the coord
 		const coordinator = h.worker("ag_01"), dev = h.worker("ag_02");
 		h.messages.length = 0;
 		h.event("agent_start", {});
+		coordinator.status = "waiting";
 		dev.output = "built it mid-run";
 		dev.settle();
-		await h.tick();
-		assert.match(coordinator.lastSteer.message, /^\[Team report from dev \(ag_02\), team_01: finished — routed to you as coordinator\][\s\S]*built it mid-run/);
+		await waitFor(() => coordinator.lastSteer?.message.includes("report from dev"), "the report listed to the idle coordinator");
+		assert.match(coordinator.lastSteer.message, /- i_\w+ report from dev — finished: built it mid-run\n    \[Team report from dev \(ag_02\), team_01: finished — routed to you as coordinator\][\s\S]*built it mid-run/);
 		h.event("agent_end", { messages: [] });
 		assert.equal(h.parentMessages("subagent-complete").length, 0, "only the parent's copy is ever held");
+	} finally { await h.cleanup(); }
+});
+
+test("routing: a member woken by its inbox at its turn end still reports that turn's answer to the coordinator", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const coordinator = h.worker("ag_01"), dev = h.worker("ag_02");
+		assert.equal((await h.ask("ag_03", { type: "message", to: "dev", message: "HELLO from qa" })).ok, true);
+		coordinator.status = "waiting";
+		dev.output = "DEV-FINAL";
+		dev.settle();
+		await waitFor(() => dev.steerCount === 1, "the list at the end of dev's turn");
+		await waitFor(() => coordinator.lastSteer?.message.includes("report from dev"), "the report listed to the idle coordinator");
+		assert.match(coordinator.lastSteer.message, /report from dev — finished: DEV-FINAL[\s\S]*### ag_02 \(dev\) — waiting\n/);
+		assert.doesNotMatch(coordinator.lastSteer.message, /Still working/);
 	} finally { await h.cleanup(); }
 });
 
@@ -3555,7 +3644,7 @@ test("the monitor: roster with context, thresholds and usage; notices recorded; 
 		monitor.usage.contextTokens = 150_000;
 		const roster = await h.ask("ag_03", { type: "roster" });
 		assert.equal(roster.ok, true);
-		assert.match(roster.text, /ag_01 coordinator \(coordinator\) \[claude-code, has team tools\] working \(running\) · context 640k\/1M \(64%\)/);
+		assert.match(roster.text, /ag_01 coordinator \(coordinator\) \[pi, has team tools\] working \(running\) · context 640k\/1M \(64%\)/);
 		assert.match(roster.text, /ag_02 dev \[pi, has team tools\] working \(running\) · context — /);
 		assert.match(roster.text, /ag_03 monitor \(monitor\) .* context 150k\/200k \(75%\)/);
 		assert.match(roster.text, /Thresholds \(team defaults, read now\): wrap-up at 60% context · check every 10 min · usage pause when no login of a provider has headroom \(a non-weekly window at 90%, a 7d window at 100%\), resume 5 min after the reset/);
@@ -3571,11 +3660,14 @@ test("the monitor: roster with context, thresholds and usage; notices recorded; 
 		assert.match(reread, /wrap-up at 70% context/);
 		assert.doesNotMatch(reread, /wrap-up at 80%/, "the library shadows a legacy team-defaults.json written after seeding");
 		assert.equal((await h.ask("ag_02", { type: "roster" })).ok, false, "a worker has no roster");
-		assert.match((await h.call("team_list")).content[0].text, /ag_01 coordinator \(coordinator\) \[claude-code\] working \(running\) · context 640k\/1M \(64%\)/);
+		assert.match((await h.call("team_list")).content[0].text, /ag_01 coordinator \(coordinator\) \[pi\] working \(running\) · context 640k\/1M \(64%\)/);
 		// Notices: delivered with their kind, recorded as actions; pause/resume also as session events.
 		const paused = await h.ask("ag_03", { type: "message", to: "coordinator", message: "claude 5h at 92%, resets 18:19Z", notice: "pause" });
 		assert.equal(paused.ok, true);
-		assert.match(coordinator.lastSteer.message, /^\[Monitor notice: PAUSE — from monitor \(ag_03\), team_01\]\nclaude 5h at 92%/);
+		assert.match(paused.text, /^Queued for coordinator \(ag_01\): item i_\w+$/);
+		// An urgent notice item: the busy coordinator gets it at its next step.
+		await waitFor(() => coordinator.lastSteer?.message.includes("PAUSE:"), "the pause notice listed to the coordinator");
+		assert.match(coordinator.lastSteer.message, /^\[Team inbox: 1 new \(1 urgent\) — [^\n]*\]\n! i_\w+ notice from monitor — PAUSE: claude 5h at 92%, resets 18:19Z\n/);
 		await h.ask("ag_03", { type: "message", to: "dev", message: "wrap up", notice: "wrap-up" });
 		const actions = (await h.call("team_list")).content[0].text;
 		assert.match(actions, /monitor pause → ag_01 \(coordinator\): accepted-or-queued/);
@@ -3605,9 +3697,12 @@ test("the monitor: roster with context, thresholds and usage; notices recorded; 
 		assert.doesNotMatch(monitor.lastSteer?.message ?? "", /wake_nudge n1/, "a cancelled nudge never fires");
 		await h.ask("ag_03", { type: "nudge", nudge: { action: "schedule", at: new Date(Date.now() + 3600_000).toISOString(), reason: "after reset" } });
 		h.timers.at(-1)!.fn();
-		await h.tick();
-		assert.match(monitor.lastSteer.message, /^\[wake_nudge n2\] Scheduled wakeup fired \(set \d+s ago\)\.\nReason: after reset\nContinue your standing instruction/);
-		assert.equal(monitor.lastSteer.mode, "followUp");
+		// An urgent notice item from Sova: the busy monitor gets it at its next step.
+		await waitFor(() => monitor.lastSteer?.message.includes("[wake_nudge n2]"), "the fire listed to the monitor");
+		assert.match(monitor.lastSteer.message, /^\[Team inbox: 1 new \(1 urgent\) — [^\n]*\]\n! i_\w+ notice from Sova — \[wake_nudge n2\] after reset\n    \[wake_nudge n2\] Scheduled wakeup fired \(set \d+s ago\)\.\n    Reason: after reset\n    Continue your standing instruction/);
+		assert.equal(monitor.lastSteer.mode, undefined);
+		const fire = readMemberItems(h.memberOf("ag_03")!.dir).find((i) => i.subject.startsWith("[wake_nudge n2]"))!;
+		assert.deepEqual([fire.kind, fire.urgent, fire.from], ["notice", true, { role: "Sova", workerId: "parent" }]);
 		assert.equal((await h.ask("ag_03", { type: "nudge", nudge: { action: "schedule", delay: "5s" } })).ok, false, "at least 10s");
 		assert.equal((await h.ask("ag_03", { type: "nudge", nudge: { action: "schedule", delay: "25h" } })).ok, false, "at most 24h");
 		for (let i = 0; i < 5; i++) assert.equal((await h.ask("ag_03", { type: "nudge", nudge: { action: "schedule", delay: "1h" } })).ok, true);
@@ -3625,12 +3720,41 @@ test("the monitor: roster with context, thresholds and usage; notices recorded; 
 			assert.equal(s.ok, true, `fire ${i}`);
 			h.timers.at(-1)!.fn();
 		}
-		await h.tick();
-		assert.match(monitor.lastSteer.message, /Wake limit \(30 fires with no teammate working\) reached: do not schedule more nudges/);
+		// Many fires wait at once: listed by subject (opened with team_inbox), every one in turn.
+		await waitFor(() => readMemberItems(h.memberOf("ag_03")!.dir).some((i) => i.body.includes("Wake limit") && i.listedAt !== undefined), "the 30th fire listed");
+		assert.match(readMemberItems(h.memberOf("ag_03")!.dir).find((i) => i.body.includes("Wake limit"))!.body, /Wake limit \(30 fires with no teammate working\) reached: do not schedule more nudges/);
+
 		assert.match((await h.ask("ag_03", { type: "nudge", nudge: { action: "schedule", delay: "10m" } })).text, /Wake limit/);
 		dev.status = "running";
 		assert.equal((await h.ask("ag_03", { type: "nudge", nudge: { action: "schedule", delay: "10m" } })).ok, true, "a working teammate resets the count");
 	} finally { await h.cleanup(); }
+});
+
+test("pending wake_nudges are kept in the mailbox on each change, and the next manager re-arms them", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	const mail = path.join(h.root, "mail");
+	const kept = () => JSON.parse(fs.readFileSync(path.join(mail, "nudges.json"), "utf8"));
+	let next: ReturnType<typeof coordinatedHarness> | undefined;
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		await h.ask("ag_03", { type: "nudge", nudge: { action: "schedule", delay: "1h", reason: "next check" } });
+		await h.ask("ag_03", { type: "nudge", nudge: { action: "schedule", delay: "2h", reason: "later" } });
+		assert.deepEqual(kept().ag_03.active.map((n: any) => [n.id, n.reason]), [["n1", "next check"], ["n2", "later"]]);
+		await h.ask("ag_03", { type: "nudge", nudge: { action: "cancel", id: "n2" } });
+		assert.deepEqual(kept().ag_03.active.map((n: any) => n.id), ["n1"]);
+		await h.close();
+		assert.deepEqual(kept().ag_03.active.map((n: any) => n.id), ["n1"], "a closing manager keeps them");
+		// The next manager on the same mailbox: n1 is armed again for the time left.
+		next = coordinatedHarness();
+		const again = harness(eventBus(), { mailboxRoot: mail, mailboxPollMs: 10, agentDir: next.agentDir, setTimer: (fn, ms) => { next!.timers.push({ fn, ms }); return { fn, ms } as any; } });
+		await again.call("team_create", { name: "Other", objective: "o", members: [{ role: "dev", prompt: "p" }] });
+		const armed = next.timers.find((t) => t.ms > 3_500_000 && t.ms <= 3_600_000);
+		assert.ok(armed, `n1 re-armed (${next.timers.map((t) => t.ms).join(", ")})`);
+		await again.close();
+	} finally {
+		fs.rmSync(h.root, { recursive: true, force: true });
+		await next?.cleanup();
+	}
 });
 
 test("team_succeed starts <role>-<n+1> on the same backend/model/effort; team_ready or the timeout retires the old member", async () => {
@@ -3658,7 +3782,7 @@ test("team_succeed starts <role>-<n+1> on the same backend/model/effort; team_re
 		dev.status = "running";
 		dev.settle();
 		await h.tick();
-		assert.match(coordinator.lastSteer.message, /^\[Handover in team_01: dev's note is written\]\nStarted dev-2 \(ag_04\) to succeed dev \(ag_02\) on pi\/test\/model\/low\. dev was told to brief it; it is retired when dev-2 calls team_ready, or after 10 min\.$/);
+		await assertItem(h, "ag_01", "handover", /^\[Handover in team_01: dev's note is written\]\nStarted dev-2 \(ag_04\) to succeed dev \(ag_02\) on pi\/test\/model\/low\. dev was told to brief it; it is retired when dev-2 calls team_ready, or after 10 min\.$/);
 		const successor = h.worker("ag_04");
 		assert.deepEqual([successor.name, successor.backend, successor.model, successor.effort, successor.tools, successor.wake], ["dev-2", "pi", "test/model", "low", ["read"], false]);
 		assert.deepEqual([h.memberOf("ag_04")!.successorOf, h.memberOf("ag_04")!.coordinated, h.memberOf("ag_04")!.duty], ["dev", true, undefined]);
@@ -3694,7 +3818,7 @@ test("team_succeed starts <role>-<n+1> on the same backend/model/effort; team_re
 		h.timers.at(-1)!.fn();
 		await h.tick();
 		assert.match(h.worker("ag_05").task, /The note may be missing or incomplete: dev-2 had not written it 10 min after it was asked to\. If it is not there, ask dev-2 with team_msg for its state before you do anything else\./);
-		assert.match(coordinator.lastSteer.message, /^\[Handover in team_01: timed out waiting for dev-2's note\]\nStarted dev-3 \(ag_05\) .* The note may be missing \(dev-2 had not written it 10 min after it was asked to\); the successor was told so\.$/);
+		await assertItem(h, "ag_01", "handover", /^\[Handover in team_01: timed out waiting for dev-2's note\]\nStarted dev-3 \(ag_05\) .* The note may be missing \(dev-2 had not written it 10 min after it was asked to\); the successor was told so\.$/);
 		h.timers.at(-1)!.fn();
 		await h.tick();
 		assert.equal(h.worker("ag_04").status, "killed");
@@ -3714,7 +3838,7 @@ test("team_succeed starts <role>-<n+1> on the same backend/model/effort; team_re
 		assert.deepEqual([h.memberOf("ag_06")!.duty, h.memberOf("ag_06")!.orchestrator, h.memberOf("ag_06")!.successorOf, next.wake], ["coordinator", true, "coordinator", true]);
 		h.worker("ag_05").settle();
 		await h.tick();
-		assert.match(next.lastSteer.message, /Team report from dev-3 \(ag_05\), team_01: finished — routed to you as coordinator/);
+		await assertItem(h, "ag_06", "report", /Team report from dev-3 \(ag_05\), team_01: finished — routed to you as coordinator/);
 		const old = await h.ask("ag_01", { type: "succeed", to: "dev-3" });
 		assert.match(old.text, /coordinator-2 \(ag_06\) is this team's coordinator now; only it starts successors/);
 		assert.notEqual(coordinator.status, "killed", "the old coordinator stays until its successor confirms");
@@ -3755,8 +3879,8 @@ test("N7: with main-thread follow-ups queued on the old member, its successor st
 		assert.equal(dev.status, "running", "dev never settled");
 		const successor = h.worker("ag_05");
 		assert.equal(successor?.name, "dev-2", "the gate opened on the note alone");
-		assert.match(coordinator.lastSteer.message, /^\[Handover in team_01: dev's note is written\]\nStarted dev-2 \(ag_05\)/);
-		assert.doesNotMatch(coordinator.lastSteer.message, /timed out/);
+		await assertItem(h, "ag_01", "handover", /^\[Handover in team_01: dev's note is written\]\nStarted dev-2 \(ag_05\)/);
+		assert.ok(!readMemberItems(h.memberOf("ag_01")!.dir).some((i) => i.kind === "handover" && /timed out/.test(i.body)));
 		// N2: the queued follow-up is the successor's now; dev is told to leave it.
 		assert.match(successor.task, /Instructions from the main thread to dev, oldest first [^\n]* They are binding and part of your assignment now[^\n]*\n- After f06, also write summary\.txt\.$/);
 		assert.equal(dev.lastSteer.mode, "redirect", "the started notice is a redirect too");
@@ -3766,14 +3890,14 @@ test("N7: with main-thread follow-ups queued on the old member, its successor st
 		h.writeNote("qa");
 		h.worker("ag_03").settle(undefined, "killed"); // Ends before the next poll sees the note.
 		await h.tick();
-		assert.match(coordinator.lastSteer.message, /^\[Handover in team_01: qa ended after writing its note\]\nStarted qa-2 /);
+		await assertItem(h, "ag_01", "handover", /^\[Handover in team_01: qa ended after writing its note\]\nStarted qa-2 /);
 		await h.ask("ag_01", { type: "succeed", to: "qa-2" });
 		const timer = h.timers.at(-1)!;
 		h.writeNote("qa-2");
 		timer.fn(); // The timeout fires before the next poll sees the note.
 		await h.tick();
-		assert.match(coordinator.lastSteer.message, /^\[Handover in team_01: the wait ran out just as qa-2's note appeared\]\nStarted qa-3 /);
-		assert.doesNotMatch(coordinator.lastSteer.message, /may be missing/);
+		await assertItem(h, "ag_01", "handover", /^\[Handover in team_01: the wait ran out just as qa-2's note appeared\]\nStarted qa-3 /);
+		assert.doesNotMatch((await assertItem(h, "ag_01", "handover", /Started qa-3 /)).body, /may be missing/);
 	} finally { await h.cleanup(); }
 });
 
@@ -3790,6 +3914,7 @@ test("N9: a resume notice is refused until the pausing window's reset plus the r
 		const coordinator = h.worker("ag_01");
 		assert.match(h.worker("ag_03").task, /When woken after a pause: once that window's reset time plus 5 min has passed, team_msg coordinator with notice "resume"; otherwise schedule again\. The parent refuses a resume before then, and its refusal says when to try\./);
 		assert.equal((await h.ask("ag_03", { type: "message", to: "coordinator", message: "claude 5h at 92%", notice: "pause" })).ok, true);
+		await waitFor(() => coordinator.lastSteer?.message.includes("PAUSE:"), "the pause notice listed");
 		const steers = coordinator.steerCount;
 		// e2e 3: the monitor judged the time itself and resumed early, while the roster still said AT/OVER.
 		const early = await h.ask("ag_03", { type: "message", to: "coordinator", message: "resume", notice: "resume" });
@@ -3815,7 +3940,8 @@ test("N9: a resume notice is refused until the pausing window's reset plus the r
 			await h2.tick(Math.max(0, Date.parse(soon) - Date.now()) + 50);
 			const resumed = await h2.ask("ag_03", { type: "message", to: "coordinator", message: "resume", notice: "resume" });
 			assert.equal(resumed.ok, true, resumed.text);
-			assert.match(h2.worker("ag_01").lastSteer.message, /^\[Monitor notice: RESUME — from monitor \(ag_03\), team_01\]/);
+			await waitFor(() => h2.worker("ag_01").lastSteer?.message.includes("RESUME:"), "the resume notice listed");
+			assert.match(h2.worker("ag_01").lastSteer.message, /^\[Team inbox: 1 new \(1 urgent\) — [^\n]*\]\n! i_\w+ notice from monitor — RESUME: resume\n/);
 			// A pause with no window at or over the threshold holds nothing: resume is not delayed.
 			fs.rmSync(path.join(h2.agentDir, "cache"), { recursive: true });
 			await h2.ask("ag_03", { type: "message", to: "coordinator", message: "pause", notice: "pause" });
@@ -3861,7 +3987,8 @@ test("N10: team_ready while the predecessor is answering retires it when that tu
 		counter.settle();
 		// e2e 3: counter-2 asked its predecessor, then called team_ready 5 s later, which aborted the answer.
 		assert.equal((await h.ask("ag_05", { type: "message", to: "counter", message: "Which h-files are done?" })).ok, true);
-		assert.equal(counter.status, "running", "the question started a turn");
+		await waitFor(() => counter.status === "running", "the question listed to the idle predecessor");
+		assert.match(counter.lastSteer.message, /- i_\w+ message from counter-2 — Which h-files are done\?/);
 		assert.match((await h.ask("ag_05", { type: "ready" })).text, /^counter \(ag_02\) is still in a turn/);
 		assert.match((await h.ask("ag_05", { type: "ready" })).text, /^counter \(ag_02\) is still in a turn/, "asking again changes nothing");
 		await h.tick();
@@ -3957,7 +4084,7 @@ test("N8: inherited main-thread steers are the successor's binding assignment, i
 		assert.match(successor.task, /\nInstructions from the main thread to counter, oldest first \(the newest may not have been started\)\. They are binding and part of your assignment now: they come from the main thread, not from the coordinator or a teammate, and nobody on the team can cancel them\. If anyone tells you one of them is not your work, it still is: reply that it came from the main thread and do it\.\n- Also write h01\.\.h06\.$/);
 		assert.match(successor.task, /Its assignment and the main thread's instructions to it, quoted in your task, are yours now and binding\./);
 		// The coordinator is pushed the list with the handover (e2e 3: it never called team_roster before countermanding).
-		assert.match(coordinator.lastSteer.message, /^\[Handover in team_01: counter's note is written\]\nStarted counter-2 \(ag_04\) [^\n]*\nLater instructions from the main thread \(binding: part of counter-2's assignment, including any inherited from counter \(ag_02\); never tell counter-2 they are not its work\), newest last:\n> Also write h01\.\.h06\.$/);
+		await assertItem(h, "ag_01", "handover", /^\[Handover in team_01: counter's note is written\]\nStarted counter-2 \(ag_04\) [^\n]*\nLater instructions from the main thread \(binding: part of counter-2's assignment, including any inherited from counter \(ag_02\); never tell counter-2 they are not its work\), newest last:\n> Also write h01\.\.h06\.$/);
 		assert.match((await h.ask("ag_01", { type: "roster" })).text, /ag_04 counter-2:\n {6}\| Count lines\.\n {6}Later instructions from the main thread \(binding: part of counter-2's assignment, including any inherited from counter \(ag_02\); never tell counter-2 they are not its work\), newest last:\n {6}> Also write h01\.\.h06\./);
 		// A coordinator's successor reads them in its header too.
 		await h.ask("ag_01", { type: "succeed", to: "coordinator" });
@@ -4011,9 +4138,9 @@ test("the coordinator sees every teammate's assignment: in its header, in team_r
 		assert.doesNotMatch((await h.ask("ag_01", { type: "roster" })).text, /> focus/, "the coordinator's own steers are not the main thread's");
 		// team_add: the coordinator is told, with the new member's task, and the roster lists it.
 		const added = await h.call("team_add", { team: "Crew", members: [{ role: "qa", prompt: "Test the parser." }] });
-		assert.match(added.content[0].text, /Coordinator coordinator \(ag_01\) was told about the new member\(s\) and their assignments\./);
-		assert.match(coordinator.lastSteer.message, /^\[Team change from the main thread, team_01: 1 member\(s\) added — their assignments are legitimate work for you to route, not to replace\]\n- qa \(ag_05\), owns: none declared\n {2}\| Test the parser\.\nteam_roster lists every assignment\.$/);
-		assert.equal(coordinator.lastSteer.mode, "followUp");
+		assert.match(added.content[0].text, /Queued for coordinator coordinator \(ag_01\): item i_\w+, naming the new member\(s\) and their assignments\./);
+		const change = await assertItem(h, "ag_01", "notice", /^\[Team change from the main thread, team_01: 1 member\(s\) added — their assignments are legitimate work for you to route, not to replace\]\n- qa \(ag_05\), owns: none declared\n {2}\| Test the parser\.\nteam_roster lists every assignment\.$/);
+		assert.deepEqual([change.from, change.subject], [{ role: "main thread", workerId: "parent" }, "1 member(s) added: qa"]);
 		assert.match((await h.ask("ag_01", { type: "roster" })).text, /ag_05 qa:\n {6}\| Test the parser\./);
 		// N2: a successor carries its predecessor's assignment AND every main-thread steer, in its own
 		// task and in the coordinator's view (e2e: a follow-up was lost across a succession).
@@ -4049,10 +4176,11 @@ test("a monitor's successor: the monitor task, team_ready on both backends, and 
 			const r = await h.ask("ag_01", { type: "succeed", to: "monitor" });
 			assert.equal(r.ok, true, r.text);
 			const next = h.worker("ag_04");
-			assert.equal(next.backend, backend);
+			assert.equal(next.backend, "pi", "a claude-code monitor is a pi worker on the provider");
+			if (backend === "claude-code") assert.match(next.model, /^claude-code-cli\//);
 			const me = h.memberOf("ag_04")!;
 			assert.deepEqual([me.duty, me.successorOf], ["monitor", "monitor"]);
-			// B2: the successor monitor really has team_ready (the same list feeds member.ts and member-mcp.ts).
+			// B2: the successor monitor really has team_ready (the list member.ts serves).
 			assert.ok(memberToolNames(me).includes("team_ready"), `${backend}: team_ready`);
 			assert.deepEqual(next.tools, [], "still no built-in tools");
 			// B4: the monitor's task, not a worker's.
@@ -4091,7 +4219,7 @@ test("an idle team holds the monitor's checks until a teammate works again; a pa
 		// A teammate starts working (the main thread steers it): the held check goes out.
 		await h.call("agent_steer", { id: "ag_02", message: "more work" });
 		await h.tick(150);
-		assert.match(monitor.lastSteer.message, /^\[wake_nudge n1\] Scheduled wakeup fired \(set \d+s ago\); held while no teammate was working, delivered now that one is\.\nReason: next check\nContinue your standing instruction/);
+		assert.match(monitor.lastSteer.message, /^\[Team inbox: 1 new \(1 urgent\) [^\n]*\n! i_\w+ notice from Sova — \[wake_nudge n1\] next check\n    \[wake_nudge n1\] Scheduled wakeup fired \(set \d+s ago\); held while no teammate was working, delivered now that one is\.\n    Reason: next check\n    Continue your standing instruction/);
 		assert.equal((await h.ask("ag_03", { type: "nudge", nudge: { action: "list" } })).text, "No pending nudges.");
 		// A worker state change alone (no steer) releases a held check too.
 		dev.status = "waiting";
@@ -4103,7 +4231,7 @@ test("an idle team holds the monitor's checks until a teammate works again; a pa
 		dev.status = "running";
 		dev.change();
 		await h.tick(150);
-		assert.match(monitor.lastSteer?.message ?? "", /^\[wake_nudge n3\]/);
+		assert.match(monitor.lastSteer?.message ?? "", /\n! i_\w+ notice from Sova — \[wake_nudge n3\] scheduled wakeup fired\n/);
 		// Paused: everyone idle, yet the resume check fires on time.
 		dev.status = "waiting";
 		await h.ask("ag_03", { type: "message", to: "coordinator", message: "zai 5h at 95%", notice: "pause" });
@@ -4111,8 +4239,8 @@ test("an idle team holds the monitor's checks until a teammate works again; a pa
 		monitor.lastSteer = undefined;
 		await h.ask("ag_03", { type: "nudge", nudge: { action: "schedule", delay: "30m", reason: "resume check" } });
 		h.timers.at(-1)!.fn();
-		await h.tick();
-		assert.match(monitor.lastSteer?.message ?? "", /^\[wake_nudge n4\] Scheduled wakeup fired \(set \d+s ago\)\.\nReason: resume check/);
+		await waitFor(() => monitor.lastSteer?.message.includes("[wake_nudge n4]"), "the paused team's resume check");
+		assert.match(monitor.lastSteer?.message ?? "", /\n    \[wake_nudge n4\] Scheduled wakeup fired \(set \d+s ago\)\.\n    Reason: resume check/);
 		// After resume, an idle team is held again.
 		await h.ask("ag_03", { type: "message", to: "coordinator", message: "window reset", notice: "resume" });
 		coordinator.status = "waiting";
@@ -4147,8 +4275,8 @@ test("members default: member's own model, then the call's, then the profile's; 
 		const dev = h.worker("ag_02"), own = h.worker("ag_03"), cc = h.worker("ag_04");
 		assert.deepEqual([dev.backend, dev.model, dev.effort], ["pi", "test/model", "high"], "the profile fills the member nobody gave a model");
 		assert.deepEqual([own.backend, own.model, own.effort], ["pi", "test/model", "low"], "the member's own choice wins over the profile");
-		assert.equal(cc.model, "claude-sonnet-5-5", "a member naming another backend keeps to it: the backend's own prepare fills the model (the fixture's sonnet), never the pi default");
-		assert.notEqual(cc.effort, "high");
+		assert.equal(cc.model, "claude-code-cli/claude-sonnet-5-5", "a member naming claude-code keeps to it: Claude's default (Sonnet), never the pi default");
+		assert.equal(cc.effort, "medium");
 		const entry = h.appended.filter((e) => e.customType === "subagents-team-v1" && e.data.op === "create").at(-1);
 		const recOf = (id: string) => entry.data.members.find((m: any) => m.workerId === id);
 		assert.deepEqual(recOf("ag_02").modelOverride, {}, "a profile-filled member records no explicit choice");
@@ -4173,7 +4301,7 @@ test("members default: member's own model, then the call's, then the profile's; 
 		dev.status = "running";
 		dev.settle();
 		await h.tick();
-		const startedDev2 = h.worker("ag_01").lastSteer.message;
+		const startedDev2 = (await assertItem(h, "ag_01", "handover", /Started dev-2/)).body;
 		assert.match(
 			startedDev2,
 			/Started dev-2 \(ag_\d+\) to succeed dev \(ag_02\) on pi\/test\/model\/low\.[\s\S]*Members default: dev-2 run on pi\/test\/model\/low/,
@@ -4186,7 +4314,7 @@ test("members default: member's own model, then the call's, then the profile's; 
 		own.status = "running";
 		own.settle();
 		await h.tick();
-		assert.match(h.worker("ag_01").lastSteer.message, /Started own-2 \(ag_\d+\) to succeed own \(ag_03\) on pi\/test\/model\/low\./);
+		await assertItem(h, "ag_01", "handover", /Started own-2 \(ag_\d+\) to succeed own \(ag_03\) on pi\/test\/model\/low\./);
 		// And a default that went bad since is said and NOT used: the successor keeps the tuple it ran on.
 		lib.profiles[0].members = { backend: "pi", model: "zai/not-here", effort: "low" };
 		fs.writeFileSync(libPath, JSON.stringify(lib));
@@ -4197,11 +4325,10 @@ test("members default: member's own model, then the call's, then the profile's; 
 		docs.status = "running";
 		docs.settle();
 		await h.tick();
-		assert.match(
-			h.worker("ag_01").lastSteer.message,
+		await assertItem(
+			h, "ag_01", "handover",
 			/Started docs-2 \(ag_\d+\) to succeed docs \(ag_06\) on pi\/test\/model\/high\.[\s\S]*can't run here — unknown model zai\/not-here[\s\S]*keep the tuple they ran on\./,
-			"a denied default leaves the predecessor's tuple in place, and the notice says so",
-		);
+		); // a denied default leaves the predecessor's tuple in place, and the notice says so
 	} finally { await h.cleanup(); }
 });
 
@@ -4245,7 +4372,7 @@ test("worktrees: a worker starts only in the session cwd or an active tracked wo
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerLaunch });
 		// Nothing tracked: only the session cwd (and below it).
 		await h.call("agent_spawn", { prompt: "here", cwd: "extensions" });
-		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION], "no confinement in the session cwd");
+		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION], "no confinement in the session cwd");
 		for (const backend of [undefined, "claude-code"])
 			await assert.rejects(h.call("agent_spawn", { prompt: "there", cwd: wt, backend }), /outside this session's cwd and its worktrees \(none tracked\)/);
 		await assert.rejects(h.call("team_create", { name: "T", objective: "o", members: [{ role: "dev", prompt: "p", cwd: wt }] }), /outside this session's cwd/);
@@ -4254,24 +4381,27 @@ test("worktrees: a worker starts only in the session cwd or an active tracked wo
 		await h.call("agent_spawn", { prompt: "in tree", cwd: path.join(wt, "src") });
 		const pi = h.workers.at(-1);
 		assert.deepEqual(flagsFor, [wt], "confined to the worktree's top level, not its subdir");
-		assert.deepEqual(pi.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR]);
+		assert.deepEqual(pi.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR]);
 		assert.deepEqual(pi.flags, { sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [wt] }) });
-		// Claude Code: confined to the worktree too (write-only while off), under its own id.
+		// Claude Code: a pi worker, confined to the worktree the same way (write-only while off).
 		await h.call("agent_spawn", { prompt: "claude in tree", cwd: wt, backend: "claude-code" });
-		assert.equal(created.length, 1);
-		assert.equal(flagsFor.length, 1);
-		assert.deepEqual(JSON.parse(created[0].confine.scope), { owner: created[0].confine.key, root: wt }, "the worktree's top level is its root");
-		assert.equal(created[0].confine.describe, `write-only to ${wt}`, "its transcript line: the sandbox is off");
-		assert.equal(created[0].cwd, wt);
+		const claude = h.workers.at(-1);
+		assert.equal(created.length, 0);
+		assert.deepEqual(flagsFor, [wt, wt]);
+		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR, CLAUDE_CODE_EXTENSION]);
+		assert.deepEqual(claude.flags, { sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [wt] }), [CLAUDE_CODE_PROVIDER_FLAG]: true });
+		assert.equal(claude.cwd, wt);
+		// Another backend cannot be confined to it.
+		await assert.rejects(h.call("agent_spawn", { prompt: "other in tree", cwd: wt, backend: "native-cli" }), /cannot run workers in a tracked worktree/);
 		// A dropped worktree admits nothing; the refusal names the active set.
 		await assert.rejects(h.call("agent_spawn", { prompt: "d", cwd: dropped }), new RegExp(`outside this session's cwd and its worktrees \\(${wt}\\)`));
 		await assert.rejects(h.call("team_add", { team: "team_01", members: [{ role: "x", prompt: "p", cwd: dropped }] }), /outside this session's cwd|No such team/);
 		// On: the sandbox's narrowed scope replaces its session-wide worker flags.
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch });
 		await h.call("agent_spawn", { prompt: "on", cwd: wt });
-		await h.call("agent_spawn", { prompt: "claude on", cwd: wt, backend: "claude-code" });
-		assert.equal(created.at(-1).confine.describe, `the session's sandbox, narrowed to ${wt}`);
 		assert.deepEqual(h.workers.at(-1).flags, { sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [wt] }) });
+		await h.call("agent_spawn", { prompt: "claude on", cwd: wt, backend: "claude-code" });
+		assert.deepEqual(h.workers.at(-1).flags, { sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [wt] }), [CLAUDE_CODE_PROVIDER_FLAG]: true });
 		await h.call("agent_spawn", { prompt: "on, session cwd" });
 		assert.deepEqual(h.workers.at(-1).flags, WORKER_FLAGS);
 		// Fail closed: a worktree worker the sandbox cannot scope does not start, of either backend.
@@ -4305,10 +4435,10 @@ test("sandbox Off (§chat.sandbox/states): a worktree's workers start unconfined
 		// Off: the sandbox answers none for every worker, and says workers off.
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workers: "off", workerLaunch: () => ({ kind: "none" }) });
 		await h.call("agent_spawn", { prompt: "pi off", cwd: wt });
-		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION], "no sandbox extension, no flags");
+		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION], "no sandbox extension, no flags");
 		assert.equal(h.workers.at(-1).flags, undefined);
 		await h.call("agent_spawn", { prompt: "claude off", cwd: wt, backend: "claude-code" });
-		assert.equal(created.at(-1).confine, undefined, "a Claude Code worker is not confined either");
+		assert.deepEqual(h.workers.at(-1).flags, { [CLAUDE_CODE_PROVIDER_FLAG]: true }, "a Claude Code worker is not confined either");
 		// Fail closed: the same none without workers off (an older sandbox) still refuses, of either backend.
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerLaunch: () => ({ kind: "none" }) });
 		for (const backend of [undefined, "claude-code"])
@@ -4326,8 +4456,9 @@ test("sandbox Off (§chat.sandbox/states): a worktree's workers start unconfined
 		const list = (await h.call("agent_list", {})).content[0].text as string;
 		const lineOf = (id: string) => list.split("\n").find((l) => l.includes(` ${id} `)) ?? "";
 		const ids = h.workers.map((w: any) => w.id ?? w.options?.id).filter(Boolean);
-		assert.equal(ids.length, 5, `pi workers: ${ids.join(",")}`);
+		assert.equal(ids.length, 6, `pi workers (a claude-code one included): ${ids.join(",")}`);
 		assert.match(lineOf(ids[0]), /· sandbox: none(\s|$|·)/, "pi off");
+		assert.match(lineOf(ids[1]), /· sandbox: none(\s|$|·)/, "claude-code off");
 		assert.match(list, new RegExp(`sandbox: write-only to ${wt.replace(/[/.]/g, "\\$&")}`), "pi sub");
 		assert.match(list, new RegExp(`sandbox: on, narrowed to ${wt.replace(/[/.]/g, "\\$&")}`), "pi on");
 		assert.match(lineOf(ids.at(-1)), /· sandbox: on(\s|$|·)/, "pi on here");
@@ -4361,8 +4492,8 @@ test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with it
 		assert.deepEqual(w.env, { PI_CODING_AGENT_DIR: path.join(wt, ".agent") });
 		assert.equal(w.sessionDir, path.join(parentAgent, "sessions", `--${wt.slice(1).replace(/\//g, "-")}--`));
 		assert.ok(fs.existsSync(w.sessionDir));
-		assert.equal(w.approve, true);
-		assert.deepEqual(w.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, mode, SANDBOX_DIR], "the tree's mode by its real path; never its subagents");
+		assert.equal(w.approve, undefined, "a worker trusts its project's files as every chat does: nothing to pass");
+		assert.deepEqual(w.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, mode, SANDBOX_DIR], "the tree's mode by its real path; never its subagents");
 		assert.deepEqual(w.flags, { major: "normal", minor: "spec", sandbox: "on", "sandbox-parent": wt });
 		const record = h.appended.find((e) => e.customType === "subagents-worker-manifest" && e.data.launch);
 		assert.equal(record.data.launch.useWorktreeConfig, true);
@@ -4370,7 +4501,8 @@ test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with it
 		// Refused: not a pi worker, no tracked worktree, no .agent.
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", useWorktreeConfig: true }), /needs a cwd inside an active worktree/);
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", cwd: path.join(root, "plain"), useWorktreeConfig: true }), /has no \.agent directory/);
-		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "x" }], useWorktreeConfig: true }), /Shorthand options cannot be combined/);
+		// Beside agents it is a shared setting, applied to each agent (and so checked like one).
+		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "x" }], useWorktreeConfig: true }), /useWorktreeConfig needs a cwd inside an active worktree/);
 	} finally {
 		await h.close();
 		if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
@@ -4381,69 +4513,54 @@ test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with it
 const STATE_SPEC_ON = { version: 1, mode: "normal", strict: false, minorModes: ["spec"] };
 const STATE_SPEC_OFF = { version: 1, mode: "normal", strict: false, minorModes: [] };
 
-test("spec on: every code-writing worker (pi, claude-code, team member) gets the worker spec brief; claude-code also the spec hooks, a confined one on its own state dir; no worker gets a spec ledger", async () => {
+test("spec on: every code-writing worker (pi, claude-code, team member) gets the worker spec brief and the census hook; no worker gets a spec ledger", async () => {
 	const bus = eventBus();
 	let asked = 0;
 	bus.on(MODE_DISCOVER_EVENT, (data: any) => { if (data?.version === 1) asked++; });
 	const h = harness(bus);
-	const created: any[] = [];
-	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
 	const brief = workerSpecBrief(SPEC_CORE_DIR);
 	try {
 		assert.equal(asked, 1, "the mode state is asked for at load");
 		await h.call("agent_spawn", { prompt: "pi task" });
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code" });
-		assert.equal(h.workers[0].systemPrompt, undefined, "spec off: no brief");
-		assert.ok(!h.workers[0].extensions.includes(SPEC_WORKER_EXTENSION), "spec off: no census hook");
-		assert.ok(!("settingsJson" in created[0]), "spec off: no hooks");
+		for (const w of h.workers) {
+			assert.equal(w.systemPrompt, undefined, "spec off: no brief");
+			assert.ok(!w.extensions.includes(SPEC_WORKER_EXTENSION), "spec off: no census hook");
+		}
 
 		h.bus.emit(MODE_STATE_EVENT, STATE_SPEC_ON);
 		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "Be terse." });
-		assert.equal(h.workers[1].systemPrompt, `Be terse.\n\n${brief}`);
+		assert.equal(h.workers[2].systemPrompt, `Be terse.\n\n${brief}`);
 		// pi workers run with --no-extensions: the census hook comes in by -e, a sibling of subagents/.
-		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION]);
+		assert.deepEqual(h.workers[2].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION]);
 		assert.equal(SPEC_WORKER_EXTENSION, fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "mode", "spec-worker.ts")));
-		assert.equal(h.workers[1].env?.[LEDGER_ENV], undefined, "no spec ledger");
+		assert.equal(h.workers[2].env?.[LEDGER_ENV], undefined, "no spec ledger");
 		await h.call("agent_spawn", { prompt: "reader", tools: ["read", "grep"] });
-		assert.equal(h.workers[2].systemPrompt, undefined, "a worker that cannot write gets no brief");
-		assert.deepEqual(h.workers[2].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION], "nor the census hook");
+		assert.equal(h.workers[3].systemPrompt, undefined, "a worker that cannot write gets no brief");
+		assert.deepEqual(h.workers[3].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION], "nor the census hook");
+		// A claude-code worker is a pi worker: the same brief and census hook, its landed file named in its env.
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "Own words." });
-		const claude = created[1];
+		const claude = h.workers[4];
 		assert.equal(claude.systemPrompt, `Own words.\n\n${brief}`);
-		const hooks = JSON.parse(claude.settingsJson).hooks;
-		assert.deepEqual(Object.keys(hooks).sort(), ["PermissionDenied", "PostToolUse", "PostToolUseFailure", "PreToolUse", "UserPromptSubmit"], "nothing at the turn's end");
-		const post = hooks.PostToolUse[0];
-		assert.equal(post.matcher, "*", "after ANY tool, Bash included");
-		assert.ok(post.hooks[0].command.includes(SPEC_HOOK_SCRIPT) && post.hooks[0].command.includes(" post --core "));
-		assert.ok(post.hooks[0].command.includes(path.join(NO_AGENT_DIR, SPEC_HOOK_STATE)), "state under the agent dir");
-		assert.ok(!post.hooks[0].command.includes("--ledger"), "no ledger");
+		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION, CLAUDE_CODE_EXTENSION]);
+		assert.equal(claude.settingsJson, undefined, "no Claude Code hooks");
+		assert.ok(Object.values(claude.env ?? {}).some((v) => typeof v === "string" && v.includes(path.join(SPEC_HOOK_STATE, "landed"))), "its landed file is named in its env");
+		assert.equal(claude.env?.[LEDGER_ENV], undefined);
 		await h.call("agent_spawn", { prompt: "claude reader", backend: "claude-code", tools: ["Read"] });
-		assert.ok(!("settingsJson" in created[2]) && created[2].systemPrompt === undefined, "a read-only claude worker gets neither");
-
-		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
-		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code" });
-		const confined = created[3];
-		const merged = JSON.parse(confined.settingsJson);
-		assert.equal(merged.sandbox, undefined, "no Claude sandbox settings from the sandbox (the runner turns it off)");
-		const confinedPost = merged.hooks.PostToolUse[0].hooks[0].command as string;
-		const ownState = path.join(NO_AGENT_DIR, SPEC_HOOK_STATE, "workers", confined.confine.key);
-		assert.ok(confinedPost.endsWith(` --state ${ownState}`), confinedPost);
-		assert.equal(merged.hooks.Stop, undefined);
-		assert.deepEqual(confined.confine.writable, [ownState], "its hook state writable inside, nothing else of the agent dir");
-		assert.ok(fs.statSync(ownState).isDirectory(), "made before the launch");
-		assert.ok(!fs.existsSync(path.join(NO_AGENT_DIR, "sova", "spec-ledger")), "no ledger file is made");
-		fs.rmSync(path.join(NO_AGENT_DIR, SPEC_HOOK_STATE, "workers"), { recursive: true, force: true });
-		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_OFF);
+		assert.equal(h.workers[5].systemPrompt, undefined, "a read-only claude worker gets no brief");
+		assert.ok(!h.workers[5].extensions.includes(SPEC_WORKER_EXTENSION));
 
 		await h.call("team_create", { name: "T", objective: "o", members: [
 			{ role: "a", prompt: "p", backend: "claude-code", model: "claude-sonnet-5-5" },
 			{ role: "b", prompt: "p", backend: "pi" },
 		] });
-		assert.ok(created[4].systemPrompt.endsWith(brief) && JSON.parse(created[4].settingsJson).hooks, "a claude member");
-		assert.ok(h.workers.at(-1).systemPrompt.endsWith(brief), "a pi member");
-		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION, MEMBER_EXTENSION], "a pi member gets the census hook too");
-		assert.equal(h.workers.at(-1).env?.[LEDGER_ENV], undefined, "and no ledger beside its member identity");
-		assert.ok(Object.keys(h.workers.at(-1).env).length > 1);
+		const [a, b] = h.workers.slice(-2);
+		assert.ok(a.systemPrompt.endsWith(brief), "a claude member");
+		assert.deepEqual(a.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION, MEMBER_EXTENSION, CLAUDE_CODE_EXTENSION]);
+		assert.ok(b.systemPrompt.endsWith(brief), "a pi member");
+		assert.deepEqual(b.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION, MEMBER_EXTENSION], "a pi member gets the census hook too");
+		assert.equal(b.env?.[LEDGER_ENV], undefined, "and no ledger beside its member identity");
+		assert.ok(Object.keys(b.env).length > 1);
 
 		h.bus.emit(MODE_STATE_EVENT, { ...STATE_SPEC_ON, version: 2 });
 		h.bus.emit(MODE_STATE_EVENT, STATE_SPEC_OFF);
@@ -4459,7 +4576,7 @@ const SPEC_ON: ModeWorkerEvent = { version: 1, minorModes: ["spec"], prompt: WOR
 const SPEC_OFF: ModeWorkerEvent = { version: 1, minorModes: [] };
 const manifestOf = (h: { appended: any[] }, id: string) => h.appended.filter((e) => e.customType === "subagents-worker-manifest" && e.data.workerId === id).map((e) => e.data);
 
-test("mode: pi and claude workers get the parent's worker prompt last, as a snapshot; the launch keeps the raw brief; modes are recorded and published", async () => {
+test("mode: pi and another backend's workers get the parent's worker prompt last, as a snapshot; the launch keeps the raw brief; modes are recorded and published", async () => {
 	const h = harness();
 	const created: any[] = [];
 	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
@@ -4468,7 +4585,7 @@ test("mode: pi and claude workers get the parent's worker prompt last, as a snap
 	try {
 		// No mode extension: exactly as before.
 		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "BRIEF" });
-		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "BRIEF" });
+		await h.call("agent_spawn", { prompt: "claude task", backend: "native-cli", systemPrompt: "BRIEF" });
 		assert.equal(h.workers[0].systemPrompt, "BRIEF");
 		assert.equal(created[0].systemPrompt, "BRIEF");
 		assert.deepEqual(manifestOf(h, "ag_01")[0].modes, [], "given none: recorded as none");
@@ -4476,10 +4593,10 @@ test("mode: pi and claude workers get the parent's worker prompt last, as a snap
 		h.bus.emit(MODE_WORKER_EVENT, SPEC_ON);
 		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "BRIEF" });
 		await h.call("agent_spawn", { prompt: "pi task, no brief" });
-		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "BRIEF" });
+		await h.call("agent_spawn", { prompt: "claude task", backend: "native-cli", systemPrompt: "BRIEF" });
 		assert.equal(h.workers[1].systemPrompt, `BRIEF\n\n${WORKER_BLOCK}`, "after the brief");
 		assert.equal(h.workers[2].systemPrompt, WORKER_BLOCK);
-		assert.equal(created[1].systemPrompt, `BRIEF\n\n${WORKER_BLOCK}`, "claude: in the prepared prompt the runner uses");
+		assert.equal(created[1].systemPrompt, `BRIEF\n\n${WORKER_BLOCK}`, "another backend: in the prepared prompt the runner uses");
 		const record = manifestOf(h, "ag_03")[0];
 		assert.equal(record.launch.systemPrompt, "BRIEF", "the launch keeps the raw brief: a resume takes the modes afresh");
 		assert.deepEqual(record.modes, ["spec"]);
@@ -4498,7 +4615,7 @@ test("mode: pi and claude workers get the parent's worker prompt last, as a snap
 		// Spec off: new workers get nothing; running ones keep what they started with.
 		h.bus.emit(MODE_WORKER_EVENT, SPEC_OFF);
 		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "BRIEF" });
-		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "BRIEF" });
+		await h.call("agent_spawn", { prompt: "claude task", backend: "native-cli", systemPrompt: "BRIEF" });
 		assert.equal(h.workers[4].systemPrompt, "BRIEF");
 		assert.equal(created[2].systemPrompt, "BRIEF");
 		assert.equal(h.workers[1].systemPrompt, `BRIEF\n\n${WORKER_BLOCK}`, "a switch never reaches a running worker");
@@ -4506,7 +4623,7 @@ test("mode: pi and claude workers get the parent's worker prompt last, as a snap
 	} finally { await h.close(); }
 });
 
-test("mode: the worker modes are asked for at load; a remote claude worker gets brief, remote instructions, then the block", async () => {
+test("mode: the worker modes are asked for at load; a remote claude-code worker gets its brief, then the block", async () => {
 	const bus = eventBus();
 	let asked = 0;
 	bus.on(MODE_WORKER_DISCOVER_EVENT, (d: any) => { if (d?.version === 1) { asked++; bus.emit(MODE_WORKER_EVENT, SPEC_ON); } });
@@ -4521,16 +4638,13 @@ test("mode: the worker modes are asked for at load; a remote claude worker gets 
 	const prev = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = agentDir;
 	const r = remoteHarness(agentDir, true);
-	const created: any[] = [];
-	r.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
 	try {
 		r.bus.emit(MODE_WORKER_EVENT, SPEC_ON);
 		await r.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "be terse" });
-		const parts = created[0].systemPrompt.split("\n\n");
-		assert.equal(parts[0], "be terse");
-		assert.match(created[0].systemPrompt, /^be terse\n\n[\s\S]*remote target[\s\S]*\n\n# Minor mode: spec \(worker form, test\)$/, "brief → remote instructions → block");
+		assert.equal(r.workers[0].systemPrompt, `be terse\n\n${WORKER_BLOCK}`, "brief → block; the remote extension tells it the rest");
+		assert.ok(r.workers[0].extensions.includes(REMOTE_EXTENSION));
 		await r.call("agent_spawn", { prompt: "pi task", systemPrompt: "be terse" });
-		assert.equal(r.workers[0].systemPrompt, `be terse\n\n${WORKER_BLOCK}`);
+		assert.equal(r.workers[1].systemPrompt, `be terse\n\n${WORKER_BLOCK}`);
 	} finally {
 		await r.close();
 		if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
@@ -4565,20 +4679,983 @@ test("worker marker: says it is a worker at load and to anyone who asks later (a
 	assert.doesNotThrow(() => workerMarkExtension({ on() {} } as any), "no bus: inert");
 });
 
-test("spec on with the parent's worker modes (mode:worker) too: the spec block comes once, from the mode prompt; the census hook and hooks stay", async () => {
+test("spec on with the parent's worker modes (mode:worker) too: the spec block comes once, from the mode prompt; the census hook stays", async () => {
 	const h = harness();
-	const created: any[] = [];
-	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
 	const brief = workerSpecBrief(SPEC_CORE_DIR);
 	try {
 		h.bus.emit(MODE_STATE_EVENT, STATE_SPEC_ON);
 		h.bus.emit(MODE_WORKER_EVENT, SPEC_ON);
 		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "Be terse." });
 		assert.equal(h.workers[0].systemPrompt, `Be terse.\n\n${WORKER_BLOCK}`, "the mode prompt, no brief on top");
-		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION]);
+		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION]);
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "Own words." });
-		assert.equal(created[0].systemPrompt, `Own words.\n\n${WORKER_BLOCK}`);
-		assert.ok(!created[0].systemPrompt.includes(brief));
-		assert.ok(JSON.parse(created[0].settingsJson).hooks.PostToolUse, "the hooks still come");
+		assert.equal(h.workers[1].systemPrompt, `Own words.\n\n${WORKER_BLOCK}`);
+		assert.ok(!h.workers[1].systemPrompt.includes(brief));
+		assert.ok(h.workers[1].extensions.includes(SPEC_WORKER_EXTENSION), "the census hook still comes");
 	} finally { await h.close(); }
+});
+
+test("mode: a worker with bash gets the parent's project mode tools (the -e hook and the copies file); a read-only worker gets the block only", async () => {
+	const { PROJECT_TOOLS_FILE_ENV, readWorkerToolsFile } = await import("../mode/project-tools.ts");
+	const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "subagents-project-tools-"));
+	const h = harness(eventBus(), { agentDir });
+	const copy = (id: string, tools: unknown[]) => ({ v: 1, id, dir: `/repo/.sova/minor-modes/${id}`, description: "d", workers: true, tools, text: `# Project minor mode: ${id}`, sha: "a".repeat(64), toolsHash: tools.length ? "b".repeat(64) : "" });
+	const tool = { name: "status", description: "s", params: { type: "object", properties: {} }, command: ["./bin/status"], timeoutS: 60 };
+	try {
+		h.bus.emit(MODE_WORKER_EVENT, { version: 1, minorModes: [], prompt: "# Project minor mode: release-check", projectModes: [copy("release-check", [tool]), copy("notes", [])] });
+		await h.call("agent_spawn", { prompt: "pi task", tools: ["read", "bash"] });
+		const w = h.workers.at(-1);
+		assert.ok(w.extensions.includes(PROJECT_TOOLS_WORKER_EXTENSION));
+		assert.equal(PROJECT_TOOLS_WORKER_EXTENSION, fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "mode", "project-tools-worker.ts")));
+		const file = w.env[PROJECT_TOOLS_FILE_ENV];
+		assert.ok(file.startsWith(path.join(agentDir, "sova", "project-tools")));
+		assert.deepEqual(readWorkerToolsFile(file).map((c: { id: string }) => c.id), ["release-check"], "only copies with tools");
+		await h.call("agent_spawn", { prompt: "read-only task", tools: ["read", "grep"] });
+		const ro = h.workers.at(-1);
+		assert.ok(!ro.extensions.includes(PROJECT_TOOLS_WORKER_EXTENSION), "a read-only worker never gains a program to run");
+		assert.equal(ro.env?.[PROJECT_TOOLS_FILE_ENV], undefined);
+		assert.ok(ro.systemPrompt.includes("# Project minor mode: release-check"), "it still gets the block");
+		h.bus.emit(MODE_WORKER_EVENT, { version: 1, minorModes: [], prompt: "# Project minor mode: notes", projectModes: [copy("notes", [])] });
+		await h.call("agent_spawn", { prompt: "pi task", tools: ["read", "bash"] });
+		assert.ok(!h.workers.at(-1).extensions.includes(PROJECT_TOOLS_WORKER_EXTENSION), "no tools, no hook");
+	} finally {
+		await h.close();
+		fs.rmSync(agentDir, { recursive: true, force: true });
+	}
+});
+
+// ── al_1: limits said up front, lenient reads, refusals in Sova's words ─────────────────────
+
+/** The tool results a real session recorded, in order. */
+const toolResults = (s: Awaited<ReturnType<typeof realSession>>) => s.session.sessionManager.getEntries()
+	.filter((e: any) => e.type === "message" && e.message.role === "toolResult")
+	.map((e: any) => ({ name: e.message.toolName, isError: e.message.isError, text: e.message.content.map((c: any) => c.text ?? "").join("") }));
+
+test("through pi's own argument check: members and agents as JSON strings are read as lists, shared settings beside agents are filled in, and refusals are Sova's own words", async () => {
+	const s = await realSession();
+	try {
+		s.faux.setResponses([
+			fauxAssistantMessage(fauxToolCall("team_create", { name: "Text", objective: "o", members: JSON.stringify([{ role: "a", prompt: "pa" }, { role: "b", prompt: "pb" }]) }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("team_create", { name: "Count", objective: "o", members: [{ role: "a", prompt: "p", count: 2 }] }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("team_create", { name: "Odd", objective: "o", members: [{ role: "a", prompt: "p", colour: "red" }] }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("team_create", { name: "Defaults", objective: "o", defaults: { tools: ["read"] }, members: [{ role: "a", prompt: "p" }] }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("team_create", { name: "One", objective: "o", members: { role: "a", prompt: "p" } }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("agent_spawn", { agents: [{ prompt: "x" }, { prompt: "y", effort: "low" }], effort: "low", tools: ["read"] }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("agent_spawn", { agents: [{ prompt: "x", effort: "high" }, { prompt: "y" }], effort: "low" }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("agent_spawn", { agents: JSON.stringify([{ prompt: "z" }]) }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("agent_spawn", { agents: [{}, {}], prompt: "shared" }), { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+		]);
+		await s.session.prompt("go");
+		await s.session.waitForIdle?.();
+		const r = toolResults(s);
+		assert.equal(r.length, 9);
+		for (const one of r) assert.doesNotMatch(one.text, /schema is false|must be object|must be array/, "never pi's schema words");
+		assert.equal(r[0].isError, false, r[0].text);
+		assert.match(r[0].text, /^Created team_01 \(Text\) with 2 member\(s\)/);
+		assert.equal(r[1].isError, true);
+		assert.match(r[1].text, /^members\[0\] \(a\): count is not a member setting; a member is one role\. Add one member per role instead/);
+		assert.equal(r[2].isError, true);
+		assert.match(r[2].text, /^members\[0\] \(a\): unknown setting "colour"\. A member takes role, prompt, ownedPaths, orchestrator, backend, model, effort, tools, systemPrompt, cwd, wake, backendOptions, extensions\.$/);
+		assert.equal(r[3].isError, true);
+		assert.match(r[3].text, /^Unsupported team default tools; defaults accept backend, model, effort, backendOptions, coordinator and monitor\. Put tools on each member that needs it\.$/);
+		assert.equal(r[4].isError, true);
+		assert.match(r[4].text, /^members must be a list of member objects, \[\{"role": "\.\.\.", "prompt": "\.\.\."\}, \.\.\.\], even for one member\.$/);
+		assert.equal(r[5].isError, false, r[5].text);
+		assert.equal(r[6].isError, true);
+		assert.match(r[6].text, /^effort is set beside agents and differently in agents\[0\]: set it in one place/);
+		assert.equal(r[7].isError, false, r[7].text);
+		assert.equal(r[8].isError, false, r[8].text);
+		// Team Text (2), the shared-settings pair, the JSON-string agent, the shared-prompt pair; nothing for the refusals.
+		assert.equal(s.workers.length, 7);
+		assert.deepEqual(s.workers.slice(2, 4).map((w: any) => [w.task, w.effort, w.tools]), [["x", "low", ["read"]], ["y", "low", ["read"]]]);
+		assert.equal(s.workers[4].task, "z");
+		assert.deepEqual(s.workers.slice(5).map((w: any) => w.task), ["shared", "shared"]);
+	} finally { await s.close(); }
+});
+
+test("lenient reads stay intent-preserving: every conflict and every missing role, task, name or objective is refused before anything starts", async () => {
+	const h = harness();
+	try {
+		const refusals: [string, any, RegExp][] = [
+			["agent_spawn", { agents: [{ prompt: "x", extensions: ["./a.ts"] }, { prompt: "y" }], extensions: ["./b.ts"] }, /^extensions is set beside agents and differently in agents\[0\]/],
+			["agent_spawn", { agents: [{ prompt: "x", cwd: "a" }, { prompt: "y", cwd: "b" }], cwd: "c" }, /^cwd is set beside agents and differently in agents\[0\], agents\[1\]: set it in one place, or give those agents the same value\.$/],
+			["agent_spawn", { agents: [{}, { prompt: "own" }], prompt: "shared" }, /^A prompt beside agents is used only when no agent has its own, and agents\[1\] has one: put each task inside its agent\.$/],
+			["agent_spawn", { agents: [{ prompt: "x" }, {}] }, /^agents\[1\] has no prompt/],
+			["agent_spawn", { agents: [{ prompt: "x" }], count: 2 }, /^count cannot sit beside agents: put it inside each agent that needs it\.$/],
+			["agent_spawn", { agents: [{ prompt: "x" }], name: "n", fork: true }, /^name, fork cannot sit beside agents/],
+			["agent_spawn", { agents: "not json" }, /^agents must be a list of agent objects/],
+			["agent_spawn", { agents: "[1, 2]" }, /^agents must be a list of agent objects/],
+			["agent_spawn", { agents: [{ prompt: "x", role: "r" }] }, /^agents\[0\]: unknown setting "role"/],
+			["agent_spawn", { prompt: "x", members: [] }, /^Unknown setting "members"/],
+			["team_create", { name: "T", objective: "o", members: "a, b" }, /^members must be a list of member objects/],
+			["team_create", { name: "T", objective: "o", members: "{\"role\": \"a\", \"prompt\": \"p\"}" }, /^members must be a list of member objects/],
+			["team_create", { name: "T", objective: "o", members: [{ prompt: "p" }] }, /^members\[0\] has no role: every member needs a unique role, which Sova never makes up\.$/],
+			["team_create", { name: "T", objective: "o", members: [{ role: "a" }] }, /^members\[0\] \(a\) has no prompt/],
+			["team_create", { name: "T", members: [{ role: "a", prompt: "p" }] }, /^Missing objective: give it explicitly; Sova never makes it up\.$/],
+			["team_create", { objective: "o", members: [{ role: "a", prompt: "p" }] }, /^Missing name/],
+			["team_create", { name: "T", objective: "o", members: [{ role: "a", prompt: "p", fork: true }] }, /^members\[0\] \(a\): fork is for agent_spawn only/],
+			["team_create", { name: "T", objective: "o", members: [{ role: "a", prompt: "p", agentType: "x" }] }, /^members\[0\] \(a\): agentType is for agent_spawn only/],
+			["team_create", { name: "T", objective: "o", model: "test/model", members: [{ role: "a", prompt: "p" }] }, /^model is a member setting: put it inside each member that needs it\.$/],
+			["team_create", { name: "T", objective: "o", members: [{ role: "a", prompt: "p", extensions: "npm:x" }] }, /^members\[0\] \(a\): extensions must be a list of extension sources/],
+			["team_add", { team: "T", members: "nope" }, /^members must be a list of member objects/],
+		];
+		for (const [tool, params, expected] of refusals) {
+			const prepared = (() => { try { h.tools.get(tool).prepareArguments(params); return undefined; } catch (error) { return (error as Error).message; } })();
+			assert.ok(prepared, `${tool} ${JSON.stringify(params)} is refused before pi's schema check`);
+			assert.match(prepared!, expected);
+			await assert.rejects(h.call(tool, params), (err: Error) => expected.test(err.message), `${tool} ${JSON.stringify(params)}`);
+		}
+		assert.equal(h.workers.length, 0, "nothing started");
+		// The same value beside and inside is no conflict; a list given as text changes nothing else.
+		await h.call("agent_spawn", { agents: [{ prompt: "x", effort: "low" }, { prompt: "y" }], effort: "low", wake: false });
+		assert.deepEqual(h.workers.map((w) => [w.task, w.effort, w.wake]), [["x", "low", false], ["y", "low", false]]);
+		const team = await h.call("team_create", { name: "Text", objective: "o", members: JSON.stringify([{ role: "a", prompt: "pa", ownedPaths: ["src"] }]) });
+		assert.equal(team.details.members.length, 1);
+		assert.match(team.content[0].text, /ag_03 {2}a {2}running .*owns=src/);
+	} finally { await h.close(); }
+});
+
+test("running limit: 24 per chat, idle workers included; the refusal names the need per caller, the live count, the idle workers and how many to stop", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("agent_spawn", { prompt: "x", count: 20 });
+		h.worker("ag_01").settle();
+		h.worker("ag_02").settle();
+		const tail = "Stop 1 with agent_kill first, then retry. Idle (waiting) workers you could stop: ag_01 (agent-1), ag_02 (agent-2). Sova stops nothing itself.";
+		await assert.rejects(h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "a", prompt: "p" }, { role: "b", prompt: "p" }, { role: "c", prompt: "p" }] }), (err: Error) => {
+			assert.equal(err.message, `This team needs 5 workers running: the 3 members you named + the coordinator "coordinator" and monitor "monitor" Sova adds from this chat's team defaults. A chat runs at most 24 workers at once (idle ones, and a team's coordinator and monitor, count); 20 are live now, so 4 more fit. ${tail}`);
+			return true;
+		});
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", count: 5 }), (err: Error) => {
+			assert.equal(err.message, `This request starts 5 workers. A chat runs at most 24 workers at once (idle ones count); 20 are live now, so 4 more fit. ${tail}`);
+			return true;
+		});
+		assert.equal(h.workers.length + h.created.length, 20, "nothing started, nothing stopped");
+		assert.ok(h.workers.every((w) => w.status !== "killed"), "Sova stops nothing itself");
+		// Two named members + coordinator + monitor fit exactly.
+		const team = await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "a", prompt: "p" }, { role: "b", prompt: "p" }] });
+		assert.equal(team.details.members.length, 4);
+		await assert.rejects(h.call("team_add", { team: "Crew", members: [{ role: "c", prompt: "p" }] }), (err: Error) => {
+			assert.equal(err.message, `Adding this member needs 1 worker running. A chat runs at most 24 workers at once (idle ones count); 24 are live now, so 0 more fit. ${tail}`);
+			assert.doesNotMatch(err.message, /coordinator|monitor/, "team_add never mentions roles it does not add");
+			return true;
+		});
+		// With nobody idle the refusal says so.
+		h.worker("ag_01").status = "running";
+		h.worker("ag_02").status = "running";
+		await assert.rejects(h.call("agent_spawn", { prompt: "x" }), /This request starts 1 worker\. .*Stop 1 with agent_kill first, then retry\. None is idle: every live worker is busy, so stopping one ends work in progress\. Sova stops nothing itself\.$/);
+	} finally { await h.cleanup(); }
+});
+
+test("seats: team_create past 24 members, the standing roles included, is refused before anything starts", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await assert.rejects(
+			h.call("team_create", { name: "Huge", objective: "o", members: Array.from({ length: 23 }, (_, i) => ({ role: `m${i}`, prompt: "p" })) }),
+			/^Error: A team seats 24 members, and this one would have 25: the 23 you named \+ the coordinator "coordinator" and monitor "monitor" Sova adds from this chat's team defaults\. Name at most 22 members/,
+		);
+		assert.equal(h.workers.length + h.created.length, 0);
+		const full = await h.call("team_create", { name: "Full", objective: "o", members: Array.from({ length: 22 }, (_, i) => ({ role: `m${i}`, prompt: "p" })) });
+		assert.equal(full.details.members.length, 24);
+	} finally { await h.cleanup(); }
+});
+
+test("team members take extensions by agent_spawn's rules, beside their team tools", async () => {
+	const h = harness();
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "subagents-member-ext-"));
+	try {
+		const ext = path.join(dir, "web.ts");
+		fs.writeFileSync(ext, "export default () => {};\n");
+		const r = await h.call("team_create", { name: "Web", objective: "o", members: [{ role: "researcher", prompt: "p", extensions: [ext] }, { role: "plain", prompt: "p" }] });
+		assert.ok(h.workers[0].extensions.includes(MEMBER_EXTENSION), "still its team tools");
+		assert.ok(h.workers[0].extensions.includes(ext), "and the extension it was given");
+		assert.ok(!h.workers[1].extensions.includes(ext));
+		assert.match(r.content[0].text, new RegExp(`ag_01 {2}researcher .*extensions=${esc(ext)}`));
+		const self = path.join(path.dirname(new URL(import.meta.url).pathname), "index.ts");
+		await assert.rejects(h.call("team_add", { team: "Web", members: [{ role: "nested", prompt: "p", extensions: [self] }] }), /do not nest/);
+		await assert.rejects(h.call("team_add", { team: "Web", members: [{ role: "uninstalled", prompt: "p", extensions: ["npm:definitely-not-installed-xyz"] }] }), /isn't installed/);
+		assert.equal(h.workers.length, 2);
+	} finally { await h.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the main chat's team_succeed replaces an ended coordinator or monitor, only when none with that duty is live", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const coordinator = h.worker("ag_01"), monitor = h.worker("ag_03");
+		await assert.rejects(h.call("team_succeed", { team: "Crew", role: "coordinator" }), /^Error: coordinator \(ag_01\) is team_01's live coordinator\. A live coordinator hands over itself with its own team_succeed step \(tell it with agent_steer if it should\), so two coordinators are never live at once\./);
+		await assert.rejects(h.call("team_succeed", { team: "Crew", role: "dev" }), /^Error: dev is not team_01's coordinator or monitor: the main chat replaces only those, once none is live\. The coordinator coordinator \(ag_01\) succeeds other members/);
+		await assert.rejects(h.call("team_succeed", { team: "Crew", role: "monitor" }), /monitor \(ag_03\) is team_01's live monitor/);
+		// A second orchestrator is refused while the coordinator is live, saying how a handover works.
+		await assert.rejects(h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "p", orchestrator: true }] }), /only the coordinator is a team's orchestrator[\s\S]*A member that only watches or reports needs no orchestrator mark[\s\S]*The coordinator coordinator \(ag_01\) is live, so it hands over itself/);
+		coordinator.exit();
+		await assert.rejects(h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "p", orchestrator: true }] }), /No coordinator is live now: the main chat can start a replacement with team_succeed \{ team: "team_01", role: "coordinator" \}\.$/);
+		const r = await h.call("team_succeed", { team: "team_01", role: "coordinator" });
+		assert.match(r.content[0].text, /^Started coordinator-2 \(ag_04\) to succeed coordinator \(ag_01\) on pi\/claude-code-cli\/claude-opus-5-5\/medium\. coordinator has already ended; the successor works from the handover note\. The note may be missing \(coordinator had already ended without writing it\); the successor was told so\. It routes team_01 from now on: members report to it, and only it reaches you\.$/);
+		const successor = h.worker("ag_04");
+		assert.deepEqual([h.memberOf("ag_04")!.duty, h.memberOf("ag_04")!.successorOf, h.memberOf("ag_04")!.orchestrator], ["coordinator", "coordinator", true]);
+		assert.match(successor.task, /coordinator has already ended: there is nobody to ask and no team_ready to call/);
+		assert.match(successor.task, /Its assignment from the main thread:\nCoordinate this team toward the objective/);
+		const events = h.appended.filter((e) => e.customType === "subagents-team-v1").map((e) => e.data.op);
+		assert.deepEqual(events, ["create", "add", "eject"], "the ended coordinator's seat is released");
+		assert.equal(r.details.successorId, "ag_04");
+		// Exactly one live coordinator: the replaced one is ejected, the new one is live.
+		await assert.rejects(h.call("team_succeed", { team: "Crew", role: "coordinator" }), /coordinator \(ag_01\) was ejected from team_01/);
+		await assert.rejects(h.call("team_succeed", { team: "Crew", role: "coordinator-2" }), /coordinator-2 \(ag_04\) is team_01's live coordinator/);
+		// Members now report to the new coordinator.
+		const dev = h.worker("ag_02");
+		dev.output = "built";
+		dev.settle();
+		await h.tick();
+		await assertItem(h, "ag_04", "report", /^\[Team report from dev \(ag_02\), team_01: finished — routed to you as coordinator\]/);
+		// The monitor: replaced once it has ended, told nobody is left to ask.
+		monitor.exit();
+		const m = await h.call("team_succeed", { team: "Crew", role: "ag_03" });
+		assert.match(m.content[0].text, /^Started monitor-2 \(ag_05\) to succeed monitor \(ag_03\)/);
+		assert.match(h.worker("ag_05").task, /You take over from the monitor monitor \(ag_03\), which has already ended: there is nobody to ask and no team_ready to call\. Run your standing instruction now/);
+		assert.equal(h.memberOf("ag_05")!.duty, "monitor");
+	} finally { await h.cleanup(); }
+});
+
+test("every limit is said up front: team_create, team_add and agent_spawn descriptions and the /team planning text", async () => {
+	const h = harness();
+	try {
+		for (const name of ["team_create", "team_add"]) {
+			const d = h.tools.get(name).description as string;
+			assert.match(d, /no per-request limit/, name);
+			assert.match(d, /A team seats 24 members, the coordinator and monitor Sova adds included/, name);
+			assert.match(d, /This chat runs at most 24 workers at once, idle ones and every team member \(coordinator and monitor included\) counted/, name);
+			assert.match(d, /members must be a list of member objects/, name);
+			assert.match(d, /count, fork and agentType are refused/, name);
+			assert.match(d, /Only the coordinator hands a member over to a successor \(its team_succeed\); once no coordinator is live, the main chat can start a replacement with team_succeed\./, name);
+		}
+		const spawn = h.tools.get("agent_spawn");
+		assert.match(spawn.description, /Limits: no per-request limit; this chat runs at most 24 workers at once, idle ones and team members/);
+		assert.match(spawn.description, /name, count, fork and agentType go inside each agent/);
+		assert.doesNotMatch(JSON.stringify(spawn.parameters), /maxItems|"maximum"/, "no per-request cap in the schema");
+		assert.doesNotMatch(JSON.stringify(h.tools.get("team_create").parameters), /maxItems":8|"maximum":8/);
+		assert.equal(typeof h.tools.get("team_succeed").execute, "function", "the main chat's replacement tool");
+		await h.commands.get("team").handler("Ship the thing", h.ctx);
+		const plan = h.messages.at(-1)[0].content as string;
+		assert.match(plan, /Limits: no per-request limit\. A team seats 24 members/);
+		assert.match(plan, /at most 24 workers at once/);
+	} finally { await h.close(); }
+});
+
+test("the declared schema lets members and agents be a list or a string (as a host that checks it, the Claude Code CLI, sees it), so readList judges the string", () => {
+	const h = harness();
+	const list = JSON.stringify([{ role: "a", prompt: "p" }]);
+	const cases: [string, Record<string, unknown>, Record<string, unknown>][] = [
+		["team_create", { name: "T", objective: "o", members: list }, { name: "T", objective: "o", members: [{ role: "a" }] }],
+		["team_add", { team: "T", members: list }, { team: "T", members: [{ role: "a" }] }],
+		["agent_spawn", { agents: JSON.stringify([{ prompt: "x" }]) }, { agents: [{ name: "x" }] }],
+	];
+	for (const [name, ok, bad] of cases) {
+		const tool = h.tools.get(name);
+		// The schema as declared to a model or an MCP host: JSON, typebox's symbols gone.
+		for (const parameters of [tool.parameters, JSON.parse(JSON.stringify(tool.parameters))]) {
+			const asTool = { name, description: "", parameters };
+			assert.doesNotThrow(() => validateToolArguments(asTool as any, { type: "toolCall", id: "1", name, arguments: ok } as any), `${name} accepts a string`);
+			assert.throws(() => validateToolArguments(asTool as any, { type: "toolCall", id: "1", name, arguments: bad } as any), `${name} still checks the list form (an item without its prompt)`);
+		}
+		const key = name === "agent_spawn" ? "agents" : "members";
+		const declared = JSON.parse(JSON.stringify(tool.parameters)).properties[key];
+		assert.deepEqual(declared.anyOf.map((s: any) => s.type).sort(), ["array", "string"], `${name}.${key} is array | string`);
+	}
+});
+
+// ── Team inbox (§app.teams/inbox) ─────────────────────────────────────────
+
+test("team_inbox is served by the parent, the inbox's only writer: list, open, done, sent; a mark racing a new delivery keeps the new item", async () => {
+	const h = teamHarness();
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "lead", prompt: "coordinate", orchestrator: true }, { role: "dev", prompt: "build" }] });
+		const leadDir = h.memberOf("ag_01")!.dir, devDir = h.memberOf("ag_02")!.dir;
+		await h.ask("ag_01", { type: "message", to: "dev", subject: "Task 1", message: "Write the parser." });
+		await h.ask("ag_01", { type: "message", to: "dev", message: "FYI\nthe schema moved." });
+		const list = await h.ask("ag_02", { type: "inbox" });
+		assert.equal(list.ok, true);
+		assert.match(list.text, /^2 open items:\n- i_1 \[new\] message from lead — Task 1 \(\d\d:\d\d:\d\d\)\n- i_2 \[new\] message from lead — FYI \(\d\d:\d\d:\d\d\)\nteam_inbox open <ids>/);
+		const opened = await h.ask("ag_02", { type: "inbox", action: "open", ids: ["i_1"] });
+		assert.match(opened.text, /^i_1 message from lead \(ag_01\) · [^\n]+ · read\nSubject: Task 1\nWrite the parser\.\n\n\(2 open left\)$/, "open ends with the count of open items left");
+		// The race: dev marks both addressed while lead's next message is being delivered, in the same poll.
+		const doneId = requestId(), msgId = requestId();
+		writeRequest(devDir, { version: 1, id: doneId, at: Date.now(), type: "inbox", action: "done", ids: ["i_1", "i_2"], note: "handled" });
+		writeRequest(leadDir, { version: 1, id: msgId, at: Date.now(), type: "message", to: "dev", message: "A new task" });
+		const [done, sent] = await Promise.all([awaitResponse(devDir, doneId, 3000, undefined, 5), awaitResponse(leadDir, msgId, 3000, undefined, 5)]);
+		assert.match(done!.text, /^Marked addressed: i_1, i_2 \(note: handled\)\. [01] open left\.$/);
+		assert.equal(sent!.text, "Queued for dev (ag_02): item i_3");
+		assert.deepEqual(readMemberItems(devDir).map((i) => [i.id, i.status, i.note ?? ""]), [["i_1", "addressed", "handled"], ["i_2", "addressed", "handled"], ["i_3", "new", ""]], "the new item is kept");
+		// The sender looks up status and note; it is never woken for it.
+		const steersBefore = h.workers[0].steerCount;
+		const lookup = await h.ask("ag_01", { type: "inbox", action: "sent" });
+		assert.match(lookup.text, /^Items you sent \(newest last\):\ni_1 → dev \(ag_02\) \[closed by dev\] message: Task 1 · note: handled\ni_2 → dev \(ag_02\) \[closed by dev\] message: FYI · note: handled\ni_3 → dev \(ag_02\) \[new\] message: A new task$/);
+		await pause(50);
+		assert.equal(h.workers[0].steerCount, steersBefore);
+		// Marks only what the member holds.
+		const bad = await h.ask("ag_02", { type: "inbox", action: "done", ids: ["i_9"] });
+		assert.equal(bad.ok, false);
+		assert.match(bad.text, /No item i_9/);
+		assert.equal((await h.ask("ag_01", { type: "inbox", action: "done", ids: ["i_3"] })).ok, false, "lead cannot mark dev's item");
+		// The roster carries each member's open count; over 50, the queued answer says so.
+		assert.match((await h.ask("ag_01", { type: "roster" })).text, /ag_02 dev \[pi, has team tools\] working \(running\) · context — · 1 open item · owns/);
+		let last = "";
+		for (let i = 0; i < 50; i++) last = (await h.ask("ag_01", { type: "message", to: "dev", message: `m${i}` })).text;
+		assert.match(last, /^Queued for dev \(ag_02\): item i_\w+ · dev has 51 open items$/);
+		assert.match((await h.call("team_list")).content[0].text, /ag_02 dev \[pi\] working \(running\) · context — · 51 open items/);
+	} finally { await h.cleanup(); }
+});
+
+test("a question moved to a successor keeps its id and sender; the successor's reply marks it addressed in the asker's lookup; a message to the replaced member is forwarded", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const coordinator = h.worker("ag_01");
+		const asked = await h.ask("ag_02", { type: "question", message: "Which schema?" });
+		const qid = /item (i_\w+)/.exec(asked.text)![1];
+		// The coordinator hands over to coordinator-2 (ag_05).
+		await h.ask("ag_01", { type: "succeed", to: "coordinator" });
+		h.writeNote("coordinator");
+		await h.tick();
+		const next = h.worker("ag_05");
+		assert.equal(next?.name, "coordinator-2");
+		const own = await h.ask("ag_03", { type: "message", to: "coordinator-2", message: "hello successor" });
+		const ownId = /item (i_\w+)/.exec(own.text)![1];
+		// Its turn ends and lists the question (a new turn); team_ready then retires it when that turn ends.
+		coordinator.settle();
+		await waitFor(() => readMemberItems(h.memberOf("ag_01")!.dir).find((i) => i.id === qid)?.listedAt, "the question listed to the old coordinator");
+		assert.match((await h.ask("ag_05", { type: "ready" })).text, /still in a turn/);
+		coordinator.settle();
+		await h.tick();
+		const nextDir = h.memberOf("ag_05")!.dir;
+		await waitFor(() => readMemberItems(nextDir).some((i) => i.id === qid), "the open question moved to the successor");
+		const moved = readMemberItems(nextDir).find((i) => i.id === qid)!;
+		assert.deepEqual([moved.kind, moved.from.workerId, moved.to.workerId, moved.movedFrom?.[0].workerId, moved.movedFrom?.[0].why], ["question", "ag_02", "ag_05", "ag_01", "handover"]);
+		assert.ok(!readMemberItems(h.memberOf("ag_01")!.dir).some((i) => i.id === qid), "it left the old inbox");
+		const ownBefore = readMemberItems(nextDir).find((i) => i.id === ownId)!;
+		// coordinator-2 answers with replyTo: the question is addressed, and the asker's lookup follows the move.
+		const answer = await h.ask("ag_05", { type: "message", to: "dev", message: "Use v2.", replyTo: qid });
+		assert.equal(answer.ok, true, answer.text);
+		const lookup = await h.ask("ag_02", { type: "inbox", action: "sent" });
+		assert.match(lookup.text, new RegExp(`${qid} → coordinator-2 \\(ag_05\\) \\[answered in i_\\w+\\] question: Which schema\\?$`, "m"));
+
+		assert.deepEqual(readMemberItems(nextDir).find((i) => i.id === ownId), ownBefore, "its other items are unchanged");
+		// A message to the retired coordinator now reaches its successor, and the sender is told.
+		await waitFor(() => coordinator.status === "killed", "the old coordinator retired");
+		const fwd = await h.ask("ag_03", { type: "message", to: "coordinator", message: "status?" });
+		assert.equal(fwd.ok, true, fwd.text);
+		assert.match(fwd.text, /^Queued for coordinator-2 \(ag_05\): item (i_\w+) — coordinator \(ag_01\) was replaced: forwarded to coordinator-2 \(ag_05\)$/);
+		const fid = /item (i_\w+)/.exec(fwd.text)![1];
+		assert.deepEqual(readMemberItems(nextDir).find((i) => i.id === fid)?.movedFrom?.map((m) => [m.workerId, m.why]), [["ag_01", "forward"]], "it records whom it was first sent to");
+		// The successor cannot reach itself through its predecessor.
+		assert.match((await h.ask("ag_05", { type: "message", to: "coordinator", message: "x" })).text, /was succeeded by you/);
+	} finally { await h.cleanup(); }
+});
+
+/** Hold a fake worker's next steer until the returned release is called (a delivery in progress). */
+function holdNextSteer(w: any): () => void {
+	let release!: () => void;
+	const gate = new Promise<void>((r) => (release = r));
+	const orig = w.steer;
+	let first = true;
+	w.steer = async function (this: any, ...args: any[]) {
+		if (first) {
+			first = false;
+			await gate;
+			w.steer = orig;
+		}
+		return orig.apply(this, args);
+	};
+	return release;
+}
+
+test("inbox lifecycle: every Sova notice and handover instruction gets through while the recipient's first steer is still held (R2-R8)", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const coordinator = h.worker("ag_01"), dev = h.worker("ag_02"), monitor = h.worker("ag_04");
+		const itemsOf = (id: string) => readMemberItems(h.memberOf(id)!.dir);
+		// The main chat's steer to the idle coordinator is in progress (held).
+		coordinator.status = "waiting";
+		const releaseCoordinator = holdNextSteer(coordinator);
+		const steering = h.call("agent_steer", { id: "ag_01", message: "Status?" });
+		await pause(20);
+		// R2: a completion while it is held is stored at once as a report item.
+		dev.output = "built it";
+		dev.settle();
+		await waitFor(() => itemsOf("ag_01").some((i) => i.kind === "report"), "the report stored");
+		// R8: so is the additions notice; team_add says it was queued, never "could not tell".
+		const added = await h.call("team_add", { team: "Crew", members: [{ role: "docs", prompt: "Write docs." }] });
+		assert.match(added.content[0].text, /Queued for coordinator coordinator \(ag_01\): item i_\w+, naming the new member\(s\)/);
+		assert.doesNotMatch(added.content[0].text, /could not/);
+		releaseCoordinator();
+		assert.equal((await steering).details?.accepted ?? true, true);
+		// The steer took it into a turn; when that turn ends, both items are listed in one wake.
+		coordinator.settle();
+		await waitFor(() => /report from dev[\s\S]*notice from main thread/.test(coordinator.lastSteer?.message ?? ""), "report and notice listed together");
+		// R3: a wake_nudge fire while the monitor's first steer is held.
+		const releaseMonitor = holdNextSteer(monitor);
+		const toMonitor = h.call("agent_steer", { id: "ag_04", message: "check now" });
+		await h.ask("ag_04", { type: "nudge", nudge: { action: "schedule", delay: "10m", reason: "next check" } });
+		h.timers.at(-1)!.fn();
+		assert.ok(itemsOf("ag_04").some((i) => i.kind === "notice" && i.urgent && i.subject === "[wake_nudge n1] next check"), "the fire is stored at once");
+		releaseMonitor();
+		await toMonitor;
+		await waitFor(() => monitor.lastSteer?.message.includes("[wake_nudge n1]"), "the fire listed after the held steer");
+		// R7: team_succeed's "write your note" redirect waits behind dev's held delivery, and is never refused for it.
+		dev.status = "waiting";
+		const releaseDev = holdNextSteer(dev);
+		const more = h.call("agent_steer", { id: "ag_02", message: "more work" });
+		await pause(20);
+		const succeed = h.ask("ag_01", { type: "succeed", to: "dev" });
+		await pause(50);
+		releaseDev();
+		await more;
+		const started = await succeed;
+		assert.equal(started.ok, true, started.text);
+		assert.match(started.text, /^Handover started: dev \(ag_02\) was told to write its handover note/);
+		const order = dev.steered.slice(-2).map((s: any) => [s.message.split("\n")[0], s.mode]);
+		assert.deepEqual(order, [["more work", undefined], ["[Handover from coordinator coordinator (ag_01), team_01]", "redirect"]], "after the delivery in progress, never ahead of it");
+		// R6 + R5: the "your successor has started" instruction waits behind another held delivery; the
+		// result says dev was told, and the coordinator's handover item says so too.
+		const releaseDev2 = holdNextSteer(dev);
+		const again = h.call("agent_steer", { id: "ag_02", message: "and this" });
+		await pause(20);
+		h.writeNote("dev");
+		await pause(80);
+		releaseDev2();
+		await again;
+		const handover = await assertItem(h, "ag_01", "handover", /^\[Handover in team_01: dev's note is written\]\nStarted dev-2 \(ag_\d+\) to succeed dev \(ag_02\) [^\n]*\. dev was told to brief it;/);
+		assert.equal(handover.from.role, "Sova");
+		assert.match(dev.steered.at(-1).message, /Your successor dev-2 \(ag_\d+\) has started/);
+		assert.equal(dev.steered.at(-1).mode, "redirect");
+	} finally { await h.cleanup(); }
+});
+
+test("inbox lifecycle: a successor's start names honestly whether the old monitor could be told to brief it", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const monitor = h.worker("ag_03");
+		// The old monitor's process takes no delivery any more (its briefing request is refused): not told.
+		monitor.steer = async () => ({ ok: false, reason: "The worker's process did not start" });
+		const r = await h.ask("ag_01", { type: "succeed", to: "monitor" });
+		assert.equal(r.ok, true, r.text);
+		assert.doesNotMatch(r.text, /monitor was told to brief it/);
+		assert.match(r.text, /monitor could not be told to brief it \(/);
+	} finally { await h.cleanup(); }
+});
+
+test("inbox lifecycle: a member that ends with no successor returns its open items, one notice per sender; Sova's go to the coordinator, the main thread's to the main chat", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const coordinator = h.worker("ag_01"), qa = h.worker("ag_03"), monitor = h.worker("ag_04");
+		const itemsOf = (id: string) => readMemberItems(h.memberOf(id)!.dir);
+		// A member's item: dev → qa, then qa stops.
+		const sent = await h.ask("ag_02", { type: "message", to: "qa", message: "Please test the parser" });
+		const id = /item (i_\w+)/.exec(sent.text)![1];
+		qa.exit();
+		const back = await assertItem(h, "ag_02", "notice", new RegExp(`^\\[Not addressed: 1 item\\(s\\) returned from qa \\(ag_03\\), team_01 — it ended, with no successor\\]\\n- ${id} message sent [^\\n]* — Please test the parser\\n`));
+		assert.deepEqual([back.from, back.subject], [{ role: "Sova", workerId: "parent" }, "Not addressed: 1 item(s) returned from qa (ag_03)"]);
+		assert.match(back.body, /agent_resume ag_03\.$/);
+		assert.equal(itemsOf("ag_03").find((i) => i.id === id)?.returned?.why, "not addressed: it ended");
+		// Sova's item (a wake_nudge fire) held by the monitor goes to the routing coordinator.
+		await h.ask("ag_04", { type: "nudge", nudge: { action: "schedule", delay: "10m", reason: "next check" } });
+		h.timers.at(-1)!.fn();
+		await waitFor(() => itemsOf("ag_04").some((i) => i.subject.startsWith("[wake_nudge n1]")), "the fire stored");
+		monitor.exit();
+		await assertItem(h, "ag_01", "notice", /^\[Not addressed: 1 item\(s\) returned from monitor \(ag_04\), team_01 — it ended, with no successor\]\n- i_\w+ notice \(urgent\) sent [^\n]* — \[wake_nudge n1\] next check[\s\S]*These were Sova's notices to monitor/);
+		// The coordinator ends: the main thread's item (an additions notice) comes back to the main chat, starting no turn.
+		await h.call("team_add", { team: "Crew", members: [{ role: "docs", prompt: "Write docs." }] });
+		h.messages.length = 0;
+		coordinator.exit();
+		const notices = h.parentMessages("team-notice");
+		assert.ok(notices.length >= 1, "returned to the main chat");
+		assert.ok(notices.every(([, opts]: any[]) => opts.triggerTurn === false && opts.deliverAs === "followUp"));
+		assert.ok(notices.some(([m]: any[]) => /^\[Not addressed: \d+ item\(s\) returned from coordinator \(ag_01\), team_01 — it ended, with no successor\][\s\S]*1 member\(s\) added: docs/.test(m.content)), notices.map(([m]: any[]) => m.content).join("\n---\n"));
+		assert.equal(readMemberItems(h.memberOf("ag_01")!.dir).filter((i) => i.kind !== "instruction" && !i.returned && i.status !== "addressed").length, 0, "nothing left open");
+	} finally { await h.cleanup(); }
+});
+
+test("inbox lifecycle: at retirement the old member's open items move to its successor, ids and senders kept, and are listed to it", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const dev = h.worker("ag_02");
+		const devDir = h.memberOf("ag_02")!.dir;
+		const sent = await h.ask("ag_03", { type: "message", to: "dev", message: "Found a bug in parse()" });
+		const id = /item (i_\w+)/.exec(sent.text)![1];
+		// A second item, so the wake at dev's turn end lists both by subject (a lone item would show in full, opened).
+		const other = /item (i_\w+)/.exec((await h.ask("ag_03", { type: "message", to: "dev", message: "And the lexer" })).text)![1];
+		await h.ask("ag_01", { type: "succeed", to: "dev" });
+		h.writeNote("dev");
+		dev.status = "running";
+		dev.settle();
+		await waitFor(() => h.worker("ag_05"), "dev-2 started");
+		const successor = h.worker("ag_05");
+		assert.equal(successor.name, "dev-2");
+		assert.ok(readMemberItems(devDir).some((i) => i.id === id), "still dev's until it is retired");
+		const ready = await h.ask("ag_05", { type: "ready" });
+		assert.equal(ready.ok, true, ready.text);
+		dev.settle(); // its turn (the "successor started" redirect) ends: it is retired now
+		await waitFor(() => readMemberItems(h.memberOf("ag_05")!.dir).some((i) => i.id === id), "moved to dev-2");
+		const moved = readMemberItems(h.memberOf("ag_05")!.dir).find((i) => i.id === id)!;
+		assert.deepEqual([moved.from, moved.to, moved.movedFrom?.map((m) => [m.workerId, m.role, m.why])], [{ role: "qa", workerId: "ag_03" }, { role: "dev-2", workerId: "ag_05" }, [["ag_02", "dev", "handover"]]]);
+		assert.ok(!readMemberItems(devDir).some((i) => i.id === id), "gone from dev's inbox");
+		assert.equal(moved.status, "new", "new to its new holder");
+		assert.ok(readMemberItems(h.memberOf("ag_05")!.dir).some((i) => i.id === other), "both listed-but-unopened items moved");
+		successor.settle(); // busy on its first task: a normal item is listed when that turn ends
+		await waitFor(() => (successor.steered ?? []).some((s: any) => s.message.includes(`${id} message from qa (sent to dev) — Found a bug in parse()`)), "listed to dev-2");
+		await waitFor(() => dev.status === "killed", "dev retired");
+		// Nothing came back as "not addressed": the successor has it.
+		assert.ok(!readMemberItems(h.memberOf("ag_03")!.dir).some((i) => /Not addressed/.test(i.body)));
+	} finally { await h.cleanup(); }
+});
+
+test("a message to a member that ended while its successor is still to start is queued and moves to the successor; with none started it goes back to its sender", async () => {
+	for (const startsSuccessor of [true, false]) {
+		const h = coordinatedHarness(DEFAULTS_FILE);
+		try {
+			await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "counter", prompt: "count" }, { role: "writer", prompt: "write" }] });
+			const counter = h.worker("ag_02");
+			await h.ask("ag_01", { type: "succeed", to: "counter" });
+			// Its process is going away (not live, not yet finished): the succession is still pending.
+			counter.isStopping = () => true;
+			const sent = await h.ask("ag_03", { type: "message", to: "counter", message: "Which files are done?" });
+			assert.equal(sent.ok, true, sent.text);
+			assert.match(sent.text, /^Queued for counter \(ag_02\): item (i_\w+) — counter has ended and its successor is starting: the item moves to it$/);
+			const id = /item (i_\w+)/.exec(sent.text)![1];
+			assert.deepEqual(readMemberItems(h.memberOf("ag_02")!.dir).filter((i) => i.id === id).map((i) => [i.kind, i.from.role, i.status]), [["message", "writer", "new"]]);
+			// team_steer has no inbox to wait in: refused, saying why.
+			assert.match((await h.ask("ag_01", { type: "steer", to: "counter", message: "x" })).text, /has ended and its successor is still starting/);
+			if (!startsSuccessor) {
+				// Every seat taken (the old member still holds its own): the successor cannot start.
+				await h.call("team_add", { team: "Crew", members: Array.from({ length: 20 }, (_, i) => ({ role: `filler${i}`, prompt: `p${i}`, wake: false })) });
+			}
+			counter.exit();
+			await h.tick(60);
+			if (startsSuccessor) {
+				const next = h.worker("ag_05");
+				assert.equal(next?.name, "counter-2");
+				await waitFor(() => readMemberItems(h.memberOf("ag_05")!.dir).some((i) => i.id === id), "the item moved to counter-2");
+				const moved = readMemberItems(h.memberOf("ag_05")!.dir).find((i) => i.id === id)!;
+				assert.deepEqual([moved.from.workerId, moved.movedFrom?.[0].workerId, moved.status], ["ag_03", "ag_02", "new"]);
+			} else {
+				assert.equal(h.workers.some((w: any) => w.name === "counter-2"), false, "no successor started");
+				await waitFor(() => readMemberItems(h.memberOf("ag_02")!.dir).find((i) => i.id === id)?.returned, "the item returned");
+				await waitFor(() => readMemberItems(h.memberOf("ag_03")!.dir).some((i) => i.kind === "notice" && i.body.includes(id)), "the sender told it was not addressed");
+			}
+		} finally { await h.cleanup(); }
+	}
+});
+
+// ── Inbox zero at every end (§app.teams/inbox "Moving and returning", §app.teams/inbox-zero) ──
+
+test("inbox zero: a member stopped with an opened item gets no not-addressed notice for it; it closes automatically, the question and the unopened item go back", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const qa = h.worker("ag_03");
+		const idOf = (r: { text: string }) => /item (i_\w+)/.exec(r.text)![1];
+		const news = idOf(await h.ask("ag_02", { type: "message", to: "qa", message: "FYI: the schema moved" }));
+		const question = idOf(await h.ask("ag_02", { type: "message", to: "qa", message: "Which port?", needsReply: true }));
+		const unopened = idOf(await h.ask("ag_02", { type: "message", to: "qa", message: "Later: the docs" }));
+		// qa opens the news and the question in its running turn, closes neither, and is stopped.
+		assert.equal((await h.ask("ag_03", { type: "inbox", action: "open", ids: [news, question] })).ok, true);
+		qa.exit();
+		const back = await assertItem(h, "ag_02", "notice", /^\[Not addressed: 2 item\(s\) returned from qa \(ag_03\)/);
+		assert.doesNotMatch(back.body, new RegExp(`${news}\\b`), "handled news is never returned as not addressed");
+		assert.match(back.body, new RegExp(`${question} question`));
+		assert.match(back.body, new RegExp(`${unopened} message`));
+		const items = readMemberItems(h.memberOf("ag_03")!.dir);
+		const closed = items.find((i) => i.id === news)!;
+		assert.deepEqual([closed.status, closed.closedBy, closed.note, closed.returned], ["addressed", "auto", "closed automatically: seen, not closed by qa", undefined]);
+		assert.ok(items.find((i) => i.id === question)?.returned, "an unanswered question always goes back");
+		assert.ok(items.find((i) => i.id === unopened)?.returned, "an unopened item is never closed for it");
+	} finally { await h.cleanup(); }
+});
+
+test("inbox zero: at retirement an item the old member opened closes automatically and never reaches the successor; an unopened one moves", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const dev = h.worker("ag_02");
+		const devDir = h.memberOf("ag_02")!.dir;
+		const idOf = (r: { text: string }) => /item (i_\w+)/.exec(r.text)![1];
+		// Three items: the wake at dev's turn end lists them by subject (none opened); dev opens one in that turn.
+		const seen = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "FYI: CI is green" }));
+		const unseen = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "Found a bug in parse()" }));
+		const unseen2 = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "And the lexer" }));
+		await h.ask("ag_01", { type: "succeed", to: "dev" });
+		h.writeNote("dev");
+		dev.status = "running";
+		dev.settle();
+		await waitFor(() => h.worker("ag_05"), "dev-2 started");
+		const successor = h.worker("ag_05");
+		await h.ask("ag_02", { type: "inbox", action: "open", ids: [seen] });
+		assert.equal((await h.ask("ag_05", { type: "ready" })).ok, true);
+		dev.settle();
+		await waitFor(() => readMemberItems(h.memberOf("ag_05")!.dir).some((i) => i.id === unseen), "the unopened item moved to dev-2");
+		assert.ok(readMemberItems(h.memberOf("ag_05")!.dir).some((i) => i.id === unseen2));
+		assert.ok(!readMemberItems(h.memberOf("ag_05")!.dir).some((i) => i.id === seen), "handled news never moves to the successor");
+		const closed = readMemberItems(devDir).find((i) => i.id === seen)!;
+		assert.deepEqual([closed.status, closed.closedBy], ["addressed", "auto"]);
+		successor.settle();
+		await waitFor(() => (successor.steered ?? []).some((s: any) => s.message.includes(unseen)), "listed to dev-2");
+		assert.ok(!(successor.steered ?? []).some((s: any) => s.message.includes(seen)), "never listed to dev-2");
+		assert.ok(!readMemberItems(h.memberOf("ag_03")!.dir).some((i) => /Not addressed/.test(i.body)));
+	} finally { await h.cleanup(); }
+});
+
+test("inbox zero: a report names what its member left open after the safety net; nothing open, no line", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const dev = h.worker("ag_02"), qa = h.worker("ag_03");
+		const idOf = (r: { text: string }) => /item (i_\w+)/.exec(r.text)![1];
+		const news = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "FYI: CI is green" }));
+		const question = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "Which port?", needsReply: true }));
+		const unopened = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "Later: docs" }));
+		await h.ask("ag_02", { type: "inbox", action: "open", ids: [news, question] });
+		dev.output = "built it";
+		dev.settle();
+		const report = await assertItem(h, "ag_01", "report", /Team report from dev/);
+		assert.ok(report.body.endsWith(`[Left open: ${question} question from qa (opened); ${unopened} message from qa (unopened)]`), report.body);
+		assert.doesNotMatch(report.body, new RegExp(`${news}\\b`), "the news closed at the turn's end, before the report");
+		qa.output = "tested";
+		qa.settle();
+		const second = await assertItem(h, "ag_01", "report", /Team report from qa/);
+		assert.doesNotMatch(second.body, /Left open/);
+	} finally { await h.cleanup(); }
+});
+
+test("inbox zero: the roster shows each member's unanswered question and its wait, and one team line split by who closed", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const idOf = (r: { text: string }) => /item (i_\w+)/.exec(r.text)![1];
+		await h.ask("ag_03", { type: "message", to: "dev", message: "Which port?", needsReply: true });
+		const fyi = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "FYI" }));
+		const other = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "Another" }));
+		await h.ask("ag_02", { type: "inbox", action: "done", ids: [fyi] });
+		const roster = (await h.ask("ag_01", { type: "roster" })).text;
+		assert.match(roster, /ag_02 dev \[pi, has team tools\] working \(running\) · context — · 2 open items \(1 question unanswered under 1 min\) · owns/);
+		assert.match(roster, /\nInbox: \d+ open · closed by members 1 · automatically 0$/);
+		assert.match((await h.call("team_list")).content[0].text, /\n {2}Inbox: \d+ open · closed by members 1 · automatically 0(\n|$)/);
+		assert.ok(other);
+	} finally { await h.cleanup(); }
+});
+
+// ── Inbox zero: the safety net at a member's settle, both measurement settings (§app.teams/inbox-zero) ──
+
+test("inbox zero: a seen item the member did not close closes automatically when its turn ends; a reply closes any item; needsReply is a question that waits", async () => {
+	const h = teamHarness();
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "lead", prompt: "coordinate", orchestrator: true }, { role: "dev", prompt: "build" }] });
+		const dev = h.workers.find((w: any) => w.id === "ag_02");
+		const devDir = h.memberOf("ag_02")!.dir;
+		const idOf = (r: { text: string }) => /item (i_\w+)/.exec(r.text)![1];
+		const fyi = idOf(await h.ask("ag_01", { type: "message", to: "dev", message: "FYI: CI is green" }));
+		const ask = idOf(await h.ask("ag_01", { type: "message", to: "dev", message: "Ping me when the parser builds" }));
+		const q = idOf(await h.ask("ag_01", { type: "message", to: "dev", message: "Which port?", needsReply: true }));
+		const item = (id: string) => readMemberItems(devDir).find((i) => i.id === id)!;
+		assert.equal(item(q).kind, "question", "needsReply makes it a question");
+		await h.ask("ag_02", { type: "inbox", action: "open", ids: [fyi] });
+		// dev's first turn ends without closing it.
+		dev.settle();
+		await waitFor(() => dev.steerCount === 1, "the wake for what still waits");
+		const wake = dev.lastSteer.message;
+		assert.match(wake, new RegExp(`^\\[Team inbox: 2 new — [^\\n]*\\]\\n- ${ask} message from lead — Ping me when the parser builds\\n- ${q} question from lead — Which port\\?\\n`), "subjects only");
+		assert.match(wake, new RegExp(`\\[Open your inbox first: team_inbox open ${ask} ${q} `), "an idle member's turn starts with the gate");
+		assert.deepEqual([item(fyi).status, item(fyi).closedBy, item(fyi).note], ["addressed", "auto", "closed automatically: seen, not closed by dev"]);
+		assert.doesNotMatch(wake, /Still open/);
+		// The member works its next turn: it opens both, answers one with replyTo, leaves the question.
+		await h.ask("ag_02", { type: "inbox", action: "open", ids: [ask, q] });
+		const reply = await h.ask("ag_02", { type: "message", to: "lead", message: "It builds.", replyTo: ask });
+		assert.equal(reply.ok, true, reply.text);
+		assert.deepEqual([item(ask).status, item(ask).closedBy], ["addressed", "reply"], "a reply closes any item, not only a question");
+		assert.match(item(ask).note!, /^answered in i_\w+$/);
+		dev.settle();
+		await pause(60);
+		assert.deepEqual([item(fyi).status, item(fyi).closedBy], ["addressed", "auto"], "still closed");
+		assert.equal(item(q).status, "read", "a question is never closed automatically");
+		const sent = (await h.ask("ag_01", { type: "inbox", action: "sent" })).text;
+		assert.match(sent, new RegExp(`${fyi} → dev \\(ag_02\\) \\[closed automatically\\] message: FYI: CI is green$`, "m"));
+		assert.match(sent, new RegExp(`${ask} → dev \\(ag_02\\) \\[answered in i_\\w+\\] message: `));
+		assert.match(sent, new RegExp(`${q} → dev \\(ag_02\\) \\[read\\] question: Which port\\?$`, "m"));
+	} finally { await h.cleanup(); }
+});
+
+// ── Runtime fallback of standing roles (§teams.defaults/runtime-fallback) ─────────────────────
+/** The real Ollama error a monitor whose monthly quota ran out ends every turn with. */
+const OLLAMA_MONTHLY = '429: {"message":"you (alex) have reached your monthly usage limit, add usage credits: …"}';
+/** The text a Claude Code member's turn ends with once the bridge has tried every Claude login (the CLI's own synthetic message, claude-code/tests/fixtures/failures/limit-rejected.ndjson; session-bridge.ts fail()). */
+const CLAUDE_ALL_LOGINS_OUT = "You've hit your limit · resets 3pm";
+/** A plain rate limit: retried where it happens, never a switch. */
+const PLAIN_429 = '429: {"code":"1302","message":"Rate limit reached for requests"}';
+const MONITOR_PRIMARY = { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" };
+const FALLBACK_FILE = {
+	...DEFAULTS_FILE,
+	coordinator: { ...DEFAULTS_FILE.coordinator, fallback: { backend: "pi", model: "test/model", effort: "high" } },
+	monitor: { ...DEFAULTS_FILE.monitor, primary: MONITOR_PRIMARY, fallback: { backend: "claude-code", model: "claude-sonnet-5-5", effort: "low" } },
+};
+/** A coordinated harness whose registry also knows the Ollama model the monitor's primary names. */
+function fallbackHarness(file: unknown = FALLBACK_FILE) {
+	const h = coordinatedHarness(file);
+	h.ctx.modelRegistry.find = (p: string, m: string) => ((p === "test" && m === "model") || (p === "ollama-cloud" && m === "deepseek-v4.1-flash") ? { provider: p, id: m } : undefined);
+	return h;
+}
+/** One failed turn, as the fold settles it: parked in `waiting`, task outcome "error", the provider's errorMessage as the error. */
+const failTurn = (w: any, error: string) => {
+	w.status = "running";
+	w.taskOutcome = "error";
+	w.settle(error);
+};
+const okTurn = (w: any) => {
+	w.status = "running";
+	w.taskOutcome = "success";
+	w.output = "checked";
+	w.settle();
+};
+const itemsOf = (h: { memberOf(id: string): { dir: string } | undefined }, id: string, kind?: string) => readMemberItems(h.memberOf(id)!.dir).filter((i) => !kind || i.kind === kind);
+const teamOps = (h: { appended: any[] }) => h.appended.filter((e) => e.customType === "subagents-team-v1").map((e) => e.data.op);
+const deadEntries = (h: { appended: any[] }) => h.appended.filter((e) => e.customType === "subagents-dead-tuple-v1").map((e) => e.data);
+
+test("runtime fallback: a monitor out of its monthly Ollama usage moves to its fallback once, its seat freed first; the coordinator gets one item", async () => {
+	const h = fallbackHarness();
+	try {
+		const created = await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		assert.match(created.content[0].text, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/);
+		const monitor = h.worker("ag_03");
+		assert.equal(monitor.model, "ollama-cloud/deepseek-v4.1-flash");
+		failTurn(monitor, OLLAMA_MONTHLY);
+		await waitFor(() => h.worker("ag_04"), "the monitor's successor");
+		const successor = h.worker("ag_04");
+		assert.equal(successor.name, "monitor-2");
+		assert.equal(successor.model, "claude-code-cli/claude-sonnet-5-5", "on the fallback");
+		assert.deepEqual([h.memberOf("ag_04")!.duty, h.memberOf("ag_04")!.successorOf], ["monitor", "monitor"]);
+		assert.equal(monitor.status, "killed", "the failed monitor is stopped");
+		assert.match(successor.task, /You take over from the monitor monitor \(ag_03\), which has already ended: there is nobody to ask and no team_ready to call\. Run your standing instruction now/, "its first check runs at once");
+		// The seat is released before the successor is added (a full team still gets it).
+		assert.deepEqual(teamOps(h), ["create", "eject", "add"]);
+		const ev = h.appended.filter((e) => e.customType === "subagents-team-event-v1" && e.data.kind === "handover").map((e) => e.data);
+		assert.equal(ev.length, 1);
+		assert.equal(ev[0].workerId, "ag_03");
+		assert.match(ev[0].detail, /^successor monitor-2 \(ag_04\) on pi\/claude-code-cli\/claude-sonnet-5-5; fallback: primary pi\/ollama-cloud\/deepseek-v4\.1-flash\/low hit its monthly usage limit \(429: /);
+		assert.deepEqual(deadEntries(h).map((d) => [d.backend, d.model, d.teamId, d.duty]), [["pi", "ollama-cloud/deepseek-v4.1-flash", undefined, undefined], ["pi", "ollama-cloud/deepseek-v4.1-flash", "team_01", "monitor"]]);
+		const list = (await h.call("team_list")).content[0].text;
+		assert.match(list, /system handover → ag_03 \(monitor\): accepted-or-queued — old member already ended; nothing to retire/, "a team action row");
+		await h.tick(60);
+		// One item about the switch, and no "failed" report for the turn.
+		const handover = itemsOf(h, "ag_01", "handover");
+		assert.equal(handover.length, 1);
+		assert.match(handover[0].body, /Monitor moved to its fallback claude-sonnet-5-5: ollama-cloud\/deepseek-v4\.1-flash hit its monthly usage limit\./);
+		assert.equal(itemsOf(h, "ag_01", "report").length, 0, "no urgent failed report");
+		// Its stop is said nowhere else: still one item.
+		await h.tick(60);
+		assert.equal(itemsOf(h, "ag_01").length, 1);
+		// The successor runs the fallback: its own failure is routed as before, never a second switch.
+		failTurn(successor, OLLAMA_MONTHLY);
+		await h.tick(60);
+		assert.equal(h.workers.length + h.created.length, 4, "a member not on its primary is not switched");
+	} finally { await h.cleanup(); }
+});
+
+test("runtime fallback: 3 failed turns in a row of any kind switch; a single 429 rate limit or a streak broken by a good turn doesn't; the backstop re-arms the check", async () => {
+	const h = fallbackHarness();
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const monitor = h.worker("ag_03");
+		const armed = () => h.timers.filter((t) => t.ms === 10 * 60_000).length;
+		failTurn(monitor, PLAIN_429);
+		await h.tick(60);
+		assert.equal(h.workers.length + h.created.length, 3, "a single rate limit is not a switch");
+		assert.equal(itemsOf(h, "ag_01", "report").length, 1, "it is reported as before");
+		assert.equal(armed(), 1, "the parent schedules the monitor's next check itself");
+		assert.equal((await h.ask("ag_03", { type: "nudge", nudge: { action: "list" } })).text.match(/scheduled by Sova after a failed check/g)?.length, 1);
+		failTurn(monitor, "Connection reset by peer");
+		await h.tick(60);
+		assert.equal(armed(), 1, "a pending check is not doubled");
+		okTurn(monitor);
+		failTurn(monitor, "Connection reset by peer");
+		failTurn(monitor, "Connection reset by peer");
+		await h.tick(60);
+		assert.equal(h.workers.length + h.created.length, 3, "a good turn starts the count again");
+		failTurn(monitor, "Connection reset by peer");
+		await waitFor(() => h.worker("ag_04"), "the successor after 3 failures in a row");
+		assert.equal(h.worker("ag_04").model, "claude-code-cli/claude-sonnet-5-5");
+		const ev = h.appended.find((e) => e.customType === "subagents-team-event-v1" && e.data.kind === "handover").data;
+		assert.match(ev.detail, /fallback: primary pi\/ollama-cloud\/deepseek-v4\.1-flash\/low failed 3 turns in a row \(Connection reset by peer\)$/);
+	} finally { await h.cleanup(); }
+});
+
+test("runtime fallback: with no fallback the dead monitor is stopped and said once; a dead coordinator is said to the main chat once", async () => {
+	const none = { ...FALLBACK_FILE, monitor: { ...FALLBACK_FILE.monitor, fallback: null }, coordinator: { ...FALLBACK_FILE.coordinator, fallback: null } };
+	const h = fallbackHarness(none);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const coordinator = h.worker("ag_01"), monitor = h.worker("ag_03");
+		failTurn(monitor, OLLAMA_MONTHLY);
+		await waitFor(() => monitor.status === "killed", "the monitor stopped");
+		await h.tick(60);
+		const items = itemsOf(h, "ag_01");
+		assert.equal(items.length, 1, "one item, no failed report");
+		assert.equal(items[0].kind, "notice");
+		assert.match(items[0].body, /Monitor monitor \(ag_03\) in team_01 stopped: its primary pi\/ollama-cloud\/deepseek-v4\.1-flash\/low hit its monthly usage limit \(429: .*\), and no fallback is set\./);
+		const notices = () => h.parentMessages("team-notice").map(([m, o]: any[]) => [m.content, o.triggerTurn]);
+		assert.equal(notices().length, 1);
+		assert.equal(notices()[0][1], false, "displayed, no turn");
+		// Stopped: its timers are gone, so nothing wakes the coordinator again.
+		for (const t of [...h.timers]) t.fn();
+		await h.tick(60);
+		assert.equal(itemsOf(h, "ag_01").length, 1, "no repeated follow-ups");
+		assert.equal(h.workers.length + h.created.length, 3, "nothing started");
+		// The coordinator: not stopped, said to the main chat once.
+		failTurn(coordinator, CLAUDE_ALL_LOGINS_OUT);
+		await h.tick(60);
+		assert.notEqual(coordinator.status, "killed");
+		assert.equal(notices().length, 2);
+		assert.match(notices()[1][0], /^Coordinator coordinator \(ag_01\) in team_01 can't run: its primary claude-code\/claude-opus-5-5\/medium hit its usage limit \(You've hit your limit · resets 3pm\), and no fallback is set\. .*team_succeed \{ team: "team_01", role: "coordinator" \}/);
+		assert.equal(completions(h).length, 0, "that turn's completion is the notice");
+		failTurn(coordinator, CLAUDE_ALL_LOGINS_OUT);
+		await h.tick(60);
+		assert.equal(notices().length, 2, "once per member");
+	} finally { await h.cleanup(); }
+});
+
+test("runtime fallback: a team with all 24 seats taken still gets the successor", async () => {
+	const h = fallbackHarness();
+	try {
+		const members = Array.from({ length: 22 }, (_, i) => ({ role: `m${i}`, prompt: `p${i}` }));
+		await h.call("team_create", { name: "Full", objective: "o", members });
+		await assert.rejects(h.call("team_add", { team: "Full", members: [{ role: "extra", prompt: "p" }] }), /would exceed 24 members/, "full");
+		const monitor = h.worker("ag_24");
+		assert.equal(h.memberOf("ag_24")!.duty, "monitor");
+		failTurn(monitor, OLLAMA_MONTHLY);
+		await waitFor(() => h.worker("ag_25"), "the successor of a full team's monitor");
+		assert.equal(h.worker("ag_25").name, "monitor-2");
+		const team = (await h.call("team_list")).content[0].text;
+		assert.match(team, /ag_24 monitor \(monitor\).*ejected/);
+		assert.match(team, /ag_25 monitor-2 \(monitor\)/);
+	} finally { await h.cleanup(); }
+});
+
+test("runtime fallback: a claude-code coordinator with every login out switches, and routing moves to its successor", async () => {
+	const h = fallbackHarness();
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const coordinator = h.worker("ag_01");
+		assert.equal(coordinator.model, "claude-code-cli/claude-opus-5-5");
+		failTurn(coordinator, CLAUDE_ALL_LOGINS_OUT);
+		await waitFor(() => h.worker("ag_04"), "the coordinator's successor");
+		const next = h.worker("ag_04");
+		assert.equal(next.name, "coordinator-2");
+		assert.deepEqual([next.model, next.effort], ["test/model", "high"], "on the fallback");
+		assert.deepEqual([h.memberOf("ag_04")!.duty, h.memberOf("ag_04")!.orchestrator], ["coordinator", true]);
+		assert.equal(coordinator.status, "killed");
+		assert.match(next.task, /coordinator stopped when its primary claude-code\/claude-opus-5-5\/medium hit its usage limit, without writing a handover note/);
+		assert.match(next.task, /Its assignment from the main thread:\nCoordinate this team toward the objective/);
+		assert.match(next.task, /- dev: none declared\n {2}Assigned task \(from the main thread\):\n {2}\| build/, "every teammate's assignment");
+		assert.equal(completions(h).length, 0, "the failed turn reaches nobody");
+		const ev = h.appended.find((e) => e.customType === "subagents-team-event-v1" && e.data.kind === "handover").data;
+		assert.match(ev.detail, /^successor coordinator-2 \(ag_04\) on pi\/test\/model; fallback: primary claude-code\/claude-opus-5-5\/medium hit its usage limit \(You've hit your limit · resets 3pm\)$/);
+		// Members now report to the successor.
+		const dev = h.worker("ag_02");
+		dev.output = "built";
+		dev.settle();
+		await assertItem(h, "ag_04", "report", /^\[Team report from dev \(ag_02\), team_01: finished — routed to you as coordinator\]/);
+	} finally { await h.cleanup(); }
+});
+
+test("runtime fallback: the out primary survives a reload; new teams, the members default and replacements skip it; after an hour it is tried again", async () => {
+	const h = fallbackHarness();
+	let entries: any[];
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		failTurn(h.worker("ag_03"), OLLAMA_MONTHLY);
+		await waitFor(() => h.worker("ag_04"), "the switch");
+		entries = h.appended.map((e, i) => ({ type: "custom", id: `e${i}`, customType: e.customType, data: e.data }));
+	} finally { await h.cleanup(); }
+	const reloaded = (at?: number) => {
+		const r = fallbackHarness();
+		const list = entries.map((e) => (e.customType === "subagents-dead-tuple-v1" && at !== undefined ? { ...e, data: { ...e.data, at } } : e));
+		r.ctx.sessionManager.getEntries = () => list;
+		return r;
+	};
+	const r = reloaded();
+	try {
+		await r.start();
+		const created = (await r.call("team_create", { name: "Next", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
+		assert.match(created, /monitor monitor added on claude-code\/claude-sonnet-5-5\/low \(fallback; primary pi\/ollama-cloud\/deepseek-v4\.1-flash\/low refused: it ran out at runtime .* ago \(hit its monthly usage limit\); it is tried again from /);
+		// The members default is a tuple check too.
+		await r.commands.get("team").handler("defaults", r.ctx);
+		const libPath = path.join(r.agentDir, "subagent-profiles.json");
+		const lib = JSON.parse(fs.readFileSync(libPath, "utf8"));
+		lib.profiles[0].members = { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" };
+		fs.writeFileSync(libPath, JSON.stringify(lib));
+		const added = (await r.call("team_add", { team: "Next", members: [{ role: "late", prompt: "p" }] })).content[0].text;
+		assert.match(added, /Members default pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(subagent profile "My setup"\) can't run here — it ran out at runtime/);
+		// A replacement from the main chat skips it as well.
+		const monitorId = (await r.call("team_list", { team: "Next" })).content[0].text.match(/(ag_\d+) monitor \(monitor\)/)[1];
+		r.worker(monitorId).exit();
+		const replaced = (await r.call("team_succeed", { team: "Next", role: "monitor" })).content[0].text;
+		assert.match(replaced, /^Started monitor-2 \(ag_\d+\) to succeed monitor \(ag_\d+\) on pi\/claude-code-cli\/claude-sonnet-5-5\/low/);
+	} finally { await r.cleanup(); }
+	const later = reloaded(Date.now() - 61 * 60_000);
+	try {
+		await later.start();
+		const created = (await later.call("team_create", { name: "Later", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
+		assert.match(created, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/, "after the hour the primary is tried again");
+	} finally { await later.cleanup(); }
+});
+
+test("runtime fallback: a streak of failures that aren't about usage never marks the model out for new teams", async () => {
+	// No fallback: the monitor is stopped after 3 generic failures, and a new team still starts on the primary.
+	const none = { ...FALLBACK_FILE, monitor: { ...FALLBACK_FILE.monitor, fallback: null } };
+	const h = fallbackHarness(none);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const monitor = h.worker("ag_03");
+		failTurn(monitor, "Connection reset by peer");
+		failTurn(monitor, PLAIN_429);
+		failTurn(monitor, "Connection reset by peer");
+		await waitFor(() => monitor.status === "killed", "the monitor stopped after 3 failures");
+		assert.deepEqual(deadEntries(h), [], "no chat-wide mark");
+		const next = (await h.call("team_create", { name: "Next", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
+		assert.match(next, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/);
+	} finally { await h.cleanup(); }
+	// With a fallback: the streak switches this team only; a new team starts on the primary.
+	const f = fallbackHarness();
+	try {
+		await f.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const monitor = f.worker("ag_03");
+		for (let i = 0; i < 3; i++) failTurn(monitor, "Connection reset by peer");
+		await waitFor(() => f.worker("ag_04"), "the successor after the streak");
+		assert.equal(f.worker("ag_04").model, "claude-code-cli/claude-sonnet-5-5", "this team moved to its fallback");
+		assert.deepEqual(deadEntries(f), [], "no chat-wide mark");
+		const next = (await f.call("team_create", { name: "Next", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
+		assert.match(next, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/);
+		// This team stays on its fallback: the monitor's replacement skips the primary.
+		f.worker("ag_04").exit();
+		const replaced = (await f.call("team_succeed", { team: "Crew", role: "monitor-2" })).content[0].text;
+		assert.match(replaced, /^Started monitor-3 \(ag_\d+\) to succeed monitor-2 \(ag_04\) on pi\/claude-code-cli\/claude-sonnet-5-5\/low/);
+	} finally { await f.cleanup(); }
+});
+
+test("runtime fallback: once the hour is over a new team retries the primary, while the team that switched stays on its fallback", async () => {
+	const h = fallbackHarness();
+	const realNow = Date.now;
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		failTurn(h.worker("ag_03"), OLLAMA_MONTHLY);
+		await waitFor(() => h.worker("ag_04"), "the switch");
+		Date.now = () => realNow() + 61 * 60_000;
+		const next = (await h.call("team_create", { name: "Next", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
+		assert.match(next, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/, "the mark expired");
+		h.worker("ag_04").exit();
+		const replaced = (await h.call("team_succeed", { team: "Crew", role: "monitor-2" })).content[0].text;
+		assert.match(replaced, /^Started monitor-3 \(ag_\d+\) to succeed monitor-2 \(ag_04\) on pi\/claude-code-cli\/claude-sonnet-5-5\/low/, "the switched team keeps its fallback");
+	} finally { Date.now = realNow; await h.cleanup(); }
 });

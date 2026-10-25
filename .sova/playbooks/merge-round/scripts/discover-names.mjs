@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The merge round's private names (PLAYBOOK.md, step 0): collects what this machine knows that must
+// The merge round's private names (PLAYBOOK.md → references/start.md): collects what this machine knows that must
 // never reach the public repo, and merges it into `<state root>/merge-round.json`, the list
 // leak-scan.mjs checks every push against. Node builtins only.
 //

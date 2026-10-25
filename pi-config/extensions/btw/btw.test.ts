@@ -5,12 +5,16 @@
  *
  * pi-tui and pi-ai are nested under pi-coding-agent's node_modules, so a resolve hook
  * retries @earendil-works/* specifiers from pi-coding-agent before btw.ts is imported.
- * The model boundary is a fake createAgentSession: no model is ever called.
+ * The model boundary is a fake worker host (btw chats run in processes of their own): no model
+ * is ever called, no process started.
  */
 
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
+import { appendFileSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { registerHooks } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const piAgentUrl = import.meta.resolve("@earendil-works/pi-coding-agent");
 registerHooks({
@@ -25,6 +29,8 @@ registerHooks({
 });
 
 const { registerBtw } = await import("./btw.ts");
+const { FakeWorkerHost } = await import("../subagents/tests/fake-worker-host.ts");
+type WorkerStart = import("../subagents/worker-host.ts").WorkerStart;
 
 // ── fakes ───────────────────────────────────────────────────────────────────
 
@@ -62,16 +68,75 @@ function tuiCustom(factory: any, options: any) {
 	});
 }
 
+/**
+ * The shared fake worker host (subagents/tests/fake-worker-host.ts), answering btw's questions as a
+ * btw chat would: `answer to <question>`, on the feed and in the chat's session file (which a
+ * reattached session reads). `hold` keeps a question unanswered until `finish`.
+ */
+class BtwHost extends FakeWorkerHost {
+	hold = false;
+	private readonly pending = new Map<string, { text: string; key: string }>();
+	constructor(dir: string) {
+		super({ sessionDir: dir });
+	}
+	override async start(req: WorkerStart) {
+		const ref = await super.start(req);
+		writeFileSync(ref.sessionFile, `${JSON.stringify({ type: "session", id: ref.chatId })}\n`);
+		return ref;
+	}
+	override async send(chatId: string, input: { text: string; delivery: "prompt" | "steer" | "followUp"; key: string }) {
+		const receipt = await super.send(chatId, input);
+		this.pending.set(chatId, input);
+		this.state(chatId, { status: "running" });
+		if (!this.hold) queueMicrotask(() => this.finish(chatId));
+		return receipt;
+	}
+	/** Answer the question under way: one run on the feed, its two messages in the file. */
+	finish(chatId: string) {
+		const asked = this.pending.get(chatId);
+		if (!asked) return;
+		this.pending.delete(chatId);
+		const w = this.get(chatId);
+		const from = w.frames.length;
+		// The host names a settle by the send before it and its count in the process.
+		this.turn(chatId, { user: asked.text, reply: `answer to ${asked.text}`, key: `${asked.key}#1` });
+		const ends = w.frames.slice(from).flatMap((f) => (f.t === "event" && (f.event as any).type === "message_end" ? [f.event as any] : []));
+		const lines = ends.map((e) => JSON.stringify({ type: "message", id: e.entryId, message: e.message }));
+		appendFileSync(w.ref.sessionFile, `${lines.join("\n")}\n`);
+	}
+	get sends() {
+		return [...this.workers.values()].flatMap((w) => w.sends.map((send) => ({ chatId: w.ref.chatId, ...send })));
+	}
+	get stops() {
+		return [...this.workers.values()].flatMap((w) => w.stops.map((reason) => ({ chatId: w.ref.chatId, reason })));
+	}
+}
+
+/** The btw chats started, in order. */
+const chatIds = (host: BtwHost): string[] => [...host.workers.keys()];
+/** Every answer's entry id in its btw chat, in order. */
+const answerIds = (host: BtwHost): string[] =>
+	[...host.workers.values()].flatMap((w) => w.frames.flatMap((f) => (f.t === "event" && (f.event as any).type === "message_end" && (f.event as any).message.role === "assistant" ? [(f.event as any).entryId] : [])));
+
 type HarnessOptions = {
 	custom?: (factory: any, options: any) => Promise<unknown>;
 	input?: string | undefined;
 	confirm?: boolean;
 	entries?: any[];
 	idle?: boolean;
-	/** pi ≥0.87: every request is built from the session's SessionManager (`refreshContext()`), so
-	    an assignment to agent.state.messages never reaches the model. Default: the older contract. */
-	canonical?: boolean;
+	/** The worker host the session sees; default a fresh fake. `null`: none (the pi TUI). */
+	host?: BtwHost | null;
 };
+
+const roots: string[] = [];
+after(() => {
+	for (const dir of roots.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+function tempDir(): string {
+	const dir = mkdtempSync(join(tmpdir(), "btw-test-"));
+	roots.push(dir);
+	return dir;
+}
 
 function harness(options: HarnessOptions = {}) {
 	const commands = new Map<string, any>();
@@ -82,8 +147,8 @@ function harness(options: HarnessOptions = {}) {
 	const notices: { message: string; level: string }[] = [];
 	const inputs: any[] = [];
 	const confirms: any[] = [];
-	const prompts: string[] = [];
-	const sessions: { options: any; seed: any[] }[] = [];
+	const root = tempDir();
+	const host = options.host === undefined ? new BtwHost(root) : options.host;
 
 	const pi: any = {
 		registerCommand: (name: string, command: any) => commands.set(name, command),
@@ -104,13 +169,20 @@ function harness(options: HarnessOptions = {}) {
 		// headless decision must come from the custom() probe, never from the mode.
 		mode: "rpc",
 		hasUI: true,
+		cwd: "/repo",
 		model: MODEL,
 		modelRegistry: {
 			getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "key" }),
 			find: (provider: string, id: string) => [MODEL, ALT_MODEL].find((m) => m.provider === provider && m.id === id),
 		},
-		sessionManager: { getEntries: () => entries, getLeafId: () => null, getBranch: () => entries },
-		getSystemPrompt: () => "system prompt",
+		sessionManager: {
+			getEntries: () => entries,
+			getLeafId: () => entries.at(-1)?.id ?? null,
+			getBranch: () => entries,
+			getSessionId: () => "parent-sid",
+			getSessionFile: () => "/sessions/parent.jsonl",
+		},
+		getSystemPrompt: () => "system prompt\nCurrent date and time: now\nCurrent working directory: /repo",
 		isIdle: () => options.idle ?? true,
 		ui: {
 			custom: options.custom ?? headlessCustom,
@@ -128,68 +200,33 @@ function harness(options: HarnessOptions = {}) {
 		},
 	};
 
-	async function createAgentSession(sessionOptions: any) {
-		const agent: any = { state: { messages: [] } };
-		const record = { options: sessionOptions, seed: [] as any[] };
-		sessions.push(record);
-		const session: any = {
-			agent,
-			get state() {
-				return agent.state;
-			},
-			isStreaming: false,
-			subscribe: () => () => {},
-			async prompt(text: string) {
-				if (options.canonical) session.refreshContext();
-				record.seed = [...agent.state.messages];
-				prompts.push(text);
-				const exchange = [
-					{ role: "user", content: [{ type: "text", text }], timestamp: Date.now() },
-					{
-						role: "assistant",
-						content: [{ type: "text", text: `answer to ${text}` }],
-						provider: sessionOptions.model.provider,
-						model: sessionOptions.model.id,
-						api: sessionOptions.model.api,
-						usage: USAGE,
-						stopReason: "stop",
-						timestamp: Date.now(),
-					},
-				];
-				if (!options.canonical) {
-					agent.state.messages.push(...exchange);
-					return;
-				}
-				for (const message of exchange) sessionOptions.sessionManager.appendMessage(message);
-				session.refreshContext();
-			},
-			async abort() {},
-			dispose() {},
-		};
-		if (options.canonical) {
-			session.refreshContext = () => {
-				agent.state.messages = [...sessionOptions.sessionManager.buildSessionContext().messages];
-			};
-		}
-		return { session };
-	}
-
-	registerBtw(pi, { createAgentSession: createAgentSession as any });
+	registerBtw(pi, { workerHost: () => (host ?? undefined) as any, root: () => root });
 
 	return {
 		ctx,
+		host: host!,
+		root,
 		entries,
 		sent,
 		userMessages,
 		notices,
 		inputs,
 		confirms,
-		prompts,
-		sessions,
+		/** The questions sent to btw chats. */
+		get prompts() {
+			return host ? host.sends.map((s) => s.text) : [];
+		},
+		/** Each btw chat started: its loadout and seed. */
+		get sessions() {
+			return host ? host.starts.map((start) => ({ start, spec: start.spec, seed: (start.session as any).seed.messages })) : [];
+		},
 		run: (name: string, args = "") => commands.get(name).handler(args, ctx),
 		start: () => events.get("session_start")({ type: "session_start" }, ctx),
+		shutdown: () => events.get("session_shutdown")({ type: "session_shutdown" }, ctx),
 	};
 }
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function details(question: string, extra: Record<string, unknown> = {}) {
 	return {
@@ -323,26 +360,11 @@ test("restored notes seed the next headless exchange (thread continuity)", async
 	assert.equal(h.entries.filter((e) => e.customType === "btw-note").length, 2);
 });
 
-test("pi 0.87: restored notes reach the canonical session context (thread continuity)", async () => {
-	const h = harness({ entries: [noteEntry(details("first"))], canonical: true });
+test("inject hands off the restored thread and the new exchange, in order", async () => {
+	const h = harness({ entries: [noteEntry(details("first"))], confirm: true });
 	await h.start();
 	await h.run("btw", "second");
-
-	const seedTexts = h.sessions[0].seed.map((m: any) => m.content[0].text);
-	assert.ok(seedTexts.includes("first"), "the restored exchange is in what the model is sent");
-	assert.ok(seedTexts.includes("answer to first"));
-});
-
-test("pi 0.87: inject hands off the same side thread as under the older contract", async () => {
-	const handoff = async (canonical: boolean) => {
-		const h = harness({ entries: [noteEntry(details("first"))], confirm: true, canonical });
-		await h.start();
-		await h.run("btw", "second");
-		return injectedThread(h);
-	};
-	const legacy = await handoff(false);
-	assert.match(legacy, /first[\s\S]*second/);
-	assert.equal(await handoff(true), legacy);
+	assert.match(await injectedThread(h), /first[\s\S]*second/);
 });
 
 test("an exchange stored as both kinds (TUI --save) is restored once", async () => {
@@ -369,8 +391,11 @@ test("resets and overrides still apply across both entry kinds", async () => {
 
 	assert.doesNotMatch(text, /before reset/);
 	assert.match(text, /User: after reset \(note\)[\s\S]*User: after reset \(entry\)/);
-	assert.equal(h.sessions[0].options.model.id, "m2", "model override restored");
-	assert.equal(h.sessions[0].options.thinkingLevel, "high", "thinking override restored");
+	const next = harness({ custom: tuiCustom, entries: entries() });
+	await next.start();
+	await next.run("btw:tangent", "check");
+	assert.equal(next.sessions[0]!.spec.model, "test/m2", "model override restored");
+	assert.equal(next.sessions[0]!.spec.thinking, "high", "thinking override restored");
 
 	// The reset's tangent mode is restored too: bare /btw headless asks under the tangent title.
 	const headless = harness({ entries: entries() });
@@ -433,4 +458,157 @@ test("TUI /btw:inject never asks for confirmation", async () => {
 	await h.start();
 	await injectedThread(h);
 	assert.equal(h.confirms.length, 0);
+});
+
+// ── the side thread as a hidden chat ─────────────────────────────────────────
+
+const WORKER_MARK = join(import.meta.dirname, "..", "subagents", "worker-mark.ts");
+const BTW_CHILD = join(import.meta.dirname, "child.ts");
+
+test("the first question starts one hidden btw chat: seeded, the coding tools, the marker and child.ts, the prompt in a 0600 file named by path", async () => {
+	const h = harness({ entries: [{ type: "message", id: "m1", parentId: null, message: { role: "user", content: [{ type: "text", text: "main work" }], timestamp: 1 } }] });
+	await h.run("btw", "what is x?");
+	await h.run("btw", "and y?");
+
+	assert.equal(h.sessions.length, 1, "a follow-up continues the same chat");
+	const { start, spec, seed } = h.sessions[0]!;
+	assert.match(start.key, /^parent-sid:btw-contextual-/);
+	assert.equal(spec.kind, "btw");
+	assert.deepEqual(spec.parent, { sessionId: "parent-sid", path: "/sessions/parent.jsonl", workerId: start.key.slice("parent-sid:".length) });
+	assert.equal(spec.cwd, "/repo");
+	assert.equal(spec.model, "test/m1");
+	assert.equal(spec.thinking, "off");
+	assert.deepEqual(spec.builtins, ["read", "bash", "edit", "write"]);
+	assert.deepEqual(spec.extensions, [WORKER_MARK, BTW_CHILD], "the marker first, child.ts last");
+	assert.equal(spec.appendSystemPrompt, null);
+	assert.equal(start.task, null, "it comes up idle; the question is a send");
+	assert.equal((start.session as any).seed.dir, join(h.root, ".sessions"));
+	assert.equal(seed[0].content[0].text, "main work", "the main thread's conversation is the seed");
+
+	const file = spec.env.PI_BTW_SYSTEM_PROMPT_FILE;
+	assert.ok(file.startsWith(join(h.root, ".runs")), "the variable is a path in the thread's run dir");
+	assert.equal(statSync(file).mode & 0o777, 0o600);
+	const prompt = readFileSync(file, "utf8");
+	assert.ok(prompt.startsWith("system prompt\n\nYou are having an aside conversation"), "the main thread's prompt without its footer, then the aside text");
+	assert.doesNotMatch(prompt, /Current date and time/);
+
+	assert.deepEqual(h.prompts, ["what is x?", "and y?"]);
+	assert.equal(h.host.sends[0]!.chatId, h.host.sends[1]!.chatId);
+	assert.notEqual(h.host.sends[0]!.key, h.host.sends[1]!.key, "each question is its own keyed send");
+	assert.equal(h.entries.filter((e) => e.customType === "btw-note").length, 2);
+	assert.equal(h.entries.find((e) => e.customType === "btw-note").details.entryId, answerIds(h.host)[0], "the answer's entry id in the btw chat is recorded with it");
+});
+
+test("a thread switch, /btw:new, /btw:clear and a model change stop the chat and remove its run dir", async () => {
+	const h = harness();
+	await h.run("btw", "one");
+	const promptFile = h.sessions[0]!.spec.env.PI_BTW_SYSTEM_PROMPT_FILE;
+	await h.run("btw:tangent", "two");
+	assert.deepEqual(h.host.stops.map((s) => s.chatId), chatIds(h.host).slice(0, 1));
+	assert.throws(() => statSync(promptFile), /ENOENT/, "the prompt file goes with the chat");
+	assert.match(h.sessions[1]!.start.key, /btw-tangent-/);
+	assert.deepEqual(h.sessions[1]!.seed, [], "a tangent starts with no main-thread context");
+	await h.run("btw:new");
+	await h.run("btw:model", "test m2 openai-responses");
+	await h.run("btw:clear");
+	assert.deepEqual(h.host.stops.map((s) => s.chatId), chatIds(h.host).slice(0, 3));
+	assert.equal(readdirSync(join(h.root, ".runs")).length, 0);
+});
+
+test("without Sova's worker host /btw says it needs the chat runtime, and records nothing", async () => {
+	const h = harness({ host: null });
+	await h.run("btw", "anyone there?");
+	assert.equal(h.entries.length, 0);
+	assert.match(h.notices.at(-1)!.message, /\/btw needs Sova's chat runtime/);
+});
+
+test("/btw:summarize runs in a second hidden chat with no tools and the summary prompt alone, stopped when it answers", async () => {
+	const h = harness({ confirm: true, entries: [noteEntry(details("q"))] });
+	await h.start();
+	await h.run("btw:summarize");
+	const summary = h.sessions.at(-1)!;
+	assert.match(summary.start.key, /btw-summarize-/);
+	assert.deepEqual(summary.spec.builtins, []);
+	assert.equal(summary.spec.thinking, "off");
+	assert.deepEqual(h.host.stops.map((s) => s.reason), ["btw summary done"]);
+	assert.equal(h.userMessages.length, 1);
+});
+
+test("a reload mid-question leaves the chat running; the reopened session reattaches it and records the answer once, even across a second reload", async () => {
+	const dir = tempDir();
+	const host = new BtwHost(dir);
+	host.hold = true;
+	const first = harness({ host });
+	void first.run("btw", "slow question");
+	await tick();
+	assert.equal(host.sends.length, 1);
+	await first.shutdown();
+	assert.equal(host.stops.length, 0, "the closing session leaves the chat running");
+
+	const second = harness({ host, entries: first.entries });
+	await second.start();
+	host.finish(chatIds(host)[0]!);
+	await tick();
+	const notes = () => second.entries.filter((e) => e.customType === "btw-note");
+	assert.equal(notes().length, 1);
+	assert.equal(notes()[0].details.question, "slow question");
+	assert.equal(notes()[0].details.answer, "answer to slow question");
+	assert.equal(notes()[0].details.entryId, answerIds(host)[0]);
+
+	await second.shutdown();
+	const third = harness({ host, entries: second.entries });
+	await third.start();
+	await tick();
+	assert.equal(third.entries.filter((e) => e.customType === "btw-note").length, 1, "an answer already on the branch is not recorded again");
+	host.hold = false;
+	await third.run("btw", "follow-up");
+	assert.equal(host.starts.length, 1, "the follow-up continues the reattached chat");
+	assert.equal(third.entries.filter((e) => e.customType === "btw-note").length, 2);
+});
+
+test("an answer whose feed was missed (a gap) is read from the chat's file when its state says it settled", async () => {
+	const h = harness();
+	h.host.hold = true;
+	const asked = h.run("btw", "missed?");
+	await tick();
+	const w = h.host.get(chatIds(h.host)[0]!);
+	const watchers = [...w.watchers];
+	w.watchers.clear();
+	h.host.finish(w.ref.chatId);
+	for (const fn of watchers) w.watchers.add(fn);
+	h.host.state(w.ref.chatId, {});
+	await asked;
+	const note = h.entries.find((e) => e.customType === "btw-note");
+	assert.equal(note?.details.answer, "answer to missed?");
+	assert.equal(note?.details.entryId, answerIds(h.host)[0]);
+});
+
+test("at session_start a btw chat of another mode than the restored thread is stopped and records nothing", async () => {
+	const dir = tempDir();
+	const host = new BtwHost(dir);
+	const first = harness({ host });
+	await first.run("btw", "contextual one");
+	await first.shutdown();
+	const entries = [...first.entries, { type: "custom", customType: "btw-thread-reset", data: { timestamp: 1, mode: "tangent" } }];
+	const second = harness({ host, entries });
+	await second.start();
+	await tick();
+	assert.deepEqual(host.stops.map((s) => s.reason), ["no btw thread records it"]);
+	assert.equal(second.entries.filter((e) => e.customType === "btw-note").length, 1);
+});
+
+test("no pi session is created in this process anywhere in pi-config: every side chat goes through the worker host", () => {
+	const root = join(import.meta.dirname, "..", "..");
+	const offenders: string[] = [];
+	const walk = (dir: string) => {
+		for (const name of readdirSync(dir)) {
+			// Test tooling (`tests/`) may drive a pi session of its own; product code never does.
+			if (name === "node_modules" || name === "tests" || name.startsWith(".")) continue;
+			const path = join(dir, name);
+			if (statSync(path).isDirectory()) walk(path);
+			else if (/\.(ts|mjs|js)$/.test(name) && !name.endsWith(".test.ts") && /\bcreateAgentSession\s*\(/.test(readFileSync(path, "utf8"))) offenders.push(path.slice(root.length + 1));
+		}
+	};
+	walk(root);
+	assert.deepEqual(offenders, []);
 });

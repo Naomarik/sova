@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Install Sova (https://github.com/Naomarik/sova) into a directory of its own, put a `sova`
-# launcher on PATH, link Sova's pi extensions into pi's agent directory and, if you want one,
-# install a login service. Safe to pipe from curl:
+# launcher on PATH with an app-launcher entry that opens Sova in its own window, link Sova's pi
+# extensions into pi's agent directory and, if you want one, install a login service. Safe to
+# pipe from curl:
 #
-#   curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/install.sh | bash
 #
-# That installs the ref below (master until the first release is tagged); SOVA_REF picks another.
+# That installs the newest stable release (the `stable` tag); SOVA_REF picks another tag, branch or
+# commit, and a re-run installs the latest of whatever ref it names.
 #
 # The whole script is one function, main, called on its last line: bash reads all of it before any
 # of it runs, so a download cut short runs nothing.
@@ -24,6 +26,11 @@
 #   <install dir>          default ~/.local/share/sova — a clone, its node_modules, its dist/ and
 #                          the pinned Bun in .bun/bin/bun
 #   <bin dir>/sova         default ~/.local/bin/sova — a launcher this script wrote
+#   an app-launcher entry that runs `<bin dir>/sova app` (--no-app-entry skips it): on Linux
+#                          ${XDG_DATA_HOME:-~/.local/share}/applications/sova.desktop and its icon
+#                          .../icons/hicolor/512x512/apps/sova.png, on macOS ~/Applications/Sova.app.
+#                          `sova app` keeps its browser profile in ~/.config/sova-browser (Linux) or
+#                          ~/Library/Application Support/sova-browser (macOS).
 #   <agent dir>/extensions/<name>
 #                          one symlink per extension in <install dir>/pi-config/extensions, where
 #                          <agent dir> is $PI_CODING_AGENT_DIR, else ~/.pi/agent (--no-extensions
@@ -50,32 +57,39 @@
 #
 # Flags: --dir <path> install directory · --bin <path> directory for the launcher ·
 # --service / --no-service install the login service or not, without asking · --port <n> the
-# service's port (default 4800) · --no-extensions link no pi extensions · --reinstall rebuild
-# even when the install is already at the requested commit.
+# service's port (default 4800) · --no-extensions link no pi extensions · --no-app-entry write
+# no app-launcher entry · --reinstall rebuild even when the install is already at the requested
+# commit.
 # Env: SOVA_REF (tag, branch or commit to install; a name that is none of them stops the install),
-# SOVA_REPO (clone source, for testing).
+# SOVA_NO_APP_ENTRY=1 (as --no-app-entry), SOVA_REPO (clone source, for testing),
+# SOVA_KEEP_PREVIOUS=<path> (move the install this run replaces to <path> instead of deleting it:
+# Settings → General's upgrade keeps it until the new version answers, and puts it back otherwise).
 set -euo pipefail
 
 # The body is not indented, so the here-documents below keep their text as written.
 main() {
 
 repo=${SOVA_REPO:-https://github.com/Naomarik/sova.git}
-# RELEASE: in the commit a release tag points at, set this default to that tag (and replace vNEXT
-# in docs/public-links.md with it), so the installer fetched from the tag installs the tag. Point
-# the install command in README.md, docs/getting-started.md and site/src/content/docs/install.md
-# at the tag's script, and set `release` in site/src/data/site.ts. Until then it is master.
-ref=${SOVA_REF:-master}
+# RELEASE: the default is `stable`, the one tag that moves: each release points it at its own
+# numbered tag (vX.Y.Z), and numbered tags never move. So the installer fetched from any ref, a
+# numbered tag's included, installs whatever `stable` points at when it runs; pinning a release
+# takes SOVA_REF=vX.Y.Z. Nothing here changes per release (.sova/playbooks/release/PLAYBOOK.md).
+ref=${SOVA_REF:-stable}
 dir=${SOVA_DIR:-$HOME/.local/share/sova}
 bindir=${SOVA_BIN:-$HOME/.local/bin}
 tty=${SOVA_TTY:-/dev/tty}
 port=4800
 service=ask            # ask | yes | no
 extensions=true
+app_entry=true
+[ "${SOVA_NO_APP_ENTRY:-}" != 1 ] || app_entry=false
 reinstall=false
+keep_previous=${SOVA_KEEP_PREVIOUS:-}
 node_min_major=22
 node_min_minor=19
 marker="# sova-launcher v1"
 service_marker="sova-service v1"
+entry_marker="X-Sova-Launcher=v1"
 label=io.github.naomarik.sova
 
 die() { printf 'sova install: %s\n' "$1" >&2; exit 1; }
@@ -89,10 +103,11 @@ while [ $# -gt 0 ]; do
 		--service) service=yes; shift ;;
 		--no-service) service=no; shift ;;
 		--no-extensions) extensions=false; shift ;;
+		--no-app-entry) app_entry=false; shift ;;
 		--reinstall) reinstall=true; shift ;;
 		-h|--help)
 			say "usage: install.sh [--dir <install dir>] [--bin <launcher dir>] [--service | --no-service]"
-			say "                  [--port <n>] [--no-extensions] [--reinstall]"
+			say "                  [--port <n>] [--no-extensions] [--no-app-entry] [--reinstall]"
 			say "installs Sova into ${dir} and a launcher into ${bindir}/sova"
 			exit 0 ;;
 		*) die "unknown argument: $1 (try --help)" ;;
@@ -133,6 +148,11 @@ fi
 
 case "$dir" in /*) ;; *) dir=$PWD/$dir ;; esac
 case "$bindir" in /*) ;; *) bindir=$PWD/$bindir ;; esac
+if [ -n "$keep_previous" ]; then
+	case "$keep_previous" in /*) ;; *) keep_previous=$PWD/$keep_previous ;; esac
+	{ [ -e "$keep_previous" ] || [ -L "$keep_previous" ]; } &&
+		die "SOVA_KEEP_PREVIOUS: $keep_previous already exists; nothing was changed"
+fi
 launcher=$bindir/sova
 
 # pi's agent directory, resolved as pi resolves it: $PI_CODING_AGENT_DIR (a leading ~ expanded),
@@ -167,9 +187,44 @@ if [ -e "$launcher" ] || [ -L "$launcher" ]; then
 	fi
 fi
 
+# The app-launcher entry: a .desktop file and its icon on Linux, an app bundle on macOS. Only
+# ours is replaced: a .desktop file or an Info.plist with our marker (and the icon beside our own
+# .desktop file).
+os=$(uname -s)
+entry_kind=none
+if $app_entry; then
+	case "$os" in
+		Linux)
+			entry_kind=desktop
+			xdg_data=${XDG_DATA_HOME:-$HOME/.local/share}
+			entry_file=$xdg_data/applications/sova.desktop
+			entry_icon=$xdg_data/icons/hicolor/512x512/apps/sova.png
+			entry_ours=false
+			if [ -e "$entry_file" ] || [ -L "$entry_file" ]; then
+				if [ -f "$entry_file" ] && [ ! -L "$entry_file" ] && grep -qxF "$entry_marker" "$entry_file" 2>/dev/null; then
+					entry_ours=true
+				else
+					die "$entry_file exists and was not written by this script. Move it, or pass --no-app-entry."
+				fi
+			fi
+			if ! $entry_ours && { [ -e "$entry_icon" ] || [ -L "$entry_icon" ]; }; then
+				die "$entry_icon exists and was not written by this script. Move it, or pass --no-app-entry."
+			fi ;;
+		Darwin)
+			entry_kind=bundle
+			entry_file=$HOME/Applications/Sova.app
+			if [ -e "$entry_file" ] || [ -L "$entry_file" ]; then
+				if [ -L "$entry_file" ] || [ ! -f "$entry_file/Contents/Info.plist" ] ||
+					! grep -qF "<!-- $entry_marker" "$entry_file/Contents/Info.plist" 2>/dev/null; then
+					die "$entry_file exists and was not written by this script. Move it, or pass --no-app-entry."
+				fi
+			fi ;;
+	esac
+fi
+
 # The login service: launchd on macOS, a systemd user unit on Linux.
 service_kind=none
-case "$(uname -s)" in
+case "$os" in
 	Darwin)
 		service_kind=launchd
 		service_file=$HOME/Library/LaunchAgents/$label.plist ;;
@@ -331,7 +386,12 @@ if $rebuild; then
 	fi
 	mv "$staging/sova" "$dir"
 	if [ -n "$backup" ]; then
-		rm -rf "$backup"
+		if [ -n "$keep_previous" ]; then
+			mv "$backup" "$keep_previous"
+			say "kept the previous install at $keep_previous"
+		else
+			rm -rf "$backup"
+		fi
 		backup=
 	fi
 else
@@ -357,36 +417,307 @@ write_file() {
 	wrote=true
 }
 
-write_file "$launcher" 755 <<LAUNCHER
+# launchd and systemd start services without the login shell's PATH, and neither does a desktop
+# start `sova app` with one: give them the directories the tools were found in, then the usual ones.
+service_path=
+add_path() {
+	[ -n "$1" ] || return 0
+	case ":$service_path:" in *":$1:"*) return 0 ;; esac
+	service_path=${service_path:+$service_path:}$1
+}
+for cmd in node git pnpm claude; do
+	found=$(command -v "$cmd" 2>/dev/null || true)
+	case "$found" in /*) add_path "$(dirname "$found")" ;; esac
+done
+add_path "$HOME/.local/bin"
+mise_shims=${MISE_DATA_DIR:-$HOME/.local/share/mise}/shims
+[ -d "$mise_shims" ] && add_path "$mise_shims"
+for d in /opt/homebrew/bin /usr/local/bin /usr/bin /bin /usr/sbin /sbin; do add_path "$d"; done
+
+# The launcher: the install's paths and port first, then a body that takes them as they are.
+{
+cat <<LAUNCHER
 #!/usr/bin/env bash
 $marker
 # Runs the built Sova server from its install directory, on the Bun in its .bun/ (SOVA_BUN names
 # another), on PORT, else the port it was installed with. HOST is read by the server.
 #   sova --node  run the server on Node instead (SOVA_RUNTIME=node does the same)
 #   sova token   print this install's access token (the server mints it at its first start)
-#   sova open    open the browser at the app, unlocked by the token in the URL's fragment
+#   sova app     open the app, unlocked by the token in the URL's fragment, in a bare window of a
+#                Chromium-family browser with a profile of its own (a tab of the default browser
+#                when there is none), starting the server first when nothing answers on the port.
+#                What the app-launcher entry runs. \`sova app --print-browser\` names the browser.
+#   sova open    the same as sova app
 set -euo pipefail
 dir=$(printf '%q' "$dir")
+self=$(printf '%q' "$launcher")
+install_port=$port
+tool_path=$(printf '%q' "$service_path")
 agent=\${PI_CODING_AGENT_DIR:-$(printf '%q' "$agent")}
-case "\$agent" in "~") agent=\$HOME ;; "~/"*) agent=\$HOME/\${agent#"~/"} ;; esac
-token() {
-	local f="\$agent/sova/auth-token"
-	[ -r "\$f" ] || { echo "sova: no token at \$f yet; start sova once and it mints one" >&2; exit 1; }
-	cat "\$f"
-}
-case "\${1:-}" in
-	token) token; exit 0 ;;
-	open)
-		url="http://127.0.0.1:\${PORT:-$port}/#t=\$(token)"
-		if command -v open >/dev/null 2>&1 && [ "\$(uname)" = Darwin ]; then exec open "\$url"; fi
-		if command -v xdg-open >/dev/null 2>&1; then exec xdg-open "\$url" >/dev/null 2>&1; fi
-		echo "sova: no browser opener (open, xdg-open); paste the token from 'sova token' into the page" >&2
-		exit 1 ;;
-esac
-export SOVA_BUN=\${SOVA_BUN:-\$dir/.bun/bin/bun}
-export PORT=\${PORT:-$port}
-exec "\$dir/scripts/start-server.sh" "\$@"
 LAUNCHER
+cat <<'LAUNCHER'
+case "$agent" in "~") agent=$HOME ;; "~/"*) agent=$HOME/${agent#"~/"} ;; esac
+port=${PORT:-$install_port}
+os=$(uname)
+token() {
+	local f="$agent/sova/auth-token"
+	[ -r "$f" ] || { echo "sova: no token at $f yet; start sova once and it mints one" >&2; exit 1; }
+	cat "$f"
+}
+healthy() {            # the server answers its health check on the port
+	if command -v curl >/dev/null 2>&1; then
+		curl -fsS -m 2 -o /dev/null "http://127.0.0.1:$port/api/health" 2>/dev/null
+	else
+		( exec 3<>"/dev/tcp/127.0.0.1/$port" &&
+			printf 'GET /api/health HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n' >&3 &&
+			head -n 1 <&3 | grep -q ' 200' ) 2>/dev/null
+	fi
+}
+notify() {             # on stderr, and as a desktop notification where there is one
+	echo "sova: $1" >&2
+	if [ "$os" = Darwin ]; then
+		command -v osascript >/dev/null 2>&1 &&
+			osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title "Sova"' -e 'end run' "$1" >/dev/null 2>&1 || true
+	else
+		command -v notify-send >/dev/null 2>&1 && notify-send -a Sova Sova "$1" >/dev/null 2>&1 || true
+	fi
+}
+start_server() {       # through the installer's login service when there is one, else in the background
+	local unit="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/sova.service"
+	local plist="$HOME/Library/LaunchAgents/io.github.naomarik.sova.plist" domain
+	pid=
+	if [ "$port" = "$install_port" ]; then
+		if [ "$os" = Darwin ] && grep -qF 'sova-service v1' "$plist" 2>/dev/null; then
+			log=~/Library/Logs/sova.log
+			domain=gui/$(id -u)
+			launchctl kickstart "$domain/io.github.naomarik.sova" >/dev/null 2>&1 && return 0
+			launchctl bootstrap "$domain" "$plist" >/dev/null 2>&1 && return 0
+		elif [ "$os" = Linux ] && grep -qF 'sova-service v1' "$unit" 2>/dev/null; then
+			log="journalctl --user -u sova.service"
+			systemctl --user start sova.service >/dev/null 2>&1 && return 0
+		fi
+	fi
+	mkdir -p "$agent/sova"
+	log=$agent/sova/app-server.log
+	echo "sova: starting the server on port $port (output: $log)" >&2
+	PATH=$PATH:$tool_path nohup "$self" >"$log" 2>&1 </dev/null &
+	pid=$!
+}
+wait_up() {            # up to SOVA_APP_WAIT (20) seconds; a background server that exits stops it
+	local i=0 limit=$(( ${SOVA_APP_WAIT:-20} * 2 ))
+	while [ "$i" -lt "$limit" ]; do
+		healthy && return 0
+		if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+			notify "the Sova server exited before it answered on port $port; see $log"
+			exit 1
+		fi
+		sleep 0.5
+		i=$((i + 1))
+	done
+	healthy && return 0
+	notify "Sova did not answer on port $port within ${SOVA_APP_WAIT:-20} s; see $log"
+	exit 1
+}
+pick_browser() {       # a Chromium-family browser's executable, or nothing
+	local id= d exe name want= app
+	if [ "$os" = Darwin ]; then
+		# The default https handler, when it is one of them.
+		if command -v defaults >/dev/null 2>&1; then
+			id=$(defaults read ~/Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers 2>/dev/null |
+				awk '/\{/ { d++ }
+					/LSHandlerRoleAll = / && d == 1 { v = $3; gsub(/[";]/, "", v); role = v }
+					/LSHandlerURLScheme = https;/ && d == 1 { https = 1 }
+					/\}/ { if (d == 1) { if (https && role != "") { print role; exit } role = ""; https = 0 } d-- }' |
+				tr 'A-Z' 'a-z' || true)
+		fi
+		case "$id" in
+			com.google.chrome) want="Google Chrome" ;;
+			org.chromium.chromium) want=Chromium ;;
+			com.brave.browser) want="Brave Browser" ;;
+			com.microsoft.edgemac) want="Microsoft Edge" ;;
+			com.vivaldi.vivaldi) want=Vivaldi ;;
+			net.imput.helium) want=Helium ;;
+		esac
+		for name in ${want:+"$want"} "Google Chrome" Chromium "Brave Browser" "Microsoft Edge" Vivaldi Helium; do
+			for d in /Applications "$HOME/Applications"; do
+				app="$d/$name.app"
+				[ -d "$app" ] || continue
+				exe=$(defaults read "$app/Contents/Info" CFBundleExecutable 2>/dev/null || true)
+				[ -n "$exe" ] || exe=$name
+				[ -x "$app/Contents/MacOS/$exe" ] && { printf '%s\n' "$app/Contents/MacOS/$exe"; return 0; }
+			done
+		done
+		return 1
+	fi
+	# The default browser, when it is one of them, run as its .desktop file says.
+	id=$(xdg-settings get default-web-browser 2>/dev/null || true)
+	case "$id" in
+		google-chrome* | chromium* | brave* | microsoft-edge* | vivaldi* | helium*)
+			for d in "${XDG_DATA_HOME:-$HOME/.local/share}/applications" "$HOME/.nix-profile/share/applications" \
+				/usr/local/share/applications /usr/share/applications; do
+				[ -f "$d/$id" ] || continue
+				exe=$(sed -n 's/^Exec=\([^ ]*\).*/\1/p' "$d/$id" | head -n 1)
+				exe=$(command -v "$exe" 2>/dev/null || true)
+				[ -z "$exe" ] || { printf '%s\n' "$exe"; return 0; }
+				break
+			done ;;
+	esac
+	for name in google-chrome-stable google-chrome chromium chromium-browser brave brave-browser microsoft-edge vivaldi; do
+		exe=$(command -v "$name" 2>/dev/null || true)
+		[ -z "$exe" ] || { printf '%s\n' "$exe"; return 0; }
+	done
+	return 1
+}
+open_app() {
+	local tok url browser profile
+	if ! healthy; then
+		start_server
+		wait_up
+	fi
+	tok=$(token)
+	url="http://127.0.0.1:$port/#t=$tok"
+	if browser=$(pick_browser); then
+		if [ "$os" = Darwin ]; then
+			profile="$HOME/Library/Application Support/sova-browser"
+			mkdir -p "$profile"
+		else
+			profile="${XDG_CONFIG_HOME:-$HOME/.config}/sova-browser"
+			mkdir -p "$profile"
+			# A new profile: the system title bar (bare under a tiling compositor), no first-run page.
+			if [ ! -e "$profile/Default/Preferences" ]; then
+				mkdir -p "$profile/Default"
+				printf '{"browser":{"custom_chrome_frame":false}}\n' > "$profile/Default/Preferences"
+				: > "$profile/First Run"
+			fi
+		fi
+		chmod 700 "$profile"
+		nohup "$browser" --app="$url" --user-data-dir="$profile" --no-first-run --no-default-browser-check \
+			>/dev/null 2>&1 </dev/null &
+		exit 0
+	fi
+	if command -v open >/dev/null 2>&1 && [ "$os" = Darwin ]; then exec open "$url"; fi
+	if command -v xdg-open >/dev/null 2>&1; then exec xdg-open "$url" >/dev/null 2>&1; fi
+	echo "sova: no browser opener (open, xdg-open); paste the token from 'sova token' into the page" >&2
+	exit 1
+}
+case "${1:-}" in
+	token) token; exit 0 ;;
+	app | open)
+		if [ "${2:-}" = --print-browser ]; then pick_browser; exit 0; fi
+		open_app ;;
+esac
+export SOVA_BUN=${SOVA_BUN:-$dir/.bun/bin/bun}
+export PORT=$port
+# The server finds the install it runs from through its launcher (Settings → General's updates).
+export SOVA_LAUNCHER=$self
+exec "$dir/scripts/start-server.sh" "$@"
+LAUNCHER
+} | write_file "$launcher" 755
+
+# ---- the app-launcher entry: runs `sova app` ----
+
+# copy_file <src> <dst>: <dst> becomes a copy of <src>, only when it differs. Sets `wrote`.
+copy_file() {
+	if [ -f "$2" ] && [ ! -L "$2" ] && cmp -s "$1" "$2"; then wrote=false; return 0; fi
+	mkdir -p "$(dirname "$2")"
+	cp "$1" "$2.new.$$"
+	chmod 644 "$2.new.$$"
+	mv "$2.new.$$" "$2"
+	wrote=true
+}
+icon_src=$dir/public/icons/pwa-512.png
+entry_note=
+case "$entry_kind" in
+	desktop)
+		# Exec quoting, then the .desktop string escape: \ " ` $ escaped, % doubled, quoted.
+		dq() {
+			local s=$1
+			s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//\`/\\\`}; s=${s//\$/\\\$}; s=${s//%/%%}; s=${s//\\/\\\\}
+			printf '"%s"' "$s"
+		}
+		write_file "$entry_file" 644 <<DESKTOP
+# Written by Sova's install.sh; re-running it keeps this file current.
+[Desktop Entry]
+Type=Application
+Name=Sova
+Comment=The web app for the pi coding agent, in a window of its own
+Exec=$(dq "$launcher") app
+Icon=sova
+Terminal=false
+StartupNotify=true
+Categories=Development;
+$entry_marker
+DESKTOP
+		entry_changed=$wrote
+		if [ -f "$icon_src" ]; then
+			copy_file "$icon_src" "$entry_icon"
+			$wrote && entry_changed=true
+		fi
+		if $entry_changed; then
+			command -v update-desktop-database >/dev/null 2>&1 &&
+				{ update-desktop-database -q "$xdg_data/applications" >/dev/null 2>&1 || true; }
+			command -v gtk-update-icon-cache >/dev/null 2>&1 && [ -d "$xdg_data/icons/hicolor" ] &&
+				{ gtk-update-icon-cache -q -t -f "$xdg_data/icons/hicolor" >/dev/null 2>&1 || true; }
+		fi
+		entry_note="$entry_file" ;;
+	bundle)
+		xml() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+		write_file "$entry_file/Contents/Info.plist" 644 <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- $entry_marker: written by Sova's install.sh; re-running it keeps this bundle current. -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key><string>Sova</string>
+	<key>CFBundleDisplayName</key><string>Sova</string>
+	<key>CFBundleIdentifier</key><string>io.github.naomarik.sova.app</string>
+	<key>CFBundleExecutable</key><string>sova-app</string>
+	<key>CFBundleIconFile</key><string>sova</string>
+	<key>CFBundlePackageType</key><string>APPL</string>
+	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+	<key>CFBundleShortVersionString</key><string>1.0</string>
+	<!-- The window is the browser's: no Dock icon of its own while sova app starts it. -->
+	<key>LSUIElement</key><true/>
+	<!-- The executable is a script: without this macOS starts it, and the browser it execs, under Rosetta. -->
+	<key>LSArchitecturePriority</key><array><string>arm64</string></array>
+</dict>
+</plist>
+PLIST
+		entry_changed=$wrote
+		write_file "$entry_file/Contents/MacOS/sova-app" 755 <<APP
+#!/bin/bash
+# Written by Sova's install.sh: opens Sova in its own window (sova app).
+exec $(printf '%q' "$launcher") app
+APP
+		$wrote && entry_changed=true
+		# The icon, built from the install's PNG when that changed (kept as Resources/sova.png).
+		res=$entry_file/Contents/Resources
+		if [ -f "$icon_src" ] && command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1 &&
+			! { [ -f "$res/sova.icns" ] && cmp -s "$icon_src" "$res/sova.png"; }; then
+			iconset=$(mktemp -d "${TMPDIR:-/tmp}/sova-icon.XXXXXX")
+			mkdir "$iconset/sova.iconset"
+			icon_ok=true
+			for size in 16 32 128 256 512; do
+				sips -z "$size" "$size" "$icon_src" --out "$iconset/sova.iconset/icon_${size}x${size}.png" >/dev/null 2>&1 || icon_ok=false
+				double=$((size * 2))
+				sips -z "$double" "$double" "$icon_src" --out "$iconset/sova.iconset/icon_${size}x${size}@2x.png" >/dev/null 2>&1 || icon_ok=false
+			done
+			if $icon_ok && iconutil -c icns -o "$iconset/sova.icns" "$iconset/sova.iconset" >/dev/null 2>&1; then
+				copy_file "$iconset/sova.icns" "$res/sova.icns"
+				copy_file "$icon_src" "$res/sova.png"
+				entry_changed=true
+			else
+				say "could not build Sova.app's icon (sips, iconutil); it has none"
+			fi
+			rm -rf "$iconset"
+		fi
+		lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+		if $entry_changed && [ -x "$lsregister" ]; then "$lsregister" -f "$entry_file" >/dev/null 2>&1 || true; fi
+		entry_note="$entry_file" ;;
+esac
+# The browser `sova app` would use; none means a tab of the default browser.
+app_browser=
+case "$os" in Linux | Darwin) app_browser=$("$launcher" app --print-browser 2>/dev/null || true) ;; esac
 
 # ---- pi extensions: one link per extension, into the installed clone ----
 
@@ -432,23 +763,6 @@ fi
 
 service_note=
 if [ "$service" = yes ]; then
-	# launchd and systemd start services without the login shell's PATH: give it the directories
-	# the tools were found in, then the usual ones.
-	service_path=
-	add_path() {
-		[ -n "$1" ] || return 0
-		case ":$service_path:" in *":$1:"*) return 0 ;; esac
-		service_path=${service_path:+$service_path:}$1
-	}
-	for cmd in node git pnpm claude; do
-		found=$(command -v "$cmd" 2>/dev/null || true)
-		case "$found" in /*) add_path "$(dirname "$found")" ;; esac
-	done
-	add_path "$HOME/.local/bin"
-	mise_shims=${MISE_DATA_DIR:-$HOME/.local/share/mise}/shims
-	[ -d "$mise_shims" ] && add_path "$mise_shims"
-	for d in /opt/homebrew/bin /usr/local/bin /usr/bin /bin /usr/sbin /sbin; do add_path "$d"; done
-
 	port_busy() {
 		node -e 'const s=require("net").connect(+process.argv[1],"127.0.0.1");s.on("connect",()=>process.exit(0));s.on("error",()=>process.exit(1));setTimeout(()=>process.exit(1),2000)' "$port" 2>/dev/null
 	}
@@ -575,6 +889,13 @@ else
 	say "$dir is already at $ref ($commit); nothing to rebuild"
 fi
 say "launcher: $launcher"
+if [ -n "$entry_note" ]; then
+	say "app entry: $entry_note — 'Sova' in your app launcher opens it in its own window (sova app)"
+fi
+if [ -z "$app_browser" ] && { [ "$os" = Linux ] || [ "$os" = Darwin ]; }; then
+	say "an app window needs Chrome, Chromium, Brave, Edge or Vivaldi; until one is installed, the app"
+	say "entry and 'sova open' open Sova in a tab of your default browser"
+fi
 say "runtime: Bun $("$dir/.bun/bin/bun" --version 2>/dev/null || echo '?') in $dir/.bun (sova --node runs it on Node instead)"
 if $extensions; then
 	say "pi extensions: linked from $dir/pi-config/extensions into $agent/extensions${skipped:+ (skipped:$skipped)}"
@@ -592,8 +913,9 @@ else
 fi
 say ""
 say "It serves http://127.0.0.1:$port — loopback only, and it asks every browser for this install's"
-say "token once: 'sova open' opens the page already unlocked, and 'sova token' prints the token to"
-say "paste on another device. Set PORT to move the port. The token is all that stands between the"
+say "token once: 'sova open' (what the app entry runs) opens the app already unlocked, starting the"
+say "server first when it is not running, and 'sova token' prints the token to paste on another"
+say "device. Set PORT to move the port. The token is all that stands between the"
 say "network and an app that can read your files and run commands as you, so think twice before"
 say "setting HOST=0.0.0.0."
 say ""

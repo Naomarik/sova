@@ -5,7 +5,7 @@ The sidebar foot's Agents row ends in a gear. It opens the Settings modal: a lef
 one panel, wider than the product's question-asking modals because two panes have to fit beside
 each other (§design/ground-rules and §design/deviations record the deviation). There is no route and no URL — Settings is a modal
 the session stays behind, closed by the scrim, Esc, or its Close button (Cancel while anything
-is unsaved, §app.settings-dialog/save-bar).
+is unsaved, which discards it, §app.settings-dialog/save-bar).
 
 The rail is the structure: each settings screen is one tab — General, Models, Accounts, Subagents,
 Alignment, Profiles, Overseer, Notifications, Decisions, Summaries, Memory, Organizations, Themes, Mesh, Public links, Outreach, Voice, Experimental.
@@ -40,10 +40,13 @@ can change the dialog's size by being long or short.
 
 - **Compress thinking & tool calls** — a default-on browser-local switch, applied immediately to every open transcript and stored in `localStorage["sova:compress-work"]`. Only `"false"` disables it; missing, unreadable, or corrupt values mean on. On selects the compact work timeline; off restores the original cards (§chat.work-chain-setting/preference).
 
-The first tab: how **this browser** draws Sova. Nothing here is written to the machine — no
-policy file, no server endpoint — which is the line between this screen and Models, where a
-switch is a rule every session obeys. The panel says so in one line, because "settings" in a tool
-with a shared config file is otherwise an open question.
+The first tab, in two parts. Above: how **this browser** draws Sova. Nothing there is written to
+the machine — no policy file, no server endpoint — which is the line between those settings and
+Models, where a switch is a rule every session obeys. Below, under the heading **Updates · this
+machine**: this machine's updates (§app/updates), the one part of General the server keeps. The
+panel's intro says so ("How this browser draws Sova. The settings above stay in this browser;
+another device keeps its own. Updates, below, are this machine's."), because "settings" in a tool with a shared config
+file is otherwise an open question.
 
 - **Sessions in Recent** — how many rows the sidebar's Recent region shows
 (§app.session-list/recent). A number field, **3 to 20, 5 by default**. This is the
@@ -75,6 +78,12 @@ places is a count that disagrees in one of them.
   It applies as you flip it, and persists in `localStorage["sova:show-summaries"]` for the same
   reason as the count: it is this browser's, not the machine's. Only the stored value `false` turns
   it off; a missing or unreadable value is on.
+
+- **Updates · this machine** — last, under its own heading: what runs, the last check and what it
+  found, Check Now, the upgrade button and its progress (§app/updates), then **Update from**,
+  **Check for updates automatically** and **Upgrade automatically**. Those three are the form
+  **Updates**, staged and written by the dialog's Save Changes (§app.settings-dialog/save-bar);
+  Check Now and the upgrade are actions that run at once.
 
 ## §app.settings-dialog/models — Models
 
@@ -123,7 +132,7 @@ can't see is a rule you can't undo.
 
 A switch doesn't write on its own. Every move is staged, and the dialog's **Save Changes** writes
 the whole policy — one save for every provider and model you moved, never one per switch — while
-its **Discard Changes** puts every switch back where the saved policy has it
+its **Cancel** discards every staged switch and closes the dialog
 (§app.settings-dialog/save-bar). The file is read per spawn and per turn, so a staged switch
 refuses nothing until it's saved, and this browser's model picker follows the saved policy the
 moment the save lands. Save reads the policy again first and applies only the entries you changed
@@ -188,7 +197,7 @@ Where they sit and how they are labelled is §chat.subagent-profiles/editor-rows
   happens without one is said once, as the section's lede, never under each row: "Without a
   fallback, the agent asks you which model to use when a route's primary can't run." A fallback
   identical to its primary is refused.
-- **Saving** is explicit — the dialog's Save Changes and Discard Changes
+- **Saving** is explicit — the dialog's Save Changes and Cancel
   (§app.settings-dialog/save-bar) — because a subagent setup is one coherent choice, not a save
   per worker row. Save waits for every chosen row to have a model and an effort, valid team
   thresholds and names, and for no fallback to be its own primary; the footer names the profile
@@ -224,8 +233,10 @@ The seventh tab: which model writes the summary line under each session's title
 here: a primary and a fallback are the choices that matter, and timeouts and budgets stay in the
 file.
 
-The file is `~/.pi/agent/topic-outline.json` (shown in the footnote), shared with pi in the
-terminal. The TUI and every runtime read it once per session, at session start, so **a change
+The file is `topic-outline.json` in the server's agent dir (`~/.pi/agent`, or the dir
+`PI_CODING_AGENT_DIR` names; shown in the footnote), shared with pi in the terminal. The
+topic-outline extension reads the same agent dir that its server and pi run with, so a test
+server with an agent dir of its own never reads or follows the user's file. The TUI and every runtime read it once per session, at session start, so **a change
 applies to sessions started afterwards, here and in the terminal**, and the panel says so. A
 missing file, or one naming no usable summarizer, reads as the extension's built-in chain —
 pi `ollama-cloud/deepseek-v4.1-flash`, then Claude Code `claude-sonnet-5-5` (Sonnet 5.5) — and, while nothing is staged,
@@ -433,9 +444,9 @@ The tab after Subagents, and the align mode's settings (§chat/alignment). It op
 Changes like every gated form (§app.settings-dialog/save-bar):
 
 - **Writing style**, a radiogroup of three, each option a label row with a one-line description:
-  **Default** "Today's detail: files, code and technical trade-offs.", **Simplified** "Short
-  sentences in everyday words, fewer items.", **Project manager** "Screens, wording and behaviour
-  only; no code. Technical detail folded into notes." Under it the hint "Reaches open chats at their
+  **Project manager** "Screens, wording and behaviour only; no code. Technical detail folded into
+  notes.", **Simplified** "Short sentences in everyday words, fewer items.", **Technical** "Files,
+  code and technical trade-offs in the plan." A saved `default` shows as Technical. Under it the hint "Reaches open chats at their
   next message."
 - **Visuals**, one switch, "Draw when it helps", with the hint "The align mode draws a wireframe or a
   flow on the alignment card when a picture explains faster than words. Applies to sessions you start
@@ -448,7 +459,7 @@ Changes like every gated form (§app.settings-dialog/save-bar):
 Under the groups one line says "A subagent profile can set its own writing style and visuals
 (Settings → Subagents)." Style and Visuals are stored in `<agent dir>/mode-align.json`
 (§chat.alignment/settings-file), Review in Sova's settings; one Save writes both, and a failure of
-either keeps the form's draft and shows the save-failed banner at its end. The defaults are Default,
+either keeps the form's draft and shows the save-failed banner at its end. The defaults are Project manager,
 Visuals off and Review off.
 
 ## §app.settings-dialog/profiles — Profiles
@@ -460,17 +471,19 @@ add or change one, or edit {path}." `{path}` is the project's `.sova/profiles/` 
 writes a profile; the one profile Sova writes is a new one of yours, from Save Current As Profile on
 a new session's screen (§chat.profiles/picker), and it is listed under Yours like any other.
 
-- **The list**, in the picker's groups: **Built in** (Default first), **This project ({name})** and
-  **Yours**. Each row has the profile's icon and label, its source badge, its summary line of what it
-  changes ("reads and messages sessions · no edit files · One at a time", then its mode and minor
-  modes when it sets them, "· delegate · align, spec, vis", or "· no minor modes" for `[]`; Default
-  "Nothing changed"), the playbook it links ("Runs {title}", or "Runs "{id}", not found here"), and its file's
+- **The list** holds real profiles only: **Yours**, then **This project ({name})**, then **Built
+  in** only while Sova ships a profile file or one of them can't be read (it ships none today).
+  There is no Default row: the picker's My settings is no profile, and exists only on the new
+  session screen. Each row has the profile's icon and label, its source badge, its summary line of
+  what it changes ("reads and messages sessions · no edit files · One at a time", then its mode and
+  minor modes when it sets them, "· delegate · align, spec, vis", or "· no minor modes" for `[]`;
+  "Nothing changed" when it changes none of these), the playbook it links ("Runs {title}", or "Runs "{id}", not found here"), and its file's
   path. Without a session folder, This project says "Open a session to see its project's profiles."
 - **Problems.** A file that couldn't be read is its own row under its group, with a **Can't be
   read** badge, its path and the exact error, so a mistake made by hand or by an agent shows here.
 - **Approve** on a project profile that needs approval (§chat.profiles/trust), beside a line naming
   the powers it asks for; once approved the row says "Approved".
-- **Hide From Picker** on every profile but Default (**Show In Picker** and a **Hidden** badge once
+- **Hide From Picker** on every profile (**Show In Picker** and a **Hidden** badge once
   hidden). Hiding and approving save at once; nothing here goes through the dialog's footer.
 
 ## §app.settings-dialog/overseer — Overseer
@@ -581,7 +594,8 @@ In this order:
   policy) show in warn under the row until the next save that changes the fallback. The section ends with the saved chain in words
   ("Asks Jev, then Claude Code · Haiku 4.5.", a paused provider with when it retries, or the
   unavailable sentence).
-- **Features.** **Flag sessions that need you** and **Tag sessions**, both off by default. With a
+- **Features.** **Flag sessions that need you**, off by default (there is no Tag sessions switch:
+  automatic tags are retired, §app.decisions/session-tags). With a
   feature on while nothing can answer, the switch stays on and its hint is replaced, in warn, by
   the unavailable sentence ("Unavailable: Jev is off and no fallback model is set. Nothing is
   checked.", or Jev can't answer and why). The server's note that a feature on stays unavailable
@@ -590,20 +604,13 @@ In this order:
   a Folders textarea, one full path per line (`/…`, `~` or `~/…`). A line that isn't a full path,
   or more than 100 lines, shows the reason under the box and holds Save Changes until fixed
   (§app.decisions/privacy); blank and repeated lines are dropped, so they alone are no change.
-- **Tag past sessions**, only while Tag sessions is saved on or a backfill runs: **Tag Last 30
-  Days** and **Tag All Sessions**, a hint that it runs 2 at a time, skips what's already tagged
-  and costs more on a fallback model; **Stop Tagging** while one runs; a progress line ("Tagged 40
-  of 147 · 2 failed.", then "Tagged 147 sessions · 2 failed. New sessions are tagged as they
-  finish.", or "Stopped at … ." with the reason). Starting waits while a change is being saved,
-  and is held with a reason while nothing can answer (§app.decisions/backfill). Like Test
-  Decisions, it acts on what is saved.
 - A footnote names where the settings are stored, and that the key is stored separately, readable
   only by the user.
 
 ## §app.settings-dialog/decisions-autosave — Decisions saves with Save Changes
 
 Settings → Decisions stages every change — Use Jev, the fallback choice and model, the Features
-and Never send switches, and Folders — and writes them only with the dialog's **Save Changes**
+switch and Never send switches, and Folders — and writes them only with the dialog's **Save Changes**
 (§app.settings-dialog/save-bar). Nothing is written as it is made, and leaving the
 Folders box or the tab writes nothing.
 
@@ -633,19 +640,20 @@ Folders box or the tab writes nothing.
 
 Every Settings tab that writes a file on the server is Save-gated: **Models**, **Subagents**
 (the library and this device's default), **Overseer**, **Notifications** (the **Phone Notifications** form), **Decisions**, **Summaries**, **Memory**, **Organizations**,
-**Mesh**, **Alignment** and **Experimental**. A change on them is staged, never written as it is made. No form has a Save or
+**Mesh**, **Alignment** and **Experimental**, and on General the **Updates** form (§app/updates). A change on them is staged, never written as it is made. No form has a Save or
 Discard button of its own: saving is the dialog's.
 
-- **The footer.** Left to right: a status line, then **Discard Changes** (ghost), **Save Changes**
-  (primary; **Saving…** while it writes) and **Cancel**, while any gated form on any tab holds
+- **The footer.** Left to right: a status line, then **Save Changes**
+  (primary; **Saving…** while it writes) and **Cancel** (ghost), while any gated form on any tab holds
   unsaved changes; with none, only the status line and **Close**. Every tab shows the same footer,
   General, Themes and Typography included. Folded, the status line keeps Cancel beside it and
-  Discard Changes · Save Changes take the next line at the trailing edge, every button 44px tall.
+  Save Changes takes the next line at the trailing edge, every button 44px tall.
 - **Save Changes writes every dirty form on every tab** — the one showing, and every other, mounted
   or not. Each form writes its own file, at the same time as the others, and keeps its own rules:
   a form that rebases (Models, Overseer, Decisions, Summaries) reads its file afresh first; Mesh
   sends only what changed. A form never has two saves in flight, even across a close and reopen
-  of the dialog. **Discard Changes** puts every form on every tab back to what's saved.
+  of the dialog. **Cancel** puts every form on every tab back to what's saved and closes the dialog at once,
+  without asking.
 - **Save waits for every dirty form to be valid.** While any is incomplete or invalid, Save
   Changes is disabled and the status line, in error, names the first such form and what it needs
   ("Subagents: My setup's Delegate rows each need a model and an effort.", "Mesh: This host needs a name."). The form's own fields
@@ -667,7 +675,7 @@ Discard button of its own: saving is the dialog's.
 - **Drafts outlive their tab.** Each form's draft, its save and what its last save said are module
   state, not the panel's, so switching tabs keeps them. A closed dialog forgets every draft;
   reopening starts from what's saved.
-- **Closing holds.** Cancel, Close, Esc and the scrim all ask first when any gated form has unsaved
+- **Closing holds.** Esc and the scrim ask first when any gated form has unsaved
   changes: the dialog goes to the first tab, in rail order, that holds them — unless the one
   showing does — and holds the close with a warn banner above the foot: **Your {forms} changes
   aren't saved.** "Save them, or discard them and close." [Keep Editing] [Discard and Close].
@@ -686,8 +694,9 @@ Discard button of its own: saving is the dialog's.
   "Alignment" whichever of the two failed.
 - **Experimental** holds no switch now: its panel says "No experimental features right now." and nothing in it is ever unsaved. Adversarial
   review moved to Alignment; the Claude Code provider is no switch there, it is always on (§app.claude-code-provider/always-on).
-- **Not gated.** General, Themes and Typography change only this browser and still apply as you
-  pick. Actions run at once and are never part of a draft: Retry, Try Again, Check Again, Themes'
+- **Not gated.** General (apart from its Updates form), Themes and Typography change only this
+  browser and still apply as you pick. Actions run at once and are never part of a draft: Retry,
+  Try Again, Check Again, Updates' Check Now and its upgrade button, Themes'
   Refresh, the Jev key's Save Key, Replace Key and Remove Key, Test Decisions, Tag Last 30 Days,
   Tag All Sessions and Stop Tagging, and Phone Notifications' Enable on This Device, Turn Off on
   This Device, Remove and Send Test.
@@ -712,10 +721,24 @@ ranges."
 Below it, **Files in gathering chats** (§app.baton/files): **Largest file, MB** 1–25 (default 25),
 with the hint "Applies to gathering sessions that take files, from the next upload." Save-gated
 the same way: "Organizations needs a largest file from 1 to 25 MB."
+Below it, **Project Assistant** (§app.project-assistant/models): one control, **Default model**,
+showing the default's model and thinking level ("Opus 5.5 · medium") with its price once saved, or
+`Choose Model` while there is none; it opens the chat composer's model picker (the model row and
+its thinking ladder, then providers and models). The hint says "Every organization uses it unless
+it picks its own." Under it, when the model can't see images: "This model can't see photos:
+owners who follow it won't get an attach button."; when Settings → Models turned it off:
+"Settings → Models turned this model off: organizations that follow it aren't ready."; when this
+host can't run it: "This host can't run this model: organizations that follow it aren't ready."
+The pick joins the tab's draft and saves with Save Changes like the fields above.
 Host state, not the workspace repo: `<stateRoot>/baton-settings.json`, read and written through
 `GET`/`PUT /api/baton/settings {messagesMax, photos?: {enabled, perMessage, maxBytes,
-perConversation}, files?: {maxBytes}}` (400 outside the bounds; a missing or corrupt file reads as 60 and the photo
-and file defaults, each field on its own).
+perConversation}, files?: {maxBytes}}` (400 outside the bounds, and for an `assistant` key; GET
+also answers `assistant`, the default model with its price, or `null`; a missing or corrupt file
+reads as 60, the photo and file defaults and no default model, each field on its own). The default
+model is written through its own route, `PUT /api/settings/project-assistant {assistant: {model,
+thinking?} | null}` (400 for a model not written as provider/model or an unknown thinking level),
+which a mesh peer reaches only with `admin` (§app.project-assistant/models); Save Changes sends it
+after the other fields, and only when the pick differs from the stored one.
 
 ## §app.settings-dialog/toggle-target — A left-aligned toggle's target
 

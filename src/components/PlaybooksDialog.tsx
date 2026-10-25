@@ -321,7 +321,7 @@ export function PlaybooksDialog(props: {
                 {(sch) => (
                   <ScheduleCard
                     schedule={sch()}
-                    onApprove={() => scheduleAct(() => approveSchedule({ cwd: props.cwd ?? "", playbook: p().id, pin: sch().pin ?? "" }, hostOf(props.path)))}
+                    onApprove={() => scheduleAct(() => approveSchedule({ cwd: props.cwd ?? "", ...(sch().automation ? { automation: sch().automation } : { playbook: p().id }), pin: sch().pin ?? "" }, hostOf(props.path)))}
                     onRevoke={() => scheduleAct(() => revokeSchedule(sch().id ?? "", hostOf(props.path)))}
                   />
                 )}

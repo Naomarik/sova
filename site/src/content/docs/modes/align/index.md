@@ -24,10 +24,30 @@ Each alignment has an id (`al_1`, `al_2`…), a title and a one-line summary of 
 - **Approach** (`a1`, `a2`…): the steps it proposes.
 - **Rejected** (`x1`, `x2`…): alternatives it turned down, each with why.
 - **Questions** (`q1`, `q2`…): what it needs you to decide. A question has a topic, the ask,
-  optional context, optional options lettered a, b, c…, each with its trade-off, and a
+  optional context, optional options lettered a, b, c…, each with a one-line consequence of picking it, and a
   **recommendation** with its reason.
+- **Technical notes** (`t1`, `t2`…): the files, code and technical detail that a plan written for
+  someone who doesn't read code leaves out of the other fields.
 
 Ids are never reused within an alignment, so "q3" keeps meaning the same question.
+
+## Settings → Alignment
+
+How the agent writes alignments is set in **Settings → Alignment**:
+
+- **Writing style.** **Project manager**, the default, describes only screens, wording and
+  behaviour, with no code; it still asks a technical choice you'd notice (speed, cost, data kept or
+  lost) as a product question, and puts the technical detail in the technical notes. **Simplified**
+  uses short sentences in everyday words and fewer items. **Technical** keeps files, code and
+  technical trade-offs in the plan. A change reaches open chats at their next message.
+- **Visuals.** With **Draw when it helps** on, the agent can draw a wireframe or a flow on the
+  card when a picture explains faster than words, at most 3 per alignment. It applies to sessions
+  you start after saving.
+- **Review.** **Adversarial review** has a read-only reviewer check the plan and the diff of risky
+  work. See [Adversarial review](/docs/modes/align/review/).
+
+A subagent profile can set its own writing style and visuals (Settings → Subagents). pi's terminal
+UI reads the same writing style and Visuals.
 
 ## Status
 
@@ -62,8 +82,13 @@ each alignment is the full card. Earlier versions fold to one line that says wha
 "q3 decided · +q11", and open in place.
 
 The card shows the summary, then the **Approach**, then the questions. Open questions are expanded;
-decided and dropped ones fold to one line with their outcome. **Findings** and **Rejected** start
-folded at the bottom. Past Aligning, a chip shows the status.
+decided and dropped ones fold to one line with their outcome. **Technical notes** sit folded under
+the Approach; **Findings** and **Rejected** start folded at the bottom. Past Aligning, a chip shows
+the status. A visual is drawn under its question's context, or the alignment's under the summary,
+and each alignment names its writing style in its header ("Project manager style"; an
+older one may name none).
+When the agent decides a request needs no alignment, it shows one line instead:
+"No alignment needed", with why.
 
 In a chat Sova runs with align on, the newest card of an open alignment can be answered directly:
 
@@ -79,11 +104,13 @@ In a chat Sova runs with align on, the newest card of an open alignment can be a
 None of these change the alignment directly. They write an ordinary message for the agent to
 record, exactly as if you had typed it.
 
-## The chip in the composer
+## The badge in the message box
 
-While an alignment is open, the composer shows a chip such as **1 align · 5/7 decided**: the open
-alignments, and how many of their questions are decided. Press it to list them, each with a
-progress bar; choose one to jump to its card.
+While an alignment is open, a small badge sits at the left edge of the message box. Its ring fills
+as questions are decided, the number in the middle is the questions still open, and the dots under
+it are the open alignments. A numeral on top (I, II, III…) counts any option cards waiting too.
+Press it to open **Waiting on you**: each alignment with its progress and its next open question,
+and **Show in Chat** to jump to its card.
 
 ## When the agent is waiting on you
 
@@ -96,7 +123,7 @@ session is **waiting on your answers**:
   [Needs you](/docs/needs-you/).
 
 Once you've replied and the agent moved on without touching an alignment, or you turn align off,
-the questions stay on the card and the chip but leave the row, Needs you and notifications. Once
+the questions stay on the card and the badge but leave the row, Needs you and notifications. Once
 the session's branch is merged, they leave Needs you too.
 
 ## What keeps the agent on it
@@ -123,8 +150,10 @@ editor while align is on.
 ## Where align isn't available
 
 - **The Overseer** is always in normal mode with no minor modes.
-- **A project's coding sessions** don't take align, because nobody answers a coding session's
-  questions. The one exception is a playbook run that you answer yourself.
+- **A project's coding sessions** start in this computer's default mode, so they have align when
+  your default does, and an Overseer can start or switch one with align. Neither Overseer ever
+  answers an alignment's questions: they're yours, and while a session waits on your answers an
+  Overseer can't turn its align off. A playbook run you answer yourself starts with align on.
 
 Workers never get align: aligning is a conversation with you. A planning worker can still write an
 alignment for the agent to import.

@@ -1,98 +1,101 @@
 <p>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/brand/sova-mark-dark.svg">
-    <img src="docs/brand/sova-mark-light.svg" alt="" width="72" height="72">
+    <img src="docs/brand/sova-mark-light.svg" alt="Sova" width="72" height="72">
   </picture>
 </p>
 
-# sova
+# Sova
 
 **Every agent session, one calm workspace. On your desk, or folded in your pocket.**
 
-Sova gives your [pi](https://pi.dev) coding agent one browser interface for all of its sessions:
-the ones you start here, the ones running in your terminal, and the subagents they hand work to.
-The same workspace fits a desktop, an unfolded foldable, and a folded phone, so you can follow and
-review the work from wherever you are.
+Sova runs the [pi](https://pi.dev) coding agent on your own machine, through pi's SDK, and reads
+the same `~/.pi/agent` your terminal does. It lists every session on the machine, shows any
+transcript, watches a session that's open in a TUI as it runs, and gives web chats workers,
+branching and steering. It is one person's tool for one person's agent.
 
-It runs pi itself on your machine, through pi's SDK, and uses the sessions you already have.
-Read the tool calls, review every change, and answer the session that needs you, without digging
-through terminal scrollback. Your existing setup stays yours.
+<a href="https://sova.naomarik.com/" title="Watch a session run in Sova (video on the site)">
+  <img src="site/src/assets/screens/hero-desk.webp" alt="Sova on a desktop: the sessions sidebar with 2 sessions that need you, a session in Delegate mode waiting on its 3 workers, and the working worker's transcript." width="920">
+</a>
 
-## Get started
+<p align="center">
+  <img src="site/src/assets/screens/hero-phone.webp" alt="The same session on a folded phone: the chat alone, with a Steer composer." width="260">
+</p>
 
-Runs on macOS or Linux. Requires bash, Git, Node.js ≥22.19, pnpm (without pnpm, the installer
-runs it through npx), curl, and unzip or python3. The installer downloads the Bun version Sova is
-tested on into its own folder.
+<p align="center">The same session on a desktop and on a folded phone.
+<a href="https://sova.naomarik.com/">Watch it run on the site</a>.</p>
+
+## Try it
+
+On macOS or Linux, with Git and Node.js 22.19 or later:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/install.sh | bash
 ```
 
-Until the first release is tagged, this installs the `master` branch; running it again updates to
-master's latest commit.
+That builds the latest release (the `stable` tag) in `~/.local/share/sova` and adds **Sova** to
+your app launcher. Open it from there, or run `sova open`: it starts the server and opens
+`http://127.0.0.1:4800` already unlocked. It uses your existing pi provider login.
+[Requirements and first login](docs/getting-started.md).
 
-Then run `sova`, and `sova open` to open **http://127.0.0.1:4800** already unlocked. Uses your
-existing pi provider login.
-[First-time login or command not found?](docs/getting-started.md) ·
-[Run a checkout as a service, on Bun or Node](docs/running-as-a-service.md)
+## Why you'd run it
 
-## More work, less window switching
+- **Every session in one place.** Web chats and the sessions pi wrote in your terminal, with no
+  import. A session open in a TUI streams live and is read-only here; Sova identifies it reliably
+  only when your terminal pi loads the [sessions extension](pi-config/extensions/sessions/README.md).
+- **Hand work to subagents and follow each one.** In [Delegate mode](https://sova.naomarik.com/docs/modes/delegate/)
+  the agent sends planning, investigation and changes to workers, each with its own transcript and
+  context gauge in the workers pane. The shipped routes use Claude Code models, so install the
+  `claude` CLI or [pick your own](https://sova.naomarik.com/docs/subagent-profiles/).
+- **Agree on the approach before it's built.** With [align](https://sova.naomarik.com/docs/modes/align/)
+  on, the agent records its findings, approach, rejected alternatives and open questions, and waits
+  for your answers. It is a mode you turn on, not the default.
+- **Read every change as steps.** The [changes viewer](https://sova.naomarik.com/docs/worktrees-and-changes/)
+  shows what a session or worktree changed as numbered steps, each with the agent's reason when it
+  gave one. It is read-only: you review there and edit elsewhere.
+- **Know which session needs you, on your phone too.** The [Needs you](https://sova.naomarik.com/docs/needs-you/)
+  list shows the sessions waiting on you, and can reach your phone as a push. The phone needs a
+  [protected route](https://sova.naomarik.com/docs/phone/) to this machine, such as a tunnel or an
+  HTTPS proxy, and a pairing code.
 
-- **Hand the work to subagents, and follow every one.** In Delegate mode the agent orchestrates: it
-  sends planning, investigation, routine changes, and complex changes each to the model you routed
-  it to, with a fallback. A subagent profile keeps those routes under one name, set in Settings →
-  Subagents. The shipped routes use Claude Code models, so install the `claude` CLI or pick your
-  own. Workers open in a side pane, each with its own transcript and how full its context is, and
-  come back as idle entries after a server restart. More on
-  [Delegate](pi-config/extensions/mode/README.md) and [workers](pi-config/extensions/subagents/README.md).
-- **Agree on the plan before anything gets built.** With align on, the agent records each agreement
-  as an alignment: findings, approach, rejected alternatives, and open questions with its
-  recommendations. An experimental adversarial review (Settings → Experimental) has a fresh,
-  read-only reviewer check the plan and the finished diff.
-- **Work in worktrees. Review changes as steps.** A session tracks the git worktrees it works in;
-  ask it to create, attach, detach, or merge one, and each merge lands as a card. The changes viewer
-  shows what a session or worktree changed, read-only, as numbered steps, each with the agent's
-  why when it wrote one. [More on worktrees](pi-config/extensions/worktrees/README.md).
-- **Know which session needs you.** The sidebar's Needs you list shows the sessions waiting on you,
-  and the same list can reach your phone as a push notification, which costs no tokens. The
-  Overseer starts, prompts, or tidies sessions when you ask, confirming first when a request is
-  risky.
-- **Check in from your phone.** Add Sova to your phone's home screen, bring the phone in by
-  scanning a one-use pairing QR, and get a push when a session needs you. Sessions already in pi's
-  terminal are listed as they are and stream live, with no import.
-  [Terminal presence and phone access](docs/getting-started.md#terminal-and-phone-access) need setup.
-- **Change direction without starting over.** Rewind to a message, regenerate a reply, fork from an
-  assistant reply, steer a running web chat, and switch models mid-session.
-- **And more.** Several [Claude logins](pi-config/extensions/claude-code/README.md) with failover on
-  a usage limit; a [sandbox](pi-config/extensions/sandbox/README.md) per session; playbooks and
-  schedules; read-only [share links](docs/public-links.md) to a session, on an address you set up;
-  session tools on your SSH, AWS SSM, Docker, or Incus
-  [targets](pi-config/extensions/remote/README.md); a usage page and a resource monitor
-  that charges load to the session that caused it; model rules (which models this machine and its
-  subagents may use, and how many requests each provider runs at once); and local voice input (set
-  up in Settings → Voice).
-- **Beyond one machine (preview).** The [mesh](docs/mesh.md) lists and drives sessions on every Sova
-  host on your tailnet from any one page; every host in a mesh must be reachable by the same
-  devices. Organizations ask the people you work with through their own links, and keep what they
-  decide.
+<img src="site/src/assets/screens/delegate.webp" alt="The workers pane beside a Delegate session: 3 workers with their model, tokens and state, and the working worker's transcript." width="920">
 
-Single-user and loopback by default; every browser unlocks once, per address it uses, with the
-install's token — read from the token file `~/.pi/agent/sova/auth-token` on the machine Sova runs
-on, printed by `pnpm run auth:token` in a checkout, and by `sova token` and `sova open` where the
-installer's launcher is installed. A second device — a phone — comes in with a one-use **pairing
-code** from **Access** on the app's home page, with the link it must open shown as a QR to scan.
-Protect access before exposing it beyond your machine. Model requests go to your configured provider; tools and extensions may also
-use the network.
+<img src="site/src/assets/screens/changes.webp" alt="The changes viewer: 3 numbered steps, each with why it was made, and the first step's diff." width="920">
 
-## Make it yours
+**Also in Sova:** [rewind, fork and steer](https://sova.naomarik.com/docs/change-direction/) ·
+[several Claude logins](pi-config/extensions/claude-code/README.md) with failover ·
+a [sandbox per session](pi-config/extensions/sandbox/README.md) (bubblewrap or Seatbelt) ·
+the [Overseer](https://sova.naomarik.com/docs/overseer/), which asks before it acts on a risky request.
 
-[Setup and safe access](docs/getting-started.md) ·
-[Themes, models, and optional extensions](docs/customization.md) ·
-[Run as a service, on Bun or Node](docs/running-as-a-service.md) ·
-[Development](CONTRIBUTING.md)
+**Around it:** [18 themes and your own](docs/customization.md#themes-and-type) ·
+local voice input (Settings → Voice, downloads its model) ·
+read-only [share links](docs/public-links.md) on an address you set up ·
+[playbooks and schedules](https://sova.naomarik.com/docs/playbooks-and-schedules/) ·
+[tours](https://sova.naomarik.com/docs/modes/vis/) of a real interface ·
+a usage page (tokens and costs per session).
+
+## What it isn't
+
+Sova is for one local user. There are no accounts: one per-install token unlocks everything, and
+anyone who has it can do what you can. It listens on loopback by default; protect it before you
+expose it beyond this machine ([how](docs/getting-started.md#connect-from-another-device)). It is
+not a hosted service. Model requests go to your configured provider, and tools and extensions may
+also use the network.
+
+## More
+
+[Site and docs](https://sova.naomarik.com/docs/) ·
+[Customize](docs/customization.md) ·
+[Run as a service](docs/running-as-a-service.md) ·
+[Contributing](CONTRIBUTING.md) ·
+[Changelog](CHANGELOG.md)
+
+Preview: the [mesh](https://sova.naomarik.com/mesh/) drives sessions on every Sova host on your
+tailnet from one page, and [Organizations](https://sova.naomarik.com/orgs/) bring in the people you
+work with through their own links.
 
 ## License
 
-[Apache-2.0](LICENSE) · [NOTICE](NOTICE).
-Bundled fonts include their own licenses in [public/fonts/](public/fonts/);
-[pi-config](pi-config/LICENSE) is licensed separately.
+[Apache-2.0](LICENSE) · [NOTICE](NOTICE). Bundled fonts carry their own licenses in
+[public/fonts/](public/fonts/); [pi-config](pi-config/LICENSE), a directory in this repo, is
+licensed separately.

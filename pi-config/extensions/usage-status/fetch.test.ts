@@ -303,12 +303,12 @@ test("a session with no recorded login reads the first ready login in this devic
 
 test("OpenAI: each window keeps its own length and is labelled from it", async () => {
 	setup();
-	const authFile = path.join(FETCH_HOME, ".pi/agent/auth.json");
+	const authFile = path.join(AGENT, "auth.json");
 	const restoreAuth = preserveFile(authFile);
 	fs.mkdirSync(path.dirname(authFile), { recursive: true });
 	fs.writeFileSync(authFile, JSON.stringify({ "openai-codex": { access: "fake-openai" } }));
 	const answer = (rate_limit: unknown) => async (_url: unknown, init?: RequestInit) => {
-		assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer fake-openai", "the home-resolved synthetic credential was selected");
+		assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer fake-openai", "the agent dir's synthetic credential was selected");
 		return { ok: true, status: 200, json: async () => ({ plan_type: "plus", rate_limit }) } as Response;
 	};
 	const real = globalThis.fetch;
@@ -335,6 +335,28 @@ test("OpenAI: each window keeps its own length and is labelled from it", async (
 	} finally {
 		globalThis.fetch = real;
 		restoreAuth();
+	}
+});
+
+test("pi's API keys come from the active agent dir's auth.json, never ~/.pi/agent's", async () => {
+	setup();
+	const homeAuth = path.join(FETCH_HOME, ".pi/agent/auth.json");
+	const restoreHome = preserveFile(homeAuth);
+	fs.mkdirSync(path.dirname(homeAuth), { recursive: true });
+	fs.writeFileSync(homeAuth, JSON.stringify({ "ollama-cloud": { key: "home-key" } }));
+	fs.writeFileSync(path.join(AGENT, "auth.json"), JSON.stringify({ "ollama-cloud": { key: "agent-key" } }));
+	let sent: string | null = null;
+	const request = (async (_url: unknown, init?: RequestInit) => {
+		sent = new Headers(init?.headers).get("Authorization");
+		return { ok: true, status: 200, json: async () => ({}) } as Response;
+	}) as typeof fetch;
+	try {
+		await fetchMod.fetchOllama({ request });
+		assert.equal(sent, "Bearer agent-key");
+		fs.rmSync(path.join(AGENT, "auth.json"));
+		assert.deepEqual(await fetchMod.fetchOllama({ request }), { state: "nokey" }, "no fallback to the home agent dir");
+	} finally {
+		restoreHome();
 	}
 });
 

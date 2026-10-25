@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import { after, test } from "node:test";
@@ -165,6 +165,8 @@ function harness({ refuseSessionId = 0, manualInitialize = false, projectsRoot =
 		resumeDir,
 		onDebug: (entry) => debug.push(entry),
 		cwd: "/tmp/pi-bridge-test",
+		// The fake below stands in for it: no lookup of the real program.
+		executable: "claude",
 		...(projectsRoot === null ? {} : { projectsRoot }),
 		spawnImpl: ((command: string, argv: string[], options: any) => {
 			const child = new FakeClaude(command, argv, options, 5000 + children.length);
@@ -330,6 +332,33 @@ test("the bridge sends a new session's first prompt unwrapped, and a later resta
 		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
 	});
 	await bridge.disposeAll();
+});
+
+test("PI_CLAUDE_CODE_DEBUG's log is the active agent dir's, never ~/.pi/agent's", { timeout: 8000 }, async () => {
+	const agentDir = mkdtempSync(join(tmpdir(), "bridge-debug-agent-"));
+	const homeLog = join(homedir(), ".pi", "agent", "claude-code-debug.log");
+	const saved = { dir: process.env.PI_CODING_AGENT_DIR, debug: process.env.PI_CLAUDE_CODE_DEBUG };
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+	process.env.PI_CLAUDE_CODE_DEBUG = "1";
+	try {
+		const { bridge, children } = harness();
+		await collectAfter(bridge.runTurn(request([user("hello")])), async () => {
+			const cli = await child(children, 1);
+			await cli.waitFor((f) => f.request?.subtype === "initialize");
+			await cli.handshake();
+			await cli.waitFor((f) => f.type === "user");
+			cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+		});
+		await bridge.disposeAll();
+		assert.match(readFileSync(join(agentDir, "claude-code-debug.log"), "utf8"), /"event":"launch"/);
+		assert.equal(existsSync(homeLog), false, "nothing written under ~/.pi/agent");
+	} finally {
+		for (const [name, value] of [["PI_CODING_AGENT_DIR", saved.dir], ["PI_CLAUDE_CODE_DEBUG", saved.debug]] as const) {
+			if (value === undefined) delete process.env[name];
+			else process.env[name] = value;
+		}
+		rmSync(agentDir, { recursive: true, force: true });
+	}
 });
 
 test("the bridge frames a new session's multi-message history as joined", { timeout: 8000 }, async () => {
@@ -810,6 +839,96 @@ test("a child that crashes mid-turn ends the pi message with an error", { timeou
 	assert.equal(last?.type, "result");
 	assert.equal(last?.type === "result" && last.outcome, "error");
 	await bridge.disposeAll();
+});
+
+test("a child that dies mid-turn says why: its newest stderr lines follow the exit", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	const collecting = collect(bridge.runTurn(request([user("hi")])));
+	const cli = await child(children, 1);
+	await cli.waitFor((f) => f.request?.subtype === "initialize");
+	await cli.handshake();
+	for (let i = 1; i <= 25; i++) cli.stderr.write(`line ${i}\n`);
+	cli.stderr.write("\n   \nFATAL: out of memory\n");
+	setTimeout(() => cli.exit(9), 20);
+	const last = (await collecting).at(-1);
+	assert.equal(last?.type === "result" && last.outcome, "error");
+	const message = last?.type === "result" ? last.message ?? "" : "";
+	const [head, ...tail] = message.split("\n");
+	assert.equal(head, "Claude exited (9) before finishing the turn");
+	// 20 non-blank lines, the newest kept: lines 7..25 and the fatal one.
+	assert.deepEqual(tail, [...Array.from({ length: 19 }, (_, i) => `line ${i + 7}`), "FATAL: out of memory"]);
+	await bridge.disposeAll();
+});
+
+test("a child that dies mid-turn with nothing on stderr gives the bare message", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	const collecting = collect(bridge.runTurn(request([user("hi")])));
+	const cli = await child(children, 1);
+	await cli.waitFor((f) => f.request?.subtype === "initialize");
+	await cli.handshake();
+	cli.exit(9);
+	const last = (await collecting).at(-1);
+	assert.equal(last?.type === "result" && last.message, "Claude exited (9) before finishing the turn");
+	await bridge.disposeAll();
+});
+
+test("a child that dies before initialize says why: its stderr follows the handshake failure", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness({ manualInitialize: true });
+	const turn = collect(bridge.runTurn(request([user("hi")])));
+	const cli = await child(children, 1);
+	await cli.waitFor((f) => f.request?.subtype === "initialize");
+	cli.stderr.write("mise ERROR No version is set for shim: claude\n");
+	setTimeout(() => cli.exit(1), 20);
+	await assert.rejects(turn, (error: Error) => {
+		assert.equal(error.message, "Claude did not answer initialize\nmise ERROR No version is set for shim: claude");
+		return true;
+	});
+	await bridge.disposeAll();
+});
+
+test("with no Claude program to find, the launch fails in plain words and spawns nothing", { timeout: 8000 }, async () => {
+	const empty = mkdtempSync(join(tmpdir(), "pi-bridge-nopath-"));
+	const saved = process.env.PATH;
+	process.env.PATH = empty;
+	let spawned = 0;
+	const bridge = new SessionBridge({
+		cwd: "/tmp/pi-bridge-test", projectsRoot: EMPTY_PROJECTS,
+		spawnImpl: (() => { spawned++; throw new Error("never spawned"); }) as any,
+	});
+	try {
+		await assert.rejects(collect(bridge.runTurn(request([user("hi")]))), /^Error: Claude program not found: no `claude` on Sova's PATH \(.*pi-bridge-nopath-.*\) or at .*\.local\/bin\/claude\./);
+		assert.equal(spawned, 0);
+	} finally {
+		process.env.PATH = saved;
+		await bridge.disposeAll();
+		rmSync(empty, { recursive: true, force: true });
+	}
+});
+
+test("the child runs the Claude program found from Sova's PATH, as an absolute path, whatever the chat's folder holds", { timeout: 8000 }, async () => {
+	const root = mkdtempSync(join(tmpdir(), "pi-bridge-program-"));
+	const bin = join(root, "bin");
+	const project = join(root, "project");
+	mkdirSync(bin); mkdirSync(join(project, "node_modules", ".bin"), { recursive: true });
+	writeFileSync(join(bin, "claude"), "#!/bin/sh\n", { mode: 0o755 });
+	// A hostile chat folder: a mise.toml naming another claude, and its own claude where a relative PATH entry points.
+	writeFileSync(join(project, "mise.toml"), '[tools]\n"npm:@anthropic-ai/claude-code" = "0.0.1"\n');
+	writeFileSync(join(project, "node_modules", ".bin", "claude"), "#!/bin/sh\necho hostile\n", { mode: 0o755 });
+	const saved = process.env.PATH;
+	process.env.PATH = ["node_modules/.bin", bin].join(":");
+	const spawned: { command: string; cwd: string }[] = [];
+	const bridge = new SessionBridge({
+		cwd: project, projectsRoot: EMPTY_PROJECTS,
+		spawnImpl: ((command: string, _argv: string[], options: any) => { spawned.push({ command, cwd: options.cwd }); throw new Error("stop here"); }) as any,
+	});
+	try {
+		await assert.rejects(collect(bridge.runTurn(request([user("hi")]))), /stop here/);
+		assert.deepEqual(spawned, [{ command: join(bin, "claude"), cwd: project }]);
+	} finally {
+		process.env.PATH = saved;
+		await bridge.disposeAll();
+		rmSync(root, { recursive: true, force: true });
+	}
 });
 
 test("a tools/call with no turn listening is failed immediately", { timeout: 8000 }, async () => {

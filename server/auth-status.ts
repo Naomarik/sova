@@ -2,6 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { claudeConfigDirEnv, defaultClaudeDir } from "../pi-config/extensions/claude-code/accounts.ts";
+import { agentRoot } from "./state-root";
 import { readKeychainCredentials, type KeychainOptions } from "../pi-config/extensions/claude-code/keychain.ts";
 import type { UsageAuth, UsageProvider } from "../shared/protocol";
 
@@ -13,17 +14,17 @@ import type { UsageAuth, UsageProvider } from "../shared/protocol";
 // none can reach the wire. On macOS, a Claude login with no file is read from its keychain item
 // (§app.claude-logins/macos-keychain) at most every 30 s per login, keeping the same numbers.
 
-/** The credential files fetch.ts reads: Claude Code's own directory ($CLAUDE_CONFIG_DIR, else ~/.claude), pi's and the Codex CLI's. */
+/** The credential files fetch.ts reads: Claude Code's own directory ($CLAUDE_CONFIG_DIR, else ~/.claude), pi's (the agent dir's auth.json) and the Codex CLI's. */
 export interface AuthStatusPaths {
   claudeCreds: string;
   piAuth: string;
   codexAuth: string;
 }
 
-export function defaultAuthPaths(home = homedir(), claudeDir = defaultClaudeDir()): AuthStatusPaths {
+export function defaultAuthPaths(home = homedir(), claudeDir = defaultClaudeDir(), agentDir = agentRoot()): AuthStatusPaths {
   return {
     claudeCreds: join(claudeDir, ".credentials.json"),
-    piAuth: join(home, ".pi/agent/auth.json"),
+    piAuth: join(agentDir, "auth.json"),
     codexAuth: join(home, ".codex/auth.json"),
   };
 }

@@ -7,35 +7,43 @@ order: 12
 
 Ask the **Overseer** what needs you, what finished, or where you left off. Ask it to start sessions, send prompts, or tidy up. When a request is ambiguous or risky, it asks first.
 
-It has no shell and edits no files. It acts only through Sova, with limits you set.
+It has no shell. It acts through Sova, with limits you set, and writes files only in turns you start.
 
 ## Open it
 
-The **Overseer** button, with the eye icon, sits at the right end of the session list's toolbar. When the list is collapsed, the eye alone is there. `Alt+O` opens it from anywhere. The badge on the button counts the Overseer's own messages you haven't read yet.
+The **Overseer** button, with the eye icon, sits at the right end of the session list's toolbar. When the list is collapsed, the eye alone is there. `Alt+O` opens it from anywhere. The badge on the button counts the Overseer's own messages you haven't read yet. Once a project has a project overseer running, a **▾** joins the button: it lists those overseers, marks the ones with a new reply or a failed last turn, and ends with **All Projects**.
 
-The Overseer is always in the normal mode, with no minor modes, so its composer has no mode switch. In its place is **Quick Actions**, a list of ready-made prompts: What Needs Me, What Finished, What's Running, Tidy Up, and Where Was I. You can edit, add, remove, and reorder them in Settings → Overseer.
+The Overseer is always in the normal mode, with no minor modes, so its composer has no mode switch. In its place is **Quick Actions**, a list of ready-made prompts: What Needs Me, What Finished, What's Running, Tidy Up, and Where Was I. You can edit, add, remove, and reorder them in Settings → Overseer. Just before it, a [memory](/docs/modes/memory/) switch turns the Overseer's memory on or off from its next turn; it starts on.
+
+[**Focus**](/docs/change-direction/#focus-on-the-conversation) works here too: the head keeps only the conversation's title, and Quick Actions go away with the composer until you press it again.
 
 ## What it reads
 
 - **What needs you.** The same news as the sidebar's [Needs you](/docs/needs-you/) list, plus the items worth a decision (a branch ready to merge, a reply that seems to ask you something) and what's just for your information (what's running, a session close to its context limit). In Sova's own repository the [Merge round](/docs/playbooks-and-schedules/#example-the-merge-round) picks up branches ready to merge by itself, asking each branch's owner first.
-- **Sessions.** The list, one session's details and what's true of it now, its alignments, and a bounded slice of its transcript. Text it reads from another session is treated as untrusted.
+- **What's outstanding.** Ask "anything outstanding?" or "what needs me?" and it answers itself, from one roundup of the last 14 days, without starting a session to look: work lost or at risk because its worktree was removed before it merged (with the command that recovers lost commits), questions waiting for you, branches ready to merge, work built but not merged, uncommitted work, and turns that ended in an error. It names every session, and lists what it couldn't check instead of counting it as fine.
+- **Sessions.** The list, narrowed by date or by what a session has (open questions, a branch ready or not merged, an error, a reply that asks you something), with how each one ended; one session's details and what's true of it now; its alignments; and a bounded slice of its transcript, such as your last message through the final reply. It can also search your sessions' messages for a few words. Text it reads from another session is treated as untrusted.
 - **Your setup.** Groups, remote targets, models, subagent profiles, and recent folders.
 
 ## What it can do
 
-- **Start sessions** in any folder, on a remote target, or on another Sova host, with a first prompt, a model, and modes.
+- **Start sessions** in any folder, on a remote target, or on another Sova host, with a first prompt, a model, modes, a profile the Overseer may start, and a sandbox setting.
 - **Send a message** to a session, as if you typed it there. If a turn is running, the message is queued behind it; it steers the running turn only when you've asked it to interrupt.
+- **Run your organizations**: their projects, rosters, gathering sessions and project overseers. It can also link sessions across Sova hosts.
 - **Archive and unarchive** sessions (never a permanent delete), rename them, and move them between groups.
 - **Change a session's** model, mode, or subagent profile.
+- **Turn a project's own modes on or off** in a session it starts or changes, from the modes that session's checkout ships ([Project modes](/docs/modes/project-modes/)), though not in a session it starts on another Sova host. When it turns on a mode that runs tools or commands, that counts as the approval of them: nothing waits for you, and the approval is recorded as the Overseer's. It never approves a mode's hooks: they wait until you approve them yourself, from the mode menu's **Approve Hooks**.
 - **Answer a dialog** that's waiting in a session Sova runs. The session's transcript shows "Overseer chose: …". It never answers in a session that's open in a terminal.
 - **Keep notes for itself.** Standing notes are instructions it reads every turn; it can add to them, and you can edit them in Settings → Overseer.
 - **Keep your ideas and todos.** Say "it'd be nice if…" and it files an idea; say "remind me to…" and it adds a todo. It says what it filed in one line and starts nothing. The **Ideas** and **Todos** buttons in its head open each list.
+- **Write and edit files** wherever it can read, for small changes such as an automation in a project's `.sova/` folder. It leaves code changes to coding sessions, and says what it changed. It never writes Sova's or pi's own files (its settings, your approvals, schedules or sessions), an organization's workspace, or a credentials file. An automation it edits keeps running, as after your own edit.
 
 It can't send to a session that's open in a terminal, archived, or a worker, and it never sends to itself.
 
 ## It asks with cards
 
-When it isn't sure, or the act is risky, the Overseer writes what it found and asks with a **card**. A card lists each session it would touch, each with a short note on what it is and why the action fits it. Options are lettered and items are numbered, so you can click, or answer in chat with something like "c_4 b".
+When it isn't sure, or the act is risky, the Overseer writes what it found and asks with a **card**. A card lists each session, idea, todo, person or project it would touch, each with a short note on what it is and why the action fits it. Options are lettered and items are numbered, so you can click, or answer in chat with something like "c_4 b".
+
+If a click doesn't reach the Overseer (its chat was restarting or closed before taking it, say), the card's buttons come back with "Your click didn't reach the Overseer. Click again." A click never turns into typed text in the composer, since typed text approves nothing a click would.
 
 Lowering a session's sandbox always needs your click on a card. A typed "yes" isn't enough.
 
@@ -47,6 +55,8 @@ Runs you didn't start, such as a brief or a scheduled wake-up, are read-only. Th
 - **A standing rule** lasts until you revoke it, such as "Send continue to a session after its usage limit resets". Its button reads "Adopts a standing rule: …".
 
 Both come only from your click. The Overseer can't write one itself.
+
+**Approvals & Schedules** lists every live approval and rule, with what it allows, the card it came from, when it expires, its uses and a **Revoke** button, then every playbook schedule with **Approve Schedule** or **Revoke Schedule**. It lives in the Overseer's head: the **Schedules** menu on a wide window, or the first item of **⋯** on a narrower one, whose note gives the counts ("1 approval · 2 schedules") or "1 needs approval". While a schedule waits for your approval, both carry a dot.
 
 ## Limits
 
@@ -68,7 +78,7 @@ Every act is written to `~/.pi/agent/sova/overseer-actions.jsonl`, with secrets 
 
 ## Start over
 
-Type `/clear` in the Overseer's composer, or press **Clear** in its head, to start a new conversation. The last 20 stay under **History**, read-only. Its settings, standing notes, standing rules, and the action log carry over.
+Type `/clear` in the Overseer's composer, or press **Clear** in its head (under **⋯** on a narrow window), to start a new conversation. The last 20 stay under **History**, read-only. Its settings, standing notes, standing rules, and the action log carry over.
 
 ## Settings → Overseer
 

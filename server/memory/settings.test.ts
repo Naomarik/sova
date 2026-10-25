@@ -2,7 +2,7 @@
 // summarizer's call (usage purpose, fallback, policy). Files only under a temp agent dir; no CLI runs.
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -91,8 +91,8 @@ describe("the routes", () => {
     resolvePath: (raw) => (raw && raw.endsWith(".jsonl") && raw.startsWith(agentDir) ? raw : null),
     held: () => undefined,
     overseer: () => ({
-      memory: { status: () => ({ state: "ready", messages: 0, background: 0 }), turnedOn: () => overseerCalls.push("on"), changed: () => overseerCalls.push("changed") },
-      memorySwitched: () => overseerCalls.push("switched"),
+      memoryStatus: async () => ({ state: "ready", messages: 0, background: 0 }),
+      memorySettingsChanged: async (turnedOn: boolean) => (overseerCalls.push(turnedOn ? "on" : "changed", "switched"), null),
     }),
     readBranch: async () => [],
     sources,
@@ -124,15 +124,29 @@ describe("the routes", () => {
     assert.equal((await app.request("/api/settings/memory", { method: "PUT", body: "nope" })).status, 400);
   });
 
-  test("the Overseer's switch: kept in overseer.json, told to its held chat, 400 on a bad body", async () => {
-    const off = await (await req("GET", "/api/overseer/memory")).json();
-    assert.equal(off.on, false);
-    const on = await (await req("PUT", "/api/overseer/memory", { on: true, type: "uniichat" })).json();
-    assert.deepEqual([on.on, on.type, on.size], [true, "uniichat", 256], "Settings' UniiChat size");
-    assert.deepEqual(overseerCalls, ["on", "switched"]);
+  test("the Overseer's switch: on by default (UniiChat, never the chats' saved default, at Settings' size), kept in overseer.json, told to its held chat, 400 on a bad body", async () => {
     const { readOverseerSettings } = await import("../overseer-store");
-    assert.deepEqual(readOverseerSettings().memory, { on: true, type: "uniichat" }, "no size written");
+    // A Zoomable default saved for ordinary chats (an earlier test saves one) never reaches the Overseer.
+    settings.saveDefaultMemoryType("zoomable");
+    assert.equal(readOverseerSettings().memory, undefined, "no saved choice");
+    const dflt = await (await req("GET", "/api/overseer/memory")).json();
+    assert.deepEqual([dflt.on, dflt.type, dflt.size], [true, "uniichat", 256], "Settings' UniiChat size");
+    assert.deepEqual(dflt.status, { state: "ready", messages: 0, background: 0 }, "on: its held chat's status");
+    // Switched off: the setting in force was on, so nothing turns on.
+    const off = await (await req("PUT", "/api/overseer/memory", { on: false })).json();
+    assert.deepEqual([off.on, off.type, off.size, off.status.state], [false, "uniichat", 256, "off"]);
+    assert.deepEqual(overseerCalls.splice(0), ["changed", "switched"]);
+    assert.deepEqual(readOverseerSettings().memory, { on: false, type: "uniichat" }, "an explicit off is saved, no size written");
+    assert.equal((await (await req("GET", "/api/overseer/memory")).json()).on, false, "and stays off");
+    // A type change while off writes the choice and keeps it off.
+    const zoom = await (await req("PUT", "/api/overseer/memory", { type: "zoomable" })).json();
+    assert.deepEqual([zoom.on, zoom.type, zoom.size], [false, "zoomable", 32], "Settings' zoomable size");
+    const on = await (await req("PUT", "/api/overseer/memory", { on: true, type: "uniichat" })).json();
+    assert.deepEqual([on.on, on.type, on.size], [true, "uniichat", 256]);
+    assert.deepEqual(overseerCalls.splice(0), ["changed", "switched", "on", "switched"], "off to on is the turned-on edge");
+    assert.deepEqual(readOverseerSettings().memory, { on: true, type: "uniichat" });
     for (const bad of [{ on: "yes" }, { type: "nope" }, []]) assert.equal((await req("PUT", "/api/overseer/memory", bad)).status, 400, JSON.stringify(bad));
+    assert.deepEqual(readOverseerSettings().memory, { on: true, type: "uniichat" }, "a refused write changes nothing");
   });
 
   test("the Overseer's size is Settings': GET resolves it, a PUT's size is ignored, an older stored size is kept unread", async () => {
@@ -149,6 +163,17 @@ describe("the routes", () => {
     assert.deepEqual(readOverseerSettings().memory, { on: true, type: "uniichat", size: 128 }, "the old size is kept, never written anew");
   });
 
+  test("a settings save keeps the stored switch, whatever memory its body carries", async () => {
+    const { readOverseerSettings, writeOverseerSettings } = await import("../overseer-store");
+    const { saveOverseerSettings } = await import("../overseer");
+    writeOverseerSettings({ ...readOverseerSettings(), memory: { on: false, type: "zoomable", size: 32 } });
+    const body = { ...readOverseerSettings(), memory: { on: true, type: "uniichat", size: 128 }, proactivity: "off" };
+    const out = await saveOverseerSettings(body);
+    assert.ok(!("error" in out), JSON.stringify(out));
+    assert.equal(readOverseerSettings().proactivity, "off");
+    assert.deepEqual(readOverseerSettings().memory, { on: false, type: "zoomable", size: 32 });
+  });
+
   test("the outline and open: 400 on a bad path or id/n, 404 when it isn't a session", async () => {
     assert.equal((await req("GET", "/api/memory")).status, 400);
     assert.equal((await req("GET", "/api/memory?path=/etc/x.jsonl")).status, 400);
@@ -159,10 +184,20 @@ describe("the routes", () => {
 });
 
 describe("the summarizer's call", () => {
-  /** A fake `claude` that answers `result`, recording the usage context it ran in. */
-  function fakeClaude(result: string, contexts: unknown[]) {
-    return ((_bin: string, _args: string[]) => {
+  /** What a fake `claude` saw at spawn time: its argv, and the system prompt file it names (text, mode). */
+  interface Seen {
+    args: string[];
+    file?: string;
+    text?: string;
+    mode?: number;
+  }
+  /** A fake `claude` that answers `result`, recording the usage context it ran in (and what it saw). */
+  function fakeClaude(result: string, contexts: unknown[], seen: Seen[] = []) {
+    return ((_bin: string, args: string[]) => {
       contexts.push(currentUsageContext());
+      const at = args.indexOf("--system-prompt-file");
+      const file = at >= 0 ? args[at + 1] : undefined;
+      seen.push({ args: [...args], ...(file ? { file, text: readFileSync(file, "utf8"), mode: statSync(file).mode & 0o777 } : {}) });
       const child = new EventEmitter() as EventEmitter & { stdin: PassThrough; stdout: PassThrough; stderr: PassThrough; kill: () => void };
       child.stdin = new PassThrough();
       child.stdout = new PassThrough();
@@ -193,12 +228,40 @@ describe("the summarizer's call", () => {
     await assert.rejects(summarize(call, { settings: () => both, denied: () => "turned off", spawn: fakeClaude("x", []), agentDir: () => agentDir }), /turned off/);
   });
 
-  test("the argv: no tools, no settings sources, no session, the effort and the system prompt", () => {
-    const a = summaryClaudeArgs(haiku, "SYS");
+  test("the argv: no tools, no settings sources, no session, the effort, and no system prompt text", () => {
+    const a = summaryClaudeArgs(haiku);
     assert.equal(a[a.indexOf("--tools") + 1], "");
     assert.equal(a[a.indexOf("--setting-sources") + 1], "");
     assert.ok(a.includes("--no-session-persistence"));
     assert.equal(a[a.indexOf("--effort") + 1], "low");
-    assert.equal(a[a.indexOf("--system-prompt") + 1], "SYS");
+    assert.ok(!a.includes("--system-prompt") && !a.includes("--append-system-prompt") && !a.includes("--append-system-prompt-file"));
+  });
+
+  test("the system prompt goes in a private file that replaces Claude Code's own, removed after the call; no big argument", async () => {
+    const seen: Seen[] = [];
+    const system = `guide\n${"0+1|a summarized line of the chat. ".repeat(6500)}`; // ~200 KB
+    assert.ok(Buffer.byteLength(system) > 200_000);
+    const out = await summarize({ ...call, system }, { settings: () => settings.memoryDefaults(), denied: () => null, spawn: fakeClaude("A line.", [], seen), agentDir: () => agentDir });
+    assert.equal(out.text, "A line.");
+    const [s] = seen;
+    assert.ok(s && s.file, "--system-prompt-file names a file");
+    assert.equal(s.text, system, "the file holds the call's system prompt, whole");
+    assert.equal(s.mode, 0o600, "readable by its owner only");
+    assert.ok(!s.args.includes("--system-prompt") && !s.args.includes("--append-system-prompt-file"), "replace, never append");
+    assert.ok(s.args.every((x) => Buffer.byteLength(x) <= 64 * 1024), "no argument over 64 KiB");
+    assert.equal(existsSync(s.file!), false, "the file is removed after the call");
+  });
+
+  test("an argument over 64 KiB fails too-large without starting claude", async () => {
+    const { claudeRun } = await import("../decide-llm");
+    const { DecisionError } = await import("../decide");
+    let spawned = 0;
+    const spawn = ((..._a: unknown[]) => {
+      spawned++;
+      throw new Error("must not spawn");
+    }) as unknown as typeof import("node:child_process").spawn;
+    const fail = (f: import("../../shared/protocol").DecisionFailure, m: string) => new DecisionError(f, m);
+    await assert.rejects(claudeRun(["-p", "--system-prompt", "x".repeat(100_000)], "q", { spawn, agentDir: () => agentDir }, 5_000, fail), (err: unknown) => err instanceof DecisionError && err.failure === "too-large" && /argument too large/.test(err.message));
+    assert.equal(spawned, 0);
   });
 });

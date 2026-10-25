@@ -21,7 +21,8 @@ major mode. While it's on, the agent gets a guide to the project's spec tools an
 
 The guide has the agent read before it writes:
 
-1. Find the claims the task starts from, with the spec's map and a lookup by file or name.
+1. Find the claims the task starts from with a search by a few words of the task, a file
+   or a name, and the spec's map when that finds nothing or the task spans a whole area.
 2. Look at each claim's neighbours before reading them, and check what a claim it will change
    reaches.
 3. Read each claim it starts from, and each linked claim that could matter, one passage at a time.
@@ -38,8 +39,9 @@ After a tool call that brings new changed files, the agent gets a short **`[spec
 that tool result. It says how many changed files the spec covers and how many no claim covers yet,
 and names the new ones. Read-only tools don't trigger it.
 
-If the change also alters a claim the task didn't start from, the agent asks you in its plan,
-in one question: "This also changes {claim}: {what}. OK?"
+If the change contradicts a claim that existed before the task, or changes what a user sees beyond
+it, the agent updates that claim in the task's draft without asking: your go-ahead for the task
+covers it. Its reply lists each one as "Also updates {claim}: {what}".
 
 ## With align on too
 
@@ -51,18 +53,27 @@ numbers or names in a promise you agreed to without a new agreement, promotion p
 
 ## Finishing
 
-Once the agent stops editing, its next tool call carries one more line: **"Unread § your change
-landed in"**. It names the claims the agent's own changed files land in that the agent hasn't read
-yet, ranked by the names, strings and numbers in the lines it changed: at most five are marked
-read first, and the rest are counted, followed by the one command that lists them. A claim that still states a value the change
-removed (say, "12 MB" after a limit went to 16 MB) says so and comes first. The agent reads the ones
+Once the agent stops editing, its next tool call carries one more line, the
+**unread** line. It names the claims the agent's own changed files land in that the agent hasn't read
+yet, ranked by the names, strings and numbers in the lines it changed, with a claim that only
+shares a broad file with many others ranked lower: at most ten are marked read first, and the
+rest are left to the one command that lists them, uncounted, so the line asks only for the ones it
+names. A claim that still
+states a value the change removed (say, "12 MB" after a limit went to 16 MB) says so and is always
+marked read first. The agent reads the ones
 marked first. The line comes once, and again only when a later edit lands in other claims.
 
 When the work is done, the agent checks each promise it changed against what it built, records
-what it checked, and promotes the drafts it verified. The session promotes its own drafts.
+what it checked, and promotes the drafts it verified. The session promotes its own drafts, on its own
+branch, after its checks pass and before it calls that branch done or ready to land: nothing that
+lands the branch promotes them, so the docs land in the same merge as the code they describe. Your
+go-ahead to build or merge covers promoting and committing them; you're never asked for it
+separately, and there is no second, docs-only merge. A draft whose branch already landed
+is promoted on a fresh branch from the default branch, never on the default branch itself. Only if you say not to commit does the
+session leave its evidence pending.
 
 A turn with spec on ends when the model stops, as one with spec off does. Nothing re-prompts it,
-and replies carry no required spec lines.
+and the "Also updates" line is the only spec line a reply carries; nothing checks it.
 
 The tools check structure: that a claim exists, maps to files and is labelled. No check proves a
 claim is true. That is still a reading of the code.
@@ -82,8 +93,12 @@ the same guide and a short note:
 
 - its brief is its go-ahead;
 - it works in the draft its brief names, or says which one it started;
-- it doesn't promote or commit unless its brief says so, because the parent promotes;
-- it puts anything it would flag into one question in its final report.
+- it doesn't promote or commit unless its brief says so, and then only on its brief's branch,
+  never by landing on the default branch, because the parent promotes on its own branch;
+- its final report lists each claim it updated that existed before the task.
+
+When a worker that wrote code finishes, its summary carries one line naming the claims its changes
+landed in, and the changed files no claim covers.
 
 A worker gets the modes its parent has when it starts, so turning spec on later doesn't reach a
 worker that's already running. A team's monitor gets no guide. A worker that runs on its worktree's
@@ -91,9 +106,10 @@ own agent folder always has spec on.
 
 ## Project coding sessions
 
-A project's coding sessions start in the mode set on its project page. **Automatic**, the default,
-turns spec on when the project has `.sova/spec/manifest.json` when the session starts. The project
-overseer can't turn spec off while the project's setting has it on.
+A project has no coding-mode setting of its own: its coding sessions start in this computer's
+default mode, the one **Save as default** in a chat's mode menu sets, and the project page names
+it. An Overseer can start or switch a coding session with spec on or off, and in a project with a
+spec it's told to keep spec on unless you say otherwise.
 
 ## A spec review
 

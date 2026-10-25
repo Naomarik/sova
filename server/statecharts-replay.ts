@@ -23,6 +23,7 @@
  * Shadow only: nothing here changes Sova's behaviour.
  */
 
+import { readStoredPowers } from "../shared/powers";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -486,7 +487,8 @@ class World {
   /** The envelope of an act, from the statecharts and the trace's settings as they stand. */
   envelope(who: { by: ActBy; attended: boolean; extra?: Record<string, unknown> }): Envelope {
     const f = this.facts();
-    const settings = { autonomy: f.settings.autonomy, caps: capsOf(f.settings.caps), holdMin: 0, confirmKinds: [] };
+    // The trace's level, as the powers it carries over to (traces predate switches).
+    const settings = { powers: readStoredPowers({ autonomy: f.settings.autonomy }), caps: capsOf(f.settings.caps), holdMin: 0 };
     const ceiling = rosterCeiling(f.rosterActive);
     const e = stampEnvelope(this.host, PROJECT, { by: who.by, attended: who.attended }, () => settings, settings, () => ceiling);
     return { ...e, paused: f.paused, ceiling, archived: f.archived, ...(who.extra ?? {}) };
@@ -1007,6 +1009,9 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
     }
     if (want === null) return;
     if (said.startsWith(want)) return pass();
+    // al_3: levels became powers; the refusal names the power that is off for the overseer on its own, or the brake
+    if (/ is off for the overseer on its own\. Do not retry it\./.test(said) || said.startsWith("Nothing happens on its own right now: "))
+      return diverge("refusal-sentence", want, said, "ruling", "al_3: the levels L0–L3 became On/Off powers; the refusal names the power that is off (or the brake), never a level", { ruling: "al_3" });
     // General Projects: the refusal no longer says "tag gap" (gaps are the organization's, offered only while placed)
     if (said.startsWith(want.replace("(sova_idea, tag gap)", "(sova_idea)")))
       return diverge("refusal-sentence", want, said, "ruling", "General Projects (al_7): the autonomy refusal drops \"tag gap\"; the organization's prompt keeps the gap guidance", { ruling: "al_7" });

@@ -4,7 +4,7 @@
  * No pi imports here so this module stays runnable under plain `node --test`.
  *
  * Model of pi's settings:
- *   - Local auto-discovered extensions (~/.pi/agent/extensions, .pi/extensions)
+ *   - Local auto-discovered extensions (<agent dir>/extensions, .pi/extensions)
  *     are enabled/disabled through the top-level `extensions` pattern array in
  *     the corresponding settings.json. Pattern semantics mirror pi's
  *     applyPatterns: plain patterns are includes, `!pat` excludes, `+path`
@@ -304,8 +304,16 @@ function toPosix(p: string): string {
 	return p.split(path.sep).join("/");
 }
 
+/** The agent dir as pi resolves it: $PI_CODING_AGENT_DIR (a leading ~ expanded), else ~/.pi/agent. */
+export function defaultAgentDir(env: NodeJS.ProcessEnv = process.env): string {
+	const dir = env.PI_CODING_AGENT_DIR?.trim();
+	if (!dir) return path.join(homedir(), ".pi", "agent");
+	if (dir === "~") return homedir();
+	return dir.startsWith("~/") ? path.join(homedir(), dir.slice(2)) : dir;
+}
+
 export function listExtensions(opts: DiscoveryOpts): ExtResource[] {
-	const agentDir = opts.agentDir ?? path.join(homedir(), ".pi", "agent");
+	const agentDir = opts.agentDir ?? defaultAgentDir();
 	const globalSettingsPath = path.join(agentDir, "settings.json");
 	const projectSettingsPath = path.join(opts.cwd, ".pi", "settings.json");
 	const projectExtDir = path.join(opts.cwd, ".pi", "extensions");

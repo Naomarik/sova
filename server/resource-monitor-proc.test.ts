@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import {
   classifyArgv, parseBootTime, parseCmdline, parseEnviron, parseKeyValues, parseLoadavg, parseMeminfo, parsePressure,
-  parseSelfCgroup, parseStat, parseStatusSwap, pressureOf,
+  parsePsCpu, parsePsTable, parseSelfCgroup, parseStat, parseStatm, parseStatusSwap, pressureOf,
 } from "./resource-monitor-proc";
 
 /** A stat line with fields 3.. as given (field 3 = state). */
@@ -93,7 +93,7 @@ test("cmdline: NUL-separated argv, and a retitled process's padded title", () =>
 
 describe("classifyArgv", () => {
   const c = (...argv: string[]) => classifyArgv(argv);
-  test("pi worker (retitled)", () => assert.deepEqual(c("pi"), { kind: "pi-worker", cmd: "pi" }));
+  test("pi is no worker of its own any more: just a process", () => assert.deepEqual(c("pi"), { kind: "other", cmd: "pi" }));
   test("claude: worker or provider by argv alone is 'claude-worker', with its session uuid", () => {
     const uuid = "0287676D-8cba-4b8c-81a0-cf8a90cdd413";
     const r = c("claude", "-p", "--input-format", "stream-json", "--resume", uuid, "--settings", "{}", "--model", "opus[1m]");
@@ -103,9 +103,6 @@ describe("classifyArgv", () => {
     const fresh = c("claude", "-p", "--model", "haiku");
     assert.equal(fresh.claudeSession, undefined);
     assert.equal(c("claude", "-p", "--session-id", "not-a-uuid").claudeSession, undefined);
-  });
-  test("member-mcp helper", () => {
-    assert.deepEqual(c("/usr/bin/node", "/home/u/sova/pi-config/extensions/subagents/member-mcp.ts"), { kind: "member-mcp", cmd: "node member-mcp.ts" });
   });
   test("node: interpreter flags skipped, tsx named, paths shortened", () => {
     assert.equal(c("/x/bin/node", "--import", "tsx", "server/index.ts").cmd, "node server/index.ts");
@@ -131,5 +128,38 @@ describe("classifyArgv", () => {
   });
   test("an empty argv (kernel thread, zombie) falls back to comm", () => {
     assert.deepEqual(classifyArgv([], "kworker/0:1"), { kind: "other", cmd: "[kworker/0:1]" });
+  });
+});
+
+test("statm: resident and shared pages; own memory is what is left (RssAnon); malformed is null", () => {
+  // size resident shared text lib data dt
+  assert.deepEqual(parseStatm("1200000 61000 12000 30000 0 900000 0\n"), { resident: 61000, shared: 12000 });
+  assert.equal(parseStatm(""), null);
+  assert.equal(parseStatm("12 x 3"), null);
+  assert.equal(parseStatm("12"), null);
+});
+
+test("Sova's own processes by argv: a chat's runtime and the usage helper", () => {
+  assert.equal(classifyArgv(["/opt/bun/bin/bun", "/var/lib/sova/chats/code/abc/server/chat-runtime/main.ts"]).kind, "sova-runtime");
+  assert.equal(classifyArgv(["bun", "server/chat-runtime/main.ts"]).kind, "sova-runtime");
+  assert.equal(classifyArgv(["node", "--import", "tsx", "server/usage-helper/main.ts"]).kind, "sova-helper");
+  assert.equal(classifyArgv(["bun", "server/index.ts"]).kind, "node");
+  assert.equal(classifyArgv(["bun", "chat-runtime/main.ts.bak"]).kind, "node");
+});
+
+describe("ps (macOS)", () => {
+  test("cumulative CPU time in centiseconds: mm:ss.cc, hh:mm:ss.cc and dd-hh:mm:ss", () => {
+    assert.equal(parsePsCpu("0:01.23"), 123);
+    assert.equal(parsePsCpu("12:00.50"), 72050);
+    assert.equal(parsePsCpu("1:02:03.04"), 372304);
+    assert.equal(parsePsCpu("2-01:00:00"), 49 * 3600 * 100);
+    assert.equal(parsePsCpu("bogus"), null);
+  });
+  test("the process table: pid, ppid, resident kB and CPU; unreadable lines dropped", () => {
+    const t = parsePsTable("  101     1  20480   0:10.00\n  202   101   1024   0:00.05\n garbage\n\n");
+    assert.deepEqual([...t.values()], [
+      { pid: 101, ppid: 1, rssKb: 20480, cpu: 1000 },
+      { pid: 202, ppid: 101, rssKb: 1024, cpu: 5 },
+    ]);
   });
 });

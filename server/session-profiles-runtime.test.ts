@@ -43,6 +43,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { acquireChat, disposeAllChats, heldChat } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { archiveSession, getSessionSummary } = await import("./sessions-index");
@@ -51,7 +52,6 @@ const { readActiveBranch } = await import("./harness/pi/reader");
 const { applyProfile } = await import("./session-profile-routes");
 const { sessionActionsFile } = await import("./session-powers");
 const { parseProfile, PROFILE_ENTRY, SESSION_SENT_ENTRY } = await import("../shared/profiles");
-const { playbookTurnText } = await import("../shared/playbooks");
 const { findProfile } = await import("./profile-sources");
 const { approve } = await import("./profile-trust");
 const { overseerTools, TurnLimits } = await import("./overseer-tools");
@@ -65,20 +65,19 @@ after(async () => {
 
 /** The project fixtures (§chat.profiles/projects): `cwd` is a plain folder, so its own project. Its
     One at a time captain reads, messages and sees all, and the Overseer may start it once approved.
-    Its mini overseer reads and messages sessions in its project, can't edit, and the Overseer may start it. */
+    Its mini overseer reads and messages sessions in its project, can't edit, and the Overseer may start it.
+    Its read-only reviewer reads sessions, has no shell, edits or workers, and the Overseer may start it. */
 const CAPTAIN = { id: "captain", label: "Release captain", icon: "branch", remove: ["workers", "web"], grant: ["sessions.read", "sessions.message", "sessions.all"], singleton: true, overseerMayStart: true };
 mkdirSync(join(cwd, ".sova", "profiles"), { recursive: true });
 const MINI = { id: "mini-overseer", label: "Mini overseer", icon: "network", remove: ["edit", "workers"], grant: ["sessions.read", "sessions.message"], overseerMayStart: true };
-const FIXTURES: Record<string, object> = { captain: CAPTAIN, "mini-overseer": MINI };
+const REVIEWER = { id: "reviewer", label: "Read-only reviewer", icon: "eye", remove: ["shell", "edit", "workers"], grant: ["sessions.read"], overseerMayStart: true };
+const FIXTURES: Record<string, object> = { captain: CAPTAIN, "mini-overseer": MINI, reviewer: REVIEWER };
 for (const f of Object.values(FIXTURES) as (typeof MINI)[]) {
   writeFileSync(join(cwd, ".sova", "profiles", `${f.id}.json`), JSON.stringify(f));
   approve((await findProfile({ source: "project", id: f.id }, cwd))!, { grant: f.grant as never, overseerMayStart: true });
 }
-/** A shipped profile's snapshot, or a project fixture's. */
-const profile = (id: string) =>
-  FIXTURES[id]
-    ? { ...(parseProfile(FIXTURES[id]) as object), source: "project", project: cwd, projectName: "cwd" }
-    : { ...(parseProfile(JSON.parse(readFileSync(new URL(`../profiles/${id}.json`, import.meta.url), "utf8"))) as object), source: "sova" };
+/** A project fixture's snapshot. */
+const profile = (id: string) => ({ ...(parseProfile(FIXTURES[id]) as object), source: "project", project: cwd, projectName: "cwd" });
 const CAPTAIN_PICK = { source: "project" as const, id: "captain" };
 let n = 0;
 /** A web session file: its header, and a profile entry when given. */
@@ -269,7 +268,7 @@ describe("One at a time (§chat.profiles/singleton)", () => {
     assert.ok(!entries(a).some((e) => e.customType === PROFILE_ENTRY));
   });
 
-  test("picking a profile that links a playbook sends nothing: the branch has no user message", async () => {
+  test("a profile file still naming a playbook (the retired key) applies as if it weren't there: no link in its snapshot, nothing sent", async () => {
     const pbRoot = join(agentDir, "pb-project");
     mkdirSync(join(pbRoot, ".sova", "profiles"), { recursive: true });
     mkdirSync(join(pbRoot, ".sova", "playbooks", "tidy"), { recursive: true });
@@ -279,8 +278,8 @@ describe("One at a time (§chat.profiles/singleton)", () => {
     assert.deepEqual(await applyProfile(a, { source: "project", id: "tidier" }), { ok: true });
     await disposeAllChats();
     const es = entries(a);
-    assert.equal(es.find((e) => e.customType === PROFILE_ENTRY).data.profile.playbook, "tidy");
-    assert.ok(!es.some((e) => e.type === "message" && e.message.role === "user"), "nothing is sent before Run Playbook");
+    assert.equal(es.find((e) => e.customType === PROFILE_ENTRY).data.profile.playbook, undefined);
+    assert.ok(!es.some((e) => e.type === "message" && e.message.role === "user"), "nothing is sent");
   });
 
   test("race at Send: the first message is refused, nothing written, naming the session that has it", async () => {
@@ -460,10 +459,10 @@ describe("the Overseer may start only profiles marked for it (§app.overseer/too
     assert.deepEqual(busy.requests, []);
     const free = harness([]);
     await free.call({ cwd, profile: "reviewer" });
-    assert.match(free.requests[0] ?? "", /^\/api\/sessions .*"profile":\{"source":"sova","id":"reviewer"\}/);
+    assert.match(free.requests[0] ?? "", /^\/api\/sessions .*"profile":\{"source":"project","id":"reviewer"\}/);
   });
 
-  test("a profile that links a playbook: the playbook's turn is the first prompt, it takes the prompt caps, and a missing one refuses first", async () => {
+  test("a profile still naming a playbook (the retired key) starts no playbook: only its own prompt goes, and a missing playbook refuses nothing", async () => {
     const pbRoot = join(agentDir, "pb-overseer");
     mkdirSync(join(pbRoot, ".sova", "profiles"), { recursive: true });
     mkdirSync(join(pbRoot, ".sova", "playbooks", "tidy"), { recursive: true });
@@ -473,19 +472,12 @@ describe("the Overseer may start only profiles marked for it (§app.overseer/too
     for (const id of ["tidier", "lost"]) approve((await findProfile({ source: "project", id }, pbRoot))!, { grant: [], overseerMayStart: true });
     const h = harness([]);
     await h.call({ cwd: pbRoot, profile: "tidier", prompt: "only src/" });
-    const turn = playbookTurnText({ title: "Tidy", dir: join(pbRoot, ".sova", "playbooks", "tidy"), body: "# Tidy\n\nSweep.\n" }, "only src/");
     const sent = h.requests.find((r) => r.startsWith("/api/sessions/prompt "));
     assert.ok(sent, "the first prompt went out");
-    assert.equal(JSON.parse(sent!.slice("/api/sessions/prompt ".length)).text, turn);
-    // It is a prompt even without one: with no prompts left, it is refused before anything is created.
-    const noPrompts = { ...DEFAULT_CAPS, promptsPerTurn: 0 };
-    const hostCaps = overseerTools(
-      { ...({ request: async () => Response.json({}, { status: 201 }), overseerId: () => "ov", confirmed: () => null, sessions: async () => [], started: () => {}, runningStarted: () => 0, counted: () => false, attended: () => true } as object), caps: () => noPrompts } as unknown as Parameters<typeof overseerTools>[0],
-      new TurnLimits(),
-    ).find((t) => t.name === "sova_create_session")!;
-    await assert.rejects(hostCaps.execute("tc", { cwd: pbRoot, profile: "tidier" } as never, undefined, undefined, undefined as never), /^Error: Limit reached: at most 0 prompts to other sessions per message from the user/);
+    assert.equal(JSON.parse(sent!.slice("/api/sessions/prompt ".length)).text, "only src/", "exactly its own prompt, no playbook turn");
+    // Without a prompt it is no prompt: nothing but the create.
     const lost = harness([]);
-    await assert.rejects(lost.call({ cwd: pbRoot, profile: "lost" }), /This profile runs the playbook "gone", but this folder has no playbook with that id\. No session was created\./);
-    assert.deepEqual(lost.requests, []);
+    await lost.call({ cwd: pbRoot, profile: "lost" });
+    assert.ok(!lost.requests.some((r) => r.startsWith("/api/sessions/prompt ")), "no first message for a retired link");
   });
 });

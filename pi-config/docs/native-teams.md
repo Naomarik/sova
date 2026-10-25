@@ -43,8 +43,8 @@ Milestone 1 is **landed and verified** through batches 1, 2, 3a and 3b:
 - **Declared ownership** (`ownedPaths`): advisory coordination metadata,
   prepended into the member's own prompt and shown in `team_list`. It is **not
   a filesystem lock** — every member shares the same working tree.
-- **Session scope**: teams and their workers live and die with the extension
-  instance (details in "Session lifetime" below).
+- **Session scope**: teams belong to their parent session; their members are
+  chat processes that outlive a reload of it (details in "Session lifetime" below).
 
 ## Quick start
 
@@ -107,13 +107,19 @@ TeamMember {
   prompt,                                  // self-contained; the team header is prepended
   ownedPaths?,                             // ≤ 32 entries, ≤ 512 chars each, single line
   orchestrator?,                           // true: sibling-scoped team_roster/team_steer; pi or claude-code backend
-  backend?, model?, effort?, tools?, systemPrompt?, cwd?, wake?, backendOptions?
+  backend?, model?, effort?, tools?, systemPrompt?, cwd?, wake?, backendOptions?,
+  extensions?                              // agent_spawn's rules; loaded beside the team tools
 }
 ```
 
-- One role per member: `count`, `fork`, `extensions` and `agentType` are
-  rejected with a pointer to `agent_spawn` (which stays the tool for ad hoc
-  workers and Pi-only options).
+- One role per member: `count`, `fork` and `agentType` are rejected in plain
+  words that name the setting: `count` with "one member per role", `fork` and
+  `agentType` with a pointer to `agent_spawn` (which stays the tool for ad hoc
+  workers and those options). Any other unknown setting is refused the same
+  way, never dropped. A member takes `extensions` by `agent_spawn`'s rules.
+- `members` given as a JSON string of a list of objects is read as that list.
+  A missing role, prompt, name or objective is refused, never filled in. These
+  checks run before pi's schema check, so no refusal is in the schema's words.
 - **Atomicity:** the whole batch is validated before any worker starts; a
   failure on any member rolls the batch back (bounded 10s wait, workers stay
   owned until termination is confirmed, consumed IDs are never reused) and
@@ -225,8 +231,8 @@ sources `member` / `orchestrator` and kinds `message` / `question` / `steer` /
 
 Every member gets an identity in `PI_SUBAGENTS_TEAM_MEMBER` (team, worker ID,
 role, orchestrator flag, private mailbox directory) and a mailbox directory.
-Pi members are launched with `--no-extensions -e extensions/subagents/member.ts`
-and the identity in their environment. Claude members get the same tools from
+Pi members load `extensions/subagents/member.ts` among their listed extensions
+and get the identity in their environment. Claude members get the same tools from
 `extensions/subagents/member-mcp.ts`, a dependency-free stdio MCP server the
 Claude CLI launches from a per-worker `mcp.json` (`--mcp-config`, under
 `--strict-mcp-config`); the identity is in that server entry's `env`, and the
@@ -235,14 +241,14 @@ without a valid identity, never import the manager, and expose only:
 
 | Tool | Who | Effect (performed by the parent extension) |
 | --- | --- | --- |
-| `team_msg { to, message }` | any member | steer into the recipient (`to` = sibling role, `ag_NN`, or `all`) with a `[Team message from …]` prefix; Pi recipients get normal steering (or a fresh task if idle), Claude recipients a queued follow-up |
-| `team_inbox { limit? }` | any member | re-read delivered messages/instructions (inbox copy written by the parent) |
-| `team_ask { question }` | any member | a displayed `team-question` message in the parent session (`followUp`, `triggerTurn: true`); the parent answers with `agent_steer { id, message }` |
+| `team_msg { to, message, subject?, urgent?, replyTo? }` | any member | an item in each recipient's inbox (`to` = sibling role, `ag_NN`, or `all` = every live sibling), answered at once with its id; the recipient is woken with a short list (idle: after ~3 s, urgent at once; busy: urgent at its next step, the rest when its turn ends); a succeeded recipient's successor gets it |
+| `team_inbox { action?, ids?, note?, limit? }` | any member | the member's inbox, served by the parent (its only writer): `list` open items, `open` ids in full, `done` ids (addressed, optional note), `sent` (status of what it sent) |
+| `team_ask { question, subject? }` | any member | in a coordinated team, a `question` item for the coordinator (answered with `team_msg` `replyTo`); otherwise a displayed `team-question` message in the parent session (`followUp`, `triggerTurn: true`); the parent answers with `agent_steer { id, message }` |
 | `team_roster {}` | orchestrator | live roster of its own team, states, ownership, recent actions |
-| `team_steer { to, message, mode? }` | orchestrator | `agent_steer`-equivalent for one sibling of its own team; `[Instruction from orchestrator …]` prefix |
+| `team_steer { to, message, mode? }` | orchestrator | `agent_steer`-equivalent for one sibling of its own team; `[Instruction from orchestrator …]` prefix; delivered in full on the sibling's serial delivery lane (never refused for being busy) |
 
-Transport: request files in the member's own directory under a private
-temporary root; the parent polls (250ms), takes the sender's identity from the
+Transport: request files in the member's own directory under the parent
+session's mailbox root (kept across reloads); the parent polls (250ms), takes the sender's identity from the
 directory, validates scope (same team, not itself, orchestrator-only powers)
 and answers with a response file the tool waits for (45s cap; a timeout reports
 "may still be handled", never success). Orchestrators cannot add or stop
@@ -301,10 +307,19 @@ Guarantees, enforced by `team-widget.test.ts`:
 
 ## Session lifetime, persistence and retention
 
-- **Teams are session-scoped.** `/reload`, session replacement, switching
-  sessions, or quitting Pi **stops all workers**, team members included. Live
-  reattachment after reload is not claimed anywhere; worker Pi session files
-  remain on disk for inspection.
+- **Teams are session-scoped; their members are not tied to the parent's
+  process.** A reload, a session switch or the parent's crash leaves every
+  member running in its own chat process; the next manager of that session
+  reattaches to it, and its team becomes live again. Every chat, worker and team
+  member runs in a process of its own, so a server restart never ends them either.
+  The mailbox, each member's inbox (`items.jsonl`) and pending nudges are
+  kept beside the team's handover notes. After a reload every inbox is folded
+  from disk: live members are woken for items never listed, and a member found
+  ended first closes automatically what it opened and didn't close (never a
+  question), then returns its open items to their senders ("not addressed"; Sova's own
+  to the coordinator, the main thread's to the main chat as a `team-notice`
+  message that starts no turn). At a handover the retired member's opened items
+  close the same way and its other open items move to its successor, keeping their ids.
 - **History is per branch.** On session start, team entries
   (`subagents-team-v1`, versioned create/add operations) restore from the
   **active branch only**; a `/tree` jump re-restores. History teams are
@@ -320,9 +335,9 @@ Guarantees, enforced by `team-widget.test.ts`:
   snapshot of the last known status/outcome and renders as
   `unavailable (pruned, last …)`; the member explicitly stays
   unavailable-by-ID rather than being dropped.
-- Create-time `defaults` live in memory only — which is always safe, because
-  after a reload every team is read-only history and `team_add` can never
-  observe them.
+- Create-time `defaults` live in memory only: after a reload a team made live
+  again by a reattached or resumed member has none, so a later `team_add`
+  applies none.
 
 ## Limits (all enforced, all explicit)
 
@@ -330,8 +345,8 @@ Guarantees, enforced by `team-widget.test.ts`:
 | --- | --- |
 | Session teams / history teams | 16 / 16 |
 | Members per team (incl. finished and pending) | 24 |
-| Members per `team_create`/`team_add` call | 8 |
-| Live workers total (shared with `agent_spawn`) | 12 |
+| Members per `team_create`/`team_add` call | no limit of its own (bounded by the two rows around it) |
+| Live workers total (shared with `agent_spawn`; idle workers, coordinator and monitor included) | 24 |
 | Retained finished workers | 50 |
 | Recorded actions per team | 50 (ring; last 10 shown) |
 | Team name / role length | 64 chars, single line, no control characters |
@@ -371,6 +386,18 @@ the existing wake mechanism, not an orchestrator loop.
   tells each member what to avoid, but nothing blocks conflicting edits.
   Coordinate genuinely conflicting files through separate tasks or sequential
   follow-ups, not parallel members.
+
+- **Standing roles fall back at runtime.** A coordinated team's coordinator or
+  monitor whose turn fails because its model ran out of usage (credits,
+  quota, a monthly, weekly or 5-hour limit, a failed sign-in; one shared
+  classifier, `../extensions/provider-limits/usage-out.ts`), or that fails 3
+  turns in a row of any kind, while it runs its role's primary, is stopped,
+  its seat released, and its successor starts at once on the role's fallback
+  through the main chat's replacement path. A single 429 rate limit doesn't
+  switch. The model is marked out for an hour (`subagents-dead-tuple-v1`,
+  replayed after a reload), so new teams, the members default and later
+  successors skip it; the team that switched stays on its fallback. With no
+  fallback a monitor is stopped and a coordinator is reported, each once.
 
 ## Verification
 

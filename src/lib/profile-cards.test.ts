@@ -1,17 +1,13 @@
 // Run: pnpm test -- src/lib/profile-cards.test.ts. The profile cards' pure parts: the caption line
 // and the Settings summary line, the groups and the filter threshold, a card's unusable reason, the System context fold's open
-// state, and which sessions the Profiles shelf and Recent list.
+// state, and that Recent lists profile sessions.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ListedProfile, ProfilesListing } from "../../shared/profiles";
 import type { SessionSummary } from "../../shared/protocol";
-import { CARD_FILTER_AFTER, cardCount, cardMatches, cardUnusable, pickerProfiles, profileCaption, profileSummary } from "./profiles";
+import { CARD_FILTER_AFTER, cardCount, cardMatches, cardUnusable, mySettingsCaption, pickerProfiles, pickerSections, profileCaption, profileSummary } from "./profiles";
 import { recentEligible } from "./recent";
 import { setSetupContextOpen, setupContextOpen } from "./setup-fold";
-
-// @ts-expect-error untyped .mjs import
-const { importSsr } = await import("./align-card-ssr.mjs");
-const { shelfGroups } = (await importSsr(new URL("../components/ProfileShelf.tsx", import.meta.url), (s: string) => import.meta.resolve(s))) as typeof import("../components/ProfileShelf");
 
 const SUBAGENTS = [
   { id: "off", footprint: "the agent picks" },
@@ -32,14 +28,13 @@ const listed = (id: string, extra: Partial<ListedProfile> = {}): ListedProfile =
   ...extra,
 });
 const listing = (yours: ListedProfile[], extra: Partial<ProfilesListing> = {}): ProfilesListing => ({
-  builtins: [listed("default", { source: "sova", key: "sova:default", label: "Default" })],
+  builtins: [listed("default", { source: "sova", key: "sova:default", label: "My settings" })],
   yours,
   yoursFile: "/x/session-profiles.json",
   project: { state: "none", profiles: [] },
   problems: [],
   hidden: [],
   running: {},
-  everRun: [],
   ...extra,
 });
 
@@ -69,12 +64,13 @@ test("a card's caption and the Settings summary add the mode and minor modes onl
   assert.equal(sum({}), "Nothing changed");
 });
 
-test("the grid's groups leave hidden profiles out, never Default; the filter shows past 9 cards", () => {
+test("the grid's groups leave hidden profiles out, never My settings; the filter shows past 9 cards", () => {
   const l = listing([listed("a"), listed("b")], { hidden: ["user:b", "sova:default"] });
   const g = pickerProfiles(l);
-  assert.deepEqual(g.builtins.map((p) => p.key), ["sova:default"]);
+  assert.equal(g.mine?.key, "sova:default", "My settings is its own card, whatever the hidden list says");
+  assert.deepEqual(g.builtins, [], "Default is not among the shipped ones");
   assert.deepEqual(g.yours.map((p) => p.key), ["user:a"]);
-  assert.equal(cardCount(g), 3, "Default, a and Custom…");
+  assert.equal(cardCount(g), 3, "My settings, a and Custom…");
   const many = pickerProfiles(listing(Array.from({ length: 8 }, (_, i) => listed(`p${i}`))));
   assert.equal(cardCount(many), 10);
   assert.ok(cardCount(many) > CARD_FILTER_AFTER);
@@ -82,6 +78,31 @@ test("the grid's groups leave hidden profiles out, never Default; the filter sho
   assert.equal(cardMatches({ label: "Claude session" }, "  claude "), true);
   assert.equal(cardMatches({ label: "Claude session" }, "deep"), false);
   assert.equal(cardMatches({ label: "Claude session" }, ""), true);
+});
+
+test("the picker's order: My settings, Yours, This project, then a shipped profile", () => {
+  const shipped = listed("ship", { source: "sova", key: "sova:ship" });
+  const proj = listed("proj", { source: "project", key: "project:/w#proj", project: "/w", projectName: "w" });
+  const g = pickerProfiles(listing([listed("mine-1")], { builtins: [listing([]).builtins[0]!, shipped], project: { state: "ok", name: "w", root: "/w", profiles: [proj] } }));
+  const s = pickerSections(g);
+  assert.deepEqual(
+    s.map((x) => [x.label, x.cards.map((p) => p.key)]),
+    [
+      [null, ["sova:default"]],
+      ["Yours", ["user:mine-1"]],
+      ["This project (w)", ["project:/w#proj"]],
+      ["Built in", ["sova:ship"]],
+    ],
+  );
+  assert.deepEqual(pickerSections(pickerProfiles(listing([]))).map((x) => x.id), ["mine"], "an empty section is left out");
+});
+
+test("My settings' caption: the mode, minor modes, model and effort it stands for", () => {
+  assert.equal(mySettingsCaption({ mode: "delegate", minorModes: ["align"], model: "claude-code-cli/claude-opus-5-5" }), "Delegate · Align · Opus 5.5");
+  assert.equal(mySettingsCaption({ mode: "normal", minorModes: ["align", "spec"], model: "zai/glm-5.3", thinking: "high" }), "Normal · Align, Spec · glm-5.3 · high");
+  assert.equal(mySettingsCaption({ mode: "normal", minorModes: [] }), "Normal", "no minor modes: left out");
+  assert.equal(mySettingsCaption(null), "Your own settings");
+  assert.equal(mySettingsCaption({}), "Your own settings");
 });
 
 test("a card is unusable exactly when the listing says why", () => {
@@ -103,11 +124,9 @@ test("the System context fold: closed by default, kept open per session until cl
 const session = (id: string, profile?: SessionSummary["profile"]) =>
   ({ id, path: `/s/${id}.jsonl`, title: id, cwd: "/w", createdAt: "2026-10-01T00:00:00Z", lastActiveAt: "2026-10-01T00:00:00Z", origin: "web", ...(profile ? { profile } : {}) }) as unknown as SessionSummary;
 
-test("a capability-neutral profile's session is off the shelf and in Recent; any other profile's is the reverse", () => {
+test("a profile session is in Recent, capability-neutral or not", () => {
   const neutral = session("n", { id: "claude", label: "Claude session", icon: "wrench", source: "user", neutral: true });
-  const reviewer = session("r", { id: "reviewer", label: "Read-only reviewer", icon: "eye", source: "sova" });
-  const { groups } = shelfGroups([neutral, reviewer], [], []);
-  assert.deepEqual(groups.map((g) => g.key), ["sova:reviewer"]);
+  const reviewer = session("r", { id: "reviewer", label: "Docs reviewer", icon: "eye", source: "user" });
   assert.equal(recentEligible(neutral), true);
-  assert.equal(recentEligible(reviewer), false);
+  assert.equal(recentEligible(reviewer), true);
 });

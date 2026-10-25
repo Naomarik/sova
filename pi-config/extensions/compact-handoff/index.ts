@@ -23,12 +23,14 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionContext, findCutPoint, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import type { ClaudeForkPoint } from "../claude-code/provider/fork-point.ts";
 import {
 	claudeForkPointFor,
+	reattachBackgroundForks,
 	startBackgroundFork,
+	workerHostOf,
 	type BackgroundForkHandle,
 	type BackgroundForkHandlers,
 	type BackgroundForkResult,
@@ -37,6 +39,7 @@ import {
 import { copyForFork, forkable, sweepStale } from "../subagents/fork/copy.ts";
 import type { ForkPolicy } from "../subagents/fork/mirror.ts";
 import { rpcScopedModel } from "../subagents/runner.ts";
+import type { WorkerHost } from "../subagents/worker-host.ts";
 import {
 	agentDir as defaultAgentDir,
 	type BranchEntry,
@@ -74,6 +77,12 @@ export interface CompactHandoffOptions {
 	start?(spec: BackgroundForkSpec, handlers: BackgroundForkHandlers): BackgroundForkHandle;
 	/** Test seam; defaults to the core's claudeForkPointFor. */
 	claudeForkPoint?(model: string | undefined, parentSessionId: string): ClaudeForkPoint | undefined;
+	/** Test seam; defaults to the host Sova announces on pi.events. */
+	workerHost?(): WorkerHost | undefined;
+	/** Test seam; defaults to the shared reattach. */
+	reattach?: typeof reattachBackgroundForks;
+	/** Test seam; defaults to pi's `compaction.keepRecentTokens` for the session's model, read from its settings files. */
+	keepRecentTokens?(ctx: ExtensionContext): number;
 }
 
 interface Run {
@@ -101,11 +110,44 @@ function oneLine(text: string): string {
 	return line.length > MAX_ERROR ? `${line.slice(0, MAX_ERROR - 1)}…` : line;
 }
 
+/**
+ * Whether pi's compact() would find nothing to summarize: everything since the branch's last
+ * compaction (that compaction's kept tail and what came after) fits in `keepRecentTokens`. pi's
+ * prepareCompaction cuts the same entries with the same budget (its exported findCutPoint), and
+ * refuses with "Nothing to compact" when no conversation lies before the cut; system messages are
+ * prompt state, never summarized, so they are left out. Should the two ever disagree, compact()'s
+ * own refusal still reaches the user as a failed compaction.
+ */
+export function nothingToCompact(branch: readonly BranchEntry[], keepRecentTokens: number): boolean {
+	if (branch.at(-1)?.type === "compaction") return true;
+	const last = branch.findLastIndex((e) => e.type === "compaction");
+	let entries = branch;
+	if (last >= 0) {
+		const kept = branch.findIndex((e) => e.id === (branch[last] as { firstKeptEntryId?: string }).firstKeptEntryId);
+		entries = [...(kept >= 0 && kept < last ? branch.slice(kept, last) : []), ...branch.slice(last + 1)];
+	}
+	entries = entries.filter((e) => !(e.type === "message" && e.message?.role === "system"));
+	const cut = findCutPoint(entries as never, 0, entries.length, keepRecentTokens);
+	return !entries.slice(0, cut.firstKeptEntryIndex).some((e) => e.type === "message" || e.type === "custom_message" || e.type === "branch_summary");
+}
+
 export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoffOptions = {}): void {
 	const dirOf = options.agentDir ?? (() => defaultAgentDir());
 	const now = options.now ?? Date.now;
 	const start = options.start ?? startBackgroundFork;
 	const forkPointOf = options.claudeForkPoint ?? claudeForkPointFor;
+	/** The session whose closed predecessor's run waits to be reattached, until Sova announces its host. */
+	let attachCtx: ExtensionContext | undefined;
+	// Sova announces the host at its own session_start, which may come after ours.
+	const announced = options.workerHost
+		? undefined
+		: workerHostOf(pi.events, () => {
+				if (attachCtx) startReattach(attachCtx);
+			});
+	const hostOf = options.workerHost ?? (() => announced?.current());
+	const reattachForks = options.reattach ?? reattachBackgroundForks;
+	/** pi's keep-recent budget for this session, as its compact() reads it; undefined when the settings can't be read. */
+	const keepRecentOf = options.keepRecentTokens ?? ((ctx: ExtensionContext) => SettingsManager.create(ctx.cwd, dirOf(), { projectTrusted: ctx.isProjectTrusted() }).getCompactionKeepRecentTokens(ctx.model ?? undefined));
 	/** The fork under way, per pi session: from the command until it settles. */
 	const runs = new Map<string, Run>();
 	/** Saved notes waiting to compact, per pi session. */
@@ -138,13 +180,18 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 		try { rmSync(dir, { recursive: true, force: true }); } catch { /* the sweep takes it later */ }
 	};
 
+	/** The runs a closed session left running, watched again at session_start (`reattach`). */
+	let reattached: Promise<unknown> = Promise.resolve();
+
 	/**
-	 * Settle the running rows no fork of THIS process is behind (a restart, /reload or crash
-	 * stopped them), once per session and only when the session is written anyway: its first
-	 * prompt, or /compact-handoff. Opening a session never writes.
+	 * Settle the running rows no live fork is behind (its chat is gone: the server stopped it, or it
+	 * died for good), once per session, after the reattach, and only when the session is written
+	 * anyway: its first prompt, or /compact-handoff. Opening a session never writes.
 	 */
 	let reconciledFor: string | undefined;
-	const reconcile = (ctx: ExtensionContext): void => {
+	const reconcile = async (ctx: ExtensionContext): Promise<void> => {
+		if (attachCtx) startReattach(attachCtx);
+		await reattached;
 		try {
 			const sessionId = idOf(ctx);
 			if (reconciledFor === sessionId) return;
@@ -158,7 +205,7 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 	};
 
 	pi.on("input", (event, ctx) => { bump(event, ctx); return { action: "continue" }; });
-	pi.on("before_agent_start", (event, ctx) => { bump(event, ctx); reconcile(ctx); });
+	pi.on("before_agent_start", async (event, ctx) => { bump(event, ctx); await reconcile(ctx); });
 	pi.on("agent_start", bump);
 
 	pi.registerEntryRenderer<RunEntryData>(RUN_ENTRY, (entry, _options, theme) => {
@@ -285,10 +332,16 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 				notify(ctx, "/compact-handoff waits for an idle session: let the turn, compaction or queued messages finish, then run it again.", "warning");
 				return;
 			}
-			reconcile(ctx);
+			await reconcile(ctx);
 			const sessionFile = ctx.sessionManager.getSessionFile();
 			if (!forkable(sessionFile)) {
 				notify(ctx, "/compact-handoff: this session has no conversation on disk yet, so there is nothing to hand off.", "warning");
+				return;
+			}
+			let keep: number | undefined;
+			try { keep = keepRecentOf(ctx); } catch { /* unreadable settings: let compact() decide, as before */ }
+			if (keep !== undefined && nothingToCompact(ctx.sessionManager.getBranch() as BranchEntry[], keep)) {
+				notify(ctx, "/compact-handoff: nothing can be compacted yet. Everything since the last compaction still fits in the recent part a compaction keeps, so no note was written.", "warning");
 				return;
 			}
 			const id = randomUUID();
@@ -313,6 +366,9 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 			try {
 				run.handle = start(
 					{
+						host: hostOf(),
+						kind: "handoff",
+						parent: { sessionId, path: sessionFile },
 						id,
 						name: WORKER_NAME,
 						task: forkTask(focus),
@@ -360,9 +416,49 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 		runs.clear();
 		waiting.clear();
 		for (const run of live) run.closing = true;
-		// Nothing is written while a session closes; the next prompt settles their rows as interrupted.
-		await Promise.all(live.map((run) => run.handle?.stop().catch(() => {})));
+		// Nothing is written while a session closes. The forks keep writing: the next session over
+		// this file reattaches them (session_start).
+		for (const run of live) run.handle?.detach();
 	});
+
+	/**
+	 * Watch again the forks the worker host still runs for this session: each whose row is still
+	 * running is a live run again and settles as if never left (saved, then compacted at the next
+	 * idle moment). A row whose fork is gone is the next prompt's `reconcile`.
+	 */
+	const reattach = async (ctx: ExtensionContext): Promise<void> => {
+		const host = hostOf();
+		if (!host) return;
+		const sessionId = idOf(ctx);
+		const rows = new Map(stillRunning(ctx.sessionManager.getBranch() as BranchEntry[]).map((data) => [data.id, data]));
+		const root = runsRoot(dirOf());
+		const handles = await reattachForks(host, "handoff", WORKER_NAME, (id) => {
+			if (runs.get(sessionId)?.id === id) return null; // Already watched by this session.
+			const row = rows.get(id);
+			if (!row || runs.has(sessionId)) return undefined;
+			const run: Run = { id, sessionId, focus: row.focus ?? "", dir: join(root, id), ctx, settled: false, cancelled: false, closing: false };
+			runs.set(sessionId, run);
+			return { onSettled: (result) => settle(run, result) };
+		});
+		for (const [id, handle] of handles) {
+			const run = runs.get(sessionId);
+			if (run?.id === id && !run.settled) run.handle = handle;
+			// It settled while its handle was being made: recorded already; its chat is done.
+			else void handle.stop().catch(() => {});
+		}
+	};
+	/** Reattach now, or once Sova announces the host. A second call is harmless. */
+	const startReattach = (ctx: ExtensionContext): void => {
+		if (!hostOf()) {
+			attachCtx = ctx;
+			return;
+		}
+		attachCtx = undefined;
+		try {
+			reattached = reattach(ctx).catch(() => {});
+		} catch { /* no session to read */ }
+	};
+	pi.on("session_start", (_event, ctx) => startReattach(ctx));
 
 	// After any compaction: the newest note on this branch, hidden, right after the summary. No
 	// turn: idle, it is appended at once; during a run pi appends it at the run's next turn boundary.

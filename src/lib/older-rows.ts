@@ -7,8 +7,9 @@
 // background. This file is the list arithmetic and the fetching; the views keep the signals.
 // No Solid, for tsx --test.
 
-import type { OlderSummary, TranscriptItem, TranscriptRows } from "../../shared/protocol";
+import { HAVE_MAX_CHARS, HAVE_PARAM, type OlderSummary, type TranscriptItem, type TranscriptRows } from "../../shared/protocol";
 import { entryOfRow, isInput, isReplyRow, messageCount } from "../../shared/row-counts";
+import { isOwnInput, otherSender, sendersOf } from "../../shared/senders";
 import type { RowsAsk } from "./api";
 import { reconcileItems } from "./transcript-cache";
 
@@ -29,6 +30,16 @@ export const WHOLE: Older = { left: 0, summary: NONE };
     whole transcript, which `helloRows` reads as whole. */
 export const newestOnly = (url: string): string => `${url}&tail=rest`;
 
+/** A chat socket URL that names the last row the view holds (`have`, §chat.transcript/instant-open),
+    so its hello carries only the rows after it. Nothing named (or too long a name): the usual hello. */
+export const withHave = (url: string, have: string | null | undefined): string =>
+  have && have.length <= HAVE_MAX_CHARS ? `${url}&${HAVE_PARAM}=${encodeURIComponent(have)}` : url;
+
+/** Whether rows kept `asOf` (ISO; null or undefined: a view keeps them current, or unknown) are older
+    than the session's file, last written at `lastActiveAt` (unknown: not older). */
+export const keptBehind = (asOf: string | null | undefined, lastActiveAt: string | undefined): boolean =>
+  !!asOf && !!lastActiveAt && Date.parse(asOf) < Date.parse(lastActiveAt);
+
 /**
  * The list after a `hello` or `snapshot`. Rows the list on screen already has above the hello's
  * first row (kept from the last visit, or before a reconnect or rewind) stay: they are that row's
@@ -44,32 +55,57 @@ export function helloRows(
   if (!older || older <= 0 || items.length === 0) return { items: reconcileItems(prev, items), older: WHOLE };
   const s = summary ?? NONE;
   const j = prev ? prev.findIndex((it) => it.id === items[0]!.id) : -1;
-  if (j > 0 && j <= older) {
-    const kept = prev!.slice(0, j);
-    const inputs = kept.filter(isInput).map((r) => r.id);
-    const at = s.inputs.length - inputs.length;
-    if (at >= 0 && inputs.every((id, i) => s.inputs[at + i] === id)) {
-      // An alignment whose newest revision is a kept row is now the list's to count.
-      const keptIds = new Set(kept.map((it) => it.id));
-      const aligns = s.aligns?.filter((a) => !keptIds.has(a.rowId));
-      // So is a card whose newest snapshot is a kept row.
-      const cards = s.cards?.filter((c) => !keptIds.has(c.rowId));
-      return {
-        items: reconcileItems(prev, [...kept, ...items]),
-        older: {
-          left: older - j,
-          summary: {
-            inputs: s.inputs.slice(0, at),
-            messages: Math.max(0, s.messages - messageCount(kept)),
-            replies: s.replies,
-            ...(aligns?.length ? { aligns } : {}),
-            ...(cards?.length ? { cards } : {}),
-          },
-        },
-      };
-    }
-  }
-  return { items: reconcileItems(prev, items), older: { left: older, summary: s } };
+  return (j > 0 && keepAbove(prev!, j, items, older, s)) || { items: reconcileItems(prev, items), older: { left: older, summary: s } };
+}
+
+/**
+ * The list after a `hello` that continues after a row the view named (`after`,
+ * §chat.transcript/instant-open): the rows on screen up to and including that one, then the
+ * hello's (possibly none). Null when the list doesn't hold that row, or its inputs don't match the
+ * summary's newest: the hello's rows alone are not a list to show, so the view reads the file again.
+ */
+export function afterRows(
+  prev: readonly TranscriptItem[] | null | undefined,
+  items: TranscriptItem[],
+  after: string,
+  older?: number,
+  summary?: OlderSummary,
+): { items: TranscriptItem[]; older: Older } | null {
+  const m = prev ? prev.findIndex((it) => it.id === after) : -1;
+  if (m < 0 || !older || older <= 0) return null;
+  return keepAbove(prev!, m + 1, items, older, summary ?? NONE);
+}
+
+/** `prev`'s first `j` rows above `items`, when they can be the last `j` of the `older` rows the
+    summary sums up (its newest inputs are theirs); else null. */
+function keepAbove(prev: readonly TranscriptItem[], j: number, items: TranscriptItem[], older: number, s: OlderSummary): { items: TranscriptItem[]; older: Older } | null {
+  if (j > older) return null;
+  const kept = prev.slice(0, j);
+  const inputs = kept.filter(isInput).map((r) => r.id);
+  const at = s.inputs.length - inputs.length;
+  if (at < 0 || !inputs.every((id, i) => s.inputs[at + i] === id)) return null;
+  // The rows the user typed above the kept ones: what the summary said of those still above.
+  const above = new Set(s.inputs.slice(0, at));
+  const ownInputs = s.ownInputs?.filter((id) => above.has(id));
+  // An alignment whose newest revision is a kept row is now the list's to count.
+  const keptIds = new Set(kept.map((it) => it.id));
+  const aligns = s.aligns?.filter((a) => !keptIds.has(a.rowId));
+  // So is a card whose newest snapshot is a kept row.
+  const cards = s.cards?.filter((c) => !keptIds.has(c.rowId));
+  return {
+    items: reconcileItems(prev, [...kept, ...items]),
+    older: {
+      left: older - j,
+      summary: {
+        inputs: s.inputs.slice(0, at),
+        ...(ownInputs ? { ownInputs } : {}),
+        messages: Math.max(0, s.messages - messageCount(kept)),
+        replies: s.replies,
+        ...(aligns?.length ? { aligns } : {}),
+        ...(cards?.length ? { cards } : {}),
+      },
+    },
+  };
 }
 
 /** The list with a chunk (or range) of older rows on top, or null when they don't end right above
@@ -84,6 +120,15 @@ export function prependRows(list: readonly TranscriptItem[], older: Older, r: Tr
 // ---- The complete-list readers: the list the view holds, plus the summary of the rest ---------
 
 export const inputTotal = (list: readonly TranscriptItem[], older: Older): number => list.filter(isInput).length + older.summary.inputs.length;
+/** The messages the user typed on the branch: the composer's input count, exactly the rows the
+    Timeline's Inputs Only lists (shared/senders.ts `isOwnInput`). Above the list, the summary's own
+    inputs (an older server's summary has none: its every input), less any a sender marker the list
+    holds names: a marker always comes after its row, so one for a row above can be in the list. */
+export function ownInputTotal(list: readonly TranscriptItem[], older: Older): number {
+  const senders = sendersOf(list);
+  const above = older.summary.ownInputs ?? older.summary.inputs;
+  return list.filter((r) => isOwnInput(r, senders)).length + above.filter((id) => !otherSender(senders, id)).length;
+}
 export const messageTotal = (list: readonly TranscriptItem[], older: Older): number => messageCount(list) + older.summary.messages;
 export const anyReply = (list: readonly TranscriptItem[], older: Older): boolean => list.some(isReplyRow) || older.summary.replies;
 /** The newest input on the branch: in the list, else the newest of those above it. */

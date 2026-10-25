@@ -278,6 +278,8 @@ export class OrgHost {
   private readonly effectHandlers = new Map<string, (effect: Effect) => Promise<unknown>>();
   private readonly runners = new Map<string, InvocationRunner>();
   private readonly running = new Map<string, Promise<EffectOutcome>>();
+  /** The statechart session of each running effect, by key (settle waits for a session to go quiet). */
+  private readonly runningSid = new Map<string, string>();
   /** Invocation reports on their way to a step. */
   private readonly reporting = new Set<Promise<void>>();
   private readonly listeners: ((change: HostChange) => void)[] = [];
@@ -295,6 +297,8 @@ export class OrgHost {
   private readonly historyProblems: HostProblem[] = [];
   /** Effect and run answers waiting for history to be saveable again, oldest first. */
   private readonly waiting: (() => void)[] = [];
+  /** The session each waiting effect answer is for. */
+  private readonly waitingSid = new Map<() => void, string>();
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
 
   readonly effects = {
@@ -812,12 +816,14 @@ export class OrgHost {
       await this.ready();
       if (this.closed) return out;
       try {
-        this.answerOrWait(() =>
-          this.step(
-            () => this.engine.send(e.sessionId, out.error == null ? "effect/done" : "effect/failed", out.error == null ? { key: e.key, result: (out.result ?? null) as Json } : { key: e.key, detail: out.error }, { now: this.clock() }),
-            undefined,
-            { call: "effect" },
-          ),
+        this.answerOrWait(
+          () =>
+            this.step(
+              () => this.engine.send(e.sessionId, out.error == null ? "effect/done" : "effect/failed", out.error == null ? { key: e.key, result: (out.result ?? null) as Json } : { key: e.key, detail: out.error }, { now: this.clock() }),
+              undefined,
+              { call: "effect" },
+            ),
+          e.sessionId,
         );
       } catch (err) {
         console.warn(`[org-host] ${this.orgId}: answering effect ${e.key}: ${message(err)}`);
@@ -825,24 +831,28 @@ export class OrgHost {
       return out;
     })();
     this.running.set(e.key, p);
-    void p.finally(() => this.running.delete(e.key));
+    this.runningSid.set(e.key, e.sessionId);
+    void p.finally(() => {
+      this.running.delete(e.key);
+      this.runningSid.delete(e.key);
+    });
     return p;
   }
 
   /** An effect's or a run's answer: the outside work already happened, so while history can't be saved
       the answer waits, in order, and goes in once saving works again (never lost, never twice). */
-  private answerOrWait(deliver: () => void): void {
-    if (this.waiting.length) {
+  private answerOrWait(deliver: () => void, sid?: string): void {
+    const wait = () => {
       this.waiting.push(deliver);
+      if (sid) this.waitingSid.set(deliver, sid);
       this.retryWaiting();
-      return;
-    }
+    };
+    if (this.waiting.length) return wait();
     try {
       deliver();
     } catch (err) {
       if (!(err instanceof HistorySaveError)) throw err;
-      this.waiting.push(deliver);
-      this.retryWaiting();
+      wait();
     }
   }
 
@@ -867,7 +877,7 @@ export class OrgHost {
         if (err instanceof HistorySaveError) return this.retryWaiting();
         console.warn(`[org-host] ${this.orgId}: a waiting answer: ${message(err)}`);
       }
-      this.waiting.shift();
+      this.waitingSid.delete(this.waiting.shift()!);
     }
   }
 
@@ -941,8 +951,35 @@ export class OrgHost {
   async act(sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope, opts: { settle?: boolean; provenance?: Provenance } = {}): Promise<ActResult> {
     await this.ready();
     const out = this.actNow(sid, event, payload, envelope, opts.provenance ? { provenance: opts.provenance } : {});
-    if (opts.settle && out.result) out.effects = await this.settle(out.result);
+    if (opts.settle && out.result) {
+      out.effects = await this.settle(out.result);
+      await this.quiet(sid);
+    }
     return out;
+  }
+
+  /** The longest a settled act waits for its session to go quiet. */
+  static readonly QUIET_MAX_MS = 30_000;
+
+  /**
+   * Resolves once statechart session `sid` has no effect running and no answer waiting, including
+   * those its effects' own acts started (a take-back's stop-reply acts reply/ended, whose step writes
+   * the move's entry): a settled act's route answers after all of it. Bounded (logged when hit);
+   * never waits on other sessions or timers.
+   */
+  async quiet(sid: string, maxMs = OrgHost.QUIET_MAX_MS): Promise<void> {
+    const until = Date.now() + maxMs;
+    for (;;) {
+      const busy = [...this.runningSid].filter(([, s]) => s === sid).map(([key]) => this.running.get(key)!).filter(Boolean);
+      const waits = [...this.waitingSid.values()].includes(sid);
+      if (!busy.length && !waits) return;
+      const left = until - Date.now();
+      if (left <= 0) {
+        console.warn(`[org-host] ${this.orgId}: ${sid} still busy after ${maxMs} ms; the act answers anyway`);
+        return;
+      }
+      await Promise.race([busy.length ? Promise.allSettled(busy) : new Promise((r) => setTimeout(r, Math.min(100, left))), new Promise((r) => setTimeout(r, left))]);
+    }
   }
 
   /** Resolves once no effect and no invocation report is in flight, including those they started. */

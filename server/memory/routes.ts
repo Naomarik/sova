@@ -2,30 +2,40 @@
 // Session pane reads, Settings → Memory, and the Overseer's own switch.
 import type { Hono } from "hono";
 import type { HEntry } from "../../shared/harness";
-import type { MemoryOutline, OverseerMemoryInfo } from "../../shared/protocol";
-import { isMemoryType, MEMORY_SIZES, MEMORY_TYPE_INFO } from "../../shared/memory";
+import type { MemoryOutline, MemoryStatus, OverseerMemoryInfo } from "../../shared/protocol";
+import { MEMORY_SIZES, MEMORY_TYPE_INFO } from "../../shared/memory";
 import { stateView } from "../harness/state-view";
-import { MEMORY, MODE } from "../harness/state-kinds";
-import { readOverseerSettings, writeOverseerSettings } from "../overseer-store";
+import { MEMORY, MODE, OVERSEER } from "../harness/state-kinds";
+import { isOverseerId, readOverseerSettings, writeOverseerSettings } from "../overseer-store";
+import { projectOverseerOfPath, projectOverseerPaths, readPoSettings } from "../project-overseer-store";
+import type { ChatHandle } from "../chat-handle";
 import type { DelegateSources } from "../delegate";
 import { delegateOptions } from "../delegate";
 import { MemoryEngine } from "./engine";
 import { zoomableLines } from "./chat";
-import { choiceOf, defaultMemoryChoice, memorySettingsInfo, putMemorySettings } from "./settings";
+import { choiceOf, memorySettingsInfo, overseerMemoryOf, type OverseerMemoryInForce, type OverseerMemorySetting, patchOverseerMemory, putMemorySettings } from "./settings";
 import { MemoryStore, memoryDir } from "./store";
 
 /** What the routes ask the rest of the server. */
 export interface MemoryRouteDeps {
   resolvePath(raw: string | undefined): string | null;
-  /** A held chat's memory, by session file. */
-  held(path: string): { memory: { outline(): MemoryOutline; engine(): MemoryEngine }; memoryAvailable(): boolean } | undefined;
+  /** A held chat, by session file: its memory as its handle answers (server/chat-handle.ts). */
+  held(path: string): Pick<ChatHandle, "memoryOutline" | "memoryOpen"> | undefined;
   /** The held Overseer chat, if any. */
-  overseer(): { memory: { status(): OverseerMemoryInfo["status"]; turnedOn(): void; changed(): void }; memorySwitched(): void } | undefined;
+  overseer(): Pick<ChatHandle, "memoryStatus" | "memorySettingsChanged"> | undefined;
   readBranch(path: string): Promise<HEntry[]>;
   sources: DelegateSources;
 }
 
 const idOfPath = (path: string): string | undefined => /_([0-9a-f-]{36})\.jsonl$/i.exec(path)?.[1];
+
+/** The overseer's setting in force when the file is an overseer's (the Overseer's or a project overseer's): its own
+    switch, saved or on with UniiChat (at Settings' size for the type), never a mode. Undefined for every other chat. */
+function overseerMemoryOfFile(path: string, id: string, view: ReturnType<typeof stateView>): OverseerMemoryInForce | undefined {
+  if (isOverseerId(id) && view.has(OVERSEER)) return overseerMemoryOf(readOverseerSettings().memory);
+  const po = projectOverseerOfPath(path, id);
+  return po ? overseerMemoryOf(readPoSettings(projectOverseerPaths(po.projectId)).memory) : undefined;
+}
 
 /** The outline of a chat no one holds: read from its file and sidecar, building nothing. */
 async function coldOutline(path: string, deps: MemoryRouteDeps): Promise<{ outline: MemoryOutline; engine: MemoryEngine } | null> {
@@ -33,8 +43,9 @@ async function coldOutline(path: string, deps: MemoryRouteDeps): Promise<{ outli
   if (!id) return null;
   const branch = await deps.readBranch(path);
   const view = stateView(branch);
-  const choice = choiceOf(view.latest(MEMORY)?.data ?? null);
-  const on = view.latest(MODE)?.data.active?.minorModes.includes("memory") ?? false;
+  const overseer = overseerMemoryOfFile(path, id, view);
+  const choice = overseer ? { type: overseer.type, size: overseer.size } : choiceOf(view.latest(MEMORY)?.data ?? null);
+  const on = overseer ? overseer.on : (view.latest(MODE)?.data.active?.minorModes.includes("memory") ?? false);
   const engine = new MemoryEngine(id, new MemoryStore(memoryDir(id)), { summarize: async () => { throw new Error("not held"); }, concurrency: 0 });
   engine.sync(branch);
   const lines = choice.type === "uniichat" ? engine.currentView() : zoomableLines(branch);
@@ -52,19 +63,45 @@ async function coldOutline(path: string, deps: MemoryRouteDeps): Promise<{ outli
   };
 }
 
-/** The Overseer's switch and type, at Settings' size for that type (a size overseer.json still holds is ignored). */
-function overseerInfo(deps: MemoryRouteDeps): OverseerMemoryInfo {
-  const m = readOverseerSettings().memory;
-  const choice = m ? choiceOf({ type: m.type }) : defaultMemoryChoice();
-  return { on: m?.on ?? false, ...choice, types: [...MEMORY_TYPE_INFO], sizes: [...MEMORY_SIZES], status: deps.overseer()?.memory.status() ?? { state: "off" } };
+/** An overseer's switch as its route answers it: its setting in force (saved, else on with
+    UniiChat; at Settings' size for the type), the types and sizes, and its held chat's status (off while memory is off). Shared by the
+    Overseer's route and each project overseer's. */
+export function overseerMemoryInfo(saved: OverseerMemorySetting | undefined, status: MemoryStatus | null | undefined): OverseerMemoryInfo {
+  const m = overseerMemoryOf(saved);
+  return { ...m, types: [...MEMORY_TYPE_INFO], sizes: [...MEMORY_SIZES], status: m.on ? (status ?? { state: "off" }) : { state: "off" } };
+}
+
+/**
+ * PUT an overseer's switch: `body` over the setting in force, saved by `save`, then its held chat told (turned on
+ * when the setting in force went from off to on, so it prepares its history). The answer, or the reason it's
+ * refused (nothing written).
+ */
+export async function putOverseerMemorySwitch(
+  saved: OverseerMemorySetting | undefined,
+  body: unknown,
+  save: (next: OverseerMemorySetting) => void,
+  chat: Pick<ChatHandle, "memoryStatus" | "memorySettingsChanged"> | undefined,
+): Promise<OverseerMemoryInfo | { error: string }> {
+  const was = overseerMemoryOf(saved);
+  // A `size` in the body is ignored, not refused: the size is Settings → Memory's (§chat.memory/overseer). A size
+  // an older file holds is kept, unread.
+  const next = patchOverseerMemory(saved, body);
+  if ("error" in next) return next;
+  save(next);
+  await chat?.memorySettingsChanged(next.on && !was.on);
+  return overseerMemoryInfo(next, await chat?.memoryStatus());
+}
+
+async function overseerInfo(deps: MemoryRouteDeps): Promise<OverseerMemoryInfo> {
+  return overseerMemoryInfo(readOverseerSettings().memory, await deps.overseer()?.memoryStatus());
 }
 
 export function registerMemoryRoutes(app: Hono, deps: MemoryRouteDeps): void {
   app.get("/api/memory", async (c) => {
     const path = deps.resolvePath(c.req.query("path"));
     if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
-    const chat = deps.held(path);
-    if (chat?.memoryAvailable()) return c.json(chat.memory.outline());
+    const held = await deps.held(path)?.memoryOutline();
+    if (held) return c.json(held);
     try {
       const cold = await coldOutline(path, deps);
       return cold ? c.json(cold.outline) : c.json({ error: "Not a session file" }, 404);
@@ -80,10 +117,13 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRouteDeps): void {
     const n = Number(c.req.query("n"));
     if (!Number.isInteger(id) || !Number.isInteger(n) || id < 0 || n < 1 || (n & (n - 1)) !== 0 || id % n !== 0)
       return c.json({ error: "id and n: n is a power of 2 and id a multiple of n" }, 400);
-    const chat = deps.held(path);
+    const held = (await deps.held(path)?.memoryOpen(id, n)) ?? { state: "unavailable" as const };
+    if (held.state === "ok") return c.json(held.open);
+    if (held.state === "refused") return c.json({ error: held.error }, 404);
+    if (held.state === "no-engine") return c.json({ error: "Not a session file" }, 404);
     let engine: MemoryEngine | undefined;
     try {
-      engine = chat?.memoryAvailable() ? chat.memory.engine() : (await coldOutline(path, deps))?.engine;
+      engine = (await coldOutline(path, deps))?.engine;
     } catch {
       engine = undefined;
     }
@@ -108,34 +148,16 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRouteDeps): void {
     return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
   });
 
-  app.get("/api/overseer/memory", (c) => c.json(overseerInfo(deps)));
+  app.get("/api/overseer/memory", async (c) => c.json(await overseerInfo(deps)));
   app.put("/api/overseer/memory", async (c) => {
-    let body: Record<string, unknown>;
+    let body: unknown;
     try {
-      body = (await c.req.json()) as Record<string, unknown>;
+      body = await c.req.json();
     } catch {
       return c.json({ error: "Expected JSON body { on?, type? }" }, 400);
     }
-    if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "Expected JSON body { on?, type? }" }, 400);
-    if (body.on !== undefined && typeof body.on !== "boolean") return c.json({ error: "on must be true or false" }, 400);
-    if (body.type !== undefined && !isMemoryType(body.type))
-      return c.json({ error: `type must be one of: ${MEMORY_TYPE_INFO.map((t) => t.id).join(", ")}` }, 400);
-    // `size` is ignored, not refused: the size is Settings → Memory's (§chat.memory/overseer). A size an
-    // older overseer.json holds is kept, unread.
     const settings = readOverseerSettings();
-    const was = settings.memory;
-    const next = {
-      on: typeof body.on === "boolean" ? body.on : (was?.on ?? false),
-      type: isMemoryType(body.type) ? body.type : (was?.type ?? defaultMemoryChoice().type),
-      ...(was?.size !== undefined ? { size: was.size } : {}),
-    };
-    writeOverseerSettings({ ...settings, memory: next });
-    const chat = deps.overseer();
-    if (chat) {
-      if (next.on && !was?.on) chat.memory.turnedOn();
-      else chat.memory.changed();
-      chat.memorySwitched();
-    }
-    return c.json(overseerInfo(deps));
+    const out = await putOverseerMemorySwitch(settings.memory, body, (memory) => writeOverseerSettings({ ...readOverseerSettings(), memory }), deps.overseer());
+    return "error" in out ? c.json({ error: out.error }, 400) : c.json(out);
   });
 }

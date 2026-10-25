@@ -11,8 +11,8 @@ node sova-spec.mjs read   §ns/name      [--whole] [--no-frame] | read --frame [
 node sova-spec.mjs scope  §ns/name      [--root DIR] [--spec DIR] [--json] [--budget BYTES]
 node sova-spec.mjs impact §ns/name      [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs impact §ns/name --near [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
-node sova-spec.mjs map    [namespace | §ns/name] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
-node sova-spec.mjs where  <path|token>  [--token] [--all] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
+node sova-spec.mjs map    [namespace | '<area §id>'] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
+node sova-spec.mjs where  <path|token|topic words…> [--token] [--all] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
 node sova-spec.mjs graph                [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
 node sova-spec.mjs census               [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs census --changed [--base REV] [--related] [--own-base REV]... [--root DIR] [--spec DIR] [--json]
@@ -101,7 +101,8 @@ their own modules (`toc.mjs`, `read.mjs`), parse their own flags, and read the g
 loader. Flags may come before or after the command word. `sova-spec --help` lists them with the other commands;
 `toc --help` and `read --help` print their own bounded JSON help.
 
-**`toc §id --dir DIR`** lists the neighbours one hop away in one direction:
+**`toc §id --dir DIR`** (its `seed` carries `notOwned: [{id, title}]` and the text a `doesn't own:` line
+for an area H1 whose record has the field) lists the neighbours one hop away in one direction:
 
 | `--dir` | Lines | Groups |
 |---|---|---|
@@ -133,8 +134,10 @@ behavior with no `requires` key, or for `in` the behaviors that could also requi
 dangling targets). Exit 0 is done without unknowns, 1 is more lines or an unknown, 2 a refusal.
 
 **`read §id [--whole]`** returns one passage, exact, with no closure: `items: [{index, id, kind,
-labels?, agreed?, code?, codeMore?, title, file, lines, text, fragment}]`, where `code` is the record's
-first 12 code paths as `{path, state}` (`present`, `missing`, `refused`, …) and `codeMore` counts the rest, where `text` is byte-for-byte the passage `scope`
+labels?, agreed?, code?, codeMore?, notOwned?, title, file, lines, text, fragment}]`, where `code` is the record's
+first 12 code paths as `{path, state}` (`present`, `missing`, `refused`, …) and `codeMore` counts the rest,
+`notOwned` (an area H1 whose record has the field; never an H2) is `[{id, title}]`, printed as a
+`doesn't own:` line under the code line on the first fragment, where `text` is byte-for-byte the passage `scope`
 returns. An H1 gives its lede; `--whole` gives the lede and then each H2 in declaration order. The
 `footer` names (`named`) the passage's `requires` and prose mentions that this read does not deliver on any of its pages,
 and for an H1 read as its lede, `children` and `wholeBytes`. Exit 0 is done, 1 more, 2 a refusal.
@@ -148,17 +151,19 @@ root, spec, request and the whole computed stream, so a spec change that alters 
 manifest, `token-malformed`, `token-mismatch-or-stale`, `token-range`, `budget-refused`) are small
 JSON within the budget. Nothing is stored.
 
-## Optional record fields: `embeds`, `core`, `about`
+## Optional record fields: `embeds`, `core`, `about`, `notOwned`
 
-Three optional manifest record fields, handled in their own module (`fields.mjs`). None is a kind,
+Four optional manifest record fields, handled in their own module (`fields.mjs`). None is a kind,
 a label value or a top-level key, so an older core reads the manifest and ignores them. A spec whose
-records carry none of them gets exactly the output it got before.
+records carry none of them gets exactly the output it got before, except `map`'s one line saying no
+area carries `notOwned`.
 
 | Field | On | Means | Read by |
 |---|---|---|---|
 | `embeds: [§id]` | any record | surfaces drawn inside this one, needed whole | `scope`/`packet` follow it (reason `embeds`); `impact` walks it back; `toc --dir out` group `embeds`, `--dir in` group `embedded-by`; `read` delivers each target whole after the passage, items marked `embeddedIn` |
 | `core: true` | any record, usually an H2 | part of the always-on frame | the frame stream: `packet §id --part frame`, `read --frame`, and `frame.items` on the first page of `read §id` (outside its budget; `--no-frame` drops it) |
 | `about: [§id]` | notes only | the surface or behavior the note serves | `toc --dir out` group `about` (also for an H2 of the target H1, marked `via`); `read` footer `about`; `packet` prose, after the closure, reason `about` (one per delivered target), for every claim the packet delivers |
+| `notOwned: [§id]` | areas (H1) only | the claims elsewhere that own what a reader might expect this area to own; `[]` = looked, nothing to say | `map`: a `doesn't own` line per area (owner ids in the overview, with heading titles in the area view); never followed as an edge |
 
 **The frame** is every `core: true` record's passage in file and line order (an H1 gives its lede).
 It is never part of another stream or of the requested claim's page budget. When the spec flags at
@@ -170,24 +175,27 @@ and `check` and `packet` report a `frame-over-cap` warning.
 `check` errors (exit 2) when `embeds` or `about` is not an array of § ids, or `core` is not a
 boolean. It warns on `about` on a record that is not a note (`about-not-note`), a target with no
 record (`dangling-edge`), an `embeds` target that is not a surface (`embeds-not-surface`), and an
-`about` target that is a note or section (`about-wrong-kind`).
+`about` target that is a note or section (`about-wrong-kind`); `notOwned` (also an array of § ids)
+on a record that is not an H1 (`not-owned-not-area`) or naming a claim inside the area itself
+(`not-owned-inside`); a dangling owner is `dangling-edge`.
 
 ## Look: `map`, `where`, `impact --near`, `graph`
 
 Computed views over the whole graph, for orientation and lookup. `graph.mjs` holds the shared index
 (areas, interface tokens, code and reverse `requires`/`embeds` maps, agreement counts), `graph` and `impact --near`; `map.mjs`
-and `where.mjs` hold the other two. Like `toc`, each parses its own flags (before or after the
+and `where.mjs` hold the other two, `topic.mjs` the ranker behind `where`'s topic rows. Like `toc`, each parses its own flags (before or after the
 command word), prints compact JSON with `--json` or readable text, pages under one whole-response
 budget (1,024–32,768) with a stateless `--cursor` bound to the request and every computed line, and
 prints its own bounded JSON with `--help`. Exit 0 is done, 1 more lines or a named unknown, 2 a
 refusal as small JSON. Nothing is stored.
 
-**`map [namespace | §ns/name]`** (default budget 32,768). Without an argument: `lines` of
-`type: "area"` (`id`, `namespace`, `title`, `what`, `claims`, `labels` as counts by `authority`,
-`evidence` and `unlabelled`, `requiresOut`, `requiresIn`: `requires` and `embeds` edges across the area's boundary), then
+**`map [namespace | '<area §id>']`** (default budget 32,768). Without an argument: `lines` of
+`type: "area"` (`id`, `title`, `what`, `whatSource` only when not `prose`, `claims`, `labels`, `requiresOut`,
+`requiresIn`: `requires` and `embeds` edges across the area's boundary; no `namespace`, which the id names), then
 `type: "hub"` (`path`, `records`: the ten code files the most records list). `counts` holds
 `namespaces`, `areas`, `claims`, `labels`, `agreedNotBuilt` and `gaps` (`uninvestigated`, `noCode`, `noProse`,
-`noInterfaceToken`). A namespace limits all of it. A §id shows its area (an H2 shows its parent's):
+`noInterfaceToken`). Every `labels` count in `map` is one flat object of label value to count, authority values
+first, then evidence values (the two sets share no name), with `unlabelled` only when non-zero. A namespace limits all of it. A §id shows its area (an H2 shows its parent's):
 `type: "claim"` lines (H1 first, then declaration order; `requires` is `null` when the key is
 absent, `requiredBy` counting requirers and embedders, `agreed` and `built` when the record carries
 `agreed`), `out` and `in` crossing edges (`from`, `to`, `kind` `requires|embeds`), and `token` lines
@@ -196,9 +204,14 @@ absent, `requiredBy` counting requirers and embedders, `agreed` and `built` when
 `agreed`: built is `code` plus `evidence` `reviewed` or `verified` (sova-spec-draft.mjs `BUILT_LABELS`), and
 `oldest`/`newest` are the not-built records' `agreed.at` dates, never ages. With no `agreed` record in
 view the key is absent and the text says so. `agreed` records who decided and when, not that anyone
-read the current words.
+read the current words. The overview's JSON area lines leave the field out, so the map keeps fitting
+one page, and add the note `not-owned-per-area`; the area view's `area` carries `notOwned: [{id,
+title}]` when the record has the field, and `counts.notOwned` is `{written, areas}` when any area in view does;
+the text prints `doesn't own: written for k of n area(s)` and, per area, the owners (ids in the
+overview, `title (§id)` in the area view), `nothing declared` for `[]`, or `(not written)`. With no area in view carrying it the key is absent, the text
+says so, and no area gets the line.
 
-**`where <path|token> [--token] [--all]`** (default 12,000). A path is a file some record's `code`
+**`where <path|token|topic words…> [--token] [--all]`** (default 12,000). Several unquoted words are one token, as if quoted; only a single argument can be a file. A path is a file some record's `code`
 lists or that exists under the root; it is read with the core's own refusal rules. `mode: "path"`:
 `file: {path, state, mapped}`, then `ranked` lines (`score`, `shared` tokens, rarest first), then
 `unranked` lines (claims listing the file that share no token), top 10 unless `--all` (`total`,
@@ -206,7 +219,15 @@ lists or that exists under the root; it is read with the core's own refusal rule
 an unreadable file keeps its claims unranked, exit 1. A path-shaped argument that is no file and no record's is searched as a token with `pathLike`,
 `file: {path, state: "absent", mapped: false}` and a `note`, exit 1. `mode: "token"`: `defines` lines (the token in
 the claim's heading or first sentence) then `mentions` lines, each with the matching backticked
-`spans`. An interface token is a backticked span (fences and comments masked) of 3+ characters with
+`spans`, then ranked `topic` lines (`score`, `matched`: the query words it matched) for claims not
+already listed: field-weighted BM25 (K1 1.2, B 0.75) over heading ×4, first sentence ×1, backticked
+names ×1, prose ×2 and an H2's area heading ×1, words lower-cased, split at hyphens, stopwords
+and words under 3 characters dropped, a light suffix stemmer (path-shaped names kept whole and
+unstemmed); rows under 0.35 × the best score drop unless the heading holds every query word.
+`counts.topic`, `topicTerms` (the query words searched) and `topicNotice` are added; `notice` speaks
+for name matches. Top 10: name rows first, unchanged, and topic rows fill only the places they leave
+free; exit 0 when either kind found a claim, 1 when neither did or a name row was cut (cut topic
+rows are counted in `notShown`, not an unknown). An interface token is a backticked span (fences and comments masked) of 3+ characters with
 a letter and a separator, bracket or sigil, an inner capital, or all capitals; it occurs in a file
 with no `[A-Za-z0-9_$]` on either side, and weighs `ln((records + 1) / records using it)`.
 
@@ -331,8 +352,13 @@ in refusal output. Git still runs with fsmonitor disabled and without a local sh
 - **census**: walks only the explicit `boundary: {include: [dir], exclude: [{path, reason}]}`.
   No directory is assumed. All of `.sova/spec` is never counted, and neither is the `--spec`
   directory. That covers current docs, drafts and reviews, whichever graph is read. Symlinks are listed and
-  never followed. It reports which boundary files are claimed or unclaimed, and which mapped paths
-  lie outside the boundary.
+  never followed. In a Git work tree a file Git ignores (`.gitignore`, `info/exclude`, global
+  excludes) is not counted unless a record's `code` maps it; `census.ignored` gives how many were
+  left out (note `census-ignored`). Tracked files are always counted, even when an ignore pattern
+  matches them, and so are untracked files Git does not ignore. Outside Git, when Git cannot answer,
+  or when an enclosing repository ignores the whole project, nothing is left out (`ignored: 0`).
+  It reports which boundary files are claimed or unclaimed, and which mapped paths lie outside the
+  boundary.
 - **census --changed**: checks only the files a task changed. Those are the files that differ between
   `--base` (default `HEAD`) and the working tree, plus untracked files that aren't ignored.
   Deleted files are kept: `deleted: [path]` lists them; a deleted file a record maps is a `claimed`
@@ -353,12 +379,15 @@ in refusal output. Git still runs with fsmonitor disabled and without a local sh
   behavior without `requires` is a `touched-uninvestigated` note, never a warning, so the exit
   code is unchanged. Without `--related` the output is exactly as above. `--related` without
   `--changed` is a usage error. It also ranks the foreign touched § by the changed lines (git diff
-  -U0 from the base; an untracked file is all added): `rank: [{id, rank, score, reason, stale}]` in
-  rank order (a § with a `stale` literal, one the change removed that its passage still states,
-  first; then score, the sum of the rarity weights of the code-shaped names, string literals and
-  2+-digit numbers its passage holds; then fewer mapped code files; then id), `readFirst` (at most
-  5 with a score or a stale literal) and `named` (every other one). Each foreign `touched` entry
-  carries its `rank`, `score`, `reason` and `stale` too.
+  -U0 from the base; an untracked file is all added): `rank: [{id, rank, score, fanIn, relevance,
+  reason, stale}]` in rank order: `relevance` first, the `score` (the sum of the rarity weights of
+  the code-shaped names, string literals and 2+-digit numbers its passage holds) divided by `fanIn`
+  (of the §'s changed files, the fewest foreign touched § any one lands in: a broad file dilutes
+  each § it lands in) and by ln(passages + 1), the heaviest weight a name can have, so 1 is one name
+  only that passage holds through a file only it maps; then score; then fewer mapped code files; then id. `stale` lists a literal
+  the change removed that its passage still states. `readFirst` holds at most 10 at relevance 0.036
+  or more or with a stale literal, `named` every other one. Each foreign `touched` entry carries its
+  `rank`, `score`, `fanIn`, `relevance`, `reason` and `stale` too.
 - **Foreign §s (every census --changed).** Reading `.sova/spec`, nothing is *created*. With
   `--spec DIR` (other than `.sova/spec`), an id is created when DIR's manifest has it and
   `.sova/spec/manifest.json` does not (a missing or unreadable current manifest counts as empty; its

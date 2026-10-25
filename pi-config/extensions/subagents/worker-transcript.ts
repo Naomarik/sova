@@ -21,8 +21,6 @@
 export const WORKER_TRANSCRIPT_PROTOCOL = 1 as const;
 /** Owner-session custom entry carrying one WorkerManifestRecord. */
 export const WORKER_MANIFEST_ENTRY_TYPE = "subagents-worker-manifest";
-/** The older, hosted-only record (registry.ts). Still folded, never written by new code. */
-export const LEGACY_REGISTRY_ENTRY_TYPE = "subagents-worker-registry";
 /** Task preview kept in a manifest; the full task is in the owner's tool call. */
 export const MANIFEST_TASK_CHARS = 500;
 
@@ -331,12 +329,23 @@ export interface WorkerManifest {
 	error?: string;
 	/** Last settle (ms epoch). */
 	settledAt?: number;
+	/** The key of that settle's run (a worker chat's WorkerState.lastSettled.key): a parent that picks the
+	    worker back up announces a settle under another key, once. */
+	settleKey?: string;
+	/** The entry id of that run's final assistant message, when known: a parent that picks the worker
+	    back up after its process was reopened compares the file's last settled run with it. */
+	settleEntryId?: string;
 	/**
 	 * When the worker was brought back idle by a resume. A record carrying it
 	 * clears status, taskOutcome, endedAt and error folded so far; its own fields
 	 * then apply.
 	 */
 	resumedAt?: number;
+	/**
+	 * The older session a resume continued this worker from, when it could not reopen it (a Claude
+	 * Code worker that ran the CLI's own tools): its backend and transcript. Its own records stay.
+	 */
+	continuedFrom?: { backend: string; ref?: WorkerTranscriptRef };
 	/**
 	 * The minor modes the worker was given at its start (the mode extension's worker-scope ones, e.g.
 	 * `["spec"]`; `[]` for none), newest start winning: a resume records the ones it gave. Absent from
@@ -391,40 +400,9 @@ export function decodeManifestRecord(data: unknown): WorkerManifestRecord | unde
 	return data as unknown as WorkerManifestRecord;
 }
 
-/** A registry.ts record translated to a manifest record (hosted workers before manifests existed). */
-export function manifestFromLegacyRegistry(data: unknown): WorkerManifestRecord | undefined {
-	if (!isRecord(data) || data.v !== 1 || data.kind !== "worker-registry" || !text(data.workerId) || !text(data.backend)) return undefined;
-	const backend = data.backend;
-	const out: WorkerManifestRecord = { v: 1, kind: "worker-manifest", workerId: data.workerId, backend, at: typeof data.at === "number" ? data.at : 0 };
-	if (text(data.groupId)) out.groupId = data.groupId;
-	const spec = isRecord(data.spec) ? data.spec : undefined;
-	if (spec) {
-		if (text(spec.name)) out.name = spec.name;
-		out.spec = {
-			cwd: typeof spec.cwd === "string" ? spec.cwd : "",
-			...(text(spec.model) ? { model: spec.model } : {}),
-			...(text(spec.effort) ? { effort: spec.effort } : {}),
-			taskPreview: typeof spec.task === "string" ? spec.task : "",
-			...(typeof spec.taskChars === "number" ? { taskChars: spec.taskChars } : {}),
-			wake: spec.wake === true,
-		};
-		if (text(spec.teamId) && text(spec.role)) out.team = { teamId: spec.teamId, role: spec.role };
-	}
-	const ref = legacyRef(backend, data.backendSessionId, data.backendSessionFile, typeof spec?.cwd === "string" ? spec.cwd : undefined);
-	if (ref) out.ref = ref;
-	if (text(data.status)) out.status = data.status as WorkerManifestStatus;
-	if (text(data.taskOutcome)) out.taskOutcome = data.taskOutcome as WorkerTurnOutcome;
-	if (typeof data.endedAt === "number") out.endedAt = data.endedAt;
-	if (text(data.error)) out.error = data.error;
-	return out;
-}
-
 /** The ref a backend's (session id, session file) identity implies. */
 export function refFromIdentity(backend: string, identity: { sessionId?: string; sessionFile?: string; cwd?: string }): WorkerTranscriptRef | undefined {
-	return legacyRef(backend, identity.sessionId, identity.sessionFile, identity.cwd);
-}
-
-function legacyRef(backend: string, sessionId: unknown, sessionFile: unknown, cwd: string | undefined): WorkerTranscriptRef | undefined {
+	const { sessionId, sessionFile, cwd } = identity;
 	const where = text(cwd) ? { cwd } : {};
 	if (text(sessionFile)) return { v: 1, backend, kind: "pi-session-file", locator: sessionFile, ...(text(sessionId) ? { sessionId } : {}), ...where };
 	if (backend === "claude-code" && text(sessionId)) return { v: 1, backend, kind: "claude-session-id", locator: sessionId, ...where };
@@ -448,8 +426,7 @@ function mergeManifest(previous: WorkerManifest | undefined, record: WorkerManif
 
 /**
  * Fold owner-session entries into one manifest per worker, in entry order,
- * newest value of each field winning. Reads manifest records and legacy
- * registry records alike. Pass ALL entries (every branch) to restore; pass
+ * newest value of each field winning. Pass ALL entries (every branch) to restore; pass
  * `activeEntryIds` (the active branch's entry ids) to mark what to show.
  */
 export function readWorkerManifests(entries: readonly unknown[], options: { activeEntryIds?: ReadonlySet<string> } = {}): WorkerManifestFold {
@@ -466,8 +443,6 @@ export function readWorkerManifests(entries: readonly unknown[], options: { acti
 				if (error instanceof WorkerProtocolVersionError) refused++;
 				continue;
 			}
-		} else if (e.customType === LEGACY_REGISTRY_ENTRY_TYPE) {
-			record = manifestFromLegacyRegistry(e.data);
 		}
 		if (!record) continue;
 		const previous = manifests.get(record.workerId);

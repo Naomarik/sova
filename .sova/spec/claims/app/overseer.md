@@ -69,20 +69,23 @@ are atomic tmp+rename.
   (§app.overseer/todos), never a todo's text.
 - **Fixed at opening, live through the run note.** The prompt is rendered with the values as they
   were when the conversation opened (the time it opened, the notes, the limits, the ideas table of
-  contents, the todos counts and the extra system prompt) and stays byte for byte the same for the
+  contents, the todos counts, the extra system prompt and the form of its id rule, which follows its
+  memory switch, §app.overseer/verify-first) and stays byte for byte the same for the
   whole conversation, across runs, runtimes and server restarts, so the provider's cache holds and a
   Claude Code chat never restarts for it. The opening values are kept in the first run note's
-  details on the branch. The notes, the limits, the ideas table of contents, the todos counts and the
-  extra system prompt are still read again at the start of every run: when one differs from what the
+  details on the branch; a value the prompt gained after a conversation opened takes, for that
+  conversation, its value when its runtime opened. The notes, the limits, the ideas table of
+  contents, the todos counts, the extra system prompt and the id rule's form are still read again at the start of every run: when one differs from what the
   Overseer was last told (the prompt's opening text, or the newest run note since the last compaction
   that gave it), the run note (§app.overseer/run-note) gives its whole current text, which replaces
   the prompt's, so a `sova_note`, a `sova_idea`, a `sova_todo`, a notes, idea or todo edit or a
-  Settings save reaches the Overseer from its next run (the next message, brief or wake-up), with no
+  Settings save or a memory switch reaches the Overseer from its next run (the next message, brief or wake-up), with no
   `/clear`. A run an extension's message starts (an `/explain` result, a worker's report) has no run
   note and gets them at the next run that has one. The prompt file and the tool list are read when
   the runtime opens; a change to either (a Sova update) changes the prompt once.
 - **Tools.** The session runs with an allowlist: every `sova_*` tool, `read`, `grep`, `find`,
-  `ls` and `wake_nudge`. It never has `bash`, `edit`, `write` or subagent tools: the only
+  `ls`, `write`, `edit` and `wake_nudge` (`write` and `edit` on the terms of
+  §app.overseer/file-writes). It never has `bash` or subagent tools: the only
   subagents it can start are ideas' explorers, through `sova_idea` (§app.overseer/explorer).
 - **Model.** Its model and thinking level come from `overseer.json`, never from the new-session
   defaults. A model or thinking change made in the Overseer's composer writes back to
@@ -111,7 +114,10 @@ to that host over the peer hop (§mesh.peers/listener), never through the page's
 host's sender secret never leaves it. The peer's own routes and refusals apply.
 
 - **Read** (no side effects): the attention digest; list sessions (compact rows, each with its
-  worktrees' branches, §app.overseer/sessions-in-play); a session's alignments
+  worktrees' branches, §app.overseer/sessions-in-play; narrowed by date and by what a session has,
+  page by page, each row with how it ended, §app.overseer/list-overview); the roundup of what is
+  outstanding (`sova_outstanding`, §app.overseer/roundup); a search inside conversations
+  (`sova_search_sessions`, §app.overseer/session-search); a session's alignments
   (§app.overseer/alignment-read); one session's
   detail, whose summary topics read newest first, as the insight strip lists them
   (§app.insights/insight-strip), each heading with how long ago its own section of the conversation ended
@@ -119,7 +125,7 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   (`Topics (newest first): Merge (1m ago); Sandbox menu (2h ago)`), and what is true of it now
   (§app.overseer/session-truth); a bounded transcript read (≤40 items, ≤12,000 characters, each item ≤1,000, wrapped as
   untrusted content from another session, read with Sova's own parser so a TUI-live file is never
-  opened for writing); list groups, targets, models, subagent profiles and folders; the ideas backlog (`sova_ideas`: its table of contents,
+  opened for writing; or how it ended, `from: "ending"`, §app.overseer/ending-view); list groups, targets, models, subagent profiles and folders; the ideas backlog (`sova_ideas`: its table of contents,
   a search, one idea, an idea's scope and impact, an idea's explorer; §app.overseer/ideas); the
   user's todos (`sova_todos`: open, done or all; §app.overseer/todos); the links this host knows
   (`sova_links`, §app.overseer/links-tools); this host's live public links with their URLs
@@ -145,7 +151,15 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   mode and minor modes (`minor_modes`, e.g. `["spec"]`); the mode and minor modes are set before the
   first prompt is sent, so its first turn already runs in them, and written into the session as its
   `mode` entry even when they equal the default, so a later change to the default never moves it
-  (the same for `sova_set_session`). An unknown mode or minor mode refuses
+  (the same for `sova_set_session`). Both tools also take `project_modes`, the ids of the session's
+  own project modes to have on (§chat.mode-menu/project-modes: from the checkout the session runs
+  in; `minor_modes` names built-in modes only). The Overseer turning a project mode on counts as the
+  user's approval of its tools and commands: nothing waits, and the approval is recorded as the
+  Overseer's. It never approves the mode's hooks, which stay inactive until the user approves them
+  (§chat.mode-menu/project-mode-hooks). `project_modes` is the
+  whole set to have on (`[]` turns them all off); `sova_create_session` refuses it with `host`
+  ("project_modes can't be given with host. No session was created."). An unknown mode, minor
+  mode or project mode, or a broken project mode, refuses
   the whole call before any session is created, and a mode switch that fails sends no prompt: the
   result says the session was created but its first prompt was not sent. A `sova_set_session`
   whose `minor_modes` leave `align` out, on a session waiting on the user's alignment answers, is
@@ -159,7 +173,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   done ones); link sessions across hosts and end a link (`sova_link`, `sova_unlink`,
   §app.overseer/links-tools); this host's organizations: orgs, projects, rosters, owners and
   decisions (`sova_org`, `sova_org_project`, `sova_roster`, `sova_owner`, `sova_project_decisions`,
-  §app.overseer/org-writes), gathering sessions (`sova_gather`, §app.overseer/org-people-facing) and
+  §app.overseer/org-writes), an owner's page link sent to them on WhatsApp (`sova_owner`
+  `send_link`, §app.owner-page/send), gathering sessions (`sova_gather`, §app.overseer/org-people-facing) and
   project overseers (`sova_project_overseer`, §app.overseer/org-project-overseers); any project's
   running instances on this host (`sova_project_verbs`, §app.project-services/callers: status,
   logs and doctor at any time, the other verbs (`share` is the operator's: `needs-confirm`; `revoke`
@@ -167,12 +182,14 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   playbook on a registered project (§app.project-runtime/onboard), in a turn the user started).
 - **Sending (`sova_send`) is typing in that session's composer.** Idle, with subagents working or
   not, the message starts a turn. Mid-turn it is **queued as a follow-up** behind the running turn
-  by default: a queued row in that session, "Queued", which the user can remove
-  (§chat.transcript/a-queued-message), and which goes in when the turn ends. With
+  by default: a queued row in that session, "Queued", which the user can remove until it is
+  handed to the agent (§chat.transcript/a-queued-message), and which goes in when the turn ends. With
   `delivery: "steer"` it is queued as a **steer** instead and goes into the running turn at its
   next step, as the composer's Steer does; the Overseer's prompt reserves that for a user who asked
   to interrupt or redirect the turn. A compaction running holds the message the same way until it
-  ends. Queued messages go in the order they were sent, one at a time, whatever their kind. A
+  ends. Queued messages go in the order they were sent: follow-ups one at a time, and every steer
+  waiting while the turn runs together, each its own message at the agent's next step; a steer sent
+  after a follow-up waits for that follow-up. A
   leading `/` runs that session's command, as in the composer. The tool's result says which
   happened: sent, queued behind the turn, queued as a steer, or held for the compaction. Never a
   terminal-owned, archived or worker session, and never the Overseer's own. The route is
@@ -182,8 +199,7 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   host only, resolved against the new session's folder (its project first, then yours, then built
   in, §chat.profiles/projects). Only a profile marked "The Overseer may start it" is taken, and a
   project profile only once you approved it (§chat.profiles/trust); any other refuses before
-  anything is created. A profile that links a playbook sends that playbook as the first message,
-  with `prompt` as its text (§chat.profiles/playbook). The session is created with that profile's snapshot
+  anything is created. A profile sends no playbook (§chat.profiles/playbook): `prompt` alone is the first message. The session is created with that profile's snapshot
   (and its mode, minor modes and model unless the call names its own: an explicit
   `minor_modes` replaces the profile's set), and the tool's result renders as a
   **Started from {label}** card with Open Session. A One at a time profile that is live refuses
@@ -260,7 +276,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   rate-limit tier) and `~/.claude.json`'s `primaryApiKey`, the literal `apiKey` and header values
   in both `models.json` files (the literal parts of a `$NAME` template; a `!command` is never run
   and never taken as a value), Sova's access token (`sova/auth-token` in `~/.pi/agent` and in the
-  active agent dir, the whole file), and the server's environment variables whose name contains `KEY`,
+  active agent dir, the whole file), every extension backend's key (each file in `sova/extension-keys/`
+  in both, the whole file; §app.extensions/backend-key), and the server's environment variables whose name contains `KEY`,
   `TOKEN`, `SECRET`, `PASSWORD` or `AUTH` (not `AUTHOR`/`AUTHORITY`). A value counts only when it
   is at least 12 characters and not a boolean, a number, a path or a URL without credentials. A
   secret cut short at either end (a truncated transcript row, `sk-…`) is redacted from 16 of its
@@ -354,6 +371,34 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   says per session what was archived, each worktree removed or kept and why, and each branch
   deleted or kept. Without `worktrees`, archiving never touches a worktree.
 
+## §app.overseer/file-writes — Writing and editing files, only in your turns
+
+The Overseer and every project overseer have pi's `write` and `edit`, behind the same guard as
+their read tools (§app.overseer/tools, "Files").
+
+- **Where.** Anywhere `read` may go, except Sova's and pi's own state (the agent dir, with Sova's
+  state root in it, and `~/.pi`), a folder an attached organization's project layer reserves (its
+  workspace), a secret file, and a file with more than one hard link. A project overseer writes
+  only inside its project root; its attachments folder stays read-only. Each path is checked as
+  written, at its realpath and at every link of a symlink chain, so a dangling link can't create a
+  file in a refused place. A refusal names why ("That folder is Sova's or pi's own state; the
+  Overseer can't write there.", "That file holds credentials; the Overseer can't write it.", "That
+  path is outside the project root {root}; the project overseer writes only inside it.").
+- **When.** Only in a turn the user (for a project overseer, the operator) started. In any other
+  turn (a brief, a wake-up, another automatic message) both tools refuse before touching anything:
+  the Overseer is told to raise a `sova_card` saying what it would write and why, the user's click
+  starting a turn in which it may; a project overseer is told "Writing a file is the operator's:
+  ask with sova_card." No approval or standing rule makes a write run in another turn.
+- **Logged.** Each call, written, refused or failed, is one line of the overseer's action log with
+  the tool, the path and the bytes written, never the content. The tools' arguments reach the model
+  as given; their results are redacted like the read tools'.
+- **The prompt** states these rules, tells the overseer to leave code changes to coding sessions and
+  keep its own edits to a project's `.sova/` configuration unless asked (a project overseer is told
+  to change its project's settings with `sova_settings` instead, never by writing the settings files:
+  a settings file it edits shows the operator as uncommitted edits to land or discard,
+  §app.project-overseer/settings), and that a refused write
+  is final: never the same file another way, never a session asked to write it.
+
 ## §app.overseer/session-truth — What `sova_session` says is true now
 
 `sova_session` prints, after the session's row and its link, the facts the server holds about the
@@ -373,12 +418,19 @@ check a session in one call instead of trusting a brief, a card or a summary lin
   "Ready to merge · checks passed · 3 commits ahead"), the session's badge when it has one (merged,
   restart pending), and the last check run on the session's branch (a test, typecheck or build the
   session ran): passed or failed, how long ago, and whether it ran after the worktree's newest
-  commit or before it; with none, "no check run seen". It is the readiness answer as last read
-  (about 20 seconds old at most, except for an archived session that is idle and not open in a
-  TUI: its answer is as last read when it changed or was inspected). An inspection returns that
-  cached answer at once and, when it is at least twenty seconds old, queues one fresh background
-  read, shared with already queued or active work; a later call shows the completed refresh.
-  A session that tracks no worktree of its own has no Merge line.
+  commit or before it; with none, "no check run seen". It is the readiness answer as last read:
+  - about 20 seconds old at most while the session runs;
+  - for an idle session, read again at once when its worktrees' commits, branches, base or merge
+    setup move, and otherwise every five minutes (§app/idle-git-cache), so its uncommitted changes
+    can be that old;
+  - for an archived session that is idle and not open in a TUI, as last read when it changed or
+    was inspected.
+
+  An inspection returns that cached answer at once. It also queues one fresh background read,
+  shared with already queued or active work, when the answer is at least ten seconds old for an
+  idle session whose worktrees are checked without Git (§app/idle-git-cache), or at least twenty
+  seconds old for an archived idle session; a later call shows the completed refresh. A session
+  that tracks no worktree of its own has no Merge line.
 - **Summary:** the Purpose and Now lines are labelled as the summary's, with its age, "written
   before the last reply" when it is older than the last reply, and the summarizer's state when it
   is stale or failed and kept its last line: "Now (summary, 2h ago, written before the last reply):
@@ -415,6 +467,184 @@ mode extension's own fold, so the Overseer never greps a session file for them.
 
 The Overseer's prompt names `sova_alignment` for an alignment's questions and decisions.
 
+## §app.overseer/list-overview — Session lists for overviews
+
+`sova_list_sessions` also takes what an overview needs, and every addition only narrows or adds
+to what it listed before:
+
+- **`since`**: only sessions last active at or after it, an ISO date or time, or an age such as
+  `14d` or `24h`; anything else is a refusal naming the forms.
+- **`has`**: one or more of `open-questions` (the session waits on the user's alignment answers,
+  §chat.alignment/session-mark), `ready` (a worktree ready to merge or waiting for the go-ahead),
+  `unmerged` (a worktree with work of its own that is not merged: ready, waiting, in progress,
+  blocked or stale, never one with no commits yet), `removed` (a worktree whose folder is gone
+  with its work not merged, or with no record of a merge), `error` (a turn error, or a live
+  error state) and `asks-you` (the last reply asks the user something, §app.decisions/asks-user).
+  Every one named must hold. The merge filters read readiness as last read, so the head says
+  that a session readiness hasn't read yet matches none of them, and names `sova_outstanding` for
+  what is not checked yet.
+- **A cursor.** Rows run newest first; when more match than the page shows, the head gives a
+  `cursor` that continues after the last row shown, so a long listing is read page by page.
+- **The Ended line.** Each row whose session has one adds "Ended {age}: you: "{the last user
+  message}" · reply: "{the opening of the final reply}"", each about 200 characters, whitespace
+  collapsed. Both come from the session list's own cache of the file's tail (the bounded window
+  the last-reply read already scans, kept per file size and time), so a listing reads no whole
+  transcript; a session whose tail holds neither has no Ended line. The age is the final reply's,
+  else the user message's. A listing with an Ended line is wrapped as untrusted content from
+  other sessions, as a transcript read is, and redacted like every tool's output.
+
+## §app.overseer/roundup — The roundup: what is outstanding
+
+`sova_outstanding {since?, project?, cursor?}` is a read tool that answers "anything outstanding?"
+and "what needs me?" in one call. It covers this host's active sessions (open in a terminal, or
+started in Sova and not archived, or running) and the others last active in the window: by default
+the last 14 days, or from `since` (an ISO date or time, or an age such as `30d`). `project` keeps
+the sessions of one registered project (its id or name) or under one folder. The Overseer's own
+conversations, workers' own sessions, project overseers' conversations and organization and baton
+sessions are left out, and the coverage line counts them as skipped.
+
+- **Rows.** One row per session in a section: `- [title](sova://s/<id>) · <age> · <facts>`, the
+  facts joined by "; ", a session's worktrees comma-joined, each as its branch and a short state
+  ("feat/steer-keys conflicts 7 files"). The folder is named only when it is not the most common
+  folder of the rows, and never on a row that shows a branch; "idle" and reading ages are not
+  shown, nor "archived" on a Can't confirm merged row. A session is in as many sections as apply,
+  once in each. Every row is listed, except in Can't confirm merged and Not checked yet: at most
+  40 rows each, then "and {n} more".
+- **Sections**, in this order, each only when it has rows:
+  - **Lost (on no branch)**: a session's own launch worktree (below) whose folder and branch are
+    gone while a commit its transcript names is on no branch and not on the main branch: "branch
+    sova/<name> and its worktree are gone; newest commit <sha8> (<date>, '<subject>') is on no
+    branch and not on <main>, N commits past <main>; recover with `git branch <name> <sha8>` before
+    gc prunes it". Each such row also names up to 2 other sessions of the window whose user or
+    assistant message holds the branch name's 6 hex digits and a word of its name, with that
+    session's newest such snippet (at most 160 characters): "named in [title](sova://s/<id>):
+    '<snippet>'". That search is the conversation search's (§app.overseer/session-search), stopped
+    after about 5 seconds.
+  - **At risk**: a worktree whose folder is gone while its branch keeps commits not on the main
+    branch, whose content the main branch doesn't have (below).
+  - **Needs your answer**: one row per session not archived, from the attention digest's act
+    items (§app.overseer/attention-digest), its open alignment questions
+    (§chat.alignment/session-mark; never one with none open) and a question its final reply asks
+    (below). On the first page also the act items of no session or of a session outside the
+    window (marked so); with `project`, only that project's sessions' items; the items of skipped
+    sessions are only counted, with `sova_attention` named for them. Archived sessions with an
+    open question or an ask are only counted, in one line. Rows are ranked: first a digest item,
+    or an ask whose session has work not merged (ready, built, uncommitted, at risk or lost) or
+    that says merge, land, commit, build, start, go ahead or proceed; then open alignment
+    questions; then other asks; the most recently active first within each.
+  - **Ready to merge**: a worktree ready, or waiting for the user's go-ahead.
+  - **Built, not merged**: a worktree with commits of its own in progress, blocked or stale
+    (§chat.worktrees/readiness), one whose session is working now saying so.
+  - **Uncommitted only (lost if the worktree goes)**: a worktree with at least one uncommitted
+    file and no commit of its own, with its file count. When the main branch changed k of those
+    n files since the worktree's commit (in m commits), the row adds "master changed k of n files
+    since (m commits): may be superseded". A worktree whose files differ from the main branch by
+    fewer than half the lines they differ from its own commit is not listed, and is counted after
+    the sections ("{n} uncommitted worktrees mostly on main: not listed").
+  - **Errors**: the session's last turn ended in an error or was aborted and no user message came
+    after it, whether or not anyone has seen it: "last turn aborted" or "last turn error: <message>",
+    with its age and "nothing since".
+  - **Can't confirm merged**: a worktree whose folder is gone with no record of a merge, or whose
+    folder git can't read, by session and branch name. It is never counted as not merged. When
+    the branch is gone too and no main subject names it, the commit ids the session's transcript
+    (its last 8 MB) names within 300 characters of the branch name, less any that begins a
+    worktree record's `base` commit there, that git still has: at least one, and every one on the
+    main branch (or its tree on it, or landed), keeps the row here with "(its named commits are on
+    <main>)", and counts the branch as on the main branch for the final-reply question below.
+  - **Not checked yet**: every covered session whose merge state the roundup has no reading for,
+    and every remote-target session, which readiness never reads, each with why.
+- **A question in the final reply.** A session not archived asks the user when its final reply
+  came after its last user message and the reply's last 1,200 characters hold a sentence ending
+  in "?" (closing marks such as `**` or a quote after it allowed), or one starting in the last 400
+  of them that says "tell me", "let me know", "say "…"", "your go-ahead", "waiting on/for you" or
+  "if you'd like".
+  The row shows the last such sentence (at most 110 characters). Not when every such sentence is
+  about a restart and the server started after the reply. Not either when the session tracks at
+  least one branch (its worktrees, its launch worktree), every one of them and every `feat/` or
+  `sova/` branch the sentence names is on the main branch by the roundup's own reading (merged,
+  landed, recorded merged by the cleanup, its named commits on it, or a worktree with nothing of
+  its own), and the sentence
+  is about merging, landing, a branch, being ready or a browser check: those are counted after
+  the sections ("{n} asks about work already on main"). The 1,200 characters come from the session list's own tail read (the Ended
+  line's), with kept preview links redacted.
+- **Launch worktrees.** A covered session whose folder is `<parent>/.worktrees/<repo>-<name>`
+  (`<parent>/<repo>` a git checkout, the longest such name) is read for that worktree when
+  readiness tracks no worktree at that path (§app.project-overseer/coding-worktrees):
+  - its folder there: its branch, its commits not on the repository's checked-out branch (the main
+    branch) and its uncommitted files put it under Built, not merged or Uncommitted only;
+  - its folder gone and `sova/<name>` (or `feat/<name>`) still a branch: At risk when it keeps
+    commits not on the main branch;
+  - folder and branch gone: when the name ends in 6 hex digits, the commit ids its transcript names
+    (its last 8 MB) that git still has; all of them on the main branch is merged; the newest one
+    not on it whose tree no main commit has and which no ref contains is Lost; none found is Can't
+    confirm merged. Any other name is Can't confirm merged unless a main commit's subject records
+    its merge.
+- **Squash landings.** Per repository and main-branch commit, the roundup reads the trees of the
+  main branch's commits of the last 30 days and the subjects of its last 5,000 commits. A worktree
+  with commits not on the main branch (ready, built, at risk) has landed when its branch's tree is
+  one of those trees, or its branch is in a local branch whose tree is one of them and which is not
+  itself on the main branch. A main subject that names the branch as a whole word (the name
+  bounded by the subject's start or end, a space, a quote, a parenthesis, `@` or `:`, `refs/heads/`
+  allowed before it) settles more: for a gone worktree whose branch is gone too, it has landed;
+  for a branch that still exists, the name followed by `@` and a prefix (7 or more digits) of the
+  branch's own tip has landed, and the name alone moves the row to Can't confirm merged with
+  "master names it in <sha8>" (a ready worktree stays ready on the name alone). A landed worktree is not listed, and
+  a line after the sections counts them ("{n} branches whose content is on main: not listed").
+  A merged worktree left with uncommitted files is not listed either, and is counted in the same
+  way ("{n} merged worktrees with leftover files").
+- **Honest coverage.** The merge sections come from merge readiness's own last reading of each
+  session (the same answer `sova_session`'s Merge lines and the merge board read), joined with
+  the worktree cleanup's ledger, which marks a removal it recorded as merged as merged, and with
+  the git reads above. A session Sova hasn't checked recently is checked fresh before the answer,
+  or listed as not checked; it is never counted as fine. Before it answers, the roundup asks
+  readiness to read every session on the page it has no reading for, and every archived idle one
+  whose reading is older than readiness's own 20-second answer age, whatever that reading found,
+  and waits for those reads for at most about 8 seconds. Counted as checked is only a session whose
+  reading came in, and is not one of those old archived readings and not a read still queued or
+  running after the wait. Every other covered session is in Not checked yet: never read ("no merge
+  reading yet"), or read before ("last read {age} ago; a fresh read didn't finish"). An unchecked
+  session is never left out. All git reads are read-only.
+- **Coverage line**, last and outside the untrusted content: "Read: N sessions' final replies,
+  alignments and worktree git state (M with no git reading: listed under Not checked). Not read:
+  branches no session tracks, sessions on other hosts, anything before a session's final reply.",
+  with how many were skipped and why. A page covers at most 300 sessions, newest first; past that
+  the line gives a `cursor` for the next page.
+- Its text from other sessions (titles, summaries, details, sentences) is wrapped as untrusted
+  content and redacted like every tool's output. The roundup itself writes nothing and takes no
+  cap; the readings it asks for are readiness's own background reads, the same a listing queues.
+
+## §app.overseer/ending-view — How a session ended
+
+`sova_read_session` takes `from: "ending"`: the slice from the user's last message to the final
+reply, with the same untrusted wrapping. Its character budget defaults to the read's maximum
+(12,000). The final reply (the last assistant text) is kept whole, past the 1,000-character cap of
+other rows, within that budget; the user's message comes first, then the newest of the rows
+between them that fit the row and character budgets, and a line says how many were left out. A
+final reply longer than the budget keeps its ending, its start cut with "…". A session with no
+user message yet reads from its start. It reads this host's sessions only: with `host`, `ending` is
+refused, naming `last_user` instead.
+
+## §app.overseer/session-search — Searching inside conversations
+
+`sova_search_sessions {words, since?, project?, cursor?}` is a read tool that finds sessions by
+what was said in them:
+
+- **What it searches.** The session files of this host's sessions last changed in the window (14
+  days by default, or from `since`, as the roundup takes it), newest first, `project` as the
+  roundup takes it. Only user and assistant text counts: tool calls, tool output and thinking
+  never match and never show. A message matches when it holds every word, case-insensitive. Only
+  the lines that hold the words are parsed. Messages on abandoned branches can match.
+- **Never these.** The Overseer's own conversations, workers' own sessions, project overseers'
+  conversations and organization and baton sessions are never searched, so their content never
+  shows. Terminal-owned sessions are only read. It writes nothing and takes no cap.
+- **Caps.** At most 20 sessions a call, each with at most 3 snippets of about 200 characters
+  around the match (its newest matches), each saying who spoke and how long ago. When more may
+  match, the result gives a `cursor` that continues with the next session.
+- **Time limit.** A call stops after about 10 seconds and says plainly that it stopped short, how
+  many sessions it searched of how many, and the `cursor` that continues.
+- What it returns is wrapped as untrusted content from other sessions, as a transcript read is,
+  and redacted like every tool's output.
+
 ## §app.overseer/confirm — Decision cards
 
 The Overseer asks with **cards**: `sova_card({card?, ops: [...]})`, a clone of the align tool's
@@ -427,6 +657,11 @@ idea, todo, person or project a card about specific things acts on (archive, tic
 with a **note**: what it is, then why the action fits it, in at most 2 short sentences ("Push
 notifications for Overseer briefs. Merged to master yesterday, nothing running."). That rule is the
 prompt's; the server cannot tell such a card from any other, so it never requires `items` or notes.
+The prompt, the tool's description and the hidden note also tell it, when a click approves an act,
+to do the act first and record the card's answer only after the act succeeds: a refused act leaves
+the card open, so the user can click it again. An answer recorded before the act in the same run
+still approves it, since a click is judged against the card as it stood when the click arrived
+(§app.overseer/org-people-facing).
 When a button also acts on an idea or a todo, that item's note says the effect ("Covered by the
 push session's final report. Ticking marks it done."), and every option's `reply` says exactly what
 it does to which items, never just its label. These too are the prompt's and the tool description's,
@@ -550,15 +785,24 @@ jumps to it (§app.overseer/links).
   op, the buttons come back and the note keeps the card in front of the model. While the card is
   open, "Or type your answer." follows the buttons. A card that may gate an act that reaches people
   or ends something, the global Overseer's card listing a person, a project, an org, a folder or a
-  gathering session (`clickOnly`), has no such hint: only its click approves that act.
+  gathering session (`clickOnly`), has no such hint: only its click approves that act. A click that
+  doesn't reach the Overseer (the chat refuses it, is restarting, reloads or closes before taking
+  it, its connection ends before the chat opens, or the queued click leaves undelivered) never goes
+  into the composer, where sending it again would be typed text that approves nothing: its card's
+  "Sent" mark clears, so its buttons come back at once, and the pane says "Your click didn't reach
+  the Overseer. Click again."
 - **Approve-later and rule options.** An answer option may carry `at` (and `until`), which makes its
   click an approval for later, or `rule`, which makes its click adopt a standing rule; the button
   says so under its label, and the card shows the approval's state (§app.overseer/approvals).
-- **The composer chip.** While the Overseer's thread has open cards, its composer shows a chip
-  ("2 open cards") whose menu lists each one (id, title) and jumps to its card. It counts the open
-  cards of the whole branch, also those above the rows the view has loaded (the transcript's summary
-  of older rows carries each open card's newest snapshot and its row), and a jump to one of those
-  builds the older rows down to it first.
+- **In the composer's badge.** While the Overseer's thread has open cards, the composer's waiting
+  badge (§chat.composer/waiting-badge) counts them as its option cards, and its dialog
+  (§chat.composer/waiting-dialog) lists each one (id, title) with Show in Chat, which jumps to its
+  card. It counts the open cards of the whole branch, also those above the rows the view has loaded
+  (the transcript's summary of older rows carries each open card's newest snapshot and its row), and
+  a jump to one of those builds the older rows down to it first. The run-status row carries no card
+  chip and has exactly two ends, whatever it carries: at the left the live dot, the step's icon and
+  the subagents trigger; at the right, together, "3 of 10 running" (§app.overseer/caps), then the
+  Inputs trigger last. Nothing sits between the two ends.
 - **Hide tool calls never folds it.** The card is the Overseer's question, not its working, so
   "Hide tool calls" leaves it (and its result) in the thread, like the link card
   (§app.overseer/links-tools).
@@ -621,9 +865,14 @@ session is on which branch survives a compaction and a restart:
   as plain text, its state now (working, idle, needs-input, archived, or gone), each worktree it
   tracks as "branch <name> (<badge>)" (the readiness badge, §chat.worktrees/readiness, else that
   worktree's state, such as in-progress or blocked), when the Overseer last created or prompted it,
-  and the kind of the last brief that named it and when. A line before the rows says the table is
-  as of now, and that the Overseer still checks a session with `sova_session` before saying what it
-  is doing.
+  and the kind of the last brief that named it and when. A line before the rows says which sessions
+  these are (created, prompted or briefed about in the last 24 hours), and that the Overseer checks
+  one with `sova_session` before saying what it is doing.
+- **Memory first.** While the Overseer's memory is on (§chat.memory/overseer: the switch in force,
+  on when never set, the one its `zoom` and `date` tools follow), every run note adds,
+  after the sessions in play (alone when none is in play) and before the cards: "Any other session
+  or fact this chat has seen: zoom its line down to the message (full ids, exact words) before any
+  other tool." With memory off it is left out: `zoom` is not among its tools then.
 - It is computed when the note is written, never kept: a session that leaves the window leaves the
   table. After a compaction it is written once more, with the open cards, after the summary
   (§app.overseer/confirm), even when no card is open. Its text from other sessions is redacted like
@@ -638,6 +887,8 @@ session is on which branch survives a compaction and a restart:
   message, the card shows "Sent: b" while that turn runs and its buttons come back when the turn
   ends, and "Or type your answer." follows the buttons. The click is only that message: it approves
   nothing and shows no approval state, since the project overseer's cards carry no `at` or `rule`.
+  A click that doesn't reach it comes back as the global Overseer's does (§app.overseer/confirm):
+  its buttons, never the composer, with the same note.
 - An earlier project overseer conversation stays read only: its cards show no live buttons.
 
 ## §app.overseer/transcript-window — Only the rows shown or jumped to
@@ -645,7 +896,7 @@ session is on which branch survives a compaction and a restart:
 The Overseer's chat and its earlier conversations never fetch their older rows in the
 background, in a browser on this machine too: they hold the newest rows and the ones the reader
 scrolls up to or a jump fetches (§chat.transcript/rendering), so the end of a reply fetches again
-only those. The card chip still counts every open card on the branch, and the chip, a card
+only those. The composer's waiting badge still counts every open card on the branch, and its dialog, a card
 reference and the Timeline still reach every card and message on it: one above the rows held is
 fetched down to, then lands.
 
@@ -661,7 +912,7 @@ fetched down to, then lands.
   configurable in Settings → Overseer; a settings file without the two new ones reads them as their
   defaults.
 - **The running count shows.** While any Overseer-started session counts as running, the
-  Overseer's composer shows "3 of 10 running" beside its chips, from the same count the cap
+  Overseer's composer shows "3 of 10 running" in its run-status row, from the same count the cap
   checks, and the refusal and the prompt name Settings → Overseer → Limits. The text is a button
   that opens Settings → Overseer scrolled to Limits. The running-at-once refusal tells the model
   to tell the user in plain words which limit was reached and that it can be raised in Settings →
@@ -753,40 +1004,53 @@ time. Both kinds of approval come only from the user's click on a card option th
   never only the current branch, so rewinding the conversation never brings a revoked approval back.
   It applies from the next tool call on: an unattended run that starts after it finds nothing to act
   under.
-- **The chip and its panel.** While the Overseer holds a live approval or rule, its composer shows a
-  chip ("2 approvals · 1 rule"). It opens a panel listing each live one: what it allows (any act on
-  the sessions, as links, until the deadline; or the rule's text, its acts and sessions), where it
-  came from (a link to its card and the option letter), when it expires ("Until 6:00 PM", or "Until
-  revoked"), its uses (the last one's time, and each use as a link to the act in the thread), and a
-  **Revoke** button. There is no Settings page for them. The same chip and panel also count and list
-  every playbook schedule, approved or not ("1 approval · 2 schedules"), each with **Approve
-  Schedule** or **Revoke Schedule** (§chat.schedules/where-shown); the chip shows while there is
-  one, even with no live approval or rule.
+- **Approvals & Schedules, in the head.** The Overseer's page head holds them, never its composer:
+  from a 900px head up **Schedules ▾** next to History ▾ opens them as a dropdown, and below that
+  ⋯'s first row, **Approvals & Schedules…**, opens them as a screen of the menu (a bottom sheet on a
+  phone, like every such menu; §app.overseer/head-layout). Both show the same thing: each live one,
+  with what it allows (any act on the sessions, as links, until the deadline; or the rule's text,
+  its acts and sessions), where it came from (a link to its card and the option letter), when it
+  expires ("Until 6:00 PM", or "Until revoked"), its uses (the last one's time, and each use as a
+  link to the act in the thread), and a **Revoke** button; then every playbook schedule, approved
+  or not, each with **Approve Schedule** or **Revoke Schedule** (§chat.schedules/where-shown). A
+  link to a card, an act or a run closes the menu first, then goes there. There is no Settings page
+  for them. The ⋯ row is there on the current conversation whatever the counts, and never on an
+  earlier conversation's read-only head. Its note says the most urgent thing: "1 needs approval"
+  ("2 need approval") while any schedule waits for approval, else the counts ("1 approval · 2
+  schedules"), else "None". With none of either, the screen says "Nothing runs without you: no
+  approvals, rules or schedules."
+- **A dot while a schedule waits.** While any schedule waits for your approval (one that offers
+  Approve Schedule: Needs approval, or paused until you approve it again, as after a change or its
+  own pause; never one that is not valid, and never for an approval or a rule), ⋯ and Schedules ▾
+  carry an attention dot, and their names say it: "Overseer actions, 1 schedule needs approval".
+  It is read with the screen's contents, on open, every 15 s and at each turn's end, and again
+  right after Approve Schedule, so an approval clears it at once.
+- **The composer carries none of them.** The Overseer's run-status row has two ends and nothing
+  between them (§app.overseer/confirm).
 - **The card shows it.** An option whose click wrote one shows its state under the card's answer:
   "Approved until 6:00 PM (g_2)", then "Expired" or "Revoked"; "Rule r_1 adopted", then "Revoked".
 - `GET /api/overseer/autonomy` returns the running count, the cap and every grant and rule of the
   current conversation with its state and uses; `POST /api/overseer/autonomy/revoke {id}` revokes
   one (404 for an id the conversation doesn't hold, 409 for one already ended).
 
-## §app.overseer/auto-resume — Resuming runs a restart cut off
+## §app.overseer/auto-resume — Resuming runs a crash cut off
 
-- **What counts.** The server keeps a small ledger of the runs its hosted chats have in flight
-  (`<stateRoot>/runs-in-flight.json`: a session is added when a run starts and removed when it
-  settles). A server stop freezes the ledger first, so the aborts of the stop itself remove nothing;
-  a crash leaves it as it was. At the next start, every session still in it was cut off by that
-  stop. Sessions stopped any other way (a usage limit, an error, the user's Stop) settle, so they are
-  never resumed.
-- **Resume.** A few seconds after start, with Settings → Overseer → Advanced → **Resume interrupted sessions**
-  on (the default), each such session gets one message: "The Sova server restarted and cut off your
-  last turn. Continue where you left off." marked as sent by the Overseer (§app.overseer/sent-marker)
+- **What counts.** A server stop or restart cuts no run off: every chat runs in a process of its own
+  (§app.chat-processes/survives-restart), so nothing is resumed for it and no "The Sova server
+  restarted…" message is ever sent. Each chat records its own run in flight
+  (`<stateRoot>/chats/inflight/<session id>.json`), and only when its process dies with a run in
+  flight is it resumed (§app.chat-processes/crash). Runs stopped any other way (a usage limit, an
+  error, the user's Stop) settle, so they are never resumed.
+- **Resume.** With Settings → Overseer → Advanced → **Resume interrupted sessions** on (the default),
+  such a chat gets one message: "This chat's process stopped unexpectedly and cut off your last
+  turn. Continue where you left off." marked as sent by the Overseer (§app.overseer/sent-marker)
   and counted as Overseer-started for the running-at-once cap (§app.overseer/caps). Never the
   Overseer, a project overseer, a baton session, an archived session, a session open in a terminal,
-  or a session that is gone. Past the cap the rest are not resumed.
-- **Once per stop.** The ledger is read and emptied at start, before any resume. A run the resume
-  itself started that is cut off again is recorded as such and never resumed a second time.
-- **Told once.** Under Brief Me (§app.overseer/proactivity) the Overseer gets one brief listing each
-  session resumed and each one not resumed with why, as in-app links. Every resume is also a line in
-  `overseer-actions.jsonl` (tool `auto_resume`).
+  or a session that is gone. Past the cap it is not resumed.
+- **Once.** A run the resume itself started that is cut off again is never resumed a second time.
+- **Told once.** Under Brief Me (§app.overseer/proactivity) the Overseer gets one brief saying a chat
+  process stopped, listing the session resumed or not resumed with why, as in-app links. Every
+  resume is also a line in `overseer-actions.jsonl` (tool `auto_resume`).
 
 ## §app.overseer/session-names — How the Overseer names sessions
 
@@ -874,7 +1138,9 @@ Three tools let the Overseer make and end links between sessions on different ho
   removed, cleared by Stop, refused at hand-off or handled by an extension instead leaves no marker.
 - While it waits in the queue, its row reads **Overseer** rather than "Sent by Sova" (the queue
   snapshot's `overseer` flag, set only for a message carrying the sender secret).
-- The transcript renders an **Overseer** tag on that user row, on reload and live.
+- The transcript renders an **Overseer** tag on that user row, on reload and live. The Timeline's
+  row for it, and for a brief, carries a "From the Overseer" sender line, and Inputs Only and the
+  composer's input count leave it out (§chat/timeline "Who sent it").
 - **One mechanism, three senders.** Baton sessions attribute every user message the same way, with
   their own `sova-baton-sent` marker (§app.baton/attribution), and so does a session's
   `session_send`, with `sova-session-sent` (§chat.profiles/delivery); the pending-mark list, the
@@ -914,22 +1180,18 @@ Three tools let the Overseer make and end links between sessions on different ho
 A server-side digest, built with no model call from live records, summaries, held-chat state, the
 seen store and — when attention signals are on — the signals store (§app.decisions/attention-signals),
 which it reads and never fills. It is memoised for about 3 seconds and never includes the Overseer
-itself.
+itself. The session feed builds it from each comparison's own list and pushes it when it changed
+(§app.decisions/push), so its rows read no list of their own, and the next request within those
+3 seconds gets the same value. Any other read (a request, the Overseer's background loop) takes the
+feed's last list while nothing has changed since it was built, and builds a list only otherwise.
 
 - **Needs you (act):** a dialog open (`activity.state` needs-input, own and foreign, or a hosted
   pending dialog); an errored turn (`turnError`, §app.overseer/seen, or `activity.state` error
   while a live record is up; one item either way, dated by the reply, its detail the error message
   — the file's first — else "The last turn stopped with an error."); a worker that ended in an error. A
-  killed worker is left out: a kill is usually the user's own gesture. So is a worker the server's
-  own restart ended: a worker this server restored (§app.worker-restore/restore) in its own
-  runtime, whose recorded ending is an error at a time between the previous server's stop and this
-  server's start, on any backend (a claude-code worker's "Claude exited before expected closure
-  (SIGTERM)", a pi worker's "pi exited with code 143" alike). The stop is the moment the previous
-  server began shutting down, which it writes to `<stateRoot>/server-stop.json` (`{v: 1, pid,
-  at}`) before anything else; the next start reads it and deletes it, and allows it 5 s of slack
-  (the workers die on the same signal). Without that file (a crash, or a stop by a server that
-  predates it) the stop is taken as 30 s before this start. A worker error while the server keeps
-  running is never one of these, and still shows. A worker error counts as
+  killed worker is left out: a kill is usually the user's own gesture. A server restart ends no
+  worker (each runs in a process of its own, §app.chat-processes/workers), so a worker's error is
+  always real. A worker error counts as
   seen once the session is on screen, or its seen stamp (§app.overseer/seen) is at or past the
   latest error; it is also dealt with once the session finished a turn after the latest error (its
   last finished reply is later than the error: the session had the failure in front of it). A new
@@ -957,28 +1219,44 @@ itself.
   failed: …", "… was interrupted: …"; "Rollback of …" for a rollback), until a later deploy of that
   target; and `deploy-request`, one per overseer's open request to deploy, "Deploy {commit7} to
   {target}? {why}", until the operator plans that target or dismisses it. Never a phone notification.
+- **Needs you, a tour sign-in** (§app.tours/sites): `tour-sign-in` on the owning chat while one of its tour
+  recordings waits for a sign-in, "Sign in to {origin} on the tour card." (for a one-time code: "Enter the
+  sign-in code for {origin} on the tour card."), dated by when it began waiting. It comes from the server's
+  memory of waiting recordings, so it ends when the recording stops waiting, and with a restart, which
+  interrupts it. Never a phone notification.
+- **Needs you, an option card** (§chat.offers/card): `offer-waiting` on a session, not archived, that
+  shows an open offer card (Land It is the only one Sova declares today), idle or working, "Waiting
+  on your answer: {the card's title}", dated by when the card was shown. It goes when the card is
+  answered, set to Not Now, no longer offered or replaced by a newer commit. Never a phone
+  notification and never a brief: it lists in Needs you and counts in "need you" only.
 - **Only real blockers are act.** The act tier — Needs you, the Overseer's "need you" count, its
   briefs and phone notifications — is exactly: open alignment questions on an unmerged branch, open dialogs, errored
-  turns, subagent errors, proposed playbook runs, failed deploys and deploy requests, WhatsApp sending down, and the baton and roster hand-offs and held acts below. A guess (a
-  reply that seems to ask, a team that seems stalled) and a branch ready to merge are decide
-  items: a line in the digest and a quiet mark on the session's row, never a brief.
+  turns, subagent errors, proposed playbook runs, open option cards (never briefed), failed deploys and deploy requests, tour recordings waiting for a sign-in, WhatsApp sending down, and the baton and roster hand-offs and held acts below. A team
+  that seems stalled and a branch ready to merge are decide items: a line in the digest and a
+  quiet mark on the session's row, never a brief.
+- **The softer tier: guesses.** A turn card's guesses (§app.decisions/attention-signals) — a
+  reply that waits on you (`asks-you`) and a reply that says it is done without checking
+  (`unverified`) — are decide items marked `soft`. Needs you lists them and the Overseer's "need
+  you" count counts them, after the blockers; they never wake the Overseer with a brief and
+  never send a phone notification. A soft item goes when the thing it guessed is acted on: the
+  next turn replaces it, archiving drops it, and either goes after **7 idle days** (no reply since); looking at the session never clears either. A blocker never expires:
+  it stays until it is handled.
 - **Nothing puts an item away.** The digest lists act items by the rules above and nothing else:
   no choice of the user's hides one. A `<stateRoot>/needs-you-later.json` left by an earlier
   version, whose choices once hid items, is deleted once when the server starts (best-effort; a
   failure is logged and never stops the start), so no old choice keeps anything hidden.
 - **Finished (decide), from signals** (§app.decisions/attention-signals, only while the list carries them):
-  `asks-you` when the last reply asks the user something (§app.decisions/asks-user) and the
-  session has no `open-questions` item, "Asks you: {the asking sentence}", else "The last reply
-  asks you something.", dated by the classification; `team-stalled` when the session waits on
+  `asks-you` (soft) when the last reply asks the user something (§app.decisions/asks-user) and the
+  session has no `open-questions` item, worded by the ask's kind: "Needs your decision: {the
+  asking sentence}" (a choice), "Needs your approval: {…}" (a risky action or a restart or merge
+  go), "Needs info from you: {…}" (information), and "Asks you: {…}" when no kind is known (an
+  older record); without a sentence, "The last reply asks you something.", dated by the classification; `unverified` (soft) when the last reply says
+  it is done but names something it didn't run or check, "Says it's done, but didn't run or check
+  everything.", unless the session has an `asks-you` or `open-questions` item; `team-stalled` when the session waits on
   subagents that have all been quiet 15 minutes (§app.decisions/team-stall), "Waiting on {names},
   quiet for {n} min.", dated by when the quiet began. With the feature off, neither appears.
-- **Finished (decide), from signals:** `looping`, one item per session, for its stuck subagents
-  (two looping checks in a row; "A subagent looks stuck: {name}.", "Subagents look stuck: {a},
-  {b}.", else "{n} subagents look stuck."; adding " The last turn looks like it went in circles
-  too." when it does) or for its own last turn alone ("The last turn looks like it went in
-  circles."). A stuck subagent is the parent session's item, never a blocker: the user acts
-  through the parent. The names are stored with the signal and reach only the digest, never the
-  session list or the feed. With the feature off, none of these appear.
+- **Retired:** `looping`. No turn is asked whether it went in circles and no subagent is checked
+  for being stuck (§app.decisions/attention-signals), so no `looping` item appears.
 - **Needs you, from a baton session** (§app.baton/needs-you): `baton-needs-you` while the baton is
   with the operator, "<from> → you: <question>", or while a person holds it through a hand-off no
   live link exists for, "Send <name> their link: <question>".
@@ -993,6 +1271,17 @@ itself.
   down for {label}: {why}", opening Settings → Outreach, while that sender is down, logged out,
   replaced, blocked or unpaired, or unreachable for 5 minutes; never while it is down with its next
   automatic try still ahead.
+- **Needs you, the owner's asks** (§app/project-assistant): `owner-request`, one per open request an
+  organization's owner filed through its Project Assistant (id `owner-request:<request id>`), "{owner}
+  reports {what} on {project}: {title}", while it is with the team: until the operator marks it done
+  or declined, a fix it started has started, or the operator's first message in the chat Start Chat
+  opened for it, and again when that chat is archived before it is done or declined
+  (§app.project-assistant/request-chat); `owner-outage` the same for a report that the app is down,
+  also a phone notification; `owner-link-request`, one per org whose owner asked for a new owner link
+  (id `owner-link-request:<org id>`), until a new link is made. Each is act tier and of no session; a
+  request's item opens the org's Requests tab at that request (`#/orgs/<id>/requests/<rid>`), a link
+  ask the org's People tab, and an open `try` request is an `owner-version-request` item opening the
+  project's Branches tab (§app.project-assistant/requests).
 - **Needs you, a message not sent** (§app.outreach/send): `outreach-not-sent`, one per project
   overseer's WhatsApp send whose last outcome is refused, failed or unknown, "The WhatsApp message
   to {name} was not sent: {reason}.", opening the person's page, until a later send to that person
@@ -1016,14 +1305,17 @@ itself.
   item, which takes the place of the last kept item of the lowest tier, so a flood of one kind
   never hides another), each with at most 200 characters of detail and
   an in-app link. The `sova_attention` tool and `GET /api/overseer/attention` return it; the
-  sidebar's Needs you region (§app.session-list/needs-you) lists its act tier, and the Overseer
-  head's "need you" count is its count of sessions with an act item.
+  sidebar's Needs you region (§app.session-list/needs-you) lists its act tier and its soft
+  items, and the Overseer head's "need you" count is its count of sessions with either: one rule,
+  so the two numbers agree.
 
 ## §app.overseer/seen — The seen store and unread dots
 
 - `seen.json` maps a session id to when a Sova chat or watch socket last **attached to or
   detached from** it. A view mounts only while it's on screen, so an open socket is the proxy for
-  "the user had it in front of them". This is imperfect for background tabs.
+  "the user had it in front of them". This is imperfect for background tabs. A script's in-chat
+  action (§app/chat-actions) is no pane: it stamps nothing, so a reply it stops or a rewind it makes
+  leaves the session's dot as it was.
 - **The last finished reply** is read from the end of the session file (at most its last 256 KB),
   in file order, not along the active branch: after a rewind it can be a reply the head no longer
   shows. A reply that leaves the turn open — pi's `stopReason` `toolUse`, `pending` or `deferred` —
@@ -1046,6 +1338,15 @@ itself.
   marks (§app.decisions/push). A worker's failure stays the digest's `worker-error`.
 - The Overseer's own unread assistant messages give the entry button's **unread count**, its only
   badge (§app.overseer/entry-button).
+- `SessionSummary.unreadReplies` is a project overseer's count of unseen replies, on its
+  **current** conversation's summary only, and only while `unread` is set: the finished replies
+  (not tool-use steps) on the conversation's active branch newer than its stamp, the same count as
+  the project overseer page's (`ProjectOverseerInfo.unread`, from one counter per project kept
+  between reads, so a list rebuild re-reads only what the file gained). Every summary the server
+  sends carries it, the session list's and each single-row refresh alike. Because `unread` follows
+  the last finished reply in file order and the count follows the active branch, `unread` with a
+  count of 0 can happen; absent means unknown. It feeds the Project overseers list's pill
+  (§app.overseer/entry-button).
 
 ## §app.overseer/navigation — Navigation
 
@@ -1129,7 +1430,9 @@ memory." Each pick writes `PUT /api/overseer/memory` at once and keeps the popov
 the current type or size writes nothing); the foot line reads "From the Overseer's next turn. Its
 coding sessions never get memory." A refused write shows "Couldn't change the Overseer's memory."
 with the reason, and its memory is unchanged. Its run-status row shows memory's status
-like any chat's (§chat.composer/memory-status).
+like any chat's (§chat.composer/memory-status). With no saved choice it reads on, UniiChat at
+128 KB (§chat.memory/overseer), so a new Overseer's button shows the check. Each project overseer
+has the same button and popover for its own memory (§app.project-overseer/memory-switch).
 
 ## §app.overseer/head-layout — The head at every width
 
@@ -1143,19 +1446,23 @@ head's height, so a width change is no layout shift.
 
 - **Wide, 900px and up.** Back (below a 768px window only, as on every chat head), the title and
   meta line, the context readout (§design.copy-deck/context-window; its ring and "222k / 1M"), the proactivity cycle (a bell and the current mode,
-  §app.overseer/proactivity), **Ideas** and **Todos** with their icons and counts, **History** ▾ and
-  **Clear**. No ⋯.
+  §app.overseer/proactivity), **Ideas** and **Todos** with their icons and counts, **Schedules** ▾
+  (Approvals & Schedules as a dropdown, §app.overseer/approvals), **History** ▾ and **Clear**. No ⋯.
 - **Medium, 660 to 899px** (the Fold's inner screen held upright, about 704px; a desktop window
-  about 1024px wide): History and Clear leave the row for **⋯**. The proactivity cycle keeps its
+  about 1024px wide): Schedules, History and Clear leave the row for **⋯**. The proactivity cycle keeps its
   bell and mode; Ideas and Todos keep their words and counts, without their icons. The context
   readout drops its window below a 720px head ("222k").
 - **Narrow, below 660px** (phones and the Fold's cover screen): the proactivity cycle leaves the
   row too. Ideas and Todos are their icons with the count as a corner badge. The row is back, the
   title and meta, the context readout, Ideas, Todos and ⋯.
-- **⋯** ("Overseer actions") holds the same three items wherever it shows: **Proactivity…** (its
-  note the current mode), **History…** (its note "{n} earlier" while there are any) and **Clear**
-  (its note "Start a new conversation. This one moves to History."). It keeps an 8px gap from the
-  control before it. Proactivity… opens a screen of the three modes, each with its hint and the
+- **⋯** ("Overseer actions") holds the same four items wherever it shows: **Approvals &
+  Schedules…** first (its note the most urgent thing, §app.overseer/approvals), **Proactivity…**
+  (its note the current mode), **History…** (its note "{n} earlier" while there are any) and
+  **Clear** (its note "Start a new conversation. This one moves to History."). It keeps an 8px gap
+  from the control before it. Approvals & Schedules… opens a screen of the approvals, rules and
+  schedules, the one Schedules ▾ opens. While a schedule waits for approval, ⋯ and Schedules ▾
+  carry a dot (§app.overseer/approvals); the dot sits inside the button, so the row's widths stay
+  as they are. Proactivity… opens a screen of the three modes, each with its hint and the
   current one checked; choosing one saves it exactly as the cycle does, and says so. History…
   opens a screen listing the earlier conversations as the History menu does, or "No earlier
   conversations yet.". Clear is the head's Clear action.
@@ -1163,8 +1470,8 @@ head's height, so a width change is no layout shift.
   bell; below 660px it is off the row, and ⋯ names it under Proactivity….
 - **The meta line** says what the Overseer watches, in plain text: "{n} sessions · {w} working ·
   {a} need you", each part after the first only when it is not 0. `{a}` is the digest's count of
-  sessions with an act item (`OverseerInfo.badge.act`, §app.overseer/attention-digest), the
-  sessions the sidebar's Needs you region lists (§app.session-list/needs-you). It carries no
+  sessions with an act or soft item (`OverseerInfo.badge.needsYou`, §app.overseer/attention-digest),
+  the sessions the sidebar's Needs you region lists (§app.session-list/needs-you). It carries no
   menu: who replied since you last looked is each row's unread dot (§app.overseer/seen), and a
   session with an unsent draft is marked in the list. From a 660px head up the row leaves it at
   least 220px, so "181 sessions · 5 working · 2 need you" (about 218px) shows in full; below that, or when it is
@@ -1175,25 +1482,74 @@ head's height, so a width change is no layout shift.
   Below a 360px window (a 320px phone) the row's gaps close to 2px and its side padding to 4px,
   so back, the title in full, the readout, Ideas, Todos and ⋯ still fit without clipping.
 - **An earlier conversation** (`#/overseer/h/<id>`): back, its title and age, and History ▾ at
-  900px and up; below that, ⋯ holding History… only.
+  900px and up; below that, ⋯ holding History… only. Neither Schedules ▾ nor Approvals &
+  Schedules… shows there.
+- **Focus** (§chat.transcript/focus-view): the row is back (below a 768px window) and the title
+  alone, at every width.
 
 ## §app.overseer/entry-button — Entry button
 
-- A **labelled button** — the eye icon, the word "Overseer", and the unread badge (below) —
-  closes the session list's one toolbar line at its right end, at every width
-  (§app.session-list/search). It leaves the line, with `Select` and the search icon,
-  for as long as the line's search is open, and comes back when the search closes.
-- The collapsed spine carries the same entry as a bare **eye** icon button.
+- **A split button at the toolbar line's right end** (§app.session-list/search), at every width,
+  after the search field. It has two parts.
+  - **The main part** is a link to `#/overseer`: the **eye** icon, then the word **Overseer**, then
+    the unread count (below) as an inline pill after the word ("Overseer 3"). Its `aria-label` is
+    "Overseer", or "Overseer · {n} new message(s)" while the count shows, and its `title` adds
+    " · Alt+O". It is tinted (`aria-current="page"`) while `#/overseer` is the route.
+  - **The ▾ part** is a separate 44×44 button joined to the main part: one shared outline, a thin
+    divider between them. It is named "Project overseers" and announced as opening a menu
+    (`aria-haspopup="menu"`, `aria-expanded`). It is drawn only once at least one of this
+    computer's projects has a started overseer; until then (with no project at all, too) the main
+    part stands alone as an ordinary button with its own rounded ends, so the list is never shown
+    empty.
+  - When the line is tight the search field shrinks, never the button: the eye, the word and ▾
+    keep their size at every width. While the search field has focus or holds a query, the field
+    takes the whole line and the split button is hidden (§app.session-list/search).
+- **The project overseers list.** ▾ opens a dropdown menu titled "Project overseers"
+  (§design/menu-rows), anchored under the button:
+  - One row per project of this computer whose overseer has **started** (its current conversation
+    exists, in an organization or standalone), sorted by project name. A project in an
+    organization shows "In {organization}" under its name; a standalone project shows its name
+    alone. A project whose overseer hasn't started isn't listed, and nothing is started from this
+    menu.
+  - At each row's right end, at most one state, in this order: **Working** (the overseer's
+    Busy), else **Last turn failed**, both in words, else the **new-reply count**: the same mark as
+    the project's eye on its heading (§app.session-list/organizations), which alone decides
+    whether the row has new replies. The count is a small accent number pill, the entry button's
+    own look (`.overseer-entry-count`, "99+" past 99): how many of the overseer's replies you
+    haven't seen since you last had its conversation open (its session's `unreadReplies`,
+    §app.overseer/seen, the count the project overseer page shows). It only labels the row: when
+    the count is missing or 0 while the row has new replies, the row says **New reply** in words
+    instead, so it never shows "0" and never looks read. The pill is `aria-hidden`; the row's
+    accessible name and `title` say it: "{project} · in {organization} · 3 new replies" (1: "1 new
+    reply"; no count: "New reply").
+  - The overseer whose conversation is open is the **current** row: tinted and checked
+    (`menuitemradio`, `aria-checked="true"`), and it shows no "Last turn failed" and no new-reply
+    count or words.
+  - Picking a row opens that overseer's conversation (`#/s/<path>`, on the host that holds it) and
+    closes the list.
+  - The last row, after a separator, is **All Projects**, which opens the Projects page
+    (`#/projects`).
+  - The list ignores the search query and the host filter: it is built from every listed session
+    and this computer's project list, never from the search hits.
+- **▾'s dot.** While any listed overseer has a new reply or a failed last turn (not for Working),
+  ▾ carries a small accent dot (a dot, never a number), and its accessible name says it in words,
+  counting overseers: "Project overseers · 2 overseers with new replies" (1: "1 overseer with new
+  replies"), "Project overseers · 1 with a failed last turn", or both, joined by " · ".
+- **Keyboard.** Tab reaches the main part, then ▾. Enter or Space on ▾ opens the list with focus on
+  its first row. Escape, or a click outside, closes it and returns focus to ▾; a click that lands
+  on another control (a session row, say) leaves focus on that control.
+- **Phone.** Below 768px the list is the same dropdown, not a sheet: anchored under the button, as
+  wide as the pane, with 44px rows.
+- The collapsed spine keeps the bare **eye** icon button as its entry. The eyes on each project's
+  heading in the pane are unchanged (§app.session-list/organizations).
 - **Alt+O** opens the Overseer from anywhere.
-- **Badge:** one count — the accent pill at the button's top-right corner on both forms
-  (`.overseer-entry-count`, "99+" past 99): the
-  Overseer's own assistant messages the user hasn't seen (`OverseerInfo.unread`,
-  §app.overseer/seen). It is 0, and the badge gone, while `#/overseer` is the route, and it shows
-  whatever the proactivity: these are the Overseer's messages, not an attention count. The eye
-  carries **no** attention count and no finished dot — who is blocked on you is the sidebar's
-  Needs you region (§app.session-list/needs-you). The badge is `aria-hidden`; the button's
-  `aria-label` is "Overseer", or "Overseer · {n} new message(s)" while it shows, and its `title`
-  adds " · Alt+O". The button is tinted as selected while `#/overseer` is the route.
+- **Badge:** one count, the Overseer's own assistant messages the user hasn't seen
+  (`OverseerInfo.unread`, §app.overseer/seen): an inline pill after the word on the toolbar, the
+  accent pill at the eye's top-right corner on the spine (`.overseer-entry-count`, "99+" past 99
+  on both). It is 0, and the pill gone, while `#/overseer` is the route, and it shows whatever the
+  proactivity: these are the Overseer's messages, not an attention count. The button carries
+  **no** attention count and no finished dot: who is blocked on you is the sidebar's Needs you
+  region (§app.session-list/needs-you). The pill is `aria-hidden`; the name says the count.
 
 ## §app.overseer/proactivity — Proactivity
 
@@ -1220,6 +1576,8 @@ checked (§app.overseer/head-layout). The ⋯ item is there at every width ⋯ s
 - A brief is a snapshot of the moment it was sent. When a blocker it named clears, the next run's
   note says so (§app.overseer/run-note); no brief is sent for a blocker clearing.
 - Which needs-you items count as new is §app.overseer/brief-repeat's rule.
+- A brief that could not be sent (the Overseer's chat couldn't be opened or reached) is not lost: its
+  blockers stay new, and the next check (every 20 s) tries again.
 
 ## §app.overseer/brief-repeat — When a briefed blocker is briefed again
 
@@ -1245,10 +1603,17 @@ run note (§app.overseer/session-truth, §app.overseer/run-note) give it what th
 
 - **Check before stating.** Never state a session's state, or list open cards or open questions,
   from memory, a brief, a card's note or a summary line: check it with `sova_session` or
-  `sova_attention` in the same turn, and drop or replace a card that no longer applies before
+  `sova_outstanding` in the same turn, and drop or replace a card that no longer applies before
   listing cards.
 - **A brief is a snapshot** of when it was sent.
-- **Ids are copied** verbatim from a tool's output in the same turn, never typed from memory.
+- **Ids are copied** verbatim from a tool's output in the same turn, never typed. The rule has two
+  forms, by the Overseer's memory switch in force (§chat.memory/overseer, on when never set):
+  with memory on, a `zoom` result counts as a source, a summary line's short id is followed down
+  with `zoom` to the message that has it whole, and `sova_list_sessions` searches only for a
+  session memory never names; with memory off, it names `sova_list_sessions`, `sova_attention`
+  and `sova_session` as the sources and, when unsure, a `sova_list_sessions` search first, and
+  never names `zoom`. The form is an opening value of the prompt, and a switch change reaches the
+  next run as that rule's new text under the run note's `[changed]` (§app.overseer/hosting).
 - **Checks are reported as said.** "Tests pass" from a session is relayed as what the session
   says, unless `sova_session` shows a check that passed after the worktree's newest commit.
 - **A promise has a trigger.** Every "I'll …" is backed in the same turn by something that will
@@ -1257,8 +1622,16 @@ run note (§app.overseer/session-truth, §app.overseer/run-note) give it what th
   question is raised once.
 - **Time** comes from tool ages and the run note's time, never from the system prompt's opening
   time.
+- **Roundups are its own.** Status questions across sessions ("what needs me?", "anything
+  outstanding?") are answered by the Overseer itself, `sova_outstanding` first, never by starting
+  a session or a subagent to look. It never reads session files with its file tools: it searches
+  them with `sova_search_sessions`. It reports each row as the roundup labels it (lost, at risk,
+  can't confirm, not checked), names every session, and says what the roundup couldn't check.
+  It lists each Lost, At risk and Needs-your-answer row shown, one line each (its link, then its
+  ask in a few words), and answers only the sections the question is about.
 
-The project overseer's prompt holds the first and third for its own tools and the project's
+The project overseer's prompt holds the first, and the third as "copied verbatim from a tool's
+output in this turn, never typed or pieced together", for its own tools and the project's
 sessions.
 
 ## §app.overseer/input-source — Sova's own messages are not typed input
@@ -1484,7 +1857,11 @@ the files: the workspace repos are closed to its file tools (§app.overseer/tool
 - **Reads:** `sova_projects` (every registered project: id, name, root, archived, its org or
   "standalone"), `sova_orgs` (every org, or one), `sova_org_project` (one project and its overseer),
   `sova_org_person` (one roster person), §app.overseer/org-reads. What they carry is one
-  projection, §app.overseer/org-projection.
+  projection, §app.overseer/org-projection. And `spec_lookup {project, op, …}`: the spec of the
+  project it names, full view (§app.spec-lookup/tool); its prompt tells it to look a project's
+  spec up before it starts a gathering or a coding session there. `sova_draft_specs` (a read) answers
+  "what are the draft specs?" (§app.requirements/draft-specs); `sova_draft_approve` and
+  `sova_draft_build` are acts.
 - **Acts:** `sova_org`, `sova_org_project`, `sova_roster`, `sova_owner` and
   `sova_project_decisions` (§app.overseer/org-writes); `sova_gather` (§app.overseer/org-people-facing);
   `sova_project_overseer` (§app.overseer/org-project-overseers). Each is an act like any other
@@ -1495,12 +1872,14 @@ the files: the workspace repos are closed to its file tools (§app.overseer/tool
   those routes have applies unchanged and comes back as the tool's error, worded as the page
   shows it. The exceptions are starting a gathering session or an offer and handing one on, which
   call Sova's in-process start and move with no link minted (§app.overseer/org-people-facing), never
-  `POST /api/baton` or the hand-off route (which mints the next holder's link for the page).
+  `POST /api/baton` or the hand-off route (which mints the next holder's link for the page), and
+  sending an org's owner their page link, which takes the org statechart's act in-process with the
+  operator's envelope and the turn's card (§app.owner-page/send): no route makes and sends one.
 - **The user's authority, marked.** Whatever it writes is written as the operator
   (§app.organizations/field-authority), marked as made through the Overseer and shown as "You, via
   the Overseer" (§app.overseer/org-attribution).
-- **Never:** move an org, or take one over from another host; set or remove its push remote; mint, show or turn off an
-  owner link; Get Link on a baton session; merge or remove a coding worktree
+- **Never:** move an org, or take one over from another host; set or remove its push remote; show or turn off an
+  owner link, or make one other than by sending it to the owner (§app.owner-page/send); Get Link on a baton session; merge or remove a coding worktree
   (§app.project-overseer/coding-worktrees); anything on an org session that is TUI-live. Those
   stay the user's gestures on the page.
 - **Addressing.** Orgs, projects and people by id or by exact name (case-insensitive; a name two
@@ -1523,14 +1902,14 @@ name is a `[title](sova://s/<id>)` link; every time is relative, as in `sova_ses
   settle, stakeholders to pick), last activity, the workspace (last commit's age, uncommitted
   changes, the last git error) and its cost at API prices (§app.project-costs/org-rollup).
 - **`sova_orgs {org}`**: that org in full: its projects (name, id, root, archived, main
-  stakeholder by name, whether it has an overseer, whether that is working and the level in force,
+  stakeholder by name, whether it has an overseer, whether that is working and its powers in force (or the brake),
   open gathering sessions, cost); its roster, one line per person (name, id, status, role, decision
   areas); the owner by name; its baton sessions (public title, project, state, who holds it, what
   waits: a reply or a link to send, messages used of the limit); the last 10 profile changes
   (person, field, old → new, who, when); and the workspace line above. `about: true` adds the About
   text and its last 10 history lines (§app.organizations/about); nothing else ever carries it.
 - **`sova_org_project {org?, project}`**: the project row; its overseer: its conversation (a
-  session link), working or not, unread, the chosen level and the level in force with the reason,
+  session link), working or not, unread, its powers as set and in force, with the brake's reason,
   watching and the pace, models, what a coding session started now gets (this computer's default
   mode and subagent profile, §app.project-overseer/coding-mode), the extra instructions, both allowances used and left and the held items
   (§app.project-overseer/limits); its last 10 actions; its gathering sessions and offers; decisions
@@ -1613,6 +1992,8 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   "contact cleared", and the action log records the call with `contact` replaced by `[contact]`.
   (The user gave the value in their own message, which the conversation keeps as they wrote it.)
 - **`sova_owner {op: "set", org, person | null}`** sets the org's owner (§app.owner-page/owner).
+  `{op: "send_link", org, person, note?}` sends the owner their owner page link on WhatsApp, behind
+  a card (§app.owner-page/send).
 - **`sova_project_decisions {op, org, project}`**: `reconcile`, `promote {ids}`, `resolve
   {conflict, …}`, `route {conflict, to}` and `freeze {frozen}` (§app/requirements), through the
   project's decisions routes. `promote` refuses a decision outside its author's area, as a project
@@ -1636,8 +2017,13 @@ organization write (§app.overseer/caps); a refusal takes nothing.
   (§app.overseer/confirm) listing a **folder** row with that folder's checkout root and the same org,
   or none for standalone (and, when the row names one, the same name); anywhere else it refuses with
   the card sentence before any other refusal: "This adds a project: ask with sova_card, listing
-  {what} in its items, and act in the turn the user's click starts." The route checks the same
-  row on the card the call carries (403 without it). A folder the Overseer's file guard denies
+  {what} in its items, and act in the turn the user's click starts." When no click on a card opened
+  the turn at all, that first refusal names the folder with the org the call asked for (its id when
+  it resolves, else the org as the call wrote it; "(standalone)" only when the call names no org)
+  and says why: "This adds a project, and this turn wasn't opened by a click on a card: reopen the
+  card (sova_card reopen, if you recorded its answer) or ask again with sova_card, listing {what} in
+  its items, so the user can click it again, and act in the turn that click starts." The route
+  checks the same row on the card the call carries (403 without it). A folder the Overseer's file guard denies
   (credentials, an org workspace; §app.overseer/tools) is refused by the tool, the card and the
   route; otherwise it is refused where the page refuses (§app.projects/registration). The result:
   "Added {name} ({id})[ in {org}]: {root}[, the checkout root of {folder}]."
@@ -1717,18 +2103,23 @@ organization write (§app.overseer/caps); a refusal takes nothing.
   page's hand-off route mints one for the operator to copy). No op gets or shows a link: `send_link`
   mints one and hands it straight to the person on WhatsApp (§app.outreach/send), and its
   result says only "Sent {name} their link on WhatsApp." or why not — never the link, the token or
-  the number.
+  the number. `sova_owner` `send_link` sends an org's owner their owner page link the same way
+  (§app.owner-page/send), and its result never holds the link, the token or the number either.
 - **Behind a confirm card, enforced.** These ops act on people or end something, and run only in a
   turn the user opened by clicking a card (§app.overseer/confirm) that lists every person, project,
   session, folder and org the call acts on: the run's opening message is a click on that card, its text exactly
   the message the click composes, and the card was open when it arrived. A card-level option approves
-  every item on the card; a per-item Apply approves only the items it gave a choice. The ops: `sova_gather` `start`, `offer`,
-  `handoff`, `take`, `close`, `revoke_link` and `send_link`; `sova_roster` `leave`, and a `revert` that sets
+  every item on the card; a per-item Apply approves only the items it gave a choice. The click's mark
+  travels with it: a click the chat holds before handing it to the model (queued behind a running
+  turn, or put back in the queue because a compaction was starting) keeps its mark, and that it was
+  typed by a person, until it is handed over. A Retry (regenerate) of the click's message carries no
+  mark: the turn it starts approves nothing. The ops: `sova_gather` `start`, `offer`,
+  `handoff`, `take`, `close`, `revoke_link` and `send_link`; `sova_owner` `send_link`; `sova_roster` `leave`, and a `revert` that sets
   `left`; `sova_project_overseer` `clear`; `sova_org_project` `archive`, `import` and `add` of a
   folder or a session's folder (never a clone); `sova_org` `detach` (§app.overseer/org-project-add).
   Anywhere else (a typed
-  "yes", a card that didn't list the target, a card already answered, superseded or dropped, a
-  later turn, a card from before card ids) the op refuses without doing anything, before any other
+  "yes", the click's text typed or pasted, a card that didn't list the target, a card already answered,
+  superseded or dropped, a later turn, a Retry of the click, a card from before card ids) the op refuses without doing anything, before any other
   refusal it could get (an archive with no card gets this, not "Stop these first"). The statecharts check
   it (§app.project-overseer/statecharts): the Overseer's calls to the routes carry its turn's card
   beside its sender mark:
@@ -1766,7 +2157,7 @@ organization write (§app.overseer/caps); a refusal takes nothing.
   **Overseer** tag (§app.project-overseer/page); to the overseer's model it is the operator's
   message, in plain text.
 - **Attended, as if the user typed it.** The overseer's run that message opens is the operator's
-  (§app.project-overseer/autonomy-levels): its level doesn't bind, and it uses — and resets, as an
+  (§app.project-overseer/autonomy-levels): its switches don't bind, and it uses — and resets, as an
   operator message does — the per-message allowance, "each message you send"
   (§app.project-overseer/limits). What bounds repeats is the Overseer's own prompt cap: each
   message counts as one prompt to another session, and as a `sova_send` does against running at once

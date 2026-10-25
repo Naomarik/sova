@@ -52,7 +52,6 @@ export const isHeuristic = (via: MonitorVia | undefined): boolean => via === "cw
 const VIA_WORDS: Record<MonitorVia, string> = {
   "worker-pid": "Worker process",
   "session-id": "Claude session id",
-  "live-record": "Worker's live record",
   "team-env": "Team member helper",
   env: "Started by the session's tool",
   descendant: "Started by a charged process",
@@ -67,14 +66,16 @@ export const viaWords = (via: MonitorVia | undefined): string => (via ? VIA_WORD
 
 /** The head's second line: what the numbers cover. */
 export function scopeLine(s: Pick<MonitorSnapshot, "scope" | "unitName">): string {
-  if (s.scope === "unit") return `Everything in ${s.unitName ?? "this service"}`;
-  if (s.scope === "tree") return "This server's process tree only";
+  if (s.scope === "unit" || s.scope === "ps") return "Sova's server and its chats";
+  if (s.scope === "tree") return "Sova's server and its chats, process trees only";
   return "This server's own numbers only";
 }
 
 /** The one sentence a degraded snapshot shows above the meters, or null when nothing is missing. */
 export function degradedLine(s: Pick<MonitorSnapshot, "scope" | "platform">): string | null {
-  if (s.scope === "none") return "Process details need Linux. This shows the server's own memory and event loop.";
+  if (s.scope === "none") return "Process details need Linux or macOS. This shows the server's own memory and event loop.";
+  if (s.scope === "ps")
+    return "On macOS memory is each process's resident memory, which counts program code that processes share in each of them, so these numbers run high.";
   if (s.scope === "tree")
     return "Sova isn't running as its own systemd service here, so this covers the server's process tree only. Processes that left it aren't counted.";
   return null;
@@ -114,7 +115,18 @@ export function meters(s: MonitorSnapshot): MeterView[] {
     });
   }
   const ram = h.memTotalBytes;
-  if (s.unit) {
+  if (s.memory) {
+    // Sova's own memory: the server, its helper, every chat and what they wrap and start.
+    const total = s.memory.total;
+    out.push({
+      key: "memory",
+      label: "Sova memory",
+      value: bytes(total),
+      of: ` of ${bytes(ram)}`,
+      pct: clampPct((total / Math.max(1, ram)) * 100),
+      context: `The machine has ${bytes(h.memAvailableBytes)} available.`,
+    });
+  } else if (s.unit) {
     const m = s.unit.memory;
     out.push({
       key: "memory",
@@ -136,7 +148,8 @@ export function meters(s: MonitorSnapshot): MeterView[] {
   } else {
     out.push({ key: "memory", label: "Server memory", value: bytes(s.server.rssBytes), pct: null, context: `Heap ${bytes(s.server.heapUsedBytes)} of ${bytes(s.server.heapTotalBytes)}.` });
   }
-  if (s.scope !== "none") {
+  // macOS reports no per-process swap, and the host's isn't read there.
+  if (s.scope === "unit" || s.scope === "tree") {
     const used = Math.max(0, h.swapTotalBytes - h.swapFreeBytes);
     if (h.swapTotalBytes <= 0) out.push({ key: "swap", label: "Swap", value: "None", pct: null, ghost: true, context: "This machine has no swap." });
     else
@@ -171,6 +184,32 @@ export function meters(s: MonitorSnapshot): MeterView[] {
   return out;
 }
 
+export interface MemoryPart {
+  key: "backend" | "runtime" | "wrapped" | "tools";
+  label: string;
+  bytes: number;
+  value: string;
+  context?: string;
+}
+
+const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+
+/** Sova memory's four parts, in order, adding up to it; null when the snapshot has no split. */
+export function memoryParts(s: Pick<MonitorSnapshot, "memory">): MemoryPart[] | null {
+  const m = s.memory;
+  if (!m) return null;
+  const part = (key: MemoryPart["key"], label: string, b: number, context?: string): MemoryPart => ({ key, label, bytes: b, value: bytes(b), ...(context ? { context } : {}) });
+  return [
+    part("backend", "Backend", m.backend.bytes, "server and helper"),
+    part("runtime", "Sova runtime", m.runtime.bytes, plural(m.runtime.count, "chat", "chats")),
+    part("wrapped", "Claude Code", m.wrapped.bytes, plural(m.wrapped.count, "CLI", "CLIs")),
+    part("tools", "Tools and work", m.tools.bytes),
+  ];
+}
+
+/** Memory for a table cell: "—" where the reading has none (a moment from before own memory was counted). */
+export const memText = (n: number): string => (Number.isFinite(n) ? bytes(n) : "—");
+
 // ---- the table ---------------------------------------------------------------------------------
 
 export interface ProcRow {
@@ -197,8 +236,21 @@ export interface WorkerRow {
   rssBytes: number;
   swapBytes?: number;
   procCount?: number;
+  /** Its memory split, for its caption: "runtime 120 MB · Claude Code 150 MB". */
+  split?: string;
   /** Heaviest descendants, by short command. */
   top: ProcRow[];
+}
+
+/** One part of a group (Backend → Sova server, Usage helper; a session → Sova runtime, Claude Code, Tools). */
+export interface PartRow {
+  key: string;
+  label: string;
+  caption?: string;
+  cpuPct: number;
+  rssBytes: number;
+  /** What it expands to (a session's tools); empty = nothing to open. */
+  procs: ProcRow[];
 }
 
 export interface GroupRow {
@@ -214,9 +266,15 @@ export interface GroupRow {
   swapBytes?: number;
   procCount?: number;
   workers: WorkerRow[];
-  /** The group's own processes (a session's hosted tools, an escaped bucket's processes). */
+  /** The group's own processes (an escaped bucket's processes, a session's tools from a server
+      that doesn't split them). */
   procs: ProcRow[];
+  /** Its parts, between the group and its workers, when the snapshot splits them. */
+  parts?: PartRow[];
 }
+
+/** A process's or row's memory: its own memory where the snapshot has it, else its RSS. */
+const memOf = (x: { rssBytes: number; privBytes?: number }): number => x.privBytes ?? x.rssBytes;
 
 const procRow = (p: MonitorProc): ProcRow => ({
   key: `${p.pid}:${p.startedAt}`,
@@ -224,10 +282,52 @@ const procRow = (p: MonitorProc): ProcRow => ({
   cmd: p.cmd,
   kind: p.kind,
   cpuPct: p.cpuPct,
-  rssBytes: p.rssBytes,
+  rssBytes: memOf(p),
   via: p.via,
   cwd: p.cwd,
 });
+
+const isRuntime = (p: MonitorProc): boolean => p.kind === "sova-runtime";
+const isWrapped = (p: MonitorProc): boolean => p.kind === "claude-provider" || p.kind === "claude-worker";
+
+/** "runtime 120 MB · Claude Code 150 MB", from a worker's split; undefined when it has none. */
+function workerSplit(w: MonitorWorker): string | undefined {
+  if (w.runtimeBytes === undefined) return undefined;
+  const parts = [`runtime ${bytes(w.runtimeBytes)}`];
+  if (w.wrappedBytes) parts.push(`Claude Code ${bytes(w.wrappedBytes)}`);
+  if (w.toolsBytes) parts.push(`tools ${bytes(w.toolsBytes)}`);
+  return parts.join(" · ");
+}
+
+/** A session's backend, as its caption: what its chat wraps, if anything. */
+function backendCaption(x: MonitorSession): string | undefined {
+  if (x.backend === "claude-code" || (!x.backend && x.wrappedBytes)) return "Claude Code";
+  if (x.backend === "pi") return "pi model · nothing wrapped";
+  return undefined;
+}
+
+/** A session's own processes as its parts: its chat's runtime, the Claude Code CLI it wraps, its tools. */
+function sessionParts(x: MonitorSession): PartRow[] | undefined {
+  if (x.runtimeBytes === undefined) return undefined;
+  const key = x.sessionPath ?? `cwd:${x.cwd ?? ""}`;
+  const runtime = x.own.filter(isRuntime);
+  const wrapped = x.own.filter(isWrapped);
+  const tools = x.own.filter((p) => !isRuntime(p) && !isWrapped(p));
+  const cpu = (ps: MonitorProc[]) => sum(ps, (p) => p.cpuPct);
+  const out: PartRow[] = [];
+  if (runtime.length || x.runtimeBytes) out.push({ key: `${key}#runtime`, label: "Sova runtime", caption: "this chat's own process", cpuPct: cpu(runtime), rssBytes: x.runtimeBytes, procs: [] });
+  if (wrapped.length || x.wrappedBytes || x.backend === "claude-code")
+    out.push({ key: `${key}#wrapped`, label: "Claude Code", caption: "the wrapped CLI", cpuPct: cpu(wrapped), rssBytes: x.wrappedBytes ?? 0, procs: [] });
+  // The session's own process count less its runtime and CLI; `own` lists only its heaviest tools.
+  const ownCount = Math.max(0, (x.procCount ?? 0) - sum(x.workers, (w) => w.procCount));
+  const toolCount = Math.max(tools.length, ownCount - runtime.length - wrapped.length);
+  if (toolCount || x.toolsBytes)
+    out.push({
+      key: `${key}#tools`, label: "Tools", caption: plural(toolCount, "process", "processes"),
+      cpuPct: Math.max(0, Math.round((x.ownCpuPct - cpu(runtime) - cpu(wrapped)) * 10) / 10), rssBytes: x.toolsBytes ?? 0, procs: tools.map(procRow),
+    });
+  return out;
+}
 
 const workerRow = (w: MonitorWorker, scope: string): WorkerRow => ({
   key: `${scope}/${w.id}`,
@@ -237,9 +337,10 @@ const workerRow = (w: MonitorWorker, scope: string): WorkerRow => ({
   idleSince: w.idleSince,
   via: w.via,
   cpuPct: w.cpuPct,
-  rssBytes: w.rssBytes,
+  rssBytes: memOf(w),
   swapBytes: w.swapBytes,
   procCount: w.procCount,
+  split: workerSplit(w),
   top: w.top.map(procRow),
 });
 
@@ -285,7 +386,7 @@ export function labelsWithTitles(labels: MonitorHistory["groups"], titleOf: Titl
 
 /** The words for the groups that aren't a session, the same in the table, the chart and transient work. */
 const RESERVED: Record<string, string> = {
-  [SERVER_GROUP]: "Sova server",
+  [SERVER_GROUP]: "Backend",
   [ESCAPED_GROUP]: "Escaped processes",
   [UNATTRIBUTED_GROUP]: "Not attributed",
   [UNOWNED_GROUP]: "Workers of no known session",
@@ -299,34 +400,45 @@ export function groupLabel(key: string, labels: MonitorHistory["groups"]): strin
   return label && !isFileLabel(label) ? label : "Untitled session";
 }
 
-/** The table now: every session, then the server itself, workers of no known session, escaped and unattributed processes. Heaviest first within sessions. */
+/** The table now: the backend first, then every session, workers of no known session, escaped and unattributed processes. Heaviest first within sessions. */
 export function liveRows(s: MonitorSnapshot): GroupRow[] {
-  const rows: GroupRow[] = [...s.sessions]
-    .sort(heaviest)
-    .map((x) => ({
+  const helpers = s.server.helpers ?? [];
+  const serverMem = s.server.privBytes ?? s.server.rssBytes;
+  const rows: GroupRow[] = [
+    {
+      key: SERVER_GROUP,
+      label: RESERVED[SERVER_GROUP]!,
+      caption: "the Sova server and its helper",
+      kind: "server",
+      cpuPct: Math.round((s.server.cpuPct + sum(helpers, (p) => p.cpuPct)) * 10) / 10,
+      rssBytes: s.memory ? s.memory.backend.bytes : serverMem + sum(helpers, memOf),
+      procCount: 1 + helpers.length,
+      workers: [],
+      procs: [],
+      parts: [
+        { key: `${SERVER_GROUP}#server`, label: "Sova server", caption: "web app, sessions, monitor", cpuPct: s.server.cpuPct, rssBytes: serverMem, procs: [] },
+        ...helpers.map((p) => ({ key: `${SERVER_GROUP}#${p.pid}`, label: "Usage helper", caption: "prices and usage", cpuPct: p.cpuPct, rssBytes: memOf(p), procs: [] })),
+      ],
+    },
+  ];
+  for (const x of [...s.sessions].sort(heaviest)) {
+    const parts = sessionParts(x);
+    rows.push({
       key: x.sessionPath ?? `cwd:${x.cwd ?? ""}`,
       label: sessionLabel(x),
       sessionPath: x.sessionPath,
-      caption: x.hosted ? "Hosted here" : undefined,
+      caption: backendCaption(x),
       kind: "session" as const,
       cpuPct: x.cpuPct,
-      rssBytes: x.rssBytes,
+      rssBytes: memOf(x),
       swapBytes: x.swapBytes,
       procCount: x.procCount,
       workers: [...x.workers].sort(heaviest).map((w) => workerRow(w, x.sessionPath ?? "")),
-      procs: x.own.map(procRow),
-    }));
-  rows.push({
-    key: SERVER_GROUP,
-    label: RESERVED[SERVER_GROUP]!,
-    caption: `pid ${s.server.pid}`,
-    kind: "server",
-    cpuPct: s.server.cpuPct,
-    rssBytes: s.server.rssBytes,
-    procCount: 1,
-    workers: [],
-    procs: [],
-  });
+      // Split, its processes hang off its parts; else off the session itself.
+      procs: parts ? [] : x.own.map(procRow),
+      ...(parts ? { parts } : {}),
+    });
+  }
   if (s.unownedWorkers.length) {
     const ws = [...s.unownedWorkers].sort(heaviest);
     rows.push({
@@ -334,7 +446,7 @@ export function liveRows(s: MonitorSnapshot): GroupRow[] {
       label: "Workers of no known session",
       kind: "unowned",
       cpuPct: sum(ws, (w) => w.cpuPct),
-      rssBytes: sum(ws, (w) => w.rssBytes),
+      rssBytes: sum(ws, memOf),
       swapBytes: sum(ws, (w) => w.swapBytes),
       procCount: sum(ws, (w) => w.procCount),
       workers: ws.map((w) => workerRow(w, UNOWNED_GROUP)),
@@ -358,7 +470,7 @@ export function liveRows(s: MonitorSnapshot): GroupRow[] {
 }
 
 function bucketRow(b: MonitorSnapshot["escaped"]): Omit<GroupRow, "key" | "label" | "kind"> {
-  return { cpuPct: b.cpuPct, rssBytes: b.rssBytes, swapBytes: b.swapBytes, procCount: b.procCount, workers: [], procs: b.procs.map(procRow) };
+  return { cpuPct: b.cpuPct, rssBytes: memOf(b), swapBytes: b.swapBytes, procCount: b.procCount, workers: [], procs: b.procs.map(procRow) };
 }
 
 function sum<T>(xs: readonly T[], f: (x: T) => number): number {
@@ -379,7 +491,11 @@ export function rowsAt(point: MonitorPoint, labels: MonitorHistory["groups"], li
   const nameOf = workerNamer(live, fromHistory);
   const kindOf = (key: string): GroupRow["kind"] =>
     key === SERVER_GROUP ? "server" : key === ESCAPED_GROUP ? "escaped" : key === UNATTRIBUTED_GROUP ? "unattributed" : key === UNOWNED_GROUP ? "unowned" : "session";
-  const rows: GroupRow[] = Object.entries(point.groups).map(([key, [cpuPct, rssBytes]]) => {
+  // A point from before own memory was counted carries RSS: no memory is shown for it rather than that.
+  const own = point.sovaBytes !== undefined;
+  const m = (b: number) => (own ? b : NaN);
+  const rows: GroupRow[] = Object.entries(point.groups).map(([key, [cpuPct, rss]]) => {
+    const rssBytes = m(rss);
     const kind = kindOf(key);
     const label = groupLabel(key, labels);
     const sessionPath = kind === "session" ? (labels[key]?.sessionPath ?? (key.startsWith("/") ? key : undefined)) : undefined;
@@ -387,16 +503,16 @@ export function rowsAt(point: MonitorPoint, labels: MonitorHistory["groups"], li
       .map(([id, [wc, wr]]) => {
         const scope = kind === "unowned" ? UNOWNED_GROUP : (sessionPath ?? key);
         const w = liveWorkers.get(`${scope}/${id}`);
-        const top = point.top.filter((p) => p.group === key && p.workerId === id).map((p) => ({ key: `${p.pid}`, pid: p.pid, cmd: p.cmd, kind: p.kind, cpuPct: p.cpuPct, rssBytes: p.rssBytes }));
-        return { key: `${key}/${id}`, label: nameOf(key, id) || w?.name || id, backend: w?.backend, via: w?.via, cpuPct: wc, rssBytes: wr, top };
+        const top = point.top.filter((p) => p.group === key && p.workerId === id).map((p) => ({ key: `${p.pid}`, pid: p.pid, cmd: p.cmd, kind: p.kind, cpuPct: p.cpuPct, rssBytes: m(p.rssBytes) }));
+        return { key: `${key}/${id}`, label: nameOf(key, id) || w?.name || id, backend: w?.backend, via: w?.via, cpuPct: wc, rssBytes: m(wr), top };
       })
       .sort(heaviest);
     const procs = point.top
       .filter((p) => p.group === key && !p.workerId)
-      .map((p) => ({ key: `${p.pid}`, pid: p.pid, cmd: p.cmd, kind: p.kind, cpuPct: p.cpuPct, rssBytes: p.rssBytes }));
+      .map((p) => ({ key: `${p.pid}`, pid: p.pid, cmd: p.cmd, kind: p.kind, cpuPct: p.cpuPct, rssBytes: m(p.rssBytes) }));
     return { key, label, sessionPath, kind, cpuPct, rssBytes, workers, procs };
   });
-  const order: Record<GroupRow["kind"], number> = { session: 0, server: 1, unowned: 2, escaped: 3, unattributed: 4 };
+  const order: Record<GroupRow["kind"], number> = { server: 0, session: 1, unowned: 2, escaped: 3, unattributed: 4 };
   return rows.sort((a, b) => order[a.kind] - order[b.kind] || (a.kind === "session" ? heaviest(a, b) : 0));
 }
 
@@ -413,7 +529,7 @@ export function idleSummary(s: MonitorSnapshot): string | null {
   const all = [...s.sessions.flatMap((x) => x.workers), ...s.unownedWorkers];
   const idle = all.filter((w) => w.status && w.status !== "working");
   if (!idle.length) return null;
-  const held = sum(idle, (w) => w.rssBytes);
+  const held = sum(idle, memOf);
   return `${idle.length} idle ${idle.length === 1 ? "worker holds" : "workers hold"} ${bytes(held)}${all.length > idle.length ? `; ${all.length - idle.length} working` : ""}.`;
 }
 
@@ -438,6 +554,7 @@ export interface TransientRow {
 export function livePids(s: MonitorSnapshot): Set<number> {
   const out = new Set<number>([s.server.pid]);
   const add = (p: MonitorProc) => out.add(p.pid);
+  (s.server.helpers ?? []).forEach(add);
   for (const x of s.sessions) {
     x.own.forEach(add);
     for (const w of x.workers) {
@@ -574,7 +691,7 @@ export interface ChartModel {
   memTop: number;
   /** Stacked CPU areas, bottom first; the last is "Everything else" when groups were folded. */
   series: ChartSeries[];
-  /** The memory line (RSS, or the unit's anon when present), one path per run. */
+  /** The memory line, Sova memory, one path per run of readings that carry it. */
   memory: string[];
   /** x of each point, for the crosshair. */
   xs: number[];
@@ -620,12 +737,12 @@ export function chartModel(
   };
   let stackMax = 0;
   let memMax = 0;
-  const memOf = (p: MonitorPoint) => p.anonBytes ?? p.rssBytes;
+  // Only readings that carry Sova memory draw it: older ones counted memory another way.
   for (const p of points) {
     let s = 0;
     for (const k of keys) s += valueOf(p, k);
     stackMax = Math.max(stackMax, s);
-    memMax = Math.max(memMax, memOf(p));
+    if (p.sovaBytes !== undefined) memMax = Math.max(memMax, p.sovaBytes);
   }
   const cpuMax = niceCeil(Math.max(stackMax, 10));
   const y = (v: number, max: number) => height - (Math.min(v, max) / max) * height;
@@ -666,9 +783,31 @@ export function chartModel(
       const pts = [...upper, ...lower.reverse()];
       series[si]!.paths.push(`M${pts.map(([a, b]) => `${r1(a)},${r1(b)}`).join("L")}Z`);
     });
-    if (memMax > 0) memory.push(`M${run.map((p) => `${r1(x(p.at))},${r1(y(memOf(p), memMax * 1.1))}`).join("L")}`);
+    if (memMax > 0) {
+      let line: MonitorPoint[] = [];
+      const flush = () => {
+        if (line.length) memory.push(`M${line.map((p) => `${r1(x(p.at))},${r1(y(p.sovaBytes!, memMax * 1.1))}`).join("L")}`);
+        line = [];
+      };
+      for (const p of run) {
+        if (p.sovaBytes === undefined) flush();
+        else line.push(p);
+      }
+      flush();
+    }
   }
   return { width, height, t0, t1, cpuMax, memMax, memTop: memMax * 1.1, series, memory, xs: points.map((p) => x(p.at)) };
+}
+
+/** The chart's reading for one moment: CPU, Sova memory with its four parts where it carries them, load. */
+export function readoutText(p: MonitorPoint): string {
+  const cpu = `CPU ${cpuText(p.cpuPct)}${p.cpuPctMax ? ` (peak ${cpuText(p.cpuPctMax)})` : ""}`;
+  let mem = "";
+  if (p.sovaBytes !== undefined) {
+    const [b, r, w, t] = p.mem ?? [];
+    mem = ` · Sova memory ${bytes(p.sovaBytes)}${p.mem ? `: backend ${bytes(b!)}, runtime ${bytes(r!)}, Claude Code ${bytes(w!)}, tools ${bytes(t!)}` : ""}`;
+  }
+  return `${cpu}${mem} · load ${p.load1.toFixed(2)}`;
 }
 
 // ---- footer and this tab -----------------------------------------------------------------------

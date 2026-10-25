@@ -15,11 +15,14 @@ and any mistake in it.
 
 ## Where they live
 
+The picker's first card, **My settings**, is no profile: the session as you set it yourself (its
+mode, minor modes, model and effort). Every other card is a file:
+
 | Group | Where | Notes |
 |---|---|---|
-| **Built in** | `profiles/<id>.json` in Sova | Default (in code, changes nothing), Read-only reviewer |
-| **This project** | `<project>/.sova/profiles/<id>.json` | Committed with the project. One file per profile |
 | **Yours** | `~/.pi/agent/sova/session-profiles.json` | `{"version": 1, "profiles": [...]}`. Every folder can use them. One of yours replaces a built-in one of the same id. With the mesh on, the whole file syncs to your other devices (the newest edit wins) |
+| **This project** | `<project>/.sova/profiles/<id>.json` | Committed with the project. One file per profile |
+| **Built in** | `profiles/<id>.json` in Sova | Sova ships none today |
 
 **The project** is the repository's main checkout. A session in a worktree or a subfolder of the
 repository uses the main checkout's `.sova/profiles/` and `.sova/playbooks/`. So a profile changed on
@@ -53,7 +56,7 @@ skipped and shown in Settings → Profiles with the exact error. The others stil
 | `description` | no | One line under the name |
 | `remove` | no | Capabilities it loses (below). Removing anything also removes `workers` |
 | `grant` | no | Session powers it gains (below). `sessions.message` and `sessions.all` also grant `sessions.read` |
-| `singleton` | no | `true`: **One at a time**, at most 1 live session per profile (per project for a project's profile) |
+| `singleton` | no | `true`: **One at a time**, at most 1 live session per profile (per project for a project's profile). While one runs, its card reads **Active** and opens that session instead |
 | `limits` | no | Any of `hops` (3), `perMessage` (10), `perDay` (40), `targetsPerRun` (5), `perPair` (6): whole numbers from 1 |
 | `mode` | no | `normal` or `delegate`: the mode it starts in |
 | `minorModes` | no | The whole set of minor modes it starts with, any of `align`, `spec`, `vis` and `codemode`, in any order. `[]` starts with none. Absent: the default in `mode.json`. Picking a profile without it after one that had it puts the default back |
@@ -115,8 +118,10 @@ whose model is turned off in Settings → Models, has no credentials on this dev
 subagent profile this device doesn't have is shown disabled with the reason, and can't be picked.
 
 Picking one sets the session's model, effort and subagent profile at once; none of them becomes
-the default for new sessions. Picking Default (or a profile that doesn't set them) afterwards puts
-back the new-session model and effort, and this device's default subagent profile.
+the default for new sessions. Picking **My settings** afterwards puts back what you had set
+yourself before your first pick: the mode and minor modes, model, effort and subagent profile.
+Picking another profile that doesn't set one of them puts back the new-session model and effort,
+this device's default subagent profile, and the mode in `mode.json`.
 
 ## Approving a project's profile
 

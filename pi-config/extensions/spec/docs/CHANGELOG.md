@@ -460,6 +460,352 @@ would list master's changes instead.
     e4449e4a; computed together with lane B2 above.
   - Numbers: 25-§ fixture, line 432 → 290 characters; all 25 § still listed by the command.
 
+### 2026-10-11
+
+- **`where` also ranks claims by the words of a topic.**
+  - Commit: 1ecd9cf9 (the promotion), branch `feat/spec-search`; master fast-forwarded to 8d26139c.
+  - Changed:
+    - `where` reads several unquoted words as one query, the same as those words quoted, and beside
+      its name and path rows ranks claims and areas by field-weighted BM25 over the heading, the first
+      sentence, the backticked names, the prose and the area's heading (`core/topic.mjs`; computed on
+      each call, nothing stored); a single argument that is a file keeps the path reading;
+    - topic rows are a section of their own: `type: "topic"` lines with `score` and `matched`,
+      `counts.topic`, `topicTerms` and a `topicNotice`; name rows keep their top ten and topic rows
+      fill only the places left free;
+    - a token query with no name match but topic matches exits 0 (was 1);
+    - a search bench (`tests/search/`): 52 dev queries from real asks, 48 held-out, a leak check and
+      the CLI harness.
+  - §: +§tools.spec/where-topic; §tools.spec/where-lookup, §tools/spec reworded. Base: 67d6803b, master
+    before the fast-forward.
+  - Numbers (search bench, `tests/search/experiments/REPORT.md` and `tests/search/results/REVIEW.md`):
+    dev (52 queries) R@3 0% → 59.6%, MRR 0 → 0.532 against the a9b87037 baseline; held-out (48, run
+    once at 0b43feb9) R@3 64.6%, MRR 0.552; 110 name and path lookups (80 tokens, 25 `code` paths, 5
+    edge cases) identical to a9b87037 on rows, counts and exit, no JSON key lost. Agent A/B with the
+    old mode text (GLM 5.3 medium, 24 questions × 2 reps, the same tools in both arms): no measurable
+    difference, because agents rarely used it (`map` in every run, `where` nearly always with one
+    word): correct 90 of 96 with the old search and 87 with topic search, about 55k tokens per run in both. Hence the mode text change below.
+
+### 2026-10-12
+
+- **Spec mode finds roots with a word search first (M2b).**
+  - Commit: 6f33e2ac (the promotion), branch `feat/spec-where-first`; on master since 2026-10-12 11:52
+    (fast-forward to a0c9da53).
+  - Changed:
+    - `mode/spec-mode.md` step 1: find roots with `where` and 3–5 of the task's words, never one, or
+      a path or name; if no hit fits, try other words once, then `map` (also for a whole-area task);
+      the tools line lists `where <path|name|topic words>` before `map`; the guide's word cap
+      834 → 868;
+    - the site docs (`modes/spec.md`) and `.sova/spec/USAGE.md` say the same.
+  - §: §tools.spec/mode-reading reworded (it now requires §tools.spec/where-topic). Base: 8d26139c.
+  - Numbers (agent arm, blind-graded, 36 questions × 2 reps, GLM 5.3 high and DeepSeek Flash 4.1 low,
+    the same tools, only the mode text differing): median tokens per run −27% to −37% in all four sets
+    (GLM 46.1k → 29.1k and 59.3k → 41.0k; DeepSeek 78.1k → 51.2k and 91.1k → 66.1k); correct 265 / 288
+    against 270 / 288 for master's text; wrong answers 2 against 1. The misses cluster on questions
+    worded unlike the spec, where a plausible wrong hit replaces the overview the area list gave. A
+    titles-only area list (`map --titles`, read once per task beside `where`) was tried and dropped:
+    −11 / 288 correct, 3 wrong (ad3a61e3, reverted in 9116abae).
+- **The installed extension is the only way to run the spec tools.**
+  - Commit: fb07ef5f, branch `feat/spec-single-source`; on master since 2026-10-12 15:18 (fast-forward
+    to 41802297).
+  - Changed:
+    - bundled copies are no longer supported: agents run the tools only from the installed extension
+      (`$core`), and a copy inside a project is that project's code, read and never run without asking;
+      `README.md`, `docs/MODE.md` and the UPGRADING steps say so;
+    - Sova removed its own copy, `.sova/spec/tools/` (it lagged `core/`), with its hash check in
+      `.sova/spec/USAGE.md` and the playbook's T-VENDOR and CAN-1 rows.
+  - §: none.
+  - Upgrade: a project holding a copy of the tools deletes it and runs the installed extension.
+
+### 2026-10-18
+
+- **Whole-tree `census` leaves out what Git ignores (audit #2, P7).**
+  - Commit: this entry's, branch `feat/spec-x-census`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
+  - Changed:
+    - `census` without `--changed`, in a Git work tree, does not count a boundary file Git ignores
+      (`git ls-files --others --ignored --exclude-standard --directory`) unless a record's `code` maps
+      it; `census.ignored` counts what was left out, with a `census-ignored` note. A tracked file is
+      always counted (even one an ignore pattern matches, even inside an ignored directory), and so is
+      an untracked file Git does not ignore. Outside Git, when Git cannot answer, or under an
+      enclosing repository that ignores the whole project, nothing is left out (`ignored: 0`). No
+      project-specific list: the rule is Git's own;
+    - `core/README.md` and `.sova/spec/USAGE.md` say so; `tests/census-ignored.test.mjs` is the fixture.
+  - §: +§tools.spec/census-ignored (draft `census-ignored`, not yet promoted). Base: 9c3f949b.
+  - Numbers: Sova's tree at 9c3f949b (clean, with `site/node_modules`, `site/dist`, `site/.astro`
+    present): unclaimed 10,410 → 913, of them 9,497 ignored (9,352 `site/node_modules`, 140
+    `site/dist`, 5 `site/.astro`); the 913 are exactly the tracked unclaimed files before (0 untracked
+    unignored in that tree); claimed 2,193 and mapped-outside unchanged; ~215 ms either way. Fixture:
+    1/5 tests pass on 9c3f949b, 5/5 after.
+
+- **A declaration both sides changed merges block by block (audit #2, P8).**
+  - Commit: on branch `feat/spec-x-merge`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
+  - Changed:
+    - `merge-claims` no longer conflicts on every declaration both sides changed: it merges that
+      declaration by blocks (a list item with its wrapped lines, a nested item, a table row, a line of
+      a fenced block, a paragraph, a blank line), and conflicts only when both sides changed the same
+      block, added blocks at the same place, or one added a block directly before one the other
+      changed;
+    - such a conflict leaves Git's markers around the whole blocks; before, a declaration changed on
+      both sides in lines Git merges cleanly left a conflicted file with no markers at all.
+  - §: §tools.spec/git-merge reworded (draft `claims-merge-blocks`, not promoted yet).
+  - Numbers (merge replay: the 30 merges since 6f98ff2f whose sides both changed a claim file, 56
+    files, each redone in a throwaway clone with each side's own `.gitattributes`; the 5 Claude Code
+    sessions with a claims conflict are all among them): conflicted claim files 20 / 56 (11 merges)
+    → 7 / 56 (4 merges), against 7 / 56 (5 merges) with Git's line merge alone; conflicts Git's line
+    merge doesn't have 13 → 0; files merged cleanly that carry exactly both sides' changes (blank
+    lines aside) 36 / 36 → 49 / 49 (Git alone 48 / 49: it drops two of theirs' lines in one). With the
+    driver set for every file, 20 / 56 → 6 / 56 (3 merges), each both sides rewriting one bullet or
+    paragraph. Tool tests 554 pass, 0 fail.
+
+- **Each area says what it does not own (P4, Goal 3).**
+  - Commit: on branch `feat/spec-x-notowned`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
+  - Changed:
+    - a new optional record field, `notOwned: [§id]` on an area (H1): the claims elsewhere that own
+      what a reader might expect the area to own; `[]` says it was looked at. The manifest stays
+      relations only: the map prints each owner's own heading. `check` errors on a value that is not
+      an array of § ids and warns on `not-owned-not-area`, `not-owned-inside` and a dangling owner;
+    - `map` shows a `doesn't own` line under each area's what line (owner ids in the overview, so all
+      areas keep fitting one text page; `title (§id)` in `map '§area'`), counts `doesn't own: written
+      for k of n area(s)`, and prints `(not written)` for an area without the field once any area in
+      view has it; with none, one line says so and nothing else changes;
+    - a `notOwned`-only change lands on `--doc-only` evidence like `embeds` and `core`
+      (`FIELD_KEYS`), with the same agreed-record and bundling refusals;
+    - Sova's spec: all 87 areas carry the field (253 owners), each owner a § the area requires or
+      names, whose own code lies outside the area's code list (250 of 253; the other 3 are design
+      docs with no code).
+  - §: §tools.spec/record-fields, §tools.spec/spec-map, §tools.spec/field-promotion reworded; the
+    87 area records gain `notOwned`. Base: 9c3f949b.
+  - Numbers: the result is exposure. Areas whose map line says what they don't own 0/87 → 87/87
+    (L0, `map` text on master 9c3f949b vs this branch). Question arm (all 87 areas × 2 reps,
+    claude-opus-5-5 medium, blind grader on a source-only 9c3f949b), BEFORE / map-only b84d34b9 /
+    read-toc c7d9aabe: runs that saw the owners 0 / 2 / 174 of 174; answers citing a listed owner
+    149 / 151 / 174. Correctness did not move beyond grader noise: correct (≥1 not-own statement, 0
+    wrong) 135 / 132 / 139 of 174 and areas with both reps correct 58 / 59 / 64 of 87, where a
+    reordered regrade agreed with the first grading on 45 of 60 verdicts (75%) and shifted the
+    correct count by 3-5 of 20 per arm, more than the +4 of 174. 3 of
+    c7d9aabe's 41 wrong statements come from a listed owner; 15 areas carry the same wrong statement
+    in every arm, from spec prose that contradicts code.
+  - Page fit: `map --json` was already 32,374 of its 32,768-byte page on master. With owner ids in
+    each overview JSON line it paged (71 of 97 lines on page 1, then a cursor); the overview JSON now
+    leaves them out, keeping the count and a `not-owned-per-area` note pointing at `map '§ns/area'`:
+    32,497 B, one page. The text map is 29,808 B, one page, 87/87 lines.
+    - `read` and `toc` of an area's H1 show the same line, with each owner's title, so it sits where
+      agents land (where → read → toc; measure-agent found `map` in 0/174 question-arm runs): one
+      line, median 166 B, max 252 B on Sova's spec; an H2 never shows its area's.
+
+- **An agreed stamp says where the go-ahead was given (P2).**
+  - Commit: branch `feat/spec-x-agree`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
+  - Changed:
+    - `agree` stamps `agreed: {by, at, source}`: `source` is `--source <ref>`, else the environment variable
+      `SPEC_AGREE_SOURCE`; with neither it refuses (`agree-unsourced`, exit 1) and stamps nothing. A kept
+      stamp needs the same `by` and `source`. The text output names the source;
+    - `agreed` may carry `source` (an opaque reference, 1-200 characters on one line); promotion refuses a
+      new or replaced `agreed` without one (`agreed-unsourced`). An `agreed` current already has, kept,
+      needs none;
+    - pi side: `mode/spec-agree.ts`. While spec is on, a session that is not a worker sets
+      `SPEC_AGREE_SOURCE=pi-session:<session id>#<latest user entry id>` before each tool call, and the
+      subagents spawn path passes it to spec-on workers, which relay it and never derive one from their own
+      messages;
+    - `mode/spec-mode.md`: the agree sentence names the source and says not to stamp without one; the
+      guide's word cap goes from 868 to 884. Also updated: `DRAFTS.md`, `PROMOTE.md`, `README.md`, `docs/MODE.md` and the lane-D bench.
+  - §: §tools.spec/agree-command, §tools.spec/agreed-promotion reworded; +§tools.spec/agree-source-relay.
+    Base: 9c3f949b.
+  - Numbers (L0, `.spec-exp/l0.mjs`, 7 fixed fixtures, no model): stamps written by `agree` or landed by
+    `promote` that carry a source: 0 / 4 on master 9c3f949b, 4 / 4 after. Unsourced stamps written: 4
+    → 0 (the unsourced `agree` and the hand stamp are now refused). A legacy unsourced `agreed` kept on a
+    reword still promotes. The L2 agent arm (agree before first code edit, traceable share) is pending.
+- **Spec mode agrees at the claim step, before the first code edit (P2, iteration 2).**
+  - Commit: 25a98ee7, branch `feat/spec-x-agree`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
+  - Changed: `mode/spec-mode.md` step 4 adds "When the task's go-ahead already agrees to it, run `agree`
+    on it then, before that edit, not at the end."; the worker brief carries it (3 sentences of that rule);
+    the guide's word cap goes from 884 to 906.
+  - §: §tools.spec/mode-reading reworded. Base: 5a0b41c9.
+  - Numbers (L2, measure-agent, claude-opus-5-5 medium, 7 tasks × 2 reps, parent-only, outcome grading
+    pending): agree before first code edit 0/12 (5a0b41c9) → 4/12 (95% CI 10-65%; 4 more within 2-3 calls
+    after it); runs with any `agree --write` 7 → 11 of 14; stamps sourced and resolved to a typed turn
+    15/15 → 17/17; upkeep 24.6% → 25.1%. The L2 AFTER for the first entry (5a0b41c9 vs master): sourced
+    0/4 → 15/15, agree before code 0/13 → 0/12, upkeep 25.1% → 24.6%.
+  - Upgrade: a project that points its agents at `mode/spec-mode.md` gets the new step 4 sentence.
+
+- **The unread line asks for the § the change's lines name, not every § a broad file maps (audit #2 P1).**
+  - Commits: f8385574, cc421ef7, 184082c0, 1fcd0871, 9ec90f28 (lane tip), branch `feat/spec-x-unread`;
+    landed on master at a82af2c8 (fast-forward, base f14dbab0).
+  - Changed:
+    - `census --changed --related` divides each touched §'s score by its `fanIn` (of its changed files,
+      the fewest foreign touched § any one lands in) and ranks by that `relevance`; rank rows and
+      foreign `touched` entries carry `fanIn` and `relevance` (score ÷ fanIn ÷ ln(passages + 1), so it
+      means the same in any spec size); `readFirst` holds up to 10 at relevance ≥ 0.036 or with a stale
+      literal (was: the first 5 with a score or a stale literal, stale first);
+    - the hook's line follows it and no longer counts the rest: "read first …; lower-ranked:
+      <command>", and "none read first; lower-ranked: <command>" when none qualifies (was "+N more:
+      <command>" / "N unread: <command>"), so it asks for the § it names and no others;
+    - `README.md`, `core/README.md`, `docs/MODE.md` and the site page say the same. The mode text is
+      unchanged.
+  - §: §tools.spec/census-rank and §tools.spec/unread-landed reworded (draft `unread-short`). Base: 9c3f949b.
+  - Numbers (L1 history replay of the audit's 99 worker sessions, 93 replayed; 62 Claude sessions labelled by
+    Opus for which landed § mattered, labels fixed before any rule was compared): § the line asks for, median
+    5 → 6.5, at most 10 (it no longer adds "+N more", median 74); mattered § among them 56/148 = 38% →
+    84/148 = 57% (held-out 17/35 → 25/35); precision flat at 23%; lines with nothing read first 7 → 10 of 69. `EVOLUTION.md` (the unread line) has the iterations.
+
+- **Spec mode names `notOwned`-only among the doc-only cases (integration fix of `feat/spec-x-notowned`).**
+  - Commit: on branch `feat/spec-x-integration`; landed on master at a82af2c8 (fast-forward, base f14dbab0). Base: the merge of the five lane tips.
+  - Changed: the notowned lane added `notOwned` to the draft tool's doc-only field keys but not to the
+    guide, so `mode/index.test.ts` ("the guide's doc-only cases are the draft tool's") failed on the lane
+    tip. `mode/spec-mode.md` now says `` `embeds`/`about`/`core`/`notOwned`-only changes `` (one token,
+    word count unchanged at 899 of the 906 cap); the test's rule pattern accepts a mixed-case field name;
+    `tests/fixtures/flag-off-master.json` is regenerated (the only difference is that token);
+    `pi-config/README.md`'s spec row says the same.
+  - §: §tools.spec/mode-reading reworded (draft `notowned-mode`, not promoted yet). Draft `agree-source`
+    rewords the same § in another paragraph: whichever promotes second takes the other's text first.
+  - Upgrade: a project that points its agents at `mode/spec-mode.md` gets the sentence with this upgrade.
+
+- **A spawn no longer fails when the host's session manager has no branch (integration fix of `feat/spec-x-agree`).**
+  - Commit: on branch `feat/spec-x-integration`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
+  - Changed: `mode/spec-agree.ts`'s `goAheadRef` called `getBranch()` and `getSessionId()` unguarded, so
+    `agent_spawn` with spec on threw `session.getBranch is not a function` through a session manager
+    without them; two `subagents/tests/run.mjs` tests failed on the lane tip (466/468, master 468/468).
+    It now reads them as the rest of `subagents/index.ts` does (`getBranch?.()`), and gives no
+    reference when either is missing, so `agree` in that worker is refused (`agree-unsourced`), as
+    §tools.spec/agree-source-relay says of a worker given none. `spec-agree.test.ts` pins it.
+  - §: none (the draft `agree-source` already covers it).
+
+### 2026-10-19
+
+- **`agree` takes the runtime's reference, and only a reference (fix of the relay defect found in phase 2 of `feat/spec-x-agree`).**
+  - Commit: on branch `feat/spec-x-integration`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
+  - Changed: in phase 2, relay workers held the right go-ahead reference in `SPEC_AGREE_SOURCE` but ran
+    `agree --source "<a description>"`, and `agree` took it: 4 of 42 stamps did not trace to a typed user
+    turn (2 of 3 relay runs). The mode text offered `--source <ref>` first, and the tool accepted any
+    string. Now:
+    - while `SPEC_AGREE_SOURCE` is set it is the source; a `--source` that differs is refused
+      (`agree-source-mismatch`, exit 1, naming the reference and saying to omit `--source`);
+    - a source from either place is a reference, never a description: `scheme:locator` with no spaces
+      (`pi-session:<session id>#<entry id>` needs both ids; a URL; `chat:c1#m3`), else
+      `agree-source-not-reference`, exit 1; both refusals write nothing;
+    - promotion refuses a new or replaced hand-written `agreed` whose `source` is a description
+      (`agreed-unsourced`), as it already did one with none;
+    - `mode/spec-mode.md`: `` (`$SPEC_AGREE_SOURCE` if set, no `--source`; else `--source <ref>`, never a
+      description; else report it ready, never stamp) `` (906 words, the cap); `mode/index.test.ts`'s pin
+      and the review-smoke fixture follow; the worker brief quotes no agree source text and is unchanged.
+    - DRAFTS.md (two refusal rows), PROMOTE.md, README.md and docs/MODE.md say the same.
+  - §: none promoted. Draft `agree-source` rewords §tools.spec/agree-command, §tools.spec/agreed-promotion
+    and §tools.spec/agree-source-relay (all already in that draft).
+  - Numbers: L0, `tests/agree-command.test.mjs`: 4 new cases fail at 196989b0 (a different `--source`
+    with the variable set; descriptions in `--source`; a description in the variable; a hand stamp with a
+    description at promotion) and pass after; the accepted cases (variable alone or repeated; a reference
+    with no variable) pass on both. Not re-measured on the L2 relay arm.
+  - Upgrade: see UPGRADING step 10, "`agree` takes a reference".
+
+- **Tidy-ups after the integration (replay scenario h, stale `agreed` text, the map's placeholder).**
+  - Commits: e553d239 and the next commit, on branch `feat/spec-x-integration`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
+  - Changed:
+    - replay scenario h's hand stamp carries a reference `source` when the tool's `agree` usage says
+      `[--source REF]`, so `h.target.agreed-promoted` covers an agreed, unbuilt record landing again
+      (`run.mjs --only h`, master 9c3f949b vs this tree: 1 → 0 before, 1 → 1 after);
+    - `agreed: {by, at}` now reads `{by, at, source}` in PROMOTE.md, the draft tool's comment and
+      `tests/agreed.test.mjs`; UPGRADING step 3's field table gains `notOwned` and the source;
+    - `map`'s help, its `not-owned-per-area` note and core/README write the area argument as
+      `'<area §id>'`, a placeholder that can't be read as a spec id (was `§ns/name`, `§ns/area`).
+  - §: none promoted. Draft `agree-source` adds `notOwned` to §tools/spec's field list; draft `map-trim`
+    quotes the note's new text in §tools.spec/spec-map.
+
+- **`map --json` has room under its one-page cap again.**
+  - Commit: on branch `feat/spec-x-integration`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
+  - Changed: the overview's JSON was 32,497 B of the 32,768 B page on Sova's spec (271 B to spare), so the
+    next area or a longer lede would have pushed it to a second page. Its area lines now leave out what is
+    derivable or default, and every `labels` count in `map` is flat:
+    - `labels` is `{<label value>: n, …}`, authority values then evidence values (they share no name), with
+      `unlabelled` only when non-zero (was `{authority: {…}, evidence: {…}, unlabelled: n}`), in the area
+      lines, `counts.labels` and the one-area view's counts;
+    - an area line has no `namespace` (its id names it; `counts.namespaces` keeps the totals), and
+      `whatSource` only when it is not `prose`.
+    The text output is byte-identical (29,808 B before and after); the `not-owned-per-area` count and note stay.
+  - §: none promoted. Draft `map-trim` rewords §tools.spec/spec-map.
+  - Numbers: `map --json --root .` on this branch's spec (87 areas, 1,031 claims): 32,497 B → 25,449 B
+    (−7,048 B, −21.7%; headroom 0.8% → 22.3% of 32,768 B). Per field, dropping `namespace` saved about
+    1.6 KB, `whatSource: "prose"` 1.7 KB, flat labels with no zero `unlabelled` the rest.
+  - Upgrade: see UPGRADING step 10, "`map --json` area lines".
+
+- **A pi-session go-ahead must be a real user message, and only the spawn path makes a worker (review blockers B1, B2 of the agree fix).**
+  - Commit: on branch `feat/spec-x-integration`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
+  - Changed:
+    - B1: `mode/spec-agree.ts` took whatever `SPEC_AGREE_SOURCE` held at module load as a reference it was
+      given. The session writes that variable itself before each tool call, and pi re-runs extension modules
+      on `/reload` in the same process, so after a reload a top-level session stamped every later `agree`, and
+      every worker it spawned, with its old message. The spawn path now also sets `SPEC_AGREE_GIVEN` (the
+      reference, or empty for none), which no session writes for itself, and only that makes a process a worker.
+    - B2: `agree` checked a reference's shape only. A `pi-session:<session id>#<entry id>` source must now
+      resolve: a session file under `$PI_CODING_AGENT_DIR/sessions` (else `~/.pi/agent/sessions`) named
+      `…_<session id>.jsonl` or carrying the id in its header, holding that entry as a `message` by the `user`;
+      else `agree-source-unresolved` (exit 1), and `agreed-source-unresolved` at the promotion of a
+      hand-written stamp. Other schemes stay form-checked, for projects whose go-ahead lives outside pi. A
+      worker given no reference (`SPEC_AGREE_GIVEN` empty) refuses any `--source` (`agree-source-not-given`).
+    - DRAFTS.md (two refusal rows), PROMOTE.md, README.md and docs/MODE.md say the same. The mode text is unchanged.
+  - §: §tools.spec/agree-command, §tools.spec/agreed-promotion and §tools.spec/agree-source-relay reworded (draft `agree-resolve`).
+  - Numbers: L0. `mode/spec-agree.test.ts`: 2 new tests fail at 7a5c32d8 (after a cache-busted re-import with
+    `SPEC_AGREE_SOURCE=pi-session:s-1#u1` and no `SPEC_AGREE_GIVEN`, `setAgreeSource` over [u1, u2] gave u1, now u2;
+    the spawn env helper). `tests/agree-command.test.mjs`: 4 new tests fail at 7a5c32d8 (unresolved
+    pi-session refs from `--source` and the variable, among them `pi-session:nope#nope`; resolution by file
+    name, header and `PI_CODING_AGENT_DIR`; the worker marker; promotion of an unresolved hand stamp).
+    The existing stamps' source on this branch resolves to a user message.
+  - Upgrade: see UPGRADING step 10, "`agree` resolves pi-session references".
+
+### 2026-10-22
+
+- **Docs land with the code they describe, with no separate permission.**
+  - Commit: on branch `feat/spec-lands-with-code` (folds in the unlanded `feat/promote-before-landing`,
+    d202e854); not on master yet: the merge round folds it in.
+  - Why: since 42c63467 nobody made a branch's drafts official at landing. Sessions were told their
+    go-ahead didn't cover committing and to promote on the default branch after landing; the merge round
+    promoted none and removed the worktree, so about 1 in 4 landings since 2026-10-08 left docs
+    unpromoted, and sessions asked the user for a second, docs-only merge.
+  - Changed:
+    - `mode/spec-mode.md`: "A branch isn't done or ready to land until its drafts are promoted on it,
+      by you, after its checks pass; nothing at landing promotes for you." The go-ahead paragraph: "A
+      go-ahead to build or merge covers committing them with the code, never asked separately; told
+      not to commit, leave evidence pending". It names no project's merge process (constraint 1);
+      word cap 906 → 944 (942 words). The worker note: the parent promotes on its own branch; a
+      worker promotes, commits or records `--commit` evidence only when its brief says to, and then
+      only on its brief's branch, never by landing on the default branch;
+    - `PROMOTE.md`: the go-ahead covers committing the docs; promote on your own branch before you call
+      it ready; a draft whose branch landed without it is promoted on a fresh branch, never on the
+      default branch itself; drafts are deleted with `prune --official` or an approved list;
+    - `sova-spec-draft.mjs prune --official [--from DIR]`: deletes only drafts the tool confirms are
+      already official (own drafts read `promoted`; with `--from`, copies kept outside the project read
+      against the current spec alone, every changed record already current); keeps and lists the rest.
+      The `git-requires-commit` refusal no longer says "without permission to commit";
+    - `worktrees/spec.ts`: a merge into the default branch with the worktree's own drafts unpromoted
+      says they didn't land with the code and stay in the worktree's drafts folder until promoted on a
+      fresh branch, never on it directly (was "so promote them now"); into another branch, promote
+      them on it before it lands;
+    - the merge round (Sova's playbook, `round.mjs`): `ask` names drafts not confirmed promoted; a
+      `READY` with them left, or a `check` that finds them (`docs not promoted: …`, a need), is handed
+      back to the owner with the text to send; a merge of master that conflicts in the spec
+      (`claims/*.md`, or a manifest `merge-manifest` refuses) is aborted and handed back to re-promote
+      on top of master (was "resolve, commit, then check"); `landed` keeps a copy of drafts not
+      confirmed promoted under `<state root>/playbooks/merge-round/drafts/<head>/`, withholds the clean
+      up if the copy fails, and prunes earlier copies the draft tool confirms official. The captain
+      never promotes; a branch whose owner is gone stays the user's call;
+    - GOALS.md gains the rule "Docs land with their code" and a goal-4 measure; the site page says the same.
+    - review B1 (c0639814): `drafts` rows list `promotedConflict` (ids the draft promoted before that current
+      now says differently; state unchanged). The merge round's hold-back counts them as not promoted, so a
+      branch that took master's spec in a conflict without promoting again is handed back, and
+      `prune --official` keeps such a draft. §chat.merge-round/driver, §tools.spec/draft-hygiene (draft
+      `b1-promoted-conflict`, f8a6f806).
+    - A/B B7 (e96c8470): `mode/spec-mode.md` "Before finishing" adds "A draft whose branch already landed is
+      promoted on a fresh branch from the default branch, never on the default branch itself." (it was only
+      in PROMOTE.md; 1 of 8 runs promoted on master). Word cap 944 → 966 (964 words). §tools.spec/mode-reading
+      (draft `landed-draft-fresh-branch`).
+  - §: §tools.spec/mode-reading, §tools.spec/no-turn-end-check, §tools.spec/draft-hygiene, §tools/spec,
+    §chat.merge-round/round, §chat.merge-round/driver, §chat.worktrees/merge-card,
+    §chat.mode-menu/workers reworded (draft `spec-lands-with-code`, promoted on the branch at 005f437f;
+    `foreign --base 11459693 --head 005f437f`). Base: 2aa27857.
+  - Goal 4 (code and spec agree after building), measured L0: the merge round's tests on master's
+    `round.mjs` with this branch's tests: 6 of 38 fail (the hand-back of a READY with drafts left, the
+    check need, the spec-conflict hand-back for claims and for a refused manifest, the kept-copy prune,
+    the notice wording); 38/38 on this branch. `tests/draft-hygiene.test.mjs`: 3 new tests (the prune
+    mode). Constraint 5 (light): the mode text grows 37 words.
+  - Upgrade: see UPGRADING step 11.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -486,22 +832,21 @@ hashes are not on master; they are listed only to map old references.
 
 The tools are Node standard library only. Nothing is installed.
 
-1. **Copy every `core/*.mjs`.** Vendor them together. The entrypoints load sibling modules:
+1. **Install the extension.** Run `pi-config/install.sh`; agents run the tools from `$core`, never
+   from a copy inside the project. A project still holding a copy deletes it. The entrypoints load
+   sibling modules, all in `core/`:
 
    | Module | Role |
    |---|---|
    | `sova-spec.mjs` | Read-only core: `check`, `census`, `foreign`, `scope`, `impact`, `packet` |
    | `packet.mjs` | Packet paging |
    | `toc.mjs`, `read.mjs` | The pull path |
-   | `map.mjs`, `where.mjs`, `graph.mjs` | The look views and `impact --near` |
+   | `map.mjs`, `where.mjs`, `topic.mjs`, `graph.mjs` | The look views and `impact --near`; `topic.mjs` ranks `where`'s topic rows |
    | `fields.mjs` | The optional record fields and the frame |
    | `sova-spec-draft.mjs` | Drafts, evidence, promotion, `merge-manifest`, `merge-claims` |
    | `sova-spec-review.mjs` | The review companion |
    | `sova-spec-assess.mjs` | The assessment companion |
 
-   Copying only the entrypoints breaks the core at the first `toc`, `read` or `map`. A project that
-   vendors under `.sova/spec/tools/` keeps the copies byte-identical to `core/` and treats them as
-   foreign code until hashed.
 2. **Set up the merge drivers, once per clone.** Add these two lines to `.gitattributes`:
 
    ```
@@ -529,7 +874,8 @@ The tools are Node standard library only. Nothing is installed.
    | `embeds: [§id]` | any record | surfaces drawn inside it, read whole |
    | `core: true` | any record | part of the always-on frame |
    | `about: [§id]` | notes | the claim a note serves |
-   | `agreed: {by, at}` | behaviors and surfaces | who decided and when |
+   | `notOwned: [§id]` | areas (H1s) | the claims elsewhere that own what a reader might look for in it |
+   | `agreed: {by, at, source}` | behaviors and surfaces | who decided, when, and where the go-ahead was given (`source`, a reference; required on a new stamp since the 2026-10-18 round) |
 
    None is a new kind, label value or top-level key, so an older core loads the same manifest and
    ignores them. A spec with none of them gets the same output it got before. Older draft tools don't
@@ -575,3 +921,62 @@ The tools are Node standard library only. Nothing is installed.
    - **Merge recovery.** A spec conflict a Git merge leaves is resolved one way only: `git checkout
      --no-overlay <default branch> -- .sova/spec/manifest.json .sova/spec/claims`, never `--ours`,
      then promote the branch's drafts again (`PROMOTE.md`).
+9. **The 2026-10-11/12 round.** Copy every `core/*.mjs` again (step 1), `topic.mjs` included, then:
+   - **`where` takes a topic.** Several unquoted words are one query (the same as quoted), and the
+     answer adds ranked topic rows in their own section: `type: "topic"` lines (`score`,
+     `matched`), `counts.topic`, `topicTerms` and `topicNotice`. Name and path rows, their counts
+     and their exits are unchanged, except that a token query with no name match but topic matches
+     now exits 0 (was 1).
+   - **The mode text.** Step 1 of `mode/spec-mode.md` now finds roots with a multi-word `where`
+     first, tries other words once, then `map`. A project that points its agents at
+     `mode/spec-mode.md` gets it with this upgrade.
+10. **The 2026-10-18 round** (branches `feat/spec-x-census`, `feat/spec-x-merge`,
+    `feat/spec-x-notowned`, `feat/spec-x-agree` and `feat/spec-x-unread`, landed on master at a82af2c8, fast-forward, base
+    f14dbab0). Copy every `core/*.mjs` again (step 1), then:
+    - **Census** (`feat/spec-x-census`). Whole-tree `census` in a Git work tree leaves out what Git
+      ignores and reports it as `census.ignored` with a `census-ignored` note; tracked files always
+      count. Nothing to configure.
+    - **Claims merge** (`feat/spec-x-merge`). The merge driver lines don't change. Two branches that
+      changed different bullets, rows or paragraphs of one declaration now merge cleanly. A claim
+      file still in conflict has Git's markers around the whole blocks both sides changed.
+    - **`notOwned`** (`feat/spec-x-notowned`). Changed output: `map` prints one new line, `doesn't
+      own: no area here carries notOwned`, until an area record carries `notOwned: [§id]`; then each
+      area gets a `doesn't own` line and the JSON `counts.notOwned`, and `read`/`toc` of that area's
+      H1 print the line (`notOwned` in JSON). Nothing else changes. To adopt it, add `notOwned` to
+      each area's record in a draft and promote it on `--doc-only` evidence (`--commit` or
+      `--snapshot` for an agreed record that maps code). The mode text names `notOwned`-only among the
+      doc-only cases.
+    - **`agree` needs a source** (`feat/spec-x-agree`). Pass `--source <ref>`, a reference to where the person agreed (a
+      message, a review comment, a meeting note), or have the agent's runtime set `SPEC_AGREE_SOURCE`. Without
+      either, `agree` exits 1 (`agree-unsourced`) and writes nothing. Scripts that call `agree` must add
+      one.
+    - **Promotion refuses a new unsourced `agreed`** (`agreed-unsourced`). Stamps already in your current
+      spec stay valid as they are; an unpromoted draft holding a hand-written or older `agree` stamp is
+      restamped with `agree --source …` before it promotes.
+    - **The mode text.** A project that points its agents at `mode/spec-mode.md` gets the changed agree
+      sentence with this upgrade.
+    - **`agree` takes a reference** (`feat/spec-x-integration`, 2026-10-19). A source is
+      `scheme:locator` with no spaces (a URL, `chat:c1#m3`, `pi-session:<session id>#<entry id>`); a
+      description is refused (`agree-source-not-reference`), at promotion too for a hand-written stamp. While
+      `SPEC_AGREE_SOURCE` is set, omit `--source`: a different one is refused (`agree-source-mismatch`).
+      Scripts passing a free-text `--source` change it to a reference.
+    - **`agree` resolves pi-session references** (`feat/spec-x-integration`, 2026-10-19). A
+      `pi-session:` source must name a user message in a session file under `$PI_CODING_AGENT_DIR/sessions`
+      (`agree-source-unresolved`, `agreed-source-unresolved`); other schemes are form-checked only. A runtime
+      that spawns workers sets `SPEC_AGREE_GIVEN` beside `SPEC_AGREE_SOURCE` (empty for none); a worker given
+      none refuses `--source` (`agree-source-not-given`).
+    - **`map --json` area lines** (`feat/spec-x-integration`, 2026-10-19). `labels` counts are flat
+      (`{accepted: 6, reviewed: 4, verified: 2}`; `unlabelled` only when non-zero), area lines drop
+      `namespace` (take it from the id) and carry `whatSource` only when it isn't `prose`. A script reading
+      `labels.authority`/`labels.evidence` or `namespace` from `map` changes; the text is unchanged.
+    - **The unread line** (`feat/spec-x-unread`). `census --changed --related` rank rows gain `fanIn`
+      and `relevance` and are ordered by relevance; `readFirst` holds up to 10 (was 5) at relevance ≥
+      0.036 or stale. A hook of your own that parses the unread line reads "; lower-ranked: <command>"
+      (was "; +N more: <command>") and "none read first; lower-ranked: <command>" (was "N unread:
+      <command>"): no count.
+11. **The 2026-10-22 mode text** (branch `feat/spec-lands-with-code`). Copy `core/sova-spec-draft.mjs` again
+    (step 1). A project that points its agents at `mode/spec-mode.md` gets the new rule: a branch isn't
+    done or ready to land until its drafts are promoted on it, and the go-ahead to build or merge covers
+    committing them. A merge process of your own that promoted drafts at landing stops doing so; one that
+    removed worktrees should keep a copy of their unpromoted drafts first. New: `prune --official [--from
+    DIR]` deletes only drafts the tool confirms are already official.

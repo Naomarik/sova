@@ -72,11 +72,13 @@ export interface UploadRefusal {
   error: string;
 }
 
-/** POST the processed bytes; `progress` gets 0..1 while they go up. Resolves the staged photo, or rejects with an UploadRefusal. */
-export function uploadPhoto(token: string, blob: Blob, progress: (p: number) => void): { done: Promise<BatonPhotoUpload>; abort: () => void } {
+/** POST the processed bytes to `url` (a hand-off page's `/api/h/<token>/image`, the owner's
+    `/api/i/<token>/assistant/image`); `progress` gets 0..1 while they go up. Resolves the staged
+    photo, or rejects with an UploadRefusal. */
+export function uploadPhoto(url: string, blob: Blob, progress: (p: number) => void): { done: Promise<BatonPhotoUpload>; abort: () => void } {
   const xhr = new XMLHttpRequest();
   const done = new Promise<BatonPhotoUpload>((resolve, reject) => {
-    xhr.open("POST", `/api/h/${token}/image`);
+    xhr.open("POST", url);
     xhr.setRequestHeader("Content-Type", blob.type);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) progress(e.loaded / e.total);

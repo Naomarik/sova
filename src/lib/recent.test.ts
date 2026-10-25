@@ -152,14 +152,29 @@ test("newest org session is not Recent's first row, in any state", () => {
   assert.equal(recentEligible(orgRow), false);
 });
 
-test("a profile session is never in Recent, live or a custom pick: Profiles lists it", () => {
+test("a profile session is in Recent like any other, live or a custom pick", () => {
   const named = { id: "reviewer", label: "Reviewer", icon: "eye", source: "user" } as SessionSummary["profile"];
   const custom = { id: "custom", label: "My pick", icon: "sparkles" } as SessionSummary["profile"];
   const live = { ...session({ id: "p-live", lastActiveAt: "2026-01-09T00:00:00Z" }), profile: named, origin: "web", live: { pid: 1, status: "idle" } } as SessionSummary;
   const pick = { ...session({ id: "p-custom", lastActiveAt: "2026-01-08T00:00:00Z" }), profile: custom } as SessionSummary;
   const plain = session({ id: "plain", lastActiveAt: "2026-01-02T00:00:00Z" });
-  assert.equal(recentEligible(live), false);
-  assert.equal(recentEligible(pick), false);
+  assert.equal(recentEligible(live), true);
+  assert.equal(recentEligible(pick), true);
   assert.equal(recentEligible(plain), true);
-  assert.deepEqual(ids(recentSessions([live, pick, plain], 5)), ["plain"]);
+  assert.deepEqual(ids(recentSessions([plain, pick, live], 5)), ["p-live", "p-custom", "plain"]);
+});
+
+test("a project coding session the operator started is in Recent; one the overseer started is not", () => {
+  const project = (extra: Partial<NonNullable<SessionSummary["project"]>>) => ({ projectId: "p", projectName: "P", kind: "coding", ...extra }) as SessionSummary["project"];
+  const at = (id: string, day: string, extra: Partial<SessionSummary>) => ({ ...session({ id, lastActiveAt: `2026-01-${day}T00:00:00Z` }), ...extra }) as SessionSummary;
+  const mine = at("mine", "09", { project: project({ operator: true }), origin: "web" });
+  const theirs = at("theirs", "08", { project: project({}), origin: "web" });
+  // An older server marks no build: it reads as the overseer's.
+  const unmarked = at("unmarked", "07", { project: { projectId: "p", projectName: "P", kind: "coding" } });
+  const mineArchived = at("mine-archived", "06", { project: project({ operator: true }), archived: true });
+  const placed = at("placed", "05", { project: project({ operator: true }), org: { orgId: "o", orgName: "O", projectId: "p", projectName: "P", kind: "coding" } as SessionSummary["org"] });
+  const worker = at("worker", "04", { project: project({ operator: true }), workerSession: true });
+  const overseer = at("overseer", "03", { project: { projectId: "p", projectName: "P", kind: "overseer" } });
+  const plain = session({ id: "plain", lastActiveAt: "2026-01-02T00:00:00Z" });
+  assert.deepEqual(ids(recentSessions([plain, overseer, worker, placed, mineArchived, unmarked, theirs, mine], 20)), ["mine", "plain"]);
 });

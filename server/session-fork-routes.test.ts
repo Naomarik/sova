@@ -11,6 +11,7 @@ import { piSession } from "./harness/pi/testing/handle";
 
 const dir = mkdtempSync(join(tmpdir(), "sova-fork-routes-"));
 process.env.PI_CODING_AGENT_DIR = dir;
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { buildApp } = await import("./app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { canonicalPath } = await import("./paths");

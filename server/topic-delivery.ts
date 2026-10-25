@@ -1,21 +1,23 @@
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
+import type { ChatLifecycleEvent, ChatTopicBatch } from "../shared/chat-runtime";
 import type { SessionSummary } from "../shared/protocol";
 import { formatTopicBatch } from "../shared/topic-message";
-import type { TopicBatchMark } from "./chat-manager";
 import { onTopicPush, topicStore } from "./topics";
 
 /**
  * Topic delivery (§chat.topics/delivery): when a topic's receiver gets its next batch. A push to an
  * idle receiver delivers after a short debounce (reopening a runtime that isn't loaded); a busy one
- * gets its batch when its turn settles or its compaction ends, through `ChatSession.deliverTopicBatch`,
- * which only ever starts a turn. A refusal leaves the notes undelivered for the next push or settle.
+ * gets its batch when its turn settles or its compaction ends, through the chat's `deliverTopicBatch`
+ * (server/chat-handle.ts), which only ever starts a turn. A refusal leaves the notes undelivered for the
+ * next push or settle. Whether a batch handed over entered the transcript arrives as the chat's
+ * `topicEntered` or `topicGone` event.
  */
 
-/** What delivery needs from a receiver's runtime: ChatSession's own surface. */
+/** What delivery needs from a receiver's chat: its handle's own surface. */
 export interface ReceiverChat {
-  special: unknown;
-  deliverTopicBatch(mark: TopicBatchMark): "started" | "busy" | "paused" | "closed";
+  readonly mirror: { readonly special: unknown };
+  deliverTopicBatch(batch: ChatTopicBatch): Promise<"started" | "busy" | "paused" | "closed">;
 }
 
 export interface DeliveryHost {
@@ -24,6 +26,8 @@ export interface DeliveryHost {
   /** The runtime, reopened when not loaded (acquireChat). */
   acquire(path: string): Promise<ReceiverChat>;
   onIdle(fn: (path: string) => void): () => void;
+  /** The chats' lifecycle events (onChatEvent): a batch's topicEntered / topicGone. */
+  onChatEvent(fn: (event: ChatLifecycleEvent) => void): () => void;
   onArchived(fn: (sessionId: string) => void): () => void;
 }
 
@@ -155,36 +159,40 @@ export class TopicDelivery {
     } catch (err) {
       return `refused: ${err instanceof Error ? err.message : String(err)}`;
     }
-    if (chat.special) return "special";
+    if (chat.mirror.special) return "special";
     // Re-read after the await: a settle or another drain may have taken these meanwhile.
     const now = s.batch(topic);
     if (!now.length || this.inFlight.has(topic)) return "empty";
     const batch = `tb_${randomBytes(6).toString("hex")}`;
     const text = formatTopicBatch({ topic, batch, notes: now });
     const ids = now.map((it) => it.id);
-    const mark: TopicBatchMark = {
-      text,
-      topic,
-      batch,
-      items: now.map((it) => ({ id: it.id, from: it.from, at: it.at })),
-      entered: () => {
-        if (this.inFlight.get(topic) === batch) this.inFlight.delete(topic);
-        s.ack(topic, ids, batch, rec.receiver.sessionId);
-        // The rest of a backlog over one batch's size goes at the next settle (receiverIdle).
-      },
-      gone: () => {
-        if (this.inFlight.get(topic) === batch) this.inFlight.delete(topic);
-      },
+    const entered = () => {
+      if (this.inFlight.get(topic) === batch) this.inFlight.delete(topic);
+      s.ack(topic, ids, batch, rec.receiver.sessionId);
+      // The rest of a backlog over one batch's size goes at the next settle (receiverIdle).
     };
+    const gone = () => {
+      if (this.inFlight.get(topic) === batch) this.inFlight.delete(topic);
+    };
+    // Heard until this batch's one outcome, even past stop(): an entered batch is acknowledged.
+    const off = this.host.onChatEvent((e) => {
+      if (e.batch !== batch) return;
+      if (e.type === "topicEntered") (off(), entered());
+      else if (e.type === "topicGone") (off(), gone());
+    });
     this.inFlight.set(topic, batch);
     let r: string;
     try {
-      r = chat.deliverTopicBatch(mark);
+      r = await chat.deliverTopicBatch({ text, topic, batch, items: now.map((it) => ({ id: it.id, from: it.from, at: it.at })) });
     } catch (err) {
+      off();
       this.inFlight.delete(topic);
       return `refused: ${err instanceof Error ? err.message : String(err)}`;
     }
-    if (r !== "started") this.inFlight.delete(topic);
+    if (r !== "started") {
+      off();
+      this.inFlight.delete(topic);
+    }
     return r;
   }
 }

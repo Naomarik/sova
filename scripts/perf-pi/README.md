@@ -2,7 +2,7 @@
 
 An A/B harness for everything a pi version can change in Sova: server cold start, hosted runtime open,
 turn latency by session length, steer and follow-up, memory per runtime, the model registry, compaction,
-and the `pi --mode rpc` startup a subagent worker pays. It compares two trees that differ in their pi
+and the `pi --mode rpc` startup (a subagent worker paid it until workers became chat processes). It compares two trees that differ in their pi
 (first used for pi 0.87.1 → 1.0.3: `docs/perf/2026-10-06-pi-1.0.md`). Builtins only, no network, no
 auth, nothing written to `~/.pi` or to either tree.
 

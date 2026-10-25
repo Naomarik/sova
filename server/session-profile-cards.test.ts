@@ -30,6 +30,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const sp = await import("../pi-config/extensions/subagents/subagent-profiles.ts");
 // This device's subagent library: two profiles, "house" the default.
 sp.writeSubagentProfiles(agentDir, { version: 1, profiles: [sp.legacyProfile(agentDir, "house", "House"), sp.legacyProfile(agentDir, "claude-subs", "Claude subs")] });
@@ -226,6 +227,82 @@ describe("a card's mode and minor modes", () => {
     assert.deepEqual(await applyProfile(path, { ...yours, id: "plain" }), { ok: true });
     assert.deepEqual(await applyProfile(path, null), { ok: true });
     assert.equal(entries(path).filter((e) => e.customType === MODE_ENTRY_TYPE).length, 0);
+  });
+});
+
+/** The `mine` of each profile entry on the file, in order (null for an entry without one). */
+const mines = (path: string) => entries(path).filter((e) => e.customType === PROFILE_ENTRY).map((e) => (e.data as { mine?: unknown }).mine ?? null);
+
+describe("My settings comes back as you left it (§chat.profiles/applying)", () => {
+  test("what was set by hand before the first pick is remembered, carried across picks, and put back by My settings", async () => {
+    const path = makeSession();
+    const chat = await acquireChat(path, true);
+    const model = chat.harness.model()?.ref;
+    assert.ok(model && model !== "openai/gpt-5.5");
+    // By hand, before any profile: delegate with spec, low effort, subagents off (the device default is house).
+    await chat.switchMode({ mode: "delegate", minorModes: ["spec"] });
+    chat.setThinking("low");
+    await chat.switchSubagentProfile("off");
+    const byHand = { mode: "delegate", minorModes: ["spec"], model, thinking: chat.harness.thinking(), subagents: "off" };
+    // Three profiles, each moving something: the model and effort, the mode, the effort and subagents.
+    for (const id of ["gpt", "aligned", "subs"]) assert.deepEqual(await applyProfile(path, { ...yours, id }), { ok: true }, id);
+    const held = await acquireChat(path, true);
+    assert.equal(held.profileMessage().mine?.mode, "delegate", "the picker hears what My settings puts back");
+    assert.deepEqual(await applyProfile(path, null), { ok: true });
+    const back = await acquireChat(path, true);
+    assert.deepEqual(
+      { mode: back.modeState.mode, minorModes: [...back.modeState.minorModes], model: back.harness.model()?.ref, thinking: back.harness.thinking(), subagents: pickOf(path) },
+      byHand,
+    );
+    assert.deepEqual(pinned(path), { mode: "delegate", minorModes: ["spec"] }, "the mode is pinned with its minor modes");
+    // Remembered at the first pick, the same on every later one, and gone once back on My settings.
+    const m = mines(path);
+    assert.deepEqual(m.slice(0, 3), [byHand, byHand, byHand]);
+    assert.equal(m[3], null);
+    assert.equal(back.profileMessage().mine, undefined);
+    assert.equal(readFileSync(modeFile, "utf8"), MODE_DEFAULT, "mode.json is never written");
+    assert.equal(existsSync(defaultsFile), false, "defaults.json is never written");
+  });
+
+  test("the next first pick remembers afresh", async () => {
+    const path = makeSession();
+    assert.deepEqual(await applyProfile(path, { ...yours, id: "aligned" }), { ok: true });
+    assert.deepEqual(await applyProfile(path, null), { ok: true });
+    const chat = await acquireChat(path, true);
+    await chat.switchMode({ mode: "normal", minorModes: ["vis"] });
+    assert.deepEqual(await applyProfile(path, { ...yours, id: "aligned" }), { ok: true });
+    assert.deepEqual(await applyProfile(path, null), { ok: true });
+    assert.deepEqual(await reopened(path), { mode: "normal", minorModes: ["vis"] });
+  });
+
+  test("a remembered model that can't be used now falls to the one a new session opens on", async () => {
+    const fresh = (await acquireChat(makeSession(), true)).harness.model()?.ref;
+    const path = makeSession();
+    const chat = await acquireChat(path, true);
+    await chat.setModelRef("openai/gpt-5.5");
+    writeFileSync(yoursFile, JSON.stringify({ ...YOURS, profiles: [...YOURS.profiles, { id: "fresh-model", label: "Fresh model", model: fresh }] }));
+    const policy = readFileSync(join(agentDir, "model-policy.json"), "utf8");
+    try {
+      assert.deepEqual(await applyProfile(path, { ...yours, id: "fresh-model" }), { ok: true });
+      writeFileSync(join(agentDir, "model-policy.json"), JSON.stringify({ ...JSON.parse(policy), disabledProviders: ["zai", "openai"] }));
+      assert.deepEqual(await applyProfile(path, null), { ok: true });
+      assert.equal((await acquireChat(path, true)).harness.model()?.ref, fresh);
+    } finally {
+      writeFileSync(join(agentDir, "model-policy.json"), policy);
+      writeFileSync(yoursFile, JSON.stringify(YOURS, null, 2));
+    }
+  });
+
+  test("an entry an older build wrote, with no `mine`: My settings puts mode.json's mode back, as before", async () => {
+    const path = makeSession();
+    assert.deepEqual(await applyProfile(path, { ...yours, id: "aligned" }), { ok: true });
+    await disposeHeldChat(path, "test");
+    const lines = entries(path).map((e) => (e.customType === PROFILE_ENTRY ? { ...e, data: { ...(e.data as object), mine: undefined } } : e));
+    writeFileSync(path, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    markOwned(path);
+    assert.deepEqual(mines(path), [null]);
+    assert.deepEqual(await applyProfile(path, null), { ok: true });
+    assert.deepEqual(pinned(path), { mode: "normal", minorModes: [] });
   });
 });
 

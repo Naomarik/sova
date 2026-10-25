@@ -16,7 +16,6 @@ import { restoreActive as restoreSandbox } from "../../pi-config/extensions/sand
 import { FORK_CACHE_ENTRY, inheritedCacheKey } from "../../pi-config/extensions/subagents/fork/cache.ts";
 import { restorePick } from "../../pi-config/extensions/subagents/subagent-profiles.ts";
 import { WORKER_SESSION_ENTRY } from "../../pi-config/extensions/subagents/worker-mark.ts";
-import { LEGACY_REGISTRY_ENTRY_TYPE } from "../../pi-config/extensions/subagents/worker-transcript.ts";
 import { restoreActive as restoreWorktrees } from "../../pi-config/extensions/worktrees/state.ts";
 import { BATON_ENTRY, BATON_HANDOFF_ENTRY, BATON_OFFER_ENTRY, BATON_SENT_ENTRY } from "../../shared/baton";
 import type { StateKind, StateView } from "../../shared/harness";
@@ -41,10 +40,11 @@ import {
 import { OVERSEER_ENTRY, OVERSEER_SENT_ENTRY } from "../../shared/protocol";
 import { PROFILE_ENTRY, SESSION_SENT_ENTRY } from "../../shared/profiles";
 import { PROJECT_OVERSEER_ENTRY } from "../../shared/project-overseer";
+import { normalizeTourDetachment, TOUR_DETACHMENT_ENTRY } from "../../shared/tour";
 import { loadoutOnBranch, LOADOUT_ENTRY, normalizeLoadout } from "../session-loadout";
 import { profileOnBranch } from "../session-profile";
 import { fixtureSets, REPO } from "./pi/golden/golden";
-import { completionHeaderRef, entryFacts, WORKER_REGISTRY_TYPE, WORKER_SESSION_MARKER } from "../worker-sessions";
+import { completionHeaderRef, entryFacts, WORKER_SESSION_MARKER } from "../worker-sessions";
 import { activeBranch, historyOf, parseLines, toHEntry, type Entry } from "./pi/reader";
 import { stateViewOf } from "./pi/state";
 import {
@@ -78,7 +78,7 @@ import {
   SESSION_SENT,
   STATE_KINDS,
   SUBAGENT_PROFILE,
-  WORKER_REGISTRY,
+  TOUR_DETACHMENT,
   WORKER_SESSION,
   WORKTREES,
 } from "./state-kinds";
@@ -119,11 +119,6 @@ function workerFactsRef(e: any): { self: boolean; refs: string[] } {
   const nonEmpty = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
   if (!e || typeof e !== "object") return none;
   if (e.type === "custom" && e.customType === "subagents-worker-session") return { self: true, refs: [] };
-  if (e.type === "custom" && e.customType === "subagents-worker-registry") {
-    const d = e.data;
-    if (!d || typeof d !== "object") return none;
-    return { self: false, refs: [d.backendSessionFile, d.backendSessionId].filter(nonEmpty).map((s) => s.trim()) };
-  }
   if (e.type === "custom_message" && e.customType === "subagent-complete") {
     const c = e.content;
     const text = typeof c === "string" ? c : Array.isArray(c) ? c.filter((b) => b && typeof b === "object" && b.type === "text" && typeof b.text === "string").map((b) => b.text).join("") : "";
@@ -284,6 +279,7 @@ const SAMPLES: Record<string, unknown[]> = {
   [REVOKE_ENTRY]: [{ v: 1, id: "g_1", at: ISO, by: "user" }, { v: 1, id: "r_2", at: "2026-02-01T00:00:00.000Z" }, { v: 1, id: "g_1", at: "2026-03-01T00:00:00.000Z" }, { v: 1, id: "x_1", at: ISO }, null],
   [USE_ENTRY]: [{ v: 1, id: "g_1", tool: "sova_send", sessions: ["s1"], toolCallId: "t1", at: ISO }, { v: 1, id: "r_1", tool: "sova_send", sessions: [], toolCallId: "t2", at: ISO }, { v: 1, id: "g_2", tool: "", sessions: ["s"], toolCallId: "t", at: ISO }],
   [PROJECT_OVERSEER_ENTRY]: [{ v: 1, projectId: "p1" }, { v: 1, projectId: 4 }, { v: 1, projectId: "p2", extra: true }, null],
+  "sova-project-assistant": [{ v: 1, orgId: "o1", personId: "p1" }, { v: 1, orgId: "o1" }, { v: 1, orgId: "o2", personId: "p2", extra: true }, null],
   [BATON_ENTRY]: [{ v: 1, orgId: "o", projectId: "p" }, null],
   [BATON_SENT_ENTRY]: [{ v: 1, targetId: "aaaa0001", by: "operator" }, { v: 1, targetId: "aaaa0002", by: "" }, { v: 1, targetId: "aaaa0001", by: "p1" }],
   [BATON_HANDOFF_ENTRY]: [{ v: 1, n: 1, from: "operator", to: "p1", question: "q", briefing: "", key: "k1" }, { v: 1, n: "2", key: "k2" }, { v: 1, n: 3, key: "k3" }],
@@ -293,6 +289,8 @@ const SAMPLES: Record<string, unknown[]> = {
   "sova-baton-done": [{ v: 1, summary: "s", key: "k7" }, 3],
   "sova-baton-proposal": [{ v: 1, personId: "x", name: "N", role: "r", why: "w", by: "p1", key: "k8" }],
   "sova-baton-wrapup": [{ v: 1, phase: "start" }, { v: 1, phase: "end", applied: [], refused: [] }, null],
+  "sova-tour-attachment": [{ v: 1, handle: "tr_abcdefghijklmnop", title: "Drafts", summary: "A saved draft", steps: 1, edition: "snapshot-demo", files: ["desktop.png"] }, { v: 1, handle: "../invalid" }, null],
+  "sova-tour-detachment": [{ v: 1, handle: "tr_abcdefghijklmnop" }, { v: 1, handle: "../invalid" }, { v: 2, handle: "tr_abcdefghijklmnop" }, { v: 1, handle: "tr_abcdefghijklmnop", edition: "snapshot-demo" }, null],
   mode: [{ mode: "delegate", active: { version: 1, mode: "delegate", strict: true, minorModes: [] } }, { mode: "normal", active: { version: 2, mode: "normal" } }, { mode: "nope", active: { version: 1, mode: "normal" } }, { delta: true }, [], null],
   "subagent-profile": [{ v: 1, profile: "off" }, { v: 1, profile: "team-a" }, { v: 1, profile: 5 }, { v: 2, profile: "off" }, null],
   "sova-fork-cache": [{ v: 1, key: "src-1" }, { v: 1, key: "" }, { v: 2, key: "k" }, [], { v: 1, key: "src-2" }],
@@ -302,7 +300,6 @@ const SAMPLES: Record<string, unknown[]> = {
   "align-doc": [{ doc: { title: "T", markdown: "m", questions: [] } }, null, "x"],
   "topic-outline": [{ v: 1 }],
   "subagents-worker-session": [{ v: 1 }, { v: 1, workerId: "ag_02", teamId: "team_01", role: "dev" }, null],
-  "subagents-worker-registry": [{ v: 1, backendSessionFile: "/s/a.jsonl", backendSessionId: "id-1" }, { backendSessionId: " id-2 " }, { backendSessionFile: "/s/b.jsonl" }, { backendSessionFile: "" }, null, "x"],
 };
 const TYPES = Object.keys(SAMPLES);
 
@@ -404,6 +401,8 @@ function compare(s: Session): void {
     assert.deepEqual(b.list(RULE).map((r) => r.data), norm(s.branch, RULE_ENTRY, normalizeRule), at("rules"));
     assert.deepEqual(f.list(REVOKE).map((r) => r.data), norm(s.all, REVOKE_ENTRY, normalizeRevoke), at("revokes"));
     assert.deepEqual(f.list(GRANT_USE).map((r) => r.data), norm(s.all, USE_ENTRY, normalizeUse), at("grant uses"));
+    assert.deepEqual(b.list(TOUR_DETACHMENT).map(r => r.data), norm(s.branch, TOUR_DETACHMENT_ENTRY, normalizeTourDetachment), at("active-branch tour revocations"));
+    assert.deepEqual(f.list(TOUR_DETACHMENT).map(r => r.data), norm(s.all, TOUR_DETACHMENT_ENTRY, normalizeTourDetachment), at("whole-file tour revocations"));
     // id allocation and the click check count what any record claims (written, malformed included)
     for (const kind of ["grant", "rule"] as const) {
       let max = 0;
@@ -505,15 +504,27 @@ describe("the state kind registry", () => {
       "sova-overseer-dialog-answer sova branch-list",
       "sova-overseer-sent sova branch-list",
       "sova-profile sova newest-on-branch",
+      "sova-project-assistant sova marker",
       "sova-project-overseer sova marker",
       "sova-rewind sova branch-list",
       "sova-session-sent sova branch-list",
       "sova-topic-delivered sova write-only",
+      "sova-tour-attachment sova branch-list",
+      "sova-tour-detachment sova branch-list",
       "subagent-profile extension:subagents newest-on-branch",
-      "subagents-worker-registry extension:subagents file-list",
       "subagents-worker-session extension:subagents presence",
       "worktrees extension:worktrees newest-on-branch",
     ]);
+  });
+
+  test("tour detachments fold only well-formed revocations, in branch order", () => {
+    const row = (id: string, data: unknown) => ({ kind: "state" as const, id, parentId: null, key: TOUR_DETACHMENT.type, data });
+    const first = { v: 1, handle: "tr_abcdefghijklmnop" };
+    const second = { v: 1, handle: "tr_qrstuvwxyzABCDEF" };
+    const rows = [row("first", first), row("bad", { ...first, edition: "snapshot-demo" }), row("second", second), row("bad-version", { ...first, v: 2 })];
+    assert.deepEqual(stateView(rows).list(TOUR_DETACHMENT).map(r => [r.id, r.data]), [["first", first], ["second", second]]);
+    assert.deepEqual(stateView(rows.slice(0, 1)).list(TOUR_DETACHMENT).map(r => r.data), [first], "only the caller-selected active branch is read");
+    assert.equal(STATE_KINDS.get(TOUR_DETACHMENT.type), TOUR_DETACHMENT);
   });
 
   test("the types spelled again here are the writers' own", () => {
@@ -530,8 +541,6 @@ describe("the state kind registry", () => {
     assert.equal(ALIGN_DOC.type, ALIGN_ENTRY_TYPE);
     assert.equal(WORKER_SESSION.type, WORKER_SESSION_ENTRY);
     assert.equal(WORKER_SESSION.type, WORKER_SESSION_MARKER);
-    assert.equal(WORKER_REGISTRY.type, LEGACY_REGISTRY_ENTRY_TYPE);
-    assert.equal(WORKER_REGISTRY.type, WORKER_REGISTRY_TYPE);
   });
 
   test("kinds are frozen", () => {

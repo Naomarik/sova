@@ -133,6 +133,8 @@ function hostService(cfg, id) {
     image: IMAGES.host,
     container_name: container(id),
     hostname: id,
+    // docker-init as PID 1: it reaps the detached chat processes a restarted Sova leaves to it
+    init: true,
     cap_add: ["NET_ADMIN"],
     devices: ["/dev/net/tun:/dev/net/tun"],
     ...DNS,
@@ -198,6 +200,7 @@ export function composeFor(cfg) {
       image: IMAGES.plain,
       container_name: container("plain"),
       hostname: "plain",
+      init: true,
       // NET_ADMIN only for the entrypoint's egress guard; Sova runs with it dropped. No tun device.
       cap_add: ["NET_ADMIN"],
       ...DNS,
@@ -804,8 +807,12 @@ fs.mkdirSync(p.dirname(f),{recursive:true});fs.writeFileSync(f+".tmp",require("f
   docker(["exec", "-i", container(n), "node", "-e", script, rel], { input: content });
 }
 
+/** SIGTERM to the Sova server alone: the pid the entrypoint recorded, never a process group and never a
+    match by name that could hit a chat's own command (an image from before the pid file: the old pkill). */
+const KILL_SOVA = `p=$(cat /run/lab/sova.pid 2>/dev/null); if [ -n "$p" ] && grep -q "server/index.ts" /proc/$p/cmdline 2>/dev/null; then kill -TERM "$p"; elif [ ! -e /run/lab/sova.pid ]; then pkill -f '^[^ ]*bun server/index\\.ts( |$)'; fi; true`;
+
 function restartSova(n) {
-  docker(["exec", container(n), "pkill", "-f", "[s]erver/index.ts"], { allowFail: true, quiet: true });
+  docker(["exec", container(n), "sh", "-c", KILL_SOVA], { allowFail: true, quiet: true });
 }
 
 async function cmdPair(args) {
@@ -958,7 +965,7 @@ export async function main(argv) {
       const n = needNode(cfg, args[0], ["sova"]);
       const c = container(n);
       if (cmd === "sova-stop") {
-        docker(["exec", c, "sh", "-c", "touch /run/lab/sova-off; pkill -f \"[s]erver/index.ts\"; true"]);
+        docker(["exec", c, "sh", "-c", `touch /run/lab/sova-off; ${KILL_SOVA}`]);
         console.log((await waitSova(n, false)) ? `${n}: sova stopped` : `${n}: sova still answering`);
       } else {
         if (cmd === "sova-restart") restartSova(n);

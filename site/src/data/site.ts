@@ -1,18 +1,19 @@
-// One place for the facts the page repeats. Until a release is tagged the site installs master,
-// which master's install.sh installs by default. When a release is tagged (its commit sets
-// install.sh's default ref to the tag), set `release` to the tag (and re-verify every claim on the
-// page against it); the install URLs, command and labels follow. Also update the master command in
-// content/docs/install.md.
+// One place for the facts the page repeats. The site installs `stable`, the one tag that moves:
+// each release points it at its own numbered tag (vX.Y.Z), and numbered tags never move, so the
+// install URL, command and script link stay the same across releases. `release` names the
+// numbered tag `stable` points at; it drives only the hero pill's label and its release-page link.
+// A release sets it in its release commit (and re-verifies every claim on the page against it):
+// .sova/playbooks/release/PLAYBOOK.md.
 
-export const release: string | null = null;
-export const installRef = release ?? "master";
+export const release = "v0.8.0";
+export const installRef = "stable";
 export const repo = "https://github.com/Naomarik/sova";
 export const installUrl = `https://raw.githubusercontent.com/Naomarik/sova/${installRef}/scripts/install.sh`;
 export const installCommand = `curl -fsSL ${installUrl} | bash`;
 export const installScript = `${repo}/blob/${installRef}/scripts/install.sh`;
-// The hero pill: the tagged release, or before one exists, master's commit history.
-export const releaseLabel = release ?? "Pre-release · master";
-export const releaseUrl = release ? `${repo}/releases/tag/${release}` : `${repo}/commits/master`;
+// The hero pill: the release `stable` points at, linking to its release page.
+export const releaseLabel = release;
+export const releaseUrl = `${repo}/releases/tag/${release}`;
 export const license = `${repo}/blob/master/LICENSE`;
 export const contributing = `${repo}/blob/master/CONTRIBUTING.md`;
 export const gettingStarted = `${repo}/blob/master/docs/getting-started.md`;
@@ -23,7 +24,7 @@ export const piConfig = `${repo}/tree/master/pi-config`;
 export const pi = "https://pi.dev";
 
 // The revision and date the page's claims were checked against (derive-website playbook).
-export const verified = { ref: "master", rev: "9f94e69", date: "2026-09-28" };
+export const verified = { ref: "master", rev: "0ba0e92c", date: "2026-10-13" };
 
 // The revision and date the /docs pages were written from Sova's spec and checked against its source.
-export const docsVerified = { rev: "92d26fc6", date: "2026-10-08" };
+export const docsVerified = { rev: "094c968e", date: "2026-10-16" };

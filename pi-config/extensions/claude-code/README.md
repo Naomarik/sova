@@ -1,9 +1,11 @@
-# Claude Code workers for Pi
+# Claude Code for Pi
 
-A separate extension supplies the `claude-code` backend to the existing
-`subagents` extension. The parent can use any Pi model (including Astra); workers
-run the locally installed Claude Code CLI with its own tools and authentication.
-No Claude SDK, terminal automation, or duplicate agent manager is used.
+This extension exposes the locally installed Claude Code CLI as pi models (provider
+`claude-code-cli`, below) and owns what every `claude` process Sova starts shares: the model
+catalog, the logins and their failover, and the one executable. A Claude Code **worker**
+(`agent_spawn` with `backend: "claude-code"`) is a pi worker on this provider: the subagents
+extension maps the spawn (`subagents/claude-workers.ts`) and its README's "Claude Code workers"
+says how. No Claude SDK, terminal automation, or duplicate agent manager is used.
 
 ## Install
 
@@ -14,9 +16,13 @@ ln -s ~/pi-config/extensions/claude-code ~/.pi/agent/extensions/claude-code
 # subagents is already linked on this machine; install.sh links both on new hosts.
 ```
 
-Run `/reload` after existing workers have finished (reload stops owned workers).
-`claude` must be installed and authenticated. The runner invokes the executable
-directly, never a shell alias. No credentials are copied into configuration.
+`claude` must be installed and authenticated. Every spawn runs the executable
+directly, never a shell alias, and the same one from every folder (`claude-executable.ts`):
+the first `claude` in an absolute directory of the host's own `PATH` (a mise shim there
+resolved once with `mise which claude` from the host's cwd, then this extension's own
+directory), else `~/.local/bin/claude`, as an absolute path; a chat's or worker's cwd never
+picks it. With none found, the launch fails with "Claude program not found" and where it
+looked. No credentials are copied into configuration.
 
 ## Discover models
 
@@ -32,8 +38,8 @@ discovery (no model request, account details never kept) is used by Sova only to
 
 ## Logins
 
-Every `claude` process this extension starts (workers, the chat provider's
-children, model discovery) runs on one Claude login, chosen by `accounts.ts`:
+Every `claude` process this extension starts (the chat provider's children, a
+Claude Code worker's included, and model discovery) runs on one Claude login, chosen by `accounts.ts`:
 
 - A login is one Claude Code config directory with its own `.credentials.json`.
   Claude Code's own directory (`~/.claude`, or `$CLAUDE_CONFIG_DIR`) is the
@@ -61,11 +67,9 @@ children, model discovery) runs on one Claude login, chosen by `accounts.ts`:
   logins of the same account). A chat turn that has not streamed anything yet is
   restarted on the new login the way a model change restarts it (history
   folded) and sent again; the session gets a `claude-login` entry whose `text`
-  is the notice (`Claude: switched A → B (5h limit, resets 15:00)`). A worker's
-  process is stopped and a new one resumes the same Claude session with
-  `--resume` on the new login; the interrupted message is sent again and the
-  worker's transcript gets the notice. With no usable login left, the failure
-  ends the turn or task as before.
+  is the notice (`Claude: switched A → B (5h limit, resets 15:00)`). A Claude Code
+  worker is such a session, so its turn moves the same way. With no usable login
+  left, the failure ends the turn or task as before.
 - `default` always comes last in a device's order: Claude Code's own login is
   the last resort.
 
@@ -76,8 +80,8 @@ holds it (`null`: kept here for lending, never run). This extension honours the
 pool's marks at every spawn:
 
 - `<login dir>/.sova-leaving`: the login is on its way to another device. It is
-  never chosen; an idle chat child on it is torn down and an idle worker moves
-  to the next login (`--resume`), a busy one as soon as its turn or task ends.
+  never chosen; an idle chat child on it (a worker's included) is torn down, a
+  busy one as soon as its turn ends.
 - `<login dir>/.sova-leases/<pid>.json`: which processes of this host still run
   `claude` on the login (`LoginUsers`, rewritten every 5 s), so the server
   hands a login over only once none does.
@@ -96,271 +100,22 @@ sending it to Claude. The classifier's fixtures (`tests/fixtures/failures/`) are
 shaped after CLI 2.1.282's own schema (read from the binary), not recorded from
 a real limit.
 
-## Delegate
+## Claude Code workers
 
-```json
-{
-  "backend": "claude-code",
-  "name": "implementor",
-  "cwd": "~/webapps/example",
-  "model": "sonnet",
-  "prompt": "Implement the agreed change. Run focused tests and report results."
-}
-```
+A worker started with `backend: "claude-code"` runs as a pi worker whose model is this provider's
+(`claude-code-cli/<catalog id>`, Sonnet by default), with an effort of `low`..`max` (default
+`medium`), on Sova's tools (`Read`→`read`, `Bash`→`bash`, `Edit`→`edit`, `Write`→`write`,
+`Grep`→`grep`, `Glob`→`find`, `LS`→`ls`). The subagents extension maps the spawn
+(`subagents/claude-workers.ts`) and loads this extension into the child with `--claude-code-model
+<id>`, which makes a Claude id the catalog doesn't list available too. Its transcript, restore,
+resume, team tools, sandbox, remote target, spec census and death message are a pi worker's; login
+failover is this provider's (above). See the subagents README, "Claude Code workers", for the
+`backendOptions` it accepts and refuses.
 
-Use this with `agent_spawn`. Existing calls without `backend` still use Pi.
-Prompts and steering messages are limited to 262,144 characters; an oversized
-`prompt` is rejected before any batch member starts. `systemPrompt` is passed
-through a private temporary file (`--append-system-prompt-file`, mode 0600 in a
-0700 directory), not the command line, so it is not visible in the process list
-and is not limited by argument size. The file is deleted once the CLI has
-initialized (it reads the file at startup), or when startup fails.
-Mixed Pi/Claude entries work in the same `agents` batch and share the manager's
-8-per-call / 12-live-worker limits. `agent_list`, `agent_transcript`, `agent_wait`,
-and `agent_kill` work for both backends. Completion wakes the parent by default;
-set `wake: false` to queue the result for its next turn instead.
-
-Claude defaults:
-
-- Model: `sonnet` (CLI alias); effort: `medium`. These do not inherit a non-Claude
-  parent's model or Pi reasoning settings.
-- Tools: `Bash`, `Read`, `Edit`, `Write`, `Glob`, `Grep`. Use native Claude names;
-  `tools: []` disables tools. Native recursive delegation is not enabled by default.
-- Permission mode: `bypassPermissions`. Workers skip permission checks and do
-  not prompt for approval. Explicit restrictive modes remain available via
-  `backendOptions.permissionMode`. With `manual` or `acceptEdits`, operations
-  requiring approval are presented through Pi confirmation dialogs (file edits
-  may proceed without prompting in `acceptEdits`). Each dialog names the
-  requesting worker and its ID (instances of one `count` spec are distinct).
-  Prompts are serialized across workers. Each displayed dialog gets a
-  full 60-second response window; time waiting behind another dialog does not
-  count. Queued prompts are bounded and cancelled on worker interruption or
-  shutdown. The prompt displays the resolved worker directory. Unavailable UI,
-  rejection, or a displayed-dialog timeout denies the operation.
-- User/project/local settings and ambient MCP configuration are not inherited
-  (`--setting-sources ""`, `--strict-mcp-config`). Normal Claude project
-  instructions remain available. Without Sova's sandbox these workers are **not
-  sandboxes** and share host filesystem permissions; under it they are confined
-  whole (see **Under the sandbox**).
-- MCP servers: the manager may pass `mcpServers` (team members get the
-  subagents `team` server, see the subagents README). The runner writes them to
-  a private 0600 `mcp.json` beside the system-prompt file, passes it with
-  `--mcp-config`, and removes it when the worker closes; server `env` entries
-  never appear in the CLI's own environment or argv. Outside
-  `bypassPermissions`, an `mcp__<name>` rule is appended to `--allowedTools`
-  after any operator rules so the configured server's tools do not prompt or
-  get denied. Names are restricted to `[A-Za-z0-9_-]` and commands/args/env to
-  plain strings; anything else fails the worker before launch. A configured
-  server that does not connect fails the worker: Claude only marks it `failed`
-  in its startup event and would otherwise run the turn without those tools.
-- `env` adds variables to Claude's own process, merged over the inherited
-  environment after the nested-session markers are dropped. It is for settings
-  the CLI reads only from its environment: `MCP_TOOL_TIMEOUT` (milliseconds)
-  bounds every MCP tool call, and a per-server `env` in `mcp.json` reaches that
-  server, not Claude. Names and values are validated like server `env`.
-
-Optional policy is explicit and validated before starting any batch member:
-
-```json
-{
-  "backend": "claude-code",
-  "prompt": "Run the existing tests and summarize failures.",
-  "backendOptions": {
-    "permissionMode": "manual",
-    "allowedTools": ["Bash(npm test *)"],
-    "maxBudgetUsd": 1
-  }
-}
-```
-
-Supported permission modes: `bypassPermissions` (default), `acceptEdits`,
-`manual`, `dontAsk`, `plan`. Explicit modes are preserved even without an
-interactive approval callback; unavailable approval is denied rather than bypassed.
-`allowedTools` contains native Claude permission rules, distinct from the
-available `tools` list. Broad rules such as `Bash` grant unprompted shell access;
-these options can be requested by the coordinating model and are not a sandbox
-or a separate human authorization boundary. User/project Claude deny rules and
-hooks are not inherited (`--setting-sources ""`); choose conservative allow rules
-or `manual` mode when you want per-operation approval. In the default
-`bypassPermissions` mode, permission rules do not provide an approval boundary;
-the available `tools` list still controls which tools are exposed.
-`maxBudgetUsd` is Claude's reported cost ceiling, not a guarantee about how a
-subscription account is billed. Permissions are enforced by Claude, not by
-Pi's parent tool hooks.
-
-Pi-specific `extensions`, `agentType`, and `fork: true` are rejected for Claude.
-Provide additional role instructions with `systemPrompt` and a concise context
-handoff in `prompt`; a Pi conversation file cannot be loaded as a Claude session.
-
-## Inspect and steer
-
-`/agents` and `/subagents` open the same monitor. The header identifies the
-selected backend. Select a live worker and press:
-
-- `r`: redirect with new instructions (editor opens).
-- `f`: queue a follow-up (editor opens).
-- `x`, then `x`: stop the selected worker/run.
-
-The model-facing equivalent:
-
-```json
-{ "id": "ag_01", "message": "Stop that approach; implement the smaller fix.", "mode": "redirect" }
-```
-
-```json
-{ "id": "ag_01", "message": "Afterward, review the test coverage.", "mode": "followUp" }
-```
-
-These are `agent_steer` arguments. Claude's default is redirect. Redirect waits
-for interrupt acknowledgment **and task settlement** before delivering the
-replacement. The interrupt/settlement deadline is 15 seconds; a message-delivery
-acknowledgment has a 30-second deadline. A timeout fails closed: the worker is
-stopped, an error is returned, and replacement execution is not assumed. Malformed
-stream-json output also fails closed rather than masking protocol corruption.
-Follow-ups are held by the extension until the current task settles; raw mid-turn
-Claude stdin input is not a reliable separate-task queue. A follow-up sent to an
-idle worker starts immediately. Queued follow-ups survive the abort a redirect
-requests and run after the replacement; a genuine error or unrequested abort
-drops them and records how many were dropped. Stopping or failure also records
-dropped follow-ups. If the CLI exits on its own with follow-ups still queued,
-the worker ends in `error`, not `done`.
-
-If the interrupted task settles but its interrupt response is missing, the
-redirect is rejected and the worker is kept idle rather than stopped. No new
-turn starts until that interrupt is answered; one unanswered through the
-30-second control deadline stops the worker, so a delayed interrupt cannot abort
-later work. CLI 2.1.277 answers interrupts promptly, even when idle, so this is
-a defensive path.
-
-The parent is notified when the worker becomes idle, not for an intermediate
-aborted turn during redirect or before a queued follow-up starts.
-
-The CLI can also start a turn on its own after a task settled — it backgrounds a
-Bash command that passes its 120-second timeout and reports the real result once
-the command finishes. That turn's text still updates the transcript and the
-worker's final output, and its uncorrelated successful `result` notifies the
-parent a second time with the new answer (once per turn; an uncorrelated failure
-while idle announces nothing).
-
-Task completion and process exit are separate: an idle worker remains steerable,
-even after a failed task. Requested interruption is recorded as aborted, not as
-successful completion (the CLI's `aborted_tools` / `aborted_streaming` terminal
-reasons). Permission denials can accompany an otherwise completed
-Claude turn, so inspect the transcript/result rather than assuming all requested
-operations occurred.
-
-## Lifecycle and scope
-
-Workers stay in one owned CLI process across turns. Shutdown interrupts active
-work, closes stdin, waits for process closure, and escalates against the owned
-process group if necessary. After group escalation and an observed leader `exit`,
-output pipes get a 250ms drain before our handles are released. A detached process
-holding inherited pipes therefore cannot hang cleanup after the CLI has exited.
-A timeout/SIGKILL attempt alone never proves death; an unkillable leader still
-leaves shutdown pending. Tests cover foreground cleanup and detached pipe holders,
-but detached services remain outside containment. Use worktrees or non-overlapping
-assignments for concurrent edits.
-
-Reload, session replacement and quit stop workers. Automatic live reattachment,
-arbitrary external Claude-session adoption, and cross-harness conversation forks
-are not implemented. Claude retains its native session history on disk.
-
-Output is bounded in memory and through the manager's existing tool truncation.
-Usage comes from terminal results without repeatedly summing cumulative cost.
-Protocol behavior is version-sensitive; live probes used Claude Code 2.1.276 and
-2.1.277.
-See [docs/protocol-probes.md](docs/protocol-probes.md).
-
-## Under the sandbox
-
-When the parent's sandbox is on, or the worker starts in a tracked worktree with it off, the
-subagents spawner gets `{kind: "confine", scope, module}` from the sandbox's `workerLaunch` and
-passes it in as the runner's `confine` option (`ClaudeConfine`). The runner's single `launch()`
-chokepoint then wraps EVERY launch (start, acquire, relocate, failover) with the sandbox's
-`confineLaunch`, so the CLI, its Bash, its file tools and every MCP server it starts run inside the
-sandbox's own backend under the policy a pi worker would get there. `confined-launch.ts` holds the
-Claude half and no policy: it turns the worker and its login into the sandbox's plain `needs`.
-
-- Claude Code's own sandbox is off (`{"sandbox":{"enabled":false}}` merged into `--settings`), and
-  the permission mode stays `bypassPermissions` unless the spawn asks for another.
-- Private config dir `<agentDir>/sova/sandbox/claude/<parent session>-<worker id>/`, 0700, is
-  `CLAUDE_CONFIG_DIR` inside. Its `projects/<cwd slug>` links to that slug folder of the login's
-  (shared) `projects/`, which is the only writable part of it, so transcripts land where every
-  reader looks. `CLAUDE.md`, `agents`, `commands`, `skills` and `plugins` link to the login's,
-  read-only. The dir is kept across resumes. The subagents session-start sweep removes it once it
-  has been idle for 24 h and its owner session's file is deleted, or the worker's record is gone.
-  Archiving keeps it.
-- Token: at every launch `accounts.ts` `freshAccessToken` reads the login's ACCESS token only
-  (`accessTokenFor`, never the refresh token). With under 60 min left it first runs
-  `refreshLogin`: the CLI unconfined on that login, with the discovery argv and one `initialize`
-  (no model call). The token goes in on fd 3 (`CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=3`, probed
-  with CLI 2.1.282), never on argv or in any environment. Credential variables and the login's
-  `CLAUDE_CONFIG_DIR` are dropped from the source environment. bwrap's own spawn environment
-  keeps `CLAUDE_CONFIG_DIR=<login dir>`, so the pool's `/proc/<pid>/environ` lookup still counts
-  the worker on its login.
-- A 401 in a confined worker refreshes that login once and resumes on it with `--resume` (a
-  transcript line says so). Only a second 401 goes to the normal auth failover.
-- Writable besides the policy's roots: the private dir, its transcript slug folder, the team
-  mailbox, and with spec on its own hook state (`<agentDir>/spec-hooks/workers/<key>/`). The proxy is the
-  worker's own, and also allows `api.anthropic.com`; under `read-only` that is its only host.
-- Hosted workers: the host process (`subagents/host.ts`) reads the token and calls
-  `confineLaunch` itself, owning the worker's proxy and its tmp (`<worker dir>/tmp`). Inline
-  workers' tmp is released with `releaseWorkerTmp(scope)` when they close.
-- Launch gate (`confinedVersionProbe`, runner option `launchProbe`, darwin by default): before
-  the first confined launch of an executable in a process, `claude --version` runs through the
-  same `confineLaunch`, with no token. Only a pass is cached; a failure refuses the spawn.
-- Transcript lines: once, at the first confined launch, `[sandbox: confined — the session's
-  sandbox]` (`…, narrowed to <root>` in a tracked worktree), or `[sandbox: confined — write-only
-  to <root>]`; and `[sandbox: refused — <reason>]` before a refused launch fails the worker. Tool
-  denials reach the model raw (EROFS/EACCES).
-- Not wrapped: the chat provider (Claude as a pi session's model), whose CLI runs with
-  `--tools ''` and only calls pi's own tools, which pi's sandbox confines.
-
-## Spec hooks
-
-`spec-hooks.ts` is the worker half of the spec census (`mode/spec-guard.ts`). The subagents spawn
-path installs it for code-writing workers of a spec-on session, as `hooks` in the one `--settings`
-JSON (`withClaudeSettings` merges them into the worker's settings; flag settings, hooks included, apply
-under `--setting-sources ""`, probed with CLI 2.1.282). Each hook is `node spec-hooks.ts
-<turn|pre|post|deny> --core <spec/core> --state <dir>`, a fresh process per event with plain-JSON state per
-Claude session:
-
-- `UserPromptSubmit`: primes the census baseline of the cwd's work tree. It does not inspect other
-  worktrees. A tree already known takes in what changed since the last look instead (below).
-- `PreToolUse`: nonblocking observation of the call's explicit destinations before it executes.
-  This supplies the baseline for a shell edit in another worktree without scanning unrelated trees.
-  In a tree already known, while no other call of the session runs (`open`, by `tool_use_id`), what
-  changed since the last look changed between the session's calls: another process's commit or
-  edit, taken in silently and left out of every note (`settleCensus`, shared with the pi session).
-- `PostToolUse` and `PostToolUseFailure` (every tool, Bash included; a failed call, such as a Bash
-  command that exits non-zero, comes as `PostToolUseFailure` and is closed the same way, so its own
-  writes still count and it stops holding the settle off): the shared census step on a git-status delta, for each
-  tree the call works in (its cwd, each `cd <dir>`, `git -C <dir>`, a file path); its
-  `[spec census]` digest comes back as `additionalContext`. Each worktree keeps its own census
-  state, so "No draft yet" does not start over when returning to a tree already seen. A census that
-  can't run gives one line, `[spec census] incomplete: <why>; run census by hand`, once per cause per
-  work tree until a census there succeeds again (kept in the tree's census state, in the state file);
-  a census that printed nothing names why (its first stderr error line, else a timeout or its exit status).
-  The read-only tools (`READ_ONLY`, exact names: Read, Glob, Grep, LS, the web tools, TodoWrite,
-  BashOutput and the team MCP tools `mcp__team__team_inbox`, `…team_msg`, `…team_ask`,
-  `…team_roster`, `…team_report`, `…wake_nudge`) are skipped whole: no git status, no census; what
-  changed meanwhile is taken in at the next writing call's pre hook. Each tree's census state keeps
-  `landed`: the session's own changed files the census maps, with their §, from which the parent
-  reads the one line its settle carries ("Spec: this worker's changes landed in …").
-- `PermissionDenied` (`deny`): a denied call never ran; it stops counting as running (`open`),
-  with no census. A call no post or deny hook closes (blocked by another hook, interrupted) stops
-  counting after 15 minutes or at the next `UserPromptSubmit`.
-  The same call runs the pi session's write guard (spec-guard's helpers; "before" is the tree the
-  pre-call hook saw): an edit of the current `manifest.json` or `claims/**`, or a shell command
-  that writes them, judged by the files (`handWritten`: not during a merge, rebase, cherry-pick or
-  revert, nor bytes a promotion receipt's `after` hashes record or equal to HEAD's or the default
-  branch's), gets "you wrote the current spec directly";
-  a git operation after which a draft's evidence commit left the branch gets the rebase note (abort
-  a rebase under way, else the exact old tip to restore with a clean tree, then merge master in).
-
-Nothing runs when a turn ends, and no hook writes a spec ledger. A worker started before that change
-still calls `spec-hooks.ts stop` and may pass `--ledger <file>`: both are accepted, print nothing and
-exit 0. A hook that fails prints nothing and exits 0.
+The native worker that ran the CLI's own tools (`runner.ts`, `confined-launch.ts`, `policy.ts`,
+`permissions.ts`, `spec-hooks.ts`, the `team` and `remote` MCP servers) is gone. Workers it
+recorded stay readable (`transcript-adapter.ts` reads their Claude session file); resuming one
+continues it on Sova's tools in a new session whose first message hands its work over.
 
 ## Claude Code as pi models (experimental provider)
 
@@ -408,6 +163,16 @@ meant it) reports no efforts, so it has no thinking levels. The child gets `MCP_
 outlives any pi tool (the CLI's own default is ~27.8 h; a stray value in the
 user's shell would otherwise truncate long tools with a synthetic timeout
 result), and `DISABLE_AUTO_COMPACT=1`, because pi owns compaction (below).
+A child that exits mid-turn, or fails its `initialize` handshake, ends the turn
+with an error followed by the last lines it wrote on stderr (at most 20 lines and
+2 KB, the newest kept), so the chat says why it died.
+
+When the CLI retries inside one message because the model's tool input was
+rejected as invalid, the provider marks that message: its `diagnostics` gains
+`{ type: "measurement-invalid", timestamp, details: { reason: "invalid-tool-retry" } }`
+(`MEASUREMENT_INVALID_DIAGNOSTIC` in `provider/stream.ts`). The message's timing
+covers the failed attempt too, so a host that times replies, such as Sova,
+records no measurement for it.
 
 ### Rebuild on divergence
 
@@ -512,7 +277,7 @@ divergence is stated, and are confirmed by `docs/protocol-probes.md`.
 - **Rebuild on divergence is lossy and cache-cold** (see above); a turn right
   after a rewind or compaction pays a full re-send. The fold budget is a
   2.2-characters-per-token estimate; with `PI_CLAUDE_CODE_DEBUG=1` each fold's size and budget are
-  logged (`event: "fold"`) to compare with the next call's input tokens, with
+  logged (`event: "fold"`, to `claude-code-debug.log` in the agent dir) to compare with the next call's input tokens, with
   the images kept and dropped to fit the 4 MiB stdin line and its final bytes.
 - **Policy drift.** The control protocol is undocumented and version-sensitive;
   probes cover 2.1.276–2.1.278 only. A CLI update can change frame shapes or
@@ -556,11 +321,6 @@ one `opus[1m]` turn, and archive killing the session's CLI child.
 node ~/pi-config/extensions/subagents/tests/run.mjs
 node ~/pi-config/extensions/claude-code/tests/run.mjs
 node ~/pi-config/extensions/claude-code/tests/smoke.mjs
-node ~/pi-config/extensions/claude-code/tests/ui-permissions.mjs
-# Opt-in: small live Claude requests using configured CLI credentials
-node ~/pi-config/extensions/claude-code/tests/smoke.mjs --live
-node ~/pi-config/extensions/claude-code/tests/live-controls.mjs --live
-node ~/pi-config/extensions/claude-code/tests/live-manager.mjs --live
 ```
 
 Offline tests use the already-installed Pi runtime through the existing test

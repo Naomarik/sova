@@ -4,6 +4,8 @@ import type { ProjectCost } from "../../shared/costs";
 import { Ledger } from "./ledger";
 import { createPriceBook, type PriceBook, type PriceBookOptions } from "./price-book";
 import { orgCosts, projectCost, type ProjectDeps, type ProjectScope } from "./project";
+import { PerfStore } from "./perf-store";
+import { foldCache, foldInputOf } from "./project-fold";
 import { Queries } from "./query";
 
 /**
@@ -15,6 +17,8 @@ export interface ServiceOptions {
   usageRoot: string;
   stateDir: string;
   pricesPath: string;
+  /** The reply-timing store, `<agent dir>/usage/perf/v1` (perf-store.ts). */
+  perfRoot?: string;
   device?: () => string | null;
   now?: () => number;
   log?: (line: string) => void;
@@ -25,6 +29,7 @@ export interface Service {
   ledger: Ledger;
   prices: PriceBook;
   queries: Queries;
+  perf: PerfStore;
   /** One request, as the client sends it: `{op, ...}`. Throws a `BadRequest` on a bad one. */
   answer(req: Record<string, unknown>): Promise<unknown>;
 }
@@ -66,7 +71,12 @@ export function createService(opts: ServiceOptions): Service {
     if (days.length) log(`prices changed: folded ${days.length} day(s) again (${days[0]}${days.length > 1 ? ` … ${days[days.length - 1]}` : ""})`);
   });
 
+  const perf = new PerfStore({ root: opts.perfRoot ?? path.join(path.dirname(opts.usageRoot), "perf", "v1"), ...(opts.device ? { device: opts.device } : {}), ...(opts.now ? { now: opts.now } : {}) });
+
   const projectDeps: ProjectDeps = { ledger, queries, prices, device: opts.device ?? (() => null), now: opts.now ?? Date.now };
+
+  // The By project rows' fold, kept across polls while the server sends the same projects.
+  const folds = foldCache(opts.now);
 
   const answer = async (req: Record<string, unknown>): Promise<unknown> => {
     const tz = typeof req.tz === "string" ? req.tz : "UTC";
@@ -74,7 +84,8 @@ export function createService(opts: ServiceOptions): Service {
       case "costs": {
         const range = (req.range ?? "30d") as UsageRange;
         if (!USAGE_RANGES.includes(range)) throw new BadRequest(`range must be one of ${USAGE_RANGES.join(", ")}`);
-        return queries.costs({ range, providers: strings(req.provider), models: strings(req.model), tz });
+        const fold = foldInputOf(req.fold);
+        return queries.costs({ range, providers: strings(req.provider), models: strings(req.model), tz, ...(fold ? { fold: folds(fold) } : {}) });
       }
       case "today":
         return queries.today({ tz });
@@ -86,6 +97,15 @@ export function createService(opts: ServiceOptions): Service {
         const sids = strings(req.sids);
         if (sids.length > MAX_USAGE_SESSIONS) throw new BadRequest(`at most ${MAX_USAGE_SESSIONS} sids`);
         return queries.sessions({ sids });
+      }
+      case "session-timings": {
+        if (typeof req.sid !== "string" || !req.sid) throw new BadRequest("sid is required");
+        return perf.sessionTimings(req.sid);
+      }
+      case "performance": {
+        const range = (req.range ?? "30d") as UsageRange;
+        if (!USAGE_RANGES.includes(range)) throw new BadRequest(`range must be one of ${USAGE_RANGES.join(", ")}`);
+        return perf.performance({ range, providers: strings(req.provider), models: strings(req.model), tz });
       }
       case "prices":
         return prices.info();
@@ -114,5 +134,5 @@ export function createService(opts: ServiceOptions): Service {
     }
   };
 
-  return { ledger, prices, queries, answer };
+  return { ledger, prices, queries, perf, answer };
 }

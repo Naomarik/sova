@@ -4,6 +4,7 @@ import { clockTime, relativeTime } from "../lib/format";
 import {
   IDLE,
   inputRows,
+  type Sender,
   rewoundAt,
   rowAction,
   sentSince,
@@ -15,6 +16,7 @@ import {
   type RewindStep,
   type Rewound,
 } from "../lib/inputs";
+import { getBaton } from "../lib/api";
 import { jumpWhenArrived } from "../lib/jump";
 import { absoluteTime } from "../lib/spend";
 import { GAP_MS, newestFirst, timelineRows, timelineState, type TimelineRow } from "../lib/timeline";
@@ -103,6 +105,18 @@ export function SessionTimeline(props: {
       { defer: true },
     ),
   );
+
+  /** A shared session's names, for its teammates' sender lines: read once, when a row needs one. */
+  const [names, setNames] = createSignal<Record<string, string>>({});
+  let namesAsked = "";
+  createEffect(() => {
+    const path = props.path;
+    if (namesAsked === path || !props.summary?.baton || !rows().some((r) => r.sender?.kind === "baton")) return;
+    namesAsked = path;
+    getBaton(path)
+      .then((info) => path === props.path && setNames(info.names ?? {}))
+      .catch(() => {});
+  });
 
   const blocked = (): RewindBlock | null => (props.rewind ? props.rewind.blocked() : props.summary?.live ? "live" : "no-chat");
 
@@ -198,7 +212,7 @@ export function SessionTimeline(props: {
           <For each={display().map((r) => r.key)}>
             {(key) => (
               <Show when={byKey().get(key)}>
-                {(row) => <Row row={row()} now={props.now} phase={phase()} blocked={blocked()} onStep={step} onConfirm={confirm} onJump={jump} />}
+                {(row) => <Row row={row()} now={props.now} phase={phase()} blocked={blocked()} names={names()} onStep={step} onConfirm={confirm} onJump={jump} />}
               </Show>
             )}
           </For>
@@ -222,6 +236,7 @@ function Row(props: {
   now: number;
   phase: RewindPhase;
   blocked: RewindBlock | null;
+  names: Record<string, string>;
   onStep(s: RewindStep): void;
   onConfirm(): void;
   onJump(entryId: string | undefined): void;
@@ -267,6 +282,11 @@ function Row(props: {
         <span class="timeline-meta">{row().title}</span>
       </Show>
       <Show when={row().kind !== "gap" && row().kind !== "density"}>
+        {/* Who sent it: a line of its own above the message, in the third column, outside the
+            jump button (the link to the sending session is its own control, never nested in
+            another), and first in reading order. The stylesheet gives it its own grid row, so
+            the clock and the dot stay level with the message. */}
+        <Show when={row().kind === "input" && row().sender}>{(s) => <SenderLine sender={s()} names={props.names} />}</Show>
         <Show when={row().at}>
           {(at) => (
             <span class="timeline-time" classList={{ "timeline-time-flagged": flagged() }} title={clockTitle()}>
@@ -323,7 +343,42 @@ function Body(props: { row: TimelineRow }) {
 }
 
 /**
- * One message you sent: the body jumps to it — the safe half, and the whole of its hit area — and
+ * The line above a message someone other than the user sent, as the transcript names them: another
+ * session (a link to it, and its hop), the Overseer, or a teammate by the roster's name.
+ */
+function SenderLine(props: { sender: Sender; names: Record<string, string> }) {
+  const s = () => props.sender;
+  return (
+    <p class="session-sender timeline-sender">
+      <Show when={s().kind === "session" && (s() as Extract<Sender, { kind: "session" }>)}>
+        {(from) => (
+          <>
+            <Icon name="network" small />
+            <span>
+              From <a href={`#/sid/${encodeURIComponent(from().sessionId)}`}>{from().title || "another session"}</a>
+            </span>
+            <span class="text-muted">· hop {from().hop}</span>
+          </>
+        )}
+      </Show>
+      <Show when={s().kind === "overseer"}>
+        <Icon name="eye" small />
+        <span>From the Overseer</span>
+      </Show>
+      <Show when={s().kind === "baton" && (s() as Extract<Sender, { kind: "baton" }>)}>
+        {(b) => (
+          <>
+            <Icon name="chat" small />
+            <span>From {props.names[b().by] ?? "Someone"}</span>
+          </>
+        )}
+      </Show>
+    </p>
+  );
+}
+
+/**
+ * One message on the branch: the body jumps to it — the safe half, and the whole of its hit area — and
  * Rewind sits apart at the end and asks before it acts, so the destructive half stays explicit.
  * It is the Inputs tab's row, moved onto the axis: the same rules (inputs.ts `rowAction`), the
  * same two steps, the same notes.

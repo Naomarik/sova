@@ -1,6 +1,6 @@
-import { archivedDropToast, orgProjectOf } from "../lib/drag-archive";
+import { archivedDropToast, archivedProjectOf } from "../lib/drag-archive";
 import { batch, createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, untrack, type JSX } from "solid-js";
-import { createStore, reconcile } from "solid-js/store";
+import { createStore, produce, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type {
   ChatClaudeLogin,
@@ -18,7 +18,15 @@ import type {
 import { createTurnOwner, goTo } from "../lib/overseer";
 import { batonComposerGate } from "../lib/baton-strip";
 import { tuiOnlyCommand } from "../lib/slash";
+import { UnackedSends } from "../lib/unacked-sends";
+import { CardClicks, CLICK_NOT_DELIVERED, handBack, reopenCards, type Unsent } from "../lib/hand-back";
+import { courier, Outbox, sendsOf, sendsOnTheWay, takeBackHere, type Frame } from "../lib/chat-outbox";
+import { chatCourier } from "../lib/chat-courier";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
+import { createOfferControls, OfferContext, OfferTray } from "./OfferCard";
+import type { OfferCard } from "../../shared/session-offers";
+import { SettingsCardContext } from "./SettingsChangeCard";
+import type { OverseerApprovals } from "./OverseerApprovalsPanel";
 import { CARD_TOOL, type OverseerCard } from "../../shared/overseer-card";
 import { cardFold, openCards } from "../lib/overseer";
 import { CardJumpContext } from "../lib/card-refs";
@@ -26,7 +34,7 @@ import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
 import { sandboxOffMissing, type SandboxState } from "../lib/sandbox";
-import { approveSchedule, forkSession, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { approveSchedule, fetchTranscriptRows, forkSession, getAlignTriage, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
 import type { MemoryStatus, OverseerAutonomy, ScheduleInfo, V1EventFrame, V2EventFrame } from "../../shared/protocol";
 import { memoryRowWords, memoryTurnWords } from "../lib/memory-ui";
@@ -45,6 +53,9 @@ import {
   newClientId,
   queuedText,
   runDetail,
+  seedLive,
+  offersRemove,
+  liveInputCount,
   takeBackQueued,
   unsentRows,
   type LiveEvent,
@@ -52,13 +63,15 @@ import {
   type LiveUserState,
 } from "../lib/live";
 import { appendItems } from "../lib/explain";
+import { sendFrame } from "../lib/send-frame";
+import { codeFailure, codeView, type CodeControl, type CodeView } from "../lib/code-state";
 import { isObj, str } from "../lib/message";
 import { ensureModelPolicy, modelEnabled, modelPolicy } from "../lib/model-policy";
 import { HOST_MOVE_GRACE_MS, hostOf, mayBeHostMove, meshOn, recheckHost, sessionHrefOn, sessionViewKey } from "../lib/mesh";
 import { cachedTranscript, cacheItems, cacheSpot, keptOlder, transcripts } from "../lib/transcript-cache";
 import { inputsPending, knownInputs, knownWorkers, workersShown } from "../lib/known-before-mount";
 import { composerSeen, knownComposer, listFetchedAt, rememberComposer, sameKnown } from "../lib/composer-known";
-import { openFailureView } from "../lib/open-failure";
+import { cwdFallbackView, openFailureView, type CwdFallbackInfo } from "../lib/open-failure";
 import {
   closeRemoteStatus,
   isRemoteNotice,
@@ -75,6 +88,8 @@ import {
 } from "../lib/remote-status";
 import { remotePlaceOf } from "../lib/remote-session";
 import { createReconnectingSocket } from "../lib/socket";
+import { backWords, EMPTY_FEED, feedOnFailure, feedOnHello, feedOnNote, feedOnOpen, feedOnRefused, feedOnReset, feedOnTurnStart, feedBanner, type ErrorFeed, type FeedSay } from "../lib/error-feed";
+import { errorHandsBack, FILE_READ_WAIT_MS, heldWhileAsleep, WAIT_START, WakeQueue, waitOnHello, waitOnOpen, waitOnSleep, waitOnStatus, waitOnWake, waitReason, type ChatWait } from "../lib/chat-wait";
 import { workingSplit } from "../lib/workers";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
@@ -97,8 +112,7 @@ import { usePaneAnnounce, usePaneId, usePaneScope } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
 import { isChangeRow, isProfileRow, isLoginNoteRow } from "../lib/change-rows";
 import { ProfilePicker } from "./ProfilePicker";
-import { playbookTurnText } from "../../shared/playbooks";
-import type { RewindControl, RewindResult } from "../lib/inputs";
+import { handBackText, type RewindControl, type RewindResult } from "../lib/inputs";
 import type { RewindRefusal } from "../../shared/protocol";
 import { COMPACT_IMAGES_REFUSAL, compactCommand } from "../../shared/compact";
 import { COMPACT_STREAMING_REASON, COMPACTING_REASON, compactedAnnouncement } from "../lib/compact";
@@ -119,12 +133,14 @@ import type { MessageActionItem } from "./MessageActions";
 import { isInput } from "../lib/turn";
 import { noteLinks } from "../lib/links-live";
 import { jumpToEntry, jumpWhenArrived, landExplainJump, transcriptRoot } from "../lib/jump";
-import { inputTotal, lastInput as lastInputOf, newestOnly, newRows } from "../lib/older-rows";
+import { ownInputTotal, keptBehind, lastInput as lastInputOf, newestOnly, newRows, withHave } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
-import { alignRowFromDetails, foldAlignRows, recommendedOption, type AlignEntry } from "../lib/align";
+import { liveTourCalls } from "../lib/tour-rows";
+import { alignRowFromDetails, foldAlignRows, isOpenDoc, openCount, recommendedOption, type AlignEntry } from "../lib/align";
+import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
-import { OverseerMemoryMenu } from "./OverseerMemoryMenu";
-import { FlyoutSession, type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
+import { OverseerMemoryMenu, projectOverseerMemory } from "./OverseerMemoryMenu";
+import { type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionSetupCard } from "./SessionSetup";
 import { toolsKeyOf } from "../lib/session-tools";
@@ -133,7 +149,9 @@ import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
 import { ChangesSession } from "./ChangesViewer";
-import { HistoryItems, holdReaderAcrossSwap, LiveEntries, type MessageActionsProvider, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
+import { TourSessionContext } from "./TourCard";
+import { HistoryItems, holdReaderAcrossSwap, LiveEntries, StartError, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
+import { type ReplyPlace, useReplyAdditions } from "../lib/reply-place";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { failureHasRow } from "../lib/subagent-limit";
 import { Banner, Icon } from "./ui";
@@ -158,6 +176,9 @@ export interface OverseerChat {
       Ideas panel) sends an ordinary user message, as a quick action does. Returns the unbind the
       chat calls when it unmounts. */
   bindSender?(sender: OverseerSender): () => void;
+  /** Hands the page head this chat's one autonomy reading and its acts while mounted, for the
+      head's Approvals & Schedules (§app.overseer/approvals); returns the unbind. */
+  bindApprovals?(approvals: OverseerApprovals): () => void;
 }
 
 /** A user message into the Overseer's chat, through the composer's own send. */
@@ -185,6 +206,8 @@ export function ChatView(props: {
   /** Reconnect past the server's recent-write guard (never past a live TUI). */
   force: boolean;
   autofocus?: boolean;
+  /** Whether this view is on screen (absent: always); a workspace tab behind another isn't. */
+  front?: () => boolean;
   onModel(model: string | null): void;
   onRefused(kind: ChatRefusal, message: string): void;
   /** A run just started here: the list's `busy` is stale until it's refetched. */
@@ -198,6 +221,8 @@ export function ChatView(props: {
   onClaudeLogin?(login: ChatClaudeLogin | null): void;
   /** The session's profile as the socket said it (the head chip, §chat.profiles/after-first-message). */
   onProfile?(info: ChatProfileInfo): void;
+  /** This chat's code state and its Reload Now, for the head (§app.chat-processes/code-pickup); null when the view goes. */
+  onCode?(control: CodeControl | null): void;
   /** Toggles the subagents pane from the composer's subagents row. */
   onShowWorkers?(): void;
   /** The pane is open for this session ON THE AGENTS TAB (the subagents trigger's aria-expanded). */
@@ -219,7 +244,7 @@ export function ChatView(props: {
   onShowTimeline?(inputsOnly?: boolean): void;
   /** Hands the Timeline this chat's rewind (sent over this socket); null when this view goes away. */
   onRewindControl?(control: RewindControl | null): void;
-  /** A rewind landed on this chat, whoever asked (a Timeline row, or the flyout's "Undo last
+  /** A rewind landed on this chat, whoever asked (a Timeline row, or the palette's "Undo last
       turn"): the Timeline must re-read the branch, or it keeps offering the abandoned rows.
       Success only — a refusal changed nothing. App mints the generation counter the pane watches.
       No text: this view prefills the composer itself, and the pane rebuilds its shadow from the id. */
@@ -235,7 +260,7 @@ export function ChatView(props: {
   /** Set only for the Overseer's own chat. */
   overseer?: OverseerChat;
   /** Set only for a project overseer's current conversation: its "/clear", and a clear from another tab. */
-  projectOverseer?: { onClear(): Promise<boolean>; onReloaded(): void };
+  projectOverseer?: { projectId: string; onClear(): Promise<boolean>; onReloaded(): void };
 }) {
   // One status region for the whole page: inside a workspace every sentence from this chat says
   // which pane it came from, and every DOM id below carries the pane's id.
@@ -260,7 +285,7 @@ export function ChatView(props: {
       connection's hello, a list kept from the last visit says nothing about what's above it:
       nothing says a row isn't there, and nothing counts the whole list. */
   // The Overseer's history is the longest there is: it holds only what is shown or jumped to.
-  const olderRows = createOlderRows({ path: props.path, items, setItems, prefetch: !props.overseer });
+  const olderRows = createOlderRows({ path: props.path, items, setItems, kept: () => keptOlder(cached, items()), prefetch: !props.overseer });
   const { older, whole } = olderRows;
   createEffect(on([items, older], ([list, o]) => list && cacheItems(cacheKey, list, o)));
   /** The branch's inputs: this connection's hello says; before it, the rows kept from the last
@@ -269,7 +294,9 @@ export function ChatView(props: {
   const inputCount = () => {
     const list = items();
     const o = older() ?? keptOlder(cached, list);
-    return o ? inputTotal(list ?? [], o) : null;
+    // Plus the messages you typed that the running turn has already put on the branch (a steer as it
+    // lands); the settle that brings them into `items` empties `live` in the same update, so none counts twice.
+    return o ? ownInputTotal(list ?? [], o) + liveInputCount(live) : null;
   };
   /** The last hello's first row: rows that arrive above it are history, never "N new". */
   const [newFrom, setNewFrom] = createSignal<string | null>(null);
@@ -277,6 +304,9 @@ export function ChatView(props: {
   const [helloed, setHelloed] = createSignal(false);
   /** Hellos this visit has had: each (re)connect, a rebuilt runtime's included. */
   const [hellos, setHellos] = createSignal(0);
+  /** Whether this connection's chat has said its hello: until then Send and the composer's controls
+      wait (§chat.transcript/instant-open, lib/chat-wait). Every connection starts without it. */
+  const [wait, setWait] = createSignal<ChatWait>(WAIT_START);
   // "Open in Session" from an Explanations card: once the transcript is here (hello), land on that
   // explanation's row. Only a jump waiting for this session is claimed, and only once; one whose
   // row isn't here is fetched, down to it.
@@ -321,6 +351,8 @@ export function ChatView(props: {
   const cards = createMemo(() => cardFold(items() ?? [], liveCards(), older()?.summary.cards ?? []));
   /** Cards this run changed: their settled rows read as one line until the refetch. */
   const liveCardIds = createMemo(() => new Set([...cards().cards.keys()].filter((id) => !cards().newest.has(id))));
+  /** Tours this run finished a call for: their settled card reads as a line until the refetch (§app.tours/one-card). */
+  const liveTourIds = createMemo(() => new Set(liveTourCalls(live.tools).keys()));
   /** What a click on each card sent, until the turn it started settles (the card shows "Sent: b"). */
   const [cardSent, setCardSent] = createSignal<Record<string, string>>({});
   const jumpToCard = (card: OverseerCard) => {
@@ -367,7 +399,7 @@ export function ChatView(props: {
       refreshAutonomy();
     }
   };
-  const approveScheduleFromPanel = (s: ScheduleInfo) => scheduleAct(() => approveSchedule({ cwd: s.root, playbook: s.playbook, pin: s.pin ?? "" }));
+  const approveScheduleFromPanel = (s: ScheduleInfo) => scheduleAct(() => approveSchedule({ cwd: s.root, ...(s.automation ? { automation: s.automation } : { playbook: s.playbook }), pin: s.pin ?? "" }));
   const revokeScheduleFromPanel = (id: string) => scheduleAct(() => revokeSchedule(id));
   const jumpToCardId = (id: string) => {
     const card = cards().cards.get(id);
@@ -381,6 +413,17 @@ export function ChatView(props: {
     if (rows.some((row) => jumpToEntry(row.id, props.path))) return;
     toast("That act isn't in the transcript on screen.");
   };
+  if (props.overseer?.bindApprovals) {
+    const unbind = props.overseer.bindApprovals({
+      autonomy,
+      revokePermit,
+      approveSchedule: approveScheduleFromPanel,
+      revokeSchedule: revokeScheduleFromPanel,
+      jumpCard: jumpToCardId,
+      jumpUse: jumpToToolCall,
+    });
+    onCleanup(unbind);
+  }
   const jumpToAlign = (entry: AlignEntry) => {
     if (entry.rowId && jumpToEntry(entry.rowId, props.path)) return;
     // A revision above the rows held: fetch down to it, then land.
@@ -394,28 +437,27 @@ export function ChatView(props: {
     else toast("That alignment isn't in the transcript on screen.");
   };
   const [syncing, setSyncing] = createSignal(false);
-  /** The thread's turn-error rows: the message, and the FAILED TURN'S own model provider when the
-      server said it (live error event only — a worker's failure in the thread never carries one,
-      so the limit row never guesses it from this chat's model). */
-  const [errors, setErrors] = createSignal<{ message: string; provider?: string }[]>([]);
-  /** The pane's turn-error STATE (≠ `errors`, the thread's permanent record): the last turn ended
-      in an error and no newer turn has started. Cleared by `agent_start` — a fresh turn supersedes
-      the old failure — and by a rewind. Announced when it lands, reported to the workspace's
-      roll-up (`onTurnError`), and consulted before "replied.": an errored turn still settles (the
-      SDK's `finally` emits `agent_settled` whatever happened), and two endings for one turn would
-      read as two turns. A transcript-reload failure (`resync`) never sets it — that turn did not
-      fail, the read after it did. */
-  const [turnError, setTurnError] = createSignal<string | null>(null);
+  /** The thread's error feed (lib/error-feed): its banners, each with the FAILED TURN'S own model
+      provider when the server said it (live error event only — a worker's failure in the thread
+      never carries one, so the limit row never guesses it from this chat's model), and the pane's
+      turn-error STATE: the last turn ended in an error and no newer turn has started. Cleared by
+      `agent_start` — a fresh turn supersedes the old failure — and by a rewind. Announced when it
+      lands, reported to the workspace's roll-up (`onTurnError`), and consulted before "replied.":
+      an errored turn still settles (the SDK's `finally` emits `agent_settled` whatever happened),
+      and two endings for one turn would read as two turns. A transcript-reload failure (`resync`)
+      never sets it — that turn did not fail, the read after it did. */
+  const [feed, setFeed] = createSignal<ErrorFeed>(EMPTY_FEED);
+  const turnError = () => feed().turnError;
   /** A permanent open failure (code "config"): shown once, never retried, never appended to. */
   const [configError, setConfigError] = createSignal<string | null>(null);
+  /** The chat runs in the home folder because its stored folder is gone (hello `cwdFallback`). */
+  const [cwdFallback, setCwdFallback] = createSignal<CwdFallbackInfo | null>(null);
   /** The open-failure banner's action state: an Archive in flight. */
   const [archiving, setArchiving] = createSignal(false);
   const [dialogs, setDialogs] = createSignal<{ id: string; request: unknown }[]>([]);
   const [resume, setResume] = createSignal(0);
   /** Queued steers/follow-ups a Stop drained, handed back to the composer. */
   const [restored, setRestored] = createSignal<{ text: string } | null>(null);
-  /** Run Playbook sent the message box's text: the composer empties (§chat.profiles/playbook). */
-  const [taken, setTaken] = createSignal<{ at: number } | null>(null);
   const [everOpened, setEverOpened] = createSignal(false);
   /** The model this visit's socket said (hello, "model"); undefined until it has. */
   const [saidModel, setModel] = createSignal<string | null | undefined>(undefined);
@@ -499,6 +541,8 @@ export function ChatView(props: {
   const [workersWorking, setWorkersWorking] = createSignal(0);
   /** The same message's list, so the status row can split the count against this session's teams. */
   const [workerList, setWorkerList] = createSignal<WorkerInfo[]>([]);
+  /** The same message's total: every worker the record counts, the ones its list trims included. */
+  const [workerCount, setWorkerCount] = createSignal(0);
   const workersSplit = () => workingSplit(workersWorking(), workerList(), props.teams);
   /** While a turn runs and its model request waits on its provider's limit, the status says so
       in place of Working (§app.provider-limits/waiting-shown). */
@@ -511,14 +555,21 @@ export function ChatView(props: {
       socket's to say. The hello clears the list, but its runtime's first "workers" can come a
       while after it (none at all while the runtime has no live record yet). */
   const [workersSaid, setWorkersSaid] = createSignal(false);
-  /** How many subagents the settled-workers trigger offers: until the socket says, what the
-      session list counts (lib/known-before-mount), so the status row is there from the first
-      frame and doesn't blink at the hello; never the working count, which only the socket gives. */
-  const workersTotal = () => workersShown(workersSaid(), workerList().length, knownWorkers(props.summary?.() ?? { live: null }));
+  /** How many subagents the trigger counts, with the ended ones beside: the live ones once the
+      socket says, until then what the session list counts (lib/known-before-mount), so the status
+      row is there from the first frame and doesn't blink at the hello; never the working count,
+      which only the socket gives. */
+  const workersCounted = createMemo(() => workersShown(workersSaid(), workerList(), workerCount(), knownWorkers(props.summary?.() ?? { live: null })));
   /** This chat's memory status (WS "memory_status"); null: off, or no message yet (§chat.composer/memory-status). */
   const [memoryStatus, setMemoryStatus] = createSignal<MemoryStatus | null>(null);
   /** A compaction is in flight: a manual /compact runs with no turn, so `live.running` misses it. */
   const [compacting, setCompacting] = createSignal(false);
+  /** This chat process's code (WS "code", §app.chat-processes/code-pickup); null: current, or no message since the hello. */
+  const [code, setCode] = createSignal<CodeView | null>(null);
+  /** Reload Now, and the failed banner's Try Again: the chat reloads at once if quiet, else when it is. */
+  const reloadCode = () => void chatSend({ type: "reload_code" });
+  props.onCode?.({ view: code, quiet: () => ({ running: live.running, workersWorking: workersWorking() }), reload: reloadCode });
+  onCleanup(() => props.onCode?.(null));
   let modelTimer: ReturnType<typeof setTimeout> | undefined;
   let thinkingTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => {
@@ -567,7 +618,7 @@ export function ChatView(props: {
       if (!cleared) batch(clearLive);
     } catch (err) {
       // Keep the streamed turn on screen; it's accurate, just not re-normalized.
-      setErrors((e) => [...e, { message: `Couldn't reload the transcript after this run: ${(err as Error).message}` }]);
+      setFeed((f) => feedOnNote(f, `Couldn't reload the transcript after this run: ${(err as Error).message}`));
     } finally {
       setSyncing(false);
     }
@@ -586,7 +637,7 @@ export function ChatView(props: {
       for (const ev of events) {
         // What the event does besides the live store (lib/live-effects): run in the order given.
         for (const effect of applyEvent(setLive, ev, { overseer: !!props.overseer, mine: owner.mine() })) {
-          if (effect === "clearTurnError") setTurnError(null);
+          if (effect === "clearTurnError") setFeed(feedOnTurnStart);
           else if (effect === "announceWorking") announce(turnWord("working.", "Working."));
           else if (effect === "compacting") setCompacting(true);
           else if (effect === "compactingDone") setCompacting(false);
@@ -626,8 +677,7 @@ export function ChatView(props: {
     const rows = unsentRows(live, handedBack);
     if (rows.length === 0) return;
     for (const r of rows) if (r.id) handedBack.add(r.id);
-    const current = drafts.get(props.path);
-    setDraftText(props.path, [...rows.map((r) => r.text), ...(current ? [current] : [])].join("\n\n"));
+    handBackSends(rows);
   };
 
   /** Ids a `queue_item_gone` has spoken for, so a later snapshot can't be read as evidence about
@@ -639,21 +689,63 @@ export function ChatView(props: {
       for one message — a failed departure and the refusal `error` that accompanies it — hand it
       back exactly once, in whichever order they arrive. */
   const handedBack = new Set<string>();
+  /** Sends the server hasn't acknowledged: back in the draft when the chat goes from under the pane. */
+  const unacked = new UnackedSends();
+  /** The confirm card clicks this pane sent, by client id: one handed back goes to its card, never the draft. */
+  const clicks = new CardClicks();
+  const UNSENT_WORDS = "That message couldn't be sent. It's back in the composer.";
+  /**
+   * Every send the pane gets back (a refusal, a reload or close, a connection that ended before its
+   * chat's hello, a queued one that left undelivered) goes through here (lib/hand-back): typed texts
+   * to the top of the draft, announced with `said`; a card click never: its card's "Sent" mark
+   * clears, so the buttons come back, and the pane says so (§app.overseer/confirm). The composer on
+   * screen shows the typed texts now (it reads the stored draft only when it mounts), and the stored
+   * draft holds them for one that mounts later. Returns the typed texts handed back.
+   */
+  const handBackSends = (back: readonly Unsent[], said?: string): string[] => {
+    if (!back.length) return [];
+    const r = handBack({ draft: drafts.get(props.path), cardSent: untrack(cardSent) }, back, clicks);
+    if (r.texts.length) {
+      setDraftText(props.path, r.draft ?? "");
+      setRestored({ text: r.texts.join("\n\n") });
+      if (said) announce(said);
+    }
+    if (r.note) {
+      setCardSent(r.cardSent);
+      toast(r.note);
+      announce(r.note);
+    }
+    return r.texts;
+  };
+  /** The sends made on connection `conn` it never acknowledged come back: it ended before its
+      chat's hello, so no chat took them. Earlier connections' sends stay. How many typed texts came
+      back (a click goes to its card and is said there). */
+  const takeBackUnsent = (conn: number): number => handBackSends(unacked.takeFrom(conn, handedBack)).length;
+  const handBackUnsent = (conn: number) => {
+    handBackSends(unacked.takeFrom(conn, handedBack), UNSENT_WORDS);
+  };
   /** Items pi has queued work beside: their Remove never comes back (see SHARED_QUEUE_REASON). */
   const [sharedQueue, setSharedQueue] = createSignal<string[]>([]);
 
-  const turnFailed = (message: string, provider?: string) => {
-    const seen = errors();
-    // The same failure re-reported (a reconnect loop) says nothing new: keep one row —
-    // and say nothing, because an announcement per retry would read as N new errors.
-    // The first landing is announced like every other turn boundary: a member whose turn
-    // died reads the same as one that
-    // replied, in its own pane's voice, without panning to find the banner.
-    if (seen[seen.length - 1]?.message !== message) {
-      setErrors([...seen, { message, ...(provider ? { provider } : {}) }]);
-      setTurnError(message);
-      announce(turnWord("stopped with an error.", "The turn stopped with an error."));
+  /** What a step of the error feed says. The first landing of a failure is announced like every
+      other turn boundary: a member whose turn died reads the same as one that replied, in its own
+      pane's voice, without panning to find the banner. */
+  const sayFeed = (says: FeedSay[]) => {
+    for (const s of says) {
+      if (s.say === "turnStopped") announce(turnWord("stopped with an error.", "The turn stopped with an error."));
+      else if (s.say === "startFailed") announce(`${turnWord("didn't start.", "This chat didn't start.")}${backWords(s.back, " ")}`);
+      else if (s.say === "unsent") announce(UNSENT_WORDS);
+      else {
+        toast(s.message);
+        announce(s.message);
+      }
     }
+  };
+  /** The server's failure `error`: `beforeHello` and `back` as lib/error-feed's feedOnFailure. */
+  const turnFailed = (message: string, provider?: string, beforeHello = false, back = 0) => {
+    const step = feedOnFailure(untrack(feed), { message, ...(provider ? { provider } : {}), beforeHello, back });
+    setFeed(step.feed);
+    sayFeed(step.says);
     // A prompt that failed before the agent started leaves nothing running.
     if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
   };
@@ -674,38 +766,73 @@ export function ChatView(props: {
   };
   onCleanup(dropNotFound);
 
-  const socket = createReconnectingSocket<ChatServerMessage>(newestOnly(wsUrl("/ws/chat", props.path, props.force)), {
+  // Rows from the file first (§chat.transcript/instant-open): a chat with no rows kept in this tab,
+  // or kept rows older than its file, paints the file's newest rows (the read-only GET the Recent
+  // preload makes), then connects. Every connect names the last row the view holds, so the hello
+  // carries only the rows after it. A file read that fails connects as before; one that lands
+  // after a hello is ignored (the hello said it all). A read that hasn't answered within
+  // FILE_READ_WAIT_MS doesn't hold the socket: it connects naming no row.
+  const keptCurrent = !!cached?.items.length && !keptBehind(transcripts.stamp(cacheKey), untrack(() => props.summary?.()?.lastActiveAt));
+  const fromFile = keptCurrent
+    ? undefined
+    : fetchTranscriptRows(props.path, { tail: true }).then(
+        (r) => {
+          if ("code" in r) return;
+          batch(() => {
+            if (olderRows.paint(r)) setNewFrom(r.items[0]?.id ?? null);
+          });
+        },
+        () => {},
+      );
+  const socket = createReconnectingSocket<ChatServerMessage>(() => withHave(newestOnly(wsUrl("/ws/chat", props.path, props.force)), untrack(items)?.at(-1)?.id), {
+    after: fromFile,
+    afterMs: FILE_READ_WAIT_MS,
     onOpen(isReconnect) {
       setEverOpened(true);
+      setFeed(feedOnOpen);
+      setWait(waitOnOpen(untrack(wait)));
       // hello follows and replaces everything; dialogs belonged to the old connection.
       if (isReconnect) setDialogs([]);
+      // What the tab asked while no connection was open goes now, oldest first, before the chat's
+      // hello: the server holds it while the chat starts (§chat.transcript/send-while-starting).
+      deliverHeld();
     },
     onMessage(msg) {
       if (loginUnsaid !== undefined && msg.type !== "claude_login") awaitLogin();
       switch (msg.type) {
         case "hello":
           dropNotFound();
-          // A hello starts the socket's account again: memory says itself right after it, or is off.
+          // A hello starts the socket's account again: memory says itself right after it, or is off;
+          // so does the code, or it is current.
           setMemoryStatus(null);
+          setCode(null);
           cancelAnimationFrame(frame);
           frame = 0;
           queue = [];
           statusAsker.hello();
           owner.reset();
           batch(() => {
+            // A hello that continues after the row this view named (`after`) adds to the rows held:
+            // the first of them stays where "new" counts from.
+            const firstHeld = msg.after !== undefined ? (untrack(newFrom) ?? untrack(items)?.[0]?.id ?? null) : null;
             // The newest rows; the rest are fetched when wanted (lib/older-rows). Rows kept above
             // the hello's first row are that row's ancestors, entries that never change: they stay,
             // so a rewind or a reconnect doesn't make a whole list partial or its counts blink.
             olderRows.hello(msg);
-            setNewFrom(msg.items[0]?.id ?? null);
+            setNewFrom(msg.after !== undefined ? firstHeld : (msg.items[0]?.id ?? null));
             setHelloed(true);
+            setWait(waitOnHello(untrack(wait)));
+            setFeed(feedOnHello);
             setHellos((n) => n + 1);
             // A client that connects mid-compaction shows it, as the compaction_start it missed would.
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming, activity: msg.isCompacting ? "Compacting context" : null }));
+            // Joined mid-reply: the reply so far and its running tools, which the deltas after this continue.
+            seedLive(setLive, msg.live);
             setCompacting(!!msg.isCompacting);
           });
           setModel(msg.model);
           setHelloReview(msg.alignReview);
+          setCwdFallback(msg.cwdFallback ?? null);
           // The shield and the login stay as shown until the messages after the hello settle them
           // ("commands", "sandbox", "claude_login"), so neither blinks out and back.
           setProfileInfo(null); // a "profile" message follows for a profile or a session before its first message
@@ -720,6 +847,7 @@ export function ChatView(props: {
           setLocalWorking(props.path, 0);
           batch(() => {
             setWorkerList([]);
+            setWorkerCount(0);
             setWorkersSaid(false);
           });
           props.onWorkers?.([]);
@@ -727,12 +855,26 @@ export function ChatView(props: {
           // polled insight, never a list from before the reconnect.
           noteLinks(props.path, null);
           props.onModel(msg.model);
+          // What the tab waited on (the mode menu's lists) loads now, once (§chat.transcript/instant-open).
+          readers.flush();
           break;
+        // The chat closed for being quiet (§app.chat-processes/idle-stop): the rows, draft and
+        // composer stay, and no socket is held until something needs the chat (wake).
+        case "closed": {
+          setCode(null);
+          setWait(waitOnSleep(untrack(wait)));
+          sawGone = !props.summary?.()?.chat;
+          socket.close();
+          // Sends it never took can't be refused back on this socket any more: they come back now.
+          handBackSends(unacked.takeAll(handedBack), "That message couldn't be sent. It's back in the composer.");
+          return;
+        }
         case "workers":
           batch(() => {
             setWorkersWorking(msg.working);
             setLocalWorking(props.path, msg.working);
             setWorkerList(msg.workers);
+            setWorkerCount(msg.total);
             setWorkersSaid(true);
           });
           props.onWorkers?.(msg.workers);
@@ -742,7 +884,22 @@ export function ChatView(props: {
           break;
         // Stop drained what was still queued; it goes back to the draft, not behind the next prompt.
         case "queue_cleared": {
-          const text = takeBackQueued(setLive, [...msg.steering, ...msg.followUp]);
+          const drained = [...msg.steering, ...msg.followUp];
+          // A queued card click never goes to the composer: its buttons come back (lib/hand-back).
+          const cards: string[] = [];
+          const typed = drained.filter((t) => {
+            const card = clicks.takeByText(t);
+            if (card !== undefined) cards.push(card);
+            return card === undefined;
+          });
+          if (cards.length) {
+            setCardSent(reopenCards(untrack(cardSent), cards));
+            toast(CLICK_NOT_DELIVERED);
+            announce(CLICK_NOT_DELIVERED);
+          }
+          // Every drained row goes; only typed text comes back.
+          takeBackQueued(setLive, drained);
+          const text = typed.filter((t) => t.trim()).join("\n\n");
           if (text) {
             setRestored({ text });
             announce("Queued message returned to the composer.");
@@ -754,8 +911,7 @@ export function ChatView(props: {
         // is not touched at all.
         case "regenerated":
           batch(() => {
-            setErrors([]); // they belonged to the turns just abandoned
-            setTurnError(null);
+            setFeed(feedOnReset()); // they belonged to the turns just abandoned
             setCommandRows([]);
           });
           setActionNote(null);
@@ -770,6 +926,7 @@ export function ChatView(props: {
         // The server has our message: it is queued, not merely sent. Until this lands, the row says
         // "Sending…" and offers no Remove — nothing is known to hold it.
         case "send_ack":
+          unacked.settled(msg.clientId);
           owner.ack(msg.clientId, msg.queued);
           if (msg.queued) markQueued(setLive, msg.clientId);
           break;
@@ -789,6 +946,7 @@ export function ChatView(props: {
          * that sent it — the only tab with anywhere to put it.
          */
         case "queue_item_gone": {
+          unacked.settled(msg.itemId);
           const effect = queueGoneEffect(msg.reason);
           // The text to hand back, from the message when it carries one and otherwise from the row
           // we are about to remove. A "dropped" message has no other carrier — no message_start,
@@ -802,7 +960,12 @@ export function ChatView(props: {
           claimed.add(msg.itemId);
           if (effect.row === "delivered") markDelivered(setLive, msg.itemId);
           else markRemoved(setLive, msg.itemId);
-          if (first && effect.restore && text && sentHere(props.path, msg.itemId) && !handedBack.has(msg.itemId)) {
+          if (effect.row === "delivered") clicks.forget(msg.itemId);
+          // A card click that left undelivered: its buttons come back, never the composer (lib/hand-back).
+          if (first && effect.restore && clicks.cardOf(msg.itemId) !== undefined && !handedBack.has(msg.itemId)) {
+            handedBack.add(msg.itemId);
+            handBackSends([{ id: msg.itemId, text }]);
+          } else if (first && effect.restore && text && sentHere(props.path, msg.itemId) && !handedBack.has(msg.itemId)) {
             handedBack.add(msg.itemId);
             setRestored({ text });
             announce(
@@ -844,15 +1007,17 @@ export function ChatView(props: {
         // A rewind landed. The server has already broadcast the new branch's hello (and mode), so
         // the thread is reset; what's left is the rewound message, which goes ahead of the draft.
         case "rewound": {
+          // A message another session sent comes back as its body: the header line is the
+          // model's, not words to send again (§chat.timeline/rewind).
+          const editorText = msg.editorText ? handBackText(msg.editorText) : msg.editorText;
           batch(() => {
-            setErrors([]); // they belonged to the turns just abandoned
-            setTurnError(null);
+            setFeed(feedOnReset()); // they belonged to the turns just abandoned
             setCommandRows([]);
-            if (msg.editorText) setRestored({ text: msg.editorText });
+            if (editorText) setRestored({ text: editorText });
           });
-          announce(msg.editorText ? "Rewound. Your message is back in the composer." : "Rewound.");
+          announce(editorText ? "Rewound. Your message is back in the composer." : "Rewound.");
           props.onRewound?.({ path: props.path, entryId: msg.entryId });
-          settleRequest(msg.id, { ok: true, text: msg.editorText });
+          settleRequest(msg.id, { ok: true, text: editorText });
           break;
         }
         // settleRequest announces it: the pane shows the same message inline on its row.
@@ -898,11 +1063,23 @@ export function ChatView(props: {
             }
           break;
         case "mode":
-          setModeState({ mode: msg.mode, minorModes: msg.minorModes, strict: msg.strict, applies: msg.applies, ...(msg.memory ? { memory: msg.memory } : {}) });
+          setModeState({
+            mode: msg.mode,
+            minorModes: msg.minorModes,
+            strict: msg.strict,
+            applies: msg.applies,
+            ...(msg.memory ? { memory: msg.memory } : {}),
+            ...(msg.projectModes ? { projectModes: msg.projectModes } : {}),
+            ...(msg.project ? { project: msg.project } : {}),
+            ...(msg.projectMinors ? { projectMinors: msg.projectMinors } : {}),
+          });
           break;
         // This chat's memory (§chat.composer/memory-status): only while it is on, or the turn it goes off.
         case "memory_status":
           setMemoryStatus(msg.status.state === "off" ? null : msg.status);
+          break;
+        case "code":
+          setCode(codeView(msg));
           break;
         case "sandbox":
           setSandboxState({ on: msg.on, ...(msg.state ? { state: msg.state } : {}), enforcement: msg.enforcement, status: msg.status });
@@ -943,6 +1120,8 @@ export function ChatView(props: {
           setDialogs((d) => d.filter((x) => x.id !== msg.id));
           break;
         case "error":
+          // A turn error naming a send settles it (a refusal hands its text back below).
+          if (msg.code !== "refused") unacked.settled(msg.clientId);
           if (pendingModel()) modelFailed(msg.message, msg.code);
           if (pendingThinking()) thinkingFailed(msg.message);
           switch (msg.code) {
@@ -956,13 +1135,31 @@ export function ChatView(props: {
             // someone else): the words as they are, the draft back in the box, the socket kept, no
             // turn failure. The composer's own blocked reason says the same once the list catches up.
             case "refused":
+            {
+              // A command it names makes no user row: its text comes back from here (a click: its card).
+              const taken = handBackSends([unacked.take(msg.clientId, handedBack)].filter((u): u is Unsent => u !== null));
+              // Refused before the hello, the chat never had it: its row goes, as the text is back.
+              const unopened = errorHandsBack(untrack(wait)) !== null;
+              if (unopened && msg.clientId) {
+                const id = msg.clientId;
+                setLive(produce((s) => void (s.entries = s.entries.filter((e) => !(e.kind === "user" && e.id === id)))));
+              }
               if (msg.profileRunning) setProfileRace({ label: profileInfo()?.profile?.label ?? "This profile", running: msg.profileRunning });
               restoreUnsent();
               if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
-              toast(msg.message);
-              announce(msg.message);
+              // Before this connection's hello it is the chat failing to open (its retry included,
+              // server/ws.ts): quiet here, said by the start failure that follows (lib/error-feed).
+              const step = feedOnRefused(untrack(feed), { message: msg.message, beforeHello: unopened, back: taken.length });
+              setFeed(step.feed);
+              sayFeed(step.says);
               return;
-            case "reloaded":
+            }
+            case "reloaded": {
+              // Its code state was that process's: the next hello says the new one's (never a stale "Reloading").
+              setCode(null);
+              // The chat is going (a reload, a stop): this socket's sends the server never took can't
+              // be refused back to it any more (the pane reconnects under a new id), so they come back now.
+              handBackSends(unacked.takeAll(handedBack), "That message couldn't be sent. It's back in the composer.");
               // The Overseer's runtime can be replaced by a clear in another tab: its route may now
               // name a new file, and reconnecting here would reopen the old one.
               if (props.overseer) {
@@ -978,6 +1175,7 @@ export function ChatView(props: {
               }
               socket.reconnect();
               return;
+            }
             // Permanent (the session's cwd is gone): one banner, no retry loop. The socket layer
             // already refuses to reconnect on close 4422; closing here covers a server that sends
             // the message without the close code.
@@ -988,9 +1186,23 @@ export function ChatView(props: {
               setLive("running", false);
               return;
             default: {
-              if (modelError() || thinkingError()) break; // shown as the switch's banner
+              // Before this connection's hello the chat didn't open (it failed to start, the
+              // server's one retry included): what the server never acknowledged goes back to the
+              // composer, "This chat didn't start." says so (lib/error-feed), and the socket retries.
+              const failed = errorHandsBack(untrack(wait));
+              const back = failed !== null ? takeBackUnsent(failed) : 0;
+              // Not a start failure after all: what came back (here or by a quiet refusal) is said as before.
+              const sayBack = () => {
+                if (back + (untrack(feed).heldBack ?? 0) > 0) announce(UNSENT_WORDS);
+                setFeed((f) => (f.heldBack ? { ...f, heldBack: 0 } : f));
+              };
+              if (modelError() || thinkingError()) {
+                sayBack();
+                break; // shown as the switch's banner
+              }
               // A refused switch of Claude login is its own banner, never a turn failure.
               if (msg.message.startsWith(LOGIN_UNCHANGED)) {
+                sayBack();
                 setLoginError(msg.message.slice(LOGIN_UNCHANGED.length).trim());
                 announce(msg.message);
                 break;
@@ -999,16 +1211,121 @@ export function ChatView(props: {
               // the reconnect's "not found" is no turn error then. Ask for the host check now and
               // keep "Reconnecting"; the view is replaced when the change is confirmed.
               if (mayBeHostMove(msg, everOpened(), !hostOf(props.path), meshOn())) {
+                sayBack();
                 holdNotFound(msg.message);
                 break;
               }
-              turnFailed(msg.message, msg.provider);
+              turnFailed(msg.message, msg.provider, failed !== null, back);
             }
           }
           break;
       }
     },
   });
+
+  // ---- A chat closed while its tab is open (§chat.transcript/instant-open) ------------------
+  /** What this tab asked of its chat while no connection was open: written, in order, the moment
+      one opens (§chat.transcript/send-while-starting). A WebSocket still connecting takes no frame. */
+  const outbox = new Outbox(props.path);
+  /** Row requests in the outbox: their answer can't be lost to a connection change before they go. */
+  const heldRequests = new Set<string>();
+  /** Reads that wait for the woken chat's hello (the mode menu's lists): nothing to deliver. */
+  const readers = new WakeQueue();
+  /** The list said the server no longer holds the chat since it closed (lib/chat-wait heldWhileAsleep). */
+  let sawGone = false;
+  /** Something needs the chat: connect, which starts it again. */
+  const wake = () => {
+    if (!untrack(wait).asleep) return;
+    setWait(waitOnWake(untrack(wait)));
+    socket.retry();
+  };
+  /** Whether what the tab asks now goes into the outbox: asleep, woken with no connection open yet,
+      or behind frames already kept (they go in order). */
+  const holding = () => {
+    const w = untrack(wait);
+    return !!w.asleep || (!!w.waking && !w.open) || outbox.size > 0;
+  };
+  /** Kept for the connection that wakes the chat, which this starts. */
+  const hold = (frame: Frame) => {
+    outbox.push(frame);
+    wake();
+  };
+  /** The outbox, onto the connection that just opened; its sends are that connection's to answer. */
+  const deliverHeld = () => {
+    const conn = untrack(wait).conn;
+    for (const frame of outbox.take()) {
+      if (!socket.send(frame)) break;
+      const { type, clientId, text } = frame;
+      if ((type === "prompt" || type === "steer") && typeof clientId === "string") unacked.sent(clientId, typeof text === "string" ? text : "", conn);
+    }
+    heldRequests.clear();
+  };
+  /** Resolves once this tab's chat is open: at once, or at the hello of the chat it wakes; rejects when the tab gives up. */
+  const chatReady = (): Promise<void> =>
+    holding()
+      ? new Promise((resolve, reject) => {
+          readers.hold(resolve, { dropped: () => reject(new Error("The chat didn't start")) });
+          wake();
+        })
+      : Promise.resolve();
+  /** A message for the chat: kept for the connection that wakes it while none is open, else on the socket. */
+  const chatSend = (msg: Record<string, unknown>): boolean => {
+    if (!holding()) return socket.send(msg);
+    hold(msg);
+    return true;
+  };
+  /** The tab gave up connecting (or Stop before anything went): what the outbox kept never goes;
+      its sends' rows go back to the composer, its requests are refused. */
+  const giveUpWake = () => {
+    const ids = new Set(sendsOf(outbox.take()).keys());
+    readers.drop();
+    for (const id of [...heldRequests]) {
+      heldRequests.delete(id);
+      settleRequest(id, { ok: false, reason: "disconnected", message: "The chat didn't start. Try again." });
+    }
+    if (!ids.size) return;
+    restoreUnsent();
+    setLive(produce((s) => void (s.entries = s.entries.filter((e) => !(e.kind === "user" && e.id && ids.has(e.id))))));
+    if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
+  };
+  // A view coming back to a chat while a message of this tab's is on its way there shows it as
+  // sending until the chat's own rows say where it is (§chat.transcript/send-while-starting).
+  for (const [id, text] of sendsOnTheWay(props.path)) addPendingPrompt(setLive, text, [], [], id);
+  // A courier's refusal while this view is open comes back to this composer.
+  const stopTakingBack = takeBackHere(props.path, (texts, ids) => {
+    const gone = new Set(ids);
+    setLive(produce((s) => void (s.entries = s.entries.filter((e) => !(e.kind === "user" && e.id && gone.has(e.id))))));
+    setRestored({ text: texts.join("\n\n") });
+  });
+  // Closing with something still owed an answer (§chat.transcript/send-while-starting): the
+  // connection, open or still connecting, goes to a courier with what the outbox kept and the sends
+  // on it unanswered, so they are delivered and a refusal still comes back to the draft.
+  onCleanup(() => {
+    stopTakingBack();
+    const frames = outbox.take();
+    const w = untrack(wait);
+    // A card click is never put back by the courier (lib/hand-back): only typed sends are held for it.
+    const held = new Map([...(w.open ? unacked.of(w.conn) : new Map<string, string>())].filter(([id]) => clicks.cardOf(id) === undefined));
+    if (!frames.length && !held.size) return;
+    courier(props.path, frames, held, chatCourier, socket.release() ?? undefined);
+  });
+  createEffect(on(socket.status, (status) => (status === "failed" || status === "closed") && !untrack(wait).asleep && giveUpWake(), { defer: true }));
+  // Brought to the front (a workspace tab), a chat that slept is being opened: start it, as a send would.
+  const inFront = createMemo(() => props.front?.() ?? true);
+  createEffect(on(inFront, (front) => front && wake(), { defer: true }));
+  // Someone else opened the chat meanwhile (another tab, a worker's report): connect to it.
+  createEffect(
+    on(
+      () => !!props.summary?.()?.chat,
+      (held) => {
+        if (!untrack(wait).asleep) return;
+        const r = heldWhileAsleep(sawGone, held);
+        sawGone = r.sawGone;
+        if (r.connect) wake();
+      },
+      { defer: true },
+    ),
+  );
 
   // ---- Session requests: rewind, regenerate, remove a queued message ------------------------
   /**
@@ -1025,7 +1342,7 @@ export function ChatView(props: {
   const requests = new Map<string, { kind: RequestKind; resolve: (result: ActionResult) => void }>();
   let requestSeq = 0;
   /** How many of each kind are waiting, reactively: a strip greys its own action while one is out,
-      and the flyout's Undo row greys out while a rewind is. */
+      and the palette's Undo row greys out while a rewind is. */
   const [pending, setPending] = createSignal<Record<RequestKind, number>>({ rewind: 0, regenerate: 0, queue_remove: 0, compact: 0 });
   const countPending = () => {
     const n: Record<RequestKind, number> = { rewind: 0, regenerate: 0, queue_remove: 0, compact: 0 };
@@ -1043,9 +1360,23 @@ export function ChatView(props: {
   /** A dropped connection takes its answers with it; the reconnect's hello shows what happened. */
   const dropRequests = () => {
     for (const id of [...requests.keys()])
-      settleRequest(id, { ok: false, reason: "disconnected", message: "The connection dropped. Check the thread, then try again." });
+      if (!heldRequests.has(id))
+        settleRequest(id, { ok: false, reason: "disconnected", message: "The connection dropped. Check the thread, then try again." });
   };
   createEffect(on(socket.status, (status) => status !== "open" && dropRequests(), { defer: true }));
+  // A connection that ends waits for its own hello again; one that ends before its hello (its chat
+  // didn't start) hands back what it never acknowledged (§chat.transcript/instant-open).
+  createEffect(
+    on(
+      socket.status,
+      (status) => {
+        const { next, handBack } = waitOnStatus(untrack(wait), status, untrack(everOpened));
+        if (handBack !== null) handBackUnsent(handBack);
+        setWait(next);
+      },
+      { defer: true },
+    ),
+  );
   onCleanup(dropRequests);
   const refuseHere = (reason: string, message: string): ActionResult => {
     announce(message);
@@ -1055,12 +1386,16 @@ export function ChatView(props: {
   const ask = (kind: RequestKind, message: Record<string, unknown>): Promise<ActionResult> => {
     const id = `${kind}-${++requestSeq}`;
     return new Promise((resolve) => {
-      if (!socket.send({ ...message, id })) return resolve(refuseHere("disconnected", "Not connected. Try again once it reconnects."));
+      // A chat closed while quiet: the request goes on the connection that wakes it, as it opens.
+      if (holding()) {
+        heldRequests.add(id);
+        hold({ ...message, id });
+      } else if (!socket.send({ ...message, id })) return resolve(refuseHere("disconnected", "Not connected. Try again once it reconnects."));
       requests.set(id, { kind, resolve });
       countPending();
     });
   };
-  /** How many rewinds are out — the flyout's Undo row reads this. */
+  /** How many rewinds are out — the palette's Undo row reads this. */
   const rewindsPending = () => pending().rewind;
   /**
    * A refusal code from a server that may be newer than this build: anything it doesn't know is
@@ -1105,7 +1440,7 @@ export function ChatView(props: {
   onCleanup(() => noteLinks(props.path, null));
   props.onRewindControl?.({ path: props.path, blocked: rewindBlocked, rewind });
   onCleanup(() => props.onRewindControl?.(null));
-  /** The flyout's "Undo last turn": a rewind to just before the newest user message on the branch
+  /** The palette's "Undo last turn": a rewind to just before the newest user message on the branch
       (never a link message: a partner's words are no rewind target). */
   const lastInput = () => {
     const list = items() ?? [];
@@ -1166,7 +1501,7 @@ export function ChatView(props: {
 
   /** What every strip in this chat is judged by. Reactive by construction: a turn starting, a
       compaction, a model switch or a reconnect re-enables the actions in place. */
-  const actionState = (wake = false, link = false, topic = false): ActionState => ({
+  const actionState = (wake = false, link = false, topic = false, tourNotice = false): ActionState => ({
     chat: true,
     live: false, // a ChatView only exists for a session Sova may write to
     streaming: live.running,
@@ -1176,6 +1511,7 @@ export function ChatView(props: {
     pending: forking() || pending().rewind + pending().regenerate > 0,
     paused: blocked()?.text ?? null,
     wake,
+    tourNotice,
     link,
     topic,
   });
@@ -1210,10 +1546,14 @@ export function ChatView(props: {
   /** The session's id, for Share. A memo: the summary is a new object on every list read, and every
       strip's items read this. */
   const shareId = createMemo(() => props.summary?.()?.id);
-  /** What each delivered message offers here. Copy is ours alone; the rest are requests with a
-      reason when they can't act, never a button that quietly does nothing. */
-  const chatActions: MessageActionsProvider = {
-    items(strip) {
+  /** What extensions add under this chat's replies: asked once when it opens and once when a run
+      ends, only of extensions that add to replies (lib/reply-place). */
+  const additions = useReplyAdditions({ session: shareId, local: createMemo(() => !hostOf(props.path)), running: () => live.running });
+  /** What each delivered message offers here: the reply place. Sova's own built-in first: Copy is
+      ours alone; the rest are requests with a reason when they can't act, never a button that
+      quietly does nothing. What extensions add comes after it. */
+  const chatActions: ReplyPlace = {
+    builtIns: [{ id: "sova.message-actions", items(strip) {
       return actionsFor(strip.role, { copyable: copyable(strip) }).map((kind): MessageActionItem => {
         switch (kind) {
           case "copy":
@@ -1229,26 +1569,30 @@ export function ChatView(props: {
           case "regenerate":
             return {
               kind,
-              reason: actionReason("regenerate", actionState(!!strip.fromWake, !!strip.fromLink, !!strip.fromTopic)),
+              reason: actionReason("regenerate", actionState(!!strip.fromWake, !!strip.fromLink, !!strip.fromTopic, !!strip.fromTourNotice)),
               run: () => regenerate(strip.entryId),
             };
         }
       });
-    },
+    } }],
     note: (entryId) => (actionNote()?.entryId === entryId ? actionNote()!.text : null),
+    added: additions.added,
+    runChip: additions.runChip,
   };
 
   /** A message of ours that hasn't been delivered: one Remove, by the id the server knows it by.
       A row with no id (sent before this build, or by a client that minted none) offers nothing —
       there is no truthful way to name it to the server. */
-  const queueActions = (row: { id?: string; state: LiveUserState; text: string }): MessageActionItem[] => {
+  const queueActions = (row: { id?: string; state: LiveUserState; text: string; handed?: boolean }): MessageActionItem[] => {
     const id = row.id;
-    if (!id) return [];
+    // Only a row the server holds (Queued) has one (§chat.transcript/a-queued-message): a Sending… row
+    // draws none, before the server's answer or once handed to the agent (Stop takes that back).
+    if (!id || !offersRemove(row)) return [];
     return [
       {
         kind: "remove",
         label: ACTION_LABEL.remove,
-        reason: queueRemoveReason({ state: row.state, pending: removing().includes(id), chat: true, sharedQueue: sharedQueue().includes(id) }),
+        reason: queueRemoveReason({ state: "queued", pending: removing().includes(id), chat: true, sharedQueue: sharedQueue().includes(id) }),
         run: () => removeQueued(id),
       },
     ];
@@ -1293,27 +1637,46 @@ export function ChatView(props: {
       action strip, so reading the list itself there rebuilt every strip's buttons on each change
       of the list (an append, a turn-end reload, each chunk of a tail-first hello's history). */
   const listHere = createMemo(() => !!items());
+  /** The connection's own reason to wait, or null (lib/chat-wait waitReason). */
+  const waitingReason = (): ComposerReason | null => waitReason(socket.status(), wait()) ?? (listHere() ? null : waitReason("connecting", wait()));
+  // Offer cards (§chat.offers/card): an ordinary chat's, read from the server, again after each turn.
+  const offers = props.overseer || props.projectOverseer ? undefined : createOfferControls(() => props.path, (c) => !!c.toolCallId, () => !archivedPane() && !batonGate());
+  if (offers) createEffect(on(() => live.running, (now, before) => void (before && !now && offers.refresh()), { defer: true }));
+  /** Show in Chat for an offer card (§chat.composer/waiting-dialog): its `offer` call's row (the
+      jump's highlight included), else the card where it stands (the tray at the thread's end). */
+  const jumpToOffer = (card: OfferCard) => {
+    const rows = card.toolCallId ? (items()?.filter((it) => it.toolCallId === card.toolCallId) ?? []) : [];
+    rows.sort((a, b) => Number(b.kind === "tool-call") - Number(a.kind === "tool-call"));
+    if (rows.some((row) => jumpToEntry(row.id, props.path))) return;
+    const el = transcriptRoot(props.path)?.querySelector<HTMLElement>(`[data-offer-id="${CSS.escape(card.id)}"]`);
+    if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+    else toast("That card isn't in the transcript on screen.");
+  };
   const blocked = (): ComposerReason | null => {
     if (archivedPane()) return { icon: "archive", text: "This session is archived. Unarchive it to send." };
     // A baton session (§app.baton/attribution): the operator writes only while holding the baton.
     const baton = batonGate();
     if (baton) return baton;
-    switch (socket.status()) {
-      case "connecting":
-        return everOpened() ? { icon: "clock", text: "Reconnecting. Your draft is kept." } : { icon: "clock", text: "Connecting…", soft: true };
-      case "reconnecting":
-        return { icon: "clock", text: "Reconnecting. Your draft is kept." };
-      case "failed":
-      case "closed":
-        return { icon: "clock", text: "Not connected." };
-    }
-    if (!listHere()) return { icon: "clock", text: "Connecting…", soft: true };
+    // This tab woke its chat and the chat hasn't said hello yet: what the person asks now goes to the
+    // server in order, behind what woke it (a model switch, then Send), and the server applies each
+    // before the next (§chat.transcript/send-while-starting). The note still floats (`waitNote`).
+    const waking = !!wait().waking;
+    // Connecting, starting or reconnecting: the words float over the transcript's end (`waitNote`),
+    // the composer's reason carries them for assistive technology only (§chat.transcript/instant-open).
+    const waiting = waking ? null : waitingReason();
+    if (waiting) return waiting;
     if (syncing()) return { icon: "clock", text: "Saving this turn…" };
-    if (pendingModel()) return { icon: "clock", text: "Switching model…" };
+    if (pendingModel() && !waking) return { icon: "clock", text: "Switching model…" };
     // Any compaction: this chat's /compact (asked, or already running), pi's automatic one, or an
     // extension's. The server would hold a send meanwhile; saying so is better than a queue row.
     if (compacting() || pending().compact > 0) return { icon: "clock", text: COMPACTING_REASON };
     return null;
+  };
+
+  /** What the note over the transcript's end says while the chat connects or starts, or null. */
+  const waitNote = (): ComposerReason | null => {
+    const reason = blocked() ?? (wait().waking ? waitingReason() : null);
+    return reason?.quiet ? reason : null;
   };
 
   // ---- Taking recommendations from an alignment card (§chat.alignment/card) --------------
@@ -1336,7 +1699,17 @@ export function ChatView(props: {
       return !!current?.reviewer;
     },
   );
+  /** The open cards' triage (§app.decisions/align-triage): read again when a card's version changes. */
+  const [triage] = createResource(
+    () => {
+      if (!alignAnswerable()) return false;
+      const key = triageKey(aligns().map((e) => ({ id: e.doc.id, rev: e.doc.rev, open: isOpenDoc(e.doc) && openCount(e.doc) > 0 })));
+      return key ? `${props.path}\n${key}` : false;
+    },
+    async (k) => getAlignTriage(k.slice(0, k.indexOf("\n"))).catch(() => undefined),
+  );
   const alignAnswer: AlignAnswer = {
+    triage: (doc, rev) => triageOf(triage(), doc, rev),
     on: alignAnswerable,
     current: (id) => aligns().find((e) => e.doc.id === id)?.doc,
     picked: (doc, q) => picks()[doc]?.some((p) => p.q === q && !p.option) ?? false,
@@ -1435,7 +1808,7 @@ export function ChatView(props: {
   };
   const chooseModel = (ref: string) => {
     if (pendingModel() || ref === model() || live.running || blocked()) return;
-    if (!socket.send({ type: "set_model", ref })) return;
+    if (!chatSend({ type: "set_model", ref })) return;
     setModelError(null);
     setPendingModel(ref);
     clearTimeout(modelTimer);
@@ -1468,7 +1841,7 @@ export function ChatView(props: {
     blocked: thinkingBlocked,
     choose: (level: string) => {
       if (pendingThinking() || level === thinking() || thinkingBlocked()) return;
-      if (!socket.send({ type: "set_thinking", level })) return;
+      if (!chatSend({ type: "set_thinking", level })) return;
       setThinkingError(null);
       setPendingThinking(level);
       clearTimeout(thinkingTimer);
@@ -1503,25 +1876,31 @@ export function ChatView(props: {
     running: () => live.running,
     context: () => sessionContext()[props.path],
     choose: (id) => {
-      if (socket.send({ type: "set_claude_login", login: id })) setLoginError(null);
+      if (chatSend({ type: "set_claude_login", login: id })) setLoginError(null);
     },
     cancel: () => {
-      socket.send({ type: "set_claude_login", login: null });
+      chatSend({ type: "set_claude_login", login: null });
     },
   };
   /** The composer foot's mode switch: this chat's WS "mode" state and its session file. */
-  const modeControl: ModeControl = { state: modeState, path: props.path };
+  const modeControl: ModeControl = { state: modeState, path: props.path, blocked: () => {
+      const r = blocked();
+      return r?.quiet ? r.text : null;
+    }, ready: chatReady, wake };
   /** What the setup card's Tools group re-reads on (§chat.transcript/setup-card-tools): the model, the
       mode triple and each (re)connect, as one string, so only a change of value re-reads (the mode
       signal's objects are new on every "mode" message). */
   const toolsKey = createMemo(() => toolsKeyOf(model(), modeState(), hellos()));
-  /** The flyout's Sandbox group and the shield's panel: the extension answers with a toast and a
+  /** The shield's Sandbox panel: the extension answers with a toast and a
       "sandbox" message. */
   const sandboxControl: SandboxControl = {
     state: sandbox,
     pending: sandboxPending,
     set: (state) => {
       setSandboxPending(state);
+      // A chat closed while quiet wakes for it; the switch goes now, and the server opens the chat
+      // for it (§chat.transcript/send-while-starting).
+      wake();
       setSandbox(props.path, state)
         .then((r) => {
           if (r.outcome === "skip") toast("Sandbox unchanged: another writer has this session. Nothing was written.");
@@ -1589,14 +1968,19 @@ export function ChatView(props: {
   // outside a workspace has nobody to tell — the prop is simply absent there.
   createEffect(() => props.onTurnError?.(turnError()));
 
-  /** `confirm`: the Overseer's confirm card click (that card's tool call id); never set by typing. */
-  const send = (text: string, steer: boolean, attachments: UploadResult[], confirm?: string) => {
+  /** `running`: a reply runs, as this tab sees it. `confirm`: the Overseer's confirm card click (that
+      card's tool call id); never set by typing. `typed`: the composer's own message, always a steer
+      (sendFrame), so a quick second message lands with the first even before this tab sees the run.
+      A chat closed while quiet (§chat.transcript/instant-open) takes the message the same way: it
+      shows now and goes to the server on the connection that wakes the chat, as it opens
+      (§chat.transcript/send-while-starting). A model turned off is said before waking anything. */
+  const send = (text: string, running: boolean, attachments: UploadResult[], confirm?: string, typed = false): boolean => {
     // A model turned off in Settings → Models is refused by the server on its way to the provider
     // (server/model-policy.ts). Saying so here keeps the message in the composer instead of
     // spending it on a refusal, and never picks another model for you.
     const offModel = offNow();
     if (offModel) {
-      setErrors((e) => (e[e.length - 1]?.message === offModel ? e : [...e, { message: offModel }]));
+      setFeed((f) => feedOnNote(f, offModel, true));
       announce(offModel);
       return false;
     }
@@ -1605,9 +1989,16 @@ export function ChatView(props: {
     // are still two messages — which is what makes removing the middle one of three possible.
     // "/compact [instructions]" is Sova's builtin: a request with its own answer, not a message.
     const compact = compactCommand(text);
-    if (compact) return sendCompact(text, compact.instructions, steer, attachments.length > 0);
+    if (compact) return sendCompact(text, compact.instructions, running, attachments.length > 0);
     const clientId = newClientId();
-    if (!socket.send(steer ? { type: "steer", text, clientId } : { type: "prompt", text, clientId, ...(confirm ? { confirm } : {}) })) return false;
+    const frame = sendFrame(text, clientId, { typed, ...(confirm ? { confirm } : {}) });
+    // A click is known as one wherever it is handed back (lib/hand-back).
+    if (confirm && frame.type === "prompt") clicks.note(clientId, confirm, text);
+    if (holding()) hold(frame);
+    else {
+      if (!socket.send(frame)) return false;
+      unacked.sent(clientId, text, untrack(wait).conn);
+    }
     // A known slash command isn't a message to the model (templates and skills expand into other
     // text, extensions may never start the agent): no optimistic bubble or running state, just a
     // local "Ran" row, whether sent idle or as a steer mid-turn (pi runs it either way).
@@ -1660,6 +2051,8 @@ export function ChatView(props: {
   };
 
   const abort = () => {
+    // Stop before the waking connection opened: what the tab kept never goes, and its text comes back.
+    if (outbox.size) return giveUpWake();
     if (socket.send({ type: "abort" })) setLive("stopping", true);
   };
 
@@ -1667,8 +2060,8 @@ export function ChatView(props: {
   // Sent straight over the socket: no "Ran" row, the chips show the answer.
   if (remote) {
     const controls: RemoteControls = {
-      check: () => socket.send({ type: "prompt", text: REMOTE_CHECK_TEXT }),
-      reconnect: () => socket.send({ type: "prompt", text: REMOTE_RECONNECT_TEXT }),
+      check: () => chatSend({ type: "prompt", text: REMOTE_CHECK_TEXT }),
+      reconnect: () => chatSend({ type: "prompt", text: REMOTE_RECONNECT_TEXT }),
     };
     createEffect(() => setRemoteControls(props.path, commands().some((c) => c.name === REMOTE_COMMAND) ? controls : undefined));
   }
@@ -1695,7 +2088,7 @@ export function ChatView(props: {
     setArchiving(true);
     try {
       const res = await setSessionArchived(props.path, true);
-      toast(archivedDropToast(!!res.deleted, orgProjectOf(props.summary?.() ?? {})).text);
+      toast(archivedDropToast(!!res.deleted, archivedProjectOf(props.summary?.() ?? {})).text);
       props.onArchiveChanged?.(props.path, true);
       if (!scope.id) location.hash = "#/";
     } catch (err) {
@@ -1733,10 +2126,44 @@ export function ChatView(props: {
         resume={resume()}
         busy={!items()}
         empty={emptyScreen()}
+        note={
+          // One element for the whole wait, its clock drawn from the stylesheet (app.css): a note
+          // that first shows while the server is down still has its icon.
+          <Show when={waitNote()}>
+            {(r) => (
+              <div class="chat-wait-note" data-soft={r().soft ? "" : undefined} aria-hidden="true">
+                <span class="icon icon-sm chat-wait-note-icon" />
+                {r().text}
+              </div>
+            )}
+          </Show>
+        }
         banner={
           <div class="stack-2">
             <Show when={!archivedPane()}>
               <ConnectionBanner socket={socket} />
+            </Show>
+            {/* A reload onto new code that didn't start: the chat keeps working on older code. */}
+            <Show when={codeFailure(code())}>
+              {(f) => (
+                <Banner
+                  tone="warn"
+                  title={f().title}
+                  body={f().body}
+                  action={
+                    <button type="button" class="button button-sm" onClick={reloadCode}>
+                      Try Again
+                    </button>
+                  }
+                />
+              )}
+            </Show>
+            {/* Its stored folder is gone: the chat runs in the home folder, and says so while it does. */}
+            <Show when={cwdFallback()} keyed>
+              {(f) => {
+                const v = cwdFallbackView(f);
+                return <Banner tone="warn" title={v.title} body={v.body} />;
+              }}
             </Show>
             {/* Permanent until the world it names changes: the diagnosis and the gestures that
                 fix it, derived in src/lib/open-failure.ts. The first action is the primary one. */}
@@ -1877,6 +2304,18 @@ export function ChatView(props: {
             <CardJumpContext.Provider value={jumpToCardId}>
             <AlignAnswerContext.Provider value={alignAnswer}>
               <ChangesSession.Provider value={{ get path() { return props.path; }, get cwd() { return props.summary?.()?.cwd; } }}>
+              <TourSessionContext.Provider value={{
+                sessionId: () => props.summary?.()?.id,
+                host: () => hostOf(props.path),
+                canAsk: () => !blocked(),
+                ask: (question) => {
+                  if (blocked()) return;
+                  setRestored({ text: question });
+                  focusComposer();
+                },
+              }}>
+              <SettingsCardContext.Provider value={!!props.projectOverseer && !archivedPane()}>
+              <OfferContext.Provider value={offers}>
               <HistoryItems
                 items={list()}
                 author={props.author}
@@ -1889,8 +2328,8 @@ export function ChatView(props: {
                 older={olderRows.api}
                 liveAlignIds={liveAlignIds()}
                 liveCardIds={liveCardIds()}
+                liveTourIds={liveTourIds()}
               />
-              </ChangesSession.Provider>
               <LiveEntries
                 live={live}
                 author={props.author}
@@ -1900,6 +2339,11 @@ export function ChatView(props: {
                 limitPath={props.path}
                 queueActions={queueActions}
               />
+              <OfferTray />
+              </OfferContext.Provider>
+              </SettingsCardContext.Provider>
+              </TourSessionContext.Provider>
+              </ChangesSession.Provider>
               <For each={commandRows()}>
                 {(row) => (
                   <div class="info-row" role="note">
@@ -1947,15 +2391,8 @@ export function ChatView(props: {
                             path={props.path}
                             cwd={props.summary?.()?.cwd ?? null}
                             info={info()}
+                            live={{ mode: modeState()?.mode, minorModes: modeState()?.minorModes, model: model(), thinking: thinking() }}
                             race={profileRace()}
-                            blocked={blocked()?.text ?? offNow() ?? null}
-                            onRunPlaybook={(pb) => {
-                              // The message box is the playbook's text (§chat.profiles/playbook); a
-                              // new session's first message, so never a steer.
-                              if (!send(playbookTurnText(pb, drafts.get(props.path) ?? ""), false, [])) return false;
-                              setTaken({ at: Date.now() });
-                              return true;
-                            }}
                             onFirstMessage={(text) => {
                               if (!drafts.get(props.path)?.trim()) setDraftText(props.path, text);
                             }}
@@ -1979,10 +2416,9 @@ export function ChatView(props: {
         {/* One failure, one row: a failure with its own errored turn row in the thread carries the
             limit switch there (with that row's provider); the error feed's mount is for failures
             that never made a thread row (a refusal before any turn, a host move). */}
-        <For each={errors()}>{(m) => <><TurnError message={m.message} /><Show when={!failureHasRow(live.entries, m.message)}><SubagentLimitRow path={props.path} message={m.message} provider={m.provider} /></Show></>}</For>
+        <For each={feed().entries}>{(m) => <><Show when={feedBanner(m) === "turn"}><TurnError message={m.message} /></Show><Show when={feedBanner(m) === "start"}><StartError message={m.message} back={m.back ?? 0} /></Show><Show when={!failureHasRow(live.entries, m.message)}><SubagentLimitRow path={props.path} message={m.message} provider={m.provider} /></Show></>}</For>
       </ThreadScroller>
       </ToolSourceContext.Provider>
-      <FlyoutSession.Provider value={() => props.path}>
       <Composer
         path={props.path}
         cwd={props.summary?.()?.cwd ?? null}
@@ -1997,7 +2433,8 @@ export function ChatView(props: {
         memory={memoryRowWords(memoryStatus())}
         detail={runDetail(live)}
         workersWorking={workersWorking()}
-        workersTotal={workersTotal()}
+        workersTotal={workersCounted().total}
+        workersTally={workersCounted().tally}
         workersSplit={workersSplit()}
         onShowWorkers={props.onShowWorkers}
         workersOpen={props.workersOpen}
@@ -2027,21 +2464,26 @@ export function ChatView(props: {
                 />
                 </>
               )
-            : undefined
+            : props.projectOverseer
+              ? () => <OverseerMemoryMenu scope={projectOverseerMemory(props.projectOverseer!.projectId)} />
+              : undefined
         }
         onShowTimeline={props.onShowTimeline}
         inputCount={inputCount() ?? 0}
         inputsPending={inputsPending(inputCount(), items(), !!props.summary?.() && knownInputs(props.summary()!))}
-        aligns={aligns()}
-        onJumpAlign={jumpToAlign}
-        cards={openCards(cards())}
-        onJumpCard={jumpToCard}
+        waiting={{
+          get aligns() {
+            return aligns();
+          },
+          offers,
+          get overseerCards() {
+            return openCards(cards());
+          },
+          jumpAlign: jumpToAlign,
+          jumpOverseerCard: jumpToCard,
+          jumpOffer: jumpToOffer,
+        }}
         autonomy={props.overseer ? autonomy() : undefined}
-        onRevokePermit={props.overseer ? revokePermit : undefined}
-        onApproveSchedule={props.overseer ? approveScheduleFromPanel : undefined}
-        onRevokeSchedule={props.overseer ? revokeScheduleFromPanel : undefined}
-        onJumpCardId={jumpToCardId}
-        onJumpToolCall={jumpToToolCall}
         autofocus={props.autofocus}
         model={modelControl}
         claudeLogin={claudeLogin}
@@ -2051,14 +2493,12 @@ export function ChatView(props: {
         sandbox={sandboxControl}
         onPlaybooks={() => setShowPlaybooks(true)}
         undo={undoControl}
-        onSend={send}
+        onSend={(text, running, attachments) => send(text, running, attachments, undefined, true)}
         picks={composerPicks()}
         onDraft={setHasDraft}
         onAbort={abort}
         restored={restored()}
-        taken={taken()}
       />
-      </FlyoutSession.Provider>
       <Show when={showPlaybooks()}>
         <PlaybooksDialog
           path={props.path}
@@ -2071,8 +2511,8 @@ export function ChatView(props: {
           onSend={(text) => send(text, false, [])}
           onClose={(sent) => {
             setShowPlaybooks(false);
-            // After a send the next thing is the conversation; otherwise back
-            // to the trigger the dialog was opened from.
+            // After a send the next thing is the conversation; otherwise back to the "+" button
+            // (the palette's Playbooks row is opened from it, §chat.playbooks/the-modal).
             if (sent) focusComposer();
             else queueMicrotask(() => document.getElementById(paneId("composer-menu-trigger"))?.focus());
           }}

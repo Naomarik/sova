@@ -44,7 +44,7 @@ export const outsideFilter = (e: Pick<EventSummary, "project" | "affected" | "bo
 export function OrgHistory(props: { org: OrgDetail; view: HistoryView }) {
   const orgId = props.org.id;
   // Scalars behind equality-gated memos: a re-read of the org or a new route object for the same
-  // address changes none of them, so nothing below resets (CLAUDE.md, Method: `on` doesn't gate values).
+  // address changes none of them, so nothing below resets (agents/frontend/overview.md, Conventions: `on` doesn't gate values).
   const { filtersKey: fKey, filters, selected, chain, more } = historyViewMemos(() => props.view);
   const list = createHistoryList({ key: fKey, query: () => queryOf(filters()), fetch: (q) => getOrgHistory(orgId, q) });
 

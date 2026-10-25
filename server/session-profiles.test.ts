@@ -30,7 +30,7 @@ const {
 } = await import("../shared/profiles");
 type Profile = import("../shared/profiles").Profile;
 type SessionSummary = import("../shared/protocol").SessionSummary;
-const { linkedPlaybook, missingPlaybookText, playbookTurnText } = await import("../shared/playbooks");
+const { linkedPlaybook, playbookTurnText } = await import("../shared/playbooks");
 const { readProfiles } = await import("./profiles-store");
 const { findProfile, profileSources } = await import("./profile-sources");
 const { approve, trustFile } = await import("./profile-trust");
@@ -40,8 +40,14 @@ const { profileField, profileOnBranch, resolveChoice, singletonHolder } = await 
 const { RunState, SessionLimits, resetPairSends, visibleTo } = await import("./session-powers");
 const { harnessEventOf } = await import("./harness/pi/session");
 
-const shipped = (id: string) => ({ ...(parseProfile(JSON.parse(readFileSync(new URL(`../profiles/${id}.json`, import.meta.url), "utf8"))) as Profile), source: "sova" as const });
-const reviewer = shipped("reviewer");
+/** A built-in profile of this test's own (Sova ships none): reads sessions, no shell, edits or
+    workers, the Overseer may start it. Its file is in SHIPPED, the fixture `profiles/` folder. */
+const REVIEWER = { id: "reviewer", label: "Read-only reviewer", icon: "eye", remove: ["shell", "edit", "workers"], grant: ["sessions.read"], overseerMayStart: true };
+const SHIPPED = join(dir, "shipped");
+mkdirSync(SHIPPED, { recursive: true });
+writeFileSync(join(SHIPPED, "reviewer.json"), JSON.stringify(REVIEWER));
+const shippedDeps = { shippedDir: SHIPPED };
+const reviewer = { ...(parseProfile(REVIEWER) as Profile), source: "sova" as const };
 /** A project's One at a time profile that reads, messages and sees all: the fixture every captain test uses. */
 const CAPTAIN = {
   id: "captain",
@@ -81,10 +87,17 @@ describe("the model", () => {
     assert.equal(lockedReason("web", ["web", "workers"]), null);
   });
 
-  test("the shipped profiles are files in their normal form, and only Default is in code", async () => {
+  test("Sova ships no profile file: only Default (My settings) is built in, in code", async () => {
+    const src = await profileSources(null);
+    assert.deepEqual(src.builtins.map((p) => p.key), ["sova:default"]);
+    assert.equal(src.builtins[0]!.label, "My settings");
+    assert.deepEqual(src.problems, [], "a missing profiles/ folder lists none, and is no problem");
+  });
+
+  test("a shipped profile file is listed after Default, in its normal form", async () => {
     for (const p of [reviewer, mini]) assert.deepEqual(normalizeCaps(p.remove, p.grant), { remove: p.remove, grant: p.grant }, p.id);
     assert.ok(mini.overseerMayStart);
-    const src = await profileSources(null);
+    const src = await profileSources(null, shippedDeps);
     assert.deepEqual(src.builtins.map((p) => p.key), ["sova:default", "sova:reviewer"]);
     assert.deepEqual(src.problems, []);
     // Profile content only (ids, names, text): the file paths are left out, so the checkout's folder
@@ -131,7 +144,10 @@ describe("the model", () => {
     assert.match(profileFileError({ ...CAPTAIN, remove: ["shel"] }) ?? "", /"remove" has unknown name "shel"/);
     assert.match(profileFileError({ ...CAPTAIN, grant: ["sessions.write"] }) ?? "", /"grant" has unknown name/);
     assert.match(profileFileError({ ...CAPTAIN, limits: { perDay: 0 } }) ?? "", /"limits.perDay" must be a whole number/);
-    assert.match(profileFileError({ ...CAPTAIN, playbook: "../x" }) ?? "", /"playbook" must be a playbook's id/);
+    // The retired playbook link (§chat.profiles/playbook): accepted whatever it says, and dropped.
+    assert.equal(profileFileError({ ...CAPTAIN, playbook: "../x" }), null);
+    assert.equal(profileFileError({ ...CAPTAIN, playbook: "merge-round" }), null);
+    assert.equal("playbook" in (parseProfile({ ...CAPTAIN, playbook: "merge-round" }) as object), false);
     assert.match(profileFileError({ ...CAPTAIN, singleton: "yes" }) ?? "", /"singleton" must be true or false/);
     assert.match(profileFileError({ ...CAPTAIN, thinking: "hot" }) ?? "", /^"thinking" must be one of off, minimal, low, medium, high, xhigh, max\./);
     assert.match(profileFileError({ ...CAPTAIN, thinking: 3 }) ?? "", /^"thinking" must be one of/);
@@ -178,7 +194,7 @@ describe("the model", () => {
     assert.equal(isCapabilityNeutral(p({ remove: ["web"] })), false);
     assert.equal(isCapabilityNeutral(p({ grant: ["sessions.read"] })), false);
     assert.equal(isCapabilityNeutral(p({ singleton: true })), false);
-    assert.equal(isCapabilityNeutral(p({ playbook: "release" })), false);
+    assert.equal(isCapabilityNeutral(p({ playbook: "release" })), true, "a retired playbook key changes nothing");
     assert.equal(isCapabilityNeutral(p({ firstMessage: "go" })), false);
     // The summary field says so, and a custom board pick never does.
     assert.equal(profileField({ v: 1, profile: { ...p({ model: "a/b" }), source: "user" } })?.neutral, true);
@@ -231,9 +247,12 @@ describe("the snapshot a session keeps", () => {
   });
 
   test("a custom pick is its own snapshot, named after where it started", async () => {
-    const r = await resolveChoice({ remove: ["web"], grant: ["sessions.read"], from: { source: "sova", id: "reviewer" } });
+    const root = project("custom-from", { reviewer: REVIEWER });
+    const r = await resolveChoice({ remove: ["web"], grant: ["sessions.read"], from: { source: "project", id: "reviewer" } }, root);
     assert.ok(r.ok && r.profile);
     assert.equal(r.ok && r.profile?.label, "Read-only reviewer, edited");
+    const fromMine = await resolveChoice({ remove: ["web"], grant: [] });
+    assert.equal(fromMine.ok && fromMine.profile?.label, "Custom", "one made from My settings");
     assert.deepEqual(r.ok && r.profile?.remove, ["workers", "web"]);
     const none = await resolveChoice({ remove: [], grant: [] });
     assert.ok(none.ok && none.profile === null);
@@ -292,12 +311,13 @@ describe("where profiles come from (§chat.profiles/projects)", () => {
     mkdirSync(join(dir, "agent", "sova"), { recursive: true });
     writeFileSync(join(dir, "agent", "sova", "session-profiles.json"), JSON.stringify({ version: 1, profiles: [{ id: "reviewer", label: "My reviewer" }, { id: "mine", label: "Mine" }] }));
     assert.equal((await findProfile("reviewer", root))?.label, "Project reviewer");
-    assert.equal((await findProfile("reviewer", join(dir, "elsewhere-none")))?.label, "My reviewer", "yours replace the shipped one of that id");
+    assert.equal((await findProfile("reviewer", join(dir, "elsewhere-none"), shippedDeps))?.label, "My reviewer", "yours replace the shipped one of that id");
     assert.equal((await findProfile({ source: "user", id: "reviewer" }, root))?.label, "My reviewer");
-    assert.equal((await findProfile({ source: "sova", id: "reviewer" }, root)), null, "yours replaced it");
+    assert.equal((await findProfile({ source: "sova", id: "reviewer" }, root, shippedDeps)), null, "yours replaced it");
     assert.equal(await findProfile({ source: "project", id: "mine" }, root), null);
     rmSync(join(dir, "agent", "sova", "session-profiles.json"));
-    assert.equal((await findProfile("reviewer", join(dir, "elsewhere-none")))?.source, "sova", "a built-in nothing replaces");
+    assert.equal((await findProfile("reviewer", join(dir, "elsewhere-none"), shippedDeps))?.source, "sova", "a built-in nothing replaces");
+    assert.equal(await findProfile("reviewer", join(dir, "elsewhere-none")), null, "and Sova itself ships none");
   });
 
   test("a worktree or subfolder session's project is its main checkout: it sees the main checkout's profiles and playbooks", async () => {
@@ -351,7 +371,7 @@ describe("approving what a project's profile may do (§chat.profiles/trust)", ()
   });
 });
 
-describe("a profile's linked playbook (§chat.profiles/playbook)", () => {
+describe("a playbook's turn and its lookup by id (the setup recipes, §app.project-runtime/onboard)", () => {
   const pb = (source: "sova" | "user" | "project", id = "merge-round") => ({ id, title: `T ${source}`, description: "", source, dir: `/abs/${source}/${id}`, entry: "PLAYBOOK.md" as const, body: "# Body\n" });
   test("the turn is exactly the Playbooks dialog's, with the message box's text as the user's", () => {
     const p = pb("project");
@@ -365,7 +385,6 @@ describe("a profile's linked playbook (§chat.profiles/playbook)", () => {
     assert.equal(linkedPlaybook(all, "merge-round", undefined)?.source, "project");
     assert.equal(linkedPlaybook([pb("sova")], "merge-round", "project")?.source, "sova");
     assert.equal(linkedPlaybook(all, "nope", "project"), null);
-    assert.equal(missingPlaybookText("nope"), 'This profile runs the playbook "nope", but this folder has no playbook with that id.');
   });
 });
 
@@ -451,6 +470,20 @@ describe("the run's hop", () => {
     assert.equal(run.hop, 2, "a wake-up joining the run keeps its hop");
     run.observe(user("the user again"));
     assert.equal(run.hop, 0);
+  });
+
+  test("two session messages with the same text in one step (steers land together) each take their own hop, in order", () => {
+    const run = new RunState(new SessionLimits("s", DEFAULT_LIMITS, null));
+    const user = (text: string) => harnessEventOf({ type: "message_start", message: { role: "user", content: [{ type: "text", text }] } });
+    run.observe(harnessEventOf({ type: "agent_start" }));
+    run.expectHop("same", 1);
+    run.expectHop("same", 3);
+    run.observe(user("same"));
+    assert.equal(run.hop, 1, "the first handed in");
+    run.observe(user("same"));
+    assert.equal(run.hop, 3, "then the second: the newest message's hop, never lost");
+    run.observe(user("same"));
+    assert.equal(run.hop, 0, "nothing more was expected: a message of yours");
   });
 });
 

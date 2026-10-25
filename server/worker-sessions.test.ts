@@ -2,7 +2,8 @@
 // Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 //
 // Worker-session detection (SessionSummary.workerSession): the self marker, the owner's durable
-// refs (registry + completion header), the live registry, and the incremental read-only scan.
+// refs (completion header; an older registry entry names none), the live registry, and the
+// incremental read-only scan.
 import assert from "node:assert/strict";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -57,13 +58,12 @@ test("a marker entry marks the file it is in, and nothing else", async () => {
   assert.deepEqual([...flagged], [worker.path]);
 });
 
-test("registry refs by path and by bare id", async () => {
+test("an older subagents-worker-registry entry names no worker, by path or by bare id", async () => {
   const byPath = session();
   const byId = session();
-  const bystander = session();
   const owner = session([registry({ backendSessionFile: byPath.path }), registry({ backendSessionId: byId.id })]);
-  const flagged = await scanner().refresh([owner.path, byPath.path, byId.path, bystander.path]);
-  assert.deepEqual(new Set(flagged), new Set([byPath.path, byId.path]));
+  const flagged = await scanner().refresh([owner.path, byPath.path, byId.path]);
+  assert.deepEqual([...flagged], []);
 });
 
 test("completion header refs by path and by bare id; content as a string or text parts", async () => {
@@ -110,12 +110,12 @@ test("unresolvable refs yield nothing: outside the sessions dir, deleted, unlist
   const outside = join(agentDir, "elsewhere.jsonl");
   writeFileSync(outside, `${header(newId())}\n`);
   const owner = session([
-    registry({ backendSessionFile: outside }),
-    registry({ backendSessionFile: gone.path }),
-    registry({ backendSessionId: gone.id }),
-    registry({ backendSessionId: "01a0ccb9-ffff-7fff-8fff-ffffffffffff" }),
+    complete(header3(outside)),
+    complete(header3(gone.path)),
+    complete(header3(gone.id)),
+    complete(header3("01a0ccb9-ffff-7fff-8fff-ffffffffffff")),
     complete(header3(join("--tmp-worker-sessions--", basename(listed.path)))),
-    registry({ backendSessionFile: join(liveDir, "p1-x.jsonl") }),
+    complete(header3(join(liveDir, "p1-x.jsonl"))),
   ]);
   const flagged = await scanner().refresh([owner.path, listed.path]);
   assert.deepEqual([...flagged], []);
@@ -158,7 +158,7 @@ test("live refs through the real registry reader include this process's own pid"
 test("incremental: whole file, then only the appended bytes; shrink rescans from 0", async () => {
   const w1 = session();
   const w2 = session();
-  const owner = session([registry({ backendSessionFile: w1.path })]);
+  const owner = session([complete(header3(w1.path))]);
   const s = scanner();
   const files = [owner.path, w1.path, w2.path];
   let flagged = await s.refresh(files);
@@ -181,7 +181,7 @@ test("incremental: whole file, then only the appended bytes; shrink rescans from
   assert.deepEqual(new Set(flagged), new Set([w1.path, w2.path]));
 
   // Shrink (rewrite): the old refs go, the file is read again from 0.
-  writeFileSync(owner.path, `${header(owner.id)}\n${registry({ backendSessionFile: w2.path })}\n`);
+  writeFileSync(owner.path, `${header(owner.id)}\n${complete(header3(w2.path))}\n`);
   before = s.bytesRead;
   flagged = await s.refresh(files);
   assert.equal(s.bytesRead - before, statSync(owner.path).size);
@@ -195,7 +195,7 @@ test("a trailing partial line is ignored until it is completed, and scanned neve
   const files = [owner.path, w.path];
   await s.refresh(files);
   const complete0 = statSync(owner.path).size;
-  const line = registry({ backendSessionFile: w.path });
+  const line = complete(header3(w.path));
   const cut = Math.floor(line.length / 2);
   appendFileSync(owner.path, line.slice(0, cut));
   assert.deepEqual([...(await s.refresh(files))], []);
@@ -211,13 +211,13 @@ test("a trailing partial line is ignored until it is completed, and scanned neve
 
 test("lines longer than one 16 KB chunk parse across chunk boundaries", async () => {
   const w = session();
-  const owner = session([user("x".repeat(40_000)), registry({ backendSessionFile: w.path, pad: "y".repeat(40_000) })]);
+  const owner = session([user("x".repeat(40_000)), complete(header3(w.path, "y".repeat(40_000)))]);
   assert.deepEqual([...(await scanner().refresh([owner.path, w.path]))], [w.path]);
 });
 
 test("a deleted owner takes its refs with it; a deleted file's entry is dropped", async () => {
   const w = session();
-  const owner = session([registry({ backendSessionFile: w.path })]);
+  const owner = session([complete(header3(w.path))]);
   const s = scanner();
   assert.deepEqual([...(await s.refresh([owner.path, w.path]))], [w.path]);
   unlinkSync(owner.path);
@@ -231,7 +231,7 @@ test("a deleted owner takes its refs with it; a deleted file's entry is dropped"
 test("isWorker: the single-summary path agrees with refresh", async () => {
   const w = session();
   const self = session([marker()]);
-  const owner = session([registry({ backendSessionId: w.id })]);
+  const owner = session([complete(header3(w.id))]);
   const s = scanner();
   assert.equal(await s.isWorker(self.path), true); // cold: its own marker is enough
   await s.refresh([owner.path, w.path, self.path]);
@@ -241,7 +241,7 @@ test("isWorker: the single-summary path agrees with refresh", async () => {
 
 test("read-only: scanning leaves every file's bytes and mtime untouched", async () => {
   const w = session([marker()]);
-  const owner = session([registry({ backendSessionFile: w.path }), complete(header3(w.id))]);
+  const owner = session([complete(header3(w.path)), complete(header3(w.id))]);
   const snap = (p: string) => ({ bytes: readFileSync(p, "utf8"), mtimeMs: statSync(p).mtimeMs, size: statSync(p).size });
   const before = [snap(w.path), snap(owner.path)];
   await scanner().refresh([owner.path, w.path]);

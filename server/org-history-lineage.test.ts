@@ -5,19 +5,20 @@
 // supersessions mirrored. Each relation is read back from the recorded events, oriented, and never a cause.
 // The decide seam and the spec draft tool are fakes; a throwaway agent dir, workspace and project.
 import assert from "node:assert/strict";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { HistoryEvent, HistoryReader } from "../shared/org-history";
 import type { DecisionProvider } from "./decide";
+import { linkPiConfigExtensions } from "./testing/agent-dir";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-lineage-")));
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
-symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
+linkPiConfigExtensions(agentDir);
 
 const orgs = await import("./orgs");
 const baton = await import("./baton");
@@ -356,14 +357,16 @@ describe("lineage through the real engine", () => {
     assert.equal(h().event(OPERATOR, back[0]!.id)!.rationale?.what, "Gathering taken back by the operator");
   });
 
-  test("membership and authority: placed, added by id only, a status that moved, a level set", async () => {
+  test("membership and authority: placed, added by id only, a status that moved, a level set, a Resume", async () => {
     assert.ok(ofKind("project.placed").some((e) => e.projects.primary === project.id));
     const added = ofKind("person.added").find((e) => e.entities.some((x) => x.type === "person" && x.id === tony.id))!;
     assert.ok(added, "the person added");
     const detail = JSON.stringify(h().event(OPERATOR, added.id));
     assert.ok(!detail.includes("MARK") && !detail.includes("Tony Reyes"), "no contact or name in the event or its rationale");
     await operatorAct(`watch/${project.id}`, "operator/level-set", { resumeAt: "L2" });
-    assert.ok(ofKind("setting.changed").some((e) => h().event(OPERATOR, e.id)!.rationale?.what === "Autonomy level set: L2"));
+    assert.ok(ofKind("setting.changed").some((e) => h().event(OPERATOR, e.id)!.rationale?.what === "Autonomy level set: L2"), "an older host's level set keeps its words");
+    await operatorAct(`watch/${project.id}`, "operator/powers-set", { resume: true });
+    assert.ok(ofKind("setting.changed").some((e) => h().event(OPERATOR, e.id)!.rationale?.what === "Resumed: it may act on its own again"));
     await operatorAct(`person/${org.id}/${maria.id}`, "person/leave");
     const left = ofKind("person.status-changed").find((e) => e.entities.some((x) => x.id === maria.id))!;
     assert.equal(h().event(OPERATOR, left.id)!.rationale?.what, "Status: left");

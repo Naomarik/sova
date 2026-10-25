@@ -15,6 +15,7 @@ process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 mkdirSync(join(root, "agent", "sessions"), { recursive: true });
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const orgs = await import("./orgs");
 const baton = await import("./baton");
 const { replyEnded } = await import("./org-test-fixtures");

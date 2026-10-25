@@ -5,16 +5,23 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P23 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P28 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 import { loadPi } from "./testing/load-pi.ts";
+import { STANDIN_FILTER } from "./headless.ts";
+import { packageFrom, patchResolve } from "./own-code.ts";
+import { hearRequests } from "./session.ts";
 import { ScriptedModel } from "./testing/scripted-model.ts";
+import { PiHarnessSession } from "./session.ts";
+import { SendKeys } from "../../send-keys.ts";
+import { WebQueue } from "../../queue.ts";
+import { steerAllAtOnce } from "./queue-modes.ts";
 
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-pi-contract-")));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -90,6 +97,8 @@ interface QuirkSessionOptions {
   /** The faux model id to build with; null leaves the choice to the SDK. Default faux-1. */
   model?: string | null;
   settings?: Record<string, unknown>;
+  /** A settings manager of the test's own (instead of an in-memory one from `settings`). */
+  settingsManager?: unknown;
   /** Inline extensions, and extension files loaded by path. */
   extensions?: ((api: any) => void)[];
   extensionPaths?: string[];
@@ -106,7 +115,7 @@ async function quirkSession(o: QuirkSessionOptions = {}) {
   const runtime = await fauxRuntime();
   const cwd = join(dir, `cwd-${Math.random().toString(36).slice(2)}`);
   mkdirSync(cwd, { recursive: true });
-  const settingsManager = SettingsManager.inMemory({ cacheWarming: "off", retry: { enabled: false }, compaction: { keepRecentTokens: 1 }, ...o.settings } as never);
+  const settingsManager = (o.settingsManager as never) ?? SettingsManager.inMemory({ cacheWarming: "off", retry: { enabled: false }, compaction: { keepRecentTokens: 1 }, ...o.settings } as never);
   const resourceLoader = new DefaultResourceLoader({
     cwd,
     agentDir: dir,
@@ -373,6 +382,54 @@ describe("pi contract", () => {
     assert.deepEqual(order, ["agent_end", "resolved", "agent_end"], "fixed: the prompt is no longer deferred (or no longer resolves at once)");
     assert.equal(lastUser(model.calls[1]!), "deferred");
     session.dispose();
+
+    // What Sova builds on it (§app.chat-processes/worker-instructions): a deferred prompt runs outside the
+    // async context of the call that made it, so a keyed send labels nothing there (send-keys.ts); a keyed
+    // item handed off from the queue during agent_settled waits the window out (queue.ts `settling`) and
+    // its delivered user message carries exactly that key, once.
+    const two = await quirkSession();
+    const harness = new PiHarnessSession({ session: two.session } as never);
+    const keys = new SendKeys();
+    keys.watch(harness);
+    let fired = false;
+    const queue = new WebQueue({
+      sdk: { hasQueued: () => harness.queue.hasQueued(), mirrorTotal: () => harness.queue.mirrorTotal(), mirrorFor: (k) => harness.queue.mirrorFor(k), mirrorHas: (k, t) => harness.queue.mirrorHas(k, t) },
+      streaming: () => harness.isRunning(),
+      settling: () => harness.inSettleWindow(),
+      clearSdkQueue: () => harness.queue.clear(),
+      guard() {},
+      wake() {},
+      // As ChatSession.handOffQueued: the SDK call inside the key's send; an idle one starts a turn, not awaited.
+      handOff: async (item, streaming) => {
+        const turn = keys.run(item.key, () => harness.send(item.text, streaming ? { delivery: item.kind } : undefined));
+        if (streaming) await turn;
+        else void turn.catch(() => {});
+      },
+      onGone() {},
+      onChange() {},
+      onHandOffError() {},
+    });
+    let unkeyedTwin: Promise<void> | undefined;
+    two.session.subscribe((e: any) => {
+      if (e.type !== "agent_settled" || fired) return;
+      fired = true;
+      // The control: a keyed send made straight into the window (no queue) is deferred and labels nothing.
+      unkeyedTwin = keys.run("w:direct", () => harness.send("direct in the window"));
+      queue.enqueue({ kind: "followUp", text: "keyed in the window", origin: "server", id: "q1", key: "w:s1" });
+    });
+    await two.session.prompt("first");
+    await until(() => two.model.calls.length >= 3, "the deferred and the held turns");
+    await unkeyedTwin;
+    await two.session.waitForIdle?.();
+    const userStarts = two.events.filter((e) => e.type === "message_start" && e.message?.role === "user");
+    const keyedOnes = userStarts.filter((e) => keys.keyOf(e.message) === "w:s1");
+    assert.equal(keyedOnes.length, 1, "the keyed hand-off's message carries its key, once");
+    assert.equal(userText(keyedOnes[0].message), "keyed in the window");
+    const direct = userStarts.find((e) => userText(e.message) === "direct in the window");
+    assert.ok(direct, "the deferred prompt ran");
+    assert.equal(keys.keyOf(direct.message), undefined, "fixed: a prompt deferred past the settle window now runs inside its sender's context");
+    queue.close();
+    two.session.dispose();
   });
 
   test("P6 refresh-context: a user entry appended outside a run reaches the agent's context after refreshContext()", async () => {
@@ -774,6 +831,189 @@ return w + ":" + r.stopReason;`;
     assert.ok(JSON.stringify((model.calls[1]!.context as { messages: unknown[] }).messages).includes("steered while the tool ran"), "the request that carries the steered message");
     assert.ok(!second!.has("at_turn_start"), "registered at turn_start: too late for that request (fixed: pi builds the loadout after turn_start)");
     assert.ok(third!.has("at_turn_start"), "the control: it is declared in the request after");
+    session.dispose();
+  });
+
+  test("P24 own-code-discovery: resolve() is the loader's only source of discovered extension paths: patched, the same extensions load, Sova's from the copy", async () => {
+    const { createAgentSessionServices, DefaultPackageManager } = pi.agent;
+    const t = join(dir, "p24");
+    const ext = (file: string, name: string) => {
+      mkdirSync(join(file, ".."), { recursive: true });
+      writeFileSync(file, `export default (pi) => { pi.registerCommand(${JSON.stringify(name)}, { description: "p24", handler: async () => {} }); };\n`);
+    };
+    // A Sova checkout and its copy; the agent dir links into the checkout.
+    ext(join(t, "live", "pi-config", "extensions", "linked", "index.ts"), "linked");
+    ext(join(t, "own", "pi-config", "extensions", "linked", "index.ts"), "linked");
+    const agentDir = join(t, "agent");
+    mkdirSync(join(agentDir, "extensions"), { recursive: true });
+    symlinkSync(join(t, "live", "pi-config", "extensions", "linked"), join(agentDir, "extensions", "linked"));
+    ext(join(agentDir, "extensions", "plain.ts"), "plain");
+    ext(join(agentDir, "extensions", "off.ts"), "off");
+    // A package with an extensions filter, and a project's own extension.
+    ext(join(t, "pkg", "a.ts"), "pkg-a");
+    ext(join(t, "pkg", "b.ts"), "pkg-b");
+    writeFileSync(join(t, "pkg", "package.json"), JSON.stringify({ name: "p24-pkg", pi: { extensions: ["./a.ts", "./b.ts"] } }));
+    writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: ["!off.ts"], packages: [{ source: join(t, "pkg"), extensions: ["a.ts"] }] }));
+    const cwd = join(t, "proj");
+    ext(join(cwd, ".pi", "extensions", "proj.ts"), "proj");
+
+    const modelRuntime = await ModelRuntime.create({ authPath: join(t, "auth.json"), modelsPath: null, refreshOnCreate: false });
+    const loaded = async () => {
+      const services = await createAgentSessionServices({ cwd, agentDir, modelRuntime });
+      return new Map<string, string>(services.resourceLoader.getExtensions().extensions.flatMap((e: any) => [...e.commands.keys()].map((k: string) => [k, realpathSync(e.resolvedPath ?? e.path)])));
+    };
+    const before = await loaded();
+    assert.deepEqual([...before.keys()].sort(), ["linked", "pkg-a", "plain", "proj"], "the control: the linked, plain, filtered-package and project extensions load, the disabled one doesn't");
+    assert.equal(before.get("linked"), realpathSync(join(t, "live", "pi-config", "extensions", "linked", "index.ts")));
+    const unpatch = patchResolve(DefaultPackageManager, { own: realpathSync(join(t, "own")), live: realpathSync(join(t, "live")) });
+    try {
+      const after = await loaded();
+      assert.deepEqual([...after.keys()].sort(), [...before.keys()].sort(), "the same extensions");
+      assert.equal(after.get("linked"), realpathSync(join(t, "own", "pi-config", "extensions", "linked", "index.ts")), "fixed?: pi's loader no longer takes discovered extensions from its package manager's resolve()");
+      for (const k of ["pkg-a", "plain", "proj"]) assert.equal(after.get(k), before.get(k), k);
+    } finally {
+      unpatch();
+    }
+  });
+
+  test("P25 request-start: the agent hands its stream function options whose onPayload the provider calls once per request, before the reply starts; a wrapped one hears it", async () => {
+    const faux = createFauxCore({ provider: "probe", models: [{ id: "probe-1" }] });
+    faux.setResponses([fauxAssistantMessage([fauxText("one")]), fauxAssistantMessage([fauxText("two")])]);
+    const order: string[] = [];
+    const runtime = await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: null, refreshOnCreate: false });
+    runtime.registerProvider("probe", {
+      name: "Probe",
+      baseUrl: "http://127.0.0.1:9",
+      apiKey: "stub",
+      api: faux.api,
+      // A real provider calls options.onPayload just before it sends (pi-ai's api/*.js; the claude-code provider).
+      streamSimple: (model: any, context: any, options: any) => {
+        order.push(typeof options?.onPayload === "function" ? "provider: onPayload given" : "provider: no onPayload");
+        void options?.onPayload?.({}, model);
+        return faux.streamSimple(model, context, options);
+      },
+      models: [{ id: "probe-1", name: "Probe 1", input: ["text"], reasoning: false, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 200_000, maxTokens: 4_000 }],
+    } as never);
+    const cwd = join(dir, `cwd-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    const { session } = await createAgentSession({
+      cwd,
+      agentDir: dir,
+      modelRuntime: runtime,
+      model: runtime.getModel("probe", "probe-1"),
+      sessionManager: SessionManager.inMemory(cwd),
+      settingsManager: SettingsManager.inMemory({ cacheWarming: "off", retry: { enabled: false } } as never),
+      noTools: "builtin",
+    });
+    session.subscribe((e: any) => {
+      if (e.type === "message_start" && e.message?.role === "assistant") order.push("message_start");
+    });
+    const off = hearRequests(session.agent as never, () => order.push("heard"));
+    await session.prompt("first");
+    assert.deepEqual(order, ["provider: onPayload given", "heard", "message_start"], "fixed?: the agent no longer passes its onPayload through its stream function");
+    off();
+    order.length = 0;
+    await session.prompt("second");
+    assert.deepEqual(order, ["provider: onPayload given", "message_start"], "a removed listener hears nothing; the request still goes out");
+    session.dispose();
+  });
+
+  test("P26 native-extension-load: under Bun pi's loader imports an extension natively first: two whose imports resolve share one instance of a common file with a direct import; one whose don't is translated, with its own", async () => {
+    const { discoverAndLoadExtensions } = pi.agent as any;
+    const t = join(dir, "p26");
+    mkdirSync(join(t, "agent"), { recursive: true });
+    writeFileSync(join(t, "shared.ts"), "export const box = {};\n");
+    // a and b import only the shared file; c also imports pi-tui, which nothing resolves from this
+    // folder but pi's aliases, so a native import of it throws.
+    const ext = (name: string, extra = "") =>
+      writeFileSync(join(t, `${name}.ts`), `${extra}import { box } from "./shared.ts";\n(globalThis.__sovaP26 ??= {})[${JSON.stringify(name)}] = box;\nexport default () => {};\n`);
+    ext("a");
+    ext("b");
+    ext("c", 'import { visibleWidth } from "@earendil-works/pi-tui";\nif (typeof visibleWidth !== "function") throw new Error("no pi-tui");\n');
+    const seen = ((globalThis as any).__sovaP26 = {}) as Record<string, object>;
+    const r = await discoverAndLoadExtensions(["a", "b", "c"].map((n) => join(t, `${n}.ts`)), t, join(t, "agent"));
+    assert.deepEqual(r.errors, [], "all three load");
+    const direct = (await import(join(t, "shared.ts"))).box;
+    assert.ok(seen.a && seen.b && seen.c);
+    assert.equal(seen.a, seen.b, "fixed?: pi no longer imports extensions natively first under Bun (each one translated, with its own copy)");
+    assert.equal(seen.a, direct, "the extensions' instance is the one a plain import gets");
+    assert.notEqual(seen.c, seen.a, "the control: one that can't load natively is translated, with its own copy");
+    delete (globalThis as any).__sovaP26;
+  });
+
+  test("P27 headless-standins: pi-tui keeps its text, key and colour helpers apart from its drawing modules, pi's theme takes only the highlighter, and outside its terminal mode pi takes a drawing module only in renderers, its CLI and its entry", () => {
+    const piDist = join(pi.dir, "dist");
+    const tuiDist = join(packageFrom(pi.dir, "@earendil-works/pi-tui")!, "dist");
+    // The filter matches by these path tails, as they sit under any node_modules.
+    const piKey = (rel: string) => `/@earendil-works/pi-coding-agent/dist/${rel}`;
+    const tuiKey = (rel: string) => `/@earendil-works/pi-tui/dist/${rel}`;
+    const names = (list: string) => list.split(",").map((s) => s.trim()).filter((s) => s && !s.startsWith("type ")).map((s) => s.split(/\s+as\s+/).at(-1)!);
+    // pi-tui's index: each export name and the module it comes from; nothing but `export {…} from`.
+    const index = readFileSync(join(tuiDist, "index.js"), "utf8");
+    const from = new Map<string, string>();
+    for (const m of index.matchAll(/^export \{([^}]*)\} from "([^"]+)";/gm))
+      for (const n of names(m[1]!)) from.set(n, m[2]!.startsWith("./") ? tuiKey(m[2]!.slice(2)) : `/${m[2]}/lib/marked.esm.js`);
+    assert.doesNotMatch(index.replace(/^export \{[^}]*\} from "[^"]+";/gm, ""), /^export /m, "pi-tui's index re-exports by name only");
+    // 1. The helpers extensions and pi's theme use for text stay real.
+    const theme = ["theme.js", "system-theme.js"].map((f) => readFileSync(join(piDist, "modes", "interactive", "theme", f), "utf8"));
+    const themeNames = theme.flatMap((s) => [...s.matchAll(/import \{([^}]*)\} from "@earendil-works\/pi-tui"/g)].flatMap((m) => names(m[1]!)));
+    const helpers = ["visibleWidth", "truncateToWidth", "wrapTextWithAnsi", "sliceByColumn", "stripTerminalSequences", "matchesKey", "Key", "KeybindingsManager", "TUI_KEYBINDINGS", "getKeybindings", "setKeybindings", "fuzzyFilter", "fuzzyMatch", ...themeNames];
+    assert.ok(themeNames.length > 0, "the theme's own pi-tui names were read");
+    for (const n of helpers) {
+      assert.ok(from.has(n), `pi-tui exports ${n}`);
+      assert.doesNotMatch(from.get(n)!, STANDIN_FILTER, `${n} lives in a module the stand-ins replace (fixed?: pi-tui moved a text helper into a drawing module)`);
+    }
+    // 2 and 3. Who outside pi's terminal mode takes a drawing module: a relative import, or a pi-tui name.
+    const walk = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : e.name.endsWith(".js") ? [join(d, e.name)] : []));
+    const takers: string[] = [];
+    for (const file of walk(piDist)) {
+      const rel = relative(piDist, file);
+      if (rel.startsWith("bundle/") || STANDIN_FILTER.test(piKey(rel))) continue;
+      const code = readFileSync(file, "utf8");
+      const taken = [
+        ...[...code.matchAll(/^(?:import|export) [^;]*? from "(\.[^"]+)";/gm)].map((m) => piKey(relative(piDist, resolve(dirname(file), m[1]!)))),
+        ...[...code.matchAll(/^import \{([^}]*)\} from "@earendil-works\/pi-tui";/gm)].flatMap((m) => names(m[1]!).map((n) => from.get(n) ?? "")),
+      ].filter((k) => STANDIN_FILTER.test(k));
+      if (taken.length) takers.push(`${rel} <- ${[...new Set(taken.map((k) => k.replace(/^.*\/dist\//, "")))].join(" ")}`);
+    }
+    const allowed = /^(?:core\/tools\/renderers\/[^/]+|extensions\/[^/]+\/(?:renderer|ui|tools)|cli\/[^/]+|package-manager-cli|index|modes\/index|utils\/image-convert)\.js <- /;
+    const themeTakes = "modes/interactive/theme/theme.js <- utils/syntax-highlight.js";
+    assert.ok(takers.includes(themeTakes), `the theme takes the highlighter:\n${takers.join("\n")}`);
+    assert.deepEqual(takers.filter((t) => t !== themeTakes && !allowed.test(t)), [], "outside pi's terminal mode, a drawing module taken by code a Sova chat may run: triage by QUIRKS.md P27");
+  });
+
+  test("P28 steer-all: with the getter replaced, every queued steer lands in one step, the mode survives reload(), and settings.json holds no steeringMode", async () => {
+    // A settings file pi really reads (and would write), in an agent dir of its own.
+    const agentDir = join(dir, "p26-agent");
+    mkdirSync(agentDir, { recursive: true });
+    const settingsFile = join(agentDir, "settings.json");
+    writeFileSync(settingsFile, `${JSON.stringify({ cacheWarming: "off", retry: { enabled: false } }, null, 2)}\n`);
+    const before = readFileSync(settingsFile, "utf8");
+    const settingsManager = SettingsManager.create(dir, agentDir);
+    assert.equal(settingsManager.getSteeringMode(), "one-at-a-time", "pi's own default, which the getter replaces");
+    steerAllAtOnce(settingsManager);
+    const { session, model } = await quirkSession({ settingsManager });
+    assert.equal(session.agent.steeringMode, "all", "createAgentSession builds the agent's mode from the getter");
+    assert.equal(session.agent.followUpMode, "one-at-a-time", "follow-ups keep pi's one at a time");
+    /** Two steers queued behind a held reply: the calls the run made, and the user messages of its second. */
+    const twoSteers = async (a: string, b: string) => {
+      const from = model.calls.length;
+      const release = model.hold();
+      const run = session.prompt(`go ${a}`);
+      await until(() => model.calls.length === from + 1, "the held reply");
+      await session.steer(a);
+      await session.steer(b);
+      release();
+      await run;
+      const users = ((model.calls[from + 1]!.context as any).messages as any[]).filter((m) => m.role === "user").map(userText);
+      return { calls: model.calls.length - from, last: users.slice(-2) };
+    };
+    assert.deepEqual(await twoSteers("s1", "s2"), { calls: 2, last: ["s1", "s2"] }, "both steers in the step after the held reply: one call for the pair");
+    await session.reload();
+    assert.equal(session.agent.steeringMode, "all", "reload() re-read settings.json and kept the getter's mode");
+    assert.deepEqual(await twoSteers("s3", "s4"), { calls: 2, last: ["s3", "s4"] }, "and still lands them together");
+    assert.equal(readFileSync(settingsFile, "utf8"), before, "settings.json is untouched");
+    assert.equal("steeringMode" in JSON.parse(readFileSync(settingsFile, "utf8")), false, "no steeringMode in settings.json");
     session.dispose();
   });
 

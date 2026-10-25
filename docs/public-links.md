@@ -26,7 +26,7 @@ machine; with several Sova hosts, one gateway can serve the links of all of them
 
 ## Before you start
 
-- A Sova with public links: installed from `vNEXT` or later, or a source checkout of `master`.
+- A Sova with public links: installed from `v0.2.0` or later, or a source checkout of `master`.
   `pnpm run build` (which the installer runs) also builds the share page; without it, a link
   answers "The share page is not built on this host."
 - A domain name you control, such as `share.example.com`.
@@ -273,6 +273,29 @@ they are with Tailscale's identity. A plain WireGuard or Nebula network can't ro
 
 If a routed host's link carries a warning, Settings says why: the gateway doesn't accept this host
 yet (add it under the gateway's **Accept links from**), or it can't be reached.
+
+### When the gateway runs an older Sova
+
+The host that made a link decides which of its pages open. The gateway only checks that the address
+is well formed (`/h|i|s|t/<link>/…`, or a live view at `/ws/<kind>` or `/ws/<kind>/<name>`) and that a
+host registered the link, then forwards it; that host still checks the address against its own list.
+So a host can run newer Sova than its gateway: new pages, buttons, live views and uploads on its
+links open through the older gateway without updating it.
+
+The gateway still needs an update for:
+
+- **A bigger or slower upload** than the largest the gateway allows: 25 MB and 300 seconds, its file
+  upload's limits.
+- **A new kind of link.** The host asks the gateway which kinds it routes, and until it lists the new
+  kind, links of that kind carry "{gateway} needs an update" and aren't sent to it.
+- **A share protocol change.** The gateway and its hosts share a small number, the share protocol. It
+  goes up only when the registry's format, the forwarding headers, or what the gateway lets back from
+  a host changes. Version 2 lets a host redirect to a preview link under the gateway's own preview
+  address, which opening a version from the owner page needs.
+
+When the gateway states an older share protocol, or none (a gateway from before it existed),
+Settings → Public links on the routed host says "{gateway} runs an older version of public links."
+Update the gateway with **Resync** there, or by deploying it as you usually do.
 
 ## Set up a gateway with no page
 

@@ -6,7 +6,7 @@ import { batonById, currentOffer, targetOfPerson } from "../baton";
 import { holdSendKey, releaseSendKey } from "../baton-links";
 import { hostOf, heldAt, isOrgHostOpen, onOrgHostOpened, openEngineIds, refusalError, setStampOutageSource, type Effect, type OrgHostApi } from "../org-engine";
 import type { Envelope } from "../org-envelope";
-import { OrgError, placementSid, readRoster } from "../orgs";
+import { OrgError, orgSid, placementSid, readIndex, readRoster, targetOf } from "../orgs";
 import { projectSid } from "../projects/sids";
 import { readOverseerState } from "../overseer-store";
 import { stateRoot } from "../state-root";
@@ -33,11 +33,15 @@ export interface SendResult {
   code?: string;
   why?: string;
   retryable?: boolean;
+  /** An owner page link send made a new link (§app.owner-page/send): it stays whatever the outcome. */
+  madeLink?: boolean;
 }
 
 export interface SendInput {
   orgId: string;
-  projectId: string;
+  /** Absent on an organization's own send (an owner page link, §app.outreach/send): no project, and the
+      idempotency key is `org:<orgId>#<personId>#<key>`. */
+  projectId?: string;
   personId: string;
   link?: LinkRef;
   note?: string;
@@ -177,7 +181,13 @@ function setPending(key: string, v: { kind: string; minted: Record<string, strin
 
 // ---- the send --------------------------------------------------------------------------------------
 
-export async function send(input: SendInput, channel: Channel = channels.whatsapp): Promise<SendResult> {
+let channelForTest: Channel | null = null;
+/** Tests: the channel an effect's send uses (a stand-in that fails, or never answers); null: WhatsApp. */
+export function setSendChannelForTest(ch: Channel | null): void {
+  channelForTest = ch;
+}
+
+export async function send(input: SendInput, channel: Channel = channelForTest ?? channels.whatsapp): Promise<SendResult> {
   // What this send mints is never handed out again (Get Link kept, another send) until it settles:
   // a definite failure turns it off.
   holdSendKey(input.key);
@@ -199,7 +209,7 @@ async function sendStep(input: SendInput, channel: Channel): Promise<SendResult>
     personId,
     channel: channel.id,
     intent: "send",
-    projectId,
+    ...(projectId ? { projectId } : {}),
     ...(link ? { link: link.kind } : {}),
     ...(note ? { note: true as const } : {}),
     by,
@@ -218,7 +228,7 @@ async function sendStep(input: SendInput, channel: Channel): Promise<SendResult>
   if (again) {
     setPending(key, null);
     log("unknown", "unknown-after-restart");
-    return { outcome: "failed", channel: channel.id, code: "unknown-after-restart", why: "Sova restarted during the send, so it may or may not have gone." };
+    return { outcome: "failed", channel: channel.id, code: "unknown-after-restart", why: "Sova restarted during the send, so it may or may not have gone.", ...(again.minted?.made ? { madeLink: true } : {}) };
   }
   // The sender's state as of now (one status request), so a sender that is down refuses at once.
   await refreshSender(target, 0);
@@ -229,7 +239,7 @@ async function sendStep(input: SendInput, channel: Channel): Promise<SendResult>
   if (nr) return refuse(nr.code, nr.why);
   // A held send runs later: its link is checked again now.
   const resolver = link ? RESOLVERS[link.kind] : null;
-  const ctx = { orgId, projectId, personId };
+  const ctx = { orgId, ...(projectId ? { projectId } : {}), personId };
   const bad = resolver && link ? resolver.check(ctx, link) : null;
   if (bad) return refuse(bad.code, bad.why);
   const digits = waDigits(readRoster(orgId).find((x) => x.id === personId)?.contact?.whatsapp)!;
@@ -244,37 +254,41 @@ async function sendStep(input: SendInput, channel: Channel): Promise<SendResult>
     setPending(key, { kind: link.kind, minted: resolved.minted });
   }
   const text = composeMessage(note ?? resolved?.line, resolved?.url);
-  const r = await channel.send({ idem: `${projectId}#${personId}#${key}`, address: digits, text, target });
+  // An organization's own send (no project) has a key of its own: the same step still delivers once.
+  const idem = projectId ? `${projectId}#${personId}#${key}` : `org:${orgId}#${personId}#${key}`;
+  const r = await channel.send({ idem, address: digits, text, target });
   const ids = resolved?.log ?? {};
+  const made = resolved?.minted.made ? { madeLink: true } : {};
   if (r.ok) {
     const line: OutreachLogLine = { at: r.at, ...base, ...ids, event: "sent" };
     appendSendLog(orgId, line);
     rememberRef(r.ref, orgId, line);
     if (resolver?.settle && resolved) resolver.settle(resolved.minted);
     setPending(key, null);
-    return { outcome: "sent", channel: channel.id };
+    return { outcome: "sent", channel: channel.id, ...made };
   }
   setPending(key, null);
   // Uncertain (the request left, no answer): what the step made stays, and the send is logged as unknown.
   if (r.code === "unknown") {
     log("unknown", r.code, ids);
-    return { outcome: "failed", channel: channel.id, code: r.code, why: r.why, retryable: false };
+    return { outcome: "failed", channel: channel.id, code: r.code, why: r.why, retryable: false, ...made };
   }
   // A definite failure: exactly what this step made stops (a hand-off link's Needs you asks again).
   if (resolver && resolved) resolver.revoke(resolved.minted);
   log("failed", r.code, ids);
-  return { outcome: "failed", channel: channel.id, code: r.code, why: r.why, retryable: r.retryable };
+  return { outcome: "failed", channel: channel.id, code: r.code, why: r.why, retryable: r.retryable, ...made };
 }
 
 // ---- the act -----------------------------------------------------------------------------------------
 
-/** A note repeating private text: refused like an owner update (the overseer's prompt holds it). */
-async function noteLeak(orgId: string, projectId: string, note: string): Promise<string | null> {
+const NOTE_LEAK = "This note repeats private text (About this organization, notes, a goal or briefing, a profile or a contact). Write it again in your own words.";
+
+/** A note repeating private text: refused like an owner update (the overseer's prompt holds it). With no
+    project (an organization's own send), the private text of every project of the org. */
+async function noteLeak(orgId: string, projectId: string | null, note: string): Promise<string | null> {
   if (!note) return null;
-  const { ownerUpdateLeak } = await import("../overseer-org-part");
-  return ownerUpdateLeak(orgId, projectId, note)
-    ? "This note repeats private text (About this organization, notes, a goal or briefing, a profile or a contact). Write it again in your own words."
-    : null;
+  const { ownerUpdateLeak, orgNoteLeak } = await import("../overseer-org-part");
+  return (projectId ? ownerUpdateLeak(orgId, projectId, note) : orgNoteLeak(orgId, note)) ? NOTE_LEAK : null;
 }
 
 /**
@@ -309,6 +323,37 @@ export async function sendAct(input: { orgId: string; projectId: string; personI
   if (!r) return { outcome: "failed", channel: "whatsapp", name, code: "internal", why: eff?.error ?? "The send didn't report back." };
   return { ...r, name };
 }
+
+/**
+ * The org's owner page link to its owner (§app.owner-page/send): the org statechart's `owner/send-link`,
+ * settled. The statechart checks the person (the org's active owner), the note, the card (the global
+ * Overseer's envelope carries its turn's card) and the host's `invalid`; its `owner-link-send` effect runs
+ * the organization's own send at once. A refusal throws as a route would answer it.
+ */
+export async function sendOwnerLinkAct(input: { orgId: string; personId: string; note?: string; sentBy: OutreachLogLine["by"] }, envelope: Envelope): Promise<SendAnswer> {
+  const { orgId, personId } = input;
+  const target = targetOf(orgId, personId);
+  const note = (input.note ?? "").trim();
+  const invalid = ownerInvalid(orgId);
+  const leak = await noteLeak(orgId, null, note);
+  const payload = {
+    ...(target ? { target: { id: target.id, name: target.name, status: target.status } } : {}),
+    ...(note ? { note } : {}),
+    ...(invalid ? { invalid } : {}),
+    ...(leak ? { leak } : {}),
+    sentBy: input.sentBy,
+  };
+  const out = await hostOf(orgId).act(orgSid(orgId), "owner/send-link", payload, envelope, { settle: true });
+  if (!out.taken) throw refusalError(out.refusal ?? { sentence: "That can't be done now." });
+  const name = target?.name ?? "They";
+  const eff = out.effects?.find((e) => e.kind === "owner-link-send");
+  const r = eff?.result as SendResult | undefined;
+  if (!r) return { outcome: "failed", channel: "whatsapp", name, code: "internal", why: eff?.error ?? "The send didn't report back." };
+  return { ...r, name };
+}
+
+/** The org isn't attached here (a detach under way): the act's host-stamped `invalid`. */
+const ownerInvalid = (orgId: string): string | null => (readIndex().orgs.some((o) => o.id === orgId) ? null : "That organization isn't attached here.");
 
 /**
  * The operator's Send on WhatsApp on a gathering (and the global Overseer's, with its card in the
@@ -368,3 +413,13 @@ function registerOutreachEffects(host: OrgHostApi, orgId: string): void {
   });
 }
 onOrgHostOpened(registerOutreachEffects);
+
+/** The org statechart's `owner-link-send` (§app.owner-page/send): the organization's own send of the owner page link. */
+function registerOwnerSendEffect(host: OrgHostApi, orgId: string): void {
+  host.effects.register("owner-link-send", async (e: Effect) => {
+    const by = e.by === "operator-via-overseer" ? e.by : "operator";
+    const key = typeof e.statechartKey === "string" && e.statechartKey ? e.statechartKey : String(e.key);
+    return send({ orgId, personId: String(e.personId), link: { kind: "owner" }, ...(typeof e.note === "string" ? { note: e.note } : {}), by, key });
+  });
+}
+onOrgHostOpened(registerOwnerSendEffect);

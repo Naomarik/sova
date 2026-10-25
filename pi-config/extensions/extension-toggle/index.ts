@@ -11,11 +11,10 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Container, type SettingItem, SettingsList, Text } from "@earendil-works/pi-tui";
 import * as path from "node:path";
 import * as fs from "node:fs";
-import { homedir } from "node:os";
 import { applyToggle, listExtensions, type ExtResource } from "./logic.ts";
 
 const SELF_NAME = "extension-toggle";
@@ -24,7 +23,8 @@ export default function extensionToggle(pi: ExtensionAPI) {
 	pi.registerCommand("extensions", {
 		description: "Toggle extensions on/off",
 		handler: async (_args, ctx) => {
-			const agentDir = path.join(homedir(), ".pi", "agent");
+			// the active agent dir (PI_CODING_AGENT_DIR), never a hard-coded ~/.pi/agent: a hermetic pi edits its own settings
+			const agentDir = getAgentDir();
 			let resources: ExtResource[];
 			try {
 				resources = listExtensions({

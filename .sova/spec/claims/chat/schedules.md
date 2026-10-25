@@ -42,7 +42,9 @@ new session, and needs no model to re-arm it.
 
 - **Nothing fires unapproved.** A schedule found in a project's playbook reads **Needs approval**
   until you approve it. Only your click in Sova approves: `POST /api/schedules/approve {cwd,
-  playbook, pin}` from the Playbooks dialog or the Overseer's permits panel. A request that carries
+  playbook, pin}` from the Playbooks dialog or the Overseer's Approvals & Schedules, or **Apply and
+  Approve** on a project overseer's Settings change card that grants it (§app.project-overseer/settings:
+  the schedule's lines as the card showed them, refused when the file differs). A request that carries
   the Overseer's sender mark is refused, so no model approves one.
 - **Pinned to what you saw.** An approval records the schedule's pin: its `when:` and `tz:` lines,
   the linked profile's identity (§chat.profiles/projects), and that profile's powers (what it removes
@@ -162,14 +164,16 @@ new session, and needs no model to re-arm it.
   approval or paused) or **Revoke Schedule** (approved). The card says what approving means:
   "Sova will start or wake {profile} sessions on this schedule without you. It asks again if the
   schedule or the profile changes; edits to the instructions don't."
-- **The Overseer's permits chip and panel** (§app.overseer/approvals) count and list every schedule
-  Sova knows of, approved or not: "1 approval · 2 schedules". Each row: its `sN`, the playbook and its
+- **The Overseer's Approvals & Schedules** (§app.overseer/approvals: Schedules ▾ in its head from
+  900px up, else ⋯'s first row) lists every schedule Sova knows of, approved or not, and the ⋯ row's
+  note counts them, "1 approval · 2 schedules", or says "1 needs approval" while any waits; then
+  ⋯ and Schedules ▾ carry a dot. Each row: its `sN`, the playbook and its
   project, the schedule in words, the profile, the state (Needs approval, Next …, Paused and why),
   its last fires as links to their sessions, and **Approve Schedule** or **Revoke Schedule**.
 - **The fired message** is a wake card (§chat.transcript/transcript-items), named "Scheduled run
   s1", never "You": it counts as an input, never titles the session, and is never hidden.
 - The keeper also finds schedules no one has looked at yet: every few minutes it reads the playbooks
-  of each project a listed session runs in, so a new one appears in the panel as Needs approval.
+  of each project a listed session runs in, so a new one appears in Approvals & Schedules as Needs approval.
   Under Brief Me (§app.overseer/proactivity) the Overseer gets one brief when Sova first finds a
   schedule, naming the playbook, its project and its schedule, and saying it fires only once you
   approve it. An unapproved schedule whose playbook no longer has a `when:` line is forgotten.

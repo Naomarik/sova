@@ -64,7 +64,18 @@ export type ChartType = (typeof CHARTS)[number];
 const CHART_SYN: Record<string, ChartType> = { area: "line", lines: "line", trend: "line", donut: "pie", doughnut: "pie", parts: "pie", column: "bar", columns: "bar", bars: "bar", stacked: "bar", grouped: "bar" };
 const DEVICES: Record<string, Device> = { phone: "phone", mobile: "phone", ios: "phone", android: "phone", desktop: "desktop", web: "desktop", wide: "desktop", browser: "desktop", laptop: "desktop", tablet: "desktop" };
 /** Words with a plain meaning that a lo-fi drawing doesn't draw: dropped without a warning. */
-const IGNORED = new Set(["secondary", "ghost", "outline", "outlined", "small", "large", "full", "centered", "center", "left", "right", "sticky", "scroll", "fixed", "bold", "off", "no", "unchecked"]);
+const IGNORED = new Set(["secondary", "ghost", "outline", "outlined", "small", "large", "full", "centered", "center", "left", "sticky", "scroll", "fixed", "bold", "off", "no", "unchecked"]);
+/** Placement words (§chat.markdown/vis-wireframe, Rows): `right` and `grow` on any block, the rest on a row. */
+const RIGHT = new Set(["right", "end", "trailing"]);
+const GROW = new Set(["grow", "fill", "expand", "stretch", "flex"]);
+const ALIGN = new Set(["middle", "bottom"]);
+/** A row's shares, `1:3:2`: each from 1 to MAX_SHARE. */
+const SHARES = /^\d+(?::\d+)+$/;
+export const MAX_SHARE = 6;
+/** Outside a row, `right` puts a block at the right edge in these (and on the page). */
+const RIGHT_IN = new Set(["col", "card", "modal", "sheet", "sidebar", "box"]);
+/** Blocks the page places itself: `right` on them, at the page's top level, means nothing. */
+const PLACED = new Set(["header", "tabbar", "footer", "sidebar", "modal", "sheet", "toast"]);
 const DEVICE_KEYS = ["device", "screen", "frame", "size", "platform", "viewport"];
 
 export const MAX_SCREENS = 6;
@@ -84,6 +95,20 @@ export interface WBlock {
   tone?: Tone;
   on?: boolean;
   wide?: boolean;
+  /** In a row: it and the blocks after it sit at the row's right end; on the page, in a card, col, modal, sheet or sidebar: at the right edge. */
+  right?: boolean;
+  /** In a row that lays out by content: takes the room the others leave. */
+  grow?: boolean;
+  /** A row: `row right`, its blocks packed at its right end. */
+  end?: boolean;
+  /** A row that lays out by content: a block in it is `right` or `grow`, or it is `row right`. */
+  content?: boolean;
+  /** A row: how its blocks line up across it (without it, stretched to its height). */
+  align?: "middle" | "bottom";
+  /** A row: each block's share of its width (`row 1:3:2`), one per block. */
+  shares?: number[];
+  /** A block of a row with shares: its own. */
+  share?: number;
   chart?: ChartType;
   /** tabs / tabbar items, table columns. */
   items?: string[];
@@ -132,11 +157,35 @@ function blockWord(w: string): { type: string; tag?: string; known: boolean } {
 
 const toneOf = (w: string): Tone | undefined => (isTone(w) ? w : Object.hasOwn(TONE_SYN, w) ? TONE_SYN[w] : undefined);
 const chartOf = (w: string): ChartType | undefined => ((CHARTS as readonly string[]).includes(w) ? (w as ChartType) : Object.hasOwn(CHART_SYN, w) ? CHART_SYN[w] : undefined);
-/** A word that only modifies its block: a tone, `on`, `wide`. */
+/** A word that only modifies its block: a tone, `on`, `wide`, `right`, `grow`, and a row's `middle` or `bottom`. */
 const isFlagWord = (w: string) => {
   const l = w.toLowerCase();
-  return !!toneOf(l) || ON.has(l) || l === "wide";
+  return !!toneOf(l) || ON.has(l) || l === "wide" || RIGHT.has(l) || GROW.has(l) || ALIGN.has(l);
 };
+/** What may follow a block's texts, for a warning about a word that can't. */
+const flagHint = (type: string) => `a tone, on, wide, right, grow${type === "row" ? ", middle, bottom, shares like 1:2" : ""}${type === "chart" ? ", bar line pie" : ""}`;
+/** A word on a block: true when it is one of its modifiers (set on it), false for a stray word. */
+function setFlag(b: WBlock, w: string): boolean {
+  const l = w.toLowerCase();
+  const tone = toneOf(l);
+  if (tone) return !!(b.tone = tone);
+  if (ON.has(l)) return (b.on = true);
+  if (l === "wide") return (b.wide = true);
+  if (RIGHT.has(l)) {
+    // `row right`: its own blocks at its end, and, in a row, the start of that row's right group.
+    if (b.type === "row") b.end = true;
+    return (b.right = true);
+  }
+  if (GROW.has(l)) return (b.grow = true);
+  if (b.type === "row" && ALIGN.has(l)) return !!(b.align = l as "middle" | "bottom");
+  if (b.type === "row" && SHARES.test(l)) {
+    const shares = l.split(":").map(Number);
+    if (shares.every((n) => n >= 1 && n <= MAX_SHARE)) b.shares = shares;
+    else warn(b.line, `row ${l}: each share is a whole number from 1 to ${MAX_SHARE}; drew the row without them`);
+    return true;
+  }
+  return false;
+}
 /** Case- and quote-insensitive comparison form of a name. */
 const norm = (s: string) => s.toLowerCase().replace(/["'“”]/g, "").replace(/\s+/g, " ").trim();
 
@@ -242,6 +291,8 @@ export function parseWireframe(body: string): WireframeSpec {
   const screenArrows: { a: string; b: string; n: number }[] = [];
   /** The screen a `== Name ==` line started, until a block or another screen line. */
   let sectionOpen: WScreen | null = null;
+  /** Rows whose next block follows a `spacer`. */
+  const spaced = new Set<WBlock>();
 
   for (const line of rest) {
     const indent = /^ */.exec(line.raw)![0].length;
@@ -335,13 +386,8 @@ export function parseWireframe(body: string): WireframeSpec {
       while (stack.length > 1 && stack[stack.length - 1]!.indent >= indent) stack.pop();
       const owner = stack[stack.length - 1]!.block;
       if (owner) {
-        for (const t of toks) {
-          const l = String(t.v).toLowerCase();
-          const tone = toneOf(l);
-          if (tone) owner.tone = tone;
-          else if (ON.has(l)) owner.on = true;
-          else owner.wide = true;
-        }
+        const stray = toks.map((t) => String(t.v)).filter((w) => !setFlag(owner, w));
+        if (stray.length) warn(line.n, `ignored ${stray.map((s) => `"${s}"`).join(", ")} (after the texts: ${flagHint(owner.type)})`);
         continue;
       }
     }
@@ -356,16 +402,13 @@ export function parseWireframe(body: string): WireframeSpec {
       const words = main.filter((t) => t.t === "word").map((t) => String(t.v));
       const flag = (w: string): boolean => {
         const l = w.toLowerCase();
-        const tone = toneOf(l);
-        if (tone) return !!(b.tone = tone);
-        if (ON.has(l)) return (b.on = true);
-        if (l === "wide") return (b.wide = true);
+        if (setFlag(b, l)) return true;
         if (b.type === "chart" && chartOf(l)) return !!(b.chart = chartOf(l));
         return IGNORED.has(l) || Object.hasOwn(DEVICES, l);
       };
       const isModifier = (w: string) => {
         const l = w.toLowerCase();
-        return isFlagWord(l) || IGNORED.has(l) || (b.type === "chart" && !!chartOf(l));
+        return (isFlagWord(l) && (b.type === "row" || !ALIGN.has(l))) || IGNORED.has(l) || (b.type === "chart" && !!chartOf(l)) || (b.type === "row" && SHARES.test(l));
       };
       if (strs.length === 0 && words.length > 0) {
         // Unquoted: the whole rest of the line is the text (`|` splits it), unless every word is a modifier.
@@ -377,7 +420,7 @@ export function parseWireframe(body: string): WireframeSpec {
       } else {
         b.texts = strs;
         const stray = words.filter((w) => !flag(w));
-        if (stray.length && !["tabs", "tabbar", "table"].includes(b.type)) warn(line.n, `ignored ${stray.map((s) => `"${s}"`).join(", ")} (after the texts: a tone, on, wide${b.type === "chart" ? ", bar line pie" : ""})`);
+        if (stray.length && !["tabs", "tabbar", "table"].includes(b.type)) warn(line.n, `ignored ${stray.map((s) => `"${s}"`).join(", ")} (after the texts: ${flagHint(b.type)})`);
       }
       if (b.type === "tabs" || b.type === "tabbar" || b.type === "table") {
         // Every string and stray word, in order, so a mis-quoted `"A, "B", C"` keeps B.
@@ -432,6 +475,11 @@ export function parseWireframe(body: string): WireframeSpec {
       stack.pop();
       parent = stack[stack.length - 1]!;
     }
+    // A `spacer` among a row's blocks draws nothing: the block after it starts the row's right group.
+    if (word.toLowerCase() === "spacer" && parent.block?.type === "row" && target === undefined) {
+      spaced.add(parent.block);
+      continue;
+    }
     if (count >= MAX_BLOCKS) {
       if (!cutBlocks) warn(line.n, `at most ${MAX_BLOCKS} blocks; the rest dropped`);
       cutBlocks = true;
@@ -453,6 +501,7 @@ export function parseWireframe(body: string): WireframeSpec {
     }
     count++;
     const siblings = parent.block ? parent.block.children : screen.blocks;
+    if (parent.block && spaced.delete(parent.block)) b.right = true;
     siblings.push(b);
     // The line's other blocks: inside it when it holds blocks (and may go a level deeper), else after it.
     const inside = isContainer(b.type) && parent.depth + 1 < MAX_DEPTH;
@@ -474,6 +523,8 @@ export function parseWireframe(body: string): WireframeSpec {
 
   const screens = spec.screens;
   if (screens.every((s) => s.blocks.length === 0)) fail(0, 'nothing to draw: one block per line, like header "Title" or button "Save"');
+
+  screens.forEach((s) => settleRows(s.blocks));
 
   screens.forEach((s, si) => {
     const walk = (bs: WBlock[], p: string) =>
@@ -535,4 +586,67 @@ export function parseWireframe(body: string): WireframeSpec {
   };
   applyMarks(spec, marks, resolve, "block or screen");
   return spec;
+}
+
+/**
+ * Which placement words count where (§chat.markdown/vis-wireframe, Rows). First each row's own words: shares
+ * that don't match its blocks are dropped with a warning, and shares win over the row's own `right`; an item's
+ * blocks (and a row among them, at any depth) keep the item's own layout, so the row words mean nothing there.
+ * Then each block's `right` and `grow` against its parent: in a row with shares both are dropped (with a
+ * warning; a `row right` among them keeps its own blocks at its end); in any other row either makes the row lay
+ * out by content, where only the first `right` counts and `wide` is `grow`; outside a row `grow` means nothing,
+ * and `right` counts only on the page or in a card, col, modal, sheet, sidebar or plain box.
+ */
+function settleRows(top: WBlock[]): void {
+  const own = (bs: WBlock[], inItem: boolean) => {
+    for (const b of bs) {
+      if (b.type !== "row" || inItem) {
+        delete b.end;
+        delete b.align;
+        delete b.shares;
+      }
+      if (b.shares && b.shares.length !== b.children.length) {
+        warn(b.line, `row ${b.shares.join(":")}: ${b.shares.length} shares for ${b.children.length} block${b.children.length === 1 ? "" : "s"}; drew the row without them`);
+        delete b.shares;
+      }
+      if (b.shares && b.end) {
+        warn(b.line, `row ${b.shares.join(":")}: its shares win; "right" ignored`);
+        delete b.end;
+        delete b.right;
+      }
+      own(b.children, b.type === "item" || (inItem && b.type === "row"));
+    }
+  };
+  own(top, false);
+  const place = (bs: WBlock[], parent: WBlock | null, inItem: boolean) => {
+    if (parent?.type === "row" && !inItem) {
+      const shares = parent.shares;
+      if (shares) {
+        const words = [bs.some((c) => c.right && !c.end) ? '"right"' : "", bs.some((c) => c.grow) ? '"grow"' : ""].filter(Boolean);
+        if (words.length) warn(parent.line, `row ${shares.join(":")}: its shares win; ${words.join(" and ")} ignored`);
+        bs.forEach((c, i) => {
+          delete c.grow;
+          delete c.right;
+          delete c.wide;
+          c.share = shares[i];
+        });
+      } else if (parent.end || bs.some((c) => c.right || c.grow)) {
+        parent.content = true;
+        let first = true;
+        for (const c of bs) {
+          if (c.wide) c.grow = true;
+          delete c.wide;
+          if (c.right && !first) delete c.right;
+          if (c.right) first = false;
+        }
+      }
+    } else {
+      for (const c of bs) {
+        delete c.grow;
+        if (inItem || (parent ? !RIGHT_IN.has(parent.type) : PLACED.has(c.type))) delete c.right;
+      }
+    }
+    for (const c of bs) place(c.children, c, c.type === "item" || (inItem && c.type === "row"));
+  };
+  place(top, null, false);
 }

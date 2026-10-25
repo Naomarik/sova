@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { StringEnum } from "@earendil-works/pi-ai";
 import {
+	CURRENT_SESSION_VERSION,
 	type ExtensionAPI,
 	type ExtensionContext,
 	getAgentDir,
@@ -17,7 +18,10 @@ import { TeamModal } from "./team-modal.ts";
 import { attachTeamWidget, type TeamWidgetHandle, type TeamWidgetUi } from "./team-widget.ts";
 import { piModels, matchingModels, type CatalogModel } from "./models.ts";
 import { backendDenial, policyDenial, readPolicy } from "./policy.ts";
-import { BUILTIN_TOOLS as BUILTIN_TOOL_NAMES, claudeCodeProviderLoad, SubagentRunner } from "./runner.ts";
+import { BUILTIN_TOOLS as BUILTIN_TOOL_NAMES, claudeCodeProviderLoad, rpcScopedModel } from "./runner.ts";
+import { ChatWorker } from "./chat-worker.ts";
+import { workerHostOf } from "./fork/background.ts";
+import { NO_WORKER_HOST } from "./worker-host.ts";
 import { BACKEND_DIALOG_EVENT, BACKEND_DISCOVER_EVENT, BACKEND_REGISTER_EVENT, type BackendDialogEvent, type BackendRegistration, type SteerMode, type SteerResult, type Worker, type WorkerFactory } from "./contracts.ts";
 import {
 	MAX_LABEL_CHARS,
@@ -34,6 +38,7 @@ import {
 	steerPreview,
 	malformedWarning,
 	memberTooling,
+	normalizeLabel,
 	monitorSuccessorTask,
 	pausedTeamsFrom,
 	planTeamDefaults,
@@ -52,12 +57,16 @@ import {
 	appendInbox,
 	encodeMemberContext,
 	initMemberDir,
+	requestId,
 	scanMailboxRoot,
 	writeResponse,
 	type MailboxRequest,
 	type MailboxResponse,
 	type MemberDuty,
 } from "./mailbox.ts";
+import { InboxStore, MAIN_THREAD, SOVA, closedByOf, hasInboxCaps, isOpen, type InboxItem, type InboxKind, type InboxParty, type SeenTag } from "./inbox.ts";
+import { DeliveryLanes, WakeScheduler, itemLine, steerUntilTaken, type LaneResult } from "./delivery.ts";
+import { TEAM_NOTICE_TYPE, endReason, groupReturns, returnNoticeText } from "./inbox-lifecycle.ts";
 import { describeTeamDefaults, type TeamDefaultsState, type WorkerTuple } from "./team-defaults.ts";
 import { resolveSubagents, restorePick, type ResolvedSubagents } from "./subagent-profiles.ts";
 import {
@@ -79,37 +88,29 @@ import {
 	type UsageProvider,
 	type UsageWindow,
 } from "./coordination.ts";
-import { MCP_SERVER_NAME } from "./member-mcp.ts";
 import { WorkerRegistryRecorder, type WorkerLaunchSpec } from "./registry.ts";
 import { manifestModes, readWorkerManifests, resolvedModel, viewWorker, type FoldedWorkerManifest, type WorkerTranscriptView } from "./worker-transcript.ts";
 import { defaultWorkerTranscriptAdapters } from "./adapters/index.ts";
 import { RestoredWorker, isRestored } from "./restored.ts";
-import { WorkerHosting, detachRequested, type HostingOptions } from "./hosting.ts";
 import { placeholderDir, placeholderRoot, toRemotePath } from "../remote/argv.ts";
-import {
-	REMOTE_DISCOVER_EVENT,
-	REMOTE_MCP_ENV,
-	REMOTE_MCP_SERVER_NAME,
-	REMOTE_SESSION_EVENT,
-	encodeRemoteMcpIdentity,
-	remoteWorkerInstructions,
-	type RemoteSessionEvent,
-} from "../remote/workers.ts";
+import { REMOTE_DISCOVER_EVENT, REMOTE_SESSION_EVENT, type RemoteSessionEvent } from "../remote/workers.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent, type WorkerLaunch } from "../sandbox/state.ts";
-import { sweepPrivateConfigDirs, type ClaudeConfine } from "../claude-code/confined-launch.ts";
 import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT, type ModeStateEvent } from "../mode/state.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, parseModeWorkerEvent, type ModeWorkerEvent } from "../mode/events.ts";
-import { specHookSettings, withClaudeSettings } from "../claude-code/spec-hooks.ts";
-import { ASSESSMENT_OWNER_ENV, ASSESSMENT_WORKER_ENV, ASSESSMENT_TEAM_ENV } from "../mode/spec-assessment.ts";
+
+/** The modes a worker's chip lists: its built-in minor modes, then the project modes it carries (by id). */
+const givenModesOf = (modes: ModeWorkerEvent): string[] => [...modes.minorModes, ...(modes.projectModes ?? []).map((p) => p.id)];
 import { LANDED_FILE_ENV, readLandedLine } from "../mode/spec-guard.ts";
-import { DEFAULT_CLAUDE_TOOLS } from "../claude-code/transport.ts";
-import { canonicalClaudeId, unverifiedClaudeNote } from "../claude-code/catalog.ts";
-import { USAGE_PARENT_ENV } from "../llm-inflight/attribution.ts";
+import { goAheadRef, workerAgreeEnv } from "../mode/spec-agree.ts";
+import { canonicalClaudeId, claudeBareId, claudeOffer, unverifiedClaudeNote } from "../claude-code/catalog.ts";
+import { CLAUDE_CODE_BACKEND, claudeOnPi, continuationMessage, continuationOptions, continuationTools, seedContinuationSession } from "./claude-workers.ts";
 import { workerSpecBrief, writesCode } from "./spec-brief.ts";
+import { usageOut } from "../provider-limits/usage-out.ts";
+import { PROJECT_TOOLS_FILE_ENV, writeWorkerToolsFile } from "../mode/project-tools.ts";
 import { restoreActive as restoreWorktrees, treeOf, workerCwdRefusal as worktreeCwdRefusal, type WorktreesActive } from "../worktrees/state.ts";
 
-const MAX_LIVE = 12;
-const MAX_BATCH = 8;
+/** Workers a chat may have live at once (idle ones, a team's coordinator and monitor included). No per-request limit. */
+export const MAX_LIVE = 24;
 const MAX_FINISHED = 50;
 /** How often the parent looks for member mailbox requests while teams exist. */
 const MAILBOX_POLL_MS = 250;
@@ -127,14 +128,14 @@ const WORKER_ACTIVITY_TOTAL_CHARS = 1400;
 const ROLLBACK_WAIT_MS = 10_000;
 const BUILTIN_TOOLS = new Set(BUILTIN_TOOL_NAMES);
 const Effort = StringEnum(["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const);
-const Count = Type.Integer({ minimum: 1, maximum: MAX_BATCH, default: 1 });
+const Count = Type.Integer({ minimum: 1, default: 1 });
 const Nonempty = Type.String({ minLength: 1 });
 const AgentSpec = Type.Object(
 	{
 		prompt: Type.String({ minLength: 1, description: "Self-contained task; parent conversation is not copied." }),
 		name: Type.Optional(Nonempty),
-		backend: Type.Optional(Type.String({ minLength: 1, description: "Worker backend; default pi. claude-code requires its extension." })),
-		backendOptions: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: "Backend-specific options, validated by that backend." })),
+		backend: Type.Optional(Type.String({ minLength: 1, description: "Worker backend; default pi. claude-code runs a Claude model (Sova's Claude catalog) on Sova's tools, as a pi worker on the Claude Code provider." })),
+		backendOptions: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: "Backend-specific options. claude-code: permissionMode bypassPermissions/dontAsk (no change) or plan (read-only tools); nothing else." })),
 		count: Type.Optional(Count),
 		model: Type.Optional(
 			Type.String({ description: "Backend model ID. Pi: exact provider/model, defaults to parent. Other backends use their own defaults." }),
@@ -143,7 +144,7 @@ const AgentSpec = Type.Object(
 		tools: Type.Optional(
 			Type.Array(Nonempty, {
 				description:
-					"Backend-native tool allowlist. [] disables all tools. Pi uses lowercase built-ins and inherits active parent built-ins when omitted. Claude uses native names (Read, Bash, Edit, etc.) and defaults to its own tools.",
+					"Backend-native tool allowlist. [] disables all tools. Pi uses lowercase built-ins and inherits active parent built-ins when omitted. claude-code takes the same names or Claude's (Read, Bash, Edit, Write, Grep, Glob, LS) and defaults to all seven.",
 			}),
 		),
 		systemPrompt: Type.Optional(Type.String()),
@@ -158,7 +159,7 @@ const AgentSpec = Type.Object(
 		extensions: Type.Optional(
 			Type.Array(Nonempty, {
 				description:
-					"Extension sources the child loads (path, npm:name, git:host/repo), e.g. [\"npm:pi-web-access\"] for web tools. Children load no extensions otherwise; this extension itself is refused.",
+					"Extension sources the child loads (path, or an installed npm:name or git:host/repo; nothing is installed at spawn), e.g. [\"npm:pi-web-access\"] for web tools. Children load no extensions otherwise; this extension itself is refused.",
 			}),
 		),
 		fork: Type.Optional(
@@ -174,9 +175,9 @@ const AgentSpec = Type.Object(
 			}),
 		),
 	},
-	{ additionalProperties: false },
+	// Not closed: an unknown setting reaches readSpawnArgs, whose refusal names it (pi's own "schema is false" does not).
 );
-/** One role per member; count, fork, extensions and agentType stay agent_spawn-only. */
+/** One role per member; count, fork and agentType stay agent_spawn-only. */
 const TeamMemberSpec = Type.Object(
 	{
 		role: Type.String({ minLength: 1, maxLength: MAX_LABEL_CHARS, description: "Unique role within the team; also the worker name." }),
@@ -190,7 +191,7 @@ const TeamMemberSpec = Type.Object(
 		orchestrator: Type.Optional(
 			Type.Boolean({
 				description:
-					"This member coordinates its teammates: it additionally gets team_roster (live sibling states) and team_steer (redirect or follow-up a sibling by role). Sibling-scoped only; it can never spawn, add or stop workers. Requires the pi or claude-code backend.",
+					"This member coordinates its teammates: it additionally gets team_roster (live sibling states) and team_steer (redirect or follow-up a sibling by role). Sibling-scoped only; it can never spawn, add or stop workers. Requires the pi or claude-code backend. In a team with a coordinator, only the coordinator is the orchestrator: a member that only watches needs no mark.",
 			}),
 		),
 		backend: Type.Optional(Type.String({ minLength: 1, description: "Worker backend; default defaults.backend, else pi." })),
@@ -201,8 +202,9 @@ const TeamMemberSpec = Type.Object(
 		cwd: AgentSpec.properties.cwd,
 		wake: AgentSpec.properties.wake,
 		backendOptions: AgentSpec.properties.backendOptions,
+		extensions: AgentSpec.properties.extensions,
 	},
-	{ additionalProperties: false },
+	// Not closed: checkTeamKeys refuses an unknown setting in Sova's own words.
 );
 const TeamDefaultsSpec = Type.Object(
 	{
@@ -214,30 +216,130 @@ const TeamDefaultsSpec = Type.Object(
 		monitor: Type.Optional(Type.Boolean({ description: "false: no monitor from team-defaults.json for this team." })),
 	},
 	{
-		additionalProperties: false,
 		description: "Applied only to members whose backend equals defaults.backend (default pi); member fields win and backendOptions merge shallowly. team_add reuses them. coordinator/monitor: false turn off the team-defaults roles for this team.",
 	},
 );
-const TeamMembers = Type.Array(TeamMemberSpec, { minItems: 1, maxItems: MAX_BATCH });
+// A union with a string, so a host that checks the declared schema (the Claude Code CLI over MCP) lets a
+// JSON-string list through to readList, which is the only judge of it.
+const TeamMembers = Type.Union([Type.Array(TeamMemberSpec, { minItems: 1 }), Type.String()], {
+	description: "A list of member objects, one per role (no per-request limit; a team seats 24, and a chat runs at most 24 workers). A JSON string of that list is read as the list.",
+});
+type MemberList = Static<typeof TeamMemberSpec>[];
 const TEAM_MEMBER_KEYS = new Set(Object.keys(TeamMemberSpec.properties));
 const TEAM_DEFAULT_KEYS = new Set(Object.keys(TeamDefaultsSpec.properties));
-/** Runtime twin of additionalProperties:false, independent of host schema validation. */
-function checkTeamKeys(members: unknown, defaults?: unknown): void {
-	if (!Array.isArray(members) || !members.length || members.length > MAX_BATCH)
-		throw new Error(`Provide 1 to ${MAX_BATCH} team members per call.`);
-	for (const member of members) {
-		if (typeof member !== "object" || member === null || Array.isArray(member)) throw new Error("Each team member must be an object.");
-		const extra = Object.keys(member).find((key) => !TEAM_MEMBER_KEYS.has(key));
-		if (extra) throw new Error(`Unsupported team member option ${extra}: each member is one role; use agent_spawn for count, fork, extensions or agentType.`);
+const AGENT_KEYS = new Set(Object.keys(AgentSpec.properties));
+const isPlainObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+/**
+ * `members`/`agents` as the model sent them: a list, or a JSON string whose parse is a list of
+ * plain objects (read as that list, nothing else changed). Anything else is refused in Sova's words.
+ */
+export function readList(value: unknown, key: "members" | "agents"): unknown {
+	const what = key === "members" ? "member" : "agent";
+	const shape = key === "members" ? `[{"role": "...", "prompt": "..."}, ...]` : `[{"prompt": "..."}, ...]`;
+	if (typeof value === "string") {
+		let parsed: unknown;
+		try { parsed = JSON.parse(value); } catch { parsed = undefined; }
+		if (Array.isArray(parsed) && parsed.length && parsed.every(isPlainObject)) return parsed;
+		throw new Error(`${key} must be a list of ${what} objects, ${shape}; the string given is not one.`);
 	}
-	if (defaults === undefined) return;
-	if (typeof defaults !== "object" || defaults === null || Array.isArray(defaults)) throw new Error("Team defaults must be an object.");
+	if (value !== undefined && !Array.isArray(value)) throw new Error(`${key} must be a list of ${what} objects, ${shape}, even for one ${what}.`);
+	return value;
+}
+const MEMBER_KEY_LIST = [...TEAM_MEMBER_KEYS].join(", ");
+/** Why a member can't take a setting, and how to get what it asks for. */
+const memberKeyRefusal = (where: string, key: string): string =>
+	key === "count" ? `${where}: count is not a member setting; a member is one role. Add one member per role instead (builder-1, builder-2, …).`
+	: key === "fork" || key === "agentType" ? `${where}: ${key} is for agent_spawn only; a member starts fresh with its team header. Start that worker with agent_spawn, or leave ${key} out.`
+	: `${where}: unknown setting "${key}". A member takes ${MEMBER_KEY_LIST}.`;
+/**
+ * The team tools' argument check, before pi's schema check (prepareArguments) and again in execute:
+ * plain refusals that name the setting and how to keep it. Returns the members list as read.
+ */
+export function checkTeamKeys(members: unknown, defaults?: unknown): unknown[] {
+	const list = readList(members, "members");
+	if (!Array.isArray(list)) throw new Error(`members is missing: give a list of member objects, ${`[{"role": "...", "prompt": "..."}]`}, one per role.`);
+	if (!list.length) throw new Error("Provide at least one team member.");
+	list.forEach((member, i) => {
+		if (!isPlainObject(member)) throw new Error(`members[${i}] must be a member object with role and prompt.`);
+		const role = typeof member.role === "string" && member.role.trim() ? member.role.trim() : undefined;
+		const where = role ? `members[${i}] (${role})` : `members[${i}]`;
+		const extra = Object.keys(member).find((key) => !TEAM_MEMBER_KEYS.has(key));
+		if (extra) throw new Error(memberKeyRefusal(where, extra));
+		if (member.role === undefined) throw new Error(`${where} has no role: every member needs a unique role, which Sova never makes up.`);
+		if (member.prompt === undefined) throw new Error(`${where} has no prompt: give every member its own task.`);
+		if (member.extensions !== undefined && (!Array.isArray(member.extensions) || member.extensions.some((s) => typeof s !== "string" || !s.trim())))
+			throw new Error(`${where}: extensions must be a list of extension sources, e.g. ["npm:pi-web-access"].`);
+	});
+	if (defaults === undefined) return list;
+	if (!isPlainObject(defaults)) throw new Error(`defaults must be an object, e.g. {"model": "...", "monitor": false}.`);
 	const extra = Object.keys(defaults).find((key) => !TEAM_DEFAULT_KEYS.has(key));
-	if (extra) throw new Error(`Unsupported team default ${extra}; defaults accept backend, model, effort, backendOptions, coordinator and monitor.`);
+	if (extra) throw new Error(`Unsupported team default ${extra}; defaults accept backend, model, effort, backendOptions, coordinator and monitor.${TEAM_MEMBER_KEYS.has(extra) ? ` Put ${extra} on each member that needs it.` : ""}`);
 	for (const key of ["coordinator", "monitor"] as const) {
-		const value = (defaults as Record<string, unknown>)[key];
+		const value = defaults[key];
 		if (value !== undefined && typeof value !== "boolean") throw new Error(`defaults.${key} must be true or false.`);
 	}
+	return list;
+}
+const TEAM_CREATE_KEYS = ["name", "objective", "defaults", "members"] as const;
+const TEAM_ADD_KEYS = ["team", "members"] as const;
+/** team_create's and team_add's arguments as read: members from a JSON string, then checkTeamKeys. */
+export function readTeamArgs(args: unknown, top: readonly string[]): unknown {
+	if (!isPlainObject(args)) return args;
+	const extra = Object.keys(args).find((key) => !top.includes(key));
+	if (extra) throw new Error(TEAM_MEMBER_KEYS.has(extra) ? `${extra} is a member setting: put it inside each member that needs it.` : `Unknown argument "${extra}"; this tool takes ${top.join(", ")}.`);
+	const missing = top.filter((key) => key !== "defaults" && key !== "members" && args[key] === undefined);
+	if (missing.length) throw new Error(`Missing ${missing.join(" and ")}: give ${missing.length > 1 ? "them" : "it"} explicitly; Sova never makes ${missing.length > 1 ? "them" : "it"} up.`);
+	const members = checkTeamKeys(args.members, args.defaults);
+	return members === args.members ? args : { ...args, members };
+}
+/** agent_spawn's settings that may sit beside agents and apply to every agent that leaves them out. */
+const SHARED_SPAWN_KEYS = ["backend", "model", "effort", "cwd", "wake", "tools", "systemPrompt", "backendOptions", "extensions", "useWorktreeConfig"] as const;
+/** Settings that stay per agent: refused beside agents. */
+const PER_AGENT_KEYS = ["name", "count", "fork", "agentType"] as const;
+const SPAWN_TOP_KEYS = new Set([...AGENT_KEYS, "agents", "groupLabel"]);
+/** Order-insensitive deep equality for JSON-like values. */
+const sameValue = (a: unknown, b: unknown): boolean => {
+	const norm = (v: unknown): unknown => Array.isArray(v) ? v.map(norm) : isPlainObject(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, norm(v[k])])) : v;
+	return JSON.stringify(norm(a)) === JSON.stringify(norm(b));
+};
+/**
+ * agent_spawn's arguments as read, intent-preserving only: `agents` from a JSON string; a shared
+ * setting beside agents filled into every agent that leaves it out (refused where an agent differs);
+ * a prompt beside agents used only when no agent has its own. Everything else is refused, never guessed.
+ */
+export function readSpawnArgs(args: unknown): unknown {
+	if (!isPlainObject(args)) return args;
+	const extra = Object.keys(args).find((key) => !SPAWN_TOP_KEYS.has(key));
+	if (extra) throw new Error(`Unknown setting "${extra}". agent_spawn takes ${[...AGENT_KEYS].join(", ")}, or agents (a list of those) and groupLabel.`);
+	if (args.agents === undefined) return args;
+	const agents = readList(args.agents, "agents") as unknown[];
+	if (!agents.length) throw new Error("agents must list at least one agent.");
+	const out: Record<string, unknown>[] = agents.map((agent, i) => {
+		if (!isPlainObject(agent)) throw new Error(`agents[${i}] must be an agent object with its prompt.`);
+		const bad = Object.keys(agent).find((key) => !AGENT_KEYS.has(key));
+		if (bad) throw new Error(`agents[${i}]: unknown setting "${bad}". An agent takes ${[...AGENT_KEYS].join(", ")}.`);
+		return { ...agent };
+	});
+	const perAgent = PER_AGENT_KEYS.filter((key) => args[key] !== undefined);
+	if (perAgent.length) throw new Error(`${perAgent.join(", ")} cannot sit beside agents: put ${perAgent.length > 1 ? "them" : "it"} inside each agent that needs ${perAgent.length > 1 ? "them" : "it"}.`);
+	const rest: Record<string, unknown> = { ...args };
+	for (const key of SHARED_SPAWN_KEYS) {
+		const shared = args[key];
+		delete rest[key];
+		if (shared === undefined) continue;
+		const differ = out.flatMap((agent, i) => agent[key] !== undefined && !sameValue(agent[key], shared) ? [`agents[${i}]`] : []);
+		if (differ.length) throw new Error(`${key} is set beside agents and differently in ${differ.join(", ")}: set it in one place, or give ${differ.length > 1 ? "those agents" : "that agent"} the same value.`);
+		for (const agent of out) if (agent[key] === undefined) agent[key] = shared;
+	}
+	delete rest.prompt;
+	if (args.prompt !== undefined) {
+		const own = out.flatMap((agent, i) => agent.prompt !== undefined ? [`agents[${i}]`] : []);
+		if (own.length) throw new Error(`A prompt beside agents is used only when no agent has its own, and ${own.join(", ")} ${own.length > 1 ? "have" : "has"} one: put each task inside its agent.`);
+		for (const agent of out) agent.prompt = args.prompt;
+	}
+	const missing = out.flatMap((agent, i) => agent.prompt === undefined ? [`agents[${i}]`] : []);
+	if (missing.length) throw new Error(`${missing.join(", ")} ${missing.length > 1 ? "have" : "has"} no prompt: give every agent its task (or one prompt beside agents for all of them).`);
+	return { ...rest, agents: out };
 }
 /** Public token totals: counts only, never text. Cost is omitted when the backend reports none. */
 interface WorkerUsage { input: number; output: number; cacheRead: number; cacheWrite: number; cost?: number }
@@ -283,14 +385,21 @@ export const MARKER_EXTENSION = path.join(SELF_DIR, "worker-mark.ts");
  */
 export const SPEC_WORKER_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "mode", "spec-worker.ts"));
 /**
+ * The project mode tools for pi workers (mode/project-tools-worker.ts, a sibling file): a worker handed
+ * project modes with tools (`workers: yes`) loads it with `-e`, and reads the parent's copies from the file
+ * PROJECT_TOOLS_FILE_ENV names. Only a worker that can run commands (bash) gets them: a project tool is a
+ * program, so a read-only worker never gains one. None for a remote worker (project modes are local only).
+ */
+export const PROJECT_TOOLS_WORKER_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "mode", "project-tools-worker.ts"));
+/**
  * The per-provider request limits (provider-limits/, a sibling extension), loaded right after the
  * marker into every pi worker: a worker's model requests claim its provider's slots on this device
  * like any session's, as background work (the marker's role event says so).
  */
 export const PROVIDER_LIMITS_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "provider-limits", "index.ts"));
 /**
- * The LLM-call counter (llm-inflight/, a sibling extension), loaded after the limits into every pi
- * worker: the worker reports its calls in flight to this process's runner, which counts them here.
+ * The LLM-call counter (llm-inflight/, a sibling extension). No worker loads it any more (a worker
+ * chat counts its calls in its own process); an earlier worker's recorded extensions still name it.
  */
 export const LLM_INFLIGHT_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "llm-inflight", "index.ts"));
 /**
@@ -306,38 +415,25 @@ const listedExtensions = (worker: Worker): string[] =>
 			source !== PROVIDER_LIMITS_EXTENSION &&
 			source !== LLM_INFLIGHT_EXTENSION &&
 			source !== MODEL_LEVELS_EXTENSION &&
-			source !== SPEC_WORKER_EXTENSION,
+			source !== SPEC_WORKER_EXTENSION &&
+			source !== PROJECT_TOOLS_WORKER_EXTENSION,
 	);
-/**
- * The same member tools as a stdio MCP server for claude-code members (the CLI
- * launches it from a per-worker mcp.json; Claude sees mcp__team__<tool>). It is
- * run under the current runtime, which executes .ts files directly.
- */
-export const MEMBER_MCP = path.join(SELF_DIR, "member-mcp.ts");
 /** The trusted spec tools (pi-config/extensions/spec/core/) a spec-on worker's brief and hooks name. */
 export const SPEC_CORE_DIR = realpathOr(path.join(SELF_DIR, "..", "spec", "core"));
-/** Under the agent dir: the claude-code spec hooks' per-session state and event log. */
+/** Under the agent dir: a spec-on worker's census state (`landed/<worker key>.json`). */
 export const SPEC_HOOK_STATE = "spec-hooks";
 /**
  * The remote extension (a sibling directory, never under SELF_DIR). A pi worker of a remote
- * session loads it with `-e` and `--target <name>`, so its bash/read/write/edit/ls/find/grep run
- * on the target exactly as the parent's do; a claude-code worker gets the same through the
- * `remote` stdio MCP server (mcp-server.ts, tools mcp__remote__remote_*) and no local tools.
+ * session (a Claude Code worker included) loads it with `-e` and `--target <name>`, so its
+ * bash/read/write/edit/ls/find/grep run on the target exactly as the parent's do.
  */
 const REMOTE_DIR = realpathOr(path.join(SELF_DIR, "..", "remote"));
 export const REMOTE_EXTENSION = path.join(REMOTE_DIR, "index.ts");
-export const REMOTE_MCP = path.join(REMOTE_DIR, "mcp-server.ts");
 /**
  * The claude-code extension (runner.ts claudeCodeProviderLoad): a pi worker on a
  * `claude-code-cli/<id>` model loads it with `-e` and `--claude-code-provider`.
  */
 export { CLAUDE_CODE_EXTENSION } from "./runner.ts";
-/**
- * claude bounds every MCP tool call with MCP_TOOL_TIMEOUT (ms) read from ITS OWN process env
- * (a per-server env in mcp.json is ignored; default 60 s, too short for a remote build).
- * remote_bash's 600 s maximum plus margin; the server enforces its own per-tool deadlines below it.
- */
-export const REMOTE_MCP_TOOL_TIMEOUT_MS = 630_000;
 
 /** Whether an `-e` source is the extension directory `dir` (the directory or its index.ts). */
 function sameExtension(source: string, dir: string): boolean {
@@ -386,9 +482,17 @@ export function installedPackageDir(source: string, agentDir: string): string | 
 	return candidate && fs.existsSync(candidate) ? candidate : undefined;
 }
 
-/** Validate one child extension source: remote sources pass through (installed copy preferred); local paths must exist and must not be this extension. */
-function resolveExtensionSource(source: string, cwd: string): string {
-	if (/^(npm|git):/.test(source)) return installedPackageDir(source, getAgentDir()) ?? source;
+/**
+ * Validate one child extension source: a remote source loads from Pi's installed copy and is
+ * refused when there is none (nothing is installed at spawn); local paths must exist and must
+ * not be this extension.
+ */
+export function resolveExtensionSource(source: string, cwd: string, agentDir = getAgentDir()): string {
+	if (/^(npm|git):/.test(source)) {
+		const installed = installedPackageDir(source, agentDir);
+		if (!installed) throw new Error(`${source} isn't installed: install it first (\`pi install ${source}\`)`);
+		return installed;
+	}
 	const resolved = resolvePath(source, cwd);
 	if (!fs.existsSync(resolved)) throw new Error(`Extension source not found: ${resolved}`);
 	const real = realpathOr(resolved);
@@ -450,6 +554,42 @@ interface BatchRequest {
 	 * hosted, and its durable record is written only once it is up (resumeWorker).
 	 */
 	resume?: { id: string; groupId: string; groupLabel: string; sessionId?: string; sessionFile?: string; startedAt?: number };
+	/** Who asks, for the running-limit refusal's wording (default: agent_spawn's). */
+	need?: RunningNeed;
+}
+/**
+ * What a request needs from the running limit, as its caller words it: team_create counts the
+ * members named plus the standing roles Sova adds; the others count only what they start.
+ */
+export type RunningNeed =
+	| { kind: "agents" }
+	| { kind: "team_create"; named: number; added: readonly string[] }
+	| { kind: "team_add" }
+	| { kind: "successor"; of: string }
+	| { kind: "resume"; id: string };
+/** The running-limit refusal: what the request needs, what is live, the idle workers, how many to stop. Sova stops nothing itself. */
+export function runningLimitRefusal(need: RunningNeed, total: number, liveNow: readonly { id: string; name: string; isSettled(): boolean; isFinished(): boolean; isStopping?(): boolean }[]): string {
+	const room = Math.max(0, MAX_LIVE - liveNow.length);
+	const stop = liveNow.length + total - MAX_LIVE;
+	const workers = (n: number) => `${n} worker${n === 1 ? "" : "s"}`;
+	const asks =
+		need.kind === "team_create"
+			? `This team needs ${workers(total)} running: the ${need.named} member${need.named === 1 ? "" : "s"} you named${need.added.length ? ` + the ${need.added.join(" and ")} Sova adds from this chat's team defaults` : ""}.`
+			: need.kind === "team_add" ? `Adding ${total === 1 ? "this member" : `these ${total} members`} needs ${workers(total)} running.`
+			: need.kind === "successor" ? `The successor of ${need.of} needs 1 worker running.`
+			: need.kind === "resume" ? `Resuming ${need.id} needs 1 worker running.`
+			: `This request starts ${workers(total)}.`;
+	const idle = liveNow.filter((a) => a.isSettled() && !a.isFinished() && !a.isStopping?.());
+	return [
+		asks,
+		// Worded per caller: only team_create adds a coordinator or monitor, so only it names them.
+		`A chat runs at most ${MAX_LIVE} workers at once (${need.kind === "team_create" ? "idle ones, and a team's coordinator and monitor, count" : "idle ones count"}); ${liveNow.length} ${liveNow.length === 1 ? "is" : "are"} live now, so ${room} more fit.`,
+		`Stop ${stop} with agent_kill first, then retry.`,
+		idle.length
+			? `Idle (waiting) workers you could stop: ${idle.map((a) => `${a.id} (${a.name})`).join(", ")}.`
+			: "None is idle: every live worker is busy, so stopping one ends work in progress.",
+		"Sova stops nothing itself.",
+	].join(" ");
 }
 /** What a member's identity carries beyond its team (mailbox.ts MemberContext). */
 interface TeamIdentity { role: string; orchestrator: boolean; duty?: MemberDuty; coordinated?: boolean; successorOf?: string }
@@ -457,19 +597,18 @@ interface TeamIdentity { role: string; orchestrator: boolean; duty?: MemberDuty;
 export interface SubagentsOptions {
 	mailboxRoot?: string;
 	mailboxPollMs?: number;
-	/** Detachable workers (hosting.ts): registry root, forced enablement, host timings. */
-	hosting?: HostingOptions;
 	/** Model policy file override (policy.ts); the real one is shared with Sova. */
 	policyFile?: string;
 	/** Agent dir for team-defaults.json, handover notes and the usage-status cache; default getAgentDir(). */
 	agentDir?: string;
 	/** Timer for member wake_nudges and handover timeouts (tests fire them by hand); default setTimeout, unref'd. */
 	setTimer?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
+	/** Team inbox wakes (tests): the idle gathering time (default 3 s) and the failed-wake backoff. */
+	inboxDebounceMs?: number;
+	inboxRetryMs?: readonly number[];
 }
 /** A lifecycle fact of a coordinated team, appended to the owner session (the action history is memory only). */
 export { TEAM_EVENT_ENTRY_TYPE };
-/** Emit to re-scan the registry and adopt this session's detached workers now. */
-export const WORKERS_ADOPT_EVENT = "subagents:workers-adopt";
 
 function resolvePath(value: string, cwd: string): string {
 	const raw = value.startsWith("@") ? value.slice(1) : value;
@@ -527,6 +666,16 @@ export const FINAL_ANSWER_PAGE_CHARS = 40_000;
 const TRANSCRIPT_HEADER_MAX_CHARS = 4_000;
 /** The completion message quotes this much of the summary. */
 const WAKE_PREVIEW_CHARS = 4_000;
+/** At most this many items on a report's `[Left open: …]` line, then "… and N more". */
+const LEFT_OPEN_MAX = 10;
+/** subagents-dead-tuple-v1: a model that ran out of usage at runtime (§teams.defaults/runtime-fallback). */
+const DEAD_TUPLE_ENTRY_TYPE = "subagents-dead-tuple-v1";
+/** How long a model that ran out stays out: new teams try it again after this. */
+const DEAD_TUPLE_MS = 3_600_000;
+/** Failed turns in a row of any kind that move a standing member to its fallback. */
+const FAILOVER_STREAK = 3;
+/** The efforts a tuple's text may end with (`<backend>/<model>/<effort>`). */
+const TUPLE_EFFORTS: ReadonlySet<string> = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 /** A private copy of `text` in a fresh temporary directory; returns its path. */
 function writeSnapshot(prefix: string, name: string, text: string): string {
@@ -607,7 +756,7 @@ const toolResult = (text: string, details: Record<string, unknown> = {}, bounded
 /** Factory injection is for offline lifecycle/tool tests; normal Pi loading uses the default export. */
 export function registerSubagents(
 	pi: ExtensionAPI,
-	createRunner: RunnerFactory = (o, h) => new SubagentRunner(o, h),
+	injectedRunner?: RunnerFactory,
 	options: SubagentsOptions = {},
 ): void {
 	const agents: Worker[] = [];
@@ -617,7 +766,8 @@ export function registerSubagents(
 	const backends = new Map<string, BackendRegistration>();
 	const unregisterBackendListener = pi.events?.on(BACKEND_REGISTER_EVENT, (data: unknown) => {
 		const backend = data as BackendRegistration | undefined;
-		if (!backend || backend.version !== 1 || typeof backend.id !== "string" || !backend.id.trim() || backend.id === "pi") return;
+		// claude-code is built in (claude-workers.ts): an older claude-code extension's registration is ignored.
+		if (!backend || backend.version !== 1 || typeof backend.id !== "string" || !backend.id.trim() || backend.id === "pi" || backend.id === CLAUDE_CODE_BACKEND) return;
 		if (typeof backend.validate !== "function" || typeof backend.create !== "function" || (backend.prepare !== undefined && typeof backend.prepare !== "function")) return;
 		// Repeated discovery is idempotent; never let a second provider hijack an ID.
 		if (!backends.has(backend.id)) backends.set(backend.id, backend);
@@ -720,15 +870,35 @@ export function registerSubagents(
 	const workerSandbox = new WeakMap<Worker, string>();
 	/** What a worker was given: its start's, else (restored) its record's; undefined when unknown. */
 	const modesOf = (a: Worker): string[] | undefined => workerModes.get(a) ?? (isRestored(a) ? manifestModes(a.manifest) : undefined);
-	// Hosted workers re-adopted with a cwd this session no longer allows (§chat.worktrees/workers):
+	// Workers reattached with a cwd this session no longer allows (§chat.worktrees/workers):
 	// kept running, flagged in agent_list.
 	const outsideWorktrees = new Set<string>();
 	// Workers of earlier processes, from the manifest fold at session_start: every branch's,
 	// with their transcript view. Those on the active branch are listed as RestoredWorkers;
 	// the rest only count toward the lifetime Σ. A resumed worker leaves this map.
 	const restoredViews = new Map<string, { manifest: FoldedWorkerManifest; view: WorkerTranscriptView }>();
-	// Detachable workers: host processes that outlive this manager (see hosting.ts).
-	const hosting = new WorkerHosting(options.hosting);
+	// Every worker is a chat process of its own, started through Sova's worker host (worker-host.ts):
+	// it outlives this manager, which lets go of it at shutdown and picks it back up at the next start.
+	let workerHost = pi.events ? workerHostOf(pi.events) : undefined;
+	// A start's key (idempotent with the host): this session, the worker, this manager's launch.
+	const launchNonce = Math.random().toString(36).slice(2, 8);
+	let launches_ = 0;
+	const parentOf = (ctx: ExtensionContext | undefined) => {
+		const sessionId = ctx?.sessionManager.getSessionId?.();
+		const file = ctx?.sessionManager.getSessionFile?.();
+		return sessionId && file ? { sessionId, path: file } : undefined;
+	};
+	const createRunner: RunnerFactory = injectedRunner ?? ((o, h) => {
+		const host = workerHost?.current();
+		if (!host) throw new Error(`A worker ${NO_WORKER_HOST}`);
+		const parent = parentOf(activeCtx);
+		if (!parent) throw new Error("Workers need a saved parent session; this session has no session file yet.");
+		return new ChatWorker(o, h, {
+			host,
+			parent,
+			start: { key: `${parent.sessionId}:${o.id}:${launchNonce}.${++launches_}`, defaultSessionDir: (cwd) => path.join(agentDir(), "sessions", sessionDirName(cwd)) },
+		});
+	});
 	let counter = 0;
 	let groupCounter = 0;
 	let activeCtx: ExtensionContext | undefined;
@@ -926,7 +1096,6 @@ export function registerSubagents(
 		releaseHeldNudges();
 		for (const a of agents) {
 			registry.observe(a);
-			hosting.observe(a);
 		}
 		publishWorkers();
 		try {
@@ -1010,10 +1179,14 @@ export function registerSubagents(
 		// Constructors may synchronously report failure before their worker is
 		// registered. The post-spawn refresh handles those; never retain them here.
 		if (shuttingDown || !agents.includes(a)) return;
-		registry.finish(a, hosting.lost(a.id) ? "lost" : undefined);
+		registry.finish(a);
 		successionCheck(a);
 		retireCheck(a);
-		if (a.isFinished()) forgetMemberTimers(a.id);
+		if (a.isFinished()) {
+			forgetMemberTimers(a.id);
+			wakes?.forget(a.id);
+			if (!isRestored(a)) endInbox(a.id, "ended");
+		}
 		if (a.isFinished() && !a.processAlive && !isRestored(a)) finished.add(a);
 		pruneFinished();
 		scheduleRefresh();
@@ -1166,8 +1339,21 @@ export function registerSubagents(
 		registry.settled(a);
 		successionCheck(a);
 		retireCheck(a);
-		pruneFinished();
-		scheduleRefresh();
+		try {
+			// The safety net, before the report names what is left open (§app.teams/inbox-zero).
+			sweepSettled(a, seq);
+			announceSettle(a, seq);
+		} finally {
+			// Its turn ended: list the inbox items that wait (§app.teams/inbox). Only after the completion
+			// above is written: the list starts the member's next run at once, and a summary read after it
+			// would report that run ("running", its activity) instead of the one that settled.
+			wakes?.settled(a.id);
+			pruneFinished();
+			scheduleRefresh();
+		}
+	};
+	/** The parent's (or the coordinator's) copy of a settle, read from the worker as it settled. */
+	const announceSettle = (a: Worker, seq: number) => {
 		if (shuttingDown || !activeCtx) return;
 		const failed =
 			Boolean(a.error) ||
@@ -1176,6 +1362,8 @@ export function registerSubagents(
 			a.status === "error" ||
 			a.status === "killed";
 		const verb = a.status === "killed" ? "stopped" : failed ? "failed" : "finished";
+		// A coordinator or monitor that fails at runtime moves to its fallback; that settle is said there, once.
+		if (standingSettle(a)) return;
 		// Coordinated teams: every member but the routing coordinator reports to it, never to the parent.
 		const route = completionRoute(a, failed);
 		if (route.kind === "drop") return;
@@ -1195,7 +1383,10 @@ export function registerSubagents(
 			// A worker the parent stopped itself does not need to wake the parent.
 			const wake = route.wake;
 			// The landed line goes after the (possibly cut) answer, never cut with it.
-			const content = text.length > WAKE_PREVIEW_CHARS ? completionPreview(a, text) : withLanded(a, text);
+			const base = text.length > WAKE_PREVIEW_CHARS ? completionPreview(a, text) : withLanded(a, text);
+			// A team member's completion (the coordinator's own included) names what it left open.
+			const left = leftOpenLine(a.id);
+			const content = left ? `${base}\n${left}` : base;
 			// An agent_wait in this run (or one collecting this worker) may return this settle itself; hold it
 			// until the run's release point (or the wait) shows whether it did.
 			if (parentLoops > 0 || (collecting.get(a.id) ?? 0) > 0) {
@@ -1212,15 +1403,18 @@ export function registerSubagents(
 
 	const modelCatalog = async (ctx: ExtensionContext, backendId?: string, signal?: AbortSignal) => {
 		signal?.throwIfAborted();
-		const ids = backendId ? [backendId] : ["pi", ...backends.keys()];
+		const ids = backendId ? [backendId] : ["pi", CLAUDE_CODE_BACKEND, ...backends.keys()];
 		const models: CatalogModel[] = [];
 		const errors: { backend: string; error: string }[] = [];
 		await Promise.all(ids.map(async (id) => {
 			try {
-				if (id !== "pi" && !backends.has(id)) throw new Error(`Backend ${id} is not loaded.`);
+				if (id !== "pi" && id !== CLAUDE_CODE_BACKEND && !backends.has(id)) throw new Error(`Backend ${id} is not loaded.`);
 				const backend = backends.get(id);
-				if (id !== "pi" && !backend?.listModels) throw new Error("This backend does not expose model discovery.");
-				const choices = id === "pi" ? piModels(ctx) : await backend!.listModels!(ctx, signal);
+				if (id !== "pi" && id !== CLAUDE_CODE_BACKEND && !backend?.listModels) throw new Error("This backend does not expose model discovery.");
+				// claude-code: Sova's Claude catalog (§app.claude-code-provider/catalog), no CLI process.
+				const choices = id === "pi" ? piModels(ctx)
+					: id === CLAUDE_CODE_BACKEND ? claudeOffer().map((m) => ({ id: m.id, name: m.name, description: `Claude ${m.name}`, ...(m.efforts.length ? { efforts: [...m.efforts] } : {}) }))
+					: await backend!.listModels!(ctx, signal);
 				// User policy (policy.ts): disabled providers and models never surface as choices.
 				for (const choice of choices) {
 					if (policyDenial(readPolicy(options.policyFile), id, choice.id)) continue;
@@ -1232,7 +1426,7 @@ export function registerSubagents(
 			}
 		}));
 		signal?.throwIfAborted();
-		return { models, errors, backends: ["pi", ...backends.keys()] };
+		return { models, errors, backends: ["pi", CLAUDE_CODE_BACKEND, ...backends.keys()] };
 	};
 	/**
 	 * The one worker-creation path (agent_spawn and team tools). Validates the whole
@@ -1243,49 +1437,28 @@ export function registerSubagents(
 	const spawnBatch = async (ctx: ExtensionContext, request: BatchRequest, signal?: AbortSignal): Promise<AgentGroup> => {
 		// An old Claude id (opus[1m], sonnet, claude-opus-5-5[1m], …) is resolved through the catalog's
 		// read-only legacy table, quietly: the catalog id is what runs and what is recorded.
-		const specs = request.specs.map(withCatalogClaudeModel);
-		/** A worker's session-qualified id: the sandbox's owner of its scope and the name of its Claude state dir. */
+		// A claude-code spec runs as a pi worker on the Claude Code provider (claude-workers.ts): the
+		// user's policy for the claude-code backend is asked first, then it goes the pi worker's way.
+		const specs = request.specs.map(withCatalogClaudeModel).map((spec) => {
+			if (spec.backend !== CLAUDE_CODE_BACKEND) return spec;
+			const policy = readPolicy(options.policyFile);
+			const denied = spec.model !== undefined ? policyDenial(policy, CLAUDE_CODE_BACKEND, claudeBareId(spec.model)) : backendDenial(policy, CLAUDE_CODE_BACKEND);
+			if (denied) throw new Error(denied);
+			return claudeOnPi(spec);
+		});
+		/** A worker's session-qualified id: the sandbox's owner of its scope. */
 		const workerKey = (id: string) => `${sessionDirKey(ctx.sessionManager.getSessionId?.(), unsavedSessionKey).slice(0, 112)}-${id}`;
-		/**
-		 * A confined Claude worker's confinement (claude-code/confined-launch.ts): the sandbox's scope for
-		 * it, and what its own state needs writable — its team mailbox, and with spec on its own hook state
-		 * dir, which its hooks are pointed at.
-		 */
-		const confineClaude = (o: { id: string; cwd: string; backend: string; root?: string; specHooks: boolean; prepared: { settingsJson?: string }; mailbox?: string; hostedTmp?: string }): { confine: ClaudeConfine; settingsJson?: string } => {
-			const owner = workerKey(o.id);
-			const answer = sandboxState?.workerLaunch?.({ cwd: o.cwd, ...(o.root ? { root: o.root } : {}), backend: o.backend, owner });
-			if (answer?.kind !== "confine") throw new Error(answer?.kind === "refused" ? answer.reason : "This session's sandbox gave no confinement for this worker; it cannot start sandboxed.");
-			const writable = o.mailbox ? [o.mailbox] : [];
-			let settingsJson = o.prepared.settingsJson;
-			if (o.specHooks) {
-				const stateDir = path.join(agentDir(), SPEC_HOOK_STATE, "workers", owner);
-				fs.mkdirSync(stateDir, { recursive: true, mode: 0o700 });
-				writable.push(stateDir);
-				settingsJson = withClaudeSettings(settingsJson, specHookSettings({ node: process.execPath, coreDir: SPEC_CORE_DIR, stateDir }));
-			}
-			const hostedTmpDir = o.hostedTmp ? path.join(o.hostedTmp, "tmp") : undefined;
-			if (hostedTmpDir) fs.mkdirSync(hostedTmpDir, { recursive: true, mode: 0o700 });
-			return {
-				confine: {
-					scope: answer.scope, module: answer.module, key: owner, agentDir: agentDir(), writable, ...(hostedTmpDir ? { hostedTmpDir } : {}),
-					describe: sandboxState?.on ? `the session's sandbox${o.root ? `, narrowed to ${o.root}` : ""}` : `write-only to ${o.root}`,
-				},
-				...(settingsJson === undefined ? {} : { settingsJson }),
-			};
-		};
 		const total = specs.reduce((sum, s) => sum + (s.count ?? 1), 0);
 		if (
 			!Number.isInteger(total) ||
 			total < 1 ||
-			total > MAX_BATCH ||
 			specs.some((s) => !Number.isInteger(s.count ?? 1) || (s.count ?? 1) < 1)
 		) {
-			throw new Error(`Counts must be positive integers; at most ${MAX_BATCH} agents per call.`);
+			throw new Error("Counts must be positive integers.");
 		}
-		if (live().length + total > MAX_LIVE)
-			throw new Error(
-				`Live-agent cap is ${MAX_LIVE} (${live().length} alive, including idle workers). Kill some first.`,
-			);
+		// The one bound on a request (there is no per-request limit), checked before anything starts.
+		const liveNow = live();
+		if (liveNow.length + total > MAX_LIVE) throw new Error(runningLimitRefusal(request.need ?? { kind: "agents" }, total, liveNow));
 		// Validate the whole batch before starting any child.
 		const remote = remoteSessionFor(ctx);
 		if (remote?.error) throw new Error(`This session's remote target "${remote.target}" could not be loaded (${remote.error}); a worker would have no tools. Fix the target first.`);
@@ -1354,18 +1527,8 @@ export function registerSubagents(
 				const outside = worktreeCwdRefusal({ sessionCwd: ctx.cwd, cwd, set: worktreeSet });
 				if (outside) throw new Error(outside);
 			}
-			// What a remote session's worker carries: pi loads the remote extension with the flag;
-			// claude launches the `remote` MCP server, loses every built-in tool (`--tools ""`) and is
-			// told so in its system prompt.
+			// What a remote session's pi worker carries: the remote extension with the flag.
 			const flags = remote ? { target: remote.target, ...(remote.channelOff ? { "no-channel": true as const } : {}) } : undefined;
-			const remoteMcp = remote
-				? {
-					command: process.execPath,
-					args: [REMOTE_MCP],
-					env: { [REMOTE_MCP_ENV]: encodeRemoteMcpIdentity({ version: 1, target: remote.target, farCwd: farCwd!, agentDir: getAgentDir(), ...(remote.label ? { label: remote.label } : {}), ...(remote.channelOff ? { channel: false } : {}) }) },
-				}
-				: undefined;
-			const remoteInstructions = remote ? remoteWorkerInstructions({ target: remote.target, farCwd: farCwd!, ...(remote.label ? { label: remote.label } : {}) }) : undefined;
 			if (backendId !== "pi") {
 				const backend = backends.get(backendId);
 				if (!backend) throw new Error(`Unknown or unavailable backend ${backendId}; load its extension first.`);
@@ -1377,40 +1540,18 @@ export function registerSubagents(
 				if (denied) throw new Error(denied);
 				backend.validate(spec, ctx);
 				let prepared = backend.prepare?.({ ...spec, cwd }, ctx) ?? {};
-				// Confined (the sandbox on, or a worktree): the whole claude process runs inside the sandbox,
-				// every launch of it (claude-code/confined-launch.ts). Only Claude Code can be confined.
-				const confined = launch.kind === "confine" ? { module: launch.module } : undefined;
-				if (confined && backendId !== "claude-code") {
+				// Only pi workers can be confined or run a remote session's tools.
+				if (launch.kind !== "none") {
 					throw new Error(sandbox
 						? `Backend ${backendId} cannot run workers while this session's sandbox is on.`
-						: `Backend ${backendId} cannot run workers in a tracked worktree (only pi and claude-code workers can be confined to it).`);
+						: `Backend ${backendId} cannot run workers in a tracked worktree (only pi workers can be confined to it).`);
 				}
-				if (remote) {
-					if (backendId !== "claude-code") throw new Error(`Backend ${backendId} cannot run workers of a remote session (only pi and claude-code have remote tooling).`);
-					prepared = {
-						...prepared,
-						tools: [],
-						systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, remoteInstructions].filter(Boolean).join("\n\n"),
-						env: { MCP_TOOL_TIMEOUT: String(REMOTE_MCP_TOOL_TIMEOUT_MS) },
-					};
-				}
-				// Spec on: a code-writing Claude worker gets the hooks that run census after each tool call
-				// (claude-code/spec-hooks.ts), and the brief unless its mode prompt carries the spec block. Remote workers' files are on the target, out of the local tools' reach.
-				const specHooks = specOn && !remote && backendId === "claude-code" && writesCode(prepared.tools ?? spec.tools ?? DEFAULT_CLAUDE_TOOLS);
-				if (specHooks) {
-					const settingsJson = (prepared as { settingsJson?: string }).settingsJson;
-					prepared = {
-						...prepared,
-						...(specInPrompt ? {} : { systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, workerSpecBrief(SPEC_CORE_DIR)].filter(Boolean).join("\n\n") }),
-						// A confined worker gets its own hook state, set per worker when it is created.
-						...(confined ? {} : { settingsJson: withClaudeSettings(settingsJson, specHookSettings({ node: process.execPath, coreDir: SPEC_CORE_DIR, stateDir: path.join(agentDir(), SPEC_HOOK_STATE) })) }),
-					} as typeof prepared;
-				}
-				// Last, after the brief and any remote instructions: the prompt the runner uses is this one.
+				if (remote) throw new Error(`Backend ${backendId} cannot run workers of a remote session (only pi workers have remote tooling).`);
+				// Last: the prompt the runner uses is this one.
 				if (modePrompt) prepared = { ...prepared, systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, modePrompt].filter(Boolean).join("\n\n") };
-				return { spec, cwd, model: spec.model, tools: remote ? [] : spec.tools, systemPrompt: spec.systemPrompt,
-					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined, remoteMcp,
-					givenModes: modePrompt ? [...modes!.minorModes] : [], confined: confined ? { root: tree?.path, specHooks } : undefined, landed: specHooks };
+				return { spec, cwd, model: spec.model, tools: spec.tools, systemPrompt: spec.systemPrompt,
+					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined,
+					givenModes: modePrompt ? givenModesOf(modes!) : [], landed: false, projectToolsFile: undefined };
 			}
 			if (spec.backendOptions !== undefined) throw new Error("backendOptions are not supported by the pi backend.");
 			const definition = spec.agentType !== undefined ? loadDefinition(spec.agentType) : undefined;
@@ -1421,19 +1562,20 @@ export function registerSubagents(
 				// it is stale (no longer in the registry), and the inherited parent model too.
 				const denied = policyDenial(readPolicy(options.policyFile), "pi", model);
 				if (denied) throw new Error(denied);
+				// A claude-code-cli model is registered by the child itself (claudeCodeProviderLoad), whatever this
+				// session's registry holds; the runner refuses it there if the provider can't take it.
 				const slash = model.indexOf("/");
-				if (slash < 1 || !ctx.modelRegistry.find(model.slice(0, slash), model.slice(slash + 1))) {
+				if (!rpcScopedModel(model) && (slash < 1 || !ctx.modelRegistry.find(model.slice(0, slash), model.slice(slash + 1)))) {
 					throw new Error(`Unknown model ${model}; use agent_models to discover exact provider/model IDs from this session's registry.`);
 				}
 			}
 			if (spec.tools?.some((t) => !BUILTIN_TOOLS.has(t)))
 				throw new Error(`Only built-in child tools are supported: ${[...BUILTIN_TOOLS].join(", ")}`);
 			const tools = spec.tools ?? pi.getActiveTools().filter((name) => BUILTIN_TOOLS.has(name));
-			// Team members load the member tools (and nothing else from this
-			// package); ad hoc workers keep the user-facing source validation.
-			const own = request.team
-				? [MEMBER_EXTENSION]
-				: spec.extensions?.map((source) => resolveExtensionSource(source, ctx.cwd));
+			// Team members load the member tools (and nothing else from this package), then any
+			// extensions the member was given, through the same user-facing source validation as agent_spawn.
+			const given = spec.extensions?.map((source) => resolveExtensionSource(source, ctx.cwd));
+			const own = request.team ? [MEMBER_EXTENSION, ...(given ?? [])] : given;
 			// A claude-code-cli model: the provider's extension and switch, after the session's own
 			// (remote sessions get both; the flags merge into the same argv).
 			// A parent whose sandbox is on starts the worker under it, with the extension's own flags
@@ -1445,7 +1587,9 @@ export function registerSubagents(
 			// Spec on: a code-writing worker gets the brief (below) and the census hook; a worktree-config worker
 			// already loads the whole mode extension, and a remote one runs its tools elsewhere.
 			const specWorker = specOn && !remote && !treeConfig && writesCode(tools);
-			const sources = [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(specWorker ? [SPEC_WORKER_EXTENSION] : []), ...(own ?? [])];
+			// Its project modes' tools (PROJECT_TOOLS_WORKER_EXTENSION): the parent's copies, for a worker that has bash.
+			const projectToolsFile = modes?.projectModes?.length && !remote && !treeConfig && tools.includes("bash") ? writeWorkerToolsFile(agentDir(), modes.projectModes) : undefined;
+			const sources = [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(specWorker ? [SPEC_WORKER_EXTENSION] : []), ...(projectToolsFile ? [PROJECT_TOOLS_WORKER_EXTENSION] : []), ...(own ?? [])];
 			const modeFlags = treeConfig ? { major: "normal", minor: "spec" } : undefined;
 			// The sandbox's answer for a pi worker: its extension and flags (the parent's scope while on; in a
 			// tracked worktree, narrowed to it, or write-only while off).
@@ -1471,13 +1615,12 @@ export function registerSubagents(
 				forkSession,
 				systemPrompt: [definition?.systemPrompt, spec.systemPrompt, specWorker && !specInPrompt ? workerSpecBrief(SPEC_CORE_DIR) : undefined, modePrompt].filter(Boolean).join("\n\n") || undefined,
 				flags: piFlags,
-				remoteMcp: undefined,
 				treeConfig,
 				// A tree-config worker is started with spec on (modeFlags); older records say nothing.
-				givenModes: treeConfig ? [modeFlags!.minor] : modePrompt ? [...modes!.minorModes] : [],
-				confined: undefined,
+				givenModes: treeConfig ? [modeFlags!.minor] : modePrompt ? givenModesOf(modes!) : [],
 				// Its census (spec-worker.ts, or a tree-config worker's whole mode extension) writes what landed.
 				landed: specOn && !remote && writesCode(tools),
+				projectToolsFile,
 			};
 		});
 		const resuming = request.resume;
@@ -1490,70 +1633,30 @@ export function registerSubagents(
 		const group: AgentGroup = { id: groupId, label, createdAt: Date.now(), agents: [] };
 		let committed = false;
 		let abandoned = false;
-		const launched: string[] = [];
 		const earlySettled = new Set<Worker>();
 		try {
-			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, remoteMcp, treeConfig, givenModes, confined, landed }] of prepared.entries()) {
+			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, treeConfig, givenModes, landed, projectToolsFile }] of prepared.entries()) {
 				for (let i = 0; i < (spec.count ?? 1); i++) {
 					const base = spec.name ?? spec.agentType ?? "agent";
 					const id = resuming ? resuming.id : `ag_${String(++counter).padStart(2, "0")}`;
 					const teamMember = request.team?.members[index];
 					// A member's identity and private mailbox exist before its process
-					// does. Pi children read the identity from their environment
-					// (member.ts); claude-code children get it through the member MCP
-					// server's own environment, never the CLI's.
+					// does. Pi children read the identity from their environment (member.ts).
 					const memberVars = teamMember ? memberEnv(request.team!, teamMember, id) : undefined;
 					// A worker on its worktree's agent dir: pi resolves everything there (never written to disk).
 					const tooling = teamMember ? memberTooling(spec.backend ?? "pi") : "none";
 					const baseEnv = treeConfig ? { ...memberVars, ...treeConfig.env } : tooling === "pi" ? memberVars : undefined;
-					// The usage ledger's parent (llm-inflight attribution.ts): a pi worker reads it itself, a
-					// Claude Code worker's runner reads it from its options here.
-					const parentSid = ctx.sessionManager.getSessionId?.();
-					const usageEnv = parentSid ? { [USAGE_PARENT_ENV]: `${parentSid}:${id}` } : undefined;
-					const specEnv = specOn && !remote ? {
-						...(backendPrepared?.env as Record<string, string> | undefined), ...baseEnv,
-						[ASSESSMENT_OWNER_ENV]: ctx.sessionManager.getSessionId?.() ?? "",
-						[ASSESSMENT_WORKER_ENV]: id,
-						[ASSESSMENT_TEAM_ENV]: request.team?.teamId ?? "",
-					} : baseEnv;
-					// A code-writing worker's census state, where its settle's landed line is read: a Claude worker's hook
-					// state (by its session id, in its hook state dir), a pi worker's own file (named in its env).
+					// Spec on: the worker's `agree` records this session's go-ahead (spec-agree.ts), relayed, never its own brief;
+					// SPEC_AGREE_GIVEN marks it a worker (empty when there is no reference to give).
+					const specEnv = specOn && !remote ? { ...(backendPrepared?.env as Record<string, string> | undefined), ...baseEnv, ...workerAgreeEnv(goAheadRef(ctx.sessionManager)) } : baseEnv;
+					// A code-writing worker's census state, where its settle's landed line is read: its own file (named in its env).
 					const landedFile = landed && !backend ? path.join(agentDir(), SPEC_HOOK_STATE, "landed", `${workerKey(id)}.json`) : undefined;
-					if (landed) landedSources.set(id, landedFile ? { file: landedFile } : { stateDir: confined ? path.join(agentDir(), SPEC_HOOK_STATE, "workers", workerKey(id)) : path.join(agentDir(), SPEC_HOOK_STATE) });
+					if (landedFile) landedSources.set(id, { file: landedFile });
 					else landedSources.delete(id);
 					if (landedFile && !resuming) fs.rmSync(landedFile, { force: true });
-					const env = usageEnv || landedFile ? { ...specEnv, ...usageEnv, ...(landedFile ? { [LANDED_FILE_ENV]: landedFile } : {}) } : specEnv;
+					const landedEnv = landedFile ? { ...specEnv, [LANDED_FILE_ENV]: landedFile } : specEnv;
+					const env = projectToolsFile ? { ...landedEnv, [PROJECT_TOOLS_FILE_ENV]: projectToolsFile } : landedEnv;
 					const name = (spec.count ?? 1) > 1 ? `${base}-${i + 1}` : base;
-					// Hosted: the runner's spawnImpl starts a detached host instead of the worker itself.
-					const hostedWorker = !resuming && hosting.active();
-					if (hostedWorker) launched.push(id);
-					const hosted = hostedWorker
-						? hosting.launch({
-							id, groupId, groupLabel: request.groupLabel, name, backend: spec.backend ?? "pi",
-							spec: {
-								prompt: spec.prompt, backend: spec.backend ?? "pi", name, cwd, wake: spec.wake ?? true,
-								...(model === undefined ? {} : { model }),
-								...(spec.effort === undefined ? {} : { effort: spec.effort }),
-								...(tools === undefined ? {} : { tools }),
-								...(spec.backendOptions === undefined ? {} : { backendOptions: spec.backendOptions }),
-								...(extensions === undefined ? {} : { extensions }),
-							},
-							...(teamMember ? { team: { teamId: request.team!.teamId, role: teamMember.role, ...(teamMember.orchestrator ? { orchestrator: true } : {}) } } : {}),
-						})
-						: {};
-					// A claude worker's servers: the session's `remote` server (remote sessions), and the
-					// member's `team` server (team members) — a member of a remote session gets both.
-					const mcpServers = {
-						...(remoteMcp ? { [REMOTE_MCP_SERVER_NAME]: remoteMcp } : {}),
-						...(memberVars && tooling === "mcp" ? { [MCP_SERVER_NAME]: { command: process.execPath, args: [MEMBER_MCP], env: memberVars } } : {}),
-					};
-					// A confined claude worker: its own scope (named by its session-qualified id), its own state
-					// writable (the mailbox, and its own spec-hook state), and, hosted, the host's tmp.
-					const confinement = confined
-						? confineClaude({ id, cwd, backend: spec.backend ?? "pi", root: confined.root, specHooks: confined.specHooks, prepared: backendPrepared as { settingsJson?: string },
-							mailbox: teamMember && tooling === "mcp" ? memberDir(request.team!.teamId, id) : undefined,
-							hostedTmp: (hosted as { tmpDir?: string }).tmpDir })
-						: undefined;
 					const runner = (backend?.create ?? createRunner)(
 						{
 							model,
@@ -1565,12 +1668,9 @@ export function registerSubagents(
 							backendOptions: spec.backendOptions,
 							...(flags ? { flags } : {}),
 							...backendPrepared,
-							...confinement,
 							backend: spec.backend ?? "pi",
 							...(env ? { env } : {}),
-							...(treeConfig ? { sessionDir: treeConfig.sessionDir, approve: true } : {}),
-							...(Object.keys(mcpServers).length ? { mcpServers } : {}),
-							...hosted,
+							...(treeConfig ? { sessionDir: treeConfig.sessionDir } : {}),
 							...(resuming ? { resume: { ...(resuming.sessionId ? { sessionId: resuming.sessionId } : {}), ...(resuming.sessionFile ? { sessionFile: resuming.sessionFile } : {}), ...(resuming.startedAt ? { startedAt: resuming.startedAt } : {}) } } : {}),
 							id,
 							groupId,
@@ -1586,7 +1686,6 @@ export function registerSubagents(
 						},
 					);
 					group.agents.push(runner);
-					hosting.bind(id, runner);
 					workerModes.set(runner, givenModes);
 					if (sandboxNotes[index] !== undefined) workerSandbox.set(runner, sandboxNotes[index]!);
 					// What resume needs to start it again: the raw spec (resolved again against the
@@ -1614,8 +1713,6 @@ export function registerSubagents(
 			// disposal) ends only at confirmed termination, never because a kill
 			// promise resolved early or the caller stopped waiting.
 			for (const worker of group.agents) rollingBack.add(worker);
-			// A registry entry whose factory threw has no runner to finalize it.
-			for (const id of launched) if (!group.agents.some((worker) => worker.id === id)) hosting.discard(id);
 			const cleanup = group.agents.map(async (worker) => {
 				try { await worker.kill("spawn batch rolled back after factory failure"); }
 				catch { await worker.dispose(); }
@@ -1676,17 +1773,28 @@ export function registerSubagents(
 	 * action record; states never claim more than SteerResult says (accepted or
 	 * queued, failed, or unknown when the caller stopped waiting).
 	 */
+	/**
+	 * One serial lane per worker in front of every steer (§app.teams/inbox "Direct instructions"):
+	 * deliveries wait their turn instead of meeting the worker's single-steer guard, a redirect goes
+	 * ahead of queued ones (never the one in flight), and "still starting" is waited out while live.
+	 */
+	const lanes = new DeliveryLanes();
+	const laneSteer = (a: Worker, message: string, mode: SteerMode | undefined, signal?: AbortSignal): Promise<SteerResult> =>
+		lanes.run(a.id, async () => {
+			if (signal?.aborted) return { ok: false, unknown: true, reason: "steering wait cancelled; delivery unknown — worker was not stopped; inspect status/transcript before retrying" } as SteerResult;
+			return await steerUntilTaken(() => a.steer(message, signal, mode), () => !shuttingDown && !a.isFinished() && !a.isStopping?.(), { signal }) as SteerResult;
+		}, { jump: mode === "redirect" });
 	const steerWorker = async (a: Worker, message: string, mode: SteerMode | undefined, signal: AbortSignal | undefined, source: TeamActionSource, kind?: TeamActionKind): Promise<SteerResult> => {
 		const action = teams.recordAction(a.id, kind ?? mode ?? "steer", source, message);
 		if (action) scheduleRefresh();
 		try {
-			const accepted = await a.steer(message, signal, mode);
+			const accepted = await laneSteer(a, message, mode, signal);
 			if (accepted.ok) {
 				teams.settleAction(action, "accepted-or-queued");
 				// The main thread's steers are assignments too: the coordinator's roster lists them.
 				if (source === "parent" || source === "user") persistAssignment(teams.recordOperatorSteer(a.id, message));
 			}
-			else teams.settleAction(action, signal?.aborted ? "unknown" : "failed", accepted.reason);
+			else teams.settleAction(action, signal?.aborted || accepted.unknown ? "unknown" : "failed", accepted.reason);
 			return accepted;
 		} catch (error) {
 			teams.settleAction(action, signal?.aborted ? "unknown" : "failed", String(error));
@@ -1753,7 +1861,11 @@ export function registerSubagents(
 		// No live coordinator: the parent hears it, and is woken, so the team is never orphaned.
 		return { kind: "parent", wake: true };
 	};
-	/** A routed completion: the parent's summary, cut like the completion message, as a follow-up to the coordinator. */
+	/**
+	 * A routed completion: the parent's summary, cut like the completion message, as a `report` item
+	 * for the coordinator (urgent when the task failed). Stored, so never lost; a coordinator that
+	 * ended with no live successor meanwhile leaves it to the parent, which is woken.
+	 */
 	const deliverCompletion = async (to: PersistedMember, a: Worker, verb: string): Promise<void> => {
 		const info = teams.memberInfo(a.id);
 		if (!info) return;
@@ -1768,16 +1880,23 @@ export function registerSubagents(
 			}
 			text = `${withLanded(a, text.slice(0, WAKE_PREVIEW_CHARS))}\n[Cut at ${count(WAKE_PREVIEW_CHARS)} of ${count(text.length)} chars.${where} Ask ${info.member.role} with team_msg for more.]`;
 		}
+		const left = leftOpenLine(a.id);
 		const body = [
 			`[Team report from ${info.member.role} (${a.id}), ${info.team.id}: ${verb} — routed to you as coordinator]`,
 			text,
-			replyHint(to, info.member.role),
+			...(left ? [left] : []),
 		].join("\n");
-		try {
-			await deliverToMember(to, body, "followUp", "member", "report", { kind: "message", from: info.member.role, fromId: a.id, text: `(${verb}) ${a.finalOutput().slice(0, 2000) || "no final answer"}` });
-		} catch {
-			/* The coordinator ended meanwhile; team_list shows the failed delivery. */
-		}
+		const first = a.finalOutput().split("\n").find((l) => l.trim())?.trim();
+		const subject = `${verb}: ${first || "no final answer"}`;
+		const queued = queueItem(to, { kind: "report", body, subject, from: partyOf(info.member), urgent: verb === "failed" });
+		teams.settleAction(
+			teams.recordAction(queued.ok ? queued.to.workerId : to.workerId, "report", "member", queued.ok ? `${queued.item.id}: ${subject}` : subject),
+			queued.ok ? "accepted-or-queued" : "failed", queued.ok ? undefined : queued.reason,
+		);
+		scheduleRefresh();
+		if (queued.ok) return;
+		// Nobody on the team can take it: the parent hears it, woken, so the report is never lost.
+		sendCompletion(`${body}\n[Routed to the main chat: ${queued.reason}]`, true);
 	};
 	const appendTeamEvent = (teamId: string, kind: "handover" | "retire" | "wrap-up" | "pause" | "resume", member: { workerId: string; role: string }, detail?: string) => {
 		try {
@@ -1805,10 +1924,12 @@ export function registerSubagents(
 			appendTeamEvent(teamId, "wrap-up", target, contextShare(tokens, window));
 		}
 	};
-	/** The window of the model a worker was spawned with (claude-code: claudeContextWindow, `[1m]` or natively 1M; pi: the registry). */
+	/** The window of the model a worker was spawned with (a Claude model: claudeContextWindow, `[1m]` or natively 1M; pi: the registry). */
 	const contextWindowOf = (a: Worker | undefined, member: { backend: string; model?: string }): number | undefined => {
 		const model = (a && launches.get(a)?.model) ?? member.model ?? a?.model;
-		if (member.backend === "claude-code") return claudeContextWindow(model ?? "");
+		// A claude-code member: a native one (recorded before claude-code workers became pi workers) or a
+		// pi worker on the Claude Code provider, which the parent's registry may not list.
+		if (member.backend === "claude-code" || model?.startsWith("claude-code-cli/")) return claudeContextWindow(model ?? "");
 		if (member.backend !== "pi" || !model) return undefined;
 		const slash = model.indexOf("/");
 		if (slash < 1) return undefined;
@@ -1857,9 +1978,112 @@ export function registerSubagents(
 			return undefined;
 		}
 	};
+	// ── Runtime fallback (§teams.defaults/runtime-fallback) ─────────────────
+	// A (backend, model) whose turn ran out of usage (usageOut, never a streak of other failures) is
+	// "out" for an hour: every tuple check treats it as refused. Persisted as subagents-dead-tuple-v1
+	// entries, replayed at session_start. A team whose duty switched (for any reason) stays on its
+	// fallback: teamFellBack, scoped to that team.
+	/** By tupleKey. */
+	const deadTuples = new Map<string, { reason: string; at: number }>();
+	/** `<teamId>|<duty>` → the primary's tupleKey: that team's duty moved to its fallback and stays there. */
+	const teamFellBack = new Map<string, string>();
+	/** Failed turns in a row, by standing member. */
+	const failStreaks = new Map<string, number>();
+	/** Standing members already switched, stopped or reported (one failover per member). */
+	const failedOver = new Set<string>();
+	/** Standing members a failover is stopping: their own settles go nowhere. */
+	const failingOver = new Set<string>();
+	/** One key per model whichever backend names it: a Claude Code tuple as the pi worker it runs as. */
+	const tupleKey = (backend: string, model: string | undefined): string | undefined => {
+		if (!model) return undefined;
+		if (backend === CLAUDE_CODE_BACKEND) {
+			try {
+				return `pi|${claudeOnPi({ backend, model, effort: "medium" }).model}`;
+			} catch {
+				return `${backend}|${model}`;
+			}
+		}
+		return `${backend}|${model}`;
+	};
+	const deadDenial = (t: { backend: string; model: string }, now = Date.now()): string | undefined => {
+		const key = tupleKey(t.backend, t.model);
+		const mark = key ? deadTuples.get(key) : undefined;
+		if (!mark || now - mark.at >= DEAD_TUPLE_MS || now < mark.at - 60_000) return undefined;
+		return `it ran out at runtime ${fmtDur(Math.max(0, now - mark.at))} ago (${mark.reason}); it is tried again from ${new Date(mark.at + DEAD_TUPLE_MS).toISOString()}`;
+	};
+	/** Mark a model out (and, on a switch, the team's duty as moved): in memory and as a session entry. */
+	const markOut = (backend: string, model: string, reason: string, team?: { teamId: string; duty: MemberDuty; primaryKey: string }) => {
+		const key = tupleKey(backend, model);
+		if (!key) return;
+		const at = Date.now();
+		const why = reason.slice(0, 500);
+		deadTuples.set(key, { reason: why, at });
+		if (team) teamFellBack.set(`${team.teamId}|${team.duty}`, team.primaryKey);
+		try {
+			pi.appendEntry(DEAD_TUPLE_ENTRY_TYPE, { version: 1, backend, model, reason: why, at, ...(team ? { teamId: team.teamId, duty: team.duty } : {}) });
+		} catch {
+			/* Kept in memory; a reload forgets it. */
+		}
+	};
+	/** The marks a session recorded, newest per model; a team's switched duties. */
+	const restoreDeadTuples = (entries: readonly unknown[]) => {
+		deadTuples.clear();
+		teamFellBack.clear();
+		for (const raw of entries) {
+			const e = raw as { type?: unknown; customType?: unknown; data?: unknown };
+			if (e?.type !== "custom" || e.customType !== DEAD_TUPLE_ENTRY_TYPE) continue;
+			const d = e.data as { version?: unknown; backend?: unknown; model?: unknown; reason?: unknown; at?: unknown; teamId?: unknown; duty?: unknown } | null;
+			if (!d || d.version !== 1 || typeof d.backend !== "string" || typeof d.model !== "string" || typeof d.at !== "number" || !Number.isFinite(d.at)) continue;
+			const key = tupleKey(d.backend, d.model);
+			if (!key) continue;
+			const was = deadTuples.get(key);
+			if (!was || was.at <= d.at) deadTuples.set(key, { reason: typeof d.reason === "string" ? d.reason.slice(0, 500) : "out of usage", at: d.at });
+			if (typeof d.teamId === "string" && (d.duty === "coordinator" || d.duty === "monitor")) teamFellBack.set(`${d.teamId}|${d.duty}`, key);
+		}
+		// A team's own switch (any reason, a streak included) is read back from its handover event:
+		// "successor <role> (<ag_NN>) on <b>/<m>; fallback: primary <backend>/<model>[/<effort>] <reason>".
+		for (const raw of entries) {
+			const e = raw as { type?: unknown; customType?: unknown; data?: unknown };
+			if (e?.type !== "custom" || e.customType !== TEAM_EVENT_ENTRY_TYPE) continue;
+			const d = e.data as { kind?: unknown; teamId?: unknown; workerId?: unknown; detail?: unknown } | null;
+			if (d?.kind !== "handover" || typeof d.teamId !== "string" || typeof d.workerId !== "string" || typeof d.detail !== "string") continue;
+			const tuple = /; fallback: primary (\S+) /.exec(d.detail)?.[1];
+			const parts = tuple?.split("/") ?? [];
+			if (parts.length < 2) continue;
+			if (parts.length > 2 && TUPLE_EFFORTS.has(parts[parts.length - 1]!)) parts.pop();
+			const key = tupleKey(parts[0]!, parts.slice(1).join("/"));
+			let duty: MemberDuty | undefined;
+			try {
+				duty = teams.find(d.teamId).members.find((m) => m.workerId === d.workerId)?.duty;
+			} catch {
+				duty = undefined;
+			}
+			if (key && duty) teamFellBack.set(`${d.teamId}|${duty}`, key);
+		}
+	};
+	/** The model a member runs on, as a tupleKey. */
+	const runningKey = (a: Worker, m: PersistedMember): string | undefined => {
+		const model = launches.get(a)?.model ?? m.model ?? a.model;
+		return tupleKey(model?.startsWith("claude-code-cli/") ? "pi" : m.backend, model);
+	};
+	/** Why a team's duty skips its primary for good: it moved to the fallback during this team. */
+	const fellBackDenial = (teamId: string, duty: MemberDuty, primary: WorkerTuple): string | undefined =>
+		teamFellBack.get(`${teamId}|${duty}`) === tupleKey(primary.backend, primary.model) ? `this team's ${duty} moved to its fallback when this primary failed, and stays on it` : undefined;
 	/** Why a team-defaults tuple cannot start here, by the checks spawnBatch applies; undefined when it can. */
 	const tupleDenial = (ctx: ExtensionContext, t: WorkerTuple): string | undefined => {
+		const dead = deadDenial(t);
+		if (dead) return dead;
 		const policy = readPolicy(options.policyFile);
+		if (t.backend === CLAUDE_CODE_BACKEND) {
+			const denied = policyDenial(policy, CLAUDE_CODE_BACKEND, claudeBareId(t.model));
+			if (denied) return denied;
+			try {
+				const asPi = claudeOnPi({ backend: t.backend, model: t.model, ...(t.effort ? { effort: t.effort } : {}) });
+				return policyDenial(policy, "pi", asPi.model!) ?? undefined;
+			} catch (error) {
+				return error instanceof Error ? error.message : String(error);
+			}
+		}
 		if (t.backend !== "pi") {
 			const backend = backends.get(t.backend);
 			if (!backend) return `backend ${t.backend} is not loaded`;
@@ -1880,8 +2104,8 @@ export function registerSubagents(
 	};
 	const tupleText = (t: WorkerTuple) => `${t.backend}/${t.model}${t.effort ? `/${t.effort}` : ""}`;
 	/** Primary, else fallback; neither → the team is refused, naming both reasons. */
-	const pickTuple = (ctx: ExtensionContext, duty: MemberDuty, role: string, primary: WorkerTuple, fallback: WorkerTuple | null): { tuple: WorkerTuple; line: string } => {
-		const first = tupleDenial(ctx, primary);
+	const pickTuple = (ctx: ExtensionContext, duty: MemberDuty, role: string, primary: WorkerTuple, fallback: WorkerTuple | null, primaryDenied?: string): { tuple: WorkerTuple; line: string } => {
+		const first = primaryDenied ?? tupleDenial(ctx, primary);
 		if (!first) return { tuple: primary, line: `Team defaults: ${duty} ${role} added on ${tupleText(primary)} (primary).` };
 		const second = fallback ? tupleDenial(ctx, fallback) : "no fallback is configured";
 		if (fallback && !second) return { tuple: fallback, line: `Team defaults: ${duty} ${role} added on ${tupleText(fallback)} (fallback; primary ${tupleText(primary)} refused: ${first}).` };
@@ -1948,7 +2172,8 @@ export function registerSubagents(
 	// team is not paused awaiting a resume) is held, not delivered, and goes out at the first
 	// refresh that sees a teammate working again (every worker state change and every accepted
 	// steer schedules one). A paused team's nudges always fire: the resume check must run.
-	interface PendingNudge { id: string; reason: string; fireAt: number; createdAt: number; timer: ReturnType<typeof setTimeout> }
+	/** `timer`: none once it came due (held). */
+	interface PendingNudge { id: string; reason: string; fireAt: number; createdAt: number; timer?: ReturnType<typeof setTimeout> }
 	interface NudgeState { seq: number; idleFires: number; active: Map<string, PendingNudge>; held?: PendingNudge }
 	const nudges = new Map<string, NudgeState>();
 	/** Teams whose monitor sent "pause" and not yet "resume". */
@@ -1964,12 +2189,59 @@ export function registerSubagents(
 		if (!state) nudges.set(workerId, (state = { seq: 0, idleFires: 0, active: new Map() }));
 		return state;
 	};
+	// Kept in the mailbox (nudges.json) on every change, and re-armed by the next manager with their
+	// held state: a parent's reload or restart never drops a monitor's scheduled wakes.
+	const nudgesFile = () => (mailboxRoot ? path.join(mailboxRoot, "nudges.json") : undefined);
+	const plainNudge = ({ timer: _t, ...n }: PendingNudge) => n;
+	const saveNudges = () => {
+		const file = nudgesFile();
+		if (!file || shuttingDown) return;
+		const out: Record<string, { seq: number; idleFires: number; active: Omit<PendingNudge, "timer">[]; held?: Omit<PendingNudge, "timer"> }> = {};
+		for (const [workerId, state] of nudges) {
+			out[workerId] = { seq: state.seq, idleFires: state.idleFires, active: [...state.active.values()].map(plainNudge), ...(state.held ? { held: plainNudge(state.held) } : {}) };
+		}
+		try {
+			fs.writeFileSync(`${file}.tmp`, `${JSON.stringify(out)}\n`, { mode: 0o600 });
+			fs.renameSync(`${file}.tmp`, file);
+		} catch {
+			/* Kept in memory; the next change writes again. */
+		}
+	};
+	const loadNudges = () => {
+		const file = nudgesFile();
+		if (!file) return;
+		let saved: Record<string, { seq?: unknown; idleFires?: unknown; active?: unknown; held?: unknown }>;
+		try {
+			saved = JSON.parse(fs.readFileSync(file, "utf8"));
+		} catch {
+			return;
+		}
+		const nudgeOf = (v: unknown): PendingNudge | undefined => {
+			const n = v as Partial<PendingNudge> | null;
+			return n && typeof n.id === "string" && typeof n.fireAt === "number" ? { id: n.id, reason: typeof n.reason === "string" ? n.reason : "", fireAt: n.fireAt, createdAt: typeof n.createdAt === "number" ? n.createdAt : n.fireAt } : undefined;
+		};
+		for (const [workerId, v] of Object.entries(saved ?? {})) {
+			if (nudges.has(workerId) || !v) continue;
+			const state: NudgeState = { seq: Number(v.seq) || 0, idleFires: Number(v.idleFires) || 0, active: new Map() };
+			for (const raw of Array.isArray(v.active) ? v.active : []) {
+				const n = nudgeOf(raw);
+				if (!n) continue;
+				// One that came due while no parent was here fires now.
+				n.timer = coordinationTimer(() => fireNudge(workerId, n.id), Math.max(0, n.fireAt - Date.now()));
+				state.active.set(n.id, n);
+			}
+			const held = nudgeOf(v.held);
+			if (held) state.held = held;
+			nudges.set(workerId, state);
+		}
+	};
 	const describeNudge = (n: PendingNudge) => `${n.id} at ${new Date(n.fireAt).toISOString()} (in ${fmtDur(n.fireAt - Date.now())})${n.reason ? `: ${n.reason}` : ""}`;
 	const fireNudge = (workerId: string, id: string) => {
 		const state = nudges.get(workerId);
 		const n = state?.active.get(id);
 		if (!state || !n) return;
 		state.active.delete(id);
+		saveNudges();
 		const worker = agents.find((a) => a.id === workerId);
 		const teamId = teams.teamOf(workerId);
 		if (shuttingDown || !worker || worker.isFinished() || !teamId) return;
@@ -1977,6 +2249,7 @@ export function registerSubagents(
 		if (!working && !pausedTeams.has(teamId)) {
 			// Nobody to watch: hold one wake until a teammate works again (later ones collapse into it).
 			state.held ??= n;
+			saveNudges();
 			return;
 		}
 		deliverNudge(state, worker, teamId, n, working);
@@ -1985,6 +2258,7 @@ export function registerSubagents(
 		const workerId = worker.id;
 		if (working) state.idleFires = 0;
 		else state.idleFires++;
+		saveNudges();
 		const now = Date.now();
 		const text = [
 			`[wake_nudge ${n.id}] Scheduled wakeup fired (set ${fmtDur(now - n.createdAt)} ago)${released ? "; held while no teammate was working, delivered now that one is" : ""}.`,
@@ -1993,14 +2267,9 @@ export function registerSubagents(
 				? `Wake limit (${NUDGE_MAX_IDLE_FIRES} fires with no teammate working) reached: do not schedule more nudges; tell the coordinator the team looks idle and end your turn.`
 				: "Continue your standing instruction; schedule the next check before ending your turn.",
 		].join("\n");
-		void worker.steer(text, undefined, "followUp").then((accepted) => {
-			if (!accepted.ok) return;
-			try {
-				appendInbox(memberDir(teamId, workerId), { at: Date.now(), kind: "instruction", from: "wake_nudge", fromId: n.id, text });
-			} catch {
-				/* The inbox is a convenience copy. */
-			}
-		}, () => { /* The monitor ended meanwhile. */ });
+		// An urgent notice item: stored first, so a busy or slow-to-wake monitor never loses the fire.
+		const me = teams.memberInfo(workerId)?.member;
+		if (me && teams.teamOf(workerId) === teamId) queueItem(me, { kind: "notice", urgent: true, body: text, subject: `[wake_nudge ${n.id}] ${n.reason || "scheduled wakeup fired"}` });
 	};
 	/** A held wake goes out once a teammate of its monitor is working again. */
 	const releaseHeldNudges = () => {
@@ -2009,7 +2278,11 @@ export function registerSubagents(
 			if (!n) continue;
 			const worker = agents.find((a) => a.id === workerId);
 			const teamId = teams.teamOf(workerId);
-			if (!worker || worker.isFinished() || !teamId) { state.held = undefined; continue; }
+			if (!worker || worker.isFinished() || !teamId) {
+				// Not (yet) picked back up after a reload: kept for when it is.
+				if (worker || reattaching === undefined) { state.held = undefined; saveNudges(); }
+				continue;
+			}
 			const working = teamWorking(teamId, workerId);
 			if (!working && !pausedTeams.has(teamId)) continue;
 			state.held = undefined;
@@ -2028,12 +2301,14 @@ export function registerSubagents(
 		if (request.action === "cancel") {
 			if (request.id && state.held?.id === request.id) {
 				state.held = undefined;
+				saveNudges();
 				return { text: `Cancelled ${request.id}.`, details: details() };
 			}
 			const n = request.id ? state.active.get(request.id) : undefined;
 			if (!n) throw new Error(`No pending nudge "${request.id ?? ""}".`);
 			clearTimeout(n.timer);
 			state.active.delete(n.id);
+			saveNudges();
 			return { text: `Cancelled ${n.id}.`, details: details() };
 		}
 		const teamId = teams.teamOf(workerId);
@@ -2046,6 +2321,7 @@ export function registerSubagents(
 		const timer = coordinationTimer(() => fireNudge(workerId, id), fireAt - now);
 		const n: PendingNudge = { id, reason: request.reason?.trim() ?? "", fireAt, createdAt: now, timer };
 		state.active.set(id, n);
+		saveNudges();
 		return { text: `Scheduled ${describeNudge(n)}\nWakes you as [wake_nudge ${id}]; end your turn now.`, details: details() };
 	};
 
@@ -2067,6 +2343,8 @@ export function registerSubagents(
 		if (h.timer) clearTimeout(h.timer);
 		const reason = why === "ready" ? `retired: successor ${h.newRole} (${h.newId}) confirmed the takeover` : `retired: handover to ${h.newRole} (${h.newId}) timed out`;
 		appendTeamEvent(h.teamId, "retire", { workerId: h.oldId, role: h.oldRole }, reason);
+		// Its open items are the successor's now, ids and senders kept (those arriving until it ends follow at onExit).
+		endInbox(h.oldId, "retire");
 		const old = agents.find((a) => a.id === h.oldId);
 		// A retired member ends for good: its seat is released too (a failed kill keeps it).
 		if (old && !old.isFinished()) void killWorker(old, reason, why === "ready" ? "member" : "system", "retire").then(() => autoEject(h.teamId, h.oldId), () => scheduleRefresh());
@@ -2107,23 +2385,91 @@ export function registerSubagents(
 			`[Team ${teamId} restored while paused]`,
 			"The parent session restarted while this team was paused by a usage notice; your pending wake_nudges ended with it. Run your standing instruction now: call team_roster; if the paused window is back under the threshold or has reset, send the resume notice; otherwise schedule the resume check with wake_nudge and end your turn.",
 		].join("\n");
-		void worker.steer(text, undefined, "followUp").then((accepted) => {
-			if (!accepted.ok) return;
-			try {
-				appendInbox(memberDir(teamId, worker.id), { at: Date.now(), kind: "instruction", from: "parent", fromId: "parent", text });
-			} catch {
-				/* The inbox is a convenience copy. */
-			}
-		}, () => { /* It ended meanwhile. */ });
+		const me = teams.memberInfo(worker.id)?.member;
+		if (me) queueItem(me, { kind: "notice", urgent: true, body: text, subject: `Team ${teamId} restored while paused: run the resume check` });
 	};
 	/** A worker that ended takes its nudges with it; a retired member's pending handover is done. */
 	const forgetMemberTimers = (workerId: string) => {
 		const state = nudges.get(workerId);
 		if (state) for (const n of state.active.values()) clearTimeout(n.timer);
-		nudges.delete(workerId);
+		if (nudges.delete(workerId)) saveNudges();
 		for (const h of handovers.values()) if (h.oldId === workerId) {
 			if (h.timer) clearTimeout(h.timer);
 			handovers.delete(h.newId);
+		}
+	};
+	/** Members whose successor is being started (finishSuccession): their items wait for it, not returned. */
+	const succeeding = new Set<string>();
+	/**
+	 * A member's open items when it leaves (§app.teams/inbox "Moving and returning"): moved to its
+	 * newest live successor (ids and senders kept, listed to it), else — once it has ended for good —
+	 * returned to their senders, one "not addressed" notice per sender. `retire` only moves (the old
+	 * member still runs); `ended` and `restored` return what no successor takes.
+	 * Every end is the end of a turn (§app.teams/inbox-zero): first every item it opened in a recorded
+	 * turn that is not a question closes automatically (no later turn follows), so handled
+	 * news is never returned as "not addressed" nor listed again to a successor.
+	 */
+	const endInbox = (workerId: string, how: "retire" | "ended" | "restored") => {
+		const teamId = teams.teamOf(workerId);
+		if (!teamId || shuttingDown || (!inbox && !mailboxRoot)) return;
+		const store = inboxStore();
+		if (store.closeSeen(workerId, "all").length) scheduleRefresh();
+		if (!store.openCount(workerId)) return;
+		const next = liveSuccessor(workerId);
+		if (next) {
+			if (store.moveOpen(workerId, partyOf(next), "handover").length) scheduleWake(next.workerId);
+			scheduleRefresh();
+			return;
+		}
+		if (how === "retire" || succeeding.has(workerId) || pendingSuccessions.has(workerId)) return;
+		const holder = teams.memberInfo(workerId)?.member;
+		if (!holder) return;
+		const w = workerOf(workerId);
+		const why = endReason({ status: w?.status, error: w?.error, ejected: teams.ejectedAt(workerId) !== undefined, restored: how === "restored" });
+		returnItems(holder, teamId, why, store.returnOpen(workerId, `not addressed: ${why}`));
+		scheduleRefresh();
+	};
+	/**
+	 * After a reload, once the host has said which workers still run: every inbox on disk is folded;
+	 * a member of this session's teams found ended (restored) leaves its open items to its live
+	 * successor or returns them; a live member with items never listed is woken for them.
+	 */
+	const rewakeInboxes = () => {
+		if (!mailboxRoot) return;
+		const store = inboxStore();
+		const seen = store.workers().filter((m) => teams.teamOf(m.workerId) === m.teamId);
+		for (const { workerId } of seen) {
+			const w = workerOf(workerId);
+			if (!w || isRestored(w)) endInbox(workerId, "restored");
+		}
+		for (const { workerId } of seen) if (isLiveWorker(workerId) && store.unlisted(workerId).length) scheduleWake(workerId);
+	};
+	/** Tell each sender of returned items, once per sender: a member gets a notice item; Sova's and the main thread's go to the routing coordinator or the main chat. */
+	const returnItems = (holder: PersistedMember, teamId: string, why: string, items: readonly InboxItem[]) => {
+		const toMainChat = (content: string) => {
+			try {
+				pi.sendMessage({ customType: TEAM_NOTICE_TYPE, display: true, content }, { deliverAs: "followUp", triggerTurn: false });
+			} catch {
+				/* Session replacement can invalidate the message API. */
+			}
+		};
+		const toCoordinator = (content: string, subject: string): boolean => {
+			const routing = teams.routingCoordinator(teamId, isLiveWorker);
+			if (!routing || routing.workerId === holder.workerId) return false;
+			return queueItem(routing, { kind: "notice", body: content, subject }).ok;
+		};
+		for (const g of groupReturns(items)) {
+			const subject = `Not addressed: ${g.items.length} item(s) returned from ${holder.role} (${holder.workerId})`;
+			if (g.target.kind === "member") {
+				const text = returnNoticeText(partyOf(holder), teamId, why, g.items);
+				const sender = teams.memberInfo(g.target.to.workerId)?.member;
+				if (sender && queueItem(sender, { kind: "notice", body: text, subject }).ok) continue;
+				// Its sender has ended too: the coordinator, else the main chat, so nothing is dropped.
+				if (!toCoordinator(text, subject)) toMainChat(text);
+			} else if (g.target.kind === "sova") {
+				const text = returnNoticeText(partyOf(holder), teamId, why, g.items, true);
+				if (!toCoordinator(text, subject)) toMainChat(text);
+			} else toMainChat(returnNoticeText(partyOf(holder), teamId, why, g.items));
 		}
 	};
 	const clearCoordinationTimers = () => {
@@ -2138,7 +2484,7 @@ export function registerSubagents(
 	};
 
 	// ── Team member mailbox ─────────────────────────────────────────────────
-	// Members (member.ts in Pi children, member-mcp.ts beside Claude children)
+	// Members (member.ts in every member child)
 	// write requests into their own directory under a private root;
 	// the parent polls, derives the sender from the path, validates scope
 	// against the team store and performs the delivery itself through the same
@@ -2146,15 +2492,272 @@ export function registerSubagents(
 	// processes, and nothing here can create or stop a worker.
 	let mailboxRoot: string | undefined = options.mailboxRoot;
 	let mailboxTimer: ReturnType<typeof setInterval> | undefined;
-	let mailboxOwned = false;
+	/** The kept wake_nudges were re-armed (once per manager, with the mailbox). */
+	let nudgesLoaded = false;
 	const memberDir = (teamId: string, workerId: string) => path.join(mailboxRoot!, teamId, workerId);
+	// ── Team inbox (§app.teams/inbox) ───────────────────────────────────────
+	// Every team message and Sova notice is an item stored in the recipient's items.jsonl (this
+	// process is its only writer), then listed to the member by the wake scheduler.
+	let inbox: InboxStore | undefined;
+	let wakes: WakeScheduler | undefined;
+	/** Members this manager started: they run this member.ts, so they open inboxes even before their caps marker is written. */
+	const freshMembers = new Set<string>();
+	/** Members whose caps marker was seen (it never goes away while they run). */
+	const capsSeen = new Set<string>();
+	const inboxStore = (): InboxStore => {
+		ensureMailbox();
+		return inbox!;
+	};
+	const workerOf = (workerId: string) => agents.find((a) => a.id === workerId);
+	/** A member on older code or on a backend without team tools gets each item in full, as before. */
+	const legacyMember = (workerId: string): boolean => {
+		const info = teams.memberInfo(workerId);
+		if (!info || memberTooling(info.member.backend) === "none") return true;
+		if (freshMembers.has(workerId) || capsSeen.has(workerId)) return false;
+		if (mailboxRoot && hasInboxCaps(memberDir(info.team.id, workerId))) {
+			capsSeen.add(workerId);
+			return false;
+		}
+		return true;
+	};
+	const partyOf = (m: { role: string; workerId: string }): InboxParty => ({ role: m.role, workerId: m.workerId });
+	// ── Inbox zero (§app.teams/inbox-zero) ─────────
+	/**
+	 * The member's turn an item is seen in. An opened item: the task running now. A wake's items:
+	 * the task its steer begins, which is unknown while that run has not begun (a wake accepted after
+	 * the member's turn ended but before its settle was handled belongs to the next turn). A worker
+	 * without a turn record counts its settles.
+	 */
+	const seenTag = (workerId: string, how: "wake" | "open"): SeenTag => {
+		const w = workerOf(workerId);
+		const t = w?.inboxTurn?.();
+		if (!t) return { task: settleSeq.get(workerId) ?? 0 };
+		return how === "wake" && t.steer !== undefined ? { steer: t.steer } : { task: t.task };
+	};
+	/** At a member's settle: close what it saw in a turn that has ended and did not close. */
+	const sweepSettled = (a: Worker, seq: number) => {
+		if (!inbox || !teams.teamOf(a.id)) return;
+		const upto = a.inboxTurn ? a.inboxTurn().task : seq - 1;
+		if (inbox.closeSeen(a.id, upto).length) scheduleRefresh();
+	};
+	const wakeHost = {
+
+		state: (workerId: string) => {
+			const w = workerOf(workerId);
+			if (!w || isRestored(w) || !isLiveWorker(workerId) || teams.ejectedAt(workerId) !== undefined) return "gone" as const;
+			return w.isSettled() ? "idle" as const : "busy" as const;
+		},
+		// Every team member is a pi worker (Claude models too, on the Claude Code provider): a mid-turn steer lands at its next step.
+		nextStep: (workerId: string) => (workerOf(workerId)?.backend ?? "pi") === "pi",
+		legacy: legacyMember,
+		unlisted: (workerId: string) => inbox?.unlisted(workerId) ?? [],
+		unread: (workerId: string) => inbox?.unread(workerId) ?? [],
+		markListed: (workerId: string, ids: string[]) => inbox?.markListed(workerId, ids),
+		markRead: (workerId: string, ids: string[]) => void inbox?.markSeen(workerId, ids, seenTag(workerId, "wake")),
+		stillOpen: (workerId: string) => inbox?.stillOpen(workerId) ?? [],
+
+		deliver: async (workerId: string, text: string): Promise<LaneResult> => {
+			const w = workerOf(workerId);
+			if (!w) return { ok: false, reason: "not live" };
+			return laneSteer(w, text, undefined);
+		},
+		legacyText: (workerId: string, item: InboxItem) => {
+			const target = teams.memberInfo(workerId)?.member;
+			const fromMember = item.from.workerId !== "parent" ? teams.memberInfo(item.from.workerId)?.member : undefined;
+			const tag = fromMember ? `${fromMember.role}${fromMember.orchestrator ? ", orchestrator" : ""} (${fromMember.workerId}), ${item.teamId}` : `${item.from.role}, ${item.teamId}`;
+			const head = item.kind === "notice" && fromMember?.duty === "monitor" ? `[Monitor notice — from ${tag}${item.broadcastId ? " to all members" : ""}]`
+				: item.kind === "message" ? `[Team message from ${tag}${item.broadcastId ? " to all members" : ""}]`
+				: item.kind === "question" ? `[Team question from ${tag} — routed to you as coordinator]`
+				: `[Team ${item.kind} from ${tag}]`;
+			const hint = item.from.workerId === "parent" ? [] : [item.kind === "question"
+				? `Answer with team_msg to "${item.from.role}". If only the operator can decide, ask them with team_ask and relay the answer.`
+				: target ? replyHint(target, item.from.role) : ""];
+			return [head, item.body, ...hint].filter(Boolean).join("\n");
+		},
+		legacyDelivered: (workerId: string, item: InboxItem) => {
+			const teamId = teams.teamOf(workerId);
+			if (!teamId || memberTooling(teams.memberInfo(workerId)?.member.backend ?? "none") === "none") return;
+			try {
+				appendInbox(memberDir(teamId, workerId), { at: Date.now(), kind: "message", from: item.from.role, fromId: item.from.workerId, text: item.body });
+			} catch {
+				/* The legacy copy is a convenience. */
+			}
+		},
+		retrying: (workerId: string, _attempt: number, reason: string) => {
+			teams.settleAction(teams.recordAction(workerId, "wake retry", "system", reason), "failed", reason);
+			scheduleRefresh();
+		},
+		setTimer: (fn: () => void, ms: number) => {
+			const t = setTimeout(fn, ms);
+			t.unref?.();
+			return t;
+		},
+		clearTimer: (t: unknown) => clearTimeout(t as ReturnType<typeof setTimeout>),
+	};
+	/** The newest live member whose successorOf chain reaches `workerId` (its successor, or theirs). */
+	const liveSuccessor = (workerId: string): PersistedMember | undefined => {
+		const teamId = teams.teamOf(workerId);
+		if (!teamId) return undefined;
+		let members: readonly (PersistedMember & { ejectedAt?: number })[];
+		try {
+			members = teams.find(teamId).members;
+		} catch {
+			return undefined;
+		}
+		const seen = new Set([workerId]);
+		const found: (PersistedMember & { ejectedAt?: number })[] = [];
+		for (let frontier = [workerId]; frontier.length;) {
+			const next: string[] = [];
+			for (const id of frontier) for (const m of members) {
+				if (m.successorOf !== id || seen.has(m.workerId)) continue;
+				seen.add(m.workerId);
+				next.push(m.workerId);
+				if (m.ejectedAt === undefined && isLiveWorker(m.workerId)) found.push(m);
+			}
+			frontier = next;
+		}
+		const newest = found.sort((a, b) => b.addedAt - a.addedAt || Number(b.workerId.slice(3)) - Number(a.workerId.slice(3)))[0];
+		if (!newest) return undefined;
+		const { ejectedAt: _e, ...rest } = newest as PersistedMember & { ejectedAt?: number; actions?: unknown };
+		return { ...rest } as PersistedMember;
+	};
+	/** Why a member that ended (and has no live successor) gets nothing, and how it comes back. */
+	const goneReason = (m: { role: string; workerId: string }): string => {
+		const ejected = teams.ejectedAt(m.workerId);
+		if (ejected !== undefined) return `${m.role} (${m.workerId}) was ejected at ${ejectedStamp(ejected)} and has no live successor; it no longer receives team messages.`;
+		const w = workerOf(m.workerId);
+		const state = !w ? "is not running in this session" : isRestored(w) ? "was found stopped after a restart" : `has stopped (${w.status})`;
+		return `${m.role} (${m.workerId}) ${state} and has no live successor. agent_resume { id: "${m.workerId}" } in the main chat brings it back${teams.memberInfo(m.workerId)?.team.coordination ? " (ask the coordinator)" : " (ask with team_ask)"}.`;
+	};
+	/** The member a message for `target` reaches now: itself while live, else its newest live successor. */
+	const reachable = (target: PersistedMember): { ok: true; to: PersistedMember; forwardedFrom?: PersistedMember; awaitingSuccessor?: true } | { ok: false; reason: string } => {
+		if (isLiveWorker(target.workerId) && teams.ejectedAt(target.workerId) === undefined && !isRestored(workerOf(target.workerId)!)) return { ok: true, to: target };
+		const next = liveSuccessor(target.workerId);
+		if (next) return { ok: true, to: next, forwardedFrom: target };
+		// Ended (or ending) while its successor is still to start: kept in its own inbox, which
+		// endInbox moves to the successor once it starts, or returns to the senders if none does.
+		if (teams.ejectedAt(target.workerId) === undefined && (succeeding.has(target.workerId) || pendingSuccessions.has(target.workerId))) return { ok: true, to: target, awaitingSuccessor: true };
+		return { ok: false, reason: goneReason(target) };
+	};
+	/**
+	 * team_msg/team_steer's recipient: a sibling by role or worker ID, or a member that was ejected
+	 * (its successor gets it, see reachable). Never the sender, also not through its own predecessor.
+	 */
+	const resolveRecipient = (senderId: string, ref: string): PersistedMember => {
+		let found: PersistedMember;
+		try {
+			found = teams.resolveSibling(senderId, ref);
+		} catch (error) {
+			const teamId = teams.teamOf(senderId);
+			const trimmed = ref.trim();
+			const key = normalizeLabel(trimmed).toLowerCase();
+			let members: readonly (PersistedMember & { ejectedAt?: number })[] = [];
+			try {
+				members = teamId ? teams.find(teamId).members : [];
+			} catch {
+				throw error;
+			}
+			const ejected = members
+				.filter((m) => m.ejectedAt !== undefined && (/^ag_\d+$/.test(trimmed) ? m.workerId === trimmed : normalizeLabel(m.role).toLowerCase() === key))
+				.sort((a, b) => b.addedAt - a.addedAt)[0];
+			if (!ejected || !liveSuccessor(ejected.workerId)) throw error;
+			const { ejectedAt: _e, ...rest } = ejected as PersistedMember & { ejectedAt?: number; actions?: unknown };
+			found = { ...rest } as PersistedMember;
+		}
+		const where = reachable(found);
+		if (where.ok && where.to.workerId === senderId) throw new Error(`${found.role} (${found.workerId}) was succeeded by you; you cannot address yourself.`);
+		return found;
+	};
+	type QueueInput = { kind: InboxKind; body: string; subject?: string; urgent?: boolean; from?: InboxParty; replyTo?: string; broadcastId?: string };
+	type QueueResult = { ok: true; item: InboxItem; to: PersistedMember; forwardedFrom?: PersistedMember; awaitingSuccessor?: true } | { ok: false; reason: string };
+	/**
+	 * Store one item for a member and schedule its wake (the one path for team messages and Sova's
+	 * notices). A member that was succeeded gets it through its newest live successor; an ended one
+	 * with none is refused with the reason. Never refused for being busy or starting.
+	 */
+	const queueItem = (target: PersistedMember, input: QueueInput): QueueResult => {
+		const teamId = teams.teamOf(target.workerId);
+		if (!teamId) return { ok: false, reason: `${target.role} (${target.workerId}) is not a member of a session team.` };
+		const where = reachable(target);
+		if (!where.ok) return where;
+		let item: InboxItem;
+		try {
+			item = inboxStore().add({
+				teamId, from: input.from ?? SOVA, to: partyOf(where.to), kind: input.kind, body: input.body,
+				...(input.subject ? { subject: input.subject } : {}), ...(input.urgent ? { urgent: true } : {}),
+				...(input.replyTo ? { replyTo: input.replyTo } : {}), ...(input.broadcastId ? { broadcastId: input.broadcastId } : {}),
+				...(where.forwardedFrom ? { forwardedFrom: partyOf(where.forwardedFrom) } : {}),
+			});
+		} catch (error) {
+			return { ok: false, reason: `could not store the item: ${error instanceof Error ? error.message : String(error)}` };
+		}
+		wakes?.notify(where.to.workerId);
+		scheduleRefresh();
+		return { ok: true, item, to: where.to, ...(where.forwardedFrom ? { forwardedFrom: where.forwardedFrom } : {}), ...(where.awaitingSuccessor ? { awaitingSuccessor: true as const } : {}) };
+	};
+	/** List what waits for a member now (after a reload, a move, or anything that stored items without a wake). */
+	const scheduleWake = (workerId: string) => {
+		if (!inbox) return;
+		wakes?.notify(workerId);
+	};
+	/**
+	 * What a team member left open, after the turn-end safety net ran, for the end of its report and
+	 * of the coordinator's own completion (§app.teams/inbox-zero): `[Left open: i_7 question from
+	 * writer (opened); i_9 report (unopened)]`; empty when nothing is open or it is on no team.
+	 */
+	const leftOpenLine = (workerId: string): string => {
+		if (!inbox || !teams.teamOf(workerId)) return "";
+		const open = inbox.list(workerId, { open: true });
+		if (!open.length) return "";
+		const shown = open.slice(0, LEFT_OPEN_MAX).map((i) => `${i.id} ${i.kind} from ${i.from.role} (${i.status === "new" ? "unopened" : "opened"})`);
+		const more = open.length - shown.length;
+		return `[Left open: ${shown.join("; ")}${more > 0 ? `; … and ${more} more` : ""}]`;
+	};
+	/** Each live member's open-item count line (`3 open items`), empty when it has none. */
+	const openItemsText = (workerId: string): string => {
+		const n = inbox?.openCount(workerId) ?? 0;
+		if (!n) return "";
+		// Its unanswered questions and how long the oldest has waited (§teams.defaults/roster-context).
+		const questions = inbox!.list(workerId, { open: true }).filter((i) => i.kind === "question");
+		const oldest = questions.length ? Math.min(...questions.map((i) => i.sentAt)) : undefined;
+		const waited = oldest === undefined ? "" : questions.length === 1
+			? ` (1 question unanswered ${waitText(Date.now() - oldest)})`
+			: ` (${questions.length} questions unanswered, oldest ${waitText(Date.now() - oldest)})`;
+		return ` · ${n} open item${n === 1 ? "" : "s"}${waited}`;
+	};
+	/** A question's wait: `20 min`, `2 h 5 min`, `under 1 min`. */
+	const waitText = (ms: number): string => {
+		const min = Math.floor(Math.max(0, ms) / 60_000);
+		if (min < 1) return "under 1 min";
+		if (min < 60) return `${min} min`;
+		const h = Math.floor(min / 60);
+		return min % 60 ? `${h} h ${min % 60} min` : `${h} h`;
+	};
+	/** The team's inbox line: `Inbox: 4 open · closed by members 12 · automatically 3`; none before any item. */
+	const teamInboxLine = (teamId: string, indent = ""): string[] => {
+		if (!inbox) return [];
+		let open = 0;
+		for (const n of inbox.openCounts(teamId).values()) open += n;
+		const c = inbox.closedCounts(teamId);
+		const byMembers = c.member + c.reply;
+		if (!open && !byMembers && !c.auto) return [];
+		return [`${indent}Inbox: ${open} open · closed by members ${byMembers} · automatically ${c.auto}`];
+	};
 	const ensureMailbox = (): string => {
-		if (!mailboxRoot && hosting.active()) {
-			// Detachable members keep their mailbox across restarts; pending requests are answered after re-adoption.
-			mailboxRoot = hosting.mailboxRoot();
-		} else if (!mailboxRoot) {
-			mailboxRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-teams-"));
-			mailboxOwned = true;
+		if (!mailboxRoot) {
+			// Beside the session's handover notes, and kept: a reattached or resumed member keeps its inbox,
+			// and requests written while the parent was away are handled at the next poll.
+			mailboxRoot = path.join(agentDir(), "sova", "teams", sessionDirKey(activeCtx?.sessionManager.getSessionId?.(), unsavedSessionKey), "mailbox");
+			fs.mkdirSync(mailboxRoot, { recursive: true, mode: 0o700 });
+		}
+		if (!inbox) {
+			inbox = new InboxStore(mailboxRoot);
+			inbox.steerTask = (workerId, steer) => workerOf(workerId)?.steerTask?.(steer);
+			wakes = new WakeScheduler(wakeHost, { debounceMs: options.inboxDebounceMs, retryMs: options.inboxRetryMs });
+		}
+		if (!nudgesLoaded) {
+			nudgesLoaded = true;
+			loadNudges();
 		}
 		if (!mailboxTimer) {
 			mailboxTimer = setInterval(pollMailbox, options.mailboxPollMs ?? MAILBOX_POLL_MS);
@@ -2165,6 +2768,8 @@ export function registerSubagents(
 	const memberEnv = (team: NonNullable<BatchRequest["team"]>, member: TeamIdentity, workerId: string): Record<string, string> => {
 		const dir = memberDir(team.teamId, workerId);
 		initMemberDir(dir);
+		// Started now, on this code: its member.ts opens inboxes (its caps marker follows at load).
+		freshMembers.add(workerId);
 		return {
 			[MEMBER_ENV]: encodeMemberContext({
 				version: 1, teamId: team.teamId, teamName: team.teamName, workerId, role: member.role, orchestrator: member.orchestrator, dir,
@@ -2230,42 +2835,114 @@ export function registerSubagents(
 			`${t.id} — ${t.name} · ${countsText(t)}`,
 			`Objective: ${t.objective}`,
 			...t.members.map((m) =>
-				`  ${m.workerId} ${m.role}${dutyMark(m)} [${m.backend}${memberTooling(m.backend) === "none" ? ", receives messages only" : ", has team tools"}] ${m.state}${m.status ? ` (${m.status}${m.taskOutcome ? `/${m.taskOutcome}` : ""})` : ""}${m.available ? ` · ${memberContext(m)}` : ""} · owns: ${m.ownedPaths.join(", ") || "none declared"}${m.error ? ` · error: ${m.error}` : ""}${m.available ? "" : ` · unavailable: ${m.reason}`}${ejectedText(m)}`,
+				`  ${m.workerId} ${m.role}${dutyMark(m)} [${m.backend}${memberTooling(m.backend) === "none" ? ", receives messages only" : ", has team tools"}] ${m.state}${m.status ? ` (${m.status}${m.taskOutcome ? `/${m.taskOutcome}` : ""})` : ""}${m.available ? ` · ${memberContext(m)}${openItemsText(m.workerId)}` : ""} · owns: ${m.ownedPaths.join(", ") || "none declared"}${m.error ? ` · error: ${m.error}` : ""}${m.available ? "" : ` · unavailable: ${m.reason}`}${ejectedText(m)}`,
 			),
 			...standing,
 			...(t.actions.length ? ["  Recent actions:", ...t.actions.slice(-10).map((a) => `    #${a.seq} ${a.source} ${a.kind} → ${a.workerId} (${a.role}): ${a.state}${a.reason ? ` — ${a.reason}` : ""}`)] : []),
 			"States are observations; accepted-or-queued never means executed. Context is the last reply's size over the spawned model's window.",
+			...teamInboxLine(t.id),
 		].join("\n");
 	};
-	/** How a recipient can answer, by what it really has; MCP tools carry the server prefix. */
+	/** How a recipient can answer, by what it really has. */
 	const replyHint = (target: PersistedMember, role: string): string => {
 		switch (memberTooling(target.backend)) {
 			case "pi": return `(Reply with team_msg to "${role}" if needed; team_inbox lists delivered messages.)`;
-			case "mcp": return `(Reply with the mcp__${MCP_SERVER_NAME}__team_msg tool to "${role}" if needed; mcp__${MCP_SERVER_NAME}__team_inbox lists delivered messages.)`;
 			default: return "(You cannot reply to teammates directly; put anything meant for them in your final answer.)";
 		}
 	};
-	/** Deliver one mediated message/instruction to a sibling; the text says who sent it and how to reply. */
+	/**
+	 * A direct instruction to one member, in full, on its lane (never refused for being busy; a
+	 * redirect goes ahead of queued deliveries). A copy goes in its inbox as an `instruction` item
+	 * (history, never open), and in the legacy inbox.jsonl for a member on older code. Refused for
+	 * a member that is not live, restored or being stopped.
+	 */
 	const deliverToMember = async (
-		target: PersistedMember, text: string, mode: SteerMode | undefined, source: TeamActionSource, kind: TeamActionKind, inbox: { kind: "message" | "instruction"; from: string; fromId: string; text: string },
+		target: PersistedMember, text: string, mode: SteerMode | undefined, source: TeamActionSource, kind: TeamActionKind, copy: { kind: "message" | "instruction"; from: string; fromId: string; text: string },
 	): Promise<SteerResult> => {
 		const worker = agents.find((a) => a.id === target.workerId);
-		if (!worker || worker.isFinished() || worker.isStopping?.()) {
+		if (!worker || isRestored(worker) || worker.isFinished() || worker.isStopping?.()) {
 			// Still an audited attempt: the sender is told, and team_list shows it.
 			const reason = `${target.role} (${target.workerId}) is no longer live`;
-			teams.settleAction(teams.recordAction(target.workerId, kind, source, inbox.text), "failed", reason);
+			teams.settleAction(teams.recordAction(target.workerId, kind, source, copy.text), "failed", reason);
 			scheduleRefresh();
 			return { ok: false, reason };
 		}
 		const accepted = await steerWorker(worker, text, mode, undefined, source, kind);
-		if (accepted.ok && memberTooling(target.backend) !== "none") {
+		const teamId = teams.teamOf(target.workerId);
+		if (accepted.ok && teamId && memberTooling(target.backend) !== "none") {
 			try {
-				appendInbox(memberDir(teams.teamOf(target.workerId)!, target.workerId), { at: Date.now(), ...inbox });
+				inboxStore().add({
+					teamId, from: copy.fromId === "parent" ? (copy.from === "main thread" ? MAIN_THREAD : { role: copy.from, workerId: "parent" }) : { role: copy.from, workerId: copy.fromId },
+					to: partyOf(target), kind: "instruction", body: copy.text, status: "read",
+				});
 			} catch {
-				/* The inbox is a convenience copy; delivery already succeeded. */
+				/* The history copy is a convenience; delivery already succeeded. */
+			}
+			if (legacyMember(target.workerId)) {
+				try {
+					appendInbox(memberDir(teamId, target.workerId), { at: Date.now(), ...copy });
+				} catch {
+					/* The inbox is a convenience copy; delivery already succeeded. */
+				}
 			}
 		}
 		return accepted;
+	};
+	/** A queued answer line: `Queued for builder (ag_12): item i_41`, with forwarding and flood hints. */
+	const queuedLine = (r: Extract<QueueResult, { ok: true }>): string => {
+		const open = inbox?.openCount(r.to.workerId) ?? 0;
+		return `Queued for ${r.to.role} (${r.to.workerId}): item ${r.item.id}${r.forwardedFrom ? ` — ${r.forwardedFrom.role} (${r.forwardedFrom.workerId}) was replaced: forwarded to ${r.to.role} (${r.to.workerId})` : ""}${r.awaitingSuccessor ? ` — ${r.to.role} has ended and its successor is starting: the item moves to it` : ""}${open > 50 ? ` · ${r.to.role} has ${open} open items` : ""}`;
+	};
+	const itemFrom = (me: PersistedMember): InboxParty => ({ role: me.role, workerId: me.workerId });
+	/** team_inbox, served here: the parent is the inbox's only writer (§app.teams/inbox). */
+	const serveInbox = (me: PersistedMember, request: MailboxRequest): { text: string; details: Record<string, unknown> } => {
+		const store = inboxStore();
+		const action = request.action ?? "list";
+		const stamp = (at: number) => new Date(at).toISOString().slice(11, 19);
+		const row = (i: InboxItem) => `${i.id} [${i.returned ? "returned" : i.status}] ${itemLine(i).slice(2 + i.id.length + 1)}${i.note ? ` · note: ${i.note}` : ""} (${stamp(i.sentAt)})`;
+		if (action === "list") {
+			const items = request.limit ? store.list(me.workerId, { limit: request.limit }) : store.list(me.workerId, { open: true });
+			const open = store.openCount(me.workerId);
+			const text = items.length
+				? [`${open} open item${open === 1 ? "" : "s"}${request.limit ? ` · newest ${items.length} shown` : ""}:`, ...items.map((i) => `${i.urgent ? "!" : "-"} ${row(i)}`), "team_inbox open <ids> shows them in full; done <ids> marks them addressed."].join("\n")
+				: request.limit ? "Your inbox is empty." : "No open items.";
+			return { text, details: { action, open, items: items.map(({ body: _b, ...rest }) => rest) } };
+		}
+		if (action === "sent") {
+			const items = store.sentBy(me.workerId, request.limit ?? 50);
+			// How each addressed item was closed: `closed by builder`, `answered in i_52`, `closed automatically`.
+			const how = (i: InboxItem): string => {
+				const by = closedByOf(i);
+				if (by === "auto") return "closed automatically";
+				if (by === "reply") return i.note?.startsWith("answered in ") ? i.note : "answered";
+				return by ? `closed by ${i.to.role}` : i.returned ? `returned: ${i.returned.why}` : i.status;
+			};
+			const text = items.length
+				? ["Items you sent (newest last):", ...items.map((i) => `${i.id} → ${i.to.role} (${i.to.workerId}) [${how(i)}] ${i.kind}: ${i.subject}${i.note && closedByOf(i) !== "auto" && closedByOf(i) !== "reply" ? ` · note: ${i.note}` : ""}`)].join("\n")
+				: "You have sent no items.";
+			return { text, details: { action, items: items.map(({ body: _b, ...rest }) => rest) } };
+		}
+		const ids = request.ids ?? [];
+		if (!ids.length) throw new Error(`team_inbox ${action} needs ids.`);
+		const openLeft = () => {
+			const n = store.openCount(me.workerId);
+			return `${n} open left`;
+		};
+		if (action === "open") {
+			const results = store.markSeen(me.workerId, ids, seenTag(me.workerId, "open"));
+			const out = results.map((r) => r.item && store.holderOf(r.id) === me.workerId
+				? [`${r.item.urgent ? "! " : ""}${r.item.id} ${r.item.kind} from ${r.item.from.role}${r.item.from.workerId !== "parent" ? ` (${r.item.from.workerId})` : ""}${r.item.replyTo ? `, re ${r.item.replyTo}` : ""}${r.item.movedFrom?.length ? `, first sent to ${r.item.movedFrom[0].role} (${r.item.movedFrom[0].workerId})` : ""} · ${new Date(r.item.sentAt).toISOString()} · ${r.item.returned ? "returned" : r.item.status}`, `Subject: ${r.item.subject}`, r.item.body].join("\n")
+				: `${r.id}: ${r.reason ?? "not in your inbox"}`);
+			return { text: `${out.join("\n\n---\n\n")}\n\n(${openLeft()})`, details: { action, open: store.openCount(me.workerId), results: results.map(({ item: _i, ...rest }) => rest) } };
+		}
+		const results = store.setStatus(me.workerId, ids, "addressed", request.note);
+		const done = results.filter((r) => r.ok).map((r) => r.id);
+		const failed = results.filter((r) => !r.ok);
+		scheduleRefresh();
+		return {
+			text: [done.length ? `Marked addressed: ${done.join(", ")}${request.note ? ` (note: ${request.note})` : ""}. ${openLeft()}.` : "", ...failed.map((r) => `${r.id}: ${r.reason}`)].filter(Boolean).join("\n") || "Nothing to mark.",
+			details: { action, open: store.openCount(me.workerId), results: results.map(({ item: _i, ...rest }) => rest) },
+		};
 	};
 	const handleMemberRequest = async (teamId: string, workerId: string, dir: string, request: MailboxRequest): Promise<void> => {
 		const reply = (response: Omit<MailboxResponse, "version" | "id">) => {
@@ -2290,8 +2967,21 @@ export function registerSubagents(
 					const notice = request.notice;
 					if (notice && me.duty !== "monitor") throw new Error("Only the team's monitor sends notices.");
 					const broadcast = /^(all|\*)$/i.test(request.to);
-					const targets = broadcast ? info.siblings : [teams.resolveSibling(workerId, request.to)];
-					if (!targets.length) throw new Error("You have no teammates to message.");
+					// "all": one copy per live member; the ended ones are named on an info line, never a failure.
+					const ended = broadcast ? info.siblings.filter((m) => !isLiveWorker(m.workerId) || isRestored(workerOf(m.workerId)!)) : [];
+					const targets = broadcast ? info.siblings.filter((m) => !ended.includes(m)) : [resolveRecipient(workerId, request.to)];
+					let ejectedSiblings: PersistedMember[] = [];
+					if (broadcast) {
+						try {
+							ejectedSiblings = teams.find(info.team.id).members.filter((m) => m.workerId !== me.workerId && teams.ejectedAt(m.workerId) !== undefined);
+						} catch {
+							/* No record: nothing more to name. */
+						}
+					}
+					const skipped = [...ended, ...ejectedSiblings];
+					const skippedLine = `skipped (stopped): ${[...ended.map((m) => `${m.role} (${m.workerId})`), ...ejectedSiblings.map((m) => `${m.role} (${m.workerId}, ejected)`)].join(", ")}`;
+					if (!targets.length) throw new Error(skipped.length ? `No live teammates to message (${skippedLine}).` : "You have no teammates to message.");
+					if (request.replyTo && !inboxStore().get(request.replyTo)) throw new Error(`replyTo ${request.replyTo} is not an item in this chat's inboxes.`);
 					if (notice === "resume") {
 						const refused = resumeNoticeRefusal(info.team.id);
 						if (refused) throw new Error(refused);
@@ -2305,39 +2995,69 @@ export function registerSubagents(
 						pauseHolds.delete(info.team.id);
 					}
 					if (notice === "pause" || notice === "resume") appendTeamEvent(info.team.id, notice, me, `${notice} → ${targets.map((t) => t.role).join(", ")}: ${request.message.slice(0, 300)}`);
-					const outcomes = await Promise.all(targets.map(async (target) => {
-						const text = [
-							notice ? `[Monitor notice: ${notice.toUpperCase()} — from ${tag}${broadcast ? " to all members" : ""}]` : `[Team message from ${tag}${broadcast ? " to all members" : ""}]`,
-							request.message!,
-							replyHint(target, me.role),
-						].join("\n");
-						const accepted = await deliverToMember(target, text, target.backend === "pi" ? undefined : "followUp", notice ? "monitor" : "member", notice ?? "message", { kind: "message", from: me.role, fromId: me.workerId, text: request.message! });
-						return { to: target.role, workerId: target.workerId, ok: accepted.ok, ...(accepted.ok ? {} : { reason: accepted.reason }) };
-					}));
-					if (notice === "wrap-up") recordWrapUps(info.team.id, targets, outcomes);
-					const lines = outcomes.map((o) => `${o.to} (${o.workerId}): ${o.ok ? "accepted or queued" : `failed — ${o.reason}`}`);
-					const failed = outcomes.filter((o) => !o.ok);
-					reply({
-						ok: failed.length < outcomes.length,
-						text: `${failed.length ? (failed.length === outcomes.length ? "Delivery failed.\n" : "Partially delivered.\n") : "Delivered (accepted or queued; not proof they acted).\n"}${lines.join("\n")}`,
-						details: { deliveries: outcomes },
+					const broadcastId = broadcast && targets.length > 1 ? `b_${requestId()}` : undefined;
+					// Stored first and answered at once; the wake scheduler lists them to each recipient.
+					const queued = targets.map((target) => {
+						const action = teams.recordAction(target.workerId, notice ?? "message", notice ? "monitor" : "member", request.message!);
+						const r = queueItem(target, {
+							// needsReply: it waits for an answer like a team_ask question (§app.teams/inbox "Questions").
+							kind: notice ? "notice" : request.needsReply ? "question" : "message", body: request.message!, from: itemFrom(me),
+							...(notice ? { subject: request.subject ?? `${notice.toUpperCase()}: ${request.message!.split("\n").find((l) => l.trim()) ?? ""}`, urgent: true } : { ...(request.subject ? { subject: request.subject } : {}), ...(request.urgent ? { urgent: true } : {}) }),
+							...(request.replyTo ? { replyTo: request.replyTo } : {}), ...(broadcastId ? { broadcastId } : {}),
+						});
+						teams.settleAction(action, r.ok ? "accepted-or-queued" : "failed", r.ok ? `queued as ${r.item.id}${r.forwardedFrom ? ` for ${r.to.role} (${r.to.workerId})` : ""}` : r.reason);
+						return { target, r };
 					});
+					scheduleRefresh();
+					const outcomes = queued.map(({ target, r }) => ({
+						to: r.ok ? r.to.role : target.role, workerId: r.ok ? r.to.workerId : target.workerId, ok: r.ok,
+						...(r.ok ? { item: r.item.id, ...(r.forwardedFrom ? { forwardedFrom: r.forwardedFrom.workerId } : {}) } : { reason: r.reason }),
+					}));
+					// A reply that points back to an open item this member holds, of any kind, closes it (closed by a reply).
+					if (request.replyTo && outcomes.some((o) => o.ok)) {
+						const answered = inbox!.get(request.replyTo);
+						if (answered && inbox!.holderOf(answered.id) === me.workerId && isOpen(answered))
+							inbox!.setStatus(me.workerId, [answered.id], "addressed", `answered in ${queued.flatMap(({ r }) => (r.ok ? [r.item.id] : []))[0]}`, "reply");
+					}
+
+					if (notice === "wrap-up") recordWrapUps(info.team.id, queued.flatMap(({ r }) => (r.ok ? [r.to] : [])), outcomes);
+					const failed = queued.filter(({ r }) => !r.ok);
+					const lines = queued.map(({ target, r }) => (r.ok ? queuedLine(r) : `Not queued for ${target.role} (${target.workerId}): ${r.reason}`));
+					if (skipped.length) lines.push(skippedLine);
+					if (failed.length === queued.length) throw new Error(lines.join("\n"));
+					reply({ ok: true, text: lines.join("\n"), details: { deliveries: outcomes, ...(skipped.length ? { skipped: skipped.map((m) => m.workerId) } : {}) } });
 					return;
 				}
 				case "steer": {
 					if (!me.orchestrator) throw new Error("Only an orchestrator member can steer teammates; use team_msg, or team_ask to involve the operator.");
 					if (!request.to || !request.message?.trim()) throw new Error("A steer needs one sibling and non-blank instructions.");
 					if (/^(all|\*)$/i.test(request.to)) throw new Error("team_steer addresses one sibling at a time.");
-					const target = teams.resolveSibling(workerId, request.to);
-					const text = [`[Instruction from orchestrator ${me.role} (${me.workerId}), ${info.team.id}]`, request.message].join("\n");
+					const named = resolveRecipient(workerId, request.to);
+					const where = reachable(named);
+					if (!where.ok || where.awaitingSuccessor) {
+						// Still an audited attempt: team_list shows it. A direct instruction has no inbox to wait in.
+						const reason = where.ok ? `${named.role} (${named.workerId}) has ended and its successor is still starting; steer the successor once it is up (team_roster), or send a team_msg, which moves to it.` : where.reason;
+						teams.settleAction(teams.recordAction(named.workerId, request.mode ?? "steer", "orchestrator", request.message), "failed", reason);
+						scheduleRefresh();
+						throw new Error(`Cannot steer: ${reason}`);
+					}
+					const target = where.to;
+					const text = [`[Instruction from orchestrator ${me.role} (${me.workerId}), ${info.team.id}${where.forwardedFrom ? ` — sent to ${where.forwardedFrom.role} (${where.forwardedFrom.workerId}), whom you succeeded` : ""}]`, request.message].join("\n");
 					const accepted = await deliverToMember(target, text, request.mode, "orchestrator", request.mode ?? "steer", { kind: "instruction", from: me.role, fromId: me.workerId, text: request.message });
 					if (!accepted.ok) throw new Error(`Cannot steer ${target.role} (${target.workerId}): ${accepted.reason}`);
-					reply({ ok: true, text: `Accepted or queued for ${target.role} (${target.workerId}); this is not execution or completion. Verify with team_roster.`, details: { workerId: target.workerId, mode: request.mode ?? "default" } });
+					reply({ ok: true, text: `Accepted or queued for ${target.role} (${target.workerId})${where.forwardedFrom ? ` — ${where.forwardedFrom.role} (${where.forwardedFrom.workerId}) was replaced: forwarded to its successor` : ""}; this is not execution or completion. Verify with team_roster.`, details: { workerId: target.workerId, mode: request.mode ?? "default", ...(where.forwardedFrom ? { forwardedFrom: where.forwardedFrom.workerId } : {}) } });
 					return;
 				}
 				case "roster": {
 					if (!me.orchestrator && me.duty !== "monitor") throw new Error("team_roster is available to orchestrator members only (and to the team's monitor).");
 					reply({ ok: true, text: rosterText(info.team.id, me) });
+					return;
+				}
+				case "inbox": {
+					const served = serveInbox(me, request);
+					const results = served.details.results as { ok: boolean }[] | undefined;
+					if (results && results.length && results.every((r) => !r.ok)) throw new Error(served.text);
+					reply({ ok: true, ...served });
 					return;
 				}
 				case "question": {
@@ -2347,14 +3067,12 @@ export function registerSubagents(
 					// A coordinated team's questions go to its routing coordinator; the operator hears only the coordinator's.
 					const routing = info.team.coordination ? teams.routingCoordinator(info.team.id, isLiveWorker) : undefined;
 					if (routing && routing.workerId !== me.workerId) {
-						const text = [
-							`[Team question from ${tag} — routed to you as coordinator]`,
-							question,
-							`Answer with team_msg to "${me.role}". If only the operator can decide, ask them with team_ask and relay the answer.`,
-						].join("\n");
-						const accepted = await deliverToMember(routing, text, "followUp", "member", "question", { kind: "message", from: me.role, fromId: me.workerId, text: question });
-						if (!accepted.ok) throw new Error(`Could not reach the coordinator ${routing.role}: ${accepted.reason}`);
-						reply({ ok: true, text: `Question delivered to your coordinator ${routing.role} (${routing.workerId}); the answer arrives as a new message in your session — continue with independent work or end your turn.` });
+						const action = teams.recordAction(routing.workerId, "question", "member", question);
+						const r = queueItem(routing, { kind: "question", body: question, from: itemFrom(me), ...(request.subject ? { subject: request.subject } : {}) });
+						teams.settleAction(action, r.ok ? "accepted-or-queued" : "failed", r.ok ? `queued as ${r.item.id}` : r.reason);
+						scheduleRefresh();
+						if (!r.ok) throw new Error(`Could not reach the coordinator ${routing.role}: ${r.reason}`);
+						reply({ ok: true, text: `Question queued for your coordinator ${r.to.role} (${r.to.workerId}): item ${r.item.id}. The answer arrives in your inbox (a reply to ${r.item.id}) — continue with independent work or end your turn.`, details: { item: r.item.id } });
 						return;
 					}
 					const action = teams.recordAction(workerId, "question", "member", request.message);
@@ -2466,9 +3184,12 @@ export function registerSubagents(
 	// ends it), but its durable record (registry.ts) and its own backend session do. At
 	// session_start every recorded worker that is not live comes back as a RestoredWorker:
 	// listed, counted, read-only. agent_resume starts it again ON DEMAND, idle, in its own
-	// backend session; nothing is ever resumed or continued automatically.
+	// backend session; nothing is ever resumed or continued automatically. An older Claude Code
+	// worker (it ran the CLI's own tools) can't reopen its session: it continues on Sova's tools in
+	// a new one (claude-workers.ts).
 	/** Why a recorded worker cannot be resumed, or undefined. */
 	const resumeRefusal = (m: FoldedWorkerManifest): string | undefined => {
+		if (m.backend === CLAUDE_CODE_BACKEND) return undefined;
 		if (adapters.get(m.backend).capabilities().resume !== "native") return `backend ${m.backend} cannot resume workers (its transcript adapter declares resume: none)`;
 		if (!m.ref) return "no backend session was recorded for it (it never got that far)";
 		if (m.backend !== "pi" && !backends.has(m.backend)) return `backend ${m.backend} is not loaded`;
@@ -2528,6 +3249,8 @@ export function registerSubagents(
 	/** How long a resumed worker may take to come up idle (pi startup, Claude initialize). */
 	const RESUME_READY_MS = 180_000;
 	const resumingIds = new Set<string>();
+	/** A continued older Claude Code worker's earlier transcript, for the resume's answer. */
+	const continuedFiles = new Map<string, string | undefined>();
 	/**
 	 * agent_resume and /agent-resume: start a recorded worker again in its own backend session,
 	 * IDLE — no prompt is sent and no completion is announced; the next steer is its next task.
@@ -2549,6 +3272,8 @@ export function registerSubagents(
 		if (refusal) throw new Error(`Cannot resume ${id}: ${refusal}.`);
 		const launch = (manifest.launch ?? {}) as Partial<WorkerLaunchSpec>;
 		const pick = <T,>(value: T | undefined, key: string) => (value === undefined ? {} : { [key]: value });
+		// An older Claude Code worker continues as today's: Sova's tools, what still means something of its options.
+		const continuing = manifest.backend === CLAUDE_CODE_BACKEND;
 		const spec = {
 			// The worker's own session holds its history; the task is only its label here.
 			prompt: manifest.spec?.taskPreview?.trim() || `(resumed ${id})`,
@@ -2556,20 +3281,16 @@ export function registerSubagents(
 			...(manifest.backend === "pi" ? {} : { backend: manifest.backend }),
 			...pick(launch.model ?? manifest.spec?.model, "model"),
 			...pick(launch.effort ?? manifest.spec?.effort, "effort"),
-			...pick(launch.tools ?? manifest.spec?.tools, "tools"),
+			...pick(continuing ? continuationTools(launch.tools ?? manifest.spec?.tools) : launch.tools ?? manifest.spec?.tools, "tools"),
 			...pick(launch.systemPrompt, "systemPrompt"),
 			...pick(launch.agentType, "agentType"),
 			...pick(launch.cwd ?? manifest.spec?.cwd, "cwd"),
 			wake: manifest.spec?.wake ?? true,
 			...pick(launch.extensions, "extensions"),
-			...pick(launch.backendOptions, "backendOptions"),
+			...pick(continuing ? continuationOptions(launch.backendOptions) : launch.backendOptions, "backendOptions"),
 			...(launch.useWorktreeConfig === true ? { useWorktreeConfig: true } : {}),
 		} as Spec;
-		const ref = manifest.ref!;
-		const identity = ref.kind === "pi-session-file"
-			? { sessionFile: ref.locator, ...(ref.sessionId ? { sessionId: ref.sessionId } : {}) }
-			: { sessionId: ref.locator };
-		// Team membership: its history team becomes live again (as when a hosted member is re-adopted).
+		// Team membership: its history team becomes live again (as when a member is reattached).
 		let team: BatchRequest["team"];
 		if (manifest.team && teams.adoptHistoryTeam(manifest.team.teamId)) {
 			const teamName = teamViews().find((t) => t.id === manifest.team!.teamId)?.name ?? manifest.team.teamId;
@@ -2595,6 +3316,33 @@ export function registerSubagents(
 		// start, else the first record's time.
 		const startedAt = current?.startedAt ?? view?.view.summary?.startedAt ?? manifest.firstAt;
 		const groupLabel = current ? (groups.find((g) => g.id === current.groupId)?.label ?? `${current.groupId} · resumed`) : `${manifest.groupId ?? "run_restored"} · resumed`;
+		// Its own session, or for a continuation a new one, seeded with the handoff before the worker opens it.
+		let identity: { sessionFile?: string; sessionId?: string };
+		let seeded: string | undefined;
+		let earlier: string | undefined;
+		if (continuing) {
+			const old = view?.view ?? (manifest.ref ? await viewWorker(manifest, adapters, { items: "none" }) : undefined);
+			earlier = old?.summary?.found ? old.summary.file : undefined;
+			const local = resolvePath(launch.cwd ?? manifest.spec?.cwd ?? ctx.cwd, ctx.cwd);
+			const dir = fs.existsSync(local) ? local : ctx.cwd;
+			const text = continuationMessage({
+				id, name: spec.name ?? id, ...(manifest.team?.role ? { role: manifest.team.role } : {}),
+				...(earlier ? { transcript: earlier } : {}),
+				...(manifest.spec?.taskPreview ? { task: manifest.spec.taskPreview } : {}),
+				lastOutput: current?.finalOutput() || old?.summary?.lastAssistantText || "",
+			});
+			try {
+				seeded = seedContinuationSession(path.join(agentDir(), "sessions", sessionDirName(dir)), dir, text, CURRENT_SESSION_VERSION);
+			} catch (error) {
+				throw new Error(`Cannot resume ${id}: could not write its new session (${error instanceof Error ? error.message : String(error)}).`);
+			}
+			identity = { sessionFile: seeded };
+		} else {
+			const ref = manifest.ref!;
+			identity = ref.kind === "pi-session-file"
+				? { sessionFile: ref.locator, ...(ref.sessionId ? { sessionId: ref.sessionId } : {}) }
+				: { sessionId: ref.locator };
+		}
 		resumingIds.add(id);
 		// Never two entries with one ID (the live record refuses duplicate IDs): the earlier one
 		// steps aside while the new process starts, and comes back if it fails.
@@ -2602,15 +3350,15 @@ export function registerSubagents(
 		let worker: Worker | undefined;
 		try {
 			const group = await spawnBatch(ctx, {
-				specs: [spec], team,
+				specs: [spec], team, need: { kind: "resume", id },
 				resume: { id, groupId: manifest.groupId ?? current?.groupId ?? "run_restored", groupLabel, ...identity, ...(startedAt ? { startedAt } : {}) },
 			}, signal);
 			worker = group.agents[0];
 			if (base) usageBase.set(worker, base);
-			// The label it ran under (e.g. claude-haiku-4-5-…, not the spawn alias "haiku") until the
-			// runner reports its own model: a Claude worker's first init comes with its next turn.
-			// A listed entry already carries it (resolved at restore, or reported by its last runner).
-			const model = current?.model ?? resolvedModel(manifest, view?.view);
+			// The label it ran under until the runner reports its own model. A listed entry already
+			// carries it (resolved at restore, or reported by its last runner). A continuation runs on
+			// its new provider ref, which it keeps.
+			const model = continuing ? undefined : current?.model ?? resolvedModel(manifest, view?.view);
 			if (model) worker.model = model;
 			const deadline = Date.now() + RESUME_READY_MS;
 			while (worker.status !== "waiting" && !worker.isFinished() && Date.now() < deadline) {
@@ -2625,12 +3373,18 @@ export function registerSubagents(
 				if (!failed.isFinished()) void failed.kill("resume did not come up");
 				throw new Error(`Could not resume ${id}: ${reason}`);
 			}
-			registry.resumed(worker, workerModes.get(worker));
+			// A continuation's session is the one seeded for it, whether or not its runner has said so yet.
+			if (continuing && !worker.sessionFile) worker.sessionFile = seeded;
+			registry.resumed(worker, workerModes.get(worker), continuing
+				? { launch: launches.get(worker), from: { backend: manifest.backend, ...(manifest.ref ? { ref: manifest.ref } : {}) } }
+				: undefined);
+			if (continuing) continuedFiles.set(id, earlier);
 			restoredViews.delete(id);
 			wakeRejoinedMonitor(worker);
 			return worker;
 		} catch (error) {
 			if (!worker && current && !agents.some((a) => a.id === id)) insertWorker(current, groupLabel);
+			if (!worker && seeded) fs.rmSync(seeded, { force: true });
 			throw error;
 		} finally {
 			resumingIds.delete(id);
@@ -2639,6 +3393,11 @@ export function registerSubagents(
 	};
 	const resumedText = (a: Worker) => {
 		const paused = pausedMonitorTeam(a.id);
+		if (continuedFiles.has(a.id)) {
+			const earlier = continuedFiles.get(a.id);
+			continuedFiles.delete(a.id);
+			return `Resumed ${a.id} (${a.name}) on Sova's tools in a new session ${a.sessionFile ?? ""}, continuing its Claude Code session ${earlier ?? "(no transcript found)"}; nothing was sent to it. Give it work with agent_steer.${paused ? ` It is the monitor of ${paused}, which is paused: it was sent its resume check.` : ""}`;
+		}
 		return paused
 			? `Resumed ${a.id} (${a.name}) in its own ${a.backend ?? "pi"} session ${a.sessionFile ?? a.sessionId ?? ""}. It is the monitor of ${paused}, which is paused: it was sent its resume check, since its wake_nudges ended with the earlier parent.`
 			: `Resumed ${a.id} (${a.name}) idle in its own ${a.backend ?? "pi"} session ${a.sessionFile ?? a.sessionId ?? ""}; nothing was sent to it. Give it work with agent_steer.`;
@@ -2647,7 +3406,7 @@ export function registerSubagents(
 		name: "agent_resume",
 		label: "Resume Subagent",
 		description:
-			"Bring back a worker listed as restored (its process ended with an earlier server, reload or session) by starting it again in its OWN backend session: pi reopens its session file, Claude resumes its session. It comes back idle (waiting) with its history; nothing is sent to it and no completion is reported, so use agent_steer to give it work. The session's current sandbox and remote state apply, as at spawn; a team member rejoins its team. Refused for a live worker, an unknown ID, or a backend that cannot resume.",
+			"Bring back a worker listed as restored (its process ended with an earlier server, reload or session) by starting it again in its OWN backend session: pi reopens its session file. An older Claude Code worker (it ran the Claude Code CLI's own tools) continues on Sova's tools in a new session whose first message hands its work over. It comes back idle (waiting) with its history; nothing is sent to it and no completion is reported, so use agent_steer to give it work. The session's current sandbox and remote state apply, as at spawn; a team member rejoins its team. Refused for a live worker, an unknown ID, or a backend that cannot resume.",
 		promptSnippet: "Resume a restored subagent idle in its own session",
 		parameters: Type.Object({ id: Type.String({ pattern: "^ag_\\d+$", description: "Exact worker ID (ag_NN)." }) }, { additionalProperties: false }),
 		async execute(_id, params, signal, _update, ctx) {
@@ -2695,31 +3454,34 @@ export function registerSubagents(
 		// a codemode script's call has none.
 		exposure: "model-only",
 		description:
-			"Start independent background agents (backend defaults to pi; claude-code uses the installed Claude extension); returns IDs without waiting for tasks. Use agent_list/agent_transcript to inspect, agent_steer to redirect or queue follow-ups, agent_kill to stop, agent_wait when results are needed. Settled workers wake you when idle (wake=true, default). Workers share the filesystem. Pi-only: fork=true copies conversation history; extensions loads listed Pi extensions. Claude starts fresh and uses backendOptions for permission/settings policy.",
+			`Start independent background agents (backend defaults to pi; claude-code runs a Claude model on Sova's tools); returns IDs without waiting for tasks. Use agent_list/agent_transcript to inspect, agent_steer to redirect or queue follow-ups, agent_kill to stop, agent_wait when results are needed. Settled workers wake you when idle (wake=true, default). Workers share the filesystem. fork=true copies conversation history; extensions loads listed Pi extensions. Limits: no per-request limit; this chat runs at most ${MAX_LIVE} workers at once, idle ones and team members (a team's coordinator and monitor included) counted, and a request that would pass that is refused before anything starts. agents is a list of agent objects; backend, model, effort, cwd, wake, tools, systemPrompt, backendOptions, extensions and useWorktreeConfig given beside agents apply to every agent that leaves them out (refused if one sets a different value); name, count, fork and agentType go inside each agent.`,
 		promptSnippet: "Spawn background subagents (non-blocking) and manage them by id",
 		promptGuidelines: [
 			"Use agent_spawn to parallelise independent work; it returns immediately and does not block you.",
 			"Use agent_models to find requested worker models by name before spawning when the exact ID is unknown; it uses this session's registry, not a separate CLI search.",
 			"Use agent_wait only when you genuinely need a subagent's result before continuing; by default a finished subagent wakes you with its result when you are idle.",
 			"Tell a worker whose report may run past about 3,500 characters to write it to a file and end with that file's path plus a short summary; the completion message quotes only the first 4,000 characters.",
-			"For Pi workers, pass extensions: [\"npm:pi-web-access\"] for web tools or fork: true for conversation history; these options are not supported by Claude workers.",
+			"Pass extensions: [\"npm:pi-web-access\"] for web tools or fork: true for conversation history.",
 			"A worker starts only in this session's cwd or inside an active worktree the session tracks (the worktree tool); a pi worker started inside a worktree can write only there. useWorktreeConfig: true runs a pi worker on that worktree's own .agent.",
 			"While this session's spec minor mode is on, every worker you start (a team's monitor excepted) gets the spec block and a worker note in its system prompt: brief it with the relevant passages, not the discipline.",
-			"Use agent_spawn with backend: \"claude-code\" to delegate to Claude Code when its extension is installed. Claude uses Sova's Claude model IDs (agent_models lists them, e.g. claude-opus-5-5, claude-sonnet-5-5), native tools, and backendOptions permission/settings policy; it does not inherit Pi's model, effort, tools, or history.",
-			"Claude workers default to bypassPermissions (no permission prompts); set backendOptions.permissionMode to acceptEdits, manual, dontAsk, or plan for a restrictive policy. Do not assume a queued follow-up has executed; inspect agent_list or agent_transcript.",
+			"Use agent_spawn with backend: \"claude-code\" to run a Claude model: it uses Sova's Claude model IDs (agent_models lists them, e.g. claude-opus-5-5, claude-sonnet-5-5; Sonnet when omitted), effort low..max (medium when omitted) and Sova's tools (Claude's names Read, Bash, Edit, Write, Grep, Glob, LS are accepted; all seven when omitted). It does not inherit the parent's model, effort or tools. backendOptions.permissionMode plan keeps it read-only.",
+			"Do not assume a queued follow-up has executed; inspect agent_list or agent_transcript.",
+			`There is no per-request limit, but this chat runs at most ${MAX_LIVE} workers at once (idle ones and every team member included); stop idle workers you no longer need with agent_kill before a large spawn. Sova never stops one for you.`,
 		],
 		parameters: Type.Object(
 			{
 				...AgentSpec.properties,
 				prompt: Type.Optional(Nonempty),
-				agents: Type.Optional(Type.Array(AgentSpec, { minItems: 1, maxItems: MAX_BATCH })),
+				agents: Type.Optional(Type.Union([Type.Array(AgentSpec, { minItems: 1 }), Type.String()], { description: "A list of agent objects (a JSON string of that list is read as the list)." })),
 				groupLabel: Type.Optional(Nonempty),
 			},
 			{ additionalProperties: false },
 		),
-		async execute(_id, params, signal, _update, ctx) {
+		prepareArguments: (args: unknown) => readSpawnArgs(args) as never,
+		async execute(_id, raw, signal, _update, ctx) {
 			context(ctx);
 			signal?.throwIfAborted();
+			const params = readSpawnArgs(raw) as Omit<typeof raw, "agents"> & { agents?: Spec[] };
 			if (Boolean(params.agents) === Boolean(params.prompt))
 				throw new Error("Provide exactly one of agents or prompt.");
 			if (
@@ -2741,10 +3503,10 @@ export function registerSubagents(
 					params.useWorktreeConfig,
 				].some((x) => x !== undefined)
 			) {
-				throw new Error("Shorthand options cannot be combined with agents; put them inside each agent spec.");
+				throw new Error("Shorthand options cannot be combined with agents; put them inside each agent.");
 			}
 			const specs: Spec[] = params.agents ?? [{ ...params, prompt: params.prompt! }];
-			const group = await spawnBatch(ctx, { specs, groupLabel: params.groupLabel }, signal);
+			const group = await spawnBatch(ctx, { specs, groupLabel: params.groupLabel, need: { kind: "agents" } }, signal);
 			const { id: groupId, label } = group;
 			return result(
 				[
@@ -2767,7 +3529,7 @@ export function registerSubagents(
 
 	/** A Claude Code worker started on an id Sova's Claude catalog doesn't know: still used, and said so. */
 	const unverifiedClaudeModels = (started: readonly Worker[]): string[] => [
-		...new Set(started.filter((a) => a.backend === "claude-code" && a.model).map((a) => unverifiedClaudeNote(a.model!)).filter((n): n is string => !!n)),
+		...new Set(started.filter((a) => a.model?.startsWith("claude-code-cli/")).map((a) => unverifiedClaudeNote(claudeBareId(a.model!))).filter((n): n is string => !!n)),
 	];
 	const listUsage = (a: Worker) => {
 		if (isRestored(a) && a.usageSource === "none") return "usage unavailable";
@@ -2867,7 +3629,7 @@ export function registerSubagents(
 		name: "agent_steer",
 		label: "Steer Subagent",
 		description:
-			"Send instructions to a live worker. mode=redirect changes the current task (Pi's normal steering; Claude interrupts then resumes). mode=followUp queues work after the current task. Omitted mode preserves backend default steering. Idle workers start a fresh task. Acknowledgment means accepted or queued, not executed or completed; Claude follow-ups may only be queued locally. Cancelling acceptance waiting does not stop the worker and may leave delivery unknown; inspect status/transcript before retrying.",
+			"Send instructions to a live worker. mode=redirect changes the current task (Pi's normal steering). mode=followUp queues work after the current task. Omitted mode preserves backend default steering. Idle workers start a fresh task. Acknowledgment means accepted or queued, not executed or completed. Cancelling acceptance waiting, or Sova's server not answering, does not stop the worker and may leave delivery unknown; inspect status/transcript before retrying.",
 		parameters: Type.Object({ id: Nonempty, message: Nonempty, mode: Type.Optional(StringEnum(["redirect", "followUp"] as const)) }),
 		async execute(_id, params, signal, _update, ctx) {
 			context(ctx);
@@ -2875,7 +3637,7 @@ export function registerSubagents(
 			if (!params.message.trim()) throw new Error("Instructions must not be blank.");
 			const a = findAgent(params.id);
 			const accepted = await steerWorker(a, params.message, params.mode, signal, "parent");
-			if (!accepted.ok) throw new Error(`Cannot steer ${a.id}: ${accepted.reason}`);
+			if (!accepted.ok) throw new Error(accepted.unknown ? `Steer to ${a.id}: ${accepted.reason}` : `Cannot steer ${a.id}: ${accepted.reason}`);
 			return result(`Accepted or queued new instructions for ${a.id} (${a.name}); this does not confirm execution or completion.`, { id: a.id, steerCount: a.steerCount });
 		},
 	});
@@ -2982,13 +3744,16 @@ export function registerSubagents(
 	});
 
 	const MEMBER_TOOLS_NOTE =
-		"Members have team_msg/team_inbox/team_ask (messages to teammates are delivered by this extension; questions arrive here as team-question messages — answer them with agent_steer on that worker ID). An orchestrator member also has team_roster/team_steer over its own team. Claude members get the same tools from an MCP server (mcp__team__<tool>).";
+		"Members have team_msg/team_inbox/team_ask (messages to teammates are queued in each member's inbox, which it opens and closes item by item; questions arrive here as team-question messages — answer them with agent_steer on that worker ID). An orchestrator member also has team_roster/team_steer over its own team.";
 	/** In a coordinated team the generic question paragraph is wrong: members ask the coordinator. */
 	const COORDINATED_TOOLS_NOTE =
-		"Members have team_msg/team_inbox/team_ask, but their team_ask questions go to the coordinator, not to you: only the coordinator's team_ask (a team-question message; answer with agent_steer on its worker ID) and team_report (informational) reach the main thread. The coordinator also has team_roster/team_steer/team_succeed over this team; the monitor has team_roster and wake_nudge. Claude members get the same tools from an MCP server (mcp__team__<tool>).";
+		"Members have team_msg/team_inbox/team_ask, but their team_ask questions go to the coordinator, not to you: only the coordinator's team_ask (a team-question message; answer with agent_steer on its worker ID) and team_report (informational) reach the main thread. The coordinator also has team_roster/team_steer/team_succeed over this team; the monitor has team_roster and wake_nudge.";
 	/** Q6: the main thread cut a team short by stopping its coordinator and monitor while a member still worked. */
 	const KEEP_DUTIES_NOTE =
 		"Do not stop (agent_kill) the coordinator or the monitor while any member is still working: the coordinator routes the team's reports and successions and the monitor watches context and usage. Once no member is working, stopping them is fine.";
+	/** Every limit a team request meets, said before a call (team_create, team_add, the /team planning text). */
+	const TEAM_LIMITS =
+		`Limits: no per-request limit. A team seats ${MAX_TEAM_MEMBERS} members, the coordinator and monitor Sova adds included. This chat runs at most ${MAX_LIVE} workers at once, idle ones and every team member (coordinator and monitor included) counted; a request that would pass either is refused before anything starts, and Sova never stops a worker to make room. members must be a list of member objects (one role each). A member takes role, prompt, ownedPaths, orchestrator, backend, model, effort, tools, systemPrompt, cwd, wake, backendOptions and extensions (e.g. ["npm:pi-web-access"]); count, fork and agentType are refused (one member per role; agent_spawn for fork or agentType). In a team with a coordinator only the coordinator is the orchestrator: a member that only watches needs no orchestrator mark. Only the coordinator hands a member over to a successor (its team_succeed); once no coordinator is live, the main chat can start a replacement with team_succeed.`;
 	const TEAM_NOTES = [
 		"Declared ownership is advisory, not a lock; members share the filesystem.",
 		MEMBER_TOOLS_NOTE,
@@ -3022,6 +3787,8 @@ export function registerSubagents(
 			})),
 		};
 	};
+	/** The extensions a member was given, without its team tools. */
+	const memberExtensions = (a: Worker): string[] => listedExtensions(a).filter((source) => source !== MEMBER_EXTENSION);
 	const teamSpawnResult = (headline: string, teamId: string, group: AgentGroup, members: readonly PersistedMember[], extra: readonly string[] = []) => {
 		const coordinated = members.some((m) => m.duty === "coordinator") || Boolean(teams.memberInfo(members[0]?.workerId ?? "")?.team.coordination);
 		return result(
@@ -3030,7 +3797,7 @@ export function registerSubagents(
 				...extra,
 				...unverifiedClaudeModels(group.agents),
 				...group.agents.map((a, i) =>
-					`${a.id}  ${members[i].role}${dutyMark(members[i])}  ${a.status}  backend=${a.backend ?? "pi"}  model=${a.model ?? "child default"}  effort=${a.effort ?? "default"}  owns=${members[i].ownedPaths.join(",") || "none declared"}${a.wake ? "" : "  wake=false"}`,
+					`${a.id}  ${members[i].role}${dutyMark(members[i])}  ${a.status}  backend=${a.backend ?? "pi"}  model=${a.model ?? "child default"}  effort=${a.effort ?? "default"}  owns=${members[i].ownedPaths.join(",") || "none declared"}${memberExtensions(a).length ? `  extensions=${memberExtensions(a).join(",")}` : ""}${a.wake ? "" : "  wake=false"}`,
 				),
 				...(coordinated ? TEAM_NOTES.map((note) => (note === MEMBER_TOOLS_NOTE ? COORDINATED_TOOLS_NOTE : note)) : TEAM_NOTES),
 				coordinated
@@ -3043,13 +3810,14 @@ export function registerSubagents(
 		);
 	};
 	/** team_add's spawn path, shared with team_succeed: validated, persisted and committed as one batch. */
-	const addPrepared = async (ctx: ExtensionContext, prepared: ReturnType<TeamStore["prepareAdd"]>, signal?: AbortSignal) => {
+	const addPrepared = async (ctx: ExtensionContext, prepared: ReturnType<TeamStore["prepareAdd"]>, signal: AbortSignal | undefined, need: RunningNeed) => {
 		const addedAt = Date.now();
 		let members: PersistedMember[] = [];
 		const group = await spawnBatch(ctx, {
 			specs: prepared.members.map((m) => m.spec as Spec),
 			groupLabel: `${prepared.teamId} · ${prepared.name}`,
 			team: teamRequest(prepared.teamId, prepared.name, prepared.members),
+			need,
 			beforeCommit: (group) => {
 				members = memberRecords(prepared.members, group, addedAt);
 				pi.appendEntry(TEAM_ENTRY_TYPE, teams.addEntry(prepared, members));
@@ -3063,16 +3831,22 @@ export function registerSubagents(
 	const tellCoordinatorOfAdditions = async (teamId: string, members: readonly PersistedMember[], tasks: readonly string[]): Promise<string | undefined> => {
 		const routing = teams.routingCoordinator(teamId, isLiveWorker);
 		const added = members.map((m, i) => ({ m, task: tasks[i] })).filter(({ m }) => !m.duty && m.workerId !== routing?.workerId);
-		if (!routing || !added.length) return undefined;
+		if (!added.length) return undefined;
+		if (!routing) return teams.memberInfo(members[0]?.workerId ?? "")?.team.coordination
+			? `Could not tell a coordinator about the new member(s): ${teamId} has no live coordinator, so they report to you until one is live again (team_succeed replaces an ended one).`
+			: undefined;
 		const text = [
 			`[Team change from the main thread, ${teamId}: ${added.length} member(s) added — their assignments are legitimate work for you to route, not to replace]`,
 			...added.flatMap(({ m, task }) => [`- ${m.role} (${m.workerId}), owns: ${m.ownedPaths.join(", ") || "none declared"}`, ...assignmentText(task ?? "", m.role).split("\n").map((line) => `  | ${line}`)]),
 			"team_roster lists every assignment.",
 		].join("\n");
-		const accepted = await deliverToMember(routing, text, "followUp", "parent", "message", { kind: "instruction", from: "main thread", fromId: "parent", text });
-		return accepted.ok
-			? `Coordinator ${routing.role} (${routing.workerId}) was told about the new member(s) and their assignments.`
-			: `Warning: could not tell coordinator ${routing.role} (${routing.workerId}) about the new member(s): ${accepted.reason}`;
+		const subject = `${added.length} member(s) added: ${added.map(({ m }) => m.role).join(", ")}`;
+		const queued = queueItem(routing, { kind: "notice", from: MAIN_THREAD, body: text, subject });
+		teams.settleAction(teams.recordAction(queued.ok ? queued.to.workerId : routing.workerId, "message", "parent", subject), queued.ok ? "accepted-or-queued" : "failed", queued.ok ? undefined : queued.reason);
+		scheduleRefresh();
+		return queued.ok
+			? `Queued for coordinator ${queued.to.role} (${queued.to.workerId}): item ${queued.item.id}, naming the new member(s) and their assignments.`
+			: `Warning: could not queue the new member(s) for coordinator ${routing.role} (${routing.workerId}): ${queued.reason}`;
 	};
 	/**
 	 * team_succeed: the successor of one member (the coordinator itself included) on the same
@@ -3141,6 +3915,8 @@ export function registerSubagents(
 				: `${p.target.role} ended without writing it`;
 		let text: string;
 		let successorId: string | undefined;
+		// Its open items wait for the successor (endInbox at onExit must not return them meanwhile).
+		succeeding.add(p.target.workerId);
 		try {
 			const coordinator = teams.memberInfo(p.coordinatorId)?.member ?? p.target;
 			const started = await spawnSuccessor(p.team, p.target, coordinator, p.note, p.retireMinutes, missing);
@@ -3151,11 +3927,19 @@ export function registerSubagents(
 			text = `Could not start a successor for ${p.target.role} (${p.target.workerId}): ${reason}. Call team_succeed again to retry.`;
 			teams.settleAction(teams.recordAction(p.target.workerId, "handover", "system", text), "failed", reason);
 			scheduleRefresh();
+		} finally {
+			succeeding.delete(p.target.workerId);
 		}
+		// An old member that ended meanwhile: its items go to the successor now (or, with none started, back to their senders).
+		if (!isLiveWorker(p.target.workerId)) endInbox(p.target.workerId, "ended");
 		const routing = teams.routingCoordinator(p.team.id, isLiveWorker);
 		if (!routing || routing.workerId === successorId) return;
-		const body = [`[Handover in ${p.team.id}: ${successionHeadline(p.target.role, why, noted)}]`, text].join("\n");
-		await deliverToMember(routing, body, "followUp", "system", "message", { kind: "instruction", from: "parent", fromId: "parent", text: body }).catch(() => undefined);
+		const headline = successionHeadline(p.target.role, why, noted);
+		const body = [`[Handover in ${p.team.id}: ${headline}]`, text].join("\n");
+		// A handover item: stored, so the coordinator learns of the successor even while it is busy.
+		const queued = queueItem(routing, { kind: "handover", body, subject: `Handover: ${headline}${successorId ? `; successor ${successorId}` : "; no successor started"}`, urgent: !successorId });
+		teams.settleAction(teams.recordAction(queued.ok ? queued.to.workerId : routing.workerId, "message", "system", body), queued.ok ? "accepted-or-queued" : "failed", queued.ok ? undefined : queued.reason);
+		scheduleRefresh();
 	};
 	/** Why a pending successor started, as its coordinator is told: from the note's presence at that moment, never from the trigger alone. */
 	const successionHeadline = (role: string, why: "note" | "ended" | "timeout", noted: boolean): string =>
@@ -3165,6 +3949,10 @@ export function registerSubagents(
 	/** Spawn the successor itself; `missing` says why its predecessor's note may not be there. */
 	const spawnSuccessor = async (
 		team: { id: string; name: string }, target: PersistedMember, me: PersistedMember, note: string, retireMinutes: number, missing?: string,
+		/** Who started it: the routing coordinator (team_succeed), the main chat replacing an ended coordinator or monitor, or a runtime fallback. */
+		source: "orchestrator" | "parent" | "system" = "orchestrator",
+		/** A runtime fallback (§teams.defaults/runtime-fallback): the primary it left and why, for the handover event. */
+		failover?: { primary: string; reason: string },
 	): Promise<{ text: string; successorId: string }> => {
 		if (!activeCtx) throw new Error("The parent session is not ready; retry shortly.");
 		const old = agents.find((a) => a.id === target.workerId);
@@ -3182,8 +3970,8 @@ export function registerSubagents(
 		const input: TeamMemberInput = {
 			role,
 			prompt: monitor
-				? monitorSuccessorTask(target.role, target.workerId)
-				: workerSuccessorTask({ oldRole: target.role, oldId: target.workerId, note, oldLive, ...(missing ? { missing } : {}), ...(assignment ? { assignment } : {}), steers, steersOmitted: omitted }),
+				? monitorSuccessorTask(target.role, target.workerId, oldLive)
+				: workerSuccessorTask({ oldRole: target.role, oldId: target.workerId, note, oldLive, ...(missing ? { missing } : {}), ...(assignment ? { assignment } : {}), steers, steersOmitted: omitted, ...(target.duty === "coordinator" ? { coordinator: true } : {}) }),
 			...(assignment ? { assignment } : {}),
 			ownedPaths: [...target.ownedPaths],
 			...(target.orchestrator ? { orchestrator: true } : {}),
@@ -3194,6 +3982,7 @@ export function registerSubagents(
 			...(launch?.systemPrompt === undefined ? {} : { systemPrompt: launch.systemPrompt }),
 			...(launch?.cwd === undefined ? {} : { cwd: launch.cwd }),
 			...(launch?.backendOptions === undefined ? {} : { backendOptions: launch.backendOptions }),
+			...(launch?.extensions === undefined ? {} : { extensions: [...launch.extensions] }),
 			...(target.duty ? { duty: target.duty } : {}),
 			successorOf: target.role,
 			successorOfId: target.workerId,
@@ -3204,7 +3993,7 @@ export function registerSubagents(
 		if (!explicit?.model) {
 			const standing = target.duty && defaults?.[target.duty];
 			if (standing?.enabled) {
-				const pick = pickTuple(activeCtx, target.duty!, role, standing.primary, standing.fallback);
+				const pick = pickTuple(activeCtx, target.duty!, role, standing.primary, standing.fallback, fellBackDenial(team.id, target.duty!, standing.primary));
 				input.backend = pick.tuple.backend;
 				input.model = pick.tuple.model;
 				input.effort = pick.tuple.effort;
@@ -3227,13 +4016,17 @@ export function registerSubagents(
 		const prepared = teams.prepareAdd(team.id, [input], observeWorker, defaults);
 		let added: Awaited<ReturnType<typeof addPrepared>>;
 		try {
-			added = await addPrepared(activeCtx, prepared);
+			added = await addPrepared(activeCtx, prepared, undefined, { kind: "successor", of: `${target.role} (${target.workerId})` });
 		} finally {
 			prepared.release();
 		}
 		const successor = added.group.agents[0];
-		const detail = `successor ${role} (${successor.id}) on ${successor.backend}/${successor.model ?? "default model"}; retire on team_ready or after ${retireMinutes} min`;
+		const detail = failover
+			? `successor ${role} (${successor.id}) on ${successor.backend}/${successor.model ?? "default model"}; fallback: primary ${failover.primary} ${failover.reason}`
+			: `successor ${role} (${successor.id}) on ${successor.backend}/${successor.model ?? "default model"}; retire on team_ready or after ${retireMinutes} min`;
 		appendTeamEvent(team.id, "handover", target, detail);
+		/** Whether the live old member took the "your successor has started" instruction: the result says so only when it did. */
+		let told: SteerResult | undefined;
 		if (isLiveWorker(target.workerId)) {
 			const h: Handover = { teamId: team.id, oldId: target.workerId, oldRole: target.role, newId: successor.id, newRole: role };
 			h.timer = coordinationTimer(() => retire(h, "timeout"), retireMinutes * 60_000);
@@ -3245,26 +4038,212 @@ export function registerSubagents(
 					: `Your successor ${role} (${successor.id}) has started and is reading your handover note at ${note}${missing ? " (it may be missing: write it now if you can)" : ""}. Stop any work in progress now. Your assignment and every instruction the main thread gave you, including any still queued for you, are ${role}'s now: do not act on them; if one reaches you, reply only that ${role} has it. Answer its team_msg questions and do no new work. You are retired when it confirms with team_ready, or after ${retireMinutes} min.`,
 			].join("\n");
 			// A redirect for a worker: it stops the old member's current work instead of queueing behind it (N7).
-			const told = await deliverToMember(target, text, monitor ? "followUp" : "redirect", monitor ? "orchestrator" : "system", "handover", { kind: "instruction", from: me.role, fromId: me.workerId, text });
+			told = await deliverToMember(target, text, monitor ? "followUp" : "redirect", monitor ? "orchestrator" : "system", "handover", { kind: "instruction", from: me.role, fromId: me.workerId, text });
 			if (!told.ok) teams.settleAction(teams.recordAction(target.workerId, "handover", "orchestrator", detail), "failed", told.reason);
 		} else {
-			teams.settleAction(teams.recordAction(target.workerId, "handover", "orchestrator", detail), "accepted-or-queued", "old member already ended; nothing to retire");
+			teams.settleAction(teams.recordAction(target.workerId, "handover", source, detail), "accepted-or-queued", "old member already ended; nothing to retire");
 			// Nothing to retire: the ended member's seat is released now that its successor has started.
 			autoEject(team.id, target.workerId);
+			// Its open items are the successor's, ids and senders kept.
+			endInbox(target.workerId, "retire");
 		}
 		scheduleRefresh();
 		const effort = launch?.effort ?? old?.effort;
-		const text = `Started ${role} (${successor.id}) to succeed ${target.role} (${target.workerId}) on ${successor.backend}/${successor.model ?? "default model"}${successor.effort ? `/${successor.effort}` : ""}. ${isLiveWorker(target.workerId) ? `${target.role} was told to brief it; it is retired when ${role} calls team_ready, or after ${retireMinutes} min.` : `${target.role} has already ended; the successor works from the handover note.`}${missing ? ` The note may be missing (${missing}); the successor was told so.` : ""}${
+		const oldLine = !told
+			? `${target.role} has already ended; the successor works from the handover note.`
+			: told.ok
+				? `${target.role} was told to brief it; it is retired when ${role} calls team_ready, or after ${retireMinutes} min.`
+				: `${target.role} could not be told to brief it (${told.reason}); it is retired when ${role} calls team_ready, or after ${retireMinutes} min.`;
+		const text = `Started ${role} (${successor.id}) to succeed ${target.role} (${target.workerId}) on ${successor.backend}/${successor.model ?? "default model"}${successor.effort ? `/${successor.effort}` : ""}. ${oldLine}${missing ? ` The note may be missing (${missing}); the successor was told so.` : ""}${
 			// N8: the coordinator is shown, unasked, that these are the successor's binding assignment.
 			steers.length ? `\n${bindingSteersLabel(role, `${target.role} (${target.workerId})`)}\n${steers.map((t) => `> ${steerPreview(t)}`).join("\n")}` : ""}${memberNotes.length ? `\n${memberNotes.join("\n")}` : ""}`;
 		return { text, successorId: successor.id };
+	};
+	/** "Monitor", "Coordinator", or "Monitor watcher" for a role named apart from its duty. */
+	const dutyTitle = (duty: MemberDuty, role: string) => {
+		const title = duty === "monitor" ? "Monitor" : "Coordinator";
+		return role.toLowerCase() === duty ? title : `${title} ${role}`;
+	};
+	const firstErrorLine = (error: string | undefined) => {
+		const line = (error ?? "").split("\n").find((l) => l.trim())?.trim() ?? "";
+		return line.length > 200 ? `${line.slice(0, 199)}…` : line;
+	};
+	const toMainChatNotice = (content: string) => {
+		try {
+			pi.sendMessage({ customType: TEAM_NOTICE_TYPE, display: true, content }, { deliverAs: "followUp", triggerTurn: false });
+		} catch {
+			/* Session replacement can invalidate the message API. */
+		}
+	};
+	const toastWarning = (text: string) => {
+		if (!activeCtx || !["tui", "rpc"].includes(activeCtx.mode)) return;
+		try {
+			activeCtx.ui.notify(text, "warning");
+		} catch {
+			/* Session replacement can invalidate the UI. */
+		}
+	};
+	/**
+	 * A standing member's settle, read before it is routed (§teams.defaults/runtime-fallback): a
+	 * failed turn that is out of usage, or the 3rd failed turn in a row, moves a coordinator or
+	 * monitor running its role's primary to the fallback (or stops/reports it when none can run).
+	 * True when the settle is handled here and must not be routed.
+	 */
+	const standingSettle = (a: Worker): boolean => {
+		if (failingOver.has(a.id)) return true;
+		const info = teams.memberInfo(a.id);
+		const duty = info?.member.duty;
+		if (!info || !duty || !info.team.coordination) return false;
+		const stopped = a.status === "killed" || a.status === "stopping" || a.taskOutcome === "aborted";
+		if (stopped) return false;
+		if (a.taskOutcome !== "error" && a.status !== "error") {
+			failStreaks.delete(a.id);
+			return false;
+		}
+		const streak = (failStreaks.get(a.id) ?? 0) + 1;
+		failStreaks.set(a.id, streak);
+		const out = usageOut(a.error);
+		const model = launches.get(a)?.model ?? info.member.model ?? a.model;
+		const backend = model?.startsWith("claude-code-cli/") ? "pi" : info.member.backend;
+		// Out of usage is a fact about the model, whoever runs it: new teams skip it for the hour.
+		if (out && model) markOut(backend, model, out.reason);
+		const reason = out ? out.reason : streak >= FAILOVER_STREAK ? `failed ${streak} turns in a row` : undefined;
+		const rearm = () => {
+			if (duty === "monitor") rearmMonitor(a);
+			return false;
+		};
+		if (!reason || failedOver.has(a.id)) return rearm();
+		let origin: string | undefined;
+		try {
+			origin = teams.find(info.team.id).origin;
+		} catch {
+			origin = undefined;
+		}
+		if (origin !== "session") return rearm();
+		if (pendingSuccessions.has(a.id) || [...handovers.values()].some((h) => h.oldId === a.id || h.newId === a.id)) return rearm();
+		const state = subagentsNow().teams;
+		const standing = state.state === "ok" ? state.value[duty] : undefined;
+		if (!standing?.enabled || runningKey(a, info.member) !== tupleKey(standing.primary.backend, standing.primary.model)) return rearm();
+		failedOver.add(a.id);
+		const error = firstErrorLine(a.error);
+		void failover(a, { id: info.team.id, name: info.team.name }, info.member, duty, standing.primary, standing.fallback, { reason, error, out: Boolean(out), backend, model: model ?? standing.primary.model });
+		return true;
+	};
+	/** A failed monitor check that moved nothing: its next check is scheduled by the parent, so it never goes silent. */
+	const rearmMonitor = (a: Worker) => {
+		if (a.isFinished() || !isLiveWorker(a.id)) return;
+		const state = nudgeState(a.id);
+		if (state.active.size || state.held) return;
+		const cfg = teamDefaultsNow();
+		const every = cfg.state === "ok" ? cfg.value.monitor.everyMinutes : 10;
+		const now = Date.now();
+		const id = `n${++state.seq}`;
+		const n: PendingNudge = { id, reason: "next check, scheduled by Sova after a failed check", fireAt: now + every * 60_000, createdAt: now };
+		n.timer = coordinationTimer(() => fireNudge(a.id, id), every * 60_000);
+		state.active.set(id, n);
+		saveNudges();
+		teams.settleAction(teams.recordAction(a.id, "followUp", "system", `next check re-armed in ${every} min after a failed check`), "accepted-or-queued");
+		scheduleRefresh();
+	};
+	const failover = async (
+		a: Worker, team: { id: string; name: string }, member: PersistedMember, duty: MemberDuty,
+		primary: WorkerTuple, fallback: WorkerTuple | null,
+		why: { reason: string; error: string; out: boolean; backend: string; model: string },
+	) => {
+		const ctx = activeCtx;
+		if (!ctx || shuttingDown) return;
+		const primaryText = tupleText(primary);
+		const primaryKey = tupleKey(primary.backend, primary.model)!;
+		const said = `${why.reason}${why.error ? ` (${why.error})` : ""}`;
+		const title = dutyTitle(duty, member.role);
+		const fallbackDenial = fallback ? tupleDenial(ctx, fallback) : "no fallback is set";
+		if (fallbackDenial) {
+			// Nothing to move to. Only a real out-of-usage failure marks the model out (standingSettle did);
+			// a streak of other failures says nothing about the model for other teams.
+			const reasonLine = fallback ? `its fallback ${tupleText(fallback)} can't run (${fallbackDenial})` : "no fallback is set";
+			if (duty === "monitor") {
+				failingOver.add(a.id);
+				try {
+					await killWorker(a, `stopped: primary ${primaryText} ${why.reason}; ${reasonLine}`, "system");
+				} catch {
+					/* Its status says what happened. */
+				} finally {
+					failingOver.delete(a.id);
+				}
+				const text = `${title} ${member.role} (${member.workerId}) in ${team.id} stopped: its primary ${primaryText} ${said}, and ${reasonLine}. The team has no monitor now; the main chat can start one with team_succeed { team: "${team.id}", role: "${member.role}" } once a fallback is set.`;
+				const routing = teams.routingCoordinator(team.id, isLiveWorker);
+				if (routing) {
+					const queued = queueItem(routing, { kind: "notice", body: `[Monitor stopped in ${team.id}]\n${text}`, subject: `${title} stopped: ${primaryText} ${why.reason}` });
+					teams.settleAction(teams.recordAction(queued.ok ? queued.to.workerId : routing.workerId, "message", "system", text), queued.ok ? "accepted-or-queued" : "failed", queued.ok ? undefined : queued.reason);
+				}
+				toMainChatNotice(text);
+				toastWarning(`${title} stopped: ${primaryText} ${why.reason}.`);
+			} else {
+				const text = `${title} ${member.role} (${member.workerId}) in ${team.id} can't run: its primary ${primaryText} ${said}, and ${reasonLine}. It keeps running and fails each turn until its model has usage again. To replace it: set a fallback in Settings → Subagents → Teams, stop it with agent_kill { id: "${member.workerId}" }, then start its successor with team_succeed { team: "${team.id}", role: "${member.role}" }.`;
+				teams.settleAction(teams.recordAction(member.workerId, "handover", "system", text), "failed", reasonLine);
+				toMainChatNotice(text);
+				toastWarning(`${title} can't run: ${primaryText} ${why.reason}.`);
+			}
+			scheduleRefresh();
+			return;
+		}
+		// This team's duty moves to its fallback and stays there (the successor's tuple check skips the
+		// primary). Out of usage also marks the model out for the chat's new teams for the hour; a streak
+		// of other failures is this team's alone: no chat-wide mark, no dead-tuple entry. The handover
+		// event's "fallback: primary <tuple>" detail is what a reload reads it back from.
+		if (why.out) markOut(why.backend, why.model, why.reason, { teamId: team.id, duty, primaryKey });
+		else teamFellBack.set(`${team.id}|${duty}`, primaryKey);
+		failingOver.add(a.id);
+		// Its open items wait for the successor (endInbox at onExit must not return them meanwhile).
+		succeeding.add(a.id);
+		let successorId: string | undefined;
+		let text: string;
+		try {
+			try {
+				await killWorker(a, `fallback: primary ${primaryText} ${why.reason}`, "system");
+			} catch {
+				/* checkReplacement says whether it ended. */
+			}
+			const coordination = teams.memberInfo(a.id)?.team.coordination;
+			if (!coordination) throw new Error(`${team.id} is no longer a coordinated team of this session`);
+			const { target } = teams.checkReplacement(team.id, a.id, notEnded);
+			// Its seat first: a full team still gets the successor.
+			if (teams.ejectedAt(a.id) === undefined) ejectMember(team.id, a.id, "system");
+			const note = path.join(coordination.handoffDir, `${roleSlug(target.role)}.md`);
+			const missing = duty === "monitor" ? undefined : `${target.role} stopped when its primary ${primaryText} ${why.reason}, without writing a handover note`;
+			const state = teamDefaultsNow();
+			const retireMinutes = (state.state === "ok" ? state.value.handover.retireTimeoutMinutes : undefined) ?? 10;
+			const started = await spawnSuccessor(team, target, target, note, retireMinutes, missing, "system", { primary: primaryText, reason: said });
+			successorId = started.successorId;
+			const successor = agents.find((w) => w.id === successorId);
+			const fallbackModel = successor?.model ?? fallback!.model;
+			text = `${title} moved to its fallback ${fallback!.model}: ${why.model} ${why.reason}.`;
+			const routing = teams.routingCoordinator(team.id, isLiveWorker);
+			if (routing && routing.workerId !== successorId) {
+				const body = [`[Handover in ${team.id}: ${member.role} moved to its fallback]`, `${text} Its successor ${started.text.match(/^Started (\S+ \(ag_\d+\))/)?.[1] ?? successorId} runs on ${fallbackModel}${why.error ? `; the error was: ${why.error}` : ""}. Nothing is needed from you.`].join("\n");
+				const queued = queueItem(routing, { kind: "handover", body, subject: `Handover: ${member.role} moved to its fallback; successor ${successorId}` });
+				teams.settleAction(teams.recordAction(queued.ok ? queued.to.workerId : routing.workerId, "message", "system", body), queued.ok ? "accepted-or-queued" : "failed", queued.ok ? undefined : queued.reason);
+			}
+			toastWarning(text);
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			text = `${title} ${member.role} (${member.workerId}) in ${team.id} stopped when its primary ${primaryText} ${said}, but its successor on the fallback ${tupleText(fallback!)} could not start: ${reason}. Start one with team_succeed { team: "${team.id}", role: "${member.role}" }.`;
+			teams.settleAction(teams.recordAction(member.workerId, "handover", "system", text), "failed", reason);
+			toMainChatNotice(text);
+		} finally {
+			succeeding.delete(a.id);
+			failingOver.delete(a.id);
+		}
+		// Nothing took its items: back to their senders.
+		if (!successorId && !isLiveWorker(a.id)) endInbox(a.id, "ended");
+		scheduleRefresh();
 	};
 	pi.registerTool({
 		name: "team_create",
 		label: "Create Team",
 		exposure: "model-only",
 		description:
-			"Create a named team of background workers with one unique role each, a shared objective and declared (advisory) ownership. Each member's prompt gets a fixed team header prepended. Members get team tools: team_msg (message a teammate by role; delivered by this extension), team_inbox, team_ask (question to you/the user, surfaced as a team-question message that starts your turn when idle; answer with agent_steer). A member with orchestrator: true also gets team_roster and team_steer over its own team only; no member can spawn, add or stop workers. pi members load them as a Pi extension, Claude members as MCP tools (mcp__team__<tool>). Starts all members through the same path as agent_spawn (validated before any start, rolled back together on failure) and returns exact worker IDs without waiting. Members default to the pi backend unless defaults.backend or the member sets another.",
+			"Create a named team of background workers with one unique role each, a shared objective and declared (advisory) ownership. Each member's prompt gets a fixed team header prepended. Members get team tools: team_msg (message a teammate by role; queued in its inbox and listed when it wakes), team_inbox (open and close its own items), team_ask (question to you/the user, surfaced as a team-question message that starts your turn when idle; answer with agent_steer). A member with orchestrator: true also gets team_roster and team_steer over its own team only; no member can spawn, add or stop workers. Members (pi or claude-code) load them as a Pi extension. Starts all members through the same path as agent_spawn (validated before any start, rolled back together on failure) and returns exact worker IDs without waiting. Members default to the pi backend unless defaults.backend or the member sets another. " + TEAM_LIMITS,
 		promptSnippet: "Create a team of role-based background workers with declared ownership",
 		promptGuidelines: [
 			"Use team_create when the user wants a coordinated team with distinct roles and ownership; use agent_spawn for ad hoc independent workers.",
@@ -3273,6 +4252,8 @@ export function registerSubagents(
 			"When this chat's subagent profile (or legacy team-defaults.json) configures standing roles, team_create itself adds a coordinator (your orchestrator member becomes it if you named one) and a monitor; only the coordinator then reaches you (completions, team-report messages that ask for nothing, team-question messages). Pass defaults.coordinator: false or defaults.monitor: false only when the user asks for a team without them. /team defaults shows the file's effect.",
 			"Never stop a coordinated team's coordinator or monitor while any of its members is still working (check team_list), even when the coordinator reports the objective complete; stopping them once no member is working is fine.",
 			"Use team_add to extend a team created in this session and team_list to see roles beside actual worker status; steer and stop members with agent_steer and agent_kill by exact worker ID; team_eject releases an ended member's seat when the team is full.",
+			`Before a large team, check the room: no per-request limit, but a team seats ${MAX_TEAM_MEMBERS} (coordinator and monitor included) and this chat runs at most ${MAX_LIVE} workers at once, idle ones included. Stop idle workers you no longer need with agent_kill first; Sova never stops one for you.`,
+			"If a coordinated team's coordinator (or monitor) has ended while the team still has work, start its replacement with team_succeed { team, role }; while one is live it hands over itself.",
 		],
 		parameters: Type.Object(
 			{
@@ -3283,15 +4264,16 @@ export function registerSubagents(
 			},
 			{ additionalProperties: false },
 		),
-		async execute(_id, params, signal, _update, ctx) {
+		prepareArguments: (args: unknown) => readTeamArgs(args, TEAM_CREATE_KEYS) as never,
+		async execute(_id, raw, signal, _update, ctx) {
 			context(ctx);
 			signal?.throwIfAborted();
-			checkTeamKeys(params.members, params.defaults);
+			const params = readTeamArgs(raw, TEAM_CREATE_KEYS) as Omit<typeof raw, "members"> & { members: MemberList };
 			// Team defaults (team-defaults.json), read now: a coordinator and a monitor, enforced here.
 			const { coordinator: coordinatorSwitch, monitor: monitorSwitch, ...storeDefaults } = params.defaults ?? {};
 			const subagentsForTeam = subagentsNow(ctx);
 			const plan = planTeamDefaults(subagentsForTeam.teams, params.members, { coordinator: coordinatorSwitch, monitor: monitorSwitch });
-			const lines = [...(plan.warning ? [plan.warning] : []), ...plan.notes];
+			const lines = [...(plan.warning ? [plan.warning] : []), plan.standing, ...plan.notes];
 			const members: TeamMemberInput[] = params.members.map((m: TeamMemberInput) => ({ ...m }));
 			lines.push(...applyMembersDefault(ctx, members, storeDefaults, subagentsForTeam));
 			if (plan.existingCoordinator !== undefined) members[plan.existingCoordinator].duty = "coordinator";
@@ -3307,8 +4289,12 @@ export function registerSubagents(
 				members.push(synthesizedMember("monitor", m.role, pick.tuple));
 				lines.push(pick.line);
 			}
-			if (members.length > MAX_BATCH)
-				throw new Error(`Team defaults add ${members.length - params.members.length} member(s) (coordinator/monitor), making ${members.length}; at most ${MAX_BATCH} members start per call. Create the team with fewer members and team_add the rest.`);
+			const added = [
+				...(plan.synthesizeCoordinator ? [`coordinator "${plan.synthesizeCoordinator.role}"`] : []),
+				...(plan.synthesizeMonitor ? [`monitor "${plan.synthesizeMonitor.role}"`] : []),
+			];
+			if (members.length > MAX_TEAM_MEMBERS)
+				throw new Error(`A team seats ${MAX_TEAM_MEMBERS} members, and this one would have ${members.length}: the ${params.members.length} you named${added.length ? ` + the ${added.join(" and ")} Sova adds from this chat's team defaults` : ""}. Name at most ${MAX_TEAM_MEMBERS - added.length} members; once one ends, team_eject frees its seat for team_add.`);
 			const prepared = teams.prepareCreate({
 				name: params.name, objective: params.objective, members,
 				...(Object.keys(storeDefaults).length ? { defaults: storeDefaults } : {}),
@@ -3328,6 +4314,7 @@ export function registerSubagents(
 					specs: prepared.members.map((m) => m.spec as Spec),
 					groupLabel: `${prepared.teamId} · ${prepared.name}`,
 					team: teamRequest(prepared.teamId, prepared.name, prepared.members),
+					need: { kind: "team_create", named: params.members.length, added },
 					beforeCommit: (group) => {
 						persisted = memberRecords(prepared.members, group, createdAt);
 						pi.appendEntry(TEAM_ENTRY_TYPE, teams.createEntry(prepared, createdAt, persisted));
@@ -3349,15 +4336,16 @@ export function registerSubagents(
 		name: "team_add",
 		label: "Add Team Members",
 		description:
-			"Add members (one new unique role each) to a team created in this session, by exact team ID or unique name. New members see the current roster in their header; existing members are not told automatically (team_msg or agent_steer can inform them). orchestrator: true is accepted for pi and claude-code members. Teams restored from history are read-only. Same validation and rollback as agent_spawn; the team's create-time defaults apply.",
+			"Add members (one new unique role each) to a team created in this session, by exact team ID or unique name. New members see the current roster in their header; existing members are not told automatically (team_msg or agent_steer can inform them). orchestrator: true is accepted for pi and claude-code members. Teams restored from history are read-only. Same validation and rollback as agent_spawn; the team's create-time defaults apply. " + TEAM_LIMITS,
 		parameters: Type.Object(
 			{ team: Type.String({ minLength: 1, description: "Team ID (team_NN) or unique team name." }), members: TeamMembers },
 			{ additionalProperties: false },
 		),
-		async execute(_id, params, signal, _update, ctx) {
+		prepareArguments: (args: unknown) => readTeamArgs(args, TEAM_ADD_KEYS) as never,
+		async execute(_id, raw, signal, _update, ctx) {
 			context(ctx);
 			signal?.throwIfAborted();
-			checkTeamKeys(params.members);
+			const params = readTeamArgs(raw, TEAM_ADD_KEYS) as Omit<typeof raw, "members"> & { members: MemberList };
 			// Re-read now: a coordinated team's new members get the current standing text; a malformed file is reported.
 			const now = subagentsNow(ctx);
 			const state = now.teams;
@@ -3365,7 +4353,7 @@ export function registerSubagents(
 			const membersLine = applyMembersDefault(ctx, additions, teams.find(params.team).defaults, now);
 			const prepared = teams.prepareAdd(params.team, additions, observeWorker, state.state === "ok" ? state.value : undefined);
 			try {
-				const { group, members } = await addPrepared(ctx, prepared, signal);
+				const { group, members } = await addPrepared(ctx, prepared, signal, { kind: "team_add" });
 				const told = await tellCoordinatorOfAdditions(prepared.teamId, members, prepared.members.map((m) => m.task));
 				return teamSpawnResult(
 					`Added ${group.agents.length} member(s) to ${prepared.teamId} (${prepared.name}) in ${group.id}. Task acceptance is asynchronous; inspect status for startup failures.`,
@@ -3402,6 +4390,38 @@ export function registerSubagents(
 			);
 		},
 	});
+	/** Live for the main chat's replacement check: any worker not ended, a stopping one included. */
+	const notEnded = (workerId: string): boolean => agents.some((a) => a.id === workerId && !a.isFinished());
+	pi.registerTool({
+		name: "team_succeed",
+		label: "Replace Coordinator or Monitor",
+		description:
+			"Start a successor for a team's coordinator or monitor once none with that duty is live (it ended, failed or was stopped): the same successor path the coordinator's own team_succeed uses (role <base>-<n+1>, same duty, tools, cwd and ownership, the predecessor's assignment and every main-thread instruction it had, its handover note when there is one). The old member's seat is released. Refused while a member with that duty is live (a live coordinator hands over itself, so two coordinators are never live at once), for any member other than the newest coordinator or monitor (the coordinator succeeds other members), and for a team restored from history.",
+		promptSnippet: "Replace a team's ended coordinator or monitor",
+		parameters: Type.Object(
+			{
+				team: Type.String({ minLength: 1, description: "Team ID (team_NN) or unique team name." }),
+				role: Type.String({ minLength: 1, description: "Role or worker ID (ag_NN) of the ended coordinator or monitor." }),
+			},
+			{ additionalProperties: false },
+		),
+		async execute(_id, params, signal, _update, ctx) {
+			context(ctx);
+			signal?.throwIfAborted();
+			const { team, target } = teams.checkReplacement(params.team, params.role, notEnded);
+			if (pendingSuccessions.has(target.workerId) || [...handovers.values()].some((h) => h.oldId === target.workerId || h.newId === target.workerId))
+				throw new Error(`A handover for ${target.role} (${target.workerId}) is still under way; wait for it to finish.`);
+			const coordination = teams.memberInfo(target.workerId)?.team.coordination;
+			if (!coordination) throw new Error(`${team.id} has no coordinator or monitor to replace.`);
+			const state = teamDefaultsNow();
+			const retireMinutes = (state.state === "ok" ? state.value.handover.retireTimeoutMinutes : undefined) ?? 10;
+			const note = path.join(coordination.handoffDir, `${roleSlug(target.role)}.md`);
+			const missing = target.duty === "monitor" || fs.existsSync(note) ? undefined : `${target.role} had already ended without writing it`;
+			const started = await spawnSuccessor(team, target, target, note, retireMinutes, missing, "parent");
+			const routing = target.duty === "coordinator" ? ` It routes ${team.id} from now on: members report to it, and only it reaches you.` : "";
+			return result(`${started.text}${routing}`, { teamId: team.id, successorId: started.successorId, predecessor: target.workerId, duty: target.duty });
+		},
+	});
 	pi.registerTool({
 		name: "team_list",
 		label: "List Teams",
@@ -3417,9 +4437,10 @@ export function registerSubagents(
 				`Objective: ${t.objective}`,
 				...(t.coordinated ? [`Coordinated (team defaults): members report to the coordinator; only it reaches you. ${KEEP_DUTIES_NOTE}`] : []),
 				...t.members.map((m) =>
-					`  ${m.workerId} ${m.role}${dutyMark(m)} [${m.backend}] ${m.state}${m.status ? ` (${m.status}${m.taskOutcome ? `/${m.taskOutcome}` : ""})` : ""}${m.available ? ` · ${memberContext(m)}` : ""} · owns: ${m.ownedPaths.join(", ") || "none declared"}${m.error ? ` · error: ${m.error}` : ""}${m.available ? "" : ` · unavailable: ${m.reason}`}${ejectedText(m)}`,
+					`  ${m.workerId} ${m.role}${dutyMark(m)} [${m.backend}] ${m.state}${m.status ? ` (${m.status}${m.taskOutcome ? `/${m.taskOutcome}` : ""})` : ""}${m.available ? ` · ${memberContext(m)}${openItemsText(m.workerId)}` : ""} · owns: ${m.ownedPaths.join(", ") || "none declared"}${m.error ? ` · error: ${m.error}` : ""}${m.available ? "" : ` · unavailable: ${m.reason}`}${ejectedText(m)}`,
 				),
 				...(t.actions.length ? ["  Recent actions:", ...t.actions.slice(-10).map((a) => `    #${a.seq} ${a.source} ${a.kind} → ${a.workerId} (${a.role}): ${a.state}${a.reason ? ` — ${a.reason}` : ""}`)] : []),
+				...teamInboxLine(t.id, "  "),
 			].join("\n"));
 			// N6: where members' questions go depends on whether the team is coordinated.
 			const coordinatedCount = selected.filter((t) => t.coordinated).length;
@@ -3556,8 +4577,7 @@ export function registerSubagents(
 					composing = true;
 					try {
 						const a = findAgent(id);
-						// A redirect interrupts the current task (on Claude: interrupt,
-						// settle, then replacement) — the title must say so; it is not
+						// A redirect interrupts the current task — the title must say so; it is not
 						// a chat box. Preserve workspace state, but never cover the
 						// temporary editor.
 						const title =
@@ -3598,7 +4618,8 @@ export function registerSubagents(
 			"Plan and create a team for this objective with the team tools, then coordinate it:",
 			"- Use team_create with a short unique name, this objective, and members that each have one explicit unique role, a self-contained prompt and declared ownedPaths (advisory coordination, not a lock). Extend later with team_add; inspect with team_list; steer or stop members with agent_steer/agent_kill by exact worker ID.",
 			"- Obey the team tool descriptions, schemas and limits. All members share one filesystem; ownership does not protect files.",
-			"- Members can message teammates with team_msg (this extension delivers it) and ask you questions with team_ask (they arrive as team-question messages; answer with agent_steer on that worker ID); Claude members have the same tools through an MCP server. Give one member (pi or claude-code) orchestrator: true if the team should coordinate itself: it can see the roster and steer siblings by role but never spawn or stop anyone. You remain the authority, and each member's final answer is its report.",
+			`- ${TEAM_LIMITS}`,
+			"- Members can message teammates with team_msg (this extension delivers it) and ask you questions with team_ask (they arrive as team-question messages; answer with agent_steer on that worker ID). Give one member (pi or claude-code) orchestrator: true if the team should coordinate itself: it can see the roster and steer siblings by role but never spawn or stop anyone. You remain the authority, and each member's final answer is its report.",
 			"- When you present the plan, report the defaults and their cost: members default to the pi backend inheriting the parent model/effort (agent_models resolves exact IDs, including Claude's), and every member with wake=true (the default) starts a parent turn — which costs tokens on the parent model — when it settles. State how many wakes this team will cause, or propose wake: false to batch results into your next turn.",
 			...teamDefaultsPlanLines(),
 			"Do not start the objective's work yourself before the team exists; the /team workspace and team_list show the roster.",
@@ -3615,7 +4636,7 @@ export function registerSubagents(
 		const { coordinator: c, monitor: m } = state.value;
 		if (!c.enabled) return [];
 		return [
-			`- Team defaults are on: team_create adds a coordinator "${c.role}" (${c.primary.backend}/${c.primary.model}) unless one member has orchestrator: true (then that member is the coordinator)${m.enabled ? `, and a monitor "${m.role}" (${m.primary.backend}/${m.primary.model}) that watches context and usage` : ""}. Do not plan those roles yourself. Every other member reports to the coordinator, and only the coordinator reaches you. The user can opt out per team (defaults.coordinator: false / defaults.monitor: false). Synthesized members count toward the ${MAX_BATCH}-per-call limit.`,
+			`- Team defaults are on: team_create adds a coordinator "${c.role}" (${c.primary.backend}/${c.primary.model}) unless one member has orchestrator: true (then that member is the coordinator)${m.enabled ? `, and a monitor "${m.role}" (${m.primary.backend}/${m.primary.model}) that watches context and usage` : ""}. Do not plan those roles yourself. Every other member reports to the coordinator, and only the coordinator reaches you. The user can opt out per team (defaults.coordinator: false / defaults.monitor: false). The coordinator and monitor take seats and count toward this chat's ${MAX_LIVE} running workers.`,
 		];
 	};
 	/** Objective text for a planning message: bounded, control-free (newlines/tabs kept). */
@@ -3667,93 +4688,100 @@ export function registerSubagents(
 		},
 	});
 	/**
-	 * Re-adopt this owner session's detached workers (hosting.ts): a living host
-	 * is attached and its whole output replayed through a runner in adopt mode;
-	 * a dead host's log is replayed and the worker finalized (state "lost" if it
-	 * died mid-turn; its backend session id stays in the registry for a manual
-	 * resume, never an automatic one). Completions after the earlier manager's
-	 * consumed offset notify and wake exactly like live ones.
+	 * Pick back up this session's workers that still run (§app.chat-processes/workers): each one the
+	 * host lists that this session's records know replaces its restored entry with a live worker. Its
+	 * transcript so far is the record's and the file's; the host's feed brings the rest. A run that
+	 * settled while no parent was here is announced once (chat-worker.ts), waking like a live one.
 	 */
-	let adopting: Promise<void> | undefined;
-	const adoptWorkers = (ctx: ExtensionContext): Promise<void> => {
-		if (!hosting.active()) return Promise.resolve();
-		adopting ??= (async () => {
+	let reattaching: Promise<void> | undefined;
+	const reattach = (ctx: ExtensionContext): Promise<void> => {
+		const host = workerHost?.current();
+		const parent = parentOf(ctx);
+		if (!host || !parent) return Promise.resolve();
+		reattaching ??= (async () => {
 			try {
-				for (const { dir, meta } of hosting.candidates()) {
+				let refs: Awaited<ReturnType<typeof host.list>>;
+				try {
+					refs = await host.list();
+				} catch {
+					return; // No server to ask: they stay listed restored; the next start asks again.
+				}
+				for (const ref of refs) {
 					if (shuttingDown) return;
-					if (agents.some((a) => a.id === meta.id && !isRestored(a))) continue;
-					const backend = meta.backend === "pi" ? undefined : backends.get(meta.backend);
-					if (meta.backend !== "pi" && !backend) continue; // Its extension is not loaded (yet); stays detached.
-					let prepared: Record<string, unknown> = {};
-					try {
-						// Permission policy and handlers; nothing is spawned.
-						prepared = backend?.prepare?.({ ...meta.spec }, ctx) ?? {};
-					} catch {
-						prepared = {};
-					}
-					const adoption = await hosting.adopt(dir, meta);
-					if (!adoption) continue;
-					if (shuttingDown) { hosting.abandon(meta.id); return; }
+					// Hidden chats are their own clients' (fork/background.ts, btw).
+					if (ref.kind !== "worker") continue;
+					if (agents.some((a) => a.id === ref.workerId && !isRestored(a))) continue;
+					const ghost = agents.find((a): a is RestoredWorker => a.id === ref.workerId && isRestored(a));
+					const manifest = ghost?.manifest ?? restoredViews.get(ref.workerId)?.manifest;
+					if (!manifest) continue; // Not this session's record (another branch's process): left alone.
+					// A worker resumed since runs in its recorded session: another chat of the same id is not it.
+					if (manifest.ref?.locator && manifest.ref.locator !== ref.sessionFile && refs.some((r) => r.workerId === ref.workerId && r.sessionFile === manifest.ref!.locator)) continue;
+					const launch = (manifest.launch ?? {}) as Partial<WorkerLaunchSpec>;
+					const cwd = launch.cwd ?? manifest.spec?.cwd ?? ctx.cwd;
 					let worker: Worker;
 					try {
-						worker = (backend?.create ?? createRunner)(
+						worker = new ChatWorker(
 							{
-								model: meta.spec.model,
-								effort: meta.spec.effort,
-								tools: meta.spec.tools,
-								extensions: meta.spec.extensions,
-								...prepared,
-								...adoption.options,
-								backend: meta.backend,
-								id: meta.id,
-								groupId: meta.groupId,
-								name: meta.name,
-								task: meta.spec.prompt,
-								cwd: meta.spec.cwd,
-								wake: meta.spec.wake,
+								id: ref.workerId,
+								groupId: manifest.groupId ?? "run_restored",
+								name: manifest.name ?? manifest.team?.role ?? ref.workerId,
+								task: ghost?.task ?? manifest.spec?.taskPreview ?? "",
+								cwd: ghost?.cwd ?? cwd,
+								wake: manifest.spec?.wake ?? true,
+								backend: "pi",
+								...(launch.model ?? manifest.spec?.model ? { model: launch.model ?? manifest.spec?.model } : {}),
+								...(launch.effort ?? manifest.spec?.effort ? { effort: launch.effort ?? manifest.spec?.effort } : {}),
+								...(launch.tools ? { tools: [...launch.tools] } : {}),
+								...(launch.extensions ? { extensions: [...launch.extensions] } : {}),
 							},
 							{ onChange: scheduleRefresh, onSettled, onExit },
+							{
+								host,
+								parent,
+								attach: {
+									ref,
+									...(ghost ? { seed: { transcript: ghost.transcript, usage: ghost.usage, status: ghost.status, taskOutcome: ghost.taskOutcome, error: ghost.error, startedAt: ghost.startedAt, model: ghost.model, effort: ghost.effort } } : {}),
+									...(manifest.settleKey ? { settleKey: manifest.settleKey } : {}),
+									...(manifest.settleEntryId ? { settleEntryId: manifest.settleEntryId } : {}),
+									...(manifest.settledAt ?? manifest.resumedAt ? { settledAt: Math.max(manifest.settledAt ?? 0, manifest.resumedAt ?? 0) } : {}),
+								},
+							},
 						);
 					} catch {
-						hosting.abandon(meta.id);
 						continue;
 					}
-					hosting.bind(meta.id, worker);
 					try {
-						const outside = remoteSessionFor(ctx) ? undefined : worktreeCwdRefusal({ sessionCwd: ctx.cwd, cwd: meta.spec.cwd, set: restoreWorktrees(ctx.sessionManager.getBranch()) });
-						if (outside) outsideWorktrees.add(meta.id);
-						else outsideWorktrees.delete(meta.id);
+						const outside = remoteSessionFor(ctx) ? undefined : worktreeCwdRefusal({ sessionCwd: ctx.cwd, cwd: worker.cwd, set: restoreWorktrees(ctx.sessionManager.getBranch()) });
+						if (outside) outsideWorktrees.add(worker.id);
+						else outsideWorktrees.delete(worker.id);
 					} catch {
 						// Unknowable: not flagged.
 					}
-					// Its host kept it running: the live worker replaces its restored entry (its
-					// replayed log carries all its usage, so the restored view leaves the Σ).
-					for (const ghost of agents.filter((a) => a.id === meta.id && isRestored(a))) removeWorker(ghost);
-					restoredViews.delete(meta.id);
-					let group = groups.find((g) => g.id === meta.groupId);
+					// It ran on: the live worker replaces its restored entry (its usage is its whole session's).
+					for (const old of agents.filter((a) => a.id === ref.workerId && isRestored(a))) removeWorker(old);
+					restoredViews.delete(ref.workerId);
+					const groupId = manifest.groupId ?? "run_restored";
+					let group = groups.find((g) => g.id === groupId);
 					if (!group) {
-						group = { id: meta.groupId, label: meta.groupLabel ?? `${meta.groupId} · re-adopted`, createdAt: meta.createdAt, agents: [] };
+						group = { id: groupId, label: `${groupId} · re-adopted`, createdAt: manifest.firstAt ?? Date.now(), agents: [] };
 						groups.push(group);
 					}
 					group.agents.push(worker);
 					agents.push(worker);
 					registry.resume(worker);
-					if (meta.team && teams.adoptHistoryTeam(meta.team.teamId)) {
+					if (manifest.team && teams.adoptHistoryTeam(manifest.team.teamId)) {
 						ensureMailbox();
 						wakeRejoinedMonitor(worker);
 					}
 				}
+				if (!shuttingDown) rewakeInboxes();
 			} finally {
-				adopting = undefined;
+				reattaching = undefined;
 				refresh();
 			}
 		})();
-		return adopting;
+		return reattaching;
 	};
-	const unregisterAdoptListener = pi.events?.on(WORKERS_ADOPT_EVENT, (data: unknown) => {
-		if (shuttingDown || !activeCtx || (data as { version?: unknown } | null)?.version !== 1) return;
-		void adoptWorkers(activeCtx);
-	});
 	pi.on("session_start", (_event, ctx) => {
 		activeCtx = ctx;
 		parentLoops = 0;
@@ -3779,35 +4807,21 @@ export function registerSubagents(
 		// IDs are reserved across every branch; displayed history only from the active one.
 		teams.reserveCounter(ctx.sessionManager.getEntries());
 		teams.restoreHistory(ctx.sessionManager.getBranch?.() ?? []);
+		// Models that ran out of usage stay out for their hour across a reload (§teams.defaults/runtime-fallback).
+		restoreDeadTuples(ctx.sessionManager.getEntries());
+		failStreaks.clear();
+		failedOver.clear();
 		// A paused team stays paused across a reload: its resume check must still fire while it is idle.
 		pausedTeams.clear();
 		for (const teamId of pausedTeamsFrom(ctx.sessionManager.getBranch?.() ?? [])) pausedTeams.add(teamId);
-		hosting.setOwner(ctx.sessionManager.getSessionId?.(), ctx.sessionManager.getSessionFile?.());
-		// Confined Claude workers' own state dirs (§chat.sandbox/claude-state): kept across resumes, removed
-		// once the worker's record is gone with its owner session. Never one a live worker of this process uses.
-		try {
-			const key = sessionDirKey(ctx.sessionManager.getSessionId?.(), unsavedSessionKey).slice(0, 112);
-			const file = ctx.sessionManager.getSessionFile?.();
-			const { manifests } = readWorkerManifests(ctx.sessionManager.getEntries());
-			const live = new Set(agents.filter((a) => !a.isFinished()).map((a) => `${key}-${a.id}`));
-			sweepPrivateConfigDirs({
-				agentDir: agentDir(),
-				sessionDirs: [...new Set([path.join(agentDir(), "sessions"), ...(file ? [path.dirname(path.dirname(file))] : [])])],
-				current: { key, recorded: (id) => manifests.has(id) || agents.some((a) => a.id === id) },
-				keep: (dir) => live.has(dir),
-			});
-		} catch { /* best effort: the next start sweeps again */ }
-		// Asynchronous (transcript reads): earlier processes' workers appear once read.
-		void restoreWorkers(ctx).catch(() => { /* Best effort: the records stay for the next start. */ });
-		if (hosting.active()) {
-			try {
-				hosting.reap();
-			} catch {
-				/* Archiving stale entries is best effort. */
-			}
-			// Asynchronous: pings and replays must not block session startup.
-			void adoptWorkers(ctx);
-		}
+		// The session's worker host, asked again (it is bound to the session now starting).
+		workerHost?.dispose();
+		workerHost = pi.events ? workerHostOf(pi.events) : undefined;
+		// Asynchronous (transcript reads): earlier processes' workers appear once read, then those
+		// still running are picked back up.
+		void restoreWorkers(ctx)
+			.catch(() => { /* Best effort: the records stay for the next start. */ })
+			.then(() => (shuttingDown ? undefined : reattach(ctx)));
 		refresh();
 	});
 	pi.on("session_tree", (_event, ctx) => {
@@ -3840,8 +4854,6 @@ export function registerSubagents(
 		releaseHeld(() => true, aborted ? false : undefined);
 	});
 	pi.on("session_shutdown", async () => {
-		// Read at dispose time: the embedding process sets it only when it is going away.
-		const detach = detachRequested();
 		// Best effort: leftovers reach the transcript without starting a turn.
 		collecting.clear();
 		try {
@@ -3851,8 +4863,8 @@ export function registerSubagents(
 		}
 		held.clear();
 		shuttingDown = true;
+		wakes?.dispose();
 		unregisterWorkersListener?.();
-		unregisterAdoptListener?.();
 		publishWorkers();
 		unregisterBackendListener?.();
 		unregisterRemoteListener?.();
@@ -3887,13 +4899,13 @@ export function registerSubagents(
 		overlayHandle = undefined;
 		backendDialogs.clear();
 		composingEditor = false;
-		// Detach leaves hosted workers running for the next manager; anything
-		// whose teardown already began (agent_kill, failed spawn) still finishes.
-		const detached = detach
-			? hosting.detachAll((a) => !rollingBack.has(a) && !a.isFinished() && !a.isStopping?.())
-			: new Set<string>();
-		await Promise.all([...agents, ...rollingBack].filter((a) => rollingBack.has(a) || !detached.has(a.id)).map((a) => a.dispose()));
-		hosting.clear();
+		// Every worker runs on and is picked back up by the next manager (dispose lets go); a failed
+		// batch's workers are still stopped.
+		await Promise.all([
+			...agents.filter((a) => !rollingBack.has(a)).map((a) => a.dispose()),
+			...[...rollingBack].map((a) => Promise.resolve().then(() => a.kill("spawn batch rolled back after factory failure")).catch(() => a.dispose())),
+		]);
+		workerHost?.dispose();
 		rollingBack.clear();
 		agents.length = 0;
 		groups.length = 0;
@@ -3902,17 +4914,14 @@ export function registerSubagents(
 		registry.clear();
 		restoredViews.clear();
 		restoreGeneration++;
-		// Only a root this instance created is removed; an injected root is the caller's.
-		// A registry mailbox goes only once no worker of this owner remains to use it.
-		if (mailboxRoot && (mailboxOwned || (!options.mailboxRoot && !detached.size && hosting.ownerEmpty()))) {
-			try {
-				fs.rmSync(mailboxRoot, { recursive: true, force: true });
-			} catch {
-				/* Temp cleanup is best effort. */
-			}
-		}
-		mailboxRoot = undefined;
-		mailboxOwned = false;
+		// The mailbox and its nudges are kept for the next manager (§teams.defaults/wake-nudge).
+		mailboxRoot = options.mailboxRoot;
+		nudgesLoaded = false;
+		wakes?.dispose();
+		wakes = undefined;
+		inbox = undefined;
+		freshMembers.clear();
+		capsSeen.clear();
 	});
 }
 

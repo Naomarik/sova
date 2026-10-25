@@ -1,4 +1,7 @@
 import type { TranscriptItem } from "../../shared/protocol";
+import { TOUR_TOOLS } from "../../shared/tour";
+import { OFFER_TOOL } from "../../shared/session-offers";
+import { rowFacts } from "../../shared/wire-v1";
 import { isChangeRow } from "./change-rows";
 import type { LiveBlock, LiveState } from "./live";
 import { toolResultView } from "./message";
@@ -29,13 +32,14 @@ export interface HiddenSplit {
 /** Tools the thread renders as cards (the Overseer's question with buttons and link card, an
     alignment) rather than tool cards: "Hide tool calls" never folds them, since they are the
     message, not its working. */
-export const CARD_TOOLS: ReadonlySet<string> = new Set(["sova_card", "sova_confirm", "sova_link", "sova_unlink", "align"]);
+export const CARD_TOOLS: ReadonlySet<string> = new Set(["sova_card", "sova_confirm", "sova_link", "sova_unlink", "align", OFFER_TOOL, ...TOUR_TOOLS]);
 
 /** Ids of the calls that render as cards (their paired results go with them). */
 const cardCallIds = (items: TranscriptItem[]) =>
   new Set(items.filter((it) => it.kind === "tool-call" && it.toolCallId && CARD_TOOLS.has(it.text ?? "")).map((it) => it.toolCallId!));
+export const isTourResult = (it: TranscriptItem) => it.kind === "tool-result" && TOUR_TOOLS.has(rowFacts(it)?.tool?.name ?? "");
 const isToolRow = (it: TranscriptItem, cards: ReadonlySet<string>) =>
-  (it.kind === "tool-call" || it.kind === "tool-result") && !(it.toolCallId && cards.has(it.toolCallId)) && !(it.kind === "tool-call" && CARD_TOOLS.has(it.text ?? ""));
+  (it.kind === "tool-call" || it.kind === "tool-result") && !isTourResult(it) && !(it.toolCallId && cards.has(it.toolCallId)) && !(it.kind === "tool-call" && CARD_TOOLS.has(it.text ?? ""));
 const isHidden = (it: TranscriptItem, hide: HideKinds, cards: ReadonlySet<string>) => (hide.tools && isToolRow(it, cards)) || (hide.thinking && it.kind === "thinking");
 
 /** Counts the way `HistoryItems` renders: a paired result folds into its call's card, an orphan gets its own. */

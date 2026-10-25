@@ -34,8 +34,11 @@ export function newSessionCwd(
   current: Located | null | undefined,
   sessions: readonly (Located & { lastActiveAt: string })[],
   offers: (cwd: string) => boolean = () => true,
+  /** The root of the project whose page is open (§app/new-session-dialog, Prefill): the dialog opens on it. */
+  projectRoot: string | null = null,
 ): string | null {
   if (current?.cwd && !current.overseer && offers(current.cwd)) return current.cwd;
+  if (projectRoot && offers(projectRoot)) return projectRoot;
   const latest = sessions
     .filter((s) => !s.overseer && !!s.cwd && offers(s.cwd))
     .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))[0];
@@ -110,17 +113,48 @@ export function projectChoices(projects: readonly ProjectSummary[]): ProjectChoi
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.root.localeCompare(b.root));
 }
 
+/** `cwd` is `root` or inside it. */
+const under = (root: string, cwd: string) => {
+  const r = root.replace(/\/+$/, "") || "/";
+  return cwd === r || cwd.startsWith(r === "/" ? r : `${r}/`);
+};
+
 /** The project the open session's folder is in (its root, or inside it; the deepest root wins), or null. */
 export function projectAt(choices: readonly ProjectChoice[], cwd: string): string | null {
   if (!cwd) return null;
-  const inside = (root: string) => {
-    const r = root.replace(/\/+$/, "") || "/";
-    return cwd === r || cwd.startsWith(r === "/" ? r : `${r}/`);
-  };
   let best: ProjectChoice | null = null;
-  for (const c of choices) if (inside(c.root) && (!best || c.root.length > best.root.length)) best = c;
+  for (const c of choices) if (under(c.root, cwd) && (!best || c.root.length > best.root.length)) best = c;
   return best?.id ?? null;
 }
+
+/**
+ * The project whose folder New Session's folder tab holds: its root, a folder inside
+ * it, or inside one of its worktrees as Sova names them (`<root's parent>/.worktrees/<root's name>-…`); the deepest
+ * root wins. The server checks the folder again when it starts there.
+ */
+export function folderProject(choices: readonly ProjectChoice[], cwd: string): ProjectChoice | null {
+  if (!cwd.startsWith("/")) return null;
+  let best: { c: ProjectChoice; len: number } | null = null;
+  for (const c of choices) {
+    const root = c.root.replace(/\/+$/, "");
+    const cut = root.lastIndexOf("/");
+    const tree = root ? `${root.slice(0, cut)}/.worktrees/${root.slice(cut + 1)}-` : null;
+    const len = under(root, cwd) ? root.length : tree && cwd.startsWith(tree) && cwd.length > tree.length ? tree.length : 0;
+    if (len && (!best || len > best.len)) best = { c, len };
+  }
+  return best?.c ?? null;
+}
+
+/** What the folder tab's Create Session does: a folder in a project starts that project's coding session there (on this
+    host only: projects are this host's); any other folder, or another Host, a plain session. */
+export type FolderStart = { kind: "project"; project: ProjectChoice; cwd: string } | { kind: "plain"; cwd: string };
+export function folderStart(choices: readonly ProjectChoice[], cwd: string, host: string | null): FolderStart {
+  const project = host === null ? folderProject(choices, cwd) : null;
+  return project ? { kind: "project", project, cwd } : { kind: "plain", cwd };
+}
+
+/** The line under the Folder field while it holds a project's folder. */
+export const folderProjectHint = (name: string): string => `This folder is in ${name}: the session starts as one of its coding sessions.`;
 
 /** Where New Session starts pi: a project's root, a folder here, or a folder on a target. */
 export type NewSessionWhere = "project" | "local" | "remote";
@@ -140,6 +174,8 @@ export const PROJECT_TAB_START = { worktree: "later" } as const;
 
 /** The Project tab's toast: its session starts in the project root. */
 export const PROJECT_STARTED = "Coding session started in the project root.";
+/** The folder tab's, for a folder in a project: the root says the Project tab's words. */
+export const folderStartedToast = (name: string, at: string, root: boolean): string => (root ? PROJECT_STARTED : `Coding session of ${name} started in ${at}.`);
 
 /**
  * The Project tab's Create Session. Only the start may fail (the caller shows it, and nothing was started). Once it has
@@ -148,11 +184,13 @@ export const PROJECT_STARTED = "Coding session started in the project root.";
  */
 export async function startInProject<S>(
   projectId: string,
-  api: { start(projectId: string, input: typeof PROJECT_TAB_START): Promise<Pick<CodingStartResult, "path" | "sessionId" | "modeNotSet">>; summary(id: string): Promise<S> },
+  api: { start(projectId: string, input: typeof PROJECT_TAB_START & { cwd?: string }): Promise<Pick<CodingStartResult, "path" | "sessionId" | "modeNotSet">>; summary(id: string): Promise<S> },
   ui: { toast(text: string): void; created(s: S): void; open(href: string): void },
+  /** The folder tab's start: the folder it starts in, and its toast. */
+  at?: { cwd: string; started: string },
 ): Promise<void> {
-  const r = await api.start(projectId, { ...PROJECT_TAB_START });
-  ui.toast(r.modeNotSet ?? PROJECT_STARTED);
+  const r = await api.start(projectId, at ? { ...PROJECT_TAB_START, cwd: at.cwd } : { ...PROJECT_TAB_START });
+  ui.toast(r.modeNotSet ?? at?.started ?? PROJECT_STARTED);
   const s = await api.summary(r.sessionId).catch(() => null);
   if (s) ui.created(s);
   else ui.open(`#/s/${encodeURIComponent(r.path)}`);

@@ -40,19 +40,28 @@ export interface ReconnectingSocket {
   reconnect(): void;
   /** Close for good; no reconnect. */
   close(): void;
+  /** Stop for good, like close, but hand over the connection (open or still connecting) instead of
+      closing it, or null when there is none: what was sent on it can still be answered
+      (lib/chat-outbox courier). Its handlers are the taker's to set. */
+  release(): WebSocket | null;
 }
 
 export interface SocketHandlers<M> {
   onMessage(msg: M): void;
   /** Called on every successful (re)connect, before any message. */
   onOpen?(isReconnect: boolean): void;
+  /** The first connect waits for this (settled either way); status reads "connecting" meanwhile. */
+  after?: Promise<unknown>;
+  /** …but no longer than this many ms: past it, the first connect goes ahead. */
+  afterMs?: number;
 }
 
 /**
  * A WebSocket that reconnects with backoff. Must be created inside a reactive owner
- * (component or createRoot); the socket is closed cleanly on cleanup.
+ * (component or createRoot); the socket is closed cleanly on cleanup. A `url` function is read at
+ * every connect, so each one can say what the view holds by then.
  */
-export function createReconnectingSocket<M>(url: string, handlers: SocketHandlers<M>): ReconnectingSocket {
+export function createReconnectingSocket<M>(url: string | (() => string), handlers: SocketHandlers<M>): ReconnectingSocket {
   const [status, setStatus] = createSignal<SocketStatus>("connecting");
   const [attempt, setAttempt] = createSignal(0);
   let ws: WebSocket | null = null;
@@ -62,7 +71,7 @@ export function createReconnectingSocket<M>(url: string, handlers: SocketHandler
 
   const connect = () => {
     if (stopped) return;
-    const sock = new WebSocket(url);
+    const sock = new WebSocket(typeof url === "string" ? url : url());
     ws = sock;
     let opened = false;
     sock.onopen = () => {
@@ -138,7 +147,20 @@ export function createReconnectingSocket<M>(url: string, handlers: SocketHandler
     setStatus("closed");
   };
 
-  connect();
+  // The first connect, unless something else connected or closed it meanwhile (retry, reconnect, close).
+  if (handlers.after) {
+    const first = () => {
+      if (!ws && !stopped && status() === "connecting" && attempt() === 0) connect();
+    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const go = () => {
+      clearTimeout(timer);
+      first();
+    };
+    if (handlers.afterMs !== undefined) timer = setTimeout(go, handlers.afterMs);
+    onCleanup(() => clearTimeout(timer));
+    void handlers.after.then(go, go);
+  } else connect();
   onCleanup(close);
 
   return {
@@ -171,5 +193,15 @@ export function createReconnectingSocket<M>(url: string, handlers: SocketHandler
       connect();
     },
     close,
+    release() {
+      const sock = ws;
+      ws = null;
+      stopped = true;
+      clearTimeout(timer);
+      setStatus("closed");
+      if (!sock || (sock.readyState !== WebSocket.OPEN && sock.readyState !== WebSocket.CONNECTING)) return null;
+      sock.onopen = sock.onmessage = sock.onclose = null;
+      return sock;
+    },
   };
 }

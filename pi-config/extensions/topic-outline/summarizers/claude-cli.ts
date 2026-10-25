@@ -18,6 +18,7 @@ import { buildPrompt, parseSummarizerJson } from "./chain.ts";
 import { claudeBaseEnv, hostLogins } from "../../claude-code/accounts.ts";
 import { claudeCliId } from "../../claude-code/catalog.ts";
 import { FIXED_CLAUDE_ENV, fixedSettingsJson } from "../../claude-code/fixed-settings.ts";
+import { claudeExecutable } from "../../claude-code/claude-executable.ts";
 import { beginClaudeOneShot } from "../../llm-inflight/claude.ts";
 import { resolveUsageAttribution } from "../../llm-inflight/attribution.ts";
 import { recordClaudeEnvelope } from "../../llm-inflight/record.ts";
@@ -65,13 +66,21 @@ export function claudeCliEnv(parent: NodeJS.ProcessEnv, login: Record<string, st
   return Object.assign(env, login, FIXED_CLAUDE_ENV);
 }
 
-export function createClaudeCliSummarizer(spec: SummarizerSpec, claudeBin: string): Summarizer {
+/** `claudeBin`: a configured override; otherwise the Claude program every Sova spawn runs, resolved per call. */
+export function createClaudeCliSummarizer(spec: SummarizerSpec, configuredBin?: string): Summarizer {
   const timeoutMs = spec.timeoutMs ?? 45_000;
   const budget = spec.maxBudgetUsd ?? 0.05;
   return {
     name: `claude-code/${spec.model}`,
     summarize(input: SummarizeInput): Promise<SummarizerResult> {
       return new Promise((resolve, reject) => {
+        let claudeBin: string;
+        try {
+          claudeBin = configuredBin ?? claudeExecutable();
+        } catch (error) {
+          reject(new SummarizerError(error instanceof Error ? error.message : String(error)));
+          return;
+        }
         if (!existsSync(claudeBin)) {
           reject(new SummarizerError(`claude binary not found at ${claudeBin}`));
           return;

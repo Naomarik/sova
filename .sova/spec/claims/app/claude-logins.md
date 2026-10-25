@@ -7,8 +7,7 @@ The unit is a **login**: one Claude Code config directory with its own `.credent
 is, one refresh chain. Several logins may belong to the same Claude account (the same
 `accountUuid`); they are kept, and listed together under that account. Claude Code stays the only
 program that signs in, refreshes and signs out: Sova runs `claude` in the login's directory and
-never writes a token itself. It reads one only to launch a sandboxed Claude Code worker, and then
-only the login's short-lived access token, never its refresh token (§chat.sandbox/claude-state).
+never writes a token itself.
 On macOS, Claude Code keeps a login's credentials in the login keychain rather than in that file;
 there a login is its directory plus its keychain item, and Sova reads the item wherever it would
 read the file (§app.claude-logins/macos-keychain).
@@ -130,12 +129,10 @@ that account's quota. Every change is saved at once.
 
 Every `claude` process Sova or its extensions start runs on exactly one login, by setting
 `CLAUDE_CONFIG_DIR` to that login's directory (or, for `default`, leaving the environment as it
-was, less an inherited `CLAUDE_CONFIG_DIR` that names an added login's directory): the Claude Code chat provider's child for a session, claude-code workers (including a
-worker's detached host), model discovery (the extension's and the server's), the server's
-`claude --version` check, and the topic-outline summarizer. A sandboxed Claude Code worker
-(§chat.sandbox/claude-state) is launched the same way, so its process as the host sees it
-carries its login's directory, while the `claude` inside the sandbox runs on the worker's
-private config directory with that login's access token.
+was, less an inherited `CLAUDE_CONFIG_DIR` that names an added login's directory): the Claude Code chat provider's child for a session (a Claude Code worker's included: it is a
+pi worker on that provider, §app.subagents-pane/claude-code-workers), model discovery (the
+extension's and the server's), the server's `claude --version` check, and the topic-outline
+summarizer.
 
 The login is **this host's first usable login in its order**: enabled, assigned here, neither
 limited nor needing sign-in, and not leaving this device (§app.claude-logins/drain). While the mesh
@@ -171,7 +168,7 @@ when unknown). An auth failure puts the login out until its `.credentials.json` 
 Code re-signed it in or refreshed it) or the user clears it. Sova never runs a login that is out
 to see whether it has recovered.
 
-On a failure, a chat turn or a claude-code worker moves to the next usable login in this host's
+On a failure, a chat turn (a Claude Code worker's turn included) moves to the next usable login in this host's
 order, skipping, for a limit, every login of the same account (an auth failure may move to another
 login of the same account). While the mesh is on, the failed login also goes back to the keeper
 with its standing (§app.claude-logins/borrow-return), and when no other added login is usable here
@@ -185,17 +182,9 @@ that:
   {from} → {to} ({5h limit, resets 15:00 | sign-in failed})`; a TUI shows the same text as a
   notification. If something had already streamed, the turn ends with its error as before, and the
   next turn starts a fresh child on the next usable login.
-- **Worker.** The worker's `claude` is stopped and started again on the new login with `--resume`
-  of its own Claude session (the same session id), and the interrupted message is sent again
-  (prefixed with a note that it was interrupted, when the worker had already used a tool). Its
-  transcript gets the same note line, and no completion is announced for the failed attempt. The
-  worker's id, record and usage carry on; a worker that was running under a detached host
-  continues without one, and a worker re-adopted from its detached host after a restart does not
-  fail over. A worker confined by the sandbox (§chat.sandbox/claude-state) treats its first auth
-  failure on a login differently: nothing is recorded, its transcript gets `Claude: {login}
-  refused the worker's token; refreshing it and resuming on the same login`, and it resumes on
-  that login with a refreshed token. Only a second auth failure there, with no successful task in
-  between, fails over as above.
+- **Worker.** A Claude Code worker is a pi worker on the provider, so its turn fails over exactly
+  as a chat session's does, by the same code; its own session gets the `claude-login` entry and
+  its transcript shows the note row.
 
 With no usable login left, the failure ends the turn or the task exactly as before: the error,
 and the team usage pause. A turn fails over at most once per login.
@@ -444,16 +433,16 @@ login unused, and is retried when the keeper comes back.
 
 ## §app.claude-logins/drain — Every process on a login stops before it leaves
 
-Every process that runs `claude` on an added login — a chat's child (in Sova or in a TUI), a
-claude-code worker, model discovery, the topic summarizer — is tracked per login, with whether it
+Every process that runs `claude` on an added login — a chat's child (in Sova or in a TUI,
+a Claude Code worker's included), model discovery, the topic summarizer — is tracked per login, with whether it
 is in the middle of a turn. On Linux, a `claude` process that keeps no such record (one started
 before this version, or by hand with `CLAUDE_CONFIG_DIR` set to the login's directory) is found by
-that variable and counts as busy: its login is not lent, not returned for idleness, and at a cut it
+that variable (the process list is read again at least once a minute, and at once before a login is
+lent, returned or cut; only `claude` processes have their environment read) and counts as busy: its login is not lent, not returned for idleness, and at a cut it
 is stopped too. When a login starts leaving a device, a chat's idle child on it is
 stopped (its next turn starts on the device's next login, as after a model change, and shows
-the move as a note, §app.claude-logins/login-moved), an idle worker
-restarts on the next login with `--resume` of its own session, and a busy one does the same as soon
-as its turn or task ends. A login leaves once none of them runs on it. If some still do after a
+the move as a note, §app.claude-logins/login-moved); a Claude Code worker's
+child is a chat's child and is treated the same. A login leaves once none of them runs on it. If some still do after a
 bound (2 minutes after a limit, a failed sign-in or idleness; 15 minutes when the user asked or a
 pin moved it), their `claude` processes are stopped and each continues on the next login.
 What a process that has exited left behind holds nothing: its record counts only while its owner
@@ -529,9 +518,6 @@ login on this device, `default` and added ones alike:
   (`security find-generic-password … -w`) again for every fetch, so a token Claude Code renewed
   (it rewrites the item) is sent at once; the Usage page's sign-in numbers (expiry times, never a
   renewal time, since the item has no file time) come from one read kept at most 30 seconds per login.
-- **A sandboxed worker's token** (§chat.sandbox/claude-state): the access token handed to a
-  confined worker is read from the item at every launch, and the unconfined refresh run before it
-  starts Claude Code's own login without `$CLAUDE_CONFIG_DIR`, so that it renews the same item.
 
 A token read never prompts and gives up after 5 seconds; a failure of any kind (no item, a locked
 keychain, as in an ssh session, a timeout, unparsable JSON) is quiet and leaves what a missing file

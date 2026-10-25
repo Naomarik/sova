@@ -80,6 +80,8 @@ in master's history through 83dd1240). From the field-only rule on, it gives the
 | Field-only promotion | 56d0609b | A change to `embeds`, `about` or `core` alone lands on doc-only evidence; bundled with any other change it is refused | Pre-landing: field-only doc-only target 0 → 1; the bundled case is refused `doc-only-bundled`. Landing card: the h target is 1. |
 | M2 spec-mode text | 604ff3fb | The guide reads by `map`/`where` → `toc` → `impact --near` → `read`, with `--no-frame` after the first read; packet and scope stay for whole chains | Agent arm, all 24, both arms on the same model, pre-landing (see below). |
 | Rule A, M6 content, R1 | 558a816a, f9069bbb, 85f4e788 | Packet carries the notes about every claim it delivers; the product spec gains code lists, `about` links, ledes, whats and the frame; `toc --dir down` lists the notes about an H1's H2s | See "Rule A and M6 content" below. |
+| M3b topic search | 8d26139c (promotion 1ecd9cf9) | `where <topic words…>`: several unquoted words are one query; claims and areas ranked by field-weighted BM25 (`core/topic.mjs`) in topic rows of their own; name and path rows unchanged | Search bench (`tests/search/`), dev 52 queries: R@3 0% → 59.6%, MRR 0 → 0.532 against a9b87037; held-out 48, run once at 0b43feb9: R@3 64.6%, MRR 0.552; 110 name and path lookups identical to a9b87037. Agent arm with the old mode text: no measurable difference (correct 90 of 96 with the old search and 87 with topic search, about 55k tokens per run in both): agents rarely used it, hence M2b. |
+| M2b search-first text | 6f33e2ac (`feat/spec-where-first`, before the merge round) | Step 1 finds roots with `where` and 3–5 of the task's words (or a path or name), tries other words once, then `map` (also for a whole-area task); the tools line lists `where <path\|name\|topic words>` first | Agent arm, blind-graded, 36 questions × 2 reps, GLM 5.3 high and DeepSeek Flash 4.1 low, same tools, only the mode text differs: median tokens per run −27% to −37% in all four sets (GLM 46.1k → 29.1k and 59.3k → 41.0k; DeepSeek 78.1k → 51.2k and 91.1k → 66.1k); correct 265 / 288 against 270 / 288 for master's text; wrong answers 2 against 1. Misses cluster on questions worded unlike the spec, where a plausible wrong hit replaces the overview the area list gave. A titles-only area list (`map --titles`, read once per task beside `where`) was tried and dropped: −11 / 288 correct, 3 wrong. |
 
 The rest are re-applied harness updates and docs; see [CHANGELOG.md](CHANGELOG.md).
 
@@ -255,8 +257,8 @@ failures from an untrusted mise shim, `where` hiding results with exit 0, 40 KB 
 a merge recovery the docs couldn't complete, claim files that conflicted on parallel promotions, and 48
 drafts left behind. Wave 0 measured the agent arm on master bd597e20 as the baseline (pull, answered
 97.5 / 99.5 of 138). Each fix then ran as a lane with a builder and a measurer: checks written to fail
-first, BEFORE taken on a pristine archive of the base, AFTER on the commit. Lanes A, B1, C, F and G
-landed; D, E and B2 were on their branches at the time of writing. CHANGELOG.md has each lane's numbers.
+first, BEFORE taken on a pristine archive of the base, AFTER on the commit. All eight lanes landed
+by 2026-10-10 01:44 (52afd0a8, master reflog). CHANGELOG.md has each lane's numbers.
 
 ## Lessons
 
@@ -280,7 +282,134 @@ landed; D, E and B2 were on their branches at the time of writing. CHANGELOG.md 
   of a fresh one, and the tests wrote commits, branches and worktrees into the real repository. The
   spec and replay test globs are not affected; the full Sova suite is.
 
+## Audit #2: did the 10-09 → 10-12 changes work in real use? (2026-10-18)
+
+A read-only audit of real sessions after the lanes landed: 109 pi worker sessions that changed code
+after 10-12 (26 from one team, 21 on a non-Claude model), plus Claude Code workers, against a
+corrected 10-09 baseline (the 10-09 method had counted every pi worker as spec-off).
+
+- **What worked.** The where-first guide text (M2b) is the one clean real-use effect: 3+ word `where`
+  1/43 → 180/204 in pi workers (54/60 in Claude Code), map-first starts 25/111 → 2/142. Topic search
+  alone changed nothing until the guide told agents to use it. Lane A (census on the hook's own node):
+  incomplete-census notes 50 in 35 sessions → 0 in 176. Lane F's merge driver worked for the manifest
+  only (conflicts 30/146 → 2/78); claims-file conflicts did not fall (8/146 → 10/78). Lane G's
+  landed-in line reached most code-writing workers. Single-source tools hold.
+- **What didn't show.** The unread-line trim (B2) had no measurable effect on reading: Claude workers
+  read 17% of the § named (85/397 before their last reply), with a median of about 110 § behind
+  "+N more". Draft cleanup (E) emptied the main tree (48 → 0) but left 56 drafts across worktrees. The
+  agree step is used (0 → 195 stamps), but workers stamp `--by user` and no session shows the user
+  agreeing; agree before the first code edit in 15 of 34 workers; draft before code flat at 72%. The
+  benchmark's −17% bytes is real in the agent arm, but `map` was only 1–8% of real spec bytes.
+- **Goals.** G1 not met; G2 mostly met (`where <file>` right on 30/30, 95.7% of source covered, but no
+  moved-since-check warning can fire: no record carries a hash); G3 partly (question test 134/144, 0
+  wrong; 0 of 87 areas say what they don't own); G4 flat (93.3%); G5 not met on one pilot area (0/11,
+  6/11 without one missing export; every failure was something the spec doesn't say, none was it being
+  wrong); G6 flat once split by model. Constraints: C4 not met and slowly worse (§ ids in 783 source
+  files, 16.8% → 17.9%; 28 dangling); C5 slightly over (upkeep 9.6% of change calls, against ~7%).
+- **Proposals** (P1–P10): a reachable unread list; agreement stamped only where the user's go-ahead
+  is; a moved-since-check hash; a "doesn't own" line per area; a decision on § ids in source and on
+  how much "how" the spec holds; ignored files out of the census; claims-file conflicts; upkeep;
+  housekeeping. P7 is built on `feat/spec-x-census` (CHANGELOG 2026-10-18): Sova's whole-tree census
+  unclaimed 10,410 → 913 at 9c3f949b, the 9,497 dropped all Git-ignored and the tracked unclaimed set
+  unchanged.
+- **Method lessons.** Split every session metric by model and by team (one team was 24% of the
+  sample; a non-Claude model doubled bytes). Claude Code caps tool output at 30k characters and pi at
+  about 50 KB, so bytes don't compare across the 10-13 runtime switch. Counters must ignore quoted note
+  text (census notes were over-counted once).
+
+
+### The audit #2 lanes (2026-10-18, branch `feat/spec-x-integration`, landed on master at a82af2c8 (fast-forward, base f14dbab0))
+
+**P4, what an area does not own (2026-10-18, branch `feat/spec-x-notowned`, landed on master at a82af2c8 (fast-forward, base f14dbab0)).** Audit
+#2 found 0/87 areas saying what they don't own (Goal 3's first measure). An area record now carries
+`notOwned: [§id]` and `map` prints it: 0/87 → 87/87 on Sova's spec (L0, `map` text, master 9c3f949b
+against the branch). The first shape, `{what, owner}` with a phrase in the manifest, was dropped
+before it was measured: it put prose in a relations-only manifest and said each thing twice; the map
+prints the owner's own heading instead. Printing titles in the overview was dropped too: 78 of 87
+areas fitted the 32 KB page, against 87 of 87 with ids only (titles stay in `map '§area'`).
+Ids in the overview's JSON lines still pushed `map --json` (32,374 B on master, near its 32,768 B
+cap) onto a second page, 71 of 97 lines on the first; the overview JSON now leaves the owners out
+and adds one note pointing at `map '§area'`: 32,497 B, one page.
+The question arm then showed no subject ran `map` (0/174; master 3/174): agents go where → read → toc.
+Putting the line on `read`/`toc` of the area H1 took exposure from 2/174 to 174/174 runs, and every
+answer then named the listed owners: exposure is the result. Correctness against code did not move
+beyond grader noise: correct answers 135 → 139 of 174 and areas with both reps correct 58 → 64 of 87,
+where a reordered regrade of 10 areas agreed with the first grading on 45 of 60 verdicts (75%) and
+moved each arm's correct count on them by 3-5 of 20. Most wrong not-own statements come from spec
+prose that contradicts code, in every arm. Lesson: a view no agent opens measures as nothing, so
+put a fact on the path the mode text sends agents down, and count both text and JSON when checking
+who saw it.
+On 2026-10-19 (branch `feat/spec-x-integration`, landed on master at a82af2c8 (fast-forward, base f14dbab0)) the overview's JSON was 271 B under the page
+(32,497 of 32,768 B). Trimming derivable and default fields, not the `notOwned` count or note, took it to 25,449 B
+(22.3% headroom): no `namespace` on area lines (the id names it), `whatSource` only when not prose, and flat label
+counts with no zero `unlabelled`. The text form is unchanged at 29,808 B.
+
+**P8, claim-file merges (2026-10-18, branch `feat/spec-x-merge`, landed on master at a82af2c8 (fast-forward, base f14dbab0)).** `merge-claims`
+merges a declaration both sides changed block by block (CHANGELOG 2026-10-18 has the numbers). Dropped
+before commit, a block merge where neighbouring blocks conflict: the first block-by-block `merge-claims`
+gave Git's line merge the blocks as lines, so changes to two neighbouring blocks conflicted, as Git does
+with neighbouring lines. On the merge replay it left 10 / 56 claim files conflicted (6 merges) against
+7 / 56 for the kept version, which puts an unchanged line between blocks. The 3 it added were neighbouring
+bullets of one declaration, each a different promise.
+
+**P2, agree traceability (2026-10-18, branch `feat/spec-x-agree`, landed on master at a82af2c8 (fast-forward, base f14dbab0)).** Audit #2 found that 195 agreed stamps had been written by workers as `--by user`, and no session showed the
+user agreeing. Two changes, each measured on the L2 agent arm (claude-opus-5-5 medium, 7 tasks × 2 reps, the
+parent holding a pre-agreed typed turn):
+
+- `agreed.source`, required by `agree` and set by the runtime (5a0b41c9). Stamps traceable to a typed user
+  turn went 0/4 → 15/15. Agree before the first code edit stayed at 0/12: every agree came at wrap-up.
+- The mode text's claim step says to agree before the first edit (25a98ee7). Agree before the first code
+  edit went 0/12 → 4/12 (95% CI 10-65%), and 4 more runs agreed 2-3 calls after their first edit. Traced
+  stamps 17/17; upkeep flat (24.6% → 25.1%). That is below the 80% target: wording alone moves when the
+  agent agrees, not whether.
+
+Not measured: the worker relay, and team-injected turns.
+
+Phase 2 measured the relay: workers held the right reference in `SPEC_AGREE_SOURCE` yet typed a description in
+`--source`, and 4 of 42 stamps (2 of 3 relay runs) traced to no typed user turn. The lane had dropped refusing a
+`--source` that differs from the variable, so a parent could cite an earlier turn; that freedom was what the
+workers used. Fixed on 2026-10-19 (branch `feat/spec-x-integration`, landed on master at a82af2c8 (fast-forward, base f14dbab0)): a set variable is the
+source, a different `--source` is refused, and a source must be a `scheme:locator` reference, never a
+description. L0: 4 new cases fail at 196989b0 and pass after. The L2 relay arm has not been re-run.
+An independent review then found two holes, both closed the same day. The relay mistook a session's own
+`SPEC_AGREE_SOURCE` for a given reference after an in-process `/reload`; workers are now marked by a variable
+only the spawn path writes (`SPEC_AGREE_GIVEN`). The shape check let an invented `pi-session:` reference pass;
+such a reference must now resolve to a user message in pi's session files (other schemes stay form-checked
+for projects outside pi). L0: 6 new cases fail at 7a5c32d8 and pass after.
+
+**P1, the unread line (2026-10-18, branch `feat/spec-x-unread`, landed on master at a82af2c8 (fast-forward, base f14dbab0)).** Audit #2 found the unread line unreadable: 5 § marked read first, then "+N more" with a median near 100, and
+Claude workers read 17% of the marked ones. A lane measured candidate rules on an L1 replay of the audit's 99
+worker sessions (93 replayed, census re-run on reconstructed trees; bash-written edits can't be replayed, so
+the replayed lists run shorter than the recorded ones) against Opus labels of which landed § mattered (the change
+contradicts the passage, or edits the code that carries one of its statements): 62 Claude sessions, 40 dev and 22
+held out, labels frozen by hash before any comparison; a second labelling of 14 sessions agreed at Jaccard 0.93.
+
+- **What separates them.** A mattered § lands through a file a median of 3 landed § share; the rest through files
+  55 share. The literal score alone caught 39/113 dev mattered § in its 5 read-first; dividing it by that fan-in
+  is the one feature that moved the ranking (cap 10: 57 → 63/113 dev).
+- **Kept.** Relevance = score ÷ fan-in ÷ ln(passages + 1); up to 10 read first at relevance ≥ 0.036 or a stale
+  literal; the rest left to the census command, uncounted (9ec90f28). L1, 62 labelled sessions: mattered caught
+  56/148 = 38% → 84/148 = 57% (held-out 17/35 → 25/35); precision flat at 23%; read-first median 5 → 6.5 (max
+  10); lines with an empty read-first list 7 → 10 of 69 (3 mattered § on them).
+- **Dropped: a cut at 0.1** (184082c0, reverted in 9ec90f28). Precision 24% → 28% on L1 with recall flat (82 vs
+  84/146), but it emptied read-first in 7/12 L2 lines (master 3/13) and dropped a § the change contradicted
+  (task T1: a 30 s → 40 s timeout, supervision at 0.043).
+- **Dropped: lexical variants** (no change committed): dropping plain-word and 2-digit tokens, relative cuts to
+  the session's top score, top-3 token weights, per-file sums. None beat score ÷ fan-in by more than 2/113 dev.
+- **Dropped: a floor of one** (always mark the top-ranked § when none qualifies): +1/148, empty lines halved,
+  but no evidence the extra § mattered.
+- **Not met.** ≥90% of mattered § within 10 is out of reach for literal matching: the cap-10 ceiling is 106/113
+  dev, and the best rule reaches 57%. A § the change contradicts through a number written `30_000` is never
+  `stale`: the number pattern skips digits joined by `_`.
+
 ## Open
+
+- **Claim-file merges without the driver** (audit #2, P8). Two seams the merge replay found, not
+  fixed: Git reads `.gitattributes` from the work tree's side of a merge, so a branch cut before
+  lane F's claims line (3 of the 30 replayed merges) gets Git's line merge for its claim files; and
+  the drivers run `node` through `PATH`, so an untrusted mise shim fails both drivers and every spec
+  file both sides changed conflicts, unmerged and without markers. A per-clone
+  `.git/info/attributes` line and a resolved `node` path in the driver lines would close them.
 
 - **The agent arm and the rubric on master.** Deferred: not re-run after landing.
 - **Three needs packet answers that toc never shows one hop out.** C01:0 is the frame around the tab,
@@ -288,5 +417,5 @@ landed; D, E and B2 were on their branches at the time of writing. CHANGELOG.md 
   `§chat.composer/behavior`. Neither pre-landing agent arm read them. No agent arm has run on master:
   deferred, not re-run after landing.
 - **The frame's cost.** It is paid on every first read: 4,526 B on master's spec.
-- **The census-read guard.** "Every `census --changed` claim read" is not measured: the agent arm makes
-  no edits.
+- **The census-read guard.** Measured in real sessions by audit #2: not met (85/397 named § read,
+  Claude workers; parents 0). The agent arm still makes no edits.

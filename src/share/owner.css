@@ -1,4 +1,5 @@
-/* The Owner page (§app.owner-page/page): one reading column, phone first, capped at 720px. Token
+/* The Owner page (§app.owner-page/page): one reading column, phone first, capped at 720px (wider
+   beside the sidebar from 768px of the page's own width, below). Token
    values only. Loaded by the share build and by the operator's preview modal, so it styles nothing
    outside `.owner` (no body rules, no fonts: those are share.css's). Meta lines wrap; nothing
    truncates. Every row and button is at least 44px. */
@@ -150,3 +151,222 @@ a.owner-row:focus-visible { outline: var(--focus-ring); outline-offset: calc(var
 
 .owner-problem { margin: auto; padding: var(--space-7) var(--space-4); }
 .owner-skeleton { display: flex; flex-direction: column; gap: var(--space-3); }
+
+/* The chat screen (#a, §app.owner-page/content) fills the window's height: back and title at the top,
+   the conversation takes the middle, and the composer (share.css, sticky) stays at the bottom while
+   the page scrolls. Only on the owner's page: the preview's modal (.owner-preview) is a plain block. */
+.owner.owner-chat { min-height: 100dvh; padding-bottom: 0; }
+.owner-page-tabs .owner.owner-chat { min-height: 0; }
+.owner-chat .owner-assistant { flex: 1; }
+.owner-assistant { gap: var(--space-3); }
+/* A version the assistant started, as a row inside its bubble. */
+.owner-assistant .owner-versions { margin-top: var(--space-2); border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); background: var(--color-surface); overflow: hidden; }
+.owner-assistant .owner-versions > .owner-row:first-child { border-top: 0; }
+/* The owner's own bubbles keep a cap on the right, as on a conversation (thread.css): uncapped, a long
+   one filled the column and no longer read as theirs. Replies take the column (.share-msg-reply). */
+.owner-assistant .share-msg-own { max-width: min(85%, 60ch); }
+.owner-asked { color: var(--color-ink); }
+.owner-assistant-composer { margin-top: auto; }
+/* Requests and versions: rows that are not links. */
+.owner-row-static { align-items: center; }
+/* Open: the standard (medium, 44px) button, kept at its own width beside the row's text. */
+.owner-version-open { flex: none; }
+/* What a version changes (§app.project-assistant/versions): body text under the meta line. */
+.owner-version-summary { color: var(--color-ink); font-size: var(--fs-body); line-height: var(--lh-body); }
+/* Close and Reopen on a request (§app.project-assistant/closing): beside the chip, at the standard 44px. */
+.owner-request-act { flex: none; min-height: 44px; }
+/* The owner's closed requests: greyed, below the others. */
+.owner-row-closed .owner-row-title,
+.owner-row-closed .owner-meta { color: var(--color-ink-muted); }
+
+/* ---- The page's frame and its three tabs (§app.owner-page/content, /page). ----------------------
+   `.owner-page` is the query container (named `owner`): the 768 split asks the page's own width, so
+   the operator's preview, narrower than the window, follows its own box. A container is the
+   containing block of anything fixed inside it, so the bottom bar is sticky at the end of the
+   page's column instead of fixed: the same place on screen, above the phone's home area. */
+.owner-page { box-sizing: border-box; width: 100%; container: owner / inline-size; }
+.owner-shell { display: flex; flex-direction: column; min-height: 100dvh; }
+.owner-shell > .owner { flex: 1 0 auto; }
+.owner-page-preview .owner-shell { min-height: 0; gap: var(--space-4); }
+
+/* Folded: a bottom bar (the design system's .bottombar and .navitem, ported here, tokens only). */
+.owner-page { --owner-bar: calc(56px + var(--stroke-thin) + env(safe-area-inset-bottom)); }
+.owner-nav {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  align-items: stretch;
+  border-top: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-surface);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.owner-nav .navitem {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: 56px;
+  min-width: var(--tap-min);
+  padding: 0 var(--space-3);
+  border-radius: var(--r-md);
+  color: var(--color-ink-muted);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-medium);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.owner-nav .navitem:hover { background: var(--color-sunken); color: var(--color-ink); }
+.owner-nav .navitem:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.owner-nav .navitem[aria-current="page"] { background: var(--color-accent-tint); color: var(--color-accent); }
+.owner-nav .navitem-label { min-width: 0; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.owner-nav-icon { position: relative; display: inline-flex; }
+/* The open requests' count: a figure, never the only label (the item says "Requests, {n} open"). */
+.owner-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 var(--space-1);
+  border-radius: var(--r-full);
+  background: var(--color-ink);
+  color: var(--color-surface);
+  font-size: var(--fs-micro);
+  line-height: 1;
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+}
+.owner-nav-icon .owner-badge { position: absolute; top: -6px; left: 14px; }
+.owner-nav .owner-badge-end { display: none; }
+/* The chat's composer (sticky, share.css) sits above the bar. */
+.owner-page-tabs .owner-assistant-composer { bottom: var(--owner-bar); }
+/* Typing on a phone: the bar steps aside for the keyboard and the composer takes the bottom. */
+.owner-typing .owner-nav { display: none; }
+.owner-typing .owner-assistant-composer { bottom: 0; }
+
+/* The preview's modal: the tabs as a row at the top, never a fixed bar. */
+.owner-preview-tabs .tab { text-decoration: none; display: inline-flex; align-items: center; gap: var(--space-2); }
+.owner-preview-tabs { flex: none; }
+
+/* Unfolded: the same three as a left sidebar, the main pane wider; reading and chat stay at a
+   comfortable width. */
+@container owner (min-width: 768px) {
+  .owner-page-tabs .owner-shell { flex-direction: row; }
+  .owner-nav {
+    order: -1;
+    align-self: flex-start;
+    flex: none;
+    top: 0;
+    bottom: auto;
+    width: 200px;
+    height: 100dvh;
+    box-sizing: border-box;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-4) var(--space-2);
+    border-top: 0;
+    border-right: var(--stroke-thin) solid var(--color-border);
+    overflow-y: auto;
+  }
+  .owner-nav .navitem {
+    flex: none;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: var(--space-3);
+    min-height: var(--tap-min);
+    font-size: var(--fs-body);
+  }
+  /* The count after the label, at the item's end. */
+  .owner-nav-icon .owner-badge { display: none; }
+  .owner-nav .owner-badge-end { display: inline-flex; margin-left: auto; }
+  .owner-page-tabs .owner-shell > .owner { flex: 1 1 0; min-width: 0; max-width: 880px; padding: var(--space-6) var(--space-6) var(--space-7); }
+  .owner-page-tabs .owner-shell > .owner.owner-chat { max-width: 760px; padding-bottom: 0; }
+  .owner-page-tabs .owner-assistant-composer { bottom: 0; }
+  .owner-typing .owner-nav { display: flex; }
+  .owner-assistant-button { align-self: flex-start; min-width: 12rem; }
+}
+
+/* ---- Home. ---------------------------------------------------------------------------------- */
+.owner-greeting {
+  margin: 0;
+  font-size: var(--fs-heading-m);
+  line-height: var(--lh-heading-m);
+  font-weight: var(--fw-semibold);
+}
+
+/* The Project Assistant card: the one strong colour on the page. */
+.owner-assistant-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: var(--stroke-icon) solid var(--color-accent);
+  border-radius: var(--r-lg);
+  background: var(--color-accent-tint);
+}
+.owner-assistant-button { align-self: stretch; }
+.owner-abilities { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.owner-ability {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--tap-min);
+  padding: var(--space-2) var(--space-3);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.owner-ability:hover { background: var(--color-sunken); }
+.owner-ability:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.owner-ability-text { flex: 1; min-width: 0; }
+.owner-ability-name { font-weight: var(--fw-medium); }
+.owner-ability-how { display: block; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); }
+/* Projects that differ: one sentence, "{name}: {how}". */
+.owner-ability-named .owner-ability-how { display: inline; font-size: inherit; line-height: inherit; }
+.owner-abilities-note { color: var(--color-ink-2); }
+
+/* Home's one line on the owner's requests, opening the Requests tab. */
+.owner-requests-line {
+  display: flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  align-self: flex-start;
+  color: var(--color-accent);
+  font-weight: var(--fw-medium);
+  text-decoration: none;
+}
+.owner-requests-line:hover { text-decoration: underline; }
+.owner-requests-line:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.owner-requests-empty { padding: var(--space-6) var(--space-4); }
+
+/* ---- The chat: suggestions before the first message, What Can I Ask? after. --------------------- */
+.owner-chat-head { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.owner-suggestions { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.owner-suggestion { white-space: normal; text-align: left; }
+
+/* Its sheet: a native <dialog> opened with showModal() (top layer, the page inert behind it), drawn
+   as the design system's modal, a sheet at folded width. */
+dialog.owner-sheet { margin: 0; padding: 0; right: auto; bottom: auto; max-width: none; color: var(--color-ink); }
+dialog.owner-sheet:not([open]) { display: none; }
+dialog.owner-sheet::backdrop { background: var(--scrim); }
+@media (max-width: 767px) {
+  dialog.owner-sheet { right: 0; bottom: 0; top: auto; max-height: 85dvh; }
+}
+
+/* The owner's own feature request chat (§app.project-assistant/feature-chats): End Chat under the thread, and the
+   assistant's Open Feature Chat button inside its bubble. */
+.owner-feature-end { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-3); }
+.owner-feature-end .button { min-height: 44px; }
+.owner-feature-open { align-self: flex-start; margin-top: var(--space-2); min-height: 44px; text-decoration: none; display: inline-flex; align-items: center; }

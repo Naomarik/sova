@@ -6,6 +6,7 @@ import type { NamedChange, OrgChange, OrgNeedsYou, OrgProject, Person, PersonCon
 import { AUTONOMY_MEANING, codingModeWords, LIMIT_WHAT, PO_LIMIT_KINDS, type ProjectOverseerInfo } from "../shared/project-overseer";
 import { allBatons, batonById, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
 import { personPage } from "./person-page";
+import { ownerSendPlan } from "./owner";
 import { projectCostLine } from "./project-costs";
 import { listDecisions } from "./reconcile";
 import { operatorName, orgCosts, orgDir, orgOfProject, readHistory, readIndex, readOrg, readOrgAbout, readOrgHistory, readProjects, readRoster, recentChanges } from "./orgs";
@@ -306,6 +307,16 @@ export async function orgsList(now = Date.now()): Promise<string> {
 }
 
 /** `sova_orgs {org}`: that org in full; `about` adds the About text and its last 10 history lines. */
+/** What sova_owner send_link would do now (§app.owner-page/send): a state, never the link. */
+function ownerSendWords(orgId: string): string {
+  const plan = ownerSendPlan(orgId);
+  return plan === "reuse"
+    ? " · owner page link: works and Sova holds it (send_link sends that one)"
+    : plan === "new"
+      ? " · owner page link: none Sova holds (send_link makes a new one; their current link stops working)"
+      : "";
+}
+
 export async function orgFull(orgId: string, about = false, now = Date.now()): Promise<string> {
   const { orgWaiting } = await orgRoutes();
   const po = await poModule();
@@ -341,7 +352,7 @@ export async function orgFull(orgId: string, about = false, now = Date.now()): P
   const archived = projects.filter((p) => p.archived);
   const lines: string[] = [
     `# ${page.name} (${orgId})${orgTotal}`,
-    `Owner: ${personName(readOrg(orgId).owner ?? null)}`,
+    `Owner: ${personName(readOrg(orgId).owner ?? null)}${ownerSendWords(orgId)}`,
     needsYouWords(page.needsYou) ? `Needs you: ${needsYouWords(page.needsYou)}` : "Needs you: nothing",
     await workspaceLine(page.dir, now),
     "",
@@ -441,7 +452,8 @@ export async function projectView(projectId: string, items = false, now = Date.n
     }
   }
   // Coding sessions.
-  const coding = info.worktrees.sessions;
+  // The branch facts are the page's second read (git); the overseer's own state above ran none.
+  const coding = (await po.projectWorktrees(projectId)).sessions;
   lines.push(
     "",
     `Coding sessions (${coding.length}):`,

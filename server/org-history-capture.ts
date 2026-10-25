@@ -14,9 +14,9 @@ import type {
   Trigger,
   Unknown,
 } from "../shared/org-history";
-import { ORG_STEPS } from "../shared/org-history";
+import { ORG_STEPS, isUnknown } from "../shared/org-history";
 import type { ComposeContext, Effect } from "./org-host";
-import type { InvocationRecord, Step } from "./statecharts";
+import { statechartInfo, type InvocationRecord, type Step } from "./statecharts";
 
 /**
  * The org's capture adapters: what one committed engine call says happened,
@@ -87,6 +87,29 @@ export function inForceOf(d: Record<string, unknown>): string | undefined {
   return chosen;
 }
 
+const camel = (event: string): string => event.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+
+/** The power an act of `statechart` declares (its registry's `:power`): a power id, "always" (an act no switch
+    gates, nil in the registry included) or "operator". undefined: not an act of a known statechart. */
+export function powerOfAct(statechart: string, event: string): string | undefined {
+  const acts = statechartInfo(statechart)?.acts;
+  if (!acts) return undefined;
+  const act = acts[camel(event)] ?? acts[event];
+  if (!act) return undefined;
+  return typeof act.power === "string" && act.power ? act.power : "always";
+}
+
+/** What the caller's switches said for this act: the power it needed, the column checked, the never-looser
+    level of that column. A row recorded before the switches (no `powers` in its envelope) keeps its level. */
+function switchesOf(step: Pick<Step, "event" | "sessionId" | "statechart">, d: Record<string, unknown>, by: string | undefined): Pick<Authorization, "power" | "column" | "level"> {
+  const level = inForceOf(d);
+  if (!isObj(d.powers)) return level ? { level } : {};
+  const chart = step.statechart ?? step.sessionId.split("/")[0] ?? "";
+  const power = step.event ? powerOfAct(chart, step.event) : undefined;
+  const column = d.column === "assistant" || d.column === "overseer" ? d.column : by === "assistant" ? "assistant" : "overseer";
+  return { ...(power ? { power } : {}), column, ...(level ? { level } : {}) };
+}
+
 /** The policy the act was evaluated under, from its own envelope (never the chain's). */
 export function policyOf(d: Record<string, unknown>): PolicyAt | undefined {
   if (typeof d.attended !== "boolean" && !str(d.autonomy)) return undefined;
@@ -114,12 +137,14 @@ function cardRef(d: Record<string, unknown>): string | undefined {
  * runtime knew: an unattended overseer act was decided by the overseer, never the operator, whatever
  * started the look it ran in; who started a chain shows through its trigger, not by copying an initiator.
  */
-export function actorsOf(step: Pick<Step, "by" | "data" | "sessionId">, projectId: string | null): ActorBundle {
+export function actorsOf(step: Pick<Step, "by" | "data" | "sessionId"> & Partial<Pick<Step, "event" | "statechart">>, projectId: string | null): ActorBundle {
   const d = (step.data ?? {}) as Record<string, unknown>;
   const by = str(d.by) ?? step.by ?? undefined;
   const engine: ActorRef = { kind: "sova" };
   const released = str(d["sova/released"]);
-  const level = inForceOf(d);
+  const sw = switchesOf({ event: step.event ?? "", sessionId: step.sessionId, statechart: step.statechart }, d, by);
+  // an unattended act the caller's switch allowed: `power` once the envelope carries switches
+  const unattendedKind: Authorization["kind"] = isObj(d.powers) ? "power" : "autonomy-level";
   switch (by) {
     case "operator": {
       if (d.via !== "overseer") return { initiatedBy: { kind: "operator" }, decidedBy: { kind: "operator" }, recordedBy: engine, executedBy: engine, authorization: { kind: "operator-act", attended: true } };
@@ -140,10 +165,10 @@ export function actorsOf(step: Pick<Step, "by" | "data" | "sessionId">, projectI
       const po: ActorRef = { kind: "project-overseer", ...(projectId ? { id: projectId } : {}), ...(str(d.overseerId) ? { session: str(d.overseerId) } : {}) };
       const attended = d.attended === true;
       const authorization: Authorization = released
-        ? { kind: "hold-release", ref: released, attended: false, ...(level ? { level } : {}) }
+        ? { kind: "hold-release", ref: released, attended: false, ...sw }
         : attended
-          ? { kind: "attended-turn", attended: true, ...(level ? { level } : {}) }
-          : { kind: "autonomy-level", attended: false, ...(level ? { level } : {}) };
+          ? { kind: "attended-turn", attended: true, ...sw }
+          : { kind: unattendedKind, attended: false, ...sw };
       return {
         // An attended turn is the operator's message; an unattended act's start is its trigger (the look).
         initiatedBy: attended && !released ? { kind: "operator" } : unknown("Started by its trigger."),
@@ -159,8 +184,20 @@ export function actorsOf(step: Pick<Step, "by" | "data" | "sessionId">, projectI
         decidedBy: { kind: "statechart" },
         recordedBy: engine,
         executedBy: engine,
-        authorization: released ? { kind: "hold-release", ref: released, attended: false, ...(level ? { level } : {}) } : { kind: "autonomy-level", attended: false, ...(level ? { level } : {}) },
+        authorization: released ? { kind: "hold-release", ref: released, attended: false, ...sw } : { kind: unattendedKind, attended: false, ...sw },
       };
+    case "assistant": {
+      // The client's Project Assistant set it off from an owner's message, under its own column of switches.
+      // Which model and which owner message are not in the envelope: not recorded, never filled in.
+      const authorization: Authorization = released ? { kind: "hold-release", ref: released, attended: false, ...sw } : { kind: "power", attended: d.attended === true, ...sw, column: "assistant" };
+      return {
+        initiatedBy: unknown("The owner's message to the Project Assistant."),
+        decidedBy: { kind: "model" },
+        recordedBy: { kind: "model" },
+        executedBy: engine,
+        authorization,
+      };
+    }
     case "model":
       return {
         initiatedBy: unknown("The gathering's turn."),
@@ -355,6 +392,14 @@ export const ACTS: Record<string, ActRow> = {
       return { entities: [...person, ...(pv ? [{ type: "preview" as const, id: pv }] : [])], ...(pv ? { relationKeys: [toKey("named-target", `preview:${pv}`, { type: "preview", id: pv })] } : {}) };
     },
   },
+  // The owner's page link sent to them (§app.owner-page/send): the person by id and the outcome, never the link,
+  // the token, the number or the note.
+  "owner/send-link": {
+    kind: "outreach.sent",
+    outcome: "started",
+    on: ["org"],
+    pick: (_s, d) => (isObj(d.target) && str(d.target.id) ? { entities: [{ type: "person", id: str(d.target.id)! }] } : undefined),
+  },
   // A preview link asked for: the coding session it serves, or the running copy shared, by id. Never its purpose,
   // its address, its endpoint's link or anything the effect mints.
   "preview/start": {
@@ -396,6 +441,7 @@ export const ACTS: Record<string, ActRow> = {
   "stakeholder/set": { kind: "setting.changed", outcome: "done", on: ["placement"] },
   "spec/freeze": { kind: "setting.changed", outcome: "done", on: ["placement"] },
   "operator/level-set": { kind: "setting.changed", outcome: "done", on: ["watch"] },
+  "operator/powers-set": { kind: "setting.changed", outcome: "done", on: ["watch"] },
   "decision/owner-area": { kind: "setting.changed", outcome: "done", on: ["decision"] },
   // a person's decision areas (their authority), never another profile field and never its values
   "person/edit": {
@@ -415,6 +461,7 @@ const EFFECT_RESULTS: Record<string, HistoryKind> = {
   merge: "merge.observed",
   promote: "promotion.made",
   "outreach-send": "outreach.sent",
+  "owner-link-send": "outreach.sent",
   conform: "validation.observed",
   "make-worktree": "build.started",
   preview: "preview.made",
@@ -575,9 +622,11 @@ export function headlineOf(kind: HistoryKind, outcome: HistoryOutcome, d: Record
       if (event === "decision/owner-area") return "Decision area set";
       if (event === "person/edit") return "Decision areas changed";
       if (event === "operator/level-set") {
-        const to = Array.isArray(changed?.["settings.autonomy"]) ? changed!["settings.autonomy"][1] : undefined;
+        // an older host's level set (al_3): it resumes, the overseer column its carry-over; older rows keep their level
+        const to = Array.isArray(changed?.["settings.autonomy"]) ? changed!["settings.autonomy"][1] : d.resumeAt;
         return typeof to === "string" && LEVELS.includes(to) ? `Autonomy level set: ${to}` : "Autonomy level set";
       }
+      if (event === "operator/powers-set") return d.resume === true ? "Resumed: it may act on its own again" : "What may happen without you changed";
       return "Setting changed";
     case "preview.started":
       return "Preview link requested";
@@ -635,7 +684,8 @@ export function composeHistory(steps: readonly Step[], ctx: CaptureContext): His
       // A held act released by a review: its decider stays the act's own; the review is its authorization.
       const own = actorsOf(s, projectId);
       const review = released && approved === released ? approverActors()?.decidedBy : undefined;
-      const authorization = review ? { kind: "hold-release" as const, ref: released!, by: review as ActorRef, attended: false, ...(inForceOf(d) ? { level: inForceOf(d) } : {}) } : own.authorization;
+      const ownAuth = own.authorization as Authorization;
+      const authorization = review ? { kind: "hold-release" as const, ref: released!, by: review as ActorRef, attended: false, ...(isUnknown(ownAuth) ? {} : { ...(ownAuth.power ? { power: ownAuth.power } : {}), ...(ownAuth.column ? { column: ownAuth.column } : {}), ...(ownAuth.level ? { level: ownAuth.level } : {}) }) } : own.authorization;
       const actors = { ...own, authorization, ...(mine?.actors ?? {}) } as ActorBundle;
       const policy = policyOf(d);
       const parentKeys = [...(extra.parentKeys ?? []), ...(fromHold.parentKeys ?? []), ...(mine?.parentKeys ?? [])];
@@ -869,7 +919,7 @@ export function composeHistory(steps: readonly Step[], ctx: CaptureContext): His
         claimed.add(runs[0]!.runId!);
         push({
           ...common("look.started", "started", `look:${runs[0]!.runId}`, { aliases: [`invoke:${runs[0]!.runId}`], parentKeys: [{ key: input.source.key, via: "request" }] }),
-          actors: { initiatedBy: { kind: "operator" }, decidedBy: { kind: "statechart" }, recordedBy: { kind: "sova" }, executedBy: { kind: "sova" }, authorization: { kind: "autonomy-level", attended: false } },
+          actors: { initiatedBy: { kind: "operator" }, decidedBy: { kind: "statechart" }, recordedBy: { kind: "sova" }, executedBy: { kind: "sova" }, authorization: { kind: "power", column: "overseer", attended: false } },
           policy: { attended: false },
         });
       }
@@ -883,7 +933,7 @@ export function composeHistory(steps: readonly Step[], ctx: CaptureContext): His
       outcome: "started",
       projects: { primary: r.sessionId.startsWith("watch/") ? r.sessionId.slice("watch/".length) : null, affected: [] },
       entities: [{ type: "session", id: r.sessionId }],
-      actors: { initiatedBy: unknown("Trigger not recorded."), decidedBy: { kind: "statechart" }, recordedBy: { kind: "sova" }, executedBy: { kind: "sova" }, authorization: { kind: "autonomy-level", attended: false } },
+      actors: { initiatedBy: unknown("Trigger not recorded."), decidedBy: { kind: "statechart" }, recordedBy: { kind: "sova" }, executedBy: { kind: "sova" }, authorization: { kind: "power", column: "overseer", attended: false } },
       source: { adapter: ADAPTER, version: ADAPTER_VERSION, key: `look:${r.runId}` },
       aliases: [`invoke:${r.runId}`],
       policy: { attended: false },

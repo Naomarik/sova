@@ -15,7 +15,7 @@ unfolded (≥768)                                  folded (<768)
 
 ```html
 <a class="button skip-link" href="#transcript">Skip to Transcript</a>
-<div class="app" data-view="list|session" data-spine="on"?>   <!-- data-spine: ≥768, pane collapsed -->
+<div class="app" data-view="list|session" data-spine="on"? data-focus="on"?>   <!-- data-spine: ≥768, pane collapsed; data-focus: §chat.transcript/focus-view -->
   <aside class="app-sidebar" aria-label="Sessions">…§app/session-list…</aside>
   <main class="app-main">…§chat/transcript head, transcript, composer…</main>
   <!-- ≥768 only; CSS hides it folded; not rendered while the pane is collapsed -->
@@ -91,7 +91,9 @@ restart) and not only after the keyboard has opened once.
   run under the system bars and `env(safe-area-inset-*)` carries their size. The bottom inset is
   padded by what sits on the bottom edge (the composer, §chat.composer/tokens; the sidebar foot;
   the spine foot), so their surface continues under the gesture bar while their controls stay
-  above it. `.app` pads the top, left and right insets itself, so the head is never under a status
+  above it. In Focus (§chat.transcript/focus-view) the composer is hidden and the transcript reaches
+  the bottom edge: its end padding, the Focus button, Jump to Latest and the wait note add the
+  inset instead. `.app` pads the top, left and right insets itself, so the head is never under a status
   bar or a cutout; where the browser keeps those outside the page (Chrome on Android, in a tab or
   installed) they are 0 and nothing moves.
 
@@ -198,16 +200,19 @@ It says liveness only, never identity:
 ## §app.shell/the-open-failure-banner — The open-failure banner
 
 A webapp-owned chat the server refuses to open answers the chat socket with `error` code `config`
-and closes it (4422): the stored working directory is gone, and no reconnect can fix that by itself. The banner is one
+and closes it (4422): something only a change outside Sova can fix (a remote session's local
+placeholder folder is gone, the stored folder can't be reached for permission), so no reconnect
+fixes it by itself. A plain local folder that is gone is not refused: the chat opens in the home
+folder instead (§app.shell/missing-folder-home). The banner is one
 `.banner.banner-error` in the transcript's `.transcript-banner` slot (§chat.transcript/anatomy), and
 every word comes from `src/lib/open-failure.ts` — a pure function of the session summary, the
 server's error text, and, when a targets list is at hand, its labels. It names the concrete thing
 that's wrong, never a bare "can't be opened":
 
-- **A stored folder that doesn't exist** — a plain local folder, or a remote session's local
-  placeholder (named as a placeholder, with the target and its remote folder beside it). The
-  same reassurance every time: nothing in the session file changed; restore the folder, then
-  reconnect.
+- **A stored folder that doesn't exist** — a remote session's local placeholder (named as a
+  placeholder, with the target and its remote folder beside it), or, from a server older than the
+  home-folder fallback, a plain local folder. The same reassurance every time: nothing in the
+  session file changed; restore the folder, then reconnect.
 - **Anything else**: the server's text verbatim under the same title.
 
 The actions row is a `.cluster` in the banner's action slot, the first action solid and the rest
@@ -220,6 +225,42 @@ ghost:
   so the gesture leaves it. It moves the session to the Archive region — nothing is deleted, and
   unarchiving brings it back; the button's `title` says so. Absent when the summary says the
   session is already archived or wasn't started in Sova, exactly like the pane's button.
+
+## §app.shell/missing-folder-home — A local session whose folder is gone opens in the home folder
+
+A local session whose stored working directory no longer exists (deleted, or moved away) opens,
+resumes and reconnects in the home folder of the machine its chat runs on, instead of being
+refused. Only a folder that is genuinely missing counts: a path that doesn't exist, or one whose
+parent is not a folder. A folder that exists but can't be reached (permission denied) is still
+refused with that reason (§app.shell/the-open-failure-banner), and so is any other open failure.
+The check is made again by the chat's own process at the open, so a folder deleted after the
+server's first look and before the chat process starts opens in the home folder too; a folder
+that is still there opens there, unchanged.
+
+It applies only where the stored folder is the session's own local one: a remote session (its
+local placeholder is gone) is still refused, so a home folder of this machine never stands in for
+a folder on a target; a chat whose folder Sova chooses (the Overseer, a baton or project overseer
+session) keeps its own rule. A worker chat whose stored folder is gone follows the same rule as any
+other chat.
+
+Nothing on disk changes. The session file keeps its header (its id, its stored folder, its
+project), its transcript and its worktree records; Sova never recreates the missing folder, never
+guesses where it moved, and never rewrites the stored folder. The fallback lasts for that open:
+every open looks again, and once the folder is back the chat opens there.
+
+- **The user is told.** While the chat runs in the home folder, the chat's hello carries
+  `cwdFallback: { original, cwd }`, and the transcript's `.transcript-banner` slot shows a
+  `.banner.banner-warn`: "This session's folder is gone", naming the stored folder and saying that
+  the chat runs in the home folder instead and that the session file is unchanged.
+- **The agent is told.** Its system prompt gets a note after everything else it appends: the
+  stored folder, that it no longer exists on this machine, that the session now runs in the home
+  folder, and that earlier messages describe files in that folder which may no longer exist, so it
+  must check before relying on them. pi's own prompt names the home folder as the working
+  directory, and every tool runs there.
+- **The sandbox does not widen.** With the sandbox on (§chat.sandbox/what-on-enforces), the
+  fallback home folder is not a writable root: the chat writes only in its session tmp, the
+  policy's `writable` roots and its active tracked worktrees, as before. A guided-tour recording
+  from that chat runs under the same rule.
 
 ## §app.shell/resizing-the-sessions-pane — Resizing the sessions pane
 
@@ -310,7 +351,9 @@ else about the shell changes.
 ## §app.shell/installable — The app installs like an app
 
 The web app can be added to a phone's Home Screen or installed from a desktop browser, and it then
-opens in its own window with no browser bar.
+opens in its own window with no browser bar. On a Mac or Linux desktop where Sova was installed
+with the installer, its app-launcher entry already opens Sova that way, unlocked, with no step in
+the browser (§app.installer/app-entry).
 
 - **The manifest** (`public/manifest.webmanifest`, linked from `index.html`) names it `sova`, starts
   at `/` with the whole origin in scope, asks for `display: standalone`, and carries 192px and 512px

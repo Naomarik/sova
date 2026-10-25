@@ -38,11 +38,15 @@ import {
   sessionHrefOn,
   effectiveHostFilter,
   passesHostFilter,
+  downPeerIds,
+  listedWhileDown,
   SELF_FILTER,
   meshRetryDelay,
   helloChange,
   firstBaseline,
   helloStep,
+  helloNews,
+  weighHello,
   HOST_CONFIRM_MS,
   moveItem,
   frontDoorProblems,
@@ -240,6 +244,18 @@ test("the host filter narrows to one host's sessions, this host's included", () 
   assert.equal(passesHostFilter("laptop", B), false);
   assert.equal(passesHostFilter(SELF_FILTER, B), true);
   assert.equal(passesHostFilter(SELF_FILTER, A), false);
+});
+
+test("a down peer's rows are listed nowhere unless the host filter names it; every other host's always are", () => {
+  const peers = [peer("laptop", "down"), peer("vps", "skewed"), peer("desk", "up"), peer("old", "refused")];
+  const down = downPeerIds(peers);
+  assert.deepEqual([...down], ["laptop"], "only a peer not answering is down: a skewed one answers");
+  assert.equal(listedWhileDown("laptop", null, down), false, "All hosts leaves it out");
+  assert.equal(listedWhileDown("laptop", SELF_FILTER, down), false);
+  assert.equal(listedWhileDown("laptop", "desk", down), false);
+  assert.equal(listedWhileDown("laptop", "laptop", down), true, "chosen in the host filter: its rows show");
+  for (const host of [null, "vps", "desk", "old"]) assert.equal(listedWhileDown(host, null, down), true, `${host} is listed`);
+  assert.equal(listedWhileDown("laptop", null, downPeerIds([peer("laptop", "up")])), true, "answering again: back everywhere");
 });
 
 test("GET /api/mesh is asked again only after a failure that may pass", () => {
@@ -487,7 +503,32 @@ test("the front door's left-out hosts stay listed, and a switch puts one in or l
   assert.deepEqual(orderKeepingLeftOut(["b", "a"], ["a"]), ["b", "a"]);
 });
 
-test("the stale-tab banner calls another build different, never newer: the next host may run an older one", () => {
-  assert.match(STALE_BUILD_NOTE, /a different build of this page/);
-  assert.doesNotMatch(STALE_BUILD_NOTE, /newer|older/);
+test("the stale-tab banner's body for another build is one sentence, mesh on or off", () => {
+  assert.equal(STALE_BUILD_NOTE, "Reload when you're ready.");
 });
+
+test("without the mesh a hello never moves the tab: only a build or protocol change comes of it", () => {
+  const a = { id: "a", label: "Host A", protocol: "p1", build: "b1" };
+  // Another id answering (a restarted server with a new mesh id, say): nothing at all, nothing pends.
+  assert.deepEqual(weighHello(false, a, { ...a, id: "b", label: "Host B" }, null, 0), { change: null, pending: null });
+  assert.deepEqual(weighHello(false, a, { ...a, id: "b" }, { id: "b", at: 0 }, 5_000), { change: null, pending: null });
+  // A rebuilt page, even from another id: the build change alone, at once.
+  assert.deepEqual(weighHello(false, a, { ...a, id: "b", build: "b2" }, null, 0), {
+    change: { protocol: false, build: true, host: null },
+    pending: null,
+  });
+  assert.deepEqual(weighHello(false, a, { ...a, protocol: "p2" }, null, 0).change, { protocol: true, build: false, host: null });
+  // Same build (a server-only change), or a server that reports none (Vite): nothing.
+  assert.equal(weighHello(false, a, { ...a }, null, 0).change, null);
+  assert.equal(weighHello(false, a, { ...a, build: undefined }, null, 0).change, null);
+  // With the mesh on it is helloStep, host confirmation and all.
+  assert.deepEqual(weighHello(true, a, { ...a, id: "b" }, null, 0), { change: null, pending: { id: "b", at: 0 } });
+});
+
+test("the same build news is raised once: a dismissed banner waits for the next change", () => {
+  const a = { id: "a", label: "Host A", protocol: "p1", build: "b1" };
+  assert.equal(helloNews({ ...a, build: "b2" }), helloNews({ ...a, id: "b", build: "b2" }), "the host doesn't count");
+  assert.notEqual(helloNews({ ...a, build: "b2" }), helloNews({ ...a, build: "b3" }));
+  assert.notEqual(helloNews(a), helloNews({ ...a, protocol: "p2" }));
+});
+

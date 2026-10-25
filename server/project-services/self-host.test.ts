@@ -10,8 +10,9 @@ import { readRegistry } from "./store";
 
 /**
  * Sova hosting itself (§app.project-services/self-host): on the server's own checkout, apply, down,
- * reset and teardown of slot 0 need the operator's confirm for every caller, and are refused while a
- * hosted session is busy; a worktree's instance of the same project, and another project, stay free.
+ * reset and teardown of slot 0 need the operator's confirm for every caller, and nothing else: a busy
+ * chat never holds them (chats run in processes of their own); a worktree's instance of the same
+ * project, and another project, stay free.
  * On a host in memory (fake-host.ts): the rules are the engine's, whatever runs.
  */
 
@@ -22,7 +23,6 @@ const BASE = 21_000;
 let parent = "";
 let project = "";
 let other = "";
-let busy: string | null = null;
 let engine: ProjectEngine;
 const op: Caller = { kind: "operator" };
 const taken: VerbAct = async () => undefined;
@@ -45,7 +45,7 @@ before(async () => {
   other = join(parent, "other");
   makeProject(project, BASE);
   makeProject(other, BASE + 10);
-  engine = new ProjectEngine(new FakeHost().deps({ selfCheckout: () => project, hostBusy: () => busy }));
+  engine = new ProjectEngine(new FakeHost().deps({ selfCheckout: () => project }));
 });
 
 after(async () => {
@@ -53,7 +53,7 @@ after(async () => {
   rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true });
 });
 
-test("slot 0 of the server's own checkout: every stop or restart needs the operator's confirm, and none runs while a session is busy", async () => {
+test("slot 0 of the server's own checkout: every stop or restart needs the operator's confirm, and only that", async () => {
   const up = await engine.run("up", { project }, op);
   assert.equal(up.state, "running", up.error?.message);
   const main = up.instance!;
@@ -75,14 +75,7 @@ test("slot 0 of the server's own checkout: every stop or restart needs the opera
     const r = await engine.run("down", { instance: main, confirm: true }, c);
     assert.equal(r.error?.code, "needs-confirm", `${c.kind}: ${r.error?.message}`);
   }
-  // Confirmed, but a hosted session is busy: refused as busy, nothing changes.
-  busy = "1 hosted session busy: 1 with a turn in flight";
-  const held = await engine.run("down", { instance: main, confirm: true }, op);
-  assert.equal(held.error?.code, "busy", held.error?.message);
-  assert.match(held.error!.message, /1 hosted session busy/);
-  assert.equal(held.state, "running");
-  // Idle and confirmed: it runs.
-  busy = null;
+  // Confirmed: it runs (no busy check; a chat outlives the server).
   const dn = await engine.run("down", { instance: main, confirm: true }, op);
   assert.equal(dn.ok, true, dn.error?.message);
   assert.equal(dn.state, "stopped");
@@ -92,7 +85,6 @@ test("slot 0 of the server's own checkout: every stop or restart needs the opera
 });
 
 test("a worktree's instance of the server's own project, and another project's main, stay free", async () => {
-  busy = "2 hosted sessions busy: 2 with working subagents";
   const wt = await engine.run("up", { project, branch: "feat-free" }, op);
   assert.equal(wt.state, "running", wt.error?.message);
   assert.notEqual(wt.slot, 0);
@@ -101,32 +93,5 @@ test("a worktree's instance of the server's own project, and another project's m
   const o = await engine.run("up", { project: other }, op);
   assert.equal(o.ok, true, o.error?.message);
   assert.equal((await engine.run("down", { instance: o.instance }, op)).ok, true, "another project's main needs no confirm");
-  busy = null;
   assert.ok(readRegistry().instances.every((i) => i.slot === 0));
-});
-
-test("hostedBusy reads this server's fresh live records: a working subagent or a turn in flight, never a stale or another pid's record", async () => {
-  const { LIVE_DIR } = await import("../paths");
-  const { hostedBusy } = await import("./self-host");
-  // Only ever in a throwaway home (hermetic-env or this file's agent dir), never the real agent dir.
-  assert.ok(LIVE_DIR.startsWith(tmpdir()), `LIVE_DIR ${LIVE_DIR} must be a throwaway`);
-  mkdirSync(LIVE_DIR, { recursive: true });
-  const rec = (name: string, pid: number, beat: number, presence: object) =>
-    writeFileSync(join(LIVE_DIR, `${name}.json`), JSON.stringify({ session: { pid, sessionFile: join(parent, `${name}.jsonl`) }, heartbeat: beat, presence }));
-  const files = ["a", "b", "c", "d"].map((n) => join(LIVE_DIR, `p${process.pid}-${n}.json`));
-  try {
-    rec(`p${process.pid}-a`, process.pid, Date.now(), { activity: { state: "idle", since: 0 } });
-    assert.equal(hostedBusy(), null, "idle");
-    rec(`p${process.pid}-b`, process.pid, Date.now() - 60_000, { activity: { state: "working", since: 0 } });
-    assert.equal(hostedBusy(), null, "a stale record is ignored");
-    // pid 1 is alive (another process: a TUI, another server), and none of this server's sessions.
-    rec(`p1-e`, 1, Date.now(), { activity: { state: "working", since: 0 } });
-    files.push(join(LIVE_DIR, "p1-e.json"));
-    assert.equal(hostedBusy(), null, "another pid's record is ignored");
-    rec(`p${process.pid}-c`, process.pid, Date.now(), { activity: { state: "working", since: 0 } });
-    rec(`p${process.pid}-d`, process.pid, Date.now(), { workerCounts: { working: 2, total: 3 }, activity: { state: "idle", since: 0 } });
-    assert.equal(hostedBusy(), "2 hosted sessions busy: 1 with working subagents, 1 with a turn in flight");
-  } finally {
-    for (const f of files) rmSync(f, { force: true });
-  }
 });

@@ -18,10 +18,12 @@ process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 mkdirSync(join(root, "agent", "sessions"), { recursive: true });
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const orgs = await import("./orgs");
 const baton = await import("./baton");
 const loadout = await import("./baton-loadout");
 const rl = await import("./baton-read-link");
+const { DRAFT_TOOLS } = await import("./conversation-draft-tools");
 const ab = await import("./gathering-abilities");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { registerOrgRoutes } = await import("./org-routes");
@@ -111,7 +113,7 @@ describe("the project's setting and each start (§app.baton/abilities)", () => {
   test("a row with no abilities (started before them) has none", async () => {
     assert.deepEqual(abilitiesOf({}), { draw: false, readLinks: false, drawHtml: false });
     const c = await start({ readLinks: true });
-    assert.deepEqual(loadout.activeBatonTools(c.sessionId), [...loadout.BATON_TOOLS, rl.READ_LINK_TOOL]);
+    assert.deepEqual(loadout.activeBatonTools(c.sessionId), [...loadout.BATON_TOOLS, ...loadout.LOOKUP_TOOLS, ...DRAFT_TOOLS, rl.READ_LINK_TOOL]);
     assert.doesNotMatch(loadout.renderBatonPrompt(c.sessionId).replace(/# Drawings[\s\S]*/, ""), /```vis/);
   });
 
@@ -159,7 +161,7 @@ describe("the prompt and the tools a run gets", () => {
     assert.doesNotMatch(html, /## code|vis code/, "never code");
     const htmlNoDraw = loadout.renderBatonPrompt((await start({ draw: false, drawHtml: true })).sessionId);
     assert.doesNotMatch(htmlNoDraw, /# Drawings|```vis/, "interactive drawings count only with Draw");
-    assert.match(on, /You cannot read files, run commands or browse\./);
+    assert.match(on, /You cannot change files, run commands or browse\./);
     const off = loadout.renderBatonPrompt((await start({ draw: false, readLinks: true })).sessionId);
     assert.doesNotMatch(off, /# Drawings|```vis/);
     assert.match(off, /with `read_link`/);
@@ -176,12 +178,14 @@ describe("the prompt and the tools a run gets", () => {
     assert.ok(piSession(chat).getAllTools().some((t) => t.name === rl.READ_LINK_TOOL), "in the allowlist, inactive");
     says(chat, c.sessionId, "hello");
     await until(() => runs.length === 1 && !piSession(chat).isStreaming);
-    assert.deepEqual(runs[0]!.tools, [...loadout.BATON_TOOLS].sort());
+    assert.deepEqual(runs[0]!.tools, [...loadout.BATON_TOOLS, ...loadout.LOOKUP_TOOLS, ...DRAFT_TOOLS].sort(), "spec look-up and code reading whatever the abilities");
     assert.match(runs[0]!.prompt, /# Drawings/);
+    assert.match(runs[0]!.prompt, /# The project\n/, "the overview, built at the run's start (§app.spec-lookup/overview)");
+    assert.match(runs[0]!.prompt, /with `spec_lookup` and read its code, without changing it, with `code_read`/);
     await baton.setAbilities(c.sessionId, { draw: false, readLinks: true });
     says(chat, c.sessionId, "again");
     await until(() => runs.length === 2 && !piSession(chat).isStreaming);
-    assert.deepEqual(runs[1]!.tools, [...loadout.BATON_TOOLS, rl.READ_LINK_TOOL].sort());
+    assert.deepEqual(runs[1]!.tools, [...loadout.BATON_TOOLS, ...loadout.LOOKUP_TOOLS, ...DRAFT_TOOLS, rl.READ_LINK_TOOL].sort());
     assert.doesNotMatch(runs[1]!.prompt, /# Drawings/);
   });
 

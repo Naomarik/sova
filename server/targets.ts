@@ -2,7 +2,7 @@
 // remote session its identity, a bounded reachability probe and the remote folder browser.
 // Schema, validation and every command line come from pi-config's remote argv builder, imported like
 // server/mode-state.ts imports the mode extension's pure modules (node builtins only; nothing else
-// from pi-config). See CLAUDE.md.
+// from pi-config). See agents/extensions/remote/overview.md.
 import { type ChildProcessByStdio, spawn } from "node:child_process";
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, posix, sep } from "node:path";
@@ -11,6 +11,7 @@ import { agentRoot } from "./state-root";
 import {
   buildListDirsArgv,
   buildTargetArgv,
+  connectTimeoutMs,
   parseListDirsOutput,
   parseTargetsFile,
   placeholderDir,
@@ -135,6 +136,12 @@ export const remoteCwdOfCwd = (cwd: string): string | null => parseTargetCwd(cwd
 
 /** Hard cap on one remote command, over and above ssh's own ConnectTimeout. */
 export const REMOTE_TIMEOUT_MS = 15_000;
+/** With a target's `connectTimeoutS`: the cap is its connect time + this, never below REMOTE_TIMEOUT_MS. */
+export const REMOTE_TIMEOUT_MARGIN_MS = 10_000;
+
+/** The cap on one command on `target`: REMOTE_TIMEOUT_MS unless its ssh hop sets `connectTimeoutS`. */
+export const remoteTimeoutMs = (target: Target, registry: readonly Target[]): number =>
+  connectTimeoutMs(target, registry, REMOTE_TIMEOUT_MS, REMOTE_TIMEOUT_MARGIN_MS);
 const MAX_OUTPUT = 1024 * 1024;
 
 export interface RunResult {
@@ -145,6 +152,8 @@ export interface RunResult {
   spawnError?: string;
   /** stdout reached MAX_OUTPUT bytes and the rest was dropped. */
   stdoutTruncated?: true;
+  /** Set when timedOut: the bound that cut the run (classifyFailure names it). */
+  timeoutMs?: number;
 }
 
 /**
@@ -169,7 +178,7 @@ export function runArgv(argv: readonly string[], timeoutMs = REMOTE_TIMEOUT_MS):
       clearTimeout(timer);
       const stdout = Buffer.concat(out).toString("utf8");
       const stderr = Buffer.concat(err).toString("utf8");
-      resolve({ ...r, stdout, stderr, timedOut, ...(stdoutTruncated ? { stdoutTruncated: true as const } : {}) });
+      resolve({ ...r, stdout, stderr, timedOut, ...(stdoutTruncated ? { stdoutTruncated: true as const } : {}), ...(timedOut ? { timeoutMs } : {}) });
     };
     const [cmd, ...args] = argv;
     if (!cmd) return done({ code: null, spawnError: "empty command" });
@@ -207,7 +216,7 @@ export function runArgv(argv: readonly string[], timeoutMs = REMOTE_TIMEOUT_MS):
 
 /** A failed run as { status, error }, or null on success. ssh exits 255 when it cannot connect. */
 export function classifyFailure(r: RunResult): { status: "offline" | "error"; error: string } | null {
-  if (r.timedOut) return { status: "offline", error: `No answer within ${Math.round(REMOTE_TIMEOUT_MS / 1000)}s` };
+  if (r.timedOut) return { status: "offline", error: `No answer within ${Math.round((r.timeoutMs ?? REMOTE_TIMEOUT_MS) / 1000)}s` };
   if (r.spawnError) return { status: "error", error: r.spawnError };
   if (r.code === 0) return null;
   const last =
@@ -224,10 +233,10 @@ export type TargetRunResult = { ok: true; run: RunResult } | { ok: false; status
 /**
  * Run far shell code on a named target, in `remoteCwd` (a REMOTE absolute path): the builder
  * composes the argv and quotes the cwd (`cd -- '<cwd>' || exit 1` ahead of `command`), runArgv
- * bounds the run. The caller reads the RunResult (classifyFailure turns a failed one into words).
+ * bounds the run (`timeoutMs`, default remoteTimeoutMs). The caller reads the RunResult (classifyFailure turns a failed one into words).
  * A run the target didn't answer updates the probe cache, as the folder browser does. Never throws.
  */
-export async function runOnTarget(name: string, command: string, remoteCwd: string, timeoutMs = REMOTE_TIMEOUT_MS): Promise<TargetRunResult> {
+export async function runOnTarget(name: string, command: string, remoteCwd: string, timeoutMs?: number): Promise<TargetRunResult> {
   const { targets } = loadTargets();
   const target = isTargetName(name) ? targets.find((t) => t.name === name) : undefined;
   if (!target) return { ok: false, status: 404, error: `Unknown target: ${name}` };
@@ -239,7 +248,7 @@ export async function runOnTarget(name: string, command: string, remoteCwd: stri
   } catch (err) {
     return { ok: false, status: 502, error: `${target.name}: ${(err as Error).message}` };
   }
-  const run = await runArgv(argv, timeoutMs);
+  const run = await runArgv(argv, timeoutMs ?? remoteTimeoutMs(target, targets));
   const fail = classifyFailure(run);
   if (fail?.status === "offline") probes.set(probeKey(target, targets), { ...fail, at: Date.now() });
   return { ok: true, run };
@@ -272,7 +281,7 @@ export function probeTarget(target: Target, registry: readonly Target[], opts: {
     } catch (err) {
       return { status: "error", error: (err as Error).message, at: Date.now() };
     }
-    const fail = classifyFailure(await runArgv(argv));
+    const fail = classifyFailure(await runArgv(argv, remoteTimeoutMs(target, registry)));
     return fail ? { ...fail, at: Date.now() } : { status: "ok", at: Date.now() };
   })().then((probe) => {
     probes.set(key, probe);
@@ -357,7 +366,7 @@ export async function listRemoteFolders(name: string, raw: string | undefined, o
   } catch (err) {
     return { ok: false, status: 502, error: `${target.name}: ${(err as Error).message}` };
   }
-  const r = await runArgv(argv);
+  const r = await runArgv(argv, remoteTimeoutMs(target, targets));
   if (r.code === 3 && !r.timedOut) return { ok: false, status: 502, error: `${target.name}: no such folder: ${path}` };
   const fail = classifyFailure(r);
   if (fail) {

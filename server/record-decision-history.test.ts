@@ -82,7 +82,7 @@ describe("record_decision's history", async () => {
   test("words not in the message: recorded, not checked, the model's", async () => {
     says(priya.id, "Let me think about the bank feed.");
     const out = await run({ area: "bank", statement: "Bank sync is approved.", quote: "Bank sync is fine" });
-    assert.equal(out.content[0]!.text, "Recorded as your reading, not checked: their exact words weren't found in that message.");
+    assert.match(out.content[0]!.text, /^Recorded as your reading, not checked: their exact words weren't found in that message\. Requirement r\d+\.$/, "the check's sentence, then the requirement it became (§app.requirements/conversation-drafts)");
     const m = lastMarker().id!;
     const r = recordOf(`decision:${c.sessionId}:${m}`);
     assert.equal(r.evidence[0]!.kind === "transcript" && r.evidence[0]!.check, "quote-not-found");
@@ -93,7 +93,7 @@ describe("record_decision's history", async () => {
     // a stop between the message and its sender marker: the message is there, who sent it is not recorded
     const u = add({ kind: "user", blocks: [{ type: "text", text: "Close the books on the 5th." }] } as never);
     const said = await run({ area: "close", statement: "Books close on the 5th.", quote: "Close the books on the 5th." });
-    assert.equal(said.content[0]!.text, "Recorded as your reading, not checked: who sent that message wasn't recorded.");
+    assert.match(said.content[0]!.text, /^Recorded as your reading, not checked: who sent that message wasn't recorded\. Requirement r\d+\.$/, "the check's sentence, then the requirement it became (§app.requirements/conversation-drafts)");
     const r = recordOf(`decision:${c.sessionId}:${lastMarker().id!}`);
     const ev = r.evidence[0]!;
     assert.equal(ev.kind === "transcript" && ev.entry, u);
@@ -113,7 +113,7 @@ describe("record_decision's history", async () => {
   test("a message someone else sent: speaker mismatch, never the holder's", async () => {
     says(omar.id, "Ship it on Friday.");
     const said = await run({ area: "release", statement: "Release on Friday.", quote: "Ship it on Friday." });
-    assert.equal(said.content[0]!.text, "Recorded as your reading, not checked: that message was sent by someone else.");
+    assert.match(said.content[0]!.text, /^Recorded as your reading, not checked: that message was sent by someone else\. Requirement r\d+\.$/, "the check's sentence, then the requirement it became (§app.requirements/conversation-drafts)");
     const m = lastMarker().id!;
     const r = recordOf(`decision:${c.sessionId}:${m}`);
     assert.equal(r.evidence[0]!.kind === "transcript" && r.evidence[0]!.check, "speaker-mismatch");

@@ -8,7 +8,7 @@ import { findTmpImagePaths } from "../shared/tmp-paths";
 import { sessionAttachmentsDir, sniffImageMime } from "./attachments";
 import { batonById, sessionPathOf } from "./baton";
 import { readBatonSettings } from "./baton-settings";
-import { getModelRuntime, heldChat } from "./chat-manager";
+import { chatHandle, getModelRuntime } from "./chat-handle";
 import { readBranch } from "./harness/pi/reader";
 import { stateRoot } from "./state-root";
 import { loadDefaults } from "./web-defaults";
@@ -346,9 +346,12 @@ export function dropStaged(sessionId: string, ids: readonly string[]): void {
 
 /**
  * The sweep: staged photos older than 24 hours, leftover parts older than an hour, and every
- * photo of a session that is closed, done or no longer registered here, go. Empty folders go too.
+ * photo of a session that is closed, done or no longer registered here, go. Empty folders go too,
+ * once an hour old.
  */
 export function sweepUploads(now = Date.now(), root = uploadsRoot(), open = (sessionId: string) => {
+  // A Project Assistant owner's staging (`pa-…`, §app.project-assistant/photos) is no session: only its age counts.
+  if (sessionId.startsWith("pa-")) return true;
   const s = batonById(sessionId)?.row.state;
   return s === "open" || s === "needs-you";
 }): number {
@@ -386,7 +389,9 @@ export function sweepUploads(now = Date.now(), root = uploadsRoot(), open = (ses
       }
     }
     try {
-      if (!readdirSync(dir).length) rmSync(dir, { recursive: true, force: true });
+      // An empty folder goes only once it is an hour old, like a leftover part: a fresh one may be an
+      // upload that just made it and is about to open its part (the first upload starts this sweep).
+      if (!readdirSync(dir).length && now - statSync(dir).mtimeMs > 60 * 60 * 1000) rmSync(dir, { recursive: true, force: true });
     } catch {
       // gone meanwhile
     }
@@ -429,8 +434,7 @@ export function branchModelRef(branch: readonly HEntry[]): string | null {
  */
 export async function sessionSeesImages(row: BatonSession, dir: string, branch?: readonly HEntry[]): Promise<boolean> {
   const path = sessionPathOf(dir, row);
-  const held = heldChat(path);
-  const model = held?.harness.model();
+  const model = chatHandle(path)?.mirror.model;
   if (model) return model.images;
   const b = branch ?? (await readBranch(path).catch(() => []));
   const ref = branchModelRef(b) ?? row.model ?? loadDefaults().model ?? null;

@@ -54,6 +54,7 @@ edit" is a prompt-level rule the orchestrator checks.
 | `/mode strict on\|off` | Also remove `edit`/`write` from the orchestrator while in delegate (off by default) |
 | `/mode align [on\|off]` | Toggle (or set) the `align` minor mode |
 | `/mode spec [on\|off]` | Toggle (or set) the `spec` minor mode |
+| `/mode project:<id> [on\|off]` | Toggle (or set) one of this checkout's project minor modes; the bare `<id>` works when no built-in has that name (see **Project minor modes**) |
 | `/align`, or `alt+a` | Open the read-only alignments viewer (see below) |
 | `/align status` · `/align export [path]` · `/align on\|off` | List the alignments, write the open ones to a file (default `.pi/align.md`), or toggle align |
 | `pi --major delegate` | Start that launch in a mode (not persisted) |
@@ -136,6 +137,9 @@ writer**).
   changed, leaves none of them unclaimed, reads before finishing each § the
   census note's one `Unread § your change landed in` line marks read first
   (its command lists the rest), and promotes what it verified (or says why it could not).
+  A branch isn't done or ready to land until its drafts are promoted on it, and the
+  go-ahead to build or merge covers committing them; a draft whose branch already
+  landed is promoted on a fresh branch, never on the default branch.
   Work that changes no behavior — refactors, tests, tooling — is exempt, and
   the agent says it is claiming the exemption. The documentation changes only
   through drafts; a promotion `conflict` is per declaration, and it is
@@ -145,7 +149,7 @@ writer**).
   whitespace, and its one `sh` block is the shell prefix `minor.ts` exports as
   `SPEC_CORE_SHELL`. A missing, repeated or multi-line block fails the load. A
   project may point its agents at the same file without the mode; Sova's
-  `CLAUDE.md` does. The tools it runs without asking are the three linked into
+  `AGENTS.md` does. The tools it runs without asking are the three linked into
   the agent directory (`<agent dir>/extensions/spec/core/`, resolved like pi's
   own agent dir: an exact `~` or a leading `~/` is home), always through that
   `sh` recipe, never a guessed path. A copy inside the
@@ -228,9 +232,8 @@ writer**).
     nor Claude Code workers' hooks run the assessment companion, capture a task
     baseline or write a receipt, and none of them has an assessment tool. An
     assessment is an explicit `sova-spec-assess.mjs prepare <name> --base <known rev>`,
-    `record` and `status` (`.sova/spec/USAGE.md`, `../spec/README.md`). A spawned
-    worker's `SOVA_SPEC_OWNER_SESSION`/`SOVA_SPEC_WORKER_ID`/`SOVA_SPEC_TEAM_ID` are
-    there for a caller to pass as `--attribution-json`. Receipts and task entries
+    `record` and `status` (`.sova/spec/USAGE.md`, `../spec/README.md`); attribution is
+    only what its caller passes as `--attribution-json`. Receipts and task entries
     left by the earlier automatic observer stay as they are; an old native hook state
     keeps its assessment fields unchanged and ignored, while its census fields
     update as usual.
@@ -275,11 +278,12 @@ open at once. It holds a title, a one-line summary, findings (`fN`), approach
 steps (`aN`), rejected alternatives with why (`xN`), technical notes (`tN`,
 optional: the detail a plan for a non-coding reader keeps out of its other
 fields) and questions (`qN`). It records the writing style in effect at its
-latest change (`style`, absent for Default), and in a session started with
+latest change (`style`: `default` for Technical, `simplified` or `pm`; absent
+on documents written before Technical was recorded), and in a session started with
 Visuals on a question, and the document once, can carry a `visual`
 (`{kind, source}`, a `vis` drawing; at most 3 per alignment). A
-question has a topic, the ask, optional context and options (label and
-trade-off), a recommendation (choice and why) and, once answered, a decision
+question has a topic, the ask, optional context and options (a label and its
+`tradeoff`: one plain line on what happens if the user picks it), a recommendation (choice and why) and, once answered, a decision
 (its text, `user` or `accepted-recommendation`, and when). Ids are never
 reused, so "q3" means one question for the document's life.
 
@@ -545,9 +549,11 @@ transcripts carry the mode, never the routing.
   is still running joins it rather than restarting it, so a notice the probe
   owes (entering delegate announces fallbacks) is never dropped. pi models come from
   the session's model registry (with each model's supported thinking levels);
-  Claude models from the `claude-code` backend's `listModels` through the
-  `subagents:backend-discover` contract (a ~1–3 s `claude` initialize call,
-  cached 60 s, 15 s timeout). No worker starts at load or in normal mode.
+  Claude models from Sova's Claude catalog (`claudeOffer()` in
+  `claude-code/catalog.ts`, the list `agent_models` gives, with each model's
+  efforts), since the `claude-code` backend is built into the subagents
+  extension and never registers: no `claude` process, never "not loaded". No
+  worker starts at load or in normal mode.
 - A backend that answers and doesn't list the model, or lists it without that
   effort, makes the tuple unavailable (efforts are never clamped silently). A
   model's efforts are what the backend reported, cut to what the backend accepts
@@ -555,17 +561,15 @@ transcripts carry the mode, never the routing.
   too); nothing usable reported — no list, `[]`, or only efforts the backend
   would refuse — means unconstrained. A
   backend that isn't loaded at all counts as unavailable too — `agent_spawn`
-  would refuse it.
-- **Except a Claude alias the CLI's list omits.** The `claude` initialize model
-  list is remote and account-gated, and alternates within minutes between a
-  shape that carries `opus[1m]` / `claude-fable-5-1[1m]` and one that does not,
-  while the CLI accepts a valid alias at runtime either way (verified on
-  2.1.280). So a shape-valid Claude model (an alias: no `/`, no leading `-`)
-  missing from a successful list is "not verified" and stays in use, exactly
-  like a failed discovery; only a shape-invalid id is refused. pi's registry is
-  local and reliable, so a pi model it doesn't list stays unavailable.
-- **A failed discovery is not absence.** CLI missing, timed out, logged out:
-  the tuple stays in use, "not verified", and spawn has the final word. If a
+  would refuse it (claude-code never is: it is built in).
+- **Except a Claude model the catalog doesn't know.** A model can ship before
+  the catalog lists it, so a shape-valid Claude id (no `/`, no leading `-`, no
+  whitespace) missing from the catalog is "not verified" and stays in use,
+  exactly like a failed discovery; only a shape-invalid id is refused. pi's
+  registry is local and reliable, so a pi model it doesn't list stays
+  unavailable.
+- **A failed discovery is not absence.** A registry that throws, a backend that
+  timed out: the tuple stays in use, "not verified", and spawn has the final word. If a
   spawn then fails on model availability, the prompt says to retry once with
   that profile's fallback and say so, and otherwise ask.
 - The **policy** is re-read per turn: a model or provider it keeps from
@@ -573,6 +577,25 @@ transcripts carry the mode, never the routing.
   — disclosed, with the policy's reason — or asks. Spawn still enforces the
   policy on its own; nothing here routes around a denied provider to a model
   nobody configured.
+
+## Vis catalogue and guided tours
+
+The vis catalogue (`vis/overview.md`) teaches drawing kinds and a separate tool-backed `tour` entry.
+`vis_guide {kind:"tour"}` returns `vis/tour.md` alone: a short core with the rules behind most failed
+dry runs first, a sign-in checklist, the dry-run, recording, waiting and visual-checking workflow, a
+failure-to-fix table and one worked example. The rare cases are parts `vis_guide` returns by name, each
+alone (`VIS_TOOL_PARTS` in `minor.ts`; never listed as kinds): `tour-signin` (sign-in and test accounts),
+`tour-sites` (sources, site approval, sandbox, network rules), `tour-sova` (recording Sova itself) and
+`tour-sharing` (links, hand-offs, published editions). Each rule lives in one file. It is not a fence grammar;
+there is no executable `vis tour` fence and merely reading a message never records a browser.
+Drawing entries still return `vis/shared.md` followed by their own file, unchanged.
+
+Sova supplies `record_tour` and `show_tour` through its hosted tools (also on its Claude Code
+provider), only while the vis minor mode is on. Align with Visuals alone retains drawing guide/check
+access and grants neither tour tool. This portable extension registers no recorder
+and depends on no Sova runtime; without those hosted tools the guide says the workflow is
+unavailable, not to substitute shell screenshots. Organization hand-off sessions get only a
+scoped `show_tour` for reviewed tours already attached to their conversation.
 
 ## Writing style and Visuals
 
@@ -583,13 +606,14 @@ the align mode's writing style and Visuals; Sova's Settings → Alignment writes
 { "version": 1, "style": "pm", "visuals": true }
 ```
 
-- `style` is `default` (no added text: the align block is today's),
-  `simplified` (short sentences in everyday words, about 5 findings and 6
-  steps, files only when the user must recognise them, each question's context
-  saying what changes for the user) or `pm` (Project manager: the fields the
-  user reads describe only screens, controls, wording, states and flows, no
-  code; technical choices with a user-visible effect are asked as product
-  questions; the technical detail goes in technical notes). Its paragraph
+- `style` is `pm` (Project manager, the default: the fields the user reads
+  describe only screens, controls, wording, states and flows, no code; technical
+  choices with a user-visible effect are asked as product questions; the
+  technical detail goes in technical notes), `simplified` (short sentences in
+  everyday words, about 5 findings and 6 steps, files only when the user must
+  recognise them, each question's context saying what changes for the user) or
+  `default`, shown as **Technical** (no added text: files, code and technical
+  trade-offs in the plan). A saved `default` stays `default`, never migrated. Its paragraph
   (`ALIGN_STYLE_PARAGRAPHS` in `minor.ts`) follows the align block when the head
   is built; a later change reaches an open chat as one hidden `mode-note` at its
   next run (`buildAlignStyleNote`), once per change, its details recording the
@@ -606,7 +630,9 @@ the align mode's writing style and Visuals; Sova's Settings → Alignment writes
   `vis_check` follows too).
 - A subagent profile's optional `alignment` (`{style?, visuals?}`) overrides the
   file field by field for chats on it (`resolveAlign`).
-- Missing or malformed reads as Default with Visuals off; the strict parse
+- Missing or malformed reads as Project manager with Visuals off; a head that
+  nothing records was still built in Technical (`restoreHead`), so an older
+  chat rebuilds its head byte for byte and gets Project manager as one note; the strict parse
   (`parseAlignSettings`) refuses an unknown key or value, and the mesh checks
   with it before writing.
 
@@ -651,6 +677,74 @@ independent of Delegate:
   rendered as Delegate renders a profile with no worker. The paragraph is the
   session's alone: a worker is never offered a writer (see **Workers**).
 
+## Project minor modes
+
+A project can ship minor modes of its own: `<checkout>/.sova/minor-modes/<id>/MODE.md`, where the
+checkout is the nearest folder at or above the session's cwd holding `.git` (else the cwd; a
+relative cwd has none). The user docs are `site/src/content/docs/modes/project-modes.md`; the
+product claim is §chat.mode-menu/project-modes.
+
+- **Format** (`project-format.ts`, no imports): the id is the folder name,
+  `^[a-z][a-z0-9-]*$`, at most 30 characters, never a built-in's. `MODE.md` is a strict `---`
+  frontmatter with only `description` (required), `workers: yes|no` (default no), `tools`,
+  `commands` and `hooks` (each a JSON array; lines starting with whitespace continue a value), then
+  a non-empty body. A tool is
+  `{name, description, params?, command, timeoutS?}`: at most 16, `name` lowercase with single
+  underscores (at most 32), `params` a JSON schema of `type: "object"`, `command` an argv whose
+  first element a bare program name on `PATH` (the machine's own, not covered by approval) or a
+  `./` path; every element containing `/` must be a `./` file inside the mode folder (passed as its
+  absolute path; `scripts/x.js`, absolute paths and `../` are parse errors), `timeoutS` 1–600 (default 60). The model sees a tool as
+  `projectToolName(id, name)`: the id with `-` as `_`, `__`, the name. There is no key that turns
+  a mode on: a mode is on only when the user (`/mode`, Sova's menu) or the Overseer turns it on.
+- **Commands and hooks** (`commands`, `hooks`; parsed here, run by Sova, never by this extension).
+  A command is `{name, description, params?, run, timeoutS?}` (at most 16; the tool-name rule; `run`
+  under a tool's `command` rules; parsed into a tool's shape with `run` as `command`). A hook is
+  `{on, run, timeoutS?}` (at most 8; `on` is `turn.started` or `turn.ended`; default 30 s). The
+  snapshot carries `commands` / `hooks` only when declared, and `snapshotShaInput` adds them only
+  then, so every copy made before them keeps its sha. `toolsHash` covers them too: with either key the
+  first hash line is canonical JSON of `{tools, commands, hooks}`, without both it is the tools array
+  as before (so no earlier approval is asked again), and it is `""` only when all three are empty.
+  `refuseCall` re-hashes with them. Sova runs them in the chat's own process (its
+  `server/mode-commands.ts`); in the plain pi TUI they do nothing. Hooks need the user's own approval:
+  `isApprovedByUser` (project-tools-approval.ts), and `recordApproval` keeps a `user` record `user` when
+  the Overseer records the same hash.
+- **Discovery** (`project-discovery.ts`, node builtins only): `discoverProjectModes(cwd)` lists
+  every usable mode and every broken folder (`bad-id`, `clash`, `no-entry`, `parse`) and never
+  throws; one bad folder never hides the others. The server imports it for the menu.
+- **Namespace.** Project modes never enter `minorModes`. The `mode` entry and the mode-note
+  details carry `projectModes: [{id, sha}]` (turn-on order; older readers ignore it). At turn-on
+  the extension writes a `mode-project-snapshot` custom entry with the block text, description,
+  `workers`, the tools and `toolsHash`; its `sha` (`snapshotShaInput`) is the copy's identity, so the
+  server's "changed" is one compare of the listing's sha with the on ref's (reference files are not
+  in it: the agent reads them live); while a mode is on, it is rebuilt from that entry on the branch, never re-read from
+  disk, so the head rebuilds byte for byte on reopen and an edit reaches the session only by
+  turning the mode off and on. A deleted or broken folder leaves an active mode on from its copy.
+- **Prompt.** The block is `projectModeBlock(id, dir, body)`: `# Project minor mode: <id>`, a
+  `Folder:` line, one line on relative paths, then the body. It follows the built-in minor
+  blocks in the head, and reaches a running session in a hidden mode note, like theirs.
+- **Tools** (`project-tools.ts`): registered while the mode is on, unregistered when it goes off.
+  A call spawns the command in the session's cwd, writes the arguments as JSON to stdin, with
+  `SOVA_MODE_ID`, `SOVA_MODE_DIR`, `SOVA_PROJECT_ROOT` and `SOVA_TOOL_NAME` set, kills the process
+  group past the time limit, and returns the exit code, stdout and stderr, each cut at 256 KB.
+  Before each call it compares the snapshot's `toolsHash` with the files on disk and refuses on a
+  mismatch, asking for re-approval.
+  It also refuses, running nothing, a `./` file that is a symlink out of the mode folder, and
+  every call while the session's sandbox is On (the sandbox confines only the session's own tools).
+  Approvals (`server/project-mode-approvals.ts`) keep the last 8 approved `toolsHash`es per
+  checkout realpath and mode.
+- **Approval.** At `/mode <id> on` the extension reads the same approval store Sova's menu
+  writes: a mode with tools turns on only when that exact `toolsHash` is approved for its
+  checkout, otherwise it is refused ("Minor mode <id> not turned on: <id> runs the project's own
+  tools: approve it from a Sova chat's mode menu first"); it never asks in a terminal. A worker
+  never turns a project mode on itself: it gets them from the session that started it. `toolsHash` covers the declared tools and every file in the mode folder,
+  recursively, dotfiles included, except the top-level `MODE.md` (`./path sha` lines, sorted; a
+  symlink hashes as its target path), so a sourced helper or an imported sibling can't change
+  under an approval; editing the body never asks again. A mode with tools past 1000 files or 50 MB
+  is broken. Discovery and the call-time check both hash through `toolsHashOf`.
+- **Workers.** A mode with `workers: yes` is in the worker prompt after spec's block, from the
+  parent's snapshot, with its tools when the worker has `bash` (a read-only or remote worker gets the
+  block only; a worker on its worktree's own config gets neither; the tools refuse in a worker as in the parent); a worker carries at most 8 modes, built-in and project.
+
 ## Workers
 
 A worker is not a chat, and it gets only what its parent's modes mean for it
@@ -663,7 +757,8 @@ cannot compile without deciding):
   parent session, not rendered for the user). `composeWorkerPrompt` (`prompt.ts`) is the
   worker-scope minors only: for spec, the `spec-mode.md` block byte for byte,
   then `SPEC_WORKER_NOTE` (the brief is the go-ahead; the parent promotes unless
-  the brief says otherwise; the final report lists each foreign § it updated).
+  the brief says otherwise, and then only on its branch, never on the default
+  branch; the final report lists each foreign § it updated).
   Never the Delegate block, the align block or bridge, the vis guide, or the
   writer paragraph.
 - **Delivered over the bus** (`events.ts`), like the sandbox's state: the

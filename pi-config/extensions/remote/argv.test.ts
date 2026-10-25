@@ -7,7 +7,10 @@ import { join } from "node:path";
 import {
 	buildListDirsArgv,
 	buildTargetArgv,
+	connectTimeoutMs,
 	DEFAULT_SSH_OPTIONS,
+	effectiveConnectTimeoutS,
+	MAX_CONNECT_TIMEOUT_S,
 	parseListDirsOutput,
 	parseTargetsFile,
 	placeholderDir,
@@ -148,6 +151,92 @@ test("via: the inner chain rides inside the outer target's sh -c; cycles and mis
 	const a: Target = { name: "a", kind: "docker", docker: { container: "a" }, via: "b" };
 	const b: Target = { name: "b", kind: "docker", docker: { container: "b" }, via: "a" };
 	assert.throws(() => buildTargetArgv(a, { command: "x", registry: [a, b] }), /cycle/);
+});
+
+// ---------------------------------------------------------------------------
+// connectTimeoutS: a slow-to-connect host (aws-ssm + Instance Connect) gets a longer connect
+
+const ssm: Target = {
+	name: "box",
+	kind: "ssh",
+	ssh: { user: "ec2-user", host: "i-0abc", key: "~/.ssh/k" },
+	proxy: { type: "aws-ssm", profile: "p", region: "eu-central-1", pushKey: "ec2-instance-connect" },
+};
+
+test("connectTimeoutS unset: the argv and every timer are exactly today's", () => {
+	// Today's composition, spelled out: BatchMode, the entry's options, ProxyCommand, then the defaults verbatim.
+	assert.ok(DEFAULT_SSH_OPTIONS.includes("ConnectTimeout=10"));
+	assert.deepEqual(sshOptions(buildTargetArgv(prod, { command: "true" })), ["BatchMode=yes", "ControlPersist=1h", ...DEFAULT_SSH_OPTIONS]);
+	const opts = sshOptions(buildTargetArgv(ssm, { command: "true" }));
+	assert.deepEqual([opts[0], ...opts.slice(2)], ["BatchMode=yes", ...DEFAULT_SSH_OPTIONS]);
+	assert.match(opts[1]!, /^ProxyCommand=/);
+	// An entry that sets ConnectTimeout in its own options but not the field: unchanged too (its option first).
+	const own: Target = { ...prod, ssh: { ...prod.ssh!, options: ["ConnectTimeout=60"] } };
+	assert.deepEqual(sshOptions(buildTargetArgv(own, { command: "true" })), ["BatchMode=yes", "ConnectTimeout=60", ...DEFAULT_SSH_OPTIONS]);
+	for (const t of [prod, ssm, own]) {
+		assert.equal(effectiveConnectTimeoutS(t, [t]), undefined);
+		assert.equal(connectTimeoutMs(t, [t], 15_000, 5_000), 15_000);
+		assert.equal(connectTimeoutMs(t, [t], 20_000, 10_000), 20_000);
+	}
+});
+
+test("connectTimeoutS set: ssh's ConnectTimeout and the timers derive from it; the entry's own option still wins", () => {
+	const slow: Target = { ...ssm, connectTimeoutS: 45 };
+	const opts = sshOptions(buildTargetArgv(slow, { command: "true" }));
+	// The one default swapped in place, nothing else moved.
+	assert.deepEqual(opts.filter((o) => !o.startsWith("ProxyCommand=")), ["BatchMode=yes", ...DEFAULT_SSH_OPTIONS.map((o) => (o === "ConnectTimeout=10" ? "ConnectTimeout=45" : o))]);
+	assert.equal(effectiveConnectTimeoutS(slow, [slow]), 45);
+	assert.equal(connectTimeoutMs(slow, [slow], 15_000, 5_000), 50_000);
+	assert.equal(connectTimeoutMs(slow, [slow], 20_000, 10_000), 55_000);
+	// A short connect timeout fails fast through ssh; it never shrinks a timer below today's constant.
+	const quick: Target = { ...prod, connectTimeoutS: 2 };
+	assert.ok(sshOptions(buildTargetArgv(quick, { command: "true" })).includes("ConnectTimeout=2"));
+	assert.equal(connectTimeoutMs(quick, [quick], 15_000, 5_000), 15_000);
+	// The entry's own ConnectTimeout comes first, so ssh uses it, and the timers follow what ssh uses.
+	const both: Target = { ...slow, ssh: { ...slow.ssh!, options: ["ConnectTimeout=90"] } };
+	const bothOpts = sshOptions(buildTargetArgv(both, { command: "true" })).filter((o) => o.startsWith("ConnectTimeout="));
+	assert.deepEqual(bothOpts, ["ConnectTimeout=90", "ConnectTimeout=45"]);
+	assert.equal(effectiveConnectTimeoutS(both, [both]), 90);
+	assert.equal(connectTimeoutMs(both, [both], 20_000, 10_000), 100_000);
+	assert.equal(effectiveConnectTimeoutS({ ...slow, ssh: { ...slow.ssh!, options: ["connecttimeout 30"] } }), 30, "ssh option keys are case-insensitive, `=` or space");
+});
+
+test("connectTimeoutS validation: an integer 1-300; unknown keys are still ignored", () => {
+	for (const ok of [1, 30, MAX_CONNECT_TIMEOUT_S]) assert.deepEqual(validateTarget({ ...prod, connectTimeoutS: ok }), [], String(ok));
+	assert.equal(MAX_CONNECT_TIMEOUT_S, 300);
+	for (const bad of [0, -5, 1.5, 301, Number.NaN, Number.POSITIVE_INFINITY, "30", null, true])
+		assert.deepEqual(validateTarget({ ...prod, connectTimeoutS: bad } as never), ["connectTimeoutS must be an integer 1-300"], String(bad));
+	// What an older reader does with the new field: it is an unknown key there, and unknown keys never invalidate.
+	assert.deepEqual(validateTarget({ ...prod, someFutureField: 30 } as never), []);
+	const parsed = parseTargetsFile(JSON.stringify({ version: 1, targets: [{ ...ssm, connectTimeoutS: 30 }, { ...prod, connectTimeoutS: 0 }] }));
+	assert.deepEqual(parsed.targets.map((t) => t.connectTimeoutS), [30]);
+	assert.deepEqual(parsed.invalid, [{ name: "acme-prod", errors: ["connectTimeoutS must be an integer 1-300"] }]);
+});
+
+test("connectTimeoutS through via: the ssh-bearing target of the chain decides", () => {
+	const host: Target = { ...ssm, name: "host", connectTimeoutS: 40 };
+	const web: Target = { name: "web", kind: "docker", docker: { container: "web" }, via: "host" };
+	const cell: Target = { name: "cell", kind: "incus-cell", incus: { cell: "c1" }, via: "web" };
+	const reg = [host, web, cell];
+	for (const t of [web, cell]) {
+		assert.equal(effectiveConnectTimeoutS(t, reg), 40, t.name);
+		assert.equal(connectTimeoutMs(t, reg, 20_000, 10_000), 50_000, t.name);
+		assert.ok(sshOptions(buildTargetArgv(t, { command: "true", registry: reg })).includes("ConnectTimeout=40"), t.name);
+	}
+	// On an entry with no ssh block of its own the field is not read: the hop's (unset) value applies.
+	const plainHost: Target = { ...host, connectTimeoutS: undefined };
+	const loud: Target = { ...web, connectTimeoutS: 120 };
+	const reg2 = [plainHost, loud];
+	assert.equal(effectiveConnectTimeoutS(loud, reg2), undefined);
+	assert.equal(connectTimeoutMs(loud, reg2, 20_000, 10_000), 20_000);
+	assert.deepEqual(buildTargetArgv(loud, { command: "true", registry: reg2 }), buildTargetArgv({ ...web }, { command: "true", registry: [plainHost, web] }));
+	// No ssh anywhere (local docker), a missing via target, a cycle: nothing to derive, the constant stands.
+	const localBox: Target = { name: "d", kind: "docker", docker: { container: "web" }, connectTimeoutS: 60 };
+	assert.equal(connectTimeoutMs(localBox, [localBox], 15_000, 5_000), 15_000);
+	assert.equal(connectTimeoutMs(web, [web], 15_000, 5_000), 15_000);
+	const a: Target = { name: "a", kind: "docker", docker: { container: "a" }, via: "b" };
+	const b: Target = { name: "b", kind: "docker", docker: { container: "b" }, via: "a" };
+	assert.equal(effectiveConnectTimeoutS(a, [a, b]), undefined);
 });
 
 // ---------------------------------------------------------------------------

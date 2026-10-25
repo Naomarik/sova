@@ -13,13 +13,15 @@ import type { RewindControl } from "../lib/inputs";
 import { activeTab, home, toast } from "../lib/ui-state";
 import { regenerateOutcome, regeneratingTitle, setRegeneratingTitle } from "../lib/auto-title";
 import { regenerateSessionTitle } from "../lib/api";
-import { sessionWorking, workingSplit } from "../lib/workers";
+import { sessionWorking, tallyWorkers, workingSplit } from "../lib/workers";
 import { sessionIdOfPath } from "../lib/links";
 import { paneTitleCost } from "../lib/spend";
 import { createSessionSpend } from "./SessionUsage";
 import { ChatView, type ChatRefusal, type OverseerChat } from "./ChatView";
 import { ContextGauge, contextDescribedBy } from "./ContextGauge";
 import { ProfileChip } from "./ProfileChip";
+import { CodeState } from "./CodeState";
+import type { CodeControl } from "../lib/code-state";
 import type { ChatProfileInfo } from "../../shared/protocol";
 import { InsightStrip } from "./InsightStrip";
 import { createProjectOverseerControl, ProjectOverseerHead } from "./ProjectOverseerHead";
@@ -101,6 +103,8 @@ export function SessionView(props: {
   autofocus?: boolean;
   /** Set when this view is one pane of a workspace. */
   paneId?: string;
+  /** Whether this view is on screen (absent: always): a workspace tab behind another isn't. */
+  front?: () => boolean;
   /** The user's word for this member inside its group (`GroupMember.label`), when it has one:
       the pane head shows it in place of the title, and it is what the pane is called to AT. */
   label?: () => string | null;
@@ -165,6 +169,8 @@ export function SessionView(props: {
   const [chatModel, setChatModel] = createSignal<string | null>(null);
   /** The chat socket's profile message, for the head chip (§chat.profiles/after-first-message). */
   const [profileInfo, setProfileInfo] = createSignal<ChatProfileInfo | null>(null);
+  /** The chat's code state and its Reload Now, from its chat view (§app.chat-processes/code-pickup). */
+  const [codeControl, setCodeControl] = createSignal<CodeControl | null>(null);
 
   /**
    * Default for a freshly opened session: TUI-owned → read-only; else try chat without force.
@@ -222,6 +228,11 @@ export function SessionView(props: {
   const working = () => sessionWorking(s());
   /** What's working, by kind: team members and plain subagents are different things. */
   const split = () => workingSplit(working(), insight.data?.workers, insight.data?.teams);
+  /** The insight's workers, live and ended; null until it lands (the trigger then counts the list's). */
+  const tally = createMemo(() => {
+    const d = insight.data;
+    return d ? tallyWorkers(d.workers ?? [], d.workerTotal) : null;
+  });
 
   /**
    * The name this pane is known by, in the head and to AT. In a workspace it is the pre-assembled
@@ -287,6 +298,7 @@ export function SessionView(props: {
       </div>
       <ContextGauge path={path} />
       <ProfileChip summary={s()} info={profileInfo()} />
+      <CodeState control={codeControl()} />
       {/* The remote identity is always present; the connection chip reports liveness separately. */}
       <RemoteChip path={path} summary={s()} />
       <RemoteHeadChip path={path} onOpen={() => props.openPane(path, "session")} />
@@ -348,6 +360,7 @@ export function SessionView(props: {
           <Show when={hostOf(path)}>{(h) => <HostStateMark host={h()} class="workspace-pane-host" />}</Show>
           <ContextGauge path={path} />
           <ProfileChip summary={s()} info={profileInfo()} />
+          <CodeState control={codeControl()} />
           {/* Mid-turn, said at workspace level: split mode has N panes and
               no single place that says who is still working — the tab strip's dot covers tabs
               mode only. The pulse is the sanctioned one: work in flight. */}
@@ -401,11 +414,13 @@ export function SessionView(props: {
                   <WatchView
                     path={path}
                     sessionId={s().id}
+                    cwd={s().cwd}
                     author={author()}
                     streaming={!!s().live}
                     onAppend={reloadInsight}
                     workersWorking={working()}
-                    workersTotal={insight.data ? (insight.data.workers?.length ?? 0) : knownWorkers(s())}
+                    workersTotal={tally()?.live ?? knownWorkers(s())}
+                    workersTally={tally()}
                     workersSplit={split()}
                     onShowWorkers={() => props.toggleSubagents(path)}
                     workersOpen={props.paneOn(path, "agents")}
@@ -463,6 +478,7 @@ export function SessionView(props: {
                       author={author()}
                       force={c().force}
                       autofocus={c().autofocus}
+                      front={props.front}
                       onModel={(m) => {
                         setChatModel(m);
                         // The sidebar row reads the list: re-read it after a switch.
@@ -483,12 +499,13 @@ export function SessionView(props: {
                       onWorkers={(w) => props.onWorkers(path, w)}
                       onClaudeLogin={props.onClaudeLogin ? (login) => props.onClaudeLogin!(path, login) : undefined}
                       onProfile={setProfileInfo}
+                      onCode={(c) => setCodeControl(() => c)}
                       onTurnError={props.onTurnError ? (m) => props.onTurnError!(path, m) : undefined}
                       onShowWorkers={() => props.toggleSubagents(path)}
                       workersOpen={props.paneOn(path, "agents")}
                       onNewSession={() => props.onNewSession(path)}
                       overseer={props.overseer}
-                      projectOverseer={poControl && !poEarlier ? { onClear: poControl.clear, onReloaded: poControl.onReloaded } : undefined}
+                      projectOverseer={poControl && !poEarlier && po ? { projectId: po.projectId, onClear: poControl.clear, onReloaded: poControl.onReloaded } : undefined}
                       teams={insight.data?.teams}
                     />
                   );

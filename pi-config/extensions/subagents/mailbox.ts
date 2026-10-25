@@ -19,7 +19,7 @@ const MAX_REF_CHARS = 64;
 // Single-line fields (recipient, role, team name): no control characters at all, newline included.
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 const REQUEST_ID = /^[a-z0-9]{6,32}$/;
-const REQUEST_TYPES = new Set(["message", "steer", "roster", "question", "report", "succeed", "ready", "nudge"]);
+const REQUEST_TYPES = new Set(["message", "steer", "roster", "question", "report", "succeed", "ready", "nudge", "inbox"]);
 const STEER_MODES = new Set(["redirect", "followUp"]);
 const NOTICES = new Set(["wrap-up", "pause", "resume"]);
 const NUDGE_ACTIONS = new Set(["schedule", "list", "cancel"]);
@@ -43,7 +43,15 @@ export interface MemberContext {
 	successorOf?: string;
 }
 export type MemberDuty = "coordinator" | "monitor";
-export type RequestType = "message" | "steer" | "roster" | "question" | "report" | "succeed" | "ready" | "nudge";
+export type RequestType = "message" | "steer" | "roster" | "question" | "report" | "succeed" | "ready" | "nudge" | "inbox";
+export const INBOX_ACTIONS = ["list", "open", "done", "sent"] as const;
+export type InboxAction = (typeof INBOX_ACTIONS)[number];
+export const MAX_SUBJECT_CHARS = 120;
+export const MAX_NOTE_CHARS = 200;
+export const MAX_INBOX_IDS = 20;
+/** Stated in team_msg, team_ask and team_steer (§app.teams/inbox). */
+export const MESSAGE_LIMIT_TEXT = "At most 8,000 characters; for longer, write a file and send its path.";
+const ITEM_ID = /^i_[0-9a-z]{1,12}$/;
 export type MonitorNotice = "wrap-up" | "pause" | "resume";
 /** team_report's optional kind; Sova shows it on the report. */
 export const REPORT_KINDS = ["milestone", "concern"] as const;
@@ -71,6 +79,19 @@ export interface MailboxRequest {
 	reportKind?: ReportKind;
 	/** wake_nudge (monitor only). */
 	nudge?: NudgeRequest;
+	/** team_msg/team_ask: the item's one-line subject (else its first line). */
+	subject?: string;
+	/** team_msg: wake an idle recipient at once, reach a busy one at its next step. */
+	urgent?: boolean;
+	/** team_msg: the item this answers. */
+	replyTo?: string;
+	/** team_msg: the message waits for an answer (it is stored as a `question` item). */
+	needsReply?: boolean;
+	/** team_inbox (request type "inbox"). */
+	action?: InboxAction;
+	ids?: string[];
+	note?: string;
+	limit?: number;
 }
 export interface MailboxResponse {
 	version: 1;
@@ -98,7 +119,7 @@ export const MONITOR_TOOLS = ["team_msg", "team_inbox", "team_roster", "wake_nud
 export const SUCCESSOR_TOOLS = ["team_ready"] as const;
 
 /**
- * The one list of member tools a member really has, shared by member.ts, member-mcp.ts and the
+ * The one list of member tools a member really has, shared by member.ts and the
  * team header. A monitor has MONITOR_TOOLS (no team_ask: it never reaches the operator);
  * everyone else has MEMBER_TOOLS, plus the orchestrator pair and the coordinator pair. Any
  * successor, a monitor's included, also has team_ready.
@@ -113,27 +134,28 @@ export function memberToolNames(me: { orchestrator?: boolean; duty?: MemberDuty;
 	];
 }
 
-/** Tool texts shared with member-mcp.ts, so a pi member and a Claude member read the same contract. */
+/** Member tool texts (member.ts): one contract for every member. */
 export const memberToolText = (me: MemberContext) => {
 	const who = `${me.role} (${me.workerId}) in ${me.teamId}`;
 	return {
 		team_msg: me.duty === "monitor"
-			? `Send a message to another member of your team (${me.teamId}) by role or worker ID, or to "all". Set notice to wrap-up (a member over the context threshold must write its handover note and end its turn), pause (usage is at the limit: the team must wrap up and go idle) or resume (usage has reset: the team may continue); a notice is recorded in the team's action history. You cannot reach the operator.`
-			: `Send a message to another member of your team (${me.teamId}) by role or worker ID, or to "all" for every live sibling. The parent session delivers it as a new message in their session (they see it at their next step, or it starts a task if they are idle). Returns per-recipient delivery acceptance, not proof they acted. You cannot message yourself or workers outside your team.`,
-		team_inbox: "List messages and orchestrator instructions delivered to you so far (newest last). Deliveries also arrive as messages in your session; use this to re-read them.",
+			? `Send a message to another member of your team (${me.teamId}) by role or worker ID, or to "all" (every live member). It is queued as an item in each recipient's inbox and the answer comes at once ("Queued for <role> (<id>): item i_N"). Set notice to wrap-up (a member over the context threshold must write its handover note and end its turn), pause (usage is at the limit: the team must wrap up and go idle) or resume (usage has reset: the team may continue); a notice is urgent and is recorded in the team's action history. ${MESSAGE_LIMIT_TEXT} You cannot reach the operator.`
+			: `Send a message to another member of your team (${me.teamId}) by role or worker ID, or to "all" (one copy per live member; stopped ones are skipped and named). It is queued as an item in the recipient's inbox and the answer comes at once ("Queued for <role> (<id>): item i_N"): an idle recipient is woken with a short list within seconds; a busy one is never interrupted and sees it when its turn ends (urgent: at its next step). Queued is not proof they acted; team_inbox sent shows its status. Optional: subject (one line), urgent, needsReply (the recipient must answer it: it stays open until a reply with replyTo), replyTo (the id of an item in your inbox that this answers: it closes that item). A message to a member that was replaced goes to its successor. ${MESSAGE_LIMIT_TEXT} You cannot message yourself or workers outside your team.`,
+		team_inbox: "Your team inbox (served by the parent session). New items are listed to you by subject when they arrive (idle) or when your turn ends (busy); open an item to see it. Handle each item and close it in the same step as the work: a team_msg with replyTo closes it; otherwise done it with a short note on what you did. End each turn with nothing you have handled left open. action list (default): your open items (new or read), or the newest `limit` of any status; open: show up to 20 ids in full and mark them read; done: mark up to 20 ids addressed, with an optional one-line note (at most 200 characters); sent: the status and note of items you sent, and how each was closed.",
+
 		team_ask: me.coordinated
-			? "Raise a question to your team's coordinator (not the operator: in this team only the coordinator talks to the operator). The answer comes back later as a new message in your session. This does not block: continue with work that does not depend on the answer, or end your turn and you will be resumed with the answer."
-			: "Raise a question to the operator (the parent Pi session and its user). It is surfaced there and starts a parent turn if it is idle; the answer comes back later as a new message in your session. This does not block: continue with work that does not depend on the answer, or end your turn and you will be resumed with the answer.",
+			? `Raise a question to your team's coordinator (not the operator: in this team only the coordinator talks to the operator). It is queued as a question item in the coordinator's inbox; the answer comes back later as an item in yours (or a message in your session). This does not block: continue with work that does not depend on the answer, or end your turn and you will be resumed with the answer. ${MESSAGE_LIMIT_TEXT}`
+			: `Raise a question to the operator (the parent Pi session and its user). It is surfaced there and starts a parent turn if it is idle; the answer comes back later as a new message in your session. This does not block: continue with work that does not depend on the answer, or end your turn and you will be resumed with the answer. ${MESSAGE_LIMIT_TEXT}`,
 		team_roster: me.duty === "monitor"
 			? `Read-only live roster of your team (${me.teamId}): each member's role, worker ID, backend, state and context (tokens/window/%), the current monitor thresholds from team defaults, and the provider usage windows the team's models spend from. You are ${who}.`
-			: `Live roster of your team (${me.teamId}): each member's role, worker ID, backend, model, state, context (tokens/window/%), task outcome and declared ownership, plus recent control actions. Read-only; you are ${who}.`,
-		team_steer: "Orchestrator only: send instructions to one sibling in your team by role or worker ID. mode=followUp queues after their current task; mode=redirect changes their current task; omitted uses the backend's normal steering. An idle sibling starts a fresh task. Acceptance is not execution; check team_roster. You cannot start, add or stop members; ask the operator with team_ask for that.",
+			: `Live roster of your team (${me.teamId}): each member's role, worker ID, backend, model, state, context (tokens/window/%), open inbox items, task outcome and declared ownership, plus recent control actions. Read-only; you are ${who}.`,
+		team_steer: `Orchestrator only: send instructions to one sibling in your team by role or worker ID. mode=followUp queues after their current task; mode=redirect changes their current task; omitted uses the backend's normal steering. An idle sibling starts a fresh task. Delivered in full right away, never refused for being busy (it waits behind a delivery already in progress; a redirect goes ahead of queued ones); a sibling that was replaced gets it through its successor. Acceptance is not execution; check team_roster. ${MESSAGE_LIMIT_TEXT} You cannot start, add or stop members; ask the operator with team_ask for that.`,
 		team_report: "Coordinator only: report a milestone or a concern to the operator; set kind to milestone or concern. It is shown to them as a team-report message and does NOT start a turn or ask for action; use team_ask for a question or a decision you need.",
 		team_succeed: "Coordinator only: replace a member whose context is running out (the monitor tells you) with a fresh successor on the same backend, model and effort, named <role>-<n+1>. A working member is first told to write its handover note and end its turn; its successor starts once the note exists and that turn has ended (or at the handover timeout), and you get a message naming it. A monitor has no note: its successor starts at once and is briefed over team_msg. The old member is retired when the successor confirms with team_ready, or after the handover timeout. You can start nothing else and stop no one.",
 		team_ready: me.duty === "monitor"
 			? "Successor only: confirm you have taken over from the monitor you succeed (it briefed you over team_msg). The parent then retires that monitor, with its pending nudges; you continue the standing instruction."
 			: "Successor only: confirm you have taken over from the member you succeed (you read its handover note and asked what you needed). The parent then retires that member; you continue its work.",
-		wake_nudge: "Monitor only: schedule a wakeup. At the fire time the parent session delivers a [wake_nudge <id>] message that starts a new task for you, even while idle. action schedule needs delay (e.g. 30s, 5m, 1h30m) or at (ISO-8601); at least 10s and at most 24h ahead; at most 5 pending. list shows pending nudges; cancel takes id. After scheduling, end your turn; never sleep in a shell.",
+		wake_nudge: "Monitor only: schedule a wakeup. At the fire time a [wake_nudge <id>] notice arrives in your inbox and starts a new task for you, even while idle; close it with team_inbox done when you have run the check. action schedule needs delay (e.g. 30s, 5m, 1h30m) or at (ISO-8601); at least 10s and at most 24h ahead; at most 5 pending. list shows pending nudges; cancel takes id. After scheduling, end your turn; never sleep in a shell.",
 	};
 };
 
@@ -192,7 +214,7 @@ export function decodeMemberContext(raw: string | undefined): MemberContext | un
 
 export function decodeRequest(value: unknown): MailboxRequest | undefined {
 	if (!isRecord(value) || value.version !== 1) return undefined;
-	const { id, type, at, to, message, mode, notice, reportKind, nudge } = value;
+	const { id, type, at, to, message, mode, notice, reportKind, nudge, subject, urgent, replyTo, needsReply, action, ids, note, limit } = value;
 	if (typeof id !== "string" || !REQUEST_ID.test(id)) return undefined;
 	if (typeof type !== "string" || !REQUEST_TYPES.has(type)) return undefined;
 	if (typeof at !== "number" || !Number.isFinite(at)) return undefined;
@@ -201,6 +223,14 @@ export function decodeRequest(value: unknown): MailboxRequest | undefined {
 	if (mode !== undefined && (typeof mode !== "string" || !STEER_MODES.has(mode))) return undefined;
 	if (notice !== undefined && (typeof notice !== "string" || !NOTICES.has(notice))) return undefined;
 	if (reportKind !== undefined && !REPORT_KINDS.includes(reportKind as ReportKind)) return undefined;
+	if (subject !== undefined && (typeof subject !== "string" || subject.length > MAX_SUBJECT_CHARS || CONTROL.test(subject))) return undefined;
+	if (urgent !== undefined && typeof urgent !== "boolean") return undefined;
+	if (needsReply !== undefined && typeof needsReply !== "boolean") return undefined;
+	if (replyTo !== undefined && (typeof replyTo !== "string" || !ITEM_ID.test(replyTo))) return undefined;
+	if (action !== undefined && !INBOX_ACTIONS.includes(action as InboxAction)) return undefined;
+	if (ids !== undefined && (!Array.isArray(ids) || ids.length > MAX_INBOX_IDS || !ids.every((i) => typeof i === "string" && ITEM_ID.test(i)))) return undefined;
+	if (note !== undefined && (typeof note !== "string" || note.length > MAX_NOTE_CHARS || CONTROL.test(note))) return undefined;
+	if (limit !== undefined && (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > MAX_INBOX_RECORDS)) return undefined;
 	let decodedNudge: NudgeRequest | undefined;
 	if (nudge !== undefined) {
 		decodedNudge = decodeNudge(nudge);
@@ -213,6 +243,14 @@ export function decodeRequest(value: unknown): MailboxRequest | undefined {
 	if (notice !== undefined) out.notice = notice as MonitorNotice;
 	if (reportKind !== undefined) out.reportKind = reportKind as ReportKind;
 	if (decodedNudge) out.nudge = decodedNudge;
+	if (subject !== undefined && subject.trim()) out.subject = subject.trim();
+	if (urgent !== undefined) out.urgent = urgent;
+	if (replyTo !== undefined) out.replyTo = replyTo;
+	if (needsReply === true) out.needsReply = true;
+	if (action !== undefined) out.action = action as InboxAction;
+	if (ids !== undefined) out.ids = [...new Set(ids as string[])];
+	if (note !== undefined && note.trim()) out.note = note.trim();
+	if (limit !== undefined) out.limit = limit;
 	return out;
 }
 

@@ -25,3 +25,50 @@
    it. layout.ts' GROUP mirrors these. */
 .vis-flow-group > rect { fill: var(--color-sunken); stroke: var(--color-border-strong); stroke-width: 1; stroke-dasharray: 4 3; }
 .vis-svg .vis-flow-group-title { fill: var(--color-ink-2); font-weight: var(--fw-semibold); stroke: var(--color-sunken); stroke-width: 4px; stroke-linejoin: round; paint-order: stroke; }
+/* Tap to follow (./focus.ts, View.tsx). The figure is one Tab stop; a picked shape gets an accent
+   ring 2.5px outside its outline (a gap of the drawing's surface between them) and a heavier
+   outline; its neighbours and the arrows to them stay, those arrows darker and thicker in ink;
+   everything else fades. The keyboard's cursor shows the same ring, only while focus is visible. */
+.vis-flow:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: var(--r-xs); }
+.vis-flow-on .vis-node { cursor: pointer; }
+/* Beats `.vis-node > rect`: the tap area around a dot is never drawn. */
+.vis-node > .vis-flow-hit { fill: transparent; stroke: none; }
+.vis-flow-ring > * { fill: none; stroke: var(--color-accent); stroke-width: 9; }
+.vis-flow-ring-gap > * { fill: none; stroke: var(--color-surface); stroke-width: 5; }
+.vis-flow:not(:focus-visible) .vis-node:not(.vis-flow-sel) > :is(.vis-flow-ring, .vis-flow-ring-gap) { display: none; }
+.vis-svg .vis-node.vis-flow-sel > :is(rect, polygon, circle, path:not(.vis-cap)) { stroke-width: 2.5; }
+.vis-flow-on :is(.vis-node, .vis-edge, .vis-edge-label) { transition: opacity var(--dur-fast) var(--ease-standard); }
+.vis-flow-dim { opacity: .3; }
+/* A faded arrow label keeps its opaque background (an arrow never shows through it); its words fade. */
+.vis-edge-label.vis-flow-dim { opacity: 1; }
+.vis-edge-label.vis-flow-dim text { opacity: .3; }
+.vis-svg .vis-edge.vis-flow-near { stroke: var(--color-ink); stroke-width: 2.25; }
+.vis-svg .vis-flow-arrowhead-lit { fill: var(--color-ink); }
+.vis-svg .vis-edge-label.vis-flow-near text { fill: var(--color-ink); }
+@media (prefers-reduced-motion: reduce) {
+  .vis-flow-on :is(.vis-node, .vis-edge, .vis-edge-label) { transition: none; }
+}
+/* The reading panel, under the drawing (under its panel's drawing in a sectioned figure). */
+.vis-flow-read {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.vis .vis-flow-read p { margin: 0; }
+.vis-flow-read-kind { font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
+.vis-flow-read-text { font-weight: var(--fw-medium); }
+.vis-flow-read-sub { color: var(--color-ink-2); font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.vis-flow-read-mark { display: flex; align-items: baseline; gap: var(--space-1); color: var(--color-ink-2); font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.vis-flow-read-row { display: flex; flex-direction: column; gap: var(--space-1); }
+.vis-flow-read-head { font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink-2); }
+.vis-flow-read-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* A chip holds its neighbour's whole text: it wraps rather than cuts. */
+.vis-flow-read-chips > .button { height: auto; min-height: var(--control-sm); white-space: normal; text-align: left; padding-block: var(--space-1); max-width: 100%; }

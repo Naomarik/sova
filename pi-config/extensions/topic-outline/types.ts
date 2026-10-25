@@ -84,7 +84,8 @@ export interface OutlineConfig {
   shareWithSessions: "off" | "now-only" | "summary";
   /** Include lastHeading (short user-authored `#` text) in the sessions broadcast. */
   shareLastHeading: boolean;
-  claudeBin: string;
+  /** The Claude program to run; default: the one every Sova spawn runs (claude-code/claude-executable.ts). */
+  claudeBin?: string;
   limits: { maxTopics: number; maxBullets: number };
 }
 

@@ -5,23 +5,29 @@
  * rate-limit backoff) in one place.
  *
  * This is index.ts's `Remote` minus everything local: no cwd, no path mapping, no pi tool
- * operations. `Remote extends Connection` adds those; remote/mcp-server.ts (the workers' MCP server)
- * uses Connection directly, which is why this file must stay:
+ * operations. `Remote extends Connection` adds those. This file stays:
  *  - pi-runtime-free — node builtins, argv.ts, exec.ts and channel.ts only, NEVER
  *    @earendil-works/pi-coding-agent (hence `agentDir` as a dep instead of pi's `getAgentDir()`);
  *  - loadable by `node <file>.ts` (strip-only type stripping), like channel.ts: no parameter
  *    properties, enums or namespaces.
  *
  * The far working directory is given once, by the caller (`farCwd`): the extension derives it from
- * the session's local cwd (the placeholder), a worker's MCP server gets it in its identity.
+ * the session's local cwd (the placeholder).
  */
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { buildTargetArgv, hangupGuard, shQuote, type Target } from "./argv.ts";
-import { buildChannelArgv, Channel } from "./channel.ts";
+import { buildTargetArgv, connectTimeoutMs, hangupGuard, shQuote, type Target } from "./argv.ts";
+import { buildChannelArgv, Channel, channelStartTimeoutMs } from "./channel.ts";
 import { type RunOptions, type RunResult, runArgv } from "./exec.ts";
 
 const PREFLIGHT_TIMEOUT_MS = 20_000;
+/** With a target's `connectTimeoutS`: the preflight allows its connect time + this (see preflightTimeoutMs). */
+const PREFLIGHT_MARGIN_MS = 10_000;
+
+/** The probe's bound for `target`: PREFLIGHT_TIMEOUT_MS, or its `connectTimeoutS` + PREFLIGHT_MARGIN_MS. */
+export function preflightTimeoutMs(target: Target, registry?: readonly Target[]): number {
+	return connectTimeoutMs(target, registry, PREFLIGHT_TIMEOUT_MS, PREFLIGHT_MARGIN_MS);
+}
 /** A failed preflight is re-tried after this long; until then tools fail at once with the cached error. */
 const RETRY_AFTER_MS = 15_000;
 const OP_TIMEOUT_MS = 120_000;
@@ -128,10 +134,10 @@ export interface ConnectionDeps {
 	agentDir?: string;
 }
 
-/** Adapt channel.ts's Channel, spawned from `argv`, to what a Connection needs. */
-export function channelOver(argv: readonly string[]): ChannelFactory {
+/** Adapt channel.ts's Channel, spawned from `argv`, to what a Connection needs. `startTimeoutMs` omitted = channel.ts's default. */
+export function channelOver(argv: readonly string[], startTimeoutMs?: number): ChannelFactory {
 	return (onState) => {
-		const ch = new Channel({ argv, onState: () => onState(stateOf()) });
+		const ch = new Channel({ argv, ...(startTimeoutMs === undefined ? {} : { startTimeoutMs }), onState: () => onState(stateOf()) });
 		// An idle close is the channel's normal end, not a failure: shown as "off".
 		const stateOf = (): ChannelState => (ch.state === "new" ? "off" : ch.state === "dead" && ch.death?.reason === "idle" ? "off" : ch.state);
 		return {
@@ -154,7 +160,7 @@ export function channelOver(argv: readonly string[]): ChannelFactory {
 /** The target's channel factory; undefined when it has no ssh hop (nothing to pin). */
 export function channelFactory(target: Target, registry: readonly Target[]): ChannelFactory | undefined {
 	const argv = buildChannelArgv(target, registry);
-	return argv ? channelOver(argv) : undefined;
+	return argv ? channelOver(argv, channelStartTimeoutMs(target, registry)) : undefined;
 }
 
 export interface ConnectionRunOptions extends RunOptions {
@@ -174,6 +180,8 @@ export class Connection {
 	private failure?: { error: Error; at: number };
 	private readonly execArgv: NonNullable<ConnectionDeps["exec"]>;
 	private readonly makeChannel: ChannelFactory | undefined;
+	/** The probe's bound: PREFLIGHT_TIMEOUT_MS unless the target sets `connectTimeoutS`. */
+	private readonly preflightMs: number;
 	private channel?: ChannelLike;
 	private channelFailures: number[] = [];
 	private channelSkipUntil = 0;
@@ -201,6 +209,7 @@ export class Connection {
 		this.deps = deps;
 		this.agentDir = deps.agentDir ?? defaultAgentDir();
 		this.execArgv = deps.exec ?? runArgv;
+		this.preflightMs = preflightTimeoutMs(target, registry);
 		// Omitted = this target's own channel; `false` = none at all.
 		this.makeChannel = deps.channel === undefined ? channelFactory(target, registry) : deps.channel === false ? undefined : deps.channel;
 	}
@@ -223,7 +232,7 @@ export class Connection {
 	}
 
 	protected unreachable(r: RunResult | Error): Error {
-		const why = r instanceof Error ? r.message : r.timedOut ? `no answer within ${PREFLIGHT_TIMEOUT_MS / 1000}s` : r.stderr.trim() || `exit code ${r.exitCode}`;
+		const why = r instanceof Error ? r.message : r.timedOut ? `no answer within ${this.preflightMs / 1000}s` : r.stderr.trim() || `exit code ${r.exitCode}`;
 		return new Error(`Target "${this.target.name}" (${describeTarget(this.target)}) is unreachable: ${why}`);
 	}
 
@@ -319,7 +328,7 @@ export class Connection {
 		if (this.info) return Promise.resolve(this.info);
 		if (this.pending) return this.pending;
 		const t0 = Date.now();
-		this.pending = this.execArgv(this.argv(Connection.PROBE, this.farCwd), { timeoutMs: PREFLIGHT_TIMEOUT_MS })
+		this.pending = this.execArgv(this.argv(Connection.PROBE, this.farCwd), { timeoutMs: this.preflightMs })
 			.then(
 				(r) => {
 					this.info = this.parseProbe(r);
@@ -361,7 +370,7 @@ export class Connection {
 	async check(): Promise<RemoteStatus> {
 		const t0 = Date.now();
 		try {
-			const r = await this.execArgv(this.argv(Connection.PROBE, this.info?.cwd ?? this.farCwd), { timeoutMs: PREFLIGHT_TIMEOUT_MS });
+			const r = await this.execArgv(this.argv(Connection.PROBE, this.info?.cwd ?? this.farCwd), { timeoutMs: this.preflightMs });
 			this.info = this.parseProbe(r);
 			this.failure = undefined;
 			this.noteOk(Date.now() - t0);

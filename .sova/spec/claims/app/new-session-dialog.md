@@ -20,6 +20,7 @@ opens a folder picker in place, under the field, inside the same dialog.
         …chevron-down, class="icon icon-sm icon-twist" (turns 180° while open)…
       </button>
       <span class="field-hint" id="ns-cwd-hint">pi runs in this folder and can read and change files in it.</span>
+      <span class="field-hint" id="ns-cwd-project">This folder is in sova: the session starts as one of its coding sessions.</span>  <!-- only for a folder in a project; then also in the field's aria-describedby -->
       <span class="field-error" id="ns-cwd-error"><!-- on error only --></span>
     </div>
 
@@ -97,8 +98,10 @@ chosen here. Start that session from a TUI.
 The dialog makes one session. There is no type to choose: a group of sessions is made from the
 sidebar or by the Overseer (§workspace.groups/making-a-comparison).
 
-- **Prefill.** The `cwd` of the open session, else the most recently active session's `cwd`,
-  skipping any folder that is hidden (below) while Show hidden folders is off. The field shows the
+- **Prefill.** The `cwd` of the open session; else, on a project's page (`#/projects/<pid>`, any
+  of its tabs, a project of this host), that project's root, so the dialog opens with this project
+  already picked (the folder hint below says so, and the Project tab has it selected); else the
+  most recently active session's `cwd`, skipping any folder that is hidden (below) while Show hidden folders is off. The field shows the
   path with `~`, and the full path goes in `title`. With nothing to prefill it reads "Choose a
   folder" in `--color-ink-muted`, and Create Session is `aria-disabled`. **The prefill is decided
   once, when the dialog opens**: turning the toggle on afterwards offers the hidden folders in the
@@ -142,6 +145,17 @@ sidebar or by the Overseer (§workspace.groups/making-a-comparison).
   hidden while the picker is open, since Recent is there.
 - **Submitting.** Create Session posts `{cwd}`. While pending, the button shows "Creating…" and
   is `aria-disabled`. Enter inside the picker never submits.
+- **A folder in a project** (§app.projects/folder-sessions). While the Host is this one and the
+  chosen folder is a listed project's root, inside it, or inside one of its worktrees as Sova names
+  them (`<root's parent>/.worktrees/<root's name>-…`; the deepest root wins), a second hint line
+  under the Folder field says "This folder is in {project}: the session starts as one of its coding
+  sessions." and Create Session starts it as the Project tab does, in that folder: `POST
+  /api/projects/:pid/overseer/coding` `{worktree: "later", cwd}`. The toast says "Coding session
+  started in the project root." for the root, else "Coding session of {project} started in
+  {folder}." (the folder with `~`), or the mode sentence when its mode couldn't be set; a 4xx
+  shows the server's message under the Folder field. The projects are read when This Computer
+  first shows (the Project tab's list); until they answer, Create Session stays `aria-disabled`,
+  and a failed read starts plain sessions.
 - **On success.** Close the dialog, navigate to the new session, and focus the composer, except
   on a touch-only device (`(hover: none) and (pointer: coarse)`), where that would raise the
   keyboard over the empty session. There the user taps the composer.
@@ -230,7 +244,8 @@ picker and clears the field error; each tab keeps its own choice.
   always start at `/`, since the target's `$HOME` isn't ours, and **no remote path is ever shown
   with `~`**. The Home button reads **Start** and opens the target's start folder. Recent lists
   this target's recent folders. The client gives up after 20 s ("Couldn't reach {target}. No answer
-  within 20s."), so "Asking {target} for its folders…" always ends.
+  within 20s."), so "Asking {target} for its folders…" always ends. The server's own wait is 15 s,
+  longer for a target that declares a slow connect (§app.new-session-dialog/slow-targets).
 - **Recent remote folders.** No endpoint of their own. A remote session's local cwd is a
   placeholder that mirrors the remote folder, `~/.pi/agent/sova/targets/<target>/<remote path>`,
   so the recents from `GET /api/cwds` already hold them. The Remote tab lists those (up to 20,
@@ -329,7 +344,7 @@ branch, so the tab asks for nothing that names anything.
 </div>
 ```
 
-- **The list.** `GET /api/projects`, fetched the first time the tab shows: every project on this
+- **The list.** `GET /api/projects`, fetched the first time this tab or This Computer shows: every project on this
   host that isn't archived, sorted by name (case-insensitive). Each row shows the name, the root
   (with `~`, muted mono) and a chip with its organization's name, or "Standalone" for a project in
   no organization. Click or Enter/Space selects one; double-click selects it and submits.
@@ -357,3 +372,26 @@ branch, so the tab asks for nothing that names anything.
   the page (§mesh.remote-sessions/host-picker). Choosing another host drops the tab from the strip,
   and when Project was shown the dialog moves to This Computer.
 
+
+## §app.new-session-dialog/slow-targets — Slow-to-connect targets
+
+A target whose host is slow to reach cold (one behind AWS SSM with an EC2 Instance Connect key push
+takes 10-30 s) can say so in `targets.json` with `connectTimeoutS`, an integer from 1 to 300 seconds,
+on the entry that carries the `ssh` block; an entry reached `via` another takes the value of the
+ssh-bearing target of its chain. Any other value makes the entry invalid, listed with the reason
+"connectTimeoutS must be an integer 1-300".
+
+- **Set.** ssh's `ConnectTimeout` is that many seconds, unless the entry's own `ssh.options` sets
+  `ConnectTimeout`, which ssh takes first and the timers then follow. The server's reachability
+  probe, the Remote tab's folder listing and every other command the server runs on that target
+  wait the connect time plus 10 s, never less than the 15 s they wait otherwise; an offline result
+  says "No answer within {N}s" with that bound. A remote session on it gives its startup check the
+  connect time plus 10 s (never under 20 s) and its fast channel the connect time plus 5 s (never
+  under 15 s).
+- **Unset.** Nothing changes: ssh gets `ConnectTimeout=10`, and the server waits 15 s, the startup
+  check 20 s and the channel 15 s, exactly as before the field existed, including for an entry that
+  sets `ConnectTimeout` in its `ssh.options` alone.
+- **Older readers.** The field is additive: a Sova or remote extension that predates it ignores it
+  as an unknown key and keeps the entry valid.
+- The dialog's own 20 s wait for a folder listing is unchanged: on a cold slow host it can give up
+  first, and the server's run carries on, leaving the ssh connection warm for the next try.

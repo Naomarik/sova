@@ -21,7 +21,7 @@ import "../explain.css";
  *   worker killed right after writing, say). The page is the deliverable, so the link stays and
  *   the note sits under the row as a muted advisory — not a failure.
  *
- * An interrupted run (`status: "interrupted"`: a restart or /reload stopped it) is one of the last
+ * An interrupted run (`status: "interrupted"`: its worker stopped before it settled) is one of the last
  * two: noted when its page was written anyway, failed when not. It carries an Interrupted chip in
  * place of Failed, and its row reads "Explain" rather than "Explained" when there is no page.
  */

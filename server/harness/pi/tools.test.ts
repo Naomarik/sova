@@ -11,7 +11,7 @@ import { after, describe, test } from "node:test";
 import type { StateKind, ToolCtx, ToolResult, ToolSpec } from "../../../shared/harness";
 import { loadPi } from "./testing/load-pi.ts";
 import { historyOf } from "./reader";
-import { fromPiTool, toolCtx, toPiTool } from "./tools";
+import { fromPiTool, fromPiToolDefinition, piPrepare, toolCtx, toPiTool } from "./tools";
 
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-pi-tools-")));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -156,6 +156,53 @@ describe("fromPiTool", () => {
     await fromPiTool(toPiTool(echoSpec(seen))).execute("c", { text: "t" }, undefined, undefined, toolCtx(piCtx));
     assert.equal(seen[0]!.ctx!.native, piCtx);
     assert.equal(seen[0]!.ctx!.sessionId, (piCtx as any).sessionManager.getSessionId());
+  });
+});
+
+describe("fromPiToolDefinition and piPrepare (a served pi tool)", () => {
+  test("its run gets no pi context; its fields come through", async () => {
+    let got: unknown = "unset";
+    const def = {
+      name: "pi_file",
+      label: "File",
+      description: "A pi tool the server serves.",
+      parameters: SCHEMA,
+      async execute(_id: string, p: unknown, _s: unknown, _u: unknown, ctx: unknown) {
+        got = ctx;
+        return { content: [{ type: "text" as const, text: JSON.stringify(p) }], details: null };
+      },
+    };
+    const spec = fromPiToolDefinition(def as never);
+    assert.equal(spec.name, "pi_file");
+    assert.equal(spec.parameters, SCHEMA);
+    assert.equal(spec.prepareRule, undefined);
+    const piCtx = { sessionManager: SessionManager.inMemory(dir), cwd: dir } as never;
+    const r = await spec.execute("c", { text: "t" }, undefined, undefined, toolCtx(piCtx));
+    assert.equal(got, undefined);
+    assert.deepEqual(r.content, [{ type: "text", text: '{"text":"t"}' }]);
+  });
+
+  test("a definition that rewrites its arguments must name its rule, and keeps both", () => {
+    const edit = pi.agent.createEditToolDefinition(dir);
+    assert.throws(() => fromPiToolDefinition(edit), /name the rule/);
+    const spec = fromPiToolDefinition(edit, "pi-edit");
+    assert.equal(spec.prepareRule, "pi-edit");
+    assert.equal(typeof spec.prepareArguments, "function");
+  });
+
+  test("pi-edit is pi's own edit rewrite, on its legacy shapes", () => {
+    const own = pi.agent.createEditToolDefinition(dir).prepareArguments!;
+    const ours = piPrepare("pi-edit");
+    const cases: unknown[] = [
+      { path: "a.txt", edits: [{ oldText: "a", newText: "b" }] },
+      { path: "a.txt", edits: JSON.stringify([{ oldText: "a", newText: "b" }]) },
+      { path: "a.txt", oldText: "a", newText: "b" },
+      { path: "a.txt", edits: { oldText: "a", newText: "b" } },
+      null,
+      "text",
+    ];
+    for (const c of cases) assert.deepEqual(ours(structuredClone(c)), own(structuredClone(c) as never), JSON.stringify(c));
+    assert.throws(() => piPrepare("owner-area" as never), /No pi rewrite/);
   });
 });
 

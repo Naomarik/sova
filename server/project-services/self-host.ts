@@ -1,16 +1,13 @@
 import { execFileSync, spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { activityOf, readLiveRecords, WORKING_FRESH_MS, workerCountsOf } from "../live";
-import { LIVE_DIR } from "../paths";
 import { realExec, type Exec } from "./drivers";
-import { servicesRoot, stateHash } from "./store";
+import { stateHash } from "./store";
 
 /**
  * Sova hosting itself (§app.project-services/self-host): the checkout this server's code was loaded
- * from, and whether any session it hosts is busy (CLAUDE.md "Live server restart": a fresh live
- * record of this server's pid with a working subagent or a turn in flight).
+ * from, when it started, and the delayed restart of an adopted unit (§app.project-services/adopt).
  */
 
 let checkout: string | null | undefined;
@@ -27,22 +24,6 @@ export function serverCheckout(): string | null {
   return checkout;
 }
 
-/** Why this server's hosted sessions are busy ("2 sessions busy: 1 with working subagents, 1 turn in flight"), or null when none is. */
-export function hostedBusy(now = Date.now()): string | null {
-  let workers = 0;
-  let turns = 0;
-  for (const r of readLiveRecords({ includeOwn: true })) {
-    if (r.pid !== process.pid) continue;
-    const beat = typeof r.rec?.heartbeat === "number" ? r.rec.heartbeat : 0;
-    if (now - beat > WORKING_FRESH_MS) continue;
-    if ((workerCountsOf(r.rec)?.working ?? 0) > 0) workers++;
-    else if (activityOf(r.rec)?.state === "working") turns++;
-  }
-  if (!workers && !turns) return null;
-  const parts = [...(workers ? [`${workers} with working subagents`] : []), ...(turns ? [`${turns} with a turn in flight`] : [])];
-  return `${workers + turns} hosted session${workers + turns === 1 ? "" : "s"} busy: ${parts.join(", ")}`;
-}
-
 /** When this server started and the commit its checkout had then (as `GET /api/health` answers them), read once. */
 let started: { startedAt: string; head: string | null } | undefined;
 export function serverStart(): { startedAt: string; head: string | null } {
@@ -57,53 +38,23 @@ export function serverStart(): { startedAt: string; head: string | null } {
   return started;
 }
 
-/** The restart gate (§app.project-services/adopt), from this server's own code, never a project's. */
-export const RESTART_GATE = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "scripts", "sova-restart-gate.mjs");
-export const RESTART_DELAY_SEC = 30;
-export const restartGateLog = () => join(servicesRoot(), "logs", "restart-gate.log");
+/** How long after a confirmed apply the adopted unit restarts: long enough for the verb's answer to get out (§app.project-services/adopt). */
+export const RESTART_DELAY_SEC = 3;
 
-/** The transient unit that runs one schedule of an adopted unit's gate: a name of its own per schedule (an elapsed timer may stay loaded), and a second gate finds the unit restarted already. */
-export const restartGateUnitOf = (unit: string, at = Date.now()) => `sova-restart-${stateHash()}-${unit.replace(/\.service$/, "").replace(/[^A-Za-z0-9_.-]/g, "_")}-${at.toString(36)}`;
+/** The transient unit that runs one scheduled restart of an adopted unit: a name of its own per schedule (an elapsed timer may stay loaded). */
+export const restartUnitOf = (unit: string, at = Date.now()) => `sova-restart-${stateHash()}-${unit.replace(/\.service$/, "").replace(/[^A-Za-z0-9_.-]/g, "_")}-${at.toString(36)}`;
 
-/** The `systemd-run` argv that runs the gate for `unit` once, `RESTART_DELAY_SEC` from now (pure, for tests). */
-export function restartGateArgv(o: { unit: string; serverPid: number; liveDir: string; mainPid: number | null; log: string; node?: string; script?: string; at?: number }): string[] {
-  return [
-    "--user",
-    `--unit=${restartGateUnitOf(o.unit, o.at)}`,
-    `--on-active=${RESTART_DELAY_SEC}s`,
-    "--collect",
-    "--quiet",
-    "--",
-    o.node ?? process.execPath,
-    o.script ?? RESTART_GATE,
-    "--unit",
-    o.unit,
-    "--server-pid",
-    String(o.serverPid),
-    "--live-dir",
-    o.liveDir,
-    ...(o.mainPid ? ["--main-pid", String(o.mainPid)] : []),
-    "--log",
-    o.log,
-  ];
+/** The `systemd-run` argv that restarts `unit` once, `RESTART_DELAY_SEC` from now (pure, for tests). */
+export function restartArgv(unit: string, at?: number): string[] {
+  return ["--user", `--unit=${restartUnitOf(unit, at)}`, `--on-active=${RESTART_DELAY_SEC}s`, "--collect", "--quiet", "--", "systemctl", "--user", "restart", unit];
 }
 
-/** macOS: the gate's own argv, run as a process in a session of its own that waits `RESTART_DELAY_SEC` itself (no systemd-run there) (pure, for tests). */
-export function restartGateDetachedArgv(o: { unit: string; serverPid: number; liveDir: string; mainPid: number | null; log: string; script?: string }): string[] {
-  return [
-    o.script ?? RESTART_GATE,
-    "--delay",
-    String(RESTART_DELAY_SEC),
-    "--unit",
-    o.unit,
-    "--server-pid",
-    String(o.serverPid),
-    "--live-dir",
-    o.liveDir,
-    ...(o.mainPid ? ["--main-pid", String(o.mainPid)] : []),
-    "--log",
-    o.log,
-  ];
+/** macOS: the launchd target of an adopted unit, `gui/<uid>/<label>`, the label being the unit's name without `.service`. */
+export const launchdTargetOf = (unit: string, uid: number) => `gui/${uid}/${unit.replace(/\.service$/, "")}`;
+
+/** macOS: `/bin/sh` argv that waits `RESTART_DELAY_SEC`, then kickstarts the agent (the target is `$0`, never part of the script) (pure, for tests). */
+export function kickstartArgv(unit: string, uid: number): string[] {
+  return ["-c", `sleep ${RESTART_DELAY_SEC}; exec launchctl kickstart -k "$0"`, launchdTargetOf(unit, uid)];
 }
 
 /** Start `file args` in a session of its own, not waited for: null once it runs, else why it couldn't start. */
@@ -125,12 +76,13 @@ export function spawnDetached(file: string, args: string[]): Promise<string | nu
 }
 
 /**
- * Schedule `unit`'s gated restart: null when scheduled, else `systemd-run`'s own message (nothing
- * was scheduled). On macOS the gate runs detached from this server (a session of its own survives
- * the `launchctl kickstart -k` it issues) and waits the delay itself.
+ * Schedule `unit`'s restart `RESTART_DELAY_SEC` from now: null when scheduled, else `systemd-run`'s
+ * own message (nothing was scheduled). No busy check: every chat runs in a process of its own and
+ * outlives the restart. On macOS a process in a session of its own waits the delay and kickstarts
+ * the agent; it survives the `launchctl kickstart -k` it issues.
  */
-export async function scheduleRestart(unit: string, mainPid: number | null, exec: Exec = realExec, platform: NodeJS.Platform = process.platform, detached: (file: string, args: string[]) => Promise<string | null> = spawnDetached): Promise<string | null> {
-  if (platform === "darwin") return detached(process.execPath, restartGateDetachedArgv({ unit, serverPid: process.pid, liveDir: LIVE_DIR, mainPid, log: restartGateLog() }));
-  const r = await exec("systemd-run", restartGateArgv({ unit, serverPid: process.pid, liveDir: LIVE_DIR, mainPid, log: restartGateLog() }), { timeoutMs: 15_000 });
+export async function scheduleRestart(unit: string, exec: Exec = realExec, platform: NodeJS.Platform = process.platform, detached: (file: string, args: string[]) => Promise<string | null> = spawnDetached, uid: number = process.getuid?.() ?? 0): Promise<string | null> {
+  if (platform === "darwin") return detached("/bin/sh", kickstartArgv(unit, uid));
+  const r = await exec("systemd-run", restartArgv(unit), { timeoutMs: 15_000 });
   return r.code === 0 ? null : (r.stderr || r.stdout).trim() || `systemd-run exited with ${r.code}`;
 }

@@ -30,11 +30,13 @@ import { type ProxyHandle, proxySocketPath, startProxy } from "./proxy.ts";
 import { ensureSessionTmpDir, resolveSessionPolicy } from "./session-policy.ts";
 import {
 	describeActive,
+	isStarting,
 	markerText,
 	normalizeActive,
 	parseState,
 	restoreActive,
 	SANDBOX_DISCOVER_EVENT,
+	SANDBOX_STARTING,
 	SANDBOX_ENTRY_TYPE,
 	SANDBOX_STATE_EVENT,
 	type SandboxActive,
@@ -50,6 +52,8 @@ import { confinedDefinitions, type Snapshot, type StockOptions, stockDefinitions
 const FLAG = "sandbox";
 /** Set by a sandboxed parent on its workers: its level and writable roots (`ParentScope` JSON). */
 const PARENT_FLAG = "sandbox-parent";
+/** Set by Sova when the session runs in the home folder because its own folder is gone: the cwd is not a writable root. */
+const CWD_NOT_WRITABLE_FLAG = "sandbox-cwd-not-writable";
 const STATUS_KEY = "sandbox";
 /** remote/workers.ts: a session on a target runs its tools there, and remote owns the seven names. */
 const REMOTE_SESSION_EVENT = "remote:session";
@@ -69,8 +73,6 @@ function realpathOr(p: string): string {
 
 /** This extension's directory, for a worker's `-e` list. */
 const SELF_DIR = realpathOr(dirname(fileURLToPath(import.meta.url)));
-/** The confined-launch entry a spawner (or a hosting process) imports by path. */
-const LAUNCH_MODULE = join(SELF_DIR, "launch.ts");
 
 /** Subagents only (the default off), or Off with `workersOff`. */
 function offState(level: SandboxLevel = "workspace-write", workersOff = false): SandboxActive {
@@ -81,6 +83,11 @@ export default function sandbox(pi: ExtensionAPI) {
 	pi.registerFlag(FLAG, {
 		description: "Start with the sandbox on, for subagents only, or off (on|subagents|off). Workers get it from their parent; a session started with --sandbox on cannot lower it",
 		type: "string",
+	});
+
+	pi.registerFlag(CWD_NOT_WRITABLE_FLAG, {
+		description: "The session's cwd is a stand-in for a folder that is gone (Sova sets it): never a writable root while the sandbox is on",
+		type: "boolean",
 	});
 
 	pi.registerFlag(PARENT_FLAG, {
@@ -173,7 +180,8 @@ export default function sandbox(pi: ExtensionAPI) {
 		}
 		if (typeof parentScope === "string") return { ok: false, reason: parentScope };
 		// The same resolution Sova's server makes for this session (session-policy.ts).
-		const resolved = resolveSessionPolicy({ agentDir: agentDir(), cwd, sessionId, tmpDir, parent: parentScope, worktreeRoots, backend });
+		const cwdWritable = pi.getFlag(CWD_NOT_WRITABLE_FLAG) !== true;
+		const resolved = resolveSessionPolicy({ agentDir: agentDir(), cwd, sessionId, tmpDir, parent: parentScope, worktreeRoots, backend, ...(cwdWritable ? {} : { cwdWritable: false }) });
 		if (!resolved.ok) return { ok: false, reason: resolved.error };
 		const policy = resolved.value;
 		if (policy.outsideParent) {
@@ -235,8 +243,7 @@ export default function sandbox(pi: ExtensionAPI) {
 	 * How one worker starts (§chat.sandbox/workers, §chat.worktrees/workers). On: the parent's scope
 	 * (narrowed to a tracked worktree's `root`), or the refusal; Subagents only: a write-only scope in
 	 * a tracked worktree, else nothing; Off (§chat.sandbox/states): nothing, ever. pi workers get the
-	 * extension's flags; any other backend a scope for `confineLaunch` (launch.ts), which runs its
-	 * whole process under the same policy.
+	 * extension's flags; any other backend the scope its whole process would run under (launch.ts).
 	 */
 	function workerLaunch(on: boolean, workersOff: boolean, req: WorkerLaunchRequest): WorkerLaunch {
 		if (!on && workersOff) return { kind: "none" };
@@ -258,7 +265,7 @@ export default function sandbox(pi: ExtensionAPI) {
 		}
 		if (req.backend === "pi") return { kind: "pi", extensionPath: SELF_DIR, flags: { [FLAG]: "on", [PARENT_FLAG]: JSON.stringify(scope) } };
 		if (!OWNER_ID.test(req.owner) || req.owner === "." || req.owner === "..") return { kind: "refused", reason: `Sandbox: invalid worker id ${JSON.stringify(req.owner)}; a worker cannot start sandboxed.` };
-		return { kind: "confine", scope: encodeLaunchScope({ v: 1, agentDir: agentDir(), sessionId: tmpId || sessionId || `pid${process.pid}`, owner: req.owner, parent: scope }), module: LAUNCH_MODULE };
+		return { kind: "confine", scope: encodeLaunchScope({ v: 1, agentDir: agentDir(), sessionId: tmpId || sessionId || `pid${process.pid}`, owner: req.owner, parent: scope }) };
 	}
 
 	function renderStatus(): void {
@@ -289,15 +296,51 @@ export default function sandbox(pi: ExtensionAPI) {
 		}
 	}
 
-	/** Bring the tools and the state to `state`; the result is recorded only when `record`. */
-	async function apply(state: SandboxState, record: boolean): Promise<void> {
+	/**
+	 * Bring the tools and the state to `state`. `record`: true records the result; "if-changed" (the
+	 * /sandbox command) records it only when it changed; false records nothing. Calls run one at a
+	 * time, so an earlier change can never land after a later one.
+	 *
+	 * Turning On when the newest entry isn't already On first records a provisional On entry
+	 * (enforcement `unavailable`, reason SANDBOX_STARTING) BEFORE the confined tools exist, then the
+	 * real state after the snapshot, whatever the snapshot does: whenever this session's tools are
+	 * confined, its newest entry says On (§chat.sandbox/states).
+	 */
+	let applying: Promise<void> = Promise.resolve();
+	function apply(state: SandboxState, record: boolean | "if-changed"): Promise<void> {
+		const run = applying.then(() => applyNow(state, record));
+		applying = run.catch(() => {});
+		return run;
+	}
+
+	async function applyNow(state: SandboxState, record: boolean | "if-changed"): Promise<void> {
+		const before = JSON.stringify(active);
+		let recordNow = record === true;
 		if (state === "on") {
-			registerConfined();
 			if (remote) {
+				registerConfined();
 				active = { version: 1, on: true, level: active.level, backend: "none", enforcement: "none", reasons: [NOT_ON_REMOTE] };
 			} else {
-				const s = await snapshot();
-				const level = s.ok ? s.policy.level : levelFromFile();
+				const provisional = record === true || (record === "if-changed" && !active.on);
+				if (provisional) {
+					active = { version: 1, on: true, level: active.level, backend: backend.id, enforcement: "unavailable", reasons: [SANDBOX_STARTING] };
+					append();
+					// The real state follows, always: never leave the provisional entry newest.
+					recordNow = true;
+				}
+				let s: Snapshot;
+				try {
+					registerConfined();
+					s = await snapshot();
+				} catch {
+					s = { ok: false, reason: "the sandbox could not start" };
+				}
+				let level = active.level;
+				try {
+					level = s.ok ? s.policy.level : levelFromFile();
+				} catch {
+					// Keep the level already in effect: the entry below must still be written.
+				}
 				active = s.ok
 					? { version: 1, on: true, level, backend: backend.id, enforcement: s.enforcement, ...(s.reasons ? { reasons: s.reasons } : {}) }
 					: { version: 1, on: true, level, backend: backend.id, enforcement: "unavailable", reasons: [s.reason] };
@@ -311,7 +354,7 @@ export default function sandbox(pi: ExtensionAPI) {
 			proxy = undefined;
 			await p?.close().catch(() => {});
 		}
-		if (record) append();
+		if (recordNow || (record === "if-changed" && JSON.stringify(active) !== before)) append();
 		renderStatus();
 		emitState();
 	}
@@ -351,8 +394,9 @@ export default function sandbox(pi: ExtensionAPI) {
 		const state: SandboxState = launchedOn ? "on" : restored ? stateOf(restored) : flag ?? (defaultOn() ? "on" : "subagents");
 		const on = state === "on";
 		// Opening a session writes nothing unless it comes up on without an entry saying so: then the
-		// choice is pinned, so a later default change cannot loosen this session.
-		const record = on && restored?.on !== true;
+		// choice is pinned, so a later default change cannot loosen this session. A provisional entry
+		// left newest (the session stopped while turning on) is not a record: the real state follows.
+		const record = on && (restored?.on !== true || isStarting(restored));
 		if (!on && registered === "none" && !active.on) {
 			active = offState(active.level, state === "off");
 			renderStatus();
@@ -433,14 +477,12 @@ export default function sandbox(pi: ExtensionAPI) {
 				return;
 			}
 			// `/sandbox on` while on re-probes (a fixed cause clears `unavailable`); it records only a change.
-			const before = JSON.stringify(active);
 			const stateBefore = stateOf(active);
 			if (want !== "on" && stateBefore === want) {
 				notify(describeActive(active));
 				return;
 			}
-			await apply(want, false);
-			if (JSON.stringify(active) !== before) append();
+			await apply(want, "if-changed");
 			// A new state reaches workers only at their start or resume (§chat.sandbox/states): say so.
 			const workersNote = stateOf(active) !== stateBefore ? ". Running subagents keep theirs until resumed." : "";
 			notify(`${describeActive(active)}${workersNote}`, active.on && active.enforcement === "unavailable" ? "error" : "info");

@@ -3,9 +3,8 @@ import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { createSessionFile } from "./harness/pi/state";
 import { readAlignScan } from "./align-state";
-import { acquireChat, isSessionBusy, onAgentSettled, setOpeningChoice } from "./chat-manager";
+import { acquireChatHandle, isSessionBusy, onAgentSettled, setOpeningChoice } from "./chat-handle";
 import { noteBuildMerged } from "./build-merged";
-import { mergeMode } from "./mode-state";
 import { OrgError } from "./org-error";
 import { workingSubagents } from "./live";
 import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, openEngineIds, type Effect, type OrgHostApi } from "./org-engine";
@@ -101,6 +100,11 @@ export function seedBuildEffectsForTest(sessionId: string, s: Seeded & { path?: 
   if (s.path) fresh.set(sessionId, s.path);
 }
 
+/** Who started a build: a Project verbs run by who really did (its statechart's kind is neither of the two), else
+    `coding` the project's overseer and `operator-coding` the operator. The project page and the session list read this one rule. */
+export const buildStartedBy = (r: Pick<BuildRow, "kind" | "onboard">): "overseer" | "operator" =>
+  r.onboard ? r.onboard.startedBy : r.kind === "coding" ? "overseer" : "operator";
+
 /** A build's session file on this host, or null (another host's, or gone). */
 export function buildSessionPath(sessionId: string): string | null {
   const p = indexedSessionPaths().get(sessionId) ?? fresh.get(sessionId);
@@ -170,16 +174,19 @@ export function readBuild(projectId: string, sessionId: string): BuildRow | null
 }
 
 /** Its worktree folder on this host: beside the repository's top, named after its branch (as cutWorktree made it); an
-    adopted one's is where its session's `worktree` tool made it, as that tool recorded it. */
-export async function withWorktreePath(row: BuildRow, root: string): Promise<(BuildRow & { worktree: WorktreeRecord }) | null> {
+    adopted one's is where its session's `worktree` tool made it, as that tool recorded it. `top`: the repository's top
+    level when the caller has read it already (one read for a whole list), else read here. */
+export async function withWorktreePath(row: BuildRow, root: string, top?: string): Promise<(BuildRow & { worktree: WorktreeRecord }) | null> {
   if (!row.worktree) return null;
   if (row.worktree.path) return row as BuildRow & { worktree: WorktreeRecord };
   if (row.adoptedAt) {
     const own = await ownTreeOf(row.sessionId, row.worktree.branch);
     if (own) return { ...row, worktree: { ...row.worktree, path: own.path } };
   }
-  const repo = await gitRootOf(root);
-  const top = "reason" in repo ? root : repo.top;
+  if (top === undefined) {
+    const repo = await gitRootOf(root);
+    top = "reason" in repo ? root : repo.top;
+  }
   return { ...row, worktree: { ...row.worktree, path: worktreePathOf(top, row.worktree.branch) } };
 }
 
@@ -258,11 +265,11 @@ async function createBuildSession(cwd: string, sessionId: string, d: Record<stri
   // Opened on its model and thinking from the start (its file never records the default first);
   // set again only when the open didn't take them (a model without auth, an unknown level).
   setOpeningChoice(path, choice);
-  const chat = await acquireChat(path);
-  const cur = chat.harness.model()?.ref ?? null;
+  const chat = await acquireChatHandle(path);
+  const cur = chat.mirror.model?.ref ?? null;
   if (choice.model && choice.model !== cur) {
-    await chat.setModelRef(choice.model);
-    if (choice.thinking) chat.setThinking(choice.thinking);
+    await chat.setModel(choice.model);
+    if (choice.thinking) await chat.setThinking(choice.thinking);
   }
   return path;
 }
@@ -288,17 +295,17 @@ export interface CodingModeApplied {
  * finishes in the old mode) and what the session is on.
  */
 export async function applyCodingMode(path: string, mode: CodingModeSwitch): Promise<CodingModeApplied> {
-  const chat = await acquireChat(path);
+  const chat = await acquireChatHandle(path);
   const patch = { ...(mode.mode ? { mode: mode.mode } : {}), ...(mode.minorModes ? { minorModes: mode.minorModes as never } : {}) };
   if (Object.keys(patch).length || mode.subagentProfile === undefined) {
-    const plan = await chat.applyMode(mergeMode(chat.modeState, patch));
+    const plan = await chat.applyMode(patch);
     if (plan !== "command")
       throw new OrgError(plan === "unsupported" ? "the mode extension is not loaded in it" : "it is open in another writer (a terminal, or a process Sova doesn't know)", 409);
-    if (!chat.pinMode()) throw new OrgError("its mode entry could not be written", 409);
+    if (!(await chat.pinMode())) throw new OrgError("its mode entry could not be written", 409);
   }
-  const profile = mode.subagentProfile !== undefined ? (await chat.switchSubagentProfile(mode.subagentProfile)).current.name : chat.subagentProfileInfo().current.name;
-  const now = chat.modeState;
-  return { applies: chat.harness.isRunning() ? "after-turn" : "now", mode: { mode: now.mode, minorModes: [...now.minorModes] }, profile: profile ?? null };
+  const profile = mode.subagentProfile !== undefined ? (await chat.switchSubagentProfile(mode.subagentProfile)).current.name : (await chat.subagentProfileInfo()).current.name;
+  const now = chat.mirror.mode;
+  return { applies: chat.mirror.running ? "after-turn" : "now", mode: { mode: now.mode, minorModes: [...now.minorModes] }, profile: profile ?? null };
 }
 
 function sessionOf(host: OrgHostApi, e: Effect): { d: Record<string, unknown>; projectId: string; sessionId: string } {
@@ -335,17 +342,17 @@ const slugTitle = (sessionId: string, d: Record<string, unknown>): string => {
 
 /** A note goes in only between turns (a running turn refuses it): now, or when the session's running turn settles. */
 async function noteBetweenTurns(path: string, sessionId: string, text: string): Promise<void> {
-  const chat = await acquireChat(path);
+  const chat = await acquireChatHandle(path);
   const write = async () => {
     if (!(await chat.appendNote(CODING_WORKTREE_NOTE, text))) console.warn(`[build] ${sessionId}: its worktree note could not be written`);
   };
-  if (!chat.harness.isRunning()) return write();
+  if (!chat.mirror.running) return write();
   const off = onAgentSettled((p) => {
     if (p !== chat.path) return;
     // After the settle's own listeners (a prompt handed over inside it runs on): a turn running again waits for its end.
     setTimeout(() => {
-      if (chat.disposed) return off();
-      if (chat.harness.isRunning()) return;
+      if (chat.closed) return off();
+      if (chat.mirror.running) return;
       off();
       void write();
     }, 0);

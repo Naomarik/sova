@@ -12,7 +12,7 @@ import { readRegistry } from "./store";
 
 /**
  * Slot 0 adopts a unit Sova did not start (§app.project-services/adopt): read only, up, down, reset and
- * teardown refused, and apply, under the self-host rule for every caller, schedules the unit's gated
+ * teardown refused, and apply, under the self-host rule for every caller, schedules the unit's delayed
  * restart instead of reloading it. The unit is a stand-in: its status and the schedule are faked, and
  * a listener of this process plays its port, on a host in memory (fake-host.ts). Nothing here reaches a
  * user bus.
@@ -25,9 +25,8 @@ const BASE = 21_000;
 const host = new FakeHost();
 let parent = "";
 let project = "";
-let busy: string | null = null;
 let unit: AdoptedStatus = { state: "active", pid: process.pid, startedAt: "2026-10-03T12:00:00.000Z", rssBytes: 1024 };
-const scheduled: [string, number | null][] = [];
+const scheduled: string[] = [];
 let scheduleFails: string | null = null;
 let engine: ProjectEngine;
 const op: Caller = { kind: "operator" };
@@ -55,11 +54,10 @@ before(async () => {
   engine = new ProjectEngine(
     host.deps({
       selfCheckout: () => "/not/this/project",
-      hostBusy: () => busy,
       adoptedStatus: async () => unit,
-      scheduleRestart: async (u, pid) => {
+      scheduleRestart: async (u) => {
         if (scheduleFails) return scheduleFails;
-        scheduled.push([u, pid]);
+        scheduled.push(u);
         return null;
       },
     }),
@@ -111,7 +109,7 @@ test("up, down, reset and teardown of an adopted slot 0 are refused for everyone
   assert.ok(readRegistry().instances.some((i) => i.id === main), "slot 0 stays");
 });
 
-test("apply of an adopted slot 0: the operator, confirmed, nothing busy; then 'restart scheduled', with the unit's main pid", async () => {
+test("apply of an adopted slot 0: the operator, confirmed, whatever the chats are doing; then 'restart scheduled' 3 s out", async () => {
   const callers: Caller[] = [{ kind: "overseer", id: "o1" }, { kind: "project-overseer", id: "po", root: project, act: taken }, { kind: "session", id: "s1", root: project, own: [project] }, { kind: "system", id: "on-merge" }];
   for (const c of callers) {
     const r = await engine.run("apply", { instance: main, confirm: true }, c);
@@ -120,19 +118,14 @@ test("apply of an adopted slot 0: the operator, confirmed, nothing busy; then 'r
   const unconfirmed = await engine.run("apply", { instance: main }, op);
   assert.equal(unconfirmed.error?.code, "needs-confirm");
   assert.match(unconfirmed.error!.message, /restarts the adopted unit sova-gate-standin\.service: confirm it/);
-  busy = "1 hosted session busy: 1 with a turn in flight";
-  const held = await engine.run("apply", { instance: main, confirm: true }, op);
-  assert.equal(held.error?.code, "busy");
-  assert.match(held.error!.message, /1 hosted session busy/);
-  busy = null;
   assert.equal(scheduled.length, 0, "nothing scheduled by a refusal");
   const r = await engine.run("apply", { instance: main, confirm: true }, op);
   assert.equal(r.ok, true, r.error?.message);
   assert.equal(r.changed, true);
   const step = r.steps.find((s) => s.id === "restart:server")!;
   assert.equal(step.result, "done");
-  assert.match(step.detail!, /^restart scheduled: sova-gate-standin\.service restarts in 30 s unless a session this server hosts is busy then/);
-  assert.deepEqual(scheduled, [[UNIT, process.pid]]);
+  assert.match(step.detail!, /^restart scheduled: sova-gate-standin\.service restarts in 3 s$/);
+  assert.deepEqual(scheduled, [UNIT]);
   // A host where systemd-run can't schedule it: unsupported, and nothing restarts.
   scheduleFails = "Failed to connect to bus: No medium found";
   const no = await engine.run("apply", { instance: main, confirm: true }, op);
@@ -145,7 +138,7 @@ test("apply of an adopted slot 0: the operator, confirmed, nothing busy; then 'r
   assert.equal(scheduled.length, 1);
 });
 
-test("apply names its instance: the main checkout (CLAUDE.md's `sova-project apply --checkout <main> --confirm`) is slot 0; the project alone is refused, nothing scheduled", async () => {
+test("apply names its instance: the main checkout (AGENTS.md's `sova-project apply --checkout <main> --confirm`) is slot 0; the project alone is refused, nothing scheduled", async () => {
   const bare = await engine.run("apply", { project, confirm: true }, op);
   assert.equal(bare.error?.code, "invalid-request", "a project names no instance: apply never guesses one");
   assert.match(bare.error!.message, /apply needs an instance \(or the checkout it runs\)/);
@@ -154,7 +147,7 @@ test("apply names its instance: the main checkout (CLAUDE.md's `sova-project app
   assert.equal(r.ok, true, r.error?.message);
   assert.equal(r.instance, main, "the main checkout's instance: the adopted slot 0");
   assert.match(r.steps.find((s) => s.id === "restart:server")!.detail!, /^restart scheduled: sova-gate-standin\.service/);
-  assert.deepEqual(scheduled.at(-1), [UNIT, process.pid]);
+  assert.equal(scheduled.at(-1), UNIT);
   scheduled.pop();
 });
 
@@ -181,7 +174,7 @@ test("Sova's own definition: hermetic copies on 4810 + 10 × slot, slot 0 adopts
   assert.deepEqual(server.adopt, { unit: "sova-runtime.service", ports: { http: 4800 } });
   assert.deepEqual(server.cmd, ["pnpm", "run", "dev:hermetic"]);
   assert.equal(server.env.SOVA_PORT, "${ports.server.http}");
-  assert.deepEqual([0, 1, 2, def.slots.cap + 2].map((s) => portsFor(def, s).server!.http), [4800, 4820, 4830, 4810 + 10 * (def.slots.cap + 2)]);
+  assert.deepEqual([0, 1, 2, 18].map((s) => portsFor(def, s).server!.http), [4800, 4820, 4830, 4990]);
   assert.deepEqual(def.setup.map((s) => s.id), ["mise-trust", "node-modules", "agent-dir"]);
   assert.equal(def.share?.allow, false);
 });

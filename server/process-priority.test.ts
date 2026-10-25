@@ -5,7 +5,7 @@ import { getPriority } from "node:os";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WORKER_NICE, workerNice } from "../pi-config/extensions/subagents/priority.ts";
-import { DEFAULT_WORKER_NICE, installWorkerNice, LOWER_WORKER, lowerToolCommands, readWorkerNice, TOOL_COMMAND_PREFIX } from "./process-priority";
+import { DEFAULT_WORKER_NICE, installWorkerNice, LOWER_WORKER, lowerToolCommands, readWorkerNice, recordingPriorityCommand, TOOL_COMMAND_PREFIX } from "./process-priority";
 
 function withAgentDir(settings: unknown, fn: () => void) {
   const dir = mkdtempSync(join(tmpdir(), "sova-process-priority-"));
@@ -23,6 +23,19 @@ function withAgentDir(settings: unknown, fn: () => void) {
     rmSync(dir, { recursive: true, force: true });
   }
 }
+
+test("recording controllers lower before exec without interpreting argv or raising existing niceness", () => {
+  const argv = ["/installed/runtime", "--flag", "$(touch should-not-run)", "single'quote", "white space"];
+  const wrapped = recordingPriorityCommand(argv, 10, "linux", 0);
+  assert.deepEqual(wrapped.slice(4), argv, "arguments never become shell source");
+  assert.deepEqual(wrapped.slice(0, 2), ["/bin/sh", "-c"]);
+  assert.match(wrapped[2]!, /^renice -n 10 -p \$\$ >\/dev\/null 2>&1\nexec "\$@"$/);
+  assert.equal(wrapped[3], "sova-tour");
+  assert.deepEqual(recordingPriorityCommand(argv, 10, "linux", 15), argv, "never raises an already lowered process");
+  assert.deepEqual(recordingPriorityCommand(argv, 0, "linux", 0), argv);
+  assert.deepEqual(recordingPriorityCommand(argv, 10, "win32", 0), argv);
+  assert.throws(() => recordingPriorityCommand([]), /required/);
+});
 
 test("the worker niceness: SOVA_WORKER_NICE, else workerNice in Sova's settings, else 10", () => {
   withAgentDir(undefined, () => assert.equal(readWorkerNice({}), DEFAULT_WORKER_NICE));

@@ -20,6 +20,7 @@ process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 delete process.env.SOVA_SHARE_PUBLIC_URL;
 mkdirSync(join(root, "agent", "sessions", "live"), { recursive: true });
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const orgs = await import("./orgs");
 const baton = await import("./baton");
 const settings = await import("./baton-settings");
@@ -121,7 +122,8 @@ describe("the edge", () => {
   test("the gateway routes the photo paths as the link's own (an `h` row)", () => {
     assert.deepEqual(routeOf(`/api/h/${T}/image`), { kind: "h", token: T });
     assert.deepEqual(routeOf(`/api/h/${T}/img/12`), { kind: "h", token: T });
-    assert.equal(routeOf(`/api/h/${T}/img/01`), null);
+    // The strict edge judged the path already (img/01 never reaches the router); the kind is the prefix's.
+    assert.equal(shareMayReach("GET", `/api/h/${T}/img/01`), false);
   });
 });
 
@@ -187,6 +189,12 @@ describe("the staging area", () => {
     assert.deepEqual(readdirSync(sweepRoot), ["open-one"]);
     images.sweepUploads(later, sweepRoot, () => true);
     assert.deepEqual(readdirSync(sweepRoot), [], "a day later the photo and its empty folder are gone");
+    // A fresh empty folder is an upload about to open its part: the sweep leaves it (it raced the first upload).
+    mkdirSync(join(sweepRoot, "pa-fresh"), { recursive: true });
+    images.sweepUploads(Date.now(), sweepRoot, () => true);
+    assert.deepEqual(readdirSync(sweepRoot), ["pa-fresh"], "a folder made a moment ago stays");
+    images.sweepUploads(Date.now() + 2 * 60 * 60 * 1000, sweepRoot, () => true);
+    assert.deepEqual(readdirSync(sweepRoot), [], "an hour on, the empty folder goes");
   });
 });
 

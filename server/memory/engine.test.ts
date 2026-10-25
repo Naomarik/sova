@@ -1,7 +1,7 @@
 // One chat's memory engine (§chat.memory/log, /tree, /turn, /recall, /preparing, /zoomable) with a fake
 // summarizer: no model call, no process. Files only under a temp dir.
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -11,6 +11,7 @@ import { MemoryEngine, WAIT_MS, type EngineDeps } from "./engine";
 import { inputStart, messagesBefore, messagesOf, PAGE, TOOL_CLIP } from "./log";
 import { copyMemory, MemoryStore, memoryDir, removeMemory } from "./store";
 import type { SummaryCall } from "./summarizer";
+import { DecisionError } from "../decide";
 
 const root = mkdtempSync(join(tmpdir(), "sova-memory-engine-"));
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -201,6 +202,34 @@ describe("the engine", () => {
     assert.ok(await e.turnView([...history, user("next")], 128));
   });
 
+  test("on by default in a chat with history whose view was never built: its first sync starts preparing; a built view doesn't", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const statuses: string[] = [];
+    const { e, dir, deps } = engine({ summarize: async () => (await gate, { text: "s", model: "f" }), onStatus: (s) => statuses.push(s.state === "preparing" ? `preparing ${s.done}/${s.total}` : s.state) });
+    const history = Array.from({ length: 40 }, (_, k) => (k % 2 ? reply(long(`r${k}`)) : user(long(`u${k}`))));
+    e.sync(history); // no startPreparing: nobody turned it on
+    assert.match(statuses.at(-1)!, /^preparing 0\/40$/);
+    assert.equal(await e.turnView([...history, user("next")], 128), undefined, "still preparing: the turn goes out as without memory");
+    release();
+    await e.idle();
+    assert.equal(e.status().state, "ready");
+    assert.ok(await e.turnView([...history, user("next")], 128), "prepared: the view");
+    // Reopened (a new engine on the same sidecar) with a built view and many new messages: no preparing.
+    const more = [...history, user("next"), ...Array.from({ length: 40 }, (_, k) => (k % 2 ? reply(long(`R${k}`)) : user(long(`U${k}`))))];
+    const again = new MemoryEngine(e.sessionId, new MemoryStore(dir), { ...deps, summarize: async () => new Promise(() => {}) });
+    again.sync(more);
+    assert.notEqual(again.status().state, "preparing", "a chat whose view was built is never prepared again");
+    again.dispose();
+  });
+
+  test("a chat with a few messages and no view isn't prepared: its first turn waits for them as usual", () => {
+    const { e } = engine({ summarize: async () => new Promise(() => {}) });
+    e.sync([user(long("a")), reply(long("b")), user(long("c"))]);
+    assert.notEqual(e.status().state, "preparing");
+    e.dispose();
+  });
+
   test("the turn's wait is 20 s unless the deps say otherwise", () => {
     assert.equal(WAIT_MS, 20_000);
   });
@@ -218,13 +247,25 @@ describe("the engine", () => {
     assert.equal(statuses.at(-1), "ready");
   });
 
-  test("a summarizer that can't run pauses the queue and says why", async () => {
-    const { e } = engine({ summarize: async () => { throw new Error("no login"); } });
-    e.sync([user(long("a")), user(long("b")), user(long("c")), user(long("d")), user(long("e"))]);
+  test("a summarizer that can't run pauses the queue and says why, and when it retries", async () => {
+    let calls = 0;
+    const { e } = engine({ summarize: async () => (calls++, Promise.reject(new DecisionError("unavailable", "claude is not installed"))) });
+    e.sync([user(long("a")), user(long("b")), user(long("c")), user(long("d")), user(long("e")), user(long("f"))]);
     await e.idle();
     const s = e.status();
     assert.equal(s.state, "ready");
-    assert.match(s.problem ?? "", /no login/);
+    assert.match(s.problem ?? "", /^The memory summarizer can't run: claude is not installed\. Retrying at \d{1,2}:\d{2} (AM|PM)\.$/);
+    assert.ok(calls <= 4, "the rest wait: only the calls already started ran");
+    e.dispose();
+  });
+
+  test("a node that fails on its own sets no problem and holds nothing else up", async () => {
+    const { e } = engine({ summarize: async (c) => { if (c.prompt.includes("compress message 0")) throw new Error("no line"); return { text: "s.", model: "f" }; } });
+    e.sync([user(long("a")), user(long("b")), user(long("c"))]);
+    await e.idle();
+    assert.equal(e.status().problem, undefined);
+    assert.ok(e.get(0, 1) && e.get(0, 2) && !e.get(0, 0));
+    e.dispose();
   });
 
   test("zoomable: a compaction's summary is the view of the compacted messages, merged to the size", async () => {
@@ -240,5 +281,86 @@ describe("the engine", () => {
     assert.ok(Buffer.byteLength(out.summary) < 2 * 4 * 1024 + 2000);
     assert.equal(out.lines.reduce((s, [l]) => s + 2 ** l, 0), 48, "the lines cover exactly the compacted messages");
     assert.equal(await e.compactionSummary(b, 0, 4), undefined, "nothing compacted");
+  });
+});
+
+describe("ids shown whole (§chat.memory/full-ids)", () => {
+  // Synthetic UUIDs: A and B share their first 8 hex digits.
+  const A = "0190f3a2-1b2c-7d4e-8f90-a1b2c3d4e5f6";
+  const B = "0190f3a2-9a9a-7bbb-8ccc-ddddeeee0001";
+  const C = "5c5c5c5c-2222-7333-8444-555566667777";
+  const pad = (s: string) => `${s} ${"w ".repeat(300)}`;
+  /** Long enough that leaves 0 and 1 don't fit one line together: their parent is a merge call. */
+  const P = ` ${"z".repeat(280)}`;
+  /** A summarizer that always shortens: each leaf by its message, each merge alike. */
+  const shortening = (calls: SummaryCall[]) => async (c: SummaryCall) => {
+    calls.push(c);
+    const leaf = /compress message (\d+)/.exec(c.prompt)?.[1];
+    const text = leaf === "0" ? `echo: spawned worker 5c5c5c5c.${P}` : leaf === "1" ? `sova: worker 5c5c5c5c-2222 running.${P}` : leaf === "2" ? "user: compare 0190f3a2 and 0190f3a2-9a." : "worker 5c5c5c5c merged.";
+    return { text, model: "fake" };
+  };
+
+  test("the view, zoom, the outline and a zoomable summary show ids whole; tree.jsonl keeps the stored lines", async () => {
+    const calls: SummaryCall[] = [];
+    const { e, dir } = engine({ summarize: shortening(calls) });
+    const b = [result("agent_spawn", pad(`spawned ${C}`)), reply(pad(`worker ${C}`)), user(pad(`compare ${A} and ${B}`)), reply("ok")];
+    e.sync(b);
+    await e.idle();
+    const tree = readFileSync(join(dir, "tree.jsonl"), "utf8");
+    assert.ok(tree.includes("spawned worker 5c5c5c5c. z") && !tree.includes(C) && !tree.includes(B), "stored lines unchanged");
+
+    const ask = user("which worker?");
+    const turn = await e.turnView([...b, ask], 128);
+    const prefix = readMemoryView(turn!.content)!.prefix;
+    assert.equal(
+      prefix,
+      `<chat>\n0+1|echo: spawned worker ${C}.${P}\n1+1|sova: worker ${C} running.${P}\n2+1|user: compare 0190f3a2 and ${B}.\n3+1|sova: ok\n</chat>`,
+      "unique prefixes whole; the prefix A and B share stays short",
+    );
+    assert.equal(turn!.bytes, Buffer.byteLength(prefix) - "<chat>\n</chat>".length);
+    const again = await e.turnView([...b, ask], 128);
+    assert.deepEqual(again!.content, turn!.content, "byte-stable turn to turn");
+    assert.equal(again!.rebased, false);
+
+    assert.equal(e.zoom(0, 2), `0+1|echo: spawned worker ${C}.${P}\n1+1|sova: worker ${C} running.${P}`);
+    assert.equal(e.zoom(0, 4), `0+2|worker ${C} merged.\n2+2|user: compare 0190f3a2 and ${B}. sova: ok`);
+    assert.equal(e.zoom(2, 1), `2|user: ${pad(`compare ${A} and ${B}`)}`, "a message whole, as logged");
+    const open = e.open(0, 4);
+    assert.ok("lines" in open);
+    assert.deepEqual(open.lines.map((l) => l.text), [`worker ${C} merged.`, `user: compare 0190f3a2 and ${B}.\nsova: ok`]);
+    assert.equal(e.memoryLine([1, 0]).text, `worker ${C} merged.`);
+    assert.equal(e.viewBytesOf([[2, 0]]), Buffer.byteLength(`0+4|worker ${C} merged. user: compare 0190f3a2 and ${B}. sova: ok`) + 1, "the outline's size is the shown lines'");
+
+    const z = await e.compactionSummary(b, 4, 4);
+    assert.ok(z && z.summary.includes(`0+1|echo: spawned worker ${C}.${P}`) && z.summary.includes(`2+1|user: compare 0190f3a2 and ${B}.`));
+
+    const merge = calls.find((c) => c.prompt.includes("merge lines 0+1 and 1+1"));
+    assert.ok(merge && merge.prompt.includes(`echo: spawned worker 5c5c5c5c.${P}\nsova: worker 5c5c5c5c-2222 running.${P}`), "a merge is given its stored lines");
+  });
+
+  test("a chat whose saved prefix predates full ids rebases once, then keeps it", async () => {
+    const { e, dir, deps } = engine({ summarize: shortening([]) });
+    const b = [result("agent_spawn", pad(`spawned ${C}`)), reply("ok")];
+    e.sync(b);
+    await e.idle();
+    const store = new MemoryStore(dir);
+    store.saveState({ ...store.loadState(), prefix: [`0+1|echo: spawned worker 5c5c5c5c.${P}`, "1+1|sova: ok"], prefixSent: 0 });
+    const fresh = new MemoryEngine(e.sessionId, new MemoryStore(dir), deps);
+    const next = user("next");
+    const t1 = await fresh.turnView([...b, next], 128);
+    assert.equal(t1!.rebased, true);
+    assert.match(readMemoryView(t1!.content)!.prefix, new RegExp(`spawned worker ${C}\\. z`));
+    const t2 = await fresh.turnView([...b, next, reply("done"), user("more")], 128);
+    assert.equal(t2!.rebased, false);
+    assert.equal(readMemoryView(t2!.content)!.prefix, readMemoryView(t1!.content)!.prefix);
+  });
+
+  test("a line that shortens an id is kept as returned, never asked for again (§chat.memory/tree)", async () => {
+    const calls: SummaryCall[] = [];
+    const { e } = engine({ summarize: shortening(calls) });
+    e.sync([result("agent_spawn", pad(`spawned ${C}`))]);
+    await e.idle();
+    assert.equal(calls.length, 1);
+    assert.equal(e.get(0, 0)!.text, `echo: spawned worker 5c5c5c5c.${P}`);
   });
 });

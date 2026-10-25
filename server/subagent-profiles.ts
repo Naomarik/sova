@@ -1,9 +1,11 @@
+import { join } from "node:path";
 import { agentRoot } from "./state-root";
+import { LIBRARY_KEY, listKept, markRestored } from "./sync/kept";
 import {
   loadSubagentProfiles, legacyProfile, parseSubagentProfiles, readProfilesDefault, resolveSubagents, profilesDefaultOf,
   footprint, profileProviders, profileSlots, writeSubagentProfiles, writeProfilesDefault, OFF_FOOTPRINT,
 } from "../pi-config/extensions/subagents/subagent-profiles.ts";
-import type { SubagentProfilesInfo } from "../shared/subagent-profiles";
+import type { SubagentProfilesInfo, SubagentProfilesReplaced } from "../shared/subagent-profiles";
 import { delegateOptions, verifySlots, type DelegateSources } from "./delegate";
 
 export function subagentProfilesInfo(pick?: string, dir = agentRoot()): SubagentProfilesInfo {
@@ -24,7 +26,46 @@ export function subagentProfilesInfo(pick?: string, dir = agentRoot()): Subagent
     file: state.file,
     ...(state.state !== "ok" ? { error: state.state === "malformed" ? state.errors.join("; ") : "Fix the malformed legacy team defaults before migrating profiles." } : {}),
     ...(warnings.length ? { warnings } : {}),
+    ...withReplaced(dir),
   };
+}
+
+/** How long Settings → Subagents offers a kept library back (§chat.subagent-profiles/replaced). */
+export const REPLACED_NOTICE_MS = 24 * 60 * 60_000;
+const stateDirOf = (dir: string) => join(dir, "sova");
+
+/** The newest change another device's copy made here, while it is under a day old and not restored. */
+export function replacedNotice(dir = agentRoot(), now = Date.now()): SubagentProfilesReplaced | undefined {
+  const newest = listKept(stateDirOf(dir), LIBRARY_KEY)[0];
+  if (!newest || newest.restoredAt !== undefined || now - newest.at > REPLACED_NOTICE_MS) return undefined;
+  return { file: newest.file, at: newest.at, by: newest.byName ?? newest.by, ...(newest.changes ? { changes: newest.changes } : {}) };
+}
+const withReplaced = (dir: string): { replaced?: SubagentProfilesReplaced } => {
+  const r = replacedNotice(dir);
+  return r ? { replaced: r } : {};
+};
+
+/**
+ * Restore Previous Library: write the kept copy back as a new local edit, through the library's own
+ * strict writer (the mesh then syncs it like any edit), and mark it restored.
+ */
+export function restoreReplacedProfiles(file: unknown, dir = agentRoot(), now = Date.now()): SubagentProfilesInfo | { error: string } {
+  if (typeof file !== "string") return { error: "Name the kept library to restore" };
+  const kept = listKept(stateDirOf(dir), LIBRARY_KEY).find((k) => k.file === file);
+  if (!kept) return { error: "That kept library is no longer on this device" };
+  let value: unknown;
+  try {
+    value = JSON.parse(kept.content);
+  } catch {
+    return { error: "The kept library isn't valid JSON" };
+  }
+  try {
+    writeSubagentProfiles(dir, value);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+  markRestored(stateDirOf(dir), LIBRARY_KEY, kept.file, now);
+  return subagentProfilesInfo(undefined, dir);
 }
 
 /** Validate on this host before writing a session pick or creating anything. */

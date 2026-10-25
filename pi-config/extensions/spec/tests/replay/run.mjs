@@ -26,7 +26,7 @@ export function treeSource(tree) {
 export async function runArm(tree, { label, only, pinned, gBaseline, whatVerdicts } = {}) {
   scrubProcessEnv();
   const abs = realpathSync(resolve(tree));
-  for (const need of ["spec/core/sova-spec.mjs", "mode/spec-guard.ts", "claude-code/spec-hooks.ts"])
+  for (const need of ["spec/core/sova-spec.mjs", "mode/spec-guard.ts"])
     if (!existsSync(join(abs, need))) throw new Error(`${tree} is not an extensions tree: no ${need}`);
   const ws = workspace(label ?? "arm");
   const ctx = { tools: new Tools(abs), ws, module: moduleLoader(abs), ...(pinned ? { pinned: realpathSync(resolve(pinned)) } : {}),

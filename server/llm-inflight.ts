@@ -1,5 +1,3 @@
-import { readdirSync, readFileSync, watch, type FSWatcher } from "node:fs";
-import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { LlmFeedMessage, LlmInflight, LlmInflightGap, LlmTokens, SessionFeedMessage } from "../shared/protocol";
 
@@ -8,11 +6,9 @@ import type { LlmFeedMessage, LlmInflight, LlmInflightGap, LlmTokens, SessionFee
  * total over every connected host.
  *
  * This host = this process's counter (pi-config/extensions/llm-inflight/tracker.ts, read in
- * memory) plus every other process's `presence.llm` in its live record, one per process. Live
- * records are read only while someone listens: one directory watcher re-reads just the file an
- * event names, and one sweep re-judges heartbeats and pids from what is cached (a full re-read
- * every RESCAN_EVERY sweeps catches what the watcher missed). Nothing else is read for it: no
- * session list, no Agents facts, no transcript.
+ * memory), which already holds what every chat process (workers and hidden chats included) reports
+ * with its state over its link (server/chat-host.ts setChildCounts). Nothing else is read for it:
+ * no live record, no session list, no Agents facts, no transcript.
  *
  * Connected hosts = one socket per peer to that peer's `/ws/watch?feed=llm`, which only ever
  * sends the peer's OWN count (`llm_local`): a count this host was sent never goes back out, so no
@@ -35,8 +31,7 @@ export interface LlmProcessSnapshot {
   claudeTurns: number;
   degraded: boolean;
   /** The producer ids of every child process whose calls this count already includes (a worker
-      reporting to its parent, transitively): a live record or an unadopted worker of one of
-      these adds nothing. */
+      reporting to its parent, transitively): a live record of one of these adds nothing. */
   folded?: string[];
   /** Its ended calls' output tokens (absent from an older counter: unknown). */
   tokens?: TokenRing;
@@ -101,179 +96,35 @@ function sameTokens(a: LlmTokens | undefined, b: LlmTokens | undefined): boolean
   return newer.out.every((n, i) => n === aligned[i]);
 }
 
-/** A live detached worker no running parent has adopted (pi-config llm-inflight/hosted.ts):
-    its last own count, or null when it never reported one (a Claude Code worker, an old host). */
-export interface UnadoptedWorker {
-  key: string;
-  producer?: string;
-  counts: { active: number; approximate: number; claudeTurns: number; degraded: boolean } | null;
-  folded?: string[];
-  /** Its last reported ring; absent = its tokens are unknown. */
-  tokens?: TokenRing;
-}
-
 /** This process's counter. */
 export interface OwnCounter {
   snapshot(): LlmProcessSnapshot;
   subscribe(fn: () => void): () => void;
 }
 
-/** SCHEMA.md: a heartbeat older than this is stale (hidden), its process may come back. */
-export const FRESH_MS = 15_000;
-const FUTURE_SKEW_MS = 5 * 60_000;
 const SWEEP_MS = 5_000;
-const RESCAN_EVERY = 6;
 
 const count = (v: unknown): number | null => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null);
 /** Bounds on what another process or host may claim, so a buggy one can't swamp the total. */
 export const MAX_CALLS = 9999;
-/** A writer folds at most this many children (tracker.ts); more says it is degraded. */
-const FOLDED_LIMIT = 64;
-/** What is read of a longer list: every id read is still excluded, so nothing folded is added
-    twice; past this the record is already far over its 16 KB budget. */
-const MAX_FOLDED = 1024;
 /** The most one peer's own count may claim. */
 const MAX_HOST_CALLS = 10 * MAX_CALLS;
-const MAX_ID = 64;
-
-/** A `folded` list as sent: its valid ids (all of them, up to MAX_FOLDED, so each is still
-    excluded); over the writer's limit, or garbage, is degraded. */
-function parseFolded(raw: unknown): { folded?: string[]; bad: boolean } {
-  if (raw === undefined) return { bad: false };
-  if (!Array.isArray(raw)) return { bad: true };
-  const folded = raw.slice(0, MAX_FOLDED).filter((f): f is string => typeof f === "string" && f.length > 0 && f.length <= MAX_ID);
-  return { folded, bad: raw.length > FOLDED_LIMIT || folded.length < Math.min(raw.length, MAX_FOLDED) };
-}
-
-/** A record's presence.llm, or null when absent or malformed (a process that doesn't report). */
-export function parseProcessLlm(raw: unknown): LlmProcessSnapshot | null {
-  const r = raw as Partial<LlmProcessSnapshot> | null;
-  if (!r || typeof r !== "object" || r.v !== 1 || typeof r.producer !== "string" || !r.producer || r.producer.length > MAX_ID) return null;
-  const active = count(r.active);
-  const approximate = count(r.approximate);
-  const claudeTurns = count(r.claudeTurns);
-  const pid = count(r.pid);
-  if (active === null || approximate === null || claudeTurns === null || pid === null || typeof r.degraded !== "boolean") return null;
-  const { folded, bad } = parseFolded(r.folded);
-  const over = active > MAX_CALLS || claudeTurns > MAX_CALLS;
-  const a = Math.min(active, MAX_CALLS);
-  const tokens = parseTokenRing(r.tokens);
-  return { v: 1, producer: r.producer, pid, active: a, approximate: Math.min(approximate, a), claudeTurns: Math.min(claudeTurns, MAX_CALLS), degraded: r.degraded || bad || over, ...(folded ? { folded } : {}), ...(tokens ? { tokens } : {}) };
-}
-
-/** What a live file says, as far as the count goes. */
-export interface LiveEntry {
-  pid: number;
-  heartbeat: number;
-  llm: LlmProcessSnapshot | null;
-}
-
-/** A live file's entry, or null for a temp file, a non-record or garbage. */
-export function liveEntryOf(rec: any): LiveEntry | null {
-  const pid = rec?.session?.pid;
-  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) return null;
-  return { pid, heartbeat: typeof rec.heartbeat === "number" ? rec.heartbeat : 0, llm: parseProcessLlm(rec.presence?.llm) };
-}
 
 export const EMPTY: LlmInflight = { count: 0, approximate: 0, partial: false, gaps: [] };
 
-/**
- * One host's count: its own process plus one contribution per other process. A process with
- * several records counts once (its freshest record that reports); records of `own`'s pid or
- * producer are this process's hosted chats, already in `own`. A process some counted process
- * has folded in (a worker reporting to its parent) adds nothing of its own.
- * A dead pid counts nothing; a process whose records are all stale, or none reports, is
- * `unreported`. An unadopted detached worker adds its last own count, or is `unreported`.
- *
- * Tokens (only when `own` has a ring): every counted ring summed at `now`'s slot; one missing (an
- * older counter, a worker that never reported) makes them partial, as does any gap. `retained`,
- * kept by the caller across calls, holds each counted producer's last ring: one no longer counted
- * (gone, dead, stale) still adds it until it ages out, unless a counted process now folds it.
- */
-export function hostCount(own: LlmProcessSnapshot, entries: Iterable<LiveEntry>, now: number, alive: (pid: number) => boolean, workers: readonly UnadoptedWorker[] = [], retained?: Map<string, TokenRing>): LlmInflight {
-  const byPid = new Map<number, LiveEntry[]>();
-  for (const e of entries) {
-    if (e.pid === own.pid || e.llm?.producer === own.producer) continue;
-    let list = byPid.get(e.pid);
-    if (!list) byPid.set(e.pid, (list = []));
-    list.push(e);
-  }
-  // Each live process's freshest reporting record, or null when it doesn't report.
-  const procs: Array<{ pid: number; llm: LlmProcessSnapshot | null }> = [];
-  for (const [pid, list] of byPid) {
-    if (!alive(pid)) continue;
-    const fresh = list.filter((e) => now - e.heartbeat <= FRESH_MS && e.heartbeat - now <= FUTURE_SKEW_MS);
-    procs.push({ pid, llm: fresh.filter((e) => e.llm).sort((a, b) => b.heartbeat - a.heartbeat)[0]?.llm ?? null });
-  }
-  const folded = new Set<string>(own.folded);
-  for (const p of procs) for (const f of p.llm?.folded ?? []) folded.add(f);
-  for (const w of workers) for (const f of w.folded ?? []) folded.add(f);
-
-  const counted = new Set<string>([own.producer]);
-  let total = own.active;
-  let approximate = own.approximate;
-  let claude = own.claudeTurns > 0;
-  let unreported = own.degraded ? 1 : 0;
-  const end = slotOf(now);
-  const out = new Array<number>(TOKEN_SLOTS).fill(0);
-  let tokensMissing = !!own.tokens?.partial;
-  if (own.tokens) addRing(out, own.tokens, end, MAX_HOST_SLOT_TOKENS);
-  const addTokens = (producer: string | undefined, ring: TokenRing | undefined) => {
-    if (!ring) {
-      tokensMissing = true;
-      return;
-    }
-    if (ring.partial) tokensMissing = true;
-    addRing(out, ring, end, MAX_HOST_SLOT_TOKENS);
-    if (producer !== undefined) retained?.set(producer, ring);
-  };
-  const add = (c: { active: number; approximate: number; claudeTurns: number; degraded: boolean }) => {
-    const n = Math.min(c.active, MAX_CALLS);
-    total += n;
-    approximate += Math.min(c.approximate, n);
-    if (c.claudeTurns > 0) claude = true;
-    if (c.degraded) unreported++;
-  };
-  for (const { llm } of procs) {
-    if (llm && folded.has(llm.producer)) continue;
-    if (!llm) {
-      unreported++;
-      continue;
-    }
-    if (counted.has(llm.producer)) continue;
-    counted.add(llm.producer);
-    add(llm);
-    addTokens(llm.producer, llm.tokens);
-  }
-  for (const w of workers) {
-    if (w.producer !== undefined && (folded.has(w.producer) || counted.has(w.producer))) continue;
-    if (w.producer !== undefined) counted.add(w.producer);
-    if (w.counts) {
-      add(w.counts);
-      addTokens(w.producer, w.tokens);
-    } else unreported++;
-  }
-  // Departed producers: their last ring until it ages out, unless someone counted folds it now.
-  if (retained) {
-    for (const [producer, ring] of retained) {
-      if (counted.has(producer)) continue;
-      if (folded.has(producer) || producer === own.producer || ring.end + TOKEN_SLOTS <= end) {
-        retained.delete(producer);
-        continue;
-      }
-      const left = alignRing(ring, end);
-      if (left.every((n) => n === 0)) {
-        retained.delete(producer);
-        continue;
-      }
-      addRing(out, ring, end, MAX_HOST_SLOT_TOKENS);
-    }
-  }
+/** This host's count: its own process's counter (chat processes' reports folded in), tokens aligned to `now`. */
+export function hostCount(own: LlmProcessSnapshot, now: number): LlmInflight {
   const gaps: LlmInflightGap[] = [];
-  if (claude) gaps.push({ reason: "claude-internal" });
-  if (unreported) gaps.push({ reason: "unreported", processes: unreported });
-  const result: LlmInflight = { count: total, approximate, partial: gaps.length > 0, gaps };
-  if (own.tokens) result.tokens = { bucketMs: TOKEN_BUCKET_MS, end, out, partial: gaps.length > 0 || tokensMissing };
+  if (own.claudeTurns > 0) gaps.push({ reason: "claude-internal" });
+  if (own.degraded) gaps.push({ reason: "unreported", processes: 1 });
+  const active = Math.min(own.active, MAX_HOST_CALLS);
+  const result: LlmInflight = { count: active, approximate: Math.min(own.approximate, active), partial: gaps.length > 0, gaps };
+  if (own.tokens) {
+    const end = slotOf(now);
+    const out = new Array<number>(TOKEN_SLOTS).fill(0);
+    addRing(out, own.tokens, end, MAX_HOST_SLOT_TOKENS);
+    result.tokens = { bucketMs: TOKEN_BUCKET_MS, end, out, partial: gaps.length > 0 || !!own.tokens.partial };
+  }
   return result;
 }
 
@@ -361,15 +212,8 @@ export interface MeshPeersSource {
 
 export interface LlmInflightOptions {
   own: OwnCounter;
-  liveDir: string;
-  /** Live detached workers no running parent has adopted. Read once when counting starts and
-      then once per sweep, never per call: a begin or end only recounts from what is held. An
-      adoption between two reads is still counted once, because the adopting parent names the
-      worker it now counts (its `folded`); one that can't be named reads as unknown meanwhile. */
-  workers?: () => readonly UnadoptedWorker[];
   mesh?: MeshPeersSource;
   now?: () => number;
-  alive?: (pid: number) => boolean;
   /** Re-judge period while anyone listens. */
   sweepMs?: number;
   /** How long a peer's socket may stay open without a count before it counts as too old. */
@@ -380,7 +224,7 @@ export interface LlmInflightOptions {
   peerPingMs?: number;
   /** A peer silent this long (no frame, no pong) is unreachable: its last count is dropped. */
   peerDeadMs?: number;
-  /** Coalesces bursts of record writes and begin/end pairs. */
+  /** Coalesces bursts of begin/end pairs. */
   debounceMs?: number;
   /** Where its timers run (the sweep, the debounce, peer answers and retries); default the globals. */
   timers?: HubTimers;
@@ -402,15 +246,6 @@ const GLOBAL_TIMERS: HubTimers = {
   setInterval: (fn, ms) => unref(setInterval(fn, ms)),
   clearInterval: (handle) => clearInterval(handle as Timer),
 };
-
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
 
 interface PeerLink {
   url: string;
@@ -435,30 +270,21 @@ export class LlmInflightHub {
   readonly instance = randomUUID();
   private readonly browsers = new Set<(msg: SessionFeedMessage) => void>();
   private readonly locals = new Set<(msg: LlmFeedMessage) => void>();
-  private readonly entries = new Map<string, LiveEntry>();
-  /** The unadopted workers as last read (refreshWorkers). */
-  private workers: readonly UnadoptedWorker[] = [];
-  /** Each counted producer's last ring, and each counted peer instance's: kept until it ages out. */
-  private readonly retained = new Map<string, TokenRing>();
+  /** Each counted peer instance's last ring: kept until it ages out. */
   private readonly peerRetained = new Map<string, TokenRing>();
   private readonly links = new Map<string, PeerLink>();
   /** Peers that have sent a count on some connection: one silent later is unreachable, not old. */
   private readonly supported = new Set<string>();
-  private watcher: FSWatcher | null = null;
   private sweep: unknown = null;
-  private sweeps = 0;
   private offOwn: (() => void) | null = null;
-  private pendingFiles = new Set<string>();
   private pending: unknown = null;
   private lastLocal: LlmInflight | null = null;
   private lastTotal: LlmInflight | null = null;
   private readonly now: () => number;
-  private readonly alive: (pid: number) => boolean;
   private readonly timers: HubTimers;
 
   constructor(private readonly opts: LlmInflightOptions) {
     this.now = opts.now ?? Date.now;
-    this.alive = opts.alive ?? pidAlive;
     this.timers = opts.timers ?? GLOBAL_TIMERS;
   }
 
@@ -490,9 +316,9 @@ export class LlmInflightHub {
     };
   }
 
-  /** This host's own count (own process + live records as last read). */
+  /** This host's own count (its process, chat processes folded in). */
   local(): LlmInflight {
-    return hostCount(this.opts.own.snapshot(), this.entries.values(), this.now(), this.alive, this.workers, this.retained);
+    return hostCount(this.opts.own.snapshot(), this.now());
   }
 
   total(): LlmInflight {
@@ -507,22 +333,17 @@ export class LlmInflightHub {
   }
 
   get listening(): boolean {
-    return this.watcher !== null || this.sweep !== null;
+    return this.sweep !== null;
   }
 
   stop(): void {
     this.closePeers();
-    this.watcher?.close();
-    this.watcher = null;
     if (this.sweep) this.timers.clearInterval(this.sweep);
     this.sweep = null;
     if (this.pending) this.timers.clearTimeout(this.pending);
     this.pending = null;
     this.offOwn?.();
     this.offOwn = null;
-    this.entries.clear();
-    this.workers = [];
-    this.retained.clear();
     this.peerRetained.clear();
     this.lastLocal = this.lastTotal = null;
   }
@@ -533,48 +354,12 @@ export class LlmInflightHub {
 
   private start(): void {
     if (this.sweep) return;
-    this.rescan();
-    this.refreshWorkers();
-    this.attachWatcher();
     this.offOwn = this.opts.own.subscribe(() => this.schedule());
-    this.sweeps = 0;
     this.sweep = this.timers.setInterval(() => {
-      // Without a watcher (no live dir yet, or the watch failed) each sweep tries to attach one
-      // again, and rescans until it holds: the fallback lasts only as long as the cause.
-      if (!this.watcher && this.attachWatcher()) this.rescan();
-      else if (++this.sweeps % RESCAN_EVERY === 0 || !this.watcher) this.rescan();
-      this.refreshWorkers();
       this.reconcilePeers();
       this.checkPeers();
       this.emit();
     }, this.opts.sweepMs ?? SWEEP_MS);
-  }
-
-  private refreshWorkers(): void {
-    try {
-      this.workers = this.opts.workers?.() ?? [];
-    } catch {
-      this.workers = [{ key: "?", counts: null }]; // unreadable: unknown, never 0
-    }
-  }
-
-  /** Watch the live dir; false when it can't be watched now (missing, or the watch failed). */
-  private attachWatcher(): boolean {
-    try {
-      const w = watch(this.opts.liveDir, (_event, name) => {
-        if (typeof name === "string" && name) this.fileChanged(name);
-        else this.schedule(); // the platform didn't say which: the next sweep rescans
-      });
-      w.on("error", () => {
-        w.close();
-        if (this.watcher === w) this.watcher = null; // the sweeps rescan and re-attach
-      });
-      this.watcher = w;
-      return true;
-    } catch {
-      this.watcher = null;
-      return false;
-    }
   }
 
   /** A peer that answered once but has gone silent: ping it, and past the dead line drop it
@@ -605,44 +390,12 @@ export class LlmInflightHub {
     if (this.browsers.size === 0 && this.locals.size === 0) this.stop();
   }
 
-  private fileChanged(name: string): void {
-    if (!name.endsWith(".json") || name.startsWith(".")) return; // dotfiles = writers' temp files
-    this.pendingFiles.add(name);
-    this.schedule();
-  }
-
   private schedule(): void {
     if (this.pending) return;
     this.pending = this.timers.setTimeout(() => {
       this.pending = null;
-      for (const name of this.pendingFiles) this.readFile(name);
-      this.pendingFiles.clear();
       this.emit();
     }, this.opts.debounceMs ?? 50);
-  }
-
-  private readFile(name: string): void {
-    try {
-      const entry = liveEntryOf(JSON.parse(readFileSync(join(this.opts.liveDir, name), "utf8")));
-      if (entry) this.entries.set(name, entry);
-      else this.entries.delete(name);
-    } catch (err) {
-      // Gone (a clean exit deletes it), or caught mid-write: a rename replaces it whole, so a
-      // parse error is a non-atomic writer's half; keep what it said last until the next event.
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") this.entries.delete(name);
-    }
-  }
-
-  private rescan(): void {
-    let names: string[];
-    try {
-      names = readdirSync(this.opts.liveDir).filter((n) => n.endsWith(".json") && !n.startsWith("."));
-    } catch {
-      names = [];
-    }
-    const keep = new Set(names);
-    for (const name of [...this.entries.keys()]) if (!keep.has(name)) this.entries.delete(name);
-    for (const name of names) this.readFile(name);
   }
 
   private emit(): void {

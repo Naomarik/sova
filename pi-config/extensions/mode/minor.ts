@@ -132,8 +132,8 @@ Several alignments can be open at once, one per concern: each has its own id (al
 Exempt: questions and explanations, explicit commands to run, trivial one-line changes the user pointed at, follow-ups that plainly confirm, and prompts where the user says to skip alignment. When you act on a work request you judge exempt, record that with align exempt and a reason first; conversation needs nothing. When the ask already looks fully specified, still record a short alignment with your reading of it and ask the user to confirm. Bias heavily toward asking.`;
 
 /**
- * The writing style's paragraph after the align block (§chat.alignment/style): none for Default, so a
- * Default session's block is exactly ALIGN_INSTRUCTIONS. Keyed by align-settings.ts's AlignStyle.
+ * The writing style's paragraph after the align block (§chat.alignment/style): none for Technical
+ * (stored "default"), so a Technical session's block is exactly ALIGN_INSTRUCTIONS. Keyed by align-settings.ts's AlignStyle.
  */
 export const ALIGN_STYLE_PARAGRAPHS: Record<AlignStyle, string | undefined> = {
 	default: undefined,
@@ -216,10 +216,16 @@ export const VIS_FILES: Readonly<Record<string, string>> = Object.fromEntries(
 		.map((name) => [name.slice(0, -3), readFileSync(new URL(name, VIS_DIR), "utf8")]),
 );
 
-/** Each kind word → its file in vis/: every file but overview and shared is a kind, and html-svg is two. */
+/** Fence kind words only. Tool-backed catalogue entries have separate workflow guides. */
+export const VIS_TOOL_ENTRIES: readonly string[] = ["tour"];
+/**
+ * On-demand parts of a tool-backed entry's guide: `vis_guide` returns one by its name, alone. They are
+ * never listed in the prompt's catalogue (the entry's core names them) and are no fence kind.
+ */
+export const VIS_TOOL_PARTS: readonly string[] = ["tour-signin", "tour-sites", "tour-sova", "tour-sharing"];
 export const VIS_KIND_FILES: Readonly<Record<string, string>> = Object.fromEntries(
 	Object.keys(VIS_FILES)
-		.filter((name) => name !== "overview" && name !== "shared")
+		.filter((name) => name !== "overview" && name !== "shared" && !VIS_TOOL_ENTRIES.includes(name) && !VIS_TOOL_PARTS.includes(name))
 		.flatMap((name) => name.split("-").map((word) => [word, name])),
 );
 
@@ -228,7 +234,7 @@ export function stripVisComments(md: string): string {
 	return md.replace(/<!--[\s\S]*?-->\n?/g, "").trim();
 }
 
-const isTaught = (word: string): boolean => Object.hasOwn(VIS_KIND_FILES, word) && !VIS_FILES[VIS_KIND_FILES[word]!]!.includes(VIS_STUB);
+const isTaught = (word: string): boolean => VIS_TOOL_ENTRIES.includes(word) ? Object.hasOwn(VIS_FILES, word) : Object.hasOwn(VIS_KIND_FILES, word) && !VIS_FILES[VIS_KIND_FILES[word]!]!.includes(VIS_STUB);
 /** An overview list line, `- flow: …` or `- html / svg: …`; group 1 is its kind words. */
 const KIND_LINE = /^- ([a-z]+(?: \/ [a-z]+)*): /;
 
@@ -247,9 +253,14 @@ export const VIS_INSTRUCTIONS = visOverview(VIS_FILES.overview ?? "");
 /** The kinds the prompt lists, in its order: exactly the words `vis_guide` takes. */
 export const VIS_KINDS: readonly string[] = VIS_INSTRUCTIONS.split("\n").flatMap((line) => KIND_LINE.exec(line)?.[1]?.split(" / ") ?? []);
 
-/** What `vis_guide {kind}` returns: the shared rules, then that kind's file, owner notes stripped. */
+/** Every word `vis_guide` takes: the listed kinds and tool entries, then the tool entries' parts that have a file. */
+export const VIS_GUIDE_NAMES: readonly string[] = [...VIS_KINDS, ...VIS_TOOL_PARTS.filter((part) => Object.hasOwn(VIS_FILES, part))];
+
+/** What `vis_guide {kind}` returns: the shared rules, then that kind's file, owner notes stripped; a tool entry or part, its file alone. */
 export function visGuide(kind: string): string {
+	if (VIS_TOOL_PARTS.includes(kind) && Object.hasOwn(VIS_FILES, kind)) return stripVisComments(VIS_FILES[kind]!);
 	if (!VIS_KINDS.includes(kind)) throw new Error(`No vis kind "${kind}" to look up. Kinds: ${VIS_KINDS.join(", ")}.`);
+	if (VIS_TOOL_ENTRIES.includes(kind)) return stripVisComments(VIS_FILES[kind]!);
 	return `${stripVisComments(VIS_FILES.shared ?? "")}\n\n${stripVisComments(VIS_FILES[VIS_KIND_FILES[kind]!]!)}`;
 }
 

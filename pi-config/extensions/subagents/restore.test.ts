@@ -15,7 +15,6 @@ import { BACKEND_REGISTER_EVENT } from "./contracts.ts";
 import { WORKER_MANIFEST_ENTRY_TYPE } from "./registry.ts";
 import { resolvedModel } from "./worker-transcript.ts";
 import { MODE_WORKER_EVENT } from "../mode/events.ts";
-import { ClaudeRunner } from "../claude-code/runner.ts";
 
 const SNAPSHOT = "subagents:workers-snapshot";
 const NO_POLICY_FILE = path.join(os.tmpdir(), "subagents-tests-absent-policy.json");
@@ -97,7 +96,7 @@ function manager(file: ReturnType<typeof sessionFile>, options: Options = {}) {
 		getActiveTools: () => ["read"],
 		sendMessage: (...m: any[]) => messages.push(m),
 	} as any, factory as any, {
-		policyFile: NO_POLICY_FILE, hosting: { enabled: false },
+		policyFile: NO_POLICY_FILE,
 		...(options.agentDir ? { agentDir: options.agentDir } : {}), ...(options.mailboxRoot ? { mailboxRoot: options.mailboxRoot, mailboxPollMs: 10 } : {}),
 	});
 	const call = (name: string, params: any) => tools.get(name).execute("t", params, undefined, () => {}, ctx);
@@ -257,97 +256,77 @@ test("resume refusals: unknown ID, live worker, a backend that cannot resume, a 
 	await m.shutdown();
 });
 
-test("a claude-code worker resumes by session id through its backend; not loaded means refused", async () => {
+test("an older Claude Code worker (it ran the CLI's own tools) resumes on Sova's tools in a new session: same id, seat, cwd, model; the handoff is its first message", async () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-continue-"));
+	const agentDir = path.join(root, "agent");
+	const proj = path.join(root, "proj");
+	fs.mkdirSync(agentDir); fs.mkdirSync(proj);
 	const file = sessionFile();
-	const id = "6c852daa-6abf-4bbd-9ef5-8950d9330968";
-	file.append(WORKER_MANIFEST_ENTRY_TYPE, {
-		v: 1, kind: "worker-manifest", workerId: "ag_04", backend: "claude-code", at: 1, name: "c", groupId: "run_04", status: "running",
-		spec: { cwd: os.tmpdir(), taskPreview: "review", wake: true }, ref: { v: 1, backend: "claude-code", kind: "claude-session-id", locator: id, cwd: os.tmpdir() },
-		launch: { backend: "claude-code", model: "sonnet", systemPrompt: "be terse", backendOptions: { permissionMode: "acceptEdits" } },
-	});
-	const m = manager(file);
-	m.start();
-	await until(() => (m.snapshot()?.workers ?? []).length === 1, "restored claude worker");
-	assert.equal(m.snapshot().workers[0].resumable, false, "claude-code is not loaded in this manager");
-	const restoredStart = m.snapshot().workers[0].startedAt;
-	assert.equal(typeof restoredStart, "number");
-	await assert.rejects(m.call("agent_resume", { id: "ag_04" }), /backend claude-code is not loaded/);
-	// Load a claude-code backend: the resume goes through its own create(), with the resume id.
-	const created: any[] = [];
-	m.bus.emit(BACKEND_REGISTER_EVENT, {
-		version: 1, id: "claude-code", validate() {}, prepare: (spec: any) => ({ model: spec.model, systemPrompt: spec.systemPrompt, permissionMode: spec.backendOptions?.permissionMode }),
-		create: (options: any, handlers: any) => {
-			created.push(options);
-			const w = m.workers.length;
-			void w;
-			const worker: any = {
-				...options, backend: "claude-code", extensions: [], forked: false, status: "starting", transcript: [], transcriptOmitted: { items: 0, approxBytes: 0 },
-				usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0, contextTokens: 0 }, steerCount: 0, startedAt: Date.now(), lastActivity: Date.now(),
-				whenClosed: Promise.resolve(), processAlive: true, sessionId: options.resume?.sessionId,
-				isFinished() { return false; }, isSettled() { return this.status === "waiting"; }, finalOutput: () => "",
-				async steer() { return { ok: true }; }, async kill() {}, async dispose() {},
-			};
-			// The real ClaudeRunner's own methods: none may make it a thenable.
-			for (const k of Object.getOwnPropertyNames(ClaudeRunner.prototype)) if (k !== "constructor" && !(k in worker)) { const d = Object.getOwnPropertyDescriptor(ClaudeRunner.prototype, k)!; if (typeof d.value === "function") worker[k] = d.value; }
-			setTimeout(() => { worker.status = "waiting"; handlers.onChange(); }, 5);
-			return worker;
-		},
-	});
-	const resumed = await m.call("agent_resume", { id: "ag_04" });
-	assert.ok(!resumed?.isError, "the resume reports success");
-	assert.deepEqual(created[0].resume, { sessionId: id, startedAt: restoredStart }, "the restored entry's start travels with the resume");
-	assert.deepEqual([created[0].model, created[0].systemPrompt, created[0].permissionMode], ["claude-sonnet-5-5", "be terse", "acceptEdits"], "an old spawn id resumes as its catalog id");
-	await m.shutdown();
-});
-
-test("a backend reporting session-cumulative usage is not counted twice after a resume (e2e B1)", async () => {
-	// The e2e's checker: before the restart 10/116/0/13,846 $0.028282; after resume + one turn the
-	// Claude CLI reports its whole session, 20/168/13,846/14,016 $0.0303 — the transcript's truth.
-	const file = sessionFile();
-	// An id with no record on disk: the rebuilt usage is the snapshot (a real record would be read instead).
-	const id = "00000000-0000-4000-8000-00000000b001";
-	const base = { input: 10, output: 116, cacheRead: 0, cacheWrite: 13846, cost: 0.028282, turns: 1 };
-	file.append(WORKER_MANIFEST_ENTRY_TYPE, {
-		v: 1, kind: "worker-manifest", workerId: "ag_04", backend: "claude-code", at: 1, name: "checker", groupId: "run_04", status: "waiting",
-		spec: { cwd: os.tmpdir(), taskPreview: "check", wake: true }, ref: { v: 1, backend: "claude-code", kind: "claude-session-id", locator: id, cwd: os.tmpdir() },
-		usageSnapshot: { ...base, byModel: [], source: "snapshot", asOf: 1 }, launch: { backend: "claude-code", model: "haiku" },
-	});
-	const m = manager(file);
-	let worker: any;
-	let settled: ((w: any) => void) | undefined;
-	m.bus.emit(BACKEND_REGISTER_EVENT, {
-		version: 1, id: "claude-code", validate() {}, prepare: () => ({}),
-		create: (options: any, handlers: any) => {
-			settled = handlers.onSettled;
-			worker = {
-				...options, backend: "claude-code", usageScope: "session", extensions: [], forked: false, status: "starting", transcript: [], transcriptOmitted: { items: 0, approxBytes: 0 },
-				usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0, contextTokens: 0 }, steerCount: 0, startedAt: Date.now(), lastActivity: Date.now(),
-				whenClosed: Promise.resolve(), processAlive: true, sessionId: id,
-				isFinished() { return false; }, isSettled() { return this.status === "waiting"; }, finalOutput: () => "CHECKER-9",
-				async steer() { return { ok: true }; }, async kill() {}, async dispose() {},
-			};
-			setTimeout(() => { worker.status = "waiting"; handlers.onChange(); }, 5);
-			return worker;
-		},
-	});
-	m.start();
-	await until(() => (m.snapshot()?.workers ?? []).length === 1, "restored checker");
-	assert.deepEqual([m.snapshot().workerUsage.input, m.snapshot().workerUsage.cacheWrite], [10, 13846]);
-	await m.call("agent_resume", { id: "ag_04" });
-	// Before its first report the rebuilt total stands; nothing drops, nothing doubles.
-	await until(() => m.snapshot().workers[0]?.status === "waiting", "resumed idle");
-	assert.deepEqual([m.snapshot().workerUsage.input, m.snapshot().workerUsage.cacheWrite, m.snapshot().workerUsage.cost], [10, 13846, 0.028282]);
-	// One turn: the CLI's cumulative figures, whole session included.
-	Object.assign(worker.usage, { input: 20, output: 168, cacheRead: 13846, cacheWrite: 14016, cost: 0.0303, turns: 2 });
-	worker.taskOutcome = "success";
-	settled!(worker);
-	await until(() => m.snapshot().workerUsage.input === 20, "the settle's refresh");
-	const u = m.snapshot().workerUsage;
-	assert.deepEqual([u.input, u.output, u.cacheRead, u.cacheWrite, u.cost], [20, 168, 13846, 14016, 0.0303], "equals the transcript, not base + cumulative");
-	// And the durable snapshot is the true total, so no inflated cost outlives the next restart.
-	const snap = file.entries.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE && e.data.workerId === "ag_04").at(-1).data.usageSnapshot;
-	assert.deepEqual([snap.input, snap.output, snap.cacheRead, snap.cacheWrite, snap.cost, snap.turns], [20, 168, 13846, 14016, 0.0303, 2]);
-	await m.shutdown();
+	const first = manager(file, { agentDir, mailboxRoot: path.join(root, "mail1") });
+	const second = manager(file, { agentDir, mailboxRoot: path.join(root, "mail2") });
+	// Its Claude Code transcript, where the CLI kept it (found by session id).
+	const sid = "6c852daa-6abf-4bbd-9ef5-8950d9330968";
+	const transcript = path.join(os.homedir(), ".claude", "projects", "-old-slug", `${sid}.jsonl`);
+	const answer = `${"x".repeat(3000)} FINAL-WORDS`;
+	fs.mkdirSync(path.dirname(transcript), { recursive: true });
+	fs.writeFileSync(transcript, [
+		{ type: "user", uuid: "u0", isSidechain: false, timestamp: new Date(1).toISOString(), message: { role: "user", content: "Review f01." } },
+		{ type: "assistant", uuid: "a1", isSidechain: false, timestamp: new Date(2).toISOString(), message: { id: "m1", model: "claude-opus-5-5", role: "assistant", content: [{ type: "text", text: answer }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } } },
+	].map((l) => JSON.stringify(l)).join("\n") + "\n");
+	try {
+		first.start();
+		await first.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "rev", prompt: "Review f01." }] });
+		const [member] = first.workers;
+		member.settle();
+		await first.shutdown();
+		// What an older Sova recorded for that seat: a native Claude worker, with options and tools only its CLI had.
+		file.append(WORKER_MANIFEST_ENTRY_TYPE, {
+			v: 1, kind: "worker-manifest", workerId: "ag_01", backend: "claude-code", at: Date.now(), status: "running",
+			spec: { cwd: proj, model: "opus[1m]", effort: "high", taskPreview: "Review f01.", wake: true },
+			ref: { v: 1, backend: "claude-code", kind: "claude-session-id", locator: sid, cwd: proj },
+			launch: { backend: "claude-code", model: "opus[1m]", effort: "high", tools: ["Read", "Bash", "WebFetch", "MultiEdit"], systemPrompt: "be terse", cwd: proj, backendOptions: { permissionMode: "acceptEdits" } },
+		});
+		second.start();
+		await until(() => (second.snapshot()?.workers ?? []).length === 1, "the restored claude worker");
+		assert.deepEqual([second.snapshot().workers[0].restored, second.snapshot().workers[0].resumable], [true, true]);
+		const out = await second.call("agent_resume", { id: "ag_01" });
+		const runner = second.workers.at(-1);
+		// Same id, group and seat; today's Claude worker: the provider's ref, its effort, Sova's tools, no CLI options.
+		assert.deepEqual([runner.id, runner.groupId, runner.backend, runner.cwd], ["ag_01", "run_01", "pi", proj]);
+		assert.equal(runner.model, "claude-code-cli/claude-opus-5-5");
+		assert.equal(runner.effort, "high");
+		assert.deepEqual(runner.tools, ["read", "bash"], "WebFetch and MultiEdit have no equivalent: dropped, not refused");
+		assert.equal(runner.backendOptions, undefined, "acceptEdits means nothing on Sova's tools");
+		assert.match(runner.systemPrompt, /be terse/);
+		assert.equal(decodeMemberContext(runner.env[MEMBER_ENV])?.role, "rev", "it keeps its team seat and role");
+		// A new pi session, seeded with the handoff before it opens it; it comes back idle.
+		const seeded = runner.resume.sessionFile;
+		assert.equal(path.dirname(seeded), path.join(agentDir, "sessions", `--${proj.replace(/^\//, "").replace(/[/\\:]/g, "-")}--`));
+		const [header, first_] = fs.readFileSync(seeded, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+		assert.deepEqual([header.type, header.cwd], ["session", proj]);
+		const text: string = first_.message.content[0].text;
+		assert.equal(first_.message.role, "user");
+		assert.match(text, /continue the work of ag_01, a Claude Code worker whose run ended/);
+		assert.ok(text.includes(transcript), "the old transcript's absolute path");
+		assert.match(text, /Its task:\nReview f01\./);
+		assert.match(text, /FINAL-WORDS/);
+		assert.ok(text.length < 2600, "only the last 2,000 characters of its last answer");
+		assert.equal(runner.status, "waiting");
+		assert.equal(runner.lastSteer, undefined, "nothing is sent to it");
+		assert.match(out.content[0].text, /^Resumed ag_01 \(rev\) on Sova's tools in a new session .*, continuing its Claude Code session .*6c852daa-6abf-4bbd-9ef5-8950d9330968\.jsonl; nothing was sent to it/);
+		// The record now names the new session and keeps the old one as continuedFrom; the old transcript is untouched.
+		const resumed = file.entries.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE && e.data.workerId === "ag_01" && e.data.resumedAt).at(-1)!.data;
+		assert.equal(resumed.backend, "pi");
+		assert.deepEqual([resumed.ref.kind, resumed.ref.locator], ["pi-session-file", seeded]);
+		assert.deepEqual([resumed.continuedFrom.backend, resumed.continuedFrom.ref.locator], ["claude-code", sid]);
+		assert.equal(resumed.launch.model, "claude-code-cli/claude-opus-5-5", "a later resume reopens the new session as a pi worker");
+		assert.ok(fs.readFileSync(transcript, "utf8").includes("FINAL-WORDS"));
+		assert.equal(second.snapshot().workers[0].teamId, "team_01");
+	} finally {
+		await second.shutdown();
+		fs.rmSync(root, { recursive: true, force: true });
+		fs.rmSync(path.dirname(transcript), { recursive: true, force: true });
+	}
 });
 
 test("resolvedModel: the transcript's model, else the snapshot's biggest row, else the spawn model; claude/ dropped for claude-code only", () => {
@@ -365,7 +344,7 @@ test("resolvedModel: the transcript's model, else the snapshot's biggest row, el
 	assert.equal(resolvedModel(pi, undefined), "zai/glm-5.3");
 });
 
-test("a restored and then resumed Claude worker shows the model it ran under, until its runner reports one", async () => {
+test("a restored Claude worker shows the model it ran under", async () => {
 	const file = sessionFile();
 	const id = "00000000-0000-4000-8000-00000000b002";
 	file.append(WORKER_MANIFEST_ENTRY_TYPE, {
@@ -375,29 +354,9 @@ test("a restored and then resumed Claude worker shows the model it ran under, un
 		launch: { backend: "claude-code", model: "haiku" },
 	});
 	const m = manager(file);
-	let worker: any;
-	let launchedWith: string | undefined;
-	m.bus.emit(BACKEND_REGISTER_EVENT, {
-		version: 1, id: "claude-code", validate() {}, prepare: (spec: any) => ({ model: spec.model }),
-		create: (options: any, handlers: any) => {
-			launchedWith = options.model;
-			worker = {
-				...options, backend: "claude-code", usageScope: "session", extensions: [], forked: false, status: "starting", transcript: [], transcriptOmitted: { items: 0, approxBytes: 0 },
-				usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0, contextTokens: 0 }, steerCount: 0, startedAt: Date.now(), lastActivity: Date.now(),
-				whenClosed: Promise.resolve(), processAlive: true, sessionId: id,
-				isFinished() { return false; }, isSettled() { return this.status === "waiting"; }, finalOutput: () => "",
-				async steer() { return { ok: true }; }, async kill() {}, async dispose() {},
-			};
-			setTimeout(() => { worker.status = "waiting"; handlers.onChange(); }, 5);
-			return worker;
-		},
-	});
 	m.start();
 	await until(() => (m.snapshot()?.workers ?? []).length === 1, "restored");
 	assert.equal(m.snapshot().workers[0].model, "claude-haiku-4-5-20251001", "restored: not the spawn alias");
-	await m.call("agent_resume", { id: "ag_05" });
-	assert.equal(worker.model, "claude-haiku-4-5-20251001", "resumed: the same label before its first turn");
-	assert.equal(launchedWith, "claude-haiku-4-5", "the CLI is launched with the spawn model's catalog id");
 	await m.shutdown();
 });
 
@@ -440,7 +399,10 @@ test("restart: a paused team stays paused (its resumed monitor is sent the resum
 		await until(() => (second.snapshot()?.workers ?? []).length === 3, "restored members");
 		const resumedMonitor = await second.call("agent_resume", { id: "ag_03" });
 		assert.match(resumedMonitor.content[0].text, /^Resumed ag_03 \(monitor\) .*It is the monitor of team_01, which is paused: it was sent its resume check, since its wake_nudges ended with the earlier parent\.$/);
-		assert.match(second.workers.at(-1).lastSteer, /^\[Team team_01 restored while paused\]\n.*your pending wake_nudges ended with it\. Run your standing instruction now: call team_roster;/);
+		// An urgent notice item, listed at once.
+		const rejoined = second.workers.at(-1);
+		await until(() => typeof rejoined.lastSteer === "string" && rejoined.lastSteer.includes("restored while paused"), "the resume check listed");
+		assert.match(rejoined.lastSteer, /\[Team team_01 restored while paused\]\n.*your pending wake_nudges ended with it\. Run your standing instruction now: call team_roster;/);
 		await second.call("agent_resume", { id: "ag_01" });
 		const roster = await ask(second.workers.at(-1), { type: "roster" });
 		assert.match(roster.text, /Assignments from the main thread \(the work you route; never replace or cancel it\):\n {4}ag_02 dev:\n {6}\| Write f01-f10\.\n {6}Later instructions from the main thread \(binding: part of dev's assignment; never tell dev they are not its work\), newest last:\n {6}> After f10, also write summary\.txt\./);

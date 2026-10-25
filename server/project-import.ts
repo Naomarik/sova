@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
-import { disposeHeldChat, heldChats, isSessionBusy } from "./chat-manager";
+import { chatHandles, closeChat, isSessionBusy } from "./chat-handle";
 import { workingSubagents } from "./live";
 import { closeOrgHost, hostOf, isOrgHostOpen, type OrgHostApi } from "./org-engine";
 import { OrgError } from "./org-error";
@@ -219,7 +219,7 @@ export async function importProject(orgId: string, projectId: unknown, confirm: 
 /** Close every held chat of the project's conversations (their files move): viewers reopen at the new path. */
 async function disposeChats(projectDir: string): Promise<void> {
   const dir = canonicalPath(join(projectDir, "sessions"));
-  for (const chat of heldChats()) if (dirname(chat.path) === dir) await disposeHeldChat(chat.path, "This project moved into an organization. Opening it there.");
+  for (const chat of chatHandles()) if (dirname(chat.path) === dir) await closeChat(chat.path, "This project moved into an organization. Opening it there.");
 }
 
 /** Steps 8–9: the conversations' host-local view, the workspace commit, the standalone dir set aside, the entry dropped. */

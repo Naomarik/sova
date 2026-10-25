@@ -83,7 +83,8 @@ ssh, no channel, no toast), for a client that reconnected to a live session. A f
 using prompt sections rather than replacing the prompt.
 
 **Fail fast, fail closed.** A bounded preflight (`id -un; hostname; $HOME; pwd`) runs at session
-start. ssh always runs with `BatchMode=yes` and `ConnectTimeout=10`. An unreachable target makes
+start. ssh always runs with `BatchMode=yes` and `ConnectTimeout=10` (or the entry's
+`connectTimeoutS`, below). An unreachable target makes
 every tool fail with the target's name and ssh's stderr. The failure is cached for 15 s, then
 retried. An unknown or invalid target name makes every tool refuse, and never falls back to local
 execution.
@@ -95,13 +96,13 @@ back to `/remote/abs/path`. From any other directory, the local cwd maps to the 
 
 ## Workers (subagents of a remote session)
 
-A remote session's subagents run on the target too — both backends, through the same argv, channel
-and far scripts as the session itself (`workers.ts` is the contract the subagents extension reads):
-
-| Backend | How |
-| --- | --- |
-| pi | The subagents extension loads this extension into the child (`-e remote/index.ts --target <name>`, `--no-channel` when the session has it), so the worker's `bash`/`read`/`write`/`edit`/`ls`/`find`/`grep` are exactly the session's. Its own channel; its own preflight over the parent's ControlMaster |
-| claude-code | The child launches `mcp-server.ts` as a stdio MCP server named `remote` (tools `mcp__remote__remote_bash`, `remote_read`, `remote_write`, `remote_edit`, `remote_ls`, `remote_find`, `remote_grep`) and starts with `--tools ""`: no built-in tool at all, so nothing can touch this machine's filesystem. The identity (`PI_REMOTE_MCP`: target name, far cwd, agent dir — never a credential) rides in the worker's private mcp.json env |
+A remote session's subagents run on the target too, through the same argv, channel and far scripts
+as the session itself (`workers.ts` is the contract the subagents extension reads). Every worker is a
+pi worker (a `claude-code` one is a pi worker on the Claude Code provider): the subagents extension
+loads this extension into the child (`-e remote/index.ts --target <name>`, `--no-channel` when the
+session has it), so the worker's `bash`/`read`/`write`/`edit`/`ls`/`find`/`grep` are exactly the
+session's. Its own channel; its own preflight over the parent's ControlMaster. Any other backend is
+refused in a remote session.
 
 How the subagents extension knows: this extension emits `remote:session` on `pi.events` at session
 start (and again on `remote:discover`), since `pi.getFlag("target")` is only answered for the
@@ -111,8 +112,7 @@ to spawn workers at all — never a worker with local tools in an empty placehol
 
 A worker's `cwd` in a remote session is a FAR path (absolute, or relative to the session's far cwd;
 `~` is refused — the parent does not know the far home); its local cwd is that path's placeholder,
-created if needed. The worker is told all of this in its system prompt (`remoteWorkerInstructions`),
-and a claude worker again through the server's `initialize.instructions`.
+created if needed.
 
 ## Files
 
@@ -121,10 +121,9 @@ and a claude worker again through the server's `initialize.instructions`.
 | `argv.ts` | Pure, node-builtins-only. The entry schema, validation, the one argv builder (`buildTargetArgv`), the folder listing (`buildListDirsArgv`), quoting, and the placeholder path helpers. **Sova's server imports it**, so keep it pi-runtime-free |
 | `exec.ts` | Spawns an argv with no local shell, with a timeout, abort handling and stdin |
 | `channel.ts` | The pinned channel: one far shell over its own ssh, length-prefixed requests, base64 + marker responses |
-| `connection.ts` | Pure, loadable by plain node. `Connection`: one session's probe, status and the choke point every far command takes — the pinned channel when idle, else per call — with the whole channel policy (lazy warm, hold after a teardown, failure cooldown, login rate-limit backoff). `Remote` in index.ts extends it; a worker's MCP server uses it directly. Both lanes run in the far cwd |
+| `connection.ts` | Pure, loadable by plain node. `Connection`: one session's probe, status and the choke point every far command takes — the pinned channel when idle, else per call — with the whole channel policy (lazy warm, hold after a teardown, failure cooldown, login rate-limit backoff). `Remote` in index.ts extends it. Both lanes run in the far cwd |
 | `check.ts` | `node check.ts entry.json [--list PATH] [--cmd …]`: validates an entry and runs it end to end through the same builder. The connection agent uses it before it writes an entry |
-| `workers.ts` | Pure. What a session hands its workers: the `remote:session` event, the MCP identity env and the worker blurb; imported by index.ts, mcp-server.ts and the subagents extension |
-| `mcp-server.ts` | The `remote` stdio MCP server a claude-code worker launches (node builtins + the pure modules; never index.ts) |
+| `workers.ts` | Pure. What a session hands its workers: the `remote:session` event; imported by index.ts and the subagents extension |
 | `index.ts` | The extension |
 
 ## Entry schema
@@ -135,7 +134,8 @@ and a claude worker again through the server's `initialize.instructions`.
   "proxy": { "type": "aws-ssm", "profile": "p", "region": "eu-central-1", "pushKey": "ec2-instance-connect" },
   "incus": { "sudo": true, "sandbox": "foldai-sandbox", "cell": "foldai-cell-abc", "uid": 70000, "gid": 70000 },
   "docker": { "container": "web", "user": "app" },
-  "via": "other-target", "cwd": "/home/deploy/acme-site", "env": { "TERM": "dumb" } }
+  "via": "other-target", "cwd": "/home/deploy/acme-site", "env": { "TERM": "dumb" },
+  "connectTimeoutS": 30 }
 ```
 
 `kind` names the environment. `"ssh"` is the plain host, `"incus-cell"` uses the `incus` block, and
@@ -145,6 +145,29 @@ ignored (a `mount` block left over from the removed sshfs feature does not inval
 credential-free: key paths and profile names only. ssh always gets `ControlMaster=auto`,
 `ControlPath=~/.ssh/cm-%C` and `ControlPersist=10m` (a cold login can cost over 1.5 s), after the
 entry's own `options`, so the entry's options win.
+
+**Slow-to-connect hosts: `connectTimeoutS`.** Optional, an integer 1-300 (seconds). A host reached
+through `aws-ssm` with an Instance Connect key push can take 10-30 s to connect cold, longer than
+the fixed timers built on ssh's default `ConnectTimeout=10`. Set it on the entry that has the `ssh`
+block; a `via` entry takes it from the ssh-bearing target of its chain (on an entry with no `ssh`
+block of its own it is not read). It sets:
+
+| What | Unset (today) | Set to `N` |
+| --- | --- | --- |
+| ssh's `ConnectTimeout` (per call and the channel) | 10 | `N` |
+| The channel's start timeout (connect + ready line) | 15 s | `N` + 5 s |
+| The preflight and `/remote check` probe | 20 s | `N` + 10 s |
+| Sova's per-target probe, folder listing and remote runs (`server/targets.ts`) | 15 s | `N` + 10 s |
+| `check.ts`'s default `--timeout` | 30 s | `N` + 20 s |
+
+A derived timer never drops below its unset value: a small `N` makes ssh give up sooner, not the
+command after it. The entry's own `ssh.options` `ConnectTimeout=…` still comes first, so ssh uses it;
+when the field is also set, the timers follow that option's value. An entry with a
+`ConnectTimeout` option and no `connectTimeoutS` behaves exactly as before (the timers stay fixed).
+Leaving the field out changes nothing: every argv and timer is what it was before the field
+existed, and a reader that predates it ignores it as an unknown key. Not covered: the Sova New
+Session dialog's own 20 s wait for a folder listing; on a cold host it can give up first, while the
+server's run goes on and leaves a warm ControlMaster for the next try.
 
 **Quoting.** The folder browser's path is user input. Every value spliced into far shell code is
 single-quoted, and the far argv is re-quoted word by word for ssh's login shell. `argv.test.ts`

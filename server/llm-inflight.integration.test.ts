@@ -2,9 +2,6 @@
 // Two hubs over real WebSockets on 127.0.0.1; the rest of the hub's tests (fake peer sockets,
 // virtual time) are in llm-inflight.test.ts.
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, test } from "node:test";
 import type { SessionFeedMessage } from "../shared/protocol";
 import { LlmInflightHub, type LlmProcessSnapshot, type OwnCounter } from "./llm-inflight";
@@ -38,7 +35,6 @@ async function until(ok: () => boolean, what: string, guardMs = 30_000): Promise
 describe("two hosts over real sockets", () => {
   test("each counts the other once, both ways, and neither passes the other's count back", async () => {
     const { WebSocket, WebSocketServer } = await import("ws");
-    const dirs = [mkdtempSync(join(tmpdir(), "llm-a-")), mkdtempSync(join(tmpdir(), "llm-b-"))];
     const owns = [new FakeOwn(), new FakeOwn()];
     owns[0]!.value = snap({ producer: "a", active: 1 });
     owns[1]!.value = snap({ producer: "b", active: 2 });
@@ -56,7 +52,6 @@ describe("two hosts over real sockets", () => {
       hubs.push(
         new LlmInflightHub({
           own: owns[i]!,
-          liveDir: dirs[i]!,
           sweepMs: 1000,
           mesh: { peers: () => [{ id: `h${1 - i}`, url: other }], selfId: () => `h${i}`, connect: (url) => new WebSocket(`${url.replace(/^http/, "ws")}/ws/watch?feed=llm`) },
         }),
@@ -77,7 +72,6 @@ describe("two hosts over real sockets", () => {
     } finally {
       hubs.forEach((h) => h.stop());
       servers.forEach((s) => s.close());
-      dirs.forEach((d) => rmSync(d, { recursive: true, force: true }));
     }
   });
 });

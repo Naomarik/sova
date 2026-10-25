@@ -5,7 +5,7 @@
 // runtime, prompted or notified — and no model is called: creating the fork is file work only.
 import type { Hono } from "hono";
 import { existsSync } from "node:fs";
-import { assertNotLive, BusyError, heldChat } from "./chat-manager";
+import { assertNotLive, BusyError, chatHandle } from "./chat-handle";
 import { resolveSessionPath } from "./paths";
 import { forkSessionFile } from "./harness/pi/fork";
 import { copyMemory } from "./memory/store";
@@ -79,15 +79,15 @@ export function registerSessionForkRoutes(app: Hono): void {
       if (!(err instanceof BusyError)) throw err;
       return c.json({ error: err.message }, 409);
     }
-    const chat = heldChat(path);
+    const chat = chatHandle(path);
     if (chat) {
-      if (chat.disposed || chat.harness.isRunning())
+      if (chat.mirror.closed || chat.mirror.running)
         return c.json({ error: "Stop the current turn before forking that session." }, 409);
-      if (chat.isCompacting()) return c.json({ error: "Wait for the compaction to finish before forking that session." }, 409);
-      if (chat.hasPendingSends())
+      if (chat.mirror.compacting) return c.json({ error: "Wait for the compaction to finish before forking that session." }, 409);
+      if (chat.mirror.pendingSends)
         return c.json({ error: "A message is still on its way out. Wait for it to send, or press Stop, then fork." }, 409);
       try {
-        chat.assertNoForeignWrites();
+        await chat.assertNoForeignWrites();
       } catch (err) {
         if (!(err instanceof BusyError)) throw err;
         return c.json({ error: err.message }, 409);

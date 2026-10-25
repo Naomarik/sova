@@ -133,6 +133,56 @@ export function saveDefaultMemoryType(type: MemoryType, file = memoryFile()): vo
   saveMemorySettings({ ...loadMemorySettings(file), default: { type } }, file);
 }
 
+/** An overseer's memory as saved (`memory` in its overseer.json), or absent: no choice made yet. `size`: an
+    older file's, kept as it is and read by nothing (the size is Settings → Memory's). */
+export interface OverseerMemorySetting {
+  on: boolean;
+  type: ChatMemoryChoice["type"];
+  size?: number;
+}
+
+/** An overseer's memory in force: its switch and type, at Settings' size for that type. */
+export interface OverseerMemoryInForce {
+  on: boolean;
+  type: ChatMemoryChoice["type"];
+  size: number;
+}
+
+/**
+ * An overseer's memory in force: its saved switch and type, else on with the built-in UniiChat (never the
+ * default type Settings → Memory saved for ordinary chats), at Settings' size for the type. The one reading
+ * every overseer path uses (the chat, the routes, the turned-on edge).
+ */
+export function overseerMemoryOf(saved: OverseerMemorySetting | undefined | null, file = memoryFile()): OverseerMemoryInForce {
+  const on = saved ? saved.on : true;
+  const type = saved ? saved.type : BUILTIN_MEMORY_CHOICE.type;
+  return { on, type, size: memorySizeFor(type, loadMemorySettings(file)) };
+}
+
+/** A saved overseer memory setting read tolerantly (a stored file's `memory`), or undefined. A size outside
+    the range is dropped, never the setting. */
+export function parseOverseerMemory(m: unknown): OverseerMemorySetting | undefined {
+  if (!isRecord(m) || typeof m.on !== "boolean" || !isMemoryType(m.type)) return undefined;
+  return { on: m.on, type: m.type, ...(isSize(m.size) ? { size: m.size } : {}) };
+}
+
+/**
+ * A PUT body for an overseer's switch `{ on?, type? }` over its saved setting: the next saved setting, or the
+ * reason the body isn't one. A `size` is ignored, never refused (the size is Settings'); a size the saved
+ * setting holds is kept. Shared by `/api/overseer/memory` and a project overseer's.
+ */
+export function patchOverseerMemory(saved: OverseerMemorySetting | undefined, body: unknown): OverseerMemorySetting | { error: string } {
+  if (!isRecord(body)) return { error: "Expected JSON body { on?, type? }" };
+  if (body.on !== undefined && typeof body.on !== "boolean") return { error: "on must be true or false" };
+  if (body.type !== undefined && !isMemoryType(body.type)) return { error: `type must be ${TYPE_RULE()}` };
+  const cur = overseerMemoryOf(saved);
+  return {
+    on: typeof body.on === "boolean" ? body.on : cur.on,
+    type: isMemoryType(body.type) ? body.type : cur.type,
+    ...(saved?.size !== undefined ? { size: saved.size } : {}),
+  };
+}
+
 /** A record's choice completed: the record's type (else the saved default's) at Settings' size for it. A
     size the record holds is an older chat's own, and ignored. */
 export function choiceOf(record: { type: MemoryType; size?: number } | null | undefined, file = memoryFile()): ChatMemoryChoice {

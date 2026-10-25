@@ -2,13 +2,15 @@
 // this tree's pi-config extensions linked in, so "no pi-config extension loads" is a real claim), an
 // org workspace and a project root in the OS temp dir; ~/.pi is never touched. No model is called.
 import assert from "node:assert/strict";
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { PROJECT_OVERSEER_ENTRY, type ProjectOverseerSettings } from "../shared/project-overseer";
 import { stateView } from "./harness/state-view";
 import { piRuntime, piSession } from "./harness/pi/testing/handle";
+import { linkPiConfigExtensions } from "./testing/agent-dir";
+import { MEMORY_TOOLS } from "../shared/memory";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-po-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -16,14 +18,15 @@ process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
-symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
+linkPiConfigExtensions(agentDir);
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const orgs = await import("./orgs");
 const po = await import("./project-overseer");
 // The spec draft tool in-process (server/spec-tool-fake.ts; reconcile.integration.test.ts runs the real one).
 (await import("./spec-draft-writer")).setDraftToolForTest((await import("./spec-tool-fake")).fakeDraftTool());
 const store = await import("./project-overseer-store");
-const { PO_BUILTINS, TOOL_NEEDS } = await import("./project-overseer-tools");
+const { PO_BUILTINS, PO_UNATTENDED_WRITE_REFUSAL, TOOL_POWER } = await import("./project-overseer-tools");
 const { acquireChat, disposeAllChats, ModeRefusedError, BusyError } = await import("./chat-manager");
 const { promptSession } = await import("./session-prompt");
 const { canonicalPath } = await import("./paths");
@@ -79,25 +82,37 @@ describe("a project overseer", async () => {
     assert.equal((await po.ensureProjectOverseer(project.id)).id, made.id, "single conversation per project");
   });
 
-  test("opens as a project overseer: its tools + read-only file tools, no pi-config extension, no modes", async () => {
+  test("opens as a project overseer: its tools + its file tools, no pi-config extension, no modes", async () => {
     const { path } = await po.ensureProjectOverseer(project.id);
     const chat = await acquireChat(path);
     assert.equal(chat.special, "project-overseer");
     assert.equal(chat.overseer, false, "not the Overseer");
     // A placed project: the org part's reads (no statechart act names them) come with its tools, and so do the
     // org history's (sova_history, sova_decide).
-    const want = [...new Set([...Object.keys(TOOL_NEEDS), "sova_decisions", "sova_offer", "sova_send_status", "sova_history", "sova_decide", ...PO_BUILTINS])].sort();
+    // Its memory is on by default: the recall tools come with it.
+    const want = [...new Set([...Object.keys(TOOL_POWER), "sova_decisions", "sova_offer", "sova_send_status", "sova_history", "sova_decide", "spec_lookup", "sova_draft_specs", "sova_draft_approve", "sova_draft_build", ...PO_BUILTINS, ...MEMORY_TOOLS])].sort();
     assert.deepEqual([...piSession(chat).getActiveToolNames()].sort(), want);
-    assert.deepEqual(piSession(chat).getAllTools().map((t) => t.name).sort(), want, "no bash, edit, write or extension tool");
+    assert.deepEqual(piSession(chat).getAllTools().map((t) => t.name).sort(), want, "no bash or extension tool");
+    for (const t of ["write", "edit"]) assert.ok(want.includes(t), t);
     const loaded = piRuntime(chat).services.resourceLoader.getExtensions().extensions.map((e) => e.path);
-    assert.deepEqual(loaded, ["<inline:sova-project-overseer>"]);
+    assert.deepEqual(loaded, ["<inline:sova-project-overseer>", "<inline:sova-memory>"]);
+    assert.deepEqual(chat.memory.choice(), { on: true, type: "uniichat", size: 128 }, "no saved choice: on, UniiChat at 128 KB");
+    assert.equal(chat.memoryOffered(), false, "no mode-menu memory row");
     await assert.rejects(() => chat.switchMode({ mode: "delegate" } as never), ModeRefusedError);
+    await assert.rejects(() => chat.switchMode({ minorModes: ["memory"] } as never), ModeRefusedError);
+    // Its own switch, off: the chat reads it at once, and the rest of this file's turns run without memory
+    // (no summarizer call in the unit tier).
+    const p = store.projectOverseerPaths(project.id);
+    store.writePoSettings(p, { ...store.readPoSettings(p), memory: { on: false, type: "uniichat", size: 128 } });
+    assert.equal(chat.memory.choice().on, false);
+    await po.patchProjectOverseer(project.id, { watch: true });
+    assert.deepEqual(store.readPoSettings(p).memory, { on: false, type: "uniichat", size: 128 }, "a PATCH of its other settings keeps it");
   });
 
-  test("operator sends go through the kind's own userSend; a fresh runtime is unattended (fail closed)", async () => {
+  test("the chat tells the operator's sends apart; a fresh runtime is unattended (fail closed)", async () => {
     const { path } = await po.ensureProjectOverseer(project.id);
     const chat = await acquireChat(path);
-    assert.ok(chat.specialEntry?.userSend, "the kind hands operator sends through its own userSend");
+    assert.ok(chat.userTurns, "its loadout asks the chat to tell the operator's turns apart");
     assert.equal(po.attendedForTest(project.id), false, "starts unattended (fail closed)");
   });
 
@@ -122,6 +137,8 @@ describe("a project overseer", async () => {
     const info = await po.clearProjectOverseer(project.id);
     assert.notEqual(info.id, before.id);
     assert.equal(info.settings.autonomy, "L2");
+    assert.deepEqual(info.settings.memory, { on: false, type: "uniichat", size: 128 }, "its memory switched off stays off");
+    assert.equal((await acquireChat(info.path!)).memory.choice().on, false, "and the new conversation runs without memory");
     assert.deepEqual(info.history.map((h) => h.id), [before.id]);
     assert.ok(store.projectOverseerOfPath(before.path), "still recognised as its conversation");
     await assert.rejects(() => acquireChat(before.path), BusyError);
@@ -163,7 +180,9 @@ describe("a project overseer", async () => {
     const info = await po.projectOverseerInfo(project.id);
     assert.equal(info.effective.autonomy, "L2");
     const prompt = po.renderProjectOverseerPrompt(project.id, []);
-    assert.match(prompt, /Level in force now: \*\*L2/);
+    // What it may do on its own is the powers in force, never a level (al_5: the stale L0–L3 text is gone).
+    assert.match(prompt, /On your own you may: [^\n]*Promote decisions into the spec/);
+    assert.doesNotMatch(prompt, /Level in force|\bL[0-3]\b/, "no level anywhere in its prompt, the organization's part included");
     assert.match(prompt, /Tony \(id p_[a-z0-9]+\) — IT; decides: invoicing/);
   });
 });
@@ -196,6 +215,21 @@ describe("its reach: the project root only", async () => {
     assert.match(await run("ls", { path: join(root, "ws4") }), /^ERROR: .*outside the project root/);
     assert.match(await run("grep", { pattern: "context", path: box }), /^ERROR: .*outside the project root/);
     assert.match(await run("find", { pattern: "*", path: root }), /^ERROR: .*outside the project root/);
+  });
+
+  test("its write and edit are the operator's: a run it did not get from them (a fresh runtime) writes nothing, and the action log says so", async () => {
+    assert.equal(po.attendedForTest(project.id), false);
+    const target = join(projRoot, ".sova", "auto.json");
+    assert.equal(await run("write", { path: target, content: "{}" }), `ERROR: ${PO_UNATTENDED_WRITE_REFUSAL}`);
+    assert.equal(await run("edit", { path: "README.md", edits: [{ oldText: "inside", newText: "changed" }] }), `ERROR: ${PO_UNATTENDED_WRITE_REFUSAL}`);
+    assert.equal(existsSync(target), false);
+    assert.equal(readFileSync(join(projRoot, "README.md"), "utf8"), "inside\n");
+    const logged = readFileSync(store.projectOverseerPaths(project.id).actions, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    const last = logged.slice(-2).map((a: { tool: string; args: unknown; outcome: string; error?: string }) => [a.tool, a.args, a.outcome, a.error]);
+    assert.deepEqual(last, [
+      ["write", { path: target }, "refused", PO_UNATTENDED_WRITE_REFUSAL],
+      ["edit", { path: "README.md" }, "refused", PO_UNATTENDED_WRITE_REFUSAL],
+    ]);
   });
 
   test("only the project's own context files load, never the host's", async () => {
@@ -660,7 +694,8 @@ describe("limits through PATCH, held items and their retry", async () => {
     const prompt = po.renderProjectOverseerPrompt(project.id, po.toolsForTest(project.id));
     assert.match(prompt, /Every start names its gap \(`gap: "§gap\/<name>"`\), or\s+`gap: "none"`/);
     assert.match(prompt, /Don't do these again by hand: read the feed first\./);
-    assert.match(prompt, /wait past the hold for your review: approve\s+them early or cancel them with `sova_hold` \(a reason is required\)/);
+    assert.match(prompt, /Nothing waits for your own approval, and you approve nothing: `sova_hold` cancels a held act\s+\(a reason is required\)/);
+    assert.doesNotMatch(prompt, /needs overseer confirmation|approve\s+them early/);
     assert.match(prompt, /`gap: "none"` builds only in a\s+turn the operator started\./);
     assert.match(prompt, /`sova_correct` and a reason/);
     assert.match(prompt, /\(`sova_set_state`\) is\s+only for a turn the operator started/);
@@ -682,10 +717,10 @@ describe("a standalone project's prompt names nothing of an organization", async
   const { project } = await registerProjectIn("standalone", join(root, "proj-alone"), { name: "Alone", origin: "folder" });
   await po.ensureProjectOverseer(project.id);
 
-  test("its level reads as a standalone project's, and its limits leave out gathering sessions and promotions", async () => {
+  test("its powers read as a standalone project's, and its limits leave out gathering sessions and promotions", async () => {
     await po.patchProjectOverseer(project.id, { autonomy: "L1" });
     const prompt = po.renderProjectOverseerPrompt(project.id, po.toolsForTest(project.id));
-    assert.match(prompt, /L1 — Gather: may also publish preview links of its coding sessions' apps\./);
+    assert.match(prompt, /On your own you may: Fix the pipeline's bookkeeping; Share a version to try\./);
     assert.match(prompt, /each message the operator sends: coding sessions \S+, prompts to them \S+; on your own each day: coding sessions /);
     assert.match(prompt, /at once: \d+ coding sessions running/);
     assert.doesNotMatch(prompt, /gathering session|promotion|roster/i);
@@ -856,7 +891,7 @@ describe("the watch loop's decision, on its watch statechart", async () => {
     await to(t + 3 * 60_000);
     const text = looks.at(-1)!.text;
     assert.ok(text.startsWith("[project watch]"));
-    assert.match(text, /within your autonomy \(L1\)/);
+    assert.match(text, /within what you may do on your own \(Start, offer and close gatherings; Message people on WhatsApp; Post owner updates; Fix the pipeline.s bookkeeping; Share a version to try\)/);
   });
 });
 

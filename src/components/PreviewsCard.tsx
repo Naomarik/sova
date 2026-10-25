@@ -62,7 +62,7 @@ function SessionLink(props: { href: string | null; children: JSX.Element }) {
  * starts it (a visit never does). Read every 5 seconds while the page shows.
  */
 export function PreviewsCard(props: { projectId: string }) {
-  const poll = createPoll(() => getProjectPreviews(props.projectId), POLL_MS);
+  const poll = createPoll(() => getProjectPreviews(props.projectId), POLL_MS, { cacheKey: `project:${props.projectId}:previews` });
   /** Links minted in this page, by preview id: copyable even when the list keeps none. */
   const [links, setLinks] = createSignal<Record<string, string>>({});
   const [port, setPort] = createSignal("");

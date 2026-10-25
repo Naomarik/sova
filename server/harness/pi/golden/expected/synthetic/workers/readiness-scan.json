@@ -1,7 +1,7 @@
 {
   "full": {
     "scan": {
-      "size": 4293,
+      "size": 4093,
       "found": true,
       "entries": [
         {
@@ -74,13 +74,7 @@
           "type": "custom",
           "id": "o000000b",
           "parentId": "o000000a",
-          "at": 1788256811000
-        },
-        {
-          "type": "custom",
-          "id": "o000000c",
-          "parentId": "o000000b",
-          "at": 1788256812000,
+          "at": 1788256811000,
           "customType": "worktrees",
           "data": {
             "version": 1,
@@ -100,9 +94,9 @@
         },
         {
           "type": "message",
-          "id": "o000000d",
-          "parentId": "o000000c",
-          "at": 1788256813000,
+          "id": "o000000c",
+          "parentId": "o000000b",
+          "at": 1788256812000,
           "reply": {
             "stop": true,
             "text": "The team finished."
@@ -128,8 +122,8 @@
       ],
       "merges": [],
       "lastReply": {
-        "id": "o000000d",
-        "at": 1788256813000,
+        "id": "o000000c",
+        "at": 1788256812000,
         "text": "The team finished."
       }
     }
@@ -143,7 +137,7 @@
   },
   "grown": {
     "scan": {
-      "size": 4293,
+      "size": 4093,
       "found": true,
       "entries": [
         {
@@ -216,13 +210,7 @@
           "type": "custom",
           "id": "o000000b",
           "parentId": "o000000a",
-          "at": 1788256811000
-        },
-        {
-          "type": "custom",
-          "id": "o000000c",
-          "parentId": "o000000b",
-          "at": 1788256812000,
+          "at": 1788256811000,
           "customType": "worktrees",
           "data": {
             "version": 1,
@@ -242,9 +230,9 @@
         },
         {
           "type": "message",
-          "id": "o000000d",
-          "parentId": "o000000c",
-          "at": 1788256813000,
+          "id": "o000000c",
+          "parentId": "o000000b",
+          "at": 1788256812000,
           "reply": {
             "stop": true,
             "text": "The team finished."
@@ -270,8 +258,8 @@
       ],
       "merges": [],
       "lastReply": {
-        "id": "o000000d",
-        "at": 1788256813000,
+        "id": "o000000c",
+        "at": 1788256812000,
         "text": "The team finished."
       }
     }

@@ -8,16 +8,28 @@ import { parseDelegate } from "../../pi-config/extensions/mode/delegate.ts";
 import { parseSpec } from "../../pi-config/extensions/mode/spec.ts";
 import { ALIGN_SETTINGS_FILE, parseAlignSettingsText } from "../../pi-config/extensions/mode/align-settings.ts";
 import { parseProviderLimits } from "../../pi-config/extensions/provider-limits/gate.ts";
-import { parseSubagentProfiles } from "../../pi-config/extensions/subagents/subagent-profiles.ts";
+import { parseSubagentProfiles, SEEDED_MTIME_MS, type SubagentProfile } from "../../pi-config/extensions/subagents/subagent-profiles.ts";
 import { parseProfilesFile } from "../profiles-store";
 import { clockSkewed } from "./logins-merge";
 import { writeFileAtomic } from "./logins-stores";
+import { keepCopy, LIBRARY_KEY } from "./kept";
+import { isItems, itemsAhead, libraryText, mergeLibraries, observeItems, remoteItems, type Items, type ProfileChanges } from "./profile-merge";
 
 /**
  * Settings and themes sync: whole documents (files), newest edit wins. Unlike logins there is no
  * lineage to protect, so a document is one value with one stamp: `modifiedAt`, the wall time a
  * host first saw its content (sha256), and the host that saw it. Ties fall to origin, then hash.
  * A deleted document is a stamped absence, so deleting a theme on one host deletes it everywhere.
+ * A file that first appears on a host (at its first run or later) is dated by its own mtime, never
+ * by the moment it was noticed, so a fresh copy or seed never outvotes an older edit elsewhere.
+ *
+ * One exception: the subagent profile library merges profile by profile (`merge: "profiles"`,
+ * ./profile-merge.ts, §mesh.sync/profile-library). Its record also carries `items`, one stamp per
+ * profile id (deletions included), which travel in the manifest; the file keeps the shape every
+ * reader parses. An older peer ignores `items` and sends the whole file, which is merged by union.
+ *
+ * Before sync replaces a settings document with another host's version, the version it had is kept
+ * (./kept.ts, §mesh.sync/kept-copies).
  *
  * Every received document is checked with its consumer's own parser before it is written, and is
  * written the way the consumer writes it (tmp + rename; the palette's lock for favorites), with a
@@ -46,6 +58,8 @@ export interface DocMeta {
   hash: string | null;
   modifiedAt: number;
   origin: string;
+  /** A merged document's per-item stamps (the profile library's, by profile id). An older build ignores it. */
+  items?: Items;
 }
 
 export interface DocSpec {
@@ -58,6 +72,8 @@ export interface DocSpec {
   lockDir?: string;
   /** Capabilities a peer needs on top of the category's own (§mesh.peers/grants). */
   needs?: readonly MeshCap[];
+  /** Merged item by item instead of replaced whole (the subagent profile library). */
+  merge?: "profiles";
 }
 
 export interface DocManifest {
@@ -160,7 +176,8 @@ export function settingsDocs(agentDir: string, stateDir: string): DocSpec[] {
       },
     },
     { key: "settings:mode.json", category: "settings", path: join(agentDir, "mode.json"), valid: (t) => jsonObject(t) !== null },
-    { key: "settings:subagent-profiles.json", category: "settings", path: join(agentDir, "subagent-profiles.json"), valid: (t) => parseSubagentProfiles(t).ok },
+    // Merged profile by profile (§mesh.sync/profile-library), never replaced whole.
+    { key: LIBRARY_KEY, category: "settings", path: join(agentDir, "subagent-profiles.json"), valid: (t) => parseSubagentProfiles(t).ok, merge: "profiles" },
     {
       key: "settings:mode-delegate.json",
       category: "settings",
@@ -241,6 +258,21 @@ function readLocal(spec: DocSpec): Local {
 
 const hashOf = (l: Local): string | null | undefined => (l.kind === "file" ? sha(l.text) : l.kind === "absent" ? null : undefined);
 
+/** The library's profiles in `text` (already checked by its spec), or null. */
+const profilesOf = (text: string): SubagentProfile[] | null => {
+  const p = parseSubagentProfiles(text);
+  return p.ok ? p.value.profiles : null;
+};
+
+/** A file's mtime, or null. */
+const mtimeOf = (path: string): number | null => {
+  try {
+    return lstatSync(path).mtimeMs;
+  } catch {
+    return null;
+  }
+};
+
 export interface DocSyncOptions {
   hostId: string;
   agentDir: string;
@@ -248,6 +280,8 @@ export interface DocSyncOptions {
   stateDir: string;
   sidecarPath: string;
   peers?: () => readonly DocPeer[];
+  /** A host's name as this host knows it (a peer's label), for kept copies. */
+  deviceName?: (hostId: string) => string | undefined;
   categoryEnabled?: (c: DocCategory) => boolean;
   /** Whether category `c` is exchanged with peer `peerId` at all (this host's grant to that peer,
       §mesh.peers/grants). Absent: every category with every peer. */
@@ -269,7 +303,6 @@ export class DocSync {
   private debounce: NodeJS.Timeout | undefined;
   private syncTimer: NodeJS.Timeout | undefined;
   private started = false;
-  private firstRun = false;
   private loaded = false;
   private readonly now: () => number;
   private readonly log: (m: string) => void;
@@ -315,7 +348,7 @@ export class DocSync {
     if (this.started) return;
     this.started = true;
     this.loadSidecar();
-    this.observe(true);
+    this.observe();
     // Only our documents' names wake a scan (the agent dir also holds auth.json, sessions/, …).
     const names = new Set(settingsDocs(this.opts.agentDir, this.opts.stateDir).map((s) => basename(s.path)));
     names.add("themes");
@@ -387,12 +420,15 @@ export class DocSync {
   private loadSidecar(): void {
     if (this.loaded) return;
     this.loaded = true;
-    this.firstRun = true;
     try {
       const raw = JSON.parse(readFileSync(this.opts.sidecarPath, "utf8")) as { version?: unknown; docs?: Record<string, unknown> };
-      this.firstRun = false;
       if (raw.version !== SIDECAR_VERSION || !raw.docs) return;
-      for (const [k, v] of Object.entries(raw.docs)) if (isDocMeta(v)) this.records[k] = v;
+      for (const [k, v] of Object.entries(raw.docs)) {
+        if (!isDocMeta(v)) continue;
+        // Stamps that don't parse are dropped; the next look rebuilds them from the file.
+        const { items, ...whole } = v;
+        this.records[k] = items !== undefined && isItems(items) ? { ...whole, items } : whole;
+      }
     } catch {
       // first run
     }
@@ -408,36 +444,72 @@ export class DocSync {
 
   /**
    * Fold every document's current content into the records; returns the keys that changed here.
-   * On the first run ever, an existing file is stamped with its mtime (when it was last edited)
-   * and a missing one with 0, so a fresh host never outvotes a real edit elsewhere.
+   * A file seen for the first time — at the first run ever, or later — is stamped with its mtime
+   * (when it was last edited), and a missing one is not recorded, so a fresh host never outvotes
+   * a real edit elsewhere.
    */
-  observe(initial = false): string[] {
+  observe(): string[] {
     this.watchThemes();
     const changed: string[] = [];
     for (const spec of this.specs()) {
-      if (this.observeOne(spec, initial && this.firstRun)) changed.push(spec.key);
+      if (this.observeOne(spec)) changed.push(spec.key);
     }
     if (changed.length) this.persist();
     return changed;
   }
 
-  private observeOne(spec: DocSpec, firstScan = false): boolean {
+  private observeOne(spec: DocSpec): boolean {
     const local = readLocal(spec);
     const hash = hashOf(local);
     if (hash === undefined) return false; // local-only: not ours to report
     const rec = this.records[spec.key];
+    if (spec.merge) return this.observeMerged(spec, local, hash, rec);
     if (rec && rec.hash === hash) return false;
-    if (!rec && hash === null && !firstScan) return false; // never existed anywhere we know of
-    let modifiedAt = this.now();
-    if (firstScan && !rec) {
-      try {
-        modifiedAt = hash === null ? 0 : Math.min(lstatSync(spec.path).mtimeMs, this.now());
-      } catch {
-        modifiedAt = 0;
-      }
-      if (hash === null) return false;
-    }
+    if (!rec && hash === null) return false; // never existed anywhere we know of
+    const modifiedAt = hash !== null && (!rec || rec.hash === null) ? this.appearedAt(spec, rec) : this.now();
     this.records[spec.key] = { hash, modifiedAt, origin: this.opts.hostId };
+    this.scheduleSync();
+    return true;
+  }
+
+  /**
+   * The date of a file that first appears here: its own mtime (never later than now), and after a
+   * deletion this host recorded, just after that deletion (the file came back, and wins over it).
+   */
+  private appearedAt(spec: DocSpec, rec: DocMeta | undefined): number {
+    const age = Math.min(mtimeOf(spec.path) ?? 0, this.now());
+    return rec ? Math.max(age, rec.modifiedAt + 1) : age;
+  }
+
+  /**
+   * The profile library: fold the file into its record and per-profile stamps. An edit of a library
+   * that existed stamps what changed now and records a deletion for each profile that left; a file
+   * that first appears (or a fresh seed, dated at the epoch) is dated by its age and deletes nothing;
+   * a file that vanished deletes nothing either (it is just not offered while absent).
+   */
+  private observeMerged(spec: DocSpec, local: Local, hash: string | null, rec: DocMeta | undefined): boolean {
+    const self = this.opts.hostId;
+    if (hash === null) {
+      if (!rec || rec.hash === null) return false;
+      const items = observeItems(rec.items, null, { modifiedAt: this.now(), origin: self }, false);
+      this.records[spec.key] = { hash: null, modifiedAt: 0, origin: self, items };
+      return true;
+    }
+    const profiles = local.kind === "file" ? profilesOf(local.text) : null;
+    if (!profiles) return false;
+    if (rec && rec.hash === hash) {
+      if (rec.items) return false;
+      // A record from before per-profile stamps: each profile takes the whole file's date.
+      this.records[spec.key] = { ...rec, items: observeItems(undefined, profiles, rec, false) };
+      return true;
+    }
+    const appeared = !rec || rec.hash === null;
+    const seed = mtimeOf(spec.path) === SEEDED_MTIME_MS;
+    // A library that vanished recorded no deletion to come after, so one that (re)appears is dated
+    // by its age alone; a seed is always 0.
+    const modifiedAt = seed ? 0 : appeared ? this.appearedAt(spec, undefined) : this.now();
+    const items = observeItems(rec?.items, profiles, { modifiedAt, origin: self }, !appeared && !seed);
+    this.records[spec.key] = { hash, modifiedAt, origin: self, items };
     this.scheduleSync();
     return true;
   }
@@ -458,7 +530,10 @@ export class DocSync {
     const docs: Record<string, DocMeta> = {};
     for (const [key, meta] of Object.entries(this.records)) {
       const spec = this.specFor(key);
-      if (spec && this.enabled(spec.category) && this.sharesWith(forPeer, spec) && readLocal(spec).kind !== "local-only") docs[key] = meta;
+      if (!spec || !this.enabled(spec.category) || !this.sharesWith(forPeer, spec)) continue;
+      // An absent library is not offered: an older peer would take it as a deletion.
+      if (spec.merge && meta.hash === null) continue;
+      if (readLocal(spec).kind !== "local-only") docs[key] = meta;
     }
     return { hostId: this.opts.hostId, now: this.now(), docs };
   }
@@ -470,6 +545,7 @@ export class DocSync {
     const meta = this.records[key];
     const local = readLocal(spec);
     if (!meta || local.kind === "local-only") return null;
+    if (spec.merge && local.kind !== "file") return null;
     return { meta, content: local.kind === "file" ? local.text : null };
   }
 
@@ -481,6 +557,7 @@ export class DocSync {
     if (!isDocMeta(remote.meta)) return "invalid";
     if (readLocal(spec).kind === "local-only") return "local-only";
     if (this.observeOne(spec)) this.persist();
+    if (spec.merge) return this.applyMerged(spec, remote);
     const local = this.records[key];
     if (local && compareDocs(remote.meta, local) <= 0) return "older";
     if (remote.meta.hash !== null) {
@@ -488,11 +565,81 @@ export class DocSync {
       if (sha(remote.content) !== remote.meta.hash || !spec.valid(remote.content)) return "invalid";
     }
     const expect = local?.hash ?? null;
+    const before = readLocal(spec);
     const ok = this.install(spec, remote.meta.hash === null ? null : (remote.content as string), expect);
     if (!ok) return "changed";
-    this.records[key] = remote.meta;
+    if (before.kind === "file") this.keep(spec, before.text, remote.meta.origin);
+    const { items: _items, ...whole } = remote.meta;
+    this.records[key] = whole;
     this.persist();
     return null;
+  }
+
+  /**
+   * Merge a peer's library into ours, profile by profile. Nothing it lacks is erased; its newer
+   * profiles and deletions are taken; the merged file is checked and written like any document.
+   * A result that differs from what the peer sent is dated as our own newer edit, so the peer (an
+   * older build replaces whole) takes the union back.
+   */
+  private applyMerged(spec: DocSpec, remote: DocReply): DocPushReply["rejected"][number]["reason"] | null {
+    const key = spec.key;
+    if (remote.meta.hash === null) return "older"; // an absent library deletes nothing
+    if (typeof remote.content !== "string" || remote.content.length > MAX_DOC_BYTES) return "invalid";
+    if (sha(remote.content) !== remote.meta.hash || !spec.valid(remote.content)) return "invalid";
+    const theirProfiles = profilesOf(remote.content);
+    if (!theirProfiles) return "invalid";
+    const theirItems = remoteItems(remote.meta, theirProfiles);
+    if (!theirItems) return "invalid";
+    const rec = this.records[key];
+    const local = readLocal(spec);
+    if (local.kind === "local-only") return "local-only";
+    const ourProfiles = local.kind === "file" ? profilesOf(local.text) : null;
+    const ourItems = rec?.items ?? (ourProfiles ? observeItems(undefined, ourProfiles, rec ?? { modifiedAt: 0, origin: this.opts.hostId }, false) : {});
+    const now = this.now();
+    const remoteFirst = !rec || rec.hash === null || compareDocs(remote.meta, rec) > 0;
+    const merged = mergeLibraries({ profiles: ourProfiles, items: ourItems }, { profiles: theirProfiles, items: theirItems }, this.opts.hostId, now, remoteFirst);
+    const sameFile =
+      ourProfiles !== null &&
+      merged.profiles.length === ourProfiles.length &&
+      merged.profiles.every((p, i) => p.id === ourProfiles[i]!.id && merged.items[p.id]!.hash === ourItems[p.id]?.hash);
+    const expect = hashOf(local) ?? null;
+    let whole: DocMeta;
+    if (sameFile) {
+      const itemsChanged = JSON.stringify(merged.items) !== JSON.stringify(ourItems);
+      if (!itemsChanged && rec) return "older";
+      whole = { ...(rec ?? { hash: expect, modifiedAt: 0, origin: this.opts.hostId }), items: merged.items };
+    } else {
+      const theirsExactly =
+        merged.profiles.length === theirProfiles.length && merged.profiles.every((p, i) => p.id === theirProfiles[i]!.id && merged.items[p.id]!.hash === theirItems[p.id]?.hash);
+      const text = theirsExactly ? remote.content : libraryText(merged.profiles);
+      if (!spec.valid(text) || text.length > MAX_DOC_BYTES) return "invalid";
+      if (!this.install(spec, text, expect)) return "changed";
+      if (local.kind === "file") this.keep(spec, local.text, (merged.cause ?? remote.meta).origin, merged.changes);
+      const hash = sha(text);
+      whole =
+        hash === remote.meta.hash
+          ? { hash, modifiedAt: remote.meta.modifiedAt, origin: remote.meta.origin, items: merged.items }
+          : { hash, modifiedAt: Math.max(now, (rec?.modifiedAt ?? 0) + 1, remote.meta.modifiedAt + 1), origin: this.opts.hostId, items: merged.items };
+    }
+    // What we hold now differs from what the peer sent and isn't newer as a whole: date it ours, so
+    // a peer that replaces whole (an older build) takes the union.
+    if (whole.hash !== remote.meta.hash && compareDocs(whole, remote.meta) <= 0)
+      whole = { ...whole, modifiedAt: Math.max(now, remote.meta.modifiedAt + 1), origin: this.opts.hostId };
+    this.records[key] = whole;
+    this.persist();
+    if (whole.hash !== remote.meta.hash || itemsAhead(whole.items, theirItems)) this.scheduleSync();
+    return null;
+  }
+
+  /** Keep a settings document's replaced version (§mesh.sync/kept-copies); never fails the sync. */
+  private keep(spec: DocSpec, content: string, by: string, changes?: ProfileChanges): void {
+    if (spec.category !== "settings") return;
+    try {
+      const byName = this.opts.deviceName?.(by);
+      keepCopy(this.opts.stateDir, { key: spec.key, at: this.now(), by, ...(byName ? { byName } : {}), content, ...(changes ? { changes } : {}) });
+    } catch (e) {
+      this.log(`keeping ${spec.key} failed: ${(e as Error).message}`);
+    }
   }
 
   /**
@@ -572,6 +719,10 @@ export class DocSync {
       for (const key of new Set([...Object.keys(mine), ...Object.keys(theirs)])) {
         const l = mine[key];
         const r = theirs[key];
+        if (this.specFor(key)?.merge) {
+          await this.syncMerged(peer, key, l, r, push);
+          continue;
+        }
         if (r && (!l || compareDocs(r, l) > 0)) {
           const got = await peer.doc(key).catch(() => null);
           if (got) this.apply(key, got);
@@ -588,6 +739,25 @@ export class DocSync {
     } catch (e) {
       this.peerState.set(peer.id, { state: "error", at: this.now(), error: (e as Error).message });
     }
+  }
+
+  /**
+   * A merged document with one peer: pull when it holds a profile stamp (or deletion) newer than
+   * ours, then push when we hold one newer than its. An older peer sends no stamps: its file is
+   * pulled whenever it differs from ours (the union deletes nothing), and ours pushed when newer.
+   */
+  private async syncMerged(peer: DocPeer, key: string, l: DocMeta | undefined, r: DocMeta | undefined, push: DocPush): Promise<void> {
+    const stamped = (m: DocMeta | undefined) => !!m && isItems(m.items);
+    if (r && r.hash !== null && (!l || l.hash !== r.hash) && (!l || !stamped(r) || itemsAhead(r.items, l.items))) {
+      const got = await peer.doc(key).catch(() => null);
+      if (got) this.apply(key, got);
+    }
+    const now = this.manifest(peer.id).docs[key];
+    if (!now || now.hash === null) return;
+    const ahead = !r || r.hash === null || (stamped(r) ? itemsAhead(now.items, r.items) : now.hash !== r.hash && compareDocs(now, r) > 0);
+    if (!ahead) return;
+    const got = this.doc(key);
+    if (got) push.docs[key] = got;
   }
 
   async syncAll(): Promise<void> {

@@ -48,8 +48,7 @@ verified against a warm-parent control rather than inferred from the existence o
 
 ## §chat.session-fork/background — Background forks keep the parent's cache
 
-A background fork, a hidden child that works in a copy of the conversation and reports back
-without opening a session (/explain's worker today), uses the same cache affinity as a
+A background fork, a hidden chat that works in a copy of the conversation and reports back without opening a session anyone sees (/explain's and /compact-handoff's writers), uses the same cache affinity as a
 UI-created fork, from the same code. The copy it forks records the parent's inherited cache key
 as the same non-context metadata, so a parent that is itself a fork passes its lineage on. The
 child asks OpenAI-style providers for that key, and on Codex also sends it as its request
@@ -59,6 +58,8 @@ system prompt exactly as the parent's transcript declared them, and what it may 
 per call by the run's policy, so neither the policy nor the gate changes the request prefix.
 A Claude Code parent with a live, idle CLI session is resumed and forked there instead of
 replayed.
+
+The fork is a chat process of its own, started by Sova's worker factory like any worker (§app.chat-processes/workers), and never a child of the parent's process. The parent watches it through the server. A parent that reloads, crashes or picks up new code finds its forks still running, watches them again, and records each result once, when the fork finishes; a fork that finished while the parent was away is recorded when the parent next opens. A fork whose chat is gone (its process died for good, or was stopped) settles as interrupted.
 
 Its first request is expected to read the parent's warm prefix from cache on Zai, Codex,
 Ollama Cloud and Claude Code alike, verified against the parent's last request; provider

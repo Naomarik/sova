@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { OwnerConversationStatus, OwnerPerson } from "../../shared/owner";
-import { builtLine, byTopic, conversationChip, count, differenceLine, factsLine, ownerHash, parseOwnerHash, personLine, plainAgo, plainDate, projectChip, waitingLine } from "./owner-words";
+import { builtLine, byTopic, conversationChip, count, differenceLine, factsLine, ownerHash, ownerTab, parseOwnerHash, readsHome, personLine, plainAgo, plainDate, projectChip, waitingLine } from "./owner-words";
 
 const NOW = Date.parse("2026-09-27T12:00:00Z");
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -106,10 +106,29 @@ test("decisions group by topic in first-seen order, keeping each group's order",
 });
 
 test("the hash route round-trips and anything malformed is Home", () => {
-  for (const r of [{ kind: "home" }, { kind: "project", id: "q_abcd2345" }, { kind: "conversation", id: "k_zz99aa22" }] as const) {
+  for (const r of [{ kind: "home" }, { kind: "project", id: "q_abcd2345" }, { kind: "conversation", id: "k_zz99aa22" }, { kind: "assistant" }, { kind: "requests" }] as const) {
     assert.deepEqual(parseOwnerHash(ownerHash(r)), r);
   }
-  for (const bad of ["", "#", "#p/", "#p/k_abcd2345", "#c/q_abcd2345", "#p/q_ABCD2345", "#p/q_abcd234", "#p/q_abcd23456", "#p/q_abcd1345", "#x/q_abcd2345", "#p/q_abcd2345/x"]) {
+  for (const bad of ["", "#", "#p/", "#p/k_abcd2345", "#c/q_abcd2345", "#p/q_ABCD2345", "#p/q_abcd234", "#p/q_abcd23456", "#p/q_abcd1345", "#x/q_abcd2345", "#p/q_abcd2345/x", "#r/", "#rr", "#R", "#a/r"]) {
     assert.deepEqual(parseOwnerHash(bad), { kind: "home" }, bad);
   }
+});
+
+test("the requests tab is #r, and a project or a conversation keeps Home highlighted", () => {
+  assert.deepEqual(parseOwnerHash("#r"), { kind: "requests" });
+  assert.equal(ownerHash({ kind: "requests" }), "#r");
+  assert.equal(ownerTab({ kind: "project", id: "q_abcd2345" }), "home");
+  assert.equal(ownerTab({ kind: "conversation", id: "k_abcd2345" }), "home");
+  assert.equal(ownerTab({ kind: "home" }), "home");
+  assert.equal(ownerTab({ kind: "assistant" }), "assistant");
+  assert.equal(ownerTab({ kind: "requests" }), "requests");
+});
+
+test("Home, the Assistant and Requests are one family: they read the Home answer; a project or a conversation does not", () => {
+  assert.deepEqual(
+    (["home", "assistant", "requests"] as const).map((kind) => readsHome({ kind })),
+    [true, true, true],
+  );
+  assert.equal(readsHome({ kind: "project", id: "q_abcd2345" }), false);
+  assert.equal(readsHome({ kind: "conversation", id: "k_abcd2345" }), false);
 });

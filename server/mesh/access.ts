@@ -1,5 +1,7 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { COMMANDS } from "../../shared/commands-catalog";
+import { EVENTS_PATH } from "../../shared/events";
 import { grantCaps, MESH_CAPS, MESH_PRESETS, type MeshAccessFile, type MeshCap, type MeshGrant } from "../../shared/mesh-access";
 import { stateRoot } from "../state-root";
 import { isLanNodeId } from "./lan-cert";
@@ -13,7 +15,8 @@ import { judgedPath } from "./paths";
 // without losing its grant.
 
 /** What a request needs: a capability, `hello` (presence, or a broken file), or `full` (every cap). */
-export type Need = MeshCap | "hello" | "full" | "sync.docs";
+/** `never`: a socket the peer listener never serves, whatever the grant (/ws/events, §app.events/listeners). */
+export type Need = MeshCap | "hello" | "full" | "sync.docs" | "never";
 
 export type AccessRead = { kind: "missing" } | { kind: "ok"; file: MeshAccessFile } | { kind: "error"; error: string };
 
@@ -161,6 +164,7 @@ export function capsOf(nodeId: string): Record<MeshCap, boolean> | "hello-only" 
 
 /** Whether `nodeId` may have what a request needs. */
 export function allows(nodeId: string, need: Need): boolean {
+  if (need === "never") return false;
   const caps = capsOf(nodeId);
   if (caps === "hello-only") return need === "hello";
   if (need === "hello") return caps.presence;
@@ -238,6 +242,8 @@ const SESSION_PREFIXES = [
   "workers",
   "worktrees",
   "sandbox",
+  // A going page's chat frames (POST /api/chat/frames): what /ws/chat itself takes, so the same need.
+  "chat",
   "diff",
   "explanations",
   "insights",
@@ -271,25 +277,97 @@ const READ_PREFIXES = [
   "playbooks",
   "provider-limits",
   "usage",
+  // Session offers (§chat/offers): reading a session's cards is a read; a click sends or runs, an admin act.
+  "session-offers",
 ];
-// Never below `full`: the operator's credentials and the share pages' own routes.
-const FULL_PREFIXES = ["auth", "h", "i", "s"];
+// Never below `full`: the operator's credentials, the share pages' own routes, this machine's
+// updates (whose writes refuse the peer listener outright), and conversations' draft specs (the
+// operator's private review, §app.requirements/draft-specs).
+// `commands`: the catalogue a script reads (server/commands-routes.ts), this machine's own door only.
+// `audit`: the record of who ran what (server/command-audit.ts): the operator's, never below `full`.
+const FULL_PREFIXES = ["auth", "h", "i", "s", "t", "updates", "commands", "audit", "draft-specs"];
+// A project mode's command (§chat.mode-menu/project-mode-commands) runs one of the project's own programs: `full`,
+// whatever method, though it sits under `mode`, which stays `sessions`.
+const MODE_COMMAND_PATH = "/api/mode/command";
+/** A project's conversation drafts (approve, build): `full`, ahead of the `projects` read rule. */
+const PROJECT_DRAFT_SPECS_RE = /^\/api\/projects\/[^/]+\/draft-specs(?:\/|$)/;
+
+function tourRequest(method: string, path: string): Classified {
+  const read = method === "GET" || method === "HEAD";
+  const edition = /^\/api\/tours\/[^/]+\/[^/]+\/editions\/[^/]+(.*)$/.exec(path);
+  const tail = edition?.[1];
+  if (tail !== undefined) {
+    if (read && (tail === "" || tail === "/progress" || /^\/assets\/[^/]+$/.test(tail)) || method === "PUT" && tail === "/progress") return { need: "sessions", rule: "tour:checked-reader" };
+    if (method === "POST" && ["/share-preview", "/shares", "/binding-preview", "/bindings"].includes(tail)
+      || read && ["/bindings", "/binding-destinations"].includes(tail)
+      || method === "DELETE" && /^\/(?:shares|bindings)\/[^/]+$/.test(tail)) return { need: "admin", rule: "tour:outside-sharing" };
+  }
+  // Recording, runtime controls and unknown operations never inherit reader authority.
+  return { need: "full", rule: "tour:full" };
+}
 
 const prefixRe = (list: string[]) => new RegExp(`^/api/(${list.map((p) => p.replace(/[-]/g, "\\-")).join("|")})(?:/|$)`);
 const SESSION_RE = prefixRe(SESSION_PREFIXES);
 const READ_RE = prefixRe(READ_PREFIXES);
 const FULL_RE = prefixRe(FULL_PREFIXES);
 
+/** A remote command run on the peer listener (§mesh.peers/remote-commands): `POST /api/commands/<id>`,
+    on the judged path. Its one group is the id. Anything else under /api/commands stays `full`. */
+export const PEER_COMMAND_RE = /^\/api\/commands\/([^/]+)$/;
+
+/** The catalogue id a peer-listener request runs, or null when it is not a remote command run.
+    The gate's door (server/commands-routes.ts) and classifyRequest both read it from here. */
+export function peerCommandId(method: string, pathname: string): string | null {
+  if (method !== "POST") return null;
+  const path = judgedPath(pathname);
+  const m = path ? PEER_COMMAND_RE.exec(path) : null;
+  return m ? m[1]! : null;
+}
+
+const concrete = (path: string) => path.replace(/:[^/]+/g, "x").replace(/\*/g, "x");
+let pinned: Map<string, Need> | null = null;
+
+/** Each core entry's need: its own route's, so the remote door never reaches further than the
+    route (an entry pointing under /api/commands itself is `full`). Built on first use. */
+function pinnedNeeds(): Map<string, Need> {
+  if (!pinned) {
+    pinned = new Map();
+    for (const e of COMMANDS) {
+      const own = /^\/api\/commands(?:\/|$)/.test(e.route.path) ? "full" : classifyRequest(e.route.method, concrete(e.route.path)).need;
+      pinned.set(e.id, own);
+    }
+  }
+  return pinned;
+}
+
+/** The need of running `id` through the remote door: its entry's own route's; an unknown id `full`. */
+export const commandNeed = (id: string): Need => pinnedNeeds().get(id) ?? "full";
+
+/** Tests only: pin `id` to `need` (null: forget every override), so the door's own re-check of the
+    request it builds can be shown to hold when the pin is wrong. */
+export function pinCommandNeedForTest(id: string | null, need?: Need): void {
+  if (id === null) pinned = null;
+  else pinnedNeeds().set(id, need ?? "full");
+}
+
 /** The one capability a peer-listener request needs, from its method and path (judged as the router
     will route it). An unjudgeable path needs `full`. */
 export function classifyRequest(method: string, pathname: string): Classified {
   const path = judgedPath(pathname);
   if (!path) return { need: "full", rule: "unjudgeable" };
+  const cmd = method === "POST" && path.startsWith("/api/commands/") ? PEER_COMMAND_RE.exec(path) : null;
+  if (cmd) {
+    const known = pinnedNeeds().has(cmd[1]!);
+    return { need: commandNeed(cmd[1]!), rule: known ? `command:${cmd[1]}` : "command:unknown" };
+  }
   if (path.startsWith("/api/peer/") || path === "/api/peer") {
     for (const [re, need] of PEER_RULES) if (re.test(path)) return { need, rule: re.source };
     return { need: "full", rule: "default" };
   }
+  if (path === MODE_COMMAND_PATH) return { need: "full", rule: "full:mode-command" };
+  if (path === "/api/tours" || path.startsWith("/api/tours/")) return tourRequest(method, path);
   const read = method === "GET" || method === "HEAD";
+  if (PROJECT_DRAFT_SPECS_RE.test(path)) return { need: "full", rule: "full:project-draft-specs" };
   let m = SESSION_RE.exec(path);
   if (m) return { need: "sessions", rule: `sessions:${m[1]}` };
   m = READ_RE.exec(path);
@@ -301,6 +379,8 @@ export function classifyRequest(method: string, pathname: string): Classified {
 
 /** What a peer-listener WebSocket needs: the LLM count feed is `llm`, every other socket `sessions`. */
 export function classifyUpgrade(pathname: string, search: URLSearchParams): Classified {
+  // Sova's event stream is this machine's own door only (server/events-ws.ts).
+  if (pathname === EVENTS_PATH) return { need: "never", rule: "ws:events:main-only" };
   if (pathname === "/ws/watch" && search.get("feed") === "llm") return { need: "llm", rule: "ws:llm" };
   if (pathname === "/ws/chat" || pathname === "/ws/watch") return { need: "sessions", rule: `ws:${pathname}` };
   return { need: "full", rule: "default" };

@@ -1,6 +1,7 @@
-import { createMemo, createResource, createSignal, For, Show } from "solid-js";
+import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import {
   CAPABILITY_LABEL,
+  DEFAULT_PROFILE,
   DEFAULT_PROFILE_ID,
   GRANTABLE,
   keyOf,
@@ -9,19 +10,17 @@ import {
   powersText,
   REMOVABLE,
   singletonRunningText,
-  sourceOf,
   titleCase,
   type Grantable,
   type ListedProfile,
   type Removable,
 } from "../../shared/profiles";
-import type { ChatProfileInfo, PlaybookInfo } from "../../shared/protocol";
+import type { ChatProfileInfo } from "../../shared/protocol";
 import { approveProfile, fetchProfiles, pickProfile, saveCurrentProfile, type ProfilePickRef } from "../lib/api";
-import { allProfiles, cardUnusable, changeRows, defaultTools, guardrailNote, pickerProfiles, pickRef } from "../lib/profiles";
+import { allProfiles, cardUnusable, changeRows, defaultTools, guardrailNote, isMySettings, mySettingsCaption, pickerProfiles, pickRef, type MySettingsState } from "../lib/profiles";
 import { openSettings } from "../lib/settings-nav";
 import { toast } from "../lib/ui-state";
 import { PROFILE_GRID_CUSTOM, ProfileGrid } from "./ProfileGrid";
-import { ProfilePlaybookCard } from "./ProfilePlaybookCard";
 import { Banner, Icon } from "./ui";
 
 /** Sessions whose Custom board is open, by path (module state: see `board`). */
@@ -37,14 +36,12 @@ export function ProfilePicker(props: {
   /** The session's folder: its project's profiles are listed (§chat.profiles/projects). */
   cwd: string | null;
   info: ChatProfileInfo;
+  /** The session's mode, minor modes, model and effort now: My settings' caption while no profile is picked. */
+  live?: MySettingsState | null;
   /** A One at a time race at Send: the session that has it. */
   race?: { label: string; running: { id: string; path: string; title: string } } | null;
   /** Put a profile's first message in an empty composer. */
   onFirstMessage?: (text: string) => void;
-  /** Why sending isn't possible now, for Run Playbook (the composer's own reason), or null. */
-  blocked?: string | null;
-  /** Run Playbook (§chat.profiles/playbook): send the linked playbook's turn; false = refused. */
-  onRunPlaybook?: (playbook: PlaybookInfo) => boolean;
 }) {
   const [listing, { refetch, mutate }] = createResource(() => fetchProfiles(props.cwd).catch(() => undefined));
   // Save Current As Profile's form.
@@ -67,12 +64,18 @@ export function ProfilePicker(props: {
   const [showAll, setShowAll] = createSignal(false);
 
   const current = () => props.info.profile;
-  const label = () => current()?.label ?? "Default";
   const lists = createMemo(() => pickerProfiles(listing()));
   const runningElsewhere = (p: ListedProfile) => {
     const r = listing()?.running[p.key];
     return r && r.path !== props.path ? r : null;
   };
+  // My settings' caption: the session as it is with no profile, else what picking it puts back.
+  const mineCaption = () => mySettingsCaption(current() ? (props.info.mine ?? null) : props.live);
+  // A One at a time profile stopped elsewhere turns back into a card that picks: read the listing
+  // again whenever the window regains focus.
+  const onFocus = () => void refetch();
+  onMount(() => window.addEventListener("focus", onFocus));
+  onCleanup(() => window.removeEventListener("focus", onFocus));
   const currentKey = () => {
     const c = current();
     return c && !c.custom ? keyOf(c) : c?.custom ? null : `sova:${DEFAULT_PROFILE_ID}`;
@@ -97,20 +100,17 @@ export function ProfilePicker(props: {
       setPending(null);
     }
   }
+  // A One at a time profile live elsewhere is a link, never a pick (ProfileGrid); one that started
+  // elsewhere since the listing was read is refused by the server, and `apply` shows its alert.
   const choose = (p: ListedProfile) => {
     setAsking(null);
-    const r = runningElsewhere(p);
-    if (p.singleton && r) {
-      setAlert({ label: p.label, running: r });
-      return;
-    }
     if (p.approval === "needed") {
       setAlert(null);
       setAsking(p);
       return;
     }
     setBoard(false);
-    void apply(p.source === "sova" && p.id === DEFAULT_PROFILE_ID ? null : pickRef(p), p.label, p);
+    void apply(isMySettings(p) ? null : pickRef(p), p.label, p);
   };
   const approveAndPick = async (p: ListedProfile) => {
     if (!props.cwd) return;
@@ -173,7 +173,7 @@ export function ProfilePicker(props: {
     const next = normalizeCaps(remove, grant);
     setEdited(next);
     const o = origin();
-    void apply({ ...next, ...(o && !(o.source === "sova" && o.id === DEFAULT_PROFILE_ID) ? { from: pickRef(o) } : {}) }, "your changes");
+    void apply({ ...next, ...(o && !isMySettings(o) ? { from: pickRef(o) } : {}) }, "your changes");
   };
 
   return (
@@ -183,7 +183,8 @@ export function ProfilePicker(props: {
         groups={lists()}
         checked={current()?.custom ? PROFILE_GRID_CUSTOM : currentKey()}
         subagents={listing()?.subagents ?? []}
-        running={(p) => !!runningElsewhere(p)}
+        mineCaption={mineCaption()}
+        holder={runningElsewhere}
         unusable={(p) => cardUnusable(listing(), p)}
         onPick={choose}
         onCustom={() => setBoard(true)}
@@ -300,17 +301,17 @@ export function ProfilePicker(props: {
 
       <Show
         when={current()}
-        fallback={<p class="profile-muted">Everything a new session has today: {props.info.tools.length} tools, no session powers.</p>}
+        fallback={<p class="profile-muted">No profile: the settings you chose, {props.info.tools.length} tools, no session powers.</p>}
       >
         {(p) => (
           <>
             <Show when={p().description}>
               <p class="profile-description">{p().description}</p>
             </Show>
-            <div class="profile-changes" aria-label="What changes compared with Default">
+            <div class="profile-changes" aria-label="What changes compared with My settings">
               <p class="profile-changes-head">
                 <span class="text-eyebrow">What changes</span>
-                <span class="profile-muted">vs Default</span>
+                <span class="profile-muted">vs My settings</span>
                 <Show when={p().singleton}>
                   <span class="chip" title="Only 1 live session can use this profile at a time">
                     One at a time
@@ -334,7 +335,7 @@ export function ProfilePicker(props: {
                 </For>
               </ul>
               <p class="profile-same">
-                Same as Default: {same().length} tools.{" "}
+                Same as My settings: {same().length} tools.{" "}
                 <button type="button" class="button-link" aria-expanded={showAll()} onClick={() => setShowAll(!showAll())}>
                   {showAll() ? "Hide" : "Show All"}
                 </button>
@@ -344,17 +345,6 @@ export function ProfilePicker(props: {
               </Show>
             </div>
             <Show when={note()}>{(n) => <Banner tone="info" title={n()} />}</Show>
-            <Show when={p().playbook}>
-              {(id) => (
-                <ProfilePlaybookCard
-                  cwd={props.cwd}
-                  playbook={id()}
-                  source={p().custom ? undefined : sourceOf(p())}
-                  blocked={props.blocked ?? null}
-                  onRun={(pb) => props.onRunPlaybook?.(pb) ?? false}
-                />
-              )}
-            </Show>
           </>
         )}
       </Show>
@@ -362,7 +352,7 @@ export function ProfilePicker(props: {
       <Show when={board()}>
         <div class="profile-board" role="group" aria-label="Capabilities">
           <p class="profile-board-head">
-            <span>{changed() ? `${origin()?.label ?? "Default"}, edited` : (origin()?.label ?? "Default")}</span>
+            <span>{changed() ? `${origin()?.label ?? DEFAULT_PROFILE.label}, edited` : (origin()?.label ?? DEFAULT_PROFILE.label)}</span>
             <Show when={changed()}>
               <button
                 type="button"
@@ -370,7 +360,7 @@ export function ProfilePicker(props: {
                 onClick={() => {
                   setEdited(null);
                   const o = origin();
-                  void apply(o && !(o.source === "sova" && o.id === DEFAULT_PROFILE_ID) ? pickRef(o) : null, o?.label ?? "Default", o);
+                  void apply(o && !isMySettings(o) ? pickRef(o) : null, o?.label ?? DEFAULT_PROFILE.label, o);
                 }}
               >
                 Reset

@@ -288,3 +288,29 @@ test("in a spec project the warnings are said once: a tool merge's answer (its c
 		r.done();
 	}
 });
+
+test("no merge guard: a session that isn't the captain merges into master with no recorded go-ahead, even where the offers file still names mainMerges", async () => {
+	const r = repo();
+	try {
+		// The retired switch, as master may still hold it: it does nothing.
+		mkdirSync(join(r.main, ".sova"));
+		writeFileSync(join(r.main, ".sova", "offers.json"), JSON.stringify({ version: 1, mainMerges: "go-ahead", offers: {} }));
+		sh(r.main, "add", ".sova/offers.json");
+		sh(r.main, "commit", "-q", "-m", "leftover switch");
+		const f = fakePi();
+		worktrees(f.pi);
+		const c = f.ctx(r.main);
+		await f.fire("session_start", c);
+		await f.call(c, { action: "create", name: "g" });
+		const t = join(r.root, ".worktrees", "repo-g");
+		writeFileSync(join(t, "g.txt"), "g\n");
+		sh(t, "add", "g.txt");
+		sh(t, "commit", "-q", "-m", "g");
+		const head = sh(t, "rev-parse", "HEAD");
+		const out = await f.call(c, { action: "merge", path: t });
+		assert.match(out.content[0].text, /^Merged feat\/g into master/);
+		assert.equal(sh(r.main, "rev-parse", "master"), head, "master is the branch's head");
+	} finally {
+		r.done();
+	}
+});

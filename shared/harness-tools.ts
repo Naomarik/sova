@@ -49,6 +49,12 @@ export interface HookCtx extends ToolCtx {
   title(): string | undefined;
 }
 
+/** How a served tool's arguments are rewritten in the chat, from data alone (pi asks for the rewrite
+    synchronously, so no server call can do it). "owner-area": an owner area folded to one of
+    `parameters.properties.ownerArea.enum` (shared/decisions.ts); "pi-edit": pi's own edit tool's
+    legacy shapes (server/harness/pi/tools.ts piPrepare). */
+export type PrepareRule = "owner-area" | "pi-edit";
+
 export interface ToolSpec<P = any, D = any> {
   name: string;
   label: string;
@@ -60,6 +66,9 @@ export interface ToolSpec<P = any, D = any> {
   /** Rewrites the raw arguments before they are checked against `parameters`; a throw refuses the call
       with its message (record_decision's owner area). */
   prepareArguments?(args: unknown): unknown;
+  /** The rule a chat in a process of its own runs in place of `prepareArguments` when the tool is
+      served: required beside it on a served tool. */
+  prepareRule?: PrepareRule;
   executionMode?: "sequential" | "parallel";
   /** How the model reaches the tool. `model-only`: declared to the model, never callable from a codemode
       script (§chat.mode-menu/codemode), for a tool whose state Sova reads back from its own recorded

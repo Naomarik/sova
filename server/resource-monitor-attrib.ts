@@ -117,6 +117,14 @@ export interface HostedInfo {
   providerIds: readonly string[];
   /** A tool was running during the tick's window (for `exited-tools`). */
   toolInWindow: boolean;
+  /** The session's own chat process, when it runs in one (§app/chat-processes): it and everything
+      it starts are the session's. */
+  pid?: number;
+  /** A worker chat's process (its own chat process, with `pid`): it, everything it starts and its
+      session file are charged to its parent session and that worker, never to a session of its own. */
+  worker?: { parentPath: string; workerId: string };
+  /** What its chat runs on, when its chat says (a Claude Code CLI it wraps, or a pi model). */
+  backend?: "claude-code" | "pi";
 }
 
 /** Who a process is charged to. `session` absent with `worker` set: a worker no join tied to a
@@ -142,8 +150,9 @@ export interface AttribInput {
       or Claude Code tool): every child inherits them too, so they say nothing. */
   serverEnv?: ProcEnv;
   hosted: readonly HostedInfo[];
-  /** pi worker pid → its own session file, from the live records (`p<pid>-*.json`). */
-  liveRecordPids: ReadonlyMap<number, string>;
+  /** A process in a chat's unit of its own → that chat's process (the unit holds what the chat started,
+      reparented or not). */
+  unitOf?: ReadonlyMap<number, number>;
   sids: SidMemory;
 }
 
@@ -163,7 +172,15 @@ function indexHosted(hosted: readonly HostedInfo[]) {
   const byFile = new Map<string, Owner>();
   const byWorkerId = new Map<string, Owner[]>();
   for (const h of hosted) {
+    if (h.worker) {
+      const o = { session: h.worker.parentPath, worker: h.worker.workerId };
+      byFile.set(h.path, { ...o, via: "env" });
+      if (h.pid) byPid.set(h.pid, { ...o, via: "worker-pid" });
+      for (const id of h.providerIds) byClaude.set(id, { ...o, via: "session-id" });
+      continue;
+    }
     byFile.set(h.path, { session: h.path, via: "env" });
+    if (h.pid) byPid.set(h.pid, { session: h.path, via: "descendant" });
     for (const id of h.providerIds) byClaude.set(id, { session: h.path, via: "session-id" });
     for (const w of h.workers) {
       if (w.pid) byPid.set(w.pid, { session: h.path, worker: w.id, via: "worker-pid" });
@@ -179,7 +196,7 @@ function indexHosted(hosted: readonly HostedInfo[]) {
 
 /**
  * Charge every measured process to a session and worker, strongest evidence first: the
- * runtime's worker pid, a claude session uuid, a pi worker's live record, a team member's env,
+ * runtime's worker pid, a claude session uuid, a team member's env,
  * the PI_SESSION_FILE pi's bash tool sets, then the nearest charged ancestor, then sid memory,
  * then (heuristic) cwd. A direct child of the server that looks like a worker and matched
  * nothing becomes an unowned worker, and its subtree goes with it.
@@ -194,11 +211,6 @@ export function attribute(input: AttribInput): Attribution {
     if (p.argv.claudeSession) {
       const o = idx.byClaude.get(p.argv.claudeSession);
       if (o) return o;
-    }
-    if (p.argv.kind === "pi-worker") {
-      const file = input.liveRecordPids.get(s.pid);
-      const o = file ? idx.byFile.get(file) : undefined;
-      if (o?.worker) return { ...o, via: "live-record" };
     }
     if (p.env.team) {
       const list = (idx.byWorkerId.get(p.env.team.workerId) ?? []).filter((o) => {
@@ -243,8 +255,14 @@ export function attribute(input: AttribInput): Attribution {
       if (inTree.has(ppid)) inTree.add(pid);
       if (!owner && up) owner = up.session === undefined && up.worker?.startsWith("unowned:") ? up : { ...up, via: "descendant" };
     }
+    // In a chat's unit but no longer under it (setsid'd, reparented): still the chat's.
+    const chat = owner ? undefined : input.unitOf?.get(pid);
+    if (chat && chat !== pid && procs.has(chat)) {
+      const o = resolve(chat);
+      if (o) owner = { ...o, via: "descendant" };
+    }
     // A worker-looking child of the server that matched nothing is its own (unowned) group.
-    if (!owner && ppid === serverPid && (p.argv.kind === "pi-worker" || p.argv.kind === "claude-worker"))
+    if (!owner && ppid === serverPid && (p.argv.kind === "claude-worker"))
       owner = { worker: `unowned:${pid}`, via: "descendant" };
     if (owner) owners.set(pid, owner);
     state.set(pid, 1);
@@ -253,7 +271,7 @@ export function attribute(input: AttribInput): Attribution {
   for (const pid of procs.keys()) if (pid !== serverPid) resolve(pid);
 
   // Orphans: sid memory, then cwd within exactly one hosted session's cwd (heuristic).
-  const cwds = input.hosted.filter((h) => h.cwd && h.cwd !== "/").map((h) => ({ cwd: h.cwd!, path: h.path }));
+  const cwds = input.hosted.filter((h) => !h.worker && h.cwd && h.cwd !== "/").map((h) => ({ cwd: h.cwd!, path: h.path }));
   for (const [pid, p] of procs) {
     if (pid === serverPid || owners.has(pid)) continue;
     const bySid = input.sids.lookup(p.stat, procs);

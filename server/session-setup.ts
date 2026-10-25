@@ -4,7 +4,7 @@
 //
 // Two sources, one shape:
 //
-//  - **the open chat's own loader** (`heldChat(path).harness.resources()`) when this server
+//  - **the open chat's own loader** (`chatHandle(path).resources()`) when this server
 //    holds the session: the exact set that session prompts with, extension-added skill paths
 //    included, and free — the runtime has already read every one of those files to build its
 //    prompt;
@@ -28,10 +28,10 @@
 // reads each of these files in full to build the prompt, so the read that decides a size is a read
 // pi has already done.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import type { HarnessResources } from "../shared/harness";
-import { CHARS_PER_TOKEN, type SessionSetup, type SessionSetupFile, type SessionSetupSkill } from "../shared/protocol";
-import { acquireChat, assertNotLive, disposeHeldChat, heldChat } from "./chat-manager";
+import { CHARS_PER_TOKEN, SETUP_FILE_MAX_BYTES, type SessionSetup, type SessionSetupFileText, type SessionSetupFile, type SessionSetupSkill } from "../shared/protocol";
+import { acquireChatHandle, assertNotLive, chatHandle, closeChat } from "./chat-handle";
 import { plan, readStoredCwd, type Plan } from "./git-summary";
 import { leavesOut, normalizeLoadout, type LoadoutEntryData } from "./session-loadout";
 import { getSessionSummary } from "./sessions-index";
@@ -81,16 +81,9 @@ export type Loadout = HarnessResources;
 /** The loadout of the chat this server holds, or null when it holds none. A runtime built with a
     `sova-loadout` entry answers with its loader's UNFILTERED lists (§chat.transcript/setup-card-toggles),
     so a row it leaves out is still listed, and can be switched back on. */
-function runtimeLoadout(sessionPath: string): Loadout | null {
-  const chat = heldChat(sessionPath);
-  if (!chat) return null;
-  const loadout = chat.harness.resources();
-  const base = chat.loadoutState;
-  return {
-    ...loadout,
-    ...(base?.baseContext ? { context: base.baseContext.map((path) => ({ path })) } : {}),
-    ...(base?.baseSkills ? { skills: base.baseSkills } : {}),
-  };
+async function runtimeLoadout(sessionPath: string): Promise<Loadout | null> {
+  const chat = chatHandle(sessionPath);
+  return chat ? chat.resources() : null;
 }
 
 /** What one session switches off, and whether its card may switch rows now. Worked out per session
@@ -103,8 +96,8 @@ export interface SessionSwitches {
 /** The held chat's own entry and window; else the newest entry in the file, read by Sova's own
     parser, except for a TUI-live session (the TUI doesn't honour the entry). */
 async function sessionSwitches(sessionPath: string): Promise<SessionSwitches> {
-  const chat = heldChat(sessionPath);
-  if (chat) return { off: chat.loadoutState?.data ?? null, toggleable: chat.loadoutToggleable };
+  const chat = chatHandle(sessionPath);
+  if (chat) return { off: chat.mirror.loadout?.off ?? null, toggleable: chat.mirror.loadout?.toggleable ?? false };
   try {
     assertNotLive(sessionPath);
     return { off: stateView(await readBranch(sessionPath)).latest(LOADOUT)?.data ?? null, toggleable: false };
@@ -145,8 +138,8 @@ async function loaderLoadout(cwd: string): Promise<Loadout> {
 export interface SetupDeps {
   /** The session header's cwd (default: git-summary's reader). */
   storedCwd?: (sessionPath: string) => Promise<string | null>;
-  /** The loadout of an OPEN chat, or null when nothing holds it (default: heldChat). */
-  runtime?: (sessionPath: string) => Loadout | null;
+  /** The loadout of an OPEN chat, or null when nothing holds it (default: its handle's `resources`). */
+  runtime?: (sessionPath: string) => Loadout | null | Promise<Loadout | null>;
   /** pi's own read for a folder (default: folderResources, pi's loader without extensions). */
   loader?: (cwd: string) => Promise<Loadout>;
   /** One session's off set and switch window (default: the held chat, else the file's entry). */
@@ -194,7 +187,7 @@ async function read(cwd: string, sessionPath: string, deps: SetupDeps, now: () =
 
   let loadout: Loadout | null = null;
   try {
-    loadout = (deps.runtime ?? runtimeLoadout)(sessionPath);
+    loadout = await (deps.runtime ?? runtimeLoadout)(sessionPath);
   } catch {
     loadout = null; // a runtime that threw on a read is the same as no runtime: fall back
   }
@@ -263,6 +256,32 @@ export async function getSessionSetup(sessionPath: string, opts: { fresh?: boole
   return withSwitches(folder, sw);
 }
 
+/** Every path this setup lists, in any of its groups: the only files /api/sessions/context/file reads. */
+export function listedPaths(setup: Loaded): Set<string> {
+  return new Set([...setup.context, ...setup.skills, ...(setup.systemPrompt ? [setup.systemPrompt] : []), ...(setup.appendSystemPrompt ?? [])].map((f) => f.path));
+}
+
+export type SetupFileResult = { ok: true; file: SessionSetupFileText } | { ok: false; status: 404 | 409 | 413; error: string };
+
+/**
+ * The text of one file the session's own setup read lists (§chat.transcript/setup-card-open-file),
+ * for the markdown viewer. The list is the gate: a path it doesn't name is refused before any read,
+ * so this never reads another file on disk. The setup read may be the folder's cached one (30s);
+ * the file itself is read now, never cached.
+ */
+export async function readSetupFile(sessionPath: string, file: string, deps: SetupDeps = {}): Promise<SetupFileResult> {
+  const setup = await getSessionSetup(sessionPath, {}, deps);
+  if (setup.state === "remote") return { ok: false, status: 409, error: "This session's files are on another machine." };
+  if (setup.state !== "ok") return { ok: false, status: 409, error: setup.reason };
+  if (!listedPaths(setup).has(file)) return { ok: false, status: 404, error: "That file isn't in this session's system context." };
+  try {
+    if (statSync(file).size > SETUP_FILE_MAX_BYTES) return { ok: false, status: 413, error: "That file is over 1 MB, too big to show here." };
+    return { ok: true, file: { path: file, text: readFileSync(file, "utf8") } };
+  } catch {
+    return { ok: false, status: 404, error: "That file can't be read any more." };
+  }
+}
+
 /** The folder's cached (or joined, or fresh) read. */
 function folderSetup(cwd: string, sessionPath: string, opts: { fresh?: boolean }, deps: SetupDeps, now: () => number): Promise<SessionSetup> {
   const key = cwd;
@@ -321,22 +340,22 @@ async function applyLoadoutNow(path: string, body: unknown): Promise<LoadoutResu
   if (!local) return { ok: false, status: 409, error: "Only a local session's context files and skills can be switched here." };
   let chat;
   try {
-    chat = await acquireChat(path);
+    chat = await acquireChatHandle(path);
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
   }
-  const current = chat.loadoutState?.data;
+  const current = chat.mirror.loadout?.off;
   const unchanged = leavesOut(current) ? sameSet(current.offContext, data.offContext) && sameSet(current.offSkills, data.offSkills) : !leavesOut(data);
   if (!unchanged) {
     try {
-      chat.writeLoadout(data);
+      await chat.writeLoadout(data);
     } catch (err) {
       return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
     }
-    await disposeHeldChat(path, "Applying the context files and skills.");
+    await closeChat(path, "Applying the context files and skills.");
     // Reopened here, so the answer is the rebuilt runtime's own read; a tab reconnecting meanwhile
     // joins this same open.
-    await acquireChat(path).catch((err) => console.warn(`[setup] reopen after a switch failed: ${err instanceof Error ? err.message : String(err)}`));
+    await acquireChatHandle(path).catch((err) => console.warn(`[setup] reopen after a switch failed: ${err instanceof Error ? err.message : String(err)}`));
   }
   return { ok: true, setup: await getSessionSetup(path, { fresh: true }) };
 }

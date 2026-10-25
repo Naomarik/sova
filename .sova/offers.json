@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "offers": {
+    "landing": {
+      "when": "The Merge Captain queued this branch to land: its work is finished and committed. Land It tells the captain to land it.",
+      "why": "Saves writing the go-ahead to the captain by hand.",
+      "title": "Land {branch} at {commit}?",
+      "shownBy": "another-chat",
+      "onlyIf": ["no-open-alignment", "ready-to-land"],
+      "repeat": "once-per-commit",
+      "buttons": [
+        { "label": "Land It", "about": "Tells the Merge Captain to land this branch.", "send": "Go ahead: land {branch} at {commit}.", "to": "shower", "onlyIf": ["specs-promoted"], "landing": "go-ahead" },
+        { "label": "Merge Without Specs…", "about": "Lands this commit now; its spec drafts stay behind for a fresh branch.", "send": "Go ahead: land {branch} at {commit} without its specs ({drafts}).", "to": "shower", "onlyIf": ["specs-left"], "confirm": "Land {branch} without its specs? These spec drafts stay behind, to promote later on a fresh branch from {base}: {drafts}.", "landing": "go-ahead-without-specs" },
+        { "label": "Not Yet", "about": "Tells this session's agent to keep working; the captain waits for a new commit.", "send": "Not yet: keep working on this branch.", "landing": "not-yet" }
+      ]
+    }
+  }
+}

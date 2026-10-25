@@ -311,13 +311,13 @@ export function linkedSessionRow(
 
 /**
  * Each peer's rows. A peer that is down keeps its last rows (the server sends them as `stale`, and
- * a list this page already had stands in when it sends none), marked down by the sidebar rather
- * than vanishing. A peer no longer in peers.json is dropped.
+ * a list this page already had stands in when it sends none): the sidebar lists them only while
+ * its host filter names that peer (`listedWhileDown`). A peer no longer in peers.json is dropped.
  */
 /**
  * After a confirmed host change: the old host's sessions, as this tab last listed them, stand in as
- * that peer's list until the peer answers, so they stay in the sidebar (marked down while it is)
- * instead of vanishing. A list the peer already sent wins.
+ * that peer's list until the peer answers, so they are at hand (listed as `listedWhileDown` says
+ * while it is down) instead of lost. A list the peer already sent wins.
  */
 export function seedPeerList(
   lists: ReadonlyMap<string, SessionSummary[]>,
@@ -390,6 +390,17 @@ export function passesHostFilter(filter: string | null, path: string): boolean {
   return filter === SELF_FILTER ? host === null : host === filter;
 }
 
+/** The peers not answering (`down`; a skewed peer answers and is not among them). */
+export const downPeerIds = (peers: readonly PeerStatus[]): Set<string> =>
+  new Set(peers.filter((p) => p.state === "down").map((p) => p.id));
+
+/**
+ * Whether a session on `host` (null: here) is listed at all. A down peer's remembered rows are
+ * kept but listed nowhere unless the host filter names that peer; they are back once it answers.
+ */
+export const listedWhileDown = (host: string | null, filter: string | null, down: ReadonlySet<string>): boolean =>
+  host === null || !down.has(host) || filter === host;
+
 /** Waits between tries at GET /api/mesh after a failure that may pass (ms), the last one repeating. */
 const MESH_RETRY_MS = [5_000, 15_000, 30_000, 60_000];
 
@@ -415,9 +426,9 @@ export interface HelloBaseline {
   build?: string;
 }
 
-/** The stale-tab banner's words for another build. Different, not newer: after a failover the next
-    host may well run an older build than the one that served this tab. */
-export const STALE_BUILD_NOTE = "This host serves a different build of this page. Reload when you're ready.";
+/** The stale-tab banner's body for another build, under the title "A newer Sova is available.",
+    mesh on or off. */
+export const STALE_BUILD_NOTE = "Reload when you're ready.";
 
 /** How the host answering now differs from the one this tab was loaded from. */
 export interface HelloChange {
@@ -530,6 +541,26 @@ export function helloStep(
   if (pending?.id !== now.id) return { change: null, pending: { id: now.id, at: t } };
   if (t - pending.at < HOST_CONFIRM_MS) return { change: null, pending };
   return { change, pending: null };
+}
+
+/** A hello's build and protocol as one value: the banner rises for a build or protocol only when
+    this differs from what it last rose for, so a Dismiss holds until Sova changes again. */
+export const helloNews = (h: HelloBaseline): string => `${h.protocol}\n${h.build ?? ""}`;
+
+/**
+ * One hello as the tab weighs it. With the mesh on, helloStep. With it off there is no front door,
+ * so no other host can answer: the hello's host is taken as the baseline's own, and only a build or
+ * protocol change can come of it, never a host change (nor a pending one).
+ */
+export function weighHello(
+  mesh: boolean,
+  base: HelloBaseline,
+  now: HelloBaseline,
+  pending: PendingHost | null,
+  t: number,
+): { change: HelloChange | null; pending: PendingHost | null } {
+  if (mesh) return helloStep(base, now, pending, t);
+  return { change: helloChange(base, { ...now, id: base.id, label: base.label }), pending: null };
 }
 
 // ---- the front door's hosts: which are in, which the user left out ------------------------------

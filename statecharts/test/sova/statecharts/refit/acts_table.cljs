@@ -1,6 +1,6 @@
 (ns sova.statecharts.refit.acts-table
   "Every act of the registry with the metadata the engine and the tools act on: `[statechart event]` →
-   `{:needs :tool :hold :counts :people-facing :code-facing :correction :card? :hours? :what? :confirm?}`
+   `{:power :tool :hold :counts :people-facing :code-facing :correction :card? :hours? :what?}`
    (fns only as present/absent). The golden copy is acts-golden."
   (:require [sova.statecharts.registry :as registry]))
 
@@ -11,7 +11,6 @@
       [[nm (str ev)]
        (into (sorted-map)
          (remove (comp nil? val)
-           {:needs (:needs m) :tool (:tool m) :hold (:hold m) :counts (:counts m)
+           {:power (:power m) :tool (:tool m) :hold (:hold m) :counts (:counts m)
             :people-facing (:people-facing m) :code-facing (:code-facing m) :correction (:correction m)
-            :card? (when (:card m) true) :hours? (when (:hours m) true) :what? (when (:what m) true)
-            :confirm? (when (:confirm-kind m) true)}))])))
+            :card? (when (:card m) true) :hours? (when (:hours m) true) :what? (when (:what m) true)}))])))

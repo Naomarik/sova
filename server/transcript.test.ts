@@ -495,6 +495,27 @@ describe("btw thread entries", () => {
     assert.equal(it.model, "zai/glm-5.3");
   });
 
+  test("the headless /btw's btw-note message gets the same report row, titled with its question", () => {
+    const details = { question: "what landed today?", answer: "Two fixes shipped.", provider: "zai", model: "glm-5.3" };
+    const items = normalizeEntry({
+      type: "custom_message",
+      id: "n1",
+      parentId: null,
+      timestamp: "2026-09-19T00:00:00.000Z",
+      customType: "btw-note",
+      content: "Q: what landed today?\n\nA: Two fixes shipped.",
+      display: true,
+      details,
+    });
+    assert.equal(items.length, 1);
+    const it = items[0]!;
+    assert.equal(it.kind, "report");
+    assert.equal(it.report?.agent?.id, "btw");
+    assert.equal(it.report?.agent?.name, "what landed today?");
+    assert.equal(it.report?.body, "Two fixes shipped.");
+    assert.equal(it.model, "zai/glm-5.3");
+  });
+
   test("entries without an answer, resets and overrides stay hidden", () => {
     assert.deepEqual(normalizeEntry(btwEntry("b1", { question: "hi" })), []);
     assert.deepEqual(normalizeEntry(btwEntry("b2", { answer: "" }, "btw-thread-reset")), []);

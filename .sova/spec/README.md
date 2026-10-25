@@ -15,7 +15,7 @@ and labels. [USAGE.md](USAGE.md) has the commands.
   behavior. Only what has been implemented and verified is promoted, and only explicitly,
   except a decision: notes, sections, and behaviors or surfaces marked `agreed` and not built yet, land on
   doc-only evidence as decisions, never as built (pi-config/extensions/spec/DRAFTS.md, "Agreed, not built").
-  A change to a behavior's or surface's `embeds` or `core` field alone also lands on doc-only evidence,
+  A change to a behavior's or surface's `embeds`, `core` or `notOwned` field alone also lands on doc-only evidence,
   but not on an agreed record that maps code: it rewires what a reader is handed, not what the code
   does (DRAFTS.md, "Field-only changes"). `about` belongs on notes, which take doc-only evidence anyway.
 - **Baseline and feature stay apart.** Correcting the docs to match what the code already does
@@ -25,11 +25,10 @@ and labels. [USAGE.md](USAGE.md) has the commands.
 
 | Path | What |
 |---|---|
-| `manifest.json` | One record per ID: `kind` (`surface`, `behavior`, `section`, `note`), `requires`, `members`, `code`, the labels `authority` and `evidence`, and the optional fields `agreed` (who decided, and when), `embeds`, `core` and `about` (pi-config/extensions/spec/core/README.md). Relations only; prose never. |
+| `manifest.json` | One record per ID: `kind` (`surface`, `behavior`, `section`, `note`), `requires`, `members`, `code`, the labels `authority` and `evidence`, and the optional fields `agreed` (who decided, and when), `embeds`, `core`, `about` and `notOwned` (pi-config/extensions/spec/core/README.md). Relations only; prose never. |
 | `claims/<ns>/<name>.md` | One document. The H1 `# §ns/name — Title` is its lede, and each H2 `## §ns.name/slug — Title` is a child. Plain H3 and deeper are prose inside that child. |
 | `drafts/` | Proposed changes, one full copy per draft. Local only. |
 | `reviews/` | Review packets and records. Local only. |
-| `tools/` | Vendored copies of the tools. Check their hashes first ([USAGE.md](USAGE.md)). |
 
 ## Reading a claim
 
@@ -51,8 +50,8 @@ instructions that point at them go in together, so no link lands dangling:
 
 ```sh
 git add .sova/spec/.gitignore .sova/spec/README.md .sova/spec/USAGE.md .sova/spec/manifest.json \
-  .sova/spec/claims .sova/spec/tools pi-config/extensions/spec
-git add -p CLAUDE.md CONTRIBUTING.md pi-config/README.md pi-config/extensions/mode \
+  .sova/spec/claims pi-config/extensions/spec
+git add -p AGENTS.md agents CONTRIBUTING.md pi-config/README.md pi-config/extensions/mode \
   .claude/skills/fold-ai-dev-design/SKILL.md .claude/skills/fold-ai-dev-design/.build/audit.mjs
 git diff --cached --stat
 ```

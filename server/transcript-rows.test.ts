@@ -5,11 +5,13 @@
 // is transcript-rows.integration.test.ts. A throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi
 // untouched.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { TranscriptItem, TranscriptRows } from "../shared/protocol";
+import { largeSessionText } from "./harness/pi/golden/fixtures/large";
+import { fixtureSets } from "./harness/pi/golden/golden";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-rows-")));
 process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -118,7 +120,7 @@ describe("GET /api/transcript rows", () => {
       assert.deepEqual(r.olderSummary, summarize(whole.slice(0, r.older)));
       assert.equal(r.olderSummary.inputs.length + whole.slice(r.older).filter(isInput).length, whole.filter(isInput).length);
     }
-    assert.deepEqual(chunks.at(-1)!.olderSummary, { inputs: [], messages: 0, replies: false });
+    assert.deepEqual(chunks.at(-1)!.olderSummary, { inputs: [], ownInputs: [], messages: 0, replies: false });
   });
 
   test("a range down to the oldest input, in one request, reaches the top and concatenates", async () => {
@@ -178,28 +180,33 @@ describe("GET /api/transcript rows", () => {
     assert.equal(ends.at(-1)!.id, "x1");
   });
 
-  // The property on real sessions, as tail-hello's: chunks from the hello's cut up, and a range to
-  // every 97th row, put back together are the whole branch.
-  const copies = join(homedir(), ".cache", "sova-vscroll", "sessions");
-  const files = existsSync(copies) ? readdirSync(copies).filter((f) => f.endsWith(".jsonl")) : [];
-  test(`chunks and ranges concatenate on ${files.length} session copies`, { skip: files.length === 0 && "no session copies" }, () => {
-    for (const f of files) {
-      const items = normalizeEntries(activeBranch(parseLines(readFileSync(join(copies, f), "utf8"))));
+  // The property as tail-hello's, on the generated large session and every real session in the
+  // private golden set when there is one (golden/README.md): chunks from the hello's cut up, and a
+  // range to every 97th row, put back together are the whole branch.
+  const real = fixtureSets().find((s) => s.name === "real")?.fixtures ?? [];
+  test(`chunks and ranges concatenate on the large session and ${real.length} real ones`, () => {
+    // 301 turns: the large session rewinds at turn 300, leaving a ~1.2 MB branch of rows.
+    const sessions = [{ name: "large", text: largeSessionText(301) }, ...real.map((f) => ({ name: f.name, text: readFileSync(f.path, "utf8") }))];
+    for (const { name, text } of sessions) {
+      const items = normalizeEntries(activeBranch(parseLines(text)));
       const sizes = items.map((it) => JSON.stringify(it).length);
       const seam = tailStart(items, sizes);
       let end = seam;
       let list = items.slice(seam);
+      let chunks = 0;
       while (end > 0) {
         const s = chunkStart(items, sizes, end);
-        assert.ok(s < end, f);
+        assert.ok(s < end, name);
         list = [...items.slice(s, end), ...list];
         end = s;
+        chunks++;
       }
-      assert.deepEqual(list, items, f);
+      if (name === "large") assert.ok(seam > 0 && chunks > 2, `large: seam ${seam}, ${chunks} chunks`);
+      assert.deepEqual(list, items, name);
       for (let t = 0; t < seam; t += 97) {
         const s = rangeStart(items, t);
-        assert.ok(s <= t, f);
-        if (s > 0) assert.notEqual(items[s]!.kind, "tool-result", f);
+        assert.ok(s <= t, name);
+        if (s > 0) assert.notEqual(items[s]!.kind, "tool-result", name);
       }
     }
   });

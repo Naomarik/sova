@@ -4,7 +4,8 @@
 # uname, systemctl and launchctl are stubs, and so are the seed's scripts/fetch-bun.sh (the Bun
 # download) and scripts/start-server.sh (what the launcher execs), so nothing is downloaded, no real service manager is asked
 # anything, and nothing outside the temporary directory is touched. No case can see a terminal
-# unless it hands the installer one (SOVA_TTY).
+# unless it hands the installer one (SOVA_TTY). The cases of `sova app` stub the browsers, the
+# health check (curl), the openers, the notifiers, sips and iconutil: no real browser is started.
 #
 # Run: scripts/install.test.sh   (TMPDIR picks where the temporary directory goes;
 #      TEST_BASH=/bin/bash runs the installer under another bash, e.g. macOS's 3.2)
@@ -31,7 +32,7 @@ nopnpm=$tmp/sandbox-nopnpm       # npx but no pnpm: the installer runs pnpm thro
 nopm=$tmp/sandbox-nopm           # neither pnpm nor npx
 stubs=$tmp/stubs                 # not on any PATH; the pnpm stub lives here so npx can reach it
 mkdir -p "$sandbox" "$nogit" "$nopnpm" "$nopm" "$stubs"
-for c in basename bash cat chmod cmp cp dirname env grep head id ln mkdir mktemp mv printf readlink rm rmdir sed sh sleep sort touch wc; do
+for c in awk basename bash cat chmod cmp cp dirname env grep head id ln mkdir mktemp mv nohup printf readlink rm rmdir sed sh sleep sort touch tr wc; do
 	for d in "$sandbox" "$nogit" "$nopnpm" "$nopm"; do ln -sf "$(command -v "$c")" "$d/$c"; done
 done
 for d in "$sandbox" "$nopnpm" "$nopm"; do ln -sf "$(command -v git)" "$d/git"; done  # $nogit has no git
@@ -141,6 +142,8 @@ cat > "$seed/package.json" <<'JSON'
 JSON
 printf 'export const server = null;\n' > "$seed/server/index.ts"
 printf '[tools]\nnode = "25.2.1"\nbun = "1.4.2"\n' > "$seed/mise.toml"
+mkdir -p "$seed/public/icons"
+printf 'not really a png\n' > "$seed/public/icons/pwa-512.png"
 # fetch-bun.sh <dir>: a <dir>/bin/bun that reports the pinned version, kept when it already does;
 # every call logged to $BUN_LOG, and BUN_FAIL=1 fails it.
 cat > "$seed/scripts/fetch-bun.sh" <<'STUB'
@@ -176,14 +179,17 @@ git -C "$seed" init --quiet -b master
 git -C "$seed" -c user.email=t@t -c user.name=t add -A
 git -C "$seed" -c user.email=t@t -c user.name=t commit --quiet -m seed
 git -C "$seed" tag v0.1.0
+# `stable`, the moving tag the installer defaults to, annotated as a release makes it.
+git -C "$seed" -c user.email=t@t -c user.name=t tag -a stable -m 'stable: v0.1.0'
 
 # ---- one case = one fresh HOME, whose path has a space in it ----
 
 home=
 # Every case runs as `inst`: the sandbox PATH, a fresh or kept HOME, no terminal, and the service
 # managers' logs and state beside that HOME. Nothing the caller's environment names reaches it:
-# PI_CODING_AGENT_DIR, XDG_CONFIG_HOME and MISE_DATA_DIR would point it at real directories.
-unset PI_CODING_AGENT_DIR PI_AGENT_DIR XDG_CONFIG_HOME MISE_DATA_DIR
+# PI_CODING_AGENT_DIR, XDG_CONFIG_HOME, XDG_DATA_HOME and MISE_DATA_DIR would point it at real directories,
+# and a SOVA_BUN of the caller's would win over the install's Bun.
+unset PI_CODING_AGENT_DIR PI_AGENT_DIR XDG_CONFIG_HOME XDG_DATA_HOME MISE_DATA_DIR SOVA_BUN
 inst() {                 # inst [args...] in the current $home; sets `status` and `out`
 	local case_dir
 	case_dir=$(dirname "$home")
@@ -304,6 +310,20 @@ check "$([ -f "$home/.local/share/sova/dist/index.html" ] && echo true || echo f
 check "$([ -x "$home/.local/bin/sova" ] && echo true || echo false)" "rerun: the launcher is in place"
 check "$([ -z "$(ls -d "$home/.local/share/sova.sova-previous."* 2>/dev/null)" ] && echo true || echo false)" \
 	"rerun: removed the previous install after promoting"
+check "$(yes_if grep -qF 'export SOVA_LAUNCHER=$self' "$home/.local/bin/sova")" "rerun: the launcher tells the server its own path"
+
+# 5b. SOVA_KEEP_PREVIOUS moves the replaced install there instead of deleting it (Settings' upgrade).
+printf 'from the previous install\n' > "$home/.local/share/sova/KEPT.txt"
+SOVA_KEEP_PREVIOUS="$home/kept install" inst --reinstall
+check "$(yes_if [ "$status" -eq 0 ])" "keep previous: exits 0"
+check "$(yes_if [ -f "$home/kept install/KEPT.txt" ])" "keep previous: the replaced install is at the path it was given"
+check "$(yes_if [ ! -e "$home/.local/share/sova/KEPT.txt" ] && [ -f "$home/.local/share/sova/dist/index.html" ])" "keep previous: the new install is in place"
+check "$(yes_if [ -z "$(ls -d "$home/.local/share/sova.sova-previous."* 2>/dev/null)" ])" "keep previous: no other backup left"
+check "$(yes_if said 'kept the previous install at')" "keep previous: says where it kept it"
+SOVA_KEEP_PREVIOUS="$home/kept install" inst --reinstall
+check "$(yes_if [ "$status" -ne 0 ] && said 'already exists; nothing was changed')" "keep previous: a path that exists is refused before anything changes"
+check "$(yes_if [ -f "$home/kept install/KEPT.txt" ] && [ -f "$home/.local/share/sova/dist/index.html" ])" "keep previous: the refusal left both installs alone"
+rm -rf "$home/kept install"
 
 # 6. An install directory that is not our clone is refused, with its contents left alone.
 fresh_home foreign-dir
@@ -534,15 +554,27 @@ printf 'n\n' > "$tmp/ask-no/tty"
 CASE_TTY=$tmp/ask-no/tty inst
 check "$(yes_if [ ! -e "$home/.config/systemd/user/sova.service" ])" "ask, no: no service"
 
+# The health check `sova app` asks: curl answers while $FAKE_UP exists, and logs every call.
+up=$tmp/up
+mkdir -p "$up"
+cat > "$up/curl" <<'STUB'
+#!/usr/bin/env bash
+[ -z "${CURL_LOG:-}" ] || printf 'curl %s\n' "$*" >> "$CURL_LOG"
+[ -n "${FAKE_UP:-}" ] && [ -e "$FAKE_UP" ]
+STUB
+chmod 755 "$up/curl"
+touch "$tmp/up.always"
+
 # 24a. The launcher's `token` prints the agent dir's token (the install's, or $PI_CODING_AGENT_DIR's)
-#      and `open` opens the page unlocked by it, on the install's port or $PORT; neither starts the
-#      server. Before the server ever minted a token, both say so and exit nonzero.
+#      and never starts the server; `open`, with the server up and no Chromium-family browser,
+#      opens the page unlocked by it, on the install's port or $PORT. Before the server ever
+#      minted a token, both say so and exit nonzero.
 run_install launcher-token --port 4811 --no-service
 opener=$tmp/launcher-token/opener
 mkdir -p "$opener"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s"\n' "$tmp/launcher-token/opened" > "$opener/xdg-open"
 chmod 755 "$opener/xdg-open"
-sova_cmd() { set +e; launch=$(PATH="$opener:$sandbox" "$@" 2>&1); lstatus=$?; set -e; }
+sova_cmd() { set +e; launch=$(FAKE_UP="$tmp/up.always" PATH="$opener:$up:$sandbox" "$@" 2>&1); lstatus=$?; set -e; }
 sova_cmd env -u PI_CODING_AGENT_DIR "$home/.local/bin/sova" token
 check "$(yes_if [ "$lstatus" -ne 0 ])" "launcher token, none minted: exits nonzero"
 check "$(printf '%s' "$launch" | grep -q 'start sova once' && echo true || echo false)" "launcher token, none minted: says to start sova once"
@@ -571,11 +603,284 @@ check "$(printf '%s' "$launch" | grep -q 'start-server stub ran: .* PORT=4999$' 
 	"--port, no service: \$PORT still wins"
 # With no browser opener, open says to paste the token and exits nonzero.
 printf 'tok-of-the-install\n' > "$home/.pi/agent/sova/auth-token"
-set +e; launch=$(env -u PI_CODING_AGENT_DIR PATH="$sandbox" "$home/.local/bin/sova" open 2>&1); lstatus=$?; set -e
+set +e; launch=$(env -u PI_CODING_AGENT_DIR FAKE_UP="$tmp/up.always" PATH="$up:$sandbox" "$home/.local/bin/sova" open 2>&1); lstatus=$?; set -e
 check "$(yes_if [ "$lstatus" -ne 0 ])" "launcher open, no opener: exits nonzero"
 check "$(printf '%s' "$launch" | grep -q "paste the token from 'sova token'" && echo true || echo false)" \
 	"launcher open, no opener: says to paste the token"
 rm "$home/.pi/agent/sova/auth-token"
+
+# 27. The app entry, Linux: a .desktop file that runs `sova app` from the launcher (quoted for a
+#     spaced HOME), with our marker, and the install's icon beside it.
+run_install entry-linux
+desktop=$home/.local/share/applications/sova.desktop
+icon=$home/.local/share/icons/hicolor/512x512/apps/sova.png
+check "$(yes_if [ "$status" -eq 0 ])" "entry, linux: exits 0"
+check "$(yes_if grep -qxF "Exec=\"$home/.local/bin/sova\" app" "$desktop")" "entry, linux: Exec runs sova app, quoted"
+check "$(yes_if grep -qxF 'X-Sova-Launcher=v1' "$desktop")" "entry, linux: carries our marker"
+check "$(yes_if grep -qxF 'Icon=sova' "$desktop" && grep -qxF 'Name=Sova' "$desktop" && grep -qxF 'Terminal=false' "$desktop")" \
+	"entry, linux: named Sova, with its icon, no terminal"
+check "$(yes_if cmp -s "$icon" "$home/.local/share/sova/public/icons/pwa-512.png")" "entry, linux: the icon is the install's"
+check "$(yes_if said "app entry: $desktop")" "entry, linux: the summary names it"
+check "$(yes_if said 'an app window needs Chrome, Chromium, Brave, Edge or Vivaldi')" \
+	"entry, linux: with no Chromium-family browser, the summary says what an app window needs"
+# XDG_DATA_HOME moves it; a browser on PATH silences the note.
+fresh_home entry-xdg
+browsers=$tmp/entry-xdg/browsers
+mkdir -p "$browsers"
+printf '#!/bin/sh\nexit 0\n' > "$browsers/chromium"
+chmod 755 "$browsers/chromium"
+set +e
+out=$(env HOME="$home" XDG_DATA_HOME="$home/data" PATH="$browsers:$sandbox" SOVA_REPO="file://$seed" SOVA_REF=v0.1.0 \
+	SOVA_TTY="$tmp/.no-tty" SVC_LOG="$tmp/entry-xdg/svc.log" SVC_STATE="$tmp/entry-xdg/svc" "$test_bash" "$installer" 2>&1)
+status=$?
+set -e
+check "$(yes_if [ "$status" -eq 0 ] && [ -f "$home/data/applications/sova.desktop" ] && [ -f "$home/data/icons/hicolor/512x512/apps/sova.png" ])" \
+	"entry, XDG_DATA_HOME: written there"
+check "$(yes_if [ -z "$(printf '%s' "$out" | grep 'an app window needs')" ])" "entry, browser found: no note about one"
+
+# 28. A .desktop file or icon we did not write is refused before anything is installed, and kept;
+#     --no-app-entry and SOVA_NO_APP_ENTRY=1 write none and install the rest.
+fresh_home entry-foreign
+mkdir -p "$home/.local/share/applications"
+printf '[Desktop Entry]\nName=Mine\n' > "$home/.local/share/applications/sova.desktop"
+inst
+check "$(yes_if [ "$status" -ne 0 ])" "entry, foreign .desktop: exits nonzero"
+check "$(yes_if said 'was not written by this script' && said 'or pass --no-app-entry')" "entry, foreign .desktop: says why and how to skip it"
+check "$(yes_if grep -q 'Name=Mine' "$home/.local/share/applications/sova.desktop")" "entry, foreign .desktop: kept"
+check "$(yes_if [ ! -e "$home/.local/share/sova" ] && [ ! -e "$home/.local/bin/sova" ])" "entry, foreign .desktop: installed nothing"
+inst --no-app-entry
+check "$(yes_if [ "$status" -eq 0 ] && [ -x "$home/.local/bin/sova" ])" "--no-app-entry: installs the rest"
+check "$(yes_if grep -q 'Name=Mine' "$home/.local/share/applications/sova.desktop" && [ ! -e "$home/.local/share/icons" ])" \
+	"--no-app-entry: the file in the way is left as it is, and no icon is written"
+fresh_home entry-foreign-icon
+mkdir -p "$home/.local/share/icons/hicolor/512x512/apps"
+printf 'my icon\n' > "$home/.local/share/icons/hicolor/512x512/apps/sova.png"
+inst
+check "$(yes_if [ "$status" -ne 0 ] && grep -q 'my icon' "$home/.local/share/icons/hicolor/512x512/apps/sova.png")" \
+	"entry, foreign icon: refused, kept"
+fresh_home entry-env-off
+set +e
+out=$(env HOME="$home" SOVA_NO_APP_ENTRY=1 PATH="$sandbox" SOVA_REPO="file://$seed" SOVA_REF=v0.1.0 \
+	SOVA_TTY="$tmp/.no-tty" SVC_LOG="$tmp/entry-env-off/svc.log" SVC_STATE="$tmp/entry-env-off/svc" "$test_bash" "$installer" 2>&1)
+status=$?
+set -e
+check "$(yes_if [ "$status" -eq 0 ] && [ ! -e "$home/.local/share/applications" ] && [ -z "$(printf '%s' "$out" | grep 'app entry:')" ])" \
+	"SOVA_NO_APP_ENTRY=1: no entry"
+
+# 29. The app entry, macOS: ~/Applications/Sova.app, whose Info.plist carries our marker and
+#     whose executable runs `sova app`, with an icon from sips and iconutil (stubs). A rerun
+#     changes nothing; a bundle we did not write is refused; without sips there is no icon.
+mac_tools=$tmp/mac-tools
+mkdir -p "$mac_tools"
+cat > "$mac_tools/sips" <<'STUB'
+#!/usr/bin/env bash
+# sips -z <h> <w> <src> --out <dst>
+printf 'sips\n' >> "${SIPS_LOG:-/dev/null}"
+cp "$4" "$6"
+STUB
+cat > "$mac_tools/iconutil" <<'STUB'
+#!/usr/bin/env bash
+# iconutil -c icns -o <out> <dir>.iconset
+cat "$5"/*.png > "$4"
+STUB
+chmod 755 "$mac_tools/sips" "$mac_tools/iconutil"
+FAKE_UNAME=Darwin CASE_PATH="$mac_tools:$sandbox" run_install entry-mac
+app=$home/Applications/Sova.app
+check "$(yes_if [ "$status" -eq 0 ])" "entry, mac: exits 0"
+check "$(yes_if grep -qF '<!-- X-Sova-Launcher=v1' "$app/Contents/Info.plist")" "entry, mac: Info.plist carries our marker"
+if command -v python3 >/dev/null 2>&1; then
+	parsed=$(python3 -c 'import plistlib,sys; p=plistlib.load(open(sys.argv[1],"rb")); print(p["CFBundleName"], p["CFBundleIdentifier"], p["CFBundleExecutable"], p["CFBundleIconFile"])' "$app/Contents/Info.plist" 2>/dev/null || true)
+	check "$(yes_if [ "$parsed" = "Sova io.github.naomarik.sova.app sova-app sova" ])" "entry, mac: Info.plist parses, with name, identifier, executable, icon"
+	# A script executable starts under Rosetta, and the browser with it, unless the bundle names arm64 alone.
+	archs=$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb")).get("LSArchitecturePriority"))' "$app/Contents/Info.plist" 2>/dev/null || true)
+	check "$(yes_if [ "$archs" = "['arm64']" ])" "entry, mac: the bundle runs natively on Apple silicon (arm64 only)"
+fi
+check "$(yes_if [ -x "$app/Contents/MacOS/sova-app" ] && grep -qF "exec $(printf '%q' "$home/.local/bin/sova") app" "$app/Contents/MacOS/sova-app")" \
+	"entry, mac: the executable runs sova app"
+check "$(yes_if [ -s "$app/Contents/Resources/sova.icns" ])" "entry, mac: an icon built by iconutil"
+check "$(yes_if [ ! -e "$home/.local/share/applications" ])" "entry, mac: no .desktop file"
+touch "$tmp/entry-mac/stamp"
+sleep 1
+: > "$tmp/entry-mac/sips.log"
+FAKE_UNAME=Darwin CASE_PATH="$mac_tools:$sandbox" SIPS_LOG="$tmp/entry-mac/sips.log" inst
+check "$(yes_if [ "$status" -eq 0 ] && [ -z "$(find "$app" -newer "$tmp/entry-mac/stamp" -print)" ])" "entry, mac rerun: the bundle is untouched"
+check "$(yes_if [ ! -s "$tmp/entry-mac/sips.log" ])" "entry, mac rerun: the icon is not rebuilt"
+fresh_home entry-mac-foreign
+mkdir -p "$home/Applications/Sova.app/Contents"
+printf '<plist>mine</plist>\n' > "$home/Applications/Sova.app/Contents/Info.plist"
+FAKE_UNAME=Darwin inst
+check "$(yes_if [ "$status" -ne 0 ] && grep -q mine "$home/Applications/Sova.app/Contents/Info.plist" && [ ! -e "$home/.local/share/sova" ])" \
+	"entry, mac foreign bundle: refused, kept, nothing installed"
+FAKE_UNAME=Darwin run_install entry-mac-nosips
+check "$(yes_if [ "$status" -eq 0 ] && [ -x "$home/Applications/Sova.app/Contents/MacOS/sova-app" ] && [ ! -e "$home/Applications/Sova.app/Contents/Resources/sova.icns" ])" \
+	"entry, mac without sips/iconutil: the bundle, with no icon"
+
+# 30. `sova app` with the server up: the browser it picks, the window it opens (bare, unlocked,
+#     its own profile, no debugging port), and the tab it falls back to.
+run_install app-pick --port 4811 --no-service
+mkdir -p "$home/.pi/agent/sova"
+printf 'tok-app\n' > "$home/.pi/agent/sova/auth-token"
+fake=$tmp/app-pick/fake
+mkdir -p "$fake"
+browsed=$tmp/app-pick/browsed
+mk_browser() {      # mk_browser <path>: a browser that logs its arguments, one per line
+	mkdir -p "$(dirname "$1")"
+	printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$0" "$@" > "%s"\n' "$browsed" > "$1"
+	chmod 755 "$1"
+}
+mk_browser "$fake/chrome-bin/google-chrome-stable"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "${FAKE_DEFAULT_BROWSER:-}"\n' > "$fake/xdg-settings"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s"\n' "$tmp/app-pick/opened" > "$fake/xdg-open"
+chmod 755 "$fake/xdg-settings" "$fake/xdg-open"
+mkdir -p "$home/.local/share/applications"
+printf '[Desktop Entry]\nName=Google Chrome\nExec=%s %%U\n' "$fake/chrome-bin/google-chrome-stable" > "$home/.local/share/applications/google-chrome.desktop"
+wait_for() { local i; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do [ -s "$1" ] && return 0; sleep 0.25; done; return 1; }
+app_cmd() {         # app_cmd <PATH> [env...] -- runs `sova <args>` from $home with the server up
+	local path=$1; shift
+	rm -f "$browsed" "$tmp/app-pick/opened"
+	set +e
+	launch=$(env -u PI_CODING_AGENT_DIR -u PORT HOME="$home" FAKE_UP="$tmp/up.always" PATH="$path" "$@" 2>&1)
+	lstatus=$?
+	set -e
+}
+app_cmd "$fake:$up:$sandbox" FAKE_DEFAULT_BROWSER=google-chrome.desktop "$home/.local/bin/sova" app
+wait_for "$browsed" || true
+check "$(yes_if [ "$lstatus" -eq 0 ])" "sova app: exits 0"
+check "$(yes_if [ "$(head -n 1 "$browsed" 2>/dev/null)" = "$fake/chrome-bin/google-chrome-stable" ])" \
+	"sova app: the default browser, run as its .desktop file's Exec names it"
+check "$(yes_if grep -qxF -- '--app=http://127.0.0.1:4811/#t=tok-app' "$browsed")" "sova app: a bare app window, unlocked, on the install's port"
+check "$(yes_if grep -qxF -- "--user-data-dir=$home/.config/sova-browser" "$browsed")" "sova app: a profile of its own"
+check "$(yes_if grep -qxF -- '--no-first-run' "$browsed" && grep -qxF -- '--no-default-browser-check' "$browsed")" "sova app: no first-run or default-browser prompts"
+check "$(yes_if [ -z "$(grep -- '--remote-debugging' "$browsed")" ])" "sova app: no debugging port"
+check "$(yes_if grep -qF '"custom_chrome_frame":false' "$home/.config/sova-browser/Default/Preferences" && [ -e "$home/.config/sova-browser/First Run" ])" \
+	"sova app: a new profile uses the system title bar and skips the first-run page"
+check "$(yes_if [ ! -s "$tmp/app-pick/opened" ])" "sova app: no tab as well"
+printf '{"mine":true}\n' > "$home/.config/sova-browser/Default/Preferences"
+app_cmd "$fake:$up:$sandbox" FAKE_DEFAULT_BROWSER=google-chrome.desktop "$home/.local/bin/sova" open
+wait_for "$browsed" || true
+check "$(yes_if grep -qxF -- '--app=http://127.0.0.1:4811/#t=tok-app' "$browsed")" "sova open: the same window as sova app"
+check "$(yes_if grep -qF '"mine":true' "$home/.config/sova-browser/Default/Preferences")" "sova app: an existing profile is left as it is"
+# The default browser is not Chromium-family (or there is no xdg-settings): the first on PATH.
+mk_browser "$fake/path-bin/chromium"
+app_cmd "$fake/path-bin:$fake:$up:$sandbox" FAKE_DEFAULT_BROWSER=firefox.desktop "$home/.local/bin/sova" app
+wait_for "$browsed" || true
+check "$(yes_if [ "$(head -n 1 "$browsed" 2>/dev/null)" = "$fake/path-bin/chromium" ])" "sova app, default is firefox: the Chromium on PATH"
+app_cmd "$fake/path-bin:$up:$sandbox" "$home/.local/bin/sova" app --print-browser
+check "$(yes_if [ "$launch" = "$fake/path-bin/chromium" ])" "sova app --print-browser: names it"
+# No Chromium-family browser: a tab of the default browser, unlocked.
+app_cmd "$fake:$up:$sandbox" FAKE_DEFAULT_BROWSER=firefox.desktop "$home/.local/bin/sova" app
+check "$(yes_if [ "$lstatus" -eq 0 ] && grep -qxF 'http://127.0.0.1:4811/#t=tok-app' "$tmp/app-pick/opened")" \
+	"sova app, no such browser: a tab of the default browser, unlocked"
+check "$(yes_if [ ! -e "$browsed" ])" "sova app, no such browser: no browser started"
+
+# 31. macOS: the default https handler when it is one of them, else the first bundle found; the
+#     bundle's own executable, with the macOS profile folder; `open` as the tab fallback.
+FAKE_UNAME=Darwin run_install app-mac --no-service
+mkdir -p "$home/.pi/agent/sova"
+printf 'tok-mac\n' > "$home/.pi/agent/sova/auth-token"
+browsed=$tmp/app-mac/browsed
+mac=$tmp/app-mac/bin
+mkdir -p "$mac"
+mk_browser "$home/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+mk_browser "$home/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+cat > "$mac/defaults" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+	*launchservices.secure*LSHandlers)
+		cat <<'OUT'
+(
+        {
+        LSHandlerContentType = "public.html";
+        LSHandlerRoleAll = "com.google.chrome";
+    },
+        {
+        LSHandlerPreferredVersions =         {
+            LSHandlerRoleAll = "-";
+        };
+        LSHandlerRoleAll = "com.brave.browser";
+        LSHandlerURLScheme = https;
+    }
+)
+OUT
+		;;
+	*) exit 1 ;;
+esac
+STUB
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s"\n' "$tmp/app-mac/opened" > "$mac/open"
+chmod 755 "$mac/defaults" "$mac/open"
+mac_cmd() { set +e; rm -f "$browsed"; launch=$(env -u PI_CODING_AGENT_DIR -u PORT FAKE_UNAME=Darwin HOME="$home" FAKE_UP="$tmp/up.always" PATH="$1" "$home/.local/bin/sova" app 2>&1); lstatus=$?; set -e; }
+mac_cmd "$mac:$up:$sandbox"
+wait_for "$browsed" || true
+check "$(yes_if [ "$lstatus" -eq 0 ] && [ "$(head -n 1 "$browsed" 2>/dev/null)" = "$home/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" ])" \
+	"sova app, mac: the default https handler's bundle executable"
+check "$(yes_if grep -qxF -- "--user-data-dir=$home/Library/Application Support/sova-browser" "$browsed")" "sova app, mac: the macOS profile folder"
+rm "$mac/defaults"
+mac_cmd "$mac:$up:$sandbox"
+wait_for "$browsed" || true
+check "$(yes_if [ "$(head -n 1 "$browsed" 2>/dev/null)" = "$home/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ])" \
+	"sova app, mac, no default known: the first bundle found"
+rm -rf "$home/Applications/Google Chrome.app" "$home/Applications/Brave Browser.app"
+mac_cmd "$mac:$up:$sandbox"
+check "$(yes_if [ "$lstatus" -eq 0 ] && grep -qxF 'http://127.0.0.1:4800/#t=tok-mac' "$tmp/app-mac/opened")" "sova app, mac, no such browser: open's tab"
+
+# 32. `sova app` with the server down starts it, waits for it, then opens the window; through the
+#     login service when the installer's is installed; a server that never answers, or exits,
+#     is notified with where its output is, and nothing opens.
+run_install app-start --no-service
+case_dir=$tmp/app-start
+mkdir -p "$home/.pi/agent/sova"
+printf 'tok-start\n' > "$home/.pi/agent/sova/auth-token"
+browsed=$case_dir/browsed
+mk_browser "$case_dir/bin/chromium"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s"\n' "$case_dir/notified" > "$case_dir/bin/notify-send"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s"\n' "$case_dir/notified" > "$case_dir/bin/osascript"
+chmod 755 "$case_dir/bin/notify-send" "$case_dir/bin/osascript"
+# The server: answers after a moment (FAKE_START=up), never answers (hang), or exits at once.
+cat > "$home/.local/share/sova/scripts/start-server.sh" <<'STUB'
+#!/bin/sh
+echo "start-server stub: started PORT=$PORT"
+case "${FAKE_START:-}" in
+	up) sleep 1; touch "$FAKE_UP"; sleep 2 ;;
+	hang) sleep 4 ;;
+esac
+STUB
+start_cmd() {       # start_cmd [env...]: `sova app` with the server down
+	rm -f "$browsed" "$case_dir/notified" "$case_dir/is-up"
+	set +e
+	launch=$(env -u PI_CODING_AGENT_DIR -u PORT HOME="$home" FAKE_UP="$case_dir/is-up" SVC_LOG="$case_dir/svc.log" \
+		SVC_STATE="$case_dir/svc" PATH="$case_dir/bin:$up:$sandbox" "$@" "$home/.local/bin/sova" app 2>&1)
+	lstatus=$?
+	set -e
+}
+start_cmd FAKE_START=up
+wait_for "$browsed" || true
+check "$(yes_if [ "$lstatus" -eq 0 ])" "server down: exits 0 once it answers"
+check "$(yes_if grep -qF 'start-server stub: started PORT=4800' "$home/.pi/agent/sova/app-server.log")" \
+	"server down: started the server in the background, its output in the agent dir"
+check "$(yes_if grep -qxF -- '--app=http://127.0.0.1:4800/#t=tok-start' "$browsed")" "server down: then opened the window"
+start_cmd FAKE_START=hang SOVA_APP_WAIT=1
+check "$(yes_if [ "$lstatus" -ne 0 ])" "server never answers: exits nonzero"
+check "$(yes_if grep -qF "$home/.pi/agent/sova/app-server.log" "$case_dir/notified")" "server never answers: notifies, naming the log"
+check "$(yes_if [ ! -e "$browsed" ])" "server never answers: opens nothing"
+start_cmd
+check "$(yes_if [ "$lstatus" -ne 0 ] && grep -qF 'exited before it answered' "$case_dir/notified")" \
+	"server exits: notified at once, nonzero"
+# The installer's systemd unit: started through it.
+mkdir -p "$home/.config/systemd/user"
+printf '# sova-service v1\n[Service]\n' > "$home/.config/systemd/user/sova.service"
+: > "$case_dir/svc.log"
+start_cmd SOVA_APP_WAIT=1
+check "$(yes_if grep -qF 'systemctl --user start sova.service' "$case_dir/svc.log")" "server down, systemd unit: started through it"
+check "$(yes_if grep -qF 'journalctl --user -u sova.service' "$case_dir/notified")" "server down, systemd unit: the notice says where its log is"
+rm "$home/.config/systemd/user/sova.service"
+# The installer's launchd agent: kickstarted; the notice goes through osascript.
+mkdir -p "$home/Library/LaunchAgents"
+printf '<!-- sova-service v1 -->\n' > "$home/Library/LaunchAgents/io.github.naomarik.sova.plist"
+: > "$case_dir/svc.log"
+start_cmd FAKE_UNAME=Darwin SOVA_APP_WAIT=1
+check "$(yes_if grep -qE 'launchctl kickstart gui/[0-9]+/io.github.naomarik.sova' "$case_dir/svc.log")" "server down, launchd agent: kickstarted"
+check "$(yes_if [ "$lstatus" -ne 0 ] && grep -qF 'Library/Logs/sova.log' "$case_dir/notified")" \
+	"server down, launchd agent, no answer: osascript notifies, naming its log"
 
 # 25. The ref: one that is neither a tag, a branch nor a commit stops the install before anything
 #     is written; the default branch is never installed in its place; the summary names the ref.
@@ -605,17 +910,40 @@ check "$(yes_if [ "$status" -ne 0 ] && [ "$(git -C "$home/.local/share/sova" rev
 seed_master=$(git -C "$seed" rev-parse master)
 CASE_REF=master run_install ref-branch
 check "$(yes_if said "installed master (${seed_master:0:7})")" "ref, a branch: the summary names it and its commit"
-# With no SOVA_REF, the default is master (until a release commit sets its own tag).
-fresh_home ref-default
-set +e
-out=$(env -u SOVA_REF HOME="$home" PATH="$sandbox" SOVA_REPO="file://$seed" SOVA_TTY="$tmp/.no-tty" \
-	SVC_LOG="$tmp/ref-default/svc.log" SVC_STATE="$tmp/ref-default/svc" "$test_bash" "$installer" 2>&1)
-status=$?
-set -e
-check "$(yes_if [ "$status" -eq 0 ] && [ "$(git -C "$home/.local/share/sova" rev-parse HEAD)" = "$seed_master" ])" \
-	"ref, unset: installs master's latest commit"
-check "$(yes_if said "installed master (${seed_master:0:7})")" "ref, unset: the summary names master"
+# With no SOVA_REF, the default is the `stable` tag, whatever it points at when the run starts: a
+# re-run after a release moves it installs the new commit, and one after it is moved back (a
+# rollback) the old one. The first run has stable on `next`, which master is not, so installing
+# master in its place would fail.
 seed_next=$(git -C "$seed" rev-parse next)
+seed_v010=$(git -C "$seed" rev-parse 'v0.1.0^{commit}')
+move_stable() { git -C "$seed" -c user.email=t@t -c user.name=t tag -fa stable "$1" -m "stable: $1" >/dev/null; }
+inst_default() {
+	set +e
+	out=$(env -u SOVA_REF HOME="$home" PATH="$sandbox" SOVA_REPO="file://$seed" SOVA_TTY="$tmp/.no-tty" \
+		SVC_LOG="$tmp/ref-default/svc.log" SVC_STATE="$tmp/ref-default/svc" "$test_bash" "$installer" 2>&1)
+	status=$?
+	set -e
+}
+installed_head() { git -C "$home/.local/share/sova" rev-parse HEAD 2>/dev/null; }
+fresh_home ref-default
+move_stable next
+inst_default
+check "$(yes_if [ "$status" -eq 0 ] && [ "$(installed_head)" = "$seed_next" ] && [ "$seed_next" != "$seed_master" ])" \
+	"ref, unset: installs the commit stable points at, not master"
+check "$(yes_if said "installed stable (${seed_next:0:7})")" "ref, unset: the summary names stable and its commit"
+move_stable v0.1.0
+inst_default
+check "$(yes_if [ "$status" -eq 0 ] && [ "$(installed_head)" = "$seed_v010" ])" \
+	"ref, unset: stable moved back, a re-run installs the older commit again"
+check "$(yes_if said "installed stable (${seed_v010:0:7})")" "ref, unset: the rollback re-run rebuilds and says so"
+move_stable next
+inst_default
+check "$(yes_if [ "$status" -eq 0 ] && [ "$(installed_head)" = "$seed_next" ])" \
+	"ref, unset: stable re-pointed forward, a re-run installs the new commit"
+inst_default
+check "$(yes_if [ "$status" -eq 0 ] && said "is already at stable (${seed_next:0:7}); nothing to rebuild")" \
+	"ref, unset: stable unmoved, a re-run rebuilds nothing"
+move_stable v0.1.0
 CASE_REF=$seed_next run_install ref-commit
 check "$(yes_if [ "$status" -eq 0 ] && [ "$(git -C "$home/.local/share/sova" rev-parse HEAD)" = "$seed_next" ])" \
 	"ref, a commit: installs that commit"

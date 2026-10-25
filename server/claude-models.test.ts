@@ -1,7 +1,9 @@
 // Run: npx tsx --test server/claude-models.test.ts (or npm test). Spawns no real CLI.
 import assert from "node:assert/strict";
 import type { ChildProcess } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { describe, test } from "node:test";
@@ -71,14 +73,34 @@ describe("Claude model discovery (server)", () => {
 
   test("failures reject with a sentence; none of them claims a model is absent", async () => {
     const refused = fakeClaude((r) => [{ type: "control_response", response: { request_id: r.request_id, subtype: "error", error: "raw secret-bearing text" } }]);
-    await assert.rejects(discoverClaudeModels({ spawnImpl: refused.spawnImpl }), (err: Error) => /refused to list its models/.test(err.message) && !err.message.includes("secret"));
+    await assert.rejects(discoverClaudeModels({ executable: "claude", spawnImpl: refused.spawnImpl }), (err: Error) => /refused to list its models/.test(err.message) && !err.message.includes("secret"));
     const exits = fakeClaude(() => "exit");
-    await assert.rejects(discoverClaudeModels({ spawnImpl: exits.spawnImpl }), /exited before listing its models/);
+    await assert.rejects(discoverClaudeModels({ executable: "claude", spawnImpl: exits.spawnImpl }), /exited before listing its models/);
     const hangs = fakeClaude(() => "hang");
-    await assert.rejects(discoverClaudeModels({ spawnImpl: hangs.spawnImpl, timeoutMs: 50 }), /did not list its models within/);
+    await assert.rejects(discoverClaudeModels({ executable: "claude", spawnImpl: hangs.spawnImpl, timeoutMs: 50 }), /did not list its models within/);
     const broken = fakeClaude((r) => [success(r.request_id, "nope")]);
-    await assert.rejects(discoverClaudeModels({ spawnImpl: broken.spawnImpl }), /no model list/);
+    await assert.rejects(discoverClaudeModels({ executable: "claude", spawnImpl: broken.spawnImpl }), /no model list/);
     // (a real executable that isn't there: claude-models.integration.test.ts; a spawn error event: below)
+  });
+
+  test("with no executable given, discovery runs the one Claude program from Sova's PATH, or says it found none", async () => {
+    const root = mkdtempSync(join(tmpdir(), "claude-models-program-"));
+    const saved = process.env.PATH;
+    try {
+      mkdirSync(join(root, "bin"));
+      writeFileSync(join(root, "bin", "claude"), "#!/bin/sh\n", { mode: 0o755 });
+      process.env.PATH = ["node_modules/.bin", join(root, "bin")].join(":");
+      const fake = fakeClaude((r) => [success(r.request_id, [{ value: "haiku", displayName: "Haiku" }])]);
+      await discoverClaudeModels({ spawnImpl: fake.spawnImpl });
+      assert.equal(fake.calls[0]!.command, join(root, "bin", "claude"));
+      process.env.PATH = join(root, "empty");
+      const never = fakeClaude(() => assert.fail("never spawned"));
+      await assert.rejects(discoverClaudeModels({ spawnImpl: never.spawnImpl }), /^Error: Claude program not found: /);
+      assert.equal(never.calls.length, 0);
+    } finally {
+      process.env.PATH = saved;
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("parity: every shared fixture parses as the extension's parser parses it", () => {
@@ -168,7 +190,7 @@ describe("Claude discovery process cleanup", () => {
   test("a CLI that exits on EOF is never signalled", async () => {
     const c = scriptedChild({ closeOnEof: true });
     const s = steppedTimers();
-    assert.deepEqual(await discoverClaudeModels({ spawnImpl: c.spawnImpl, timers: s.timers, ...graces }), [{ id: "opus", name: "Opus" }]);
+    assert.deepEqual(await discoverClaudeModels({ executable: "claude", spawnImpl: c.spawnImpl, timers: s.timers, ...graces }), [{ id: "opus", name: "Opus" }]);
     await settle();
     assert.equal(s.pending(), 0, "its exit cleared the escalation");
     await s.runAll();
@@ -178,7 +200,7 @@ describe("Claude discovery process cleanup", () => {
   test("a CLI that exits before answering: the close that settles it also stops escalation", async () => {
     const c = scriptedChild({ closeBeforeAnswer: true });
     const s = steppedTimers();
-    await assert.rejects(discoverClaudeModels({ spawnImpl: c.spawnImpl, timers: s.timers, ...graces }), /exited before listing its models/);
+    await assert.rejects(discoverClaudeModels({ executable: "claude", spawnImpl: c.spawnImpl, timers: s.timers, ...graces }), /exited before listing its models/);
     await settle();
     assert.equal(s.pending(), 0, "no TERM/KILL scheduled for a process already gone");
     await s.runAll();
@@ -188,7 +210,7 @@ describe("Claude discovery process cleanup", () => {
   test("a CLI that ignores EOF gets TERM, and nothing after it exits", async () => {
     const c = scriptedChild({ closeOnTerm: true });
     const s = steppedTimers();
-    await discoverClaudeModels({ spawnImpl: c.spawnImpl, timers: s.timers, ...graces });
+    await discoverClaudeModels({ executable: "claude", spawnImpl: c.spawnImpl, timers: s.timers, ...graces });
     await settle();
     assert.equal(s.pending(), 1, "TERM waits for its grace");
     await s.runAll();
@@ -198,7 +220,7 @@ describe("Claude discovery process cleanup", () => {
   test("a CLI that ignores TERM gets KILL, once", async () => {
     const c = scriptedChild({});
     const s = steppedTimers();
-    await discoverClaudeModels({ spawnImpl: c.spawnImpl, timers: s.timers, ...graces });
+    await discoverClaudeModels({ executable: "claude", spawnImpl: c.spawnImpl, timers: s.timers, ...graces });
     await s.runAll();
     assert.deepEqual(c.signals, ["SIGTERM", "SIGKILL"]);
   });
@@ -206,7 +228,7 @@ describe("Claude discovery process cleanup", () => {
   test("a timed-out CLI is escalated the same way, and a spawn error signals nothing", async () => {
     const c = scriptedChild({ answer: false, closeOnTerm: true });
     const s = steppedTimers();
-    const timedOut = discoverClaudeModels({ spawnImpl: c.spawnImpl, timeoutMs: 20, timers: s.timers, ...graces });
+    const timedOut = discoverClaudeModels({ executable: "claude", spawnImpl: c.spawnImpl, timeoutMs: 20, timers: s.timers, ...graces });
     await settle();
     assert.equal(s.pending(), 1, "only the deadline is armed");
     const refused = assert.rejects(timedOut, /did not list its models/);
@@ -217,7 +239,7 @@ describe("Claude discovery process cleanup", () => {
     const signals: string[] = [];
     Object.assign(failed, { stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), kill: (s: string) => (signals.push(s), true) });
     const f = steppedTimers();
-    const pending = discoverClaudeModels({ spawnImpl: (() => failed) as never, timers: f.timers, ...graces });
+    const pending = discoverClaudeModels({ executable: "claude", spawnImpl: (() => failed) as never, timers: f.timers, ...graces });
     failed.emit("error", new Error("ENOENT"));
     await assert.rejects(pending, /Could not run the Claude Code CLI/);
     await settle();

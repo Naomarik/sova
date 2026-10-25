@@ -398,6 +398,44 @@ describe("a long session's cuts, per wire", () => {
   });
 });
 
+test("a measured reply's timing: the same on GET /api/transcript, the chat's first hello and the watch snapshot", async () => {
+  const { replyTimingsOf, sessionIdOfPath, setReplyTimingsSource } = await import("../../reply-facts");
+  const lines = longSession();
+  const path = sessionFile(lines);
+  const sid = sessionIdOfPath(path);
+  const replies = lines.filter((l) => (l.message as { role?: string } | undefined)?.role === "assistant").map((l) => String(l.id));
+  const timings = Object.fromEntries(replies.filter((_, i) => i % 10 === 0).map((id, i) => [id, { ttftMs: 100 + i, thinkingMs: 0, replyMs: 2000, output: 300 + i }]));
+  assert.ok(Object.keys(timings).length > 3);
+  // A store that answers a beat later: the chat's hello waits for it rather than going out bare.
+  setReplyTimingsSource(async (s) => (await new Promise((r) => setTimeout(r, 30)), s === sid ? { v: "1", timings } : null));
+  const byEntry = (items: readonly TranscriptItem[]) =>
+    Object.fromEntries(items.filter((it) => it.facts?.reply).map((it) => [it.id.split(":")[0], it.facts!.reply]));
+  try {
+    const r = await app.request(`/api/transcript?path=${encodeURIComponent(path)}&wire=2`, { headers: AUTH });
+    const rest = byEntry((JSON.parse(await r.text()) as { items: TranscriptItem[] }).items);
+    assert.deepEqual(rest, timings, "REST");
+
+    const chat = await acquireChat(path, true);
+    const pane = client({ wire: 2 });
+    chat.attach(pane.c);
+    const end = Date.now() + 5_000;
+    while (!pane.got.length && Date.now() < end) await new Promise((r) => setTimeout(r, 5));
+    const first = parsed(pane.got)[0]!;
+    assert.equal(first.type, "hello");
+    assert.deepEqual(byEntry(first.items!), rest, "the chat's first hello");
+    assert.equal(parsed(pane.got).filter((m) => m.type === "hello").length, 1);
+    await chat.dispose();
+
+    const got: WatchServerMessage[] = [];
+    const tail = new SessionTail(path, (m) => void got.push(viaJson(m)), undefined, undefined, undefined, undefined, 2, () => replyTimingsOf(sid));
+    await (tail as unknown as { snapshot(): Promise<void> }).snapshot();
+    tail.close();
+    assert.deepEqual(byEntry((got[0] as Extract<WatchServerMessage, { type: "snapshot" }>).items), rest, "the watch snapshot");
+  } finally {
+    setReplyTimingsSource(null);
+  }
+});
+
 test("no stale v2 expected files", () => {
   const stale: string[] = [];
   const walk = (dir: string) => {

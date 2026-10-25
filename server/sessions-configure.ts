@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import type { SessionConfigure, SessionConfigureResult } from "../shared/mesh-links";
 import type { SessionSummary } from "../shared/protocol";
 import { MEMORY_CODING_REFUSAL } from "../shared/memory";
-import { acquireChat, isSessionBusy } from "./chat-manager";
+import { acquireChatHandle, isSessionBusy } from "./chat-handle";
 import { workingSubagents } from "./live";
 import { parseModePatch, type ModePatch } from "./mode-state";
 import { modelDenial, readModelPolicy } from "./model-policy";
@@ -89,24 +89,24 @@ export async function configureSession(body: unknown): Promise<ConfigureOutcome>
   }
   const done: string[] = [];
   try {
-    const chat = await acquireChat(path);
+    const chat = await acquireChatHandle(path);
     if (req.subagent_profile !== undefined) {
       await chat.switchSubagentProfile(req.subagent_profile);
       done.push(`subagent profile ${req.subagent_profile}`);
     }
     if (req.model) {
-      await chat.setModelRef(req.model);
+      await chat.setModel(req.model);
       done.push(`model ${req.model}`);
     }
-    if (req.thinking) done.push(`thinking ${chat.setThinking(req.thinking)}`);
+    if (req.thinking) done.push(`thinking ${await chat.setThinking(req.thinking)}`);
     const mode = patch ? await chat.switchMode(patch) : null;
     // Pinned, as sova_create_session and sova_set_session pin a local session: a mode equal to
     // the default still gets its entry, so it never follows a later change of mode.json.
-    if (patch && !chat.pinMode()) throw new Error("Switched, but its mode entry was not written, so it may follow a later default");
+    if (patch && !(await chat.pinMode())) throw new Error("Switched, but its mode entry was not written, so it may follow a later default");
     const result: SessionConfigureResult = {
       ok: true,
-      model: chat.harness.model()?.ref ?? null,
-      thinking: chat.harness.thinking() ?? null,
+      model: chat.mirror.model?.ref ?? null,
+      thinking: chat.mirror.thinking ?? null,
       ...(mode ? { mode: mode.mode, minorModes: mode.minorModes } : {}),
     };
     return { ok: true, result };

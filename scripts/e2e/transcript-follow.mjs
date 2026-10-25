@@ -13,30 +13,54 @@
 // Live rows count as read: a chat left at the end while a turn ran, or with a message queued,
 // comes back at the end with no Jump to Latest (the running turn's rows and the queued message were
 // drawn when the reader left), while a turn that started and ended while away still stops at the
-// last row read with "· 2 new". These run real turns, on scripts/fake-claude.mjs: start the server
-// with `PATH="$(scripts/fake-claude-path.sh):$PATH" CLAUDE_CONFIG_DIR=<fixture login dir>` (the
-// Claude Code provider is always on; CLAUDE.md, "Claude logins in a hermetic run"). Without the fake they are skipped, never passed.
+// last row read with "· 2 new". Any scroll up by the reader stops following, however small: a
+// switch back caught between its rows and its chat's hello (the hello held with routeWebSocket) is
+// scrolled up 40px, or 300px in 10px trackpad steps with the hello landing mid-gesture, and the view
+// stays where the reader put it with Jump to Latest; so does a 30px scroll up while a reply streams.
+// A change in the rows that adds no height never moves a following view short of the end, while
+// growth below it still takes it there. These run real turns, on scripts/fake-claude.mjs (the Claude Code
+// provider is always on; agents/extensions/claude-code/overview.md, "Testing Claude logins without
+// Anthropic").
 //
-// Writes its fixtures into the hermetic agent dir and drives a hermetic server — `pnpm run
-// dev:hermetic` in THIS worktree, serving the built app (`pnpm run build` first) — through the
-// playwright skill's own browser.
+// By default it hosts its own server (scripts/e2e/self-hosted.mjs): a scratch agent dir built like
+// dev:hermetic's, a free port, the fake `claude` first on its PATH and a fixture login as
+// CLAUDE_CONFIG_DIR; stopped, with its chats, and removed at the end (or on Ctrl-C). Nothing to
+// start first but the build; the live checks then always run, and a server whose claude isn't the
+// fake fails them. It drives that server through the playwright skill's own browser.
 //
-//   pnpm run build && pnpm run dev:hermetic        # in one terminal
-//   pnpm run e2e:transcript-follow                  # in another
+//   pnpm run build && pnpm run e2e:transcript-follow
 //
-// Env: SOVA_E2E_PORT (default 4810); SOVA_E2E_AGENT, the server's agent dir when it isn't this
-// worktree's .agent; SOVA_E2E_CDP, a browser already running (CDP URL) instead of starting one.
+// Against a server already running instead (say `pnpm run dev:hermetic`, started with
+// `PATH="$(scripts/fake-claude-path.sh):$PATH" CLAUDE_CONFIG_DIR=<fixture login dir>` for the live
+// checks, which are skipped without the fake, never passed): SOVA_E2E_PORT=<its port>, and
+// SOVA_E2E_AGENT, its agent dir when it isn't this worktree's .agent. The fixtures go into that dir.
+//
+// Env: SOVA_E2E_CDP, a browser already running (CDP URL) instead of starting one.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { tokenHeaders } from "../sova-token.mjs";
+import { whenListed } from "./listed.mjs";
+import { selfHosted } from "./self-hosted.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
-const AGENT = resolve(process.env.SOVA_E2E_AGENT ?? join(ROOT, ".agent"));
-const PORT = Number(process.env.SOVA_E2E_PORT ?? 4810);
+/** The server this run starts and stops itself, unless SOVA_E2E_PORT names one already running. */
+const SELF = process.env.SOVA_E2E_PORT ? null : await selfHosted({ fakeClaude: true, label: "e2e-follow" }).catch((err) => {
+  console.error(`self-hosted server: ${err.message}`);
+  process.exit(2);
+});
+// Its own token file, never a SOVA_TOKEN meant for another server.
+if (SELF) delete process.env.SOVA_TOKEN;
+const AGENT = SELF ? SELF.agent : resolve(process.env.SOVA_E2E_AGENT ?? join(ROOT, ".agent"));
+const PORT = SELF ? SELF.port : Number(process.env.SOVA_E2E_PORT);
 const BASE = `http://127.0.0.1:${PORT}`;
+/** Before every exit: the self-hosted server, its chats and its dir go. */
+const exit = async (code) => {
+  await SELF?.stop();
+  process.exit(code);
+};
 const SKILL = join(ROOT, ".claude/skills/playwright/scripts");
 
 let passed = 0;
@@ -70,14 +94,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // ---- preflight: the server is the hermetic one on AGENT ----
 try {
   const d = await api("/api/settings/decisions");
-  assert(d.file.startsWith(AGENT + "/"), `the server on ${PORT} writes ${d.file}, not into ${AGENT}: start this worktree's hermetic server (pnpm run dev:hermetic)`);
+  assert(d.file.startsWith(AGENT + "/"), `the server on ${PORT} writes ${d.file}, not into ${AGENT}: give its agent dir as SOVA_E2E_AGENT, or unset SOVA_E2E_PORT to host one`);
 } catch (err) {
   console.error(`preflight: ${err.message}`);
-  process.exit(2);
+  await exit(2);
 }
 if (!existsSync(join(SKILL, "node_modules", "playwright"))) {
   console.error(`preflight: no playwright in ${SKILL}/node_modules — run npm ci there, or symlink another checkout's`);
-  process.exit(2);
+  await exit(2);
 }
 
 // ---- the fixtures: long sessions ending in alignment cards (and one without) ----
@@ -157,18 +181,61 @@ const SESSIONS = [
   writeSession("01a0e2e0-0000-7000-8000-0000000f0a15", 5, { aligns: 0 }),
 ];
 
+/** A short session that fits on screen, rows appended while away: rewritten every run. */
+function writeShort(id, seed) {
+  const file = join(dir, `2026-09-28T00-00-0${seed}-000Z_${id}.jsonl`);
+  FILES.set(id, file);
+  const t0 = Date.parse("2026-09-28T00:00:00.000Z") + seed * 3_600_000;
+  const lines = [{ type: "session", version: 3, id, timestamp: new Date(t0).toISOString(), cwd }];
+  let parent = null;
+  let n = 0;
+  const push = (e) => {
+    lines.push({ ...e, parentId: parent, timestamp: new Date(t0 + n++ * 1000).toISOString() });
+    parent = e.id;
+  };
+  for (let i = 0; i < 4; i++) {
+    push({ type: "message", id: `u${seed}_${i}`, message: { role: "user", content: [{ type: "text", text: `Short ${i}: ${words(5, i)}` }], timestamp: 0 } });
+    push({ type: "message", id: `a${seed}_${i}`, message: { role: "assistant", content: [{ type: "text", text: words(8, i + seed) }], provider: "e2e", model: "m", api: "anthropic-messages", stopReason: "stop", timestamp: 0 } });
+  }
+  writeFileSync(file, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  utimesSync(file, new Date(t0), new Date(t0));
+  SESSIONS.push(id);
+  return id;
+}
+/** Fits on screen with the rows added; the same, overflowing by ~40px once they're added. */
+const SHORT_FITS = writeShort("01a0e2e0-0000-7000-8000-0000000f0a16", 6);
+const SHORT_OVER = writeShort("01a0e2e0-0000-7000-8000-0000000f0a17", 7);
+/** The 5 rows appended to a short session while away, as JSONL lines after its last entry. */
+function shortRows(file, tag) {
+  const lines = readFileSync(file, "utf8").trim().split("\n");
+  let parent = JSON.parse(lines.at(-1)).id;
+  const added = [0, 1, 2, 3, 4].map((i) => {
+    const id = `${tag}${Date.now().toString(36)}${i}`;
+    const e = { type: "message", id, parentId: parent, timestamp: new Date().toISOString(), message: i % 2 ? { role: "assistant", content: [{ type: "text", text: words(10, i) }], provider: "e2e", model: "m", api: "anthropic-messages", stopReason: "stop", timestamp: 0 } : { role: "user", content: [{ type: "text", text: `Added ${i}: ${words(4, i)}` }], timestamp: 0 } };
+    parent = id;
+    return JSON.stringify(e);
+  });
+  return lines.concat(added).join("\n") + "\n";
+}
+
 // ---- the browser ----
 
 const { chromium } = createRequire(join(SKILL, "package.json"))("playwright");
 let cdpPort = null;
 let cdp = process.env.SOVA_E2E_CDP;
-if (!cdp) {
-  const started = execFileSync(join(SKILL, "start-browser.sh"), ["--headless"], { cwd: SKILL, stdio: ["ignore", "pipe", "pipe"] }).toString();
-  cdpPort = /PW_PORT=(\d+)/.exec(started)?.[1];
-  if (!cdpPort) throw new Error(`start-browser.sh printed no PW_PORT:\n${started}`);
-  cdp = `http://127.0.0.1:${cdpPort}`;
+let browser;
+try {
+  if (!cdp) {
+    const started = execFileSync(join(SKILL, "start-browser.sh"), ["--headless"], { cwd: SKILL, stdio: ["ignore", "pipe", "pipe"] }).toString();
+    cdpPort = /PW_PORT=(\d+)/.exec(started)?.[1];
+    if (!cdpPort) throw new Error(`start-browser.sh printed no PW_PORT:\n${started}`);
+    cdp = `http://127.0.0.1:${cdpPort}`;
+  }
+  browser = await chromium.connectOverCDP(cdp);
+} catch (err) {
+  console.error(`browser: ${err?.message ?? err}`);
+  await exit(2);
 }
-const browser = await chromium.connectOverCDP(cdp);
 
 /** Every frame, once that frame's own callbacks (the transcript's settle) have run: how far the
     view is from the end and whether Jump to Latest shows. Restarts for each new transcript. */
@@ -195,15 +262,14 @@ const RECORDER = () => {
 };
 
 const paths = new Map();
-async function newPage() {
+async function newPage({ before } = {}) {
   const ctx = await browser.newContext({ serviceWorkers: "block", viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
   await ctx.setExtraHTTPHeaders(tokenHeaders(AGENT));
   await ctx.addInitScript(RECORDER);
+  await before?.(ctx);
   const page = await ctx.newPage();
   if (!paths.size) {
-    const list = await api("/api/sessions");
-    for (const s of list.sessions ?? list) if (SESSIONS.includes(s.id)) paths.set(s.id, s.path);
-    for (const id of SESSIONS) assert(paths.has(id), `the fixture ${id} isn't listed by the server`);
+    for (const [id, s] of await whenListed(api, SESSIONS)) paths.set(id, s.path);
   }
   return { ctx, page };
 }
@@ -323,15 +389,83 @@ try {
     await ctx.close();
   });
 
+  /** A short session left at its end, 5 rows appended while another is open, switched back to:
+      every frame from its rows on shows no Jump to Latest and the end, also once the hello has
+      landed. The viewport is sized so the session with the rows added fits with ~40px to spare,
+      or with `overflow` overflows it by ~40px. */
+  const shortBack = async (id, overflow) => {
+    const { ctx, page } = await newPage();
+    const other = SESSIONS[3];
+    const file = FILES.get(id);
+    {
+      // Measure the session as it will be, rows added, at a height it overflows, then size the
+      // view so it fits with 40px to spare or overflows by 40px.
+      const base = readFileSync(file, "utf8");
+      writeFileSync(file, shortRows(file, "cal"));
+      await sleep(1500);
+      await page.setViewportSize({ width: 1440, height: 300 });
+      await open(page, id);
+      await filled(page);
+      const m = await page.evaluate(() => {
+        const t = document.getElementById("transcript");
+        return { sh: t.scrollHeight, ch: t.clientHeight, vh: innerHeight };
+      });
+      assert(m.sh > m.ch, `the session with its rows added fits even at 300px: ${JSON.stringify(m)}`);
+      const height = m.sh + (overflow ? -40 : 40) + (m.vh - m.ch);
+      writeFileSync(file, base);
+      await open(page, other);
+      await filled(page);
+      await sleep(1500);
+      await page.setViewportSize({ width: 1440, height });
+    }
+    await open(page, id);
+    await filled(page);
+    await toEnd(page);
+    await sleep(300);
+    const left = await page.evaluate(() => {
+      const t = document.getElementById("transcript");
+      return { max: t.scrollHeight - t.clientHeight, rows: t.querySelectorAll(".thread > .entry").length };
+    });
+    assert(left.max === 0, `the short session doesn't fit when left: ${JSON.stringify(left)}`);
+    await open(page, other);
+    await filled(page);
+    writeFileSync(file, shortRows(file, "away"));
+    await sleep(1500);
+    await open(page, id);
+    await filled(page);
+    await sleep(1500);
+    const log = await frames(page);
+    const r = await page.evaluate(() => {
+      const t = document.getElementById("transcript");
+      const pill = t.parentElement.querySelector(".jump-latest");
+      return { max: t.scrollHeight - t.clientHeight, gap: Math.round(t.scrollHeight - t.scrollTop - t.clientHeight), pill: pill.hasAttribute("data-shown") ? pill.textContent : null, rows: t.querySelectorAll(".thread > .entry").length, innerHeight };
+    });
+    await ctx.close();
+    assert(r.rows >= left.rows + 5, `the rows added didn't come: ${JSON.stringify({ left, r })}`);
+    if (overflow) assert(r.max >= 20 && r.max < 80, `wanted an overflow of ~40px, got ${r.max}: ${JSON.stringify(r)}`);
+    else assert(r.max === 0, `the rows added don't fit: ${JSON.stringify(r)}`);
+    const drawn = log.filter((f) => f.rows > 5);
+    const bad = drawn.find((f) => f.pill) ?? drawn.slice(-8).find((f) => f.gap >= 2);
+    assert(!bad && !r.pill && r.gap < 2, `not at the end following: ${JSON.stringify({ frame: bad, now: r })}`);
+  };
+  await check("a short session that fits, left at its end, gains rows that still fit while away: back at the end, no Jump to Latest", () => shortBack(SHORT_FITS, false));
+  await check("a short session left at its end gains rows overflowing it by ~40px while away: back at the end following, no Jump to Latest", () => shortBack(SHORT_OVER, true));
+
   // ---- live rows: a running turn's and a queued message's rows were read when the reader left ----
   const fake = await api("/api/settings/claude-status").catch((err) => ({ error: String(err?.message ?? err) }));
   const LIVE = [
     "a queued message: six switches back with a turn running and a message queued each open at the end, the queued message in view, no Jump to Latest",
     "left mid-turn, back after the turn ended: at the end, no Jump to Latest",
     "a turn started and ended while away: it stops at the last row read with Jump to Latest · 2 new",
+    "a small scroll up while the chat connects stops following; its hello lands and the view stays where the reader put it",
+    "a slow trackpad scroll up while the chat connects ends where the reader scrolled, the hello landing mid-gesture",
+    "a small scroll up while a reply streams stops following; the reply's end doesn't pull the view back",
   ];
   if (!/fake/i.test(fake.version ?? "")) {
-    for (const name of LIVE) skip(name, `the server's claude isn't scripts/fake-claude.mjs (${JSON.stringify(fake)}): start it with PATH="$(scripts/fake-claude-path.sh):$PATH" (see this file's head)`);
+    const why = `the server's claude isn't scripts/fake-claude.mjs (${JSON.stringify(fake)})`;
+    // A server of its own was started with the fake: anything else is a failure, never a skip.
+    if (SELF) for (const name of LIVE) await check(name, () => assert(false, why));
+    else for (const name of LIVE) skip(name, `${why}: start it with PATH="$(scripts/fake-claude-path.sh):$PATH" (see this file's head)`);
   } else {
     const liveCwd = join(AGENT, "e2e-follow-live-cwd");
     mkdirSync(liveCwd, { recursive: true });
@@ -360,12 +494,8 @@ try {
       }
       writeFileSync(file, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
       utimesSync(file, new Date(t0), new Date(t0));
-      for (let i = 0; i < 50; i++) {
-        const list = await api("/api/sessions");
-        if ((list.sessions ?? list).some((s) => s.path === file)) return file;
-        await sleep(300);
-      }
-      throw new Error(`the server never listed ${file}`);
+      await whenListed(api, [file], "path");
+      return file;
     };
     const openPath = async (page, path) => {
       const hash = `#/s/${encodeURIComponent(path)}`;
@@ -397,6 +527,21 @@ try {
       await page.keyboard.press("Enter");
       await page.locator("textarea").first().blur().catch(() => {});
     };
+    /** Sends, pressing Enter again while the composer still holds the text (a busy machine can
+        take the first press before the composer is ready). */
+    const sendSure = async (page, text) => {
+      await sendText(page, text);
+      for (let k = 0; k < 6; k++) {
+        const left = await page.evaluate(() => document.querySelector("textarea")?.value ?? "");
+        if (!left) return;
+        await sleep(2000);
+        if (await page.evaluate(() => document.querySelector("textarea")?.value ?? "")) {
+          await page.locator("textarea").first().focus();
+          await page.keyboard.press("Enter");
+        }
+      }
+      throw new Error(`the composer kept ${JSON.stringify(text.slice(0, 40))}: never sent`);
+    };
     const lines = (n, tag) => Array.from({ length: n }, (_, i) => `${tag} line ${i}: ${words(9, i)}`).join("\n");
     /** The view against the end, the pill, and where the row holding `mark` (if any) sits. */
     const view = (page, mark) =>
@@ -413,6 +558,123 @@ try {
         };
       }, mark);
     const stop = (page) => page.locator('button[aria-label="Stop"]').first().click({ timeout: 3000 }).catch(() => {});
+
+    /** A tab whose chat sockets' server frames can be held (`gate.holding`) and let through later
+        (`gate.release()`), so a switch back is caught between its rows and its chat's hello. */
+    const heldPage = async () => {
+      const gate = { holding: false, held: [], sockets: 0 };
+      gate.release = () => {
+        gate.holding = false;
+        for (const send of gate.held.splice(0)) send();
+      };
+      const { ctx, page } = await newPage({
+        before: (ctx) =>
+          ctx.routeWebSocket(/\/ws\/chat/, (ws) => {
+            gate.sockets++;
+            const server = ws.connectToServer();
+            ws.onMessage((m) => server.send(m));
+            server.onMessage((m) => (gate.holding ? gate.held.push(() => ws.send(m)) : ws.send(m)));
+            ws.onClose(() => server.close().catch(() => {}));
+            server.onClose(() => ws.close().catch(() => {}));
+          }),
+      });
+      return { ctx, page, gate };
+    };
+    /** A running chat (one fake turn done), shown, then left for another and come back to with its
+        chat's frames held: the rows kept from the visit show at the end, following, its hello held. */
+    const connecting = async () => {
+      const { ctx, page, gate } = await heldPage();
+      const [mine, other] = [await liveSession(), await liveSession()];
+      await openPath(page, other);
+      await openPath(page, mine);
+      await still(page);
+      await sendSure(page, "wake the chat");
+      // A chat's first start can be slow on a busy machine.
+      await page.waitForFunction(() => document.getElementById("transcript")?.textContent.includes("Fake answer from login"), null, { timeout: 45000 });
+      await still(page);
+      await toEnd(page);
+      await sleep(300);
+      await openPath(page, other);
+      await still(page);
+      const sockets = gate.sockets;
+      gate.holding = true;
+      await openPath(page, mine);
+      for (let k = 0; k < 50 && !(gate.sockets > sockets && gate.held.length); k++) await sleep(200);
+      assert(gate.sockets > sockets && gate.held.length > 0, `no chat frame came to hold (sockets ${gate.sockets - sockets}, frames ${gate.held.length}): the check would compare nothing`);
+      await sleep(400);
+      const s = await view(page);
+      assert(s.gap < 2 && !s.pill, `before the scroll, not at the end following: ${JSON.stringify(s)}`);
+      // Every change the hello makes in the transcript from here on.
+      await page.evaluate(() => {
+        window.__mut = 0;
+        new MutationObserver((r) => (window.__mut += r.length)).observe(document.getElementById("transcript"), { childList: true, subtree: true, characterData: true });
+      });
+      const box = await page.locator("#transcript").boundingBox();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      return { ctx, page, gate };
+    };
+
+    await check(LIVE[3], async () => {
+      const { ctx, page, gate } = await connecting();
+      try {
+        await page.mouse.wheel(0, -40);
+        await sleep(300);
+        const before = await view(page);
+        gate.release();
+        await sleep(1500);
+        const after = await view(page);
+        const mutations = await page.evaluate(() => window.__mut);
+        assert(mutations > 0, `the hello changed nothing in the transcript (${mutations} mutations): the check compared nothing`);
+        assert(before.pill && Math.abs(before.gap - 40) <= 3, `a 40px scroll up didn't stop following: ${JSON.stringify({ before, afterHello: after, mutations })}`);
+        assert(after.pill && Math.abs(after.gap - before.gap) <= 1, `the hello moved the view (${mutations} mutations): ${JSON.stringify({ before, after })}`);
+      } finally {
+        gate.release();
+        await ctx.close();
+      }
+    });
+
+    await check(LIVE[4], async () => {
+      const { ctx, page, gate } = await connecting();
+      try {
+        for (let k = 0; k < 30; k++) {
+          await page.mouse.wheel(0, -10);
+          if (k === 4) gate.release();
+          await sleep(30);
+        }
+        await sleep(1500);
+        const s = await view(page);
+        const mutations = await page.evaluate(() => window.__mut);
+        assert(mutations > 0, `the hello changed nothing in the transcript (${mutations} mutations): the check compared nothing`);
+        assert(s.pill && Math.abs(s.gap - 300) <= 5, `wanted 300px from the end with Jump to Latest: ${JSON.stringify(s)}`);
+      } finally {
+        gate.release();
+        await ctx.close();
+      }
+    });
+
+    await check(LIVE[5], async () => {
+      const { ctx, page } = await newPage();
+      const [mine, other] = [await liveSession(), await liveSession()];
+      await openPath(page, other);
+      await openPath(page, mine);
+      await still(page);
+      await sendSure(page, `[fake-slow 6000] ${lines(4, "streaming")}`);
+      await page.waitForFunction(() => document.getElementById("transcript")?.textContent.includes("Working…"), null, { timeout: 45000 });
+      await sleep(300);
+      const at = await view(page);
+      assert(at.gap < 2 && !at.pill, `while it streams, not at the end following: ${JSON.stringify(at)}`);
+      const box = await page.locator("#transcript").boundingBox();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.wheel(0, -30);
+      await sleep(300);
+      const before = await view(page);
+      await page.waitForFunction(() => document.getElementById("transcript")?.textContent.includes("Fake answer from login"), null, { timeout: 45000 });
+      await still(page);
+      const after = await view(page);
+      await ctx.close();
+      assert(before.pill && Math.abs(before.gap - 30) <= 3, `a 30px scroll up while it streams didn't stop following: ${JSON.stringify(before)}`);
+      assert(after.pill && after.gap >= before.gap - 1, `the reply's end pulled the view back: ${JSON.stringify({ before, after })}`);
+    });
 
     await check(LIVE[0], async () => {
       const { ctx, page } = await newPage();
@@ -612,6 +874,56 @@ try {
     await sleep(300);
   });
 
+  await check("a following view off the very end moves only when something below grows, never for a change that adds nothing", async () => {
+    await toEnd(page);
+    await sleep(300);
+    const box = await page.locator("#transcript").boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, -300);
+    await sleep(600);
+    let s = await now(page);
+    assert(s.pill && Math.abs(s.gap - 300) <= 3, `after the wheel up: ${JSON.stringify(s)}`);
+    // The reader's own scroll back to within 80px of the end follows again, short of the end.
+    await page.mouse.wheel(0, 260);
+    await sleep(600);
+    const at = await now(page);
+    assert(!at.pill && at.gap >= 20 && at.gap < 80, `the wheel back down didn't follow again short of the end: ${JSON.stringify(at)}`);
+    // A change that adds no height (what a hello does to the rows' action buttons), then growth.
+    const r = await page.evaluate(async () => {
+      const t = document.getElementById("transcript");
+      const frames = async (n) => {
+        for (let i = 0; i < n; i++) await new Promise((r) => requestAnimationFrame(r));
+        await new Promise((r) => setTimeout(r, 0));
+      };
+      const read = () => ({ gap: Math.round(t.scrollHeight - t.scrollTop - t.clientHeight), pill: t.parentElement.querySelector(".jump-latest").hasAttribute("data-shown") });
+      // A drawn row's own button (a row that draws nothing would grow by what it is given).
+      const rows = [...t.querySelectorAll(".thread > .entry")].filter((r) => r.getBoundingClientRect().height > 0);
+      const host = rows.findLast((r) => r.querySelector("button"))?.querySelector("button");
+      if (!host) return null;
+      const span = document.createElement("span");
+      span.className = "visually-hidden";
+      span.textContent = "Waiting for the chat to connect";
+      host.append(span);
+      await frames(4);
+      span.remove();
+      await frames(4);
+      const same = read();
+      const d = document.createElement("div");
+      d.style.height = "200px";
+      rows.at(-1).append(d);
+      await frames(4);
+      const grown = read();
+      d.remove();
+      await frames(4);
+      return { same, grown };
+    });
+    assert(r, "no drawn row with a button: the check compared nothing");
+    assert(!r.same.pill && Math.abs(r.same.gap - at.gap) <= 1, `a change that adds nothing moved the view: ${JSON.stringify({ at, ...r })}`);
+    assert(!r.grown.pill && r.grown.gap < 2, `growth below a following view didn't take it to the end: ${JSON.stringify({ at, ...r })}`);
+    await toEnd(page);
+    await sleep(300);
+  });
+
   /** The last closed disclosure in view (the last answer's thinking): its summary's top before
       and after `act`, the view's scrollTop, and whether the disclosure opened. */
   const disclosureKeeps = async (act) => {
@@ -686,6 +998,7 @@ try {
       execFileSync(join(SKILL, "stop-browser.sh"), [], { cwd: SKILL, env: { ...process.env, PW_PORT: cdpPort }, stdio: "ignore" });
     } catch {}
   }
+  await SELF?.stop();
 }
 
 console.log(`\n${passed} passed, ${failures.length} failed${skipped.length ? `, ${skipped.length} skipped (not passed)` : ""}`);

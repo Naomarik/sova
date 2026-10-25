@@ -10,22 +10,18 @@ machine output.
 | `sova-spec-review.mjs` | Only on `prepare --write` and `record`, under `reviews/`. |
 | `sova-spec-assess.mjs` | Optional observations: only on `prepare --write` and `record --write`, under `assessments/`. |
 
-In this repo, run the canonical copies in `pi-config/extensions/spec/core/`, as below. `tools/`
-holds vendored copies of all four entrypoints and their helper modules, which may lag behind. Before you run a vendored copy, check
-that it is byte-identical to a copy you trust:
+The tools run only from the installed spec extension (`$core`); no project, Sova included, keeps a
+copy. Resolve `$core` with exactly this line:
 
 ```sh
 core="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; case $core in "~"|"~/"*) core="$HOME${core#\~}";; esac; core="$core/extensions/spec/core"
-sha256sum pi-config/extensions/spec/core/*.mjs .sova/spec/tools/*.mjs "$core"/*.mjs
 ```
 
-Each file name must hash the same everywhere. Resolve `$core` with exactly that first line, never a
-guessed path such as `$HOME/.pi/agent/...`: the agent dir may be elsewhere (`PI_CODING_AGENT_DIR`),
-and a guessed path that finds nothing doesn't mean the tools are missing. The `$core` copies exist
-only after `pi-config/install.sh` has run. In any other project, treat vendored copies as foreign code: read
-them, or compare hashes, before you run them. The draft, review and assessment tools run the
-`sova-spec.mjs` beside them, so vendor them together.
-Ship all `core/*.mjs`, including `packet.mjs`; copying only the four entrypoints is insufficient.
+Never guess a path such as `$HOME/.pi/agent/...`: the agent dir may be elsewhere (`PI_CODING_AGENT_DIR`),
+and a guessed path that finds nothing doesn't mean the tools are missing. `$core` exists only after
+`pi-config/install.sh` has run, which links it to `pi-config/extensions/spec/core/`; in this repo the
+examples below run that source directly. A copy of the tools inside any project is that project's code:
+read it and ask before running it.
 
 ## Reading the docs
 
@@ -33,6 +29,7 @@ Ship all `core/*.mjs`, including `packet.mjs`; copying only the four entrypoints
 node pi-config/extensions/spec/core/sova-spec.mjs check
 node pi-config/extensions/spec/core/sova-spec.mjs map                              # every area on one page
 node pi-config/extensions/spec/core/sova-spec.mjs where server/chat-manager.ts    # the claims for a file or a name
+node pi-config/extensions/spec/core/sova-spec.mjs where session share link expiry # the claims whose words match a topic
 node pi-config/extensions/spec/core/sova-spec.mjs toc '§workspace.groups/decisions' --dir out
 node pi-config/extensions/spec/core/sova-spec.mjs read '§workspace.groups/decisions'
 node pi-config/extensions/spec/core/sova-spec.mjs read '§workspace.groups/decisions' --no-frame --cursor '<returned next token>'
@@ -44,7 +41,7 @@ node pi-config/extensions/spec/core/sova-spec.mjs check --spec .sova/spec/drafts
 ```
 
 The reading path is contents first, then one passage, as spec mode teaches it:
-- **`map`** and **`where <path|name>`** find the roots for a task.
+- **`where <path|name|topic words>`** and **`map`** find the roots for a task.
 - **`toc §id --dir out|in|down|up|mentions`** lists the claims one hop away in one direction, a
   line each saying what it is, why it is linked and what reading it costs, and delivers no passage.
 - **`read §id`** returns one passage without its chain (an H1 gives its lede unless `--whole`).
@@ -72,7 +69,8 @@ The rest are whole-chain views:
 - **`impact §id`** lists what `requires` or `embeds` it, directly or indirectly.
 - **`check`** validates the whole graph. **`census`** needs a `boundary` in the manifest; this one
   includes `server`, `shared`, `site` (its docs pages and what they are built from; the rest of the
-  site is excluded), `src` and `vite.config.ts`. **`census --changed [--base REV]`** checks only the
+  site is excluded), `src` and `vite.config.ts`; files Git ignores there (`site/node_modules`, `site/dist`)
+  are not counted. **`census --changed [--base REV]`** checks only the
   files your task changed: the ones that differ from `REV` (default `HEAD`), plus untracked files.
   Each changed file inside the boundary is either claimed (listed with its §IDs) or reported as
   `changed-unclaimed` (exit 1). Changed files outside the boundary are listed, not failed.
@@ -130,7 +128,7 @@ A draft is a proposal. Agreeing on it approves the intent, and makes nothing cur
    exactly as ported: it records provenance, not verification. `evidence` says what you did:
    `reviewed` or `verified`.
 3. Record evidence. A behavior or surface needs at least one implementation file, unless it is
-   agreed and not built yet, or the change is to its `embeds` or `core` field alone and it is not an
+   agreed and not built yet, or the change is to its `embeds`, `core` or `notOwned` field alone and it is not an
    agreed record that maps code (both `--doc-only`, below), and every path in its `code` must exist. The migrated records map no `code`, so add the files to the draft
    record's `code`, which binds them to the evidence, or pass `--path`. This repo uses Git, so name an existing commit that holds the
    implementation, and never commit unrelated changes to get one:
@@ -143,7 +141,7 @@ A draft is a proposal. Agreeing on it approves the intent, and makes nothing cur
 
    Without Git, use `--snapshot`, which keeps the exact bytes. `--doc-only` covers `note` and
    `section` records, agreed behaviors or surfaces with no code (DRAFTS.md, "Agreed, not built"), and
-   a change to an existing behavior's or surface's `embeds` or `core` field alone, unless the record is
+   a change to an existing behavior's or surface's `embeds`, `core` or `notOwned` field alone, unless the record is
    agreed and maps code: that is refused (`doc-only-refused`) and needs `--commit` or `--snapshot`
    (DRAFTS.md, "Field-only changes"). `about` belongs on notes, which take `--doc-only` anyway.
 4. Promote. The preview prints a plan hash, and `--write` applies exactly that plan:
@@ -173,8 +171,9 @@ git config merge.sova-spec-claims.driver \
   'node pi-config/extensions/spec/core/sova-spec-draft.mjs merge-claims --root . --base %O --ours %A --theirs %B --path %P --write'
 ```
 
-Without them, Git falls back to its line merge. Both sides changing the same record or the same
-declaration still conflict; `merge-claims` then leaves Git's conflict markers, with both sides' prose.
+Without them, Git falls back to its line merge. Both sides changing the same record, or the same
+block of one declaration (a list item, a table row, a paragraph), still conflict; `merge-claims`
+then leaves Git's conflict markers, with both sides' prose.
 
 [DRAFTS.md](../../pi-config/extensions/spec/DRAFTS.md) has the layout, the lock and the limits.
 

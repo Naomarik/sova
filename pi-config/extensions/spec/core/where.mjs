@@ -3,8 +3,10 @@
 import { posix } from "node:path";
 import { whatOf, titleOf, fingerprintOf, boundedRefusal, emit } from "./toc.mjs";
 import { lookArgs, openSpec, refuse, indexOf, labelsOf, labelText, occurs, nameRe, paged, pageFields } from "./graph.mjs";
+import { topicIndex, topicRank } from "./topic.mjs";
 
 const WHERE_NOTICE = "A shared token is a literal name match, never proof that the claim covers that code. Only a record's code list maps a file.";
+const TOPIC_NOTICE = "A topic row is a ranked match of the query's words in the claim's text, never proof of what the claim covers: read it to judge.";
 const TOP = 10, SHOW = 8;
 const ticks = (ts) => ts.slice(0, SHOW).map((t) => `\`${t}\``).join(", ") + (ts.length > SHOW ? ` … +${ts.length - SHOW}` : "");
 
@@ -49,7 +51,8 @@ function byToken(ix, token) {
 
 const HEADS = { ranked: "ranked by interface tokens shared with the file", unranked: "listing the file, no interface token shared (code list only)",
   candidate: "UNMAPPED CANDIDATES: no record lists this file; these claims' interface tokens occur in it (a name match, not a mapping)",
-  defines: "defines it (in its heading or first sentence)", mentions: "mentions it" };
+  defines: "defines it (in its heading or first sentence)", mentions: "mentions it",
+  topic: "TOPIC MATCHES: ranked by the query's words in heading, first sentence, names, prose and area heading (a word match, not a name match or a mapping)" };
 export function renderWhere(out) {
   const L = [], c = out.counts;
   if (out.mode === "path") {
@@ -60,12 +63,14 @@ export function renderWhere(out) {
   } else {
     if (out.note) L.push(out.note);
     L.push(c.claims ? `${out.query}: ${c.claims} claim(s) use it in backticks · defines ${c.defines} · mentions ${c.mentions}` : `${out.query}: no claim uses it in backticks`);
+    L.push(c.topic ? `as a topic: ${c.topic} more claim(s) match its words` : out.topicTerms?.length ? "as a topic: no other claim matches its words" : "as a topic: no word in it to search");
   }
   let head = null;
   for (const e of out.lines) {
     if (e.type !== head) { head = e.type; L.push(HEADS[head]); }
     const base = `  ${e.id} — ${e.title}  ${e.kind} · ${labelText(e.labels)}`;
     if (e.type === "ranked" || e.type === "candidate") L.push(`${base} · score ${e.score}`, `    shares: ${ticks(e.shared)}`);
+    else if (e.type === "topic") L.push(`${base} · score ${e.score}`, `    matched: ${e.matched.join(", ")}`);
     else if (e.type === "unranked") L.push(`${base}${e.tokens ? "" : " · no interface token"}`);
     else L.push(`${base}`, `    as: ${ticks(e.spans)}`);
   }
@@ -80,30 +85,44 @@ export function whereMain(argv, core) {
   const done = (out) => emit(out, o.json, renderWhere);
   const budget = o.budget ?? 1024;
   if (o.help) return done({ tool: "sova-spec", command: "where", exit: 0, status: "done", budget,
-    help: "where <path|token> [--token] [--all] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]; top 10 unless --all; default budget 12000, supported 1024..32768" });
-  if (o.usage || o.pos.length !== 1 || !o.pos[0].trim()) return done(boundedRefusal("where", budget, "usage", { message: o.usage ?? "where takes one path or token" }));
+    help: "where <path|token|topic words…> [--token] [--all] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]; several words are one query; top 10 unless --all; default budget 12000, supported 1024..32768" });
+  if (o.usage || !o.pos.join(" ").trim()) return done(boundedRefusal("where", budget, "usage", { message: o.usage ?? "where takes a path, a token or topic words" }));
   const g = openSpec(o, core);
   if (g.refused) return done(refuse("where", budget, g));
-  const ix = indexOf(g.ctx, core.parentOf), query = o.pos[0];
+  const ix = indexOf(g.ctx, core.parentOf), query = o.pos.join(" ");
   const path = posix.normalize(query.split("\\").join("/")).replace(/^\.\//, "");
   let mode = "token", read = {}, r;
-  if (!o.token) {
+  // Only a single argument can be a file; several words are one token and topic query.
+  if (!o.token && o.pos.length === 1) {
     try { read = { state: "read", text: core.readSource(g.root, path) }; } catch (e) { read = { state: e.code ?? "unreadable" }; }
     if (ix.code.has(path) || read.state === "read") mode = "path";
   }
   if (mode === "path") r = byPath(ix, path, read);
   else r = byToken(ix, query.trim());
-  const total = r.list.length, full = o.all ? r.list : r.list.slice(0, TOP);
+  let full = o.all ? r.list : r.list.slice(0, TOP), total = r.list.length, cut = total - full.length, topic = null;
+  if (mode === "token") {
+    // Topic rows follow the name rows; a claim already listed by name is not repeated.
+    const named = new Set(r.list.map((e) => e.id));
+    topic = topicRank(topicIndex(ix), query.trim());
+    const rows = topic.rows.filter((t) => !named.has(t.id)).map((t) => ({ type: "topic", ...claimLine(ix, t.id), score: t.score, matched: t.matched }));
+    r.counts.topic = rows.length;
+    // Name rows keep their top ten unchanged; topic rows fill only the places they leave free.
+    const names = o.all ? r.list.length : Math.min(r.list.length, TOP);
+    full = [...r.list.slice(0, names), ...(o.all ? rows : rows.slice(0, TOP - names))];
+    total = r.list.length + rows.length; cut = r.list.length - names;
+  }
   // A path-shaped argument that is no file under the root and no record's: say so in both forms, never a silent token search.
   const pathLike = mode === "token" && !o.token && /^[\w.-][^\s]*\/[^\s/]+\.[A-Za-z0-9]+$/.test(path);
   const absent = pathLike ? { file: { path, state: read.state === "missing" ? "absent" : read.state, mapped: false },
     note: read.state === "missing" ? `no file ${path} under the root and no record lists it: searched as a token` : `${path} was not read (${read.state}) and no record lists it: searched as a token` } : {};
   const notShown = total - full.length, q = mode === "path" ? path : query.trim();
   const head = { tool: "sova-spec", command: "where", budget, query: q, mode, all: !!o.all,
-    ...(mode === "path" ? { file: { path, state: read.state, mapped: ix.code.has(path) } } : {}), ...(pathLike ? { pathLike: true, ...absent } : {}), counts: r.counts, total, shown: full.length,
+    ...(mode === "path" ? { file: { path, state: read.state, mapped: ix.code.has(path) } } : {}), ...(pathLike ? { pathLike: true, ...absent } : {}),
+    ...(topic ? { topicTerms: topic.terms } : {}), counts: r.counts, total, shown: full.length,
     ...(notShown ? { notShown, hint: `where '${q}'${mode === "token" ? " --token" : ""} --all` } : {}) };
-  const unknown = notShown > 0 || pathLike || (mode === "path" ? read.state !== "read" || !r.counts.claims : !r.counts.claims);
+  // Cut name or path rows leave the answer incomplete; topic rows past the ten are the ranking's tail.
+  const unknown = cut > 0 || pathLike || (mode === "path" ? read.state !== "read" || !r.counts.claims : !r.counts.claims && !r.counts.topic);
   const fp = fingerprintOf({ root: g.root, spec: o.spec, head, list: full });
   return paged({ command: "where", o, fp, list: full, render: renderWhere,
-    build: (lines, at, next) => ({ ...head, exit: at < full.length || unknown ? 1 : 0, ...pageFields(full, lines, at, next), notice: WHERE_NOTICE }) });
+    build: (lines, at, next) => ({ ...head, exit: at < full.length || unknown ? 1 : 0, ...pageFields(full, lines, at, next), notice: WHERE_NOTICE, ...(topic ? { topicNotice: TOPIC_NOTICE } : {}) }) });
 }

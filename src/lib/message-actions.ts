@@ -39,6 +39,8 @@ export interface MessageStrip {
   /** This reply answered a TOPIC BATCH, notes other sessions pushed (§chat.topics/row): refused the
       same way (`regenerate_refused` reason "topic"). */
   fromTopic?: boolean;
+  /** With fromWake: the wake was a tour's sign-in notice (§app.tours/sites), refused under its own name. */
+  fromTourNotice?: boolean;
 }
 
 /**
@@ -57,9 +59,11 @@ export function messageStrips(rows: readonly TranscriptItem[]): MessageStrip[] {
   const at = new Map<string, number>();
   /** What started the turn these replies belong to: a message the user sent, or a wake nudge. */
   let startedBy: "user" | "wake" | "link" | "topic" = "user";
+  let tourNotice = false;
   rows.forEach((item, index) => {
     if (item.kind === "wake" || item.kind === "link" || item.kind === "topic") {
       startedBy = item.kind;
+      tourNotice = item.kind === "wake" && item.wake?.tour === true;
       return;
     }
     if (item.kind === "user") {
@@ -73,7 +77,7 @@ export function messageStrips(rows: readonly TranscriptItem[]): MessageStrip[] {
     const seen = at.get(entryId);
     if (seen === undefined) {
       at.set(entryId, strips.length);
-      strips.push({ index, entryId, role: "assistant", text, ...(startedBy === "wake" ? { fromWake: true } : startedBy === "link" ? { fromLink: true } : startedBy === "topic" ? { fromTopic: true } : {}) });
+      strips.push({ index, entryId, role: "assistant", text, ...(startedBy === "wake" ? { fromWake: true, ...(tourNotice ? { fromTourNotice: true } : {}) } : startedBy === "link" ? { fromLink: true } : startedBy === "topic" ? { fromTopic: true } : {}) });
       return;
     }
     // The same reply, one more block: the strip moves down to it and Copy takes both blocks.
@@ -143,6 +147,8 @@ export const REGENERATE_CONFIRM = {
 
 /** A reply to a scheduled wake-up has no message of the user's to send again. */
 export const REGENERATE_WAKE_REASON = "That reply answered a scheduled wake-up, not a message you sent, so there's nothing to send again.";
+/** A reply to a tour's sign-in notice: the same, naming the notice. */
+export const REGENERATE_TOUR_NOTICE_REASON = "That reply answered a tour's sign-in notice, not a message you sent, so there's nothing to send again.";
 export const REGENERATE_LINK_REASON = "That reply answered a linked session's message, not one you sent, so there's nothing to send again.";
 export const REGENERATE_TOPIC_REASON = "That reply answered notes other sessions pushed to a topic, not a message you sent, so there's nothing to send again.";
 
@@ -173,6 +179,8 @@ export interface ActionState {
   paused: string | null;
   /** This reply answered a wake nudge: there is no message of yours to send again. */
   wake?: boolean;
+  /** With wake: that wake was a tour's sign-in notice. */
+  tourNotice?: boolean;
   /** This reply answered a link message: the same. */
   link?: boolean;
   /** This reply answered a topic batch: the same. */
@@ -209,7 +217,7 @@ export function actionReason(kind: LandedActionKind, s: ActionState): string | n
     case "regenerate":
       // Permanent before anything else: waiting, stopping or reconnecting never makes a wake
       // nudge into a message you sent.
-      if (kind === "regenerate" && s.wake) return REGENERATE_WAKE_REASON;
+      if (kind === "regenerate" && s.wake) return s.tourNotice ? REGENERATE_TOUR_NOTICE_REASON : REGENERATE_WAKE_REASON;
       if (kind === "regenerate" && s.link) return REGENERATE_LINK_REASON;
       if (kind === "regenerate" && s.topic) return REGENERATE_TOPIC_REASON;
       if (!s.chat) return `Only a chat open in Sova can ${verb}.`;
@@ -222,8 +230,9 @@ export function actionReason(kind: LandedActionKind, s: ActionState): string | n
   }
 }
 
-/** A queued row's own states. `sending` = this tab sent it and the server hasn't said it queued. */
-export type QueuedState = "sending" | "queued" | "delivered";
+/** The states a row asks its Remove's reason in. A `sending` row draws no Remove at all
+    (live.ts `offersRemove`, §chat.transcript/a-queued-message), so it never asks. */
+export type QueuedState = "queued" | "delivered";
 
 /**
  * Once pi has queued work of its own beside a message, that message can never be taken back on its
@@ -237,9 +246,6 @@ export const SHARED_QUEUE_REASON = "pi queued work of its own alongside this mes
 export function queueRemoveReason(row: { state: QueuedState; pending: boolean; chat: boolean; sharedQueue?: boolean }): string | null {
   if (!row.chat) return "Only a chat open in Sova can remove a queued message.";
   if (row.sharedQueue) return SHARED_QUEUE_REASON;
-  // Truthful about what the server holds: until it acknowledges the message, removing it would
-  // be a claim about something that may not be in the queue yet.
-  if (row.state === "sending") return "Not queued yet. This can be removed once the server has it.";
   if (row.state === "delivered") return "Already sent. It can't be removed now.";
   if (row.pending) return "Removing…";
   return null;

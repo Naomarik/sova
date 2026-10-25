@@ -191,7 +191,10 @@ TMPDIR=$BASE/tmp
 PATH=$SERVICE_PATH
 SOVA_BUN=$BASE/app/.bun/bin/bun
 EOF
-[ "${SOVA_RUNTIME:-}" != node ] || echo "SOVA_RUNTIME=node" >> "$BASE/sova-mesh.env.tmp"
+if [ "${SOVA_RUNTIME:-}" = node ]; then
+  echo "SOVA_RUNTIME=node" >> "$BASE/sova-mesh.env.tmp"
+  log "WARNING: SOVA_RUNTIME=node: Sova on Node runs no chats or workers (they need Bun); leave SOVA_RUNTIME empty for a host with chats"
+fi
 # Only with VPS_RELAY=on: unset, Sova has no internet relay, and an accept process left installed never listens.
 [ -z "$RELAY_ENV" ] || echo "$RELAY_ENV" >> "$BASE/sova-mesh.env.tmp"
 mv "$BASE/sova-mesh.env.tmp" "$BASE/sova-mesh.env"

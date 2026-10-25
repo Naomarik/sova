@@ -19,6 +19,8 @@ import type {
   TeamEvent,
   TeamInfo,
   TeamMember,
+  TeamInboxBody,
+  TeamInboxView,
   ClaudeLoginRow,
   ClaudePoolInfo,
   ClaudePoolLogin,
@@ -36,14 +38,14 @@ import type {
 import type { HEntry } from "../shared/harness";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 // The usage-status extension's fetch/cache core. Part of the sanctioned pi-config import
-// surface (node builtins only, like extensions/mode/state.ts) — see CLAUDE.md.
+// surface (node builtins only, like extensions/mode/state.ts) — see agents/extensions/overview.md.
 import { claudeLoginIds, forceRefresh, parseActivity, parseCredits, parseReading, type CacheFile } from "../pi-config/extensions/usage-status/fetch.ts";
 import { balanceBurn, type BurnHistory, windowBurn } from "../src/lib/usage-burn";
 import { type PeriodSummary, readingsOf, samePeriod, splitPeriods, splitRuns, summarizePeriod, type UsageSample, usageHistory, type WindowSummary, windowKey } from "./usage-history";
 import { ownClaudeLoginUnreadable, readAuthStatus, readClaudeLoginAuth } from "./auth-status";
 import { ClaudeAccountsService } from "./claude-accounts";
 import { hasPage, listExplanations, sortExplanations } from "./explanations";
-import { readLiveRecords, type RawLiveRecord, workerCountsOf } from "./live";
+import { isOwnPid, readLiveRecords, type RawLiveRecord, workerCountsOf } from "./live";
 import { modelProvider, sharedWorkerWindowResolver } from "./models";
 import { resolveSessionPath } from "./paths";
 import { collectSkills, hasSkills, skillLinesOf } from "./skills";
@@ -55,11 +57,12 @@ import { describeWorktrees, worktreesOf } from "./worktrees-state";
 import { goneWorkOf, REMOVED_EMPTY, treeReadinessOf } from "./merge-readiness";
 import { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage } from "./usage-last-known";
 import { workerSkills } from "./worker-skills";
+import { addInboxCounts, inboxBody, inboxView, itemsFileOf, mailboxRootOf, readItems, validSegment } from "./team-inbox";
 import { defaultAdapters } from "./worker-adapters";
 import { WorkerRestorer, workersFromRecords } from "./worker-restore";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
 import { handoverSuccessor, retireReason, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
-import { LEGACY_REGISTRY_ENTRY_TYPE, readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE, type WorkerTranscriptAdapters } from "../pi-config/extensions/subagents/worker-transcript.ts";
+import { readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE, type WorkerTranscriptAdapters } from "../pi-config/extensions/subagents/worker-transcript.ts";
 
 // Read-only views over what the user's pi extensions leave on disk (sources and shapes:
 // docs/insights-research.md "Data sources"). The one writer is the shared usage cache: through
@@ -639,7 +642,7 @@ function lastKnown(p: UsageProvider): UsageProvider {
 
 const TEAM_ENTRY = "subagents-team-v1";
 /** The durable per-worker records the protocol fold reads (readWorkerManifests). */
-const WORKER_RECORD_TYPES: ReadonlySet<unknown> = new Set([WORKER_MANIFEST_ENTRY_TYPE, LEGACY_REGISTRY_ENTRY_TYPE]);
+const WORKER_RECORD_TYPES: ReadonlySet<unknown> = new Set([WORKER_MANIFEST_ENTRY_TYPE]);
 /** The explain extension's completion entry; server/transcript.ts turns it into a report row. */
 const EXPLAIN_ENTRY = "explain-doc";
 const TEAM_ID = /^team_\d+$/;
@@ -1104,7 +1107,7 @@ async function liveSession({ sessionFile, pid, rec }: RawLiveRecord): Promise<Li
   const presence = isRec(rec.presence) ? rec.presence : undefined;
   const heartbeat = num(rec.heartbeat) ?? 0;
   const age = Date.now() - heartbeat;
-  const workers = decodeWorkers(presence, pid === process.pid);
+  const workers = decodeWorkers(presence, isOwnPid(pid));
   const wc = isRec(presence?.workerCounts) ? presence.workerCounts : null;
   const workerCounts = wc
     ? { total: count(wc.total), working: count(wc.working), waiting: count(wc.waiting), done: count(wc.done), error: count(wc.error), killed: count(wc.killed) }
@@ -1127,7 +1130,7 @@ async function liveSession({ sessionFile, pid, rec }: RawLiveRecord): Promise<Li
     pid,
     mode: str(session.mode) ?? null,
     fresh: age <= FRESH_MS && age >= -FUTURE_SLACK_MS,
-    embedded: pid === process.pid,
+    embedded: isOwnPid(pid),
     state: sessionState(presence, session),
     workerCounts,
     workers,
@@ -1257,6 +1260,27 @@ async function linkRows(sessionId: string | null, path: string): Promise<Pick<Se
   return links.length ? { links } : {};
 }
 
+/** One team member's inbox (§app.subagents-pane/member-inbox), read-only: its items without bodies,
+    or with `item` one item's whole message. Only a member of one of this session's teams is read.
+    `path` must already be validated with resolveSessionPath(). */
+export async function getMemberInbox(
+  path: string,
+  teamId: string,
+  workerId: string,
+  item?: string,
+): Promise<{ ok: true; body: TeamInboxView | TeamInboxBody } | { ok: false; status: 400 | 404; error: string }> {
+  if (!validSegment(teamId) || !validSegment(workerId)) return { ok: false, status: 400, error: "Invalid ?team= or ?worker=" };
+  if (item !== undefined && !validSegment(item)) return { ok: false, status: 400, error: "Invalid ?item=" };
+  const facts = await sessionFacts(path);
+  const team = facts.teams.find((t) => t.id === teamId);
+  if (!team || !team.members.some((m) => m.workerId === workerId)) return { ok: false, status: 404, error: "No such member in this session's teams" };
+  const root = mailboxRootOf(agentRoot(), facts.sessionId);
+  const items = (root ? await readItems(itemsFileOf(root, teamId, workerId)) : null) ?? [];
+  if (item === undefined) return { ok: true, body: inboxView(teamId, workerId, items) };
+  const one = inboxBody(items, item);
+  return one ? { ok: true, body: one } : { ok: false, status: 404, error: "No such item in this inbox" };
+}
+
 /** `path` must already be validated with resolveSessionPath(). Never throws. */
 export async function getSessionInsight(path: string): Promise<SessionInsight> {
   const facts = await sessionFacts(path);
@@ -1272,13 +1296,15 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
   const resolveWindow = await sharedWorkerWindowResolver();
   const restored = live || facts.workerRecords.all.length === 0 ? null : await restorer.restore(facts.workerRecords.all, facts.workerRecords.active, resolveWindow);
   const workers = live
-    ? withWorkerContext(decodeWorkers(presence, live.pid === process.pid), contextReader, resolveWindow, claudeSpawnModels(facts.workerRecords.all))
+    ? withWorkerContext(decodeWorkers(presence, isOwnPid(live.pid)), contextReader, resolveWindow, claudeSpawnModels(facts.workerRecords.all))
     : restored && restored.workers.length > 0 ? restored.workers : null;
   // The record lists at most 40 of the workers it counts: the pane offers the rest on request.
   const counted = live ? workerCountsOf(live.rec)?.total : undefined;
   const workerTotal = workers && counted !== undefined && counted > workers.length ? counted : undefined;
   // What the session spent is the usage ledger's (/api/usage/session), never counted here.
   const teams = joinTeams(facts, path, workers);
+  // Each member's inbox counts, folded from the main chat's items files (server/team-inbox.ts).
+  await addInboxCounts(teams, mailboxRootOf(agentRoot(), facts.sessionId));
   // A worker's own transcript is the only record of what it loaded (see server/worker-skills.ts).
   // mtime-cached, because this endpoint is polled every 3s while the pane is open.
   const skillsLoaded = workers && workers.length > 0 ? await workerSkills(workers) : undefined;

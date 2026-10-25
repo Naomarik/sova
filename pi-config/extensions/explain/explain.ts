@@ -12,19 +12,21 @@
  * Two entries per run, same `id`: a provisional `status: "running"` entry once
  * the child is spawned (so the row is visible for the whole run), then the
  * final entry, without `status`, when it settles; the later entry supersedes
- * the earlier one for readers deduping by id. A run stopped at shutdown
- * (restart, /reload, a crash) records no final entry then: nothing may be
- * written while a session closes. Its running entry is settled later, by
- * `reconcile` at the session's next prompt, as `status: "interrupted"`.
+ * the earlier one for readers deduping by id.
  *
- * The child is a background fork (`../subagents/fork/`): it forks a copy of the parent's session
- * (`copyForFork`), kept in `explanations/.forks/` for the run and deleted when it ends, on the
- * parent's prompt cache, and may write only into its own store directory.
+ * The child is a background fork (`../subagents/fork/`), a hidden chat of its own process: it
+ * forks a copy of the parent's session (`copyForFork`), kept with the fork's own session in
+ * `explanations/.forks/` for the run and deleted when it ends, on the parent's prompt cache, and
+ * may write only into its own store directory. A parent session that closes (a reload, new code,
+ * a crash) leaves it running and writes nothing: the next session `reattach`es it and records its
+ * end. Only a run whose chat is gone (the server stopped it, or it died for good) is settled by
+ * `reconcile`, at the session's next prompt, as `status: "interrupted"`.
  */
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { ClaudeForkPoint } from "../claude-code/provider/fork-point.ts";
 import {
+	reattachBackgroundForks,
 	startBackgroundFork,
 	type BackgroundForkHandle,
 	type BackgroundForkHandlers,
@@ -32,6 +34,7 @@ import {
 } from "../subagents/fork/background.ts";
 import { copyForFork, forkable, sweepStale } from "../subagents/fork/copy.ts";
 import type { ForkPolicy } from "../subagents/fork/mirror.ts";
+import type { WorkerHost } from "../subagents/worker-host.ts";
 import { buildChildPrompt } from "./prompt.ts";
 import {
 	agentDir,
@@ -84,8 +87,12 @@ export interface ExplainHost {
 	notify(message: string, level: "info" | "warning" | "error"): void;
 	/** Deliver the completion message to the parent agent (and wake it when idle). */
 	wake(text: string): void;
-	/** Test seam; defaults to a real forked pi child. */
+	/** Sova's worker host for the parent's session; undefined where none serves it (the pi TUI). */
+	workerHost?(): WorkerHost | undefined;
+	/** Test seam; defaults to the shared background fork. */
 	start?(spec: BackgroundForkSpec, handlers: BackgroundForkHandlers): BackgroundForkHandle;
+	/** Test seam; defaults to the shared reattach. */
+	reattach?: typeof reattachBackgroundForks;
 }
 
 export interface BeginRequest {
@@ -114,9 +121,12 @@ export interface BeginResult {
 interface Run {
 	known: KnownMeta;
 	dir: string;
-	handle: BackgroundForkHandle;
+	/** Unset only while a reattached run's handle is being made. */
+	handle?: BackgroundForkHandle;
 	/** The session copy the child forked; deleted when the run ends. */
 	forkCopy?: string;
+	/** The fork's own session directory; deleted when the run ends. */
+	sessionDir: string;
 }
 
 /** Where the per-run session copies live, beside the stores (a dot name is never an explanation id). */
@@ -127,7 +137,7 @@ const STALE_FORK_MS = 24 * 60 * 60 * 1000;
 function removeQuietly(path: string | undefined): void {
 	if (!path) return;
 	try {
-		rmSync(path, { force: true });
+		rmSync(path, { force: true, recursive: true });
 	} catch {
 		/* A leftover copy is swept by the next run. */
 	}
@@ -184,6 +194,19 @@ export function oneLineError(...parts: (string | undefined)[]): string {
 	return text.length > MAX_ERROR ? `${text.slice(0, MAX_ERROR - 1)}…` : text;
 }
 
+/** What a running entry knew about its run (its cwd from the store's meta, when written). */
+function knownOf(entry: ExplainEntryData, env: NodeJS.ProcessEnv): KnownMeta {
+	const raw = readMeta(storeDir(entry.id, env)) as { cwd?: unknown } | undefined;
+	return {
+		id: entry.id,
+		topic: entry.topic,
+		parentSessionId: entry.parentSessionId,
+		cwd: raw && typeof raw.cwd === "string" ? raw.cwd : "",
+		createdAt: entry.createdAt,
+		model: entry.model ?? "",
+	};
+}
+
 export class ExplainRuns {
 	private readonly runs = new Map<string, Run>();
 	private readonly host: ExplainHost;
@@ -219,6 +242,7 @@ export class ExplainRuns {
 		};
 
 		const forkSession = forkable(request.parentSessionFile) ? this.copyParent(request.parentSessionFile, id, env) : undefined;
+		const sessionDir = join(explanationsRoot(env), FORK_DIR, id);
 		const webAccess = webAccessExtension(env);
 		const task = buildChildPrompt({
 			...known,
@@ -235,6 +259,10 @@ export class ExplainRuns {
 		try {
 			handle = start(
 				{
+					host: this.host.workerHost?.(),
+					kind: "explain",
+					parent: { sessionId: request.parentSessionId, path: request.parentSessionFile ?? "" },
+					sessionDir,
 					id,
 					name: WORKER_NAME,
 					task,
@@ -253,7 +281,7 @@ export class ExplainRuns {
 			removeQuietly(forkSession);
 			throw error;
 		}
-		this.runs.set(id, { known, dir, handle, ...(forkSession ? { forkCopy: forkSession } : {}) });
+		this.runs.set(id, { known, dir, handle, sessionDir, ...(forkSession ? { forkCopy: forkSession } : {}) });
 		// Only now: a refused spawn threw above and must leave no phantom running row.
 		this.record(runningEntryData(known));
 		return { id, dir, forked: Boolean(forkSession), webSearch: Boolean(webAccess) };
@@ -264,7 +292,10 @@ export class ExplainRuns {
 		const run = this.runs.get(id);
 		if (!run) return;
 		this.runs.delete(id);
-		void run.handle.stop().catch(() => {});
+		void run.handle
+			?.stop()
+			.catch(() => {})
+			.finally(() => removeQuietly(run.sessionDir));
 		removeQuietly(run.forkCopy);
 
 		// The child's own model id wins: it is what actually wrote the page.
@@ -307,17 +338,57 @@ export class ExplainRuns {
 		}
 	}
 
-	/** Stop every live child (session shutdown, reload). Their running entries are settled by `reconcile` later. */
-	async stopAll(): Promise<void> {
+	/**
+	 * The session is closing (a reload, new code, shutdown): stop watching every child and leave it
+	 * running. The next session over the same file `reattach`es it; nothing is written now.
+	 */
+	detachAll(): void {
 		const runs = [...this.runs.values()];
 		this.runs.clear();
-		await Promise.all(runs.map((run) => run.handle.stop().catch(() => {})));
-		for (const run of runs) removeQuietly(run.forkCopy);
+		for (const run of runs) run.handle?.detach();
 	}
 
 	/**
-	 * Settle the running entries no child of THIS process is behind: the runs a restart, a
-	 * /reload or a crash killed before they recorded their end. `entries` is the `explain-doc`
+	 * Watch again the children the worker host still runs for this session, from `entries` (the
+	 * branch's `explain-doc` data, oldest first): each id whose newest entry is running and whose
+	 * chat is listed is a live run again, and records its end when it settles (at once, when it
+	 * settled meanwhile). A listed chat no running entry claims is stopped; one this session already
+	 * watches is left alone, so a second call is harmless. A running entry with no chat behind it is
+	 * left to `reconcile`. Returns how many runs are live again.
+	 */
+	async reattach(entries: readonly ExplainEntryData[]): Promise<number> {
+		const host = this.host.workerHost?.();
+		if (!host) return 0;
+		const latest = new Map<string, ExplainEntryData>();
+		for (const entry of entries) if (entry && typeof entry.id === "string") latest.set(entry.id, entry);
+		const env = this.host.env ?? process.env;
+		const forks = join(explanationsRoot(env), FORK_DIR);
+		const claimed = new Set<string>();
+		const handles = await (this.host.reattach ?? reattachBackgroundForks)(host, "explain", WORKER_NAME, (id) => {
+			if (this.runs.has(id)) return null; // Already watched by this session.
+			const entry = latest.get(id);
+			if (!entry || entry.status !== "running" || !isExplanationId(id)) return undefined;
+			const forkCopy = join(forks, `${id}.jsonl`);
+			this.runs.set(id, { known: knownOf(entry, env), dir: storeDir(id, env), sessionDir: join(forks, id), ...(existsSync(forkCopy) ? { forkCopy } : {}) });
+			claimed.add(id);
+			return { onSettled: (result) => this.finish(id, result) };
+		});
+		for (const [id, handle] of handles) {
+			const run = this.runs.get(id);
+			if (run) run.handle = handle;
+			// It settled while its handle was being made: its run is recorded, its chat is done.
+			else
+				void handle
+					.stop()
+					.catch(() => {})
+					.finally(() => removeQuietly(join(forks, id)));
+		}
+		return claimed.size;
+	}
+
+	/**
+	 * Settle the running entries no live child is behind (after `reattach`): the runs whose chat is
+	 * gone (the server stopped it, or it died for good) before they recorded their end. `entries` is the `explain-doc`
 	 * data on the session's branch, oldest first; for each id whose newest entry is still
 	 * running, append a final `status: "interrupted"` entry. A child can finish its page right
 	 * before the kill, so a complete store is validated and linked (`note`); otherwise the entry
@@ -334,15 +405,7 @@ export class ExplainRuns {
 		for (const entry of latest.values()) {
 			if (entry.status !== "running" || this.runs.has(entry.id) || !isExplanationId(entry.id)) continue;
 			const dir = storeDir(entry.id, env);
-			const raw = readMeta(dir) as { cwd?: unknown } | undefined;
-			const known: KnownMeta = {
-				id: entry.id,
-				topic: entry.topic,
-				parentSessionId: entry.parentSessionId,
-				cwd: raw && typeof raw.cwd === "string" ? raw.cwd : "",
-				createdAt: entry.createdAt,
-				model: entry.model ?? "",
-			};
+			const known = knownOf(entry, env);
 			const check = storeExists(dir) ? validateStore(dir, known) : undefined;
 			this.record(check?.ok && check.meta ? interruptedEntryData(check.meta, true) : interruptedEntryData({ ...known, summary: "" }, false));
 			settled++;

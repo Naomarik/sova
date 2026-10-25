@@ -108,7 +108,7 @@ enforce them, and the reference reader enforces them again.
 | `focusable` | | boolean | | (v2) |
 | `focusReason` | | string | 120 | (v2) why focusing is or isn't possible |
 | `previewAt` | | ms epoch | | (v2) time `preview` was produced |
-| `llm` | | LlmPresence | | (v2) this **process's** LLM calls in flight; see below |
+| `llm` | | LlmPresence | | (v2) this **process's** LLM calls in flight; no longer written (see below) |
 
 **WorkerEntry**: `id` ✔ (150), `name` ✔ (120), `status` ✔ (80, free text),
 `model` (100), `preview` (180), `backend` (32, v2), `sessionFile` (1024, v2, optional),
@@ -170,7 +170,9 @@ by `fit()`. So `workerUsage.workers` may exceed both `workers.length` and
 Do not recompute it from `workers[]`; a consumer wanting "the rows I can see" should
 sum `workers[].usage` itself.
 
-**LlmPresence** (v2, `presence.llm`, written by `../llm-inflight/`): the counts of the
+**LlmPresence** (v2, `presence.llm`): no longer written. Sova's chat processes report their
+counts to the server over their own link, and nothing reads this field any more; a reader must
+treat it as absent. As it was written by older versions: the counts of the
 **process** that writes the record, not of the session: `v` ✔ (`1`), `producer` ✔ (string, 64:
 one id per process lifetime), `pid` ✔, `active` ✔ (logical LLM calls in flight now, from issue to
 end; queue waits, cooldowns and tool time never count; the process's pi workers included, which

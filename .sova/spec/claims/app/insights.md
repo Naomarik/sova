@@ -4,7 +4,7 @@
 What the user's pi extensions publish, read-only except for one cache: subscription usage, provider-reported credits and activity
 (usage-status), which this server also keeps fresh itself (§app.insights/usage-refresh), teams and
 subagents (subagents + sessions live records), the LLM calls in flight and their output-token ring
-(each process's own count in its live record, and each connected host's own count,
+(the server's own count with its chat processes' reports, and each connected host's own count,
 §app.insights/llm-inflight, §app.insights/token-velocity), and
 per-session summaries (topic-outline, compaction). Data shapes are `UsageInsight`, `AgentsInsight`, and `SessionInsight` in
 `shared/protocol.ts`. **Every status says where it came from**: live-sourced states can pulse,
@@ -184,13 +184,13 @@ Usage glance needs the room.
 - **Agents row, what is working right now:** `{n} agents` and how fast the agents are writing, on
   two lines in one 64px whole-row link, the gear centred at its right.
   - **The figure** is the working count (§app.session-list/working-now): the sessions whose own
-    turn is running plus the subagents working, on this host and every connected host — the sum
-    of the toolbar's breakdown line, so the two never disagree. It is printed short as agents:
+    turn is running plus the subagents working, on this host and every connected host — the one
+    figure the foot, the phone bar and the spine all show, so none of them disagree. It is printed short as agents:
     `{n} agents` (`1 agent`). A known count always shows the bare number, `0 agents` included: a
     floor (a connected host that isn't answering) is marked by no `+` or `~`, only by its
     sentence (below). The word follows the number shown, floor or not: `1 agent`, every other
     figure `agents`. While it is unknown the segment is the plain word "Agents", with no figure,
-    never a 0. No other figure follows it in words — the breakdown is the toolbar line's — and
+    never a 0. No other figure follows it in words — the breakdown is in its sentence — and
     teams are never counted (their members are subagents already).
   - **The velocity** (§app.insights/token-velocity): line 1 ends with the readout, `48k tok/min`
     (the figure semibold ink at body size, the unit muted micro), never shrunk or cut — `{n}
@@ -269,7 +269,7 @@ provider and is still waiting on or receiving, from the moment it is issued unti
 ends, fails or is aborted. Time spent running tools between calls never counts, and neither does
 a request still queued for a provider-limits slot or sitting out a cooldown
 (§app/provider-limits): it counts from the moment the slot is granted. Every caller counts alike —
-a main thread's turn, a subagent's or team member's, and background work: titles, tags,
+a main thread's turn, a subagent's or team member's, and background work: titles,
 decisions, topic outlines, compaction, cache warming.
 
 - **Where it is measured.** Each process counts its own calls, at the boundary every model
@@ -278,36 +278,26 @@ decisions, topic outlines, compaction, cache warming.
   no payload, no transcript and no other token count is read or written for it, and nothing is
   written per token. The same boundary, at the same call end, appends the call's usage record
   (§app.insights/usage-ledger); that is the ledger's, not part of this count.
-  - **pi** (Sova's own server with its hosted chats and one-shots, a TUI, a pi worker): the
+  - **pi** (Sova's own server with its one-shots, a chat process, a pi worker): the
     process's model runtime, which every session, compaction and background caller of that
     process shares. A call is counted once however many wrappers it passes through.
   - **Claude Code.** A chat session on the `claude-code` provider is a pi call like any other: one
     per model request of its stream, until the reply stops for a tool or ends. A Claude Code worker
-    counts while its CLI reports it is requesting the model, until that reply ends. Calls the CLI
-    makes internally without reporting them (its own subagents, side queries, compaction) can't be
-    seen, so while a Claude Code turn runs, in a session or a worker, the count is **partial**
-    (below), never a guessed number.
+    is a pi worker on that provider and counts the same way. Calls the CLI makes internally without
+    reporting them (its own subagents, side queries, compaction) can't be seen, so while a Claude
+    Code turn runs, in a session or a worker, the count is **partial** (below), never a guessed
+    number.
   - **One-shot `claude -p`** (a decision, a title, a topic outline): counted as one call from the
     spawn to the process's exit — **approximate**: the process's start-up and exit count too, so
     for part of that time it may not be calling at all, and what it does inside can't be seen.
   - **Jev** (§app/decisions): from the request to its answer.
-- **How a host adds up.** Sova's server reads its own process directly. A subagent's calls reach
-  the host through the session that runs it: a pi worker reports its count to its parent over the
-  worker's own channel, and a Claude Code worker is observed by its parent, so the parent's count
-  includes its workers' (each worker's report replaces its last one, and goes when the worker
-  does; until a worker's first report, or after one that can't be read, it is unknown, never 0).
-  The parent also names every worker it counts this way, transitively, so a worker that publishes
-  a live record of its own as well is never counted twice; past 64 named workers it sums no more
-  of them (it can't name them), and its count is partial instead. A detached worker that no running
-  session has adopted (after a restart, before it is adopted again) is counted by the server from
-  its host's record of the worker's last report, or, with no such report (a Claude Code worker),
-  makes the count partial; once adopted, only its parent counts it. Every other process on the host publishes its count in its live record (`presence.llm`,
-  `pi-config/extensions/sessions/public/SCHEMA.md`), rewritten only when the count or its coverage
-  changes, never per token. A call's output tokens land in that same rewrite, at the moment it ends. The server counts each process once (by its producer id, so a
-  process with several live records is not counted twice, and the records its own hosted chats
-  write are never added to its own count). A fresh record with no `presence.llm` (a process
-  without the counter), and a record whose heartbeat went stale while its pid lives, make the
-  host's count **partial**; a dead pid's record counts nothing.
+- **How a host adds up.** Sova's server reads its own process directly. A chat in a process of its
+  own (a worker or a hidden chat included, §app.chat-processes/workers) counts its own calls, and
+  the server counts them from what that process reports with its state, once, whether or not its
+  parent is running (each report replaces its last one, and goes when the server lets go of the
+  process; its tokens stay). Nothing else on the host is counted: no live record is read for it,
+  and a pi or Claude Code run outside Sova (a terminal pi, say) is not part of the count. A counter
+  that can't see its runtime makes the host's count **partial**.
 - **Connected hosts.** While the mesh is on (§mesh/peers) and at least one browser is listening,
   the server holds one socket per peer to that peer's **local** count (`/ws/watch?feed=llm`,
   through the peer listener's gate) and adds it once per host. A peer only ever publishes its own
@@ -328,7 +318,7 @@ decisions, topic outlines, compaction, cache warming.
   no longer prints the count or its sentence (its figure is the working count,
   §app.session-list/working-now), so they are for its readers — the token ring's coverage
   (§app.insights/token-velocity), the server's own consumers and any later view.
-  - **Complete** — every process on every counted host reports and nothing is known to be
+  - **Complete** — every Sova process on every counted host reports and nothing is known to be
     unseen: the count is exact, `0` included.
   - **Partial** — the count is a floor: `partial` with the gaps that say why (Claude Code's own
     internal calls aren't visible; a process or a host doesn't report).
@@ -338,8 +328,8 @@ decisions, topic outlines, compaction, cache warming.
     and from the moment the socket drops until the next snapshot). A previous connection's
     snapshot is never used.
 - **What it is not.** It is not the number of HTTP requests on the wire, nor every model call any
-  program on the machine makes: only processes running the counter report, and its partial
-  state says so whenever something is known to be missing.
+  program on the machine makes: only Sova's server and its chat processes report, and its partial
+  state says so whenever something of theirs is known to be missing.
 
 ## §app.insights/token-velocity — Token velocity: how fast the agents are writing
 
@@ -356,28 +346,19 @@ host and every connected host.**
   than 30 minutes is gone. The shares are rounded so a call's slots add up to exactly its count.
 - **Where it is measured.** In the counter that counts the calls (§app.insights/llm-inflight), at
   the same boundary: a pi process reads the final message's output count of each call its model
-  runtime makes; a Claude Code worker's call takes the last output count its CLI streams for that
-  reply. A chat on the `claude-code` provider is counted once, as its pi call, never again by the
-  CLI it drives. A one-shot `claude -p` and Jev add no tokens.
-- **How it adds up.** As the calls do. A pi worker carries its ring in the report it already sends
-  its parent, and the parent sums it with its own; a worker that ends leaves its tokens in its
-  parent's ring until they age out (a worker detached for another session to adopt takes its
-  tokens with it and goes on reporting them itself). Each process publishes its ring in its live
-  record (`presence.llm.tokens`, `pi-config/extensions/sessions/public/SCHEMA.md`); the server
-  sums each counted process once, by the same producer rule (a folded worker's tokens are already
-  in its parent's), and adds each connected host's own ring once. While anyone listens, a process
-  or host that goes (an exit, a dead pid, a stale record, a dropped peer) leaves its last ring in
-  the sum until it ages out; tokens from before the server started, or ended while nobody
+  runtime makes. A chat on the `claude-code` provider, and a Claude Code worker (a pi worker on that
+  provider), is counted once, as its pi call, never again by the CLI it drives. A one-shot `claude -p` and Jev add no tokens.
+- **How it adds up.** As the calls do. A chat process, a worker's included, carries its ring in the report it sends the server with its state, and the server sums it with its own; a process that ends leaves its tokens in the server's ring until they age out. The server adds each connected host's own ring once. While anyone listens, a host
+  that goes (a dropped peer) leaves its last ring in the sum until it ages out; tokens from before the server started, or ended while nobody
   listened by processes since gone, are not there.
 - **Partial, never a guessed number.** Every gap of the calls count (a Claude Code turn running,
-  whose internal calls' tokens can't be seen; an unreported process; a peer connecting,
-  unreachable or too old) makes the tokens partial too, and so does a process, worker or peer that
-  publishes a count without a ring (an older counter, until its `/reload`).
+  whose internal calls' tokens can't be seen; a counter that can't see its runtime; a peer
+  connecting, unreachable or too old) makes the tokens partial too, and so does a peer that
+  publishes a count without a ring.
 - **Bounds.** One process's slot is capped at 10,000,000 tokens and one host's at 100,000,000; a
   malformed ring is dropped (its tokens unknown, so partial), never its count with it.
 - **Pushed with the count, never per token.** A call's tokens land at the instant it ends, in the
-  one change that already rewrites its live record and pushes the `llm_inflight` frame for the
-  count's drop. No timer, file or frame is added: time passing alone sends no frame (the browser
+  one change that already pushes the `llm_inflight` frame for the count's drop. No timer, file or frame is added: time passing alone sends no frame (the browser
   slides the windows itself).
 - **The means** are windowed means of the `tokens` ring on the `llm_inflight` frame
   (§app.insights/llm-inflight), computed in the browser by `tokenVelocityView()` in
@@ -467,10 +448,10 @@ function.** Standalone `claude` use outside Sova and pi is not recorded.
   does nothing for a call but that one append.
 - **Recorded at the boundary that already counts calls** (§app.insights/llm-inflight): the pi model
   runtime records each call when its stream ends; a Claude Code CLI (a chat on the `claude-code`
-  provider or a Claude Code worker) is recorded from its stream, once per Anthropic message id,
+  provider, a Claude Code worker's included) is recorded from its stream, once per Anthropic message id,
   plus what its cumulative per-model totals show beyond those messages (its own subagents, side
   queries, compaction), measured against the last total recorded for that Claude session so a
-  resume or re-adoption never counts history again; a `claude -p` one-shot and a Jev call are
+  resume or a reattach never counts history again; a `claude -p` one-shot and a Jev call are
   recorded from their answers. A `claude-code` chat's calls are recorded from the CLI's stream
   only, never again by the pi runtime.
 - **Whose call it is.** A call belongs to the session that registered with the process; a side call
@@ -492,6 +473,160 @@ function.** Standalone `claude` use outside Sova and pi is not recorded.
   checked-in seed is only the starting copy when that file is missing. The server pulls models.dev
   every 6 hours and on demand, and a pull only adds dated periods: an old period is never dropped
   or rewritten.
+
+## §app.insights/reply-timing — Measured reply timing: each reply's wait, thinking and reply time, recorded once
+
+**Every assistant reply in a chat Sova hosts (a main chat, a worker or team member at any depth, a
+hidden chat, the Overseer, a project overseer, a baton session; on pi providers and Claude Code
+alike) is timed as it streams, in the one chat loop every hosted chat runs, and a reply that
+finishes writes one timing record into a device store beside the usage ledger.** A session open in
+the terminal is never timed, and neither is a one-shot side call (a title, a decision, a summary, a
+topic outline, an image description, a cache warm, a compaction's summary).
+
+- **What is timed.** *Request sent*: when the agent's own model request goes out, after any wait
+  for a provider slot. The first send counts: a request sent again before any part arrived (after a
+  rate limit), and pi's automatic retry after a failed attempt, keep the first send's time until a
+  reply is measured or the retry ends. *Wait for first token*: from the reply's first send to the
+  first part of the reply of any kind (a thinking, text or tool-call part starting, or its first
+  characters), so it includes the provider's retries and the backoff between them. A send heard
+  outside a request's wait (a cache warm) is never a reply's. *Thinking time*: each
+  thinking part's window, from its start to its last characters (to its end when it streamed none,
+  as Claude's hidden thinking does), summed when thinking comes back later in the reply; a part's
+  end that a provider sends only when the whole reply ends never stretches it. *Reply time*: each
+  text and tool-call part's window, measured the same way. A reply *thought* when it wrote a thinking
+  part, however short that part's window (its characters can all arrive at once, and Claude's hidden
+  thinking can end as it starts); such a reply's output holds its thinking tokens. Times are taken
+  when the chat process hears each event; nothing is written per token.
+- **Which replies count.** Only a reply that finishes: it stopped, reached its length limit, or
+  asked for tools. A reply that errors or is stopped writes nothing. An automatic retry's failed
+  attempt writes nothing; the reply that finally succeeds is measured once, its wait running from
+  the first attempt's send. A reply
+  made while a compaction runs writes nothing. A Claude Code reply in which the CLI rejected a tool
+  call's arguments and asked the model again (§app.claude-code-provider/invalid-tool-input) writes
+  nothing: the rejected attempt's time is inside it. A Claude login failover inside a turn only
+  lengthens that reply's wait for its first token. A reply whose request start was not heard
+  writes nothing.
+- **The record.** Its key (the session and the entry the reply was written as), when it finished,
+  this device, the writing process, the session's kind (`main`, `worker`, `overseer`), the
+  provider, the model asked for and the model that answered, the effort level the reply was
+  requested at (`off` when none) and the provider-native level it ran at when the provider says,
+  how it ended, when the request went out, the wait for the first token, the thinking time and the
+  reply time (and within it the text and tool-call time), how many parts of each kind there were,
+  every output token, and the provider's thinking-token count only where it reports one. A count
+  the provider leaves out is absent, never 0; a 0 reported for a reply that had a thinking window
+  is recorded as absent too. No prompt or reply text is kept.
+- **Where.** `<agent dir>/usage/perf/v1/<UTC day>/<producer>.jsonl`: one file per chat process
+  and day, one writer per file, one appended line per reply, under the usage ledger's rules
+  (§app.insights/usage-ledger): a reader takes only terminated lines and deduplicates by key.
+  Writing never throws, and never fails or holds up a reply. Records are never pruned and outlive
+  their session (deleted or archived).
+- **Live.** The chat tags the reply's end with its timing as it goes out, so a client watching the
+  reply has it at once (§app.insights/reply-timing-hover).
+- **This device only.** Like the Costs tab, the store counts the replies of the chats this
+  device's server hosts; a chat a mesh peer hosts is timed on that peer.
+
+## §app.insights/reply-timing-hover — A reply's own timing, on its head
+
+**A measured reply's head (its model name and time) opens a card with that reply's own figures:
+resting the mouse on the head opens it, and the time is a button that opens it on a tap or Enter and
+keeps it open until a press elsewhere, Escape or a second tap.** A reply with no measurement (an
+older one, one from the terminal, one that errored) looks exactly as it did: no card and no button.
+
+- **The card.** First Effort (left out when not recorded). Then the headline: the overall speed
+  (every output token over the thinking, text and tool-call writing time) as one large number, with
+  every output token and that writing time under it. A reply too short for an overall speed leads
+  with its writing time instead, labelled as a time ("Written in"), never under a speed's label; the
+  line under it says it wrote too few tokens for a speed when it wrote fewer than 100, else that it
+  was too quick for one (under 1 second). Then, under a divider, the reply's parts in the order they
+  happened: First token, the wait for the first token; Thinking (only when it thought); Reply.
+  Where the provider counts thinking tokens, Thinking and Reply are speeds, else times; a reply
+  that wrote tool calls shows its reply time, never a reply-text speed. Nothing is estimated: a
+  speed shows only when its part has at least 100 tokens over at least 1 second, and its time shows
+  instead. A screen reader hears the card as one line, in the same order.
+- **A live reply.** A reply that just finished in front of you gets its card at once: its head shows
+  the time it ended, and the card opens before the transcript is read again.
+- **Where it comes from.** On wire 2 (§app.harness/wire), an assistant reply's first row carries
+  `reply` (a row fact: effort, the wait, thinking and reply time, output, the thinking-token count
+  only where the split is real, the thinking and tool-call parts when any) when that reply was measured: on
+  `GET /api/transcript` (one lookup in the timing store, §app.insights/reply-timing, per load) and
+  on the chat's hello and appends (the chat's own lookup: one load through the server when the chat
+  opens, plus each reply it measures; a pane that attaches while that load is on its way gets its
+  one hello when it arrives, whether it brought timings, none or failed; one still waiting after
+  1.5 seconds gets its hello then, and again with the facts if they come); and on `/ws/watch`'s snapshot, history and appends
+  (one lookup when the watch starts, asked again when an appended reply has no timing yet), so
+  every view of a chat shows the card, read-only ones included (a session open in the terminal, a
+  chat that can't be opened, a pi worker's pane). A live reply's wire-2 `message.end` carries the same `reply`
+  when it finished and was measured. An unmeasured reply carries none; wire 1 never carries it, and
+  its frames and rows stay byte for byte.
+
+## §app.insights/performance-tab — The Performance tab (`#/agents/performance`)
+
+**The Agents page's third tab, Performance, shows for each provider and model how fast this
+device's measured replies were and how long they thought, and for each effort level that ran how
+often and how long it thought, from the timing store (§app.insights/reply-timing).**
+
+- **Route and controls.** `#/agents/performance`, never read as a team key. The Costs tab's
+  controls: range chips `7d` · `30d` · `All` (30d by default) and the Provider and Model filters,
+  kept in the URL; they apply to everything on the tab. Beside the By model card's title, a Sort
+  menu: Most replies (the default), Fastest (highest median overall speed first) or Quickest first
+  token (lowest median wait first). A model with no such figure sorts after those with one; ties
+  fall to most replies, then provider and model. The sort is kept in the URL too (`sort=fastest`,
+  `sort=first-token`, left out for the default), and coming back from Board restores the tab's last
+  range, filters and sort.
+- **Rows.** One row per provider and model, in five columns, one sentence under the card's title
+  explaining them once: the model (its name, then its provider and reply count); overall speed, the
+  headline (every output token over thinking and writing time), set larger than the rest; reply
+  speed, where the reply text can be split out (no tool calls; thinking absent or counted);
+  thinking, the thinking time per reply over the replies that thought; and the wait for the first
+  token. Each cell is the median and at most one short muted line: under overall speed, a thin bar
+  from the 10th to the 90th percentile with a mark at the median, every row on one scale (0 to the
+  highest 90th percentile among the rows shown), and the average beside it; under reply speed, its
+  10–90% range; under thinking, how many of the replies thought; under first token, the slow case
+  (the 90th percentile).
+- **Opening a row** (the chevron on its name; on a phone, a full-width Show Effort Levels button)
+  shows an Effort levels panel under it. First, the model's thinking speed in one line. Then one
+  line per effort level that ran, in five columns: the level; its replies and how many thought;
+  thinking time per reply (median, then average and 10–90% range); thinking tokens per reply; and
+  overall speed. Then a level switch, All levels (the default) and each level, each with its reply
+  count, left out when the model ran at one level; picking a level marks its line with the
+  selected-row tint and as current, and closing the row picks All levels again. Then two spread
+  charts for the picked level, thinking time per reply and overall speed, side by side from 768px
+  of pane width and stacked under it. Each chart leads with its median, 10–90% range and count, then draws one bar per band
+  of values (up to 12; a bar's height is its share of the fullest band), a median line and a 10–90%
+  bracket, its axis labelled with the lowest value, the median and the highest. A bar's band and
+  count is its accessible name, shown when it is hovered or focused, and the bars are reached with
+  the keyboard. A chart's axis is the whole model's, and every level is binned on the model's
+  bands, so picking another level moves the bars without re-scaling, and two levels with the same
+  spread draw the same heights.
+- **Few replies.** Every figure, bar, range, chart and count is gated on that figure's own count
+  (the replies it rests on), never on the row's reply total. A figure resting on fewer than 5 shows
+  its median and that count (how many were long enough for a speed, how many thought, how many
+  replies), with no bar and no range. Each chart is shown or replaced on its own: a replaced chart
+  is one short line, its median and its count, then that a chart needs 5 and, at a single level,
+  that All levels pools them; a thinking chart where no reply thought says so instead. If neither
+  of the model's two chart figures reaches 5, there is no switch and no chart area, only one
+  sentence giving the larger of their two counts. A figure no reply can give shows a dash and a
+  2–3 word reason, its full sentence for a screen reader: the provider doesn't count thinking
+  tokens; every reply wrote tool calls (a reply speed); no reply thought (a thinking figure of a
+  group none of whose replies thought); no reply long enough yet. Speeds count only parts with at
+  least 100 tokens over at least 1 second; times count every finished reply.
+- **Where it comes from.** `GET /api/usage/performance` (range `7d`|`30d`|`all`, provider and model
+  filters, time zone; main listener only) answers from the usage helper, relayed unparsed: one row
+  per provider and model as the Costs tab names it (most replies first), each opening into one line
+  per effort level that ran, every figure counting this device's measured replies whose local day
+  falls in the range. Each figure gives its reply count, median and mean; from 5 replies also its
+  10th and 90th percentile and log-spaced bins (at most 12); an effort level's bins are its
+  model's bands, so they line up. `since` is the first measured reply on this device, null before
+  any.
+- **Says what it counts.** The tab says it counts this device only and since when replies were
+  measured, that a range needs 5 replies, and what a speed needs. Before the first measured reply
+  it says speeds appear as models answer.
+- **When the helper is down** the tab says the counter isn't running yet and that nothing was lost,
+  as the Costs tab does.
+- **Phone.** Under 560px of page width each model is a card with no sideways scrolling: its name,
+  provider and reply count; the overall speed as the headline with its bar across the card; reply
+  speed, thinking and first token side by side, each with its line; then Show Effort Levels.
+  Opened, the effort lines read as a short list, the switch wraps, and the two charts stack.
 
 ## §app.insights/usage-resend — What re-sending a conversation's history cost
 
@@ -533,19 +668,28 @@ and neither does one whose launches were never recorded.
 
 ## §app.insights/cost-history — The Costs tab (`#/agents/costs`)
 
-**The Agents page has two tabs, Board (the board as it was, §app.insights/team-cards) and Costs,
-which shows this device's spend at API prices from the usage ledger (§app.insights/usage-ledger).**
+**The Agents page's Costs tab (beside Board, §app.insights/team-cards, and Performance,
+§app.insights/performance-tab) shows this device's spend at API prices from the usage ledger
+(§app.insights/usage-ledger).**
 
 - **Route.** `#/agents/costs` opens the Costs tab; it is never read as a team key. The filters live
   in the URL, so a reload or a shared link keeps them.
 - **Controls.** Range chips `7d` · `30d` · `All` (30d by default), and beside them multi-select **Provider** and
   **Model** filters; the model choices narrow to the selected providers. The range and both filters
   apply to every section below.
-- **Sections.** Stats: Total, Main sessions, Workers, One-shots. A daily cost bar chart (local
-  days). Tables by provider, by model (input · cache · output · cost), by kind and by project
-  (the org project, else the working directory). Top sessions, most expensive first; a click opens
+- **Sections.** Stats: Total, Main sessions, Workers, One-shots, each a dollar figure with a small
+  line under it, its cache hit rate (`96% from cache`; with no cache read or write in it, "No cache
+  use reported"). A daily cost bar chart (local days). Tables by provider (tokens · hit rate ·
+  cost), by model (input · cache · hit rate · output · cost), by kind and by project
+  (registered projects, code checkouts, the Overseer and Other folders, §app.insights/cost-by-project).
+  Top sessions, most expensive first; a click opens
   the session, and a row whose conversation re-sent its history says so under its name
   (§app.insights/usage-resend-display).
+- **Cache hit rate.** The share of input tokens read from cache: cache read ÷ (input + cache read +
+  cache write), output left out, in whole percent (`<1%` and `>99%` at the edges, never a rounded
+  `0%` or `100%` that isn't exact). A table row with no cache read or write shows `—`, its `title`
+  "No cache use reported for this model." (a provider row: "… for this provider."); such rows still
+  count their input in a card's rate. A rate only: no figure of money saved.
 - **Prices.** "Prices as of {date}" with the last change found, and a **Refresh Prices** button that
   pulls the prices now (§app.insights/usage-ledger); it says so when pulling is off or the prices are
   still the starter list.
@@ -553,6 +697,54 @@ which shows this device's spend at API prices from the usage ledger (§app.insig
   it never shows another count.
 - **This device.** The tab says it counts this device only.
 - Works at phone widths: tables stack under 560px of page width.
+
+## §app.insights/cost-by-project — The Costs tab's By project table
+
+**The Costs tab's By project table (§app.insights/cost-history) has one row per registered
+project, one per code checkout on this computer that is no project, one Overseer row and one
+Other folders row, and its rows add up to the tab's Total.** Every call is in exactly one row,
+decided from the folder it ran in (its working directory), once per distinct folder:
+
+- **Overseer.** A call that ran in the Overseer's folder (`<state root>/overseer`) or in an
+  attached organization's workspace (`<state root>/workspaces/<org>`, or the folder the org is
+  attached from) is the Overseer's: the global Overseer's conversations and each organization's
+  sessions are one row, "Overseer".
+- **Registered projects.** Otherwise a call belongs to the registered project whose folder it ran
+  in, by the same rule as the sidebar (§app.projects/folder-sessions): the project's root, a folder
+  inside it, or a folder inside one of its worktrees, a worktree that no longer exists included
+  (`<root's parent>/.worktrees/<root's name>-…`); the deepest root wins. Unlike the sidebar, a
+  worktree folder still on disk whose checkout is gone (its `.git` removed, a husk left, in no
+  checkout) counts as gone, so it is its project's too. A call the ledger records
+  with a project id is that project's. An archived project keeps its row, marked "archived". A
+  project overseer's conversation runs in its project's root, so it counts in its project's row. The
+  row shows the project's name.
+- **Any other Overseer call** (a call recorded as kind `overseer` whose folder is in no project)
+  is in the Overseer row.
+- **Code checkouts.** A folder in no project that sits in a git checkout on this computer gets that
+  checkout's row, named after the checkout's folder: walking up to the first `.git`, a folder there
+  is the checkout; a `.git` file names its main checkout, so a linked worktree and its subfolders
+  roll into the main checkout's row. A folder that no longer exists, or a husk in no checkout, is
+  the checkout's when it was one of its worktrees as Sova names them (`<x>/.worktrees/<name>-…`
+  beside an existing checkout `<x>/<name>`); a folder that no longer exists also when it sat inside
+  an existing checkout. Git is never run.
+- **Other folders.** Everything else is one row, "Other folders", always last whatever it cost:
+  temporary and scratch folders (the system's temp folders, even holding a repository), folders
+  that no longer exist and were never in a checkout, folders inside Sova's agent folder (a remote
+  session's stand-in folder), and calls that name no folder.
+- **Hover.** A project row's `title` says where its spend comes from: its root, then "Every
+  session in this project's folders, worktrees included.", since it counts every session there and
+  can be higher than the project page's Cost card (§app.project-costs/scope); an archived one adds
+  " Archived.". The archived mark is a muted `archived` line under the name.
+  A checkout row's: its path, then "Every session in this checkout, worktrees included." The
+  Overseer row's: "The Overseer's and your organizations' conversations." Other folders': "{n}
+  folders that are no project or checkout, and calls with no folder." (1: "1 folder …").
+- **Order.** Most expensive first, Other folders last.
+- **Unchanged.** The Total, the daily chart and every other table and stat are not affected by
+  this grouping.
+- **Wire.** Each row carries `kind` (`project` · `folder` · `overseer` · `other`), `name`, `path`
+  (a checkout's folder, a project's root), `folders` (how many distinct folders it holds) and
+  `archived` when it applies, beside `project` (the project id) and `cwd` (a checkout's folder) for
+  an older browser. A browser shows `name` when it is there, else as before.
 
 ## §app.insights/usage-model-rows — One row per real model
 
@@ -635,8 +827,9 @@ can't disagree, and nothing is fetched, sent or stored.
   running work; no TUI mark pulses anywhere (§design.ground-rules/motion).
 - **Working** is worker-level: a subagent is mid-task. On a member row it's
   `.chip-accent.chip-live` "Working", and pulses only when live-sourced (see Team cards). The one
-  aggregate that also says "working" of a session's own turn is the toolbar's working-now line,
-  which names the two apart: "2 sessions · 5 subagents working" (§app.session-list/working-now).
+  aggregate that also says "working" of a session's own turn is the working count's sentence, on
+  the foot's Agents row and the spine's tally, which names the two apart: "7 agents working now: 2
+  sessions and 5 subagents" (§app.session-list/working-now).
 - **Aggregates are neutral** `.chip.chip-count`, with no dot and no pulse, so each row has only
   one pulsing thing:
   - **Session rows (§app/session-list):** no chip at all. The count is a bare `{n}`, with no icon, in the row's
@@ -695,9 +888,9 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   it's about, where it stands and its worktrees folded inside the row. When nothing is in view, its whole body under the bar is one `.empty`
   (§design/copy-deck): the live fact first ("{n} sessions live." or "No session is live right
   now."), then the absence for the chip or search in force.
-- **Tabs (Agents).** Under the head the Agents page has two tabs, Board (everything this section
-  and §app.insights/team-cards describe) and Costs (§app.insights/cost-history), at `#/agents` and
-  `#/agents/costs`.
+- **Tabs (Agents).** Under the head the Agents page has three tabs, Board (everything this section
+  and §app.insights/team-cards describe), Costs (§app.insights/cost-history) and Performance
+  (§app.insights/performance-tab), at `#/agents`, `#/agents/costs` and `#/agents/performance`.
 - **Head meta (Agents).** `{w} working · {l} live · {$} today · {u} unmerged`: sessions in the
   Working state, live sessions, this device's spend since local midnight at API prices, every
   call of every kind (§app.insights/usage-ledger, `GET /api/usage/today`; left out before its
@@ -705,7 +898,7 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   unmerged branches among the worktrees read so far (left out before the first reading). The
   line's `title` says what each figure counts. It shows once at every width: on the Board tab
   only on the count line directly above the board (§app.insights/team-cards), never in the head;
-  on the Costs tab, which has no count line, in the head.
+  on the Costs and Performance tabs, which have no count line, in the head.
 - **Rows (Usage).** The Usage page lists provider types as separate `.card.usage-rows` surfaces in
   `.usage-groups`, with visible page-background spacing between types (§app.insights/usage-cards).
   Each row spans its provider surface, so a short row is never stretched to a taller neighbour's height. Its layout steps at 640px and 960px of the `insights` container
@@ -1039,12 +1232,14 @@ due (sooner after a failed fetch, never more often than the extension itself wou
 - **A TUI pi**, unchanged: its own timer and after each turn.
 
 Two servers with different agent dirs (the live one and a hermetic test server) keep separate
-caches and locks, so each fetches on its own; servers on the same agent dir share one.
+caches and locks, so each fetches on its own; servers on the same agent dir share one. A server or pi on another agent dir (a hermetic test
+server) reads pi's `auth.json` from that dir, for the fetch and for the sign-in numbers below,
+never the live `~/.pi/agent/auth.json`.
 
 **Sign-in data.** `GET /api/insights/usage` adds `auth` (`UsageAuth`) to a provider when its
 credentials say something: expiry times, when the sign-in was last renewed, and whether the access
 and refresh tokens have expired by the server's clock. It comes from the same credential files the
-usage fetch reads (Claude Code's `~/.claude/.credentials.json`, pi's `~/.pi/agent/auth.json`, the
+usage fetch reads (Claude Code's `~/.claude/.credentials.json`, pi's `auth.json` in the agent dir (`~/.pi/agent/auth.json` on the live server), the
 Codex CLI's `~/.codex/auth.json`), re-read only when a file changes; on macOS a Claude login with no
 credentials file is read from its keychain item instead, for the fetch and for these numbers
 (§app.claude-logins/macos-keychain), and then carries no `refreshedAt`. It carries numbers, enums and
@@ -1345,13 +1540,22 @@ Sova that aren't archived.
 ```
 
 - **State.** One per row, on its rail (a colored left edge) and under its group's heading; no
-  row carries a state chip at any width. A row's state reaches screen readers as visually
-  hidden text after its title (", Needs you", ", Working", ", Idle", ", Archived"), so it is
-  never carried by the rail's color or the heading alone. The states: **Needs you** when the session waits on input or has an extension dialog open; else
-  **Working** when its turn runs or any of its workers works; else **Needs you** when its last
-  turn failed or stopped on an error, or it has open alignment questions, or its decision marks (an unseen reply that asks you, unseen
-  looping, a stuck subagent) say so; else **Idle**, or **Archived** for an archived session nothing runs in. The
-  open row says why a row needs you, in a line.
+  row carries a state chip or a second badge at any width. The states: **Needs you** when the
+  session waits on input or has an extension dialog open; else **Working** when its turn runs or
+  any of its workers works; else **Needs you** when its last turn failed or stopped on an error,
+  or it has open alignment questions, or its decision marks (a reply that waits on you, a reply
+  that says it is done without checking, §app.decisions/attention-signals) say so; else
+  **Idle**, or **Archived** for an archived session nothing runs in.
+- **The state's word.** Each row's state has one word, said to screen readers as visually hidden
+  text after its title (", Waiting on you: approval"), so it is never carried by the rail's color
+  or the heading alone: **Waiting on you** (an input request or a dialog), **Working**,
+  **Working (team)** (only its workers work), **Broken** (the last turn failed or stopped on an
+  error), **Waiting on you: decision** (open alignment questions, or a reply that asks you to
+  choose), **Waiting on you: approval** / **: info** (a reply that asks for an approval or for
+  information), **Done, unverified**, **Done** (an idle session whose last turn card says it did
+  what was asked), **Idle** and **Archived**. Broken, Working and Working (team) are counted in
+  code; only the waiting kind and the done words come from the turn card. The open row says why
+  a row needs you, in a line that ends with its source ("Guessed by Jev.", "From code.").
 - **Sort.** Needs you first, then Working, then the rest; within each, last active first.
 - **Groups.** The rendered rows sit under a heading per state, in that order: "Needs you · {n}",
   "Working · {n}", "Idle · {n}" (the rest; "Archived · {n}" when every one of them is archived),
@@ -1432,9 +1636,10 @@ Sova that aren't archived.
   Session, Open Subagents (opens the session with its pane on the Agents tab), Rename…, Use Gist as Title (the gist on one line,
   cut to the title limit; off, with the reason, when there's none or it already is the title),
   Reset to Original Title (off when not renamed), Move to Group… (a screen of the groups, with
-  "No group"), Archive or Unarchive, Copy Path.
-- **Rename.** Only ⋯ → Rename… renames on the board: nothing on the row starts it. In place, the
-  sidebar's title field: Enter saves, Escape cancels, an empty field restores the derived title,
+  "No group"), Archive or Unarchive, Copy Path. After them, for a session on this host, comes
+  what extensions add to the menu (§app.extensions/session-menu).
+- **Rename.** Only ⋯ → Rename… renames on the board: nothing on the row starts it. In place, a
+  title field (Sova's title store, §app.session-list/session-titles): Enter saves, Escape cancels, an empty field restores the derived title,
   and leaving the field saves what's in it (empty: cancels). A value equal to the title the field
   opened with is a cancel, never a write, on Enter or on leaving, even when the row's title
   changed while the field was open. Kept in Sova only.
@@ -1517,8 +1722,9 @@ whether anything is uncommitted, untracked files included.
 **Read-only and bounded.** Reading a tree never writes to it: no index refresh or lock, no
 fsmonitor, no textconv or external diff, and the trial merge behind `content` writes its objects to
 a scratch store that is deleted afterwards. Every git runs without a shell under a 5-second limit,
-at most four at a time. The comparison is kept until the tree's HEAD or its base moves, `dirty` for
-ten seconds, and what hasn't been asked for in an hour is dropped. With git older than 2.38 there
+at most four at a time. The comparison is kept until the tree's HEAD or its base moves, or what its
+trial merge rests on changes (the configuration, attribute files and merge drivers' code,
+§app/idle-git-cache); `dirty` is kept for ten seconds, and what hasn't been asked for in an hour is dropped. With git older than 2.38 there
 is no trial merge, and `merged` is only ever `ancestor` or `no`.
 
 ## §app.insights/explanations-page — Explanations page (`#/explanations`)
@@ -1766,6 +1972,8 @@ which draws them on the session's axis; the strip keeps no history of its own.
 - **Refetching.** Refetch after a watch `append` or chat `agent_settled`, debounced. Update in
   place.
 - **Folded width.** `.outline-body` caps at 50vh instead of `--outline-max` (40vh).
+- **Focus.** In Focus (§chat.transcript/focus-view) the strip is hidden on a single-chat screen;
+  it comes back as it was when Focus turns off.
 
 ## §app.insights/summary-sections — One section of the conversation per topic
 

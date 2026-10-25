@@ -18,7 +18,9 @@ four screens. A profile holds:
 
 Profiles are unlimited and named by the user. The main thread's own model is not part of a
 profile. These are distinct from session profiles (§chat/profiles): the picker and settings tab
-identify the setup as "Subagent profiles" or "Subagents".
+identify the setup as "Subagent profiles" or "Subagents". With the mesh on, the library is shared
+by every device profile by profile, and when another device's copy changes it, Settings → Subagents
+says so for a day and can put the previous library back (§chat.subagent-profiles/replaced).
 
 ## §chat.subagent-profiles/file — The file
 
@@ -36,7 +38,7 @@ identify the setup as "Subagent profiles" or "Subagents".
   may also carry an optional `reviewer` (`{primary, fallback}` or `null`), the adversarial
   reviewer's route (§chat.alignment-review/route): a profile without the key parses as before, and
   a parse never adds it. Likewise an optional `alignment` `{style?, visuals?}`: the align mode's
-  writing style (`default`, `simplified` or `pm`) and Visuals for chats on this profile, each
+  writing style (`pm`, `simplified` or `default`, the last read as Technical) and Visuals for chats on this profile, each
   field present only when the profile overrides the host's `mode-align.json`
   (§chat.alignment/settings-file); an empty object, an unknown key or a bad value is malformed, and a
   profile without it reads exactly as before. The default
@@ -56,10 +58,17 @@ identify the setup as "Subagent profiles" or "Subagents".
   postpones seeding until it is fixed, preserving its warning through legacy resolution. A library
   found without a default file (one was removed) is not re-seeded: the default reads as `"off"`
   until the user saves one. The seeded setup preserves the legacy routing until the user changes it. The write never replaces a file another process made first.
+  The seeded library is dated as old: its file's modification time is set to the Unix epoch, so
+  with the mesh on, a library edited on any other device wins over it, while a device alone keeps
+  it (§mesh.sync/profile-library).
 - **The legacy files stay.** Nothing deletes or rewrites `mode-delegate.json`,
   `team-defaults.json` or `mode-spec.json`; they are only the last fallback.
-- **Mesh.** With the mesh on, the library syncs like the other settings documents (whole file,
-  newest edit wins, checked with the module's own parser before it is written). The default file
+- **Mesh.** With the mesh on, the library syncs profile by profile (§mesh.sync/profile-library):
+  a device adds or changes only the profiles it has and never erases one it lacks, a deleted
+  profile stays deleted, and two edits to one profile resolve newest-wins for that profile only.
+  Every merged library is checked with the module's own parser before it is written, and its
+  shape stays exactly the file above: the merge's per-profile dates and deletions live in Sova's
+  sync state, never in the file. The default file
   never syncs: which profile new chats start from is each device's own, exactly as which profile
   each chat uses stays with that chat (§chat.subagent-profiles/resolution).
 
@@ -119,7 +128,8 @@ backend stays explicit and follows that backend's existing model-default behavio
 was given; the profile never crosses it. Synthesized coordinators and monitors keep their own tuples.
 
 - **Never a failed team.** A members default the model policy denies, whose backend isn't loaded,
-  or whose pi model the session's registry doesn't list is not used: those members run on the
+  whose pi model the session's registry doesn't list, or whose model ran out of usage at runtime
+  within the hour (§teams.defaults/runtime-fallback) is not used: those members run on the
   parent's model, and the `team_create` or `team_add` result says so in one line with the reason.
 - **The planning message** (`/team <objective>`) carries one line while a members default is set:
   "Members you don't give a model run on X; pass a member model to override."
@@ -181,8 +191,8 @@ profile in its mode menu; new chats start on the default."
   - **Reviewer**, only while adversarial review is switched on (§chat.alignment-review/route): one
     switch ("Review alignments with a reviewer"); its summary is the reviewer's model, or
     "Off · no review".
-  - **Alignment**, last: two choices, **Writing style** (Use host default, Default, Simplified,
-    Project manager) and **Visuals** (Use host default, On, Off), each starting on "Use host default"
+  - **Alignment**, last: two choices, **Writing style** (Use host default, Project manager,
+    Simplified, Technical) and **Visuals** (Use host default, On, Off), each starting on "Use host default"
     for a profile without an override; its summary is "Host default" or what it overrides
     ("Project manager · visuals on"). "Use host default" stores no field, and both on it store no
     `alignment` at all.
@@ -192,8 +202,26 @@ profile in its mode menu; new chats start on the default."
   from discovery, a changed worker its backend can't run is refused, one that can't be checked or
   that the policy denies saves with a note. The dialog's Save Changes saves the library; unsaved
   edits hold a close. Going back keeps them: the list then offers only that profile's Edit, so
-  another profile can't be opened over them, and Discard Changes or Save Changes frees the rest.
+  another profile can't be opened over them, and Save Changes frees the rest (Cancel discards them and closes the dialog).
 - A save reaches every chat on that profile from its next turn or team action.
+
+## §chat.subagent-profiles/replaced — When another device's copy changed the library
+
+When sync changed this device's library with another device's copy (§mesh.sync/kept-copies) in
+the last 24 hours, Settings → Subagents' list shows one info notice above its actions, for the
+newest such change, until it is restored:
+
+- **Title.** "Replaced by Zen's copy at 2:01 PM." when a profile here was changed or removed;
+  "Zen's copy added Fast at 2:01 PM." when it only added profiles. The device is named as this
+  device's Mesh page names it (its label), else by its id; the time is a stamp (the 12-hour clock,
+  with the date when it isn't today).
+- **Body.** What changed, by profile name ("Added Fast; changed Deep; removed Old."), then
+  "Your previous library is kept on this device."
+- **Restore Previous Library** writes the kept version back as a new edit, through the library's
+  own strict parse: it is then this device's newest edit, and syncs like any other, so profiles the
+  other copy added are deleted on every device and its changes undone. It waits while the dialog
+  holds unsaved Subagents edits. A restore that fails says so in an error banner and leaves the
+  library as it is. After a restore, the notice is gone.
 
 ## §chat.subagent-profiles/editor-rows — How the editor lays out its rows
 
@@ -232,7 +260,9 @@ one tap: **Switch This Chat to <profile>**, naming the first profile (in list or
 chat's current one, excluding Off since it promises no provider choice) whose footprint uses no
 model of the exhausted provider. Pressing
 it switches this chat only, as a pick in the menu does. With no such profile the row links to
-Settings → Subagents instead. Nothing switches automatically, and there is no near-limit hint.
+Settings → Subagents instead. A failure with no thread row of its own (its error drawn at the
+thread's end, §chat.transcript/states) keeps this row when a newer turn starts and its error
+banner goes. Nothing switches automatically, and there is no near-limit hint.
 
 ## §chat.subagent-profiles/overseer — The Overseer
 

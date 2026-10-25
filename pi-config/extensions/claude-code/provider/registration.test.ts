@@ -8,6 +8,7 @@ import { beforeEach, test } from "node:test";
 import type { ExtensionAPI, ProviderConfig, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import type { ClaudeSessionBridge } from "./types.ts";
 import {
+	CLAUDE_MODEL_FLAG,
 	CLAUDE_PROVIDER_API_KEY,
 	CLAUDE_PROVIDER_FLAG,
 	CLAUDE_PROVIDER_ID,
@@ -107,6 +108,27 @@ test("flag on registers the provider with a literal key and static models", () =
 	assert.equal(config.api, CLAUDE_PROVIDER_ID);
 	assert.equal(typeof config.streamSimple, "function");
 	assert.deepEqual(config.models?.map((model) => model.id), claudeOffer().map((m) => m.id));
+});
+
+test("a worker's id the catalog doesn't know is registered beside the catalog (--claude-code-model), still used", async () => {
+	const { pi, state, startSession } = fakePi(true);
+	registerProviderIfEnabled(pi, bridge);
+	assert.equal(state.flags.get(CLAUDE_MODEL_FLAG)?.type, "string");
+	state.values.set(CLAUDE_MODEL_FLAG, "claude-opus-6");
+	startSession();
+	const config = state.registered.get(CLAUDE_PROVIDER_ID)!;
+	assert.deepEqual(config.models?.map((model) => model.id), [...claudeOffer().map((m) => m.id), "claude-opus-6"]);
+	const refreshed = await config.refreshModels!({ allowNetwork: false, signal: new AbortController().signal } as any);
+	assert.equal(refreshed.at(-1)?.id, "claude-opus-6", "a refresh keeps it");
+	// A catalog id, or a malformed one, adds nothing.
+	for (const extra of ["claude-opus-5-5", "zai/glm-5.3", ""]) {
+		delete (globalThis as unknown as Record<symbol, boolean | undefined>)[REGISTERED_MARKER];
+		const again = fakePi(true);
+		registerProviderIfEnabled(again.pi, bridge);
+		again.state.values.set(CLAUDE_MODEL_FLAG, extra);
+		again.startSession();
+		assert.equal(again.state.registered.get(CLAUDE_PROVIDER_ID)!.models?.length, claudeOffer().length, extra);
+	}
 });
 
 test("registration happens once per process, and is never undone", () => {

@@ -15,21 +15,37 @@ The server runs on Bun: the installer downloads the version Sova pins into the i
 and checks its checksum. Then:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/install.sh | bash
 ```
 
-Until the first release is tagged, this builds Sova's `master` branch in `~/.local/share/sova`
-and creates `~/.local/bin/sova`. For another tag, branch or commit, end the command with
-`| SOVA_REF=<ref> bash`; a ref that doesn't exist stops the installer before it changes anything.
-It does **not** start the server. Run:
+This builds Sova's newest stable release (the `stable` tag) in `~/.local/share/sova`,
+creates `~/.local/bin/sova`, and adds **Sova** to your app launcher: on Linux
+`~/.local/share/applications/sova.desktop` with its icon in
+`~/.local/share/icons/hicolor/512x512/apps/sova.png`, on macOS `~/Applications/Sova.app`
+(`--no-app-entry`, or `SOVA_NO_APP_ENTRY=1`, leaves it out). For another tag, branch or commit,
+end the command with `| SOVA_REF=<ref> bash`; a ref that doesn't exist stops the installer before
+it changes anything. The installer does **not** start the server.
+
+Click **Sova** in your app launcher, or run `sova open` (the same thing): if the server isn't
+running, it starts it in the background (through the login service, if you installed one) and
+waits for it, then opens <http://127.0.0.1:4800> already unlocked in a window of its own, with no
+tabs or address bar. That window is Chrome, Chromium, Brave, Edge or Vivaldi (your default browser
+when it is one of them) running with a browser profile kept for Sova alone, in
+`~/.config/sova-browser` on Linux or `~/Library/Application Support/sova-browser` on macOS, so it
+never mixes with your own browsing. With none of those installed, Sova opens as a tab of your
+default browser instead, and the installer says so. A server started this way keeps running after
+you close the window; its output is in `~/.pi/agent/sova/app-server.log`. If it hasn't answered
+within 20 seconds, you get a notification naming that log, and nothing opens. A browser installed
+only as a Flatpak isn't found.
+
+To run the server in a terminal yourself instead:
 
 ```sh
 sova
 ```
 
-Then, in another terminal, run `sova open`: it opens <http://127.0.0.1:4800> already unlocked.
-On a machine with no browser opener (`open` or `xdg-open`), such as a server over SSH, it says so
-and exits instead; open the page yourself and paste the token from `sova token`.
+On a machine with no browser opener (`open` or `xdg-open`), such as a server over SSH, `sova open`
+says so and exits instead; open the page yourself and paste the token from `sova token`.
 Sova asks every browser for its token once, at each address it uses; `sova token` prints it, to
 paste on the unlock screen of another browser or device. A browser can also be let in with a
 pairing code instead of the token — see below. Without the installer's launcher (Sova running from
@@ -55,7 +71,7 @@ extension (`--no-extensions` skips them); it writes no settings, models, auth or
 doesn't install the optional pi configuration. It installs a login service only if you ask
 (`--service`, or yes at its prompt; see [running as a service](running-as-a-service.md)).
 The whole script is one function called on its last line, so a download cut short runs nothing.
-You can [inspect the script](https://github.com/Naomarik/sova/blob/master/scripts/install.sh)
+You can [inspect the script](https://github.com/Naomarik/sova/blob/stable/scripts/install.sh)
 before running it. Its `--dir` and `--bin` flags select different install and launcher
 directories, and `--port <n>` the port `sova` (and the service) serves on.
 
@@ -129,8 +145,8 @@ experimenting with configuration. Never commit credentials, transcripts, or pers
 
 ## Reinstall or remove
 
-Running the install command again updates to master's latest commit (or the latest of the
-`SOVA_REF` you set). An install already at that commit isn't rebuilt;
+Running the install command again updates to the newest stable release (or the latest of the
+`SOVA_REF` you set; `SOVA_REF=v0.8.0` stays on that release). An install already at that commit isn't rebuilt;
 `--reinstall` rebuilds it anyway. Pass the same options again: without `--port`, a re-run goes back
 to 4800. The installer stages the build before replacing the installation and refuses tracked
 local changes. Don't store your own files in the install directory: untracked files do not prevent
@@ -161,6 +177,19 @@ place of `~/.pi/agent` if you set one), the install, and the launcher:
 ```sh
 find ~/.pi/agent/extensions -maxdepth 1 -lname "$HOME/.local/share/sova/*" -delete
 rm -rf ~/.local/share/sova ~/.local/bin/sova
+```
+
+Then the app entry and the browser profile its window uses. On Linux:
+
+```sh
+rm -f ~/.local/share/applications/sova.desktop ~/.local/share/icons/hicolor/512x512/apps/sova.png
+rm -rf ~/.config/sova-browser
+```
+
+On macOS:
+
+```sh
+rm -rf ~/Applications/Sova.app ~/Library/Application\ Support/sova-browser
 ```
 
 This leaves your pi sessions and credentials, and Sova's state under `~/.pi/agent/sova/`, intact.

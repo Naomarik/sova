@@ -24,6 +24,7 @@ const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: [resolve(dirname(fileURLToPath(import.meta.url)), "../pi-config/extensions/mode")] }));
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { acquireChat, disposeAllChats, disposeHeldChat } = await import("./chat-manager");
 const { markOwned } = await import("./write-guard");
 const { getSessionTools } = await import("./session-tools");
@@ -33,7 +34,7 @@ after(async () => {
 });
 
 type Chat = Awaited<ReturnType<typeof acquireChat>>;
-const VIS = ["vis_check", "vis_guide"];
+const VIS = ["record_tour", "show_tour", "vis_check", "vis_guide"];
 const visTools = (chat: Chat) => chat.harness.activeTools().filter((t) => VIS.includes(t)).sort();
 const client = {
   send: (m: ChatServerMessage) => {
@@ -91,7 +92,7 @@ test("a switch during a run waits for it to settle; the run keeps its tools", as
   assert.deepEqual(during, [], "mid-run the switch changes no tool");
   await until(() => !chat.harness.isRunning());
   await piSession(chat).waitForIdle();
-  await until(() => visTools(chat).length === 2);
+  await until(() => visTools(chat).length === VIS.length);
   assert.deepEqual(visTools(chat), VIS, "settled: both follow");
   await disposeHeldChat(path, "test done");
 });
@@ -145,17 +146,18 @@ test("align on, Visuals on, vis off: two settled runs keep vis_check active, and
     const touching = (tool: string) => changes.filter((c) => [...c.added, ...c.removed].includes(tool));
 
     await set(chat, { minorModes: ["align"] });
-    assert.deepEqual(visTools(chat), VIS, "align on: both vis tools join at the switch, vis off");
+    assert.deepEqual(visTools(chat), ["vis_check", "vis_guide"], "align Visuals grants drawing tools only, never recording or tour presentation tools");
     const model = new ScriptedModel().attach(piSession(chat));
     for (const text of ["first", "second"]) {
       model.reply(async () => ({ text: "ok" }));
       chat.handle(client, { type: "prompt", text });
       await until(() => !chat.harness.isRunning());
       await piSession(chat).waitForIdle();
-      assert.deepEqual(visTools(chat), VIS, `still both after the ${text} settled run`);
+      assert.deepEqual(visTools(chat), ["vis_check", "vis_guide"], `still drawing-only after the ${text} settled run`);
     }
     assert.deepEqual(touching("vis_check"), [{ added: ["vis_check"], removed: [] }], "setActiveTools changed vis_check once, at the switch, never at a run start or settle");
     assert.equal(touching("vis_guide").length, 1, "and vis_guide once");
+    for (const tool of ["record_tour", "show_tour"]) assert.equal(touching(tool).length, 0, `${tool} is not granted by align Visuals`);
     await disposeHeldChat(path, "test done");
   } finally {
     rmSync(file, { force: true });

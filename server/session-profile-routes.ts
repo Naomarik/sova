@@ -1,9 +1,9 @@
 import type { Hono } from "hono";
-import { keyOf, THINKING_LEVELS, type ListedProfile, type Profile, type ProfilesListing } from "../shared/profiles";
+import { DEFAULT_PROFILE, keyOf, parseMine, THINKING_LEVELS, type ListedProfile, type Profile, type ProfileMine, type ProfilesListing } from "../shared/profiles";
 import type { SessionSummary } from "../shared/protocol";
-import { acquireChat, disposeHeldChat, heldChat, setOpeningChoice, setSingletonCheck } from "./chat-manager";
+import { acquireChatHandle, chatHandle, type ChatHandle, closeChat, setOpeningChoice, setSingletonCheck } from "./chat-handle";
 import { modelDenial, readModelPolicy } from "./model-policy";
-import { readMode, type ModePatch } from "./mode-state";
+import { parseModePatch, readMode, type ModePatch } from "./mode-state";
 import { listModels } from "./models";
 import { addProfile } from "./profiles-store";
 import { subagentProfilesInfo } from "./subagent-profiles";
@@ -12,7 +12,7 @@ import { resolveSessionPath } from "./paths";
 import { findProfile, profileSources, readHidden, setHidden } from "./profile-sources";
 import { approve } from "./profile-trust";
 import { projectRootOf } from "./project-root";
-import { setPowersHost } from "./session-powers";
+import { type PowersHost, type PowersSend, type PowersSendResult, sendInviting, setPowersHost } from "./session-powers";
 import { resolveChoice, singletonHolder, SingletonRefusal, snapshotKey, type ProfileChoice } from "./session-profile";
 import { getSessionSummary, listSessions } from "./sessions-index";
 import { rowsOf } from "./transcript";
@@ -60,41 +60,69 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
   }
   let chat;
   try {
-    chat = await acquireChat(path);
+    chat = await acquireChatHandle(path);
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
   }
   const next = r.profile;
-  const prev = chat.profileState?.data?.profile ?? null;
+  const prevData = chat.mirror.profile;
+  const prev = prevData?.profile ?? null;
+  // What My settings puts back: what the session had at its first profile pick, carried from one
+  // profile to the next, and replayed (then dropped) when My settings is picked again.
+  const remembered = prev ? parseMine(prevData?.mine) : undefined;
+  const mine = next ? (prev ? remembered : mineOf(chat)) : undefined;
+  const restore = !next ? remembered : undefined;
   // Everything the pick sets is checked here first, so a pick that can't apply writes nothing.
   if (next?.model) {
-    const why = modelDenial(readModelPolicy(), next.model) ?? (await chat.harness.findModel(next.model).then((f) => (f.ok ? null : f.error)));
+    const why = modelDenial(readModelPolicy(), next.model) ?? (await chat.findModel(next.model).then((f) => (f.ok ? null : f.error)));
     if (why) return { ok: false, status: 400, error: `${next.label} can't be picked here: ${why}` };
   }
   if (next?.thinking && !(THINKING_LEVELS as readonly string[]).includes(next.thinking))
     return { ok: false, status: 400, error: `${next.label} can't be picked here: "${next.thinking}" isn't an effort level.` };
-  // Switching back from a profile that set subagents pins the device default, since a pick can't be
-  // cleared; a chat that never had a pick gets none.
+  // Switching back from a profile that set subagents pins the remembered pick, else the device
+  // default, since a pick can't be cleared; a chat that never had a pick gets none.
   let subagents = next?.subagents;
-  if (!subagents && prev?.subagents && chat.subagentPick !== undefined) subagents = subagentProfilesInfo().default;
+  const own = restore?.subagents && !subagentsUnusable(restore.subagents) ? restore.subagents : undefined;
+  if (!subagents && own) subagents = own !== chat.mirror.subagentPick ? own : undefined;
+  else if (!subagents && prev?.subagents && chat.mirror.subagentPick !== undefined) subagents = subagentProfilesInfo().default;
   if (subagents) {
-    const why = (next?.subagents ? subagentsUnusable(next.subagents) : null) ?? chat.subagentSwitchRefusal();
-    if (why) return { ok: false, status: 400, error: `${next?.label ?? "Default"} can't be picked here: ${why}` };
+    const why = (next?.subagents ? subagentsUnusable(next.subagents) : null) ?? (await chat.subagentSwitchRefusal());
+    if (why) return { ok: false, status: 400, error: `${next?.label ?? DEFAULT_PROFILE.label} can't be picked here: ${why}` };
   }
   // A profile without a model or effort, after one that set it: back to what a new session opens on
-  // (the new-session default when usable, else pi's own; read, never written), by a fresh reopen below.
+  // (the new-session default when usable, else pi's own; read, never written), by a fresh reopen
+  // below. My settings puts back the remembered ones instead, a model that can't be used now aside.
+  let model = next?.model;
+  let thinking = next?.thinking;
   const fresh = { model: !next?.model && !!prev?.model, thinking: !next?.thinking && !!prev?.thinking };
-  const model = next?.model;
-  const thinking = next?.thinking;
+  if (restore?.model && restore.model !== chat.mirror.model?.ref) {
+    const usable = !modelDenial(readModelPolicy(), restore.model) && (await chat.findModel(restore.model).then((f) => f.ok, () => false));
+    if (usable) (model = restore.model), (fresh.model = false);
+  } else if (restore?.model) fresh.model = false;
+  // The effort after the model: a model switch re-clamps it.
+  if (restore?.thinking && (THINKING_LEVELS as readonly string[]).includes(restore.thinking) && (model || restore.thinking !== chat.mirror.thinking))
+    (thinking = restore.thinking as Profile["thinking"]), (fresh.thinking = false);
+  else if (restore?.thinking === chat.mirror.thinking) fresh.thinking = false;
   // Its mode and minor modes, pinned together; a field it doesn't set, after a profile that set it,
-  // goes back to mode.json's default (read, never written) and is pinned with the other.
+  // goes back to mode.json's default (read, never written) and is pinned with the other. My settings
+  // puts back the remembered pair when it differs from now.
   const modePatch: ModePatch = {};
-  if (next?.mode) modePatch.mode = next.mode as ModePatch["mode"];
-  else if (prev?.mode) modePatch.mode = readMode().mode;
-  if (next?.minorModes) modePatch.minorModes = [...next.minorModes];
-  else if (prev?.minorModes) modePatch.minorModes = [...readMode().minorModes];
+  const back = restore ? parseModePatch({ mode: restore.mode, minorModes: restore.minorModes }) : null;
+  if (back && !("error" in back)) {
+    const now = chat.mirror.mode;
+    const want = back.minorModes ?? [];
+    if (back.mode !== now.mode || want.length !== now.minorModes.length || want.some((m) => !now.minorModes.includes(m))) {
+      modePatch.mode = back.mode;
+      modePatch.minorModes = [...want];
+    }
+  } else {
+    if (next?.mode) modePatch.mode = next.mode as ModePatch["mode"];
+    else if (prev?.mode) modePatch.mode = readMode().mode;
+    if (next?.minorModes) modePatch.minorModes = [...next.minorModes];
+    else if (prev?.minorModes) modePatch.minorModes = [...readMode().minorModes];
+  }
   try {
-    chat.writeProfile({ v: 1, profile: next, ...(by ? { by } : {}) });
+    await chat.writeProfile({ v: 1, profile: next, ...(by ? { by } : {}), ...(mine ? { mine } : {}) });
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
   }
@@ -108,20 +136,34 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
     }
   };
   if (modePatch.mode || modePatch.minorModes) await step("mode", () => chat.switchMode(modePatch).then(() => chat.pinMode()));
-  if (model && model !== chat.harness.model()?.ref) await step("model", () => chat.setModelRef(model));
+  if (model && model !== chat.mirror.model?.ref) await step("model", () => chat.setModel(model));
   if (thinking) await step("effort", () => chat.setThinking(thinking));
   if (subagents) await step("subagent profile", () => chat.switchSubagentProfile(subagents));
-  await disposeHeldChat(path, "Applying the profile.");
+  await closeChat(path, "Applying the profile.");
   if (fresh.model || fresh.thinking) {
     setOpeningChoice(path, { fresh });
     await step("model and effort reset", async () => {
-      const reopened = await acquireChat(path);
-      reopened.flushDeferredAppends();
+      const reopened = await acquireChatHandle(path);
+      await reopened.flushDeferredAppends();
     });
-    await disposeHeldChat(path, "Applying the profile.");
+    await closeChat(path, "Applying the profile.");
   }
-  if (failed.length) return { ok: false, status: 409, error: `${next?.label ?? "Default"} was picked, but ${failed.join(", and ")}.` };
+  if (failed.length) return { ok: false, status: 409, error: `${next?.label ?? DEFAULT_PROFILE.label} was picked, but ${failed.join(", and ")}.` };
   return { ok: true };
+}
+
+/** What a session has now, as My settings remembers it at its first profile pick. */
+function mineOf(chat: Pick<ChatHandle, "mirror">): ProfileMine {
+  const m = chat.mirror;
+  const ref = m.model?.ref;
+  const thinking = m.thinking;
+  return {
+    mode: m.mode.mode,
+    minorModes: [...m.mode.minorModes],
+    ...(ref ? { model: ref } : {}),
+    ...((THINKING_LEVELS as readonly string[]).includes(thinking) ? { thinking } : {}),
+    ...(m.subagentPick ? { subagents: m.subagentPick } : {}),
+  };
 }
 
 /** Why a profile's subagent profile can't be picked on this device, or null. */
@@ -156,19 +198,21 @@ async function unusableProfiles(profiles: readonly ListedProfile[], info = subag
 export async function saveCurrentProfile(path: string, label: string): Promise<{ ok: true; profile: Profile; listing: ProfilesListing } | { ok: false; status: 400 | 404 | 409; error: string }> {
   const s = await getSessionSummary(path);
   if (!s) return { ok: false, status: 404, error: "Session file not found" };
-  let chat = heldChat(path);
+  let chat = chatHandle(path);
   try {
-    chat ??= await acquireChat(path);
+    chat ??= await acquireChatHandle(path);
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
   }
-  const thinking = chat.harness.thinking();
+  const thinking = chat.mirror.thinking;
+  const ref = chat.mirror.model?.ref;
+  const pick = chat.mirror.subagentPick;
   try {
     const profile = addProfile({
       label,
-      ...(chat.harness.model()?.ref ? { model: chat.harness.model()!.ref } : {}),
+      ...(ref ? { model: ref } : {}),
       ...((THINKING_LEVELS as readonly string[]).includes(thinking) ? { thinking: thinking as Profile["thinking"] } : {}),
-      ...(chat.subagentPick ? { subagents: chat.subagentPick } : {}),
+      ...(pick ? { subagents: pick } : {}),
     });
     return { ok: true, profile, listing: await profilesListing(s.cwd) };
   } catch (err) {
@@ -180,13 +224,11 @@ export async function saveCurrentProfile(path: string, label: string): Promise<{
 export async function profilesListing(cwd?: string | null): Promise<ProfilesListing> {
   const [src, all] = await Promise.all([profileSources(cwd), listSessions()]);
   const running: ProfilesListing["running"] = {};
-  const everRun = new Set<string>();
   for (const s of all) {
     const p = s.profile;
-    if (!p?.singleton || p.custom) continue;
+    if (!p?.singleton || p.custom || s.archived) continue;
     const key = keyOf(p);
-    everRun.add(key);
-    if (!s.archived && !running[key]) running[key] = holderOf(s);
+    if (!running[key]) running[key] = holderOf(s);
   }
   const info = subagentProfilesInfo();
   const unusable = await unusableProfiles([...src.builtins, ...src.yours, ...src.project.profiles], info);
@@ -198,7 +240,6 @@ export async function profilesListing(cwd?: string | null): Promise<ProfilesList
     problems: src.problems,
     hidden: readHidden(),
     running,
-    everRun: [...everRun],
     unusable,
     subagents: info.profiles.map((p) => ({ id: p.id, name: p.name, footprint: p.footprint })),
     ...(src.yoursError ? { error: src.yoursError } : {}),
@@ -262,7 +303,33 @@ setSingletonCheck(async (key, path) => {
   return holder ? holderOf(holder) : null;
 });
 
-setPowersHost({
+/** A session message handed to its target by this server (a chat here, or a chat process's
+    `@powers.send` action): the target's own checks, then its send, marked as the sender's. */
+async function sendToSession({ path, text, delivery, from }: PowersSend): Promise<PowersSendResult> {
+  const s = await getSessionSummary(path);
+  if (!s) return { ok: false, error: "That session no longer exists." };
+  if (s.live) return { ok: false, error: `"${s.title}" is open in a terminal (pid ${s.live.pid}), so it is read-only.` };
+  let chat;
+  try {
+    chat = await acquireChatHandle(path);
+  } catch (err) {
+    return { ok: false, error: `"${s.title}" can't take messages now: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  // A pristine One at a time session's first message: the same check as its composer's.
+  const single = chat.mirror.profile?.profile;
+  if (single?.singleton && chat.mirror.pristine && singletonHolder(snapshotKey(single), await listSessions(), path))
+    return { ok: false, error: `${single.label} is set to One at a time and runs in another session, so "${s.title}" takes no first message.` };
+  try {
+    const r = await chat.send({ text, origin: "server", checkModel: true, ...(delivery ? { delivery } : {}), sentBySession: from });
+    return { ok: true, queued: r.queued, kind: r.queued ? (delivery ?? "followUp") : "prompt" };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Session powers as this server answers them: the tools of a chat it hosts, and the asks and
+    `@powers.send` action of a chat in a process of its own (chat-handle.ts answerChatAsk). */
+export const powersHost: PowersHost = {
   sessions: () => listSessions(),
   async session(id) {
     const s = (await listSessions()).find((x) => x.id === id);
@@ -271,31 +338,10 @@ setPowersHost({
   transcript: async (path) => rowsOf(await readBranch(path)),
   insight: (path) => getSessionInsight(path),
   held(path) {
-    const chat = heldChat(path);
-    return chat ? { streaming: chat.harness.isRunning(), queued: chat.queue.size } : null;
+    const chat = chatHandle(path);
+    return chat ? { streaming: chat.mirror.running, queued: chat.mirror.queue.web } : null;
   },
   projectRoot: (cwd) => projectRootOf(cwd),
-  async send(path, text, delivery, from) {
-    const s = await getSessionSummary(path);
-    if (!s) return { ok: false, error: "That session no longer exists." };
-    if (s.live) return { ok: false, error: `"${s.title}" is open in a terminal (pid ${s.live.pid}), so it is read-only.` };
-    let chat;
-    try {
-      chat = await acquireChat(path);
-    } catch (err) {
-      return { ok: false, error: `"${s.title}" can't take messages now: ${err instanceof Error ? err.message : String(err)}` };
-    }
-    // A pristine One at a time session's first message: the same check as its composer's.
-    const single = chat.profileState?.data?.profile;
-    if (single?.singleton && chat.pristine && singletonHolder(snapshotKey(single), await listSessions(), path))
-      return { ok: false, error: `${single.label} is set to One at a time and runs in another session, so "${s.title}" takes no first message.` };
-    try {
-      chat.assertModelAllowed();
-      const r = chat.acceptPrompt(text, undefined, "server", undefined, { ...(delivery ? { delivery } : {}), sentBySession: from });
-      void r.turn.catch((err) => chat.reportTurnFailure(err));
-      return { ok: true, queued: r.queued, kind: r.queued ? (delivery ?? "followUp") : "prompt" };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  },
-});
+  send: (a) => sendInviting(a, sendToSession),
+};
+setPowersHost(powersHost);

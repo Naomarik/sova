@@ -5,6 +5,7 @@ import { ALIGN_STYLE_LABELS, type AlignStyle } from "./align-settings.ts";
 import { ALIGN_STYLE_PARAGRAPHS, buildMinorPrompt, MINOR_MODES, promptedMinorModes, VIS_GUIDE_DIR, workerMinorModes, type AlignPromptOptions, type MinorMode } from "./minor.ts";
 import { routeAll, usable, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import type { Mode, ModeState } from "./state.ts";
+import { WORKER_MODES_CAP, type ProjectModeRef, type ProjectModeSnapshot } from "./project-format.ts";
 
 /** Before any probe: every profile on its primary, unverified. What a fresh Delegate session starts from. */
 export const DEFAULT_ROUTES: readonly ProfileRoute[] = routeAll(delegateDefaults(), {}, () => null);
@@ -121,6 +122,8 @@ export function composePrompt(
 	writer: SlotRoute | null = null,
 	headMinors: readonly MinorMode[] = state.minorModes,
 	align?: AlignPromptOptions,
+	/** The head's project mode blocks (their saved copies' text), in turn-on order: after every built-in. */
+	projectBlocks: readonly string[] = [],
 ): string | undefined {
 	const blocks: string[] = [];
 	if (state.mode === "delegate") {
@@ -128,7 +131,53 @@ export function composePrompt(
 		blocks.push(state.minorModes.includes("align") ? `${delegate}\n\n${buildDelegateAlignBridge(align?.visuals === true)}` : delegate);
 	}
 	for (const minor of promptedMinorModes(headMinors)) blocks.push(minorBlock(minor, writer, false, align));
+	blocks.push(...projectBlocks);
 	return blocks.length > 0 ? blocks.join("\n\n") : undefined;
+}
+
+/**
+ * The hidden note's part for project modes switched since the model was last told (§chat.mode-menu/project-modes),
+ * from `told` to `now` (refs: id and saved copy). A mode turned on gets its copy's whole block unless that very
+ * copy is already in context (in the head, or carried by a note since the last compaction: `known.guides`, by
+ * sha), when a pointer is enough. Turned on again with a different copy, the earlier block is said to be
+ * replaced. Turned off: its block no longer applies. `snapshots` by sha; a ref without one is skipped.
+ */
+export function buildProjectModeNote(
+	told: readonly ProjectModeRef[],
+	now: readonly ProjectModeRef[],
+	known: { head: readonly ProjectModeRef[]; guides: readonly string[] },
+	snapshots: ReadonlyMap<string, ProjectModeSnapshot>,
+): { text: string; guides: string[] } | undefined {
+	const inHead = (ref: ProjectModeRef) => known.head.some((h) => h.sha === ref.sha && h.id === ref.id);
+	const where = (ref: ProjectModeRef) => (inHead(ref) ? "in your system prompt" : "given earlier in this conversation");
+	const parts: string[] = [];
+	const guides: string[] = [];
+	for (const was of told) {
+		if (now.some((ref) => ref.id === was.id)) continue;
+		parts.push(`Mode change: the user turned the project minor mode ${was.id} off. Its instructions (the "# Project minor mode: ${was.id}" block ${where(was)}) no longer apply, and its tools are gone; do not follow them unless a later note turns it back on.`);
+	}
+	for (const ref of now) {
+		const was = told.find((t) => t.id === ref.id);
+		if (was?.sha === ref.sha) continue;
+		const snapshot = snapshots.get(ref.sha);
+		if (!snapshot) continue;
+		const replaced = was ? ` It replaces the earlier "# Project minor mode: ${ref.id}" block ${where(was)}, which no longer applies.` : "";
+		if (inHead(ref) || known.guides.includes(ref.sha)) {
+			parts.push(`Mode change: the user turned the project minor mode ${ref.id} back on. Its instructions (the "# Project minor mode: ${ref.id}" block ${where(ref)}) apply again from now on.${replaced}`);
+		} else {
+			guides.push(ref.sha);
+			parts.push(`Mode change: the user turned the project minor mode ${ref.id} on. Its instructions follow and apply from now on, as if they were part of your system prompt.${replaced}\n\n${snapshot.text}`);
+		}
+	}
+	return parts.length > 0 ? { text: parts.join("\n\n"), guides } : undefined;
+}
+
+/**
+ * The project modes a worker this session starts carries (§chat.mode-menu/workers): those with `workers: yes`,
+ * in turn-on order, as many as fit beside `builtIn` worker modes under WORKER_MODES_CAP.
+ */
+export function workerProjectModes(builtIn: number, snapshots: readonly ProjectModeSnapshot[]): ProjectModeSnapshot[] {
+	return snapshots.filter((snapshot) => snapshot.workers).slice(0, Math.max(0, WORKER_MODES_CAP - builtIn));
 }
 
 /** One minor mode's block exactly as the prompt carries it: spec gains the writer paragraph while a writer is set, align its style and Visuals. */
@@ -181,12 +230,13 @@ export function buildModeNote(
 
 /**
  * The hidden note for a writing style changed after the model was told one (§chat.alignment/style):
- * the new style's paragraph, superseding the earlier one, or, back to Default, that it no longer applies.
+ * the new style's paragraph, superseding the earlier one, or, switching to Technical (no paragraph), that
+ * the earlier one no longer applies.
  */
 export function buildAlignStyleNote(from: AlignStyle, to: AlignStyle): string {
 	const paragraph = ALIGN_STYLE_PARAGRAPHS[to];
 	if (paragraph === undefined) {
-		return `Writing style change: the user set the align writing style back to Default. The earlier "Writing style: ${ALIGN_STYLE_LABELS[from]}" paragraph no longer applies; write alignments at your usual level of detail from now on.`;
+		return `Writing style change: the user set the align writing style to ${ALIGN_STYLE_LABELS[to]}. The earlier "Writing style: ${ALIGN_STYLE_LABELS[from]}" paragraph no longer applies; write alignments with the files, code and technical trade-offs they need from now on.`;
 	}
 	return `Writing style change: the user set the align writing style to ${ALIGN_STYLE_LABELS[to]}. It applies to every alignment you write or change from now on, instead of any earlier writing style:\n\n${paragraph}`;
 }
@@ -196,7 +246,7 @@ export function buildAlignStyleNote(from: AlignStyle, to: AlignStyle): string {
  * session that plans, promotes and briefs, and stays byte-identical, so what differs for a worker is said
  * here. The parent promotes; the worker's brief can say otherwise.
  */
-export const SPEC_WORKER_NOTE = `You are a worker: a parent session started you, and it promotes. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started. Do not promote, commit, or record \`--commit\` evidence unless your brief says to; say instead what is ready to promote. List each foreign § you updated in your final report.`;
+export const SPEC_WORKER_NOTE = `You are a worker: a parent session started you, and it promotes on its own branch before calling it ready. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started. Promote, commit or record \`--commit\` evidence only when your brief says to, and then only on its branch, never by landing on the default branch; otherwise say what is ready to promote. List each foreign § you updated in your final report.`;
 
 /** One minor mode's block as a worker receives it: spec gets the worker note, never the writer paragraph. */
 function buildWorkerMinorPrompt(mode: MinorMode): string {
@@ -209,8 +259,9 @@ function buildWorkerMinorPrompt(mode: MinorMode): string {
  * modes only (MINOR_WORKER), in registry order. No major-mode block, no Delegate+align bridge, no spec
  * writer. undefined when none applies.
  */
-export function composeWorkerPrompt(state: Pick<ModeState, "minorModes">): string | undefined {
-	const blocks = promptedMinorModes(workerMinorModes(state.minorModes)).map(buildWorkerMinorPrompt);
+export function composeWorkerPrompt(state: Pick<ModeState, "minorModes">, projects: readonly ProjectModeSnapshot[] = []): string | undefined {
+	const minors = workerMinorModes(state.minorModes);
+	const blocks = [...promptedMinorModes(minors).map(buildWorkerMinorPrompt), ...workerProjectModes(minors.length, projects).map((snapshot) => snapshot.text)];
 	return blocks.length > 0 ? blocks.join("\n\n") : undefined;
 }
 
@@ -246,6 +297,8 @@ export function statusLabel(
 	minorModes: readonly MinorMode[],
 	/** The routed spec writer while spec is on; off its primary it reads `writer:fallback` / `writer:ask`. */
 	writer: SlotRoute | null = null,
+	/** The project modes on, by id, after the built-ins. */
+	projectIds: readonly string[] = [],
 ): { text: string; tone: StatusTone } {
 	const extras: string[] = [];
 	let degraded = false;
@@ -257,13 +310,13 @@ export function statusLabel(
 		degraded = fallback.length + none.length > 0;
 		if (strict) extras.push("strict");
 	}
-	extras.push(...minorModes);
+	extras.push(...minorModes, ...projectIds);
 	if (writer && writer.via !== "primary" && minorModes.includes("spec")) {
 		extras.push(writer.via === "fallback" ? "writer:fallback" : "writer:ask");
 		degraded = true;
 	}
 	return {
 		text: [mode, ...extras].join(" · "),
-		tone: degraded ? "warning" : mode === "delegate" || minorModes.length > 0 ? "accent" : "dim",
+		tone: degraded ? "warning" : mode === "delegate" || minorModes.length + projectIds.length > 0 ? "accent" : "dim",
 	};
 }

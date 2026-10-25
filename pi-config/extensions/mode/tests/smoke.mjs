@@ -1,6 +1,8 @@
 // Offline wiring smoke test for the mode extension. No model requests.
 // Drives the real index.ts through the globally installed pi runtime (jiti alias),
-// with a fake ExtensionAPI/TUI and a fake claude-code backend registration.
+// with a fake ExtensionAPI/TUI. claude-code is built in (no backend registration): the main
+// scenarios swap its model list through the extension's test-only `claudeModels` option, and one
+// scenario runs on the real Claude catalog.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -96,7 +98,7 @@ function makeCtx(store) {
 	};
 }
 
-// Fake claude-code backend; models list is swappable per scenario.
+// claude-code's model list (in place of Sova's catalog), swappable per scenario.
 let offered = [
 	{ id: "claude-fable-5-1", name: "Fable" },
 	{ id: "claude-opus-5-5", name: "Opus" },
@@ -110,24 +112,16 @@ const ctx = makeCtx(store);
 // gate that holds them open.
 let listCalls = 0;
 let gate;
-events.on("subagents:backend-discover", () => {
-	events.emit("subagents:backend-register", {
-		version: 1,
-		id: "claude-code",
-		listModels: async () => {
-			listCalls++;
-			if (gate) await gate;
-			if (offered instanceof Error) throw offered;
-			return structuredClone(offered);
-		},
-		validate: () => {},
-		create: () => {
-			throw new Error("smoke test must not create workers");
-		},
-	});
-});
+const claudeModels = async () => {
+	listCalls++;
+	if (gate) await gate;
+	if (offered instanceof Error) throw offered;
+	return offered.map((m) => ({ id: m.id, efforts: m.efforts ?? [] }));
+};
+// A claude-code registration is never asked for, and one that arrives anyway is not what Delegate reads.
+events.on("subagents:backend-discover", () => assert.fail("claude-code discovery must not go through backend registration"));
 
-modeExtension(api);
+modeExtension(api, { claudeModels });
 
 assert.ok(commands.has("mode"), "/mode registered");
 assert.ok(shortcuts.has("alt+m"), "alt+m registered");
@@ -401,7 +395,9 @@ await flush();
 assert.equal(store.status.get("mode"), "<accent>delegate · strict · align</accent>", "the newest usable snapshot wins over --major/--minor and the default");
 assert.deepEqual(getTools(), ["read", "bash", "grep", "align"], "restoring strict heavy reapplies the strict tool set, and align (on in the snapshot) brings its tool");
 assert.match((await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt, /# Mode: delegate/, "the restored mode shapes the prompt");
-assert.equal(entries.length, entriesBefore, "restoring appends nothing");
+// The head built with align on records its writing style: no mode-align.json means Project manager, which a
+// head records (mode-head); restoring itself appends nothing else.
+assert.deepEqual(entries.slice(entriesBefore), [{ type: "mode-head", data: { v: 1, style: "pm" } }], "restoring appends nothing; the Project manager head records its style");
 
 // An empty branch adopts the default as it is now, and still writes nothing
 writeDefault("normal", ["align"]);
@@ -896,28 +892,36 @@ await flush();
 assert.equal(listCalls, 1, "a fresh discovery is not repeated on the next turn");
 await commands.get("mode").handler("normal", ctx);
 
-// ── A backend that wasn't loaded is asked again at the next turn, not after 10 minutes ──
+// ── claude-code is built in: with no backend registration at all, its profiles route on the Claude catalog ──
 {
-	const late = makeApi();
-	let loaded = false;
-	late.events.on("subagents:backend-discover", () => {
-		if (!loaded) return;
-		late.events.emit("subagents:backend-register", { version: 1, id: "claude-code", listModels: async () => [{ id: "claude-fable-5-1", name: "F" }, { id: "claude-opus-5-5", name: "O" }], validate() {}, create() {} });
-	});
-	const lateStore = { status: new Map(), notices: [], widgets: new Map(), branch: [], customCalls: [] };
-	const lateCtx = makeCtx(lateStore);
-	modeExtension(late.api);
-	const lateStart = (event) => late.hooks.get("before_agent_start")[0](event, lateCtx);
-	await late.commands.get("mode").handler("delegate", lateCtx);
-	assert.equal(lateStore.status.get("mode"), "<warning>delegate · ask:plan,investigate,routine,complex</warning>", "no backend loaded: every claude profile asks");
-	assert.match((await lateStart({ systemPrompt: "base" })).systemPrompt, /- Routine implementation .* → NO AVAILABLE WORKER \(the claude-code backend is not loaded/);
-	const settle = () => new Promise((resolve) => setTimeout(resolve, 60)); // a missing backend's probe waits 25ms for registration
-	await settle(); // that turn's own re-ask (still not loaded) lands
-	loaded = true; // e.g. the claude-code extension came up after a /reload of its own
-	await lateStart({ systemPrompt: "base" }); // this turn re-asks in the background
-	await settle();
-	assert.equal(lateStore.status.get("mode"), "<accent>delegate</accent>", "the next turn found the backend");
-	assert.match((await lateStart({ systemPrompt: "base" })).systemPrompt, /- Routine implementation .* → backend "claude-code", model "claude-opus-5-5", effort "low"/);
+	const { claudeOffer } = await jiti.import(pathToFileURL(path.resolve(new URL("../../claude-code/catalog.ts", import.meta.url).pathname)).href);
+	const { WorkerProbe } = await jiti.import(pathToFileURL(path.resolve(new URL("../discovery.ts", import.meta.url).pathname)).href);
+	const bare = makeApi();
+	let discoverAsked = 0;
+	bare.events.on("subagents:backend-discover", () => discoverAsked++); // nobody answers, as with the subagents extension today
+	const bareStore = { status: new Map(), notices: [], widgets: new Map(), branch: [], customCalls: [] };
+	const bareCtx = makeCtx(bareStore);
+
+	// The probe itself: the catalog, ids and efforts as agent_models lists them, never "missing".
+	const discovery = await new WorkerProbe(bare.api).discover(bareCtx, "claude-code");
+	assert.deepEqual(
+		discovery,
+		{ models: claudeOffer().map((m) => ({ id: m.id, ...(m.efforts.length ? { efforts: [...m.efforts] } : {}) })) },
+		"claude-code discovery is Sova's Claude catalog",
+	);
+	assert.ok(discovery.models.some((m) => m.id === "claude-opus-5-5"), "the catalog offers claude-opus-5-5");
+
+	// The extension as pi loads it (no options): every built-in Claude profile is available.
+	modeExtension(bare.api);
+	const bareStart = (event) => bare.hooks.get("before_agent_start")[0](event, bareCtx);
+	await bare.commands.get("mode").handler("delegate", bareCtx);
+	assert.equal(bareStore.status.get("mode"), "<accent>delegate</accent>", "no registration: claude profiles still on their primaries");
+	const barePrompt = (await bareStart({ systemPrompt: "base" })).systemPrompt;
+	assert.match(barePrompt, /- Routine implementation .* → backend "claude-code", model "claude-opus-5-5", effort "low"/);
+	assert.doesNotMatch(barePrompt, /NO AVAILABLE WORKER|not loaded/, "no claude-code profile reads as not loaded");
+	assert.equal(discoverAsked, 0, "claude-code discovery asks for no backend registration");
+	await bare.commands.get("mode").handler("status", bareCtx);
+	assert.doesNotMatch(bareStore.notices.at(-1).message, /not loaded|not verified/, "/mode status verifies every claude profile");
 }
 
 // ── Spec writer: re-read at the turn boundary and probed while spec is on, outside delegate too ──
@@ -1138,7 +1142,7 @@ await commands.get("mode").handler("normal", ctx);
 // cached prefix survives a toggle on every provider. Each fake here records, in order, what pi would
 // put on the branch: the extension's entries and the notes it delivers.
 {
-	const { VIS_INSTRUCTIONS, SPEC_INSTRUCTIONS, VIS_KINDS, visGuide } = await jiti.import(pathToFileURL(path.resolve(new URL("../minor.ts", import.meta.url).pathname)).href);
+	const { VIS_INSTRUCTIONS, SPEC_INSTRUCTIONS, VIS_GUIDE_NAMES, VIS_KINDS, visGuide } = await jiti.import(pathToFileURL(path.resolve(new URL("../minor.ts", import.meta.url).pathname)).href);
 	const branch = [{ type: "custom", customType: "mode", data: { mode: "normal", active: { version: 1, mode: "normal", strict: false, minorModes: ["spec"] } } }];
 	const open = () => {
 		const host = makeApi();
@@ -1188,9 +1192,11 @@ await commands.get("mode").handler("normal", ctx);
 	assert.deepEqual(first.notes, [], "nothing to tell on the first run");
 	const hasGuideTool = () => session.host.getTools().includes("vis_guide");
 	assert.ok(!hasGuideTool(), "no vis_guide while vis is off");
-	// The tool: in-process, kind is exactly the listed kinds, and a lookup is the shared rules then the kind's file.
+	// The tool: in-process, kind is exactly the listed kinds then the tour guide's parts, and a lookup is the shared rules then the kind's file.
 	const guideTool = session.host.registeredTools.get("vis_guide");
-	assert.deepEqual(guideTool.parameters.properties.kind.enum, [...VIS_KINDS]);
+	assert.deepEqual(guideTool.parameters.properties.kind.enum, [...VIS_GUIDE_NAMES]);
+	assert.deepEqual(VIS_GUIDE_NAMES, [...VIS_KINDS, "tour-signin", "tour-sites", "tour-sova", "tour-sharing"]);
+	assert.equal((await guideTool.execute("t0", { kind: "tour-signin" })).content[0].text, visGuide("tour-signin"));
 	const looked = await guideTool.execute("t1", { kind: "wireframe" });
 	assert.equal(looked.content[0].text, visGuide("wireframe"));
 	assert.match(looked.content[0].text, /^# vis: rules for every kind\n[\s\S]*\n# vis wireframe\n/);

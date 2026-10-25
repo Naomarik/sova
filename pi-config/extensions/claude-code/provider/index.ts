@@ -15,7 +15,7 @@
  */
 import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import type { ThinkingLevelMap } from "@earendil-works/pi-ai";
-import { claudeContextWindow, claudeModel, claudeOffer, resolveClaude } from "../catalog.ts";
+import { claudeContextWindow, claudeModel, claudeOffer, isClaudeIdShape, resolveClaude } from "../catalog.ts";
 import { CLAUDE_LOGIN_ENTRY, hostLogins, recordedLogin } from "../accounts.ts";
 import { registerAutoCompact } from "./auto-compact.ts";
 import { CLAUDE_LOGIN_COMMAND, pickChatLogin } from "./login-command.ts";
@@ -24,6 +24,11 @@ import { createClaudeStreamSimple } from "./stream.ts";
 import type { ClaudeSessionBridge } from "./types.ts";
 
 export const CLAUDE_PROVIDER_FLAG = "claude-code-provider";
+/**
+ * One more model id to register beside the catalog: a Claude worker started on an id the catalog
+ * doesn't know yet (§app.claude-code-provider/catalog: still used, never refused). Workers only.
+ */
+export const CLAUDE_MODEL_FLAG = "claude-code-model";
 export const CLAUDE_PROVIDER_ID = "claude-code-cli";
 /** Required by registerProvider, never dialled: the CLI is a local process. */
 export const CLAUDE_PROVIDER_BASE_URL = "claude-code-cli://local";
@@ -74,6 +79,12 @@ export function toProviderModel(model: { id: string; name: string; efforts?: rea
  */
 export const STATIC_MODELS: ProviderModelConfig[] = claudeOffer().map((m) => toProviderModel(m));
 
+/** The catalog, plus a shape-valid id it doesn't know (CLAUDE_MODEL_FLAG). */
+export function withExtraModel(models: ProviderModelConfig[], extra: unknown): ProviderModelConfig[] {
+	if (typeof extra !== "string" || !isClaudeIdShape(extra) || models.some((m) => m.id === extra)) return models;
+	return [...models, toProviderModel({ id: extra, name: extra })];
+}
+
 /** The catalog, for pi's refreshModels: the same list online and offline. */
 export async function refreshClaudeModels(_context: { allowNetwork: boolean; signal: AbortSignal }): Promise<ProviderModelConfig[]> {
 	return STATIC_MODELS;
@@ -105,6 +116,10 @@ export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessio
 		default: false,
 		description: "Expose the local Claude Code CLI as pi models (experimental)",
 	});
+	pi.registerFlag(CLAUDE_MODEL_FLAG, {
+		type: "string",
+		description: "A Claude model id to offer beside Sova's catalog (a worker's id the catalog doesn't know yet)",
+	});
 	// session_start is the first point where the caller's flag value is visible.
 	pi.on("session_start", (_event, ctx) => {
 		if (pi.getFlag(CLAUDE_PROVIDER_FLAG) !== true) return;
@@ -130,8 +145,8 @@ export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessio
 			baseUrl: CLAUDE_PROVIDER_BASE_URL,
 			apiKey: CLAUDE_PROVIDER_API_KEY,
 			api: CLAUDE_PROVIDER_ID,
-			models: STATIC_MODELS,
-			refreshModels: (context) => refreshClaudeModels(context),
+			models: withExtraModel(STATIC_MODELS, pi.getFlag(CLAUDE_MODEL_FLAG)),
+			refreshModels: async (context) => withExtraModel(await refreshClaudeModels(context), pi.getFlag(CLAUDE_MODEL_FLAG)),
 			streamSimple: createClaudeStreamSimple(bridge),
 		});
 	});

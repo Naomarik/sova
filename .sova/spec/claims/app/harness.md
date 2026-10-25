@@ -76,6 +76,18 @@ with a leading `~` expanded, else `~/.pi/agent`) and reads it on every call, so 
 that moves `PI_CODING_AGENT_DIR` moves every such path at once. Sova's own state root is
 `<agentRoot()>/sova`. Only the pi adapter (`server/harness/pi/agent-dir.ts`) asks pi for it.
 
+## §app.harness/extension-agent-dir — pi-config extensions use the active agent directory
+
+Sova's pi-config extensions find pi's files in the agent directory pi itself runs with
+(`$PI_CODING_AGENT_DIR`, a leading `~` expanded, else `~/.pi/agent`), never a hard-coded
+`~/.pi/agent`, so a pi on a hermetic agent dir neither reads nor writes the live one:
+`/extensions` lists and toggles the extensions and settings of that dir; the usage footer and the
+server's usage fetch read API keys and pi's OpenAI sign-in from that dir's `auth.json`;
+`look_at_image` judges a fallback's subscription usage from that dir's
+`cache/usage-status.json`; and the Claude Code bridge's opt-in diagnostics
+(`PI_CLAUDE_CODE_DEBUG=1`) append to that dir's `claude-code-debug.log`. With no
+`PI_CODING_AGENT_DIR` all of these are `~/.pi/agent`, as before.
+
 ## §app.harness/tools — Sova's tools are harness-neutral
 
 Sova's own tools are written as the contract's `ToolSpec`: plain JSON-schema parameters, a Sova
@@ -128,12 +140,16 @@ sockets already read as the visit's tab).
 - **Only a consumer that asks gets wire 2.** It gets each live event as
   `{type: "event", v: 2, event}`, with the entry a message was written as named inside its end,
   and each entry's first row with `facts` (a setting change, a context reset, a compaction's
-  figures, a reply's context fill, a tool result's tool and failure) and no `meta`. A consumer that
+  figures, a reply's context fill, a tool result's tool and failure, a measured reply's timing) and
+  no `meta`. A consumer that
   doesn't ask (an older bundle, a cached page, an older peer's page through this host's mesh proxy,
   a script) gets today's frames and rows byte for byte, and nothing it shows changes.
 - **One mapping, on both sides.** Every wire-2 event is a wire-1 event mapped by one pure function,
   and every row's facts are its wire-1 facts mapped by another (`fromV1` and `factsFromMeta`,
-  `shared/wire-v1.ts`); the server and the browser use the same two. A wire-1 event the live view
+  `shared/wire-v1.ts`); the server and the browser use the same two. The one exception is a measured
+  reply's timing (`reply`, §app.insights/reply-timing-hover), which comes from the reply-timing store
+  rather than from wire 1. It rides wire 2 only: on its entry's first row, and in the live reply's
+  `message.end`, where the chat tags the wire-1 frame and `fromV1` maps the tag. Wire 1 drops it. A wire-1 event the live view
   ignores maps to nothing.
 - **An older peer still reads.** A browser that asked for wire 2 and got wire 1 (an older server
   ignores the parameter) maps the frames and rows itself, through those same functions, and shows
@@ -172,7 +188,12 @@ lists the active and registered tools and the slash commands, reads its session'
 and hears the run's live events. The session looks pi up again at every call, so whatever pi
 session the chat's runtime holds at that moment, and any method replaced on it since, is the one
 used. Each pi event reaches the chat once, in pi's own listener, in the order and tick pi emits it,
-named in Sova's words and carrying the wire-1 frame the chat forwards. Moving the chat onto it
+named in Sova's words and carrying the wire-1 frame the chat forwards. Beside pi's events the session
+tells the chat, in the same listener, when the agent's own model request goes out (after any wait
+for a provider slot; never a side call's request); no wire carries that one. A finished assistant
+message's end carries what reply timing reads (§app.insights/reply-timing), in Sova's words: its
+provider and model, how it ended, its output and thinking-token counts as reported, the effort it
+was requested and run at, and whether a provider marked it as no measurement. Moving the chat onto it
 changes nothing a client, a session file or an extension sees: the session goldens
 (`server/harness/pi/golden/session/`, S1–S15) record each scenario's session file, pi's calls in
 order and the frames it exercises to two clients (a hello cut to its state and rows; a frame type no
@@ -185,11 +206,24 @@ and disposing it. A test that drives or patches pi directly gets the runtime's s
 `server/harness/pi/testing/handle.ts`, looked up at each call as the driving session looks it up, so
 a method a test replaces after open is the one the chat's calls reach.
 
-Server code outside the chat that asks about a session this server holds asks the chat's driving
-session too, never pi's agent session: whether a reply is running, whether the agent still holds
-queued messages, the model (and whether it takes images) and the thinking level, the session's id,
-folder and active branch, what its runtime loaded for its prompt (context files, skills, the system
-prompt's sources), and stopping a reply at shutdown. A folder no runtime holds is read with pi's own
+Server code outside the chat that asks about a session this server holds, or tells it to do
+something, goes through the chat's handle (`server/chat-handle.ts`), never the chat itself, its
+driving session or pi's agent session. The handle is what a chat in a process of its own will look
+like to the server (`shared/chat-runtime.ts`): commands that are calls with ids, answered with a
+result or a typed refusal (busy, refused, config) that is thrown again as the error class the chat
+threw; a state mirror read without asking; lifecycle events numbered for a reader that missed some;
+and browser frames passed through. The handle has two forms. In the server every chat is in a process of its own. The other form, a
+chat in the caller's own process (only where nothing routes chats: a chat process's own chat, a
+test), runs a command as the chat's own method at once, and the mirror reads the chat as it is. A chat in a process of its own (§app/chat-processes)
+gets each command over its socket and answers it there, a refusal as the same typed refusal; the
+mirror is the copy the chat last sent, which it sends before answering a command that changed it;
+and its lifecycle events reach the server's listeners. Either way the
+driving session answers as before: whether a reply is running, whether the agent still holds queued messages, the model
+(and whether it takes images) and the thinking level, the session's id, folder and active branch,
+and what its runtime loaded for its prompt (context files, skills, the system prompt's sources). A
+server's shutdown stops no reply. Whose live record belongs
+to one of this server's chats is decided by a set of processes, this one and each chat process it
+hosts, never by comparing with the server's own pid. A folder no runtime holds is read with pi's own
 loader, without extensions, by the adapter (`server/harness/pi/resources.ts`). The Overseer's
 alignment reads fold a session's neutral entries, and the worktree cleanup and a link's sandbox read
 the session file through the neutral reader. Every answer is the one pi gave before: the routes,
@@ -230,7 +264,12 @@ setup included, is over.
 Extension dialogs reach the chat through a dialog bridge (`DialogBridge`, `shared/harness-session.ts`;
 pi's side is `server/harness/pi/ui-bridge.ts`, which turns pi's UI calls — select, confirm, input,
 editor, notify, status, the theme — into bridge requests). The chat keeps the pending dialogs and
-their broadcast, answer, timeout, abort and fallback. A session's title (its name, else its first
+their broadcast, answer, timeout, abort and fallback. A pane that attaches while a dialog is
+pending gets it again, after the chat's state, with the time it has left. When the last pane
+leaves, a pending dialog is answered with its fallback; when a chat in its own process loses its
+server instead (§app.chat-processes/survives-restart), its panes are kept as orphans: dialogs stay
+pending and new ones may open, and the fallback applies only if no pane attaches within a minute of
+the server reconnecting. A session's title (its name, else its first
 message's text, else "Untitled") is read from the neutral history; a first message stored as a bare
 string, as legacy files keep it, still titles "Untitled". None of this changes what a client, a
 session file or an extension sees: the session goldens pin the session file, pi's calls and the
@@ -257,22 +296,38 @@ abort, sandbox and worker-resume suites.
 
 ## §app.harness/session-special — The special loadouts and the stream guard drive a session through the harness
 
-The Overseer, a project's overseer and a baton session (its wrap-up included) watch each session
-their runtime builds as a driving session (`HarnessSession`, `shared/harness-session.ts`), and the
-runaway-stream guard (§chat.transcript/runaway-stream) watches a chat's stream through it too:
-none of them reaches pi's session, and none imports pi. Their live events are the driving
-session's, in Sova's words, one per pi event in pi's own listener and tick, registered where they
-were before, so every listener keeps its place in the order. Such an event carries what these
-watchers read: a streaming reply's delta (a tool call starting, its argument characters, text or
-thinking) and the reply so far, whether a compaction is followed by a retry of the request, and a
-custom message's note type, by which the Overseer tells its own state notes from input.
-Who sent a user message (§app.overseer/input-source) is still told by the object the message
-reaches the agent as, through the driving session's user-message hook, one wrap per agent.
-Rebuilding the Overseer's system prompt from its refreshed parts at a run's start, and switching
-a baton session's active tools, are driving-session calls; the pi quirk behind the first stays in
-the quirk registry. The Overseer reads its subagent tools through the driving session, as Sova
-tools. The extension factories of these loadouts are typed from the adapter's extension types
+The chat watches each session its runtime builds as a driving session (`HarnessSession`,
+`shared/harness-session.ts`), and so does the runaway-stream guard (§chat.transcript/runaway-stream)
+it runs: neither reaches pi's session, and neither imports pi. The driving session's live events are
+in Sova's words, one per pi event in pi's own listener and tick. Such an event carries what these
+watchers read: a streaming reply's delta (a thinking, text or tool-call part starting or ending,
+a tool call's argument characters, text or thinking) and the reply so far, whether a compaction is followed by a retry of the request, and a
+custom message's note type, by which the Overseer's turns tell its own state notes from input.
+The Overseer, a project's overseer and a baton session (its wrap-up included) never hold the chat
+or its driving session: the chat tells their loadout what its runs do as data (`ChatRunEvent`,
+`shared/chat-runtime.ts`: a run's start, with the tag the send that asked for it named; the
+person's message entering; a confirm card's click ending; the reply's text so far; a message's end;
+an appended entry; a run's settle), from where their own watch was, so every listener keeps its
+place in the order. Their other hooks get the chat's handle (`server/chat-handle.ts`), never the
+chat. Who sent a user message (§app.overseer/input-source) is still told by the object the message
+reaches the agent as, through the driving session's user-message hook, one wrap per agent, by the
+chat where its loadout asks for it (the Overseer, a project overseer); the server reads the answer
+from the chat's mirror, or from the call of the tool it is running. Rebuilding the Overseer's
+system prompt from its refreshed parts at a run's start is the chat's driving-session call, made
+when the loadout's text for the run changed; the pi quirk behind it stays in the quirk registry.
+Switching a baton session's active tools goes through the handle. Their loadouts are data (`SpecialSpec`,
+`shared/chat-runtime.ts`) that the server builds for each open, turned into the chat's loadout by one
+chat-side extension (`server/chat-special.ts`), plus hooks the server answers: each run's prompt and
+run note, a compaction's note, the reply's end; the kinds' own hooks (`SpecialHost`,
+`server/chat-handle.ts`) live in the server only. The tools whose state lives in the server (the
+Overseer's, a project overseer's, a baton's, and the file tools of the first two) stay in the
+server: the chat registers each one's declaration and runs it as a call with an effect id of its
+own, and a call delivered again is answered with its first run's outcome, never run twice. A tool
+whose arguments are rewritten before they are checked names a rule the chat runs itself (a baton's
+owner area, matched to the roster's spelling; pi's edit arguments). Within that call the tool reads
+the chat's branch and entries, writes into the chat (a baton's tools through its extension's own
+writer, so the entry is announced as before; the Overseer's approvals' uses) and calls the chat's
+subagent tools, by calls back to the chat, as Sova tools. The extension factories of these loadouts are typed from the adapter's extension types
 (`server/harness/pi/extension-types.ts`), and so are Sova's other inline extensions (the vis check,
 topics, the resource monitor, the project services), the loadout's skills override and the context
-windows read off the model runtime. Nothing a client, a session file, an extension or a model sees
-changes: the session goldens compare byte for byte.
+windows read off the model runtime. The harness migration itself changes nothing a client, a session file, an extension or a model sees: session goldens compare byte for byte against the approved product baseline. That baseline deliberately includes the reviewed-tour guide and bound-only scoped `show_tour` in baton loadouts (§app.tours/handoffs); no recording or arbitrary browser tools are added to them.

@@ -40,24 +40,20 @@ export function activityOf(rec: any): LiveActivity | undefined {
 }
 
 /** presence.workerCounts.error: workers that ended in an error, or 0. Killed ones are left out:
-    a kill is usually the user's own gesture, not something to bring back to them. So are the
-    error rows `skip` names (a restart's, server/server-stop.ts): the count less those rows. */
-export function failedWorkersOf(rec: any, skip?: (row: unknown) => boolean): number {
-  const n = count(rec?.presence?.workerCounts?.error) ?? 0;
-  const rows = rec?.presence?.workers;
-  if (!skip || !Array.isArray(rows)) return n;
-  return Math.max(0, n - rows.filter((w) => w?.status === "error" && skip(w)).length);
+    a kill is usually the user's own gesture, not something to bring back to them. */
+export function failedWorkersOf(rec: any): number {
+  return count(rec?.presence?.workerCounts?.error) ?? 0;
 }
 
 /** When each worker ROW in status `error` ended (endedAt, else lastActivity, else startedAt), for
-    the rows that carry a time and `skip` doesn't name. Rows can be dropped for size (SCHEMA.md §5,
+    the rows that carry a time. Rows can be dropped for size (SCHEMA.md §5,
     finished ones first), so this may cover fewer workers than failedWorkersOf counts. */
-export function workerErrorTimesOf(rec: any, skip?: (row: unknown) => boolean): number[] {
+export function workerErrorTimesOf(rec: any): number[] {
   const rows = rec?.presence?.workers;
   if (!Array.isArray(rows)) return [];
   const out: number[] = [];
   for (const w of rows) {
-    if (!w || typeof w !== "object" || w.status !== "error" || skip?.(w)) continue;
+    if (!w || typeof w !== "object" || w.status !== "error") continue;
     const t = [w.endedAt, w.lastActivity, w.startedAt].find((v) => typeof v === "number" && Number.isFinite(v) && v > 0);
     if (t !== undefined) out.push(t);
   }
@@ -78,6 +74,24 @@ function pidAlive(pid: number): boolean {
   } catch (err) {
     return (err as NodeJS.ErrnoException).code === "EPERM";
   }
+}
+
+/**
+ * The processes whose live records are this server's own: the chats it hosts write them (the pi
+ * "sessions" extension runs inside every hosted chat). Today every hosted chat runs in this process;
+ * a chat this server hosts in a process of its own is added here for as long as it lives, so its
+ * record never reads as a TUI owning the file, and a process that is not in the set always does.
+ */
+const ownPids = new Set<number>([process.pid]);
+/** Whether a live record's pid is one of this server's hosted chats. */
+export const isOwnPid = (pid: number): boolean => ownPids.has(pid);
+/** A process hosting this server's chats, until the returned call removes it (never this process). */
+export function addOwnPid(pid: number): () => void {
+  if (ownPids.has(pid)) return () => {};
+  ownPids.add(pid);
+  return () => {
+    ownPids.delete(pid);
+  };
 }
 
 const count = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null);
@@ -128,7 +142,7 @@ export function readLiveRecords(opts: { includeOwn?: boolean } = {}): RawLiveRec
       parsed.set(name, hit);
     }
     const r = hit.record;
-    if (!r || (r.pid === process.pid && !opts.includeOwn) || !pidAlive(r.pid)) continue;
+    if (!r || (isOwnPid(r.pid) && !opts.includeOwn) || !pidAlive(r.pid)) continue;
     out.push({ sessionFile: r.sessionFile, pid: r.pid, rec: r.rec });
   }
   for (const name of parsed.keys()) if (!seen.has(name)) parsed.delete(name);
@@ -157,7 +171,7 @@ export function readOwnLiveRecords(): Map<string, RawLiveRecord> {
   const now = Date.now();
   const beat = (r: RawLiveRecord) => (typeof r.rec.heartbeat === "number" ? r.rec.heartbeat : 0);
   for (const r of readLiveRecords({ includeOwn: true })) {
-    if (r.pid !== process.pid || !r.sessionFile || now - beat(r) > OWN_FRESH_MS) continue;
+    if (!isOwnPid(r.pid) || !r.sessionFile || now - beat(r) > OWN_FRESH_MS) continue;
     const prev = out.get(r.sessionFile);
     if (!prev || beat(r) > beat(prev)) out.set(r.sessionFile, r);
   }
@@ -191,7 +205,7 @@ export function readLive(): Map<string, LiveRecord> {
 
 /** How recent a heartbeat must be for the archive guard to believe a record's worker count.
     Looser than OWN_FRESH_MS on purpose: a false "working" costs the user a wait, a false "idle"
-    kills their subagents. The dev-server restart gate uses the same 30s. */
+    kills their subagents. */
 export const WORKING_FRESH_MS = 30_000;
 /** SCHEMA.md: a heartbeat this far in the future is garbage, not fresh. */
 const FUTURE_SKEW_MS = 5 * 60_000;

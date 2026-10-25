@@ -26,7 +26,7 @@ system packages or any running service. The few root steps are in [SUDO.md](SUDO
 Layout (`~/sova-mesh`): `node/` (Node 22 LTS, sha256-pinned per architecture), `bin/caddy` (sha512-pinned per
 architecture), `app/` (git archive of a commit; `app.prev` = the previous one; Sova runs on its `app/.bun/bin/bun`, the
 Bun build the commit's mise.toml pins, sha256-checked against its `scripts/bun-release.txt`; `SOVA_RUNTIME=node` in
-local.env runs it on Node instead), `agent/` (PI_CODING_AGENT_DIR;
+local.env runs it on Node instead, with no chats or workers: they need Bun, and the deploy warns), `agent/` (PI_CODING_AGENT_DIR;
 `auth.json` starts EMPTY, keys arrive by sync; `sova/peers.json` is seeded once with self id `$VPS_ID` (default `vps`)
 and no peers (logins of every kind sync, subscriptions included; Settings → Mesh can switch this host to API keys
 only); the self id is never rewritten, since host filters and the front-door order reference it), `home/` (isolated

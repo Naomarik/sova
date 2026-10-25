@@ -1,3 +1,4 @@
+import { readStoredPowers } from "../shared/powers";
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { DEFAULT_PO_CAPS } from "../shared/project-overseer";
@@ -17,7 +18,7 @@ function fakeHost(sessions: SessionInfo[]) {
 const s = (id: string, statechart: string, configuration: string[], data: Record<string, unknown> = {}): SessionInfo => ({ id, statechart, configuration, data, running: true });
 const NONE = () => null;
 const CEIL = { autonomy: "L0" as const, reason: "capped" };
-const settings = { autonomy: "L3" as const, caps: { ...DEFAULT_PO_CAPS }, holdMin: 5, confirmKinds: ["gather" as const] };
+const settings = { powers: readStoredPowers({ autonomy: "L3" }), caps: { ...DEFAULT_PO_CAPS }, holdMin: 5 };
 
 describe("stamping an envelope from the statecharts as they stand", () => {
   const world = () => [

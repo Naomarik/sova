@@ -1,5 +1,9 @@
 // OPT-IN LIVE TEST — this one really does spend (small) model calls.
 //
+// STAGE 4: a background fork is now a hidden chat Sova's worker host starts, and the bare
+// `pi --mode rpc` parent below has none, so /fork-probe answers FORK-PROBE-ERROR here. The same
+// measurement on a hermetic Sova server (a chat that runs /fork-probe) is what proves it now.
+//
 // Proves that a background fork (../fork/background.ts, the path /explain uses) reads the
 // parent's warm prompt cache on its FIRST request. A throwaway parent pi (RPC mode, the agent
 // dir's own extensions, so the prefix is a realistic one) answers a few one-word turns, then

@@ -8,6 +8,7 @@ import {
   doneOpen,
   inArchivedProject,
   inOrgRegion,
+  isOrgFolderSession,
   listedOrgProjects,
   NO_PROJECT,
   orgRowState,
@@ -257,17 +258,32 @@ test("labels, titles and search text", () => {
   assert.equal(orgSearchText(session("plain")), "", "an ordinary row gains nothing");
 });
 
-test("open state: the region opens by default and remembers a collapse; forced open without touching it", () => {
+test("open state: the region opens by default and remembers a collapse; a search forces it open without touching it", () => {
   assert.equal(storedOrgsOpen(null), true);
   assert.equal(storedOrgsOpen("0"), false);
-  const shut = { stored: false, searching: false, holdsSelected: false };
+  const shut = { stored: false, searching: false, holdsSelected: false, dismissed: false };
   assert.equal(orgsRegionOpen(shut), false);
   assert.equal(orgsRegionOpen({ ...shut, searching: true }), true);
-  assert.equal(orgsRegionOpen({ ...shut, holdsSelected: true }), true);
-  assert.equal(orgSectionOpen({ chosen: undefined, searching: false, holdsSelected: false }), true, "orgs open by default");
-  assert.equal(orgSectionOpen({ chosen: false, searching: false, holdsSelected: true }), true);
-  assert.equal(doneOpen({ chosen: undefined, searching: false, holdsSelected: false }), false, "Done starts closed");
-  assert.equal(doneOpen({ chosen: false, searching: false, holdsSelected: true }), true);
+  assert.equal(orgSectionOpen({ chosen: undefined, searching: false, holdsSelected: false, dismissed: false }), true, "orgs open by default");
+  assert.equal(doneOpen({ chosen: undefined, searching: false, holdsSelected: false, dismissed: false }), false, "Done starts closed");
+});
+
+test("open state: the open session opens its region, org and Done once; a collapse on that visit sticks", () => {
+  const shut = { stored: false, searching: false, holdsSelected: true };
+  // Moved to a session inside: each section opens for it, whatever the choice.
+  assert.equal(orgsRegionOpen({ ...shut, dismissed: false }), true, "the region reveals the open session");
+  assert.equal(orgSectionOpen({ chosen: false, searching: false, holdsSelected: true, dismissed: false }), true, "its org");
+  assert.equal(doneOpen({ chosen: false, searching: false, holdsSelected: true, dismissed: false }), true, "its Done");
+  // The user collapsed it on this visit: it stays shut although it still holds the open session.
+  assert.equal(orgsRegionOpen({ ...shut, dismissed: true }), false, "a collapsed region stays shut over the open session");
+  assert.equal(orgSectionOpen({ chosen: false, searching: false, holdsSelected: true, dismissed: true }), false);
+  assert.equal(doneOpen({ chosen: false, searching: false, holdsSelected: true, dismissed: true }), false);
+  // A search still opens every section with a match, dismissed or not.
+  assert.equal(orgsRegionOpen({ ...shut, dismissed: true, searching: true }), true, "a search still opens it");
+  assert.equal(orgSectionOpen({ chosen: false, searching: true, holdsSelected: true, dismissed: true }), true);
+  assert.equal(doneOpen({ chosen: false, searching: true, holdsSelected: true, dismissed: true }), true);
+  // Opened again by hand: the choice answers.
+  assert.equal(orgsRegionOpen({ ...shut, stored: true, dismissed: true }), true);
 });
 
 test("orgProjectItems: projects to pick a main stakeholder for, newest first, narrowed by a search", () => {
@@ -304,6 +320,29 @@ test("orgProjectItems: held acts first, soonest to go ahead on top; then conflic
     items: [it("stake", "project-stakeholder", 5), it("late", "held-act", 9, 2000), it("soon", "held-act", 1, 1000), it("conf", "conflict-to-operator", 7), it("sess", "needs-input", 99), it("unsent", "outreach-not-sent", 6)],
   };
   assert.deepEqual(orgProjectItems(digest).map((x) => x.id), ["soon", "late", "conf", "unsent", "stake"]);
+});
+
+test("a placed project's folder session (folderOrg, no org): a row in its project's Sessions, active while it runs, never once archived, never in the region's Needs you", () => {
+  const where = { orgId: "o1", orgName: "Mamluk Arabia", projectId: "p1", projectName: "Rakiba site" };
+  const folder = { projectId: "p1", projectName: "Rakiba site", kind: "folder" as const };
+  const liveOne = session("f-live", { project: folder, folderOrg: where, origin: "external", live: { pid: 1, status: "idle" } as SessionSummary["live"], lastActiveAt: at(5) });
+  const web = session("f-web", { project: folder, folderOrg: where, lastActiveAt: at(4) });
+  const ended = session("f-ended", { project: folder, folderOrg: where, origin: "external", lastActiveAt: at(3) });
+  const archived = session("f-arch", { project: folder, folderOrg: where, archived: true, lastActiveAt: at(2) });
+  const build = session("c1", { org: org({ kind: "coding" }), lastActiveAt: at(1) });
+  const gone = session("f-gone", { project: folder, folderOrg: { ...where, projectArchived: true } });
+  assert.equal(isOrgFolderSession(web), true);
+  assert.equal(isOrgFolderSession(build), false);
+  assert.equal(inOrgRegion(web), true);
+  assert.equal(inOrgRegion(session("no-project", { folderOrg: where })), false, "folderOrg goes with a folder session only");
+  const [o] = orgSections([liveOne, web, ended, archived, build, gone]);
+  const p = o!.projects[0]!;
+  assert.deepEqual(ids(p.builds.active), ["f-live", "f-web", "c1"]);
+  assert.deepEqual(ids(p.builds.done), ["f-ended"], "an archived folder session is the Archive's only");
+  assert.equal(inOrgRegion(archived), false);
+  assert.equal(orgCount(o!), 4, "an archived folder session and an archived project's are left out");
+  const waiting = { items: [{ id: "i", path: "/s/f-web.jsonl", title: "f-web", where: "~", tier: "act", kind: "needs-input", since: 5, href: "" } as AttentionItem] };
+  assert.deepEqual(orgNeedsYouRows(waiting, [web]), [], "the global Needs you lists it: an ordinary session");
 });
 
 const placed = (id: string, name: string, orgId: string, orgName: string, extra: Partial<ProjectSummary> = {}): ProjectSummary => ({

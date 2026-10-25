@@ -161,3 +161,36 @@ export function rangeStart(items: readonly TranscriptItem[], target: number): nu
 export function pullFields(items: readonly TranscriptItem[], older: number, prefetch: boolean): { olderSummary: OlderSummary; prefetch?: true } {
   return { olderSummary: summarize(items.slice(0, older)), ...(prefetch ? { prefetch: true as const } : {}) };
 }
+
+// ---- Rows the client already holds (`/ws/chat?have=`, §chat.transcript/instant-open) ----------------
+// A browser that painted a chat's newest rows from its file names the last of them; the chat's first
+// hello then carries only the rows after it, so nothing is downloaded twice.
+
+/**
+ * The rows after `have` in `items`, and how many rows come up to and including it (`older`), or
+ * null for the usual hello: `have` isn't a row of this branch (a fork, a rewind, unknown), or it
+ * lies above row `tailFrom` (the usual hello's first row), so the rows after it would be more than
+ * the usual hello carries.
+ */
+export function afterHave(items: readonly TranscriptItem[], have: string, tailFrom: number): { items: TranscriptItem[]; older: number } | null {
+  const at = items.findIndex((it) => it.id === have);
+  if (at < 0 || at + 1 < tailFrom) return null;
+  return { items: items.slice(at + 1), older: at + 1 };
+}
+
+/**
+ * A hello for a `?tail=rest` client that holds the rows up to `have`: `hello`'s state with only
+ * the rows of `all` after it, `after` naming it, and `older`/`olderSummary` counting every row up
+ * to it, the client's own included. Null when `afterHave` says the usual hello it is.
+ */
+export function helloAfterHave<H extends { items: TranscriptItem[] }>(
+  hello: H,
+  all: readonly TranscriptItem[],
+  tailFrom: number,
+  have: string,
+  prefetch: boolean,
+): (H & { older: number; after: string; olderSummary: OlderSummary; prefetch?: true }) | null {
+  const after = afterHave(all, have, tailFrom);
+  if (!after) return null;
+  return { ...hello, items: after.items, older: after.older, after: have, ...pullFields(all, after.older, prefetch) };
+}

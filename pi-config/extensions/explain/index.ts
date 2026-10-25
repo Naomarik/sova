@@ -1,11 +1,11 @@
 /**
- * `/explain <topic>` — spawn one forked pi child that writes a self-contained
+ * `/explain <topic>` — start one forked hidden chat that writes a self-contained
  * HTML explanation into `~/.pi/agent/explanations/<id>/`, and record it in this
  * session when it settles.
  *
  * Shape of the feature:
  *
- *   /explain <topic>   parent (here)          child (one pi process)
+ *   /explain <topic>   parent (here)          child (a chat process of its own)
  *   ────────────────   ────────────────────   ──────────────────────────────
  *   command handler →  create the store dir,  marks its own session as a
  *                      build the prompt,      worker (worker-mark.ts), then
@@ -19,9 +19,11 @@
  *                      wake the parent agent
  *
  * The parent conversation is untouched: the child works in a *copy* of the
- * session (`pi --fork`), so a long research run costs the parent no context. A
- * brand-new session has no file on disk yet; the child then starts unforked and
- * works from the topic alone.
+ * session, so a long research run costs the parent no context. A brand-new
+ * session has no file on disk yet; the child then starts unforked and works from
+ * the topic alone. The child is started by Sova's worker host and outlives this
+ * session's process: a reload leaves it running and the next session reattaches
+ * it (session_start). Without a host (the pi TUI) /explain can't start one.
  *
  * Nothing here opens a browser. The page is read in Sova (thread row, session
  * strip, gallery), or by opening the file by hand.
@@ -34,7 +36,7 @@
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { claudeForkPointFor } from "../subagents/fork/background.ts";
+import { claudeForkPointFor, workerHostOf } from "../subagents/fork/background.ts";
 import { ExplainRuns, MAX_LIVE, wakeMessage, type ExplainHost } from "./explain.ts";
 import { parentIdentity } from "./identity.ts";
 import { EXPLAIN_ENTRY_TYPE, type ExplainEntryData } from "./store.ts";
@@ -44,8 +46,15 @@ const USAGE = "Usage: /explain <topic>";
 export default function explainExtension(pi: ExtensionAPI): void {
 	/** The most recent context, for notifications from a child's settle callback. */
 	let activeCtx: ExtensionContext | undefined;
+	/** The session whose closed predecessor's runs wait to be reattached, until Sova announces its host. */
+	let attachCtx: ExtensionContext | undefined;
+	// Sova announces the host at its own session_start, which may come after ours.
+	const workerHost = workerHostOf(pi.events, () => {
+		if (attachCtx) reattach(attachCtx);
+	});
 
 	const host: ExplainHost = {
+		workerHost: () => workerHost.current(),
 		now: () => Date.now(),
 		appendEntry: (data) => pi.appendEntry<ExplainEntryData>(EXPLAIN_ENTRY_TYPE, data),
 		notify: (message, level) => {
@@ -66,39 +75,60 @@ export default function explainExtension(pi: ExtensionAPI): void {
 	};
 	const runs = new ExplainRuns(host);
 
+	const explainEntries = (ctx: ExtensionContext): ExplainEntryData[] =>
+		ctx.sessionManager
+			.getBranch()
+			.filter((entry) => entry.type === "custom" && entry.customType === EXPLAIN_ENTRY_TYPE)
+			.map((entry) => (entry as { data?: ExplainEntryData }).data)
+			.filter((data): data is ExplainEntryData => !!data && typeof data === "object");
+
+	/** The session's runs a closed session left running, watched again (explain.ts `reattach`). */
+	let reattached: Promise<unknown> = Promise.resolve();
+	const reattach = (ctx: ExtensionContext): void => {
+		if (!workerHost.current()) {
+			attachCtx = ctx;
+			return;
+		}
+		attachCtx = undefined;
+		try {
+			reattached = runs.reattach(explainEntries(ctx)).catch(() => 0);
+		} catch {
+			/* No branch to read: nothing to reattach. */
+		}
+	};
+
 	/**
-	 * Settle running entries left by a stopped parent (explain.ts `reconcile`), once per session
-	 * and only when the session is being written anyway: its first prompt, or /explain. Opening
-	 * a session never writes.
+	 * Settle running entries whose child is gone (explain.ts `reconcile`), once per session, after
+	 * the reattach, and only when the session is being written anyway: its first prompt, or
+	 * /explain. Opening a session never writes.
 	 */
 	let reconciledFor: string | undefined;
-	const reconcile = (ctx: ExtensionContext): void => {
+	const reconcile = async (ctx: ExtensionContext): Promise<void> => {
+		if (attachCtx) reattach(attachCtx);
+		await reattached;
 		try {
 			const sessionId = ctx.sessionManager.getSessionId();
 			if (reconciledFor === sessionId) return;
 			reconciledFor = sessionId;
-			const entries = ctx.sessionManager
-				.getBranch()
-				.filter((entry) => entry.type === "custom" && entry.customType === EXPLAIN_ENTRY_TYPE)
-				.map((entry) => (entry as { data?: ExplainEntryData }).data)
-				.filter((data): data is ExplainEntryData => !!data && typeof data === "object");
-			runs.reconcile(entries);
+			runs.reconcile(explainEntries(ctx));
 		} catch {
 			/* Best-effort: an unsettled row only keeps reading as running. */
 		}
 	};
 	pi.on("before_agent_start", async (_event, ctx) => {
-		reconcile(ctx);
+		await reconcile(ctx);
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
 		activeCtx = ctx;
+		reattach(ctx);
 	});
 	pi.on("turn_start", async (_event, ctx) => {
 		activeCtx = ctx;
 	});
 	pi.on("session_shutdown", async () => {
-		await runs.stopAll();
+		// The children outlive this session; the next one reattaches them.
+		runs.detachAll();
 	});
 
 	pi.registerEntryRenderer<ExplainEntryData>(EXPLAIN_ENTRY_TYPE, (entry, _options, theme) => {
@@ -126,7 +156,7 @@ export default function explainExtension(pi: ExtensionAPI): void {
 				ctx.ui.notify(`${USAGE}\n${runs.live} of ${MAX_LIVE} explanations running.`, "warning");
 				return;
 			}
-			reconcile(ctx);
+			await reconcile(ctx);
 			const parent = parentIdentity(ctx.sessionManager);
 			const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "";
 			// A Claude CLI parent: its live CLI session is where the child picks up, not a folded replay.

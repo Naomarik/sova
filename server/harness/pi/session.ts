@@ -12,7 +12,9 @@ import type {
   HarnessCommand,
   HarnessEvent,
   HarnessModel,
+  HarnessPartEdge,
   HarnessQueue,
+  HarnessReplySummary,
   HarnessResources,
   HarnessSession,
   HarnessStreamDelta,
@@ -92,12 +94,116 @@ function messageText(content: unknown): string {
 /** The pieces of pi's assistant-message stream the stream guard counts (pi-ai's AssistantMessageEvent). */
 const STREAM_KIND = { toolcall_delta: "tool-call", text_delta: "text", thinking_delta: "thinking" } as const;
 
-/** A message_update's stream piece, when it is one the stream guard counts. */
+/** A part of pi's assistant-message stream starting or ending (pi-ai's AssistantMessageEvent). */
+const STREAM_EDGE: Record<string, HarnessPartEdge> = {
+  toolcall_start: "tool-call.start",
+  toolcall_end: "tool-call.end",
+  text_start: "text.start",
+  text_end: "text.end",
+  thinking_start: "thinking.start",
+  thinking_end: "thinking.end",
+};
+
+/** A message_update's stream piece: a part's start or end, or the characters the stream guard counts. */
 function streamDeltaOf(e: { type?: string; contentIndex?: number; delta?: unknown } | undefined): HarnessStreamDelta | undefined {
   if (!e) return undefined;
-  if (e.type === "toolcall_start") return { kind: "tool-call.start", index: e.contentIndex };
-  const kind = STREAM_KIND[e.type as keyof typeof STREAM_KIND];
+  const edge = Object.hasOwn(STREAM_EDGE, e.type ?? "") ? STREAM_EDGE[e.type!] : undefined;
+  if (edge) return { kind: edge, index: e.contentIndex };
+  const kind = Object.hasOwn(STREAM_KIND, e.type ?? "") ? STREAM_KIND[e.type as keyof typeof STREAM_KIND] : undefined;
   return kind ? { kind, index: e.contentIndex, delta: typeof e.delta === "string" ? e.delta : "" } : undefined;
+}
+
+/** The diagnostic a provider leaves on a reply whose timing is no measurement (pi-config's claude-code
+    provider: a CLI retry of a rejected tool call inside the reply). */
+export const MEASUREMENT_INVALID_DIAGNOSTIC = "measurement-invalid";
+
+const STOPS = new Set(["stop", "length", "toolUse", "error", "aborted"]);
+const count = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.round(v) : undefined);
+const word = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
+
+/** A finished assistant message (pi-ai's AssistantMessage, public fields only) as the reply summary reply
+    timing reads; undefined when it names no provider or model. */
+export function replySummaryOf(message: unknown): HarnessReplySummary | undefined {
+  const m = message as {
+    role?: unknown;
+    provider?: unknown;
+    model?: unknown;
+    responseModel?: unknown;
+    stopReason?: unknown;
+    usage?: { output?: unknown; reasoning?: unknown };
+    thinkingLevel?: unknown;
+    providerThinkingLevel?: unknown;
+    diagnostics?: unknown;
+  } | null;
+  if (!m || m.role !== "assistant") return undefined;
+  const provider = word(m.provider);
+  const model = word(m.model);
+  if (!provider || !model) return undefined;
+  const stop = typeof m.stopReason === "string" && STOPS.has(m.stopReason) ? (m.stopReason as HarnessReplySummary["stop"]) : "other";
+  const out: HarnessReplySummary = { provider, model, stop, output: count(m.usage?.output) ?? 0 };
+  const responseModel = word(m.responseModel);
+  if (responseModel) out.responseModel = responseModel;
+  const reasoning = count(m.usage?.reasoning);
+  if (reasoning !== undefined) out.reasoning = reasoning;
+  const effort = word(m.thinkingLevel);
+  if (effort) out.effort = effort;
+  const providerEffort = word(m.providerThinkingLevel);
+  if (providerEffort) out.providerEffort = providerEffort;
+  if (Array.isArray(m.diagnostics)) {
+    const d = m.diagnostics.find((x) => (x as { type?: unknown } | null)?.type === MEASUREMENT_INVALID_DIAGNOSTIC) as { details?: { reason?: unknown } } | undefined;
+    if (d) out.invalid = word(d.details?.reason) ?? MEASUREMENT_INVALID_DIAGNOSTIC;
+  }
+  return out;
+}
+
+/** What a request-start hook hears: the agent's own request is about to go out, at `at` (ms epoch). */
+type RequestListener = (at: number) => void;
+type PiStreamFn = ((model: unknown, context: unknown, options?: { onPayload?: (...a: any[]) => unknown }) => unknown) & { [REQUESTS]?: Set<RequestListener> };
+const REQUESTS = Symbol.for("sova.harness.request-start");
+
+/**
+ * P24: hear the agent's own requests go out. The agent's stream function is wrapped (once per function:
+ * a replaced one is wrapped again) so the options it hands the provider carry an `onPayload` that tells
+ * the listeners, then runs the agent's own. A provider calls `onPayload` just before sending, after any
+ * wait for a provider slot (pi-ai's providers and the claude-code provider alike), and only the agent's
+ * requests carry the agent's options: a side call (a title, a compaction summary) never does. A cache
+ * warm reuses a past request's options, so it can call it again later; reply timing ignores a start
+ * heard outside a reply's wait (server/reply-timing.ts).
+ */
+export function hearRequests(agent: { streamFunction: PiStreamFn }, fn: RequestListener): () => void {
+  let wrapped = agent.streamFunction;
+  if (!wrapped[REQUESTS]) agent.streamFunction = wrapped = heardStream(wrapped, new Set());
+  const set = wrapped[REQUESTS]!;
+  set.add(fn);
+  return () => set.delete(fn);
+}
+
+/** `orig` with an `onPayload` in its options that tells `listeners`, then runs the caller's own. */
+function heardStream(orig: PiStreamFn, listeners: Set<RequestListener>): PiStreamFn {
+  const wrapped = ((model, context, options) => {
+    const own = options?.onPayload;
+    const onPayload = (...args: any[]) => {
+      const at = Date.now();
+      for (const l of [...listeners]) {
+        try {
+          l(at);
+        } catch {
+          // a listener's failure never touches the request
+        }
+      }
+      return own?.(...args);
+    };
+    return orig(model, context, { ...options, onPayload });
+  }) as PiStreamFn;
+  wrapped[REQUESTS] = listeners;
+  return wrapped;
+}
+
+/** After something replaced the agent's stream function (a test double), keep telling the listeners the
+    one it replaced told. */
+export function keepHearingRequests(agent: { streamFunction: PiStreamFn }, replaced: unknown): void {
+  const listeners = (replaced as PiStreamFn | undefined)?.[REQUESTS];
+  if (listeners && !agent.streamFunction[REQUESTS]) agent.streamFunction = heardStream(agent.streamFunction, listeners);
 }
 
 /** One pi event as the HarnessEvent it is (exactly one per event). */
@@ -110,7 +216,16 @@ export function harnessEventOf(event: { type: string; [k: string]: any }): Harne
       const message = event.message as { role?: unknown; content?: unknown; customType?: unknown } | undefined;
       const role = message?.role === "user" ? "user" : message?.role === "assistant" ? "assistant" : "other";
       const noteType = message?.role === "custom" && typeof message.customType === "string" ? message.customType : undefined;
-      return { type, frame, role, ...(role === "user" ? { text: messageText(message!.content) } : {}), ...(noteType !== undefined ? { noteType } : {}), handle: message ?? undefined };
+      const reply = type === "message.end" && role === "assistant" ? replySummaryOf(message) : undefined;
+      return {
+        type,
+        frame,
+        role,
+        ...(role === "user" ? { text: messageText(message!.content) } : {}),
+        ...(noteType !== undefined ? { noteType } : {}),
+        handle: message ?? undefined,
+        ...(reply ? { reply } : {}),
+      } as HarnessEvent;
     }
     case "message.update": {
       const message = event.message as { role?: unknown } | undefined;
@@ -340,8 +455,8 @@ export class PiHarnessSession implements HarnessSession {
     this.s.refreshContext();
   }
   /** P16: idle, appended at once with message_start and message_end, no turn. */
-  async appendNote(noteType: string, text: string): Promise<void> {
-    await this.s.sendCustomMessage({ customType: noteType, content: text, display: true }, { triggerTurn: false });
+  async appendNote(noteType: string, text: string, details?: unknown): Promise<void> {
+    await this.s.sendCustomMessage({ customType: noteType, content: text, display: true, ...(details !== undefined ? { details } : {}) }, { triggerTurn: false });
   }
 
   onUserMessage(claim: (input: unknown) => void): () => void {
@@ -349,6 +464,19 @@ export class PiHarnessSession implements HarnessSession {
   }
 
   subscribe(fn: (event: HarnessEvent) => void): () => void {
-    return this.s.subscribe((event) => fn(harnessEventOf(event as { type: string })));
+    const s = this.s;
+    const off = s.subscribe((event) => fn(harnessEventOf(event as { type: string })));
+    // Never forwarded (no wire carries it): a frame only for the contract's shape.
+    const agent = (s as { agent?: { streamFunction?: unknown } }).agent;
+    const offRequests =
+      typeof agent?.streamFunction === "function"
+        ? hearRequests(agent as { streamFunction: PiStreamFn }, (at) =>
+            fn({ type: "request.start", at, frame: () => ({ type: "event", event: { type: "sova_request_start", at } }) }),
+          )
+        : () => undefined;
+    return () => {
+      off();
+      offRequests();
+    };
   }
 }

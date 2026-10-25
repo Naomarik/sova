@@ -50,6 +50,19 @@ describe("org engines: one host per org", () => {
     assert.equal(hostOf("org_a"), f.host);
   });
 
+  test("a chat process never opens an org's engine: only the server runs its statecharts", async () => {
+    let opened = 0;
+    setOrgHostOpener(async () => (opened++, fakeHost().host));
+    process.env.SOVA_CHAT_UNIT = "sova-chat-test";
+    try {
+      await assert.rejects(openOrgHost(opts("org_c")), /opens only in the Sova server/);
+    } finally {
+      delete process.env.SOVA_CHAT_UNIT;
+    }
+    assert.equal(opened, 0);
+    assert.equal(isOrgHostOpen("org_c"), false);
+  });
+
   test("a host that is not open answers 409; after close it is gone", async () => {
     assert.throws(() => hostOf("org_x"), (e: unknown) => e instanceof OrgError && e.status === 409);
     const f = fakeHost();

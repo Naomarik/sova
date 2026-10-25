@@ -19,13 +19,13 @@ export interface Point {
 
 /**
  * One press on a row. `pressed`: down, not yet anything. `lifted`: held still past HOLD_MS, so a
- * release selects and a move drags. A move that starts the drag hands the press over (`onDrag`)
+ * move drags and a release in place does nothing (the row settles back). A move that starts the drag hands the press over (`onDrag`)
  * and the press is over: the drag lives outside the row, which a list poll may rebuild under it.
  */
 export type PressPhase = "idle" | "pressed" | "lifted";
 
 export interface RowPressOptions {
-  /** The press was held still long enough: the row rises, and a release now selects it. */
+  /** The press was held still long enough: the row rises, and a move now drags it. */
   onLift(): void;
   /** The press became a drag at this point. */
   onDrag(at: Point): void;
@@ -36,10 +36,10 @@ export interface RowPressOptions {
 }
 
 export interface RowPress {
-  /** A press began. `drag` is false where a row can't be dragged (selection mode). */
-  start(at: Point, pointer: string, drag: boolean): void;
+  /** A press began. */
+  start(at: Point, pointer: string): void;
   move(at: Point): void;
-  /** The press ended where it was. True when it had lifted: the caller selects. */
+  /** The press ended where it was. True when it had lifted; either way the release does nothing. */
   finish(): boolean;
   /** The press is off without a choice: a scroll, a pointercancel, the window losing focus. */
   cancel(): void;
@@ -51,7 +51,6 @@ export interface RowPress {
 export function createRowPress(opts: RowPressOptions): RowPress {
   let origin: Point | null = null;
   let mouse = false;
-  let canDrag = false;
   let phase: PressPhase = "idle";
   const hold = createHoldGesture({
     delayMs: opts.delayMs ?? HOLD_MS,
@@ -69,10 +68,9 @@ export function createRowPress(opts: RowPressOptions): RowPress {
     phase = "idle";
   };
   return {
-    start(at, pointer, drag) {
+    start(at, pointer) {
       origin = at;
       mouse = pointer === "mouse";
-      canDrag = drag;
       phase = "pressed";
       hold.start(at);
     },
@@ -80,7 +78,7 @@ export function createRowPress(opts: RowPressOptions): RowPress {
       if (phase === "idle" || !origin) return;
       if (phase === "pressed") {
         // A mouse drags before the hold's tolerance runs out; a thumb that moves is a scroll.
-        if (mouse && canDrag && far(at, DRAG_MOUSE_PX)) {
+        if (mouse && far(at, DRAG_MOUSE_PX)) {
           hold.cancel();
           end();
           opts.onDrag(at);
@@ -93,11 +91,11 @@ export function createRowPress(opts: RowPressOptions): RowPress {
         }
         return;
       }
-      // Lifted: a move is a drag, never a selection.
+      // Lifted: a move is a drag.
       if (far(at, DRAG_LIFTED_PX)) {
         hold.cancel(); // still inside the suppression window: the click this press leaves is swallowed
         end();
-        if (canDrag) opts.onDrag(at);
+        opts.onDrag(at);
       }
     },
     finish() {
@@ -127,8 +125,10 @@ export interface DragInfo {
   groupId: string | null;
   /** An organization's session: never joins a group (taking one out is fine). */
   org: boolean;
-  /** The project an org session's archive toasts name (drag-archive's `orgProjectOf`). */
+  /** The project the unarchive (Undo) toast names (drag-archive's `orgProjectOf`). */
   orgProject: string | null;
+  /** The project the archive toast names: an org session's only (drag-archive's `archivedProjectOf`). */
+  archivedProject: string | null;
   /** The peer's label, for a session that lives on another host; null on this one. */
   peer: string | null;
   archive: ArchiveDrag;

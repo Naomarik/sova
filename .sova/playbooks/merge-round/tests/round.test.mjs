@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { acquireLock, busyOf, dirtyPaths, expandArgs, failingTestFiles, groupOf, hasScript, homeShown, needsRestart, ownerOf, parseBatch, parseBoard, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
+import { acquireLock, alsoUpdateNudges, areaGuides, dirtyPaths, expandArgs, failingTestFiles, globRe, groupOf, guideFrontMatter, hasScript, homeShown, landingAnswer, landingAnswerAt, needsRestart, ownerOf, parseBatch, parseBoard, parseLanding, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
 
 const ROUND = fileURLToPath(new URL("../scripts/round.mjs", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -38,14 +38,16 @@ const writeBoard = (rows, { pending = 0, at = Date.now() } = {}) => {
   const iso = new Date(at).toISOString();
   writeFileSync(boardFile, JSON.stringify({
     v: 1, at: iso, read: 10, pending,
-    rows: rows.map(([branch, state, owner, status, path = wt(branch)]) => ({ path, branch, repo: join(main, ".git"), state, reason: `${words[state] ?? "In progress"} · reason`, readAt: iso, owner: { id: owner, status, profile: null, lastActiveAt: iso } })),
+    rows: rows.map(([branch, state, owner, status, path = wt(branch), landing]) => ({ path, branch, repo: join(main, ".git"), state, reason: `${words[state] ?? "In progress"} · reason`, ...(landing ? { landing } : {}), readAt: iso, owner: { id: owner, title: `Chat of ${owner}`, status, profile: null, lastActiveAt: iso } })),
   }));
 };
 const outputs = [];
+/** Ready to land at the branch's current head (§chat.worktrees/ready-to-land), as the board says it. */
+const landed = (branch, over = {}) => ({ state: "ready", commit: execFileSync("git", ["-C", main, "rev-parse", `refs/heads/${branch}`], { encoding: "utf8" }).trim(), ...over });
 
 const gitEnv = { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(root, "gitconfig") };
 const baseEnv = () => {
-  const env = { ...process.env, ...gitEnv, PATH: `${bin}:${dirname(process.execPath)}:${process.env.PATH}`, HOME: root, PI_CODING_AGENT_DIR: agent, PI_SESSION_ID: ME, SOVA_ROUND_PNPM: join(bin, "pnpm"), SOVA_ROUND_SPEC_CORE: core, SOVA_ROUND_HEALTH_URL: "http://127.0.0.1:9/api/health", FAKE_PNPM_LOG: pnpmLog, CLAUDE_CONFIG_DIR: join(root, "claude-login") };
+  const env = { ...process.env, ...gitEnv, PATH: `${bin}:${dirname(process.execPath)}:${process.env.PATH}`, HOME: root, PI_CODING_AGENT_DIR: agent, PI_SESSION_ID: ME, SOVA_ROUND_PNPM: join(bin, "pnpm"), SOVA_ROUND_SPEC_CORE: core, SOVA_ROUND_HEALTH_URL: "http://127.0.0.1:9/api/health", FAKE_PNPM_LOG: pnpmLog, FAKE_MAIN: main, FAKE_PRUNE_LOG: join(root, "prune.log"), CLAUDE_CONFIG_DIR: join(root, "claude-login") };
   for (const k of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"]) delete env[k];
   return env;
 };
@@ -58,11 +60,13 @@ const commit = (cwd, file, text, subject) => {
   return git(cwd, "rev-parse", "HEAD");
 };
 const wt = (name) => join(root, `wt-${name.replace(/\//g, "-")}`);
+/** A git command that may fail (a merge expected to conflict). */
+const spawnSyncGit = (cwd, args) => { try { execFileSync("git", args, { cwd, env: { ...process.env, ...gitEnv }, stdio: "ignore" }); } catch {} };
 
 /** Runs round.mjs (or another script) asynchronously, so the test's own health server can answer. */
-function run(args, { env = {}, input, script = ROUND } = {}) {
+function run(args, { env = {}, input, script = ROUND, cwd = main } = {}) {
   return new Promise((done) => {
-    const child = spawn(process.execPath, [script, ...args], { cwd: main, env: { ...baseEnv(), ...env }, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [script, ...args], { cwd, env: { ...baseEnv(), ...env }, stdio: ["pipe", "pipe", "pipe"] });
     let out = "";
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (out += d));
@@ -97,6 +101,10 @@ if (args[0] === "test" && mode === "fail") {
   console.log("  test at server/pre-fail.test.ts:3:1");
   process.exit(1);
 }
+if (args[0] === "test" && mode === "flaky") {
+  console.log("✖ server/new-fail.test.ts (3ms)");
+  process.exit(1);
+}
 if (args[0] === "test:int" && mode === "int-fail") {
   console.log("FAIL server/new-int.integration.test.ts (exit 1, 0 pass, 1 fail)");
   console.log("  FAIL server/pre-fail.test.ts");
@@ -106,7 +114,12 @@ if (args[0] === "test" && mode === "hang") {
   const c = spawn("sleep", ["1000"], { stdio: "ignore" });
   fs.writeFileSync(process.env.FAKE_HANG_PID, String(c.pid));
   setInterval(() => {}, 1000);
-} else if (args[0] === "exec") process.exit(args.at(-1).includes("pre-fail") ? 1 : 0);
+} else if (args[0] === "exec") {
+  // A file run alone: pre-fail fails everywhere; one FAKE_ALONE_FAIL names also fails alone in a worktree (never on master's checkout).
+  const file = args.at(-1);
+  const onMain = fs.realpathSync(process.cwd()) === fs.realpathSync(process.env.FAKE_MAIN);
+  process.exit(file.includes("pre-fail") || (!onMain && (process.env.FAKE_ALONE_FAIL || "").split(",").includes(file)) ? 1 : 0);
+}
 else process.exit(0);
 `);
   writeFileSync(join(bin, "systemctl"), `#!/bin/sh\necho "$@" >> ${JSON.stringify(systemctlLog)}\necho 0\n`);
@@ -117,11 +130,41 @@ const bad = process.env.FAKE_SPEC_BAD === "1";
 console.log(JSON.stringify(c === "census" ? { census: { unclaimed: bad ? ["src/x.ts"] : [] } } : { exit: bad ? 2 : 0 }));
 if (bad && c === "check") process.exitCode = 2;
 `);
-  writeFileSync(join(core, "sova-spec-draft.mjs"), `import { writeFileSync } from "node:fs";
+  writeFileSync(join(core, "sova-spec-draft.mjs"), `import { existsSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 const a = process.argv.slice(2);
 const rootDir = a[a.indexOf("--root") + 1];
-if (a[0] === "merge-manifest") writeFileSync(rootDir + "/.sova/spec/manifest.json", '{"merged":true}\\n');
-console.log(JSON.stringify({ ids: process.env.FAKE_SPEC_BAD === "1" ? [{ id: "§a/b", current: "pending" }] : [] }));
+if (a[0] === "merge-manifest") {
+  if (process.env.FAKE_MANIFEST_REFUSE === "1") { console.log(JSON.stringify({ exit: 1, conflicts: [{ key: "claims.§x", kind: "record" }] })); process.exit(1); }
+  writeFileSync(rootDir + "/.sova/spec/manifest.json", '{"merged":true}\\n');
+}
+// FAKE_DRAFT_IDS: {draft: [ids not promoted]}; a draft it lists with none has one record already current;
+// one it lists as "garbage" reads as unreadable; FAKE_DRAFTS_GARBAGE=1 makes the whole reading non-JSON.
+const named = (n) => (process.env.FAKE_DRAFT_IDS ? JSON.parse(process.env.FAKE_DRAFT_IDS)[n] : undefined);
+if (a[0] === "drafts") {
+  if (process.env.FAKE_DRAFTS_GARBAGE === "1") { console.log("not json"); process.exit(1); }
+  const dir = rootDir + "/.sova/spec/drafts";
+  const names = existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith(".")).map((d) => d.name).sort() : [];
+  const drafts = names.map((name) => {
+    const n = named(name);
+    if (n === "garbage") return { name, state: "unreadable", reasons: ["corrupt"], pending: [], conflict: [] };
+    const pending = n ? n : process.env.FAKE_SPEC_BAD === "1" ? ["§a/b"] : [];
+    return { name, state: pending.length ? "active" : "promoted", pending, conflict: [], current: n && !n.length ? ["§z/done"] : [] };
+  });
+  console.log(JSON.stringify({ exit: 0, drafts }));
+}
+// prune --official --from DIR: deletes the copies FAKE_OFFICIAL names; FAKE_PRUNE_FAIL=1 fails, deleting nothing.
+if (a[0] === "prune") {
+  writeFileSync(process.env.FAKE_PRUNE_LOG, JSON.stringify(a) + "\\n", { flag: "a" });
+  if (process.env.FAKE_PRUNE_FAIL === "1") { console.log("not json"); process.exit(2); }
+  const from = a[a.indexOf("--from") + 1];
+  const official = JSON.parse(process.env.FAKE_OFFICIAL || "[]");
+  const deleted = [], kept = [];
+  for (const name of readdirSync(from).sort()) {
+    if (official.includes(name)) { rmSync(from + "/" + name, { recursive: true, force: true }); deleted.push({ name }); }
+    else kept.push({ name, state: "pending", reasons: [] });
+  }
+  console.log(JSON.stringify({ exit: 0, deleted, kept }));
+}
 `);
 
   execFileSync("git", ["init", "-q", "--bare", "-b", "master", bare], { env: { ...process.env, ...gitEnv } });
@@ -163,7 +206,7 @@ after(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-test("pure rules: temporary subjects, restart files, dirty paths, timeouts, busy", () => {
+test("pure rules: temporary subjects, restart files, dirty paths, timeouts", () => {
   assert.equal(tempCommitOf(["fine", "WIP: x", "TEMP"]), "WIP: x");
   assert.equal(tempCommitOf(["amend! x"]), "amend! x");
   assert.equal(tempCommitOf(["template work"]), undefined);
@@ -174,7 +217,6 @@ test("pure rules: temporary subjects, restart files, dirty paths, timeouts, busy
   assert.equal(homeShown("/h/u/w/x and /h/u, not /h/us or /x/h/u", "/h/u"), "~/w/x and ~, not /h/us or /x/h/u");
   assert.equal(shellPath("/h/u/w/it's", "/h/u"), `"$HOME"'/w/it'\\''s'`);
   assert.equal(shellPath("/srv/w", "/h/u"), "'/srv/w'");
-  assert.ok(busyOf({ presence: { workerCounts: { working: 1 } } }) && busyOf({ presence: { activity: { state: "working" } } }) && !busyOf({ presence: { activity: { state: "idle" }, workerCounts: { working: 0 } } }));
   assert.deepEqual(failingTestFiles("✖ server/a.test.ts (3ms)\n  test at file:///r/src/lib/b.test.ts:1:2\n  test at /elsewhere/c.test.ts:1:1", "/r"), ["server/a.test.ts", "src/lib/b.test.ts"]);
   // scripts/run-tests.mjs on Bun: each failing file's FAIL line, then the summary's list.
   const bun = "ok   server/ok.test.ts (3 pass)\nFAIL server/sync/logins.test.ts (exit 1, 20 pass, 1 fail)\nerror: FAIL inside output.test.ts\n\nrun-tests (bun): 2 files\n  FAIL server/sync/logins.test.ts\n  FAIL src/lib/x.test.tsx";
@@ -317,8 +359,8 @@ test("status without the board: git facts, owners unknown and why, exit 2", asyn
 
 test("status: the whole board sorted by the next action, counts first, owners from the board", async () => {
   writeBoard([
-    ["feat/clean", "waiting-approval", OWNER, "idle"],
-    ["feat/firstrun", "ready", "0199cccc-busy", "busy"],
+    ["feat/clean", "waiting-approval", OWNER, "idle", undefined, landed("feat/clean")],
+    ["feat/firstrun", "ready", "0199cccc-busy", "busy", undefined, landed("feat/firstrun")],
     ["feat/dirty", "ready", "0199dddd-archived", "archived"],
     ["feat/temp", "in-progress", "0199eeee-temp", "idle"],
     ["feat/slow", "ready", "0199ffff-elsewhere", "idle", join(root, "not-a-worktree")],
@@ -329,9 +371,9 @@ test("status: the whole board sorted by the next action, counts first, owners fr
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(objectFiles(), objects, "merge-tree wrote into the shared object store");
   const out = r.out.split("\n");
-  assert.match(out[0], /^Merge board \(written \d+s ago\): 0 to check · 0 to land · 1 to ask now · 1 owner busy · 1 owner archived · 4 no session tracks · 0 owner unknown · 1 not ready\.$/);
+  assert.match(out[0], /^Merge board \(written \d+s ago\): 0 to check · 0 to land · 1 to queue now · 0 card shown · 1 owner busy · 1 owner archived · 4 no session tracks · 0 owner unknown · 1 not ready\.$/);
   const at = (re) => out.findIndex((l) => re.test(l));
-  assert.ok(at(/^== Ready to merge, owner idle: ask the owner now \(1\)$/) === at(/^feat\/clean: /) - 1, "under its group's head");
+  assert.ok(at(/^== Ready to land, owner idle: queue it \(Sova shows the Landing card\) \(1\)$/) === at(/^feat\/clean: /) - 1, "under its group's head");
   const order = ["feat/clean", "feat/firstrun", "feat/dirty", "feat/conflict", "feat/temp"].map((b) => at(new RegExp(`^${b}: `)));
   assert.deepEqual([...order].sort((a, b) => a - b), order, "ask, busy, archived, untracked, not ready");
   const line = (b) => out.find((l) => l.startsWith(`${b}:`)) ?? "";
@@ -345,7 +387,7 @@ test("status: the whole board sorted by the next action, counts first, owners fr
   assert.match(line("feat/dirty"), /1 uncommitted \(junk\.txt\)/);
   assert.match(line("feat/conflict"), /conflicts with master in 1 file/);
   assert.match(line("feat/manifest"), /conflicts with master in 1 file/);
-  assert.match(r.out, /next: round\.mjs ask feat\/clean topic=<your topic> \(ask the owner, never the user\)/);
+  assert.match(r.out, /next: round\.mjs ask feat\/clean \(Ready to land: queues it, and Sova shows its owner the Landing card\)/);
   assert.equal(state().branches["feat/clean"].board.owner, OWNER, "the board's owner is recorded");
   // While Sova hasn't read every session, a worktree with no row is unknown, never untracked.
   writeBoard([["feat/clean", "waiting-approval", OWNER, "idle"]], { pending: 7 });
@@ -360,7 +402,7 @@ test("status: the whole board sorted by the next action, counts first, owners fr
   assert.match(line("feat/manifest"), /conflicts with master in 1 file/);
   assert.match(r.out, /feat\/\[private name\]-notes: /);
   assert.match(r.out, /Main checkout: on master, 0 uncommitted, \+1\/-0 vs origin\/master/);
-  writeBoard([["feat/clean", "waiting-approval", OWNER, "idle"]]);
+  writeBoard([["feat/clean", "waiting-approval", OWNER, "idle", undefined, landed("feat/clean")]]);
   const j = await run(["status", "--json"]);
   const parsed = JSON.parse(j.out);
   assert.deepEqual([parsed.branches.find((b) => b.branch === "feat/clean").group, parsed.branches.find((b) => b.branch === "feat/temp").group], ["ask", "untracked"]);
@@ -380,7 +422,7 @@ test("note, ask and reply: never a busy owner, never twice in a row, never the s
   assert.equal((await run(["ask", "feat/clean", "topic=merge"])).code, 2, "a bare base name is not a topic queue_open made");
   const ask = await run(["ask", "feat/clean", `topic=${TOPIC}`]);
   assert.equal(ask.code, 0, ask.out);
-  assert.ok(ask.out.includes(`Is feat/clean ready to merge at its current head? Reply with queue_push, topic "${TOPIC}", text one line: READY feat/clean <the head sha you checked>, or NOT READY: <why>.`));
+  assert.ok(ask.out.includes(`Is feat/clean ready to merge at its current head? Answer READY only if the user has told you, in your chat, to merge this branch; checks passing is not their go-ahead. Reply with queue_push, topic "${TOPIC}", text one line: READY feat/clean <the head sha you checked>, or NOT READY: <why> (NOT READY: awaiting the user's go-ahead, if they haven't given it). If the user later tells you to merge it, don't merge it yourself: push READY to this topic and the merge round lands it.`));
   assert.match(ask.out, /don't poll/);
   assert.ok(!ask.out.includes(head.slice(0, 7)), "the ask holds the head's sha");
   assert.equal(state().branches["feat/clean"].ask.topic, TOPIC);
@@ -475,42 +517,77 @@ test("check: a manifest-only conflict goes through merge-manifest, then the chec
   assert.equal(git(main, "rev-parse", "master"), masterBefore, "check wrote to master");
 });
 
-test("check: a failing spec check, unclaimed files and an unpromoted draft are printed and hold nothing", async () => {
+test("check: a failing spec check and unclaimed files hold nothing; a draft not promoted holds the branch and hands it back", async () => {
   const exclude = join(main, ".git", "info", "exclude");
   const was = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
   writeFileSync(exclude, `${was}.sova/spec/drafts/\n`);
   mkdirSync(join(wt("feat/manifest"), ".sova", "spec", "drafts", "left"), { recursive: true });
   try {
     const r = await run(["check", "feat/manifest"], { env: { FAKE_SPEC_BAD: "1" } });
-    assert.equal(r.code, 0, r.out);
+    assert.equal(r.code, 1, r.out);
     assert.match(r.out, /^spec check: ERRORS\.$/m);
     assert.match(r.out, /^spec census: 1 unclaimed \(src\/x\.ts\)\.$/m);
     assert.match(r.out, /^draft left: not promoted: §a\/b\.$/m);
-    assert.match(r.out, /landable at [0-9a-f]{7}/);
-    assert.doesNotMatch(r.out, /needs:/);
+    assert.match(r.out, /^needs: docs not promoted: left$/m, "the draft is the only need: the spec check and census hold nothing");
+    // Owner gone (none recorded): the hand-back is the user's call, and the branch can't land with its docs missing.
+    assert.match(r.out, /^Hand-back, for its owner \(none known: the user's call\):$/m);
+    assert.match(r.out, /^feat\/manifest isn't landing yet: its docs aren't official\. Your spec drafts aren't promoted: left \(§a\/b\)\. Promote them on feat\/manifest and commit that/m);
+    const land = await run(["land", "feat/manifest"]);
+    assert.equal(land.code, 1, land.out);
+    assert.match(land.out, /needs: docs not promoted: left/);
+    assert.doesNotMatch(land.out, /call: worktree/);
+    // Promoted (the draft confirmed promoted): the same spec errors and unclaimed files land.
+    const promoted = await run(["check", "feat/manifest"], { env: { FAKE_SPEC_BAD: "1", FAKE_DRAFT_IDS: JSON.stringify({ left: [] }) } });
+    assert.equal(promoted.code, 0, promoted.out);
+    assert.match(promoted.out, /^draft left: promoted\.$/m);
+    assert.match(promoted.out, /landable at [0-9a-f]{7}/);
+    assert.doesNotMatch(promoted.out, /needs:|Hand-back/);
   } finally {
     rmSync(join(wt("feat/manifest"), ".sova", "spec", "drafts"), { recursive: true, force: true });
     writeFileSync(exclude, was);
   }
 });
 
-test("check: a failing test file is pre-existing when it fails on master too; pnpm test runs without CLAUDE_CONFIG_DIR", async () => {
+test("check: a test file failing in the full run but passing alone is flaky and holds nothing", async () => {
   writeFileSync(pnpmLog, "");
-  const r = await run(["check", "feat/clean"], { env: { FAKE_PNPM_MODE: "fail" } });
-  assert.equal(r.code, 1, r.out);
-  assert.match(r.out, /needs: new test failure: server\/new-fail\.test\.ts$/m);
-  assert.match(r.out, /Pre-existing on master \(not blocking\): server\/pre-fail\.test\.ts/);
+  const r = await run(["check", "feat/clean"], { env: { FAKE_PNPM_MODE: "flaky" } });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /^  failing files: server\/new-fail\.test\.ts \(flaky: passes alone\)\.$/m);
+  assert.match(r.out, /^Flaky \(failed in the full run, passed alone; not blocking\): server\/new-fail\.test\.ts\.$/m);
+  assert.match(r.out, /^landable at [0-9a-f]{7}$/m);
+  assert.deepEqual(state().branches["feat/clean"].check.flaky, ["server/new-fail.test.ts"]);
   const calls = readFileSync(pnpmLog, "utf8").trim().split("\n").map((l) => JSON.parse(l));
   const testCall = calls.find((c) => c.args[0] === "test");
-  assert.equal(testCall.claude, false);
+  assert.equal(testCall.claude, false, "pnpm test runs without CLAUDE_CONFIG_DIR");
   assert.equal(testCall.cwd, wt("feat/clean"));
-  const rerun = calls.find((c) => c.args[0] === "exec");
-  assert.equal(rerun.cwd, main);
-  // The same runner and runtime as the branch's pnpm test (Bun unless SOVA_RUNTIME=node).
-  assert.deepEqual(rerun.args, ["exec", "node", "scripts/run-tests.mjs", "--runtime", process.env.SOVA_RUNTIME === "node" ? "node" : "bun", "server/pre-fail.test.ts"]);
+  // Rerun on its own in the branch's worktree, with the same runner and runtime (Bun unless SOVA_RUNTIME=node); never on master.
+  const reruns = calls.filter((c) => c.args[0] === "exec");
+  assert.deepEqual(reruns.map((c) => [c.cwd, c.args]), [[wt("feat/clean"), ["exec", "node", "scripts/run-tests.mjs", "--runtime", process.env.SOVA_RUNTIME === "node" ? "node" : "bun", "server/new-fail.test.ts"]]]);
 });
 
-test("check runs pnpm test:int after pnpm test, with the same pre-existing rule; a tree without the script skips it", async () => {
+test("check: a file failing alone holds the branch only when it passes on master; one failing on master too is pre-existing", async () => {
+  writeFileSync(pnpmLog, "");
+  const r = await run(["check", "feat/clean"], { env: { FAKE_PNPM_MODE: "fail", FAKE_ALONE_FAIL: "server/new-fail.test.ts" } });
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /^needs: new test failure: server\/new-fail\.test\.ts$/m);
+  assert.match(r.out, /server\/new-fail\.test\.ts \(fails alone; passes on master\), server\/pre-fail\.test\.ts \(fails alone; pre-existing: also fails on master\)/);
+  assert.match(r.out, /^Pre-existing on master \(not blocking\): server\/pre-fail\.test\.ts\.$/m);
+  assert.deepEqual(state().branches["feat/clean"].check.preexisting, ["server/pre-fail.test.ts"]);
+  assert.doesNotMatch(r.out, /^Flaky/m);
+  const calls = readFileSync(pnpmLog, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((c) => c.args[0] === "exec");
+  const runtime = process.env.SOVA_RUNTIME === "node" ? "node" : "bun";
+  assert.deepEqual(calls.filter((c) => c.cwd === wt("feat/clean")).map((c) => c.args.at(-1)), ["server/new-fail.test.ts", "server/pre-fail.test.ts"], "each alone in the worktree first");
+  // master's runs are cached per (master, file); the first check of this master runs both there.
+  for (const c of calls) assert.deepEqual(c.args.slice(0, 5), ["exec", "node", "scripts/run-tests.mjs", "--runtime", runtime]);
+  // One flaky, one pre-existing: neither holds the branch.
+  const mixed = await run(["check", "feat/clean"], { env: { FAKE_PNPM_MODE: "fail" } });
+  assert.equal(mixed.code, 0, mixed.out);
+  assert.match(mixed.out, /^Pre-existing on master \(not blocking\): server\/pre-fail\.test\.ts\.$/m);
+  assert.match(mixed.out, /^Flaky \(failed in the full run, passed alone; not blocking\): server\/new-fail\.test\.ts\.$/m);
+  assert.match(mixed.out, /^landable at [0-9a-f]{7}$/m);
+});
+
+test("check runs pnpm test:int after pnpm test, with the same alone-then-master rule; a tree without the script skips it", async () => {
   writeFileSync(pnpmLog, "");
   const skipped = await run(["check", "feat/clean"]);
   assert.match(skipped.out, /pnpm test:int: skipped \(this tree's package\.json has no test:int script\)\./);
@@ -519,7 +596,7 @@ test("check runs pnpm test:int after pnpm test, with the same pre-existing rule;
   git(main, "worktree", "add", "-q", wt("feat/int"), "-b", "feat/int");
   commit(wt("feat/int"), "package.json", `${JSON.stringify({ scripts: { test: "x", "test:int": "y" } })}\n`, "int: the tiers' scripts");
   writeFileSync(pnpmLog, "");
-  const r = await run(["check", "feat/int"], { env: { FAKE_PNPM_MODE: "int-fail" } });
+  const r = await run(["check", "feat/int"], { env: { FAKE_PNPM_MODE: "int-fail", FAKE_ALONE_FAIL: "server/new-int.integration.test.ts" } });
   assert.equal(r.code, 1, r.out);
   assert.match(r.out, /^pnpm test: ok, \d+s\.$/m);
   assert.match(r.out, /^pnpm test:int: FAILED \(exit 1\), \d+s\.$/m);
@@ -543,9 +620,9 @@ test("hasScript: a package.json script by name; none, or unreadable, is no", () 
   assert.equal(hasScript(dir, "test:all"), false);
 });
 
-test("touchesSpecReplay: the spec core, its replay tests, spec-guard and spec-hooks only", () => {
-  for (const f of ["pi-config/extensions/spec/core/sova-spec.mjs", "pi-config/extensions/spec/tests/replay/replay.test.mjs", "pi-config/extensions/mode/spec-guard.ts", "pi-config/extensions/claude-code/spec-hooks.ts"]) assert.ok(touchesSpecReplay(f), f);
-  for (const f of ["pi-config/extensions/spec/tests/core.test.mjs", "pi-config/extensions/spec/README.md", "pi-config/extensions/mode/spec.ts", "server/spec-settings.ts", "x/pi-config/extensions/spec/core/a.mjs"]) assert.ok(!touchesSpecReplay(f), f);
+test("touchesSpecReplay: the spec core, its replay tests and spec-guard only", () => {
+  for (const f of ["pi-config/extensions/spec/core/sova-spec.mjs", "pi-config/extensions/spec/tests/replay/replay.test.mjs", "pi-config/extensions/mode/spec-guard.ts"]) assert.ok(touchesSpecReplay(f), f);
+  for (const f of ["pi-config/extensions/spec/tests/core.test.mjs", "pi-config/extensions/spec/README.md", "pi-config/extensions/mode/spec.ts", "server/spec-settings.ts", "pi-config/extensions/claude-code/spec-hooks.ts", "x/pi-config/extensions/spec/core/a.mjs"]) assert.ok(!touchesSpecReplay(f), f);
 });
 
 test("acquireLock: a fresh lock is waited for whatever its pid, a stale one taken over, the holder's beat keeps it fresh", async () => {
@@ -839,44 +916,36 @@ test("push: refused on a leak-scan hit, pushed when clean, refused when not a fa
   assert.equal(git(bare, "rev-parse", "master"), theirs);
 });
 
-test("restart-check: drops its own record, ignores stale and other servers, fails closed with no server", async () => {
+test("restart-check: a pending restart prints the systemctl restart line whatever the sessions are doing; it reads no live records and finds no server", async () => {
   const live = join(agent, "sessions", "live");
-  const serverDir = join(root, "server");
-  mkdirSync(serverDir, { recursive: true });
-  // A stand-in for the Sova server: writes live records under its own pid, then runs the check as its child.
-  writeFileSync(join(serverDir, "index.ts"), `import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
-const live = process.env.LIVE_DIR;
-const now = Date.now();
-const rec = (tag, sessionId, presence, heartbeat = now, pid = process.pid) =>
-  writeFileSync(live + "/p" + pid + "-" + tag + ".json", JSON.stringify({ v: 1, session: { id: "p" + pid + "-" + tag, pid, sessionId, name: sessionId + " ${PLANTED}", cwd: "/", model: "m", startedAt: now, lastActivity: now }, presence, heartbeat }));
-rec("aaaaaaaa", process.env.PI_SESSION_ID, { activity: { state: "working" } });
-rec("bbbbbbbb", "idle-one", { activity: { state: "idle" }, workerCounts: { working: 0 } });
-rec("cccccccc", "stale-one", { activity: { state: "working" } }, now - 60_000);
-rec("dddddddd", "other-server", { workerCounts: { working: 2 } }, now, 4242424);
-if (process.env.ADD_BUSY) rec("eeeeeeee", "busy-one", { workerCounts: { working: 1 } });
-const r = spawnSync(process.execPath, [process.env.ROUND, "restart-check"], { encoding: "utf8" });
-process.stdout.write(r.stdout);
-process.exitCode = r.status;
-`);
-  const env = { LIVE_DIR: live, ROUND };
-  // A restart pending, and no health to read: it stays pending, so the line is printed.
+  mkdirSync(live, { recursive: true });
+  // A busy session of some server: before chat processes it held the restart; now it doesn't matter.
+  const now = Date.now();
+  writeFileSync(join(live, `p${process.pid}-eeeeeeee.json`), JSON.stringify({ v: 1, session: { id: `p${process.pid}-eeeeeeee`, pid: process.pid, sessionId: "busy-one", name: "busy-one", cwd: "/", model: "m", startedAt: now, lastActivity: now }, presence: { workerCounts: { working: 1 }, activity: { state: "working" } }, heartbeat: now }));
+  // Nothing pending: no line.
+  const idle = state();
+  idle.restart = { pending: false };
+  writeFileSync(stateFile, JSON.stringify(idle));
+  const none = await run(["restart-check"]);
+  assert.equal(none.code, 0, none.out);
+  assert.match(none.out, /No restart pending\./);
+  assert.ok(!none.out.includes("systemctl --user restart"));
+  // A restart pending, and no health to read: it stays pending (the next test confirms it), so the line is printed.
   const st = state();
   st.restart = { pending: true, since: Date.now(), merges: [] };
   writeFileSync(stateFile, JSON.stringify(st));
-  const idle = await run([], { env, script: join(serverDir, "index.ts") });
-  assert.equal(idle.code, 0, idle.out);
-  assert.match(idle.out, /Every other hosted session is idle \(1,/);
-  assert.match(idle.out, /Restart pending since \d+s ago; the server's health can't be read, so it isn't confirmed\./);
-  assert.match(idle.out, /^systemd-run --user --on-active=30s systemctl --user restart sova-runtime\.service$/m);
+  const due = await run(["restart-check"]);
+  assert.equal(due.code, 0, due.out);
+  assert.match(due.out, /Restart pending since \d+s ago; the server's health can't be read, so it isn't confirmed\./);
+  assert.match(due.out, /^systemctl --user restart sova-runtime\.service$/m);
+  assert.ok(!/busy/.test(due.out), "no busy list, no hold");
+  assert.ok(!due.out.includes("systemd-run"));
+  // macOS: the launchd agent's kickstart, its label the unit's name without .service.
+  const mac = await run(["restart-check"], { env: { SOVA_ROUND_PLATFORM: "darwin" } });
+  assert.equal(mac.code, 0, mac.out);
+  assert.match(mac.out, new RegExp(`^launchctl kickstart -k gui/${process.getuid()}/sova-runtime$`, "m"));
+  assert.ok(!mac.out.includes("systemctl"));
   for (const f of readdirSync(live)) rmSync(join(live, f));
-  const busy = await run([], { env: { ...env, ADD_BUSY: "1" }, script: join(serverDir, "index.ts") });
-  assert.equal(busy.code, 1, busy.out);
-  assert.match(busy.out, /busy-one "busy-one \[private name\]": 1 worker\(s\) working/);
-  assert.ok(!busy.out.includes("systemd-run"));
-  const none = await run(["restart-check"]);
-  assert.equal(none.code, 2, none.out);
-  assert.ok(!none.out.includes("systemd-run --user"));
 });
 
 test("start confirms a restart from /api/health, and report gives the skeleton", async () => {
@@ -898,7 +967,7 @@ test("start confirms a restart from /api/health, and report gives the skeleton",
   const rep = await run(["report"]);
   assert.equal(rep.code, 0, rep.out);
   assert.match(rep.out, /^- Merged: /m);
-  assert.match(rep.out, /^- For you, once \(no live owner\): /m);
+  assert.match(rep.out, /^- For you, once \(no live owner, so no Landing card\): /m);
 });
 
 test("report: a branch with no live owner reaches the user once; a quiet round is one line", async () => {
@@ -906,7 +975,7 @@ test("report: a branch with no live owner reaches the user once; a quiet round i
   assert.equal((await run(["start"])).code, 0);
   assert.equal((await run(["status"])).code, 0);
   const first = await run(["report"]);
-  assert.match(first.out, /^- For you, once \(no live owner\): .*feat\/dirty \(owner archived, your call\).*feat\/slow \(no session tracks this worktree, your call\)/m);
+  assert.match(first.out, /^- For you, once \(no live owner, so no Landing card\): .*feat\/dirty \(owner archived: say "land feat\/dirty" here to land it\).*feat\/slow \(no session tracks this worktree: say "land feat\/slow" here to land it\)/m);
   assert.equal((await run(["status"])).code, 0);
   const again = await run(["report"]);
   assert.equal(again.out.split("\n")[0], "Nothing new on the merge board.", again.out);
@@ -945,7 +1014,8 @@ test("b2: the board's newer reading beats an older note: idle and fresh, so ask 
   const ask = await run(["ask", branch, `topic=${TOPIC}`]);
   assert.equal(ask.code, 0, ask.out);
   assert.ok(ask.out.includes(`session_send to ${OWNER}:`), ask.out);
-  assert.ok(ask.out.includes(`Is ${branch} ready to merge at its current head? Reply with queue_push, topic "${TOPIC}"`), ask.out);
+  assert.ok(ask.out.includes(`Is ${branch} ready to merge at its current head? Answer READY only if the user has told you, in your chat, to merge this branch;`), ask.out);
+  assert.ok(ask.out.includes(`Reply with queue_push, topic "${TOPIC}"`), ask.out);
   // A hand note newer than the board names the owner, and only that.
   assert.equal((await run(["note", branch, "owner=0199aaaa-other", "chip=ready", "idle=yes"])).code, 0);
   assert.equal(ownerOf(state().branches[branch]).owner, "0199aaaa-other");
@@ -963,8 +1033,9 @@ test("pure board rules: the file's shape, the owner rule and the groups", () => 
   assert.deepEqual(ownerOf({ owner: "B", idle: "yes", notedAt: 3000, board }), { owner: "B", from: "note", status: "idle", at: 3000, via: "note" });
   assert.deepEqual(ownerOf({ owner: "A", idle: "no", notedAt: 3000, board }), { owner: "A", from: "note", status: "busy", at: 3000, via: "note" }, "the newest reading of that owner");
   assert.equal(ownerOf({}), null);
-  const g = (rec, row, pending = 0) => groupOf({ rec, row, head: "h", master: "m", pending });
-  const row = (state) => ({ state });
+  const g = (rec, row, pending = 0, extra = {}) => groupOf({ rec, row, head: "h", master: "m", pending, ...extra });
+  const L = { state: "ready", commit: "h" };
+  const row = (state, landing = L) => ({ state, ...(landing ? { landing } : {}) });
   assert.equal(g({ check: { ok: true, head: "h", masterSha: "m" } }, null), "land");
   assert.equal(g({ answer: { kind: "ready", head: "h" }, board }, row("ready")), "check");
   assert.equal(g({ board }, row("waiting-approval")), "ask");
@@ -972,6 +1043,487 @@ test("pure board rules: the file's shape, the owner rule and the groups", () => 
   assert.equal(g({ board: { ...board, status: "archived" } }, row("in-progress")), "archived");
   assert.equal(g({}, null), "untracked");
   assert.equal(g({}, null, 3), "unknown");
-  assert.equal(g({ board }, row("in-progress")), "not-ready");
+  assert.equal(g({ board }, row("in-progress", null)), "not-ready");
   assert.equal(g({ board, answer: { kind: "not-ready", head: "h" } }, row("ready")), "not-ready");
+  // Ready to land (§chat.worktrees/ready-to-land): what the captain queues; Ready to merge alone isn't finished work.
+  assert.equal(g({ board }, row("waiting-approval", null)), "not-ready");
+  assert.equal(g({ board }, row("ready", { ...L, commit: "old" })), "not-ready", "Ready to land at another head");
+  assert.equal(g({ board }, row("ready", { state: "specs", commit: "h", drafts: ["d"] })), "not-ready", "landing its specs");
+  assert.equal(g({ board }, row("ready", { state: "specs", commit: "h", drafts: ["d"], specsWhy: "no tools" })), "ask", "its specs can't land: the card offers Merge Without Specs…");
+  assert.equal(g({ board, source: "user", chip: "ready" }, row("ready", null)), "ask", "the user named it: asked the old way");
+  // The Landing card: shown, waiting; refused, asked again; the user's answer at this head.
+  const queued = { board, ask: { queued: "lq_1", head: "h", at: 1, owner: "A" } };
+  assert.equal(g(queued, row("ready"), 0, { queued: { at: 1, card: "of_1" } }), "waiting");
+  assert.equal(g(queued, row("ready"), 0, { queued: { at: 1, refused: "an open offer" } }), "ask");
+  assert.equal(g({ board }, row("in-progress", null), 0, { answer: { kind: "go-ahead" } }), "check", "Land It at this head is the go-ahead");
+  assert.equal(g({ board }, row("ready"), 0, { answer: { kind: "not-yet" } }), "not-ready", "Not Yet waits for a new commit");
+  assert.deepEqual(landingAnswer(parseLanding(JSON.stringify({ v: 1, goAheads: [{ branch: "b", commit: "a".repeat(40), by: "land-it", withoutSpecs: true }], notYet: [{ branch: "c", commit: "a".repeat(40) }] })), "b", "a".repeat(40)), { kind: "go-ahead", withoutSpecs: true, by: "land-it" });
+  assert.equal(landingAnswer(parseLanding("{bad"), "b", "a".repeat(40)), null);
+});
+
+test("groupOf: the owner's READY or the user's Land It checks, a green check lands, Not Yet holds; no merge guard", () => {
+  const board = { owner: "A", status: "idle", at: 2000 };
+  const g = (rec, row, extra = {}) => groupOf({ rec, row, head: "h", master: "m", pending: 0, ...extra });
+  const row = { state: "ready", landing: { state: "ready", commit: "h" } };
+  const ready = { board, answer: { kind: "ready", head: "h" } };
+  const green = { check: { ok: true, head: "h", masterSha: "m" } };
+  assert.equal(g(ready, row), "check", "the owner's READY alone checks it");
+  assert.equal(g({ ...ready, ...green }, row), "land");
+  assert.equal(g({ board }, row, { answer: { kind: "go-ahead" } }), "check", "Land It counts as READY");
+  // Land It at the pre-check head P, carried to the check's clean master merge (landingAnswerAt's `at`): it lands.
+  assert.equal(g({ board, ...green }, row, { answer: { kind: "go-ahead", at: "p" } }), "land");
+  assert.equal(g({ board, ...green }, row), "land", "a check that passed at this head and master lands");
+  assert.equal(g({ board }, row), "ask", "neither: queued for the Landing card");
+  const shown = { board, ask: { queued: "lq_1", head: "h", at: 1, owner: "A" } };
+  assert.equal(g(shown, row, { queued: { at: 1, card: "of_1" } }), "waiting");
+  // Not Yet holds, at this head or carried from P, green check or the owner's READY notwithstanding.
+  for (const answer of [{ kind: "not-yet" }, { kind: "not-yet", at: "p" }]) {
+    assert.equal(g({ ...ready, ...green }, row, { answer }), "not-ready");
+    assert.equal(g({ board }, row, { answer }), "not-ready");
+  }
+  const named = { board, source: "user", chip: "ready", answer: { kind: "ready", head: "h" } };
+  assert.equal(g(named, null), "check", "the user named it, its owner said READY");
+});
+
+test("also-update rules: globs, the guides' front-matter and which touched areas missed their files", () => {
+  assert.ok(globRe("pi-config/extensions/spec/**").test("pi-config/extensions/spec/core/a.mjs"));
+  assert.ok(!globRe("pi-config/extensions/spec/**").test("pi-config/extensions/spec2/a.mjs"));
+  assert.ok(globRe("server/**/*.ts").test("server/a.ts") && globRe("server/**/*.ts").test("server/harness/pi/b.ts"));
+  assert.ok(!globRe("server/*.ts").test("server/harness/b.ts"));
+  assert.ok(globRe("src/App.tsx").test("src/App.tsx") && !globRe("src/App.tsx").test("src/AppXtsx"));
+  assert.deepEqual(guideFrontMatter('---\nwatches: ["a/**", "b.ts"]\nalsoUpdate: ["a/CHANGELOG.md"]\n---\n# A\n'), { watches: ["a/**", "b.ts"], alsoUpdate: ["a/CHANGELOG.md"] });
+  assert.deepEqual(guideFrontMatter("---\nwatches:\n  - a/**\n  - 'b.ts'\nalsoUpdate:\n  - \"c.md\"\n---\n"), { watches: ["a/**", "b.ts"], alsoUpdate: ["c.md"] });
+  assert.deepEqual(guideFrontMatter('# no front-matter\nwatches: ["a"]\n'), { watches: [], alsoUpdate: [] });
+  assert.deepEqual(guideFrontMatter("---\nwatches: [not json\n---\n"), { watches: [], alsoUpdate: [] });
+
+  const dir = mkdtempSync(join(root, "guides-"));
+  const guide = (rel, text) => { mkdirSync(dirname(join(dir, rel)), { recursive: true }); writeFileSync(join(dir, rel), text); };
+  guide("agents/modes/spec/overview.md", '---\nwatches: ["pi-config/extensions/spec/**"]\nalsoUpdate: ["pi-config/extensions/spec/docs/CHANGELOG.md"]\n---\n');
+  guide("agents/server/overview.md", '---\nwatches: ["server/**"]\nalsoUpdate: []\n---\n');
+  guide("agents/frontend/overview.md", "# no front-matter\n");
+  guide("agents/frontend/notes.md", '---\nwatches: ["src/**"]\nalsoUpdate: ["x.md"]\n---\n');
+  const guides = areaGuides(dir);
+  assert.deepEqual(guides.map((x) => x.guide), ["agents/frontend/overview.md", "agents/modes/spec/overview.md", "agents/server/overview.md"]);
+  assert.equal(guides[1].area, "modes/spec");
+  assert.deepEqual(areaGuides(join(dir, "none")), []);
+
+  assert.deepEqual(alsoUpdateNudges(["pi-config/extensions/spec/core/a.mjs", "server/x.ts", "src/y.tsx"], guides), [
+    { area: "modes/spec", guide: "agents/modes/spec/overview.md", touched: ["pi-config/extensions/spec/core/a.mjs"], missing: ["pi-config/extensions/spec/docs/CHANGELOG.md"] },
+  ]);
+  assert.deepEqual(alsoUpdateNudges(["pi-config/extensions/spec/core/a.mjs", "pi-config/extensions/spec/docs/CHANGELOG.md"], guides), []);
+  assert.deepEqual(alsoUpdateNudges(["README.md"], guides), []);
+});
+
+test("check prints an also-update line for an area touched without its files, and it holds nothing", async () => {
+  git(main, "worktree", "add", "-q", wt("feat/guide"), "-b", "feat/guide");
+  commit(wt("feat/guide"), "agents/modes/spec/overview.md", '---\nwatches: ["pi-config/extensions/spec/**"]\nalsoUpdate: ["pi-config/extensions/spec/docs/CHANGELOG.md"]\n---\n# Spec\n', "guide: spec");
+  commit(wt("feat/guide"), "pi-config/extensions/spec/core/x.mjs", "export {};\n", "spec: core change");
+  const r = await run(["check", "feat/guide"]);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /^also update: touched modes\/spec \(1 file, agents\/modes\/spec\/overview\.md\), not pi-config\/extensions\/spec\/docs\/CHANGELOG\.md: ask the owner \("updated" or "not needed because …"\)\.$/m);
+  assert.match(r.out, /landable at [0-9a-f]{7}/);
+  commit(wt("feat/guide"), "pi-config/extensions/spec/docs/CHANGELOG.md", "# Changelog\n", "spec: changelog");
+  const again = await run(["check", "feat/guide"]);
+  assert.equal(again.code, 0, again.out);
+  assert.doesNotMatch(again.out, /^also update:/m);
+});
+
+test("ask names a worktree's unpromoted drafts, a READY with them left is handed back, and landed keeps and names any left", async () => {
+  const branch = "feat/drafts";
+  git(main, "worktree", "add", "-q", wt(branch), "-b", branch);
+  const head = commit(wt(branch), "drafts.txt", "d\n", "drafts: a file");
+  const exclude = join(main, ".git", "info", "exclude");
+  const was = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
+  writeFileSync(exclude, `${was}.sova/spec/drafts/\n`);
+  const drafts = join(wt(branch), ".sova", "spec", "drafts");
+  const askLine = (out) => { const l = out.split("\n"); return l[l.indexOf(`session_send to ${OWNER}:`) + 1]; };
+  const noticeLine = (out) => { const l = out.split("\n"); return l[l.indexOf(`session_send to ${OWNER}, after the clean up:`) + 1]; };
+  const ASK = `Is ${branch} ready to merge at its current head? Answer READY only if the user has told you, in your chat, to merge this branch; checks passing is not their go-ahead. Reply with queue_push, topic "${TOPIC}", text one line: READY ${branch} <the head sha you checked>, or NOT READY: <why> (NOT READY: awaiting the user's go-ahead, if they haven't given it). If the user later tells you to merge it, don't merge it yourself: push READY to this topic and the merge round lands it.`;
+  const FIVE = ["§a/one", "§a/two", "§a/three", "§a/four", "§a/five"];
+  const DRAFT_ENV = { FAKE_DRAFT_IDS: JSON.stringify({ open: FIVE, done: [] }) };
+  const NAMED = "open (§a/one, §a/two, §a/three, §a/four, +1 more)";
+  // Every earlier ask of this owner, moved back past the ask gap.
+  const reAsk = () => {
+    const st = state();
+    for (const r of Object.values(st.branches)) if (r.ask) r.ask.at -= 3600_000;
+    writeFileSync(stateFile, JSON.stringify(st));
+  };
+  try {
+    // No drafts: the ask is word for word what it was.
+    reAsk();
+    assert.equal((await run(["note", branch, `owner=${OWNER}`, "chip=ready", "idle=yes"])).code, 0);
+    const plain = await run(["ask", branch, `topic=${TOPIC}`]);
+    assert.equal(plain.code, 0, plain.out);
+    assert.equal(askLine(plain.out), ASK);
+
+    // One draft with five unpromoted records, one fully promoted: only the first is named, four ids shown.
+    for (const name of ["open", "done"]) { mkdirSync(join(drafts, name, "spec"), { recursive: true }); writeFileSync(join(drafts, name, "draft.json"), `{"name":"${name}"}\n`); }
+    reAsk();
+    const withDrafts = await run(["ask", branch, `topic=${TOPIC}`], { env: DRAFT_ENV });
+    assert.equal(withDrafts.code, 0, withDrafts.out);
+    assert.equal(askLine(withDrafts.out), `${ASK} Your worktree's spec drafts aren't promoted yet: ${NAMED}. Promote them on your branch and commit that before you answer READY: the user's go-ahead to merge covers it, and a READY with them left is handed back.`);
+    assert.doesNotMatch(withDrafts.out, /done|§z\/done|§a\/five/, "a promoted draft, and ids past four, are never named");
+    // READY with the drafts left: handed back to the owner, never taken.
+    const early = await run(["reply", branch], { input: batch(TOPIC, [[OWNER, `READY ${branch} ${head.slice(0, 7)}`, inMs(1000), "d00000000001"]]), env: DRAFT_ENV });
+    assert.equal(early.code, 1, early.out);
+    assert.match(early.out, new RegExp(`^${OWNER}: READY ${branch} at ${head.slice(0, 7)}, but its spec drafts aren't promoted: handed back\\.$`, "m"));
+    assert.equal(askLine(early.out), `${branch} isn't landing yet: its docs aren't official. Your spec drafts aren't promoted: ${NAMED}. Promote them on ${branch} and commit that (the user's go-ahead to merge covers it: don't ask for it again; delete a draft that holds nothing to land, and say so), then answer READY ${branch} <the new head sha> with queue_push, topic "${TOPIC}". The merge round never promotes them.`);
+    assert.equal(state().branches[branch].answer.kind, "not-ready");
+    assert.equal(state().branches[branch].answer.handedBack, true);
+    // The owner promotes on its branch and commits: READY at the new head is taken, and the ask no longer names a draft.
+    const promotedHead = commit(wt(branch), "drafts.txt", "d, promoted\n", "spec: promoted on the branch");
+    const PROMOTED = { FAKE_DRAFT_IDS: JSON.stringify({ open: [], done: [] }) };
+    const ready = await run(["reply", branch], { input: batch(TOPIC, [[OWNER, `READY ${branch} ${promotedHead.slice(0, 7)}`, inMs(2000), "d00000000002"]]), env: PROMOTED });
+    assert.equal(ready.code, 0, ready.out);
+    assert.equal(state().branches[branch].answer.kind, "ready");
+    assert.equal(state().branches[branch].answer.head, promotedHead);
+    reAsk();
+    assert.equal(askLine((await run(["ask", branch, `topic=${TOPIC}`], { env: PROMOTED })).out), ASK, "promoted drafts are never named");
+
+    // Landed with the drafts still there: a copy is kept, the notice names them and that copy, and the clean up still runs.
+    git(main, "merge", "-q", "--no-edit", "--no-ff", branch);
+    const master = git(main, "rev-parse", "master");
+    const keptDir = join(agent, "sova", "playbooks", "merge-round", "drafts", promotedHead);
+    const kept = await run(["landed", branch], { env: DRAFT_ENV });
+    assert.equal(kept.code, 0, kept.out);
+    assert.equal(noticeLine(kept.out), `${branch} is merged into master at ${master.slice(0, 7)}. Don't touch master; start any new work on a fresh branch. Its docs didn't land with the code: its spec drafts weren't promoted: ${NAMED}. Promote them on a fresh branch from master, never on master itself: copy each draft's folder from ~/agent/sova/playbooks/merge-round/drafts/${promotedHead}/ into that worktree's .sova/spec/drafts/, then promote and commit it there.`);
+    assert.equal(readFileSync(join(keptDir, "open", "draft.json"), "utf8"), '{"name":"open"}\n');
+    assert.ok(!existsSync(join(keptDir, "done")), "a promoted draft isn't kept");
+    assert.match(kept.out.split("\n").find((l) => l.startsWith("next: ")), /worktree remove -- /);
+
+    // The copy can't be written: no clean up, so the drafts stay where they are, and the notice points there.
+    rmSync(keptDir, { recursive: true, force: true });
+    chmodSync(dirname(keptDir), 0o555);
+    try {
+      const stuck = await run(["landed", branch], { env: DRAFT_ENV });
+      assert.equal(stuck.code, 0, stuck.out);
+      assert.match(stuck.out, /^Clean up: its unpromoted drafts couldn't be kept \(EACCES\), and removing it would delete them: leave it, and say so in the report\.$/m);
+      assert.doesNotMatch(stuck.out, /worktree remove/);
+      assert.ok(noticeLine(stuck.out).endsWith(`copy each draft's folder from ~/wt-feat-drafts/.sova/spec/drafts/ into that worktree's .sova/spec/drafts/, then promote and commit it there.`), stuck.out);
+    } finally {
+      chmodSync(dirname(keptDir), 0o755);
+    }
+
+    // No drafts left: the notice is word for word what it was.
+    rmSync(drafts, { recursive: true, force: true });
+    const none = await run(["landed", branch]);
+    assert.equal(none.code, 0, none.out);
+    assert.equal(noticeLine(none.out), `${branch} is merged into master at ${master.slice(0, 7)}. Don't touch master; start any new work on a fresh branch.`);
+    assert.doesNotMatch(none.out, /Unpromoted drafts kept/);
+  } finally {
+    rmSync(drafts, { recursive: true, force: true });
+    writeFileSync(exclude, was);
+  }
+});
+
+test("landed keeps every draft not confirmed promoted: an unreadable status, or no spec tools, is kept and named", async () => {
+  const branch = "feat/drafts-unread";
+  git(main, "worktree", "add", "-q", wt(branch), "-b", branch);
+  const head = commit(wt(branch), "unread.txt", "u\n", "unread: a file");
+  const exclude = join(main, ".git", "info", "exclude");
+  const was = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
+  writeFileSync(exclude, `${was}.sova/spec/drafts/\n`);
+  const drafts = join(wt(branch), ".sova", "spec", "drafts");
+  for (const name of ["broken", "fine"]) { mkdirSync(join(drafts, name), { recursive: true }); writeFileSync(join(drafts, name, "draft.json"), `{"name":"${name}"}\n`); }
+  const noticeLine = (out) => { const l = out.split("\n"); return l[l.indexOf(`session_send to ${OWNER}, after the clean up:`) + 1]; };
+  const keptDir = join(agent, "sova", "playbooks", "merge-round", "drafts", head);
+  try {
+    assert.equal((await run(["note", branch, `owner=${OWNER}`, "chip=ready", "idle=yes"])).code, 0);
+    git(main, "merge", "-q", "--no-edit", "--no-ff", branch);
+    const master = git(main, "rev-parse", "master");
+    const BASE = `${branch} is merged into master at ${master.slice(0, 7)}. Don't touch master; start any new work on a fresh branch.`;
+    const TAIL = `Promote them on a fresh branch from master, never on master itself: copy each draft's folder from ~/agent/sova/playbooks/merge-round/drafts/${head}/ into that worktree's .sova/spec/drafts/, then promote and commit it there.`;
+
+    // One draft's status can't be read; the other is fully promoted.
+    const unread = await run(["landed", branch], { env: { FAKE_DRAFT_IDS: JSON.stringify({ broken: "garbage", fine: [] }) } });
+    assert.equal(unread.code, 0, unread.out);
+    assert.equal(noticeLine(unread.out), `${BASE} Its docs didn't land with the code: its spec drafts may not be promoted: broken (status unreadable). ${TAIL}`);
+    assert.equal(readFileSync(join(keptDir, "broken", "draft.json"), "utf8"), '{"name":"broken"}\n');
+    assert.ok(!existsSync(join(keptDir, "fine")), "a draft confirmed promoted isn't kept");
+    assert.match(unread.out.split("\n").find((l) => l.startsWith("next: ")), /worktree remove -- /, "kept first, so the clean up runs");
+
+    // No spec tools at all: no status can be read, so every draft is kept and named.
+    rmSync(keptDir, { recursive: true, force: true });
+    const noTools = await run(["landed", branch], { env: { SOVA_ROUND_SPEC_CORE: join(root, "no-spec-core") } });
+    assert.equal(noTools.code, 0, noTools.out);
+    assert.equal(noticeLine(noTools.out), `${BASE} Its docs didn't land with the code: its spec drafts may not be promoted: broken (status unreadable); fine (status unreadable). ${TAIL}`);
+    for (const name of ["broken", "fine"]) assert.equal(readFileSync(join(keptDir, name, "draft.json"), "utf8"), `{"name":"${name}"}\n`);
+
+    // No spec tools and the copy fails: no clean up, so nothing is deleted.
+    rmSync(keptDir, { recursive: true, force: true });
+    chmodSync(dirname(keptDir), 0o555);
+    try {
+      const stuck = await run(["landed", branch], { env: { SOVA_ROUND_SPEC_CORE: join(root, "no-spec-core") } });
+      assert.match(stuck.out, /^Clean up: its unpromoted drafts couldn't be kept \(EACCES\)/m);
+      assert.doesNotMatch(stuck.out, /worktree remove/);
+    } finally {
+      chmodSync(dirname(keptDir), 0o755);
+    }
+  } finally {
+    rmSync(drafts, { recursive: true, force: true });
+    writeFileSync(exclude, was);
+  }
+});
+
+test("two branches promote the same claim: once A lands, check B hands it back to re-promote on top of master, never 'resolve, commit'", async () => {
+  // Master gains a claim file both branches then promote differently.
+  commit(main, ".sova/spec/claims/x.md", "# §x/one\n\nOne does X.\n", "spec: x");
+  const a = "feat/spec-a", b = "feat/spec-b";
+  for (const [br, text] of [[a, "One does X, twice."], [b, "One does X, once."]]) {
+    git(main, "worktree", "add", "-q", wt(br), "-b", br);
+    commit(wt(br), `${br.slice(5)}.txt`, "code\n", `${br}: code`);
+    commit(wt(br), ".sova/spec/claims/x.md", `# §x/one\n\n${text}\n`, `spec: ${br} promoted`);
+  }
+  git(main, "merge", "-q", "--no-edit", "--no-ff", a);
+  const masterAfterA = git(main, "rev-parse", "master");
+  const headB = git(main, "rev-parse", b);
+  assert.equal((await run(["note", b, `owner=${OWNER}`, "chip=ready", "idle=yes"])).code, 0);
+  const r = await run(["check", b]);
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /^Merging master into feat\/spec-b conflicts in the spec \(\.sova\/spec\/claims\/x\.md\): the merge was aborted/m);
+  assert.doesNotMatch(r.out, /resolve, commit|left in .* for you/, "a spec conflict is never the captain's to resolve");
+  const l = r.out.split("\n");
+  assert.equal(l[l.indexOf(`session_send to ${OWNER}:`) + 1], `${b} isn't landing yet: merging master into it conflicts in the spec (.sova/spec/claims/x.md). Merge master into ${b} yourself and recover the spec as PROMOTE.md says: take master's whole spec with \`git checkout --no-overlay master -- .sova/spec/manifest.json .sova/spec/claims\`, resolve the rest and commit the merge, promote your drafts again with the same --ids (re-record stale evidence), and commit the claims (the user's go-ahead to merge covers it: don't ask for it again). Then answer READY ${b} <the new head sha> on the merge round's topic.`);
+  // The owner's worktree is as it was: no merge in progress, nothing changed, the head unmoved.
+  assert.ok(!existsSync(join(main, ".git", "worktrees", "wt-feat-spec-b", "MERGE_HEAD")), "the conflicted merge was left in the owner's worktree");
+  assert.equal(git(wt(b), "status", "--porcelain"), "");
+  assert.equal(git(main, "rev-parse", b), headB);
+  assert.equal(git(main, "rev-parse", "master"), masterAfterA, "check wrote to master");
+  assert.equal(state().branches[b].answer.handedBack, true);
+  const land = await run(["land", b]);
+  assert.equal(land.code, 1, land.out);
+  assert.doesNotMatch(land.out, /call: worktree/);
+});
+
+test("check: a manifest conflict merge-manifest refuses is handed back like a claims conflict", async () => {
+  const br = "feat/spec-manifest";
+  git(main, "worktree", "add", "-q", wt(br), "-b", br);
+  commit(wt(br), ".sova/spec/manifest.json", '{"branch":2}\n', "spec: manifest on the branch");
+  commit(main, ".sova/spec/manifest.json", '{"master":2}\n', "spec: manifest on master");
+  const headBefore = git(main, "rev-parse", br);
+  const r = await run(["check", br], { env: { FAKE_MANIFEST_REFUSE: "1" } });
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /merge-manifest --write didn't resolve it/);
+  assert.match(r.out, /^Merging master into feat\/spec-manifest conflicts in the spec \(\.sova\/spec\/manifest\.json\): the merge was aborted/m);
+  assert.match(r.out, /^For its owner \(none known: the user's call\):$/m);
+  assert.equal(git(wt(br), "status", "--porcelain"), "");
+  assert.equal(git(main, "rev-parse", br), headBefore);
+});
+
+test("landed deletes kept draft copies only when the draft tool confirms them official, and keeps the rest", async () => {
+  const br = "feat/prune-kept";
+  git(main, "worktree", "add", "-q", wt(br), "-b", br);
+  commit(wt(br), "prune.txt", "p\n", "prune: a file");
+  git(main, "merge", "-q", "--no-edit", "--no-ff", br);
+  const base = join(agent, "sova", "playbooks", "merge-round", "drafts");
+  const old = join(base, "a".repeat(40));
+  for (const n of ["landed-one", "waiting-one"]) { mkdirSync(join(old, n), { recursive: true }); writeFileSync(join(old, n, "draft.json"), "{}\n"); }
+  const pruneLog = join(root, "prune.log");
+  writeFileSync(pruneLog, "");
+  // The prune fails: nothing is deleted.
+  const failed = await run(["landed", br], { env: { FAKE_OFFICIAL: JSON.stringify(["landed-one"]), FAKE_PRUNE_FAIL: "1" } });
+  assert.match(failed.out, /^Kept draft copies: the prune failed for aaaaaaa; nothing there was deleted\.$/m);
+  assert.deepEqual(readdirSync(old).sort(), ["landed-one", "waiting-one"]);
+  // It works: only the confirmed copy goes, against the main checkout's spec.
+  const r = await run(["landed", br], { env: { FAKE_OFFICIAL: JSON.stringify(["landed-one"]) } });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /^Kept draft copies already official in master, deleted: aaaaaaa\/landed-one\.$/m);
+  assert.match(r.out, /^Kept draft copies not confirmed official: 1, kept\.$/m);
+  assert.deepEqual(readdirSync(old), ["waiting-one"]);
+  const call = readFileSync(pruneLog, "utf8").trim().split("\n").map((x) => JSON.parse(x)).at(-1);
+  assert.deepEqual(call, ["prune", "--official", "--from", old, "--write", "--root", main, "--json"]);
+  // Once every copy is official, the folder goes too.
+  await run(["landed", br], { env: { FAKE_OFFICIAL: JSON.stringify(["waiting-one"]) } });
+  assert.ok(!existsSync(old), "an emptied folder of copies is removed");
+});
+
+test("B1: a § the draft promoted before, now in conflict after taking master's spec without re-promoting, is not promoted: READY and check hand it back", async () => {
+  // Its own repository with a real spec and the real draft tool: the hold-back reads what the tool says.
+  const REAL_CORE = join(REPO_ROOT, "pi-config", "extensions", "spec", "core");
+  const DRAFT = join(REAL_CORE, "sova-spec-draft.mjs");
+  const r2 = join(root, "b1");
+  const main2 = join(r2, "main");
+  const origin2 = join(r2, "origin.git");
+  const env2 = { ...process.env, ...gitEnv, HOME: root };
+  for (const k of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"]) delete env2[k];
+  const tool = (cwd, ...a) => execFileSync(process.execPath, [DRAFT, ...a, "--root", cwd, "--json"], { cwd, env: env2, encoding: "utf8" });
+  const toolJ = (cwd, ...a) => { try { return JSON.parse(tool(cwd, ...a)); } catch (e) { return JSON.parse(e.stdout); } };
+  mkdirSync(r2, { recursive: true });
+  execFileSync("git", ["init", "-q", "--bare", "-b", "master", origin2], { env: env2 });
+  execFileSync("git", ["init", "-q", "-b", "master", main2], { env: env2 });
+  const MANIFEST = { formatVersion: 1, claims: { "§x/top": { kind: "surface", authority: "accepted" }, "§x.top/one": { kind: "behavior", authority: "accepted", requires: [], code: ["lib/one.txt"] } } };
+  const TOP = (one) => `# §x/top\n\nThe top surface.\n\n## §x.top/one\n\n${one}\n`;
+  mkdirSync(join(main2, ".sova", "spec", "claims", "x"), { recursive: true });
+  writeFileSync(join(main2, ".sova/spec/manifest.json"), JSON.stringify(MANIFEST, null, 2) + "\n");
+  writeFileSync(join(main2, ".sova/spec/claims/x/top.md"), TOP("One does X."));
+  writeFileSync(join(main2, ".sova/spec/.gitignore"), "/drafts/\n");
+  commit(main2, "lib/one.txt", "v1\n", "base: spec and code");
+  git(main2, "add", "-A"); git(main2, "commit", "-q", "-m", "base: spec");
+  git(main2, "remote", "add", "origin", origin2);
+  git(main2, "push", "-q", "origin", "master");
+  git(main2, "fetch", "-q", "origin");
+  const wt2 = (b) => join(r2, `wt-${b.replace(/\//g, "-")}`);
+  // A and B each build §x.top/one differently and promote it on their own branch.
+  for (const [br, text] of [["feat/b1-a", "One does X twice."], ["feat/b1-b", "One does X once."]]) {
+    git(main2, "worktree", "add", "-q", wt2(br), "-b", br);
+    const w = wt2(br);
+    assert.equal(toolJ(w, "new", "d", "--write").exit, 0);
+    writeFileSync(join(w, ".sova/spec/drafts/d/spec/claims/x/top.md"), TOP(text));
+    commit(w, "lib/one.txt", `${text}\n`, `${br}: build`);
+    assert.equal(toolJ(w, "evidence", "d", "--id", "§x.top/one", "--by", "t", "--verification", "built", "--commit", "HEAD", "--write").exit, 0);
+    const pv = toolJ(w, "promote", "d", "--id", "§x.top/one");
+    assert.equal(pv.exit, 0, JSON.stringify(pv.findings));
+    assert.equal(toolJ(w, "promote", "d", "--id", "§x.top/one", "--plan", pv.plan, "--write").exit, 0);
+    git(w, "add", "--", ".sova/spec/manifest.json", ".sova/spec/claims"); git(w, "commit", "-q", "-m", `spec: ${br} promoted`);
+  }
+  // A lands; B's check is handed back for the spec conflict.
+  git(main2, "merge", "-q", "--no-edit", "--no-ff", "feat/b1-a");
+  const B = "feat/b1-b", wB = wt2(B), OWNER2 = "0199cccc-owner2";
+  const SPEC_ENV = { SOVA_ROUND_SPEC_CORE: REAL_CORE };
+  assert.equal((await run(["note", B, `owner=${OWNER2}`, "chip=ready", "idle=yes"], { cwd: main2 })).code, 0);
+  const first = await run(["check", B], { cwd: main2, env: SPEC_ENV });
+  assert.equal(first.code, 1, first.out);
+  assert.match(first.out, /conflicts in the spec/);
+  // The owner takes master's whole spec as the hand-back says, but never promotes again.
+  spawnSyncGit(wB, ["merge", "--no-edit", "master"]);
+  git(wB, "checkout", "--no-overlay", "master", "--", ".sova/spec/manifest.json", ".sova/spec/claims");
+  git(wB, "add", "-A"); git(wB, "commit", "-q", "--no-edit");
+  assert.equal(readFileSync(join(wB, ".sova/spec/claims/x/top.md"), "utf8"), TOP("One does X twice."), "fixture: B's branch now holds A's prose, not its own");
+  const headB = git(main2, "rev-parse", B);
+  // READY at the new head: B's own docs are gone from its branch, so it is handed back.
+  const st = state();
+  for (const rec of Object.values(st.branches)) if (rec.ask) rec.ask.at -= 3600_000;
+  writeFileSync(stateFile, JSON.stringify(st));
+  assert.equal((await run(["note", B, `owner=${OWNER2}`, "chip=ready", "idle=yes"], { cwd: main2 })).code, 0);
+  const asked = await run(["ask", B, `topic=${TOPIC}`], { cwd: main2, env: SPEC_ENV });
+  assert.equal(asked.code, 0, asked.out);
+  const reply = await run(["reply", B], { cwd: main2, env: SPEC_ENV, input: batch(TOPIC, [[OWNER2, `READY ${B} ${headB.slice(0, 7)}`, inMs(1000), "b10000000001"]]) });
+  assert.equal(reply.code, 1, reply.out);
+  assert.match(reply.out, /handed back/);
+  const check = await run(["check", B], { cwd: main2, env: SPEC_ENV });
+  assert.equal(check.code, 1, check.out);
+  assert.match(check.out, /^needs: (.*; )?docs not promoted: d(;|$)/m);
+  assert.match(asked.out, /spec drafts aren't promoted yet: d \(§x\.top\/one\)/, "the ask names it too");
+});
+
+test("Ready to land: ask queues the branch for Sova's Landing card; status reads Sova's answer, then the user's Land It or Not Yet at that head", async () => {
+  const sova = join(agent, "sova");
+  const queueFile = join(sova, "landing-queue.json");
+  const shownFile = join(sova, "landing-shown.json");
+  const landingFile = join(sova, "landing.json");
+  const saved = readFileSync(stateFile, "utf8");
+  try {
+    git(main, "worktree", "add", "-q", "-b", "feat/landq", wt("feat/landq"), "master");
+    writeFileSync(join(wt("feat/landq"), "landq.txt"), "landq\n");
+    git(wt("feat/landq"), "add", "landq.txt");
+    git(wt("feat/landq"), "commit", "-q", "-m", "landq");
+    const head = git(main, "rev-parse", "feat/landq");
+    writeBoard([["feat/landq", "waiting-approval", OWNER, "idle", undefined, landed("feat/landq")]]);
+    const q = await run(["ask", "feat/landq"]);
+    assert.equal(q.code, 0, q.out);
+    assert.match(q.out, new RegExp(`^Queued feat/landq at ${head.slice(0, 7)}: Sova shows the Landing card in "Chat of ${OWNER}" \\(#/sid/${OWNER}\\)\\.$`, "m"));
+    assert.match(q.out, /don't poll/);
+    const entries = JSON.parse(readFileSync(queueFile, "utf8")).entries;
+    assert.deepEqual(entries.map((e) => [e.branch, e.head, e.owner, e.captain, e.path === wt("feat/landq")]), [["feat/landq", head, OWNER, ME, true]]);
+    assert.equal((await run(["ask", "feat/landq"])).code, 1, "queued once per head");
+    const line = async () => (await run(["status"])).out.split("\n").find((l) => l.startsWith("feat/landq:")) ?? "";
+    assert.match(await line(), /queued \d+s ago at [0-9a-f]{7}; Sova hasn't read the queue yet/);
+    writeFileSync(shownFile, JSON.stringify({ v: 1, results: { [entries[0].id]: { at: Date.now(), card: "of_1" } } }));
+    const shown = await run(["status", "--json"]);
+    assert.equal(JSON.parse(shown.out).branches.find((b) => b.branch === "feat/landq").group, "waiting");
+    // The owner's chat by its title and a link, never "its card is shown" alone; the report lists it too.
+    assert.match(await line(), new RegExp(`Landing card shown in "Chat of ${OWNER}" \\(#/sid/${OWNER}\\)`));
+    const rep = await run(["report"]);
+    assert.match(rep.out, new RegExp(`^- Waiting for your Land It: feat/landq at ${head.slice(0, 7)} in "Chat of ${OWNER}" \\(#/sid/${OWNER}\\)$`, "m"));
+    writeFileSync(landingFile, JSON.stringify({ v: 1, goAheads: [], notYet: [{ branch: "feat/landq", commit: head, at: "x" }] }));
+    assert.match(await line(), /the user said Not Yet at [0-9a-f]{7}: it waits for a new commit/);
+    assert.equal(JSON.parse((await run(["status", "--json"])).out).branches.find((b) => b.branch === "feat/landq").group, "not-ready");
+    writeFileSync(landingFile, JSON.stringify({ v: 1, goAheads: [{ branch: "feat/landq", commit: head, at: "x", by: "land-it" }], notYet: [] }));
+    assert.match(await line(), /the user's go-ahead \(Land It\) at [0-9a-f]{7}/);
+    const go = await run(["status", "--json"]);
+    assert.equal(JSON.parse(go.out).branches.find((b) => b.branch === "feat/landq").group, "check", "Land It counts as READY");
+    // The press survives a clean merge of master into the branch (the check's own), and nothing else.
+    const masterBefore = git(main, "rev-parse", "master");
+    writeFileSync(join(main, "landq-master.txt"), "master moved\n");
+    git(main, "add", "landq-master.txt");
+    git(main, "commit", "-q", "-m", "master moves");
+    git(wt("feat/landq"), "merge", "--no-edit", "-q", "master");
+    const merged = git(main, "rev-parse", "feat/landq");
+    writeBoard([["feat/landq", "waiting-approval", OWNER, "idle", undefined, landed("feat/landq")]]);
+    assert.equal(JSON.parse((await run(["status", "--json"])).out).branches.find((b) => b.branch === "feat/landq").group, "check", "carried over the clean merge");
+    assert.match(await line(), new RegExp(`the user's go-ahead \\(Land It\\) at ${head.slice(0, 7)}, carried to ${merged.slice(0, 7)} over clean master merges`));
+    writeFileSync(join(wt("feat/landq"), "landq.txt"), "edited after the press\n");
+    git(wt("feat/landq"), "commit", "-q", "-am", "more work");
+    assert.notEqual(JSON.parse((await run(["status", "--json"])).out).branches.find((b) => b.branch === "feat/landq").group, "check", "a commit of its own needs a new press");
+    git(wt("feat/landq"), "reset", "-q", "--hard", head);
+    git(main, "update-ref", "refs/heads/master", masterBefore);
+    git(main, "reset", "-q", "--hard", masterBefore);
+    // Sova refused to show it: the next ask falls back to the typed READY ask, on the round's topic.
+    writeFileSync(landingFile, JSON.stringify({ v: 1, goAheads: [], notYet: [] }));
+    writeFileSync(shownFile, JSON.stringify({ v: 1, results: { [entries[0].id]: { at: Date.now(), refused: "an open offer" } } }));
+    assert.match(await line(), /Sova didn't show the card: an open offer/);
+    const old = await run(["ask", "feat/landq", `topic=${TOPIC}`]);
+    assert.equal(old.code, 0, old.out);
+    assert.match(old.out, /Is feat\/landq ready to merge at its current head\?/);
+  } finally {
+    writeFileSync(stateFile, saved);
+    for (const f of [queueFile, shownFile, landingFile, boardFile]) rmSync(f, { force: true });
+  }
+});
+
+test("Land It before the check: the check's own clean merge of master keeps it, and the branch lands with no new press", async () => {
+  const sova = join(agent, "sova");
+  const landingFile = join(sova, "landing.json");
+  const saved = readFileSync(stateFile, "utf8");
+  const masterBefore = git(main, "rev-parse", "master");
+  try {
+    git(main, "worktree", "add", "-q", "-b", "feat/carry", wt("feat/carry"), "master");
+    const P = commit(wt("feat/carry"), "carry.txt", "carry\n", "carry: a file");
+    writeBoard([["feat/carry", "waiting-approval", OWNER, "idle", undefined, landed("feat/carry")]]);
+    writeFileSync(landingFile, JSON.stringify({ v: 1, goAheads: [{ branch: "feat/carry", commit: P, at: new Date().toISOString(), by: "land-it" }], notYet: [] }));
+    const group = async () => JSON.parse((await run(["status", "--json"])).out).branches.find((b) => b.branch === "feat/carry").group;
+    assert.equal(await group(), "check", "Land It at P");
+    // Master moves on; the check merges it into the branch, so the head is no longer P.
+    commit(main, "carry-master.txt", "master moved\n", "master: moves on for carry");
+    const c = await run(["check", "feat/carry"]);
+    assert.equal(c.code, 0, c.out);
+    const M = git(main, "rev-parse", "feat/carry");
+    assert.notEqual(M, P, "the check merged master in");
+    assert.equal(git(main, "rev-parse", "feat/carry^1"), P);
+    assert.equal(await group(), "land", "the press at P counts at M");
+    const land = await run(["land", "feat/carry"]);
+    assert.equal(land.code, 0, land.out);
+    assert.match(land.out, new RegExp(`^The user's Land It at ${P.slice(0, 7)}\\.$`, "m"));
+    assert.match(land.out, /call: worktree \{"action":"merge"/);
+    // The user's Not Yet at P after it holds the branch, at M too, and land refuses.
+    writeFileSync(landingFile, JSON.stringify({ v: 1, goAheads: [{ branch: "feat/carry", commit: P, at: "2026-10-24T00:00:00Z", by: "land-it" }], notYet: [{ branch: "feat/carry", commit: P, at: "2026-10-24T00:05:00Z" }] }));
+    assert.equal(await group(), "not-ready");
+    const held = await run(["land", "feat/carry"]);
+    assert.equal(held.code, 1, held.out);
+    assert.match(held.out, new RegExp(`The user said Not Yet to feat/carry at ${P.slice(0, 7)}`));
+  } finally {
+    writeFileSync(stateFile, saved);
+    for (const f of [landingFile, boardFile]) rmSync(f, { force: true });
+    spawnSyncGit(main, ["worktree", "remove", "--force", wt("feat/carry")]);
+    spawnSyncGit(main, ["branch", "-D", "feat/carry"]);
+    git(main, "update-ref", "refs/heads/master", masterBefore);
+    git(main, "reset", "-q", "--hard", masterBefore);
+  }
+});
+
+test("landingAnswerAt: a later Not Yet on the way stops the carry; the newest answer at a commit wins", async () => {
+  const [A, B, C] = ["a", "b", "c"].map((c) => c.repeat(40));
+  const parentOf = async (s) => (s === C ? B : s === B ? A : undefined);
+  const go = (commit, at) => ({ branch: "f", commit, at, by: "land-it" });
+  const no = (commit, at) => ({ branch: "f", commit, at });
+  const kind = async (landing, head) => (await landingAnswerAt(landing, "f", head, parentOf))?.kind ?? null;
+  assert.deepEqual(await landingAnswerAt({ goAheads: [go(A, "2026-10-24T00:00:00Z")], notYet: [] }, "f", C, parentOf), { kind: "go-ahead", withoutSpecs: false, by: "land-it", at: A });
+  const later = { goAheads: [go(A, "2026-10-24T00:00:00Z")], notYet: [no(B, "2026-10-24T00:05:00Z")] };
+  assert.deepEqual(await landingAnswerAt(later, "f", C, parentOf), { kind: "not-yet", at: B }, "Not Yet at B is never walked past, and holds C");
+  assert.equal(await kind(later, B), "not-yet");
+  assert.equal(await kind({ goAheads: [go(A, "2026-10-24T00:00:00Z")], notYet: [no(A, "2026-10-24T00:05:00Z")] }, C), "not-yet", "Not Yet at A after its go-ahead");
+  assert.equal(await kind({ goAheads: [], notYet: [no(A, "2026-10-24T00:05:00Z")] }, C), "not-yet", "a Not Yet alone carries too");
+  assert.equal(await kind({ goAheads: [go(A, "2026-10-24T00:00:00Z")], notYet: [] }, "d".repeat(40)), null, "a commit of its own: no answer");
+  assert.equal(await kind({ goAheads: [go(A, "2026-10-24T00:00:00Z"), go(B, "2026-10-24T00:10:00Z")], notYet: [no(B, "2026-10-24T00:05:00Z")] }, C), "go-ahead", "a go-ahead at B after its Not Yet");
+  assert.equal(await kind({ goAheads: [go(B, "2026-10-24T00:05:00Z")], notYet: [no(B, "2026-10-24T00:05:00Z")] }, B), "not-yet", "a tie is Not Yet");
 });

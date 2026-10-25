@@ -112,7 +112,7 @@
       {
         "rule": "names-manifest",
         "text": "try { manifest = JSON.parse(m.buf.toString(\"utf8\")); } catch (e) { throw new Fail(2, \"manifest-unreadable\", `${where(\"manifest.json\")}: ${e.message}`); }",
-        "reason": "message text naming the settings file to the user; reads nothing"
+        "reason": "readTree parses the settings file (kept in both layouts) it read with the draft tool's refusal rules; its records go through layout.mjs assemble"
       },
       {
         "rule": "names-manifest",
@@ -207,7 +207,7 @@
       {
         "rule": "names-manifest",
         "text": "try { m = JSON.parse(text); } catch (e) { throw new Fail(2, \"manifest-unreadable\", `${side} manifest.json: ${e.message}`); }",
-        "reason": "message text naming the settings file to the user; reads nothing"
+        "reason": "merge-manifest's format 1 driver parses manifest.json's three sides (base, ours, theirs) Git hands it; format 2 sides go through readSpecGit"
       },
       {
         "rule": "names-manifest",
@@ -227,7 +227,7 @@
       {
         "rule": "reads-claims",
         "text": "for (const k of uniqOrdered([...Object.keys(o), ...Object.keys(top), \"claims\"])) if (k === \"claims\") merged.claims = v2 ? CLAIMS_POINTER : claims; else if (k in top) merged[k] = top[k];",
-        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+        "reason": "merge-manifest's root merge: writes the merged root, records under claims in format 1 or the pointer string in format 2"
       },
       {
         "rule": "reads-claims",
@@ -257,7 +257,7 @@
       {
         "rule": "names-manifest",
         "text": "const recs = (git(root, [\"ls-files\", \"-u\", \"-z\", \"--\", SPEC]).out ?? \"\").split(\"\\0\").filter(Boolean).map((l) => l.split(\"\\t\")[1]).filter((p) => p.endsWith(\".json\") && !p.endsWith(\"/manifest.json\") && p !== \"manifest.json\");",
-        "reason": "merge-manifest: Git hands the format 1 driver manifest.json's three stages (and its index mode reads them); format 2 sides go through readSpecGit"
+        "reason": "merge-manifest index mode: lists the unmerged per-area record files (claims/**/*.json) to route the merge through readSpecGit; reads no record"
       },
       {
         "rule": "names-manifest",

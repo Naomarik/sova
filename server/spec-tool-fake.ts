@@ -98,7 +98,8 @@ function run(root: string, args: string[]): ToolResult {
     if (existsSync(draft)) return refused(1, "draft-exists", `draft ${name} exists`);
     if (!write) return ok({ written: false, name });
     const existed = existsSync(join(spec, "manifest.json"));
-    const current: Manifest = existed ? readJson<Manifest>(join(spec, "manifest.json")) : { formatVersion: 1, claims: {} };
+    // The settings through the shared reader (any layout); `new` copies the tree literally, as the real tool does.
+    const current: Manifest = existed ? readManifest(spec).manifest : { formatVersion: 1, claims: {} };
     const claimsRoot = (current.claimsRoot ?? "claims").replace(/\/+$/, "");
     // The edit copy, and (when there was a spec) the base it started from: literal copies both.
     for (const to of existed ? [draftSpec, join(draft, "base")] : [draftSpec]) {

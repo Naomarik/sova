@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 480 |
-| Routes a catalogue entry points at | 115 |
-| Catalogue entries | 142 |
+| Routes registered | 482 |
+| Routes a catalogue entry points at | 117 |
+| Catalogue entries | 148 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -29,7 +29,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Pending (not yet a command) | 304 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 8 |
-| Hand-written tool specs | 120 |
+| Hand-written tool specs | 123 |
 
 ## Catalogue entries
 
@@ -170,6 +170,12 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `org.owner.request.chat` | Start Chat | changes | `POST /api/orgs/:id/owner/requests/:rid/chat` | admin |
 | `org.owner.request.done` | Mark Done | changes | `POST /api/orgs/:id/owner/requests/:rid` | admin |
 | `org.owner.request.decline` | Decline | changes | `POST /api/orgs/:id/owner/requests/:rid` | admin |
+| `org.owner.request.noted` | Got It | changes | `POST /api/orgs/:id/owner/requests/:rid` | admin |
+| `org.project.versions` | Show Owner's Versions | looks | `GET /api/orgs/:id/projects/:pid/versions` | sessions |
+| `org.project.version.rewrite` | Rewrite Summary | changes | `PUT /api/orgs/:id/projects/:pid/versions/:instance` | admin |
+| `org.project.version.automatic` | Use Automatic | changes | `PUT /api/orgs/:id/projects/:pid/versions/:instance` | admin |
+| `org.project.version.hide` | Hide Summary | changes | `PUT /api/orgs/:id/projects/:pid/versions/:instance` | admin |
+| `org.project.version.show` | Show Summary | changes | `PUT /api/orgs/:id/projects/:pid/versions/:instance` | admin |
 | `chat.stop` | Stop | changes | `POST /api/chat/action` | sessions |
 | `chat.compact` | Compact | changes | `POST /api/chat/action` | sessions |
 | `chat.rewind` | Rewind | changes | `POST /api/chat/action` | sessions |
@@ -644,8 +650,10 @@ Approving what a project's files may make Sova do (an offers file's run buttons,
 | `POST /api/mode/command` | full | `chat.mode-command` |
 | `GET /api/models` | sessions | `models.list` |
 | `PUT /api/models/favorite` | sessions | `models.favorite` |
-| `POST /api/orgs/:id/owner/requests/:rid` | admin | `org.owner.request.decline`, `org.owner.request.done` |
+| `POST /api/orgs/:id/owner/requests/:rid` | admin | `org.owner.request.decline`, `org.owner.request.done`, `org.owner.request.noted` |
 | `POST /api/orgs/:id/owner/requests/:rid/chat` | admin | `org.owner.request.chat` |
+| `GET /api/orgs/:id/projects/:pid/versions` | sessions | `org.project.versions` |
+| `PUT /api/orgs/:id/projects/:pid/versions/:instance` | admin | `org.project.version.automatic`, `org.project.version.hide`, `org.project.version.rewrite`, `org.project.version.show` |
 | `GET /api/overseer/attention` | sessions | `overseer.attention` |
 | `GET /api/overseer/idea` | sessions | `overseer.idea.get` |
 | `PATCH /api/overseer/idea` | admin | `overseer.idea.update` |
@@ -767,6 +775,8 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 
 | File | Count | Names |
 | --- | ---: | --- |
+| `server/assistant-news.ts` | 1 | `project_news` |
+| `server/assistant-request-tools.ts` | 3 | `owner_requests`, `close_request`, `reopen_request` |
 | `server/baton-files.ts` | 2 | `<computed: INSPECT_TOOL>`, `confirm_file` |
 | `server/baton-loadout.ts` | 4 | `record_decision`, `hand_to`, `goal_done`, `propose_roster_edit` |
 | `server/baton-read-link.ts` | 1 | `read_link` |
@@ -787,7 +797,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/overseer-todo-tools.ts` | 2 | `sova_todos`, `sova_todo` |
 | `server/overseer-tools.ts` | 23 | `sova_attention`, `sova_list_sessions`, `sova_outstanding`, `sova_search_sessions`, `sova_session`, `sova_public_links`, `sova_alignment`, `sova_read_session`, `sova_list_groups`, `sova_list_targets`, `sova_list_models`, `sova_list_subagent_profiles`, `sova_list_folders`, `sova_create_session`, `sova_send`, `sova_set_session`, `sova_archive`, `sova_group`, `sova_answer_dialog`, `sova_navigate`, `sova_note`, `sova_org_history`, `<computed: SPEC_LOOKUP_TOOL>` |
 | `server/playbook-tools.ts` | 1 | `<computed: PLAYBOOK_READ_TOOL>` |
-| `server/project-assistant-tools.ts` | 8 | `report_issue`, `owner_requests`, `start_fix`, `deploy`, `owner_versions`, `start_version`, `start_feature_chat`, `requirement_agree` |
+| `server/project-assistant-tools.ts` | 7 | `report_issue`, `start_fix`, `deploy`, `owner_versions`, `start_version`, `start_feature_chat`, `requirement_agree` |
 | `server/project-overseer-tools.ts` | 18 | `sova_project`, `sova_list_subagent_profiles`, `sova_list_sessions`, `sova_read_session`, `sova_todos`, `sova_note`, `sova_idea`, `sova_previews`, `sova_preview`, `sova_create_session`, `sova_send`, `sova_files`, `sova_pipeline`, `sova_hold`, `sova_correct`, `sova_set_state`, `sova_settings`, `sova_todo` |
 | `server/project-services/tools.ts` | 4 | `<computed: o.name>`, `project_verbs`, `sova_project_verbs`, `sova_project_verbs` |
 | `server/session-offers-tool.ts` | 1 | `<computed: OFFER_TOOL>` |

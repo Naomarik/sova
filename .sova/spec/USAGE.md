@@ -118,7 +118,19 @@ node $d diff composer-paste --root .
 node $d check composer-paste --root .
 ```
 
-A draft is a proposal. Agreeing on it approves the intent, and makes nothing current. Then:
+A draft is a proposal. Agreeing on it approves the intent, and makes nothing current. In this repo a
+branch's drafts become official when it lands: the merge round's check (or the `worktree` tool's merge)
+runs `land` after every check passed and commits the docs with the code. What a chat does after
+implementing and verifying is relabel (step 2) and record one note per changed promise:
+
+```sh
+node $d evidence composer-paste --id '§chat.composer/behavior' --by claude \
+  --verification "pasted a PNG in the composer; it attached and sent" --note --root . --write
+```
+
+A clash at landing comes back to the chat: `node $d refresh composer-paste --root . --write` moves
+the draft onto the current docs and marks each declaration both sides changed, to rewrite as one text.
+Steps 3 and 4 below are the manual path, for work with no landing step:
 
 1. Implement it, and verify each changed promise against the result.
 2. Relabel each changed record as it should read once current. `promote` needs an explicit

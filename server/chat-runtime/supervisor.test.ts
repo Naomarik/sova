@@ -989,7 +989,7 @@ test("the chat env names Sova's git system config: git run by the chat starts no
   const env = chatEnv({ serverEnv: { LANG: "C", GIT_CONFIG_NOSYSTEM: "1" }, bun: "/opt/bun/bin/bun", home: agentDir, agentDir });
   assert.equal(env.GIT_CONFIG_SYSTEM, gitCleanupConfigPath(agentDir));
   assert.equal(env.GIT_CONFIG_NOSYSTEM, undefined, "it would make git skip the file");
-  // Never a variable that turns the idle git cache off (§app/idle-git-cache).
+  // Never a variable that turns the idle git cache off.
   assert.equal(env.GIT_CONFIG_COUNT, undefined);
   assert.equal(env.GIT_CONFIG_PARAMETERS, undefined);
   const git = (key: string) => execFileSync("git", ["config", "--get", key], { env: { PATH: process.env.PATH!, HOME: agentDir, GIT_CONFIG_SYSTEM: env.GIT_CONFIG_SYSTEM! }, encoding: "utf8" }).trim();

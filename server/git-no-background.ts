@@ -1,12 +1,12 @@
 /**
- * The server's own git commands start no git background cleanup (§app.git-cleanup/no-background):
+ * The server's own git commands start no git background cleanup:
  * `git maintenance run --auto --detach`, started after a commit, a merge, a fetch or a push into a
  * local repository, runs in the server's process tree, outside git's own schedule, and is cut off
  * whenever that tree goes. Sova registers its projects with git's scheduled maintenance instead
  * (server/git-maintenance.ts).
  *
  * Per command, never in the server's environment: a GIT_CONFIG_COUNT or GIT_CONFIG_PARAMETERS in
- * process.env turns the idle git cache off (server/worktrees.ts, §app/idle-git-cache).
+ * process.env turns the idle git cache off (server/worktrees.ts).
  */
 import { join } from "node:path";
 import { writeGitCleanupConfig } from "../pi-config/extensions/sandbox/env.ts";

@@ -1,5 +1,5 @@
-// The server's own git commands start no background cleanup (§app.git-cleanup/no-background), and
-// the way they say so never reaches the server's environment (§app/idle-git-cache). Real git in
+// The server's own git commands start no background cleanup, and the way they say so never
+// reaches the server's environment (the idle git cache would turn off). Real git in
 // throwaway repositories, judged by git's own trace2 event log: a `child_start` of
 // `git maintenance` (or `gc`) is exactly the background cleanup starting.
 import assert from "node:assert/strict";

@@ -198,7 +198,7 @@ export function scrubChatProcessEnv(env: NodeJS.ProcessEnv = process.env): strin
  * server's PATH; HOME; PI_CODING_AGENT_DIR; Bun's GC timer off (server/chat-runtime/gc-timer.ts);
  * GIT_CONFIG_SYSTEM naming Sova's git system config (gitCleanupConfigPath, written here with the
  * sandbox's own writer; left out when it can't be), so nothing a chat runs starts a background
- * cleanup that a stop or a reload of its unit would cut off (§app.git-cleanup/no-background). `extra`
+ * cleanup that a stop or a reload of its unit would cut off. `extra`
  * (the chat's own `SOVA_CHAT_*`) goes last and wins.
  */
 export function chatEnv(o: { serverEnv: NodeJS.ProcessEnv; bun: string; claude?: string | null; home: string; agentDir: string; extra?: Record<string, string> }): Record<string, string> {

@@ -845,12 +845,13 @@ would list master's changes instead.
       recovery word for word;
     - the census note asks the core whether the spec is mixed each time HEAD moves (once per HEAD); the
       merge round merges master with `--no-commit`, finishes a mixed result with `merge-manifest --write`
-      before the merge commit, and stages the record files merge-manifest wrote;
+      before the merge commit, stages the record files merge-manifest wrote, and aborts the merge (the
+      worktree as it was) when the records don't read or the tool gives no answer;
     - `.sova/spec/.gitignore` admits `claims/**/*.json`.
   - §: + §tools.spec/record-layout; §tools.spec/git-merge, §tools.spec/conflict-recovery,
     §tools.spec/census-note, §chat.merge-round/driver reworded, §tools/spec (its new child) (drafts
-    `spec-store`, `spec-store-2`, promoted on the branch at 9eca2773; `foreign --base 9b7297f8 --head
-    9eca2773`).
+    `spec-store`, `spec-store-2`, promoted on the branch at 9eca2773, and `spec-store-3` at ede39a14;
+    `foreign --base 9b7297f8 --head ede39a14` gives the same list).
   - Numbers: every read command (check, map, map app, graph, where by words and by path, toc out/in/down,
     read, read --whole, scope, impact, impact --near, packet, census, foreign) gives byte-identical JSON on
     Sova's spec at 9b7297f8 in format 1 and converted to format 2 at the same path (17 of 17); `migrate`

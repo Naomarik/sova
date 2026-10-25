@@ -96,7 +96,7 @@ const writeBoard = (branches) => {
 const pressLandIt = (branch, commit, extra = {}) => {
   const d = existsSync(landingFile) ? JSON.parse(readFileSync(landingFile, "utf8")) : { v: 1, goAheads: [], notYet: [] };
   const hash = draftsHashOf(wt(branch));
-  const drafts = hash ? { drafts: { hash, names: draftNamesOf(wt(branch)) } } : {};
+  const drafts = hash ? { drafts: { hash, names: draftNamesOf(wt(branch)), each: eachHashOf(wt(branch)) } } : {};
   d.goAheads.push({ branch, commit, session: OWNER, at: new Date().toISOString(), by: "land-it", ...drafts, ...extra });
   mkdirSync(dirname(landingFile), { recursive: true });
   writeFileSync(landingFile, JSON.stringify(d));
@@ -235,6 +235,7 @@ test("a5: after Land It a failing build hands the branch back unchanged with its
   assert.equal(git(main, "rev-parse", `${D}^1`), P, "the docs entry sits directly on the checked head");
   assert.equal(git(main, "rev-list", "--count", `${P}..${D}`), "1", "exactly one new commit");
   assert.deepEqual(docsEntries(`master..${b}`), [D], "it carries the trailer");
+  assert.ok(git(main, "log", "-1", "--format=%B", D).split("\n").includes(`${TRAILER}: ${ME}`), "the trailer names the round's session");
   assert.ok(changedBy(D).every(isSpecPath), `the docs entry touches only spec paths: ${changedBy(D)}`);
   assert.ok(changedBy(D).includes(`.sova/spec/claims/${ids[0].id.slice(1)}.md`), "and makes the claim official");
   assert.deepEqual(draftReading(tree, ids[0].draft).pending, [], "the draft tool reads it landed");
@@ -318,7 +319,7 @@ test("a14: the drafts hash: the core's land, round.mjs and this test's own readi
   const round = await import(ROUND);
   assert.equal(typeof round.draftsHashOf, "function", "round.mjs exports draftsHashOf");
   const roundHash = (t) => round.draftsHashOf(t)?.hash ?? null;
-  assert.deepEqual(round.draftsHashOf(tree), { hash: mine, names: ["one", "two"] }, "round.mjs reads the same hash and names");
+  assert.deepEqual(round.draftsHashOf(tree), { hash: mine, names: ["one", "two"], each: eachHashOf(tree) }, "round.mjs reads the same hash, names and per-draft hashes");
   // draft.json (evidence, notes) is not in it.
   const ev = draftTool(tree, "evidence", ids[0].draft, "--id", ids[0].id, "--by", OWNER, "--verification", "again", "--note", "--write");
   assert.equal(ev.exit, 0, JSON.stringify(ev));
@@ -329,6 +330,9 @@ test("a14: the drafts hash: the core's land, round.mjs and this test's own readi
   writeFileSync(md, readFileSync(md, "utf8") + " ");
   assert.notEqual(roundHash(tree), mine);
   assert.equal(roundHash(tree), draftsHashOf(tree));
+  const each = round.draftsHashOf(tree).each;
+  assert.notEqual(each.two, eachHashOf(tree).one, "per draft, not one value");
+  assert.deepEqual(each, eachHashOf(tree));
   assert.equal(round.draftsHashOf(main), null, "a tree with no drafts: null");
 });
 
@@ -410,6 +414,7 @@ test("a7: a record without the chat's verification note holds the branch and not
     assert.match(landing.verification, /Land It/, "who gave the go-ahead");
     assert.match(landing.verification, /\bbuild\b/, "the checks that passed");
     assert.doesNotMatch(landing.verification, /FAILED|test:int/, "only the checks that passed (test:int was skipped here)");
+    assert.ok(!landing.verification.includes(root) && !landing.verification.includes(basename(root)), "no local path: it goes into a public commit message");
   }
   const body = git(main, "log", "-1", "--format=%B", D);
   assert.ok(body.includes(P.slice(0, 7)), `the entry names the landed commit:\n${body}`);
@@ -531,6 +536,30 @@ test("q2: Merge Without Specs… lands no docs entry and leaves the drafts pendi
   assert.equal(docsEntries(`master..${b}`).length, 1, "a plain Land It lands them");
 });
 
+// ---------------------------------------------------------------- the kill switch
+test("specLanding off in the round's settings brings back today's hold on unpromoted drafts; back on, the same branch lands its docs", async () => {
+  const b = "feat/switch";
+  const { P, ids, tree } = makeBranch(b);
+  reset([b]);
+  pressLandIt(b, P);
+  const settingsFile = join(sova, "merge-round.json");
+  writeFileSync(settingsFile, JSON.stringify({ ...SETTINGS, specLanding: "off" }));
+  try {
+    const off = await run(["check", b]);
+    assert.equal(off.code, 1, off.out);
+    const needs = state().branches[b]?.check?.needs ?? [];
+    assert.ok(needs.includes(`docs not promoted: ${ids[0].draft}`), `today's need: ${JSON.stringify(needs)}`);
+    assert.equal(head(b), P, "nothing committed");
+    assert.deepEqual(docsEntries(`master..${b}`), []);
+    assert.deepEqual(draftReading(tree, ids[0].draft).pending, [ids[0].id]);
+  } finally {
+    writeFileSync(settingsFile, JSON.stringify(SETTINGS));
+  }
+  const on = await run(["check", b]);
+  assert.equal(on.code, 0, on.out);
+  assert.equal(docsEntries(`master..${b}`).length, 1, "the control: with the switch on, the docs land");
+});
+
 // ---------------------------------------------------------------- the drafts hash, read from its definition
 /** Draft names under a worktree's drafts dir (dot-dirs skipped), code-point sorted. */
 function draftNamesOf(tree) {
@@ -543,11 +572,11 @@ function draftNamesOf(tree) {
  * `<draft name>/<path under spec/> <sha256 hex of the bytes>`, one per file under every draft's spec/, joined by "\n";
  * null with no draft. A test comparing the tools with this can't pass by the tools agreeing with themselves.
  */
-function draftsHashOf(tree) {
-  const names = draftNamesOf(tree);
-  if (!names.length) return null;
-  const lines = [];
-  for (const name of names) {
+/** Each draft's lines, by name. */
+function draftLines(tree) {
+  const out = {};
+  for (const name of draftNamesOf(tree)) {
+    const lines = (out[name] = []);
     const spec = join(tree, ".sova/spec/drafts", name, "spec");
     const walk = (dir, rel) => {
       for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -558,5 +587,12 @@ function draftsHashOf(tree) {
     };
     if (existsSync(spec)) walk(spec, "");
   }
-  return createHash("sha256").update(lines.sort(byCodePoint).join("\n")).digest("hex");
+  return out;
 }
+const hashLines = (lines) => createHash("sha256").update([...lines].sort(byCodePoint).join("\n")).digest("hex");
+function draftsHashOf(tree) {
+  const by = draftLines(tree);
+  return Object.keys(by).length ? hashLines(Object.values(by).flat()) : null;
+}
+/** Each draft's own hash over its own lines (the same lines the whole hash uses). */
+const eachHashOf = (tree) => Object.fromEntries(Object.entries(draftLines(tree)).map(([n, l]) => [n, hashLines(l)]));

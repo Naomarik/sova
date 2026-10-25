@@ -22527,7 +22527,7 @@
         "§tools.spec/census-note"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "pi-config/extensions/mode/minor.ts",
         "pi-config/extensions/mode/index.ts",
@@ -22541,7 +22541,8 @@
         "pi-config/extensions/mode/index.test.ts",
         "server/codemode-runtime.test.ts",
         "server/harness/pi/contract.test.ts",
-        "server/harness/pi/tools.test.ts"
+        "server/harness/pi/tools.test.ts",
+        "pi-config/extensions/mode/tests/codemode-handover.mjs"
       ]
     },
     "§chat.mode-menu/strict": {

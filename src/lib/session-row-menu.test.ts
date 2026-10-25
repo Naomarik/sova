@@ -59,15 +59,14 @@ const drawMenu = (props: Record<string, unknown>, extensions?: ExtensionInfo[]):
     .replace(/<!--[^>]*-->/g, "");
 
 const CASES: Record<string, Record<string, unknown>> = {
-  plain: { row: row(session()), ctx: ctx(), href: "#/s/a", archive: { label: "Archive", blocked: null } },
+  plain: { row: row(session()), ctx: ctx(), archive: { label: "Archive", blocked: null } },
   "renamed, with a gist, details open": {
     row: row(session({ title: "Mine", originalTitle: "Fix the build", outlineGist: "Repairs CI" })),
     ctx: ctx("/state/sessions/a.jsonl"),
-    href: "#/s/a",
     archive: { label: "Unarchive", blocked: null },
   },
-  "archive blocked": { row: row(session({ outlineGist: "Fix the build" })), ctx: ctx(), href: "#/s/a", archive: { label: "Archive", blocked: "A TUI has it open." } },
-  "no archive": { row: row(session()), ctx: ctx(), href: "#/h/peer/s/a", archive: null },
+  "archive blocked": { row: row(session({ outlineGist: "Fix the build" })), ctx: ctx(), archive: { label: "Archive", blocked: "A TUI has it open." } },
+  "no archive": { row: row(session()), ctx: ctx(), archive: null },
 };
 
 test("Sova's own items in the session ⋯ menu are drawn exactly as before", () => {
@@ -81,7 +80,7 @@ test("Sova's own items in the session ⋯ menu are drawn exactly as before", () 
 test("the snapshot holds every item, in order", () => {
   const html = drawMenu(CASES.plain!);
   const labels = [...html.matchAll(/<span class="popover-item-label">([^<]*)<\/span>/g)].map((m) => m[1]);
-  assert.deepEqual(labels, ["Open Session", "Session Details", "Open Subagents", "Rename…", "Use Gist as Title", "Reset to Original Title", "Move to Group…", "Archive", "Copy Path"]);
+  assert.deepEqual(labels, ["Session Details", "Open Subagents", "Rename…", "Use Gist as Title", "Reset to Original Title", "Move to Group…", "Archive", "Copy Path"]);
   const groups = [...html.matchAll(/role="group" aria-label="([^"]*)"/g)].map((m) => m[1]);
   assert.deepEqual(groups, ["Open", "Title", "Organize"]);
 });
@@ -111,14 +110,14 @@ test("with no extension entry to show, the menu is exactly the snapshot's", () =
 test("a session on another host shows no extension rows: an extension is this host's", () => {
   const { noteHost } = mesh;
   noteHost("/peer/sessions/b.jsonl", "peer");
-  const remote = { row: row(session({ path: "/peer/sessions/b.jsonl" })), ctx: ctx(), href: "#/h/peer/s/b", archive: null };
+  const remote = { row: row(session({ path: "/peer/sessions/b.jsonl" })), ctx: ctx(), archive: null };
   assert.equal(drawMenu(remote, [tickets, notes]), drawMenu(remote, []));
   assert.ok(drawMenu({ ...remote, row: row(session()) }, [tickets]).includes("File Issue"), "the same session on this host does");
 });
 
 test("extension rows come after every one of Sova's items, one group per extension, headed by its title", () => {
   const html = drawMenu(CASES.plain!, [tickets, notes]);
-  assert.deepEqual(labels(html), ["Open Session", "Session Details", "Open Subagents", "Rename…", "Use Gist as Title", "Reset to Original Title", "Move to Group…", "Archive", "Copy Path", "File Issue", "Pin Note"]);
+  assert.deepEqual(labels(html), ["Session Details", "Open Subagents", "Rename…", "Use Gist as Title", "Reset to Original Title", "Move to Group…", "Archive", "Copy Path", "File Issue", "Pin Note"]);
   const groups = [...html.matchAll(/role="group" aria-label="([^"]*)"/g)].map((m) => m[1]);
   assert.deepEqual(groups, ["Open", "Title", "Organize"], "Sova's groups, named by aria-label");
   // Each extension group is named by its visible heading.

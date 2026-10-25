@@ -1,11 +1,14 @@
 // The Agents board (#/agents): one row per session, its workers, team and worktrees folded inside.
 // Everything here is pure — which rows a scope or filter shows, how they sort, what the head
-// totals say, and the words a worktree reading turns into — so it runs under `tsx --test`.
+// totals say, the words a worktree reading turns into and a row's tokens a minute — so it runs
+// under `tsx --test`.
 
-import type { AgentsInsight, LiveAgentSession, SessionSummary, TeamInfo, WorktreeStatus } from "../../shared/protocol";
+import type { AgentsInsight, LiveAgentSession, LlmInflight, SessionSummary, TeamInfo, WorktreeStatus } from "../../shared/protocol";
 import { SESSION_TITLE_MAX } from "../../shared/protocol";
 import type { UsageSessionsTotals, UsageToday } from "../../shared/usage/wire";
 import { teamKey } from "./insights";
+import { denseCount, tokenVelocityView } from "./llm-inflight";
+import { decodeSessionTokens } from "../../shared/session-tokens-wire";
 import { isMainThread, isTopSession } from "./regions";
 import { askKindWord, type NeedsYouMark, rowNeedsYou, signalTitle, signalTooltip } from "./signals";
 import { summaryLineOf } from "./summary-row";
@@ -286,15 +289,15 @@ export function money(usd: number): string {
 /** The comma-joined `paths` the worktrees request names: the rendered rows, in order. "" = none. */
 export const worktreePathsKey = (rows: readonly Pick<BoardRow, "session">[]): string => rows.map((r) => r.session.path).join(",");
 
-/** What a tree's merge reading says: merged (either way), ahead/behind counts, or nothing known. */
-export type TreeMerge = { kind: "merged"; text: "merged" | "content merged"; title: string } | { kind: "diverged"; ahead: number; behind: number } | { kind: "unknown"; text: string };
+/** What a tree's merge reading says, in words: merged (either way), unmerged, or nothing known. */
+export type TreeMerge = { kind: "merged"; text: "merged"; title: string } | { kind: "unmerged"; text: "unmerged"; title: string } | { kind: "unknown"; text: string };
 
 export function treeMerge(t: WorktreeStatus): TreeMerge {
   if (!t.exists) return { kind: "unknown", text: "gone" };
   if (t.error && t.merged === undefined) return { kind: "unknown", text: "unreadable" };
   if (t.merged === "ancestor") return { kind: "merged", text: "merged", title: `Its tip is in ${t.base ?? "the base"}.` };
-  if (t.merged === "content") return { kind: "merged", text: "content merged", title: `Merging into ${t.base ?? "the base"} would change nothing (a squash or rebase merge).` };
-  if (t.merged === "no") return { kind: "diverged", ahead: t.ahead ?? 0, behind: t.behind ?? 0 };
+  if (t.merged === "content") return { kind: "merged", text: "merged", title: `Merging into ${t.base ?? "the base"} would change nothing (a squash or rebase merge).` };
+  if (t.merged === "no") return { kind: "unmerged", text: "unmerged", title: `Not merged into ${t.base ?? "the base"}.` };
   return { kind: "unknown", text: "no base" };
 }
 
@@ -305,11 +308,7 @@ export function treeName(t: WorktreeStatus): string {
   return "detached";
 }
 
-/** Lines the branch adds and removes, when both were read and it changes any. */
-export const treeLines = (t: WorktreeStatus): { added: number; removed: number } | null =>
-  t.added !== undefined && t.removed !== undefined && t.added + t.removed > 0 ? { added: t.added, removed: t.removed } : null;
-
-/** How useful a tree is in the cell, lower first: unmerged, uncommitted, merged, the rest, gone. */
+/** How useful a tree is in the open row, lower first: unmerged, uncommitted, merged, the rest, gone. */
 function treeRank(t: WorktreeStatus): number {
   if (!t.exists) return 4;
   if (t.merged === "no") return 0;
@@ -318,42 +317,86 @@ function treeRank(t: WorktreeStatus): number {
   return 3;
 }
 
-/** The trees in the cell's order, most useful first; each kind keeps the session's own order. A new array. */
+/** The trees in the open row's order, most useful first; each kind keeps the session's own order. A new array. */
 export const orderTrees = (trees: readonly WorktreeStatus[]): WorktreeStatus[] =>
   trees.map((t, i) => [t, i] as const).sort(([a, i], [b, j]) => treeRank(a) - treeRank(b) || i - j).map(([t]) => t);
 
-/** Two or more trees, and every one is gone: the cell says so in one line. */
-export const allGone = (trees: readonly WorktreeStatus[]): boolean => trees.length > 1 && trees.every((t) => !t.exists);
-
-/** A line count in at most 4 characters: `840`, `8.8k`, `326k`, `1.2M`. */
-export function compactLines(n: number): string {
-  const short = (v: number, unit: string) => `${v < 10 ? Math.round(v * 10) / 10 : Math.round(v)}${unit}`;
-  if (n < 1000) return String(n);
-  if (n < 999_500) return short(n / 1000, "k");
-  return short(n / 1_000_000, "M");
-}
-
-/** The counts a cell prints: exact, or both shortened when either is over 9,999 (one pair, one scale). */
-export function linesShown(l: { added: number; removed: number }): { added: string; removed: string; short: boolean } {
-  const short = Math.max(l.added, l.removed) > 9999;
-  return short ? { added: compactLines(l.added), removed: compactLines(l.removed), short } : { added: String(l.added), removed: String(l.removed), short };
-}
-
-/** One sentence for a tree's title: branch, base, the reading, and uncommitted work. */
+/** One sentence for a tree's title: branch, path, whether it is merged, and uncommitted work. No counts. */
 export function treeTitle(t: WorktreeStatus): string {
   if (!t.exists) return `${t.path} is gone.`;
   const m = treeMerge(t);
-  const reading =
-    m.kind === "merged"
-      ? m.title
-      : m.kind === "diverged"
-        ? `${m.ahead} ahead of ${t.base ?? "the base"}, ${m.behind} behind.`
-        : t.error
-          ? `Couldn't read it: ${t.error}`
-          : "No base branch to compare with.";
-  const lines = treeLines(t);
-  return [`${treeName(t)} · ${t.path}`, reading, lines ? `+${lines.added} −${lines.removed} lines.` : "", t.dirty ? "Uncommitted changes." : ""].filter(Boolean).join("\n");
+  const reading = m.kind !== "unknown" ? m.title : t.error ? `Couldn't read it: ${t.error}` : "No base branch to compare with.";
+  return [`${treeName(t)} · ${t.path}`, reading, t.dirty ? "Uncommitted changes." : ""].filter(Boolean).join("\n");
 }
+
+// ---------------------------------------------------------------------------
+// Tokens a minute (§app.insights/session-token-rate)
+
+/** A row's output-token means, read once per answer and per 30 s step, never per redraw. */
+export interface RowRate {
+  /** Tokens a minute over 5 and 30 minutes, own and workers together. */
+  five: number;
+  thirty: number;
+  /** The 5-minute figure's split. */
+  own5: number;
+  workers5: number;
+  partial: boolean;
+}
+
+/** A list (newest last at `end`) as the ring `tokenVelocityView` reads; null when absent. */
+const ringOf = (end: number, out: number[] | undefined): LlmInflight | null =>
+  out ? { count: 0, approximate: 0, partial: false, gaps: [], tokens: { bucketMs: TOKEN_SLOT_MS, end, out, partial: false } } : null;
+
+/** The slot width of the board's token lists (the sidebar's ring's). */
+export const TOKEN_SLOT_MS = 30_000;
+
+/** Every row's means at `now`, by session id, from the agents answer's `tokens`: the 5-minute one slides with the
+    clock (the sidebar's `tokenVelocityView`), the 30-minute one is the answer's total over 30. */
+export function rowRates(tokens: Readonly<Record<string, string>> | undefined, now: number): Map<string, RowRate> {
+  const out = new Map<string, RowRate>();
+  for (const [path, line] of Object.entries(tokens ?? {})) {
+    const t = decodeSessionTokens(line);
+    if (!t) continue;
+    const own = ringOf(t.end, t.own);
+    const workers = ringOf(t.end, t.workers);
+    const o = own ? tokenVelocityView(own, now).perMinute![0]! : 0;
+    const w = workers ? tokenVelocityView(workers, now).perMinute![0]! : 0;
+    out.set(path, { five: o + w, thirty: ((t.own30 ?? 0) + (t.workers30 ?? 0)) / 30, own5: o, workers5: w, partial: t.partial === true });
+  }
+  return out;
+}
+
+/** What a row's Tokens/min cell says: a figure with its sentence, or a muted dash with why. */
+export interface RateCell {
+  /** `48k tok/min`; null for a dash. */
+  figure: string | null;
+  /** The `title` and the words for AT. */
+  title: string;
+}
+
+/**
+ * A row's cell. `rate` is its entry in `rowRates` (none: nothing in the window), `reported` whether
+ * the server sends tokens at all, `remote` a session on another host. A session open in a terminal
+ * pi has its own calls unseen: a worker's tokens show, as a floor.
+ */
+export function rateCell(s: Pick<SessionSummary, "live">, rate: RowRate | undefined, opts: { reported: boolean; remote: boolean }): RateCell {
+  const tui = s.live !== null && s.live !== undefined;
+  if (opts.remote) return { figure: null, title: "On another host: its tokens aren't counted here." };
+  if (rate && rate.five > 0) {
+    const partial = rate.partial || tui;
+    const d = denseCount;
+    const title =
+      `Output tokens a minute: ${partial ? "at least " : ""}${d(rate.five)} over the last 5 minutes, ${d(rate.thirty)} over 30 ` +
+      `(this session ${d(rate.own5)}, its workers ${d(rate.workers5)}).${partial ? " Some calls' tokens can't be seen." : ""} Replies still being written aren't counted yet.`;
+    return { figure: `${d(rate.five)} tok/min`, title };
+  }
+  if (tui) return { figure: null, title: "Open in a terminal pi: Sova can't see its tokens." };
+  if (!opts.reported) return { figure: null, title: "This server doesn't report tokens per session." };
+  return { figure: null, title: "No output in the last 5 minutes." };
+}
+
+/** Whether two rows' cells read the same, so a step that changes nothing redraws nothing. */
+export const sameRateCell = (a: RateCell, b: RateCell): boolean => a.figure === b.figure && a.title === b.title;
 
 // ---------------------------------------------------------------------------
 // The open row
@@ -372,7 +415,7 @@ export interface RowDetail {
   now: string | null;
   /** Its outline has topics: the open row reads their headings when it opens. */
   topics: boolean;
-  /** Worktree lines: only with 2 or more trees, or one with uncommitted changes. */
+  /** Worktree lines, most useful first: every tree the session has. */
   trees: WorktreeStatus[];
 }
 
@@ -389,7 +432,7 @@ export function rowDetail(r: Pick<BoardRow, "session" | "reason">, trees: readon
     error: err && err !== r.reason ? err : null,
     now: s.outlineNow?.trim() || null,
     topics: (s.outlineTopics ?? 0) > 0,
-    trees: list.length > 1 || list.some((t) => t.dirty) ? [...list] : [],
+    trees: orderTrees(list),
   };
 }
 

@@ -3,36 +3,37 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AgentsInsight, LiveAgentSession, SessionSummary, TeamInfo, WorktreeStatus } from "../../shared/protocol";
 import {
-  allGone,
   boardGroups,
   boardRows,
   boardState,
   boardTotals,
-  compactLines,
   filterCounts,
   gistTitle,
   hasUnmerged,
   inDefaultScope,
-  linesShown,
   matchesSearch,
   money,
   orderTrees,
   passesFilter,
+  rateCell,
   rowDetail,
   rowHasDetail,
+  rowRates,
+  sameRateCell,
   sortRows,
   teamChips,
   teamForLink,
   totalsLine,
   workersChips,
-  treeLines,
   treeMerge,
+  treeTitle,
   treeName,
   visibleRows,
   workersLine,
   worktreePathsKey,
 } from "./agents-board";
 import { teamKey } from "./insights";
+import { encodeSessionTokens } from "../../shared/session-tokens-wire";
 
 const NOW = Date.parse("2026-09-27T15:00:00.000Z");
 const ago = (min: number) => new Date(NOW - min * 60_000).toISOString();
@@ -266,11 +267,14 @@ test("money: symbol first, two decimals, a sub-cent spend is not $0.00", () => {
   assert.equal(money(0), "$0.00");
 });
 
-test("worktrees: merged either way, ahead/behind when not, and plain words for what's unknown", () => {
+test("worktrees: merged either way, unmerged in words when not, and plain words for what's unknown; never a count", () => {
   assert.deepEqual(treeMerge(tree("/t", { merged: "ancestor" })).kind, "merged");
   const content = treeMerge(tree("/t", { merged: "content" }));
-  assert.equal(content.kind === "merged" && content.text, "content merged");
-  assert.deepEqual(treeMerge(tree("/t", { merged: "no", ahead: 3, behind: 1 })), { kind: "diverged", ahead: 3, behind: 1 });
+  assert.equal(content.kind === "merged" && content.text, "merged");
+  assert.deepEqual(treeMerge(tree("/t", { merged: "no", ahead: 3, behind: 1 })), { kind: "unmerged", text: "unmerged", title: "Not merged into master." });
+  const title = treeTitle(tree("/t", { merged: "no", ahead: 3, behind: 1, added: 120, removed: 4, dirty: true }));
+  assert.equal(title, "feat/x · /t\nNot merged into master.\nUncommitted changes.");
+  assert.doesNotMatch(title, /\d+ ahead|behind|120|lines/, "no ahead/behind or line counts in the title");
   assert.deepEqual(treeMerge(tree("/t", { base: undefined })), { kind: "unknown", text: "no base" });
   assert.deepEqual(treeMerge({ path: "/t", source: "worker", exists: false }), { kind: "unknown", text: "gone" });
   assert.deepEqual(treeMerge(tree("/t", { error: "fatal" })), { kind: "unknown", text: "unreadable" });
@@ -297,22 +301,14 @@ test("a team link finds its team by key or bare id", () => {
   assert.equal(teamForLink(data, "team_01.zzz"), null, "a key that names no live team");
 });
 
-test("tree lines: both counts when the branch changes any; nothing for +0 −0 or an unread count", () => {
-  assert.deepEqual(treeLines(tree("/t", { added: 3, removed: 0 })), { added: 3, removed: 0 });
-  assert.equal(treeLines(tree("/t", { added: 0, removed: 0 })), null);
-  assert.equal(treeLines(tree("/t", { added: 3 })), null);
-});
-
 test("the open row: what it's about and where it stands, never the same fact twice", () => {
   const plain = boardRows([sess("a")], undefined, noBusy)[0]!;
-  const empty = rowDetail(plain, [tree("/t")]);
-  assert.equal(rowHasDetail(empty), false, "an idle session with one clean tree has nothing to say: no twist");
-  assert.deepEqual(empty.trees, [], "one clean tree is the cell already");
+  const one = rowDetail(plain, [tree("/t")]);
+  assert.equal(rowHasDetail(one), true, "one clean tree gets its line: no column shows it any more");
+  assert.deepEqual(one.trees.map((t) => t.path), ["/t"]);
   assert.equal(rowHasDetail(rowDetail(plain, undefined)), false, "trees not read yet");
-
-  const dirty = rowDetail(plain, [tree("/t", { dirty: true })]);
-  assert.equal(dirty.trees.length, 1, "one dirty tree gets its line");
-  assert.equal(rowDetail(plain, [tree("/t"), tree("/u")]).trees.length, 2, "2 trees get their lines");
+  assert.equal(rowHasDetail(rowDetail(plain, [])), false, "no tree, nothing else: no twist");
+  assert.deepEqual(rowDetail(plain, [tree("/m", { merged: "ancestor" }), tree("/u", { merged: "no" })]).trees.map((t) => t.path), ["/u", "/m"], "most useful first");
 
   const topics = boardRows([sess("b", { outlineTopics: 3 })], undefined, noBusy)[0]!;
   assert.equal(rowDetail(topics, []).topics, true);
@@ -402,17 +398,48 @@ test("tree order: unmerged, uncommitted, merged, the rest, gone; ties keep the s
   assert.equal(orderTrees(trees).length, trees.length);
 });
 
-test("all gone: two or more trees and none left; one gone tree still reads as a tree", () => {
-  const gone = (p: string) => tree(p, { exists: false });
-  assert.equal(allGone([gone("/a"), gone("/b")]), true);
-  assert.equal(allGone([gone("/a"), tree("/b")]), false);
-  assert.equal(allGone([gone("/a")]), false);
-  assert.equal(allGone([]), false);
+// ---- tokens a minute (§app.insights/session-token-rate) ------------------------------------------
+
+const SLOT_MS = 30_000;
+/** A list ending at the slot `now` falls in, `perSlot` in each of its last `slots` slots. */
+const slots = (perSlot: number, n: number) => new Array<number>(n).fill(perSlot);
+const at = Math.floor(NOW / SLOT_MS);
+
+test("rates: the sidebar's 5-minute mean, own and workers apart, and the 30-minute total over 30", () => {
+  // 10 slots (5 min) of 600 own + 300 workers: 1,200 + 600 a minute; 30 minutes: a sixth of that.
+  const r = rowRates({ a: encodeSessionTokens({ end: at, own: slots(600, 10), own30: 6000, workers: slots(300, 10), workers30: 3000 }) }, NOW).get("a")!;
+  assert.equal(r.own5, 1200);
+  assert.equal(r.workers5, 600);
+  assert.equal(r.five, 1800);
+  assert.equal(r.thirty, 300);
+  assert.equal(r.partial, false);
+  // The 5-minute window slides with the browser's clock alone; the 30-minute figure is the answer's.
+  const later = rowRates({ a: encodeSessionTokens({ end: at, own: slots(600, 10), own30: 6000 }) }, NOW + 5 * 60_000).get("a")!;
+  assert.equal(later.five, 0, "5 minutes later the window is past every slot");
+  assert.equal(later.thirty, 200);
+  assert.equal(rowRates({ a: encodeSessionTokens({ end: at, own: slots(600, 10), own30: 6000 }) }, NOW + 60_000).get("a")!.five, 960, "a minute on, two slots fewer");
+  assert.equal(rowRates(undefined, NOW).size, 0);
+  assert.equal(rowRates({ a: "not a row" }, NOW).size, 0, "a malformed row reads as no tokens");
 });
 
-test("line counts: exact up to 9,999; past it both of the pair shorten", () => {
-  assert.deepEqual(["0", "840", "8.8k", "10k", "326k", "1M", "1.2M"], [0, 840, 8825, 9999, 326035, 999_999, 1_234_567].map(compactLines));
-  assert.deepEqual(linesShown({ added: 326035, removed: 8825 }), { added: "326k", removed: "8.8k", short: true });
-  assert.deepEqual(linesShown({ added: 9999, removed: 12 }), { added: "9999", removed: "12", short: false });
-  assert.deepEqual(linesShown({ added: 3, removed: 10000 }), { added: "3", removed: "10k", short: true });
+test("the cell: the sidebar's format, a sentence with both windows and the split; a dash that says why", () => {
+  const live = sess("a");
+  const rate = { five: 48_000, thirty: 12_000, own5: 8_000, workers5: 40_000, partial: false };
+  const c = rateCell(live, rate, { reported: true, remote: false });
+  assert.equal(c.figure, "48k tok/min");
+  assert.equal(c.title, "Output tokens a minute: 48k over the last 5 minutes, 12k over 30 (this session 8.0k, its workers 40k). Replies still being written aren't counted yet.");
+  const partial = rateCell(live, { ...rate, partial: true }, { reported: true, remote: false });
+  assert.equal(partial.figure, "48k tok/min", "the figure stays bare");
+  assert.match(partial.title, /^Output tokens a minute: at least 48k .* Some calls' tokens can't be seen\. Replies still/);
+  // A terminal pi's own calls are unseen: its workers' figure is a floor.
+  const tui = sess("t", { live: { pid: 1, status: "idle" } });
+  assert.match(rateCell(tui, rate, { reported: true, remote: false }).title, /at least/);
+  assert.deepEqual(rateCell(tui, undefined, { reported: true, remote: false }), { figure: null, title: "Open in a terminal pi: Sova can't see its tokens." });
+  assert.deepEqual(rateCell(live, undefined, { reported: true, remote: true }), { figure: null, title: "On another host: its tokens aren't counted here." });
+  assert.equal(rateCell(live, rate, { reported: true, remote: true }).figure, null, "another host's row never shows this host's figure");
+  assert.deepEqual(rateCell(live, undefined, { reported: true, remote: false }), { figure: null, title: "No output in the last 5 minutes." });
+  assert.deepEqual(rateCell(live, { ...rate, five: 0 }, { reported: true, remote: false }).figure, null, "nothing in 5 minutes is idle");
+  assert.equal(rateCell(live, undefined, { reported: false, remote: false }).figure, null, "an older server: a dash");
+  assert.equal(sameRateCell(c, rateCell(live, { ...rate }, { reported: true, remote: false })), true);
+  assert.equal(sameRateCell(c, partial), false);
 });

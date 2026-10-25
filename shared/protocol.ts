@@ -3104,6 +3104,28 @@ export interface AgentsInsight {
   at: number;
   totals: { sessions: number; working: number; total: number; teams: number; teamWorking: number; soloWorking: number };
   sessions: LiveAgentSession[]; // working first, then by lastActivity
+  /** Output tokens of each Sova-hosted main thread, its workers at any depth rolled up, keyed by
+      its session id: only sessions with tokens in the last 5 minutes (§app.insights/session-token-rate),
+      each one `SessionTokens` as one string (shared/session-tokens-wire.ts). `{}` when none; absent
+      from older servers (every row then reads as unmeasured). */
+  tokens?: Record<string, string>;
+}
+
+/** One board row's output tokens: its last 5 minutes as 30 s epoch slots (`end` = the server's
+    current slot), oldest first, each list starting at its oldest non-zero slot and ending at `end`,
+    and each list's 30-minute total. A list absent = no tokens in the last 5 minutes. Sent encoded
+    (shared/session-tokens-wire.ts). */
+export interface SessionTokens {
+  end: number;
+  /** The session's own chat processes'. */
+  own?: number[];
+  /** Its 30-minute total, with `own`. */
+  own30?: number;
+  /** Its workers', at any depth. */
+  workers?: number[];
+  workers30?: number;
+  /** Some of these calls' tokens are known missing (a Claude Code turn running, a ring not reported). */
+  partial?: true;
 }
 
 export interface OutlineTopic {

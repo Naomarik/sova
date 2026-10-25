@@ -3,7 +3,6 @@ import { newestTopics, topicTime } from "../../shared/outline-order";
 import type { AgentsInsight, ContextInfo, OutlineTopic, SessionSummary, WorktreeStatus } from "../../shared/protocol";
 import { fetchSessionInsight, fetchWorktrees, getUsageSessions, getUsageToday } from "../lib/api";
 import {
-  allGone,
   BOARD_FILTERS,
   BOARD_PAGE,
   type BoardFilter,
@@ -13,17 +12,19 @@ import {
   boardTotals,
   filterCounts,
   inDefaultScope,
-  linesShown,
-  orderTrees,
+  type RateCell,
+  rateCell,
   ROW_TOPICS,
   rowDetail,
   rowHasDetail,
+  type RowRate,
+  rowRates,
+  sameRateCell,
   sortRows,
   STATE_WORD,
   teamChips,
   teamForLink,
   totalsLine,
-  treeLines,
   treeMerge,
   type TreeMerge,
   treeName,
@@ -37,6 +38,7 @@ import {
 import { compactModel, relativeTime, tildePath } from "../lib/format";
 import { browserZone, costsHref, type CostsQuery, DEFAULT_COSTS_QUERY } from "../lib/cost-history";
 import { agentsHref, teamKey } from "../lib/insights";
+import { hostOf } from "../lib/mesh";
 import { createPoll, type Poll } from "../lib/poll";
 import { renameSession } from "../lib/session-actions";
 import { archiveBlockReason } from "../lib/archive-block";
@@ -60,8 +62,6 @@ interface BoardCtx {
   now: number;
   agents: AgentsInsight | undefined;
   treesOf(path: string): WorktreeStatus[] | undefined;
-  /** The worktrees request failed or the server has no such route: unknown cells say "—". */
-  treesDown: boolean;
   expanded(path: string): boolean;
   toggle(path: string): void;
   renaming(path: string): boolean;
@@ -76,6 +76,10 @@ interface BoardCtx {
   onOpenAgents(path: string): void;
   /** USD its workers have spent (the usage ledger), when above zero; null before the answer. */
   workersSpend(sessionId: string): number | null;
+  /** Its tokens a minute (§app.insights/session-token-rate), by session id, read once per answer and 30 s step; none when idle. */
+  rateOf(sessionId: string): RowRate | undefined;
+  /** The server sends per-session tokens at all (an older one doesn't). */
+  tokensReported: boolean;
 }
 
 /** Spend moves with every call, but a minute is fresh enough for a head figure and a row's chip. */
@@ -92,7 +96,7 @@ function contextOf(s: SessionSummary): ContextInfo | null {
   return s.context && s.context.window ? s.context : null;
 }
 
-/** A tree's merge reading: a success chip when merged, else ↑ahead ↓behind, else a muted word. */
+/** A tree's merge reading: a success chip when merged, else "unmerged" in words, else a muted word. No counts. */
 function TreeMergeMark(props: { tree: WorktreeStatus }) {
   const m = createMemo(() => treeMerge(props.tree));
   return (
@@ -104,10 +108,10 @@ function TreeMergeMark(props: { tree: WorktreeStatus }) {
           </Chip>
         )}
       </Match>
-      <Match when={m().kind === "diverged" && (m() as Extract<TreeMerge, { kind: "diverged" }>)}>
+      <Match when={m().kind === "unmerged" && (m() as Extract<TreeMerge, { kind: "unmerged" }>)}>
         {(r) => (
-          <span class="board-ahead text-mono text-num" aria-label={`${r().ahead} ahead, ${r().behind} behind`}>
-            ↑{r().ahead} ↓{r().behind}
+          <span class="board-unmerged" title={r().title}>
+            {r().text}
           </span>
         )}
       </Match>
@@ -115,36 +119,6 @@ function TreeMergeMark(props: { tree: WorktreeStatus }) {
         {(r) => <span class="text-muted">{r().text}</span>}
       </Match>
     </Switch>
-  );
-}
-
-/** `+added −removed`; in the cell (`compact`) a pair over 9,999 shortens, the exact counts in its title. */
-function TreeLinesMark(props: { tree: WorktreeStatus; compact?: boolean }) {
-  return (
-    <Show when={treeLines(props.tree)}>
-      {(l) => {
-        const shown = () => (props.compact ? linesShown(l()) : { added: String(l().added), removed: String(l().removed), short: false });
-        return (
-          <span
-            class="board-lines text-mono text-num"
-            aria-label={`${l().added} lines added, ${l().removed} removed`}
-            title={shown().short ? `+${l().added.toLocaleString("en-US")} −${l().removed.toLocaleString("en-US")} lines` : undefined}
-          >
-            <span class="git-add">+{shown().added}</span> <span class="git-del">−{shown().removed}</span>
-          </span>
-        );
-      }}
-    </Show>
-  );
-}
-
-function DirtyMark(props: { tree: WorktreeStatus }) {
-  return (
-    <Show when={props.tree.dirty}>
-      <span class="board-dirty" title="Uncommitted changes">
-        <span class="visually-hidden">Uncommitted changes</span>
-      </span>
-    </Show>
   );
 }
 
@@ -158,72 +132,21 @@ function Dash(props: { words: string }) {
   );
 }
 
-/**
- * One tree in the Worktrees cell: branch, merge reading, lines, then the uncommitted dot and any
- * "+N". Four slots, always there (empty when it has none), so from 768px the cell's grid lines
- * the readings and counts of both trees up in columns.
- */
-function TreeMark(props: { tree: WorktreeStatus; class?: string; children?: JSX.Element }) {
+/** The Tokens/min cell, and the folded micro line's figure: one line, or a muted dash that says why. */
+function RateMark(props: { cell: RateCell; micro?: boolean }) {
   return (
-    <span class={props.class ? `board-tree ${props.class}` : "board-tree"}>
-      <span class="board-tree-branch text-mono">{treeName(props.tree)}</span>
-      <span class="board-tree-reading">
-        <TreeMergeMark tree={props.tree} />
-      </span>
-      <span class="board-tree-count">
-        <TreeLinesMark tree={props.tree} compact />
-      </span>
-      <span class="board-tree-end">
-        <DirtyMark tree={props.tree} />
-        {props.children}
-      </span>
-    </span>
-  );
-}
-
-/**
- * The Worktrees cell: at most 2 lines, the most useful trees first, "+N" for the rest on the
- * second; folded, the first tree and "+N" for every other. Every tree gone: one muted line.
- */
-function TreesCell(props: { trees: WorktreeStatus[] | undefined; down: boolean }) {
-  return (
-    <Show when={props.trees} fallback={<Dash words={props.down ? "Worktrees not read" : "Reading worktrees"} />}>
-      {(trees) => {
-        const ordered = createMemo(() => orderTrees(trees()));
-        const title = () => trees().map(treeTitle).join("\n\n");
-        return (
-          <Show when={ordered()[0]} fallback={<Dash words="No worktree" />}>
-            {(t) => (
-              <Show when={!allGone(trees())} fallback={<span class="board-tree-gone" title={title()}>{trees().length} worktrees, all gone</span>}>
-                <span class="board-tree-set" title={title()}>
-                  <TreeMark tree={t()} />
-                  <Show when={ordered()[1]}>
-                    {(t2) => (
-                      <TreeMark tree={t2()} class="board-tree-second">
-                        <Show when={ordered().length > 2}>
-                          <span class="board-tree-more-second">
-                            <CountChip title={`${ordered().length} worktrees`}>+{ordered().length - 2}</CountChip>
-                          </span>
-                        </Show>
-                      </TreeMark>
-                    )}
-                  </Show>
-                  <Show when={ordered().length > 1}>
-                    <span class="board-tree-more">
-                      <CountChip title={`${ordered().length} worktrees`}>+{ordered().length - 1}</CountChip>
-                    </span>
-                  </Show>
-                </span>
-              </Show>
-            )}
-          </Show>
-        );
-      }}
+    <Show when={props.cell.figure} fallback={props.micro ? null : <span class="board-dash" title={props.cell.title}><span aria-hidden="true">—</span><span class="visually-hidden">{props.cell.title}</span></span>}>
+      {(f) => (
+        <span class={props.micro ? "board-rate" : "board-cell-line board-rate text-num"} title={props.cell.title}>
+          <span aria-hidden="true">{f()}</span>
+          <span class="visually-hidden">{props.cell.title}</span>
+        </span>
+      )}
     </Show>
   );
 }
 
-/** One tree in the open row: branch, path, the reading, lines, and uncommitted work in words. */
+/** One tree in the open row: branch, merged or unmerged, uncommitted work in words, whose, and its path. */
 function TreeLine(props: { tree: WorktreeStatus }) {
   const t = () => props.tree;
   return (
@@ -231,7 +154,6 @@ function TreeLine(props: { tree: WorktreeStatus }) {
       <Icon name="branch" small />
       <span class="board-tree-branch text-mono">{treeName(t())}</span>
       <TreeMergeMark tree={t()} />
-      <TreeLinesMark tree={t()} />
       <Show when={t().dirty}>
         <span class="board-dirty-word">
           <span class="board-dirty" aria-hidden="true" />
@@ -367,6 +289,17 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
     location.hash = sessionHref(s().path);
   };
   const teams = createMemo(() => teamChips(r().teams));
+  /** Its tokens a minute: redrawn only when the words change. */
+  const rate = createMemo(() => rateCell(s(), props.ctx.rateOf(s().id), { reported: props.ctx.tokensReported, remote: hostOf(s().path) !== null }), undefined, {
+    equals: sameRateCell,
+  });
+  /** The title is a real link: a click that ends a text selection in the row doesn't follow it. */
+  const onTitleClick = (e: MouseEvent) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const row = (e.currentTarget as Element).closest(".board-row");
+    const sel = window.getSelection();
+    if (row && sel && !sel.isCollapsed && sel.anchorNode && row.contains(sel.anchorNode)) e.preventDefault();
+  };
 
   return (
     <li class="board-row" id={`board-row-${s().id}`} data-state={r().state} classList={{ "board-row-open": open() && hasDetail() }} onClick={onRowClick}>
@@ -391,9 +324,14 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
               when={props.ctx.renaming(s().path)}
               fallback={
                 <p class="board-title-line">
-                  <span class="board-title" title={s().originalTitle ? `${s().title}\nOriginally ${quoted(s().originalTitle!)}` : s().title}>
+                  <a
+                    class="board-title"
+                    href={sessionHref(s().path)}
+                    title={s().originalTitle ? `${s().title}\nOriginally ${quoted(s().originalTitle!)}` : s().title}
+                    onClick={onTitleClick}
+                  >
                     {s().title}
-                  </span>
+                  </a>
                   {/* The rail and the group heading show the state; this says it to a screen reader. */}
                   <span class="visually-hidden">, {r().word}</span>
                 </p>
@@ -423,6 +361,9 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
               <Show when={compactModel(s().model)}>{(m) => <span class="text-mono">{m()}</span>}</Show>
               <Show when={r().total > 0 && workersLine(r())}>{(w) => <span>{w()}</span>}</Show>
               <span>{relativeTime(s().lastActiveAt, props.ctx.now)}</span>
+              <Show when={rate().figure}>
+                <RateMark cell={rate()} micro />
+              </Show>
             </p>
           </div>
         </div>
@@ -491,14 +432,11 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
           </Show>
         </div>
 
-        <div class="board-cell board-trees">
-          <TreesCell trees={trees()} down={props.ctx.treesDown} />
+        <div class="board-cell board-tokens">
+          <RateMark cell={rate()} />
         </div>
 
         <div class="board-cell board-actions">
-          <a class="button button-icon button-ghost board-act" href={sessionHref(s().path)} aria-label={`Open ${quoted(s().title)}`} title="Open session">
-            <Icon name="arrow-right" />
-          </a>
           <button
             type="button"
             class="button button-icon button-ghost board-act board-act-details"
@@ -510,7 +448,7 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
           >
             <Icon name="info" />
           </button>
-          <RowMenu row={r()} ctx={props.ctx} href={sessionHref(s().path)} archive={archive()} />
+          <RowMenu row={r()} ctx={props.ctx} archive={archive()} />
         </div>
       </div>
 
@@ -602,7 +540,6 @@ export function AgentsView(props: {
   const [open, setOpen] = createSignal<ReadonlySet<string>>(new Set());
   const [renaming, setRenaming] = createSignal<string | null>(null);
   const [trees, setTrees] = createSignal<ReadonlyMap<string, WorktreeStatus[]>>(new Map());
-  const [treesDown, setTreesDown] = createSignal(false);
   const treesOf = (path: string) => trees().get(path);
 
   // A new chip or search starts at the top of the list again.
@@ -653,10 +590,8 @@ export function AgentsView(props: {
         for (const s of res.sessions) next.set(s.sessionPath, s.trees);
         return next;
       });
-      setTreesDown(false);
     } catch {
-      // No route yet (an older server), or git trouble: the column says "—", nothing else does.
-      setTreesDown(true);
+      // No route yet (an older server), or git trouble: the readings stay unread, nothing says so.
     }
   };
   createEffect(
@@ -690,6 +625,29 @@ export function AgentsView(props: {
     }),
   );
 
+  // Tokens a minute (§app.insights/session-token-rate): every row's means at once, re-read when the
+  // agents answer's tokens change and on one 30 s tick, the sidebar's rule: only while a shown row
+  // has tokens and the tab is visible.
+  const [tabVisible, setTabVisible] = createSignal(!document.hidden);
+  const onVisibility = () => setTabVisible(!document.hidden);
+  document.addEventListener("visibilitychange", onVisibility);
+  onCleanup(() => document.removeEventListener("visibilitychange", onVisibility));
+  const [rateClock, setRateClock] = createSignal(0);
+  const rates = createMemo(() => {
+    rateClock();
+    return rowRates(props.agents.data()?.tokens, Date.now());
+  });
+  const rateTicking = createMemo(() => {
+    if (onCosts() || !tabVisible()) return false;
+    const t = props.agents.data()?.tokens;
+    return !!t && paged().some((r) => t[r.session.id] !== undefined);
+  });
+  createEffect(() => {
+    if (!rateTicking()) return;
+    const t = setInterval(() => setRateClock((n) => n + 1), 30_000);
+    onCleanup(() => clearInterval(t));
+  });
+
   const totals = createMemo(() => boardTotals(rows().filter(inDefaultScope), trees().values(), today.data()));
   const counts = createMemo(() => filterCounts(rows(), treesOf));
 
@@ -721,9 +679,6 @@ export function AgentsView(props: {
       return props.agents.data();
     },
     treesOf,
-    get treesDown() {
-      return treesDown();
-    },
     expanded: (p) => open().has(p),
     toggle: (p) =>
       setOpen((s) => {
@@ -742,6 +697,10 @@ export function AgentsView(props: {
     onOpenDetails: (p) => props.onOpenDetails(p),
     onOpenAgents: (p) => props.onOpenAgents(p),
     workersSpend: (sid) => spends().get(sid) ?? null,
+    rateOf: (id) => rates().get(id),
+    get tokensReported() {
+      return props.agents.data()?.tokens !== undefined;
+    },
   };
 
   const meta = () => (props.sessions ? totalsLine(totals()) : undefined);
@@ -851,7 +810,7 @@ export function AgentsView(props: {
               <span>Session</span>
               <span>Activity</span>
               <span>Workers</span>
-              <span>Worktrees</span>
+              <span>Tokens/min</span>
               <span />
             </div>
             <For each={groupKeys()}>

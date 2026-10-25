@@ -50,11 +50,6 @@
       },
       {
         "rule": "names-manifest",
-        "text": "if (!existsSync(join(tree, MANIFEST)) || !existsSync(join(this.specCore, \"sova-spec.mjs\"))) return false;",
-        "reason": "existence probe before asking the core's records command about a mixed layout; reads no record"
-      },
-      {
-        "rule": "names-manifest",
         "text": "const files = Array.isArray(out.files) && out.files.length ? out.files : [MANIFEST];",
         "reason": "conflict handling: matches and stages the paths merge-manifest wrote (the settings file among them); reads no record"
       },

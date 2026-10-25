@@ -863,8 +863,9 @@ session is on which branch survives a compaction and a restart:
   last 24 hours. Never the Overseer's own. At most 15, the most recently touched first.
 - **Each row:** the session as a link, named summary-first (§app.overseer/session-names), its id
   as plain text, its state now (working, idle, needs-input, archived, or gone), each worktree it
-  tracks as "branch <name> (<badge>)" (the readiness badge, §chat.worktrees/readiness, else that
-  worktree's state, such as in-progress or blocked), when the Overseer last created or prompted it,
+  tracks as "branch <name> (<badge>)" (its landing while one holds, "ready to land" or "landing
+  specs", §chat.worktrees/ready-to-land; else the readiness badge, §chat.worktrees/readiness, else
+  that worktree's state, such as in-progress or blocked), when the Overseer last created or prompted it,
   and the kind of the last brief that named it and when. A line before the rows says which sessions
   these are (created, prompted or briefed about in the last 24 hours), and that the Overseer checks
   one with `sova_session` before saying what it is doing.

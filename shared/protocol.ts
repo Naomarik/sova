@@ -1302,6 +1302,27 @@ export interface GitCommit {
   at: number;
 }
 
+/** A repository's git folder (the one a linked worktree shares with its main checkout), read by
+    stat: every file's size summed, and what says git's cleanup there is stuck or overdue. */
+export interface GitFolderReading {
+  /** The git folder, absolute. */
+  path: string;
+  /** Sum of the files' sizes; a lower bound when `partial`. */
+  bytes: number;
+  /** The walk stopped at its entry cap. */
+  partial: boolean;
+  /** `objects/pack/*.pack` files (always whole: the pack folder is walked first). */
+  packs: number;
+  /** Loose objects (`objects/xx/*`); a lower bound when `partial`. */
+  loose: number;
+  /** At most one, stuck first. `stuck`: a cleanup lock (multi-pack-index.lock or
+      commit-graph-chain.lock) more than an hour old, `since` its mtime (ms epoch). `overdue`: more
+      than 50 pack files or 6,700 loose objects; each count present only when it is over. */
+  warning: { kind: "stuck"; lock: string; path: string; since: number } | { kind: "overdue"; packs?: number; loose?: number } | null;
+  /** When it was read (ms epoch); a cached reading keeps its time. */
+  checkedAt: number;
+}
+
 /** Where the read ran: this machine, or the session's target. */
 export type GitWhere = { kind: "local" } | { kind: "remote"; target: string };
 
@@ -1334,6 +1355,10 @@ export interface GitRepoSummary {
       yet reads `lastCommit` instead and shows the one commit it has. A transitional read, not a
       permanent contract. */
   commits?: GitCommit[];
+  /** The repository's git folder, for the new-session card (server/git-folder.ts). Local
+      repositories only; absent on a target, when the folder couldn't be read, and from a server
+      older than the field. Additive. */
+  gitFolder?: GitFolderReading;
   /** Changed paths, conflicted first, then by path; cut at the server's cap (`filesTotal`). */
   files: GitFileChange[];
   /** Changed paths git reported, before the cap. */

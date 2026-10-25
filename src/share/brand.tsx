@@ -27,7 +27,7 @@ export function ShareBrand(props: { themeSwitch?: boolean; class?: string }) {
     <div class={props.class ? `share-brand ${props.class}` : "share-brand"}>
       <span class="share-brand-name">
         <span class="icon share-brand-mark" aria-hidden="true" />
-        Sova
+        sova
       </span>
       <Show when={props.themeSwitch}>
         <ThemeToggle />

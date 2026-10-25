@@ -202,7 +202,7 @@ for an earlier revision of the same alignment its one-line change row, at the ca
 call's own tool card renders nothing once this result is there. A failed `align` call stays an
 ordinary tool-call and tool-result.
 
-**tour.** A valid compact `record_tour` or `show_tour` projection (§app.tours/editions) renders its tour/progress card at the call's position and suppresses the paired result's duplicate row. It remains visible outside compressed thinking/tool groups. Hide tools also keeps every tour request, progress and failure row visible, even before a valid card projection exists, so waiting and cancellation never disappear into hidden work. Only a checked edition opens as a readable tour; malformed or failed results remain safe ordinary tool rows, never plausible finished tours.
+**tour.** A valid compact `record_tour` or `show_tour` projection (§app.tours/editions) renders its tour/progress card at the call's position when the call is its tour's newest successful tour call, and suppresses the paired result's duplicate row; an earlier call for the same tour is one tool line with what it reported then (§app.tours/one-card). It remains visible outside compressed thinking/tool groups. Hide tools also keeps every tour request, progress and failure row visible, even before a valid card projection exists, so waiting and cancellation never disappear into hidden work. Only a checked edition opens as a readable tour; malformed or failed results remain safe ordinary tool rows, never plausible finished tours.
 
 **offer.** An `offer` call that showed a card (§chat.offers/card) renders the card at the call's
 position, and the paired result draws nothing; Hide tools keeps it. A refused `offer` call stays an

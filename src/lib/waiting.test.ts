@@ -9,6 +9,7 @@ import {
   alignmentLine,
   cardNumeral,
   dash,
+  countSize,
   dotXs,
   newestFirst,
   nextOpenTopic,
@@ -165,5 +166,14 @@ describe("the badge's place in the box", () => {
   test("one line tall inside the border, so a one-line box is exactly its band and stays centred", () => {
     assert.equal(decl("height"), "calc(var(--control-md) - 2 * var(--stroke-icon))");
     assert.equal(decl("place-items"), "center");
+  });
+});
+
+describe("countSize: the middle number's size", () => {
+  test("17 units for one digit, 14 for two or more", () => {
+    assert.equal(countSize(0), 17);
+    assert.equal(countSize(9), 17);
+    assert.equal(countSize(10), 14);
+    assert.equal(countSize(120), 14);
   });
 });

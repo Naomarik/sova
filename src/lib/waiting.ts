@@ -51,6 +51,9 @@ export function progressLength(c: Pick<WaitingCounts, "decided" | "total">): num
 /** A dash array as the SVG takes it, to two decimals. */
 export const dash = (len: number): string => `${len.toFixed(2)} ${RING_CIRCUMFERENCE.toFixed(2)}`;
 
+/** The middle number's size in the glyph's units: 17, or 14 when it has two digits or more. */
+export const countSize = (n: number): number => (Math.abs(n) >= 10 ? 14 : 17);
+
 const NUMERALS = ["", "I", "II", "III", "IV"] as const;
 
 /** The option cards' numeral: I, II, III, IV, then V+; "" at 0 (left out). */

@@ -262,7 +262,8 @@ export async function mergeBack(w: WorktreeRecord, root: string, title: string, 
 /**
  * Remove Worktree: git's own `worktree remove` (refused with uncommitted changes, naming them), and
  * the branch deleted only when merged; an unmerged branch keeps its commits. A folder already gone
- * is pruned from git's list. Returns whether the branch was deleted.
+ * is dropped from git's list by the same command, naming it: never a bare `worktree prune`, which
+ * forgets every worktree whose folder is missing. Returns whether the branch was deleted.
  */
 export async function removeWorktree(w: WorktreeRecord, root: string, git: Git = runGit): Promise<{ branchDeleted: boolean }> {
   if (existsSync(w.path)) {
@@ -271,7 +272,7 @@ export async function removeWorktree(w: WorktreeRecord, root: string, git: Git =
       throw new WorktreeRefusal(`The worktree has uncommitted changes in ${files.length} file${files.length === 1 ? "" : "s"} (${files[0]}). Nothing was removed. Commit or discard them first.`);
     const rm = await git(["worktree", "remove", "--", w.path], root);
     if (rm.code !== 0) throw new WorktreeRefusal(`Nothing was removed: ${firstLine(rm.stderr || rm.stdout)}`);
-  } else await git(["worktree", "prune"], root);
+  } else await git(["worktree", "remove", "--", w.path], root);
   if (!(await mergedInto(git, root, w))) return { branchDeleted: false };
   const del = await git(["branch", "-D", "--", w.branch], root);
   return { branchDeleted: del.code === 0 };

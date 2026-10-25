@@ -951,9 +951,11 @@ export async function cutCheckout(git: Git, root: string, commit: string, name: 
 /** Remove a checkout cut by `cutCheckout`, whatever it holds. */
 export async function dropCheckout(git: Git, root: string, dir: string): Promise<void> {
   if (!dir.startsWith(checkoutsDir() + "/")) return;
-  await git(["worktree", "remove", "--force", "--force", dir], root);
+  await git(["worktree", "remove", "--force", "--force", "--", dir], root);
   rmSync(dir, { recursive: true, force: true });
-  await git(["worktree", "prune"], root);
+  // Whatever git couldn't remove is gone now: drop this one's record, never another worktree's
+  // (a bare `worktree prune` forgets every worktree whose folder is missing).
+  await git(["worktree", "remove", "--force", "--force", "--", dir], root);
 }
 
 /** Where `program` (an argv's first word) resolves, from `cwd`, or why it doesn't. Reads only. */

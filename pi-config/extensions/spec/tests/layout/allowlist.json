@@ -17,6 +17,11 @@
       },
       {
         "rule": "names-manifest",
+        "text": "return `take ${branch}'s whole spec with \\`git checkout --no-overlay ${branch} -- ${specDir}/manifest.json ${specDir}/claims\\` ` +",
+        "reason": "format 1 recovery text naming the files for a git checkout of master's whole spec; reads nothing"
+      },
+      {
+        "rule": "names-manifest",
         "text": "if (await exists(join(dir, SPEC_REL, \"manifest.json\"))) return dir;",
         "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record"
       },

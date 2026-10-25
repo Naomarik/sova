@@ -13,7 +13,7 @@ import { RECORDS, SPEC, REPO, project, core, draft, codes, messages, put, read, 
 const COMMANDS = [["check"], ["census"], ["records"], ["map"], ["graph"], ["where", "draftId"], ["read", "§ot/uses"], ["toc", "§ot/uses", "--dir", "out"], ["scope", "§ot/uses"], ["impact", "§ot/uses"], ["impact", "§ot/uses", "--near"], ["packet", "§ot/uses"]];
 const refusedAs = (j, code, label) => {
   assert.equal(j.exit, 2, `${label}: exit 2 (${JSON.stringify(j).slice(0, 400)})`);
-  assert.ok(codes(j).includes(code) || JSON.stringify(j).includes(`"${code}"`), `${label}: ${code} in ${JSON.stringify(codes(j))} ${JSON.stringify(j).slice(0, 300)}`);
+  assert.ok(codes(j).includes(code) || j.cause === code, `${label}: ${code} in findings, or as the refusal's cause: ${JSON.stringify(codes(j))} ${JSON.stringify(j).slice(0, 300)}`);
 };
 
 // ---------------------------------------------------------------- the four record-file findings

@@ -95,7 +95,8 @@ export const core = (root, args, o) => spawn(CORE, root, args, o);
 export const draft = (root, args, o) => spawn(DRAFT, root, args, o);
 /** Every finding/refusal code of a core or draft-tool result. */
 export const codes = (j) => [...(j?.findings ?? []).map((f) => f.code), ...(j?.refusals ?? []).map((r) => r.code), ...(j?.coreFindings ?? []).map((f) => f.code)];
-export const messages = (j) => [...(j?.findings ?? []), ...(j?.refusals ?? []), ...(j?.coreFindings ?? [])].map((f) => f.message ?? "").join("\n");
+// The pull/look views refuse in their own bounded shape: a top-level `message` (and `cause`), no findings[].
+export const messages = (j) => [j?.message ?? "", ...[...(j?.findings ?? []), ...(j?.refusals ?? []), ...(j?.coreFindings ?? [])].map((f) => f.message ?? "")].join("\n");
 
 /** Every page of a paged command, following next (each page's raw JSON). */
 export function pages(root, args, { budget, max = 200 } = {}) {

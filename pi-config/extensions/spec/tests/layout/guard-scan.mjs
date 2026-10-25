@@ -108,16 +108,19 @@ export function growth(before, after) {
   return out;
 }
 
-/** The allowlist as committed at the merge base of HEAD and master (else HEAD), or null when there is none. */
+/**
+ * The allowlist as committed at the merge base of HEAD and master (or main), or null when that commit has none
+ * (the branch that adds or first fills the list has nothing to grow past). HEAD is used only when there is no
+ * master/main at all; never as a fallback, or a branch's own first commit would freeze its unfinished list.
+ */
 export function committedAllowlist(repo, rel) {
   const run = (...a) => spawnSync("git", ["-C", repo, ...a], { encoding: "utf8" });
-  let rev = null;
-  for (const m of ["master", "main"]) { const r = run("merge-base", "HEAD", m); if (r.status === 0) { rev = r.stdout.trim(); break; } }
-  for (const at of [rev, "HEAD"].filter(Boolean)) {
-    const r = run("show", `${at}:${rel}`);
-    if (r.status === 0) { try { return { at, allow: JSON.parse(r.stdout) }; } catch { return null; } }
-  }
-  return null;
+  let at = null;
+  for (const m of ["master", "main"]) { const r = run("merge-base", "HEAD", m); if (r.status === 0) { at = r.stdout.trim(); break; } }
+  if (!at) at = "HEAD";
+  const r = run("show", `${at}:${rel}`);
+  if (r.status !== 0) return null;
+  try { return { at, allow: JSON.parse(r.stdout) }; } catch { return null; }
 }
 
 /** A draft allowlist from the current hits (reasons empty: fill each in, or switch the reader). */

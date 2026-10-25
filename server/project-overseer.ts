@@ -134,6 +134,7 @@ import { settingsIndex } from "../shared/settings-reference";
 import { appendHistory, recordKept, setSettingsDeps } from "./project-settings";
 import type { SettingsBy, SettingsHistoryRow } from "../shared/project-settings";
 import { putOverseerMemorySwitch } from "./memory/routes";
+import { carriedBranch, expectCarry } from "./draft-carry";
 
 /**
  * The project overseer (§app/project-overseer): one special session per project. Like the
@@ -983,6 +984,8 @@ export interface StartedCoding {
   notPrompted?: string;
   /** The start waits in a hold (q10: the overseer's unattended act): nothing was made yet. */
   held?: ActResult["held"];
+  /** A Build from a conversation's draft: the branch its worktree got that draft on (server/draft-carry.ts). */
+  carriedTo?: string;
 }
 
 export const NOT_PROMPTED = "Started, but not prompted: its mode could not be set.";
@@ -1032,6 +1035,9 @@ async function startCodingSession(
   const choice = codingChoice(input, settings, await overseerRunning(projectId));
   // The title store first: the worktree's branch is named after a title given.
   if (title) setSessionTitle(sessionId, title);
+  // A Build from a conversation's draft: its worktree gets the draft when it is cut (server/draft-carry.ts).
+  const carry = typeof input.extra?.conversationDraft === "string" ? input.extra.conversationDraft : null;
+  if (carry) expectCarry(sessionId, project.root, carry);
   const envelope = input.envelope ?? projectEnvelope(projectId, { by: "operator", attended: true, ...(input.via ? { via: input.via } : {}) });
   // F21: the project's builds as their runtimes stand now (a turn running, workers), so the at-once cap counts them.
   await syncProjectBuilds(projectId);
@@ -1061,15 +1067,18 @@ async function startCodingSession(
     );
   } catch (err) {
     if (title) setSessionTitle(sessionId, null);
+    if (carry) carriedBranch(sessionId);
     throw err;
   }
   if (out.held) {
     if (title) setSessionTitle(sessionId, null);
+    if (carry) carriedBranch(sessionId);
     return { sessionId, path: "", cwd: "", mode, held: { ...out.held, ...heldAt(input.item ?? projectSid(projectId), out.held) } };
   }
   const sid = buildSid(projectId, sessionId);
   await buildSetupEnded(projectId, sid);
   const row = readBuild(projectId, sessionId);
+  const carriedTo = carry ? carriedBranch(sessionId) : undefined;
   if (!row || row.notStarted) {
     if (title) setSessionTitle(sessionId, null);
     throw new OrgError(row?.notStarted ?? "No session was started.", 409);
@@ -1083,6 +1092,7 @@ async function startCodingSession(
     mode,
     ...(wt ? { worktree: { path: wt.worktree.path, branch: wt.worktree.branch } } : {}),
     ...(row.inRoot ? { note: row.inRoot } : {}),
+    ...(carriedTo ? { carriedTo } : {}),
   };
   if (row.modeNotSet) return { ...made, notPrompted: NOT_PROMPTED };
   if (row.promptError) throw new OrgError(row.promptError, 409);
@@ -1496,7 +1506,7 @@ export async function codeItem(projectId: string, body: ItemCodeInput, via?: "ov
 export async function startDraftBuild(
   projectId: string,
   input: { title: string; prompt: string; model?: string; thinking?: string; extra?: { conversationDraft: string } },
-): Promise<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; note?: string; notPrompted?: string }> {
+): Promise<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; note?: string; notPrompted?: string; carriedTo?: string }> {
   const prompt = input.prompt.trim();
   const title = input.title.trim().slice(0, 80);
   if (!prompt || !title) throw new OrgError("A build from a draft needs a title and a prompt.");
@@ -1514,6 +1524,7 @@ export async function startDraftBuild(
     ...(made.worktree ? { worktree: made.worktree } : {}),
     ...(made.note ? { note: made.note } : {}),
     ...(made.notPrompted ? { notPrompted: made.notPrompted } : {}),
+    ...(made.carriedTo ? { carriedTo: made.carriedTo } : {}),
   };
 }
 

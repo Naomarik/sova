@@ -118,7 +118,7 @@ to make progress. A known missing manifest adds `cause: manifest-not-found` to `
 other graph refusals do not imply a missing spec. Start a draft for that missing-manifest cause,
 but never overwrite orphaned claims: the draft tool still refuses `orphaned-spec`. Pagination is separate from dependency unknowns: the frontier does not
 substitute page omissions for graph findings. Inspect the stated frontier and unread inventory,
-not just the first readable page. This adds no assessment or release gate.
+not just the first readable page. This adds no release gate.
 
 Cursors are stateless navigation tokens, not authenticated identity or reading evidence. They bind
 root, spec, seed, read policy, captured inputs, and the actual ordered/serialized streams. Changed
@@ -381,9 +381,15 @@ in refusal output. Git still runs with fsmonitor disabled and without a local sh
   separately as `containers`, never as consumers. A behavior that has no `requires` key could be
   an unlisted consumer, so it goes on the frontier.
 - **check**: validates the whole graph and every record's evidence. It also returns `counts`
-  (including `labels`) and `declarations: [{id, file, lines, level, textSha256}]`, sorted by id.
-  `textSha256` is the SHA-256 of exactly the text `scope` would return. `declarations` is still
-  emitted when the graph is broken, but it may then be partial.
+  (including `labels`) and `declarations: [{id, file, lines, level, textSha256, bytes}]`, sorted by id.
+  `textSha256` is the SHA-256 of exactly the text `scope` would return, and `bytes` its UTF-8 size,
+  as `read` and `toc` count it. `declarations` is still emitted when the graph is broken, but it may
+  then be partial. `counts.cap` is the declaration size cap (6,144 B, or the manifest's optional
+  top-level `declarationCap`, a whole number of bytes; any other value warns
+  `declaration-cap-invalid` and the default holds), and `counts.overCap` how many declarations are
+  over it. A claim's size is its claim-file prose only, so it is the same in either record layout.
+  Being over the cap is counted, never a finding, so it never changes the exit status; the draft
+  tool warns when a draft takes a claim over it or grows one there.
 - **census**: walks only the explicit `boundary: {include: [dir], exclude: [{path, reason}]}`.
   No directory is assumed. All of `.sova/spec` is never counted, and neither is the `--spec`
   directory. That covers current docs, drafts and reviews, whichever graph is read. Symlinks are listed and
@@ -491,36 +497,21 @@ in refusal output. Git still runs with fsmonitor disabled and without a local sh
 
 ## Capture-local internal reader
 
-Companions may import `createInspection(root, {spec, readPolicy})` from this module. Import is
-silent; direct CLI invocation, including through a directory symlink, retains the existing output
-and refusal contracts. The reader loads one graph and exposes synchronous `check()`, `scope(id)`,
-`impact(id)` and `census({base, related})` results with the same JSON envelopes. Returned objects
-are detached, so consumer mutation cannot alter another query. `sourceHashes()` returns detached
-raw-byte hashes from the graph's actual reads (including any repeated versions and a conflict flag),
-not re-encoded prose or another file read. The assessment checks these against bound present inputs
-and refuses a mixed-version capture as a race, even when its requested prose is unchanged.
-This is a capture-local graph, not a live or persistent cache: create a new reader for every
-independent capture/status check. Internal `readPolicy: "assessment"` applies review refusals and
-also refuses the assessment receipt store before graph or lazy incumbent contents are read;
-ordinary CLI policies are unchanged. The assessment companion uses this policy and batches only
-selected, size-approved immutable Git blobs.
+Companions may import `createInspection(root, {spec, readPolicy})` from this module, with
+`readPolicy` `default` or `review` (any other value is a usage error). Import is silent; direct CLI
+invocation, including through a directory symlink, retains the existing output and refusal
+contracts. The reader loads one graph and exposes synchronous `check()`, `scope(id)`, `impact(id)`
+and `census({base, related})` results with the same JSON envelopes. Returned objects are detached,
+so consumer mutation cannot alter another query. This is a one-graph reader, not a live or
+persistent cache: create a new reader to see changed inputs.
 
 The draft sibling exports silent, read-only `inspectDraft(root, name, {base, readPolicy})` for its
-existing `check` result. It accepts no write command. The assessment uses `readPolicy: "assessment"`
-through the proposed/baseline core checks and proposed/baseline/current claim-tree reads used by
-optional draft triage. Receipt/cache paths are refused before the draft's safe content reader,
-including when the selected proposed graph is safe but the current claims root names storage.
-Only this internal
-assessment-policy result includes detached `inputSources` metadata from the exact safe reads of
-proposed, baseline and current manifest/claim trees and draft state. Repeated source versions remain
-visible; the assessor binds these paths and refuses changed versions as a race. No raw bytes are
-returned. Candidate identities staying the same does not conceal changed draft inputs. Default
-API results and draft CLI checks retain their original JSON contracts and subprocess path. No new CLI flag, weaker read
-policy, source snapshot store or release gate is introduced.
+existing `check` result, with the same two policies. It accepts no write command. Default API
+results and draft CLI checks keep their JSON contracts and subprocess path.
 
 ## What this tool does not do
 
-This core only reads. It has no command that writes. Three sibling tools in this directory write,
+This core only reads. It has no command that writes. Two sibling tools in this directory write,
 explicitly and only under `.sova/spec/`, and all use this core for graph inspection (through its
 CLI or capture-local reader):
 
@@ -535,14 +526,9 @@ CLI or capture-local reader):
   a closure's inputs, `record` stores a reviewer's conclusion, and `status` rechecks them. It
   writes only under `.sova/spec/reviews/`. See `../README.md`.
 
-- `sova-spec-assess.mjs` records observation-only dispositions against exact claim and implementation
-  inputs, with metadata-only local receipts and separate applicability/coverage/verification outcomes.
-  Its `prepare`, `record`, and `status` commands do not change any existing release or review gate.
-  See `../README.md` for the CLI and the distinctions.
-
 None of these tools adopts a claim or decides that code implements prose. The `spec` minor mode
-(`../../mode/minor.ts`) tells the agent when to run them. The four entrypoints are shipped together:
-the three companions find this core as the sibling `sova-spec.mjs`.
-Ship all `core/*.mjs`, including `packet.mjs`; copying only the four entrypoints is insufficient.
+(`../../mode/minor.ts`) tells the agent when to run them. The three entrypoints are shipped together:
+the two companions find this core as the sibling `sova-spec.mjs`.
+Ship all `core/*.mjs`, including `packet.mjs`; copying only the three entrypoints is insufficient.
 
 Tests: `node --test ../tests/*.test.mjs`

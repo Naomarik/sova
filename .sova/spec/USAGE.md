@@ -8,7 +8,6 @@ machine output.
 | `sova-spec.mjs` | Never. It reads a spec and prints its prose and relations. |
 | `sova-spec-draft.mjs` | Only with `--write`: drafts under `drafts/`, and the current docs on `promote`. |
 | `sova-spec-review.mjs` | Only on `prepare --write` and `record`, under `reviews/`. |
-| `sova-spec-assess.mjs` | Optional observations: only on `prepare --write` and `record --write`, under `assessments/`. |
 
 The tools run only from the installed spec extension (`$core`); no project, Sova included, keeps a
 copy. Resolve `$core` with exactly this line:
@@ -81,7 +80,7 @@ warnings), never complete behavioral context or proof of reading earlier pages. 
 `more`/`done` describes only selected-stream navigation; `next` is null only when it is done.
 Exit `1` means something relevant is unknown, stale or unread, or the packet stream has more.
 Exit `2` means refused/untrusted, including a packet budget that cannot make progress. Packet errors
-also fit supported budgets and have no stderr side channel. This adds no assessment or release gate.
+also fit supported budgets and have no stderr side channel. This adds no release gate.
 
 **While coding**, exempt work included, spec mode runs the census after each tool call that
 brings newly changed files and adds a `[spec census]` note to its result; without spec mode, run
@@ -204,37 +203,6 @@ Until a packet is written (`prepare --write`), `status` exits 2 with `packet-mis
 `baseline` is taken. A stale packet is prepared again under a new name. Never edit
 anything under `reviews/` by hand. See
 [the tools README](../../pi-config/extensions/spec/README.md).
-
-## Optional structured observations
-
-Assessments run only when someone asks: no session, worker or hook runs one by itself. They do not
-add a required release gate or replace the existing review workflow. Prepare against a known
-base, the revision the work started from (noted before it began, or `git merge-base master HEAD`);
-every change since it is included, a file already dirty then too:
-
-```sh
-a=pi-config/extensions/spec/core/sova-spec-assess.mjs
-base=$(git merge-base master HEAD)
-node $a prepare change-review --root . --base $base                # preview
-node $a prepare change-review --root . --base $base --write
-node $a record change-review --root . --by reviewer \
-  --decisions-json '{"decisions":[],"files":[]}' --write            # deliberately leaves items unresolved
-node $a status change-review --root .
-node $a status --root . --owner-session '<owner session id>'
-```
-
-Record explicit `changed`, `preserved`, `not-applicable` or `unresolved` dispositions with reasons
-and structured verification bases; batches retain candidate IDs without duplicate claim prose.
-The empty example records no verification and resolves nothing. Input applicability, disposition,
-accepted-intent assertions, declared labels and recorded verification outcomes are separate: none
-proves semantic correctness or changes readiness policy. Status exit 0 means only current known
-inputs, even when coverage is unresolved or recorded verification failed. Missing inputs/baselines
-remain unknown; changed inputs stale a receipt. No-Git explicit paths/snapshot baselines work too.
-
-Immutable metadata receipts stay locally ignored under `assessments/`; no raw source or logs are
-retained. Paths, identity and rationale can themselves be private, so publication is a separate
-explicit decision. [The tools README](../../pi-config/extensions/spec/README.md) has the full
-schema, attribution, refusal and applicability distinctions.
 
 ## What no tool tells you
 

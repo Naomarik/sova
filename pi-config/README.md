@@ -180,7 +180,7 @@ cd extensions/subagents && node tests/run.mjs && node tests/smoke.mjs && node te
 cd extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs
 cd extensions/extension-toggle && node --test index.test.ts command.test.ts
 cd extensions/compact-handoff && node tests/run.mjs && node tests/compact-turn.mjs
-cd extensions/mode && node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts review.test.ts spec.test.ts align-settings.test.ts spec-guard.test.ts spec-assessment.test.ts project-modes.test.ts project-tools.test.ts project-mode-extension.test.ts project-actions.test.ts && node tests/smoke.mjs && node tests/review-smoke.mjs && node tests/wake-turn.mjs && node tests/align-turn.mjs && node tests/style-turn.mjs && node tests/note-turn.mjs && node tests/spec-turn.mjs && node tests/spec-worker.mjs && node tests/assessment-absence.mjs
+cd extensions/mode && node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts review.test.ts spec.test.ts align-settings.test.ts spec-guard.test.ts project-modes.test.ts project-tools.test.ts project-mode-extension.test.ts project-actions.test.ts && node tests/smoke.mjs && node tests/review-smoke.mjs && node tests/wake-turn.mjs && node tests/align-turn.mjs && node tests/style-turn.mjs && node tests/note-turn.mjs && node tests/spec-turn.mjs && node tests/spec-worker.mjs
 cd extensions/model-policy && node --test policy.test.ts index.test.ts
 cd extensions/provider-limits && node tests/run.mjs
 cd extensions/model-levels && node tests/run.mjs

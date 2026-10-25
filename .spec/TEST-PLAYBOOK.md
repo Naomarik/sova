@@ -1,7 +1,7 @@
 # Acceptance playbook: the Sova spec system
 
 This file is a complete brief for an orchestrating agent. It tells you how to drive every advertised claim
-of the Sova spec system (the `.sova/spec` documentation, its four tools (`sova-spec`, `sova-spec-draft`, `sova-spec-review`, `sova-spec-assess`), the `spec` minor mode and the
+of the Sova spec system (the `.sova/spec` documentation, its three tools (`sova-spec`, `sova-spec-draft`, `sova-spec-review`), the `spec` minor mode and the
 Sova instruction that points at it) through isolated scenarios, have independent observers score them,
 and hand back a report in which every claim is accounted for. You need nothing from the conversation that
 produced this file.

@@ -402,6 +402,15 @@ held out, labels frozen by hash before any comparison; a second labelling of 14 
   dev, and the best rule reaches 57%. A § the change contradicts through a number written `30_000` is never
   `stale`: the number pattern skips digits joined by `_`.
 
+## Retired: the assessment companion (2026-10-26, branch `feat/spec-size`; not on master yet)
+
+`sova-spec-assess.mjs` recorded input-bound dispositions for a change. It ran automatically only from 10-02
+to 10-04 (switched off on 10-03), and nothing ran it after that. Its 215 packets named no claim, and none
+was ever concluded (al_5 plan, decision q5). So it served no goal. The tool, its transport, its read policy
+and its tests are gone, and the packets are archived outside the repository. The review companion and its
+saved reviews stay. A 6 KB per-claim size warning ships on the same branch. 124 of Sova's claims are over
+the cap, waiting for the per-area migration.
+
 ## Open
 
 - **Claim-file merges without the driver** (audit #2, P8). Two seams the merge replay found, not

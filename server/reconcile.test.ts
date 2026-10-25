@@ -386,6 +386,26 @@ describe("decisions → conflicts → draft → promotion", async () => {
     assert.deepEqual(r.promoted, []);
   });
 
+  test("a drafted decision a Build carried onto its branch is refused until that branch lands (§app.requirements/draft-approval)", async () => {
+    const { writeRecord } = await import("./conversation-draft-store");
+    const { placeOf } = await import("./conversation-draft-tools");
+    const ws = placeOf(project.id).workspace;
+    const at = "2026-10-26T10:00:00.000Z";
+    const item = { id: "r1", kind: "new" as const, title: "srv-01", text: "The portal runs on the office server srv-01.", area: "hosting", areaKey: "hosting", quote: "Run it on srv-01.", agreedAt: at, decisionId: host, status: "approved" as const, buildSessionId: "b1", buildBranch: "sova/build-hosting-abc123" };
+    const rec = { version: 1 as const, sessionId: "carry-test", projectId: project.id, kind: "gathering" as const, draft: "conv-carry-test", baseSha: null, state: "unconfirmed" as const, items: [item], updatedAt: at };
+    writeRecord(ws, rec);
+    const held = await reconcile.promoteDecisions(org.id, project.id, [host]);
+    assert.deepEqual(held.promoted, []);
+    assert.deepEqual(held.refused, [{ id: host, reason: "it is being built on sova/build-hosting-abc123: it becomes official when that branch lands" }]);
+    assert.equal(held.info.decisions.find((d) => d.id === host)!.state, "drafted", "it stays drafted");
+    // The control: the same record without a carried branch holds nothing (host stays drafted for the next tests).
+    const { decisionsHeldForBranch } = await import("./conversation-draft-routes");
+    assert.equal(decisionsHeldForBranch(project.id).get(host), "sova/build-hosting-abc123");
+    writeRecord(ws, { ...rec, items: [{ ...item, buildBranch: undefined }] });
+    assert.equal(decisionsHeldForBranch(project.id).has(host), false);
+    rmSync(join(ws, "projects", project.id, "conversation-drafts"), { recursive: true, force: true });
+  });
+
   test("a contradiction is a conflict routed to the area's owner as a baton session; neither side is drafted", async () => {
     d60 = `${s2.sessionId}:${(await say(f2, tony.id, "No, billing is 60 days.", { area: "Billing", ownerArea: "invoicing", statement: "Invoices are due 60 days after issue.", quote: "No, billing is 60 days." })).markerId}`;
     const info = await reconcile.reconcileProject(org.id, project.id);

@@ -95,6 +95,12 @@ The machine can't tell which label is correct.
      or not an ancestor of `HEAD`, usually a rebase after evidence. The newest evidence entry
      for each ID is active. Superseded entries remain in history but no longer raise this warning;
      an older multi-ID entry remains active for IDs a newer entry has not replaced.
+   - `declaration-over-cap` (warn, in `introduced`, with `bytes`, `cap` and `was`): a declaration
+     the draft takes from at or below the size cap to over it, or makes larger while it is over. The
+     size is its prose bytes in its claim file, never its record's; the cap is 6,144 B or the spec's
+     top-level `declarationCap`. One over the cap that the draft leaves alone or shrinks counts under
+     `preexisting`. Split such a claim by topic into sibling claims, the old § keeping a short summary
+     that `requires` its parts. It never refuses and never changes the exit status.
 2. **Implement the change and verify it.** The tool never does this part.
 3. **`evidence`** records, for each changed ID, what was verified and against which
    implementation bytes:
@@ -126,7 +132,9 @@ The machine can't tell which label is correct.
    has, plus each current H1 that gains a new H2 (`alsoChangesDetail: [{id, change, children?}]`,
    `change` one of `text`, `record`, `text+record`, `deleted`, `file`, `child-added`). That list,
    not memory, is what "Also updates" names. They also print `driftWarnings`,
-   the `check` warnings above (never a refusal), so drift shows even when nobody ran `check`.
+   the `check` warnings above (never a refusal), so drift shows even when nobody ran `check`, and
+   `sizeWarnings`: each selected declaration the promotion would take over the size cap or grow
+   there (never a refusal, and never one of the findings that keep `agree` from promoting).
    Evidence on a commit that is gone or not an ancestor of `HEAD` (a rebase after evidence) is
    refused as `evidence-not-ancestor`: never rebase after evidence; re-record evidence on the
    current commit, or merge master in instead.

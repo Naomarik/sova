@@ -1,5 +1,5 @@
 ---
-watches: ["scripts/run-tests.mjs", "scripts/test-tier-guard.mjs", "scripts/test-changed.mjs", "scripts/test-sentinel.mjs", "scripts/hermetic-agent-dir.mjs", "pi-config/extensions/claude-code/tests/hermetic-env.mjs", "server/test-scratch.ts"]
+watches: ["scripts/run-tests.mjs", "scripts/test-tier-guard.mjs", "scripts/test-changed.mjs", "scripts/test-sentinel.mjs", "scripts/hermetic-agent-dir.mjs", "pi-config/extensions/claude-code/tests/hermetic-env.mjs", "server/test-scratch.ts", "scripts/sova-scenario.mjs", "server/testing/hermetic-server.ts"]
 alsoUpdate: ["agents/testing/overview.md"]
 ---
 # Testing
@@ -64,6 +64,15 @@ environment every runner starts in, and the hermetic dev server.
   (Bun's `os.homedir()` ignores an in-process change), puts the real node and `mise bin-paths` first
   on PATH (shims refuse in a throwaway HOME; tests spawn `node` and `python3`), and sets
   `SOVA_PRICES_FETCH=off`. `bun test` itself runs with TZ=UTC and NODE_ENV=test, unlike `node --test`.
+- **No real Claude.** On both runtimes the runner puts a stand-in `claude` (`scripts/fake-claude.mjs`)
+  first on every test process's PATH: code under test resolves the Claude program from PATH, and the
+  inherited one holds the installed CLI (a paid model). A test that needs another `claude` sets its
+  own PATH. A unit file whose in-process chats load this tree's pi-config extensions links them with
+  `linkPiConfigExtensions` (`server/testing/agent-dir.ts`), never a bare symlink: its
+  `topic-outline.json` runs the outline's check at once after each turn and never calls a summarizer
+  model on its own. A bare link left topic-outline's 3 s debounce, so a file still running 3 s after
+  a turn spawned `claude` (a tier-guard failure only on slow runs). `server/outline-no-claude.test.ts`
+  proves both.
 
 ### The hermetic test environment
 
@@ -80,6 +89,23 @@ environment every runner starts in, and the hermetic dev server.
   (§app.server-runtime/test-repo-fence). A test that needs a plain folder makes its temp root with
   `scratchRoot` (`server/test-scratch.ts`); one that needs a repository runs `git init` under it.
 
+### Tour recording tests (real Chrome)
+
+- `server/tours/*.integration.test.ts` drive a real Chrome or Chromium through `playwright-core`: one
+  found on PATH (`chromium`, `google-chrome-stable`, …) or named by `SOVA_TOUR_BROWSER`; nothing is
+  ever downloaded. They don't skip when none is installed: they fail.
+- Chrome puts named Unix sockets under `TMPDIR`, and `assertTourBrowserTempPath`
+  (`server/tours/browser.ts`) refuses a base whose socket path would pass 100 bytes. Run them with a
+  short temp dir outside any repository, e.g. `TMPDIR=/dev/shm/q` (create it first); a sandboxed
+  session's long `TMPDIR` fails them.
+- The runner kills any one file after 300 s (`TEST_FILE_LIMIT_MS`), the per-file cap, under the
+  integration tier's load too. Each browser launch costs seconds: split a growing Chrome file by
+  scenario (as `runner-signin`, `-landed` and `-inplace` are) rather than raising its test timeouts.
+- Shared stand-in sites and probes are `*.integration.fixture.ts` beside the tests (not test files, so
+  no glob matches them). Test credentials are short fakes (`fake-pw-01`): the merge round's leak scan
+  flags any `password`/`token`/`secret`/`apiKey` assigned a literal of 16+ characters with no space. A test that needs
+  a long value builds it at runtime (`"x".repeat(17)`, `"fake-copy-token".padEnd(48, "x")`).
+
 ### The hermetic dev server (`pnpm run dev:hermetic`)
 
 - Once `.agent` holds copies of real sessions (or `--copied-sessions` announces them), the script
@@ -90,6 +116,29 @@ environment every runner starts in, and the hermetic dev server.
 - Claude logins in a hermetic run (fake `claude`, `SOVA_CLAUDE_ACCOUNTS_DEV`, the pool e2e):
   [agents/extensions/claude-code/overview.md](../extensions/claude-code/overview.md).
 
+### Ratchets and scenarios (the commands work)
+
+Each is data a change may regenerate only on purpose, never to hide a regression; review the diff.
+
+- **Agent loadout snapshot** (`server/agent-loadouts.test.ts`, unit): every agent tool family's
+  model-facing words, frozen in `server/agent-loadouts.snapshot.json`. A deliberate wording change
+  re-takes it in the same commit: `SOVA_LOADOUT_UPDATE=1 pnpm test -- server/agent-loadouts.test.ts`.
+- **Commands inventory** (`server/commands-inventory.test.ts`, unit): every route is a catalogue
+  entry, a declared not-a-command class or a pending row (which only shrinks), each mesh need
+  pinned. Regenerate with
+  `SOVA_INVENTORY_OUT=$PWD/server/commands-inventory/baseline.json pnpm test -- server/commands-inventory.test.ts`,
+  then `node scripts/commands-inventory.mjs` (rewrites `docs/commands.md`; `--check` changes nothing
+  and exits 1 when stale). Never hand-edit either file.
+- **Commands fuzz** (`server/commands-fuzz.test.ts`, unit, runner only): bad input against every
+  catalogue entry. A new entry adds only its `FIXTURES` or `VALIDATE_ONLY` row (plus an `anchors()`
+  line when needed); no other line changes. `server/commands-fuzz/known-500.json` only shrinks.
+  Details: [agents/server/commands/overview.md](../server/commands/overview.md), "Adding an entry".
+- **Scenarios** (`scenarios/*.json`, run by `server/scenarios.integration.test.ts`, integration):
+  each boots its own throwaway server (`server/testing/hermetic-server.ts`: free port, stand-in
+  model, sentinel HOME) and drives it only through `scripts/sova.mjs`. The step format is in
+  `scripts/sova-scenario.mjs`'s header; `pnpm run scenario [<file>…]` runs them by hand. A new
+  scenario file is picked up with no other change.
+
 ## When you change X, also update Y
 
 | You change | Also |
@@ -97,6 +146,9 @@ environment every runner starts in, and the hermetic dev server.
 | add a test file in a new folder | a glob in `scripts/run-tests.mjs` GLOBS (the boundary test fails otherwise) |
 | a unit test needs a process, port or fetch | split those cases into the `.integration.test.ts` sibling |
 | add a test runner | import `hermetic-env.mjs` first |
+| a unit file's chats need pi-config's extensions | `linkPiConfigExtensions(agentDir)` from `server/testing/agent-dir.ts` |
+| a tool's wording an agent sees | re-take the loadout snapshot (`SOVA_LOADOUT_UPDATE=1`) in the same commit |
+| a route, or a catalogue entry | regenerate the inventory baseline and `docs/commands.md`; add the entry's fuzz case |
 | the runner, tier guard or preload | the runner's header comment, this guide, and §app.server-runtime/test-tiers or /test-repo-fence through a spec draft |
 
 While working: `pnpm test` constantly, `pnpm test:int --changed` before asking to land. Landing (the

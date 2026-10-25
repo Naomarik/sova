@@ -107,6 +107,8 @@ Defaults:
   only, and the Mesh page shows the error.
 - An older build ignores the file, so moving a host back to one drops its grants.
 
+For guided tours, reading an owning chat's checked edition manifest or listed pictures and reading or saving its reader position use the sessions grant, as does listing a hand-off conversation's attached tours. That list shows only what that grant can already read in the transcript. Share previews, link creation and hand-off binding previews, binding and detachment require admin, like the existing share-link and organization-sharing writes: sessions access alone never authorizes exposing a tour to another audience. The share capability used for peer gateway transport is not link-minting or binding authority. Recording requests and recording-runtime controls (Revoke Site and Remove Account included) remain behind full authority, as do unknown tour operations or routes; a broad tour prefix never silently gives sessions access to those stronger actions. The host's own authenticated browser remains the operator, not a peer (§app.access/gate).
+
 Every route and socket on the peer listener belongs to exactly one capability, and a route the
 listener doesn't classify needs `full`. A request the grant doesn't cover is refused with 403 and
 `X-Sova-Mesh: denied` ("refused" keeps meaning "not a peer"). Lowering a grant ends that peer's open
@@ -126,6 +128,27 @@ any faster than its normal cadence. A peer that withholds its sessions keeps no 
 list, which says "Hidden by {host}" when filtered to it; the host menu says "hidden" beside it, and
 New Session's Host choice disables it. The Mesh page shows, for each peer, what this host can
 see there, as learned from that peer's answers, never from anything the peer claims.
+
+## §mesh.peers/remote-commands — Running a command on a peer
+
+A script on this host runs a catalogue command on a peer with `sova run <id> --host
+<peer>` (or `sova --host <peer> run <id>`). The run goes through this host's `/peer/<peer>/` proxy,
+as a browser's request to that peer does, to the peer listener's `POST /api/commands/<id>`, whose
+body is the command's params as one JSON object. The peer looks the id up in its own catalogue and
+makes exactly the request that entry's own route takes, as that peer's caller, so every check the
+route has applies as it would to that request sent directly.
+
+What it takes is what the entry's own route takes, decided by the peer's grant to this host
+(§mesh.peers/grants): a peer granted `sessions` can rename one of its sessions this way but not run
+one of its project verbs, which needs admin. An id the peer doesn't know, an extension's own command
+(`ext.*`) included, needs `full` and then answers that there is no such command. A request whose
+params would take it off the entry's own route is refused. A refusal by the peer's grant is exit 2
+(refused), as it is for the entry's route. Neither the main listener nor the share listener has the
+route: it is reached only on the peer listener and a dial-out pairing's connection. Without
+`--host`, `sova run` is unchanged.
+
+In a remote run, `--session` is looked up on the peer, and a path param must be absolute (a path
+on this host means nothing there); list, describe and watch take no `--host`.
 
 ## §mesh.peers/address-identity — Hosts without Tailscale LocalAPI
 

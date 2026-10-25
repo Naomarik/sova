@@ -389,11 +389,11 @@ comments): `yes`, `no`, or `partial` with what is missing.
 
 | Component | Variants | Sizes | Key rule | Ported |
 |---|---|---|---|---|
-| Button | primary, secondary, destructive, ghost, icon | sm 36 · md 44 · lg 52 | One primary per view. Destructive outlined, never filled. | partial — no `.button-lg` |
+| Button | primary, secondary, destructive, ghost, icon, split | sm 36 · md 44 · lg 52 | One primary per view. Destructive outlined, never filled. A split joins an action and its ▾ menu. | partial — no `.button-lg` |
 | Chip | success, warn, error, info, accent, solid, count | one | Status is round. A dot *and* the word — never hue alone. | yes |
 | Input | text, textarea, mono, invalid | md 44 | Label always present; placeholder is never the label. A field is a column unless you say `.field-row`. | partial — no `.field-row`; no `.input-invalid` rule (invalid is styled through `.input[aria-invalid="true"]`, not the class) |
 | Select | select, combobox | md 44 | Options are 44px targets too. | partial — no combobox (`.combobox-list`, `.combobox-option`) |
-| Toggle | checkbox, radio, switch | 18px box / 40px switch | The label row is the target, not the 18px box. | partial — no `.toggle-radio` |
+| Toggle | checkbox, radio, switch | 18px box / 40px switch | The label row is the target, not the 18px box. | partial — no `.toggle-radio`; Sova's switch adds a mixed state (an indeterminate input: knob halfway, a dash in it) and `.toggle-held` (set but not in force: drawn disabled, still pressable), and draws its track's edge as an inset ring so the knob's 4px inset is exact |
 | Card | resting, raised, interactive | — | Interactive cards need a focus ring, not just a hover. | partial — no `.card-raised` |
 | App bar | — | 56px | Brand, context, and status. Never actions that belong to content. | no |
 | Rail & bottom bar | rail, bottombar | 44px items | One or the other, never both. Bottom under 768px. | no |
@@ -411,7 +411,7 @@ comments): `yes`, `no`, or `partial` with what is missing.
 | Modal | — | ≤520px | Becomes a sheet at folded width. | yes |
 | Sheet | — | ≤85vh | Arrives inside the thumb arc. | partial — no `.sheet`; only `.sheet-grip`, as a folded-width state of `.modal` |
 | Popover | menu: one-line, detail (label + description), mono, checked, disabled, busy, section label, separator | ≥200px · 44px rows | **Every menu, dropdown, ⋯ overflow and flyout is a `.popover` of `.popover-item` rows** — see Menus & dropdowns. Its trigger is always visible, never revealed on hover. | yes |
-| Tooltip | on a term, on a figure, start · end aligned | ≤32ch | One sentence, on hover and keyboard focus. **Never the only place a fact lives.** | no |
+| Tooltip | on a term, on a figure, start · end aligned | ≤32ch | One sentence, on hover and keyboard focus. **Never the only place a fact lives.** | yes |
 | Run timeline | done, running, waiting, failed | — | Every step says what happened; a failure says what it did *not* touch. | no |
 | Diff viewer | unified, split ≥768 | — | Added/removed carry a gutter sign as well as a color. Split measures its `.diff`, not the window. | no |
 | Approval bar | — | — | Sticky at folded width, inline from unfolded — measured on its `.pane`. Destructive apart from primary. | no |
@@ -454,7 +454,7 @@ something this table lacks, add a variant here and in `fold-ai-dev.css` first.
 
 | Component | Selectors |
 |---|---|
-| Button | `.button` `.button-primary` `.button-destructive` `.button-ghost` `.button-sm` `.button-lg` `.button-icon` `.button-row` · demo only: `.is-hover` `.is-focus` `.is-active` `.is-disabled` |
+| Button | `.button` `.button-primary` `.button-destructive` `.button-ghost` `.button-sm` `.button-lg` `.button-icon` `.button-split` `.button-row` · demo only: `.is-hover` `.is-focus` `.is-active` `.is-disabled` |
 | Chip | `.chip` `.chip-dot` `.chip-success` `.chip-warn` `.chip-error` `.chip-info` `.chip-accent` `.chip-solid` `.chip-count` |
 | Input | `.field` `.field-row` `.field-label` `.field-hint` `.field-error` `.input` `.textarea` `.input-mono` `.input-invalid` · demo only: `.is-hover` `.is-focus` `.is-disabled` |
 | Select | `.select` `.select-wrap` `.select-caret` `.combobox-list` `.combobox-option` |

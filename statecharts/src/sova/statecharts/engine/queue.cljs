@@ -56,12 +56,14 @@
     (swap! session-queues
       (fn [qs]
         (reduce-kv
+          ;; a queue nothing was taken from keeps its identity: the engine saves the sessions whose
+          ;; queue changed, so a cancel must not touch the others
           (fn [acc target q]
-            (assoc acc target
-              (filterv (fn [e] (not (and (= send-id (::sc/send-id e))
-                                         (= session-id (or (::sc/source-session-id e) target)))))
-                q)))
-          {} qs)))
+            (let [q' (filterv (fn [e] (not (and (= send-id (::sc/send-id e))
+                                                (= session-id (or (::sc/source-session-id e) target)))))
+                       q)]
+              (if (= (count q') (count q)) acc (assoc acc target q'))))
+          qs qs)))
     nil)
   (receive-events! [this env handler]
     (sp/receive-events! this env handler {}))

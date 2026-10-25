@@ -135,8 +135,15 @@ the org page's Projects tab. The owner page and the project overseer never do.
   host), kind · who started it, cost.
 - **Notes**, one line each, only when true: unpriced tokens, sessions not on this host,
   what isn't counted, and the date of the prices. Copy: §design.copy-deck/project-costs.
-- Read on open, with Refresh Project, and every 60 seconds while the tab shows (paused while
-  hidden). `GET /api/projects/:pid/costs`; the cost is never part of `GET …/overseer`.
+- Read on open, with Refresh Project, and every 60 seconds while the browser tab shows (paused
+  while hidden), on every project tab: the summary's cost chip reads it too.
+  `GET /api/projects/:pid/costs`; the cost is never part of `GET …/overseer`.
+- **The last count at once.** The server keeps each project's last count in memory. A read answers
+  it at once, and when it is more than 15 seconds old it also starts one recount in the background
+  (never two at once for a project); the page reads again a few seconds later to pick up the
+  recount. Only the first read after the server starts waits for a count. Refresh Project asks for
+  a fresh count and waits for it. The card says when its figures were counted, "as of {time}"
+  (`asOf`) under the total, so a count a few minutes old reads as one.
 
 ## §app.project-costs/org-rollup — Totals on the org page
 

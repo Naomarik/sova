@@ -20,7 +20,7 @@ routes read the engine). The event vocabulary is `EVENTS.md`.
 
 | statechart | file | storage | session id | what |
 |---|---|---|---|---|
-| org | `org.cljc` | portable | `org/<org>` | identity, owner ‹none·set·cleared›, holder record (r1), births of people and of placements (`project/place`) |
+| org | `org.cljc` | portable | `org/<org>` | identity, owner ‹none·set·cleared›, the owner's page link sent to them (`owner/send-link`), holder record (r1), births of people and of placements (`project/place`) |
 | residence | `residence.cljc` | host-local | `residence/<org>` | tenure ‹checking·held-elsewhere·held-here·detached› × commits ‹clean·dirty·committing› |
 | person | `person.cljc` | portable | `person/<org>/<pid>` | ‹born·proposed·active·left›; field authority; one transition per status pair per event; left cascade |
 | project | `proj.cljc` | portable | `project/<p>` | project layer, no org: shelf, overseer; gap-less builds; builds' started list; `last-merged-at` |
@@ -35,8 +35,9 @@ routes read the engine). The event vocabulary is `EVENTS.md`.
 | runtime | `runtime.cljc` | host-local | `runtime/<p>` | project layer, no org: the software registry; standing ‹unregistered·conforming·registered·stale·failed› (`rules/runtime standing-of`) × playbook ‹idle·running·proposed›; the automatic conform, drift |
 
 Shared: `base.cljc` (event, time, ids, reasons and ledger sends, `relink`, `send-if`/`flush-transition`),
-`reasons.cljc` (typed reasons and today's sentences), `rules/*.cljc` (pure rules: `refusal`, `levels`
-(L0–L3, attended, forced L0, caps, the GO card), `person`, `baton`, `item`). Every rule is a pure
+`reasons.cljc` (typed reasons and today's sentences), `rules/*.cljc` (pure rules: `refusal`, `powers`
+(al_3: the power check, the brakes, the carry-over, the drives' gate), `levels` (caps, the GO card, the host's
+`invalid`), `person`, `baton`, `item`). Every rule is a pure
 function over (data, event) returning nil or `{sentence status code? tail?}` with today's sentence.
 
 **The seam (General Projects).** Project layer: `project`, `watch`, `build`, `runtime`: ids with no
@@ -51,18 +52,21 @@ placement.
 
 ## How the rulings land
 
-- **q2 / r3 drive**: `item` region `drive` (eventless, each once per key, at the level in force read
-  from the watched `watch` session): L2 `decision/promote` of in-area drafted decisions; L3
+- **q2 / r3 drive**: `item` region `drive` (eventless, each once per key, while its power is On in the
+  overseer column with no brake, read from the watched `watch` session, `rules/powers drive-on?`):
+  `promote` `decision/promote` of in-area drafted decisions; `codingStart`
   `build/start` with `rules/item build-prompt` once every live decision is promoted, none built, no
-  build; L1 a planned gathering (`gather/plan`, filed at L0) once, never after an attempt that
-  answered nothing; L1 `baton/close` of an own unwritten gathering once a newer one to the same
-  person is open. The L1 `reconcile/request` when a gathering ended with pending decisions is the
+  build; `gather` a planned gathering (`gather/plan`, always allowed to file) once, never after an attempt that
+  answered nothing; `gather` `baton/close` of an own unwritten gathering once a newer one to the same
+  person is open. A drive whose facts hold but whose power is Off notes once why (`drive-off`, a feed
+  transition, `:drive-off {power {:note :at}}`). The always-allowed `reconcile/request` when a gathering ended with pending decisions is the
   baton's own drive (`baton` `reconcile-when-ended`, F8a), not the item's. All go through `dsl/drive`
   (by statechart) and so through every guard and the hold.
-- **q7**: `project` `build/start` refuses an unattended overseer at every level (`attended-build-check`);
+- **q7**: `project` `build/start` refuses an unattended overseer whatever its switches, and the Project
+  Assistant without an owner request's `basis` (`attended-build-check`);
   `item` `build/start` needs promoted, not-built decisions (`decisions-check`; narrowing only).
-- **q9 / r5 corrections**: `hold/cancel` (L0, every statechart), item `correct/reopen`, `correct/skip-stall`,
-  `correct/relink` (L1), reconciler `correct/clear-failed` (L1), build `correct/merged` (L2); each a
+- **q9 / r5 corrections**: `hold/cancel` (always, every statechart), item `correct/reopen`, `correct/skip-stall`,
+  `correct/relink` (`bookkeeping`), reconciler `correct/clear-failed` (`bookkeeping`), build `correct/merged` (`markMerged`); each a
   `dsl/correction` (reason required unless the operator's). Free set-state is the engine's.
 - **q10 / r4 / r6 hold**: acts with `:hold true` in the registry: person approve/decline, project
   `baton/start` · `build/start` · `session/prompt` · `owner-update/post`, baton `close`, reconciler `decision/promote`, item
@@ -105,24 +109,26 @@ placement.
   the held payload), in hours only (an hours wait comes first), cancellable like any hold; the host releases it
   when the channel is back (`sova/rewindow` with `until` nil); at its bound it goes ahead and the channel refuses
   it. Tests: `refit_test` `a-released-act-waits-out-its-channels-outage-for-at-most-a-day`.
-- **r8 / q12 review**: `:confirm-kind` on every held act (F12; `base/start-kind`: "offer" for ≥2
-  targets); `b/hold-review` on each statechart with held acts: `hold/approve` (approve early, L0, reason) and,
-  on `hold/waiting`, a soon `hold/review` reason to the project's watch, naming the hold as
-  `<session-id>:<hold-id>` (F19: hold ids are per session; `params.hold`). Tests: `registry_test`,
-  `holds_test` F12 + r8.
+- **al_3 powers** (replacing r8 / q12 review): every act a tool or a drive makes declares one `:power`
+  (a power id, `"always"` or `"operator"`); no act has a confirm kind and nothing approves a hold: a held act
+  goes ahead at its end unless cancelled (a hold saved while it waited for a review goes ahead at the next
+  resume). The Project Assistant's acts (`by` assistant) use their own column and are held like the
+  overseer's. `project` `services/reset` (reset, teardown: `copiesReset`) is split from `services/run`, and
+  `deploy/run` (power `deploy`, held, effect `deploy-run`) runs the project's own recipe. `watch` v2 keeps
+  both columns in its settings (v1's level migrates by the carry-over). Tests: `registry_test`,
+  `powers_test`, `holds_test`.
 - **r8a feed classes**: every transition declares `:sova/feed` (rule in EVENTS.md); `registry_test`
   (none unclassified), `feed_test` (a pin per class per statechart, and the golden table `feed_golden` of
   every authored transition).
 - **r10**: no act sends text into a gathering (F-128): `baton/send` deleted, no act of kind "message".
-- **Root prompt** (coordinator-25): project `session/prompt` (L3 `sova_send`, a prompt, held, kind
-  "prompt") for a coding session under the root that is not a build.
+- **Root prompt** (coordinator-25): project `session/prompt` (`codingPrompt` `sova_send`, a prompt, held) for a coding session under the root that is not a build.
 - **C-rows**: C1 C2 C3 C12 in `watch`; C4 `reconciler.debouncing`; C5 item stall clocks; C6
   `person/revert`; C7 `gap` or `"none"`; C8 C14 baton lease timer; C10 person status in the edit's
   patch; C11 item `…-starting` flags; C13 C18 (deleted/unneeded); C16 decision; C17 conflict `unrouted`;
   C20 q7 above.
 
 Tests: `test/sova/statecharts/refit/` — `host.cljc` (a deterministic JVM/Node host: the real
-processor, a virtual clock, the engine's level and `:pre` checks; hosts are values) and one test
+processor, a virtual clock, the engine's power and `:pre` checks; hosts are values) and one test
 namespace per statechart group. Run on the JVM:
 `cd statecharts && clojure -Srepro -M -e "(require 'clojure.test 'sova.statecharts.refit.person-test 'sova.statecharts.refit.baton-test 'sova.statecharts.refit.item-test 'sova.statecharts.refit.org-project-test 'sova.statecharts.refit.watch-decisions-build-test 'sova.statecharts.refit.hours-test 'sova.statecharts.refit.decision-results-test 'sova.statecharts.refit.server4-findings-test 'sova.statecharts.refit.started-test 'sova.statecharts.refit.pins-test 'sova.statecharts.refit.reach-test 'sova.statecharts.refit.company-hours-test 'sova.statecharts.refit.asks-rules-test) (clojure.test/run-all-tests #\".*refit.*\")"`.
 `pins_test` holds the pins for statechart mutants that survived verifier-2's run2 (each assertion names its mutant id).
@@ -158,7 +164,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-009 | Attach re-derives host state | host | attach hooks (titles, web marks, stat); `wroteAt`/`conflict` are baton data from birth (C18) |
 | F-010 | Working dirs come from this host | host | host rule |
 | F-011 | Links must be re-issued after a move | host | host link stores are never portable |
-| F-012 | Commits: the hourly committer | statechart | `residence.commits`: `dirty` arms `commit/look` every 1 min; `commit-every` since `head-at` → `committing` |
+| F-012 | Commits: the hourly committer | statechart | `residence.commits`: `clean`/`dirty` arm `commit/look` at `head-at` + `commit-every` (`clean`: from the later of `head-at` and `tried-at`, an attempt that committed nothing; ≥ 1 min away, `look-at`; a commit answered there re-arms it), so no look finds nothing due and a clean repo with an old HEAD is tried once an hour; due → `committing` (`residence_test`) |
 | F-013 | Commit Now | statechart | `residence` `commit/now` (any state) → `committing`; answer sentences from the effect result |
 | F-014 | Push and remote | statechart | `residence` `push-pending` retried at a due look from `clean`; remote route plain data |
 | F-015 | Graceful-shutdown commit | host | shutdown sequence; the commit result lands as `effect/done commit` |
@@ -177,7 +183,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-032 | Field authority by writer | statechart | `rules/person authority-refusal` + `field-authority`; approve/decline: `person` `decider-check` |
 | F-033 | Profile history and revert | statechart | `person/revert` (row from roster-history; creation refused; C6 stale row refused 409); `roster-history` effect lines |
 | F-034 | Referral (`propose_roster_edit`) | statechart | `baton` `baton/propose` (`rules/person referral-refusal`, apply-change as referral) → spawn `person` proposed; `baton-entry proposal`; reason `baton/proposal` |
-| F-035 | Approve or decline a proposed person | statechart | `person` `person/approve`/`person/decline` (op; overseer L2 `sova_roster`, held unattended r4/r6); `not-waiting` sentences |
+| F-035 | Approve or decline a proposed person | statechart | `person` `person/approve`/`person/decline` (op; overseer `roster` `sova_roster`, held unattended r4/r6); `not-waiting` sentences |
 | F-036 | Someone leaves (status →left by edit, revert or decline) | statechart | `person` entry of `left`: `revoke-person-links`; watchers: `org` (owner cleared), `placement` (stakeholder cleared), `baton` (holder → operator "(left the organization)", pool withdrawn "({name} left…; offer withdrawn)", mid-reply stop first) |
 | F-037 | Privacy of profiles | host | projections/prompts; `:redact {:contact}` in person's registry entry |
 | F-038 | Person page `#/orgs/<id>/people/<pid>` | proj | person page from person/baton/decision/conflict data + host links |
@@ -216,7 +222,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-082 | Field ownership in the project spec | host | promotion effect's spec writer |
 | F-083 | Owner area | statechart | `decision/owner-area` (`rules/baton owner-area-refusal`, superseded 409, history) → `decision/owner-area-changed` → reconciler `route-conflict-of` → `conflict/reroute {keepIfSame}` |
 | F-084 | Reconciler switch | statechart | `reconciler.off`: only `reconcile/request` refused (`reconcile-off`); automatic ones record the error |
-| F-085 | When the reconciler runs | statechart | `reconciler` `reconcile/request` (op, `sova_reconcile` L1, GO, sova 2 s `debouncing` durable C4; the L1 drive when a gathering ends with pending decisions is the baton's `reconcile-when-ended`, not the item's) |
+| F-085 | When the reconciler runs | statechart | `reconciler` `reconcile/request` (op, `sova_reconcile` always, GO, sova 2 s `debouncing` durable C4; the drive when a gathering ends with pending decisions is the baton's `reconcile-when-ended`, not the item's) |
 | F-086 | What the reconciler sends | host | decide seam in `:sova/reconcile` |
 | F-087 | Area filing | host | inside `:sova/reconcile` |
 | F-088 | Contradiction check | host | inside `:sova/reconcile` |
@@ -240,21 +246,21 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-111 | Clear and History | statechart | `overseer/clear` (≤20 history) + `ledger/reset-message` |
 | F-112 | Two writers only | host | routes; archived from `project.shelf` |
 | F-113 | Loadout and confinement | host | loadout, confinement |
-| F-114 | Prompt | host | prompt (level in force from `rules/levels`) |
+| F-114 | Prompt | host | prompt (the powers in force, `rules/powers`) |
 | F-115 | Extra instructions | data | settings |
 | F-116 | Models and thinking | data | settings |
 | F-117 | Chat page head and status strip | proj | head and strip from watch exports |
-| F-118 | Autonomy levels | statechart | `rules/levels` `effective-autonomy`, `level-check` (engine option), `tool-needs` |
+| F-118 | Powers (were autonomy levels) | statechart | `rules/powers` `power-check` (engine option `:level-check`), `brake`, `carry-over`, `drive-on?`; acts' `:power` |
 | F-119 | Attended vs unattended runs | statechart | envelope `attended`; `watch.turn` ‹idle·look-turn·run-turn·operator-turn› (W20) |
 | F-120 | Tool wrapper and audit | statechart | engine explain/trial with the registry's acts; refused steps = the log's refused rows |
 | F-121 | Read tools | proj | reads + `sova_pipeline` from item exports |
-| F-122 | L0 tools: note, confirm, idea | statechart | `placement` `gap/file` (L0) spawns `item`; note/confirm/idea plain data |
-| F-123 | L1 `sova_start_gathering` and `sova_offer` | statechart | `item` `gather/start` (L1, cap, held) / `gather/plan` (L0); `placement` `baton/start` with `gap: "none"` (C7) |
-| F-124 | L1 `sova_close_gathering {session, reason}` | statechart | `baton/close` overseer path (`close-refusal` order), held unattended (r6) |
-| F-125 | L1 `sova_reconcile` | statechart | `reconciler` `reconcile/request {by overseer}` |
+| F-122 | Always: note, confirm, idea | statechart | `placement` `gap/file` (always) spawns `item`; note/confirm/idea plain data |
+| F-123 | `gather`: `sova_start_gathering` and `sova_offer` | statechart | `item` `gather/start` (`gather`, cap, held) / `gather/plan` (always); `placement` `baton/start` with `gap: "none"` (C7) |
+| F-124 | `gather`: `sova_close_gathering {session, reason}` | statechart | `baton/close` overseer path (`close-refusal` order), held unattended (r6) |
+| F-125 | always: `sova_reconcile` | statechart | `reconciler` `reconcile/request {by overseer}` |
 | F-126 | Send to person… (an operator gesture on an item) | statechart | `placement` `baton/start` by the operator with `opItem` |
-| F-127 | L2 `sova_promote {ids}` | statechart | `reconciler` `decision/promote` by overseer (L2, held) |
-| F-128 | L3 `sova_create_session` and `sova_send` | statechart | `item` `build/start` (L3, decisions ⊆ promoted not built, held); `project` `build/start` gap none (q7 attended only); `build/prompt` (L3 `sova_send`) to a build; `session/prompt` (L3 `sova_send`, held) to a root coding session that is not a build; a gathering session is refused by the tool (r10: no statechart act) |
+| F-127 | `promote`: `sova_promote {ids}` | statechart | `reconciler` `decision/promote` by overseer (`promote`, held) |
+| F-128 | `codingStart` `sova_create_session` and `codingPrompt` `sova_send` | statechart | `item` `build/start` (`codingStart`, decisions ⊆ promoted not built, held); `project` `build/start` gap none (q7 attended only); `build/prompt` (`codingPrompt` `sova_send`) to a build; `session/prompt` (`codingPrompt` `sova_send`, held) to a root coding session that is not a build; a gathering session is refused by the tool (r10: no statechart act) |
 | F-129 | Limits: allowances, at-once, looks | statechart | `rules/levels` `cap-check` (at once, then allowance), watch ledgers (`ledger/take`), settings data |
 | F-130 | Held items and release | statechart | `watch` `limit/refused` → `held` (≤10), releases at midnight / raised limit / message at once (C12) |
 | F-131 | Watch-loop reasons (events → English) | statechart | typed `reason/noted` from statecharts; `watch` `own-act?` (C2; R3: news of the statechart's own act, `by` statechart from `b/tell-watch`, is never a reason: no look, no look used, it rides the next look's feed), key dedupe (C3), ≤50 pending, 20 in the text; R4: item reopened / answered-nothing are feed entries, not reasons (item/stalled stays, C5); tests `watch_decisions_build_test` R3, `item_test` R4 |
@@ -269,7 +275,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-140 | Coding mode | statechart | `build.setup.setting-mode` (`mode-not-set`); ceiling = host `invalid` |
 | F-141 | Coding worktrees | statechart | `build.setup.making-worktree` (branch/base/target, `in-root`, or `later`; not-started sentence); `tree-root` `worktree/adopted` (a `later` build adopts its session's first own worktree, once) |
 | F-142 | Merge Branch | statechart | `build/merge` (`root-check`, `busy-check`) → effect `merge`; reasons `build/merged` / `build/merge-refused` (not for root-checkout) |
-| F-143 | Merged is read from git | statechart | `build.branch` from `git/probe`; recorded `merged` when git can't say; `correct/merged` (L2) |
+| F-143 | Merged is read from git | statechart | `build.branch` from `git/probe`; recorded `merged` when git can't say; `correct/merged` (`markMerged`) |
 | F-144 | Remove Worktree | statechart | `build/remove-worktree` → effect; `tree-removed` |
 | F-145 | The project page | proj | project page from statechart data |
 | F-146 | Coding rows in `started.json` | statechart (changed on purpose, r11) | project `:started` (exported): one ordered list of every baton and build it or its items started (`started/noted` from the item), cap 200 (`rules/started`); past it the oldest SETTLED one gets `session/retire` (baton/build final `retired`, guarded: never while live); tests `started_test` |
@@ -277,14 +283,14 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-147 | Org statecharts (existing, shadow-only) | statechart | the refit engine + these statecharts replace the spike |
 | F-150 | Org owner | statechart | `org.owner` ‹owner-none·owner-set·owner-cleared› |
 | F-151 | Owner leaves | statechart | watched owner `:left` → `owner-cleared`, `revoke-owner-links` |
-| F-152 | Owner link | host | owner link store; mint needs `org` owner |
+| F-152 | Owner link | host | owner link store; mint needs `org` owner; the global Overseer's send: `org` `owner/send-link` (card: the owner) → effect `owner-link-send` |
 | F-153 | Owner link: off and dead checks | host | validity check reads org owner + person status |
 | F-154 | Owner page content | proj | owner page from statechart data |
 | F-155 | Which conversations the owner reads | statechart | baton `hidden-from-owner`; project `owner-hidden` |
 | F-156 | What the page never shows | host | owner page projection |
 | F-157 | Page mechanics | host | page mechanics |
 | F-158 | Operator controls | proj | operator controls |
-| F-159 | `sova_owner_update({text})` (PO, L1) | statechart | `placement` `owner-update/post` (L1, `update-check` order, `milestone` ‹no-milestone·since-post›, `cooldown` ‹ready·cooling› 24 h timer), held unattended |
+| F-159 | `sova_owner_update({text})` (PO, `ownerUpdates`) | statechart | `placement` `owner-update/post` (`ownerUpdates`, `update-check` order, `milestone` ‹no-milestone·since-post›, `cooldown` ‹ready·cooling› 24 h timer), held unattended |
 | F-160 | Take Down an update | data | withdraw: updates.jsonl route |
 | F-170 | Cost scope | data | costs |
 | F-171 | Pricing and the price table | data | costs |

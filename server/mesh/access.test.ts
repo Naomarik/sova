@@ -210,9 +210,45 @@ describe("the route classifier", () => {
     assert.equal(need("GET", "/api/settings"), "sessions");
     assert.equal(need("PUT", "/api/settings"), "admin");
     assert.equal(need("POST", "/api/orgs/o/projects"), "admin");
+    // Conversations' draft specs are the operator's private review: never below full.
+    assert.equal(need("GET", "/api/draft-specs"), "full");
+    assert.equal(need("POST", "/api/projects/p/draft-specs/s/approve"), "full");
+    assert.equal(need("POST", "/api/projects/p/draft-specs/s/build"), "full");
+    assert.equal(need("GET", "/api/projects/p"), "sessions");
     assert.equal(need("PUT", "/api/claude/pool/keeper"), "admin");
     assert.equal(need("GET", "/api/auth/token"), "full");
     assert.deepEqual(classifyRequest("GET", "/api/brand-new-route"), { need: "full", rule: "default" });
+  });
+
+  test("tour reader/position, outside-sharing and runtime routes have distinct exact capabilities", () => {
+    const base = "/api/tours/chat/tour/editions/edition";
+    const cases = [
+      ["GET", base, "sessions"], ["HEAD", `${base}/assets/desktop.png`, "sessions"], ["GET", `${base}/progress`, "sessions"], ["PUT", `${base}/progress`, "sessions"],
+      ...["share-preview", "shares", "binding-preview", "bindings"].map(path => ["POST", `${base}/${path}`, "admin"]),
+      ["GET", `${base}/bindings`, "admin"], ["GET", `${base}/binding-destinations`, "admin"], ["DELETE", `${base}/shares/link`, "admin"], ["DELETE", `${base}/bindings/handle`, "admin"],
+      ["GET", "/api/tours/chat/jobs/job", "full"], ["POST", "/api/tours/chat/jobs/job/cancel", "full"], ["POST", "/api/tours/chat/jobs/job/approve", "full"], ["POST", "/api/tours/chat/jobs/job/account", "full"], ["POST", "/api/tours/chat/tour/re-record", "full"], ["DELETE", "/api/tours/chat/tour/approvals", "full"], ["DELETE", "/api/tours/chat/tour/accounts", "full"],
+      ["GET", "/api/tours/chat/tour", "full"], ["GET", `${base}/destinations`, "full"], ["POST", `${base}/progress`, "full"], ["PUT", `${base}/shares`, "full"], ["GET", `${base}/something-new`, "full"], ["GET", "/api/tours", "full"],
+    ];
+    for (const [method, path, expected] of cases) { const actual = classifyRequest(method!, path!); assert.equal(actual.need, expected, `${method} ${path}`); assert.notEqual(actual.rule, "default", "the known family is classified deliberately"); }
+    assert.equal(need("POST", "/API//%74ours/chat/tour/editions/edition/shares"), "admin");
+    assert.equal(need("PUT", "/api/tours/chat/tour/editions/edition/progress"), "sessions");
+    assert.equal(need("GET", "/api/tours/chat/tour/editions/edition/assets%2fprivate"), "full");
+  });
+
+  test("session and gateway-share grants cannot expose a tour or operate its runtime, and corrupt grants deny reads too", () => {
+    const base = "/api/tours/chat/tour/editions/edition";
+    put({ version: 1, peers: { reader: { preset: "sessions" }, gateway: { preset: "none", caps: { share: true } }, administrator: { preset: "none", caps: { admin: true } }, operator: { preset: "full" } } });
+    const check = (node: string, method: string, path: string) => allows(node, classifyRequest(method, path).need);
+    assert.equal(check("reader", "GET", base), true); assert.equal(check("reader", "PUT", `${base}/progress`), true);
+    for (const path of ["share-preview", "shares", "binding-preview", "bindings"]) {
+      assert.equal(check("reader", "POST", `${base}/${path}`), false, path); assert.equal(check("gateway", "POST", `${base}/${path}`), false, "gateway transport is not mint/bind authority"); assert.equal(check("administrator", "POST", `${base}/${path}`), true, path);
+    }
+    for (const [method, path] of [["GET", "/api/tours/chat/jobs/job"], ["POST", "/api/tours/chat/jobs/job/account"], ["POST", "/api/tours/chat/tour/re-record"], ["PUT", `${base}/unknown`]]) {
+      for (const node of ["reader", "gateway", "administrator"]) assert.equal(check(node, method!, path!), false, `${node} ${path}`);
+      assert.equal(check("operator", method!, path!), true);
+    }
+    put("{broken");
+    for (const node of ["reader", "operator"]) for (const [method, path] of [["GET", base], ["PUT", `${base}/progress`], ["POST", `${base}/shares`]]) assert.equal(check(node, method!, path!), false, "malformed grant state never grants tour authority");
   });
 
   test("judged as the router routes it: spelling never lowers what a path needs", () => {

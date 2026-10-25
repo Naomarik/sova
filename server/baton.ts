@@ -40,6 +40,16 @@ import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
 import { addWebSession } from "./web-sessions";
 import { markOwned } from "./write-guard";
+import { featureChatRecord } from "./project-assistant-store";
+
+/** The holder is the owner who opened this feature request chat (§app.project-assistant/feature-chats): no link to send. */
+const ownersOwnFeatureChat = (row: Pick<BatonSession, "orgId" | "sessionId" | "holder">): boolean => {
+  try {
+    return !!row.holder && featureChatRecord(row.orgId, row.sessionId)?.personId === row.holder;
+  } catch {
+    return false;
+  }
+};
 
 /**
  * Baton sessions (§app/baton): one baton statechart per gathering session (`baton/<org>/<sessionId>`,
@@ -532,6 +542,8 @@ export interface CreateOptions {
   /** false: no link is minted (an in-process caller that can't show one); Needs you asks the operator. */
   mintLink?: boolean;
   startedVia?: "overseer";
+  /** The Project Assistant opened it (a feature request chat, §app.project-assistant/feature-chats): `started.by` "assistant". */
+  startedByAssistant?: boolean;
   /** An overseer's reason for starting it, for the operator only (§app.baton/told); its tool requires one. */
   why?: string;
   /** Sova's own item for it (the operator's to-do it came from). */
@@ -548,9 +560,10 @@ export interface CreateOptions {
  * Who starts it, as its statechart records it (§app.baton/goal-and-loadout): the project overseer comes with its
  * turn's envelope, the global Overseer as the operator via the Overseer; anyone else is the operator.
  */
-function startedRecord(opts: CreateOptions): { by: "operator" | "overseer" | "project-overseer"; overseerId?: string; why?: string } {
+function startedRecord(opts: CreateOptions): { by: "operator" | "overseer" | "project-overseer" | "assistant"; overseerId?: string; why?: string } {
   const why = cleanText(opts.why);
   const extra = (overseerId: string | undefined) => ({ ...(overseerId ? { overseerId } : {}), ...(why ? { why } : {}) });
+  if (opts.startedByAssistant) return { by: "assistant", ...extra(undefined) };
   if (opts.envelope?.by === "overseer") return { by: "project-overseer", ...extra(opts.envelope.overseerId) };
   if (opts.startedVia === "overseer") return { by: "overseer", ...extra(opts.by?.overseerId) };
   return { by: "operator" };
@@ -660,6 +673,12 @@ export async function handTo(sessionId: string, person: string, question: string
 
 /** goal_done: the goal is met; the conversation ends and its wrap-up starts. */
 export async function markDone(sessionId: string, summary = "Done."): Promise<BatonSession> {
+  // Requirements agreed here and not locked in: the person confirms them first (§app.requirements/lock-in).
+  const refusal = (await import("./conversation-draft-tools")).goalDoneRefusal(sessionId);
+  if (refusal) throw new Error(refusal);
+  // A feature request chat's plan is agreed only by the owner who asked for it (§app.project-assistant/feature-chats).
+  const notOwner = (await import("./feature-chats")).featureHolderRefusal(sessionId);
+  if (notOwner) throw new Error(notOwner);
   await batonAct(sessionId, "baton/goal-done", { summary }, actorOn("model"), { settle: true });
   return batonById(sessionId)!.row;
 }
@@ -687,6 +706,9 @@ export async function extendBudget(sessionId: string, by: unknown, who?: Operato
 
 /** Hide a conversation from the org owner's page, or show it again (§app.owner-page/chats; the operator's strip). */
 export async function setHiddenFromOwner(sessionId: string, hidden: boolean, by?: OperatorBy): Promise<BatonSession> {
+  // A feature request chat is the owner's own (§app.project-assistant/feature-chats): never hidden from them.
+  const own = hidden ? (await import("./feature-chats")).hideRefusal(sessionId) : null;
+  if (own) throw new OrgError(own, 409, "feature-chat");
   await batonAct(sessionId, "baton/hide", { hidden }, operatorOn(by), { settle: true });
   return batonById(sessionId)!.row;
 }
@@ -986,7 +1008,8 @@ export function batonSummaryField(path: string): BatonSummaryField | undefined {
       return newest ? { linkAt: newest } : {};
     })(),
     // A person holds it through a hand-off nobody has a link for yet: the operator must send one.
-    ...(row.state === "open" && last && row.holder !== null && row.holder !== OPERATOR && last.to === row.holder && liveLinks(row.sessionId, last.n).length === 0
+    // Never for the owner's own feature request chat while they hold it: they answer on their owner page.
+    ...(row.state === "open" && last && row.holder !== null && row.holder !== OPERATOR && last.to === row.holder && liveLinks(row.sessionId, last.n).length === 0 && !ownersOwnFeatureChat(row)
       ? { sendLink: { to: nameOf(row.orgId, row.holder), question: last.question, since: Date.parse(last.at) || 0 } }
       : {}),
     // An open offer with invitees nobody has a link for (started in-process without links): the

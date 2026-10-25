@@ -245,6 +245,8 @@ export interface ChatAsks {
   singleton: { args: { key: string; path: string }; result: { id: string; path: string; title: string } | null };
   /** A session's measured replies by entry (server/reply-facts.ts), for its rows' `reply` fact. */
   "reply.timings": { args: { sessionId: string }; result: { v: string; timings: Record<string, ReplyTiming> } | null };
+  /** The offer tool's note of a run button's outcome (§chat.offers/card), server/session-offers.ts. */
+  "offers.note": { args: { sessionId: string }; result: string | null };
   // proto 2, policy "wait":
   "special.runStart": { args: { leafId: string | null; images: boolean }; result: RunStartAnswer };
   "special.compact": { args: { leafId: string | null }; result: RunStartAnswer["message"] | null };
@@ -271,6 +273,7 @@ export const ASK_POLICY: Record<ChatAskMethod, "nothing" | "wait"> = {
   links: "nothing",
   singleton: "nothing",
   "reply.timings": "nothing",
+  "offers.note": "nothing",
   "special.runStart": "wait",
   "special.compact": "wait",
   "special.agentEnd": "wait",
@@ -325,6 +328,11 @@ export type ToolBackWire =
  */
 export type ChatRunWire = { t: "run"; n: number; event: ChatRunEvent } | { t: "run.ack"; n: number };
 
+/** Runtime → server, additive: the step its start (until its hello says ready) or its open (until its
+    `opened`) is in, on entering each step and every 10 s (§app.chat-processes/boot-log). Sova's own
+    step names; a server that hears none (older code) knows no step. */
+export type ChatBootWire = { t: "boot"; phase: "starting" | "opening"; step: string; stepMs: number; totalMs: number };
+
 /** The runtime asks the server's rollout to reload it on current code. */
 export type ChatRequestWire = { t: "reload.request"; auto: boolean };
 
@@ -359,6 +367,7 @@ export type ChatWireFrame =
   | ChatAskWire
   | ChatPushWire
   | ChatRequestWire
+  | ChatBootWire
   | WorkerFeedWire
   | WorkerHostWire;
 

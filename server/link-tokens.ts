@@ -18,7 +18,7 @@ import { stateRoot } from "./state-root";
 
 export const LINK_TOKENS_FILE = "link-tokens.json";
 
-export type LinkTokenKind = "s" | "h" | "i";
+export type LinkTokenKind = "s" | "h" | "i" | "t";
 
 export interface KeptToken {
   hash: string;
@@ -36,7 +36,7 @@ export const linkTokensFile = (): string => join(stateRoot(), LINK_TOKENS_FILE);
 // The link stores' own rules (server/baton-links.ts), restated so this module imports none of them.
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 const HASH = /^[0-9a-f]{64}$/;
-const KINDS: readonly string[] = ["s", "h", "i"];
+const KINDS: readonly string[] = ["s", "h", "i", "t"];
 const sha256 = (token: string): string => createHash("sha256").update(token, "utf8").digest("hex");
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -138,7 +138,7 @@ export const SHARE_LINK_REDACTED = "[share link]";
 
 /** A token as it stands in text, with the link around it when there is one (`https://host/s/`, or
     the path alone when no address was set). Never part of a longer run of token characters. */
-const IN_TEXT = /(?:(?:https?:\/\/[A-Za-z0-9.:[\]-]+)?\/[shi]\/)?(?<![A-Za-z0-9_-])([A-Za-z0-9_-]{43})(?![A-Za-z0-9_-])/g;
+const IN_TEXT = /(?:(?:https?:\/\/[A-Za-z0-9.:[\]-]+)?\/[shit]\/)?(?<![A-Za-z0-9_-])([A-Za-z0-9_-]{43})(?![A-Za-z0-9_-])/g;
 
 /** The kept tokens, for a run of the filter. */
 export const keptTokenSet = (): ReadonlySet<string> => new Set(Object.values(read().tokens).map((e) => e.token));

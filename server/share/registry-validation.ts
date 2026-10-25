@@ -13,8 +13,8 @@ export interface SnapshotContext {
 
 export type SnapshotCheck = { ok: true; snapshot: RegistrySnapshot } | { ok: false; error: "bad-snapshot"; why: string };
 
-const SNAPSHOT_KEYS = ["assets", "ingressPort", "links", "seq", "v"];
-const LINK_KEYS = ["exp", "h", "kind"];
+export const SNAPSHOT_KEYS = ["assets", "ingressPort", "links", "seq", "v"];
+export const LINK_KEYS = ["exp", "h", "kind"];
 const KINDS: readonly RegistryLinkKind[] = REGISTRY_LINK_KINDS;
 
 function plainObject(v: unknown): v is Record<string, unknown> {

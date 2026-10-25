@@ -21,6 +21,8 @@ const frames: ChatWireFrame[] = [
   { t: "client.send", clientId: "c1", json: JSON.stringify({ type: "append", text: "héllo ✓ 𝄞" }) },
   { t: "touched" },
   { t: "drain", id: "d1", reason: "idle", force: false },
+  // The start-up trail's step (§app.chat-processes/boot-log): additive, not a kernel frame.
+  { t: "boot", phase: "starting", step: "extensions start", stepMs: 12_000, totalMs: 13_500 },
 ];
 const bytes = () => {
   const parts = frames.map((f) => encodeFrame(f));

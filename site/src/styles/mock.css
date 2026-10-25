@@ -105,6 +105,63 @@
    containment counts that content as 0 wide: the frame collapses to its 2 borders. */
 .dev > .frame { align-self: stretch; width: 100%; }
 .dev-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
+/* Under a session video (VideoCaption.astro): page text that follows the video's clock. A thin
+   chapter bar as wide as the video, one segment per chapter in proportion to its length (past:
+   accent; current: filling with playback; later: the track), each a button with a hit area taller
+   than the 3px it shows. Under it the chapter's name, set like a section eyebrow, then the caption
+   in full ink. The words keep a fixed height (one line on a desktop, two on a phone) and cross-fade,
+   so nothing moves when they change. Where the video doesn't play (reduced motion, no JS, a failed
+   load) only the fixed line shows, centred and muted as before. */
+.dev-caption { align-self: stretch; }
+.vcap { display: flex; flex-direction: column; }
+.vcap-bar { display: flex; gap: 4px; margin-top: -4px; }
+.vcap-seg {
+  flex: 1 1 0; min-width: 0; height: 22px; padding: 0; border: 0; background: none;
+  display: flex; align-items: center; cursor: pointer; border-radius: var(--r-xs);
+}
+.vcap-track {
+  flex: 1; height: 3px; border-radius: var(--r-full); overflow: hidden;
+  background: var(--color-border-strong);
+  transition: height var(--dur-fast) var(--ease-standard);
+}
+.vcap-seg:hover .vcap-track { height: 6px; }
+.vcap-seg:focus-visible { outline: var(--focus-ring); outline-offset: -2px; border-radius: var(--r-sm); }
+.vcap-seg:focus-visible .vcap-track { height: 6px; }
+.vcap-fill { display: block; height: 100%; background: var(--color-accent); transform-origin: left center; transform: scaleX(0); }
+.vcap-words { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.vcap-head { margin: 0; display: flex; align-items: center; gap: var(--space-2); min-height: 20px; }
+.vcap-chapter {
+  font-family: var(--font-mono); font-size: var(--fs-micro); line-height: var(--lh-micro); font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-accent); white-space: nowrap;
+}
+.vcap-num { margin-right: .35em; opacity: .7; }
+.vcap-tag {
+  padding: 0 7px; border-radius: var(--r-full); border: var(--stroke-thin) solid var(--color-border-strong);
+  font-family: var(--font-mono); font-size: 10.5px; line-height: 16px; color: var(--color-ink-muted); white-space: nowrap;
+}
+.vcap-tag[hidden] { display: none; }
+.vcap-line {
+  margin: 0; min-height: calc(2 * 1.4em); text-wrap: balance;
+  font-size: var(--fs-heading-s); line-height: 1.4; font-weight: var(--fw-semibold); letter-spacing: var(--ls-heading-s); color: var(--color-ink);
+}
+@media (min-width: 600px) { .vcap-line { min-height: 1.4em; font-size: 18px; } }
+/* Two layers in one cell: the old words fade out quickly, the new ones in just after. */
+.vcap-fade { display: grid; }
+.vcap-layer { grid-area: 1 / 1; opacity: 0; transition: opacity var(--dur-fast) var(--ease-standard); }
+.vcap-layer.is-on { opacity: 1; transition: opacity var(--dur-base) var(--ease-standard) 90ms; }
+.vcap-fixed {
+  display: none; margin: 0; min-height: 1.45em; text-align: center; text-wrap: balance;
+  font-size: 15px; line-height: 1.45; color: var(--color-ink-2);
+}
+.vcap[data-mode="fixed"] :is(.vcap-bar, .vcap-head, .vcap-line) { display: none; }
+.vcap[data-mode="fixed"] .vcap-fixed { display: block; }
+.vcap[data-mode="fixed"] .vcap-words { margin-top: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .vcap :is(.vcap-bar, .vcap-head, .vcap-line) { display: none; }
+  .vcap .vcap-fixed { display: block; }
+  .vcap .vcap-words { margin-top: 0; }
+}
+@media (max-width: 599px) { .vcap-fixed { min-height: 2.9em; } }
 .dev-desk { width: min(920px, 100%); }
 
 /* ---- FOLDDEV. One foldable the visitor opens like a book, FoldDevice.astro, no script. --------

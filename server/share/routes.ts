@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { FILES_PER_MESSAGE, SHARE_TEXT_MAX, type GoneWhy } from "../../shared/baton";
 import { FRAME_HOST_NAME, FRAME_HOST_PATH, frameHostHeaders } from "../../shared/vis-frame-host";
 import { linkAccess, nameOf, noteMessage, sessionPathOf, undoNote } from "../baton";
@@ -11,12 +11,20 @@ import { acquireChatHandle } from "../chat-handle";
 import { OrgError } from "../orgs";
 import { imageForToken, refreshShare, viewForToken } from "./hub";
 import { assertBudget, countUpload, dropStaged, ensureSweep, isPhotoType, photoCount, PhotoRefusal, photosFor, stagePhoto, takeStaged, type SdkImage } from "../baton-images";
-import { ownerAccess } from "../owner";
-import { ownerView } from "../owner-page";
+import { askForNewLink, noteOwnerUse, ownerAccess } from "../owner";
+import { attentionChanged } from "../attention-memo";
+import { ownerVersionOf, ownerView } from "../owner-page";
+import { openVersion, STARTING_PAGE } from "../owner-versions";
+import { AssistantRefusal, assistantPhoto, assistantPhotoLimits, assistantStagingKey, assistantView, sendOwnerMessage } from "../project-assistant";
+import { assistantReady } from "../project-assistant-ready";
+import { ASSISTANT_TEXT_MAX } from "../../shared/project-assistant";
 import { mountSessionShareRoutes } from "./session-routes";
+import { mountPublicTourRoutes } from "./tour-routes";
+import { mountBatonTourRoutes } from "../tours/bindings-routes";
 import { classify, recordOpen, recordRefused, recordShellFetch, type VisitLink } from "../visits";
 import { noteShareVisit } from "../visitor-identity";
 import { RateLimiter } from "./rate-limit";
+import { OWNER_READS_PER_MINUTE, ownerReadTokenLimited } from "./tour-limits";
 import { ensureAssetsCurrent } from "./registry-push";
 import { shareDist } from "./share-dist";
 
@@ -58,11 +66,10 @@ export const imageTokenLimited = (token: string, now = Date.now()): boolean => i
 const IMAGE_CSP = "default-src 'none'; sandbox";
 
 /** Owner page reads per token per minute (a page re-reads every 60 s; this is the ceiling). */
-export const OWNER_GETS_PER_MINUTE = 120;
-const ownerGets = new RateLimiter(OWNER_GETS_PER_MINUTE);
+export const OWNER_GETS_PER_MINUTE = OWNER_READS_PER_MINUTE;
 
 /** Sliding one-minute window of Owner page reads per token; true when this one is over the limit. */
-export const ownerTokenLimited = (token: string, now = Date.now()): boolean => ownerGets.limited(token, now);
+export const ownerTokenLimited = (token: string, now = Date.now()): boolean => ownerReadTokenLimited(token, now);
 
 const SECURITY_HEADERS: Record<string, string> = {
   "Cache-Control": "no-store",
@@ -362,6 +369,12 @@ export function createShareApp(): Hono {
     return c.body(readFileSync(index, "utf8"), 200, { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": PAGE_CSP });
   });
 
+  /** A dead or unknown owner link's answer (§app.owner-page/link): only turning off unused is named; no org or person, ever. */
+  const ownerDead = (c: import("hono").Context, access: ReturnType<typeof ownerAccess>) => {
+    if (access.ok || access.status === 404) return c.json(refusal("not-found", "This link doesn't open anything."), 404);
+    return c.json(access.why === "idle" ? { ...refusal("gone", "This link turned off after a week without use.", "expired"), ...(access.link?.askedAt ? { asked: true } : {}) } : refusal("gone", "This link is no longer active."), 410);
+  };
+
   const ownerRead = (what: (c: import("hono").Context) => { project?: string; conversation?: string }) => async (c: import("hono").Context) => {
     const token = c.req.param("token") ?? "";
     if (ownerTokenLimited(token)) return c.json(refusal("rate-limited", "Too many requests. Wait a minute."), 429);
@@ -370,9 +383,7 @@ export function createShareApp(): Hono {
     if (!access.ok) {
       const dead = access.link;
       if (access.status === 410 && dead) logVisit(token, "refused", () => recordRefused(ownerVisit(dead), ua));
-      // §app.owner-page/link: only an expiry is named; no org or person, ever.
-      if (access.status === 404) return c.json(refusal("not-found", "This link doesn't open anything."), 404);
-      return c.json(access.why === "expired" ? refusal("gone", "This link has expired.", "expired") : refusal("gone", "This link is no longer active."), 410);
+      return ownerDead(c, access);
     }
     let view;
     try {
@@ -383,8 +394,170 @@ export function createShareApp(): Hono {
       throw err;
     }
     logVisit(token, "open", () => noteShareVisit(recordOpen(ownerVisit(access.link), { tab: c.req.query("v"), userAgent: ua }), c.env));
+    // A person's read is a use: the link's 7 days start again (never a previewer's or a script's).
+    if (classify(ua).kind === "person") noteOwnerUse(access);
     return c.json(view);
   };
+  // The Project Assistant (§app.project-assistant/chat): its conversation as the owner reads it, and their messages.
+  app.get("/api/i/:token/assistant", async (c) => {
+    const token = c.req.param("token");
+    if (ownerTokenLimited(token)) return c.json(refusal("rate-limited", "Too many requests. Wait a minute."), 429);
+    const access = ownerAccess(token);
+    if (!access.ok) return ownerDead(c, access);
+    if (classify(c.req.header("user-agent")).kind === "person") noteOwnerUse(access);
+    return c.json(await assistantView(access.orgId));
+  });
+  app.post("/api/i/:token/assistant", async (c) => {
+    const token = c.req.param("token");
+    const access = ownerAccess(token);
+    if (!access.ok) return ownerDead(c, access);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json(refusal("bad-request", "Expected JSON { text }."), 400);
+    }
+    // Only { text, images? }: no sender, nothing else. The sender IS the link's owner; images are ids of
+    // photos this link staged (§app.project-assistant/photos), never bytes.
+    if (typeof body !== "object" || body === null || Array.isArray(body) || Object.keys(body).some((k) => k !== "text" && k !== "images"))
+      return c.json(refusal("bad-request", "Only { text, images } is accepted."), 400);
+    const ids = (body as { images?: unknown }).images;
+    if (ids !== undefined && (!Array.isArray(ids) || ids.some((x) => typeof x !== "string"))) return c.json(refusal("bad-request", "images is a list of photo ids."), 400);
+    const text = (body as { text?: unknown }).text;
+    if (typeof text === "string" && text.trim().length > ASSISTANT_TEXT_MAX) return c.json(refusal("too-long", `Messages are limited to ${ASSISTANT_TEXT_MAX} characters.`), 413);
+    if (tokenLimited(token)) return c.json(refusal("rate-limited", "Too many messages. Wait a minute."), 429);
+    noteOwnerUse(access);
+    try {
+      await sendOwnerMessage(access.orgId, text, (ids ?? []) as string[]);
+    } catch (err) {
+      if (err instanceof AssistantRefusal) return c.json(refusal(err.code, err.message), err.status);
+      console.warn(`[share] assistant message on ${tokenTag(token)} refused: ${err instanceof Error ? err.message : String(err)}`);
+      return c.json(refusal("busy", "The Project Assistant can't take a message right now. Try again in a moment."), 503);
+    }
+    return c.json({ ok: true }, 202);
+  });
+  // The owner's photos (§app.project-assistant/photos): staged at attach, per org and owner.
+  app.post("/api/i/:token/assistant/image", async (c) => {
+    const token = c.req.param("token");
+    const access = ownerAccess(token);
+    if (!access.ok) return ownerDead(c, access);
+    if (!(await assistantReady(access.orgId))) return c.json(refusal("not-ready", "The Project Assistant isn't ready yet."), 409);
+    const photos = await assistantPhotoLimits(access.orgId).catch(() => null);
+    if (!photos) return c.json(refusal("no-photos", "Photos can't be sent here."), 409);
+    const mime = (c.req.header("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+    if (!isPhotoType(mime)) return c.json(refusal("bad-type", "This photo's format can't be sent."), 400);
+    const declared = Number(c.req.header("content-length"));
+    if (!Number.isFinite(declared) || declared > photos.maxBytes) return c.json(refusal("too-large", `Over ${Math.round(photos.maxBytes / (1024 * 1024))} MB.`), 413);
+    try {
+      // No total or daily limit (§app.project-assistant/photos): only the per-minute window.
+      countUpload(`i:${hashToken(token)}`, Number.POSITIVE_INFINITY);
+      assertBudget(declared);
+      const personId = access.link.personId;
+      const staged = await stagePhoto({ sessionId: assistantStagingKey(access.orgId, personId), personId, mime, body: c.req.raw.body as AsyncIterable<Uint8Array> | null, maxBytes: photos.maxBytes });
+      noteOwnerUse(access);
+      return c.json(staged, 201);
+    } catch (err) {
+      if (err instanceof PhotoRefusal) {
+        console.warn(`[share] owner photo on ${tokenTag(token)} refused: ${err.code}`);
+        return c.json(refusal(err.code, err.message), err.status);
+      }
+      throw err;
+    }
+  });
+  app.get("/api/i/:token/assistant/img/:n", async (c) => {
+    const token = c.req.param("token");
+    if (imageTokenLimited(token)) return c.json(refusal("rate-limited", "Too many requests. Wait a minute."), 429);
+    const access = ownerAccess(token);
+    if (!access.ok) return ownerDead(c, access);
+    const got = await assistantPhoto(access.orgId, Number(c.req.param("n")));
+    if (!got || !isPhotoType(got.mimeType)) return c.json(refusal("not-found", "No such photo."), 404);
+    return c.body(new Uint8Array(Buffer.from(got.data, "base64")), 200, { "Content-Type": got.mimeType, "Content-Security-Policy": IMAGE_CSP, "Content-Disposition": "inline" });
+  });
+
+  // A version to try (§app.project-assistant/versions): the link and the copy checked again, then on to
+  // its owner-bound preview. The address goes only into this redirect, never into a JSON answer.
+  app.get("/i/:token/v/:handle", async (c) => {
+    const token = c.req.param("token");
+    if (ownerTokenLimited(token)) return c.json(refusal("rate-limited", "Too many requests. Wait a minute."), 429);
+    const access = ownerAccess(token);
+    if (!access.ok) return ownerDead(c, access);
+    const v = await ownerVersionOf(access.orgId, c.req.param("handle")).catch(() => null);
+    if (!v) return c.json(refusal("missing", "Not found."), 404);
+    // A link previewer's fetch never opens a version; only a person's Open is a use.
+    const kind = classify(c.req.header("user-agent")).kind;
+    if (kind === "preview") return c.json(refusal("missing", "Not found."), 404);
+    if (kind === "person") noteOwnerUse(access);
+    // A copy start_version started that hasn't answered yet: a page that reloads itself until it does; a failed one says so.
+    if (v.state === "starting") return c.html(STARTING_PAGE, 200, { Refresh: "3", "Cache-Control": "no-store", "Content-Security-Policy": PAGE_CSP });
+    if (v.state === "failed") return c.text("This version didn't start. The team knows.", 409, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+    const live = ownerAccess(token);
+    const url = live.ok ? await openVersion(v, live.link).catch((err) => {
+      console.warn(`[share] owner version on ${tokenTag(token)} failed: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }) : null;
+    if (!url) return c.text("This version isn't running right now. Go back and try again later.", 409, { "Content-Type": "text/plain; charset=utf-8" });
+    return c.redirect(url, 302);
+  });
+
+  // Ask for a new link (§app.owner-page/link): only a link that turned off unused; at most once a day.
+  app.post("/i/:token/ask-link", (c) => {
+    const token = c.req.param("token");
+    if (ownerTokenLimited(token)) return c.json(refusal("rate-limited", "Too many requests. Wait a minute."), 429);
+    const r = askForNewLink(token);
+    if (r.status === 202) {
+      attentionChanged();
+      return c.json({ ok: true, askedAt: r.askedAt }, 202);
+    }
+    if (r.status === 409) return c.json(refusal("live", "This link still works."), 409);
+    return ownerDead(c, ownerAccess(token));
+  });
+  // The owner's own feature request chat (§app.project-assistant/feature-chats): their message, and End Chat. Only a
+  // chat this person opened while they are the owner; anything else answers 404, as a handle that never existed.
+  const featureRoute = (act: (orgId: string, personId: string, handle: string, body: Record<string, unknown>) => Promise<void>, keys: readonly string[]) => async (c: Context) => {
+    const token = c.req.param("token") ?? "";
+    const access = ownerAccess(token);
+    if (!access.ok) return ownerDead(c, access);
+    let body: unknown = {};
+    if (keys.length)
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json(refusal("bad-request", "Expected JSON { text }."), 400);
+      }
+    if (typeof body !== "object" || body === null || Array.isArray(body) || Object.keys(body).some((k) => !keys.includes(k))) return c.json(refusal("bad-request", `Only { ${keys.join(", ")} } is accepted.`), 400);
+    if (tokenLimited(token)) return c.json(refusal("rate-limited", "Too many messages. Wait a minute."), 429);
+    try {
+      await act(access.orgId, access.link.personId, c.req.param("handle") ?? "", body as Record<string, unknown>);
+    } catch (err) {
+      if (err instanceof OrgError) {
+        if (err.code === "busy") return c.json(refusal("busy", "The chat can't take a message right now. Try again in a moment."), 503);
+        if (err.status === 404) return c.json(refusal("missing", "Not found."), 404);
+        return c.json(refusal(err.code ?? "refused", err.message), err.status === 400 ? (err.code === "too-long" ? 413 : 400) : 409);
+      }
+      console.warn(`[share] feature chat on ${tokenTag(token)} refused: ${err instanceof Error ? err.message : String(err)}`);
+      return c.json(refusal("busy", "The chat can't take a message right now. Try again in a moment."), 503);
+    }
+    noteOwnerUse(access);
+    return c.json({ ok: true }, 202);
+  };
+  app.post(
+    "/api/i/:token/c/:handle/message",
+    featureRoute(async (orgId, personId, handle, body) => (await import("../feature-chats")).sendOwnerFeatureMessage(orgId, personId, handle, body.text), ["text"]),
+  );
+  app.post(
+    "/api/i/:token/c/:handle/end",
+    featureRoute(async (orgId, personId, handle) => {
+      const f = await import("../feature-chats");
+      await f.ownerEndsFeatureChat(orgId, f.ownersChatByHandle(orgId, personId, handle).sessionId);
+    }, []),
+  );
+  // The owner closes or reopens their own request (§app.project-assistant/closing), by its page handle.
+  app.post(
+    "/api/i/:token/requests/:handle",
+    featureRoute(async (orgId, personId, handle, body) => {
+      await (await import("../owner-request-close")).ownerRequestAction(orgId, personId, handle, body.action);
+    }, ["action"]),
+  );
   app.get("/api/i/:token", ownerRead(() => ({})));
   app.get("/api/i/:token/p/:handle", ownerRead((c) => ({ project: c.req.param("handle") ?? "" })));
   app.get("/api/i/:token/c/:handle", ownerRead((c) => ({ conversation: c.req.param("handle") ?? "" })));
@@ -392,6 +565,8 @@ export function createShareApp(): Hono {
   // ---- session shares (§app/session-share): read-only ------------------------------------------
 
   mountSessionShareRoutes(app, shareDist, PAGE_CSP);
+  mountPublicTourRoutes(app, PAGE_CSP);
+  mountBatonTourRoutes(app);
 
   app.all("*", (c) => c.json({ error: "Not found" }, 404));
   return app;

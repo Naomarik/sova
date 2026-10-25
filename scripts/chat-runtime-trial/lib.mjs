@@ -55,7 +55,11 @@ export const modelsJson = (port) => ({
       baseUrl: `http://127.0.0.1:${port}/v1`,
       api: "openai-completions",
       apiKey: "trial",
-      models: [{ id: "m1", contextWindow: 100000, maxTokens: 4000 }],
+      models: [
+        { id: "m1", contextWindow: 100000, maxTokens: 4000 },
+        // A second model: a switch to it is visible in the file (run.mjs tsend).
+        { id: "m2", contextWindow: 100000, maxTokens: 4000 },
+      ],
     },
   },
 });
@@ -88,8 +92,12 @@ export function buildAgentDir(scratch, { mockPort, auth } = {}) {
   rmSync(settingsFile, { force: true });
   writeFileSync(settingsFile, JSON.stringify({ ...settings, defaultProvider: "trial", defaultModel: "m1" }, null, 2));
   // The Overseer on the mock, its explorer a pi worker on the mock (the default is Claude Code).
+  // Its memory off (on by default; the value server/testing/overseer-memory.ts overseerMemoryOff
+  // writes): the memory view quotes earlier prompts back as user text, which the mock reads as tags
+  // (an earlier turn's [call …] replayed) and which fills the 300 characters it logs (a brief's tag
+  // cut off). The trial checks processes, not memory.
   mkdirSync(join(agent, "sova"), { recursive: true });
-  writeFileSync(join(agent, "sova", "overseer.json"), JSON.stringify({ version: 1, model: "trial/m1", explorer: { backend: "pi", model: "trial/m1", effort: "medium" } }, null, 2));
+  writeFileSync(join(agent, "sova", "overseer.json"), JSON.stringify({ version: 1, model: "trial/m1", explorer: { backend: "pi", model: "trial/m1", effort: "medium" }, memory: { on: false, type: "uniichat", size: 128 } }, null, 2));
   mkdirSync(join(agent, "extensions"), { recursive: true });
   copyFileSync(join(HERE, "trial-dialog.ts"), join(agent, "extensions", "trial-dialog.ts"));
   // Replaced, never written through: a link there would reach whatever it names.
@@ -133,7 +141,9 @@ export async function startMock({ port, log, step }) {
   const mockPort = JSON.parse(line).port;
   /** What a message with no tag gets from now on (mock-llm.mjs POST /trial/plain); "" clears it. */
   const plain = (text) => fetch(`http://127.0.0.1:${mockPort}/trial/plain`, { method: "POST", body: JSON.stringify({ text }) }).then((r) => r.text());
-  return { child, port: mockPort, log, plain, stop: () => child.kill("SIGTERM") };
+  /** Holds (on) or releases (off) the end of the [long … #tag] reply (mock-llm.mjs POST /trial/hold). */
+  const hold = (tag, on = true) => fetch(`http://127.0.0.1:${mockPort}/trial/hold`, { method: "POST", body: JSON.stringify({ tag, on }) }).then((r) => r.text());
+  return { child, port: mockPort, log, plain, hold, stop: () => child.kill("SIGTERM") };
 }
 /** The mock's log as records. */
 export const mockLog = (file) => (existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
@@ -325,13 +335,16 @@ export function userBus() {
 /** Waits for GET /api/health to answer. */
 // 150 s: under `test:int` several trial files boot servers at once, and a boot (bun, the take-back of
 // the chats an earlier check left) has taken more than 60 s there.
-export async function healthy(base, ms = 150000) {
+// `gaveUp`: a reason the server will never answer (it could not listen), checked between tries.
+export async function healthy(base, ms = 150000, gaveUp = () => null) {
   const end = Date.now() + ms;
   for (;;) {
     try {
       const r = await fetch(`${base}/api/health`);
       if (r.ok) return await r.json();
     } catch {}
+    const why = gaveUp();
+    if (why) throw new Error(`${base}: ${why}`);
     if (Date.now() > end) throw new Error(`${base}: no health answer within ${ms} ms`);
     await sleep(300);
   }
@@ -389,7 +402,7 @@ export function client(base, token) {
 
 /** Opens /ws/chat (wire 2) on a session and waits for its hello. `force`: the page's "Open anyway"
     (&force=1), past a "recent" refusal. */
-export async function chat(c, path, ms = 30000, { force = false } = {}) {
+export async function chat(c, path, ms = 40000, { force = false } = {}) {
   const s = c.socket(`/ws/chat?path=${encodeURIComponent(path)}&wire=2${force ? "&force=1" : ""}`);
   await s.opened;
   const first = await s.until((m) => m.type === "hello" || m.type === "error", ms, "hello");

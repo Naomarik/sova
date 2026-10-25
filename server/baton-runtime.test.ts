@@ -2,14 +2,15 @@
 // tree's pi-config extensions linked in, so "no pi-config extension loads" is a real claim) and a
 // workspace in the OS temp dir; ~/.pi is never read or written. No model is called.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { BATON_DECISION_ENTRY, BATON_DONE_ENTRY, BATON_HANDOFF_ENTRY, BATON_SENT_ENTRY } from "../shared/baton";
 import type { SessionSummary } from "../shared/protocol";
 import { piRuntime, piSession } from "./harness/pi/testing/handle";
 import { until as waitUntil } from "./test-wait";
+import { linkPiConfigExtensions } from "./testing/agent-dir";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-baton-rt-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -17,7 +18,7 @@ process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
-symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
+linkPiConfigExtensions(agentDir);
 
 await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const orgs = await import("./orgs");
@@ -45,8 +46,9 @@ describe("a baton session's runtime", async () => {
     const chat = await acquireChat(c.path);
     assert.equal(chat.special, "baton");
     assert.equal(chat.overseer, false);
-    assert.deepEqual([...piSession(chat).getActiveToolNames()].sort(), ["goal_done", "hand_to", "propose_roster_edit", "record_decision"]);
-    assert.deepEqual([...BATON_TOOLS].sort(), ["goal_done", "hand_to", "propose_roster_edit", "record_decision"]);
+    assert.deepEqual([...piSession(chat).getActiveToolNames()].sort(), ["code_read", "goal_done", "hand_to", "propose_roster_edit", "record_decision", "requirement_drop", "requirements_confirm", "requirements_summary", "show_tour", "spec_lookup"], "spec look-up, code reading and the draft tools with no switch (§app.spec-lookup/who-gets-what); presentation of an already-bound reviewed tour is baseline; no recording or attachment power");
+    assert.deepEqual([...BATON_TOOLS].sort(), ["goal_done", "hand_to", "propose_roster_edit", "record_decision", "show_tour"]);
+    for (const forbidden of ["record_tour", "bash", "read", "browser", "agent_spawn"]) assert.ok(!LOADOUT_TOOLS.includes(forbidden as never), `${forbidden} never joins the hand-off loadout`);
     assert.deepEqual(piSession(chat).getAllTools().map((t) => t.name).sort(), [...LOADOUT_TOOLS].sort(), "no built-in, no extension tool");
     assert.ok(!piSession(chat).getActiveToolNames().includes("write_profile_updates"), "the wrap-up tool is never active in the conversation");
     const loaded = piRuntime(chat).services.resourceLoader.getExtensions().extensions.map((e) => e.path);

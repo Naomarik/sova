@@ -1,0 +1,19 @@
+{
+  "_": "What Alperen asks for (alperen.md), as groups of case-insensitive regular expressions. A group is found in a text when any of its patterns matches. His draft must hold every 'required' group; the operator's 'what are the draft specs?' answer must name every 'required' group too. 'optional' groups are reported, never failed.",
+  "required": {
+    "edits-timetable": ["timetable", "schedule"],
+    "edits-prices": ["price"],
+    "self-edit": ["edit", "update", "change (it|them) (himself|herself|themselves|yourself)", "content management", "\\bCMS\\b", "without (calling|a developer)"],
+    "arabic": ["arabic", "عربي"],
+    "bilingual-switch": ["english", "language (switch|toggle)", "switch(es)? (language|between)"],
+    "pages-events": ["event", "news"],
+    "pages-gallery": ["gallery", "photos"]
+  },
+  "optional": {
+    "rtl": ["right[- ]to[- ]left", "\\bRTL\\b"],
+    "arabic-default": ["arabic (is |as )?(the )?default", "default (language )?(is |to )?arabic"],
+    "whatsapp-booking": ["whatsapp", "trial"],
+    "coaches-page": ["coach"],
+    "branding": ["brown", "gold", "logo"]
+  }
+}

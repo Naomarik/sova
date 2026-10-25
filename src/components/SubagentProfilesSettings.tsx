@@ -561,7 +561,7 @@ export function SubagentProfilesSettings() {
                 () => (
                   <>
                     <Show when={coordinatorOn(p())}>
-                      <p class="field-hint settings-delegate-desc">Without a fallback, a team isn't created when a role's primary can't run.</p>
+                      <p class="field-hint settings-delegate-desc">Without a fallback, a team isn't created when a role's primary can't run. With one, a role whose primary runs out of usage during the team moves to it.</p>
                     </Show>
                     <For each={["coordinator", "monitor"] as const}>
                       {(role) => {
@@ -788,7 +788,7 @@ export function SubagentProfilesSettings() {
                               <option value="host" selected={p().alignment?.style === undefined}>
                                 Use host default
                               </option>
-                              <For each={["default", "simplified", "pm"] as const}>
+                              <For each={["pm", "simplified", "default"] as const}>
                                 {(s) => (
                                   <option value={s} selected={p().alignment?.style === s}>
                                     {ALIGN_STYLE_NAMES[s]}

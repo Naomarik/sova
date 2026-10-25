@@ -41,6 +41,7 @@ const {
   refusalOf,
   serverToolCall,
   serveTools,
+  servedToolsFor,
   chatsReady,
   expectChatRouter,
   setChatRouter,
@@ -189,6 +190,54 @@ test("a server-hosted tool: the chat gets its declaration as data; each run is a
   assert.equal(serverToolCall(), undefined, "outside a run, no run");
 });
 
+test("a chat in a process of its own pushes a note under the title Sova shows for it, never a blank one (§chat.topics/push)", async () => {
+  const { setTopicStore, topicStore } = await import("./topics");
+  const { TopicStore } = await import("./topic-store");
+  const { displayTitleOf } = await import("./sessions-index");
+  const { setSessionTitle } = await import("./session-titles");
+  setTopicStore(new TopicStore(join(agentDir, "topics-served")));
+  const idOf = (p: string): string => JSON.parse(readFileSync(p, "utf8").split("\n")[0]!).id;
+  const receiver = session();
+  const local = { signal: undefined, onUpdate: undefined, ctx: undefined, chat: { branch: () => [], entries: () => [], append: async () => "", tool: () => undefined } };
+  let k = 0;
+  /** One push by `pusher` through its served queue_push, the chat reporting `known` as its title; the note's stored title. */
+  const push = async (pusher: string, known: string | undefined): Promise<string> => {
+    const s = topicStore();
+    const { name } = s.open({ sessionId: idOf(receiver), path: receiver }, `sender check ${k}`);
+    s.invite(name, idOf(pusher));
+    // What the chat host serves an ordinary chat at its open, its take-back and its reopen.
+    const decls = servedToolsFor(pusher, idOf(pusher), () => known, false);
+    assert.ok(decls.some((d) => d.name === "queue_push"));
+    const out = await deliverServerToolCall({ effectId: `fx-sender-${k}`, chatId: pusher, toolCallId: `tc-sender-${k++}`, name: "queue_push", params: { topic: name, text: "a note" }, attended: false, card: null }, { ...local });
+    assert.equal(out.ok, true, JSON.stringify(out));
+    return s.pending(name).at(-1)!.from.title;
+  };
+
+  // No pi session name (the chat reports none, or a blank one): its first message, as the list shows it.
+  const unnamed = session();
+  const shown = await displayTitleOf(unnamed);
+  assert.equal(shown, "first ask");
+  assert.equal(await push(unnamed, undefined), shown);
+  assert.equal(await push(unnamed, ""), shown);
+  // A title the user gave the session is what the list shows, so it is the sender's title too.
+  const titled = session();
+  setSessionTitle(idOf(titled), "Billing fixer");
+  assert.equal(await displayTitleOf(titled), "Billing fixer");
+  assert.equal(await push(titled, undefined), "Billing fixer");
+  // A file the list can't read: the title the chat reports, else "Untitled"; never blank.
+  const gone = join(sessionsDir, "not-a-session.jsonl");
+  writeFileSync(gone, "not json\n");
+  const pushed = (t: string | undefined) => {
+    const s = topicStore();
+    const { name } = s.open({ sessionId: idOf(receiver), path: receiver }, `sender check ${k}`);
+    s.invite(name, "gone-id");
+    servedToolsFor(gone, "gone-id", () => t, false);
+    return deliverServerToolCall({ effectId: `fx-sender-${k}`, chatId: gone, toolCallId: `tc-sender-${k++}`, name: "queue_push", params: { topic: name, text: "a note" }, attended: false, card: null }, { ...local }).then(() => s.pending(name).at(-1)!.from.title);
+  };
+  assert.equal(await pushed("pi name"), "pi name");
+  assert.equal(await pushed("  "), "Untitled");
+});
+
 test("server code reaches a chat only through its handle: nothing outside the chat's host imports chat-manager", () => {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
   // The chat's host: the handle itself, the commands and mirror it shares with a chat process's host
@@ -247,4 +296,35 @@ test("a server that will install a router makes boot readers wait for it: chats 
   setChatRouter(null);
   await chatsReady(); // with none expected and none installed: at once
   installInProcessChats();
+});
+
+test("an ordinary chat is served its offer tool last, from its snapshot; a chat without offers or a special kind is served exactly what it was", async () => {
+  const { servedToolsForChat } = await import("./chat-handle");
+  const project = join(agentDir, "offers-project");
+  mkdirSync(join(project, ".sova"), { recursive: true });
+  const write = (names: string[]) =>
+    writeFileSync(join(project, ".sova", "offers.json"), JSON.stringify({ version: 1, offers: Object.fromEntries(names.map((n) => [n, { when: `When ${n}.`, title: n, buttons: [{ label: "Go", about: "Goes.", send: "go" }] }])) }));
+  const at = (id: string, dir: string): string => {
+    const path = join(sessionsDir, `2026-10-23T00-00-00-000Z_${id}.jsonl`);
+    writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-10-23T00:00:00.000Z", cwd: dir })}\n`);
+    return canonicalPath(path);
+  };
+  const names = (decls: { name: string }[]) => decls.map((d) => d.name);
+  // No offers file: what servedToolsFor serves, and nothing more.
+  const plain = at("01a0-offers-plain", cwd);
+  assert.deepEqual(names(await servedToolsForChat(plain, "01a0-offers-plain", () => undefined, null)), names(servedToolsFor(plain, "01a0-offers-plain", () => undefined, false)));
+  write(["alpha"]);
+  const withOffers = at("01a0-offers-yes", project);
+  const decls = await servedToolsForChat(withOffers, "01a0-offers-yes", () => undefined, null);
+  assert.equal(decls.at(-1)!.name, "offer", "last, after every tool a chat had before");
+  assert.deepEqual(names(decls).slice(0, -1), names(servedToolsFor(withOffers, "01a0-offers-yes", () => undefined, false)));
+  // Its reopen reads the snapshot, whatever the file says now.
+  write(["alpha", "charlie"]);
+  const again = await servedToolsForChat(withOffers, "01a0-offers-yes", () => undefined, null);
+  assert.deepEqual(JSON.stringify(again.at(-1)), JSON.stringify(decls.at(-1)), "the declaration is byte-identical");
+  // A special chat (the Overseer, a project overseer) never gets it; a powers profile's chat does.
+  const special = at("01a0-offers-special", project);
+  assert.ok(!names(await servedToolsForChat(special, "01a0-offers-special", () => undefined, "overseer")).includes("offer"));
+  const powers = at("01a0-offers-powers", project);
+  assert.ok(names(await servedToolsForChat(powers, "01a0-offers-powers", () => undefined, "powers")).includes("offer"));
 });

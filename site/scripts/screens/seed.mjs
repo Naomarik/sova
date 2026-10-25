@@ -54,41 +54,48 @@ export async function seed(plan, root, { directorPort, now = Date.now() } = {}) 
   mkdirSync(scratchHome, { recursive: true });
   execFileSync(process.execPath, [join(REPO, "scripts", "hermetic-agent-dir.mjs")], { cwd: REPO, env: { ...env, HOME: scratchHome, HERMETIC_AGENT_DIR: agent }, stdio: ["ignore", "pipe", "pipe"] });
 
-  // models.json: the director, and nothing else (the linked catalogue is replaced).
+  // models.json: every provider the story names, each at the director (the linked catalogue is
+  // replaced), so a real provider name shows on screen while nothing leaves the machine.
   const models = join(agent, "models.json");
   if (existsSync(models) || isLink(models)) rmSync(models);
-  const byId = new Map();
-  for (const m of Object.values(plan.models)) if (!byId.has(m.id)) byId.set(m.id, m);
-  writeJson(models, {
-    providers: {
-      [plan.provider]: {
-        baseUrl: `http://127.0.0.1:${directorPort ?? 9}/v1`,
-        api: "openai-completions",
-        apiKey: "demo",
-        compat: { supportsDeveloperRole: false, supportsReasoningEffort: true },
-        models: [...byId.values()].map((m) => ({ id: m.id, name: m.name ?? m.id, reasoning: true, contextWindow: m.contextWindow ?? 200_000, maxTokens: 32_000 })),
-      },
-    },
-  });
+  const providers = {};
+  for (const name of plan.providers) {
+    const byId = new Map();
+    for (const m of Object.values(plan.models)) if (m.provider === name && !byId.has(m.id)) byId.set(m.id, m);
+    providers[name] = {
+      baseUrl: `http://127.0.0.1:${directorPort ?? 9}/v1`,
+      api: "openai-completions",
+      apiKey: "demo",
+      compat: { supportsDeveloperRole: false, supportsReasoningEffort: true },
+      models: [...byId.values()].map((m) => ({ id: m.id, name: m.name ?? m.id, reasoning: true, contextWindow: m.contextWindow ?? 200_000, maxTokens: 32_000 })),
+    };
+  }
+  writeJson(models, { providers });
 
   // pi settings: new sessions start on the main model; nothing else changes.
   const settingsFile = join(agent, "settings.json");
   const settings = JSON.parse(execFileSync("cat", [settingsFile]).toString());
   const main = plan.sessions.find((s) => s.live) ?? plan.sessions[0];
-  writeJson(settingsFile, { ...settings, defaultProvider: plan.provider, defaultModel: main.modelId, ...(main.effort ? { defaultThinkingLevel: main.effort } : {}) });
+  writeJson(settingsFile, { ...settings, defaultProvider: main.provider, defaultModel: main.modelId, ...(main.effort ? { defaultThinkingLevel: main.effort } : {}) });
+
+  // The session summaries (topic-outline): only the story's summarizer model, at the director,
+  // soon after a turn ends; no Claude Code fallback. The director answers with `summary` steps.
+  writeJson(join(agent, "topic-outline.json"), plan.summarizer
+    ? { summarizers: [{ backend: "pi", model: plan.summarizer, timeoutMs: 30_000 }], trigger: { debounceMs: 300, minNewMessages: 2 } }
+    : { summarizers: [{ backend: "pi", model: Object.values(plan.models)[0].ref, timeoutMs: 1_000 }], trigger: { debounceMs: 3_000, minNewMessages: 1_000_000 } });
 
   // Delegate's routes: every profile on the pi backend, on the story's models.
   const route = (key) => {
     const m = plan.models[key];
     return { backend: "pi", model: m.ref, effort: m.effort ?? "medium" };
   };
-  const slot = (k) => (plan.models[k] ? k : Object.keys(plan.models)[0]);
+  const slot = (...keys) => keys.find((k) => plan.models[k]) ?? Object.keys(plan.models)[0];
   writeJson(join(agent, "mode-delegate.json"), {
     version: 1,
     profiles: {
       planning: { primary: route(slot("main")), fallback: null },
-      investigation: { primary: route(slot("scout")), fallback: null },
-      routine: { primary: route(slot("routine")), fallback: null },
+      investigation: { primary: route(slot("scout", "glm")), fallback: null },
+      routine: { primary: route(slot("routine", "glm")), fallback: null },
       complex: { primary: route(slot("main")), fallback: null },
     },
   });
@@ -130,7 +137,7 @@ export function staticSession(plan, s, repo, endMs) {
   let t = endMs - span;
   const tick = () => (t += 15_000);
   const id = (n) => createHash("sha256").update(`${s.id}:${n}`).digest("hex").slice(0, 8);
-  const [provider, model] = [plan.provider, s.modelId];
+  const [provider, model] = [s.provider, s.modelId];
   const lines = [];
   let parent = null;
   let n = 0;
@@ -143,6 +150,14 @@ export function staticSession(plan, s, repo, endMs) {
   push({ type: "model_change", provider, modelId: model });
   if (s.effort) push({ type: "thinking_level_change", thinkingLevel: s.effort });
   push({ type: "session_info", name: s.title });
+  // A static session was in its modes from the start: the mode extension's own markers (a switch,
+  // then the minor mode), each with the active state it restores from.
+  if (s.modes.length) {
+    const major = s.modes.includes("delegate") ? "delegate" : "normal";
+    const active = { version: 1, mode: major, strict: false, minorModes: s.modes.filter((m) => m !== "delegate") };
+    if (major !== "normal") push({ type: "custom", customType: "mode", data: { mode: major, active } });
+    for (const minor of active.minorModes) push({ type: "custom", customType: "mode", data: { minor, on: true, active } });
+  }
 
   const files = new Map(plan.files);
   let context = 9_000;
@@ -165,25 +180,60 @@ export function staticSession(plan, s, repo, endMs) {
   let docs = [];
   let say = [];
   let k = 0;
-  for (const step of steps) {
+  // Written-in summaries: the topic-outline snapshots its summarizer would have appended.
+  const anchorOf = new Map(); // user step index -> its anchor
+  let lastAnchor = null; // the newest user or text-only assistant message, as an anchor
+  let lastEntryId = null; // the newest message entry of any kind (a summary's basis)
+  let topics = [];
+  let counter = 0;
+  const remember = (role, message) => {
+    const anchor = { entryId: parent, role, timestamp: t, fingerprint: fingerprint(message) };
+    lastAnchor = anchor;
+    return anchor;
+  };
+  const pushMessage = (message) => {
+    push({ type: "message", message });
+    if (message.role === "assistant" && !message.content.some((c) => c.type === "toolCall")) remember("assistant", message);
+    lastEntryId = parent;
+  };
+  for (const [si, step] of steps.entries()) {
     const a = actionOf(step);
+    if (a === "summary") {
+      const sum = step.summary;
+      for (const tp of sum.topics) {
+        const from = tp.from !== undefined ? anchorOf.get(tp.from) : null;
+        const range = from ? { from, to: lastAnchor } : undefined;
+        if (tp.update) topics = topics.map((x) => (x.id === tp.update ? { ...x, heading: tp.heading, summary: tp.summary, at: t, ...(from ? { anchor: from, range } : {}) } : x));
+        else topics.push({ id: `t${++counter}`, heading: tp.heading, anchor: from, range, summary: tp.summary, at: t });
+      }
+      const latest = topics.reduce((p, x) => (!p || x.at >= p.at ? x : p), null);
+      push({
+        type: "custom",
+        customType: "topic-outline",
+        data: { version: 2, topics, now: sum.now, overall: sum.overall, topicCounter: counter, basisLeafId: lastEntryId, generatedAt: t, state: "fresh", lastHeading: latest?.heading ?? "", lastManualHeading: "", purpose: text(steps.find((x) => actionOf(x) === "user").user).slice(0, 400) },
+      });
+      continue;
+    }
     tick();
     if (a === "user") {
-      push({ type: "message", message: { role: "user", content: [{ type: "text", text: text(step.user) }], timestamp: t } });
+      const message = { role: "user", content: [{ type: "text", text: text(step.user) }], timestamp: t };
+      push({ type: "message", message });
+      anchorOf.set(si, remember("user", message));
+      lastEntryId = parent;
       continue;
     }
     if (a === "say") {
       say.push(text(step.say));
-      const next = steps[steps.indexOf(step) + 1];
+      const next = steps.slice(si + 1).find((x) => actionOf(x) !== "summary");
       if (!next || ["user", "say", "error"].includes(actionOf(next))) {
         if (next && actionOf(next) === "say") continue;
-        push({ type: "message", message: assistant([{ type: "text", text: say.join("\n\n") }], "stop") });
+        pushMessage(assistant([{ type: "text", text: say.join("\n\n") }], "stop"));
         say = [];
       }
       continue;
     }
     if (a === "error") {
-      push({ type: "message", message: assistant(say.length ? [{ type: "text", text: say.join("\n\n") }] : [], "error", { errorMessage: step.error }) });
+      pushMessage(assistant(say.length ? [{ type: "text", text: say.join("\n\n") }] : [], "error", { errorMessage: step.error }));
       say = [];
       continue;
     }
@@ -206,19 +256,25 @@ export function staticSession(plan, s, repo, endMs) {
       docs = [...docs.filter((d) => d.id !== out.details.doc?.id), ...(out.details.doc ? [out.details.doc] : [])];
       [name, args, result, details] = ["align", input, out.text, out.details];
     }
-    push({ type: "message", message: assistant([...(say.length ? [{ type: "text", text: say.join("\n\n") }] : []), { type: "toolCall", id: callId, name, arguments: args }], "toolUse") });
+    pushMessage(assistant([...(say.length ? [{ type: "text", text: say.join("\n\n") }] : []), { type: "toolCall", id: callId, name, arguments: args }], "toolUse"));
     say = [];
     tick();
+    lastEntryId = id(n);
     push({ type: "message", message: { role: "toolResult", toolCallId: callId, toolName: name, content: [{ type: "text", text: result }], ...(details ? { details } : {}), isError: false, timestamp: t } });
   }
   return lines;
 }
 
 let alignMod = null;
+let anchorsMod = null;
 const alignModule = () => alignMod;
-/** The align extension's own core (Node builtins only), so a static alignment is the real shape. */
+/** A message's fingerprint as the topic-outline extension stores it in a topic's anchor. */
+const fingerprint = (message) => anchorsMod.fingerprintOf(message);
+/** The align extension's own core (Node builtins only), so a static alignment is the real shape;
+    and the topic-outline extension's anchors, so a written-in summary's anchors are too. */
 export async function loadAlignModule() {
   alignMod ??= await import(join(REPO, "pi-config", "extensions", "mode", "align.ts"));
+  anchorsMod ??= await import(join(REPO, "pi-config", "extensions", "topic-outline", "anchors.ts"));
   return alignMod;
 }
 

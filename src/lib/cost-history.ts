@@ -147,6 +147,34 @@ export const tokenSum = (t: CostTokens) => t.input + t.output + t.cacheRead + t.
 /** Cache read and write together, the model table's one Cache column. */
 export const cacheSum = (t: CostTokens) => t.cacheRead + t.cacheWrite;
 
+/** Every input token: uncached input, cache read and cache write (output left out). */
+export const inputSum = (t: CostTokens) => t.input + t.cacheRead + t.cacheWrite;
+
+/**
+ * The cache hit rate, 0..1: the share of input tokens read from cache, cacheRead / (input +
+ * cacheRead + cacheWrite). Null when the count reported no cache read or write at all (a provider
+ * that doesn't cache, or doesn't say), or has no input: there is no rate to show, only its absence.
+ */
+export function cacheHitRate(t: CostTokens): number | null {
+  const all = inputSum(t);
+  if (cacheSum(t) <= 0 || all <= 0) return null;
+  return t.cacheRead / all;
+}
+
+/** A rate in whole percent: "96%"; "<1%" and ">99%" where rounding would claim a 0% or 100% that
+    isn't exact; "—" for none. */
+export function cacheRateWords(rate: number | null): string {
+  if (rate === null || !Number.isFinite(rate)) return "—";
+  if (rate <= 0) return "0%";
+  if (rate >= 1) return "100%";
+  if (rate < 0.005) return "<1%";
+  if (rate >= 0.995) return ">99%";
+  return `${Math.round(rate * 100)}%`;
+}
+
+/** The hover note on a row with no rate. */
+export const noCacheNote = (of: "model" | "provider" = "model") => `No cache use reported for this ${of}.`;
+
 /** Most expensive first; ties by tokens, then by `name`, so two equal rows never swap between polls. */
 export function byCost<T extends Pick<UsageSpend, "usd" | "tokens">>(rows: readonly T[], name: (r: T) => string): T[] {
   return [...rows].sort((a, b) => b.usd - a.usd || tokenSum(b.tokens) - tokenSum(a.tokens) || name(a).localeCompare(name(b)));
@@ -187,13 +215,38 @@ export const costWord = (s: Pick<UsageSpend, "usd" | "tokens" | "unpricedTokens"
 export const kindRows = <T extends { kind: UsageKind }>(rows: readonly T[]): T[] =>
   [...rows].sort((a, b) => USAGE_KIND_ORDER.indexOf(a.kind) - USAGE_KIND_ORDER.indexOf(b.kind));
 
-/** A project row's name: its project's (`name` looks it up), else the last part of its folder, else
-    "No project" for calls with neither (Sova's own decisions). */
-export function projectName(row: Pick<UsageProjectRow, "project" | "cwd">, name: (id: string) => string | undefined = () => undefined): string {
+/** A project row's name: the name the server gave it; else (an older server) its project's (`name` looks it up),
+    else the last part of its folder, else "No project" for calls with neither (Sova's own decisions). */
+export function projectName(row: Pick<UsageProjectRow, "project" | "cwd" | "name">, name: (id: string) => string | undefined = () => undefined): string {
+  if (row.name) return row.name;
   if (row.project) return name(row.project) ?? row.project;
   if (!row.cwd) return "No project";
   const parts = row.cwd.split("/").filter(Boolean);
   return parts[parts.length - 1] ?? row.cwd;
+}
+
+/** The By project rows in their order: most expensive first, Other folders always last. */
+export function projectRows<T extends Pick<UsageProjectRow, "usd" | "tokens" | "project" | "cwd" | "name" | "kind">>(rows: readonly T[]): T[] {
+  const sorted = byCost(rows, (r) => r.name ?? r.project ?? r.cwd ?? "");
+  return [...sorted.filter((r) => r.kind !== "other"), ...sorted.filter((r) => r.kind === "other")];
+}
+
+/** A By project row's hover: where its spend comes from. An older server's row: its folder or project id. */
+export function projectRowTitle(row: Pick<UsageProjectRow, "project" | "cwd" | "kind" | "path" | "folders" | "archived">): string | undefined {
+  switch (row.kind) {
+    case "project":
+      return `${row.path ? `${row.path}\n` : ""}Every session in this project's folders, worktrees included.${row.archived ? " Archived." : ""}`;
+    case "folder":
+      return `${row.path ?? row.cwd ?? ""}\nEvery session in this checkout, worktrees included.`;
+    case "overseer":
+      return "The Overseer's and your organizations' conversations.";
+    case "other": {
+      const n = row.folders ?? 0;
+      return `${n} ${n === 1 ? "folder" : "folders"} that are no project or checkout, and calls with no folder.`;
+    }
+    default:
+      return row.cwd ?? row.project ?? undefined;
+  }
 }
 
 /** A date as the footer says it: `Oct 4`, or `Oct 4, 2025` in another year; null for none. */

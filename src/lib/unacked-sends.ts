@@ -1,3 +1,5 @@
+import type { Unsent } from "./hand-back";
+
 /**
  * The sends a pane made that the server has not acknowledged yet: prompts, steers and commands, by
  * client id. A chat that reloads or stops tells the pane to reconnect (`error` code reloaded), and
@@ -5,6 +7,7 @@
  * took can't reach it any more. What was never acknowledged goes back to the draft then, once (a
  * command makes no user row, and an acknowledged direct prompt still reads "sending", so the rows
  * can't tell). A command the chat took is acknowledged before it runs, so it never comes back.
+ * Each comes back with its client id, so a card click goes to its card, never the draft (lib/hand-back).
  */
 export class UnackedSends {
   private readonly texts = new Map<string, string>();
@@ -23,41 +26,48 @@ export class UnackedSends {
     this.conns.delete(clientId);
   }
 
-  /** A refusal naming it: its text, once (`handedBack` remembers it), else null. */
-  take(clientId: string | undefined, handedBack: Set<string>): string | null {
+  /** A refusal naming it: the send, once (`handedBack` remembers it), else null. */
+  take(clientId: string | undefined, handedBack: Set<string>): Unsent | null {
     const text = clientId ? this.texts.get(clientId) : undefined;
     if (!clientId || text === undefined) return null;
     this.texts.delete(clientId);
     this.conns.delete(clientId);
     if (handedBack.has(clientId)) return null;
     handedBack.add(clientId);
-    return text;
+    return { id: clientId, text };
   }
 
-  /** The chat is gone from under the pane: every text never acknowledged, oldest first, each once; then none. */
-  takeAll(handedBack: Set<string>): string[] {
-    const out: string[] = [];
+  /** The chat is gone from under the pane: every send never acknowledged, oldest first, each once; then none. */
+  takeAll(handedBack: Set<string>): Unsent[] {
+    const out: Unsent[] = [];
     for (const [id, text] of this.texts) {
       if (handedBack.has(id)) continue;
       handedBack.add(id);
-      out.push(text);
+      out.push({ id, text });
     }
     this.texts.clear();
     this.conns.clear();
     return out;
   }
 
-  /** Connection `conn` ended before its chat's hello: the texts sent on it alone, oldest first, each
+  /** The sends made on connection `conn` still unanswered, by client id, oldest first; kept here. */
+  of(conn: number): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const [id, text] of this.texts) if (this.conns.get(id) === conn) out.set(id, text);
+    return out;
+  }
+
+  /** Connection `conn` ended before its chat's hello: the sends made on it alone, oldest first, each
       once. Sends made on an earlier connection stay: that chat may have taken them. */
-  takeFrom(conn: number, handedBack: Set<string>): string[] {
-    const out: string[] = [];
+  takeFrom(conn: number, handedBack: Set<string>): Unsent[] {
+    const out: Unsent[] = [];
     for (const [id, text] of [...this.texts]) {
       if (this.conns.get(id) !== conn) continue;
       this.texts.delete(id);
       this.conns.delete(id);
       if (handedBack.has(id)) continue;
       handedBack.add(id);
-      out.push(text);
+      out.push({ id, text });
     }
     return out;
   }

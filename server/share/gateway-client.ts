@@ -1,5 +1,5 @@
 import { isIP } from "node:net";
-import { REGISTRY_LIMITS, REGISTRY_LINK_KINDS, type GatewayInfo, type RegistryLinkKind, type PublicLinksFile, type RegistryAck, type RegistrySnapshot } from "../../shared/public-links";
+import { REGISTRY_LIMITS, REGISTRY_LINK_KINDS, SHARE_PROTOCOL, type GatewayInfo, type RegistryLinkKind, type PublicLinksFile, type RegistryAck, type RegistrySnapshot } from "../../shared/public-links";
 import { meshApi } from "../mesh";
 import { entryAddresses, tailnetIp } from "../mesh/address-identity";
 import type { GatewayIdentity } from "../mesh/gate";
@@ -152,7 +152,7 @@ export function parseAck(reply: GatewayReply | null): RegistryAck | null {
   if (!reply || !isObj(reply.body)) return null;
   const b = reply.body;
   if (b.ok === true) {
-    if (reply.status !== 200 || !onlyKeys(b, ["ok", "seq", "publicUrl", "collisions"]) || !seqOk(b.seq)) return null;
+    if (reply.status !== 200 || !onlyKeys(b, [...ACK_OK_KEYS]) || !seqOk(b.seq)) return null;
     const publicUrl = publicOrigin(b.publicUrl);
     if (!publicUrl) return null;
     if (b.collisions === undefined) return { ok: true, seq: b.seq, publicUrl };
@@ -161,18 +161,27 @@ export function parseAck(reply: GatewayReply | null): RegistryAck | null {
     return { ok: true, seq: b.seq, publicUrl, collisions: [...c] as string[] };
   }
   if (b.ok === false) {
-    if (reply.status >= 500 || !onlyKeys(b, ["ok", "error"])) return null;
+    if (reply.status >= 500 || !onlyKeys(b, [...ACK_ERROR_KEYS])) return null;
     if (b.error === "not-gateway" || b.error === "not-accepted" || b.error === "bad-snapshot") return { ok: false, error: b.error };
   }
   return null;
 }
+
+/** The keys an ack and an info may carry; anything else and the reply is no answer. */
+export const ACK_OK_KEYS = ["ok", "seq", "publicUrl", "collisions"] as const;
+export const ACK_ERROR_KEYS = ["ok", "error"] as const;
+export const INFO_KEYS = ["publicUrl", "accepting", "seq", "kinds", "previewUrl", "shareProtocol"] as const;
+/** The query the info is asked with: kinds, the preview address, and the share protocol. */
+export const INFO_QUERY = "?kinds=1&preview=1&proto=1";
 
 /** GET info's reply: the gateway's answer, "not-gateway" (404 {error:"not-gateway"}), or null. */
 export function parseInfo(reply: GatewayReply | null): GatewayInfo | "not-gateway" | null {
   if (!reply || !isObj(reply.body)) return null;
   const b = reply.body;
   if (reply.status === 404) return onlyKeys(b, ["error"]) && b.error === "not-gateway" ? "not-gateway" : null;
-  if (reply.status !== 200 || !onlyKeys(b, ["publicUrl", "accepting", "seq", "kinds", "previewUrl"]) || typeof b.accepting !== "boolean") return null;
+  if (reply.status !== 200 || !onlyKeys(b, [...INFO_KEYS]) || typeof b.accepting !== "boolean") return null;
+  // A share protocol is a small positive whole number (§mesh.public/share-protocol).
+  if (b.shareProtocol !== undefined && !(typeof b.shareProtocol === "number" && Number.isSafeInteger(b.shareProtocol) && b.shareProtocol >= 1 && b.shareProtocol <= 1_000_000)) return null;
   if (b.seq !== null && !seqOk(b.seq)) return null;
   // `kinds` is optional (an older gateway omits it); a kind this build doesn't know is dropped.
   if (b.kinds !== undefined && !(Array.isArray(b.kinds) && b.kinds.length <= 16 && b.kinds.every((k) => typeof k === "string" && k.length <= 16))) return null;
@@ -185,6 +194,7 @@ export function parseInfo(reply: GatewayReply | null): GatewayInfo | "not-gatewa
     const preview = parsePreviewUrl(b.previewUrl, false);
     if (preview) info.previewUrl = preview;
   }
+  if (typeof b.shareProtocol === "number") info.shareProtocol = b.shareProtocol;
   return info;
 }
 
@@ -288,6 +298,18 @@ export const routesSessions = (target: GatewayTarget | null): boolean => targetK
 /** Whether `target` stated that it routes links of `kind` (h and i: always). */
 export const routesKind = (target: GatewayTarget | null, kind: RegistryLinkKind): boolean => kind === "h" || kind === "i" || (targetKinds(target)?.includes(kind) ?? false);
 
+// The share protocol the target stated in its own last info (null: it answered with none, an
+// older gateway), bound to that exact target as `kinds` is (§mesh.public/share-protocol).
+let protocolEvidence: { generation: number; key: string; theirs: number | null } | null = null;
+
+/** The gateway's share protocol against this host's, for the Public links panel: only for the
+    current target, once its own info answered since it became the target; null otherwise. */
+export function gatewayProtocol(): { theirs: number | null; ours: number } | null {
+  const target = currentTarget();
+  const e = protocolEvidence;
+  return target && e && e.generation === target.generation && e.key === target.key ? { theirs: e.theirs, ours: SHARE_PROTOCOL } : null;
+}
+
 /** Forget what any gateway said about its kinds (a refusal, the gateway unreachable or no gateway). */
 export function forgetKinds(): void {
   kindsEvidence = null;
@@ -335,7 +357,7 @@ async function callGateway(target: GatewayTarget, path: string, init?: RequestIn
 export async function refreshGateway(): Promise<ViaGatewayStatus | null> {
   const target = currentTarget();
   if (!target) return viaGatewayStatus();
-  const [hello, info] = await Promise.all([callGateway(target, "/api/peer/hello"), callGateway(target, "/api/peer/share-gateway/info?kinds=1&preview=1")]);
+  const [hello, info] = await Promise.all([callGateway(target, "/api/peer/hello"), callGateway(target, `/api/peer/share-gateway/info${INFO_QUERY}`)]);
   if (hello === "withdrawn" || info === "withdrawn" || !stillCurrent(target)) return viaGatewayStatus(); // the target changed meanwhile
   const peer = target.peer;
   const s = cached(peer);
@@ -346,11 +368,14 @@ export async function refreshGateway(): Promise<ViaGatewayStatus | null> {
   if (!info) {
     s.reachable = false;
     forgetKinds(); // a gateway that comes back renegotiates
+    protocolEvidence = null;
   } else if (parsed === "not-gateway") {
     s.reachable = true;
     s.accepting = false; // not (or no longer) a gateway
     forgetKinds();
+    protocolEvidence = null;
   } else if (parsed) {
+    protocolEvidence = { generation: target.generation, key: target.key, theirs: parsed.shareProtocol ?? null };
     s.reachable = true;
     s.accepting = parsed.accepting;
     // An info without `kinds` (an older gateway) states none: nothing is believed.
@@ -406,6 +431,7 @@ export async function pushSnapshot(target: GatewayTarget, snapshot: RegistrySnap
 export function resetGatewayClient(): void {
   cache = null;
   kindsEvidence = null;
+  protocolEvidence = null;
   lastEntry = null;
   routeGeneration += 1;
 }

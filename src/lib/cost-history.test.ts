@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   barShare,
+  cacheHitRate,
+  cacheRateWords,
   type CostChoice,
   costBars,
   costsApiSearch,
@@ -16,10 +18,13 @@ import {
   pickedLabel,
   priceChangeWords,
   projectName,
+  projectRows,
+  projectRowTitle,
   providerChoices,
   toggleModel,
   toggleProvider,
 } from "./cost-history";
+import type { UsageProjectRow } from "../../shared/usage/wire";
 
 test("the default query has a bare address, and every query round-trips through the hash", () => {
   assert.equal(costsHref(), "#/agents/costs");
@@ -82,6 +87,34 @@ test("kinds keep the ledger's order; projects name the org project, else the fol
   assert.equal(projectName({ project: "prj_gone0000", cwd: null }), "prj_gone0000");
   assert.equal(projectName({ project: null, cwd: "/home/u/webapps/sova/" }), "sova");
   assert.equal(projectName({ project: null, cwd: null }), "No project");
+});
+
+test("by project: the server's name wins, Other folders sorts last whatever it cost, and each kind's hover says what it holds", () => {
+  const spend = (usd: number) => ({ usd, tokens: { input: usd, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 } });
+  const rows: Pick<UsageProjectRow, "project" | "cwd" | "kind" | "name" | "path" | "folders" | "archived" | "usd" | "tokens">[] = [
+    { project: null, cwd: null, kind: "other" as const, name: "Other folders", folders: 3, ...spend(99) },
+    { project: "prj_a", cwd: null, kind: "project" as const, name: "Alpha", path: "/c/alpha", ...spend(5) },
+    { project: null, cwd: "/c/tool", kind: "folder" as const, name: "tool", path: "/c/tool", ...spend(7) },
+    { project: null, cwd: "/s/overseer", kind: "overseer" as const, name: "Overseer", ...spend(1) },
+    { project: "prj_b", cwd: null, kind: "project" as const, name: "Beta", path: "/c/beta", archived: true as const, ...spend(5) },
+  ];
+  const order = projectRows(rows);
+  assert.equal(order.at(-1)!.kind, "other");
+  assert.deepEqual(order.slice(0, -1).map((r) => r.usd), [7, 5, 5, 1]);
+  assert.deepEqual(projectRows([...rows].reverse()).map((r) => r.name), order.map((r) => r.name), "ties stay put between polls");
+  // The server's name beats the browser's lookup and the folder's last part.
+  const lookup = (id: string) => `looked-up ${id}`;
+  for (const r of rows) assert.equal(projectName(r, lookup), r.name);
+  // Hovers: one per kind, never the same sentence for two kinds.
+  const titles = rows.map((r) => projectRowTitle(r)!);
+  assert.equal(new Set(titles).size, titles.length);
+  assert.ok(titles[1]!.startsWith(rows[1]!.path!));
+  assert.ok(titles[2]!.startsWith(rows[2]!.path!));
+  assert.ok(titles[0]!.startsWith(`${rows[0]!.folders} folders`));
+  assert.ok(projectRowTitle({ ...rows[0]!, folders: 1 })!.startsWith("1 folder "));
+  assert.ok(titles[4]!.startsWith(titles[1]!.replace(rows[1]!.path!, rows[4]!.path!)), "archived adds to the project hover");
+  // An older server's row: as before.
+  assert.equal(projectRowTitle({ project: null, cwd: "/x/y" }), "/x/y");
 });
 
 test("the last price change in words", () => {
@@ -167,4 +200,38 @@ test("bar heights are shares of the tallest; nothing spent is all zero", () => {
   assert.equal(barShare(bars[5]!, bars), 0.5);
   const none = costBars([], "7d", "2026-10-05");
   assert.ok(none.every((b) => barShare(b, none) === 0));
+});
+
+const tok = (input: number, cacheRead: number, cacheWrite: number, output = 0) => ({ input, output, cacheRead, cacheWrite, cacheWrite1h: 0 });
+
+test("the cache hit rate is cache read over every input token, output left out", () => {
+  // Claude-like: reads and writes, the writes counted as input.
+  assert.equal(cacheHitRate(tok(10, 900, 90, 5000)), 0.9);
+  // Codex-like: reads, never a write reported.
+  assert.equal(cacheHitRate(tok(250, 750, 0, 40)), 0.75);
+  // Writes only: a cache was used, nothing was read back yet.
+  assert.equal(cacheHitRate(tok(100, 0, 300)), 0);
+  // Jev-like: no cache read or write at all is no rate, not 0%.
+  assert.equal(cacheHitRate(tok(1200, 0, 0, 300)), null);
+  // Nothing at all.
+  assert.equal(cacheHitRate(tok(0, 0, 0)), null);
+  assert.equal(cacheHitRate(tok(0, 0, 0, 50)), null, "output alone has no rate");
+});
+
+test("a total's rate counts the input of rows with no cache use", () => {
+  const rows = [tok(250, 750, 0), tok(1000, 0, 0), tok(0, 0, 0)];
+  const sum = rows.reduce((a, r) => tok(a.input + r.input, a.cacheRead + r.cacheRead, a.cacheWrite + r.cacheWrite), tok(0, 0, 0));
+  assert.equal(cacheHitRate(sum), 750 / 2000);
+  assert.equal(cacheRateWords(cacheHitRate(sum)), "38%");
+});
+
+test("a rate reads in whole percent, never a rounded 0% or 100% that isn't exact", () => {
+  assert.equal(cacheRateWords(null), "—");
+  assert.equal(cacheRateWords(0), "0%");
+  assert.equal(cacheRateWords(0.004), "<1%");
+  assert.equal(cacheRateWords(0.005), "1%");
+  assert.equal(cacheRateWords(0.9649), "96%");
+  assert.equal(cacheRateWords(0.994), "99%");
+  assert.equal(cacheRateWords(0.995), ">99%");
+  assert.equal(cacheRateWords(1), "100%");
 });

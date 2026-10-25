@@ -1,12 +1,13 @@
 import type { Context, Hono } from "hono";
-import { type GatewayInfo, type RegistryAck, REGISTRY_LINK_KINDS, SNAPSHOT_MAX_BYTES } from "../../shared/public-links";
+import { type GatewayInfo, type RegistryAck, REGISTRY_LINK_KINDS, SHARE_PROTOCOL, SNAPSHOT_MAX_BYTES } from "../../shared/public-links";
 import type { MeshApi } from "../mesh";
 import { acceptsNode, type GatewayRegistry, gatewayPreviewUrl, gatewayPublicUrl, gatewaySetting, localShareHashes, RegistryUnavailable, shareRegistry } from "./registry";
 
 /**
  * A gateway's peer routes (§mesh.public/registry), under /api/peer/share-gateway/* so only the
- * peer listener's verified caller reaches them: GET info[?kinds=1[&preview=1]] -> GatewayInfo
- * (`kinds` only when asked, `previewUrl` only with `preview=1` too), PUT links body
+ * peer listener's verified caller reaches them: GET info[?kinds=1[&preview=1]][&proto=1] -> GatewayInfo
+ * (`kinds` only when asked, `previewUrl` only with `preview=1` too, `shareProtocol` only with
+ * `proto=1`, §mesh.public/share-protocol), PUT links body
  * RegistrySnapshot -> RegistryAck (shared/public-links.ts). The caller is always
  * `mesh.requestPeer` (its StableID keys the rows), never anything in the body. A host that is no
  * gateway answers 404 `not-gateway` on both.
@@ -55,6 +56,7 @@ export function mountShareGateway(app: Hono, mesh: MeshApi, registry: GatewayReg
       const preview = c.req.query("preview") === "1" ? gatewayPreviewUrl() : null;
       if (preview) info.previewUrl = preview;
     }
+    if (c.req.query("proto") === "1") info.shareProtocol = SHARE_PROTOCOL;
     return c.json(info);
   });
 

@@ -6,6 +6,8 @@ import {
   barShare,
   browserZone,
   byCost,
+  cacheHitRate,
+  cacheRateWords,
   cacheSum,
   COST_RANGES,
   costBars,
@@ -15,16 +17,20 @@ import {
   costWord,
   dayKey,
   facetChoices,
+  inputSum,
   kindName,
   kindOne,
   kindRows,
   modelChoices,
+  noCacheNote,
   pickedLabel,
   priceChangeWords,
   priceDate,
   providerChoices,
   providerName,
   projectName,
+  projectRows,
+  projectRowTitle,
   toggleModel,
   toggleProvider,
   tokenSum,
@@ -334,6 +340,26 @@ function CheckMark(props: { on: boolean }) {
 
 const spendTitle = (s: UsageSpend) => `${tokens(tokenSum(s.tokens))} tokens over ${s.calls} ${s.calls === 1 ? "call" : "calls"}`;
 
+/** A stat card's cache line: "96% from cache", or that none of it reported cache use. */
+const statCacheWords = (s: UsageSpend) => {
+  const rate = cacheHitRate(s.tokens);
+  return rate === null ? "No cache use reported" : `${cacheRateWords(rate)} from cache`;
+};
+
+/** A Hit rate cell: the rate, or "—" with the note that the row reported no cache use. */
+function HitRate(props: { spend: Pick<UsageSpend, "tokens">; of?: "model" | "provider" }) {
+  const rate = () => cacheHitRate(props.spend.tokens);
+  const title = () =>
+    rate() === null
+      ? noCacheNote(props.of)
+      : `${tokens(props.spend.tokens.cacheRead)} of ${tokens(inputSum(props.spend.tokens))} input tokens read from cache`;
+  return (
+    <Num label="Hit rate" title={title()}>
+      <span class="cost-figure">{cacheRateWords(rate())}</span>
+    </Num>
+  );
+}
+
 /** Total, and the three ways it was spent. */
 function CostStats(props: { answer: UsageCosts }) {
   const stats = (): { label: string; spend: UsageSpend; tip?: string }[] => [
@@ -349,6 +375,7 @@ function CostStats(props: { answer: UsageCosts }) {
           <div class="card costs-stat" title={s.tip ? `${s.tip} ${spendTitle(s.spend)}.` : `${spendTitle(s.spend)}.`}>
             <dt class="text-eyebrow">{s.label}</dt>
             <dd class="cost-figure">{usd(s.spend.usd)}</dd>
+            <dd class="costs-stat-cache">{statCacheWords(s.spend)}</dd>
           </div>
         )}
       </For>
@@ -458,7 +485,25 @@ const SpendHead = (props: { first: string }) => (
 
 function ProviderTable(props: { answer: UsageCosts }) {
   return (
-    <TableCard id="costs-providers" title="By provider" caption="Cost by provider" head={<SpendHead first="Provider" />}>
+    <TableCard
+      id="costs-providers"
+      title="By provider"
+      caption="Tokens, cache hit rate and cost by provider"
+      head={
+        <>
+          <th scope="col">Provider</th>
+          <th scope="col" align="right">
+            Tokens
+          </th>
+          <th scope="col" align="right">
+            Hit rate
+          </th>
+          <th scope="col" align="right">
+            Cost
+          </th>
+        </>
+      }
+    >
       <For each={byCost(props.answer.byProvider, (r) => r.provider)}>
         {(r) => (
           <tr>
@@ -468,6 +513,7 @@ function ProviderTable(props: { answer: UsageCosts }) {
             <Num label="Tokens" title={spendTitle(r)}>
               <Tok n={tokenSum(r.tokens)} />
             </Num>
+            <HitRate spend={r} of="provider" />
             <Num label="Cost">
               <SpendUsd spend={r} />
             </Num>
@@ -503,7 +549,7 @@ function ModelTable(props: { answer: UsageCosts }) {
     <TableCard
       id="costs-models"
       title="By model"
-      caption="Tokens and cost by model"
+      caption="Tokens, cache hit rate and cost by model"
       class="costs-wide"
       stack
       head={
@@ -514,6 +560,9 @@ function ModelTable(props: { answer: UsageCosts }) {
           </th>
           <th scope="col" align="right">
             Cache
+          </th>
+          <th scope="col" align="right">
+            Hit rate
           </th>
           <th scope="col" align="right">
             Output
@@ -540,6 +589,7 @@ function ModelTable(props: { answer: UsageCosts }) {
             <Num label="Cache" title={`${tokens(r.tokens.cacheRead)} read · ${tokens(r.tokens.cacheWrite)} written`}>
               <Tok n={cacheSum(r.tokens)} />
             </Num>
+            <HitRate spend={r} />
             <Num label="Output">
               <Tok n={r.tokens.output} />
             </Num>
@@ -556,11 +606,14 @@ function ModelTable(props: { answer: UsageCosts }) {
 function ProjectTable(props: { answer: UsageCosts; name(id: string): string | undefined }) {
   return (
     <TableCard id="costs-projects" title="By project" caption="Cost by project or folder" class="costs-wide" head={<SpendHead first="Project" />}>
-      <For each={byCost(props.answer.byProject, (r) => r.project ?? r.cwd ?? "")}>
+      <For each={projectRows(props.answer.byProject)}>
         {(r) => (
           <tr>
-            <th scope="row" title={r.cwd ?? r.project ?? undefined}>
+            <th scope="row" title={projectRowTitle(r)}>
               {projectName(r, props.name)}
+              <Show when={r.archived}>
+                <span class="cost-session-meta">archived</span>
+              </Show>
             </th>
             <Num label="Tokens" title={spendTitle(r)}>
               <Tok n={tokenSum(r.tokens)} />

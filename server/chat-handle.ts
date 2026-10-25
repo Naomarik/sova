@@ -33,7 +33,7 @@ import type {
 } from "../shared/chat-runtime";
 import type { ChatAskMethod, ServerToolCtxWire } from "../shared/chat-runtime-wire";
 import type { HEntry, HookCtx, ImageInput, StateKind, ToolCtx, ToolResult, ToolSpec } from "../shared/harness";
-import type { ChatClientMessage, HeldChatState } from "../shared/protocol";
+import type { ChatClientMessage, ChatModeResult, HeldChatState, ProjectModeApproval } from "../shared/protocol";
 import {
   BusyError,
   type ChatClient,
@@ -69,6 +69,9 @@ import { sessionInstanceNote, sessionVerbsTool } from "./project-services/tools"
 import { stateRoot } from "./state-root";
 import { queueOpenTool, queuePushTool } from "./topics";
 import type { PowersSend } from "./session-powers";
+import { tourTools } from "./tours/tools";
+import { sessionOfferTools } from "./session-offers-tool";
+import { offerNoteFor } from "./session-offers";
 /** The powers host, loaded when first needed (session-profile-routes binds chat-manager at its import). */
 const powersHost = () => import("./session-profile-routes").then((m) => m.powersHost);
 
@@ -165,6 +168,15 @@ export abstract class ChatHandle {
   applyMode(patch: ChatModePatch) {
     return this.call("applyMode", { patch });
   }
+  modeResult(): Promise<ChatModeResult> {
+    return this.call("modeResult", {});
+  }
+  approveHooks(approvals: ProjectModeApproval[]) {
+    return this.call("approveHooks", { approvals });
+  }
+  runModeCommand(mode: string, name: string, args?: unknown) {
+    return this.call("runModeCommand", { mode, name, ...(args !== undefined ? { args } : {}) });
+  }
   pinMode(): Promise<boolean> {
     return this.call("pinMode", {});
   }
@@ -188,8 +200,8 @@ export abstract class ChatHandle {
   appendState<T>(kind: StateKind<T>, data: T): Promise<string> {
     return this.call("appendState", { kind: kind.type, data });
   }
-  appendNote(noteType: string, text: string): Promise<boolean> {
-    return this.call("appendNote", { noteType, text });
+  appendNote(noteType: string, text: string, details?: unknown): Promise<boolean> {
+    return this.call("appendNote", { noteType, text, ...(details !== undefined ? { details } : {}) });
   }
   writeProfile(data: ChatMethods["writeProfile"]["args"]["data"]): Promise<null> {
     return this.call("writeProfile", { data });
@@ -404,6 +416,14 @@ export async function acquireChatHandle(path: string, force = false): Promise<Ch
   return router.acquire(path, force);
 }
 
+/** Whether a chat is open for a session file, once a take-back of it (after a server restart) is
+    done: the chat, or undefined. A router that takes nothing back answers at once. */
+export async function chatHandleTakenBack(path: string): Promise<ChatHandle | undefined> {
+  if (!router && routerComing) await routerComing.promise;
+  await router?.takenBack?.(path);
+  return router?.get(path);
+}
+
 /** The open chat for a session file (already through resolveSessionPath), or undefined. */
 export const chatHandle = (path: string): ChatHandle | undefined => router?.get(path);
 
@@ -422,10 +442,13 @@ export interface ChatRouter {
   all(): ChatHandle[];
   /** The chat in a process of its own (taken back, or started); a chat that can't start is refused. */
   acquire(path: string, force: boolean): Promise<ChatHandle>;
-  /** Close it for good (archive): its panes are told to reconnect. False: none open there. */
-  close(path: string, message: string): Promise<boolean>;
+  /** Close it for good (archive): its panes are told to reconnect, or with `quiet` that it closed. False: none open there. */
+  close(path: string, message: string, opts?: CloseOpts): Promise<boolean>;
   /** A special chat's composer may have changed: each in a process of its own is told. */
   composersChanged?(): void;
+  /** Resolves once this path's chat, if a previous server left it running, is taken back (bounded),
+      so `get` can be trusted for it; at once when none of it was left running. */
+  takenBack?(path: string): Promise<void>;
 }
 let router: ChatRouter | null = null;
 export function setChatRouter(r: ChatRouter | null): void {
@@ -455,10 +478,18 @@ export const chatsReady = async (): Promise<void> => {
 /** The open chat of a session id, or undefined. */
 export const chatHandleById = (sessionId: string): ChatHandle | undefined => chatHandles().find((h) => h.mirror.sessionId === sessionId);
 
+/** How a closed chat's open tabs are told. `quiet`: they keep what they show and don't reconnect
+    (`closed`, as after an idle stop), so the close never starts the chat again (an archive);
+    otherwise they reconnect, opening it anew (a cleared Overseer, a model change, a move). */
+export interface CloseOpts {
+  quiet?: "archived";
+}
+
 /** Close a held chat for good (archive/close): every open tab is told to reconnect, and the session
-    reopens on demand. A running turn is aborted and its workers die with it. False: none held. */
-export async function closeChat(path: string, message: string): Promise<boolean> {
-  return router ? router.close(path, message) : false;
+    reopens on demand, or with `quiet` told it closed. A running turn is aborted and its workers die
+    with it. False: none held. */
+export async function closeChat(path: string, message: string, opts: CloseOpts = {}): Promise<boolean> {
+  return router ? router.close(path, message, opts) : false;
 }
 
 /** SessionSummary.busy: this server holds the chat and a run is in progress. */
@@ -621,9 +652,10 @@ export async function fileSnapshot(path: string, w: Partial<ServerToolCtxWire> &
 }
 
 /** The server-hosted tools of an ordinary chat in a process of its own, hosted here: their
-    declarations go to the chat in its `open`, in loadout order. `title`: the chat's name now. */
-export function servedToolsFor(chatId: ChatId, sessionId: string, title: () => string, powers = false): ServerToolDecl[] {
-  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title })];
+    declarations go to the chat in its `open`, in loadout order. `known`: the title the chat reports
+    (its pi session name, often none), used only when the session's display title can't be read. */
+export function servedToolsFor(chatId: ChatId, sessionId: string, known: () => string | undefined, powers = false): ServerToolDecl[] {
+  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title: () => senderTitle(chatId, known) }), ...tourTools(sessionId, chatId)];
   if (process.env.SOVA_CHAT_TEST_SERVED === "1") specs.push(trialServedSleep());
   // A powers profile's queue_open (its own extension registers it, from this declaration) and its
   // sends, a server action (§app.chat-processes/server-actions).
@@ -633,6 +665,35 @@ export function servedToolsFor(chatId: ChatId, sessionId: string, title: () => s
   }
   serveTools(chatId, specs);
   return specs.map(declOfTool);
+}
+
+/** The server-hosted tools of a worker or team member (WorkerKind "worker", never a hidden chat), hosted
+    here: only `project_verbs`, under an ordinary session's rules (§app.project-services/callers). */
+export function servedWorkerTools(chatId: ChatId): ServerToolDecl[] {
+  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine())];
+  serveTools(chatId, specs);
+  return specs.map(declOfTool);
+}
+
+/**
+ * Every server-hosted tool of a chat this server opens or adopts: servedToolsFor's, then, for an
+ * ordinary chat (no special kind but a powers profile), its `offer` tool when its snapshot names any
+ * (§chat.offers/tool). Last in the list, so a chat with none declares exactly what it did before.
+ */
+export async function servedToolsForChat(chatId: ChatId, sessionId: string, known: () => string | undefined, kind: string | null): Promise<ServerToolDecl[]> {
+  const decls = servedToolsFor(chatId, sessionId, known, kind === "powers");
+  if (kind !== null && kind !== "powers") return decls;
+  const offers = await sessionOfferTools(sessionId, chatId);
+  if (!offers.length) return decls;
+  serveTools(chatId, offers);
+  return [...decls, ...offers.map(declOfTool)];
+}
+
+/** A pusher's title, the one Sova shows for its session (§chat.topics/push): its display title, else
+    the title its chat reports, else "Untitled"; never blank. */
+async function senderTitle(path: string, known: () => string | undefined): Promise<string> {
+  const { displayTitleOf } = await import("./sessions-index"); // it imports this module
+  return (await displayTitleOf(path))?.trim() || known()?.trim() || "Untitled";
 }
 
 /** `@powers.send`: a powers chat's session_send, run here with its invitations (PowersHost.send). */
@@ -711,6 +772,8 @@ export async function answerChatAsk(path: string, method: ChatAskMethod, args: u
       return singletonFor(a.key, a.path ?? path);
     case "reply.timings":
       return fetchSessionTimings(String(a.sessionId ?? ""));
+    case "offers.note":
+      return offerNoteFor(String(a.sessionId ?? ""));
     case "powers.sessions":
       return (await powersHost()).sessions();
     case "powers.session":

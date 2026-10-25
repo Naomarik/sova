@@ -5,7 +5,7 @@ import { getUsageSession } from "../lib/api";
 import { formatTokens } from "../lib/context";
 import { compactModel, usageModelNote } from "../lib/format";
 import { createPoll, type Poll } from "../lib/poll";
-import { originLabel, spendTitle, spendUsd, spentAnything, spoken, usageTabRows } from "../lib/spend";
+import { cacheHeadline, hitRateCell, originLabel, spendTitle, spendUsd, spentAnything, spoken, usageTabRows } from "../lib/spend";
 import { ResendLine } from "./ResendLine";
 import { Banner } from "./ui";
 
@@ -79,6 +79,7 @@ export function SessionUsageTab(props: { spend: Poll<UsageSessionSpend>; workers
               </h3>
               <p class="text-mono" style={{ margin: 0 }} title={spendTitle(s().total)}>
                 {formatTokens(spoken(s().total))} tokens in and out · {spendUsd(s().total.usd)}
+                <Show when={cacheHeadline(s().total)}>{(c) => <> · {c()}</>}</Show>
               </p>
               <ResendLine resend={s().resend} spendUsd={s().own.usd} of="the main thread" />
               <Show when={rows().length > 0}>
@@ -100,6 +101,9 @@ export function SessionUsageTab(props: { spend: Poll<UsageSessionSpend>; workers
                         </th>
                         <th scope="col" align="right">
                           Cache write
+                        </th>
+                        <th scope="col" align="right">
+                          Hit rate
                         </th>
                         <th scope="col" align="right">
                           Cost
@@ -149,7 +153,7 @@ function WorkerCount(props: { total: number; working: number }) {
   );
 }
 
-/** The four token columns and the cost. Each cell names its column, so a narrow pane can stack the
+/** The four token columns, the cache hit rate and the cost. Each cell names its column, so a narrow pane can stack the
     row and still say which count is which. */
 function Cells(props: { spend: UsageSpend }) {
   const cell = (label: string, n: number) => (
@@ -163,6 +167,9 @@ function Cells(props: { spend: UsageSpend }) {
       {cell("Out", props.spend.tokens.output)}
       {cell("Cache read", props.spend.tokens.cacheRead)}
       {cell("Cache write", props.spend.tokens.cacheWrite)}
+      <td align="right" class="text-mono text-num" style={oneLine} data-label="Hit rate" title={hitRateCell(props.spend).title}>
+        {hitRateCell(props.spend).text}
+      </td>
       <td align="right" class="text-mono text-num" style={oneLine} data-label="Cost">
         {spendUsd(props.spend.usd)}
       </td>

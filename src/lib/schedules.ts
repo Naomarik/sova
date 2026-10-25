@@ -2,7 +2,7 @@ import type { PlaybookSchedule } from "../../shared/protocol";
 import { stampTime } from "./format";
 
 /**
- * A playbook schedule's one line, as the Playbooks dialog's row and the permits panel show it
+ * A playbook schedule's one line, as the Playbooks dialog's row and the Overseer's Approvals & Schedules show it
  * (§chat.schedules/where-shown): the schedule in words, then its state.
  */
 

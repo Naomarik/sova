@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { REQUIREMENTS_NS, type DecisionRow } from "../shared/decisions";
 import { provenanceOf, specSlug } from "./decisions";
@@ -25,6 +25,8 @@ import { LOCAL_ONLY_IGNORE } from "./project-worktrees";
 const DRAFT_TOOL = join(import.meta.dirname, "..", "pi-config", "extensions", "spec", "core", "sova-spec-draft.mjs");
 export const PROJECT_DRAFT = "sova-decisions";
 const BATCH_PREFIX = "sova-promote-";
+/** A conversation's own draft (§app.requirements/conversation-drafts): `conv-<session id>`. */
+export const CONVERSATION_PREFIX = "conv-";
 const TOOL_TIMEOUT_MS = 60_000;
 
 export class SpecToolError extends Error {
@@ -83,7 +85,7 @@ async function must(root: string, args: string[]): Promise<ToolResult> {
 
 export const specDirOf = (root: string): string => join(root, ".sova", "spec");
 const draftsDir = (root: string) => join(specDirOf(root), "drafts");
-const draftSpecDir = (root: string, name: string) => join(draftsDir(root), name, "spec");
+export const draftSpecDir = (root: string, name: string) => join(draftsDir(root), name, "spec");
 
 
 function ensureLocalOnlyIgnore(root: string): void {
@@ -95,7 +97,7 @@ function ensureLocalOnlyIgnore(root: string): void {
 
 /** Remove one of Sova's own drafts. Refuses while any promotion is in flight. */
 function removeOwnDraft(root: string, name: string): void {
-  if (name !== PROJECT_DRAFT && !name.startsWith(BATCH_PREFIX)) throw new Error(`not a Sova draft: ${name}`);
+  if (name !== PROJECT_DRAFT && !name.startsWith(BATCH_PREFIX) && !name.startsWith(CONVERSATION_PREFIX)) throw new Error(`not a Sova draft: ${name}`);
   if (existsSync(join(draftsDir(root), ".txn"))) throw new SpecToolError("A spec promotion is pending recovery in this project (drafts/.txn); run the draft tool's recover first.", ["pending-transaction"]);
   rmSync(join(draftsDir(root), name), { recursive: true, force: true });
 }
@@ -147,8 +149,8 @@ const said = (d: Pick<DecisionRow, "quote" | "name" | "at">): string => `${quote
 
 /** A record's prose: the statement, then each quote with who said it and when (the decision's own
     first, then any that restated it), then the supersede line. */
-export function renderRecord(d: DecisionRow, supersededByRecord?: string, also: DecisionRow[] = []): string {
-  const lines = [`## ${d.recordId} — ${oneLine(d.statement, 80)}`, "", safeProse(d.statement), "", said(d)];
+export function renderRecord(d: DecisionRow, supersededByRecord?: string, also: DecisionRow[] = [], changes?: string): string {
+  const lines = [`## ${d.recordId} — ${oneLine(d.statement, 80)}`, "", ...(changes ? [`Changes ${changes}.`, ""] : []), safeProse(d.statement), "", said(d)];
   for (const a of also) lines.push("", said(a));
   if (supersededByRecord) lines.push("", `Superseded by ${supersededByRecord}.`);
   return `${lines.join("\n")}\n`;
@@ -156,7 +158,7 @@ export function renderRecord(d: DecisionRow, supersededByRecord?: string, also: 
 
 /** The manifest fields the decisions layer owns (§app.requirements/decisions). `kind` and
     `authority` are written only when it creates a record; every other field is the spec layer's. */
-export const DECISION_FIELDS = ["decision", "provenance", "supersededBy"] as const;
+export const DECISION_FIELDS = ["decision", "provenance", "supersededBy", "changes"] as const;
 
 /** A record's decisions-owned fields, in a fixed order: what the reconciler compares. */
 export const decisionPart = (rec: unknown): Record<string, unknown> => {
@@ -177,13 +179,14 @@ export function mergeRecord(existing: Record<string, unknown> | undefined, rec: 
   return out;
 }
 
-export function manifestRecord(d: DecisionRow, supersededByRecord?: string, also: DecisionRow[] = []): Record<string, unknown> {
+export function manifestRecord(d: DecisionRow, supersededByRecord?: string, also: DecisionRow[] = [], changes?: string): Record<string, unknown> {
   return {
     kind: "note",
     authority: "accepted",
     provenance: [provenanceOf(d), ...also.map(provenanceOf)],
     decision: d.id,
     ...(supersededByRecord ? { supersededBy: supersededByRecord } : {}),
+    ...(changes ? { changes } : {}),
   };
 }
 
@@ -263,6 +266,8 @@ export interface SpecEdit {
   supersededBy: Map<string, string>;
   /** recordId → decisions folded into it (their quotes and provenance join the record). */
   also?: Map<string, DecisionRow[]>;
+  /** recordId → the § id of the existing record it changes (a conversation's change to existing behaviour). */
+  changes?: Map<string, string>;
 }
 
 /**
@@ -304,7 +309,8 @@ export function applyToSpecDir(specDir: string, edit: SpecEdit, opts: { proseOnl
     for (const d of rows) {
       const sup = edit.supersededBy.get(d.recordId!);
       const also = edit.also?.get(d.recordId!) ?? [];
-      const text = renderRecord(d, sup, also);
+      const chg = edit.changes?.get(d.recordId!);
+      const text = renderRecord(d, sup, also, chg);
       const i = parsed.blocks.findIndex((b) => b.id === d.recordId);
       if (i < 0 || trimBlock(parsed.blocks[i]!.text) !== trimBlock(text)) {
         if (i < 0) appendBlock(parsed, d.recordId!, text);
@@ -314,7 +320,7 @@ export function applyToSpecDir(specDir: string, edit: SpecEdit, opts: { proseOnl
       }
       const existing = manifest.claims[d.recordId!];
       if (opts.proseOnly && existing) continue;
-      const rec = mergeRecord(existing, manifestRecord(d, sup, also));
+      const rec = mergeRecord(existing, manifestRecord(d, sup, also, chg));
       if (JSON.stringify(existing) === JSON.stringify(rec)) continue;
       manifest.claims[d.recordId!] = rec;
       manifestChanged = true;
@@ -328,7 +334,74 @@ export function applyToSpecDir(specDir: string, edit: SpecEdit, opts: { proseOnl
   return [...changed].sort();
 }
 
+/** The claim files of a spec directory, relative to its claims root (sorted). */
+function claimFiles(claimsRoot: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string, rel: string) => {
+    let names: string[];
+    try {
+      names = readdirSync(dir).sort();
+    } catch {
+      return;
+    }
+    for (const n of names) {
+      const abs = join(dir, n);
+      const r = rel ? `${rel}/${n}` : n;
+      if (statSync(abs).isDirectory()) walk(abs, r);
+      else if (n.endsWith(".md")) out.push(r);
+    }
+  };
+  walk(claimsRoot, "");
+  return out;
+}
+
+/**
+ * Every declaration's prose block in a spec directory (current or a draft's spec/), by § id: an H2
+ * through the line before the next, an H1 lede through the line before its first H2. Fences are
+ * skipped, as the claim-file parser skips them.
+ */
+export function blocksOf(specDir: string): Map<string, string> {
+  const out = new Map<string, string>();
+  let claimsRoot = "claims";
+  try {
+    const m = JSON.parse(readFileSync(join(specDir, "manifest.json"), "utf8")) as { claimsRoot?: string };
+    if (typeof m.claimsRoot === "string") claimsRoot = m.claimsRoot.replace(/\/+$/, "");
+  } catch {
+    return out;
+  }
+  const base = join(specDir, claimsRoot);
+  for (const rel of claimFiles(base)) {
+    const f = parseClaimFile(readFileSync(join(base, rel), "utf8"));
+    const h1 = f.lede ? /^# (§\S+)/m.exec(f.lede) : null;
+    if (h1 && f.lede) out.set(h1[1]!, f.lede.slice(h1.index));
+    for (const b of f.blocks) out.set(b.id, b.text);
+  }
+  return out;
+}
+
 // ---- reading the current spec ----------------------------------------------------------------------------
+
+/** SHA-256 over the current spec's manifest and claims (paths + bytes), "" when there is none. */
+export function specHash(root: string): string {
+  const dir = specDirOf(root);
+  if (!existsSync(join(dir, "manifest.json"))) return "";
+  const h = createHash("sha256");
+  const walk = (rel: string) => {
+    const abs = join(dir, rel);
+    let st;
+    try {
+      st = statSync(abs);
+    } catch {
+      return;
+    }
+    if (st.isDirectory()) for (const n of readdirSync(abs).sort()) walk(join(rel, n));
+    else if (st.isFile()) h.update(`${rel}\0`).update(readFileSync(abs)).update("\0");
+  };
+  walk("manifest.json");
+  walk("claims");
+  return h.digest("hex");
+}
+
 
 /** The current spec's manifest records by id (empty when there is none). */
 export function currentClaims(root: string): Record<string, unknown> {
@@ -350,14 +423,76 @@ export const projectDraftExists = (root: string): boolean => existsSync(join(dra
 
 /** Rebuild the project draft from current plus `edit`. Returns the ids it changed. */
 export async function writeProjectDraft(root: string, edit: SpecEdit): Promise<{ draft: string | null; changed: string[] }> {
+  return rebuildOwnDraft(root, PROJECT_DRAFT, "Decisions recorded in conversations, reconciled and not yet promoted", edit, { keepEmpty: false });
+}
+
+/**
+ * Rebuild one of Sova's own drafts from current plus `edit`: removed, made again from the current
+ * spec (the tools' empty baseline when there is none), the records written, then checked. With
+ * `keepEmpty`, an edit with no rows still leaves an empty draft (a conversation's draft exists from
+ * its first need). Returns the ids it changed against current.
+ */
+export async function rebuildOwnDraft(root: string, name: string, purpose: string, edit: SpecEdit, opts: { keepEmpty: boolean }): Promise<{ draft: string | null; changed: string[] }> {
   ensureLocalOnlyIgnore(root);
-  removeOwnDraft(root, PROJECT_DRAFT);
-  if (!edit.rows.length) return { draft: null, changed: [] };
-  await must(root, ["new", PROJECT_DRAFT, "--purpose", "Decisions recorded in conversations, reconciled and not yet promoted", "--write"]);
-  const changed = applyToSpecDir(draftSpecDir(root, PROJECT_DRAFT), edit);
-  const check = await runDraftTool(root, ["check", PROJECT_DRAFT]);
+  removeOwnDraft(root, name);
+  if (!edit.rows.length && !opts.keepEmpty) return { draft: null, changed: [] };
+  await must(root, ["new", name, "--purpose", purpose, "--write"]);
+  const changed = edit.rows.length ? applyToSpecDir(draftSpecDir(root, name), edit) : [];
+  const check = await runDraftTool(root, ["check", name]);
   if (check.exit === 2) throw new SpecToolError(`the draft does not load: ${findingText(check)}`, findingCodes(check));
-  return { draft: PROJECT_DRAFT, changed };
+  return { draft: name, changed };
+}
+
+/**
+ * Rebuild one of Sova's own drafts of `root` on another spec: `baseRoot`'s `.sova/spec` (a tool root
+ * holding the project's main-line spec, §app.requirements/conversation-drafts), or the tools' empty
+ * baseline when null. The spec tools copy only their root's own spec at `new`, so the draft is made in
+ * a scratch tool root under the project's drafts folder holding a copy of that spec, checked there,
+ * then moved into place as `<root>/.sova/spec/drafts/<name>`. The root's own current spec is never
+ * read or written. Returns the ids it changed against the base.
+ */
+export async function rebuildOwnDraftOn(root: string, baseRoot: string | null, name: string, purpose: string, edit: SpecEdit): Promise<{ draft: string; changed: string[] }> {
+  if (baseRoot !== null && canonicalDir(baseRoot) === canonicalDir(root)) return rebuildOwnDraft(root, name, purpose, edit, { keepEmpty: true }) as Promise<{ draft: string; changed: string[] }>;
+  ensureLocalOnlyIgnore(root);
+  if (existsSync(join(draftsDir(root), ".txn"))) throw new SpecToolError("A spec promotion is pending recovery in this project (drafts/.txn); run the draft tool's recover first.", ["pending-transaction"]);
+  const scratch = join(draftsDir(root), `.build-${name}-${process.pid}-${Date.now()}`);
+  try {
+    const spec = specDirOf(scratch);
+    mkdirSync(spec, { recursive: true });
+    if (baseRoot !== null && existsSync(join(specDirOf(baseRoot), "manifest.json"))) {
+      const from = specDirOf(baseRoot);
+      const m = JSON.parse(readFileSync(join(from, "manifest.json"), "utf8")) as { claimsRoot?: string };
+      const claimsRoot = (m.claimsRoot ?? "claims").replace(/\/+$/, "");
+      cpSync(join(from, "manifest.json"), join(spec, "manifest.json"));
+      if (existsSync(join(from, claimsRoot))) cpSync(join(from, claimsRoot), join(spec, claimsRoot), { recursive: true });
+    }
+    await must(scratch, ["new", name, "--purpose", purpose, "--write"]);
+    const changed = edit.rows.length ? applyToSpecDir(draftSpecDir(scratch, name), edit) : [];
+    const check = await runDraftTool(scratch, ["check", name]);
+    if (check.exit === 2) throw new SpecToolError(`the draft does not load: ${findingText(check)}`, findingCodes(check));
+    removeOwnDraft(root, name);
+    renameSync(join(draftsDir(scratch), name), join(draftsDir(root), name));
+    return { draft: name, changed };
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+const canonicalDir = (d: string): string => {
+  try {
+    return realpathSync(d);
+  } catch {
+    return d;
+  }
+};
+
+/** Whether one of the project's drafts exists (its draft.json). */
+export const draftExists = (root: string, name: string): boolean => existsSync(join(draftsDir(root), name, "draft.json"));
+
+/** Remove a conversation's draft (its conversation was deleted). */
+export function removeConversationDraft(root: string, name: string): void {
+  if (!name.startsWith(CONVERSATION_PREFIX)) throw new Error(`not a conversation draft: ${name}`);
+  removeOwnDraft(root, name);
 }
 
 export interface PromoteOutcome {

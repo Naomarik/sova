@@ -10,12 +10,13 @@
  * contacts, goals, briefings to others, the project overseer's notes or conversation, coding
  * titles or paths, costs, tokens, visits, link states.
  *
- * Share listener (read-only; no POST, no socket):
+ * Share listener (reads; the Project Assistant's routes are in shared/project-assistant.ts):
  * GET /i/<token>                        the share build's shell (it routes /i/ to the Owner page)
  * GET /api/i/<token>                    -> OwnerHome
  * GET /api/i/<token>/p/<q_…>            -> OwnerProject (404: unknown or not shown)
  * GET /api/i/<token>/c/<k_…>            -> OwnerConversation (404: unknown or hidden)
- * Dead links: 410 { error, code: "gone", why?: "expired" } with no names; unknown: 404 { error, code: "not-found" }.
+ * Dead links: 410 { error, code: "gone", why?: "expired", asked?: true } with no names (`expired`: it
+ * turned off after 7 days unused, and may ask for a new one); unknown: 404 { error, code: "not-found" }.
  *
  * Operator routes (main listener only):
  * PUT  /api/orgs/:id/owner                    body { personId: string | null } -> OrgDetail (null: no owner)
@@ -32,6 +33,7 @@
  */
 
 import type { BatonView } from "./baton";
+import type { OwnerRequestRow, OwnerVersionRow } from "./project-assistant";
 import type { LinkWarningCode } from "./public-links";
 
 /** A project's chip, derived, never typed: the first that applies. */
@@ -39,8 +41,8 @@ export type OwnerStatus = "waiting-on-you" | "asking" | "building" | "quiet";
 
 /** The most characters of one update. */
 export const OWNER_UPDATE_MAX = 2000;
-/** How long an owner link lasts from minting (absolute; no renewal). */
-export const OWNER_LINK_DAYS = 90;
+/** How long an owner link lasts unused (§app.owner-page/link): 7 days after its last use, no other expiry. */
+export const OWNER_LINK_DAYS = 7;
 
 /** A person as the page names them: the whole name and the first name. Never a role or an id. */
 export interface OwnerName {
@@ -65,6 +67,8 @@ export interface OwnerWaiting {
   projectName: string;
   /** When it was put to them (the hand-off or the offer). */
   askedAt: string;
+  /** Their own feature request chat (§app.project-assistant/feature-chats): answered on the page, not through a link. */
+  feature?: true;
 }
 
 export interface OwnerCounts {
@@ -89,6 +93,32 @@ export interface OwnerProjectCard extends OwnerCounts {
   conversations: number;
 }
 
+/** What the Project Assistant would do if asked now (§app.project-assistant/abilities): starts at once, starts on its
+    own after the waiting period, or goes to the team. Outcome words only, never why. */
+export type OwnerAbilityOutcome = "now" | "held" | "team";
+
+/** One shown project's answers. */
+export interface OwnerProjectAbilities {
+  /** The project's handle (q_…), as OwnerProjectCard.id. */
+  project: string;
+  /** Get a problem fixed. */
+  fix: OwnerAbilityOutcome;
+  /** Try the latest version; "none": no version listed that could be opened. */
+  version: OwnerAbilityOutcome | "none";
+  /** Release a new version. */
+  release: OwnerAbilityOutcome;
+  /** Plan something new with you (§app.project-assistant/feature-chats): `now` opens a feature request chat, `team`
+      sends it to the team. Absent from an older server: read as `team`. */
+  feature?: "now" | "team";
+}
+
+export interface OwnerAbilities {
+  /** The owner can send photos and screenshots now. */
+  photos: boolean;
+  /** One per shown project, in `projects` order. */
+  projects: OwnerProjectAbilities[];
+}
+
 /** GET /api/i/<token>. */
 export interface OwnerHome {
   org: { name: string };
@@ -98,6 +128,14 @@ export interface OwnerHome {
   updatedAt: string;
   waiting: OwnerWaiting[];
   projects: OwnerProjectCard[];
+  /** The owner's requests, newest first (§app.project-assistant/requests). */
+  requests?: OwnerRequestRow[];
+  /** Versions you can try (§app.project-assistant/versions). */
+  versions?: OwnerVersionRow[];
+  /** The Project Assistant: whether it takes messages (a reply model is set). */
+  assistant?: { ready: boolean };
+  /** What the assistant can do for the owner, per shown project; absent while it isn't ready. */
+  abilities?: OwnerAbilities;
 }
 
 /** Someone asked in the project's conversations. */
@@ -138,7 +176,12 @@ export type OwnerConversationStatus =
   | { kind: "with-operator"; name: string; first: string }
   | { kind: "offered"; count: number }
   | { kind: "done" }
-  | { kind: "closed" };
+  | { kind: "closed" }
+  /** The owner's own feature request chat (§app.project-assistant/feature-chats): they hold it ("Planning with
+      you"), or it is agreed ("Plan agreed"). Someone else holding it reads `with-operator` or `waiting-on`, said
+      "With {first}"; ended reads `closed`. */
+  | { kind: "planning" }
+  | { kind: "plan-agreed" };
 
 export interface OwnerConversationRow {
   /** The conversation's handle (k_…). */
@@ -182,6 +225,9 @@ export interface OwnerConversation extends BatonView {
   status: OwnerConversationStatus;
   /** The owner holds it now: "It's your turn here. Answer through the link {op} sent you." */
   yourTurn: boolean;
+  /** Present only on the owner's own feature request chat (§app.project-assistant/feature-chats): they write here
+      (`canWrite` while they hold it and it is open) and may end it (`canEnd` while it is open). */
+  feature?: { canWrite: boolean; canEnd: boolean };
   org: { name: string };
   operator: OwnerName;
   updatedAt: string;

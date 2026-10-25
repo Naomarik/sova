@@ -3,11 +3,14 @@
 // request, its system prompt and its tools (name, description, prompt snippet and guidelines,
 // parameters), compared with a recording made before the loadouts became data (al_3 stage 3 S1,
 // recorded at 6aef2368). The session goldens record neither. SOVA_GOLDEN_RECORD=1 records it again.
-// A throwaway PI_CODING_AGENT_DIR and workspace; the scripted model only.
+// A throwaway PI_CODING_AGENT_DIR, HOME and workspace; the scripted model only. Hermetic: pi reads every
+// AGENTS.md/CLAUDE.md from the workspace up to /, and skills from ~/.agents/skills, so the scratch dir sits
+// where no ancestor holds a context file and HOME is inside it; a golden that names a real home path, a
+// context file or a skill fails (the repo is public: a re-record must never carry the host's files).
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { piSession } from "./testing/handle";
 import { ScriptedModel, scriptedModelsJson } from "./testing/scripted-model";
@@ -16,8 +19,39 @@ for (const k of Object.keys(process.env)) if (/_API_KEY$|_AUTH_TOKEN$/.test(k)) 
 const REPO = resolve(import.meta.dirname, "../../..");
 const FIXTURE = join(import.meta.dirname, "golden", "special-model-view.json");
 const piDir = realpathSync(join(REPO, "node_modules/@earendil-works/pi-coding-agent"));
-const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-special-view-")));
+const REAL_HOME = homedir();
+const CONTEXT_FILES = ["AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
+/** The context file pi would read from `dir` or any ancestor of it, if any. */
+function contextAbove(dir: string): string | null {
+  for (let d = dir; ; d = dirname(d)) {
+    for (const f of CONTEXT_FILES) if (existsSync(join(d, f))) return join(d, f);
+    if (dirname(d) === d) return null;
+  }
+}
+/** A scratch base with no context file above it (TMPDIR first, else /dev/shm, /tmp); never under the real home. */
+function scratchBase(): string {
+  const tried: string[] = [];
+  for (const base of [tmpdir(), "/dev/shm", "/tmp"]) {
+    try {
+      const b = realpathSync(base);
+      const above = contextAbove(b);
+      if (above || b === REAL_HOME || b.startsWith(`${REAL_HOME}/`)) {
+        tried.push(`${b} (${above ?? "under the home dir"})`);
+        continue;
+      }
+      const probe = mkdtempSync(join(b, "sova-special-view-"));
+      return probe;
+    } catch {
+      tried.push(`${base} (not writable)`);
+    }
+  }
+  throw new Error(`special-model-view: no hermetic scratch dir (pi would read a context file above it): ${tried.join("; ")}`);
+}
+const root = realpathSync(scratchBase());
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
+// HOME inside the scratch dir: pi's ~/.agents/skills and any homedir() read stay in it.
+process.env.HOME = join(root, "home");
+mkdirSync(process.env.HOME, { recursive: true });
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
@@ -42,12 +76,12 @@ function fixed(text: string, ids: Record<string, string>): string {
   return t
     .split(piDir)
     .join("<PI>")
+    .split(homedir())
+    .join("<HOME>")
     .split(root)
     .join("<ROOT>")
     .split(REPO)
     .join("<REPO>")
-    .split(homedir())
-    .join("<HOME>")
     .replace(/\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?/g, "<DATE>")
     .replace(/\b\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AP]M)?\b/g, "<TIME>")
     .replace(/\b(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day\b/g, "<DAY>")
@@ -81,6 +115,11 @@ test("the special loadouts show the model the same system prompt and tools as be
   const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
   const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT" });
   const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "Find the server" });
+  // The recording predates memory on by default: both overseers run it off here, so the
+  // view stays the loadouts' own; with memory on they add `zoom` and `date` (overseer-memory.integration.test.ts).
+  const { overseerMemoryOff, projectOverseerMemoryOff } = await import("../../testing/overseer-memory");
+  overseerMemoryOff();
+  projectOverseerMemoryOff(project.id);
   const ov = await overseer.ensureOverseer();
   const p = await po.ensureProjectOverseer(project.id);
   const ids = { [org.id]: "<ORG>", [project.id]: "<PROJECT>", [tony.id]: "<TONY>", [c.sessionId]: "<BATON>", [ov.id]: "<OVERSEER>", [p.id]: "<PO>" };
@@ -89,6 +128,7 @@ test("the special loadouts show the model the same system prompt and tools as be
     projectOverseer: await firstRequest(p.path, ids),
     baton: await firstRequest(c.path, ids),
   };
+  assert.deepEqual(leaks(JSON.stringify(got)), [], "the view read something of the host's");
   if (process.env.SOVA_GOLDEN_RECORD === "1" || !existsSync(FIXTURE)) {
     writeFileSync(FIXTURE, `${JSON.stringify(got, null, 1)}\n`);
     if (process.env.SOVA_GOLDEN_RECORD !== "1") assert.fail(`recorded ${FIXTURE}: none was there`);
@@ -98,4 +138,23 @@ test("the special loadouts show the model the same system prompt and tools as be
   // A difference is written beside the fixture, for a diff by hand.
   if (JSON.stringify(got) !== JSON.stringify(want)) writeFileSync(`${FIXTURE}.actual`, `${JSON.stringify(got, null, 1)}\n`);
   assert.deepEqual(got, want);
+});
+
+/** What a recording must never hold: a real home path, a context file's or skill's block. */
+function leaks(text: string): string[] {
+  const out: string[] = [];
+  for (const [what, hit] of [
+    ["the real home dir", REAL_HOME.length > 1 && text.includes(REAL_HOME)],
+    ["a /home/ path", text.includes("/home/")],
+    ["a /Users/ path", text.includes("/Users/")],
+    ["a context file (project_instructions)", text.includes("<project_instructions")],
+    ["a skill list (available_skills)", text.includes("<available_skills>")],
+    ["~/.agents", text.includes(".agents/skills")],
+  ] as const)
+    if (hit) out.push(what);
+  return out;
+}
+
+test("the recorded golden holds nothing of the host: no home path, context file or skill", () => {
+  assert.deepEqual(leaks(readFileSync(FIXTURE, "utf8")), []);
 });

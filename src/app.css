@@ -114,8 +114,143 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .archive-date-label .icon-twist { transition: transform var(--dur-fast) var(--ease-standard); }
 .archive-date[open] > .archive-date-label .icon-twist { transform: rotate(90deg); }
 .archive-date-name { flex: 1; min-width: 0; }
-/* Folder groups inside an open section: a hairline under the date row. */
-.archive-date[open] > .session-group:first-of-type { border-top: var(--stroke-thin) solid var(--color-border); }
+/* An open day: a hairline under its head, full width; its folders sit one step in beside its guide line. */
+.archive-date:not(.org-done)[open] > .archive-date-label { border-bottom: var(--stroke-thin) solid var(--color-border); }
+
+/* ---- Guide lines (§app.session-list/guide-lines). Every collapsible group inside a region has a line running down
+   from its head's chevron, and pressing it closes the group (lib/guide-line). The line is a transparent `--space-3`-wide
+   box, centred on a 2px `--color-border` line, a direct child of its group after the head. Two kinds:
+   - Beside the contents (an org, a user group, an org project's Done, an Archive day): the chevron keeps its place,
+     the head's `--space-4` inset plus half the 16px icon; the line starts at the head's bottom and the contents sit
+     one step in beside it.
+   - Down the rows' rail (a folder, a Projects-region project and its "{n} done"): the chevron moves onto the axis of
+     its rows' state rail and the line runs down that axis, behind the rail's items, each ringed in its row's ground so
+     the line breaks around it. The rows stay 4px in, where they always were. */
+.sidebar-list {
+  /* An org's projects and an org Done's rows: where an org's projects already sat. */
+  --guide-step: calc(var(--space-5) + var(--space-1));
+  /* A user group's and an Archive day's folders, a Projects-region Done's rows: clear of the parent's line. */
+  --guide-nest: var(--space-5);
+  /* The rows' state rail axis, from the row's left edge: the rail's 2px margin plus half its 30px column
+     (base.css, .session-rail). */
+  --rail-axis: calc(2px + 30px / 2);
+  /* Where a folder's and a Projects-region project's rows sit inside it. */
+  --folder-inset: var(--space-1);
+}
+.org-section,
+.group-section,
+.archive-date,
+.session-group,
+.org-project { position: relative; }
+.guide-line {
+  --guide-x: calc(var(--space-4) + var(--space-2));
+  --guide-before: calc(var(--space-3) / 2);
+  --guide-after: calc(var(--space-3) / 2);
+  position: absolute;
+  top: var(--row-height);
+  bottom: 0;
+  left: calc(var(--guide-x) - var(--guide-before));
+  width: calc(var(--guide-before) + var(--guide-after));
+  cursor: pointer;
+}
+.guide-line::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--guide-before) - var(--stroke-thin));
+  width: calc(var(--stroke-thin) * 2);
+  background: var(--color-border);
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.guide-line:hover::before { background: var(--color-border-strong); }
+/* An org's padding under its last project is not its contents. */
+.org-section > .guide-line { bottom: var(--space-2); }
+
+/* Down the rail. The folder's and the project's head is sticky and on top of the line, so the line can run the whole
+   block: it shows from the head's bottom, and the stuck head keeps its own press. The group is its own stacking
+   context, so its head (2) stays over the rail items (1), which stay over the line. */
+.session-group > .guide-line,
+.sidebar-projects .org-project > .guide-line {
+  --guide-x: calc(var(--folder-inset) + var(--rail-axis));
+  top: 0;
+}
+.session-group,
+.sidebar-projects .org-project { isolation: isolate; }
+.session-group > summary,
+.sidebar-projects .org-project > .org-project-head { z-index: 2; }
+/* The folder's chevron on its rows' rail axis: the head's inset stops half an icon short of it. */
+.session-group > summary > .list-group-label { padding-left: calc(var(--rail-axis) - var(--space-2)); }
+/* The project's arrow, a 44px button, centred on the same axis (the label's own `--space-3` inset undone). */
+.sidebar-projects .org-project-label > .project-fold { margin-left: calc(var(--rail-axis) - var(--tap-min) / 2 - var(--space-3)); }
+/* A project's "{n} done": its rows one step in, its chevron and line on their rail's axis, clear of the project's. */
+.sidebar-projects .project-done > .list { margin-left: var(--guide-nest); }
+.sidebar-projects .project-done > .archive-date-label { padding-left: calc(var(--guide-nest) + var(--rail-axis) - var(--space-2)); }
+.sidebar-projects .project-done > .guide-line { --guide-x: calc(var(--guide-nest) + var(--rail-axis)); }
+/* The rail's items sit on the line, each in a ring of its row's ground: rest, hover, focus or current tint. */
+.session-row-shell { --row-ground: var(--color-surface); }
+.session-row-shell:hover,
+.session-row-shell:focus-within { --row-ground: var(--color-sunken); }
+.session-row-shell-current,
+.session-row-shell-current:hover,
+.session-row-shell-current:focus-within { --row-ground: var(--color-accent-tint); }
+.session-group .session-rail-item,
+.sidebar-projects .org-project .session-rail-item { position: relative; z-index: 1; }
+/* The current tint is as dark as the line's own `--color-border`, so across the open row the line would vanish: that
+   row redraws its piece of the line in the strong line colour, over the line and under the rail's items. */
+.session-group .session-row-shell-current,
+.sidebar-projects .org-project .session-row-shell-current { position: relative; }
+.session-group .session-row-shell-current::before,
+.sidebar-projects .org-project .session-row-shell-current::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--rail-axis) - var(--stroke-thin));
+  width: calc(var(--stroke-thin) * 2);
+  background: var(--color-border-strong);
+  pointer-events: none;
+}
+/* TUI's plate and the count's figure: their own box, ringed. */
+.session-group .session-rail-tui,
+.sidebar-projects .org-project .session-rail-tui { box-shadow: 0 0 0 var(--stroke-thin) var(--row-ground); }
+.session-group .session-rail-count,
+.sidebar-projects .org-project .session-rail-count {
+  padding: 0 var(--stroke-thin);
+  background: var(--row-ground);
+  box-shadow: 0 0 0 var(--stroke-thin) var(--row-ground);
+}
+/* Busy: its button is invisible and wide, so the ring is a disc behind the dot (the dot pulses; its ring doesn't). */
+.session-group .session-rail-state.chip-live::before,
+.sidebar-projects .org-project .session-rail-state.chip-live::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  top: 50%;
+  width: calc(7px + var(--space-1) * 2);
+  height: calc(7px + var(--space-1) * 2);
+  transform: translate(-50%, -50%);
+  border-radius: var(--r-full);
+  background: var(--row-ground);
+}
+
+/* The contents, one step in beside a line beside the contents. */
+.org-done > .list { margin-left: var(--guide-step); }
+.group-section:not(.org-section) > .session-group,
+.group-section:not(.org-section) > .sidebar-region-note,
+.archive-date:not(.org-done) > .session-group { margin-left: var(--guide-nest); }
+/* What will close lights up while its line is hovered: the head takes the hover fill and full ink. */
+.org-section:has(> .guide-line:hover) > summary,
+.group-section:has(> .guide-line:hover) > summary,
+.archive-date:has(> .guide-line:hover) > summary,
+.session-group:has(> .guide-line:hover) > summary,
+.org-project:has(> .guide-line:hover) > .org-project-head {
+  background: var(--color-sunken);
+  color: var(--color-ink);
+}
+.session-group:has(> .guide-line:hover) > summary > .list-group-label { color: var(--color-ink); }
 
 /* Archive cleanup: one quiet button closing the open Archive. */
 .archive-tools {
@@ -378,23 +513,23 @@ html, body { overflow: clip; overscroll-behavior: none; }
 /* A menu row's second line: a disabled row's reason, or its description. */
 .mode-option-note { display: block; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 
-/* The Groups and Needs you region heads: a <details> like the Archive, but
+/* The Groups, Needs you, Projects, Folders and Organizations region heads: a <details> like the Archive, but
    its <summary> wraps the region's own <h2> so the heading and `aria-labelledby` survive the
    twist. base.css styles the h2; everything the summary itself needs is here. */
-:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-profiles) > summary {
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-folders, .sidebar-profiles) > summary {
   display: block;
   cursor: pointer;
   list-style: none;
   user-select: none;
 }
-:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-profiles) > summary::-webkit-details-marker { display: none; }
-:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-profiles) > summary > .sidebar-region-head { transition: color var(--dur-fast) var(--ease-standard); }
-:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-profiles) > summary:hover > .sidebar-region-head { color: var(--color-ink); }
-:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-profiles) > summary:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
-:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-profiles) > summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
-:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-profiles)[open] > summary .icon-twist { transform: rotate(90deg); }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-folders, .sidebar-profiles) > summary::-webkit-details-marker { display: none; }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-folders, .sidebar-profiles) > summary > .sidebar-region-head { transition: color var(--dur-fast) var(--ease-standard); }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-folders, .sidebar-profiles) > summary:hover > .sidebar-region-head { color: var(--color-ink); }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-folders, .sidebar-profiles) > summary:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-folders, .sidebar-profiles) > summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-folders, .sidebar-profiles)[open] > summary .icon-twist { transform: rotate(90deg); }
 /* Collapsed, the head is the region's last row: the region rule below it is the only divider. */
-:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-profiles):not([open]) > summary > .sidebar-region-head { border-bottom: 0; }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-folders, .sidebar-profiles):not([open]) > summary > .sidebar-region-head { border-bottom: 0; }
 
 /* ---- ORGANIZATIONS (§app.session-list/organizations): last before the Archive. Its own Needs you
    list, then org (a group-section head) → project (a sticky label) → rows, each project with a
@@ -472,14 +607,12 @@ html, body { overflow: clip; overscroll-behavior: none; }
   color: var(--color-ink-muted);
 }
 .org-section[open] { padding-bottom: var(--space-2); }
-/* Projects: sticky labels, not sections — one level of sticking inside the pane. Under an org the
-   block steps in so its guide rule falls under the org's chevron; the Projects region has no org
-   level, so its blocks start at the edge. */
-.org-project {
-  padding-left: calc(var(--space-1) / 2);
-  border-left: calc(var(--stroke-thin) * 2) solid var(--color-border);
-}
-.org-section > .org-project { margin-left: var(--space-5); }
+/* Projects: sticky labels, not sections — one level of sticking inside the pane. The Projects region
+   has no org level, so its blocks start at the edge, their rows 4px in, with their own guide line
+   down their rows' rail; under an org the blocks step in beside the org's one guide line, centred
+   under its chevron (§app.session-list/guide-lines), and carry no line of their own. */
+.org-project { padding-left: var(--folder-inset); }
+.org-section > .org-project { margin-left: var(--guide-step); padding-left: 0; }
 .org-project + .org-project { margin-top: var(--space-3); }
 .org-project-label {
   position: sticky;
@@ -510,18 +643,23 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .org-project-name > bdi { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .org-project-icon { flex: none; width: 16px; height: 16px; color: var(--color-ink-muted); }
 .org-project-name:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); border-radius: var(--r-xs); }
-/* The Projects region (§app.projects/list): its head's Add Project and page link are quiet 44px
-   icons like an org head's; a project's name opens its page. */
+/* The Projects region (§app.projects/list): its head's page link is a quiet 44px
+   icon like an org head's; a project's name opens its page. */
 .sidebar-projects .sidebar-region-head > .org-link {
   flex: none;
   color: var(--color-ink-muted);
 }
-.sidebar-projects .sidebar-region-head > button.org-link { margin-left: auto; }
-.sidebar-projects .sidebar-region-head > a.org-link { margin-right: calc(var(--space-4) * -1 + var(--space-1)); }
+.sidebar-projects .sidebar-region-head > a.org-link { margin-left: auto; margin-right: calc(var(--space-4) * -1 + var(--space-1)); }
 .sidebar-projects .sidebar-region-head > .org-link:hover,
 .sidebar-projects .sidebar-region-head > .org-link:focus-visible { color: var(--color-ink); }
 .sidebar-projects .sidebar-region-head > .org-link .icon { width: 16px; height: 16px; }
 .project-region-link { color: inherit; text-decoration: none; }
+/* A project heading's fold (§app.projects/list): a quiet 44px twist before the name, turned while open. */
+.org-project-label > .project-fold { flex: none; margin-left: calc(var(--space-3) * -1); color: var(--color-ink-muted); }
+.org-project-label > .project-fold:hover,
+.org-project-label > .project-fold:focus-visible { color: var(--color-ink); }
+.project-fold .icon-twist { width: 16px; height: 16px; transition: transform var(--dur-fast) var(--ease-standard); }
+.project-fold[aria-expanded="true"] .icon-twist { transform: rotate(90deg); }
 .project-region-link:hover { text-decoration: underline; }
 .org-finished { border-top: var(--stroke-thin) solid var(--color-border); }
 
@@ -647,7 +785,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .public-links-accept-list { margin: 0; padding: 0 0 0 var(--space-3); list-style: none; }
 .public-links-check { justify-content: flex-start; gap: var(--space-3); }
 .public-links-check .toggle-box { order: -1; flex: none; }
-/* A tick, not just a filled square (never hue alone), as base.css draws .session-select's. */
+/* A tick, not just a filled square (never hue alone). */
 .public-links-check .toggle-box { position: relative; }
 .public-links-check input:checked ~ .toggle-box::after { content: ""; position: absolute; left: 5px; top: 1px; width: 4px; height: 9px; border: solid var(--color-on-accent); border-width: 0 2px 2px 0; transform: rotate(45deg); }
 .public-links-routed { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
@@ -1041,6 +1179,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .session-sender > span { min-width: 0; white-space: nowrap; }
 .session-sender > span:nth-of-type(2) { display: flex; gap: 0.3em; overflow: hidden; }
 .session-sender > span:nth-of-type(2) > a { min-width: 0; }
+/* The same line above a Timeline row (§chat/timeline "Who sent it"): in the row's column, not
+   pulled under a bubble. */
+.session-sender.timeline-sender { grid-row: 1; grid-column: 3; align-self: auto; margin: 0 0 var(--space-1); }
+.timeline-row:has(> .timeline-sender) > :not(.timeline-sender) { grid-row: 2; }
 .profile-card .card-body { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-width: 0; }
 .profile-card .card-body > .text-muted { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-changes-head { flex-wrap: wrap; }
@@ -1077,6 +1219,9 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .memory-type-by { font-weight: var(--fw-regular); color: var(--color-ink-muted); }
 .memory-type-link .popover-item-label { color: var(--color-accent); }
 .memory-size-default { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* A project overseer's memory switch is the foot's last control, alone in its accessory: the accessory
+   already reaches the right edge, so the trigger drops the edge margin it would otherwise be squeezed by. */
+.composer-foot .composer-accessory:not(:has(.quick-actions-trigger)) > .overseer-memory-trigger { margin-right: 0; }
 /* The run-status row's memory piece shrinks before the triggers do, ending in an ellipsis. */
 .run-status > .run-status-memory { flex: 0 1 auto; min-width: 4em; }
 .run-status > .run-status-memory.run-status-link { flex: 0 1 auto; }
@@ -1148,3 +1293,234 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .chat-wait-note-icon {
   --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v5l3 2'/%3E%3C/svg%3E");
 }
+
+
+/* ── Project minor modes in the mode menu ───────────────────────────────────────────────────────── */
+/* A row that can't be pressed (a broken mode) is not waiting on a save: no progress cursor. */
+.mode-menu .popover-item[data-project-state="broken"][aria-disabled="true"] { cursor: default; }
+.mode-menu .popover-item[data-project-state="broken"] .popover-item-label { color: var(--color-ink-muted); }
+/* The state line (broken, removed, changed, asks first) wraps rather than ellipsizing: it carries the
+   problem's path and error, which a cut would lose. */
+.mode-menu-project-note { white-space: normal; overflow-wrap: anywhere; }
+/* The approval panel: what the mode would run, before it is turned on. */
+.mode-approval { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+.mode-approval > .banner { flex: none; margin: var(--space-2) var(--space-2) 0; }
+.mode-approval-lead { margin: 0; padding: var(--space-2) var(--space-3) 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
+.mode-approval-tools {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.mode-approval-tool {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+}
+.mode-approval-tool-name { font-size: var(--fs-mono); color: var(--color-ink); }
+.mode-approval-tool-desc { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.mode-approval-tool-cmd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink);
+  background: var(--color-sunken);
+  border-radius: var(--r-sm);
+  padding: var(--space-1) var(--space-2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.mode-approval .mode-menu-foot-line .text-mono { overflow-wrap: anywhere; }
+
+/* ---- UPDATES. The dot on the Settings buttons, the note after an upgrade, and Settings →
+   General's Updates section. ---------------------------------------------------------------- */
+
+/* A small accent dot at the gear's top right: an update this copy can install. Static. */
+.button:has(> .update-dot) { position: relative; }
+.update-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-full);
+  background: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-surface);
+  pointer-events: none;
+}
+.settings-updates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  margin-top: var(--space-2);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+.settings-updates-running { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.settings-updates-version { font-weight: var(--fw-medium); }
+.settings-updates-sha { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
+.settings-updates-status p { margin: 0; }
+.settings-updates-checked { font-size: var(--fs-caption); color: var(--color-ink-2); }
+.settings-updates-offer { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.settings-updates-notes { width: 100%; }
+.settings-updates-notes summary { cursor: pointer; min-height: var(--tap-min); display: flex; align-items: center; color: var(--color-accent); }
+.settings-updates-notes pre {
+  margin: 0 0 var(--space-2);
+  max-height: 16rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-2);
+}
+.settings-updates-confirm { display: flex; flex-direction: column; gap: var(--space-2); }
+.settings-updates-confirm p { margin: 0; max-width: var(--measure); }
+.settings-updates-progress p { margin: 0 0 var(--space-2); }
+.settings-updates-steps { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); margin: 0; padding: 0; list-style: none; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.settings-updates-steps li::before { content: "○ "; }
+.settings-updates-steps li.done { color: var(--color-ink-2); }
+.settings-updates-steps li.done::before { content: "✓ "; }
+.settings-updates-steps li.now { color: var(--color-ink); font-weight: var(--fw-medium); }
+.settings-updates-steps li.now::before { content: "● "; }
+.settings-updates-form { display: flex; flex-direction: column; gap: var(--space-2); }
+.settings-updates-toggle { align-self: flex-start; width: fit-content; }
+
+/* ── The run-status row's two ends (§app.overseer/confirm, §chat.alignment/chip) ─────────────────
+   The right-hand cluster ("3 of 10 running", the card chip, the alignment chip, the inputs trigger
+   last; lib/run-status) is pushed to the row's end by ONE auto margin, on its first part. Compound,
+   so it outweighs the triggers' own -8px offset (.run-status > .run-status-link) at any order. */
+.run-status > .run-status-link.run-status-lead { margin-left: auto; margin-right: 0; }
+.run-status > .run-status-inputs { margin-right: 0; }
+
+/* ── The Overseer head's Approvals & Schedules (§app.overseer/approvals) ──────────────────────────
+   ⋯ and Schedules ▾ carry an accent dot while a schedule waits for approval, said in words by
+   their names; it sits inside the button, so the head's widths don't move. */
+.overseer-page-head > .overseer-more,
+.overseer-page-head > .overseer-schedules { position: relative; }
+.overseer-attention-dot {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-full);
+  background: var(--color-accent);
+  pointer-events: none;
+}
+.overseer-schedules > .overseer-attention-dot { top: 5px; right: 5px; }
+
+/* ── Focus (§chat.transcript/focus-view) ─────────────────────────────────────────────────────────
+   One round button in the single view's transcript corner. On, `.app[data-focus="on"]` leaves the
+   conversation alone: the head keeps Back and the title, and the strips under it and the composer
+   collapse. Scoped to a `.app-main` that holds a transcript, so the pages that borrow the session
+   head (Usage, Agents, …) and a workspace (`.workspace`) never change. The composer is kept mounted
+   (inert, Composer.tsx), so its draft is there when Focus turns off. */
+/* Registered, so --measure's `ch` resolves in .app-main's font (the composer's), not the button's. */
+@property --focus-right { syntax: "<length-percentage>"; inherits: true; initial-value: 0px; }
+.app-main {
+  --focus-toggle: 32px;
+  /* What the floating controls and the thread's end add for the gesture bar: only in Focus, when
+     the composer that pays it otherwise (§app.shell/viewport) is hidden. */
+  --focus-inset: 0px;
+  /* The button's right inset: on a wide screen, the composer column's right edge (the centred
+     --measure + --space-9 column the composer and thread share); where that column is full width,
+     a small inset clear of the scrollbar. */
+  --focus-right: max(var(--space-3), calc((100% - (var(--measure) + var(--space-9))) / 2));
+}
+.focus-toggle {
+  position: absolute;
+  right: var(--focus-right);
+  bottom: calc(var(--space-3) + var(--focus-inset));
+  z-index: 3;
+  width: var(--focus-toggle);
+  height: var(--focus-toggle);
+  min-height: 0;
+  padding: 0;
+  border-color: var(--color-border);
+  border-radius: var(--r-full);
+  background: var(--color-surface);
+  color: var(--color-ink-muted);
+  box-shadow: var(--shadow-1);
+}
+/* A 44px target around the 32px circle, as the message actions reach theirs. */
+.focus-toggle::after { content: ""; position: absolute; inset: calc((var(--focus-toggle) - var(--tap-min)) / 2); border-radius: var(--r-full); }
+.focus-toggle:hover { background: var(--color-sunken); color: var(--color-ink); }
+/* On: tint fill and an accent edge, so the state reads from the shape's fill, never a hue alone. */
+.focus-toggle[aria-pressed="true"],
+.focus-toggle[aria-pressed="true"]:hover { background: var(--color-accent-tint); border-color: var(--color-accent); color: var(--color-ink); }
+@media (hover: none), (pointer: coarse) {
+  .focus-toggle { color: var(--color-ink-2); }
+}
+/* The thread's end clears the button: its height and both gaps, so the last message's actions
+   scroll above it. The centred controls keep the button's lane free on both sides. */
+.app-main > .transcript-wrap .transcript-inner {
+  padding-bottom: calc(var(--focus-toggle) + 2 * var(--space-3) + var(--focus-inset));
+}
+.app-main > .transcript-wrap > .jump-latest {
+  bottom: calc(var(--space-4) + var(--focus-inset));
+  max-width: calc(100% - 2 * (var(--focus-right) + var(--focus-toggle) + var(--space-2)));
+}
+.app-main > .transcript-wrap > .chat-wait-note {
+  bottom: calc(var(--space-4) + var(--focus-inset));
+  max-width: calc(100% - 2 * (var(--focus-right) + var(--focus-toggle) + var(--space-2)));
+}
+.app-main > .transcript-wrap > .jump-latest[data-shown] ~ .chat-wait-note {
+  bottom: calc(var(--space-4) + var(--control-md) + var(--space-2) + var(--focus-inset));
+}
+
+.app[data-focus="on"] > .app-main:has(> .transcript-wrap) { --focus-inset: env(safe-area-inset-bottom, 0px); }
+/* The head: Back (where it shows) and the title, one line. */
+.app[data-focus="on"] > .app-main:has(> .transcript-wrap) > .session-head { min-height: var(--tap-min); }
+.app[data-focus="on"] > .app-main:has(> .transcript-wrap) > .session-head > :not(.app-back, .session-head-main),
+.app[data-focus="on"] > .app-main:has(> .transcript-wrap) > .session-head .session-head-meta { display: none; }
+/* Under the head, and the composer: collapsed out of sight, still mounted. A project overseer's
+   status strip stays while it says its status couldn't be read. */
+.app[data-focus="on"] > .app-main:has(> .transcript-wrap) > :is(.composer, .outline, .baton-strip, .po-status:not(.po-status-error)) {
+  height: 0;
+  min-height: 0;
+  padding-block: 0;
+  border-block-width: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+/* The baton strip is held by its own max-height; collapsing it needs that too. (Never the
+   composer's: `none` doesn't interpolate, and would end its collapse at once.) */
+.app[data-focus="on"] > .app-main:has(> .transcript-wrap) > .baton-strip { max-height: 0; }
+/* The collapse runs only while Focus changes (App's data-focus-moving), never when the composer
+   grows with its text. Going out of sight, visibility waits for the end; coming back, it is at once.
+   Reduced motion collapses every transition to near zero (tokens.css). */
+.app[data-focus-moving] > .app-main:has(> .transcript-wrap) > :is(.composer, .outline, .baton-strip, .po-status) {
+  interpolate-size: allow-keywords;
+  transition:
+    height var(--dur-base) var(--ease-standard),
+    max-height var(--dur-base) var(--ease-standard),
+    padding var(--dur-base) var(--ease-standard),
+    border-width var(--dur-base) var(--ease-standard),
+    visibility 0s linear 0s;
+}
+.app[data-focus-moving][data-focus="on"] > .app-main:has(> .transcript-wrap) > :is(.composer, .outline, .baton-strip, .po-status) {
+  transition-property: height, max-height, padding, border-width, visibility;
+  transition-delay: 0s, 0s, 0s, 0s, var(--dur-base);
+}
+.app[data-focus-moving] > .app-main:has(> .transcript-wrap) > .session-head { transition: min-height var(--dur-base) var(--ease-standard); }
+.app[data-focus-moving] > .app-main > .transcript-wrap > .focus-toggle { transition: bottom var(--dur-base) var(--ease-standard); }
+
+/* A setup row's name opens its file in the markdown viewer (§chat.transcript/setup-card-open-file):
+   the name keeps its look and place (.setup-path), as a button with no chrome of its own. */
+.setup-open {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  text-align: start;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+}
+.setup-open:hover { text-decoration: underline; text-underline-offset: 0.2em; }
+.setup-open:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }

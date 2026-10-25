@@ -8,6 +8,8 @@ import type { SovaEvent, SovaPart } from "../../shared/harness-wire";
 import type { ReplyTiming } from "../../shared/usage/perf";
 import { isLinkMessage } from "../../shared/link-message";
 import { parseTopicBatch } from "../../shared/topic-message";
+import { isBriefText } from "../../shared/senders";
+import { parseWakeNudge } from "../../shared/wake";
 import type { HelloLive, TmpAttachment, UploadResult, V1EventFrame, V2EventFrame } from "../../shared/protocol";
 import { fromV1 } from "../../shared/wire-v1";
 import {
@@ -68,14 +70,25 @@ export function offersRemove(row: { id?: string; state: LiveUserState; handed?: 
 }
 
 /**
- * The inputs the live turn has added to the branch (§chat.timeline/opening-it): each user message the
- * agent has taken since the last settle, a steer the moment it lands. A row still waiting isn't on the
- * branch; a topic batch is a turn start, never an input (`isInput`), and a link message has no row.
- * The settled list's count plus this is the branch's; a settle swaps the two in one update (resync).
+ * The inputs you typed that the live turn has added to the branch (§chat.timeline/opening-it): each
+ * user message the agent has taken since the last settle, a steer the moment it lands, counted by the
+ * settled list's own rule (shared/senders.ts `isOwnInput`). A row still waiting isn't on the branch;
+ * a message another session, the Overseer, a teammate or this session itself sent isn't yours, nor is
+ * a brief, a wake nudge or a topic batch; a link message has no row. The settled list's count plus
+ * this is the branch's; a settle swaps the two in one update (resync).
  */
 export function liveInputCount(s: LiveState): number {
-  return s.entries.reduce((n, e) => (e.kind === "user" && e.started && parseTopicBatch(e.text) === null ? n + 1 : n), 0);
+  return s.entries.reduce((n, e) => (e.kind === "user" && e.started && isOwnLive(e) ? n + 1 : n), 0);
 }
+
+const isOwnLive = (e: Extract<LiveEntry, { kind: "user" }>): boolean =>
+  e.origin !== "server" &&
+  !e.overseer &&
+  !e.fromSession &&
+  (e.by === undefined || e.by === "operator") &&
+  !isBriefText(e.text) &&
+  parseWakeNudge(e.text) === null &&
+  parseTopicBatch(e.text) === null;
 
 export type LiveEntry =
   | {

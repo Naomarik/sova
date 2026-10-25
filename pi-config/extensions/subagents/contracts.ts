@@ -52,7 +52,15 @@ export interface Worker {
 	 */
 	isStopping?(): boolean;
 	finalOutput(): string;
+	/**
+	 * The inbox's turn record (§app.teams/inbox-zero): the task running now, and the newest accepted
+	 * steer whose run has not begun. Optional: without it the manager counts settles instead.
+	 */
+	inboxTurn?(): { task: number; steer?: number };
+	/** The task a numbered steer (inboxTurn's `steer`) was delivered in, once its run began. */
+	steerTask?(no: number): number | undefined;
 	steer(message: string, signal?: AbortSignal, mode?: SteerMode): Promise<SteerResult>;
+
 	/**
 	 * Termination contract: whenClosed resolves (and isFinished() becomes true)
 	 * only after the owned process is confirmed gone. kill()/dispose() should

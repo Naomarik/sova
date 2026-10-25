@@ -156,7 +156,7 @@ and `fill="none" stroke="currentColor"`.
 | `stop.svg` | Stop (composer): a rounded square; also the mic button while recording (Stop Recording) |
 | `mic.svg` | Dictate: the composer's mic button and the Settings dialog's Voice tab (§chat/voice). A capsule microphone on a stand arc with a short stem and base. New, drawn on the system grid |
 | `chat.svg` | Empty-state mark (no session selected) |
-| `attach.svg` | Attach Images (composer). New, drawn on the system grid |
+| `attach.svg` | Attach Images. Drawn on the system grid; nothing shows it now, since the Commands palette's Attach images row carries no icon |
 | `command.svg` | Commands button (composer, §chat/slash-commands): a `/` in a rounded square. New, drawn on the system grid |
 | `image.svg` | Tool-card image count, drop overlay. New, drawn on the system grid |
 | `pencil.svg` | Draft rows (§app/session-list): the lead of line 2, before the draft's preview; the composer's run status while the turn writes (§chat.transcript/streaming). A pen at 45° with a nib, legible at `.icon-sm`. New, drawn on the system grid |
@@ -177,6 +177,7 @@ and `fill="none" stroke="currentColor"`.
 | `shield.svg` | The Settings dialog's Decisions tab |
 | `shield-on.svg`, `shield-partial.svg`, `shield-off.svg` | The composer's sandbox shield, one per state (§chat.composer/sandbox-shield): a heavy rim with a filled core, the core's left half, a thin dashed outline |
 | `star.svg` | The model menu's favourite toggle; the Overseer's Ideas button |
+| `expand.svg` | Focus (§chat.transcript/focus-view): the round button in the transcript's corner. Four corner brackets. New, drawn on the system grid |
 | `check-circle.svg`, `x-circle.svg`, `menu.svg` | Drawings only (vis): the ok / error tone icons, and wireframe icons |
 
 `/favicon.svg` is the mark on the Indigo dusk gradient, a rounded square: a linear gradient from
@@ -214,7 +215,8 @@ Spend `--color-accent` on only three things:
    rail `TUI` chip (`.session-rail-tui`, the word, no dot), the spine tile's `.spine-dot-live`,
    and the session head's `TUI` chip (`.chip.chip-accent`, dot and word) — all of which are
    accent but **static** (see Motion).
-3. Focus rings and links.
+3. Focus rings and links, and the edge of a pressed toggle (`aria-pressed="true"`, such as the
+   Focus button, §chat.transcript/focus-view), which pairs it with the tint fill.
 
 Selected rows and user bubbles take `--color-accent-tint`. Anything else that "needs color" is a
 status (`--status-*`), and always pairs a dot or icon with a word.

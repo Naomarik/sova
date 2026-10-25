@@ -17,7 +17,7 @@ import type { QueueGoneReason, QueueItem, QueueRemoveRefusal } from "../shared/p
  * inside it at any time are ALL OF ONE KIND (`handed`, in order). Follow-ups go one at a time, as
  * they always did: the next goes in when the previous drains. STEERS LAND TOGETHER: while pi still
  * holds steers of ours, the next waiting steer is handed over at once, behind them, and pi's
- * steering mode is "all" in Sova's runtimes (quirk P26 steer-all, server/harness/pi/queue-modes.ts),
+ * steering mode is "all" in Sova's runtimes (quirk P28 steer-all, server/harness/pi/queue-modes.ts),
  * so the agent's next step takes every one of them, each its own message, in the order sent. A
  * steer never joins a follow-up of ours (pi's continue() would take the steer first, P9), and a
  * follow-up never joins steers: the order the messages were sent in is kept.
@@ -330,6 +330,7 @@ export class WebQueue {
     baton?: WebQueueItem["baton"];
     session?: WebQueueItem["session"];
     byPerson?: true;
+    confirm?: WebQueueItem["confirm"];
     key?: string;
   }): string {
     const item: WebQueueItem = {
@@ -342,6 +343,8 @@ export class WebQueue {
       ...(input.baton ? { baton: input.baton } : {}),
       ...(input.session ? { session: input.session } : {}),
       ...(input.byPerson ? { byPerson: true as const } : {}),
+      // A confirm card's click keeps its mark while it waits (§app.overseer/org-people-facing).
+      ...(input.confirm ? { confirm: input.confirm } : {}),
       ...(input.key !== undefined ? { key: input.key } : {}),
     };
     this.held.push(item);
@@ -669,7 +672,7 @@ export class WebQueue {
    * Whether the SDK has taken every handed item: committed to the model, whether or not
    * `message_start` has been emitted yet. The only honest proof of delivery, and the one the mirror
    * cannot give (it lags the drain, and an empty-text entry never leaves it at all). pi drains the
-   * steering lane whole (P26 steer-all), so one answer covers every handed steer at once. False is
+   * steering lane whole (P28 steer-all), so one answer covers every handed steer at once. False is
    * "still held, as far as can be told", never a claim: with something queued that cannot be pinned
    * on ours or anyone else's, they stay handed until it can.
    */

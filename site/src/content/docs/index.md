@@ -23,8 +23,10 @@ commands.
 | [delegate](/docs/modes/delegate/) | Major | The agent plans and routes 4 kinds of work to workers, each on the model your subagent profile names. |
 | [align](/docs/modes/align/) | Minor | The agent agrees with you on what to build first, and records each agreement as an alignment you answer in chat. |
 | [spec](/docs/modes/spec/) | Minor | The agent reads the project's spec before coding, and proposes changes to it in drafts before promoting them. |
-| [vis](/docs/modes/vis/) | Minor | The agent can draw small diagrams and charts in its replies, which Sova renders itself. |
+| [vis](/docs/modes/vis/) | Minor | The agent can draw small diagrams and charts in its replies, which Sova renders itself, and record checked tours of a real interface. |
 | [codemode](/docs/modes/codemode/) | Minor | The agent can run a short script that calls its other tools, several at once, and filters their output. |
+| [memory](/docs/modes/memory/) | Minor | A cheap model folds the chat's messages into one-line summaries the agent can open back up, so a long chat outgrows its context. Only Sova's mode menu turns it on. |
+| [project modes](/docs/modes/project-modes/) | Minor | A project's own modes, with its instructions, command-line tools, commands and hooks. None is on until someone turns it on in a chat, and only you approve its hooks. |
 
 [Subagent profiles](/docs/subagent-profiles/) hold the models every subagent uses: Delegate's
 workers, team members, the spec writer and the reviewer. Each chat picks one in its mode menu.
@@ -37,8 +39,12 @@ workers, team members, the spec writer and the reviewer. Each chat picks one in 
   and on your lock screen.
 - [The Overseer](/docs/overseer/): one chat that watches every session and acts for you.
 - [Check in from your phone](/docs/phone/): pair a phone, and pick up a terminal session in the browser.
-- [Change direction](/docs/change-direction/): rewind, regenerate, fork from a reply, steer and switch models.
+- [Change direction](/docs/change-direction/): rewind, regenerate, fork from a reply, steer, switch
+  models, and Focus on the conversation.
+- [Playbooks and schedules](/docs/playbooks-and-schedules/): written recipes an agent runs, by hand or
+  on a schedule you approve.
 
 ## Set up
 
 - [Install Sova](/docs/install/): what it needs, and how to start it.
+- [Updates](/docs/updates/): keep Sova current, from the install command or from Settings.

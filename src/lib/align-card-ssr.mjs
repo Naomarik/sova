@@ -21,7 +21,8 @@ const viteSolid = dirname(req.resolve("vite-plugin-solid"));
 const babel = req(req.resolve("@babel/core", { paths: [viteSolid] }));
 const solid = req(req.resolve("babel-preset-solid", { paths: [viteSolid] }));
 
-const SPECIFIER = /(\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(["'])([^"']+)\2/g;
+// A specifier never holds whitespace: compiled template text such as `' from '` is not an import.
+const SPECIFIER = /(\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(["'])([^"'\s]+)\2/g;
 const EXTS = ["", ".tsx", ".ts", ".mjs", ".js", "/index.tsx", "/index.ts"];
 
 /**

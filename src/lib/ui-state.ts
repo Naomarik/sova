@@ -6,6 +6,7 @@ import { fetchDraft, putDraft } from "./api";
 import type { SessionSummary, UploadResult } from "../../shared/protocol";
 import type { ContextState } from "./context";
 import { draftCounts } from "./draft-mark";
+import { registerPutBack } from "./chat-outbox";
 import { createDraftSaver, type DraftPayload } from "./draft-save";
 import { readKey, writeKey } from "./storage-keys";
 import { makeToast, placeToast, type Toast, type ToastOptions } from "./toast";
@@ -195,6 +196,12 @@ export async function loadDraft(path: string): Promise<DraftPayload> {
   return local();
 }
 
+// A message its chat refused after its view closed (lib/chat-outbox): back in that chat's draft,
+// ahead of what the draft holds, quietly (§chat.transcript/send-while-starting).
+registerPutBack((path, texts) => {
+  void loadDraft(path).then((d) => setDraftText(path, [...texts, ...(d.text.trim() ? [d.text] : [])].join("\n\n")));
+});
+
 /** Sends every pending draft save now. */
 export function flushDrafts(): void {
   draftSaver.flush();
@@ -293,6 +300,48 @@ export function setHideThinking(path: string, hide: boolean): void {
   setHideThinkingByPath((m) => (m[path] === hide ? m : { ...m, [path]: hide }));
   writePref("hide-thinking", path, hide ? "1" : "0");
   announce(hide ? "Thinking hidden in this session." : "Thinking shown again.");
+}
+
+/**
+ * Focus (§chat.transcript/focus-view): the single-chat screen shows only the conversation. One
+ * choice for this browser, never per session, so switching sessions keeps it. Only an explicit
+ * "true" is on; a missing, corrupt or unreadable value is off. The signal is the authority within
+ * the page, so blocked or full storage still keeps the choice until a reload.
+ */
+export const FOCUS_KEY = "sova:focus";
+
+export const parseFocus = (stored: string | null): boolean => stored === "true";
+
+export function readStoredFocus(): boolean {
+  try {
+    return parseFocus(readKey(localStorage, FOCUS_KEY));
+  } catch {
+    // No localStorage at all (a hardened browser, a test): off.
+    return false;
+  }
+}
+
+const [focusView, setFocusSignal] = createSignal(readStoredFocus());
+export { focusView };
+
+/** True for the moment a change of Focus animates. The stylesheet runs its collapse only then, so
+    the composer growing with its text is never animated. A little longer than `--dur-base`. */
+const [focusMoving, setFocusMoving] = createSignal(false);
+export { focusMoving };
+export const FOCUS_MOVE_MS = 260;
+let focusMoveTimer: ReturnType<typeof setTimeout> | undefined;
+
+export function setFocusView(on: boolean): void {
+  if (on === focusView()) return;
+  setFocusMoving(true);
+  clearTimeout(focusMoveTimer);
+  focusMoveTimer = setTimeout(() => setFocusMoving(false), FOCUS_MOVE_MS);
+  setFocusSignal(on);
+  try {
+    writeKey(localStorage, FOCUS_KEY, on ? "true" : "false");
+  } catch {
+    // Persistence is a convenience; the choice still holds for this page.
+  }
 }
 
 /** The session pane's active tab per path. A plain string, so this module knows no tab list: the

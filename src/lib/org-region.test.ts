@@ -258,17 +258,32 @@ test("labels, titles and search text", () => {
   assert.equal(orgSearchText(session("plain")), "", "an ordinary row gains nothing");
 });
 
-test("open state: the region opens by default and remembers a collapse; forced open without touching it", () => {
+test("open state: the region opens by default and remembers a collapse; a search forces it open without touching it", () => {
   assert.equal(storedOrgsOpen(null), true);
   assert.equal(storedOrgsOpen("0"), false);
-  const shut = { stored: false, searching: false, holdsSelected: false };
+  const shut = { stored: false, searching: false, holdsSelected: false, dismissed: false };
   assert.equal(orgsRegionOpen(shut), false);
   assert.equal(orgsRegionOpen({ ...shut, searching: true }), true);
-  assert.equal(orgsRegionOpen({ ...shut, holdsSelected: true }), true);
-  assert.equal(orgSectionOpen({ chosen: undefined, searching: false, holdsSelected: false }), true, "orgs open by default");
-  assert.equal(orgSectionOpen({ chosen: false, searching: false, holdsSelected: true }), true);
-  assert.equal(doneOpen({ chosen: undefined, searching: false, holdsSelected: false }), false, "Done starts closed");
-  assert.equal(doneOpen({ chosen: false, searching: false, holdsSelected: true }), true);
+  assert.equal(orgSectionOpen({ chosen: undefined, searching: false, holdsSelected: false, dismissed: false }), true, "orgs open by default");
+  assert.equal(doneOpen({ chosen: undefined, searching: false, holdsSelected: false, dismissed: false }), false, "Done starts closed");
+});
+
+test("open state: the open session opens its region, org and Done once; a collapse on that visit sticks", () => {
+  const shut = { stored: false, searching: false, holdsSelected: true };
+  // Moved to a session inside: each section opens for it, whatever the choice.
+  assert.equal(orgsRegionOpen({ ...shut, dismissed: false }), true, "the region reveals the open session");
+  assert.equal(orgSectionOpen({ chosen: false, searching: false, holdsSelected: true, dismissed: false }), true, "its org");
+  assert.equal(doneOpen({ chosen: false, searching: false, holdsSelected: true, dismissed: false }), true, "its Done");
+  // The user collapsed it on this visit: it stays shut although it still holds the open session.
+  assert.equal(orgsRegionOpen({ ...shut, dismissed: true }), false, "a collapsed region stays shut over the open session");
+  assert.equal(orgSectionOpen({ chosen: false, searching: false, holdsSelected: true, dismissed: true }), false);
+  assert.equal(doneOpen({ chosen: false, searching: false, holdsSelected: true, dismissed: true }), false);
+  // A search still opens every section with a match, dismissed or not.
+  assert.equal(orgsRegionOpen({ ...shut, dismissed: true, searching: true }), true, "a search still opens it");
+  assert.equal(orgSectionOpen({ chosen: false, searching: true, holdsSelected: true, dismissed: true }), true);
+  assert.equal(doneOpen({ chosen: false, searching: true, holdsSelected: true, dismissed: true }), true);
+  // Opened again by hand: the choice answers.
+  assert.equal(orgsRegionOpen({ ...shut, stored: true, dismissed: true }), true);
 });
 
 test("orgProjectItems: projects to pick a main stakeholder for, newest first, narrowed by a search", () => {

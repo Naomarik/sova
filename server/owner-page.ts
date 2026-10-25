@@ -1,9 +1,16 @@
+import type { OwnerRequestRow, OwnerVersionRow } from "../shared/project-assistant";
+import { orgRequests } from "./project-assistant-store";
+import { assistantReady } from "./project-assistant-ready";
+import { projectVersions, versionRows, type OwnerVersion } from "./owner-versions";
+import { assistantWouldAct } from "./assistant-would-act";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { OPERATOR, POOL, type BatonSession } from "../shared/baton";
 import type { DecisionRow } from "../shared/decisions";
 import type { OrgProject, Person } from "../shared/orgs";
 import type {
+  OwnerAbilities,
+  OwnerAbilityOutcome,
   OwnerConversation,
   OwnerConversationRow,
   OwnerConversationStatus,
@@ -16,6 +23,7 @@ import type {
   OwnerNews,
   OwnerPerson,
   OwnerProject,
+  OwnerProjectAbilities,
   OwnerProjectCard,
   OwnerStatus,
   OwnerWaiting,
@@ -28,6 +36,7 @@ import { handleOf } from "./person-links";
 import { transcriptFacts } from "./person-page";
 import { readBuilds, withWorktreePath } from "./build-loadout";
 import { publishedUpdates } from "./project-updates";
+import { featureChatOf, shownToOwner } from "./feature-chats";
 import { readWorktree, type WorktreeReading } from "./project-worktrees";
 import { listDecisions } from "./reconcile";
 import { opaqueSenders, outsiderRedactor, readView } from "./share/hub";
@@ -70,7 +79,9 @@ function contextOf(orgId: string, now: number): Ctx {
   const projects = readProjects(orgId).filter((p) => !p.ownerHidden);
   const shown = new Set(projects.map((p) => p.id));
   const rows = new Map<string, BatonSession[]>(projects.map((p) => [p.id, []]));
-  for (const row of allBatons()) if (row.orgId === orgId && shown.has(row.projectId) && !row.hiddenFromOwner) rows.get(row.projectId)!.push(row);
+  // A feature request chat shows only to the owner who opened it (§app.project-assistant/feature-chats); it is never hidden from them.
+  for (const row of allBatons())
+    if (row.orgId === orgId && shown.has(row.projectId) && shownToOwner(row, owner.id) && (!row.hiddenFromOwner || featureChatOf(orgId, row.sessionId))) rows.get(row.projectId)!.push(row);
   const op = operatorName();
   const r = outsiderRedactor(orgId);
   return {
@@ -115,6 +126,10 @@ interface RowFacts {
 
 function statusOf(ctx: Ctx, row: BatonSession): OwnerConversationStatus {
   if (row.state === "closed") return { kind: "closed" };
+  // The owner's own feature request chat: Planning with you while they hold it, Plan agreed once done.
+  const feature = !!featureChatOf(ctx.orgId, row.sessionId);
+  if (feature && row.state === "done") return { kind: "plan-agreed" };
+  if (feature && row.holder === ctx.owner.id) return { kind: "planning" };
   if (row.state === "done") return { kind: "done" };
   const offer = currentOffer(row);
   if (row.holder === ctx.owner.id) return { kind: "waiting-on-you" };
@@ -280,8 +295,8 @@ async function assemble(ctx: Ctx, project: OrgProject): Promise<Assembled> {
   const people = [...who.values()].sort((a, b) => (b.lastWroteAt ?? "").localeCompare(a.lastWroteAt ?? "") || a.name.localeCompare(b.name));
 
   const waiting: OwnerWaiting[] = facts
-    .filter((f) => f.status.kind === "waiting-on-you")
-    .map((f) => ({ conversation: f.handle, publicTitle: ctx.r.redact(f.row.publicTitle), project: handle, projectName: name, askedAt: askedAt(ctx, f) }))
+    .filter((f) => f.status.kind === "waiting-on-you" || f.status.kind === "planning")
+    .map((f) => ({ conversation: f.handle, publicTitle: ctx.r.redact(f.row.publicTitle), project: handle, projectName: name, askedAt: askedAt(ctx, f), ...(f.status.kind === "planning" ? { feature: true as const } : {}) }))
     .sort((a, b) => b.askedAt.localeCompare(a.askedAt));
 
   const status: OwnerStatus = waiting.length
@@ -313,14 +328,86 @@ function rowOf(ctx: Ctx, f: RowFacts): OwnerConversationRow {
 export async function ownerHome(orgId: string, now = Date.now()): Promise<OwnerHome> {
   const ctx = contextOf(orgId, now);
   const all = await Promise.all(ctx.projects.map((p) => assemble(ctx, p)));
+  const cards = all.map((a) => a.card).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || a.name.localeCompare(b.name));
+  const ready = await assistantReady(orgId);
   return {
     org: { name: ctx.orgName },
     owner: nameOf(ctx, ctx.owner.id),
     operator: ctx.operator,
     updatedAt: new Date(now).toISOString(),
     waiting: all.flatMap((a) => a.waiting).sort((a, b) => b.askedAt.localeCompare(a.askedAt)),
-    projects: all.map((a) => a.card).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || a.name.localeCompare(b.name)),
+    projects: cards,
+    requests: requestRows(ctx),
+    versions: await versionsOf(ctx),
+    assistant: { ready },
+    ...(ready ? { abilities: await abilitiesOf(ctx, cards) } : {}),
   };
+}
+
+/** What the assistant can do for the owner, per shown project, in the cards' order (§app.project-assistant/abilities):
+    the tools' own question, asked without doing anything; outcome words only. */
+async function abilitiesOf(ctx: Ctx, cards: OwnerProjectCard[]): Promise<OwnerAbilities> {
+  const byHandle = new Map(ctx.projects.map((p) => [handleOf("q", p.id), p.id]));
+  const word = (a: { outcome: OwnerAbilityOutcome | "none" }): OwnerAbilityOutcome => (a.outcome === "none" ? "team" : a.outcome);
+  const projects = await Promise.all(
+    cards.map(async (c): Promise<OwnerProjectAbilities> => {
+      const id = byHandle.get(c.id)!;
+      const [fix, version, release, feature] = await Promise.all((["fix", "version", "release", "feature"] as const).map((k) => assistantWouldAct(ctx.orgId, id, k).catch(() => ({ outcome: "team" as const }))));
+      return { project: c.id, fix: word(fix!), version: version!.outcome, release: word(release!), feature: feature!.outcome === "now" ? "now" : "team" };
+    }),
+  );
+  // Imported late: server/project-assistant.ts imports this module.
+  const { assistantPhotoLimits } = await import("./project-assistant");
+  const photos = !!(await assistantPhotoLimits(ctx.orgId).catch(() => null));
+  return { photos, projects };
+}
+
+/** The owner's requests of the shown projects (§app.project-assistant/requests): handles, names, the words the model wrote passed through `said`. */
+function requestRows(ctx: Ctx): OwnerRequestRow[] {
+  const names = new Map(ctx.projects.map((p) => [p.id, p.name]));
+  return orgRequests(ctx.orgId)
+    .filter((r) => names.has(r.projectId))
+    .map((r) => ({
+      handle: handleOf("r", r.id),
+      project: ctx.r.redact(names.get(r.projectId)!),
+      kind: r.kind,
+      title: ctx.r.redact(ctx.r.said(r.title)),
+      status: r.status,
+      at: r.updatedAt,
+      // Who closed it for the owner (§app.project-assistant/closing): never a person id, only you or your assistant.
+      ...(r.status === "closed" && r.closed ? { closedBy: r.closed.by.kind === "assistant" ? ("assistant" as const) : ("you" as const) } : {}),
+      ...planOfRequest(ctx, r),
+    }));
+}
+
+/** A `feature` request's chat as it stands (§app.project-assistant/feature-chats): planning while open, agreed once
+    done, while the request is still with the team; only for the owner who opened it. */
+function planOfRequest(ctx: Ctx, r: { kind: string; status: string; sessionId?: string }): { plan?: "planning" | "agreed" } {
+  if (r.kind !== "feature" || r.status !== "with-team" || !r.sessionId) return {};
+  const rec = featureChatOf(ctx.orgId, r.sessionId);
+  if (!rec || rec.personId !== ctx.owner.id) return {};
+  const row = [...ctx.rows.values()].flat().find((x) => x.sessionId === r.sessionId);
+  if (!row) return {};
+  if (row.state === "done") return { plan: "agreed" };
+  if (row.state === "open" || row.state === "needs-you") return { plan: "planning" };
+  return {};
+}
+
+/** Versions you can try of the shown projects (§app.project-assistant/versions); never an address. */
+async function versionsOf(ctx: Ctx): Promise<OwnerVersionRow[]> {
+  const out: OwnerVersionRow[] = [];
+  for (const p of ctx.projects) out.push(...versionRows(await projectVersions(ctx.orgId, p).catch(() => []), ctx.r, ctx.orgId));
+  return out;
+}
+
+/** A version of a shown project by its handle, for the Open route; null when none. */
+export async function ownerVersionOf(orgId: string, handle: string): Promise<OwnerVersion | null> {
+  const ctx = contextOf(orgId, Date.now());
+  for (const p of ctx.projects) {
+    const hit = (await projectVersions(orgId, p).catch(() => [])).find((v) => v.handle === handle);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 export async function ownerProject(orgId: string, handle: string, now = Date.now()): Promise<OwnerProject> {
@@ -358,6 +445,9 @@ export async function ownerConversation(orgId: string, handle: string, now = Dat
     projectName: ctx.r.redact(hit.project.name),
     status: f.status,
     yourTurn: hit.row.holder === ctx.owner.id && (hit.row.state === "open" || hit.row.state === "needs-you"),
+    ...(featureChatOf(orgId, hit.row.sessionId)
+      ? { feature: { canWrite: hit.row.holder === ctx.owner.id && (hit.row.state === "open" || hit.row.state === "needs-you") && hit.row.budget.messagesUsed < hit.row.budget.messagesMax, canEnd: hit.row.state === "open" || hit.row.state === "needs-you" } }
+      : {}),
     org: { name: ctx.orgName },
     operator: ctx.operator,
     updatedAt: new Date(now).toISOString(),
@@ -376,3 +466,6 @@ export function ownerView(orgId: string, what: { project?: string; conversation?
   if (what.project !== undefined) return ownerProject(orgId, what.project, now);
   return ownerHome(orgId, now);
 }
+
+/** The assistant takes messages (§app.project-assistant/chat): the one readiness predicate. */
+export { assistantReady };

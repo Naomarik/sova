@@ -1,0 +1,38 @@
+{
+  "name": "librarian",
+  "about": "One session's whole life from a terminal: made, asked, answered, read back, renamed, tagged and shelved in the archive, with sova watch seeing each change.",
+  "steps": [
+    { "name": "watch the list", "watch": "w" },
+    { "name": "a new session", "sova": ["run", "session.create", "--cwd", "."], "json": { "id": { "$type": "string" }, "path": { "$match": "\\.jsonl$" } }, "save": "s" },
+    { "name": "it is found by id", "sova": ["run", "session.get", "--session", "{{s.id}}"], "json": { "id": "{{s.id}}", "path": "{{s.path}}", "archived": false } },
+    { "name": "send it a message", "sova": ["run", "session.send", "--session", "{{s.path}}", "--text", "Read package.json and tell me the package name."], "json": { "ok": true, "queued": false } },
+    {
+      "name": "the reply arrives",
+      "sova": ["run", "session.read", "--session", "{{s.path}}"],
+      "until": { "items": { "$some": { "kind": "assistant-text", "text": "The package name is in package.json." } } },
+      "timeoutMs": 30000
+    },
+    {
+      "name": "the transcript reads back in order",
+      "sova": ["run", "session.read", "--session", "{{s.id}}"],
+      "json": {
+        "items": {
+          "$some": { "kind": "user", "text": "Read package.json and tell me the package name." }
+        }
+      },
+      "save": "t"
+    },
+    { "name": "the tool call is in it", "sova": ["run", "session.read", "--session", "{{s.path}}"], "json": { "items": { "$some": { "kind": "assistant-text", "text": "Reading it." } } } },
+    { "name": "watch sees it listed", "await": "w", "event": { "event": "created", "id": "{{s.id}}" } },
+    { "name": "rename it", "sova": ["run", "session.title.set", "--session", "{{s.id}}", "--title", "Package name lookup"], "json": { "title": "Package name lookup" } },
+    { "name": "the new title holds", "sova": ["run", "session.get", "--session", "{{s.id}}"], "json": { "title": "Package name lookup" } },
+    { "name": "watch sees the rename", "await": "w", "event": { "event": "renamed", "id": "{{s.id}}", "title": "Package name lookup" } },
+    { "name": "tag it", "sova": ["run", "session.tags.set", "--session", "{{s.path}}", "--tags", "library,lookup"] },
+    { "name": "the tags hold", "sova": ["run", "session.get", "--session", "{{s.id}}"], "json": { "tags": { "user": ["library", "lookup"] } } },
+    { "name": "watch sees the tags", "await": "w", "event": { "event": "tagged", "id": "{{s.id}}", "tags": { "user": ["library", "lookup"] } } },
+    { "name": "archive it", "sova": ["run", "session.archive", "--session", "{{s.id}}"] },
+    { "name": "it is archived", "sova": ["run", "session.get", "--session", "{{s.id}}"], "json": { "archived": true, "title": "Package name lookup" } },
+    { "name": "watch sees it archived", "await": "w", "event": { "event": "archived", "id": "{{s.id}}", "archived": true } },
+    { "name": "the archive keeps its transcript", "sova": ["run", "session.read", "--session", "{{s.path}}"], "json": { "items": { "$some": { "kind": "assistant-text", "text": "The package name is in package.json." } } } }
+  ]
+}

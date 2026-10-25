@@ -74,6 +74,21 @@ test("(1) an embeds-only change to a built behavior lands on doc-only evidence; 
   assert.equal(promote(r2, "frame").exit, 0);
 });
 
+test("(1b) a notOwned-only change to a built area lands on doc-only evidence; bundled with prose it is refused", () => {
+  const root = project();
+  assert.equal(run(root, "new", "no", "--write").exit, 0);
+  editRecord(root, "no", "§p/panel", (r) => { r.notOwned = ["§a.top/one"]; });
+  assert.equal(docOnly(root, "no", "§p/panel", "read §p/panel, §a.top/one and lib/one.txt").exit, 0);
+  assert.equal(promote(root, "no", "§p/panel").exit, 0);
+  assert.deepEqual(current(root)["§p/panel"].notOwned, ["§a.top/one"]);
+  assert.deepEqual(current(root)["§p/panel"].code, ["lib/panel.txt"]);
+  const r2 = project();
+  assert.equal(run(r2, "new", "np", "--write").exit, 0);
+  editRecord(r2, "np", "§p/panel", (r) => { r.notOwned = []; });
+  write(r2, D("np", "claims/p/panel.md"), "# §p/panel\n\nThe panel shows Z.\n");
+  bundled(docOnly(r2, "np", "§p/panel"), /notOwned change is bundled with prose/);
+});
+
 test("(2) a field change bundled with a prose change is refused, naming the prose", () => {
   const root = project();
   draft(root, "fp", (r) => { r.embeds = ["§p/panel"]; }, TOP.replace("One does X.", "One does X, drawn with the panel."));

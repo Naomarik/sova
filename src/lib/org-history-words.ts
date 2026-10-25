@@ -1,6 +1,7 @@
 // The History tab's words: every
 // line here is made from what the server returned, never from a guess. A value the server didn't
 // record reads as not recorded, never as the operator or anyone else. Pure: no DOM, no Solid.
+import { powerWord } from "../../shared/powers";
 import {
   isUnknown,
   OUTCOME_WORDS,
@@ -148,6 +149,7 @@ export function authorizationWord(a: Authorization | Unknown, label: (r: Pick<Ac
     "operator-act": "The operator's own act",
     "attended-turn": "A turn the operator attended",
     "autonomy-level": a.level ? `Autonomy level ${a.level}` : "Its autonomy level",
+    power: powerWord(a.power, a.column) ?? "Its switches",
     grant: "A grant",
     "confirm-card": "A confirm card",
     "hold-release": "A released hold",
@@ -156,6 +158,8 @@ export function authorizationWord(a: Authorization | Unknown, label: (r: Pick<Ac
     none: "None recorded as needed",
   };
   const parts = [base[a.kind]];
+  // a held or attended act recorded with switches names the power too; a row from before them keeps its level
+  if (a.kind !== "power" && a.kind !== "autonomy-level" && a.power) parts.push(powerWord(a.power, a.column) ?? a.power);
   // "A turn the operator attended" already says it.
   if (a.attended === true && a.kind !== "attended-turn") parts.push("attended");
   if (a.attended === false) parts.push("unattended");

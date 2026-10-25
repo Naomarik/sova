@@ -69,7 +69,7 @@ describe("the prompt and the tool set stay in step", () => {
     const tools = buildOverseerTools();
     const registered = new Set(tools.map((t) => t.name));
     const prompt = renderOverseerPrompt(tools, readOverseerSettings());
-    const mentioned = new Set([...prompt.matchAll(/`(sova_[a-z_]+)`/g)].map((m) => m[1]!));
+    const mentioned = new Set([...prompt.matchAll(/`(sova_[a-z_]+|spec_lookup)`/g)].map((m) => m[1]!));
     assert.deepEqual([...mentioned].sort(), [...registered].sort());
     assert.ok(!/\{\{[A-Z]+\}\}/.test(prompt), "every placeholder is filled");
   });
@@ -87,7 +87,7 @@ describe("the prompt and the tool set stay in step", () => {
 
   test("the allowlist is the sova_* tools plus the file built-ins (write and edit guarded) and wake_nudge: no bash or subagents", () => {
     const names = [...buildOverseerTools().map((t) => t.name), ...BUILTIN_ALLOWED];
-    assert.ok(names.every((n) => n.startsWith("sova_") || ["read", "grep", "find", "ls", "write", "edit", "wake_nudge"].includes(n)));
+    assert.ok(names.every((n) => n.startsWith("sova_") || ["read", "grep", "find", "ls", "write", "edit", "wake_nudge", "spec_lookup"].includes(n)));
     for (const want of ["write", "edit"]) assert.ok(names.includes(want));
     for (const banned of ["bash", "agent_spawn", "team_create"]) assert.ok(!names.includes(banned));
   });
@@ -816,6 +816,7 @@ describe("sandbox on sova_set_session and sova_create_session (§app.overseer/to
       caps: () => DEFAULT_CAPS,
       session: async (ref: string) => (["a", "b", "new"].includes(ref) ? summary(ref) : null),
       open: async () => {},
+      pinMode: async () => {},
       sandbox: async (path: string) => {
         const st = states.get(/\/s\/(\w+)\.jsonl/.exec(path)![1]!);
         return st ? info(st) : null;
@@ -897,5 +898,16 @@ describe("sandbox on sova_set_session and sova_create_session (§app.overseer/to
     assert.match(await h.run("sova_create_session", { host: "peer", cwd: "/w", minor_modes: ["spec", "memory"] }), /^ERROR: Memory is for chats only: .*\. No session was created\.$/);
     assert.match(await h.run("sova_set_session", { session: "a", title: "renamed", minor_modes: ["memory"] }), /^ERROR: Memory is for chats only: .*\. Nothing was changed\.$/);
     assert.deepEqual(h.calls, [], "nothing was created, renamed or switched");
+  });
+
+  test("project_modes: create and set send them to the chat's mode route as projectModes; never with host; a bad id creates nothing (§chat.mode-menu/project-modes)", async () => {
+    const h = harness();
+    await h.run("sova_create_session", { cwd: "/w", project_modes: ["release-check"] });
+    await h.run("sova_set_session", { session: "a", project_modes: [] });
+    assert.deepEqual(h.calls.filter((c) => c.path.startsWith("/api/mode")).map((c) => c.body), [{ projectModes: ["release-check"] }, { projectModes: [] }]);
+    const bad = harness();
+    assert.match(await bad.run("sova_create_session", { cwd: "/w", project_modes: ["Bad"] }), /^ERROR: Not a project mode name: Bad\. No session was created\.$/);
+    assert.match(await bad.run("sova_create_session", { host: "peer", cwd: "/w", project_modes: ["x"] }), /^ERROR: project_modes can't be given with host\. No session was created\.$/);
+    assert.deepEqual(bad.calls, []);
   });
 });

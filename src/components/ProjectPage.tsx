@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, Show, Switch } from "solid-js";
 import type { ProjectSummary } from "../../shared/projects";
+import type { SessionSummary } from "../../shared/protocol";
 import { ApiError, archiveProject, getProjectPreviews, unarchiveProject } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { createPoll } from "../lib/poll";
@@ -16,6 +17,8 @@ import { PlaybookReviewBanner } from "./PlaybookReview";
 import { ProjectDeployPanel } from "./ProjectDeployPanel";
 import { createRuntimePoll, ProjectSoftwareCard } from "./ProjectSoftwareCard";
 import { ProjectFilesCard } from "./ProjectFilesCard";
+import { ProjectOffersCard } from "./ProjectOffersCard";
+import { createProjectSettings, ProjectAllSettings, ProjectSettingsChanges, ProjectSettingsHistory } from "./ProjectSettingsCards";
 import { ActivityCard, CodingSessionsCard, createProjectOverseer, IdeasCard, type ItemSendForm, OverseerSettings, OverseerSummary, type ProjectOverseer, TodosCard } from "./ProjectOverseerPanel";
 import { Banner, Icon } from "./ui";
 import "../orgs.css";
@@ -80,6 +83,8 @@ export function ProjectPage(props: {
   onProject(p: ProjectSummary): void;
   refetchProject(): void;
   org?: (ctx: ProjectPartContext) => ProjectOrgPart;
+  /** The session list the sidebar holds: Coding sessions lists from it before its own read answers. */
+  sessions?: () => readonly SessionSummary[] | undefined;
 }) {
   const projectId = props.project.id;
   const project = () => props.project;
@@ -87,9 +92,9 @@ export function ProjectPage(props: {
   // Refresh Project recounts the cost too.
   const [costTick, setCostTick] = createSignal(0);
   // Read once for the whole page: the summary counts them, and each tab shows its part.
-  const po = createProjectOverseer({ projectId, onBusy: setOverseerBusy });
+  const po = createProjectOverseer({ projectId, onBusy: setOverseerBusy, sessions: props.sessions });
   const cost = createProjectCost({ projectId, tick: costTick });
-  const previews = createPoll(() => getProjectPreviews(projectId), PREVIEWS_POLL_MS);
+  const previews = createPoll(() => getProjectPreviews(projectId), PREVIEWS_POLL_MS, { cacheKey: `project:${projectId}:previews-chip` });
   // The software registry, read once for the page: the Software card and a proposed run's banner.
   const runtime = createRuntimePoll(projectId);
   const ideaList = () => (po.ideas.data() ? openIdeas(po.ideas.data()!.ideas) : undefined);
@@ -163,7 +168,7 @@ export function ProjectPage(props: {
     const pv = previews.data();
     const oc = org?.counts() ?? {};
     return summaryChips({
-      sessions: w ? w.worktrees.sessions.length : undefined,
+      sessions: w ? w.coding.length : undefined,
       previews: pv ? pv.previews.filter((x) => x.state === "active").length : undefined,
       cost: c ? costFigure(c) : undefined,
       conflicts: oc.conflicts,
@@ -219,6 +224,7 @@ export function ProjectPage(props: {
         props.refetchProject();
         org?.refresh();
         po.info.refetch();
+        po.worktrees.refetch();
         po.actions.refetch();
         po.ideas.refetch();
         po.todos.refetch();
@@ -331,8 +337,21 @@ export function ProjectPage(props: {
             <ProjectCostCard projectId={projectId} poll={cost} />
           </Match>
           <Match when={tab() === "settings"}>
-            <OverseerSettings po={po} placed={!!org} />
-            {org?.settings()}
+            {(() => {
+              // Every project setting and the overseer's Settings change cards (§app.project-overseer/settings), read while the tab shows.
+              const settings = createProjectSettings(projectId);
+              return (
+                <>
+                  <ProjectSettingsChanges projectId={projectId} data={settings} />
+                  <OverseerSettings po={po} placed={!!org} />
+                  {org?.settings()}
+                  {/* The project's offers file, read now (§chat.offers/project-list). */}
+                  <ProjectOffersCard projectId={projectId} />
+                  <ProjectAllSettings data={settings} />
+                  <ProjectSettingsHistory projectId={projectId} data={settings} />
+                </>
+              );
+            })()}
             <section class="card orgs-section project-danger" aria-labelledby="project-danger">
               <h2 class="orgs-h2" id="project-danger">
                 Danger zone

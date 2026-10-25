@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, Match, on, Show, Switch } from "solid-js";
 import type { OverseerInfo, OverseerProactivity, SessionSummary } from "../../shared/protocol";
 import { clearOverseer, getOverseer, getOverseerIdeas, getOverseerSettings, getOverseerTodos, putOverseerSettings } from "../lib/api";
 import { modelLabel, relativeTime } from "../lib/format";
@@ -7,7 +7,9 @@ import { isMainThread } from "../lib/regions";
 import { settingsOpenAt } from "../lib/settings-nav";
 import { announce, toast } from "../lib/ui-state";
 import { sessionWorking } from "../lib/workers";
+import { approvalsNote, overseerActionsLabel, schedulesMenuLabel, waitingSchedules } from "../lib/overseer-approvals";
 import { ActionMenu, type ActionMenuApi } from "./ActionMenu";
+import { type OverseerApprovals, OverseerApprovalsBody } from "./OverseerApprovalsPanel";
 import type { OverseerChat, OverseerSender } from "./ChatView";
 import { ContextGauge } from "./ContextGauge";
 import { OverseerIdeas } from "./OverseerIdeas";
@@ -53,7 +55,8 @@ export function OverseerView(props: {
 
   const main = createMemo(() => props.sessions.filter(isMainThread));
   const working = () => main().filter((s) => s.busy || sessionWorking(s) > 0 || s.activity?.state === "working").length;
-  const act = () => props.info?.badge.act ?? 0;
+  // The sessions Needs you lists, blockers and guesses alike (shared/needs-you.ts): one rule, so the counts agree.
+  const act = () => props.info?.badge.needsYou ?? props.info?.badge.act ?? 0;
   /** The head's one line: what the Overseer is watching, as counts. */
   const facts = () => {
     const parts = [`${sessions(main().length)}`];
@@ -77,6 +80,16 @@ export function OverseerView(props: {
   createEffect(on(() => props.wiring.listVersion, () => ideasOpen() && bumpIdeas(), { defer: true }));
   createEffect(on(ideasOpen, (open) => open && void refetchIdeas(), { defer: true }));
   const [sender, setSender] = createSignal<OverseerSender | null>(null);
+  /** The mounted chat's autonomy reading and acts (§app.overseer/approvals): the head reads none itself. */
+  const [approvals, setApprovals] = createSignal<OverseerApprovals | null>(null);
+  const autonomy = () => approvals()?.autonomy();
+  /** Schedules waiting for approval: the dot on ⋯ and Schedules ▾. */
+  const waiting = () => waitingSchedules(autonomy()?.schedules);
+  const dot = () => (
+    <Show when={waiting() > 0}>
+      <span class="overseer-attention-dot" aria-hidden="true" />
+    </Show>
+  );
   let ideasButton: HTMLButtonElement | undefined;
   const closeIdeas = () => {
     setIdeasOpen(false);
@@ -151,6 +164,10 @@ export function OverseerView(props: {
       setSender(() => s);
       return () => setSender((cur) => (cur === s ? null : cur));
     },
+    bindApprovals: (a) => {
+      setApprovals(() => a);
+      return () => setApprovals((cur) => (cur === a ? null : cur));
+    },
     onClear: clear,
     // Read the route afresh BEFORE remounting: a remount on the old path would reopen a file the
     // clear just retired. A new path remounts through the key; the same path needs the bump.
@@ -188,6 +205,11 @@ export function OverseerView(props: {
       else menu.focusTrigger();
     });
   };
+  /** The ⋯ row's note: "1 needs approval", else the counts, else "None"; none until the first read. */
+  const approvalsNote_ = () => {
+    const a = autonomy();
+    return a ? approvalsNote(a.permits, a.schedules ?? []) : undefined;
+  };
   const earlierWords = (n: number) => `${n} earlier ${n === 1 ? "conversation" : "conversations"}`;
   const HistoryRows = (p: { menu: ActionMenuApi; fallback?: boolean }) => (
     <For each={history()} fallback={p.fallback ? <p class="mode-option-note overseer-count-state">No earlier conversations yet.</p> : undefined}>
@@ -212,17 +234,30 @@ export function OverseerView(props: {
   );
   /** ⋯: the same rows at every width it shows (below a 900px head); the row's copies go by container query. */
   const More = (p: { earlier: boolean }) => (
-    <ActionMenu label="Overseer actions" title="Overseer actions" icon="more" class="overseer-more">
+    <ActionMenu label={p.earlier ? "Overseer actions" : overseerActionsLabel(waiting())} title="Overseer actions" icon="more" class="overseer-more" badge={p.earlier ? undefined : dot()}>
       {(menu) => (
         <Show
           when={menu.screen() === null}
           fallback={
-            <Show when={menu.screen() === "history"} fallback={<ProactivityRows menu={menu} />}>
-              <HistoryRows menu={menu} fallback />
-            </Show>
+            <Switch fallback={<ProactivityRows menu={menu} />}>
+              <Match when={menu.screen() === "history"}>
+                <HistoryRows menu={menu} fallback />
+              </Match>
+              <Match when={menu.screen() === "approvals" && approvals()}>
+                {(a) => <OverseerApprovalsBody approvals={a()} close={menu.close} />}
+              </Match>
+            </Switch>
           }
         >
           <Show when={!p.earlier}>
+            <menu.Item
+              label="Approvals & Schedules…"
+              aria={approvalsNote_() ? `Approvals & Schedules: ${approvalsNote_()}` : "Approvals & Schedules"}
+              description={approvalsNote_()}
+              disabled={approvals() ? undefined : "Starting the Overseer"}
+              stayOpen
+              onRun={() => showScreen(menu, "approvals")}
+            />
             <menu.Item
               label="Proactivity…"
               aria={`Proactivity: ${PROACTIVITY_LABEL[shownProactivity()]}. Change it.`}
@@ -325,6 +360,20 @@ export function OverseerView(props: {
             <span class="chip chip-count">{openTodos()}</span>
           </Show>
         </button>
+      </Show>
+      <Show when={!p.earlier && approvals()}>
+        {(a) => (
+          <ActionMenu
+            label={schedulesMenuLabel(waiting())}
+            title="What the Overseer and your schedules may do without you"
+            icon="shield"
+            text="Schedules"
+            class="button-sm overseer-wide overseer-schedules"
+            badge={dot()}
+          >
+            {(menu) => <OverseerApprovalsBody approvals={a()} close={menu.close} />}
+          </ActionMenu>
+        )}
       </Show>
       <Show when={history().length > 0}>
         <ActionMenu label="Earlier Overseer conversations" title="Earlier conversations" icon="clock" text="History" class="button-sm overseer-wide">

@@ -2,7 +2,7 @@
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 People outside the tailnet open hand-off links (`/h/`), owner-page links (`/i/`) and session share
-links (`/s/`, §app/session-share) on a public address. One host, usually the VPS, can be the **public gateway**: its share listener
+links (`/s/`, §app/session-share), and standalone reviewed tour links (`/t/`, §app.tours/sharing) on a public address. One host, usually the VPS, can be the **public gateway**: its share listener
 (§app.baton/share-listener) sits on `127.0.0.1` behind a **front** outside Sova that terminates TLS
 for one hostname. Any other host can send its links **through** that gateway: it registers the
 SHA-256 of each live token with the gateway over the tailnet, and the gateway forwards a request
@@ -46,7 +46,7 @@ live in `shared/public-links.ts`, never in `shared/protocol.ts`, so the mesh fin
 - **The effective address**, first match wins: `SOVA_SHARE_PUBLIC_URL` (an `http` or `https` bare
   origin; any other value is ignored with one warning, and the setting decides); this host's own
   gateway address; the via gateway's address (as its info or ack last stated it, else its hello's,
-  else `lastKnownUrl`); the bound address; none. Every `/h/`, `/i/` and `/s/` link is built by one
+  else `lastKnownUrl`); the bound address; none. Every `/h/`, `/i/`, `/s/` and reviewed tour `/t/` link is built by one
   helper on that address, or is just the path with none. The answer is a `ShareState`: `state` off,
   configured, verified or unreachable; `source` env, setting, gateway or bound; `publicUrl`; `via`
   (the gateway peer's current id); `warning` with its `warningCode` whenever a link may not
@@ -81,9 +81,11 @@ links". When nothing answers in time, it replies with the state as it stands.
   calling peer `{publicUrl, accepting, seq}` (`seq`: the last snapshot stored for it, null when not
   accepting); a host that is no gateway answers 404 `{error: "not-gateway"}`. Asked with
   `?kinds=1`, the answer adds `kinds`, the link kinds this gateway accepts and routes (`h`, `i`,
-  `s`, `x`, `p`), and asked also with `preview=1` it adds `previewUrl` when a preview address is
-  set (§mesh.public/preview-address); without it the answer keeps exactly the three keys, since an older routed host parses
-  it strictly.
+  `s`, `x`, `p`, `t`), and asked also with `preview=1` it adds `previewUrl` when a preview address is
+  set (§mesh.public/preview-address). Asked with `proto=1` (whatever else is asked), it adds
+  `shareProtocol`, this gateway's share protocol number (§mesh.public/share-protocol). Without
+  those flags the answer keeps exactly the three keys, since an older routed host parses it
+  strictly; a gateway that ignores `proto=1` states no number.
 - `routed` (in `GET /api/public-links`, only while this host is the gateway): every host that
   registered links here, then every other host `acceptFrom` lists, each `{nodeId, peer, links, up,
   lastPushAt, accepted}`: its peer id (null when no longer in `peers.json`), its live `h`, `i`
@@ -132,8 +134,10 @@ links". When nothing answers in time, it replies with the state as it stands.
 
 ## §mesh.public/registry — Which host minted a token
 
+Reviewed expiring standalone tour links use kind `t`. A routed host includes `t` rows only after the exact gateway target advertises `t` support, with the same target/generation binding, rechecks and fallback rules as other negotiated kinds. An older gateway receives no unknown `t` row that could reject the whole snapshot and break hand-off or owner links; a tour mint through an unsupported gateway is explicitly refused. Expiry or revocation withdraws the tour row without changing its edition pin.
+
 - **Push.** A routed host sends its gateway its whole live set as a `RegistrySnapshot`, `PUT
-  /api/peer/share-gateway/links` `{v: 1, seq, links: {h, exp, kind: "h" | "i" | "s" | "x" | "p"}[],
+  /api/peer/share-gateway/links` `{v: 1, seq, links: {h, exp, kind: "h" | "i" | "s" | "x" | "p" | "t"}[],
   assets, ingressPort}`: every hand-off, owner and session share link not revoked or expired, as
   the lowercase hex SHA-256 of its token, and the names in its own share build's `assets/`.
   Session links (`s`) go only to a gateway target whose own info listed `s` in `kinds`: an older
@@ -188,8 +192,8 @@ links". When nothing answers in time, it replies with the state as it stands.
 
 - With `route: {via}` and the gateway listed in `peers.json`, the host binds a share ingress on its
   tailnet addresses (`SOVA_PEER_HOST` when set), never loopback or a wildcard, at `ingressPort`
-  (4802 by default). It serves exactly the share listener's paths, `/ws/h` and `/ws/s`, with the same edge
-  (§app.baton/share-listener), and retries every 15 seconds when it can't bind.
+  (4802 by default). It serves exactly the share listener's paths and sockets, with the same strict edge
+  (§app.baton/share-listener), never the gateway's forward-only shapes (§mesh.public/share-protocol), and retries every 15 seconds when it can't bind.
 - Every request and upgrade must come from the via gateway: its StableID by Tailscale `whois`, and
   in address-identity mode (§mesh.peers/address-identity) also one of its pinned addresses. Anyone
   else gets 403 with the refused marker. A missing, ambiguous or non-matching identity fails
@@ -201,37 +205,47 @@ links". When nothing answers in time, it replies with the state as it stands.
 
 ## §mesh.public/routing — The gateway routes by token hash
 
+A `t` row routes only `/t/<token>` and its narrowly scoped `/api/t/<token>/…` presentation and picture reads; an `h` row additionally carries token-scoped bound tour reads within the conversation's visibility (§app.tours/handoffs). Tour picture hops have explicit byte caps and a separate bounded image bucket. Membership, edition pin, expiry and revocation remain the minting host's authority and are checked again after reads. Unknown, cross-kind or guessed assets never become an operator API path. A failed or partial picture hop is not returned as a whole valid image.
+
 - The share edge (allowed paths, the per-address limit, timeouts, the body cap) runs at the gateway
   before any hop. Then: a token this host minted, live or not, is served in-process; else a hash a
   live, accepted host registered for that route's kind is forwarded to that host's ingress; else
   the request is served in-process, which answers 404 for an unknown token's API and socket (the
-  page shell answers 200 for any token). An unknown hash is never asked of any host.
+  page shell answers 200 for any token). An unknown hash is never asked of any host. A request
+  that passed only the gateway's forward-only shape (§mesh.public/share-protocol) is forwarded
+  the same way, and is never served in-process: for any other token it is the unknown-link 404.
 - **Kinds bind routes.** An `h` row serves `/h`, `/api/h` (its photo upload and photo reads
-  included, §app.baton/images, and its file upload, §app.baton/files) and `/ws/h`; an upload's hop
-  (a photo's or a file's) waits for the origin's answer as long as the edge lets that upload take
-  (120 s or 300 s) plus the header wait, and its body was already capped at the gateway's edge at
-  the setting's ceiling, since the gateway never knows the minting host's own setting; an `i` row serves `/i` and
-  `/api/i`; an `s` row serves `/s`, `/api/s` (its image route included) and `/ws/s`; a `p` row
+  included, §app.baton/images, and its file upload, §app.baton/files) and `/ws/h`; a hop with a
+  body (an upload's included) waits for the origin's answer as long as the edge lets a registered
+  link's request take (300 s) plus the header wait, and its body was already capped at the
+  gateway's edge at the one ceiling (§mesh.public/share-protocol), since the gateway never knows
+  the minting host's own setting; an `i` row serves `/i`, `/api/i`
+  (the Project Assistant's chat, its versions and `ask-link` included) and `/ws/i`; an `s` row serves `/s`, `/api/s` (its image route included) and `/ws/s`; a `p` row
   serves only its own preview host, every path and websocket on it (§mesh.public/preview-address);
-  an `x` row never routes. A socket's kind comes from its path.
+  an `x` row never routes. A path's kind is its first segment after `/` or `/api/`, and a
+  socket's the segment after `/ws/`.
 - A hop dials a literal tailnet address verified to belong to the row's StableID (from Tailscale's
   status, at most 5 seconds old, or the pinned address in address-identity mode), never a name, at
   the row's ingress port. Authorization is judged again after each wait and for as long as a hop
   stays open: a hop whose host no longer holds the hash (setting gone, peer removed or not
   accepted, row withdrawn or expired, port or address moved) is closed, checked on every registry
-  commit, setting change and each second. One exception: a `/ws/h` or `/ws/s` hop whose own host
+  commit, setting change and each second. One exception: a share socket hop (of any kind) whose own host
   withdrew the row first waits up to 3 s for that host's own close (§mesh.public/withdrawn-hop). A
   hop is tried once; a POST is never retried or replayed. At most 256 HTTP hops and 256 socket hops
-  (`/ws/h` and `/ws/s` together, 4 per link) are open at once.
+  (every share socket together, 4 per link) are open at once.
 - A hop's answer passes through without cookies, `x-sova-*`, `Service-Worker-Allowed` or
   `Clear-Site-Data` headers (the share origin is every routed host's) and always with
-  `Cache-Control: no-store`, `Referrer-Policy: no-referrer` and `nosniff`. A `p` hop is the
+  `Cache-Control: no-store`, `Referrer-Policy: no-referrer` and `nosniff`. A redirect (a 3xx but
+  304) passes only when its `Location` is an `https` address on a preview host under the
+  gateway's own preview address (`https://<label>.<zone>/…`, the label well formed,
+  §mesh.public/preview-address), as a version opened from the owner page is
+  (§app.project-assistant/versions); any other redirect is the offline answer. A `p` hop is the
   exception: its answer (redirects, 502s and cookies included) passes as the minting host sent it,
   minus hop-by-hop and `x-sova-*` headers, with a preview's limits (§mesh.public/preview-limits),
   and its websocket is passed through raw. A hopped `h` photo read is capped at 10 MB while
   streaming, as a session share's image is. The minting host keeps
   its per-token limits, visits and CSP.
-- `/ws/h` and `/ws/s` through a hop: the page's handshake is checked first (400 otherwise); the page is
+- A share socket through a hop: the page's handshake is checked first (400 otherwise); the page is
   accepted only after the host's side opened and the route was judged again (404 otherwise). The
   page's messages keep the 1 KB cap before anything is forwarded; the host's messages to the page
   aren't capped by it. The origin's own closes (1000, 4000, 4410) and statuses (404, 410, 429) pass
@@ -252,8 +266,10 @@ links". When nothing answers in time, it replies with the state as it stands.
 ## §mesh.public/withdrawn-hop — A link its own host withdrew
 
 - The gateway may see a hash leave the registry while its host stays live and accepted, because
-  that host's newer snapshot no longer lists it (revoked or expired). Open `/ws/h` hops on that
-  hash (and `/ws/s` hops alike) are then not cut at once. The gateway stops passing on the page's messages, and waits up to
+  that host's newer snapshot no longer lists it (revoked or expired). Open share socket hops on
+  that hash, of every kind (`/ws/h`, `/ws/s`, `/ws/i` and any `/ws/<kind>/<name>`), are then not
+  cut at once; each is judged by its own kind, so a live hop whose row stands is never taken for
+  a withdrawn one. The gateway stops passing on the page's messages, and waits up to
   3 seconds for the host's own close. That close passes through as it is: after a revoke, 4410
   gone, so the page says the link is no longer active, not that it is reconnecting. Only when no
   close comes in time does the gateway close the page's socket with 4503.
@@ -261,17 +277,68 @@ links". When nothing answers in time, it replies with the state as it stands.
   gateway setting going away, the peer being removed or no longer accepted, or the row moving to
   another port or host.
 
+## §mesh.public/share-protocol — Links from a newer host through an older gateway
+
+The host that made a link decides which of that link's pages open; the gateway only checks that
+the address is well formed and that a host registered the link. So a host running newer Sova than
+its gateway adds pages, live views and uploads to its links without a gateway update.
+
+- **Two tiers at the gateway's edge.** The strict path list (§app.baton/share-listener) stays the
+  only rule on a host's own share listener when it isn't a gateway, on a routed host's ingress
+  (§mesh.public/ingress), and at the gateway for its own links and unknown tokens. The gateway
+  also passes a forward-only shape: `GET`, `HEAD`, `POST` or `PUT` of `/<kind>/<token>/…` or
+  `/api/<kind>/<token>/…`, `kind` one of `h`, `i`, `s`, `t`, with 1 to 8 more segments, each 1 to
+  64 of `A-Z a-z 0-9 . _ ~ -` and none made of dots only, judged on the raw target with no `%`
+  anywhere. Such a request is forwarded only when a live, accepted host registered the token's
+  hash for that kind (§mesh.public/routing); for a token the gateway minted itself or doesn't
+  know, it answers the share app's unknown-link 404 (`{error: "This link doesn't open
+  anything.", code: "not-found"}`) and never reaches the gateway's own share app. The per-address
+  limit, the header stripping and the refusal of odd targets apply to it as to any share request.
+- **One ceiling for a registered link.** At the gateway, every request for a link a live,
+  accepted host registered, whether its address is on the strict list or only forward-only, has
+  one fixed limit instead of its page's own: its body may be as large as the largest upload any
+  share page allows (the file upload's ceiling, 25 MB plus 64 KB), and it has as long as the
+  slowest share upload has (300 seconds) for its body and for the host's answer. So a host that
+  raises one of its pages' limits needs no gateway update. The host's ingress judges every request
+  against its own strict list and each page's own limits. The gateway's own links, unknown links,
+  and every listener that isn't a gateway keep each page's limits. Such a request that no longer
+  routes once its body arrived gets the unknown-link 404, never the gateway's own share app. The
+  per-address limits are the same for every request.
+- **Sockets.** A share socket is `/ws/<kind>` or `/ws/<kind>/<name>` (`name` one segment as
+  above) with exactly one `token=`. Its kind comes from its path's first segment. The gateway
+  forwards one for a hash a live, accepted host registered for that kind and closes it when the
+  link is withdrawn (§mesh.public/withdrawn-hop); for any other token it answers 404. A new live
+  view of a link uses `/ws/<kind>/<name>`.
+- **The share protocol.** `SHARE_PROTOCOL` in `shared/public-links.ts` is a small whole number,
+  outside `shared/protocol.ts`, so changing it never marks a peer skewed (§mesh.peers/hello). It
+  is 2: version 1 is every gateway before it, which passes no redirect at all. It goes up only for
+  a change an older gateway or host can't follow: the registry's format, the hop's headers, what
+  the gateway lets back from a hop, the offline answers, the socket and route shapes above. A
+  gateway states its number in its info when asked (§mesh.public/gateway); a routed host keeps
+  what its current gateway stated, bound to that exact target as its `kinds` are
+  (§mesh.public/registry). A gateway that states no number, or a lower one, is behind: Settings →
+  Public links says so (§mesh.public/panel).
+- **A test holds the number.** A fingerprint of the share contract (the registry's keys and
+  limits, the info and ack keys, the hop's set and stripped headers, the preview header, the
+  headers dropped and stamped on a hop's answer, the redirect rule, the socket close codes and
+  caps, the offline body and close code, the forward-only and socket shapes, the asset types, the
+  token and hash rules) is checked against a recorded value per protocol number. A change to any
+  of them fails the test until the number goes up, or the new fingerprint is recorded under the
+  same number with the reason it is compatible.
+
 ## §mesh.public/offline — A known link whose host is down
 
 A registered hash whose host is down, has no verified address, refuses the gateway, answers 502 or
-504 or a redirect, or sends no response headers within 15 seconds:
+504 or a redirect other than one to the gateway's own preview address (§mesh.public/routing), or
+sends no response headers within 15 seconds (an upload's or a forward-only request's longer wait,
+§mesh.public/share-protocol):
 
 | Request | Answer |
 |---|---|
-| Page shell `/h/<t>`, `/i/<t>`, `/s/<t>` | 503 static page that names no host and repeats no token; `Retry-After: 60`, `no-store`, `no-referrer`, `nosniff`, the share page's CSP |
-| `/api/h/…`, `/api/i/…`, `/api/s/…`, POST included | 503 `{error: "offline", retryAfter: 60}`; the body is dropped, never buffered or replayed |
-| `/ws/h` or `/ws/s` upgrade | 503 |
-| A live `/ws/h` or `/ws/s` hop whose host goes away | Close 4503 |
+| Page shell `/h/<t>`, `/i/<t>`, `/s/<t>`, `/t/<t>` | 503 static page that names no host and repeats no token; `Retry-After: 60`, `no-store`, `no-referrer`, `nosniff`, the share page's CSP |
+| `/api/h/…`, `/api/i/…`, `/api/s/…`, `/api/t/…` (tour manifests and picture reads included), POST included | 503 `{error: "offline", retryAfter: 60}`; the body is dropped, never buffered or replayed |
+| A share socket upgrade | 503 |
+| A live share socket hop whose host goes away | Close 4503 |
 | An asset whose source fails | 503 |
 | An unknown hash | 404, never asked of any host |
 | A preview host (`p`) | As above for its host being down; its own answers are §mesh.public/preview-offline |
@@ -326,7 +393,13 @@ mesh off. Copy is §design.copy-deck/public-links.
   name, `{n} links`, `Last push {time}` or `Never pushed`, and `Up` / `Down`, or `Not accepted`
   in its place; none: "No other host sends its links here yet.").
 - **Through {gateway}:** the always-on advice, Ingress port, and, while that gateway is the saved
-  route, its `unreachable` or `not-accepted` warning as a warn banner.
+  route, its `unreachable` or `not-accepted` warning as a warn banner. While the saved route's
+  gateway answered its info and is behind (it stated no share protocol number, or a lower one
+  than this host's, §mesh.public/share-protocol), a warn banner says it runs an older version of
+  public links, with `Resync` for that peer (§mesh.peers/resync), the host menu's button and
+  confirm sheet, disabled with the host menu's reason when it can't resync that peer. `GET /api/public-links` carries `gatewayProtocol: {theirs, ours}`
+  for it (`theirs` null when the gateway stated none), only on a routed host whose gateway
+  answered its info.
 - **Saving:** every field and the route are staged and written by the dialog's Save Changes
   (§app.settings-dialog/save-bar), which sends only what changed (the whole gateway block when any
   of its fields did). A field an environment variable pins is read-only with the pinned hint, and
@@ -606,17 +679,23 @@ would have expired, and answers them 410 too.
   visitor's address to preview apps** ("Preview apps get X-Forwarded-For."). Off means nothing
   below is written and no address is sent.
 - **Log visitors** covers every link this host minted: hand-off (`/h/`), owner (`/i/`), session
-  share (`/s/`) and preview links. Each time the visit log records or continues a visit
+  share (`/s/`), tour (`/t/`) and preview links. Each time the visit log records or continues a visit
   (§app.baton/visits), Sova appends a line to `<stateRoot>/visitor-identity.jsonl` (0600,
   host-local, never synced or committed) `{id, at, ip, ua, lang?, referer?, path?}`: `id` the
   visit's id in its visit log, `ip` the client address as the share edge computed it
   (§mesh.public/forwarded-for), `ua` the raw user agent (at most 512 characters), `lang` the
-  `Accept-Language`. A `/h/`, `/i/` or `/s/` visit gets one line per address and user agent (each
+  `Accept-Language`. A `/h/`, `/i/`, `/s/` or `/t/` visit gets one line per address and user agent (each
   run of Sova); a preview visit one line per page load (at most 200 a visit each run), with its
   path (no query) and, when the page came from another site, that `Referer`'s origin only (a path
   can carry someone's token). A host under the preview zone is never another site. Never written there or anywhere: the token, the preview
   label, any hash of either, `Host`, cookies or `Authorization`; a value that would carry the
   preview's own origin is left out. The identity never goes into an org's `visits.jsonl`.
+- **Tour links.** A tour link (`/t/`) is recorded only while Log visitors is on. With it off,
+  opening one writes neither a visit nor an identity line. With it on, a tour that opened (after
+  its link, edition and source chat are checked) records or continues one visit under that link in
+  the host's session visit log, and a link previewer's fetch of the page records a preview line as
+  `/s/` does. A refused, expired or guessed link writes nothing. A reader's resume link and saved
+  place are never written there or joined to a visit.
 - **Preview visits.** While Log visitors is on, a page load (a navigation, as the preview's own
   pages judge it) through the minting host's proxy is recorded in
   `<stateRoot>/preview-visits.jsonl` (0600, host-local) by the rules of §app.baton/visits, its

@@ -2,7 +2,7 @@
 // it: how many rows it shows.
 //
 // Recent is a SHORTCUT, not a region in the pane rule's sense. It is additive the way a group is:
-// every session it lists is still in Live & web or the Archive underneath, or in its project's block for the operator's own
+// every session it lists is still in Folders or the Archive underneath, or in its project's block for the operator's own
 // coding session (never an org session), so nothing here decides
 // where a session lives — only which few rows get said twice, at the top, because they are the
 // ones the user is most likely to want back.
@@ -19,7 +19,7 @@ import { readKey, writeKey } from "./storage-keys";
     machine's — there is no server endpoint for it, and the server list is unchanged by it. */
 export const RECENT_COUNT_KEY = "sova:recent-count";
 
-/** Enough rows to be worth a region, few enough that Groups and Live & web stay above the fold. */
+/** Enough rows to be worth a region, few enough that Groups, Projects and Folders stay above the fold. */
 export const DEFAULT_RECENT_COUNT = 5;
 /**
  * Below 3 the region stops being a list and starts being a single row with neighbours, which the

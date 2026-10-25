@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { DecisionProviderId, SessionSignals, SignalKind } from "../shared/protocol";
+import { ASK_KINDS, type AskKind, type DecisionProviderId, type SessionSignals, type SessionSummary, type SignalKind, TURN_OUTCOMES, type TurnCard, type TurnOutcome } from "../shared/protocol";
 import type { Answer } from "./decide";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
@@ -10,8 +10,8 @@ import { sessionsChanged } from "./list-generation";
  * finished turn (one per session, the latest) and of every worker check (one per parent session and
  * worker id: `workerKey`; `ag_NN` alone repeats across sessions, and records keyed by it alone are
  * dropped on load).
- * Written only by server/attention-signals.ts; read by the session list's overlay (`signalsOverlay`,
- * `workerSignalsOverlay`). Never a byte of this goes into a session file.
+ * Written only by server/attention-signals.ts; read by the session list's overlay (`signalsOverlay`; a stored worker check is
+ * kept readable and shown nowhere: subagents are no longer checked). Never a byte of this goes into a session file.
  *
  * The thresholds live here and are applied at READ time, so moving one needs no re-classification.
  * Whether a turn FAILED is not a question here: that is the file's own stopReason, read by the
@@ -22,11 +22,13 @@ import { sessionsChanged } from "./list-generation";
  * Same store rules as seen.ts: re-read and merge before writing, atomic tmp+rename, ~1 s read cache.
  */
 
-/** asks_user.p at or above → "asks-you". */
-export const ASKS_USER_MIN = 0.5;
+/** asks_user.p at or above → "asks-you". Real asks score ~0.95; courtesy offers 0.5–0.8. */
+export const ASKS_USER_MIN = 0.85;
 /** stuck score (0..2) at or above, with confidence at or above STUCK_CONFIDENCE_MIN → "looping". */
 export const STUCK_SCORE_MIN = 1.5;
 export const STUCK_CONFIDENCE_MIN = 0.5;
+/** A turn card's guess (asks-you, unverified) stops showing once its reply is this old: 7 idle days. */
+export const GUESS_IDLE_MS = 7 * 86_400_000;
 /** A worker's "looping" is current only this long after its check (checks repeat every 5 min while it runs). */
 export const WORKER_STUCK_FRESH_MS = 11 * 60_000;
 /** A worker counts as looping after this many looping answers in a row in one turn. */
@@ -46,9 +48,10 @@ export interface StoredTurn {
   /** The reply's asking sentence (when `asks_user` was asked), redacted and capped: the digest's
       detail. Local only: never on the list or the feed. */
   detail?: string;
-  /** 2: written since `asks_user` came back (§app.decisions/asks-user). An older record's
-      `asks_user` answer (asked of every turn, before 28 Sep 2026) is dropped on load. */
-  schema?: 2;
+  /** 2: written since `asks_user` came back (§app.decisions/asks-user); 3: a turn card (every
+      finished turn, five questions). An older record's `asks_user` answer (asked of every turn,
+      before 28 Sep 2026, schema absent) is dropped on load. */
+  schema?: 2 | 3;
 }
 
 /** One "stuck" check of a running subagent worker's current turn (repeated while it runs). */
@@ -108,7 +111,7 @@ function load(file: string): SignalsFile {
     if (isRec(v.sessions))
       for (const [k, t] of Object.entries(v.sessions))
         if (isRec(t) && typeof t.turnId === "string" && typeof t.at === "number" && isRec(t.answers)) {
-          if (t.schema !== 2 && "asks_user" in t.answers) {
+          if (t.schema !== 2 && t.schema !== 3 && "asks_user" in t.answers) {
             const { asks_user: _old, ...answers } = t.answers;
             out.sessions[k] = { ...(t as StoredTurn), answers };
           } else out.sessions[k] = t as StoredTurn;
@@ -166,9 +169,27 @@ export function isLooping(answers: Record<string, Answer>): boolean {
   return !!s && s.score >= STUCK_SCORE_MIN && s.confidence >= STUCK_CONFIDENCE_MIN;
 }
 
+/** claims_unverified.p at or above, on a turn whose outcome is did-what-was-asked → "unverified". */
+export const UNVERIFIED_MIN = 0.8;
+
+const choiceOf = (a: Answer | undefined) => (a?.type === "choice" ? a.choice : undefined);
+
+/** Ask kinds that never put a turn waiting on the user (a courtesy offer, no ask at all). */
+const NOT_AN_ASK = new Set(["optional-offer", "none"]);
+
+/** asks_user at the cutoff, and — on a turn card — an ask kind that waits on the user. A record from
+    before the card (no `ask_kind`) needs only the first. */
 export function asksUser(answers: Record<string, Answer>): boolean {
   const p = boolP(answers.asks_user);
-  return p !== undefined && p >= ASKS_USER_MIN;
+  if (p === undefined || p < ASKS_USER_MIN) return false;
+  const kind = choiceOf(answers.ask_kind);
+  return kind === undefined || !NOT_AN_ASK.has(kind);
+}
+
+/** It says it did what was asked, and names something it didn't run, test or check. */
+export function doneUnverified(answers: Record<string, Answer>): boolean {
+  const p = boolP(answers.claims_unverified);
+  return choiceOf(answers.outcome) === "did-what-was-asked" && p !== undefined && p >= UNVERIFIED_MIN;
 }
 
 /** A worker check that counts: fresh, and looping for the WORKER_STRIKES-th time in a row. */
@@ -176,12 +197,46 @@ export function workerStuck(w: StoredWorker, now: number): boolean {
   return w.kind === "stuck" && now - w.at <= WORKER_STUCK_FRESH_MS && isLooping(w.answers) && (w.strikes ?? 1) >= WORKER_STRIKES;
 }
 
-/** The kinds that fire for one turn's raw answers, most urgent first. */
+/** The kinds that fire for one turn's raw answers, most urgent first. A stored `stuck` answer
+    (the retired question) fires nothing. */
 export function signalKinds(answers: Record<string, Answer>): SignalKind[] {
   const out: SignalKind[] = [];
   if (asksUser(answers)) out.push("asks-you");
-  if (isLooping(answers)) out.push("looping");
+  else if (doneUnverified(answers)) out.push("unverified");
   return out;
+}
+
+/** An asking sentence that only asks for a server restart or a merge (or push) go-ahead. */
+const RESTART_GO_RE = /\b(?:restart|merge|merging|land|landing|push|pushing|go live)\b/i;
+export const isRestartGo = (sentence: string | undefined): boolean => !!sentence && RESTART_GO_RE.test(sentence);
+
+/**
+ * A row's signals without an `asks-you` that only asks for a restart or merge go while merge
+ * readiness already says a restart is owed (§app.decisions/asks-user): the readiness badge says it.
+ */
+export function withoutRestartAsk<R extends Pick<SessionSummary, "id" | "signals" | "readiness">>(row: R, data = readSignals()): R {
+  const sig = row.signals;
+  if (!sig?.kinds.includes("asks-you") || !row.readiness?.restartPending) return row;
+  const stored = data.sessions[row.id];
+  if (!stored || !(choiceOf(stored.answers.ask_kind) === "restart-or-merge-go" || isRestartGo(stored.detail))) return row;
+  const kinds = sig.kinds.filter((k) => k !== "asks-you");
+  const { signals: _drop, ...rest } = row;
+  return (kinds.length ? { ...rest, signals: { ...sig, kinds } } : rest) as R;
+}
+
+/** The turn card's answers on the wire, or undefined for a record from before the card. */
+export function cardOf(answers: Record<string, Answer>): TurnCard | undefined {
+  const outcome = choiceOf(answers.outcome);
+  const askKind = choiceOf(answers.ask_kind);
+  const cu = boolP(answers.claims_unverified);
+  const lo = boolP(answers.left_open);
+  const card: TurnCard = {
+    ...(outcome && (TURN_OUTCOMES as readonly string[]).includes(outcome) ? { outcome: outcome as TurnOutcome } : {}),
+    ...(askKind && (ASK_KINDS as readonly string[]).includes(askKind) ? { askKind: askKind as AskKind } : {}),
+    ...(cu !== undefined ? { claimsUnverified: cu } : {}),
+    ...(lo !== undefined ? { leftOpen: lo } : {}),
+  };
+  return Object.keys(card).length ? card : undefined;
 }
 
 /** A stored turn as the wire carries it. */
@@ -192,7 +247,9 @@ export function toWire(t: StoredTurn): SessionSignals {
     at: t.at,
     turnId: t.turnId,
     provider: t.provider,
+    ...(t.model ? { model: t.model } : {}),
     ...(p !== undefined ? { asksUser: p } : {}),
+    ...(cardOf(t.answers) ? { card: cardOf(t.answers)! } : {}),
     ...(s ? { stuck: { score: s.score, confidence: s.confidence } } : {}),
     kinds: signalKinds(t.answers),
   };
@@ -214,12 +271,13 @@ export function asksUserOf(sessionId: string, data = readSignals()): { turnId: s
  * stored asking sentence, and the names of workers whose stuck check counts. Read only to word
  * items the list's overlay already decided to show.
  */
-export function signalTextOf(id: string, now = Date.now(), data = readSignals()): { sentence?: string; stuckWorkers: string[] } {
+export function signalTextOf(id: string, now = Date.now(), data = readSignals()): { sentence?: string; askKind?: AskKind; stuckWorkers: string[] } {
   const t = data.sessions[id];
   const stuckWorkers = Object.values(data.workers)
     .filter((w) => w.sessionId === id && workerStuck(w, now))
     .map((w) => w.name ?? "unnamed");
-  return { ...(t?.detail ? { sentence: t.detail } : {}), stuckWorkers };
+  const askKind = t ? cardOf(t.answers)?.askKind : undefined;
+  return { ...(t?.detail ? { sentence: t.detail } : {}), ...(askKind ? { askKind } : {}), stuckWorkers };
 }
 
 /** A session's stalled team (§app.decisions/team-stall), for the digest: when the quiet began and
@@ -246,32 +304,21 @@ const unseen = (at: number, ctx: OverlayContext) => !ctx.viewing && (ctx.seenAt 
 
 /**
  * `SessionSummary.signals`, present only while it should show: the feature is on, some kind
- * fires, no newer turn is running, and — for every kind but "asks-you", which stays until the
- * user answers — the user has not looked since (seen stamp, or a pane open now). "Present" =
+ * fires, no newer turn is running, and — for every kind but "asks-you" and "unverified", which
+ * stay until the user acts — the user has not looked since (seen stamp, or a pane open now). "Present" =
  * "show the mark", for the sidebar, the feed and the digest alike.
  */
-export function signalsOverlay(id: string, ctx: OverlayContext, data = readSignals()): SessionSignals | undefined {
+export function signalsOverlay(id: string, ctx: OverlayContext, data = readSignals(), now = Date.now()): SessionSignals | undefined {
   if (!ctx.enabled || ctx.running) return undefined;
   const t = data.sessions[id];
   if (!t) return undefined;
+  // A guess goes after 7 idle days (§app.overseer/attention-digest): no reply since it was made.
+  if (now - t.replyAt >= GUESS_IDLE_MS) return undefined;
   const wire = toWire(t);
-  // A reply that asks waits on the user until they answer (a newer turn replaces or drops it), like
-  // open questions: a look does not clear it. The other kinds are news, gone once seen.
-  const kinds = unseen(t.at, ctx) ? wire.kinds : wire.kinds.filter((k) => k === "asks-you");
+  // A reply that asks, or says it is done unchecked, waits on the user until they act (a newer turn
+  // replaces or drops it), like open questions: a look does not clear it. The other kinds are news,
+  // gone once seen.
+  const kinds = unseen(t.at, ctx) ? wire.kinds : wire.kinds.filter((k) => k === "asks-you" || k === "unverified");
   return kinds.length ? { ...wire, kinds } : undefined;
 }
 
-/**
- * `SessionSummary.workerSignals`: this session's workers whose latest "stuck" check counts (fresh:
- * a worker that stopped being checked stopped running; and looping twice in a row in one turn),
- * counting only checks newer than the user's last look. Absent when 0.
- */
-export function workerSignalsOverlay(id: string, ctx: Omit<OverlayContext, "running">, now = Date.now(), data = readSignals()): { stuck: number } | undefined {
-  if (!ctx.enabled) return undefined;
-  let stuck = 0;
-  for (const w of Object.values(data.workers)) {
-    if (w.sessionId !== id || !unseen(w.at, { ...ctx, running: false })) continue;
-    if (workerStuck(w, now)) stuck++;
-  }
-  return stuck ? { stuck } : undefined;
-}

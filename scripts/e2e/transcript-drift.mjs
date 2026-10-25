@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { tokenHeaders } from "../sova-token.mjs";
+import { whenListed } from "./listed.mjs";
 import { deflateSync } from "node:zlib";
 
 const ROOT = resolve(import.meta.dirname, "../..");
@@ -204,9 +205,7 @@ async function open(viewport, { remote }) {
   const page = await ctx.newPage();
   const cdpSession = await ctx.newCDPSession(page);
   await cdpSession.send("Emulation.setCPUThrottlingRate", { rate: 4 });
-  const list = await api("/api/sessions");
-  const session = (list.sessions ?? list).find((s) => s.id === ID);
-  assert(session, `the fixture ${ID} isn't listed by the server`);
+  const session = (await whenListed(api, [ID])).get(ID);
   await page.goto(`${BASE}/#/s/${encodeURIComponent(session.path)}`);
   await page.waitForFunction(() => document.querySelectorAll("#transcript .thread > .entry").length > 5, null, { timeout: 30000 });
   return { ctx, page };

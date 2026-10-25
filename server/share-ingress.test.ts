@@ -111,7 +111,7 @@ const fakeDeps: Record<string, unknown> = {
     const [, node, path] = m as unknown as [string, string, string];
     if (path === "/api/peer/hello") return helloReply(node);
     // The routed host asks with ?kinds=1 (GatewayInfo.kinds); the fake answers either.
-    if (path === "/api/peer/share-gateway/info" || path === "/api/peer/share-gateway/info?kinds=1" || path === "/api/peer/share-gateway/info?kinds=1&preview=1") return infoReply(node);
+    if (path === "/api/peer/share-gateway/info" || path === "/api/peer/share-gateway/info?kinds=1" || path === "/api/peer/share-gateway/info?kinds=1&preview=1" || path === "/api/peer/share-gateway/info?kinds=1&preview=1&proto=1") return infoReply(node);
     if (path === "/api/peer/share-gateway/links" && init?.method === "PUT") return pushReply(node, JSON.parse(String(init.body)));
     return null;
   },
@@ -1119,9 +1119,32 @@ test("parseInfo: kinds is optional; known kinds are kept, unknown ones dropped; 
   assert.equal(gw.parseInfo({ status: 200, body: { ...good, kinds: [1] } }), null);
 });
 
-test("the routed host asks its gateway's info with ?kinds=1&preview=1", async () => {
+test("the routed host asks its gateway's info with ?kinds=1&preview=1&proto=1", async () => {
   await gw.refreshGateway();
-  assert.ok(calls.some((u) => u.endsWith("/api/peer/share-gateway/info?kinds=1&preview=1")), calls.join("\n"));
+  assert.ok(calls.some((u) => u.endsWith("/api/peer/share-gateway/info?kinds=1&preview=1&proto=1")), calls.join("\n"));
+});
+
+test("parseInfo: shareProtocol is optional and a small whole number; anything else is no answer", () => {
+  const good = { publicUrl: PUBLIC_URL, accepting: true, seq: null };
+  assert.deepEqual(gw.parseInfo({ status: 200, body: { ...good, shareProtocol: 2 } }), { ...good, shareProtocol: 2 });
+  assert.deepEqual(gw.parseInfo({ status: 200, body: good }), good, "an older gateway states none");
+  for (const bad of [0, -1, 1.5, "2", null, 2_000_000]) assert.equal(gw.parseInfo({ status: 200, body: { ...good, shareProtocol: bad } }), null, String(bad));
+});
+
+test("gatewayProtocol: the current gateway's stated number against ours; none stated is null; nothing before its info answers", async () => {
+  const { SHARE_PROTOCOL } = await import("../shared/public-links");
+  gw.resetGatewayClient();
+  assert.equal(gw.gatewayProtocol(), null, "not asked yet");
+  infoReply = async (n) => infoOk(n); // an older gateway: no shareProtocol
+  await gw.refreshGateway();
+  assert.deepEqual(gw.gatewayProtocol(), { theirs: null, ours: SHARE_PROTOCOL });
+  infoReply = async (n) => ({ status: 200, body: { publicUrl: urlOf(n), accepting: true, seq: null, shareProtocol: SHARE_PROTOCOL } });
+  await gw.refreshGateway();
+  assert.deepEqual(gw.gatewayProtocol(), { theirs: SHARE_PROTOCOL, ours: SHARE_PROTOCOL });
+  infoReply = async () => null; // unreachable: nothing is believed any more
+  await gw.refreshGateway();
+  assert.equal(gw.gatewayProtocol(), null);
+  infoReply = async (n) => infoOk(n);
 });
 
 test("version skew: a gateway whose info lists no kinds never receives an `s` row; h and i links still route and confirm", async () => {

@@ -9,8 +9,8 @@ the chat's full history back.
 
 Owns: the two memory types and their credit, where memory can be turned on, each chat's own type and
 view size, the message log, the summary tree and the view, the summarizer, what a turn sends, the
-recall tools and their rows, preparing an existing chat, zoomable compaction, the memory status and
-outline the web shows, Settings → Memory and the Overseer's switch. Not here: the mode menu's rows
+recall tools and their rows, preparing an existing chat, recovering from failed summaries, zoomable compaction, the memory status and
+outline the web shows, Settings → Memory and the overseers' switches. Not here: the mode menu's rows
 and Save as default (§chat/mode-menu), and how a Claude Code chat's CLI takes a request
 (§app/claude-code-provider).
 
@@ -37,11 +37,26 @@ Taelin" · "One chat that never ends: every message kept, summarized into lines 
 Taelin" while it is on; Zoomable compaction · "Sova" · "The chat stays as it is; when it would
 compact, older turns become summary lines the model can open instead of a one-off summary".
 
+Sova's UniiChat is an adaptation of Taelin's design, and keeps its name and credit, "UniiChat — by
+Victor Taelin". What it changes, and why:
+
+- **The reader's guide is rewritten** (§chat.memory/turn): it calls the lines an index, not the
+  record, and sends any recall to `zoom` before other tools, because an A/B evaluation of recall
+  found the model answering from the lines or searching elsewhere instead of opening them.
+- **The Overseer's run note adds a memory-first line** (§app.overseer/sessions-in-play): any other
+  session or fact the chat has seen is zoomed down to its message (full ids, exact words) before
+  any other tool, because the Overseer looked sessions up again with its own tools.
+- **Ids are shown whole** (§chat.memory/full-ids): a line's shortened session id is shown whole when
+  its own messages make that certain, because summaries shorten ids and a reader seeing the same
+  short id on every level took it for all memory kept.
+
 ## §chat.memory/where — Where memory can be turned on
 
 Memory runs inside Sova's server, so only Sova turns it on: from an ordinary chat's mode menu
 (`POST /api/mode?path=…`, §chat.mode-menu/how-a-switch-reaches-the-chat), whatever the chat's
-model, and for the Overseer from its own switch (§chat.memory/overseer).
+model, and for the Overseer and each project overseer from that overseer's own switch
+(§chat.memory/overseer). Those switches are the only way: a project overseer's mode switch stays
+refused, and neither overseer has a mode-menu memory row.
 
 - The mode extension declares it web-only (`MINOR_SURFACES` in `pi-config/extensions/mode/minor.ts`,
   a record over every minor mode). Its `/mode memory on` takes effect only while Sova's server is
@@ -75,20 +90,22 @@ model, and for the Overseer from its own switch (§chat.memory/overseer).
 A chat's memory type and view size are its own: a hidden `sova-memory` state record `{v: 1, type,
 size}` (§app.harness/state, newest on the branch wins), written by `POST /api/mode?path=… { memory }`.
 A chat with no record uses the saved default (Settings' memory file `default`), else UniiChat at
-128 KB. The choice is kept while memory is off, survives reopen, rewind (a rewind past the record
+128 KB. An overseer (the Overseer, a project overseer) keeps no record: its type and size are its
+own switch's (§chat.memory/overseer). The choice is kept while memory is off, survives reopen, rewind (a rewind past the record
 falls back to the one before it) and restart, and reaches every tab in the chat's `mode` message
 (`memory`), so a change of type alone is a new `mode` message. `Save as default` saves it with the
 chat's modes; the size accepts any whole number of KB from 8 to 512. Only a chat whose menu can turn
 memory on gets `memory` in its `mode` message and in a switch's result (`ChatModeResult`): a runtime
-without the memory engine (a baton, a project overseer, another special loadout), a session that
-refuses mode switches and the Overseer get none, so their menu shows no memory row, and a `{ memory }`
+without the memory engine (a baton, another special loadout), a session that refuses mode switches
+(a project overseer, whose memory is its own switch's) and the Overseer get none, so their menu shows no memory row, and a `{ memory }`
 or memory-on switch there is refused before anything is written.
 
 ## §chat.memory/log — The message log and its sidecar
 
 The engine logs the chat's **active branch**, read through the neutral reader, as numbered messages
 of six kinds: `user` (the user's words, an image as `[image]`), `sova` (the model's reply text),
-`tool` (one per tool call: its name and JSON arguments), `echo` (its result, clipped to its first and
+`tool` (one per tool call: its name and JSON arguments, `record_tour`'s supplied credentials as "[hidden]",
+§app.tours/sites), `echo` (its result, clipped to its first and
 last 15,000 characters; a failed one says so), `work` (a message an extension shows in the
 transcript, such as a worker's report) and `note` (a branch summary). Thinking, hidden notes (mode
 notes, alignment state, nudges), system and state entries are not logged. A text longer than 16,000
@@ -99,7 +116,7 @@ is needed and a rewind or a fork is correct by construction: on load the engine 
 leaves with the branch, and every summary covering a message from the first difference on is
 dropped (and the view cut back to the lines before it). Summaries live beside the chat in
 `<agent dir>/sova/memory/<session id>/` (`tree.jsonl` the built nodes, `state.json` the views and
-their saved prefixes); "Fork from here" copies the source chat's directory to the fork (when the
+their saved prefixes, `retry.json` the failed summaries' tries and retry times, §chat.memory/recovery); "Fork from here" copies the source chat's directory to the fork (when the
 source has one and the fork has none), and the fork keeps what still matches its own branch. Turning memory off keeps
 them, so turning it back on only summarizes what came after; deleting or archiving the chat deletes
 them.
@@ -111,16 +128,19 @@ Following Taelin's design: message `i` is node `(0, i)`; node `(l, i)` merges `(
 bytes is its own node with no model call (two short lines are joined by a newline); every other node
 is one summarizer call asked for 512 bytes with a 512-character ruler, accepted up to 768 bytes, and a
 longer reply is cut at its last sentence end within 768 bytes, never asked again. Each node is built
-once.
+once; a node whose summary keeps failing is tried again later on its own, and after its third failed
+try its line is a clipped excerpt instead (§chat.memory/recovery).
 
 The view is a list of nodes covering every message, oldest first; each new message appends its line.
 Once the view passes the chat's size it merges, in one batch, the most due sibling pair whose parent
 is built (due = (T − the pair's last message) / 2^l; the oldest pair wins a tie), again and again
 until it is at most half the size; a batch that can't reach half yet merges what it can at each new
 message until it does. The view is saved and never rebuilt from the log, except after a rewind or a
-fork. Nodes ready to build wait in a queue (never a scan of the tree), leaves first, up to 4 calls at
-once; a merge is ready once both halves are built, and merges are built in the background as soon as
-they are.
+fork. Nodes ready to build wait in a queue (never a scan of the tree), up to 4 calls at once: leaves
+first, then merges, except while the summarizer's compaction view is over its size
+(§chat.memory/summarizer): then a merge that combines two of its lines goes before every leaf. A
+merge is ready once both halves are built, and merges are built in the background as soon as they
+are.
 
 ## §chat.memory/summarizer — Who writes the summaries
 
@@ -131,17 +151,38 @@ provider's request limit as background work, runs on this host's Claude login li
 one-shots, and is recorded in the usage ledger as the chat's own spend with purpose `memory`. Its
 system prompt is the compaction guide (adapted from Taelin's §4–§5) followed by a stable prefix of
 the chat's **compaction view** (the view merged further, to 16–32 KB, saved beside it), so calls read
-it from the prompt cache; the lines after the prefix and the task go in the message. A failed call
-is tried again at the next message; while the summarizer can't run at all the status says why.
+it from the prompt cache; the lines after the prefix and the task go in the message. The summarizer
+keeps its own instructions only: a Claude Code call gets its system prompt from a private temporary
+file (`--system-prompt-file`, which replaces Claude Code's own instructions, nothing added to them),
+written readable by its owner only and removed when the call ends, never on the command line, so no
+size keeps it from starting (§app.decisions/providers bounds every one-shot's arguments); a pi call
+takes it as the call's system prompt.
+
+The compaction view is merged down with the merges already built before every summary and whenever
+a merge is built, not only when a message arrives, and while it is over 32 KB a merge that combines
+two of its lines is built before any new message's leaf (§chat.memory/tree). One summary's context lines are capped at 64 KB: past that the oldest lines are
+left out, in fixed steps of 16 KB counted from the view's first line, behind a line saying which
+messages are left out, so back-to-back summaries share the same prefix and its cache; a prefix over
+the cap is never saved. Each call is bounded by its own deadline and budget cap, with no other
+spending cap. What a failed call does next: §chat.memory/recovery.
 
 ## §chat.memory/turn — What a UniiChat turn sends
 
 With UniiChat on, each request of a turn sends, after the chat's usual system prompt and tools: one
-**view message** — the memory guide (Taelin's §5, the agent unnamed, device and subagent paragraphs
-left out), then the view of every message before the turn, as `<chat>` lines `id+n|text` — then the
+**view message** — the memory guide, then the view of every message before the turn, as `<chat>` lines `id+n|text` — then the
 chat's standing mode notes, then the turn itself whole (the message that started it, the hidden
 notes it carries, and every reply, tool call, result and steer since). The view is rendered once, at
 the turn's first request, and is the same for the turn's every request.
+
+- **The guide.** It holds no date, id or state, so it stays a stable cache prefix. It tells the
+  model the view is the chat's history as an index of one-line summaries, oldest first, with the
+  message kinds and that older lines merge pairs; that lines are the index, not the record: every
+  message is kept whole under its line, tool results included, while lines shorten names and
+  numbers (ids are shown whole, §chat.memory/full-ids). Whenever the model needs anything the chat has seen, it finds the latest mention in the
+  view and zooms, halving n down to the message, before any other tool and before it acts, guesses
+  or asks; it never greps or reads the chat's transcript or memory files, and uses other tools only
+  for what the view never mentions or to check what is true now. Its wording was chosen by an A/B
+  evaluation of recall against the earlier wording.
 
 - **Wait.** Before the first request, the turn waits for the newest messages' summaries, at most
   20 seconds, then goes on anyway (a line not summarized yet reads "(not summarized yet: zoom it)");
@@ -167,15 +208,45 @@ the turn's first request, and is the same for the turn's every request.
 While memory is on the model has two tools: `zoom(id, n)` opens line `id+n` into the two lines it was
 made from, and `zoom(id, 1)` gives message `id` whole; `date(id)` gives message `id`'s date and time.
 `n` must be a power of 2 and `id` a multiple of it; a line not built yet opens into its own halves
-or messages. Each call is a tool row like any other, whose folded line reads what it opened:
+or messages. The zoom tool's description says it recalls anything from earlier in the chat (a
+session, its full id, a branch, a number, what was said), that every message is kept whole under its
+memory line, and to use it before searching. Each call is a tool row like any other, whose folded line reads what it opened:
 "Recalled messages 40–47", "Recalled message 40", "Date of message 40".
+
+## §chat.memory/full-ids — Ids shown whole
+
+Summary lines often shorten a session id (a UUID such as `0190f3a2-1b2c-7d4e-8f90-a1b2c3d4e5f6`) to
+its first 8 hex digits or a part of it, and the same short id then repeats on every level down to
+the leaf. So a line is shown with its ids whole where its own messages make that certain: in line
+`id+n`, a token of at least 8 hex digits, optionally continued by hyphenated hex groups (such as
+`0190f3a2-1b2c`), standing alone (no letter, digit, `_` or `-` right before or after it), that is not
+itself a whole UUID and begins exactly one of the distinct UUIDs in messages `id` to `id+n−1` as
+logged (§chat.memory/log, tool calls and results included), is shown as that UUID. A token that
+begins none of them, or more than one, is shown as written; no UUID from outside the line's own
+messages is ever used.
+
+It applies wherever a line is shown: a UniiChat turn's view, `zoom`'s two lines, a zoomable
+compaction's summary, and the Memory outline (§chat.memory/status). It never rewrites the stored
+summaries (`tree.jsonl`), and the summarizer never sees it: the two lines a merge is asked to merge
+and the compaction view it reads as context are the stored lines, and the view's merges are decided
+on the stored lines' sizes. A line's shown text depends only on its stored text and its own messages, so it reads
+the same at every turn and the view's cached prefix stays byte-stable; a chat whose saved prefix
+predates it rebases once.
 
 ## §chat.memory/preparing — Turning memory on in a chat with history
 
 Turning memory on in a chat that already has messages prepares it in the background: every message
 not summarized yet is queued, and until the view covers the chat, turns go out exactly as without
 memory. The status reads "Preparing memory: 120 of 480 messages" (messages summarized of messages
-logged). Memory applies from the first turn after the leaves are built.
+logged). Memory applies from the first turn after the leaves are built. A message whose summary keeps
+failing never holds preparing up for good: the others carry on, and after its third failed try its
+line is an excerpt (§chat.memory/recovery).
+
+A chat whose memory is on but was never prepared (no view built yet: an overseer that is on by
+default and already has history, §chat.memory/overseer, or a chat whose preparing a restart cut
+short) is prepared the same way, with the same status, from the first time the engine reads its
+branch with memory on: its runtime opening, or its next turn. Its turns go out as without memory
+meanwhile; a chat whose view was built once is never prepared again.
 
 ## §chat.memory/zoomable — Zoomable compaction
 
@@ -191,11 +262,46 @@ writes the view of everything it compacts again.
 
 The chat's WebSocket gets `memory_status` after hello and on every change, only from a runtime with
 the memory engine: `off`, `preparing` (done of total), `updating` (a turn waiting), or `ready` (with
-the merges still being written), each but off with an optional `problem` sentence. `GET
+the merges still being written), each but off with an optional `problem` sentence. The `problem`
+shows only while every summary is paused, says when they are tried again, and clears at the next
+summary that succeeds (§chat.memory/recovery); a single message that keeps failing never sets it. `GET
 /api/memory?path=…` gives the lines the model sees now (UniiChat: the next turn's view; zoomable: the
 newest compaction's lines) with each line's first and last transcript entry, and `GET
 /api/memory/open?path=…&id=&n=` the two lines under a line, or a message whole, for the Session
-pane's read-only Memory outline.
+pane's read-only Memory outline. Their lines read as the model is shown them, ids whole where
+certain (§chat.memory/full-ids).
+
+## §chat.memory/recovery — When summaries fail
+
+A chat's memory recovers from failed summaries on its own, with no new message needed, and one
+message that keeps failing never blocks the rest.
+
+- **A failure that stops every summary** pauses the whole queue: the summarizer's login failed, it
+  hit a usage or rate limit, the model policy refuses its model, or it can't run at all (Claude Code
+  not installed); or a failure that says nothing about the message: a timeout (waiting for a Claude
+  Code slot, or a run killed at its deadline), a network error, an overloaded provider. The message
+  goes back in the queue and the try isn't counted. The queue tries again by itself after 5 minutes, then 10, 20, 40 and at most 60
+  between tries; a new message lifts the pause at once. The status's `problem` names the cause and
+  the time of the next try, e.g. "The memory summarizer's login failed: check Settings → Accounts.
+  Retrying at 2:05 PM.", and clears at the next summary that succeeds.
+- **A failure that points at the message itself belongs to its node** (a malformed or empty reply,
+  a reading too large, a request the provider refuses as malformed, an unexplained provider error): that node waits and is tried again by itself, 5 minutes after its first
+  failed try and 2 hours after its second, while every other node carries on; it sets no `problem`.
+  After its third failed try, a message's line is its own text clipped to 512 bytes at a sentence end
+  (a merge's: its two lines, clipped to 768), marked as an excerpt in `tree.jsonl`; the whole message
+  stays one `zoom` away. A new message doesn't reset a node's tries.
+- **Many failing in a row**: when 8 different nodes fail one after another with no success between,
+  the summarizer counts as down and the queue pauses as for a failure that stops every summary, its
+  `problem` reading "Memory summaries are failing: …" with the time of the next try; the tries already
+  counted stay counted.
+- **Saved.** Each node's tries and next try, and the pause's next try, are kept in the chat's
+  sidecar (`retry.json`, §chat.memory/log), so a chat whose process reloads or exits while idle picks
+  up where it left off. A rewind or fork drops those past the first changed message.
+- **Repair on load.** The first time the running chat's engine reads its branch, it merges the
+  compaction view down with the merges already built, throws away a saved prefix over the 64 KB cap
+  (§chat.memory/summarizer), queues every ready merge and sets its retry timers. Reading a chat no
+  runtime holds (the Memory outline of a closed chat) builds nothing, writes nothing and starts no
+  timer.
 
 ## §chat.memory/settings — Settings → Memory
 
@@ -232,6 +338,20 @@ reusable component.
 ## §chat.memory/overseer — The Overseer's memory
 
 The Overseer has no mode menu; its memory is a switch of its own, `GET`/`PUT /api/overseer/memory`
-`{on, type, size}`, kept in `overseer.json` and read at each of its turns. With it on, the Overseer
-runs the same engine as a chat (its tools include `zoom` and `date`). It never reaches the coding
-sessions the Overseer starts.
+`{on, type, size}`, kept in `overseer.json` (`memory`) and read at each of its turns. Each project
+overseer has the same switch of its own, `GET`/`PUT /api/projects/:pid/overseer/memory`, kept in
+that project's overseer `overseer.json` (§app.project-overseer/identity, §app.project-overseer/memory-switch).
+Changing one never changes the Overseer's or another project's.
+
+- **On by default.** An overseer with no saved choice has memory on, UniiChat at 128 KB, whatever
+  default Settings → Memory saved for ordinary chats; both routes report it so, and so does its
+  Memory outline (`GET /api/memory?path=…`), held or not. Switched off, it
+  stays off until someone switches it on again. Clear keeps the choice: it is the overseer's, not
+  its conversation's. Only its switch writes it: a Settings → Overseer save (and the proactivity
+  cycle, which saves the same settings) keeps the stored switch whatever its body carries.
+- **An existing conversation** on by default is prepared in the background from its runtime's next
+  open or its next turn, whichever comes first (§chat.memory/preparing), its run-status row
+  showing "Preparing memory: n of m messages", and it answers as without memory meanwhile.
+- With it on, the overseer runs the same engine as a chat (its tools include `zoom` and `date`),
+  on Claude Code as on pi. It never reaches the coding sessions either overseer starts
+  (§chat.memory/where).

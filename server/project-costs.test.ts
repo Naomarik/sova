@@ -237,5 +237,51 @@ describe("a project's cost (§app/project-costs)", async () => {
 
   test("an unknown project is a 404", async () => {
     await assert.rejects(() => costs.projectScope("prj_nope0000"), (e: any) => e.status === 404);
+    await assert.rejects(() => costs.projectCostLatest("prj_nope0000"), (e: any) => e.status === 404);
+  });
+
+  test("the page's read: the last count at once, one recount behind it once it is old, fresh waits (§app.project-costs/card)", async () => {
+    costs.resetCostCountsForTest();
+    // Each count answers its own number, and waits until released: a read that waits for one shows it.
+    let counts = 0;
+    const gates: (() => void)[] = [];
+    setUsageAsker(async () => {
+      const n = ++counts;
+      await new Promise<void>((r) => gates.push(r));
+      return { status: 200, body: Buffer.from(JSON.stringify({ n })) };
+    });
+    const n = (a: { body: Buffer }) => (JSON.parse(a.body.toString()) as { n: number }).n;
+    const release = async () => {
+      while (!gates.length) await new Promise((r) => setTimeout(r, 1));
+      gates.shift()!();
+    };
+    try {
+      // The first read waits for a count.
+      const first = costs.projectCostLatest(project.id);
+      await release();
+      assert.equal(n(await first), 1);
+      // Young: answered from memory, no recount.
+      assert.equal(n(await costs.projectCostLatest(project.id)), 1);
+      assert.equal(counts, 1);
+      // Old: the same answer at once, one recount behind it, never two.
+      const later = Date.now() + costs.COST_RECOUNT_AFTER_MS;
+      assert.equal(n(await costs.projectCostLatest(project.id, { now: later })), 1);
+      assert.equal(n(await costs.projectCostLatest(project.id, { now: later })), 1);
+      while (counts < 2) await new Promise((r) => setTimeout(r, 1));
+      assert.equal(counts, 2, "one recount");
+      await release();
+      while (n(await costs.projectCostLatest(project.id)) !== 2) await new Promise((r) => setTimeout(r, 1));
+      // Fresh (Refresh Project) waits for its own count.
+      const fresh = costs.projectCostLatest(project.id, { fresh: true });
+      await release();
+      assert.equal(n(await fresh), 3);
+    } finally {
+      for (const g of gates) g();
+      costs.resetCostCountsForTest();
+      setUsageAsker(async (op, params) => {
+        svc.ledger.scanAll();
+        return { status: 200, body: Buffer.from(JSON.stringify(await svc.answer({ ...params, op }))) };
+      });
+    }
   });
 });

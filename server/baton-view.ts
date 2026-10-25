@@ -12,11 +12,14 @@ import {
   drawsHtml,
   OPERATOR,
   type BatonSession,
+  type BatonPlan,
+  type BatonPlanVisual,
   type BatonView,
   type BatonViewItem,
   type PersonRef,
 } from "../shared/baton";
 import type { HEntry } from "../shared/harness";
+import { normalizeTourAttachment, normalizeTourDetachment, SHOW_TOUR_TOOL, TOUR_ATTACHMENT_ENTRY, TOUR_DETACHMENT_ENTRY } from "../shared/tour";
 import { shareFences } from "../src/share/markdown";
 import { visKindWord } from "../src/vis/parse";
 import { canonicalKind } from "../src/vis/registry";
@@ -24,6 +27,7 @@ import { typedText } from "./harness/pi/reader";
 import { REDACTED } from "./overseer-redact";
 import { authorNotes, dataOf, labelAuthors, messageSenders, redactPhrases, secretPhrases, textOf } from "./author-context";
 import { FILE_LINE_RE } from "./project-files";
+import { ALIGN_TOOL, normalizeAlignDetails, questionState, type AlignDocument, type AlignVisual } from "../pi-config/extensions/mode/align.ts";
 
 /**
  * The outsider view (§app.baton/outsider-view): a baton session's active branch reduced to what a
@@ -138,6 +142,50 @@ export interface ViewInput {
   /** The files received in this session, by id (§app.baton/files): a message's line for one its
       sender sent becomes a file row. Absent: every such line stays text. */
   files?: ReadonlyMap<string, { name: string; size: number; personId: string }>;
+  /** A feature request chat (§app.project-assistant/feature-chats): its `align` results become plan cards. */
+  plans?: boolean;
+}
+
+/**
+ * A plan card from an align document (§app.baton/outsider-view, §app.project-assistant/feature-chats): an
+ * allowlist, field by field. Never the technical notes, the review, the ids of findings or steps, the style or the
+ * timestamps. Each text goes through `said` (the model wrote it); a drawing as the fence it would be, so the markup
+ * backstop judges it as it judges a reply's. Pure.
+ */
+export function planOf(doc: AlignDocument, said: (t: string) => string): BatonPlan {
+  const visualOf = (v: AlignVisual | undefined): BatonPlanVisual | undefined => {
+    if (!v) return undefined;
+    const fence = "```vis " + v.kind + "\n" + v.source + "\n```";
+    const out = said(fence);
+    const m = /^```vis ([a-z]+)\n([\s\S]*)\n```$/.exec(out);
+    return m && m[1] === v.kind ? { kind: m[1], source: m[2]! } : { withheld: true };
+  };
+  const live = doc.questions.filter((q) => !q.dropped);
+  const state: BatonPlan["state"] = doc.phase === "dropped" ? "dropped" : live.length && live.every((q) => questionState(q) === "decided") ? "agreed" : live.length ? "open" : "open";
+  const docVisual = visualOf(doc.visual);
+  return {
+    doc: doc.id,
+    title: said(doc.title),
+    summary: said(doc.summary),
+    state,
+    findings: doc.findings.map((f) => said(f.text)),
+    approach: doc.approach.map((a) => said(a.text)),
+    rejected: doc.rejected.map((x) => ({ option: said(x.option), why: said(x.why) })),
+    questions: live.map((q) => {
+      const v = visualOf(q.visual);
+      return {
+        id: q.id,
+        topic: said(q.topic),
+        ask: said(q.ask),
+        ...(q.context ? { context: said(q.context) } : {}),
+        options: (q.options ?? []).map((o) => ({ label: said(o.label), tradeoff: said(o.tradeoff) })),
+        recommendation: { choice: said(q.recommendation.choice), why: said(q.recommendation.why) },
+        ...(q.decision ? { decision: said(q.decision.text) } : {}),
+        ...(v ? { visual: v } : {}),
+      };
+    }),
+    ...(docVisual ? { visual: docVisual } : {}),
+  };
 }
 
 /** A person's message text without the lines that announce files they sent, and those files. Pure. */
@@ -173,6 +221,9 @@ export function batonView(input: ViewInput): BatonView {
   const name = (ref: unknown): string => (typeof ref === "string" && names[ref]) || (ref === OPERATOR ? "Operator" : "Someone");
   const by = messageSenders(branch, input.row.holder);
 
+  // Revocation is authority, not conversation text: a later tombstone must also revoke an
+  // offer-cut reader who cannot see that later part of the conversation.
+  const detached = new Set(branch.flatMap(h => h.kind === "state" && h.key === TOUR_DETACHMENT_ENTRY ? normalizeTourDetachment(h.data)?.handle ?? [] : []));
   const items: BatonViewItem[] = [];
   let photos = 0;
   for (const h of branch) {
@@ -205,9 +256,31 @@ export function batonView(input: ViewInput): BatonView {
       }
       continue;
     }
+    if (h.kind === "tool-result" && input.plans && h.tool === ALIGN_TOOL) {
+      // A feature request chat's plan: once, at its latest change (an earlier card of the same plan goes).
+      const doc = h.isError ? undefined : normalizeAlignDetails(h.details)?.doc;
+      if (doc) {
+        const at = items.findIndex((i) => i.kind === "plan" && i.plan.doc === doc.id);
+        if (at >= 0) items.splice(at, 1);
+        items.push({ kind: "plan", id, plan: planOf(doc, said) });
+      }
+      continue;
+    }
+    if (h.kind === "tool-result") {
+      // The model showing an attached tour shows it here too, re-checked on every view: only a tour
+      // already visible above in this same view (attached, not detached, inside the cut). Its copy
+      // comes from that attachment, never from the result's payload; the attachment stays the authority.
+      const handle = h.tool === SHOW_TOUR_TOOL && !h.isError && h.details && typeof h.details === "object" ? (h.details as { handle?: unknown }).handle : undefined;
+      const shown = typeof handle === "string" ? items.find((i) => i.kind === "tour" && i.handle === handle) : undefined;
+      if (shown?.kind === "tour") items.push({ ...shown, id });
+      continue;
+    }
     if (h.kind !== "state") continue;
     const d = dataOf(h) ?? {};
-    if (h.key === BATON_HANDOFF_ENTRY && typeof d.n === "number") {
+    if (h.key === TOUR_ATTACHMENT_ENTRY) {
+      const tour = normalizeTourAttachment(d);
+      if (tour && !detached.has(tour.handle)) items.push({ kind: "tour", id, handle: tour.handle, title: said(tour.title), summary: said(tour.summary), steps: tour.steps });
+    } else if (h.key === BATON_HANDOFF_ENTRY && typeof d.n === "number") {
       const addressee = viewer === undefined || viewer === d.to;
       // The limit's hand-off tells the operator what to do; the people only that the limit was reached.
       const question = viewer !== undefined && d.to === OPERATOR && d.question === LIMIT_QUESTION ? LIMIT_REACHED_FOR_PEOPLE : said(String(d.question ?? ""));

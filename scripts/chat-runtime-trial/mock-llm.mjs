@@ -12,7 +12,9 @@
 //
 // The newest user message's text picks the answer (tags may sit anywhere in it):
 //   [long N]   N text parts, one every --step ms (default 500), then "REPLY-DONE <id>" where <id>
-//              is the tag's optional `#id` ([long 40 #a1]); the trial waits for that line
+//              is the tag's optional `#id` ([long 40 #a1]); the trial waits for that line. While its
+//              #id is held (POST /trial/hold {"tag": id, "on": true}; {"on": false} releases it), the
+//              reply keeps streaming "held." parts after its N, and ends only once released
 //   [spawn]    first a call to agent_spawn starting one pi worker on trial/m1 whose prompt is
 //              "[long 60 #worker] worker", then (once the tool answered) a short text
 //   [ask]      first a call to the trial_ask tool (trial-dialog.ts: it opens a confirm dialog), then
@@ -94,6 +96,8 @@ function parseCalls(text) {
 }
 /** The tags an untagged message gets ("" none): set with POST /trial/plain {text}. */
 let plainAs = "";
+/** The [long … #id] ids whose replies don't end until released: set with POST /trial/hold {tag, on}. */
+const held = new Set();
 
 const server = createServer(async (req, res) => {
   let body = "";
@@ -103,6 +107,17 @@ const server = createServer(async (req, res) => {
       plainAs = String(JSON.parse(body).text ?? "");
     } catch {}
     if (log) appendFileSync(log, JSON.stringify({ at: new Date().toISOString(), event: "plain", text: plainAs }) + "\n");
+    res.writeHead(200, { "content-type": "application/json" });
+    return res.end("{}");
+  }
+  if (req.url === "/trial/hold") {
+    let h = {};
+    try {
+      h = JSON.parse(body);
+    } catch {}
+    const tag = String(h.tag ?? "");
+    if (tag) h.on === false ? held.delete(tag) : held.add(tag);
+    if (log) appendFileSync(log, JSON.stringify({ at: new Date().toISOString(), event: "hold", tag, on: h.on !== false }) + "\n");
     res.writeHead(200, { "content-type": "application/json" });
     return res.end("{}");
   }
@@ -206,6 +221,10 @@ const server = createServer(async (req, res) => {
     chunk({ role: "assistant", content: "" });
     for (let i = 1; i <= parts && !closed; i++) {
       chunk({ content: `part ${i}/${parts}. ` });
+      await sleep(step);
+    }
+    while (!closed && long[2] && held.has(long[2])) {
+      chunk({ content: "held. " });
       await sleep(step);
     }
     if (closed) {

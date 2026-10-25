@@ -26,8 +26,27 @@ first-source-wins ordering remain unchanged. Successful commit metadata is keyed
 and observed HEAD OID; commit subjects and comparisons use observed base/HEAD OIDs rather than
 moving ref names. Push ancestry reuse includes the repository, merge OID and current
 remote-tracking OID: remote movement invalidates it, a missing ref remains unknown, and nothing
-fetches. Changes to mutable Git history semantics invalidate reuse or take the conservative
-fallback rather than treating OIDs alone as proof of unchanged meaning.
+fetches. OIDs alone never prove unchanged meaning. Reuse of HEAD, refs, logs and ancestry also
+rests on what history means: replacement refs, grafts, shallow boundaries and the configuration
+files. A change there ends it.
+
+**Merge setup.** A comparison's trial merge and line counts also rest on the merge setup:
+
+- the configuration, its merge settings and merge drivers included;
+- the attribute files, and every working-tree `.gitattributes` in the folders of the paths the
+  two tips differ on or either side changed since their merge bases (Git reads these from the
+  worktree it runs in, not from the commits);
+- the code of each configured merge driver as it would run: its program as found on the path, and
+  every file its command names, resolved from the worktree's top (so a relative driver is that
+  worktree's own copy), with the local files a script imports.
+
+A change to any of them reads the comparison again. A comparison that rests on a worktree's own
+files (its attributes or a configured driver) belongs to that worktree and is never shared with
+another worktree of the repository. Configured merge drivers turn off reuse of nothing else. These
+take the conservative fallback, so Git is asked again on every read: a driver command that can't be
+read that way (shell expansion, or a script that imports a package or imports dynamically); injected
+or included configuration; a configured attributes file or attribute macros; and replacement or
+attribute environment settings.
 
 **Independent dirty lifetime.** Dirty status stands for only ten seconds per worktree,
 including unstaged and untracked changes that leave HEAD and index unchanged, except where
@@ -51,20 +70,36 @@ watchers, background Git timers, model calls or network requests.
 active readiness refresh. Genuinely newer row or session-file inputs coalesce into one necessary
 trailing refresh without losing newer working/open-question state. Listings still return without
 waiting on Git, ordinary unchanged-session refreshes retain their twenty-second cadence except
-for settled and archived-idle sessions below, and only files that ever wrote a `worktrees` entry
+for idle and archived-idle sessions below, and only files that ever wrote a `worktrees` entry
 receive Git readiness reads. Ownership, checks,
 questions, follow-up judgments and derived readiness remain per session, never shared merely
 because sessions name the same tree. Routine refreshes still never query spec assessment status
 or recapture its inputs.
 
-**Settled sessions.** A session with nothing running (no turn and no working subagents) whose
-last answer has every tracked worktree merged and clean is re-read every five minutes instead of
-every twenty seconds. Each listing still checks, without Git, each such worktree's index, HEAD
-and branch ref: a commit, checkout, branch switch or `git add` there re-reads it at once, as does
-any change of its file or row (the session starting a turn included) and opening it (an explicit
-look at its worktrees in the Session tab or `sova_session`'s Merge facts, once its answer is ten
-seconds old). Whatever else readiness reports for it, such as whether its merge is pushed yet,
-can therefore be up to five minutes old.
+**Idle sessions.** A session with nothing running (no turn and no working subagents) is re-read
+every five minutes instead of every twenty seconds, merged or not. Each listing still checks,
+without Git, what each of its worktrees' answers rests on besides the session:
+
+- the worktree's index, HEAD and branch ref;
+- the base branch's refs (`master`, `main`, `origin/HEAD` and its target, the packed refs);
+- the configuration and attribute files;
+- the code of the merge drivers its last read found.
+
+A commit, checkout, branch switch or `git add` there, the base branch moving, or a change to the
+merge setup or a driver's code re-reads the session at once. So does any change of its file or row
+(the session starting a turn included), and opening it: an explicit look at its worktrees in the
+Session tab or `sova_session`'s Merge facts, once its answer is ten seconds old.
+
+Only what moves none of these can be up to five minutes old:
+
+- uncommitted edits in a worktree, including a hand-edited `.gitattributes` or a worktree's own
+  driver copy;
+- what readiness reads elsewhere, such as whether its merge is pushed yet.
+
+A session keeps the twenty-second cadence while one of its worktrees can't be checked this way:
+the folder isn't a worktree, its refs are in a reftable, or no read has found its drivers yet (the
+first read after a start). It keeps that cadence too while a worktree's folder is gone and another
+of its worktrees is not merged.
 
 **Archived-idle exception.** An archived session that is not open in a TUI and has nothing
 running (no turn and no working subagents) keeps its last readiness answer without the

@@ -166,7 +166,6 @@
   (chart/statechart {:initial :placement}
     (state {:id :placement :initial :regions}
       (dsl/hold-cancel-correction)
-      (b/hold-review)
       (b/flush-transition)
       (on-entry {}
         (dsl/watch (fn [d] (b/project-sid (:project-id d))))
@@ -262,20 +261,19 @@
         (raise {:event :cooldown/restart})))))
 
 (def acts
-  {:placement/edit    {:needs nil}
-   :spec/freeze       {:needs nil}
-   :stakeholder/set   {:needs nil}
-   :gap/file          {:needs "L0" :tool "sova_idea"}
-   :baton/start       {:needs "L1" :tool "sova_start_gathering" :people-facing true :counts "gather" :hold true :confirm-kind b/start-kind :hours b/hours-window
+  {:placement/edit    {:power nil}
+   :spec/freeze       {:power nil}
+   :stakeholder/set   {:power nil}
+   :gap/file          {:power "always" :tool "sova_idea"}
+   :baton/start       {:power "gather" :tool "sova_start_gathering" :people-facing true :counts "gather" :hold true :hours b/hours-window
                        :card (fn [d] (b/start-card (:project-id d) d))
                        :what (fn [d] (str "A gathering session \"" (:public-title (b/evt d)) "\""))}
-   :owner-update/post {:needs "L1" :tool "sova_owner_update" :people-facing true :hold true :confirm-kind "owner-update"
+   :owner-update/post {:power "ownerUpdates" :tool "sova_owner_update" :people-facing true :hold true
                        :what (fn [_] "An owner update")}
-   :outreach/send     {:needs "L1" :tool "sova_send_to_person" :people-facing true :hold true :confirm-kind "send" :hours b/hours-window :outage true
+   :outreach/send     {:power "whatsapp" :tool "sova_send_to_person" :people-facing true :hold true :hours b/hours-window :outage true
                        :card (fn [d] (let [e (b/evt d)] {:people [(get-in e [:target :id])] :sessions (vec (keep identity [(get-in e [:link :session])]))}))
                        :what (fn [d] (str "A WhatsApp message to " (get-in (b/evt d) [:target :name])))}
-   :hold/cancel       {:needs "L0" :correction true}
-   :hold/approve      {:needs "L0" :correction true}})
+   :hold/cancel       {:power "always" :correction true}})
 
 (defn not-here [_event _config _data] "That can't be done now.")
 

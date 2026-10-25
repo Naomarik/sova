@@ -359,10 +359,32 @@ export interface OrgLinkRow {
   link?: string;
 }
 
+/** A live standalone reviewed-tour link (`/t/`, §app.session-share/shares-page): pinned to one
+    edition. Its visits are only what opt-in Log visitors recorded; a reader's resume link never. */
+export interface TourLinkRow {
+  id: string;
+  sessionId: string;
+  tourId: string;
+  editionId: string;
+  /** The reviewed snapshot's title, and when its pinned edition passed its check. */
+  title: string;
+  checkedAt: string;
+  createdAt: string;
+  expiresAt: string;
+  opened: number;
+  lastAt?: string;
+  /** Newest first. */
+  visits: SessionShareVisit[];
+  /** The link, when its token is kept (§app.session-share/link). */
+  link?: string;
+}
+
 /** GET /api/shares-overview: every live public link this host serves. */
 export interface SharesOverview {
   sessionShares: SessionShare[];
   orgLinks: OrgLinkRow[];
+  /** Live `/t/` links whose source chat still owns them, newest first. An older host omits it. */
+  tourLinks?: TourLinkRow[];
   /** This host's preview visits by preview id, newest first (§mesh.public/visitor-log); a preview
       with none is absent. An older host omits it. */
   previewVisits?: Record<string, SessionShareVisit[]>;

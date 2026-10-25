@@ -2,6 +2,7 @@
 // neutral history whenever it is needed, never kept as a second append-only log. Pure.
 import type { HBlock, HEntry } from "../../shared/harness";
 import type { MemoryMessageKind } from "../../shared/protocol";
+import { redactTourToolArgs } from "../../shared/tour";
 
 /** A tool's output is clipped to its head and tail, this many characters in all. */
 export const TOOL_CLIP = 30_000;
@@ -67,7 +68,7 @@ export function entryMessages(h: HEntry): { kind: MemoryMessageKind; text: strin
       // Thoughts are never logged (Taelin §1): only the reply's words and its tool calls.
       const text = h.blocks.filter((b): b is Extract<HBlock, { type: "text" }> => b.type === "text").map((b) => b.text).join("\n");
       if (text.trim()) out.push({ kind: "sova", text });
-      for (const b of h.blocks) if (b.type === "toolCall") out.push({ kind: "tool", text: `${b.name} ${json(b.arguments)}` });
+      for (const b of h.blocks) if (b.type === "toolCall") out.push({ kind: "tool", text: `${b.name} ${json(redactTourToolArgs(b.name, b.arguments))}` });
       return out;
     }
     case "tool-result":

@@ -395,7 +395,9 @@ await flush();
 assert.equal(store.status.get("mode"), "<accent>delegate · strict · align</accent>", "the newest usable snapshot wins over --major/--minor and the default");
 assert.deepEqual(getTools(), ["read", "bash", "grep", "align"], "restoring strict heavy reapplies the strict tool set, and align (on in the snapshot) brings its tool");
 assert.match((await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt, /# Mode: delegate/, "the restored mode shapes the prompt");
-assert.equal(entries.length, entriesBefore, "restoring appends nothing");
+// The head built with align on records its writing style: no mode-align.json means Project manager, which a
+// head records (mode-head); restoring itself appends nothing else.
+assert.deepEqual(entries.slice(entriesBefore), [{ type: "mode-head", data: { v: 1, style: "pm" } }], "restoring appends nothing; the Project manager head records its style");
 
 // An empty branch adopts the default as it is now, and still writes nothing
 writeDefault("normal", ["align"]);
@@ -1140,7 +1142,7 @@ await commands.get("mode").handler("normal", ctx);
 // cached prefix survives a toggle on every provider. Each fake here records, in order, what pi would
 // put on the branch: the extension's entries and the notes it delivers.
 {
-	const { VIS_INSTRUCTIONS, SPEC_INSTRUCTIONS, VIS_KINDS, visGuide } = await jiti.import(pathToFileURL(path.resolve(new URL("../minor.ts", import.meta.url).pathname)).href);
+	const { VIS_INSTRUCTIONS, SPEC_INSTRUCTIONS, VIS_GUIDE_NAMES, VIS_KINDS, visGuide } = await jiti.import(pathToFileURL(path.resolve(new URL("../minor.ts", import.meta.url).pathname)).href);
 	const branch = [{ type: "custom", customType: "mode", data: { mode: "normal", active: { version: 1, mode: "normal", strict: false, minorModes: ["spec"] } } }];
 	const open = () => {
 		const host = makeApi();
@@ -1190,9 +1192,11 @@ await commands.get("mode").handler("normal", ctx);
 	assert.deepEqual(first.notes, [], "nothing to tell on the first run");
 	const hasGuideTool = () => session.host.getTools().includes("vis_guide");
 	assert.ok(!hasGuideTool(), "no vis_guide while vis is off");
-	// The tool: in-process, kind is exactly the listed kinds, and a lookup is the shared rules then the kind's file.
+	// The tool: in-process, kind is exactly the listed kinds then the tour guide's parts, and a lookup is the shared rules then the kind's file.
 	const guideTool = session.host.registeredTools.get("vis_guide");
-	assert.deepEqual(guideTool.parameters.properties.kind.enum, [...VIS_KINDS]);
+	assert.deepEqual(guideTool.parameters.properties.kind.enum, [...VIS_GUIDE_NAMES]);
+	assert.deepEqual(VIS_GUIDE_NAMES, [...VIS_KINDS, "tour-signin", "tour-sites", "tour-sova", "tour-sharing"]);
+	assert.equal((await guideTool.execute("t0", { kind: "tour-signin" })).content[0].text, visGuide("tour-signin"));
 	const looked = await guideTool.execute("t1", { kind: "wireframe" });
 	assert.equal(looked.content[0].text, visGuide("wireframe"));
 	assert.match(looked.content[0].text, /^# vis: rules for every kind\n[\s\S]*\n# vis wireframe\n/);

@@ -1,12 +1,14 @@
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
 import { releaseControl } from "../lib/release-control";
-import type { ChatClaudeLogin, ScheduleInfo, SlashCommand, UploadResult } from "../../shared/protocol";
+import type { ChatClaudeLogin, SlashCommand, UploadResult } from "../../shared/protocol";
 import { composerLogin } from "../lib/claude-login";
 import { runControls } from "../lib/compact";
 import { createTouchMode, enterSends, refocusAfterSend, type SendPress } from "../lib/input-mode";
 import { keyboardIsUp, watchKeyboard } from "../lib/voice/keyboard";
 import { enterRunsLocal, insertCommand, localCommand, menuCommands, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
+import { registerComposer } from "../commands/composers";
+import { openPaletteFrom } from "../commands/palette-open";
 import {
   cachedFileIndex,
   capMentionEntries,
@@ -41,6 +43,7 @@ import {
   draftAttachments,
   drafts,
   flushDrafts,
+  focusView,
   loadDraft,
   openLightbox,
   setDraftAttachments,
@@ -48,15 +51,11 @@ import {
 } from "../lib/ui-state";
 import { paneScopedId, usePaneAnnounce, usePaneScope } from "../lib/pane-scope";
 import { inputsText } from "../lib/input-count";
-import { isOpenDoc, type AlignEntry } from "../lib/align";
-import { AlignChip } from "./AlignChip";
-import { OverseerCardChip } from "./OverseerCardChip";
-import { OverseerPermitsChip } from "./OverseerPermitsChip";
-import { livePermits, type Permit } from "../../shared/overseer-grants";
-import type { OverseerCard } from "../../shared/overseer-card";
+import { createWaiting, WaitingBadge, type WaitingSource } from "./WaitingBadge";
+import { runStatusEnd } from "../lib/run-status";
 import { openSettings } from "../lib/settings-nav";
 import { showInputsOnTimelineLabel } from "../lib/timeline";
-import { showWorkersOfLabel, teamNote, type WorkingSplit, workersOfLabel, workersRunningLabel } from "../lib/workers";
+import { teamNote, type WorkerTally, type WorkingSplit, workersRunningLabel, workersTrigger } from "../lib/workers";
 import { ComposerMenu, type ComposerMenuApi, type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { sandboxBadge } from "../lib/sandbox";
 import type { ModelControl } from "./ModelMenu";
@@ -137,8 +136,12 @@ export function Composer(props: {
   memory?: { text: string; problem: boolean } | null;
   /** Subagents working now; after the turn settles they get their own status row. */
   workersWorking?: number;
-  /** Every subagent this session has, working or settled, so the row survives going idle. */
+  /** This session's live subagents (ended ones left out), working or not, so the row survives
+      going idle; before the session's worker list has come, the list count it falls back to. */
   workersTotal?: number;
+  /** The worker list's live and ended ones: the trigger's ended note, and its row once every
+      worker has ended. Null or absent: no list yet, so no note. */
+  workersTally?: WorkerTally | null;
   /** How that count divides into team members and plain subagents; null: it can't be split. */
   workersSplit?: WorkingSplit | null;
   /** Makes the subagents status row a button that toggles the subagents pane. */
@@ -167,26 +170,13 @@ export function Composer(props: {
   /** Opens the session pane's Timeline tab: a bare "/timeline" unfiltered; a bare "/tree" and
       the run-status row's "N inputs" trigger with `inputsOnly`, on your own messages. */
   onShowTimeline?: (inputsOnly?: boolean) => void;
-  /** The branch's alignments (§chat.alignment/chip): with one open, the run-status row carries
-      the alignment chip right before the Inputs trigger. */
-  aligns?: AlignEntry[];
-  /** Jump to an alignment's newest card. */
-  onJumpAlign?: (entry: AlignEntry) => void;
-  /** The Overseer's open cards (§app.overseer/confirm): with one open, the run-status row carries
-      the card chip, before the alignment chip. */
-  cards?: OverseerCard[];
-  /** Jump to a card. */
-  onJumpCard?: (card: OverseerCard) => void;
-  /** The Overseer's approvals and rules and its running count (§app.overseer/approvals,
-      §app.overseer/caps): the run-status row carries "3 of 10 running" while any runs, and the
-      approvals chip while any is live. */
-  autonomy?: { running: number; cap: number; permits: Permit[]; schedules?: ScheduleInfo[] };
-  onRevokePermit?: (id: string) => Promise<string | null>;
-  /** Approve or revoke a playbook schedule from the same panel (§chat.schedules/where-shown). */
-  onApproveSchedule?: (s: ScheduleInfo) => Promise<string | null>;
-  onRevokeSchedule?: (id: string) => Promise<string | null>;
-  onJumpCardId?: (card: string) => void;
-  onJumpToolCall?: (toolCallId: string) => void;
+  /** What in this chat waits for the user (§chat.composer/waiting-badge): its open alignments and
+      option cards, shown as the badge inside the message box, which opens the Waiting on you dialog. */
+  waiting?: WaitingSource;
+  /** The Overseer's running count (§app.overseer/caps): the run-status row carries "3 of 10
+      running" while any runs. Its approvals and schedules live in the page head, not here
+      (§app.overseer/approvals). */
+  autonomy?: { running: number; cap: number };
   /** User messages on this chat's active branch; the status row's inputs trigger, hidden at 0. */
   inputCount?: number;
   /** The branch has inputs whose count isn't known yet (lib/known-before-mount): the inputs
@@ -208,9 +198,9 @@ export function Composer(props: {
   thinking?: ThinkingControl | null;
   /** Chat sessions only: this chat's mode switch, at the right end of the foot. */
   mode?: ModeControl | null;
-  /** Chat sessions only: opens the Playbooks dialog (the flyout's Playbooks row). */
+  /** Chat sessions only: opens the Playbooks dialog (the palette's Playbooks row). */
   onPlaybooks?: () => void;
-  /** Chat sessions only: the flyout's "Undo last turn" row. */
+  /** Chat sessions only: the palette's "Undo last turn" row. */
   undo?: UndoControl | null;
   /** Chat sessions with the sandbox extension: the flyout's Sandbox row and the foot's shield. */
   sandbox?: SandboxControl | null;
@@ -401,27 +391,18 @@ export function Composer(props: {
     else menu()?.show("sandbox", shield);
   };
 
-  /** The subagents status row: what's working, or — once idle — what the session
-      has, so the pane stays one click away after every worker settles. Its ring draws the
-      working share of every worker the session has; a settled-workers row is only worth
-      offering once the parent is idle. */
-  const workersRow = () => {
-    const working = props.workersWorking ?? 0;
-    // The list's total can lag the socket's working count: never draw more working than there are.
-    const total = Math.max(props.workersTotal ?? 0, working);
-    if (working > 0)
-      return {
-        working,
-        total,
-        n: `${working}/${total}`,
-        text: workersOfLabel(working, total, props.workersSplit),
-        label: showWorkersOfLabel(working, total, props.workersSplit),
-      };
-    if (props.running) return null;
-    if (total === 0 || !props.onShowWorkers) return null; // settled workers are only worth a row you can open
-    const text = `${total} ${total === 1 ? "subagent" : "subagents"}`;
-    return { working: 0, total, n: `${total}`, text, label: `${text} — show subagents` };
-  };
+  /** The subagents status row: what's working, or — once idle — the live workers (else the
+      ended ones), so the pane stays one click away after every worker settles. Its ring draws the
+      working share of the live workers; an idle row is only worth offering once the parent is idle. */
+  const workersRow = () =>
+    workersTrigger({
+      working: props.workersWorking ?? 0,
+      total: props.workersTotal ?? 0,
+      tally: props.workersTally,
+      split: props.workersSplit,
+      running: props.running,
+      canOpen: !!props.onShowWorkers,
+    });
   /** The subagents trigger shows a count; its tooltip is the words, plus the split of a mix of
       subagents and team members, and the team when there is one. */
   const workersTitle = (words: string) => {
@@ -456,14 +437,16 @@ export function Composer(props: {
       the row at its height, so the transcript above doesn't move when it lands. */
   const inputsHeld = () => !inputsRow() && !!props.inputsPending && !!props.onShowTimeline;
 
-  /** The alignment chip, while an alignment is open (and there is somewhere to jump). */
   const runningRow = () => (props.autonomy && props.autonomy.running > 0 ? props.autonomy : null);
-  // The chip shows while an approval or rule is live, or while Sova knows of a schedule.
-  const permitsRow = () =>
-    props.autonomy && props.onRevokePermit && (livePermits(props.autonomy.permits).length || props.autonomy.schedules?.length)
-      ? { permits: props.autonomy.permits, schedules: props.autonomy.schedules ?? [] }
-      : null;
-  const alignRow = () => (props.onJumpAlign && (props.aligns ?? []).some((e) => isOpenDoc(e.doc)) ? props.aligns! : null);
+  /** The waiting badge's counts and look; the box's text makes room for it only while it shows. */
+  const waiting = createWaiting(() => props.waiting);
+  /** The row's right-hand cluster, in order; its parts as strings, so a chip keeps its node (and
+      its open menu) while the others come and go. */
+  const endItems = createMemo(() =>
+    runStatusEnd({ running: !!runningRow(), inputs: !!inputsRow(), inputsHeld: inputsHeld() }),
+  );
+  const endParts = createMemo(() => endItems().map((p) => p.part), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
+  const leadClass = (part: string) => (endItems()[0]?.part === part ? " run-status-lead" : "");
 
   // ---- Slash-command autocomplete (combobox: focus stays in the textarea) ----------------
   const slashMatches = createMemo(() => {
@@ -500,7 +483,6 @@ export function Composer(props: {
     const cmd = slashMatches()[index];
     if (!token || !cmd) return;
     const next = insertCommand(input.value, token, cmd.name);
-    buttonSlash = null; // that "/" is now part of a command
     setDraft(next.text);
     input.value = next.text;
     input.setSelectionRange(next.caret, next.caret);
@@ -617,54 +599,37 @@ export function Composer(props: {
           : null
         : null;
 
-  // ---- Commands button: opens the same menu by inserting "/" at the caret ----------------
-  /** The "/" (and the space before it) the button inserted; removed if closed untouched. */
-  let buttonSlash: { at: number; space: boolean } | null = null;
-  const dropButtonSlash = () => {
-    const ins = buttonSlash;
-    buttonSlash = null;
-    if (!ins) return;
-    const v = input.value;
-    const token = slashTokenAt(v, ins.at + 1);
-    if (v[ins.at] !== "/" || token?.start !== ins.at || token.query !== "") return; // user typed on
-    const from = ins.space ? ins.at - 1 : ins.at;
-    const next = v.slice(0, from) + v.slice(ins.at + 1);
-    setDraft(next);
-    input.value = next;
-    input.setSelectionRange(from, from);
-  };
-  const toggleCommands = () => {
-    if (disabled() || !(props.commands?.length ?? 0)) return;
-    if (slashOpen()) {
-      const token = slashToken();
-      setSlashDismissed(token ? tokenKey(token) : null);
-      dropButtonSlash();
-      input.focus();
-      updateSlash();
-      return;
-    }
-    const v = input.value;
-    const caret = document.activeElement === input ? input.selectionStart ?? v.length : v.length;
-    const inToken = slashTokenAt(v, caret);
-    if (inToken) {
-      // Already in a (dismissed) token: just reopen it.
-      setSlashDismissed(null);
-      input.focus();
-      input.setSelectionRange(caret, caret);
-      updateSlash();
-      return;
-    }
-    const space = caret > 0 && !/\s/.test(v[caret - 1]!);
-    const insert = `${space ? " " : ""}/`;
-    const next = v.slice(0, caret) + insert + v.slice(caret);
-    setDraft(next);
-    input.value = next;
-    const at = caret + insert.length - 1;
-    buttonSlash = { at, space };
-    input.focus();
-    input.setSelectionRange(at + 1, at + 1);
-    updateSlash();
-  };
+  // The command palette's rows for this chat (commands/composers): the menu's commands, "/name "
+  // put in this textarea exactly as the menu's Enter on an empty draft leaves it (nothing is sent),
+  // and the This chat actions: the file picker, Playbooks and Undo last turn.
+  createEffect(() => {
+    const off = registerComposer(props.path, {
+      commands: () => menuCommands(props.commands ?? []),
+      off: () => reason()?.text ?? null,
+      hasDraft: () => text().trim().length > 0 || images().length > 0,
+      insert: (name) => {
+        if (disabled()) return;
+        const next = `/${name} `;
+        setDraft(next);
+        input.value = next;
+        input.focus();
+        input.setSelectionRange(next.length, next.length);
+        updateSlash();
+      },
+      attach: () => {
+        if (!disabled()) picker?.click(); // no await before it: the picker needs the gesture
+      },
+      canPlaybooks: () => !!props.onPlaybooks,
+      playbooks: () => {
+        if (!disabled()) props.onPlaybooks?.();
+      },
+      undoBlocked: () => (props.undo ? props.undo.blocked() : undefined),
+      undo: () => {
+        if (!disabled() && props.undo?.blocked() === null) props.undo.run();
+      },
+    });
+    onCleanup(off);
+  });
   // Announce the count on open and when it changes, at most once a second (latest wins).
   let announceTimer: ReturnType<typeof setTimeout> | undefined;
   let lastAnnounced = 0;
@@ -891,7 +856,7 @@ export function Composer(props: {
     <>
         {/* One row, whichever of the three has something to say (they can coexist: the inputs
             trigger sits at its right end while a turn streams, and alone when nothing runs). */}
-        <Show when={controls().status || props.memory || workersRow() || inputsRow() || inputsHeld() || alignRow() || props.cards?.length || runningRow() || permitsRow()}>
+        <Show when={controls().status || props.memory || workersRow() || inputsRow() || inputsHeld() || runningRow()}>
           <p class="run-status">
             {/* One dot leads the row while anything works — the turn, a stop, a rare state, a
                 compaction or a subagent — and nothing else in the row pulses. */}
@@ -942,7 +907,7 @@ export function Composer(props: {
                   <Show
                     when={props.onShowWorkers}
                     fallback={
-                      <span class="run-status-workers" title={workersTitle(row().text)}>
+                      <span class="run-status-workers" title={workersTitle(row().say)}>
                         <WorkersRing working={row().working} total={row().total} />
                         <span class="text-num run-status-narrow" aria-hidden="true">{row().n}</span>
                         <span class="run-status-say">{row().text}</span>
@@ -969,61 +934,48 @@ export function Composer(props: {
                 </>
               )}
             </Show>
-            {/* The alignment chip, then the inputs trigger: right-aligned together (the chip takes the
-                auto margin when it is there), so they keep their place whatever else the row carries. */}
-            <Show when={runningRow()}>
-              {(r) => (
-                <button
-                  type="button"
-                  class="run-status-link run-status-running text-num"
-                  title="Sessions the Overseer started or messaged that are working now, of its limit. Opens Settings → Overseer → Limits."
-                  onClick={() => openSettings("overseer", "overseer-limits")}
-                >
-                  {r().running} of {r().cap} running
-                </button>
+            {/* The right end: one cluster in a fixed order, "3 of 10 running", then the inputs
+                trigger last (lib/run-status). Only its first part
+                takes the auto margin, so the row has two ends and nothing floats between them. */}
+            <For each={endParts()}>
+              {(part) => (
+                <Switch>
+                  <Match when={part === "running" && runningRow()}>
+                    {(r) => (
+                      <button
+                        type="button"
+                        class={`run-status-link run-status-running text-num${leadClass(part)}`}
+                        title="Sessions the Overseer started or messaged that are working now, of its limit. Opens Settings → Overseer → Limits."
+                        onClick={() => openSettings("overseer", "overseer-limits")}
+                      >
+                        {r().running} of {r().cap} running
+                      </button>
+                    )}
+                  </Match>
+                  <Match when={part === "inputs" && inputsRow()}>
+                    {(row) => (
+                      <button
+                        type="button"
+                        class={`run-status-link run-status-inputs${leadClass(part)}`}
+                        aria-label={row().label}
+                        aria-expanded={props.inputsOpen ? "true" : "false"}
+                        aria-controls={PANE_ID}
+                        onClick={() => props.onShowTimeline?.(true)}
+                      >
+                        {row().text}
+                        <Icon name="chevron-right" small />
+                      </button>
+                    )}
+                  </Match>
+                  <Match when={part === "inputs-held"}>
+                    <span class={`run-status-link run-status-inputs${leadClass(part)}`} aria-hidden="true" style={{ visibility: "hidden" }}>
+                      {inputsText(1)}
+                      <Icon name="chevron-right" small />
+                    </span>
+                  </Match>
+                </Switch>
               )}
-            </Show>
-            <Show when={permitsRow()}>
-              {(permits) => (
-                <OverseerPermitsChip
-                  permits={permits().permits}
-                  schedules={permits().schedules}
-                  onRevoke={(id) => props.onRevokePermit?.(id) ?? Promise.resolve(null)}
-                  onApproveSchedule={(s) => props.onApproveSchedule?.(s) ?? Promise.resolve(null)}
-                  onRevokeSchedule={(id) => props.onRevokeSchedule?.(id) ?? Promise.resolve(null)}
-                  onJumpCard={(id) => props.onJumpCardId?.(id)}
-                  onJumpUse={(id) => props.onJumpToolCall?.(id)}
-                />
-              )}
-            </Show>
-            <Show when={props.onJumpCard && props.cards?.length ? props.cards : null}>{(cards) => <OverseerCardChip cards={cards()} onJump={(c) => props.onJumpCard?.(c)} />}</Show>
-            <Show when={alignRow()}>{(entries) => <AlignChip entries={entries()} onJump={(e) => props.onJumpAlign?.(e)} />}</Show>
-            <Show when={inputsRow()}>
-              {(row) => (
-                <button
-                  type="button"
-                  class="run-status-link"
-                  style={{ "margin-left": alignRow() ? "calc(var(--run-status-pad) * -1)" : "auto", "margin-right": 0 }}
-                  aria-label={row().label}
-                  aria-expanded={props.inputsOpen ? "true" : "false"}
-                  aria-controls={PANE_ID}
-                  onClick={() => props.onShowTimeline?.(true)}
-                >
-                  {row().text}
-                  <Icon name="chevron-right" small />
-                </button>
-              )}
-            </Show>
-            <Show when={inputsHeld()}>
-              <span
-                class="run-status-link"
-                aria-hidden="true"
-                style={{ visibility: "hidden", "margin-left": alignRow() ? "calc(var(--run-status-pad) * -1)" : "auto", "margin-right": 0 }}
-              >
-                {inputsText(1)}
-                <Icon name="chevron-right" small />
-              </span>
-            </Show>
+            </For>
           </p>
         </Show>
     </>
@@ -1032,6 +984,9 @@ export function Composer(props: {
   return (
     <footer
       class="composer"
+      // Focus hides the single view's composer but keeps it, draft and all (§chat.transcript/focus-view):
+      // inert, so nothing in it takes focus or a press while it is out of sight.
+      inert={focusView() && scope.id === null ? true : undefined}
       data-drop={drop() ?? undefined}
       onDragOver={(e) => {
         if (disabled() || !e.dataTransfer?.types.includes("Files")) return;
@@ -1155,16 +1110,13 @@ export function Composer(props: {
           <Show when={!props.readOnly}>
             <VoiceButton voice={voice} />
           </Show>
-          {/* One flyout in place of the old Attach and Commands buttons. */}
+          {/* The plus opens the Commands palette on this chat (§app.command-palette/opening); the
+              flyout it sits with holds the model, login and sandbox panels. */}
           <ComposerMenu
             disabled={disabled()}
-            commandsAvailable={(props.commands?.length ?? 0) > 0}
-            onAttach={() => picker?.click()}
-            onCommands={toggleCommands}
+            onPlus={(trigger) => openPaletteFrom(props.path, trigger)}
             model={props.model}
             thinking={props.thinking}
-            onPlaybooks={props.onPlaybooks}
-            undo={props.undo}
             sandbox={props.sandbox}
             login={props.login}
             onRefocus={() => input.focus()}
@@ -1188,103 +1140,104 @@ export function Composer(props: {
           <label class="visually-hidden" for={paneId("composer-input")}>
             Message
           </label>
-          <textarea
-            ref={input}
-            class="input textarea composer-input"
-            id={paneId("composer-input")}
-            rows={1}
-            placeholder={placeholder()}
-            data-ph-size={fitted()?.size === "caption" ? "caption" : undefined}
-            enterkeyhint={touch() ? "enter" : "send"}
-            aria-describedby={paneId("composer-reason")}
-            aria-autocomplete={slashOpen() || mentionOpen() ? "list" : undefined}
-            aria-controls={listboxControls() ?? undefined}
-            aria-activedescendant={listboxActive() ?? undefined}
-            value={text()}
-            disabled={!!props.readOnly}
-            onInput={(e) => {
-              buttonSlash = null; // typed: the "/" is the user's now
-              setDraft(e.currentTarget.value);
-              updateSlash();
-              updateMention();
-            }}
-            onClick={() => {
-              updateSlash();
-              updateMention();
-            }}
-            onKeyUp={(e) => {
-              if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
+          {/* The message box, and inside it at its left edge the waiting badge (§chat.composer/waiting-badge). */}
+          <div class="composer-field" data-waiting={waiting.look() !== "hidden" ? "" : undefined}>
+            <Show when={props.waiting}>{(w) => <WaitingBadge source={w()} counts={waiting.counts()} look={waiting.look()} />}</Show>
+            <textarea
+              ref={input}
+              class="input textarea composer-input"
+              id={paneId("composer-input")}
+              rows={1}
+              placeholder={placeholder()}
+              data-ph-size={fitted()?.size === "caption" ? "caption" : undefined}
+              enterkeyhint={touch() ? "enter" : "send"}
+              aria-describedby={paneId("composer-reason")}
+              aria-autocomplete={slashOpen() || mentionOpen() ? "list" : undefined}
+              aria-controls={listboxControls() ?? undefined}
+              aria-activedescendant={listboxActive() ?? undefined}
+              value={text()}
+              disabled={!!props.readOnly}
+              onInput={(e) => {
+                setDraft(e.currentTarget.value);
                 updateSlash();
                 updateMention();
-              }
-            }}
-            onPointerDown={onPointerDown}
-            // focusout, not blur: a delegated handler is one releaseControl can drop (the textarea
-            // has no children, so the two fire alike).
-            onFocusOut={() => {
-              dropButtonSlash(); // closing by blur undoes an untouched button "/" too
-              setSlashToken(null);
-              setMentionToken(null);
-            }}
-            onKeyDown={(e) => {
-              press = null;
-              // A bare local command runs on the Enter that would send; in touch mode it's a newline.
-              const runsLocal = enterSends(e, touch()) && enterRunsLocal(text(), e.key, e.shiftKey, localOpts());
-              if (slashOpen() && !e.isComposing && !runsLocal) {
-                const hasMatches = slashMatches().length > 0;
-                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                  if (!hasMatches) return;
-                  e.preventDefault();
-                  moveSlash(e.key === "ArrowDown" ? 1 : -1);
-                  return;
-                }
-                if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
-                  if (hasMatches) {
-                    e.preventDefault();
-                    pickSlash(slashActive());
-                    return;
-                  }
-                  if (e.key === "Tab") return; // nothing to insert: Tab moves focus as usual
-                }
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  const token = slashToken();
-                  setSlashDismissed(token ? tokenKey(token) : null);
-                  dropButtonSlash(); // a "/" the Commands button added, untouched, goes away
+              }}
+              onClick={() => {
+                updateSlash();
+                updateMention();
+              }}
+              onKeyUp={(e) => {
+                if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
                   updateSlash();
-                  return;
+                  updateMention();
                 }
-              }
-              if (mentionOpen() && !e.isComposing) {
-                const hasMatches = mentionMatches().length > 0;
-                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                  if (!hasMatches) return;
-                  e.preventDefault();
-                  const n = mentionMatches().length;
-                  setMentionActive((i) => (i + (e.key === "ArrowDown" ? 1 : -1) + n) % n);
-                  return;
-                }
-                // Enter and Tab both complete: the next Enter, menu closed, does what Enter does.
-                // With no match, Enter falls through to that rule with the typed text as-is.
-                if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
-                  if (hasMatches) {
+              }}
+              onPointerDown={onPointerDown}
+              // focusout, not blur: a delegated handler is one releaseControl can drop (the textarea
+              // has no children, so the two fire alike).
+              onFocusOut={() => {
+                setSlashToken(null);
+                setMentionToken(null);
+              }}
+              onKeyDown={(e) => {
+                press = null;
+                // A bare local command runs on the Enter that would send; in touch mode it's a newline.
+                const runsLocal = enterSends(e, touch()) && enterRunsLocal(text(), e.key, e.shiftKey, localOpts());
+                if (slashOpen() && !e.isComposing && !runsLocal) {
+                  const hasMatches = slashMatches().length > 0;
+                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    if (!hasMatches) return;
                     e.preventDefault();
-                    pickMention(mentionActive());
+                    moveSlash(e.key === "ArrowDown" ? 1 : -1);
                     return;
                   }
-                  if (e.key === "Tab") return; // nothing to complete: Tab moves focus as usual
+                  if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+                    if (hasMatches) {
+                      e.preventDefault();
+                      pickSlash(slashActive());
+                      return;
+                    }
+                    if (e.key === "Tab") return; // nothing to insert: Tab moves focus as usual
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    const token = slashToken();
+                    setSlashDismissed(token ? tokenKey(token) : null);
+                    updateSlash();
+                    return;
+                  }
                 }
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  const token = mentionToken();
-                  setMentionDismissed(token ? mentionKey(token) : null);
-                  updateMention();
-                  return;
+                if (mentionOpen() && !e.isComposing) {
+                  const hasMatches = mentionMatches().length > 0;
+                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    if (!hasMatches) return;
+                    e.preventDefault();
+                    const n = mentionMatches().length;
+                    setMentionActive((i) => (i + (e.key === "ArrowDown" ? 1 : -1) + n) % n);
+                    return;
+                  }
+                  // Enter and Tab both complete: the next Enter, menu closed, does what Enter does.
+                  // With no match, Enter falls through to that rule with the typed text as-is.
+                  if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+                    if (hasMatches) {
+                      e.preventDefault();
+                      pickMention(mentionActive());
+                      return;
+                    }
+                    if (e.key === "Tab") return; // nothing to complete: Tab moves focus as usual
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    const token = mentionToken();
+                    setMentionDismissed(token ? mentionKey(token) : null);
+                    updateMention();
+                    return;
+                  }
                 }
-              }
-              if (enterSends(e, touch())) void send(e);
-            }}
-          />
+                if (enterSends(e, touch())) void send(e);
+              }}
+            />
+          </div>
           <div class="composer-actions">
             <Show when={!props.readOnly}>
               <button

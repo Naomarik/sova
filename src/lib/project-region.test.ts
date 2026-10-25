@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ProjectSummary } from "../../shared/projects";
 import type { SessionSummary } from "../../shared/protocol";
-import { inProjectsRegion, isStandaloneProjectSession, projectBlocks, projectOpenCount, projectRowCount } from "./project-region";
+import { inLocalProjectsRegion, inProjectsRegion, isStandaloneProjectSession, projectBlocks, projectOpenCount } from "./project-region";
 import { isOrdinarySession, sidebarRegion } from "./regions";
 import { listedOrgProjects, orgSections } from "./org-region";
 
@@ -75,8 +75,8 @@ test("blocks: every registered standalone project by name, its overseer as the e
       ["Zeta", "ov", ["b2", "b1"], ["b3"]],
     ],
   );
-  assert.equal(projectRowCount(blocks), 2, "open rows only: Done and the eye aren't counted");
-  assert.deepEqual(blocks.map(projectOpenCount), [0, 2]);
+  assert.equal(blocks.length, 2, "the region head counts projects, Alpha with no session included");
+  assert.deepEqual(blocks.map(projectOpenCount), [0, 2], "each heading counts its open rows: Done and the eye aren't counted");
 });
 
 test("one project list, two regions: every unarchived project is listed exactly once — standalone in Projects, placed under its org — sessions or none", () => {
@@ -113,8 +113,19 @@ test("a folder session is in its project's Sessions too: active while live or a 
   assert.equal(rest.length, 0, "the placed project has no block here");
   assert.deepEqual(b!.builds.active.map((s) => s.id), ["f-live", "f-web", "c1"]);
   assert.deepEqual(b!.builds.done.map((s) => s.id), ["f-ended"], "an archived folder session is the Archive's only");
-  assert.equal(projectRowCount([b!]), 3, "open rows only");
+  assert.equal(projectOpenCount(b!), 3, "open rows only");
   assert.equal(inProjectsRegion(archivedWeb), false);
   // Without the projects read, a placed folder session still makes no block.
   assert.deepEqual(projectBlocks([placed]).length, 0);
+});
+
+test("a mesh peer's folder session is never a Projects row (it stays in Folders), so it makes no block; this computer's is", () => {
+  const peerFolder = session("pf", proj("peer-p", "folder"));
+  const peerBuild = session("pb", proj("peer-p", "coding"));
+  const mine = session("mf", proj("pa", "folder"));
+  assert.equal(inLocalProjectsRegion(peerFolder, false), false);
+  assert.equal(inLocalProjectsRegion(mine, true), true);
+  assert.equal(inLocalProjectsRegion(peerBuild, false), true, "a peer project's own build has no other place: unchanged");
+  const rows = [peerFolder, mine].filter((s) => inLocalProjectsRegion(s, s.id !== "pf"));
+  assert.deepEqual(projectBlocks(rows, [registered("pa", "Mine")]).map((b) => b.id), ["pa"], "the peer's project id adds no block");
 });

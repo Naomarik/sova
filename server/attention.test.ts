@@ -1,9 +1,10 @@
 // Run: npx tsx --test server/attention.test.ts (or npm test). Pure: no files, no runtime.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import type { SessionSummary } from "../shared/protocol";
-import { type AttentionRow, blockerCount, blockerKey, buildDigest, DIGEST_MAX, openQuestionsText, sessionItems, STALE_MS, whereOf, workerErrorTime } from "./attention";
+import { PUSH_KINDS, type SessionSummary } from "../shared/protocol";
+import { type AttentionRow, blockerCount, blockerKey, buildDigest, DIGEST_MAX, NEVER_BRIEFED, openQuestionsText, sessionItems, STALE_MS, whereOf, workerErrorTime } from "./attention";
 import { workerErrorTimesOf } from "./live";
+import { listsInNeedsYou } from "../shared/needs-you";
 
 const NOW = Date.parse("2026-09-25T12:00:00.000Z");
 
@@ -99,7 +100,7 @@ describe("attention: a worker error is acknowledged by seeing the session after 
   test("seen after the error: no item and no badge; the same failure seen BEFORE it still raises one", () => {
     const after = row(summary("w", { seenAt: ERR + 1 }), { failedWorkers: 1, workerErrorAt: ERR });
     assert.deepEqual(kinds(after), []);
-    assert.deepEqual(buildDigest([after], NOW).badge, { act: 0, decide: 0 });
+    assert.deepEqual(buildDigest([after], NOW).badge, { act: 0, decide: 0, needsYou: 0 });
     assert.deepEqual(kinds(row(summary("w", { seenAt: ERR - 1 }), { failedWorkers: 1, workerErrorAt: ERR })), ["act:worker-error"]);
   });
 
@@ -123,7 +124,7 @@ describe("attention: a worker error is acknowledged by seeing the session after 
   test("a turn the session finished after the error deals with it, unseen or not; one finished before does not", () => {
     // Never seen, never on screen: the parent's later finished reply clears it.
     assert.deepEqual(kinds(row(summary("p"), { failedWorkers: 1, workerErrorAt: ERR, lastReplyAt: ERR + 1 })), []);
-    assert.deepEqual(buildDigest([row(summary("p"), { failedWorkers: 1, workerErrorAt: ERR, lastReplyAt: ERR + 1 })], NOW).badge, { act: 0, decide: 0 });
+    assert.deepEqual(buildDigest([row(summary("p"), { failedWorkers: 1, workerErrorAt: ERR, lastReplyAt: ERR + 1 })], NOW).badge, { act: 0, decide: 0, needsYou: 0 });
     // A reply at or before the error is not one after it.
     assert.deepEqual(kinds(row(summary("p"), { failedWorkers: 1, workerErrorAt: ERR, lastReplyAt: ERR })), ["act:worker-error"]);
     assert.deepEqual(kinds(row(summary("p"), { failedWorkers: 1, workerErrorAt: ERR, lastReplyAt: ERR - 60_000 })), ["act:worker-error"]);
@@ -209,7 +210,7 @@ describe("attention: the digest", () => {
       ],
       NOW,
     );
-    assert.deepEqual(d.badge, { act: 1, decide: 1 });
+    assert.deepEqual(d.badge, { act: 1, decide: 1, needsYou: 1 });
     assert.deepEqual(d.counts, { act: 2, decide: 3, fyi: 1 }); // c is running: fyi only, not in the badge
   });
 
@@ -238,7 +239,7 @@ describe("attention: open alignment questions (§chat.alignment/session-mark)", 
     assert.deepEqual(kinds(row(summary("s", { align: align(2), archived: true }))), []);
     assert.deepEqual(kinds(row(summary("s", { align: { openDocs: 1, openQuestions: 0, questionDocs: 0 } }))), []);
     const d = buildDigest([row(summary("a", { align: align(2) }))], NOW);
-    assert.deepEqual(d.badge, { act: 1, decide: 0 });
+    assert.deepEqual(d.badge, { act: 1, decide: 0, needsYou: 1 });
     assert.equal(blockerKey(d.items[0]!), "a:open-questions");
   });
 
@@ -285,7 +286,7 @@ describe("attention: decision signals (the list carries them only while unseen a
   test("no kinds, no items; an empty kinds list is not a mark; a stuck subagent is never needs-you", () => {
     assert.deepEqual(kinds(row(summary("s", { signals: signals([]) }))), []);
     const d = buildDigest([row(summary("a", { workerSignals: { stuck: 1 }, unread: true }))], NOW);
-    assert.deepEqual(d.badge, { act: 0, decide: 1 });
+    assert.deepEqual(d.badge, { act: 0, decide: 1, needsYou: 0 });
   });
 
   test("a stalled team is the session's decide item (never Needs you), unless it already waits on the user", () => {
@@ -298,19 +299,23 @@ describe("attention: decision signals (the list carries them only while unseen a
     assert.deepEqual(kinds(row(summary("a", { signals: signals(["asks-you"]) }), { teamStall: stall })), ["decide:asks-you"]);
     assert.deepEqual(kinds(row(summary("a", { align: { openDocs: 1, openQuestions: 1, questionDocs: 1 } }), { teamStall: stall })), ["act:open-questions"]);
     assert.deepEqual(kinds(row(summary("a", { busy: true }), { teamStall: stall })).filter((k) => k.endsWith("team-stalled")), []);
-    assert.deepEqual(buildDigest([row(summary("a"), { teamStall: stall })], NOW).badge, { act: 0, decide: 1 });
+    assert.deepEqual(buildDigest([row(summary("a"), { teamStall: stall })], NOW).badge, { act: 0, decide: 1, needsYou: 0 });
   });
 
-  test("a reply that asks is decide asks-you (a row mark, never Needs you), quoting its sentence; open questions take its place", () => {
+  test("a reply that asks is a soft decide asks-you (a row mark and Needs you's softer tier), quoting its sentence; open questions take its place", () => {
     const detail = (s: SessionSummary, t?: AttentionRow["signalText"]) =>
       sessionItems(row(s, t ? { signalText: t } : {}), NOW).map((i) => `${i.tier}:${i.kind}:${i.detail}`);
     assert.deepEqual(detail(summary("a", { signals: signals(["asks-you"]) }), { sentence: "Shall I merge it into master?", stuckWorkers: [] }), ["decide:asks-you:Asks you: Shall I merge it into master?"]);
+    const q = "Which one?";
+    for (const [askKind, lead] of [["choose-between-options", "Needs your decision"], ["approve-risky-action", "Needs your approval"], ["restart-or-merge-go", "Needs your approval"], ["needs-info", "Needs info from you"]] as const)
+      assert.deepEqual(detail(summary("a", { signals: signals(["asks-you"]) }), { sentence: q, askKind, stuckWorkers: [] }), [`decide:asks-you:${lead}: ${q}`], `the line names the kind of wait: ${askKind}`);
     assert.deepEqual(detail(summary("a", { signals: signals(["asks-you"]) })), ["decide:asks-you:The last reply asks you something."]);
     const both = sessionItems(row(summary("a", { signals: signals(["asks-you"]), align: { openDocs: 1, openQuestions: 1, questionDocs: 1 } })), NOW);
     assert.deepEqual(both.map((i) => i.kind), ["open-questions"]);
     assert.deepEqual(kinds(row(summary("a", { signals: signals(["asks-you"]), archived: true }))), [], "archived: out of the way");
     const d = buildDigest([row(summary("a", { signals: signals(["asks-you"]) }))], NOW);
-    assert.deepEqual(d.badge, { act: 0, decide: 1 });
+    assert.deepEqual(d.badge, { act: 0, decide: 1, needsYou: 1 }, "counted in need you, never a blocker");
+    assert.equal(d.items[0]!.soft, true);
     assert.deepEqual(d.counts, { act: 0, decide: 1, fyi: 0 });
   });
 
@@ -355,3 +360,91 @@ describe("attention: a proposed verb playbook run (§app.project-runtime/review)
     assert.ok(!kinds(row(summary("pb", { archived: true }), { playbook: fact })).includes("act:playbook-review"));
   });
 });
+
+describe("b2: blockers stay, guesses expire, and both counts agree (§app.overseer/attention-digest)", () => {
+  test("an errored turn idle 8 days plus Jev asks-you marks: the digest's count and the Needs you list agree, and the errored session is listed", async () => {
+    const { signalsOverlay, GUESS_IDLE_MS } = await import("./signals-store");
+    const { listsInNeedsYou } = await import("../shared/needs-you");
+    const { needsYouRows } = await import("../src/lib/needs-you");
+    const DAY = 86_400_000;
+    const card = (replyAt: number) => ({
+      turnId: "t",
+      replyAt,
+      at: replyAt + 1500,
+      provider: "jev" as const,
+      model: "jev-1.14.0",
+      schema: 3 as const,
+      answers: {
+        asks_user: { type: "boolean" as const, p: 0.95 },
+        ask_kind: { type: "choice" as const, choice: "approve-risky-action", probabilities: { "approve-risky-action": 1 }, confidence: 1 },
+      },
+      detail: "Should I delete the old branch?",
+    });
+    // Signals as the list overlays them (server/sessions-index.ts decisionFields): read at NOW.
+    const data = { version: 1 as const, workers: {}, stalls: {}, sessions: { stale: card(NOW - 8 * DAY), fresh: card(NOW - 60_000), errored: card(NOW - 8 * DAY - 5000) } };
+    const ctx = { enabled: true, viewing: false, running: false };
+    const sig = (id: string) => signalsOverlay(id, ctx, data, NOW);
+    assert.equal(GUESS_IDLE_MS, 7 * DAY);
+    assert.equal(sig("stale"), undefined, "a guess 8 idle days old is gone");
+    const old = new Date(NOW - 8 * DAY).toISOString();
+    const errored = summary("errored", { lastActiveAt: old, turnError: { message: "529 overloaded" }, signals: sig("errored") });
+    const stale = summary("stale", { lastActiveAt: old, signals: sig("stale") });
+    const fresh = summary("fresh", { signals: sig("fresh") });
+    const rows = [row(errored, { lastReplyAt: NOW - 8 * DAY }), row(stale, { lastReplyAt: NOW - 8 * DAY }), row(fresh, { lastReplyAt: NOW - 60_000 })];
+    const digest = buildDigest(rows, NOW, "/home/u");
+    // What GET /api/overseer/attention returns is the digest without its badge (server/overseer.ts attentionForWire).
+    const { badge, ...wire } = digest;
+    const wireCount = new Set(wire.items.filter(listsInNeedsYou).map((i) => i.path)).size;
+    const listed = needsYouRows(wire, [errored, stale, fresh]);
+    assert.equal(badge.needsYou, 2, "the Overseer's need you");
+    assert.equal(wireCount, 2, "the attention route's items");
+    assert.equal(listed.length, 2, "the Needs you list");
+    assert.deepEqual(listed.map((r) => [r.session.id, r.soft]), [["errored", false], ["fresh", true]], "the blocker first, still listed after 8 idle days; the fresh guess in the softer tier");
+    assert.deepEqual(badge.act, 1, "briefs and phone pushes still see only the blocker");
+  });
+});
+
+describe("unverified: the turn card's done-but-unchecked guess", () => {
+  test("a soft decide item, never with an ask or open questions, never archived", () => {
+    const sig = (kinds: string[]) => ({ kinds, at: NOW - 1000, turnId: "t", provider: "jev" }) as SessionSummary["signals"];
+    const items = sessionItems(row(summary("u", { signals: sig(["unverified"]) })), NOW);
+    assert.deepEqual(items.map((i) => [i.tier, i.kind, i.detail, i.soft]), [["decide", "unverified", "Says it's done, but didn't run or check everything.", true]]);
+    assert.deepEqual(kinds(row(summary("u", { signals: sig(["asks-you", "unverified"]) }))), ["decide:asks-you"]);
+    assert.deepEqual(kinds(row(summary("u", { signals: sig(["unverified"]), archived: true }))), []);
+  });
+
+  test("a look does not clear unverified: viewing the session keeps it, like asks-you", async () => {
+    const { signalsOverlay } = await import("./signals-store");
+    const t = { turnId: "t", replyAt: NOW - 60_000, at: NOW - 58_000, provider: "jev" as const, model: "jev-1.14.0", schema: 3 as const,
+      answers: { outcome: { type: "choice" as const, choice: "did-what-was-asked", probabilities: { "did-what-was-asked": 1 }, confidence: 1 }, claims_unverified: { type: "boolean" as const, p: 0.95 } } };
+    const data = { version: 1 as const, workers: {}, stalls: {}, sessions: { u: t } };
+    assert.deepEqual(signalsOverlay("u", { enabled: true, viewing: false, running: false }, data, NOW)?.kinds, ["unverified"], "fires");
+    assert.deepEqual(signalsOverlay("u", { enabled: true, viewing: true, running: false }, data, NOW)?.kinds, ["unverified"], "viewing keeps it");
+    assert.deepEqual(signalsOverlay("u", { enabled: true, viewing: false, running: false, seenAt: NOW }, data, NOW)?.kinds, ["unverified"], "seen keeps it");
+  });
+});
+
+describe("an open option card (§chat.offers/card, §app.overseer/attention-digest)", () => {
+  const offer = { title: "Land feat/x at abc1234?", at: NOW - 30_000 };
+  test("is a Needs you blocker, idle or working, quoting its title; never a push kind, never briefed", () => {
+    const idle = sessionItems(row(summary("o"), { offer }), NOW);
+    assert.deepEqual(idle.filter((i) => i.tier === "act").map((i) => `${i.kind}:${i.detail}:${i.since}`), [`offer-waiting:Waiting on your answer: Land feat/x at abc1234?:${NOW - 30_000}`]);
+    assert.ok(idle.some(listsInNeedsYou), "listed in Needs you's main list");
+    assert.equal(idle.find((i) => i.kind === "offer-waiting")?.soft, undefined, "not the softer tier");
+    const working = sessionItems(row(summary("o", { busy: true, activity: { state: "working" } }), { offer }), NOW);
+    assert.ok(working.some((i) => i.tier === "act" && i.kind === "offer-waiting"), "while a turn runs too");
+    assert.deepEqual(kinds(row(summary("o", { archived: true }), { offer })), [], "archived: out of the way");
+    assert.equal((PUSH_KINDS as readonly string[]).includes("offer-waiting"), false, "no phone notification");
+    assert.ok(NEVER_BRIEFED.has("offer-waiting"), "no Overseer brief");
+  });
+
+  test("counts on the badge, and replaces the soft asks-you its idle row's mark would add", () => {
+    const signals = { at: NOW - 5000, turnId: "offer", provider: "pi" as const, kinds: ["asks-you" as const] };
+    const items = sessionItems(row(summary("o", { signals }), { offer }), NOW);
+    assert.deepEqual(items.filter((i) => i.kind === "asks-you"), []);
+    const d = buildDigest([row(summary("o", { signals }), { offer }), row(summary("p"))], NOW);
+    assert.equal(d.badge.act, 1);
+    assert.equal(d.badge.needsYou, 1);
+  });
+});
+

@@ -196,11 +196,11 @@ export function overseerPausedSince(projectId: string): string | null {
   return pausedSinceOf(engine, projectId) ?? new Date(0).toISOString();
 }
 
-/** The operator set the project overseer's level on this host (`resumeAt`, the level they chose): a pause ends (any level). */
-export async function resumeOverseer(projectId: string, resumeAt?: string): Promise<void> {
+/** The operator pressed Resume on this host (or, one release, an older client set a level): the attach pause ends. */
+export async function resumeOverseer(projectId: string, _resumeAt?: string): Promise<void> {
   const engine = engineOf(projectId);
   if (!engine || !hostOf(engine).configuration(watchSid(projectId))) return;
-  await hostOf(engine).act(watchSid(projectId), "operator/level-set", resumeAt ? { resumeAt } : {}, operatorEnvelopeOf(projectId));
+  await hostOf(engine).act(watchSid(projectId), "operator/powers-set", { resume: true }, operatorEnvelopeOf(projectId));
 }
 
 // ---- standalone engines --------------------------------------------------------------------------

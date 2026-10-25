@@ -15,10 +15,13 @@
  * Host-local (never committed): the counters (each message's and each day's) and the watch loop's memo (held items too), under the state root.
  *
  * Operator routes (main listener only):
- * GET    /api/projects/:pid/overseer               -> ProjectOverseerInfo (exists: false before the first open)
+ * GET    /api/projects/:pid/overseer               -> ProjectOverseerInfo (exists: false before the first open; runs no git)
+ * GET    /api/projects/:pid/overseer/worktrees     -> ProjectWorktrees (every coding session with git's facts: the slow half)
  * POST   /api/projects/:pid/overseer               -> ProjectOverseerInfo (open or create; then mount #/s/<path>)
  * PATCH  /api/projects/:pid/overseer               body ProjectOverseerPatch -> ProjectOverseerInfo
  * POST   /api/projects/:pid/overseer/clear         -> ProjectOverseerInfo (a new conversation; settings, notes, ideas, todos stay)
+ * GET    /api/projects/:pid/overseer/memory        -> OverseerMemoryInfo (protocol.ts; its own memory switch, on by default)
+ * PUT    /api/projects/:pid/overseer/memory        body { on?, type?, size? } -> OverseerMemoryInfo (saved as `memory`; Clear keeps it)
  * GET    /api/projects/:pid/overseer/ideas         -> OverseerIdeasInfo (protocol.ts shape)
  * GET    /api/projects/:pid/overseer/idea?id=      -> OverseerIdeaDetail
  * PATCH  /api/projects/:pid/overseer/idea?id=      body IdeaPatch (no newId) -> OverseerIdeaDetail
@@ -35,11 +38,12 @@
  * POST   /api/projects/:pid/overseer/message       body { text } -> ProjectMessageResult (the global Overseer's one route into
  *                                                               the overseer's conversation; 403 for any other caller)
  * POST   /api/projects/:pid/overseer/coding        body CodingStartInput -> 201 CodingStartResult (New Coding Session: no item, no prompt)
- * POST   /api/projects/:pid/overseer/worktrees/merge  body { sessionId } -> ProjectOverseerInfo (merge a coding session's branch into its target)
- * POST   /api/projects/:pid/overseer/worktrees/remove body { sessionId } -> ProjectOverseerInfo (remove its worktree; the branch too once merged)
+ * POST   /api/projects/:pid/overseer/worktrees/merge  body { sessionId } -> ProjectWorktrees (merge a coding session's branch into its target)
+ * POST   /api/projects/:pid/overseer/worktrees/remove body { sessionId } -> ProjectWorktrees (remove its worktree; the branch too once merged)
  */
 
 import type { GatheringAbilities } from "./baton";
+import type { PowersPatch, PowersView, StoredPowers } from "./powers";
 
 /** `customType` of the marker a project overseer's file carries (data `ProjectOverseerMarkerData`). */
 export const PROJECT_OVERSEER_ENTRY = "sova-project-overseer";
@@ -235,7 +239,10 @@ export const codingModeWords = (m: Pick<ProjectCodingMode, "mode" | "minorModes"
 
 export interface ProjectOverseerSettings {
   version: 1;
+  /** Always the never-looser level derived from `powers.overseer` (for an older Sova that reads only the level). */
   autonomy: Autonomy;
+  /** What may happen without the operator (shared/powers.ts, §app.project-overseer/autonomy-levels). */
+  powers: StoredPowers;
   /** "provider/model"; null = the new-session default. */
   model: string | null;
   thinking: string | null;
@@ -260,14 +267,34 @@ export interface ProjectOverseerSettings {
   /** An act that reaches a person or the client's code waits this many minutes in its hold, where
       the operator (Needs you) or the overseer may cancel it (0–1440; 0 = no hold). */
   holdMin: number;
-  /** The act kinds that, held, wait for the overseer's confirmation (CONFIRM_KINDS; default all). */
-  confirmKinds: ConfirmKind[];
+  /** Gone (al_3 q2): read and ignored, never written. Kept optional so older readers' shapes still type. */
+  confirmKinds?: ConfirmKind[];
   extraSystemPrompt: string;
+  /** Its memory switch, written only by PUT …/overseer/memory.
+      Absent = no choice made: on, UniiChat at 128 KB. */
+  memory?: { on: boolean; type: "uniichat" | "zoomable"; size: number };
 }
 
-export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "gatheringModel" | "gatheringThinking" | "gatheringAbilities" | "watchGapMin" | "soonLookSec" | "watch" | "holdMin" | "confirmKinds" | "extraSystemPrompt">> & {
-  caps?: Partial<ProjectOverseerCaps>;
-};
+export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "model" | "thinking" | "codingModel" | "codingThinking" | "gatheringModel" | "gatheringThinking" | "gatheringAbilities" | "watchGapMin" | "soonLookSec" | "watch" | "holdMin" | "extraSystemPrompt">> &
+  PowersPatch & {
+    caps?: Partial<ProjectOverseerCaps>;
+    /** One release only: the overseer column becomes the carry-over of this level, and the attach pause ends. */
+    autonomy?: Autonomy;
+    /** One release only: accepted and ignored (the confirmation checklist is gone). */
+    confirmKinds?: unknown;
+  };
+
+/** Every field PATCH …/overseer reads (the settings reference covers each; a field missing here fails typecheck). */
+export const PO_PATCH_FIELDS = [
+  "model", "thinking", "codingModel", "codingThinking", "gatheringModel", "gatheringThinking", "gatheringAbilities",
+  "watchGapMin", "soonLookSec", "watch", "holdMin", "extraSystemPrompt", "powers", "resume", "powersNoteSeen", "assistantModels",
+  "caps", "autonomy", "confirmKinds",
+] as const satisfies readonly (keyof ProjectOverseerPatch)[];
+type _PatchFieldsCovered = Exclude<keyof ProjectOverseerPatch, (typeof PO_PATCH_FIELDS)[number]>;
+export const PO_PATCH_FIELDS_COVERED: [_PatchFieldsCovered] extends [never] ? true : _PatchFieldsCovered = true;
+
+/** The settings as GET answers them: `powers` is the view, not the stored shape. */
+export type ProjectOverseerSettingsView = Omit<ProjectOverseerSettings, "powers"> & { powers: PowersView };
 
 /** How the last unattended run went; `started` means it is running now. */
 export type LastRunOutcome = "started" | "finished" | "stopped" | "cut-off" | "skipped";
@@ -282,16 +309,17 @@ export interface ProjectOverseerInfo {
   id: string | null;
   /** Earlier conversations, newest first (read-only). */
   history: { id: string; path: string; title: string; lastActiveAt: string }[];
-  settings: ProjectOverseerSettings;
+  /** As saved, but `powers` is the view (PowersView): both columns as set and after the brake, the brake, the one-time note. */
+  settings: ProjectOverseerSettingsView;
   /** What a coding session started now gets: this computer's default mode and subagent profile. */
   codingModeNow: CodingModeNow;
   /** What a gathering session started now gets (`settings.gatheringAbilities`, or Automatic). */
   gatheringAbilitiesNow: GatheringAbilities;
-  /** Coding sessions run in their own git worktree and branch when the project root is in a git
-      repository; `reason` (a tail: "it isn't a Git repository.") says why not: they then run in the
-      root itself. `sessions`: every coding session the project started, newest first. */
-  worktrees: { available: boolean; reason?: string; sessions: CodingWorktree[] };
-  /** The level in force now: `settings.autonomy`, or L0 with a reason ("The roster has no active people yet."). */
+  /** Every coding session the project started, newest first, as the project records it: no git
+      read (§app.project-overseer/coding-worktrees, Read in two steps). Git's facts are
+      `GET …/overseer/worktrees` (ProjectWorktrees), merged in by `sessionId`. */
+  coding: CodingSession[];
+  /** For older clients, one release: the level derived from the overseer column after the brake, and the brake's reason. */
   effective: { autonomy: Autonomy; reason?: string };
   /** When an attach on this host paused it at L0 (ISO): unattended runs wait and the level in force
       is L0 until the operator sets its level here. Null or absent: not paused. */
@@ -326,8 +354,19 @@ export interface StartedSession {
   /** Baton state for gathering/offer; "idle" | "working" for coding. */
   state: string;
   createdAt: string;
-  /** A coding session's own worktree branch, when it has one. */
+  /** A coding session's own worktree branch, when it has one (as recorded: no git read). */
   worktree?: { branch: string; state: CodingWorktree["state"] };
+}
+
+/** GET …/overseer/worktrees: the coding sessions with git's facts (the page's second, slower read). */
+export interface ProjectWorktrees {
+  /** Coding sessions run in their own git worktree and branch when the project root is in a git
+      repository; `reason` (a tail: "it isn't a Git repository.") says why not: they then run in the
+      root itself. */
+  available: boolean;
+  reason?: string;
+  /** Every coding session the project started, newest first. */
+  sessions: CodingWorktree[];
 }
 
 /**
@@ -335,7 +374,7 @@ export interface StartedSession {
  * worktree (§app.project-overseer/coding-worktrees), or the reason it runs in the project root.
  * `worktree` is a path on the host that started it (host-local); the branch is in the client repo.
  */
-export interface CodingWorktree {
+export interface CodingSession {
   sessionId: string;
   /** The session file on this host, for #/s/<path>; null when it is not here (on another host: no gesture acts on it). */
   path: string | null;
@@ -351,12 +390,24 @@ export interface CodingWorktree {
   inRoot?: string;
   /** Started with `worktree: "later"` and has no worktree yet: "In the project root until it makes a worktree." */
   later?: true;
-  /** The worktree's top level when it exists on this host. */
-  worktree: string | null;
   /** The commit it was cut from. */
   base: string | null;
   /** The branch it merges into (the root's branch when it was cut). */
   target: string | null;
+  /** The last Merge Branch (history: a branch merged once may have new commits since). */
+  mergedAt?: string;
+  removedAt?: string;
+  /** The session itself is working. */
+  running: boolean;
+  /** Its workers running now. */
+  workers: number;
+  createdAt: string;
+}
+
+/** A coding session with git's facts about its worktree and branch (ProjectWorktrees). */
+export interface CodingWorktree extends CodingSession {
+  /** The worktree's top level when it exists on this host. */
+  worktree: string | null;
   /** open: its folder is here, not merged; merged: its branch is in target (by Merge Branch or by hand);
       removed: Remove Worktree ran; missing: its folder is gone otherwise; root: it runs in the project root. */
   state: "open" | "merged" | "removed" | "missing" | "root";
@@ -365,20 +416,12 @@ export interface CodingWorktree {
   merged: boolean;
   /** True when the branch no longer exists (deleted with a merged worktree, or by hand): nothing left to merge. Absent otherwise. */
   branchGone?: boolean;
-  /** The last Merge Branch (history: a branch merged once may have new commits since). */
-  mergedAt?: string;
   /** Merged before and not merged now: its commits that target lacks. Absent otherwise. */
   newSinceMerge?: number;
-  removedAt?: string;
   /** Commits on the branch beyond base. */
   ahead: number;
   /** Uncommitted changes in the worktree. */
   dirty: boolean;
-  /** The session itself is working. */
-  running: boolean;
-  /** Its workers running now. */
-  workers: number;
-  createdAt: string;
   /** Git could not be read. */
   error?: string;
 }

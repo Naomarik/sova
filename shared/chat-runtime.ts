@@ -20,7 +20,10 @@ import type {
   HeldChatState,
   MemoryOpen,
   MemoryOutline,
+  ModeCommandOutcome,
   ModeInfo,
+  ProjectModeApproval,
+  ProjectModeApprovalNeeded,
   OverseerMemoryInfo,
   SandboxApplyResult,
   SandboxInfo,
@@ -56,7 +59,7 @@ export function unsentRefusal(msg: ChatClientMessage): { type: "error"; code: "r
 }
 
 /** The loadouts a chat may be opened with besides an ordinary one. */
-export type ChatSpecialKind = "overseer" | "baton" | "project-overseer";
+export type ChatSpecialKind = "overseer" | "baton" | "project-overseer" | "project-assistant";
 
 /** One extension dialog of a chat that waits on an answer (a browser is attached). */
 export interface ChatDialogInfo {
@@ -90,6 +93,10 @@ export interface ChatModePatch {
   minorModes?: ModeState["minorModes"];
   strict?: ModeState["strict"];
   memory?: Partial<ChatMemoryChoice>;
+  /** The chat's project minor modes, whole on set (server/mode-state.ts ModePatch). */
+  projectModes?: string[];
+  approve?: ProjectModeApproval[];
+  approvedBy?: "overseer" | "user" | "caller";
 }
 
 /**
@@ -102,6 +109,9 @@ export interface ChatStateMirror {
   /** The session's id (its file header's). */
   sessionId: string;
   cwd: string;
+  /** The chat runs in the home folder because its stored local folder is gone (§app.shell/missing-folder-home);
+      null (or absent, from an older chat process) when it runs in its own folder. */
+  cwdFallback?: { original: string; cwd: string } | null;
   /** Closed for good: archived, reloaded, the server stopping. A closed chat takes no command. */
   closed: boolean;
   special: ChatSpecialKind | null;
@@ -291,9 +301,18 @@ export interface ChatMethods {
   /** Resolves to the effective level. */
   setThinking: { args: { level: string; save?: boolean }; result: string };
   findModel: { args: { ref: string }; result: { ok: true } | { ok: false; error: string } };
-  switchMode: { args: { patch: ChatModePatch }; result: ChatModeResult };
+  /** A project mode turn-on that needs approval switches nothing and answers the chat's mode as it is plus
+      `error` and `needsApproval` (ProjectModeApprovalNeeded). */
+  switchMode: { args: { patch: ChatModePatch }; result: ChatModeResult & Partial<ProjectModeApprovalNeeded> };
   /** Merge `patch` into the chat's mode and apply it (the /mode handler, no prompt). */
   applyMode: { args: { patch: ChatModePatch }; result: "skip" | "unsupported" | "command" };
+  /** Your approval of project modes' hooks (POST /api/mode?path= { approveHooks }); a stale hash answers like
+      switchMode's needsApproval. */
+  approveHooks: { args: { approvals: ProjectModeApproval[] }; result: ChatModeResult & Partial<ProjectModeApprovalNeeded> };
+  /** Run a command of a project mode on in the chat (POST /api/mode/command). */
+  runModeCommand: { args: { mode: string; name: string; args?: unknown }; result: ModeCommandOutcome };
+  /** The chat's mode with its project rows read now (GET /api/mode?path=). */
+  modeResult: { args: Record<string, never>; result: ChatModeResult };
   pinMode: { args: Record<string, never>; result: boolean };
   saveModeDefault: { args: Record<string, never>; result: ModeInfo };
   subagentProfileInfo: { args: Record<string, never>; result: SubagentProfilesInfo };
@@ -304,7 +323,7 @@ export interface ChatMethods {
   /** Append a state record of a registered kind, whatever the run is doing. */
   appendState: { args: { kind: string; data: unknown }; result: string };
   /** A note entry of `noteType` (its custom type), between turns only. */
-  appendNote: { args: { noteType: string; text: string }; result: boolean };
+  appendNote: { args: { noteType: string; text: string; details?: unknown }; result: boolean };
   writeProfile: { args: { data: ProfileEntryData }; result: null };
   writeLoadout: { args: { data: ChatLoadoutChoice }; result: null };
   flushDeferredAppends: { args: Record<string, never>; result: null };
@@ -340,7 +359,7 @@ export interface ChatMethods {
     result: { state: "unavailable" } | { state: "no-engine" } | { state: "ok"; open: MemoryOpen } | { state: "refused"; error: string };
   };
   memoryStatus: { args: Record<string, never>; result: OverseerMemoryInfo["status"] };
-  /** The Overseer's memory setting changed (overseer.json): turned on now, or changed otherwise. */
+  /** An overseer's memory setting changed (its overseer.json): turned on now, or changed otherwise. */
   memorySettingsChanged: { args: { turnedOn: boolean }; result: null };
   resumeWorker: { args: { id: string }; result: { ok: true } | { ok: false; status: 404 | 409; error: string } };
   workerInfo: { args: { id: string }; result: WorkerInfo | null };
@@ -403,7 +422,7 @@ export type ChatClientFrame =
 export interface SpecialSpec {
   kind: ChatSpecialKind;
   /** The inline extension's name, unchanged. */
-  extension: "sova-overseer" | "sova-project-overseer" | "sova-baton";
+  extension: "sova-overseer" | "sova-project-overseer" | "sova-baton" | "sova-project-assistant";
   /** The folder the chat runs in on this host, or null: the header's. */
   cwd: string | null;
   /** Served, registered by the extension, in loadout order. */
@@ -427,9 +446,15 @@ export interface SpecialSpec {
   model: string | null;
   thinking: string | null;
   memory?: true;
+  /** The file whose `memory` is this loadout's own memory switch (a project overseer's overseer.json),
+      read at each of its turns; absent = the Overseer's own (the state root's). */
+  memorySettings?: string;
   attribution?: true;
   background?: true;
   replyText?: true;
+  /** A run that settles with a `vis` block that can't be drawn gets the hidden retry note
+      (§chat.markdown/visuals, server/vis-check.ts), as an ordinary chat with vis on does. */
+  visRetry?: true;
   /** The usage kind the chat's requests are noted under (the Overseer, a project overseer). */
   usage?: "overseer";
   /** The hooks the server answers besides runStart (always installed). */

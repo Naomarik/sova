@@ -1,44 +1,24 @@
-import { For, type JSX, Show } from "solid-js";
-import { setThemePick, THEME_PICKS, themePick, type ThemePick } from "./theme";
+import { Show } from "solid-js";
+import { resolvedTheme, toggleTheme } from "./theme";
 
 /**
  * Sova's mark and name, small, at the top of the owner page (§app.owner-page/content, Its frame), with the theme
- * switch beside them (§app.owner-page/page). The operator's preview draws the mark without the switch: a pick there
- * would change the operator's own app.
+ * toggle on the same row, to their right (§app.owner-page/page). The operator's preview draws the mark without the
+ * toggle: a pick there would change the operator's own app.
  */
 
-const LABEL: Record<ThemePick, string> = { system: "System", light: "Light", dark: "Dark" };
-
-/** Each pick's icon (24 grid, 1.5 stroke, round caps, as the design system's): a screen, a sun, a moon. */
-const ICON: Record<ThemePick, () => JSX.Element> = {
-  system: () => (
-    <>
-      <rect x="3" y="4" width="18" height="12" rx="2" />
-      <path d="M8 20h8M12 16v4" />
-    </>
-  ),
-  light: () => (
-    <>
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4" />
-    </>
-  ),
-  dark: () => <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />,
-};
-
-export function ThemeSwitch() {
+/** One button; its icon shows the action (24 grid, 1.5 stroke, round caps, as the design system's): a sun while dark, a moon while light. */
+export function ThemeToggle() {
+  const label = () => (resolvedTheme() === "dark" ? "Switch to light theme" : "Switch to dark theme");
   return (
-    <div class="share-theme" role="group" aria-label="Theme">
-      <For each={THEME_PICKS}>
-        {(p) => (
-          <button type="button" class="button button-icon button-ghost share-theme-pick" aria-pressed={themePick() === p ? "true" : "false"} aria-label={LABEL[p]} title={LABEL[p]} onClick={() => setThemePick(p)}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              {ICON[p]()}
-            </svg>
-          </button>
-        )}
-      </For>
-    </div>
+    <button type="button" class="button button-icon button-ghost share-theme-toggle" aria-label={label()} title={label()} onClick={toggleTheme}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <Show when={resolvedTheme() === "dark"} fallback={<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />}>
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4" />
+        </Show>
+      </svg>
+    </button>
   );
 }
 
@@ -50,7 +30,7 @@ export function ShareBrand(props: { themeSwitch?: boolean; class?: string }) {
         Sova
       </span>
       <Show when={props.themeSwitch}>
-        <ThemeSwitch />
+        <ThemeToggle />
       </Show>
     </div>
   );

@@ -54,6 +54,8 @@ import {
   queuedText,
   runDetail,
   seedLive,
+  offersRemove,
+  liveInputCount,
   takeBackQueued,
   unsentRows,
   type LiveEvent,
@@ -61,6 +63,7 @@ import {
   type LiveUserState,
 } from "../lib/live";
 import { appendItems } from "../lib/explain";
+import { sendFrame } from "../lib/send-frame";
 import { codeFailure, codeView, type CodeControl, type CodeView } from "../lib/code-state";
 import { isObj, str } from "../lib/message";
 import { ensureModelPolicy, modelEnabled, modelPolicy } from "../lib/model-policy";
@@ -132,6 +135,7 @@ import { noteLinks } from "../lib/links-live";
 import { jumpToEntry, jumpWhenArrived, landExplainJump, transcriptRoot } from "../lib/jump";
 import { ownInputTotal, keptBehind, lastInput as lastInputOf, newestOnly, newRows, withHave } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
+import { liveTourCalls } from "../lib/tour-rows";
 import { alignRowFromDetails, foldAlignRows, isOpenDoc, openCount, recommendedOption, type AlignEntry } from "../lib/align";
 import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
@@ -290,7 +294,9 @@ export function ChatView(props: {
   const inputCount = () => {
     const list = items();
     const o = older() ?? keptOlder(cached, list);
-    return o ? ownInputTotal(list ?? [], o) : null;
+    // Plus the messages you typed that the running turn has already put on the branch (a steer as it
+    // lands); the settle that brings them into `items` empties `live` in the same update, so none counts twice.
+    return o ? ownInputTotal(list ?? [], o) + liveInputCount(live) : null;
   };
   /** The last hello's first row: rows that arrive above it are history, never "N new". */
   const [newFrom, setNewFrom] = createSignal<string | null>(null);
@@ -345,6 +351,8 @@ export function ChatView(props: {
   const cards = createMemo(() => cardFold(items() ?? [], liveCards(), older()?.summary.cards ?? []));
   /** Cards this run changed: their settled rows read as one line until the refetch. */
   const liveCardIds = createMemo(() => new Set([...cards().cards.keys()].filter((id) => !cards().newest.has(id))));
+  /** Tours this run finished a call for: their settled card reads as a line until the refetch (§app.tours/one-card). */
+  const liveTourIds = createMemo(() => new Set(liveTourCalls(live.tools).keys()));
   /** What a click on each card sent, until the turn it started settles (the card shows "Sent: b"). */
   const [cardSent, setCardSent] = createSignal<Record<string, string>>({});
   const jumpToCard = (card: OverseerCard) => {
@@ -1575,14 +1583,16 @@ export function ChatView(props: {
   /** A message of ours that hasn't been delivered: one Remove, by the id the server knows it by.
       A row with no id (sent before this build, or by a client that minted none) offers nothing —
       there is no truthful way to name it to the server. */
-  const queueActions = (row: { id?: string; state: LiveUserState; text: string }): MessageActionItem[] => {
+  const queueActions = (row: { id?: string; state: LiveUserState; text: string; handed?: boolean }): MessageActionItem[] => {
     const id = row.id;
-    if (!id) return [];
+    // Only a row the server holds (Queued) has one (§chat.transcript/a-queued-message): a Sending… row
+    // draws none, before the server's answer or once handed to the agent (Stop takes that back).
+    if (!id || !offersRemove(row)) return [];
     return [
       {
         kind: "remove",
         label: ACTION_LABEL.remove,
-        reason: queueRemoveReason({ state: row.state, pending: removing().includes(id), chat: true, sharedQueue: sharedQueue().includes(id) }),
+        reason: queueRemoveReason({ state: "queued", pending: removing().includes(id), chat: true, sharedQueue: sharedQueue().includes(id) }),
         run: () => removeQueued(id),
       },
     ];
@@ -1958,11 +1968,13 @@ export function ChatView(props: {
   // outside a workspace has nobody to tell — the prop is simply absent there.
   createEffect(() => props.onTurnError?.(turnError()));
 
-  /** `confirm`: the Overseer's confirm card click (that card's tool call id); never set by typing. */
-  /** A chat closed while quiet (§chat.transcript/instant-open) takes the message the same way: it
+  /** `running`: a reply runs, as this tab sees it. `confirm`: the Overseer's confirm card click (that
+      card's tool call id); never set by typing. `typed`: the composer's own message, always a steer
+      (sendFrame), so a quick second message lands with the first even before this tab sees the run.
+      A chat closed while quiet (§chat.transcript/instant-open) takes the message the same way: it
       shows now and goes to the server on the connection that wakes the chat, as it opens
       (§chat.transcript/send-while-starting). A model turned off is said before waking anything. */
-  const send = (text: string, steer: boolean, attachments: UploadResult[], confirm?: string): boolean => {
+  const send = (text: string, running: boolean, attachments: UploadResult[], confirm?: string, typed = false): boolean => {
     // A model turned off in Settings → Models is refused by the server on its way to the provider
     // (server/model-policy.ts). Saying so here keeps the message in the composer instead of
     // spending it on a refusal, and never picks another model for you.
@@ -1977,11 +1989,11 @@ export function ChatView(props: {
     // are still two messages — which is what makes removing the middle one of three possible.
     // "/compact [instructions]" is Sova's builtin: a request with its own answer, not a message.
     const compact = compactCommand(text);
-    if (compact) return sendCompact(text, compact.instructions, steer, attachments.length > 0);
+    if (compact) return sendCompact(text, compact.instructions, running, attachments.length > 0);
     const clientId = newClientId();
-    const frame = steer ? { type: "steer", text, clientId } : { type: "prompt", text, clientId, ...(confirm ? { confirm } : {}) };
+    const frame = sendFrame(text, clientId, { typed, ...(confirm ? { confirm } : {}) });
     // A click is known as one wherever it is handed back (lib/hand-back).
-    if (confirm && !steer) clicks.note(clientId, confirm, text);
+    if (confirm && frame.type === "prompt") clicks.note(clientId, confirm, text);
     if (holding()) hold(frame);
     else {
       if (!socket.send(frame)) return false;
@@ -2316,6 +2328,7 @@ export function ChatView(props: {
                 older={olderRows.api}
                 liveAlignIds={liveAlignIds()}
                 liveCardIds={liveCardIds()}
+                liveTourIds={liveTourIds()}
               />
               <LiveEntries
                 live={live}
@@ -2480,7 +2493,7 @@ export function ChatView(props: {
         sandbox={sandboxControl}
         onPlaybooks={() => setShowPlaybooks(true)}
         undo={undoControl}
-        onSend={send}
+        onSend={(text, running, attachments) => send(text, running, attachments, undefined, true)}
         picks={composerPicks()}
         onDraft={setHasDraft}
         onAbort={abort}

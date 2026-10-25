@@ -5,7 +5,7 @@ import { rowFacts } from "../../shared/wire-v1";
 import type { BatonMark } from "../../shared/baton";
 import { wrapupRowIds } from "../lib/wrapup-rows";
 import { readHoldTop } from "../lib/read-hold";
-import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState } from "../lib/live";
+import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState, shownUserState } from "../lib/live";
 import { agoTime, modelLabel, modelMismatch, prettyJson, stampTime, thousands, tildePath } from "../lib/format";
 import { useMinuteNow } from "../lib/minute-clock";
 import { isObj, resultDetails as detailsOf, str, toolCallArgs, toolResultView } from "../lib/message";
@@ -49,6 +49,7 @@ import { WorktreeMergeCard } from "./WorktreeMergeCard";
 import { OwnerRequestNote } from "./OwnerRequestNote";
 import { ShowChangesCard } from "./ChangesViewer";
 import { TourCard } from "./TourCard";
+import { liveTourCalls, newestTourRows, tourFold, tourLine } from "../lib/tour-rows";
 import { normalizeTourCardDetails, TOUR_TOOLS } from "../../shared/tour";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { rowProvider } from "../lib/subagent-limit";
@@ -574,6 +575,9 @@ export function HistoryItems(props: {
   /** Cards this streaming run already changed: their settled rows read as one line until the
       refetch brings the new snapshot (§app.overseer/confirm). */
   liveCardIds?: ReadonlySet<string>;
+  /** Tours this streaming run already finished a call for: their settled card reads as a line until
+      the refetch, since the live call draws the card (§app.tours/one-card). */
+  liveTourIds?: ReadonlySet<string>;
 }) {
   /**
    * The items the thread may render: the settings-change rows are dropped before anything else,
@@ -616,9 +620,16 @@ export function HistoryItems(props: {
     const d = r && !toolResultView(r).isError ? detailsOf(r) : undefined;
     return isSettingsToolDetails(d) && (d.card || d.appliedNow.length) ? d : undefined;
   };
-  const tourOf = (callId: string | undefined) => {
-    const r = callId ? results().get(callId) : undefined;
-    return r && !toolResultView(r).isError ? normalizeTourCardDetails(detailsOf(r)) : undefined;
+  /** Each successful tour call's card, and which call draws it: the newest of its tour (§app.tours/one-card). */
+  const tours = createMemo(() => tourFold(props.items));
+  const tourCards = createMemo(() => newestTourRows(props.items, props.liveTourIds));
+  /** The full card, for the call that draws it. */
+  const tourCardOf = (item: TranscriptItem) => (tourCards().has(item.id) ? tours().rows.get(item.id) : undefined);
+  /** An earlier call's one line: what it reported then, as its row carries it. */
+  const tourEarlier = (item: TranscriptItem): string | undefined => {
+    const d = tours().rows.get(item.id);
+    if (!d || tourCards().has(item.id)) return undefined;
+    return (item.toolCallId ? results().get(item.toolCallId)?.tool?.output : undefined) || tourLine(d);
   };
   const calls = createMemo(() => {
     const ids = new Set<string>();
@@ -653,6 +664,8 @@ export function HistoryItems(props: {
     if (it.text === SHOW_CHANGES_TOOL) return !!showChangesOf(it.toolCallId);
     if (it.text === OFFER_TOOL) return !!offerOf(it.toolCallId);
     if (it.text === SETTINGS_TOOL) return !!settingsOf(it.toolCallId);
+    // Every tour call breaks the timeline (§chat.transcript/work-chain): its card, an earlier
+    // call's one line (§app.tours/one-card) and a failure row alike stay outside compressed groups.
     if (TOUR_TOOLS.has(it.text ?? "")) return true;
     return cardRow(it) !== undefined || CARD_RENDER_NAMES.has(it.text ?? "");
   };
@@ -989,7 +1002,7 @@ export function HistoryItems(props: {
               </Match>
               {/* A show_changes result whose details check out reads as a card that opens the
                   changes viewer (§chat.changes/show-changes-card); anything else, a tool card. */}
-              <Match when={item.kind === "tool-call" && TOUR_TOOLS.has(item.text ?? "") && tourOf(item.toolCallId)}>
+              <Match when={item.kind === "tool-call" && tourCardOf(item)}>
                 {(details) => <TourCard details={details()} />}
               </Match>
               <Match when={item.kind === "tool-call" && item.text === SHOW_CHANGES_TOOL && showChangesOf(item.toolCallId)}>
@@ -1055,7 +1068,7 @@ export function HistoryItems(props: {
                     <ToolCard
                       name={item.text ?? "tool"}
                       args={toolCallArgs(item)}
-                      summary={item.tool?.summary}
+                      summary={tourEarlier(item) ?? item.tool?.summary}
                       stats={(item.text === "edit" || item.text === "write") && item.toolCallId ? results().get(item.toolCallId)?.tool?.stats : undefined}
                       calls={item.toolCallId ? results().get(item.toolCallId)?.tool?.calls : undefined}
                       lazy={lazy()}
@@ -1174,7 +1187,16 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
           const aligned = () => (b().name === "align" && status() === "done" ? alignRowFromDetails(tool()?.details) : undefined);
           /** A show_changes result: its card, as soon as the call finishes (§chat.changes/show-changes-card). */
           const changes = () => (b().name === SHOW_CHANGES_TOOL && status() === "done" ? normalizeShowChangesDetails(tool()?.details) : undefined);
-          const tour = () => (TOUR_TOOLS.has(b().name) && status() === "done" ? normalizeTourCardDetails(tool()?.details) : undefined);
+          const tourDone = () => (TOUR_TOOLS.has(b().name) && status() === "done" ? normalizeTourCardDetails(tool()?.details) : undefined);
+          /** The card only on this run's newest call for its tour; an earlier one reads as its line (§app.tours/one-card). */
+          const tour = () => {
+            const d = tourDone();
+            return d && liveTourCalls(props.live.tools).get(d.tourId) === b().id ? d : undefined;
+          };
+          const tourEarlier = () => {
+            const d = tourDone();
+            return d && !tour() ? tourLine(d) : undefined;
+          };
           const offer = () => (b().name === OFFER_TOOL && status() === "done" ? normalizeOfferDetails(tool()?.details) : undefined);
           const settingsCard = () => {
             const d = b().name === SETTINGS_TOOL && status() === "done" ? tool()?.details : undefined;
@@ -1199,6 +1221,7 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
                   fallback={
                     <ToolCard
                       name={b().name}
+                      summary={tourEarlier()}
                       args={b().args ?? tool()?.args}
                       argsText={b().argsText}
                       details={tool()?.details}
@@ -1239,7 +1262,7 @@ export function LiveEntries(props: {
   /** What a message of ours that hasn't been delivered offers — one Remove, from the chat. A row
       the server has already taken (`delivered`) is never asked: nothing can be recalled then, and
       a disabled Remove under every message you ever sent is an affordance that lies. */
-  queueActions?: (row: { id?: string; state: LiveUserState; text: string }) => MessageActionItem[];
+  queueActions?: (row: { id?: string; state: LiveUserState; text: string; handed?: boolean }) => MessageActionItem[];
 }) {
   const hide = () => ({ tools: !!props.hideTools, thinking: !!props.hideThinking });
   const shows = (b: LiveBlock | undefined) => !!b && !isHiddenBlock(b, hide()) && (!compressWork() || b.type !== "text" || !!b.text);
@@ -1335,7 +1358,7 @@ export function LiveEntries(props: {
                     <div class="message-actions-host">
                       <UserTurn
                         text={e().attachments ? stripPastedPaths(e().text) : e().text}
-                        state={e().state}
+                        state={shownUserState(e())}
                         origin={e().origin}
                         overseer={e().overseer}
                         fromSession={e().fromSession}

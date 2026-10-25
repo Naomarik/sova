@@ -94,7 +94,8 @@ export type WorkerFeedFrame =
 	| { t: "state"; cursor: WorkerCursor; state: WorkerState }
 	/** A wire-1 pi event (pi's rpc toJsonEvent shape), one of WORKER_FEED_EVENTS; an `agent_settled`
 	    carries `settleKey`, the key its WorkerState.lastSettled will have, and `settleEntryId`, its
-	    lastSettled.entryId, when known. */
+	    lastSettled.entryId, when known. A keyed feed (WorkerState.keys) adds `sendKey` to user messages
+	    and sends `send_dropped`. */
 	| { t: "event"; cursor: WorkerCursor; event: unknown }
 	/** Resync: read the file, then wait for `state`. */
 	| { t: "gap" }
@@ -117,6 +118,11 @@ export interface WorkerState {
 	    id of its final assistant message when known, its outcome, error. */
 	lastSettled: { key: string; entryId?: string; outcome: "success" | "error" | "aborted"; error?: string } | null;
 	queue: { steering: string[]; followUp: string[] };
+	/** Its process's feed names the send key of each user message (`sendKey` on its message_start and
+	    message_end) and tells a keyed send whose message never ran (`{type: "send_dropped", sendKey}`,
+	    before the settle of the run it would have joined). Absent: a worker on code from before keys
+	    (or no process now): the parent correlates as it did before. */
+	keys?: true;
 }
 
 /** The pi event types a worker chat feeds its parent (the set the worker fold consumes). `message_update`

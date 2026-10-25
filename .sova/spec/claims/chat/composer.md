@@ -174,11 +174,19 @@ are kept, and what the foot and its model indicator show.
     body line height, so it stays centred in the box.
   - Empty or whitespace-only text doesn't send, and Send is `aria-disabled` with no reason text,
     because the reason is obvious.
-- **Send.** Sends `{type:"prompt"}`. Clear the textarea only after the socket accepts the message.
+- **Send.** Sends `{type:"steer"}`, as every message typed here does, whether or not a reply runs:
+  idle, the server starts a turn with it exactly as with a prompt (the same checks, the same holds
+  while a turn is starting or a compaction runs, the message marked as yours); busy, it is a steer,
+  even when this pane hasn't seen the reply start yet (a quick second message). Only sends that are
+  not typed here stay `{type:"prompt"}`, a follow-up mid-turn: a playbook (§chat/playbooks), a quick
+  action, a review button and a card's confirm click. `/compact` is still Sova's own request, never a
+  message. Clear the textarea only after the socket accepts the message.
   Show the user bubble optimistically and resume auto-follow.
-- **While streaming.** Send stays available and its label changes to `Steer`, which sends
-  `{type:"steer"}`. The placeholder becomes "Steer the current turn…" (plus the key hint when Enter
-  sends, see Keys). `Stop`
+- **While streaming.** Send stays available and its label changes to `Steer`. Steers sent while
+  the turn runs land together: each reaches the agent at its next step, in the order sent, each its
+  own message, and the one reply after them answers them all (§chat.transcript/a-queued-message).
+  The placeholder becomes "Steer the current turn…" (plus the key hint when Enter sends, see Keys).
+  `Stop`
   (`.button-destructive`, outlined, never filled, one word so the button stays narrow) sends
   `{type:"abort"}`. Show it only while streaming, after Steer. `Esc` does **not** abort, to prevent
   accidental stops. While a dictation is recording, `Esc` cancels the recording and nothing else

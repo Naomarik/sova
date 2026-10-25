@@ -5,7 +5,7 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P27 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P28 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
@@ -18,6 +18,10 @@ import { STANDIN_FILTER } from "./headless.ts";
 import { packageFrom, patchResolve } from "./own-code.ts";
 import { hearRequests } from "./session.ts";
 import { ScriptedModel } from "./testing/scripted-model.ts";
+import { PiHarnessSession } from "./session.ts";
+import { SendKeys } from "../../send-keys.ts";
+import { WebQueue } from "../../queue.ts";
+import { steerAllAtOnce } from "./queue-modes.ts";
 
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-pi-contract-")));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -93,6 +97,8 @@ interface QuirkSessionOptions {
   /** The faux model id to build with; null leaves the choice to the SDK. Default faux-1. */
   model?: string | null;
   settings?: Record<string, unknown>;
+  /** A settings manager of the test's own (instead of an in-memory one from `settings`). */
+  settingsManager?: unknown;
   /** Inline extensions, and extension files loaded by path. */
   extensions?: ((api: any) => void)[];
   extensionPaths?: string[];
@@ -109,7 +115,7 @@ async function quirkSession(o: QuirkSessionOptions = {}) {
   const runtime = await fauxRuntime();
   const cwd = join(dir, `cwd-${Math.random().toString(36).slice(2)}`);
   mkdirSync(cwd, { recursive: true });
-  const settingsManager = SettingsManager.inMemory({ cacheWarming: "off", retry: { enabled: false }, compaction: { keepRecentTokens: 1 }, ...o.settings } as never);
+  const settingsManager = (o.settingsManager as never) ?? SettingsManager.inMemory({ cacheWarming: "off", retry: { enabled: false }, compaction: { keepRecentTokens: 1 }, ...o.settings } as never);
   const resourceLoader = new DefaultResourceLoader({
     cwd,
     agentDir: dir,
@@ -376,6 +382,54 @@ describe("pi contract", () => {
     assert.deepEqual(order, ["agent_end", "resolved", "agent_end"], "fixed: the prompt is no longer deferred (or no longer resolves at once)");
     assert.equal(lastUser(model.calls[1]!), "deferred");
     session.dispose();
+
+    // What Sova builds on it (§app.chat-processes/worker-instructions): a deferred prompt runs outside the
+    // async context of the call that made it, so a keyed send labels nothing there (send-keys.ts); a keyed
+    // item handed off from the queue during agent_settled waits the window out (queue.ts `settling`) and
+    // its delivered user message carries exactly that key, once.
+    const two = await quirkSession();
+    const harness = new PiHarnessSession({ session: two.session } as never);
+    const keys = new SendKeys();
+    keys.watch(harness);
+    let fired = false;
+    const queue = new WebQueue({
+      sdk: { hasQueued: () => harness.queue.hasQueued(), mirrorTotal: () => harness.queue.mirrorTotal(), mirrorFor: (k) => harness.queue.mirrorFor(k), mirrorHas: (k, t) => harness.queue.mirrorHas(k, t) },
+      streaming: () => harness.isRunning(),
+      settling: () => harness.inSettleWindow(),
+      clearSdkQueue: () => harness.queue.clear(),
+      guard() {},
+      wake() {},
+      // As ChatSession.handOffQueued: the SDK call inside the key's send; an idle one starts a turn, not awaited.
+      handOff: async (item, streaming) => {
+        const turn = keys.run(item.key, () => harness.send(item.text, streaming ? { delivery: item.kind } : undefined));
+        if (streaming) await turn;
+        else void turn.catch(() => {});
+      },
+      onGone() {},
+      onChange() {},
+      onHandOffError() {},
+    });
+    let unkeyedTwin: Promise<void> | undefined;
+    two.session.subscribe((e: any) => {
+      if (e.type !== "agent_settled" || fired) return;
+      fired = true;
+      // The control: a keyed send made straight into the window (no queue) is deferred and labels nothing.
+      unkeyedTwin = keys.run("w:direct", () => harness.send("direct in the window"));
+      queue.enqueue({ kind: "followUp", text: "keyed in the window", origin: "server", id: "q1", key: "w:s1" });
+    });
+    await two.session.prompt("first");
+    await until(() => two.model.calls.length >= 3, "the deferred and the held turns");
+    await unkeyedTwin;
+    await two.session.waitForIdle?.();
+    const userStarts = two.events.filter((e) => e.type === "message_start" && e.message?.role === "user");
+    const keyedOnes = userStarts.filter((e) => keys.keyOf(e.message) === "w:s1");
+    assert.equal(keyedOnes.length, 1, "the keyed hand-off's message carries its key, once");
+    assert.equal(userText(keyedOnes[0].message), "keyed in the window");
+    const direct = userStarts.find((e) => userText(e.message) === "direct in the window");
+    assert.ok(direct, "the deferred prompt ran");
+    assert.equal(keys.keyOf(direct.message), undefined, "fixed: a prompt deferred past the settle window now runs inside its sender's context");
+    queue.close();
+    two.session.dispose();
   });
 
   test("P6 refresh-context: a user entry appended outside a run reaches the agent's context after refreshContext()", async () => {
@@ -926,6 +980,41 @@ return w + ":" + r.stopReason;`;
     const themeTakes = "modes/interactive/theme/theme.js <- utils/syntax-highlight.js";
     assert.ok(takers.includes(themeTakes), `the theme takes the highlighter:\n${takers.join("\n")}`);
     assert.deepEqual(takers.filter((t) => t !== themeTakes && !allowed.test(t)), [], "outside pi's terminal mode, a drawing module taken by code a Sova chat may run: triage by QUIRKS.md P27");
+  });
+
+  test("P28 steer-all: with the getter replaced, every queued steer lands in one step, the mode survives reload(), and settings.json holds no steeringMode", async () => {
+    // A settings file pi really reads (and would write), in an agent dir of its own.
+    const agentDir = join(dir, "p26-agent");
+    mkdirSync(agentDir, { recursive: true });
+    const settingsFile = join(agentDir, "settings.json");
+    writeFileSync(settingsFile, `${JSON.stringify({ cacheWarming: "off", retry: { enabled: false } }, null, 2)}\n`);
+    const before = readFileSync(settingsFile, "utf8");
+    const settingsManager = SettingsManager.create(dir, agentDir);
+    assert.equal(settingsManager.getSteeringMode(), "one-at-a-time", "pi's own default, which the getter replaces");
+    steerAllAtOnce(settingsManager);
+    const { session, model } = await quirkSession({ settingsManager });
+    assert.equal(session.agent.steeringMode, "all", "createAgentSession builds the agent's mode from the getter");
+    assert.equal(session.agent.followUpMode, "one-at-a-time", "follow-ups keep pi's one at a time");
+    /** Two steers queued behind a held reply: the calls the run made, and the user messages of its second. */
+    const twoSteers = async (a: string, b: string) => {
+      const from = model.calls.length;
+      const release = model.hold();
+      const run = session.prompt(`go ${a}`);
+      await until(() => model.calls.length === from + 1, "the held reply");
+      await session.steer(a);
+      await session.steer(b);
+      release();
+      await run;
+      const users = ((model.calls[from + 1]!.context as any).messages as any[]).filter((m) => m.role === "user").map(userText);
+      return { calls: model.calls.length - from, last: users.slice(-2) };
+    };
+    assert.deepEqual(await twoSteers("s1", "s2"), { calls: 2, last: ["s1", "s2"] }, "both steers in the step after the held reply: one call for the pair");
+    await session.reload();
+    assert.equal(session.agent.steeringMode, "all", "reload() re-read settings.json and kept the getter's mode");
+    assert.deepEqual(await twoSteers("s3", "s4"), { calls: 2, last: ["s3", "s4"] }, "and still lands them together");
+    assert.equal(readFileSync(settingsFile, "utf8"), before, "settings.json is untouched");
+    assert.equal("steeringMode" in JSON.parse(readFileSync(settingsFile, "utf8")), false, "no steeringMode in settings.json");
+    session.dispose();
   });
 
   test("T1 scripted-model: the members the test double replaces exist, and it runs a turn", async () => {

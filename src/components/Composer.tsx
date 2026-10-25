@@ -204,8 +204,9 @@ export function Composer(props: {
   undo?: UndoControl | null;
   /** Chat sessions with the sandbox extension: the flyout's Sandbox row and the foot's shield. */
   sandbox?: SandboxControl | null;
-  /** `text` already names each attachment's path; `attachments` are for the optimistic row. */
-  onSend(text: string, steer: boolean, attachments: UploadResult[]): boolean;
+  /** `text` already names each attachment's path; `running`: a reply runs, as this pane sees it (the
+      frame is the chat's choice, sendFrame); `attachments` are for the optimistic row. */
+  onSend(text: string, running: boolean, attachments: UploadResult[]): boolean;
   onAbort(): void;
   /** Queued text a Stop handed back; each new object goes ahead of the draft (TUI Esc order). */
   restored?: { text: string } | null;

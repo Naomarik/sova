@@ -489,6 +489,40 @@
       },
       "evidence": "verified"
     },
+    "§app.chat-processes/worker-instructions": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/send-keys.ts",
+        "server/queue.ts",
+        "server/chat-manager.ts",
+        "server/chat-runtime/methods.ts",
+        "server/chat-runtime/worker-feed.ts",
+        "server/chat-runtime/host.ts",
+        "server/chat-workers.ts",
+        "shared/chat-runtime-wire.ts",
+        "pi-config/extensions/subagents/fold.ts",
+        "pi-config/extensions/subagents/chat-worker.ts",
+        "pi-config/extensions/subagents/worker-host.ts",
+        "server/queue.test.ts",
+        "server/chat-runtime/worker-feed.test.ts",
+        "server/chat-workers.test.ts",
+        "server/harness/pi/chat-wiring.test.ts",
+        "server/harness/pi/contract.test.ts",
+        "pi-config/extensions/subagents/chat-worker.test.ts"
+      ],
+      "requires": [
+        "§app.chat-processes/workers",
+        "§app.chat-processes/code-generations",
+        "§app.chat-processes/worker-crash"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-25T15:55Z",
+        "source": "pi-session:4805896b-dd1c-464a-a653-c071229c3d1c#1f1f2b81"
+      },
+      "evidence": "verified"
+    },
     "§app.chat-processes/workers": {
       "kind": "behavior",
       "authority": "accepted",
@@ -3182,7 +3216,12 @@
         "src/design/base.css",
         "src/lib/release-control.ts",
         "src/lib/release-control.test.ts",
-        "src/components/ComposerMenu.tsx"
+        "src/components/ComposerMenu.tsx",
+        "src/lib/send-frame.ts",
+        "src/components/ChatView.tsx",
+        "server/chat-manager.ts",
+        "server/chat-queue-clients.test.ts",
+        "server/harness/pi/chat-wiring.test.ts"
       ],
       "requires": [
         "§chat.images/composer-attachments",
@@ -3192,8 +3231,8 @@
       "evidence": "reviewed",
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T15:11Z",
-        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+        "at": "2026-10-25T15:55Z",
+        "source": "pi-session:4805896b-dd1c-464a-a653-c071229c3d1c#1f1f2b81"
       }
     },
     "§chat.composer/composer-flyout": {
@@ -4503,7 +4542,9 @@
         "shared/senders.ts",
         "src/lib/older-rows.test.ts",
         "shared/protocol.ts",
-        "src/components/CommandPalette.tsx"
+        "src/components/CommandPalette.tsx",
+        "src/lib/live.ts",
+        "src/lib/live.test.ts"
       ],
       "agreed": {
         "by": "naomarik",
@@ -4571,7 +4612,13 @@
         "src/lib/live.ts",
         "src/components/Thread.tsx",
         "src/lib/live.test.ts",
-        "server/chat-manager.ts"
+        "server/chat-manager.ts",
+        "server/harness/pi/queue-modes.ts",
+        "src/components/ChatView.tsx",
+        "server/queue.test.ts",
+        "server/chat-queue-clients.test.ts",
+        "server/harness/pi/chat-wiring.test.ts",
+        "server/harness/pi/session-golden.test.ts"
       ],
       "agreed": {
         "by": "naomarik",
@@ -4916,9 +4963,9 @@
         "src/lib/input-count.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "omar",
+        "at": "2026-10-23T22:04Z",
+        "source": "pi-session:cb32c74b-7123-4902-acf1-37d2f19c83b9#c86a4620"
       }
     },
     "§chat/composer": {
@@ -24085,6 +24132,29 @@
       "agreed": {
         "by": "user",
         "at": "2026-10-17T21:58Z"
+      }
+    },
+    "§app.tours/one-card": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/tour-rows.ts",
+        "src/lib/tour-rows.test.ts",
+        "src/components/Thread.tsx",
+        "src/components/ChatView.tsx",
+        "server/tour-one-card.integration.test.ts"
+      ],
+      "requires": [
+        "§app.tours/recording",
+        "§app.tours/editions",
+        "§chat.transcript/transcript-items",
+        "§chat.transcript/work-chain"
+      ],
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-23T21:42Z",
+        "source": "pi-session:cb32c74b-7123-4902-acf1-37d2f19c83b9#c86a4620"
       }
     },
     "§app.tours/recording": {

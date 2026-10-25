@@ -18,6 +18,7 @@ import { instrumentModelRuntime } from "../../../pi-config/extensions/llm-inflig
 import { markDegraded } from "../../../pi-config/extensions/llm-inflight/tracker.ts";
 import { applyModelLevels, type ComposedModel, modelFetchEnabled, onLevelsUpdated, refreshStale } from "../../../pi-config/extensions/model-levels/core.ts";
 import { installWorkerNice, lowerToolCommands } from "../../process-priority";
+import { steerAllAtOnce } from "./queue-modes";
 import { agentRoot } from "../../state-root";
 import type { PiExtensionFactory, PiLoaderOptions, PiToolDefinition } from "./extension-types";
 import { installOwnCode, ownCodeLoader } from "./own-code";
@@ -157,6 +158,8 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
     resourceLoaderOptions,
   });
   lowerToolCommands(services.settingsManager);
+  // Steers sent while the chat is busy land together, at the agent's next step (P28 steer-all).
+  steerAllAtOnce(services.settingsManager);
   return services;
 }
 

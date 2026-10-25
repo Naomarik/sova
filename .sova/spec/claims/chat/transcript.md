@@ -202,7 +202,7 @@ for an earlier revision of the same alignment its one-line change row, at the ca
 call's own tool card renders nothing once this result is there. A failed `align` call stays an
 ordinary tool-call and tool-result.
 
-**tour.** A valid compact `record_tour` or `show_tour` projection (§app.tours/editions) renders its tour/progress card at the call's position and suppresses the paired result's duplicate row. It remains visible outside compressed thinking/tool groups. Hide tools also keeps every tour request, progress and failure row visible, even before a valid card projection exists, so waiting and cancellation never disappear into hidden work. Only a checked edition opens as a readable tour; malformed or failed results remain safe ordinary tool rows, never plausible finished tours.
+**tour.** A valid compact `record_tour` or `show_tour` projection (§app.tours/editions) renders its tour/progress card at the call's position when the call is its tour's newest successful tour call, and suppresses the paired result's duplicate row; an earlier call for the same tour is one tool line with what it reported then (§app.tours/one-card). It remains visible outside compressed thinking/tool groups. Hide tools also keeps every tour request, progress and failure row visible, even before a valid card projection exists, so waiting and cancellation never disappear into hidden work. Only a checked edition opens as a readable tour; malformed or failed results remain safe ordinary tool rows, never plausible finished tours.
 
 **offer.** An `offer` call that showed a card (§chat.offers/card) renders the card at the call's
 position, and the paired result draws nothing; Hide tools keeps it. A refused `offer` call stays an
@@ -492,10 +492,32 @@ extensions add under a reply comes after it, outside the strip, and never change
 ## §chat.transcript/a-queued-message — A queued message (§chat/composer, sending)
 
 A message of yours that hasn't been delivered says which state it is in, with a dot and the word:
-`Sending…` while nothing is known to hold it, `Queued` once the server says it does. Only a queued
-row carries an action — one `Remove this queued message` — and it is removed BY ITS ID, so a
-duplicate in the middle of three goes and its twins stay, and an images-only message is a row like
-any other. A delivered row never draws one: nothing can be recalled then. A queued row is not an
+`Sending…` while nothing is known to hold it, `Queued` once the server says it holds it, and
+`Sending…` again once the server has handed it to the agent, which takes it at its next step. Only
+a queued row carries an action — one `Remove this queued message` — and it is removed BY ITS ID, so
+a duplicate in the middle of three goes and its twins stay, and an images-only message is a row like
+any other. A row handed to the agent never draws one: it can no longer be taken back on its own, only
+by Stop, which takes every waiting message back to the composer, in order. A delivered row never
+draws one either: nothing can be recalled then. A `Sending…` row draws no Remove at all, not even a
+disabled one: before the server answers nothing holds it, and once handed over it can't be taken
+back on its own. A message the server holds behind a turn (a playbook's follow-up, a steer waiting
+behind one) turns `Queued` and gets its Remove when the server says so.
+
+**The live transcript keeps the session file's order at every moment.** A message waiting to be
+taken sits below everything the agent has done so far in the turn. When the agent takes it, its row
+moves to where it landed: after every step that ran before it, and before the steps after it. A step
+that ran before a steer is never drawn below that steer, so the live view, the view at the turn's
+end and the view after a reload read the same.
+
+**Messages sent while a reply runs land together.** Every steer waiting while a chat is busy (the
+composer's, and any other sender's, in every chat: main chats, workers, team members, the
+Overseer's) is handed to the agent at once, behind the steers it already holds, and the agent takes
+all of them at its next step: each its own message with its own images, in the order sent, and one
+reply after them answers them all. Their rows turn into sent messages at the same moment. Follow-ups
+(worker reports, wake-ups, a parent's follow-up instructions, a playbook) still go in one at a time,
+each when the one before it has been taken, and order holds across the two: a steer sent after a
+follow-up waits for that follow-up. A steer handed over in the instant the agent is already taking
+the ones before it can land at the step after them instead; nothing is lost or reordered. A queued row is not an
 `.entry`, so it wraps itself in a `display: contents` host that gives its Remove the same hover
 and tap region every other strip has.
 
@@ -530,7 +552,9 @@ dropped): the row goes, its text never reaches the composer, and its card's butt
 the note "Your click didn't reach the Overseer. Click again." (§app.overseer/confirm).
 
 A removal the server refuses because the agent already took the message says "Already sent. It
-can't be removed now.", and the row becomes the delivered message it turned out to be.
+can't be removed now.", and the row becomes the delivered message it turned out to be. One that
+reaches the server after the message was handed over is refused with "It's already with the agent,
+which takes it at its next step. Stop takes it back."
 
 ## §chat.transcript/streaming — Streaming (chat sessions)
 

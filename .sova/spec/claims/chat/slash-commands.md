@@ -3,7 +3,7 @@
 
 pi's slash commands, offered while you type. The server sends the list once per connection as
 `{type:"commands", commands}`. Names come without the slash (`sessions`, `skill:omarchy`).
-Sending `/name args` as a normal prompt runs the command.
+Sending `/name args` from the composer runs the command, as any typed message is sent.
 
 Owns: when the menu opens, its markup, filtering, keys and announcements, where its tap target went (the Commands row),
 what a sent command leaves in the thread, the bare commands Sova answers itself, `/compact-handoff`, `/btw` and its side chat,
@@ -156,8 +156,9 @@ and again when the count changes, at most once a second. When there are none, an
 A sent command leaves a local "Ran" row instead of a user bubble, and a few bare commands are
 answered by Sova itself and never sent.
 
-- **Sending.** A command goes as a normal `prompt` with the text `/{name} {args}`, or as a
-  `steer` while streaming.
+- **Sending.** A command typed in the composer goes as the composer's `steer` with the text
+  `/{name} {args}` (§chat.composer/behavior): idle, the server runs it exactly as a `prompt`;
+  while streaming, pi runs it as it does a steered command.
 - **No optimistic bubble.** When the first token is a known command, don't add the optimistic
   user bubble. The command isn't a message to the model, and a template or skill expands into
   different text.

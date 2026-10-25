@@ -456,7 +456,7 @@ export class ChatRuntimeHost {
       // A worker chat feeds its parent (through the server) from its first event.
       if (f.worker && !this.feed) {
         this.feed = new WorkerFeed((frame) => this.sendFeed(frame), { onSettled: () => this.pokeSoon() });
-        this.feed.attach(chat.harness);
+        this.feed.attach(chat.harness, chat.sendKeys);
       }
       this.setState("open");
       this.quietSince = this.now();
@@ -934,7 +934,7 @@ export class ChatRuntimeHost {
       // What the monitor extension in this process says of the chat; before its first session_start, the title alone.
       monitor: hostedFacts(this.o.path) ?? { title: titleOf(chat.harness.branch()), workers: [], toolsRunning: 0, lastToolEnd: 0 },
       ...(chat.workerSpec && this.feed
-        ? { worker: { parentSessionId: chat.workerSpec.parent.sessionId, workerId: chat.workerSpec.parent.workerId, kind: chat.workerSpec.kind, proc: this.feed.proc, seq: this.feed.cursor().seq, lastSettled: this.feed.settled } }
+        ? { worker: { parentSessionId: chat.workerSpec.parent.sessionId, workerId: chat.workerSpec.parent.workerId, kind: chat.workerSpec.kind, proc: this.feed.proc, seq: this.feed.cursor().seq, lastSettled: this.feed.settled, keys: true } }
         : {}),
       llm: llmSnapshot(),
     };

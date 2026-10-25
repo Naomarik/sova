@@ -1587,7 +1587,14 @@ async function cmdLand(root, o) {
         ids: [{ id, kind: c.kind, deleted: c.deleted, ...c.binding }], ...(docOnly ? {} : { commit }), inputs, landing: true });
     }
     const p = await plan(root, { name, id: [], all: true, meta: [], file: [], "own-base": [], landing: { entries, current } });
-    for (const r of p.refusals) if (!/^evidence-/.test(r.code) || !problems.length) problems.push({ code: r.code, id: idOf(r.message), message: r.message });
+    // Each refusal named by its § where it has one: a file's refusal (a clash in a claim file) by the draft's ids in it.
+    for (const r of p.refusals) {
+      if (/^evidence-/.test(r.code) && problems.length) continue;
+      const named = idOf(r.message.replace(/^record /, "")), file = !named && p.out.files.find((f) => r.message.startsWith(`${f.path}`));
+      const rids = named ? [named] : file ? file.ids.filter((id) => ids.includes(id)) : [];
+      if (!rids.length) problems.push({ code: r.code, id: null, message: r.message });
+      for (const id of rids) problems.push({ code: r.code, id, message: r.message });
+    }
     const isNew = (id) => recOf(a.cur, id) === undefined && !a.changed.get(id).deleted;
     return { name, ids, entries, problems, current, plan: p,
       added: ids.filter(isNew), changed: ids.filter((id) => !isNew(id) && !a.changed.get(id).deleted), removed: ids.filter((id) => a.changed.get(id).deleted),

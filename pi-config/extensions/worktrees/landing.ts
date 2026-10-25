@@ -3,10 +3,12 @@
  * Land It (a go-ahead) or Not Yet for a branch at one commit, kept per user outside every repository:
  *
  *   <state root>/landing.json
- *   { "v": 1, "goAheads": [ { branch, commit, session?, at, by, withoutSpecs? } ], "notYet": [ { branch, commit, session?, at } ] }
+ *   { "v": 1, "goAheads": [ { branch, commit, session?, at, by, withoutSpecs?, drafts? } ], "notYet": [ { branch, commit, session?, at } ],
+ *     "docsEntries": [ { branch, sha, parent, at, drafts } ] }
  *
- * Sova's server writes it (a click on a Landing card); the merge round's driver reads it as the user's word.
- * Nothing enforces it: no merge needs a recorded go-ahead.
+ * Sova's server writes the answers (a click on a Landing card; a Land It keeps the spec drafts as they were then);
+ * the merge round's driver reads them as the user's word and appends the docs entries it commits itself, the only
+ * spec-only commits a go-ahead carries across. Nothing enforces it: no merge needs a recorded go-ahead.
  *
  * Node builtins only (the extension runs in every chat). Writes re-read the file, merge and replace it
  * atomically; a damaged file reads as no records.
@@ -32,6 +34,24 @@ export interface GoAhead {
 	by: GoAheadBy;
 	/** Merge Without Specs…: the user agreed its spec drafts stay behind. */
 	withoutSpecs?: true;
+	/** Land It: the branch's spec drafts as they were at the click (one hash over the files under each draft's spec/,
+	    each draft's own hash, the names), so a later change to them holds the branch. */
+	drafts?: DraftsSeen;
+}
+
+export interface DraftsSeen {
+	hash: string;
+	names: string[];
+	each?: Record<string, string>;
+}
+
+/** A docs commit the merge round made on a branch at its landing, and the one parent it was made on. */
+export interface DocsEntry {
+	branch: string;
+	sha: string;
+	parent: string;
+	at: string;
+	drafts: string[];
 }
 
 export interface NotYet {
@@ -45,6 +65,7 @@ export interface LandingData {
 	v: 1;
 	goAheads: GoAhead[];
 	notYet: NotYet[];
+	docsEntries?: DocsEntry[];
 }
 
 /** pi's agent dir as pi resolves it: $PI_CODING_AGENT_DIR (a leading ~ expanded), else ~/.pi/agent. */
@@ -68,7 +89,20 @@ const str = (v: unknown): v is string => typeof v === "string" && v.length > 0 &
 function cleanGoAhead(v: unknown): GoAhead | null {
 	if (!isRec(v) || !str(v.branch) || typeof v.commit !== "string" || !SHA.test(v.commit) || !str(v.at)) return null;
 	if (v.by !== "land-it" && v.by !== "page") return null;
-	return { branch: v.branch, commit: v.commit, ...(str(v.session) ? { session: v.session } : {}), at: v.at, by: v.by, ...(v.withoutSpecs === true ? { withoutSpecs: true as const } : {}) };
+	const drafts = cleanDrafts(v.drafts);
+	return { branch: v.branch, commit: v.commit, ...(str(v.session) ? { session: v.session } : {}), at: v.at, by: v.by, ...(v.withoutSpecs === true ? { withoutSpecs: true as const } : {}), ...(drafts ? { drafts } : {}) };
+}
+
+const HEX = /^[0-9a-f]{64}$/;
+function cleanDrafts(v: unknown): DraftsSeen | undefined {
+	if (!isRec(v) || typeof v.hash !== "string" || !HEX.test(v.hash) || !Array.isArray(v.names) || !v.names.every(str)) return undefined;
+	const each = isRec(v.each) && Object.entries(v.each).every(([k, h]) => str(k) && typeof h === "string" && HEX.test(h)) ? (v.each as Record<string, string>) : undefined;
+	return { hash: v.hash, names: [...(v.names as string[])], ...(each ? { each: { ...each } } : {}) };
+}
+
+function cleanDocsEntry(v: unknown): DocsEntry | null {
+	if (!isRec(v) || !str(v.branch) || typeof v.sha !== "string" || !SHA.test(v.sha) || typeof v.parent !== "string" || !SHA.test(v.parent) || !str(v.at)) return null;
+	return { branch: v.branch, sha: v.sha, parent: v.parent, at: v.at, drafts: Array.isArray(v.drafts) ? v.drafts.filter(str) : [] };
 }
 
 function cleanNotYet(v: unknown): NotYet | null {
@@ -80,10 +114,12 @@ export function readLanding(file: string = landingFile()): LandingData {
 	try {
 		const raw = JSON.parse(readFileSync(file, "utf8")) as unknown;
 		if (!isRec(raw) || raw.v !== 1) return { v: 1, goAheads: [], notYet: [] };
+		const docsEntries = (Array.isArray(raw.docsEntries) ? raw.docsEntries : []).map(cleanDocsEntry).filter((e): e is DocsEntry => !!e);
 		return {
 			v: 1,
 			goAheads: (Array.isArray(raw.goAheads) ? raw.goAheads : []).map(cleanGoAhead).filter((g): g is GoAhead => !!g),
 			notYet: (Array.isArray(raw.notYet) ? raw.notYet : []).map(cleanNotYet).filter((n): n is NotYet => !!n),
+			...(docsEntries.length ? { docsEntries } : {}),
 		};
 	} catch {
 		return { v: 1, goAheads: [], notYet: [] };
@@ -93,7 +129,9 @@ export function readLanding(file: string = landingFile()): LandingData {
 function writeLanding(file: string, data: LandingData): void {
 	mkdirSync(dirname(file), { recursive: true });
 	const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-	writeFileSync(tmp, `${JSON.stringify({ v: 1, goAheads: data.goAheads.slice(-LANDING_KEPT), notYet: data.notYet.slice(-LANDING_KEPT) }, null, 2)}\n`, { mode: 0o600 });
+	// The round's docs entries are kept as read: an answer written here never drops one.
+	const docs = data.docsEntries?.length ? { docsEntries: data.docsEntries.slice(-LANDING_KEPT) } : {};
+	writeFileSync(tmp, `${JSON.stringify({ v: 1, goAheads: data.goAheads.slice(-LANDING_KEPT), notYet: data.notYet.slice(-LANDING_KEPT), ...docs }, null, 2)}\n`, { mode: 0o600 });
 	renameSync(tmp, file);
 }
 

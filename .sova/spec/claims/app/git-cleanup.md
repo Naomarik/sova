@@ -59,13 +59,27 @@ scheduled maintenance of projects. Not here: how the sandbox adds that config to
 - **Its settings.** In the repository's own config: `maintenance.auto=false`,
   `maintenance.strategy=incremental`, `maintenance.prefetch.enabled=false` (nothing fetches),
   `maintenance.worktree-prune.enabled=false` and `gc.worktreePruneExpire=never` (scheduled
-  maintenance never forgets a worktree whose folder is missing). Each key's earlier value is
-  recorded, and unregistering puts back each key Sova set that still holds Sova's value.
+  maintenance never forgets a worktree whose folder is missing), `maintenance.gc.enabled=true` and
+  `maintenance.gc.schedule=weekly`. Each key's earlier value is recorded, and unregistering puts
+  back each key Sova set that still holds Sova's value. A repository registered before a key was
+  added gets it at the next sweep, its earlier value recorded the same way.
 - **The schedule.** Once per machine, `git maintenance start --scheduler=auto` (systemd user timers
   on Linux, launchd on macOS), recorded so it runs again only when the record is missing. The
   timers run outside every chat and sandbox, so nothing cuts them off. Under the incremental
   strategy git updates the commit-graph hourly, and daily packs loose objects and repacks
-  incrementally: one daily run packs the loose objects and the next deletes them.
+  incrementally: one daily run packs the loose objects and the next deletes them. Weekly, a full
+  `git gc` runs too, so unreachable objects are pruned and the repository stops only growing. It
+  shortens no expiry: git's own defaults stand (unreachable objects are kept 2 weeks, reflog
+  entries 90 days, unreachable ones 30), so recent work and anything a reflog still names survive,
+  and no worktree is pruned.
+- **A cut-off run recovers.** A run that was killed can leave `objects/maintenance.lock` or
+  `gc.pid` (or a multi-pack-index or commit-graph lock) behind, and every later run then skips
+  with "lock file exists" and still exits 0. At each sweep, for each repository it holds, Sova
+  removes any of those four locks older than 1 hour, but only when it can tell no git process is
+  working in that repository (on Linux, from `/proc`: no git process whose working folder or
+  `GIT_DIR` is in the repository, its git folder or one of its worktrees). When it can't tell (no
+  `/proc`, a git process it can't read), it removes nothing. Each removal is logged. It never
+  touches `index.lock` or a ref's lock.
 - **Off.** `SOVA_GIT_MAINTENANCE=off` turns all of it off. The hermetic dev server and the test
   runner set it, so neither registers anything in a real git config or starts a timer; a test that
   drives it gives it a throwaway global config. A git that fails is logged, and the next sweep

@@ -1675,8 +1675,9 @@ card shows it; the session pane's Repository section doesn't.
   reads `Git folder at least {size}`. The server reads it with the rest of the group and reuses it
   for 5 minutes per git folder, so a big repository is not walked on every card. A session on a
   target, or a folder the server couldn't read, shows no row.
-- **Stuck.** When `objects/pack/multi-pack-index.lock` or
-  `objects/info/commit-graphs/commit-graph-chain.lock` in that folder is more than 1 hour old, a
+- **Stuck.** When one of git's cleanup locks in that folder (`objects/maintenance.lock`, `gc.pid`,
+  `objects/pack/multi-pack-index.lock`, `objects/info/commit-graphs/commit-graph-chain.lock`) is
+  more than 1 hour old, a
   second row reads "Git's cleanup looks stuck: {lock name} was left {age}.", the age in the app's
   relative words ("2h ago", "3d ago", "Mar 4"). Its title is the lock's full path and "If no git
   command is running, deleting it lets cleanup finish."

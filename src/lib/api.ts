@@ -1,4 +1,4 @@
-import type { AssistantInfo, AssistantView, PricedPick } from "../../shared/project-assistant";
+import type { AssistantInfo, AssistantView, PricedPick, VersionSummaryRow } from "../../shared/project-assistant";
 import type { ModelPick, WorkModels } from "../../shared/powers";
 import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
 import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow } from "../../shared/project-settings";
@@ -1277,6 +1277,8 @@ export const assistantInfo = (id: string) => request<AssistantInfo>(assistantUrl
 export const setAssistantModels = (id: string, models: WorkModels) => request<AssistantInfo>(assistantUrl(id, "assistant"), jsonInit("PUT", { models }));
 /** Mark Done or Decline an owner request. */
 export const setOwnerRequest = (id: string, rid: string, status: "done" | "declined") => request<AssistantInfo>(assistantUrl(id, `requests/${encodeURIComponent(rid)}`), jsonInit("POST", { status }));
+/** Got It on a request the owner closed while it was being worked on (§app.project-assistant/closing): its Needs you item ends. */
+export const noteOwnerRequest = (id: string, rid: string) => request<AssistantInfo>(assistantUrl(id, `requests/${encodeURIComponent(rid)}`), jsonInit("POST", { noted: true }));
 /** Start Chat on an owner request: a new chat in its project with the request as a note
     (§app.project-assistant/request-chat). 409 `has-chat` carries the live chat's path, `closed` none. */
 export const startOwnerRequestChat = (id: string, rid: string) => request<{ sessionId: string; path: string }>(assistantUrl(id, `requests/${encodeURIComponent(rid)}/chat`), jsonInit("POST"));
@@ -1292,6 +1294,11 @@ export const setProjectOwnerHidden = (id: string, pid: string, ownerHidden: bool
 export const setBatonHiddenFromOwner = (sid: string, hidden: boolean) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/owner`, jsonInit("POST", { hidden }));
 /** The project's updates on the owner's page, newest first, withdrawn ones included. */
 export const getProjectUpdates = (id: string, pid: string) => request<ProjectUpdate[]>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/updates`);
+/** The versions on the owner's page with their summaries (§app.project-assistant/versions). */
+export const getVersionSummaries = (id: string, pid: string) => request<VersionSummaryRow[]>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/versions`);
+/** Rewrite (`text`), Use Automatic (`text: null`), Hide or Show (`hidden`) a version's summary. */
+export const setVersionSummary = (id: string, pid: string, instance: string, body: { text?: string | null; hidden?: boolean }) =>
+  request<VersionSummaryRow[]>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/versions/${encodeURIComponent(instance)}`, jsonInit("PUT", body));
 export const withdrawProjectUpdate = (id: string, pid: string, uid: string) =>
   request<ProjectUpdate[]>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/updates/${encodeURIComponent(uid)}/withdraw`, jsonInit("POST"));
 

@@ -215,9 +215,9 @@ describe("the Project Assistant", () => {
     const hd = held[0]! as unknown as { by: string; event: string; data: { column: string; basis: { kind: string; id: string }; sessionId: string } };
     assert.deepEqual([hd.by, hd.event, hd.data.column], ["assistant", "build/start", "assistant"]);
     const on = store.orgRequests(org.id).find((r) => r.title === "Fix the gallery")!;
-    assert.notEqual(on.status, "with-team", "filed as started-to-be, not left with the team");
+    assert.equal(on.status, "with-team", "held: not being worked on until its session starts (§app.project-assistant/closing)");
     assert.deepEqual(hd.data.basis, { kind: "owner-request", id: on.id }, "the build rests on the owner's request");
-    assert.ok(!ownerAttention().some((i) => i.id === `owner-request:${on.id}`), "an act taken is not a request for the operator");
+    assert.ok(!ownerAttention().some((i) => i.id === `owner-request:${on.id}`), "an act taken (held) is not a request for the operator: the held act is its Needs you item");
     assert.equal(readBuilds(project.id).length, buildsBefore, "held: no session yet");
 
     // The hold ends: the build starts its coding session, and the request reads started with it.

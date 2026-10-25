@@ -4,13 +4,16 @@ import { readIndex, readOrgOrPlaceholder, readProjects, readRoster } from "./org
 import { featureChats, orgRequests } from "./project-assistant-store";
 import { batonById } from "./baton";
 import { convergeFeatureChats } from "./feature-chats";
+import { heldRequestIds } from "./project-holds";
 
 /**
  * The owner's asks in Needs you (§app.project-assistant/requests, §app.owner-page/link), act tier,
  * every open owner request (`owner-request`; an outage `owner-outage`, which a phone notification also
  * tells), each opening the org's Requests tab at that request; an open `try` request is an
  * `owner-version-request`, opening the project's Branches tab; and an owner who asked for a new link
- * (`owner-link-request`), opening the People tab (its Owner card). No session: `path` "".
+ * (`owner-link-request`), opening the People tab (its Owner card); and a request the owner closed while it was
+ * being worked on (`owner-request-closed`, until the operator's Got It). A request the owner closed otherwise leaves
+ * Needs you quietly. No session: `path` "".
  */
 
 const clip = (t: string, max: number) => (t.length > max ? `${t.slice(0, max - 1)}…` : t);
@@ -69,8 +72,40 @@ export function ownerAttention(): AttentionItem[] {
         return fallback;
       }
     };
+    const heldBy = new Map<string, Set<string>>();
+    const held = (pid: string): Set<string> => {
+      let x = heldBy.get(pid);
+      if (!x) {
+        try {
+          x = heldRequestIds(pid);
+        } catch {
+          x = new Set();
+        }
+        heldBy.set(pid, x);
+      }
+      return x;
+    };
     for (const r of requests) {
+      // Closed by the owner while the team was working on it (§app.project-assistant/closing): one item, until Got It.
+      if (r.status === "closed" && r.closed && r.closed.prior === "started" && !r.closed.noted) {
+        const project = projects.find((p) => p.id === r.projectId);
+        out.push({
+          id: `owner-request-closed:${r.id}:${r.closed.at}`,
+          path: "",
+          title: r.title,
+          where: orgName,
+          tier: "act",
+          kind: "owner-request-closed",
+          since: Date.parse(r.closed.at) || 0,
+          detail: clip(`${ownerName} closed a request the team was working on, on ${project?.name ?? "a project"}: ${r.title}`, 200),
+          href: `#/orgs/${encodeURIComponent(o.id)}/requests/${encodeURIComponent(r.id)}`,
+          org: { orgId: o.id, orgName, ...(project ? { projectId: project.id, projectName: project.name } : {}) },
+        });
+        continue;
+      }
       if (r.status !== "with-team") continue;
+      // A fix whose start waits in a hold is the held act's (its own Needs you item, with Cancel), not a request for the operator.
+      if (r.kind === "fix" && held(r.projectId).has(r.id)) continue;
       const chat = r.kind === "feature" ? chats.find((c) => c.requestId === r.id) : undefined;
       if (chat?.ended) {
         const project = projects.find((p) => p.id === r.projectId);

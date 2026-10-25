@@ -84,9 +84,10 @@ export type Caller =
   | { kind: "project-overseer"; id: string; root: string; act: VerbAct; deployAct?: true }
   /** The client's Project Assistant (al_1, al_3): deploy.request any time; deploy.plan and deploy.run only from inside its
       project's released `deploy/run` act (`deployAct`), checked against its column of powers. `up`: only `up` of that one
-      instance (a copy the owner's versions list holds, which its start_version checked), and only once `act` (its
-      project statechart's `services/run`) is taken. */
-  | { kind: "assistant"; id: string; root: string; deployAct?: true; up?: string; act?: VerbAct }
+      instance (a copy the owner's versions list holds, which its start_version checked); `upMain`: only a bare `up` of
+      the main checkout while it has no copy (the Current version's, made then); either only once `act` (its project
+      statechart's `services/run`) is taken. */
+  | { kind: "assistant"; id: string; root: string; deployAct?: true; up?: string; upMain?: true; act?: VerbAct }
   | { kind: "session"; id: string; root: string | null; own: string[] }
   | { kind: "conform"; id: string }
   /** Sova itself, on no one's request: `on-merge` reloads the main checkout's copy when main moves (§app.project-services/on-merge). Apply only. */
@@ -709,6 +710,9 @@ export class ProjectEngine {
     // its project's services/run act is taken (actFor, after these checks).
     if (caller.kind === "assistant") {
       if (verb === "up" && caller.up && caller.act && run.rec && run.rec.id === caller.up && run.rec.project === caller.root && !run.req.checkout && !run.req.branch) return;
+      // The Current version's copy, when the main checkout has none (§app.project-assistant/tools): a bare up makes it.
+      const target = (run as Run & { target?: string }).target;
+      if (verb === "up" && caller.upMain && caller.act && !run.rec && project === caller.root && target === project && !run.req.instance && !run.req.checkout && !run.req.branch) return;
       throw new VerbFailure("forbidden", "the Project Assistant runs no verb on running copies but up of the version it was asked to start");
     }
     // A coding session.

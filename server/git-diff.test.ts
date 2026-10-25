@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -351,6 +351,30 @@ describe("merge scope", () => {
     assert.deepEqual(s.files.map((f) => f.path), ["f1.txt", "f2.txt", "f3.txt"]);
     const p = await diffs(() => [main, wt], [{ path: wt, base: c0 }], undefined, [card(tip, true)]).patch(scope(tip), "f2.txt");
     assert.match(p.patch ?? "", /\+f2\.txt/);
+  });
+
+  it("reads a removed worktree's merge from another known folder when its folder is left behind with no .git", async () => {
+    const { main, wt, c0, card, scope } = setup(["f1.txt", "f2.txt"]);
+    git(main, "merge", "-q", "--ff-only", "feat/m");
+    const tip = git(main, "rev-parse", "HEAD");
+    git(main, "worktree", "remove", "--force", wt);
+    // What `git worktree remove` left: the folder with stray files, no checkout.
+    mkdirSync(join(wt, "node_modules"), { recursive: true });
+    writeFileSync(join(wt, "node_modules", "stray.txt"), "x\n");
+    assert.equal(existsSync(join(wt, ".git")), false);
+    const tracked = [{ path: wt, base: c0 }];
+    const s = await diffs(() => [main, wt], tracked, undefined, [card(tip, true)]).summary(scope(tip));
+    assert.equal(s.repo, main);
+    assert.deepEqual(s.files.map((f) => f.path), ["f1.txt", "f2.txt"]);
+    // A commit scope falls back the same way.
+    const c = await diffs(() => [main, wt]).summary({ kind: "commit", sessionPath: SESSION, repoPath: wt, sha: tip });
+    assert.deepEqual(c.files.map((f) => f.path), ["f2.txt"]);
+    // No known folder holds the commit: still not a work tree.
+    await rejects(diffs(() => [outside, wt], tracked, undefined, [card(tip, true)]).summary(scope(tip)), 400, /not in a git work tree/);
+    // Nothing to fall back on for an uncommitted read.
+    await rejects(diffs(() => [main, wt]).summary({ kind: "dirty", sessionPath: SESSION, cwd: wt }), 400, /not in a git work tree/);
+    // The merge scope still needs its recorded card.
+    await rejects(diffs(() => [main, wt]).summary(scope(tip)), 400, /not a merge this session recorded/);
   });
 
   it("refuses a sha that is not a merge card in the session, before any git runs", async () => {

@@ -180,7 +180,9 @@ describe("a project overseer", async () => {
     const info = await po.projectOverseerInfo(project.id);
     assert.equal(info.effective.autonomy, "L2");
     const prompt = po.renderProjectOverseerPrompt(project.id, []);
-    assert.match(prompt, /Level in force now: \*\*L2/);
+    // What it may do on its own is the powers in force, never a level (al_5: the stale L0–L3 text is gone).
+    assert.match(prompt, /On your own you may: [^\n]*Promote decisions into the spec/);
+    assert.doesNotMatch(prompt, /Level in force|\bL[0-3]\b/, "no level anywhere in its prompt, the organization's part included");
     assert.match(prompt, /Tony \(id p_[a-z0-9]+\) — IT; decides: invoicing/);
   });
 });
@@ -692,7 +694,8 @@ describe("limits through PATCH, held items and their retry", async () => {
     const prompt = po.renderProjectOverseerPrompt(project.id, po.toolsForTest(project.id));
     assert.match(prompt, /Every start names its gap \(`gap: "§gap\/<name>"`\), or\s+`gap: "none"`/);
     assert.match(prompt, /Don't do these again by hand: read the feed first\./);
-    assert.match(prompt, /wait past the hold for your review: approve\s+them early or cancel them with `sova_hold` \(a reason is required\)/);
+    assert.match(prompt, /Nothing waits for your own approval, and you approve nothing: `sova_hold` cancels a held act\s+\(a reason is required\)/);
+    assert.doesNotMatch(prompt, /needs overseer confirmation|approve\s+them early/);
     assert.match(prompt, /`gap: "none"` builds only in a\s+turn the operator started\./);
     assert.match(prompt, /`sova_correct` and a reason/);
     assert.match(prompt, /\(`sova_set_state`\) is\s+only for a turn the operator started/);
@@ -714,10 +717,10 @@ describe("a standalone project's prompt names nothing of an organization", async
   const { project } = await registerProjectIn("standalone", join(root, "proj-alone"), { name: "Alone", origin: "folder" });
   await po.ensureProjectOverseer(project.id);
 
-  test("its level reads as a standalone project's, and its limits leave out gathering sessions and promotions", async () => {
+  test("its powers read as a standalone project's, and its limits leave out gathering sessions and promotions", async () => {
     await po.patchProjectOverseer(project.id, { autonomy: "L1" });
     const prompt = po.renderProjectOverseerPrompt(project.id, po.toolsForTest(project.id));
-    assert.match(prompt, /L1 — Gather: may also publish preview links of its coding sessions' apps\./);
+    assert.match(prompt, /On your own you may: Fix the pipeline's bookkeeping; Share a version to try\./);
     assert.match(prompt, /each message the operator sends: coding sessions \S+, prompts to them \S+; on your own each day: coding sessions /);
     assert.match(prompt, /at once: \d+ coding sessions running/);
     assert.doesNotMatch(prompt, /gathering session|promotion|roster/i);

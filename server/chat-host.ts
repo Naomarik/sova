@@ -29,14 +29,15 @@ import {
   openKindOf,
   recordConfigFailure,
   adoptSpecial,
-  servedToolsFor,
+  servedToolsForChat,
+  servedWorkerTools,
   setChatRouter,
   setWorkerHostSource,
   specialHostOf,
   specialSpecFor,
   takeOpeningChoice,
 } from "./chat-handle";
-import { type ChatSpecialKind, isNoAnswer, type SpecialSpec, type WorkerSpec } from "../shared/chat-runtime";
+import { type ChatSpecialKind, isNoAnswer, type ServerToolDecl, type SpecialSpec, type WorkerSpec } from "../shared/chat-runtime";
 import { type HeldRequests, holdRequests, RemoteChatHandle, type RemoteHooks } from "./chat-handle-remote";
 import { awaitFrame, connectLink, type Link } from "./chat-runtime/link";
 import { crashSkip } from "./chat-runtime/crash";
@@ -110,6 +111,11 @@ export function chatHostHealth(): { driver: ChatHost["driver"] | "starting"; bun
 }
 
 const log = (line: string) => console.log(`[chat-host] ${line}`);
+
+/** What a worker chat is served (§app.project-services/callers): a worker's or team member's project_verbs; a hidden chat, nothing. */
+export function workerServed(worker: { kind: string }, path: string): ServerToolDecl[] {
+  return worker.kind === "worker" ? servedWorkerTools(path) : [];
+}
 
 /** What a test swaps (a fake driver, links over in-memory streams); the server uses the real ones. */
 export interface RouterDeps {
@@ -405,9 +411,9 @@ export class ChatHostRouter {
   private async openOn(link: Link, path: string, sessionId: string, force: boolean, kind: OpenKind = null, built?: SpecialSpec, worker?: WorkerSpec): Promise<ChatRuntimeMirror> {
     const id = randomUUID();
     if (worker) {
-      // A worker chat opens as its loadout says, with nothing an ordinary chat is served.
+      // A worker chat opens as its loadout says, served only project_verbs (a worker or team member, never a hidden chat).
       const answer = this.awaitOpened(link, id, sessionId);
-      link.send({ t: "open", id, path, force, link: null, served: [], worker });
+      link.send({ t: "open", id, path, force, link: null, served: workerServed(worker, path), worker });
       const f: FrameOf<"opened"> = await answer;
       if (f.ok) return f.mirror;
       if (f.refusal) throw errorOfRefusal(f.refusal);
@@ -419,7 +425,7 @@ export class ChatHostRouter {
     const answer = this.awaitOpened(link, id, sessionId);
     const origin = currentLinkOrigin();
     const opening = takeOpeningChoice(path);
-    const served = servedToolsFor(path, sessionId, () => this.remotes.get(path)?.mirror.monitor.title, kind === "powers");
+    const served = await servedToolsForChat(path, sessionId, () => this.remotes.get(path)?.mirror.monitor.title, kind);
     link.send({ t: "open", id, path, force, ...(opening ? { opening } : {}), link: origin ? { origin, token: sovaToken() } : null, served, ...(special ? { special } : {}) });
     const f: FrameOf<"opened"> = await answer;
     if (f.ok) return f.mirror;
@@ -520,8 +526,9 @@ export class ChatHostRouter {
         // The calls it queued while no server was there come at once, before its state: kept for the handle.
         const held = holdRequests(link);
         const state = await awaitFrame(link, "state", 5_000);
-        // A worker chat is the registry's: nothing is served to it.
+        // A worker chat is the registry's: only a worker's or team member's project_verbs runs here again.
         if (state.mirror.worker) {
+          workerServed(state.mirror.worker, rec.sessionPath);
           this.workerPaths.add(rec.sessionPath);
           const h = this.adoptHandle(rec, link, state.mirror, held);
           if (!this.workers.adopt(h)) log(`${rec.chatId}: a worker chat no worker record names`);
@@ -530,7 +537,7 @@ export class ChatHostRouter {
         // Its server-hosted tools run here now, as for a chat this server opened (the same specs: the
         // chat declared them at its open).
         const kind = kindOfMirror(state.mirror);
-        servedToolsFor(rec.sessionPath, state.mirror.sessionId, () => this.remotes.get(rec.sessionPath)?.mirror.monitor.title, kind === "powers");
+        await servedToolsForChat(rec.sessionPath, state.mirror.sessionId, () => this.remotes.get(rec.sessionPath)?.mirror.monitor.title, kind);
         if (kind && kind !== "powers") await adoptSpecial(kind, rec.sessionPath);
         const h = this.adoptHandle(rec, link, state.mirror, held);
         this.pushSpecial(h);
@@ -592,7 +599,7 @@ export class ChatHostRouter {
         // "Chat anyway" reopens it in its process, and that close drops what this server serves it: served again.
         if (again === "reloaded") {
           const kind = kindOfMirror(open.mirror);
-          servedToolsFor(path, open.mirror.sessionId, () => open.mirror.monitor.title, kind === "powers");
+          await servedToolsForChat(path, open.mirror.sessionId, () => open.mirror.monitor.title, kind);
           if (kind && kind !== "powers") await adoptSpecial(kind, path);
         }
         return open;

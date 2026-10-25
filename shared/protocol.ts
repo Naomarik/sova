@@ -270,6 +270,10 @@ export const EAGER_TOOLS: ReadonlySet<string> = new Set([
   "session_send",
   "sova_create_session",
   "sova_navigate",
+  // An offer card (§chat.offers/card, shared/session-offers.ts OFFER_TOOL): its details are the card.
+  "offer",
+  // The project overseer's Settings change card (§app.project-overseer/settings): a propose's details are the card.
+  "sova_settings",
   // Tours retain only a validated small card projection; full authoring input remains lazy.
   "record_tour",
   "show_tour",
@@ -452,8 +456,8 @@ export interface AlignDocInfo {
   /** The adversarial review record (§chat.alignment-review/record); absent on every document no
       review op touched, which is all of them with the `adversarial-review` flag off. */
   review?: AlignReviewInfo;
-  /** The writing style in effect at the document's latest change; absent for Default. */
-  style?: "simplified" | "pm";
+  /** The writing style in effect at the document's latest change ("default": Technical); absent on older documents. */
+  style?: "default" | "simplified" | "pm";
   /** The document's own drawing (§chat.alignment/visuals); a question can carry one too. */
   visual?: AlignVisualInfo;
 }
@@ -1430,6 +1434,22 @@ export type SessionSetup =
   /** Nothing could be read: `reason` is a sentence for the user. Never cached. */
   | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; checkedAt: number };
 
+// GET /api/sessions/context/file?path=<session file>&file=<listed path> -> SessionSetupFileText
+//                                  (server/session-setup.ts, §chat.transcript/setup-card-open-file:
+//                                  the text of ONE file the session's own setup read lists, for the
+//                                  markdown viewer. Any other path is a 404, so it reads nothing else
+//                                  on disk; a remote session or an unreadable setup is a 409; a file
+//                                  over SETUP_FILE_MAX_BYTES a 413. 400 a bad path, 404 a missing
+//                                  session file. Never cached.)
+// ---------------------------------------------------------------------------
+/** The largest file the setup card opens in the viewer. */
+export const SETUP_FILE_MAX_BYTES = 1024 * 1024;
+
+export interface SessionSetupFileText {
+  path: string;
+  text: string;
+}
+
 // GET /api/sessions/tools?path=<session file> -> SessionTools   (server/session-tools.ts,
 //                                  §chat.transcript/setup-card-tools: the tools the HELD chat declares
 //                                  to its model now, in its order, with the descriptions as declared.
@@ -2386,7 +2406,9 @@ export type ChatServerMessage =
   /** `after` (only to a client that asked with `&have=`): the client's rows up to and including
       this row are the branch's first `older` rows, and `items` are the rows after it (possibly
       none); `olderSummary` sums up all `older` of them, the client's own included. */
-  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive; after?: string }
+  /** `cwdFallback` (§app.shell/missing-folder-home): the chat runs in the home folder because its stored
+      local folder is gone; absent when it runs in its own folder. */
+  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive; after?: string; cwdFallback?: CwdFallback }
   /** Which code a chat in its own process runs (§app.chat-processes/code-pickup). Sent after the
       hello when not current, and to every client on each change; none received = current. A chat
       hosted in the server sends it only to answer `reload_code`. See ChatCodeState. */
@@ -2979,6 +3001,54 @@ export interface TeamMember {
   /** The newest `retire` event for this member. `reason`: the successor confirmed, or the handover
       timed out; absent when the event's detail says neither. */
   retired?: { at: string; reason?: "confirmed" | "timeout" };
+  /** The member's team inbox (§app.subagents-pane/member-inbox), counted from the items file the
+      main chat's subagents extension keeps for it. `open`: new or read, not returned, not an
+      instruction copy; `urgent`: the open ones marked urgent; `total`: every item its file folds
+      to. Absent when the member has no items file, and from older servers. */
+  inbox?: TeamInboxCounts;
+}
+/** `closedByMember`: addressed items the member closed itself (`team_inbox done` or a reply);
+    `closedAutomatically`: addressed items Sova's safety net closed (§app.teams/inbox-zero). Both
+    absent from older servers, which show no summary line. */
+export interface TeamInboxCounts { open: number; urgent: number; total: number; closedByMember?: number; closedAutomatically?: number }
+export type TeamInboxKind = "message" | "question" | "report" | "handover" | "notice" | "instruction";
+export type TeamInboxStatus = "new" | "read" | "addressed";
+/** One item in a member's inbox, without its body (GET /api/insights/session/inbox). `from` is
+    the sender (`workerId` "parent" for the main thread and for Sova); `movedFrom`: the members it
+    was first sent to, oldest first, when a handover or a forward moved it here; `returned`: it was
+    sent back to its sender and is no longer open; `closedBy`: how an addressed item was closed
+    (`member` by `team_inbox done`, `reply` by a reply naming it, `auto` by Sova's safety net),
+    absent on older items and from older servers (read as the member). Times are epoch ms. */
+export interface TeamInboxItemInfo {
+  id: string;
+  from: { role: string; workerId: string };
+  kind: TeamInboxKind;
+  subject: string;
+  urgent: boolean;
+  status: TeamInboxStatus;
+  sentAt: number;
+  readAt?: number;
+  addressedAt?: number;
+  note?: string;
+  replyTo?: string;
+  movedFrom?: { role: string; workerId: string; at: number; why: "handover" | "forward" }[];
+  returned?: { at: number; why: string };
+  closedBy?: TeamInboxClosedBy;
+}
+export type TeamInboxClosedBy = "member" | "reply" | "auto";
+/** GET /api/insights/session/inbox?path=&team=&worker=: one member's items, newest first.
+    `items` is capped at the newest 500; `total` counts them all. */
+export interface TeamInboxView {
+  teamId: string;
+  workerId: string;
+  items: TeamInboxItemInfo[];
+  total: number;
+  counts: TeamInboxCounts;
+}
+/** GET /api/insights/session/inbox?path=&team=&worker=&item=<id>: one item's whole message. */
+export interface TeamInboxBody {
+  id: string;
+  body: string;
 }
 export type TeamDuty = "coordinator" | "monitor";
 export type TeamEventKind = "handover" | "retire" | "pause" | "resume" | "wrap-up";
@@ -3359,8 +3429,10 @@ export interface OverseerInfo {
   id: string;
   /** Up to 20 previous Overseer files, newest first; openable read-only (watch, no chat). */
   history: { id: string; path: string; title: string; lastActiveAt: string }[];
-  /** Attention counts for the entry button (from the digest). act = needs you; decide = finished/look. */
-  badge: { act: number; decide: number };
+  /** Attention counts for the entry button (from the digest). act = blockers; decide = finished/look;
+      needsYou = sessions Needs you lists (act or soft items, shared/needs-you.ts), the head's "need
+      you" (additive: absent from older servers, then read `act`). */
+  badge: { act: number; decide: number; needsYou?: number };
   /** Overseer assistant messages newer than the Overseer's own seenAt: the chat-unread badge on the
       entry button, separate from `badge`. */
   unread: number;
@@ -3386,6 +3458,7 @@ export type AttentionKind =
   | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
   | "held-act"            // act tier, never pushed: a statechart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
+  | "offer-waiting"       // act tier, never pushed or briefed: the session shows an open offer card (Land It, §chat.offers/card), idle or working
   | "tour-sign-in"        // act tier, never pushed: one of the session's tour recordings waits for the user to sign in on its card (§app.tours/sites; from the server's memory, gone on restart)
   | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Merge Branch (§app.project-runtime/review; the run's session, `playbook` set)
   | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project page)
@@ -3393,7 +3466,8 @@ export type AttentionKind =
   | "outreach-not-sent"   // act tier, never pushed: a project overseer's WhatsApp send was refused or failed (no session: `path` "", `href` the person's page)
   | "whatsapp-down"       // act tier, pushed (kind `whatsapp-down`): WhatsApp sending is down, logged out, replaced, blocked, unpaired, or unreachable 5 min (§app.outreach/sender-health; no session: `path` "", `href` "#/settings/outreach")
   | "conflict-to-operator" // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
-  | "asks-you"        // decide tier: decisions' guess that the last reply of a turn with no open alignment question asks the user something
+  | "asks-you"        // decide tier, soft: decisions' guess that the last reply of a turn with no open alignment question asks the user something
+  | "unverified"      // decide tier, soft: decisions' guess that the last reply says it is done but names something it didn't run or check
   | "ready-to-merge"  // decide tier: a worktree is ready, or ready and waiting for the go-ahead (SessionSummary.readiness)
   | "merged-open-work" // a merge whose reply names significant open work (§app.decisions/merge-followup)
   | "restart-pending" // merges changed the server since it started (one item, no session: `path` "")
@@ -3402,11 +3476,16 @@ export type AttentionKind =
   | "owner-request"      // act tier, never pushed: an org owner's open request from the Project Assistant (§app.project-assistant/requests; no session: `path` "", `href` the org's People tab)
   | "owner-outage"       // act tier, pushed (kind `owner-outage`): the owner reports the app is down
   | "owner-link-request" // act tier, never pushed: the owner asks for a new owner link (theirs turned off unused, §app.owner-page/link)
-  | "owner-version-request"; // act tier, never pushed: the owner asks to try a version that wasn't started (an open `try` request; `href` the project's Branches tab)
+  | "owner-version-request" // act tier, never pushed: the owner asks to try a version that wasn't started (an open `try` request; `href` the project's Branches tab)
+  | "owner-request-closed" // act tier, never pushed: the owner closed a request the team was working on, until the operator's Got It (§app.project-assistant/closing)
+  | "owner-feature-ended"; // act tier, never pushed: a feature request chat ended because its owner stopped being the owner (its request still with the team; `href` the Requests tab)
 
 export interface AttentionItem {
   /** Session id. */
   id: string;
+  /** A guess of the turn card (§app.overseer/attention-digest, the softer tier): listed in Needs
+      you and counted in "need you", never a brief or a phone notification. Additive. */
+  soft?: true;
   path: string;
   title: string;
   /** cwd (or target:remoteCwd), home-shortened. */
@@ -4125,7 +4204,8 @@ export interface FrontDoorConfig {
 // Push: WS /ws/watch?feed=sessions — the existing read-only socket, in a session-less mode (no
 // ?path=). Sends SessionFeedMessage: a full `marks` snapshot on connect, then one `marks` message
 // per change (a signal, tag or turn error written, cleared, or pruned) and `tags_backfill` progress while a
-// backfill runs. The client overlays these onto its SessionSummary list by id without waiting for
+// backfill runs; `list_changed`, `attention` and `overseer` when those change (never on connect: the
+// client reads the list, digest and Overseer once per open and when its tab becomes visible). The client overlays these onto its SessionSummary list by id without waiting for
 // the list poll; the list itself still carries the same fields (the poll stays the source of truth
 // after a reconnect). Never writes; the socket ignores anything the client sends.
 // ---------------------------------------------------------------------------
@@ -4241,7 +4321,41 @@ export interface DecisionProbeResult {
     "asks-you": the last reply of a turn with no open alignment question asks the user something
     (open alignment questions stay SessionSummary.align's deterministic count); "looping": the turn
     went in circles. */
-export type SignalKind = "asks-you" | "looping";
+export type SignalKind = "asks-you" | "looping" | "unverified";
+
+/** An alignment question's stakes (§app.decisions/align-triage). */
+export const ALIGN_STAKES = ["low-risk", "deletes-data", "costs-money", "changes-architecture-or-contract"] as const;
+export type AlignStakes = (typeof ALIGN_STAKES)[number];
+/** GET /api/sessions/align-triage: per open card (by `al_N`), the version answered and each open question's stakes. */
+export interface AlignTriage {
+  docs: Record<string, { rev: number; provider: DecisionProviderId; model: string; stakes: Record<string, AlignStakes> }>;
+}
+
+/** A worker report check's outcome choice (§app.decisions/worker-report). */
+export const WORKER_REPORT_OUTCOMES = ["finished", "partial", "blocked", "failed"] as const;
+export type WorkerReportOutcome = (typeof WORKER_REPORT_OUTCOMES)[number];
+/** GET /api/sessions/worker-checks: per worker id, the check of its newest done report. `report` is
+    the report's entry id; `unverified`: it reads finished but doesn't say it ran tests or checks. */
+export interface WorkerChecks {
+  workers: Record<string, { report: string; provider: DecisionProviderId; model: string; outcome: WorkerReportOutcome; unverified: boolean }>;
+}
+
+/** The turn card's outcome choice (§app.decisions/attention-signals). */
+export const TURN_OUTCOMES = ["did-what-was-asked", "partial-stopped", "waiting-on-user", "waiting-on-team", "hit-unfixed-failure", "progress-report"] as const;
+export type TurnOutcome = (typeof TURN_OUTCOMES)[number];
+/** The turn card's kind of ask. */
+export const ASK_KINDS = ["choose-between-options", "approve-risky-action", "needs-info", "restart-or-merge-go", "optional-offer", "none"] as const;
+export type AskKind = (typeof ASK_KINDS)[number];
+
+/** A finished turn's card as the wire carries it (additive): the chosen options and the two probabilities. */
+export interface TurnCard {
+  outcome?: TurnOutcome;
+  askKind?: AskKind;
+  /** P(it says it is done but names something not run, tested or checked). */
+  claimsUnverified?: number;
+  /** P(it names work still to do). */
+  leftOpen?: number;
+}
 
 /** One classified finished turn of a session (<stateRoot>/signals.json keeps the raw answers). */
 export interface SessionSignals {
@@ -4249,11 +4363,16 @@ export interface SessionSignals {
   at: number;
   /** Id of the last assistant entry on the active branch when classified (the cache key). */
   turnId: string;
+  /** Who actually answered: the mark's tooltip names it ("Guessed by Jev", or the model). */
   provider: DecisionProviderId;
+  /** The answering model's id (additive; absent from older servers). */
+  model?: string;
   /** score in [0, 2]: 0 progressing … 2 clearly looping. */
   stuck?: { score: number; confidence: number };
   /** P(the last reply asks the user something), 0..1, when that turn was asked. */
   asksUser?: number;
+  /** The turn card's answers (additive; absent on records from before the card). */
+  card?: TurnCard;
   /** The kinds that fire under the server's thresholds; [] = none. The client never re-derives
       them. Visibility is server-computed too: `signals` (and `workerSignals`) are present on a
       SessionSummary / SessionMarks only while the mark should show (attention on, kinds non-empty,
@@ -4313,6 +4432,14 @@ export interface SessionSummary {
 }
 
 /** One worktree's merge readiness (§chat.worktrees/readiness). */
+/** A chat running in the home folder because its stored local working directory is gone
+    (§app.shell/missing-folder-home): `original` is the stored folder, unchanged in the file; `cwd` the
+    home folder of the machine the chat runs on. */
+export interface CwdFallback {
+  original: string;
+  cwd: string;
+}
+
 /** "removed": the worktree's folder is gone and its work isn't known merged (§chat.worktrees/readiness). */
 export type ReadinessState = "merged" | "stale" | "in-progress" | "blocked" | "ready" | "waiting-approval" | "removed";
 
@@ -4339,6 +4466,20 @@ export interface WorktreeReadiness {
   /** Readable, unmerged, and no commit of its own past its base (what "no commits yet" says,
       whatever the state): the row has no Review Changes (§chat.changes/entry). Absent otherwise. */
   noCommits?: true;
+  /** Ready to land at its head commit, or Landing specs (§chat.worktrees/ready-to-land). Absent otherwise. */
+  landing?: WorktreeLanding;
+}
+
+/** A worktree whose work is finished at its head commit (§chat.worktrees/ready-to-land). */
+export interface WorktreeLanding {
+  /** "ready": Ready to land; "specs": finished, with spec drafts left to promote (Landing specs). */
+  state: "ready" | "specs";
+  /** The full head sha it holds for. */
+  commit: string;
+  /** The spec drafts not promoted, by name (state "specs"). */
+  drafts?: string[];
+  /** The session's own reason it can't land them (its reply's `Can't land specs:` line). */
+  specsWhy?: string;
 }
 
 /** The row's badge, the first that holds (§chat.worktrees/readiness). */
@@ -4365,6 +4506,21 @@ export interface SessionReadiness {
   /** The follow-up check's answer for the newest merge (§app.decisions/merge-followup), when it
       names work: its weight and the reply's own line naming it. */
   followUp?: { weight: "small" | "significant"; cue: string };
+  /** The branch status line of the newest merge (additive): code only, no model. */
+  status?: BranchStatus;
+}
+
+/** "merged {commit} · pushed · live · spec promoted" (§chat.worktrees/readiness), as facts. */
+export interface BranchStatus {
+  branch: string;
+  /** The merge's commit, 7 characters. */
+  commit: string;
+  /** On the target's origin branch; absent when there is no origin to ask. */
+  pushed?: boolean;
+  /** This server already runs the merge (false: a restart is owed). */
+  live: boolean;
+  /** Spec drafts in the merged worktree not promoted yet; absent when it has none or is gone. */
+  specDrafts?: number;
 }
 
 export type TagsBackfillScope = "recent" | "all";
@@ -4407,6 +4563,12 @@ export type SessionFeedMessage =
       connect, then on each change of the total or its coverage. Never a reason to re-read the
       list. */
   | { type: "llm_inflight"; inflight: LlmInflight }
+  /** The attention digest (as GET /api/overseer/attention returns it), sent only when it differs
+      from the last one this server pushed; never on connect (the client reads it once when the
+      feed opens and when the tab becomes visible again). */
+  | { type: "attention"; digest: AttentionDigest }
+  /** The Overseer's state (as GET /api/overseer returns it), sent the same way as `attention`. */
+  | { type: "overseer"; info: OverseerInfo }
   | { type: "error"; message: string };
 
 /** Why an LlmInflight count is only a floor. `host` is the peer's id; absent = this host. */

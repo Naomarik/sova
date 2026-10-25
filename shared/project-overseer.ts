@@ -284,6 +284,15 @@ export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "model"
     confirmKinds?: unknown;
   };
 
+/** Every field PATCH …/overseer reads (the settings reference covers each; a field missing here fails typecheck). */
+export const PO_PATCH_FIELDS = [
+  "model", "thinking", "codingModel", "codingThinking", "gatheringModel", "gatheringThinking", "gatheringAbilities",
+  "watchGapMin", "soonLookSec", "watch", "holdMin", "extraSystemPrompt", "powers", "resume", "powersNoteSeen", "assistantModels",
+  "caps", "autonomy", "confirmKinds",
+] as const satisfies readonly (keyof ProjectOverseerPatch)[];
+type _PatchFieldsCovered = Exclude<keyof ProjectOverseerPatch, (typeof PO_PATCH_FIELDS)[number]>;
+export const PO_PATCH_FIELDS_COVERED: [_PatchFieldsCovered] extends [never] ? true : _PatchFieldsCovered = true;
+
 /** The settings as GET answers them: `powers` is the view, not the stored shape. */
 export type ProjectOverseerSettingsView = Omit<ProjectOverseerSettings, "powers"> & { powers: PowersView };
 

@@ -59,7 +59,7 @@ profile after a usage limit, and Off. A profile never turns on a project mode.
 ## §site.docs/align — Align and alignments (`/docs/modes/align/`)
 
 The align minor mode: what an alignment holds, answering it, Settings → Alignment (writing style,
-Visuals, review), the card, chip and session mark, Needs you and notifications, and the terminal
+Visuals, review), the card, the composer's badge and session mark, Needs you and notifications, and the terminal
 viewer.
 
 ## §site.docs/align-review — Adversarial review (`/docs/modes/align/review/`)
@@ -94,7 +94,8 @@ follows the site's light/dark toggle through the same tokens. Every example pars
 warnings, or the generator fails, and it writes the same bytes on every run. A kind that lays
 out for its pane's width (flow, state, sequence, chart, matrix, steps) is drawn for the docs column and
 for a 320px phone, and the page shows the one that fits its figure's width. Interactive parts
-show their first state and do nothing: a sequence's **Step Through** button is disabled. A `vis
+show their first state and do nothing: a sequence's **Step Through** button is disabled, and a
+flow's or state machine's shapes are not buttons and pick nothing. A `vis
 svg` example is drawn in place, as its frame would show it; a `vis html` example shows only its
 source, with a line saying that in the chat it runs in a sandboxed frame. A changed kind, View or
 style reaches the page only when the generator runs again.

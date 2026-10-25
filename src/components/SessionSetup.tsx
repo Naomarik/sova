@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
 import type { GitSummary, SessionSetup } from "../../shared/protocol";
-import { fetchSessionSetup, fetchSessionTools, setSessionLoadout } from "../lib/api";
+import { fetchSessionSetup, fetchSessionTools, fetchSetupFile, setSessionLoadout } from "../lib/api";
+import { openMarkdown } from "../lib/markdown-viewer";
 import { loadGitSummary, UPSTREAM_TITLE } from "../lib/git-summary";
 import {
   CONTEXT_NONE,
@@ -15,6 +16,8 @@ import {
   isOff,
   isSumEmpty,
   loadoutView,
+  OPEN_FILE_FAILED,
+  openFileLabel,
   skillsHeading,
   skillsNone,
   skillsNote,
@@ -106,6 +109,16 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
   );
 
   const [applying, setApplying] = createSignal(false);
+  /** A row's name opens its file in the markdown viewer (§chat.transcript/setup-card-open-file):
+      read now, never cached; a failure is a toast and the viewer stays shut. */
+  const openFile = async (name: string, file: string) => {
+    try {
+      const r = await fetchSetupFile(path(), file);
+      openMarkdown({ title: name, subtitle: r.path, markdown: r.text });
+    } catch (err) {
+      toast(`${OPEN_FILE_FAILED} ${(err as Error).message}`);
+    }
+  };
   const flip = (kind: "context" | "skill", key: string, input: HTMLInputElement) => {
     const on = input.checked;
     const s = setup();
@@ -199,7 +212,9 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
                             {(r) => (
                               <li class="setup-row" classList={{ "setup-row-off": isOff(r.file) }} title={r.file.path}>
                                 <span class="setup-name">
-                                  <span class="setup-path">{r.label}</span>
+                                  <button class="setup-path setup-open" type="button" aria-label={openFileLabel(r.label)} onClick={() => void openFile(r.label, r.file.path)}>
+                                    {r.label}
+                                  </button>
                                   <Show when={r.role}>{(role) => <span class="setup-role">{role()}</span>}</Show>
                                 </span>
                                 <span class="setup-facts">{fileFacts(r.file)}</span>
@@ -235,7 +250,9 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
                             {(k) => (
                               <li class="setup-row" classList={{ "setup-row-off": isOff(k) }} title={k.description ? `${k.path}\n${k.description}` : k.path}>
                                 <span class="setup-name">
-                                  <span class="setup-path">{k.name}</span>
+                                  <button class="setup-path setup-open" type="button" aria-label={openFileLabel(k.name)} onClick={() => void openFile(k.name, k.path)}>
+                                    {k.name}
+                                  </button>
                                 </span>
                                 <span class="setup-facts">{fileFacts(k)}</span>
                                 <Show when={switchable()}>

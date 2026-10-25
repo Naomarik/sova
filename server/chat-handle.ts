@@ -70,6 +70,8 @@ import { stateRoot } from "./state-root";
 import { queueOpenTool, queuePushTool } from "./topics";
 import type { PowersSend } from "./session-powers";
 import { tourTools } from "./tours/tools";
+import { sessionOfferTools } from "./session-offers-tool";
+import { offerNoteFor } from "./session-offers";
 /** The powers host, loaded when first needed (session-profile-routes binds chat-manager at its import). */
 const powersHost = () => import("./session-profile-routes").then((m) => m.powersHost);
 
@@ -665,6 +667,28 @@ export function servedToolsFor(chatId: ChatId, sessionId: string, known: () => s
   return specs.map(declOfTool);
 }
 
+/** The server-hosted tools of a worker or team member (WorkerKind "worker", never a hidden chat), hosted
+    here: only `project_verbs`, under an ordinary session's rules (§app.project-services/callers). */
+export function servedWorkerTools(chatId: ChatId): ServerToolDecl[] {
+  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine())];
+  serveTools(chatId, specs);
+  return specs.map(declOfTool);
+}
+
+/**
+ * Every server-hosted tool of a chat this server opens or adopts: servedToolsFor's, then, for an
+ * ordinary chat (no special kind but a powers profile), its `offer` tool when its snapshot names any
+ * (§chat.offers/tool). Last in the list, so a chat with none declares exactly what it did before.
+ */
+export async function servedToolsForChat(chatId: ChatId, sessionId: string, known: () => string | undefined, kind: string | null): Promise<ServerToolDecl[]> {
+  const decls = servedToolsFor(chatId, sessionId, known, kind === "powers");
+  if (kind !== null && kind !== "powers") return decls;
+  const offers = await sessionOfferTools(sessionId, chatId);
+  if (!offers.length) return decls;
+  serveTools(chatId, offers);
+  return [...decls, ...offers.map(declOfTool)];
+}
+
 /** A pusher's title, the one Sova shows for its session (§chat.topics/push): its display title, else
     the title its chat reports, else "Untitled"; never blank. */
 async function senderTitle(path: string, known: () => string | undefined): Promise<string> {
@@ -748,6 +772,8 @@ export async function answerChatAsk(path: string, method: ChatAskMethod, args: u
       return singletonFor(a.key, a.path ?? path);
     case "reply.timings":
       return fetchSessionTimings(String(a.sessionId ?? ""));
+    case "offers.note":
+      return offerNoteFor(String(a.sessionId ?? ""));
     case "powers.sessions":
       return (await powersHost()).sessions();
     case "powers.session":

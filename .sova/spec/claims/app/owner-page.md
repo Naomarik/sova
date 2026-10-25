@@ -138,8 +138,12 @@ A shown conversation can include its reviewed checked tour attachments (§app.to
     On a phone the tab bar hides while the owner types in the box and comes back when they leave
     it. The operator's Preview as shows the same, read only.
   - **Requests** (`#r`): every one of the owner's requests (§app.project-assistant/requests),
-    newest first, each its title, its project, kind and where it stands; with none, a line
-    saying nothing was asked yet and `Open the Chat`.
+    newest first, each its title, its project, kind and where it stands, an open one with `Close`;
+    the ones the owner closed below the rest under **Closed**, greyed, each with `Reopen`
+    (§app.project-assistant/closing); with none, a line saying nothing was asked yet and `Open the
+    Chat`. `Requests`' count and Home's line leave closed requests out.
+  - **Versions you can try** show each version's summary under its name when one is shown
+    (§app.project-assistant/versions).
   - **A project** (`#p/<handle>`): its name and status, then in this order: **Updates**,
     **Waiting on you** (this project's, only when there is something), **Who we've talked to**,
     **What's been decided**, **What's been built**, **Conversations**. Updates, decisions and
@@ -176,10 +180,12 @@ A shown conversation can include its reviewed checked tour attachments (§app.to
 - **A conversation** reads exactly as a share page shows it (§app.baton/outsider-view), with the
   owner as the viewer: the same filter, redaction and sender labels; briefings only when addressed
   to the owner; how many people an offer went to, never who; never cut at an offer; done and closed
-  conversations included; no composer. A message's photos (§app.baton/images) show as their count
+  conversations included; no composer, except in the owner's own feature request chat while they
+  hold it (§app.project-assistant/feature-chats), which also draws its plan cards. A message's photos (§app.baton/images) show as their count
   only ("2 photos"), never the pictures: only the owner's own photos, in their own Project
   Assistant chat, show as pictures. When it is the owner's turn in it, the page says to answer
-  through the link the operator sent for it.
+  through the link the operator sent for it, except in a feature request chat, where they answer
+  on the page.
 
 ## §app.owner-page/conversations — Which conversations the owner reads
 
@@ -197,6 +203,8 @@ A visible conversation's reviewed tour attachment follows that same conversation
   (the placement's `ownerHidden`, §app.projects/placement, shown by default; `PATCH
   /api/orgs/:id/projects/:pid/placement {ownerHidden}`). A project switched off disappears from the page with everything in it, and its
   handle answers 404.
+- **A feature request chat** (§app.project-assistant/feature-chats) is shown only to the person who
+  opened it, while they are the owner; Hide From is never offered for it.
 - **Never shown**: the project overseer's conversations (current and history), coding sessions
   (their titles and topic summaries too), and every other session of the operator's.
 - **Handles.** Projects and conversations are addressed on the page by a handle (`q_` + 8
@@ -269,6 +277,11 @@ Tour reads reveal only a checked public presentation bound to a conversation and
   worked out from its column (§app.project-assistant/abilities): right away, on its own, the team,
   none. Never a switch's name or label, a level, the overseer's column, a model, a brake's reason
   or a limit.
+- **One carve-out**: a version's summary (§app.project-assistant/versions), one or two plain
+  sentences a model wrote from a fix's commits and changed files, is shown under its version: only
+  through the outsider filter's `said`, then the secret redactor, never the commits, files,
+  branches or messages it was written from, and never once the team hid it (their own rewrite,
+  through the secret redactor, replaces it).
 - A test plants a distinct marker in every one of those fields, checks each marker is present in
   the operator's own views (so its absence means something), then reads every owner-page answer
   and the shell and finds none of them.
@@ -288,15 +301,18 @@ Tour reads reveal only a checked public presentation bound to a conversation and
 - **Its routes**, and no others: `GET /i/<token>` (the same page shell as `/h/`),
   `GET /api/i/<token>` (home), `GET /api/i/<token>/p/<q_handle>`, `GET /api/i/<token>/c/<k_handle>`,
   `GET /api/i/<token>/c/<k_handle>/tours/<handle>` and its narrowly scoped exact-edition asset reads
-  (§app.tours/handoffs), `GET /api/i/<token>/assistant` (the chat), `POST /api/i/<token>/assistant`
+  (§app.tours/handoffs), `POST /api/i/<token>/c/<k_handle>/message` and `POST
+  /api/i/<token>/c/<k_handle>/end` (the owner's feature request chat,
+  §app.project-assistant/feature-chats), `GET /api/i/<token>/assistant` (the chat), `POST /api/i/<token>/assistant`
   (a message to it), `POST /api/i/<token>/assistant/image` and `GET
-  /api/i/<token>/assistant/img/<n>` (the owner's photos, §app.project-assistant/photos), the socket
+  /api/i/<token>/assistant/img/<n>` (the owner's photos, §app.project-assistant/photos), `POST
+  /api/i/<token>/requests/<r_handle>` (close or reopen a request, §app.project-assistant/closing), the socket
   `/ws/i?token=` (the chat's live view), `GET /i/<token>/v/<v_handle>`
   (a version) and `POST /i/<token>/ask-link` (§app.owner-page/link). The tour reads check current
   owner access and the already-exposed conversation cut before any file read, and recheck after
   asynchronous reads; denial is indistinguishable missing 404. They have no Ask control. Any other
-  `/i/` or `/api/i/` path or method answers 404. Only a message to the Project Assistant reaches a
-  model.
+  `/i/` or `/api/i/` path or method answers 404. Only a message to the Project Assistant or to the
+  owner's own feature request chat reaches a model.
 - **Fresh.** The page reads again every 60 seconds while it is visible (paused while hidden, at
   once when shown again) and says when it last did.
 - **Limits.** The listener's per-address limit applies, and the ordinary page and scoped tour-manifest reads share the existing per-token ceiling of 120 requests a minute (429). Exact tour-picture reads use a separate per-token bucket of 120 a minute, so reading pictures does not spend the page's allowance. The owner's photo reads (`/api/i/<token>/assistant/img/<n>`) count in the listener's photo bucket (§app.baton/share-listener), never the page's; a photo upload has the hand-off upload's body cap and time (§app.baton/share-listener). Tour denial remains indistinguishable missing 404 even when a rate bucket is exhausted; current access and exact picture membership are checked before the bucket and before any picture read.
@@ -329,8 +345,16 @@ Tour reads reveal only a checked public presentation bound to a conversation and
 - **The Owner card's Project Assistant part** (§app/project-assistant): one line, "{n} open
   requests from {first name}", linking to the org's Requests tab (§app.project-assistant/requests-tab),
   which lists them and answers them, in place of a list here; `Open Assistant Chat` once the conversation exists; its models
-  per kind of work (reply, coding, gathering), each with its price and, for coding and gathering,
-  whether a project overrides it (§app.project-assistant/models); and, per project, its Project
+  (§app.project-assistant/models) as three rows, `Its replies`, `Fixes it starts` and `Feature request
+  chats it starts` (the `gathering` kind, which runs the feature request chats it opens), each saying where its model comes from, the model and its
+  thinking level ("Default · Opus 5.5 · medium", "This organization · glm-5.3 · high") and its
+  price, with `Change`, which opens the chat composer's model picker (the model row and its
+  thinking ladder, then providers and models: favorites, search, the vision tag, models Settings →
+  Models turned off left out) and saves the model and thinking at once, and, only on the
+  organization's own pick, `Use Default`, which clears it. With no default and no pick the row says
+  "Not set. Set a default in Settings → Organizations.", linking there. A reply model this host can't
+  run or Settings → Models turned off is said under its row; for fixes, a project that overrides it
+  is named; and, per project, its Project
   Assistant column of power switches (§app.project-overseer/autonomy-levels; its copy
   §design.copy-deck/project-powers), the same control as the project page's, with one line under
   them saying the owner sees what these let the assistant do, in plain words, on their page
@@ -341,10 +365,14 @@ Tour reads reveal only a checked public presentation bound to a conversation and
   row at the top of the modal, never a fixed bar) and the chat's suggestions, read only. A test pins that the preview's data equals the token
   route's for the same org.
 - **Project page: an Owner Page card** (only while the org has an owner): the `Show this project
-  on {first name}'s page` switch and the updates log with `Take Down` (§app.owner-page/updates).
+  on {first name}'s page` switch, the updates log with `Take Down` (§app.owner-page/updates), and
+  the versions on the owner's page with their summaries, `Rewrite`, `Use Automatic`, `Hide` and
+  `Show` (§app.project-assistant/versions; `GET /api/orgs/:id/projects/:pid/versions`, `PUT
+  /api/orgs/:id/projects/:pid/versions/:instance {text?: string | null, hidden?: boolean}`).
 - **Baton strip**: `Hide From {first name}` / `Show To {first name}`, a row of the strip's More
-  actions menu (§app.baton/strip-layout), on each conversation of an org with an owner, and a line
-  while it is hidden (§app.owner-page/conversations).
+  actions menu (§app.baton/strip-layout), on each conversation of an org with an owner but a feature
+  request chat (§app.project-assistant/feature-chats), and a line while it is hidden
+  (§app.owner-page/conversations).
 - **Person page**: an `Owner` chip beside the owner's status, their owner link among their links
   (state, made, expires, Copy Link while live and kept, Delete), and their visits to the owner page as "Opened the owner page"
   rows (§app.organizations/person-page).
@@ -418,7 +446,8 @@ Tour reads reveal only a checked public presentation bound to a conversation and
 - **Showing or summarising the overseer's conversation**: it is candid, technical, and its tool
   results carry roster data and the About text.
 - **Answering a conversation from the page**: the owner still answers their own questions through
-  the links they are sent; the page writes only to the Project Assistant.
+  the links they are sent; the page writes only to the Project Assistant and, the one exception,
+  to the owner's own feature request chat (§app.project-assistant/feature-chats).
 - **An owner per project, or a login**: one person per org with one personal link is what the
   user asked for.
 - **Showing costs**: never on this page; the assistant's models and their costs are on the

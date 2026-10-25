@@ -11,12 +11,15 @@
  * WS   /ws/i?token=T&v=<tab>     server -> client AssistantServerMessage; client messages ignored
  * GET  /i/T/v/<v_…>              -> 302 to the version (an owner-bound preview link) | 404 | 410
  * POST /i/T/ask-link             -> 202 { ok, askedAt } | 409 (still works) | 410 | 404 (§app.owner-page/link)
+ * POST /api/i/T/requests/<r_…>   body { action: "close" | "reopen" } -> 202 { ok: true } | 404 | 409 { code: "closed" | "not-yours" } | 429
+ *                                (the owner closes or reopens their own request, §app.project-assistant/closing)
  * OwnerHome gains `requests`, `versions` and `assistant` (shared/owner.ts).
  *
  * Operator routes (main listener only):
  * GET  /api/orgs/:id/owner/assistant              -> AssistantInfo
- * PUT  /api/orgs/:id/owner/assistant              body { models: WorkModels } -> AssistantInfo
- * POST /api/orgs/:id/owner/requests/:rid          body { status: "done" | "declined" } -> AssistantInfo
+ * PUT  /api/orgs/:id/owner/assistant              body { models: WorkModels } -> AssistantInfo (a kind's null: follow the default)
+ * POST /api/orgs/:id/owner/requests/:rid          body { status: "done" | "declined" } | { noted: true } -> AssistantInfo
+ *      ({ noted: true }: Got It on a request the owner closed while it was being worked on)
  * POST /api/orgs/:id/owner/assistant/open         -> { sessionId, path } (Open Assistant Chat; makes it when none)
  * POST /api/orgs/:id/owner/requests/:rid/chat     -> { sessionId, path } (Start Chat, §app.project-assistant/request-chat)
  *      | 404 unknown | 409 { code: "closed" } | 409 { code: "has-chat", sessionId, path } | 409 { code: "not-started" } (its note not written; nothing linked)
@@ -36,11 +39,21 @@ export interface ProjectAssistantMarkerData {
 
 export type OwnerRequestKind = "bug" | "outage" | "question" | "feature" | "fix" | "deploy" | "try";
 export const OWNER_REQUEST_KINDS: readonly OwnerRequestKind[] = ["bug", "outage", "question", "feature", "fix", "deploy", "try"];
-export type OwnerRequestStatus = "with-team" | "started" | "done" | "declined";
+export type OwnerRequestStatus = "with-team" | "started" | "done" | "declined" | "closed";
+
+/** Closed: done or declined by the team, or closed by the owner (§app.project-assistant/closing). The one test every
+    reader uses: a closed request takes no new chat, leaves the to-do lists, and nothing moves it on its own. */
+export const isRequestClosed = (status: OwnerRequestStatus): boolean => status === "done" || status === "declined" || status === "closed";
+
+/** Who closed (or reopened) a request for the owner: the owner on their page, or their assistant on their yes. */
+export interface OwnerRequestBy {
+  kind: "owner" | "assistant";
+  personId: string;
+}
 
 /** A kind and a status in the operator's words (the Requests tab, the request note). */
 export const OWNER_REQUEST_KIND_WORD: Record<OwnerRequestKind, string> = { bug: "Problem", outage: "App down", question: "Question", feature: "New feature", fix: "Fix", deploy: "Release", try: "Version to try" };
-export const OWNER_REQUEST_STATUS_WORD: Record<OwnerRequestStatus, string> = { "with-team": "With the team", started: "Being worked on", done: "Done", declined: "Declined" };
+export const OWNER_REQUEST_STATUS_WORD: Record<OwnerRequestStatus, string> = { "with-team": "With the team", started: "Being worked on", done: "Done", declined: "Declined", closed: "Closed by the owner" };
 
 /** The note type of a request put in the chat Start Chat opened (§app.project-assistant/request-chat). */
 export const OWNER_REQUEST_NOTE = "sova-owner-request";
@@ -89,6 +102,11 @@ export interface OwnerRequest {
   sessionId?: string;
   /** The chat Start Chat linked, newest (its `linked` line; it changes no status). */
   linked?: { sessionId: string; at: string };
+  /** While `closed`: who closed it, when, the status it was closed from, and whether the operator pressed Got It
+      (only asked of one closed while `started`). */
+  closed?: { by: OwnerRequestBy; at: string; prior: OwnerRequestStatus; noted?: boolean };
+  /** A `try` request: the id of the version's copy it asked for (absent on one filed before). */
+  version?: string;
   /** Operator routes only: the request's chat (the linked one, else the fix's session), present
       only while it exists and isn't archived (worked out at read time). `startedAt`: when Start
       Chat linked it; absent for a fix's session. */
@@ -106,6 +124,12 @@ export interface OwnerRequestRow {
   title: string;
   status: OwnerRequestStatus;
   at: string;
+  /** A closed request (status `closed`): "you" when the owner closed it on their page, "assistant" when their
+      Project Assistant did on their yes. */
+  closedBy?: "you" | "assistant";
+  /** A `feature` request's feature request chat, as it stands now (§app.project-assistant/feature-chats):
+      "planning" while it is open, "agreed" once done; worked out at read time. */
+  plan?: "planning" | "agreed";
 }
 
 /** A version the owner can try (§app.project-assistant/versions). */
@@ -113,11 +137,35 @@ export interface OwnerVersionRow {
   /** v_…: opened at /i/<token>/v/<handle>. */
   handle: string;
   project: string;
-  /** "Current version", "Fix: {title}" or "Fix {n} · started {date}". */
+  /** "Current version", "Fix: {title}" or "Work in progress · started {date}", unique within its project (a repeat gets " (2)"). */
   label: string;
   /** "starting": the assistant started it and it hasn't answered yet; "failed": it didn't start
       (§app.project-assistant/versions). */
   state: "running" | "starting" | "not-running" | "failed";
+  /** One or two plain sentences on what it changes against the Current version, when one is shown (written
+      automatically or by the team, cleaned for the owner; §app.project-assistant/versions). */
+  summary?: string;
+}
+
+/** A version on the team's Owner Page card, with its summary as stored (operator-side):
+ * GET /api/orgs/:id/projects/:pid/versions -> VersionSummaryRow[]
+ * PUT /api/orgs/:id/projects/:pid/versions/:instance  body { text?: string | null, hidden?: boolean } -> VersionSummaryRow[]
+ *     (text: Rewrite; null: Use Automatic; hidden: Hide / Show) */
+export interface VersionSummaryRow {
+  /** The copy's instance id. */
+  instance: string;
+  label: string;
+  /** The Current version (it has no summary). */
+  current: boolean;
+  state: OwnerVersionRow["state"];
+  /** What the owner is shown now (before the outsider filter), or null. */
+  summary: string | null;
+  /** Where the shown one comes from; "hidden" while the team hides it. */
+  source: "auto" | "team" | "hidden" | null;
+  hidden: boolean;
+  /** The automatic one and the team's rewrite, as kept. */
+  auto: string | null;
+  team: string | null;
 }
 
 /** A photo in a message: `n` numbers the photos of THIS view in order (fetched from
@@ -147,6 +195,9 @@ export interface AssistantMessage {
   /** On the assistant's message after a start_version that started or found a copy: that version,
       resolved at each read (§app.project-assistant/versions). */
   versions?: OwnerVersionRow[];
+  /** On the assistant's message after a start_feature_chat that opened one: that chat, while it is
+      the owner's to read (§app.project-assistant/feature-chats). */
+  featureChat?: { conversation: string; title: string };
 }
 
 export interface AssistantView {
@@ -162,7 +213,27 @@ export interface AssistantView {
   photos?: { perMessage: number; maxBytes: number };
 }
 
-export type AssistantServerMessage = { type: "view"; view: AssistantView } | { type: "streaming"; text: string } | { type: "error"; code: string; message: string };
+export type AssistantServerMessage =
+  | { type: "view"; view: AssistantView }
+  | { type: "streaming"; text: string }
+  | { type: "error"; code: string; message: string }
+  /** One of the owner's feature request chats changed: read it again (§app.project-assistant/feature-chats). */
+  | { type: "conversation"; conversation: string }
+  /** Its reply so far, filtered as a hand-off page's streaming text. */
+  | { type: "conversation-streaming"; conversation: string; text: string };
+
+/** A feature request chat the Project Assistant opened (§app.project-assistant/feature-chats): who it belongs to. */
+export interface FeatureChatRecord {
+  sessionId: string;
+  /** The owner who opened it (a person id). */
+  personId: string;
+  projectId: string;
+  /** Its `feature` request. */
+  requestId: string;
+  at: string;
+  /** Closed because its person stopped being the owner. */
+  ended?: { at: string; why: "owner-changed" | "left" };
+}
 
 /** `<workspace>/project-assistant.json`: the org's assistant models and its conversation per owner. */
 export interface AssistantStore {
@@ -170,6 +241,8 @@ export interface AssistantStore {
   models: WorkModels;
   /** Owner person id -> their conversation's session id (the newest; earlier ones stay in the workspace, closed). */
   conversations: Record<string, string>;
+  /** The feature request chats it opened, oldest first. */
+  featureChats?: FeatureChatRecord[];
 }
 
 /** A model as the Owner card shows it: the pick, its price per million tokens when known. */
@@ -178,12 +251,31 @@ export interface PricedPick extends ModelPick {
   price?: { input: number; output: number };
 }
 
+/** Where a kind's model comes from (§app.project-assistant/models): a project's override (coding and
+    gathering only), the organization's own pick, or the host's default. */
+export type AssistantModelSource = "project" | "org" | "default";
+
+/** A resolved model with its source. */
+export interface ResolvedPick extends PricedPick {
+  source: AssistantModelSource;
+}
+
+/** Why a resolved reply model doesn't run: this host can't run it (not in its model list, so unknown or
+    without credentials), or Settings → Models turned it off. */
+export type AssistantModelProblem = "unavailable" | "turned-off";
+
 /** The Owner card's Project Assistant part. */
 export interface AssistantInfo {
-  /** The org's models per kind of work. */
-  models: Partial<Record<WorkKind, PricedPick | null>>;
+  /** The org's resolved model per kind of work (its own pick, else the default); null when neither is set. */
+  models: Partial<Record<WorkKind, ResolvedPick | null>>;
+  /** The host's default (Settings → Organizations), or null. */
+  default: PricedPick | null;
+  /** The resolved reply model runs here: the assistant answers (§app.project-assistant/chat). */
+  ready: boolean;
+  /** Why the resolved reply model doesn't run, when one resolves and it doesn't. */
+  replyProblem?: AssistantModelProblem | null;
   /** Per project: which coding/gathering model applies and where it comes from. */
-  projects: { projectId: string; name: string; coding: { pick: PricedPick | null; source: "org" | "project" }; gathering: { pick: PricedPick | null; source: "org" | "project" } }[];
+  projects: { projectId: string; name: string; coding: { pick: PricedPick | null; source: AssistantModelSource | null }; gathering: { pick: PricedPick | null; source: AssistantModelSource | null } }[];
   /** The owner's conversation, once it exists. */
   sessionId: string | null;
   /** Whether the reply model sees images; null with no reply model (the card's "can't see photos" line). */

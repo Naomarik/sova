@@ -11,6 +11,8 @@ import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoEr
 import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, mergeCodingWorktree, messageProjectOverseer, patchProjectOverseer, projectOverseerChat, projectOverseerInfo, projectWorktrees, removeCodingWorktree, startCoding } from "./project-overseer";
 import { projectOf, projectOverseerPaths, type ProjectOverseerPaths, readPoSettings, writePoSettings } from "./project-overseer-store";
 import { overseerMemoryInfo, putOverseerMemorySwitch } from "./memory/routes";
+import { recordKept } from "./project-settings";
+import { TOKEN_HEADER } from "./auth";
 
 /**
  * The operator's routes for project overseers (§app/project-overseer; the list is in
@@ -75,7 +77,9 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
   }));
   app.patch(base, handle(async (c) => {
     const p = pathsOf(c);
-    return c.json(await patchProjectOverseer(p.projectId, await body(c)), 200, NO_STORE);
+    // Who changed it, for the settings history (§app.project-overseer/settings): the global Overseer, a script (the token in a header), or the page.
+    const by = overseerOf(c) ? ({ kind: "overseer" } as const) : c.req.header(TOKEN_HEADER) !== undefined ? ({ kind: "operator", via: "script" } as const) : ({ kind: "operator", via: "page" } as const);
+    return c.json(await patchProjectOverseer(p.projectId, await body(c), by), 200, NO_STORE);
   }));
   // Its memory switch: the Overseer's route's shape, its own overseer.json.
   app.get(`${base}/memory`, handle(async (c) => {
@@ -91,8 +95,11 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
     } catch {
       return c.json({ error: "Expected JSON body { on?, type?, size? }" }, 400);
     }
-    const out = await putOverseerMemorySwitch(readPoSettings(p).memory, b, (memory) => writePoSettings(p, { ...readPoSettings(p), memory }), await projectOverseerChat(p.projectId));
-    return "error" in out ? c.json({ error: out.error }, 400) : c.json(out, 200, NO_STORE);
+    const before = readPoSettings(p);
+    const out = await putOverseerMemorySwitch(before.memory, b, (memory) => writePoSettings(p, { ...readPoSettings(p), memory }), await projectOverseerChat(p.projectId));
+    if ("error" in out) return c.json({ error: out.error }, 400);
+    recordKept(p.projectId, before, readPoSettings(p), overseerOf(c) ? { kind: "overseer" } : { kind: "operator", via: c.req.header(TOKEN_HEADER) !== undefined ? "script" : "page" });
+    return c.json(out, 200, NO_STORE);
   }));
   app.post(`${base}/clear`, handle(async (c) => {
     const p = pathsOf(c);

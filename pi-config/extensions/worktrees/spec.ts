@@ -46,7 +46,7 @@ export interface MergeSpecRequest {
 	before: string;
 	after: string;
 	branchSha: string;
-	/** The target is the repo's default branch: the landing's own drafts are promoted now. */
+	/** The target is the repo's default branch: the landing's own drafts didn't land with it, and are kept for a fresh branch. */
 	onDefault?: boolean;
 }
 
@@ -91,7 +91,13 @@ export async function mergeSpecReport(git: Git, req: MergeSpecRequest, opts: { c
 		for (const d of landing.unpromotedDrafts) {
 			const own = d.worktree === top || d.worktree === req.path;
 			const them = d.ids.length === 1 ? "it" : "them";
-			const what = !own ? `its session promotes ${them}` : req.onDefault ? `this landed on the default branch, so promote ${them} now` : "promote what shipped";
+			// The owner promotes on its own branch before landing; after a landing on the default branch they are never
+			// promoted there: the draft stays in the worktree until promoted on a fresh branch.
+			const what = !own
+				? `its session promotes ${them}`
+				: req.onDefault
+					? `${them === "it" ? "it" : "they"} didn't land with the code; the draft stays in ${d.worktree}/${DRAFTS}/${d.draft} until promoted on a fresh branch from the default branch, never on it directly`
+					: `promote ${them} on the branch it merged into, before that branch lands`;
 			warnings.push({
 				text: `draft ${d.draft}${own ? "" : ` in ${d.worktree}`} has ${d.ids.length} unpromoted record${d.ids.length === 1 ? "" : "s"} (${d.ids.join(", ")}): ${what}`,
 				key: `${d.worktree}\0${d.draft}\0${d.ids.join(",")}`,

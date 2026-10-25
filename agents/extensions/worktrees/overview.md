@@ -11,7 +11,7 @@ and each merge becomes a card.
 ## What lives here
 
 - [`README.md`](../../../pi-config/extensions/worktrees/README.md).
-- Tests: `cd pi-config/extensions/worktrees && node --test state.test.ts git.test.ts spec.test.ts && node tests/run.mjs`.
+- Tests: `cd pi-config/extensions/worktrees && node --test state.test.ts git.test.ts spec.test.ts landing.test.ts && node tests/run.mjs`.
 
 ## What Sova relies on
 
@@ -30,6 +30,13 @@ and each merge becomes a card.
 - `spec.ts`: when a merge is recorded, it adds the landing's spec warnings to the merge note (changed files no claim
   maps, draft records left behind, hand-resolved §, orphaned evidence), in any project with a spec, mode on or off.
 
+- `landing.ts` (builtins only): the user's answers on a branch's Landing card, `<state root>/landing.json`
+  (Land It or Not Yet per branch and commit, §chat.worktrees/landing-answers). Sova writes it (a click on
+  the card, `server/session-offers.ts`) and the merge round's driver reads it, carrying an answer over
+  clean master merges itself (`round.mjs` `cleanMergeParent`, `landingAnswerAt`). Nothing enforces it:
+  `worktree merge` needs no go-ahead. `answerAt`'s newest-answer rule has a copy in the driver
+  (`landingAnswer`), held equal by `server/merge-round-rules.test.ts`: change both together.
+
 `create <name>` runs `git worktree add -b feat/<name>` at `<parent of the main checkout>/.worktrees/<repo>-<name>`
 (AGENTS.md's worktree rule) and tracks it, so workers may start there. The dev watcher doesn't watch this directory: an edit reaches a running server only at
 its restart.
@@ -40,4 +47,6 @@ its restart.
 - `git.ts`'s `reviewBase`, `mergedReviewBase` or `REVIEW_LIMITS`: show-changes' tests too
   (`cd pi-config/extensions/show-changes && node --test git.test.ts`) and `server/git-diff.test.ts`; the
   tool and the viewer must keep choosing the same base and limits.
+- `landing.ts`'s file shape: Sova's writers and readers above and
+  `.sova/playbooks/merge-round/scripts/round.mjs` (its `parseLanding`) in the same branch.
 - `spec.ts`: [modes/spec](../../modes/spec/overview.md) (its MODE.md row).

@@ -114,8 +114,143 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .archive-date-label .icon-twist { transition: transform var(--dur-fast) var(--ease-standard); }
 .archive-date[open] > .archive-date-label .icon-twist { transform: rotate(90deg); }
 .archive-date-name { flex: 1; min-width: 0; }
-/* Folder groups inside an open section: a hairline under the date row. */
-.archive-date[open] > .session-group:first-of-type { border-top: var(--stroke-thin) solid var(--color-border); }
+/* An open day: a hairline under its head, full width; its folders sit one step in beside its guide line. */
+.archive-date:not(.org-done)[open] > .archive-date-label { border-bottom: var(--stroke-thin) solid var(--color-border); }
+
+/* ---- Guide lines (§app.session-list/guide-lines). Every collapsible group inside a region has a line running down
+   from its head's chevron, and pressing it closes the group (lib/guide-line). The line is a transparent `--space-3`-wide
+   box, centred on a 2px `--color-border` line, a direct child of its group after the head. Two kinds:
+   - Beside the contents (an org, a user group, an org project's Done, an Archive day): the chevron keeps its place,
+     the head's `--space-4` inset plus half the 16px icon; the line starts at the head's bottom and the contents sit
+     one step in beside it.
+   - Down the rows' rail (a folder, a Projects-region project and its "{n} done"): the chevron moves onto the axis of
+     its rows' state rail and the line runs down that axis, behind the rail's items, each ringed in its row's ground so
+     the line breaks around it. The rows stay 4px in, where they always were. */
+.sidebar-list {
+  /* An org's projects and an org Done's rows: where an org's projects already sat. */
+  --guide-step: calc(var(--space-5) + var(--space-1));
+  /* A user group's and an Archive day's folders, a Projects-region Done's rows: clear of the parent's line. */
+  --guide-nest: var(--space-5);
+  /* The rows' state rail axis, from the row's left edge: the rail's 2px margin plus half its 30px column
+     (base.css, .session-rail). */
+  --rail-axis: calc(2px + 30px / 2);
+  /* Where a folder's and a Projects-region project's rows sit inside it. */
+  --folder-inset: var(--space-1);
+}
+.org-section,
+.group-section,
+.archive-date,
+.session-group,
+.org-project { position: relative; }
+.guide-line {
+  --guide-x: calc(var(--space-4) + var(--space-2));
+  --guide-before: calc(var(--space-3) / 2);
+  --guide-after: calc(var(--space-3) / 2);
+  position: absolute;
+  top: var(--row-height);
+  bottom: 0;
+  left: calc(var(--guide-x) - var(--guide-before));
+  width: calc(var(--guide-before) + var(--guide-after));
+  cursor: pointer;
+}
+.guide-line::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--guide-before) - var(--stroke-thin));
+  width: calc(var(--stroke-thin) * 2);
+  background: var(--color-border);
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.guide-line:hover::before { background: var(--color-border-strong); }
+/* An org's padding under its last project is not its contents. */
+.org-section > .guide-line { bottom: var(--space-2); }
+
+/* Down the rail. The folder's and the project's head is sticky and on top of the line, so the line can run the whole
+   block: it shows from the head's bottom, and the stuck head keeps its own press. The group is its own stacking
+   context, so its head (2) stays over the rail items (1), which stay over the line. */
+.session-group > .guide-line,
+.sidebar-projects .org-project > .guide-line {
+  --guide-x: calc(var(--folder-inset) + var(--rail-axis));
+  top: 0;
+}
+.session-group,
+.sidebar-projects .org-project { isolation: isolate; }
+.session-group > summary,
+.sidebar-projects .org-project > .org-project-head { z-index: 2; }
+/* The folder's chevron on its rows' rail axis: the head's inset stops half an icon short of it. */
+.session-group > summary > .list-group-label { padding-left: calc(var(--rail-axis) - var(--space-2)); }
+/* The project's arrow, a 44px button, centred on the same axis (the label's own `--space-3` inset undone). */
+.sidebar-projects .org-project-label > .project-fold { margin-left: calc(var(--rail-axis) - var(--tap-min) / 2 - var(--space-3)); }
+/* A project's "{n} done": its rows one step in, its chevron and line on their rail's axis, clear of the project's. */
+.sidebar-projects .project-done > .list { margin-left: var(--guide-nest); }
+.sidebar-projects .project-done > .archive-date-label { padding-left: calc(var(--guide-nest) + var(--rail-axis) - var(--space-2)); }
+.sidebar-projects .project-done > .guide-line { --guide-x: calc(var(--guide-nest) + var(--rail-axis)); }
+/* The rail's items sit on the line, each in a ring of its row's ground: rest, hover, focus or current tint. */
+.session-row-shell { --row-ground: var(--color-surface); }
+.session-row-shell:hover,
+.session-row-shell:focus-within { --row-ground: var(--color-sunken); }
+.session-row-shell-current,
+.session-row-shell-current:hover,
+.session-row-shell-current:focus-within { --row-ground: var(--color-accent-tint); }
+.session-group .session-rail-item,
+.sidebar-projects .org-project .session-rail-item { position: relative; z-index: 1; }
+/* The current tint is as dark as the line's own `--color-border`, so across the open row the line would vanish: that
+   row redraws its piece of the line in the strong line colour, over the line and under the rail's items. */
+.session-group .session-row-shell-current,
+.sidebar-projects .org-project .session-row-shell-current { position: relative; }
+.session-group .session-row-shell-current::before,
+.sidebar-projects .org-project .session-row-shell-current::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--rail-axis) - var(--stroke-thin));
+  width: calc(var(--stroke-thin) * 2);
+  background: var(--color-border-strong);
+  pointer-events: none;
+}
+/* TUI's plate and the count's figure: their own box, ringed. */
+.session-group .session-rail-tui,
+.sidebar-projects .org-project .session-rail-tui { box-shadow: 0 0 0 var(--stroke-thin) var(--row-ground); }
+.session-group .session-rail-count,
+.sidebar-projects .org-project .session-rail-count {
+  padding: 0 var(--stroke-thin);
+  background: var(--row-ground);
+  box-shadow: 0 0 0 var(--stroke-thin) var(--row-ground);
+}
+/* Busy: its button is invisible and wide, so the ring is a disc behind the dot (the dot pulses; its ring doesn't). */
+.session-group .session-rail-state.chip-live::before,
+.sidebar-projects .org-project .session-rail-state.chip-live::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  top: 50%;
+  width: calc(7px + var(--space-1) * 2);
+  height: calc(7px + var(--space-1) * 2);
+  transform: translate(-50%, -50%);
+  border-radius: var(--r-full);
+  background: var(--row-ground);
+}
+
+/* The contents, one step in beside a line beside the contents. */
+.org-done > .list { margin-left: var(--guide-step); }
+.group-section:not(.org-section) > .session-group,
+.group-section:not(.org-section) > .sidebar-region-note,
+.archive-date:not(.org-done) > .session-group { margin-left: var(--guide-nest); }
+/* What will close lights up while its line is hovered: the head takes the hover fill and full ink. */
+.org-section:has(> .guide-line:hover) > summary,
+.group-section:has(> .guide-line:hover) > summary,
+.archive-date:has(> .guide-line:hover) > summary,
+.session-group:has(> .guide-line:hover) > summary,
+.org-project:has(> .guide-line:hover) > .org-project-head {
+  background: var(--color-sunken);
+  color: var(--color-ink);
+}
+.session-group:has(> .guide-line:hover) > summary > .list-group-label { color: var(--color-ink); }
 
 /* Archive cleanup: one quiet button closing the open Archive. */
 .archive-tools {
@@ -472,14 +607,12 @@ html, body { overflow: clip; overscroll-behavior: none; }
   color: var(--color-ink-muted);
 }
 .org-section[open] { padding-bottom: var(--space-2); }
-/* Projects: sticky labels, not sections — one level of sticking inside the pane. Under an org the
-   block steps in so its guide rule falls under the org's chevron; the Projects region has no org
-   level, so its blocks start at the edge. */
-.org-project {
-  padding-left: calc(var(--space-1) / 2);
-  border-left: calc(var(--stroke-thin) * 2) solid var(--color-border);
-}
-.org-section > .org-project { margin-left: var(--space-5); }
+/* Projects: sticky labels, not sections — one level of sticking inside the pane. The Projects region
+   has no org level, so its blocks start at the edge, their rows 4px in, with their own guide line
+   down their rows' rail; under an org the blocks step in beside the org's one guide line, centred
+   under its chevron (§app.session-list/guide-lines), and carry no line of their own. */
+.org-project { padding-left: var(--folder-inset); }
+.org-section > .org-project { margin-left: var(--guide-step); padding-left: 0; }
 .org-project + .org-project { margin-top: var(--space-3); }
 .org-project-label {
   position: sticky;
@@ -1376,3 +1509,18 @@ html, body { overflow: clip; overscroll-behavior: none; }
 }
 .app[data-focus-moving] > .app-main:has(> .transcript-wrap) > .session-head { transition: min-height var(--dur-base) var(--ease-standard); }
 .app[data-focus-moving] > .app-main > .transcript-wrap > .focus-toggle { transition: bottom var(--dur-base) var(--ease-standard); }
+
+/* A setup row's name opens its file in the markdown viewer (§chat.transcript/setup-card-open-file):
+   the name keeps its look and place (.setup-path), as a button with no chrome of its own. */
+.setup-open {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  text-align: start;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+}
+.setup-open:hover { text-decoration: underline; text-underline-offset: 0.2em; }
+.setup-open:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }

@@ -59,6 +59,7 @@
 //               completion
 //     t19       a team across a restart: alpha's team_msg to beta just before it arrives once; a
 //               team_ask reaches the parent once; after a parent reload alpha's inbox keeps beta's message
+//               (closed automatically by then: listed with `limit`, which shows closed items)
 //     t19n      a monitor's wake_nudge set before a parent reload fires once after it (team-defaults.json)
 //     t20       kill -9 of a worker mid-run: the continue once, the run finishes, one completion; a
 //               second kill during that resume is final ("stopped unexpectedly", last output)
@@ -74,7 +75,7 @@
 //     tsend     §chat.transcript/send-while-starting: on a chat closed while quiet, a model switch and a
 //               message sent on a socket closed at once still run, the switch first; the same client id
 //               on two sockets runs once; frames POSTed by a page that went (/api/chat/frames) run the
-//               same way, a repeat once; a refusal (its model turned off, its folder gone) with no socket
+//               same way, a repeat once; a refusal (its model turned off, its folder unreachable) with no socket
 //               left goes back as the session's saved draft
 //     t21rx     F14/F15: Reload now and a prompt at once, either order: refused back by clientId and run once
 //               when sent again, or taken first and reloaded at the reply's end; never lost or doubled
@@ -123,7 +124,7 @@
 // Writes <scratch>/results.json (every check, pass/fail, details) and keeps server-*.log and
 // mock.jsonl beside it. Exit 0 when every check passed, 1 when one failed, 2 on a setup problem.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -745,13 +746,19 @@ async function tsend() {
   R.check(userTurns(c1, "TSEND-C1") === 0, "tsend: the refused message never ran");
   await c.api("/api/settings/models", { method: "PUT", body: JSON.stringify({ disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }) });
 
-  // (c2) A chat that can't start (its folder is gone), with no socket left: the text goes back as the draft.
-  const gone = join(scratch, "tsend-gone");
-  mkdirSync(gone, { recursive: true });
-  const c2 = await quietChat(gone);
-  rmSync(gone, { recursive: true, force: true });
-  await sendAndLeave(c2, [{ type: "prompt", text: "TSEND-C2 never started", clientId: "tsend-c2" }]);
-  for (let i = 0; i < 60 && draftOf(c2) === null; i++) await sleep(500);
+  // (c2) A chat that can't start (its folder can't be reached: a folder that is gone opens in the home
+  // folder instead), with no socket left: the text goes back as the draft.
+  const shut = join(scratch, "tsend-shut");
+  const unreachable = join(shut, "repo");
+  mkdirSync(unreachable, { recursive: true });
+  const c2 = await quietChat(unreachable);
+  chmodSync(shut, 0o000);
+  try {
+    await sendAndLeave(c2, [{ type: "prompt", text: "TSEND-C2 never started", clientId: "tsend-c2" }]);
+    for (let i = 0; i < 60 && draftOf(c2) === null; i++) await sleep(500);
+  } finally {
+    chmodSync(shut, 0o755);
+  }
   R.check(draftOf(c2) === "TSEND-C2 never started", `tsend: a message whose chat failed to start goes back as the draft (${JSON.stringify(draftOf(c2))})`);
   const list = await c.api("/api/sessions");
   const rows = Array.isArray(list) ? list : (list?.sessions ?? []);
@@ -1733,7 +1740,9 @@ async function t18b() {
 
 // T19: a team across a restart: alpha's team_msg to beta, made just before the restart, arrives once;
 // alpha's team_ask reaches the parent once; after a parent reload alpha's inbox still lists beta's
-// earlier message.
+// earlier message. Beta's message reached alpha as a one-item wake, which showed it in full, and the
+// safety net closed it when that turn ended (§app.teams/inbox-zero), so it is no longer open: the
+// default list shows only open items, and `limit` lists the newest whatever their status.
 async function t19() {
   const team = {
     name: "t19",
@@ -1776,9 +1785,12 @@ async function t19() {
   const list = await agentList(p3);
   const a = list.find((x) => x.name === "alpha");
   R.check(a && !a.restored, `t19: after the parent's reload alpha is live again, not restored (${JSON.stringify(a)?.slice(0, 160)})`);
-  if (a) await turn(p3, `[call agent_steer ${JSON.stringify({ id: a.id, message: "[call team_inbox {}] read your inbox" })}]`);
-  await waitFor(() => askedBy(chatPid(alpha.path)).some((e) => e.afterTool && /HELLO-T19/.test(e.toolText ?? "")), 60000);
-  R.check(askedBy(chatPid(alpha.path)).some((e) => e.afterTool && /HELLO-T19/.test(e.toolText ?? "")), "t19: after the parent's reload alpha's team_inbox still lists beta's earlier message");
+  if (a) await turn(p3, `[call agent_steer ${JSON.stringify({ id: a.id, message: '[call team_inbox {"limit":20}] read your inbox' })}]`);
+  const listed = () => askedBy(chatPid(alpha.path)).find((e) => e.afterTool && /HELLO-T19/.test(e.toolText ?? ""))?.toolText ?? "";
+  await waitFor(() => listed(), 60000);
+  const rows = listed().split("\n").filter((l) => /HELLO-T19/.test(l));
+  R.check(rows.length === 1, `t19: after the parent's reload alpha's team_inbox still lists beta's earlier message, once (${JSON.stringify(rows)})`);
+  R.check(rows.length === 1 && /\[addressed\]/.test(rows[0]) && /closed automatically/.test(rows[0]), `t19: beta's message is listed as closed automatically, its status kept through the reload (${rows[0]})`);
   noRpc("t19");
   p3.s.close();
 }

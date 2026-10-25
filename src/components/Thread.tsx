@@ -4,6 +4,7 @@ import type { HandoffRunInfo, TmpAttachment, TranscriptItem } from "../../shared
 import { rowFacts } from "../../shared/wire-v1";
 import type { BatonMark } from "../../shared/baton";
 import { wrapupRowIds } from "../lib/wrapup-rows";
+import { readHoldTop } from "../lib/read-hold";
 import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState } from "../lib/live";
 import { agoTime, modelLabel, modelMismatch, prettyJson, stampTime, thousands, tildePath } from "../lib/format";
 import { useMinuteNow } from "../lib/minute-clock";
@@ -52,6 +53,12 @@ import { normalizeTourCardDetails, TOUR_TOOLS } from "../../shared/tour";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { rowProvider } from "../lib/subagent-limit";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
+import { normalizeOfferDetails, OFFER_TOOL } from "../../shared/session-offers";
+import { OfferCardView } from "./OfferCard";
+import { SettingsToolCard } from "./SettingsChangeCard";
+import { isSettingsToolDetails } from "../../shared/project-settings";
+/** The project overseer's settings tool: a propose draws its Settings change card. */
+const SETTINGS_TOOL = "sova_settings";
 import { Banner, Chip, Icon } from "./ui";
 import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow, useOverseerThread } from "./OverseerCards";
 import { cardFold, confirmAnswer, confirmDetails, isBriefText } from "../lib/overseer";
@@ -598,6 +605,17 @@ export function HistoryItems(props: {
     const r = callId ? results().get(callId) : undefined;
     return r && !toolResultView(r).isError ? normalizeShowChangesDetails(detailsOf(r)) : undefined;
   };
+  /** An offer call's card, once it succeeded (§chat.offers/card). */
+  const offerOf = (callId: string | undefined) => {
+    const r = callId ? results().get(callId) : undefined;
+    return r && !toolResultView(r).isError ? normalizeOfferDetails(detailsOf(r)) : undefined;
+  };
+  /** A sova_settings propose's card, once it succeeded (§app.project-overseer/settings). */
+  const settingsOf = (callId: string | undefined) => {
+    const r = callId ? results().get(callId) : undefined;
+    const d = r && !toolResultView(r).isError ? detailsOf(r) : undefined;
+    return isSettingsToolDetails(d) && (d.card || d.appliedNow.length) ? d : undefined;
+  };
   const tourOf = (callId: string | undefined) => {
     const r = callId ? results().get(callId) : undefined;
     return r && !toolResultView(r).isError ? normalizeTourCardDetails(detailsOf(r)) : undefined;
@@ -633,6 +651,8 @@ export function HistoryItems(props: {
   const asCard = (it: TranscriptItem): boolean => {
     if (it.kind !== "tool-call") return false;
     if (it.text === SHOW_CHANGES_TOOL) return !!showChangesOf(it.toolCallId);
+    if (it.text === OFFER_TOOL) return !!offerOf(it.toolCallId);
+    if (it.text === SETTINGS_TOOL) return !!settingsOf(it.toolCallId);
     if (TOUR_TOOLS.has(it.text ?? "")) return true;
     return cardRow(it) !== undefined || CARD_RENDER_NAMES.has(it.text ?? "");
   };
@@ -975,6 +995,12 @@ export function HistoryItems(props: {
               <Match when={item.kind === "tool-call" && item.text === SHOW_CHANGES_TOOL && showChangesOf(item.toolCallId)}>
                 {(details) => <ShowChangesCard details={details()} />}
               </Match>
+              <Match when={item.kind === "tool-call" && item.text === OFFER_TOOL && offerOf(item.toolCallId)}>
+                {(card) => <OfferCardView card={card()} />}
+              </Match>
+              <Match when={item.kind === "tool-call" && item.text === SETTINGS_TOOL && settingsOf(item.toolCallId)}>
+                {(details) => <SettingsToolCard details={details()} />}
+              </Match>
               <Match when={item.kind === "tool-call"}>
                 {(() => {
                   const view = () => {
@@ -1149,7 +1175,14 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
           /** A show_changes result: its card, as soon as the call finishes (§chat.changes/show-changes-card). */
           const changes = () => (b().name === SHOW_CHANGES_TOOL && status() === "done" ? normalizeShowChangesDetails(tool()?.details) : undefined);
           const tour = () => (TOUR_TOOLS.has(b().name) && status() === "done" ? normalizeTourCardDetails(tool()?.details) : undefined);
+          const offer = () => (b().name === OFFER_TOOL && status() === "done" ? normalizeOfferDetails(tool()?.details) : undefined);
+          const settingsCard = () => {
+            const d = b().name === SETTINGS_TOOL && status() === "done" ? tool()?.details : undefined;
+            return isSettingsToolDetails(d) && (d.card || d.appliedNow.length) ? d : undefined;
+          };
           return (
+            <Show when={!settingsCard()} fallback={<SettingsToolCard details={settingsCard()!} />}>
+            <Show when={!offer()} fallback={<OfferCardView card={offer()!} />}>
             <Show when={!tour()} fallback={<TourCard details={tour()!} />}>
             <Show when={!changes()} fallback={<ShowChangesCard details={changes()!} />}>
             <Show when={!aligned()} fallback={<div class="entry-live-align" data-align-live={aligned()?.doc?.id}><AlignRow row={aligned()!} newest /></div>}>
@@ -1178,6 +1211,8 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
                 >
                   {(d) => <LinkCard details={d()} ended={b().name === "sova_unlink"} />}
                 </Show>
+            </Show>
+            </Show>
             </Show>
             </Show>
             </Show>
@@ -1242,6 +1277,10 @@ export function LiveEntries(props: {
       if (b.name === SHOW_CHANGES_TOOL) {
         const tool = props.live.tools[b.id];
         return !(tool?.status === "done" && normalizeShowChangesDetails(tool.details));
+      }
+      if (b.name === OFFER_TOOL) {
+        const tool = props.live.tools[b.id];
+        return !(tool?.status === "done" && normalizeOfferDetails(tool.details));
       }
       if (TOUR_TOOLS.has(b.name)) return false;
       return !CARD_RENDER_NAMES.has(b.name);
@@ -1853,8 +1892,9 @@ export function ThreadScroller(props: {
     if (!added) return false;
     const id = row.dataset.entry ?? "";
     readTo = null;
-    const top = el.scrollTop + row.getBoundingClientRect().bottom - el.getBoundingClientRect().bottom;
-    if (el.scrollHeight - top - el.clientHeight < FOLLOW_PX) return false;
+    // Clamped to what the view can scroll to: a transcript that fits stays following.
+    const top = readHoldTop(el, row.getBoundingClientRect().bottom - el.getBoundingClientRect().bottom, FOLLOW_PX);
+    if (top === null) return false;
     endJumpHold();
     el.scrollTop = top;
     lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;

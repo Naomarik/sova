@@ -391,7 +391,10 @@ their read tools (§app.overseer/tools, "Files").
   the tool, the path and the bytes written, never the content. The tools' arguments reach the model
   as given; their results are redacted like the read tools'.
 - **The prompt** states these rules, tells the overseer to leave code changes to coding sessions and
-  keep its own edits to a project's `.sova/` configuration unless asked, and that a refused write
+  keep its own edits to a project's `.sova/` configuration unless asked (a project overseer is told
+  to change its project's settings with `sova_settings` instead, never by writing the settings files:
+  a settings file it edits shows the operator as uncommitted edits to land or discard,
+  §app.project-overseer/settings), and that a refused write
   is final: never the same file another way, never a session asked to write it.
 
 ## §app.overseer/session-truth — What `sova_session` says is true now
@@ -789,14 +792,15 @@ jumps to it (§app.overseer/links).
 - **Approve-later and rule options.** An answer option may carry `at` (and `until`), which makes its
   click an approval for later, or `rule`, which makes its click adopt a standing rule; the button
   says so under its label, and the card shows the approval's state (§app.overseer/approvals).
-- **The composer chip.** While the Overseer's thread has open cards, its composer shows a chip
-  ("2 open cards") whose menu lists each one (id, title) and jumps to its card. It counts the open
-  cards of the whole branch, also those above the rows the view has loaded (the transcript's summary
-  of older rows carries each open card's newest snapshot and its row), and a jump to one of those
-  builds the older rows down to it first. The run-status row has exactly two ends, whatever it
-  carries: at the left the live dot, the step's icon and the subagents trigger; at the right,
-  together, "3 of 10 running" (§app.overseer/caps), the card chip, then the Inputs trigger last.
-  Nothing sits between the two ends.
+- **In the composer's badge.** While the Overseer's thread has open cards, the composer's waiting
+  badge (§chat.composer/waiting-badge) counts them as its option cards, and its dialog
+  (§chat.composer/waiting-dialog) lists each one (id, title) with Show in Chat, which jumps to its
+  card. It counts the open cards of the whole branch, also those above the rows the view has loaded
+  (the transcript's summary of older rows carries each open card's newest snapshot and its row), and
+  a jump to one of those builds the older rows down to it first. The run-status row carries no card
+  chip and has exactly two ends, whatever it carries: at the left the live dot, the step's icon and
+  the subagents trigger; at the right, together, "3 of 10 running" (§app.overseer/caps), then the
+  Inputs trigger last. Nothing sits between the two ends.
 - **Hide tool calls never folds it.** The card is the Overseer's question, not its working, so
   "Hide tool calls" leaves it (and its result) in the thread, like the link card
   (§app.overseer/links-tools).
@@ -890,7 +894,7 @@ session is on which branch survives a compaction and a restart:
 The Overseer's chat and its earlier conversations never fetch their older rows in the
 background, in a browser on this machine too: they hold the newest rows and the ones the reader
 scrolls up to or a jump fetches (§chat.transcript/rendering), so the end of a reply fetches again
-only those. The card chip still counts every open card on the branch, and the chip, a card
+only those. The composer's waiting badge still counts every open card on the branch, and its dialog, a card
 reference and the Timeline still reach every card and message on it: one above the rows held is
 fetched down to, then lands.
 
@@ -906,7 +910,7 @@ fetched down to, then lands.
   configurable in Settings → Overseer; a settings file without the two new ones reads them as their
   defaults.
 - **The running count shows.** While any Overseer-started session counts as running, the
-  Overseer's composer shows "3 of 10 running" beside its chips, from the same count the cap
+  Overseer's composer shows "3 of 10 running" in its run-status row, from the same count the cap
   checks, and the refusal and the prompt name Settings → Overseer → Limits. The text is a button
   that opens Settings → Overseer scrolled to Limits. The running-at-once refusal tells the model
   to tell the user in plain words which limit was reached and that it can be raised in Settings →
@@ -1174,7 +1178,10 @@ Three tools let the Overseer make and end links between sessions on different ho
 A server-side digest, built with no model call from live records, summaries, held-chat state, the
 seen store and — when attention signals are on — the signals store (§app.decisions/attention-signals),
 which it reads and never fills. It is memoised for about 3 seconds and never includes the Overseer
-itself.
+itself. The session feed builds it from each comparison's own list and pushes it when it changed
+(§app.decisions/push), so its rows read no list of their own, and the next request within those
+3 seconds gets the same value. Any other read (a request, the Overseer's background loop) takes the
+feed's last list while nothing has changed since it was built, and builds a list only otherwise.
 
 - **Needs you (act):** a dialog open (`activity.state` needs-input, own and foreign, or a hosted
   pending dialog); an errored turn (`turnError`, §app.overseer/seen, or `activity.state` error
@@ -1215,28 +1222,39 @@ itself.
   sign-in code for {origin} on the tour card."), dated by when it began waiting. It comes from the server's
   memory of waiting recordings, so it ends when the recording stops waiting, and with a restart, which
   interrupts it. Never a phone notification.
+- **Needs you, an option card** (§chat.offers/card): `offer-waiting` on a session, not archived, that
+  shows an open offer card (Land It is the only one Sova declares today), idle or working, "Waiting
+  on your answer: {the card's title}", dated by when the card was shown. It goes when the card is
+  answered, set to Not Now, no longer offered or replaced by a newer commit. Never a phone
+  notification and never a brief: it lists in Needs you and counts in "need you" only.
 - **Only real blockers are act.** The act tier — Needs you, the Overseer's "need you" count, its
   briefs and phone notifications — is exactly: open alignment questions on an unmerged branch, open dialogs, errored
-  turns, subagent errors, proposed playbook runs, failed deploys and deploy requests, tour recordings waiting for a sign-in, WhatsApp sending down, and the baton and roster hand-offs and held acts below. A guess (a
-  reply that seems to ask, a team that seems stalled) and a branch ready to merge are decide
-  items: a line in the digest and a quiet mark on the session's row, never a brief.
+  turns, subagent errors, proposed playbook runs, open option cards (never briefed), failed deploys and deploy requests, tour recordings waiting for a sign-in, WhatsApp sending down, and the baton and roster hand-offs and held acts below. A team
+  that seems stalled and a branch ready to merge are decide items: a line in the digest and a
+  quiet mark on the session's row, never a brief.
+- **The softer tier: guesses.** A turn card's guesses (§app.decisions/attention-signals) — a
+  reply that waits on you (`asks-you`) and a reply that says it is done without checking
+  (`unverified`) — are decide items marked `soft`. Needs you lists them and the Overseer's "need
+  you" count counts them, after the blockers; they never wake the Overseer with a brief and
+  never send a phone notification. A soft item goes when the thing it guessed is acted on: the
+  next turn replaces it, archiving drops it, and either goes after **7 idle days** (no reply since); looking at the session never clears either. A blocker never expires:
+  it stays until it is handled.
 - **Nothing puts an item away.** The digest lists act items by the rules above and nothing else:
   no choice of the user's hides one. A `<stateRoot>/needs-you-later.json` left by an earlier
   version, whose choices once hid items, is deleted once when the server starts (best-effort; a
   failure is logged and never stops the start), so no old choice keeps anything hidden.
 - **Finished (decide), from signals** (§app.decisions/attention-signals, only while the list carries them):
-  `asks-you` when the last reply asks the user something (§app.decisions/asks-user) and the
-  session has no `open-questions` item, "Asks you: {the asking sentence}", else "The last reply
-  asks you something.", dated by the classification; `team-stalled` when the session waits on
+  `asks-you` (soft) when the last reply asks the user something (§app.decisions/asks-user) and the
+  session has no `open-questions` item, worded by the ask's kind: "Needs your decision: {the
+  asking sentence}" (a choice), "Needs your approval: {…}" (a risky action or a restart or merge
+  go), "Needs info from you: {…}" (information), and "Asks you: {…}" when no kind is known (an
+  older record); without a sentence, "The last reply asks you something.", dated by the classification; `unverified` (soft) when the last reply says
+  it is done but names something it didn't run or check, "Says it's done, but didn't run or check
+  everything.", unless the session has an `asks-you` or `open-questions` item; `team-stalled` when the session waits on
   subagents that have all been quiet 15 minutes (§app.decisions/team-stall), "Waiting on {names},
   quiet for {n} min.", dated by when the quiet began. With the feature off, neither appears.
-- **Finished (decide), from signals:** `looping`, one item per session, for its stuck subagents
-  (two looping checks in a row; "A subagent looks stuck: {name}.", "Subagents look stuck: {a},
-  {b}.", else "{n} subagents look stuck."; adding " The last turn looks like it went in circles
-  too." when it does) or for its own last turn alone ("The last turn looks like it went in
-  circles."). A stuck subagent is the parent session's item, never a blocker: the user acts
-  through the parent. The names are stored with the signal and reach only the digest, never the
-  session list or the feed. With the feature off, none of these appear.
+- **Retired:** `looping`. No turn is asked whether it went in circles and no subagent is checked
+  for being stuck (§app.decisions/attention-signals), so no `looping` item appears.
 - **Needs you, from a baton session** (§app.baton/needs-you): `baton-needs-you` while the baton is
   with the operator, "<from> → you: <question>", or while a person holds it through a hand-off no
   live link exists for, "Send <name> their link: <question>".
@@ -1285,8 +1303,9 @@ itself.
   item, which takes the place of the last kept item of the lowest tier, so a flood of one kind
   never hides another), each with at most 200 characters of detail and
   an in-app link. The `sova_attention` tool and `GET /api/overseer/attention` return it; the
-  sidebar's Needs you region (§app.session-list/needs-you) lists its act tier, and the Overseer
-  head's "need you" count is its count of sessions with an act item.
+  sidebar's Needs you region (§app.session-list/needs-you) lists its act tier and its soft
+  items, and the Overseer head's "need you" count is its count of sessions with either: one rule,
+  so the two numbers agree.
 
 ## §app.overseer/seen — The seen store and unread dots
 
@@ -1449,8 +1468,8 @@ head's height, so a width change is no layout shift.
   bell; below 660px it is off the row, and ⋯ names it under Proactivity….
 - **The meta line** says what the Overseer watches, in plain text: "{n} sessions · {w} working ·
   {a} need you", each part after the first only when it is not 0. `{a}` is the digest's count of
-  sessions with an act item (`OverseerInfo.badge.act`, §app.overseer/attention-digest), the
-  sessions the sidebar's Needs you region lists (§app.session-list/needs-you). It carries no
+  sessions with an act or soft item (`OverseerInfo.badge.needsYou`, §app.overseer/attention-digest),
+  the sessions the sidebar's Needs you region lists (§app.session-list/needs-you). It carries no
   menu: who replied since you last looked is each row's unread dot (§app.overseer/seen), and a
   session with an unsent draft is marked in the list. From a 660px head up the row leaves it at
   least 220px, so "181 sessions · 5 working · 2 need you" (about 218px) shows in full; below that, or when it is

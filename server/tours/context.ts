@@ -17,6 +17,8 @@ export interface TourContextSnapshot {
   sessionId: string; sessionFile: string; cwd: string; state: StateView; agentDir: string;
   /** undefined: this server holds no process for the chat; null: its runtime has no sandbox (or did not answer). */
   held?: TourHeldSandbox | null;
+  /** The cwd is the home folder standing in for the chat's folder, which is gone: never a writable root (§app.shell/missing-folder-home). */
+  cwdStandIn?: boolean;
 }
 export interface TourContextDeps {
   snapshot?: (caller: TourToolCaller) => Promise<TourContextSnapshot>;
@@ -41,12 +43,13 @@ async function snapshot(caller: TourToolCaller): Promise<TourContextSnapshot> {
   const info = (i: { on: boolean; enforcement: string; starting?: true } | null): TourHeldSandbox | null => i ? { on: i.on, enforcement: i.enforcement, ...(i.starting ? { starting: true } : {}) } : null;
   const handle = chatHandle(caller.sessionFile);
   let held: TourHeldSandbox | null | undefined;
+  let cwdStandIn = !!handle?.mirror.cwdFallback;
   if (handle) held = await handle.sandboxInfo().then(info, () => null);
   else {
     const local = (await import("../chat-manager")).heldChat(caller.sessionFile);
-    if (local) { try { held = info(local.sandboxInfo()); } catch { held = null; } }
+    if (local) { try { held = info(local.sandboxInfo()); } catch { held = null; } cwdStandIn = !!local.cwdFallback; }
   }
-  return { sessionId: file.header.id, sessionFile: caller.sessionFile, cwd, state: stateView(branchOf(file.entries)), agentDir: agentRoot(), held };
+  return { sessionId: file.header.id, sessionFile: caller.sessionFile, cwd, state: stateView(branchOf(file.entries)), agentDir: agentRoot(), held, ...(cwdStandIn ? { cwdStandIn } : {}) };
 }
 export async function resolveTourContext(caller: TourToolCaller, deps: TourContextDeps = {}): Promise<TourRecordingContext> {
   const value = await (deps.snapshot ?? snapshot)(caller);
@@ -60,7 +63,7 @@ export async function resolveTourContext(caller: TourToolCaller, deps: TourConte
   const canonical = deps.canonical ?? realpathSync;
   const cwd = canonical(value.cwd);
   const worktreeRoots = value.state.latest(WORKTREES)?.data.trees.filter(t => t.status === "active").map(t => canonical(t.path)) ?? [];
-  return { sessionId: value.sessionId, sessionFile: value.sessionFile, cwd, agentDir: value.agentDir, sandbox: { on: active.on, worktreeRoots } };
+  return { sessionId: value.sessionId, sessionFile: value.sessionFile, cwd, agentDir: value.agentDir, sandbox: { on: active.on, worktreeRoots, ...(value.cwdStandIn ? { cwdWritable: false as const } : {}) } };
 }
 /**
  * The state the chat's own tools run under. A recorded On entry always confines. Otherwise only the

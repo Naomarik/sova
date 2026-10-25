@@ -1,9 +1,18 @@
 import { homedir } from "node:os";
-import type { AttentionDigest, AttentionItem, AttentionKind, AttentionTier, SessionSummary } from "../shared/protocol";
+import { listsInNeedsYou } from "../shared/needs-you";
+import type { AskKind, AttentionDigest, AttentionItem, AttentionKind, AttentionTier, SessionSummary } from "../shared/protocol";
 import { readinessItems } from "./merge-readiness";
 import { reviewDetail } from "../shared/playbook-review";
 import type { PlaybookReviewFact } from "./projects/playbook-review";
 import { sessionName } from "./session-names";
+
+/** An ask's line lead by its kind (§app.overseer/attention-digest); "Asks you" when none is known. */
+export function askLead(kind: AskKind | undefined): string {
+  if (kind === "choose-between-options") return "Needs your decision";
+  if (kind === "approve-risky-action" || kind === "restart-or-merge-go") return "Needs your approval";
+  if (kind === "needs-info") return "Needs info from you";
+  return "Asks you";
+}
 
 /**
  * The Overseer's attention digest: what needs the user, what finished, what is running — built
@@ -33,7 +42,7 @@ export interface AttentionRow {
   lastReplyAt?: number;
   /** Words for the decision-signal items (signals-store.ts signalTextOf): the reply's asking
       sentence, and the names of subagents that look stuck. Absent: the fixed fallbacks. */
-  signalText?: { sentence?: string; stuckWorkers: string[] };
+  signalText?: { sentence?: string; askKind?: AskKind; stuckWorkers: string[] };
   /** The session waits on subagents that have all gone quiet (signals-store.ts teamStallOf,
       §app.decisions/team-stall): since when, and who. Absent: not stalled, or the feature is off. */
   teamStall?: { since: number; names: string[] };
@@ -45,7 +54,13 @@ export interface AttentionRow {
   /** One of the session's tour recordings waits for a sign-in (server/tours/sign-in-notice.ts, §app.tours/sites):
       where, what it asks for, and since when (ms epoch). */
   tourSignIn?: { origin: string; code: boolean; since: number };
+  /** The session shows an open offer card (server/session-offers.ts openOfferOf, §chat.offers/card): its title
+      and when it was shown (ms epoch). */
+  offer?: { title: string; at: number };
 }
+
+/** Act kinds that list in Needs you and count in "need you" but never brief the Overseer (and are no push kind). */
+export const NEVER_BRIEFED: ReadonlySet<AttentionKind> = new Set(["offer-waiting"]);
 
 export const DIGEST_MAX = 30;
 export const STALE_MS = 3 * 86_400_000;
@@ -91,8 +106,8 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
     // The sidebar lists an org session's items in the Organizations region's own Needs you.
     ...(s.org ? { org: { orgId: s.org.orgId, orgName: s.org.orgName, ...(s.org.projectId ? { projectId: s.org.projectId } : {}), ...(s.org.projectName !== undefined ? { projectName: s.org.projectName } : {}) } } : {}),
   };
-  const add = (tier: AttentionTier, kind: AttentionKind, since: number, detail?: string) =>
-    out.push({ ...base, tier, kind, since, ...(detail ? { detail: cap(detail) } : {}) });
+  const add = (tier: AttentionTier, kind: AttentionKind, since: number, detail?: string, soft?: true) =>
+    out.push({ ...base, tier, kind, since, ...(detail ? { detail: cap(detail) } : {}), ...(soft ? { soft } : {}) });
   const state = s.activity?.state;
   const running = s.busy || state === "working";
 
@@ -151,19 +166,25 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   // A tour recording waiting for a sign-in (§app.tours/sites): a blocker until it stops waiting.
   const tour = row.tourSignIn;
   if (tour && !s.archived) add("act", "tour-sign-in", tour.since || lastActive, tour.code ? `Enter the sign-in code for ${tour.origin} on the tour card.` : `Sign in to ${tour.origin} on the tour card.`);
-  // Decision signals (server/signals-store.ts): the list carries them only while unseen and idle,
-  // with the kinds already derived from the fixed thresholds. They are guesses, so never blockers
-  // (§app.overseer/attention-digest): a reply that seems to ask the user something is a decide
-  // item — a row mark and a digest line — unless open questions already say so
-  // (§app.decisions/asks-user). "looping" is a judgement call (decide), a subagent's too: the user
-  // acts through the parent session, and a subagent counts only after two looping checks in a row.
+  // An open option card (§chat.offers/card, Land It today): it waits on the user's click whether or not a turn
+  // runs, so it is a blocker; never a push (no push kind) and never a brief (NEVER_BRIEFED).
+  const offer = row.offer;
+  if (offer && !s.archived) add("act", "offer-waiting", offer.at || lastActive, `Waiting on your answer: ${offer.title}`);
+  // Decision signals (server/signals-store.ts): the list carries them only while they should show
+  // (idle, not expired after 7 idle days), with the kinds already derived from the fixed thresholds.
+  // They are guesses, so never blockers (§app.overseer/attention-digest): soft decide items, which
+  // Needs you lists in its softer tier and "need you" counts, but which never brief or notify. A
+  // reply that seems to ask is one unless open questions already say so (§app.decisions/asks-user).
   const sig = s.signals?.kinds ?? [];
   const at = s.signals?.at ?? lastActive;
-  const asks = sig.includes("asks-you") && !questions && !s.archived;
+  // An open offer card is its own item above, so the asks-you mark it gives an idle row adds no soft item.
+  const asks = sig.includes("asks-you") && !questions && !s.archived && !offer;
   if (asks) {
     const sentence = row.signalText?.sentence;
-    add("decide", "asks-you", at, sentence ? `Asks you: ${sentence}` : "The last reply asks you something.");
+    add("decide", "asks-you", at, sentence ? `${askLead(row.signalText?.askKind)}: ${sentence}` : "The last reply asks you something.", true);
   }
+  // Done but not checked (the turn card, §app.decisions/attention-signals): the softer tier too.
+  if (sig.includes("unverified") && !asks && !questions && !s.archived) add("decide", "unverified", at, "Says it's done, but didn't run or check everything.", true);
   // A stalled team (counted in code, §app.decisions/team-stall): a decide item, only when the
   // session is not already waiting on the user. Never Needs you, a brief or a notification.
   const stall = row.teamStall;
@@ -206,16 +227,21 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
  * `items` ≤30. `badge` counts SESSIONS, not items, and each session once, at its most urgent tier:
  * a session with a dialog and an error is one "needs you", not two.
  */
-export function buildDigest(rows: AttentionRow[], now = Date.now(), home?: string, extra: AttentionItem[] = []): AttentionDigest & { badge: { act: number; decide: number } } {
-  const badge = { act: 0, decide: 0 };
+export function buildDigest(rows: AttentionRow[], now = Date.now(), home?: string, extra: AttentionItem[] = []): AttentionDigest & { badge: { act: number; decide: number; needsYou: number } } {
+  const badge = { act: 0, decide: 0, needsYou: 0 };
   // Items of no session (an org project's missing main stakeholder): each counts once in the badge.
   const all: AttentionItem[] = [...extra];
-  for (const it of extra) if (it.tier === "act") badge.act++;
-  else if (it.tier === "decide") badge.decide++;
+  for (const it of extra) {
+    if (it.tier === "act") badge.act++;
+    else if (it.tier === "decide") badge.decide++;
+    if (listsInNeedsYou(it)) badge.needsYou++;
+  }
   for (const r of rows) {
     const items = sessionItems(r, now, home);
     if (items.some((i) => i.tier === "act")) badge.act++;
     else if (items.some((i) => i.tier === "decide")) badge.decide++;
+    // The same rule Needs you lists by (shared/needs-you.ts): the two counts agree.
+    if (items.some(listsInNeedsYou)) badge.needsYou++;
     all.push(...items);
   }
   all.sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier] || b.since - a.since);

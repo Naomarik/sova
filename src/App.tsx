@@ -36,7 +36,9 @@ import { noteSessionsHidden, sessionsHiddenBy } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { bindKey, paletteKeyAction } from "./commands/keys";
 import { composerOf } from "./commands/composers";
-import { isOverseerHash, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
+import { closePalette, paletteRequest, togglePaletteFromKey } from "./commands/palette-open";
+import { isOverseerHash, OVERSEER_HASH, overseerHistoryId } from "./lib/overseer";
+import { onFeedPush, sessionFeedOpen } from "./lib/session-feed";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
 import type { CostsQuery } from "./lib/cost-history";
 import type { PerfQuery } from "./lib/perf";
@@ -65,7 +67,7 @@ import { sessionsGlance } from "./lib/home-sessions";
 import { applySidebarWidth } from "./lib/sidebar-width";
 import { closeSettings, openSettings, settingsOpenAt, settingsTabFromHash } from "./lib/settings-nav";
 import type { RewindControl } from "./lib/inputs";
-import { activeTab, focusMoving, focusView, groupSendAll, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
+import { activeTab, focusMoving, focusView, groupSendAll, hideThinking, hideTools, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
 import { createPaneInsight } from "./lib/pane-insight";
 import { sessionWorking } from "./lib/workers";
 import { answeredPeers, workPeers } from "./lib/work-now";
@@ -133,9 +135,9 @@ function openSettingsFromHash() {
   openSettings(tab);
 }
 
-/** While a run is in flight, re-read the list often enough that the Busy chip clears itself when
-    the run settles in a session nobody is looking at. Idle costs nothing: the interval only
-    exists while something is busy. */
+/** While a run is in flight and the session feed is down, re-read the list often enough that the
+    Busy chip clears itself when the run settles in a session nobody is looking at. Idle costs
+    nothing: the interval only exists while something is busy with no feed. */
 const BUSY_POLL_MS = 5_000;
 
 /** Insights polling (paused while the tab is hidden). The usage file itself changes ≤ every 3 min. */
@@ -424,10 +426,22 @@ export function App() {
   setAgentsFeedSource(agents.data);
   const explanations = createPoll(fetchExplanations, EXPLAIN_POLL_MS);
   setExplanationsFeedSource(explanations.data);
-  const overseer = createPoll(getOverseer, OVERSEER_POLL_MS);
-  /** The attention digest, read once for the page on the entry button's cadence: the sidebar's
-      Needs you region, the home card and the app badge all read it. */
-  const attention = createPoll(getAttention, OVERSEER_POLL_MS);
+  /** The Overseer's state and the attention digest (the sidebar's Needs you region, the home card
+      and the app badge all read it), one copy each for the page. Never on a timer: read at load,
+      when the tab is shown again (createPoll) and whenever the session feed (re)opens, then
+      replaced by each value the feed pushes on change (lib/session-feed). */
+  const overseer = createPoll(getOverseer, null);
+  const attention = createPoll(getAttention, null);
+  onCleanup(
+    onFeedPush({
+      resync: () => {
+        overseer.refetch();
+        attention.refetch();
+      },
+      attention: (d) => attention.set(d),
+      overseer: (o) => overseer.set(o),
+    }),
+  );
   // The app badge (an installed app, with notifications allowed): the sessions that need you, kept
   // current from the digest this page already reads; zero clears it (lib/push.ts).
   const badgeCount = createMemo(() => {
@@ -445,7 +459,8 @@ export function App() {
     return items && items.length > 0 ? items : null;
   });
   const [creating, setCreating] = createSignal(false);
-  const [paletteOpen, setPaletteOpen] = createSignal(false);
+  /** The palette is open: by the key, or by a composer's "+" (commands/palette-open.ts). */
+  const paletteOpen = () => paletteRequest() !== null;
   const [shortcutsOpen, setShortcutsOpen] = createSignal(false);
   // The Settings modal is opened from the sidebar foot's gear, and at Modes by the mode menu's
   // "Configure Delegate" (lib/settings-nav.ts holds which tab, so either can open it).
@@ -553,7 +568,7 @@ export function App() {
   const offPaletteKey = bindKey("palette.open", (e) => {
     const act = paletteKeyAction(e, IS_MAC);
     if (act === "field") return false; // the browser's: a Mac text field's delete-to-end
-    if (act === "toggle") setPaletteOpen((open) => !open);
+    if (act === "toggle") togglePaletteFromKey();
     return true; // a held key's repeats are swallowed: it toggles once
   });
   const offShortcutsKey = bindKey("shortcuts.open", () => {
@@ -713,6 +728,8 @@ export function App() {
     const p = focusedPath();
     return (p ? summaryOf(p) : undefined) ?? null;
   });
+  /** The chat the palette's rows act on: the one whose "+" opened it, else the focused one. */
+  const palettePath = () => paletteRequest()?.path ?? focusedPath();
   /** The group the route names, once its name is known; the workspace needs the group itself. */
   const openGroup = createMemo(() => {
     const id = groupRoute()?.id;
@@ -917,8 +934,9 @@ export function App() {
 
   /** Any row claiming a run in flight (the sidebar's Busy chip's fallback source). */
   const anyBusy = createMemo(() => (list() ?? []).some((s) => s.busy));
+  // Only while the session feed is down: open, its `list_changed` says when a run settles.
   createEffect(() => {
-    if (!anyBusy()) return;
+    if (!anyBusy() || sessionFeedOpen()) return;
     const t = setInterval(refresh, BUSY_POLL_MS);
     onCleanup(() => clearInterval(t));
   });
@@ -1425,16 +1443,33 @@ export function App() {
             openShortcuts: () => setShortcutsOpen(true),
             settingsTabs: () => SETTINGS_TAB_LABELS,
           }}
+          origin={paletteRequest()?.origin ?? "key"}
+          returnTo={paletteRequest()?.trigger ?? null}
           context={() => {
-            const s = summary();
-            const c = composerOf(focusedPath());
+            // Opened from a pane's "+", every row about the chat acts on that pane's chat, which
+            // need not be the workspace's focused one (§app.command-palette/opening).
+            const path = palettePath();
+            const s = path ? (summaryOf(path) ?? null) : null;
+            const c = composerOf(path);
             return {
               session: s ? { path: s.path, id: s.id, title: s.title, terminal: !!s.live } : null,
-              composer: c ? { commands: c.commands(), off: c.off(), hasDraft: c.hasDraft() } : null,
+              composer:
+                c && path
+                  ? {
+                      commands: c.commands(),
+                      off: c.off(),
+                      hasDraft: c.hasDraft(),
+                      hideTools: hideTools(path),
+                      hideThinking: hideThinking(path),
+                      playbooks: c.canPlaybooks(),
+                      undo: c.undoBlocked(),
+                    }
+                  : null,
             };
           }}
-          composer={() => composerOf(focusedPath())}
-          onClose={() => setPaletteOpen(false)}
+          chatPath={palettePath}
+          composer={() => composerOf(palettePath())}
+          onClose={closePalette}
         />
       </Show>
       <Show when={shortcutsOpen()}>

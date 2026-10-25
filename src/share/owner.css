@@ -171,6 +171,13 @@ a.owner-row:focus-visible { outline: var(--focus-ring); outline-offset: calc(var
 .owner-row-static { align-items: center; }
 /* Open: the standard (medium, 44px) button, kept at its own width beside the row's text. */
 .owner-version-open { flex: none; }
+/* What a version changes (§app.project-assistant/versions): body text under the meta line. */
+.owner-version-summary { color: var(--color-ink); font-size: var(--fs-body); line-height: var(--lh-body); }
+/* Close and Reopen on a request (§app.project-assistant/closing): beside the chip, at the standard 44px. */
+.owner-request-act { flex: none; min-height: 44px; }
+/* The owner's closed requests: greyed, below the others. */
+.owner-row-closed .owner-row-title,
+.owner-row-closed .owner-meta { color: var(--color-ink-muted); }
 
 /* ---- The page's frame and its three tabs (§app.owner-page/content, /page). ----------------------
    `.owner-page` is the query container (named `owner`): the 768 split asks the page's own width, so
@@ -357,3 +364,9 @@ dialog.owner-sheet::backdrop { background: var(--scrim); }
 @media (max-width: 767px) {
   dialog.owner-sheet { right: 0; bottom: 0; top: auto; max-height: 85dvh; }
 }
+
+/* The owner's own feature request chat (§app.project-assistant/feature-chats): End Chat under the thread, and the
+   assistant's Open Feature Chat button inside its bubble. */
+.owner-feature-end { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-3); }
+.owner-feature-end .button { min-height: 44px; }
+.owner-feature-open { align-self: flex-start; margin-top: var(--space-2); min-height: 44px; text-decoration: none; display: inline-flex; align-items: center; }

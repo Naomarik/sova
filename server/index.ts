@@ -14,7 +14,7 @@ import { reconcileProjectServices } from "./project-services/routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
 import { finishImports, rollForwardCopies } from "./project-import";
-import { closeAllOrgHosts } from "./org-engine";
+import { closeAllOrgHosts, onOrgChange } from "./org-engine";
 import { flushWorkspaces } from "./workspace-commits";
 import { stopVoice } from "./voice/service";
 import { startStaticPreviews } from "./project-previews";
@@ -43,13 +43,16 @@ import { meshApi, startMesh, stopMesh } from "./mesh";
 import { captureBootBuild } from "./mesh/build-id";
 import { meshLinks } from "./mesh/links";
 import { setLinkOrigin } from "./link-delivery";
-import { setOverseerDispatch, startOverseerLoop } from "./overseer";
+import { feedFrameKey, feedFrames, setOverseerDispatch, startOverseerLoop } from "./overseer";
+import { watchFeedInputs } from "./session-feed-watch";
+import { startLandingQueue } from "./landing-queue";
+import { setOffersDispatch } from "./session-offers";
 import { setSovaPort } from "./extensions";
 import { startExtensionKeys } from "./extension-keys";
 import { startUpdates } from "./updates/routes";
-import { decisionRuntime, decisions, decisionSettings, decisionsReady } from "./decide-runtime";
+import { decisions, decisionSettings, decisionsReady } from "./decide-runtime";
 import { AttentionSignals } from "./attention-signals";
-import { configureSessionFeed, nudgeMarks, publishFeed, sessionFeed } from "./session-feed";
+import { configureSessionFeed, nudgeMarks, sessionFeed } from "./session-feed";
 import { startEvents } from "./events";
 import { onAttentionNotified } from "./attention-memo";
 import { configureLlmInflight } from "./llm-inflight";
@@ -59,12 +62,10 @@ import { peerUrl } from "./mesh/peers";
 import { onTagsChanged } from "./session-tags";
 import { terminalSession } from "./decide-settings";
 import { MergeFollowUps } from "./merge-followup";
-import { configureReadiness } from "./merge-readiness";
-import { startSessionTags } from "./tags-backfill";
+import { checkReadinessInputs, configureReadiness } from "./merge-readiness";
 import { addOwnPid, readLiveRecords } from "./live";
 import { claimRecordedChats, scrubChatProcessEnv } from "./chat-runtime/supervisor";
 import { startResourceMonitor, stopResourceMonitor } from "./resource-monitor";
-import { defaultAdapters } from "./worker-adapters";
 import { serverRedactor } from "./overseer-redact";
 import { serverAuthEnabled, setAuthHosts, setAuthPort, initAuthToken } from "./auth";
 
@@ -197,6 +198,10 @@ try {
 
 // The Overseer's tools call these same routes in-process (no socket, every guard applies).
 setOverseerDispatch((path, init) => app.request(path, init));
+// An offer card's buttons call the same routes in-process (§chat.offers/buttons).
+setOffersDispatch((path, init) => app.request(path, init));
+// The merge captain's landing queue: Sova shows the Landing card itself (§chat.offers/sova-landing).
+startLandingQueue();
 startOverseerLoop();
 startProjectOverseerLoop();
 startScheduleKeeper((path, init) => app.request(path, init));
@@ -225,7 +230,26 @@ const events = startEvents({
   isHosted: (path) => chatHandle(path) !== undefined,
   idOf,
 });
-configureSessionFeed({ list: () => listSessions().then(events.seeList) });
+// Change-driven (§app.decisions/push): it compares when a watched input or an in-process store
+// changes, an org statechart moves or something the digest lists changes, and pushes the digest
+// and the Overseer's state built from its own list.
+let feedChanged: (() => void) | null = null;
+onOrgChange(() => feedChanged?.());
+configureSessionFeed({
+  list: () => listSessions().then(events.seeList),
+  watch: (changed) => {
+    feedChanged = changed;
+    const offWatch = watchFeedInputs(changed, { checks: [checkReadinessInputs] });
+    const offAttention = onAttentionNotified(changed);
+    return () => {
+      feedChanged = null;
+      offWatch();
+      offAttention();
+    };
+  },
+  after: feedFrames,
+  frameKey: feedFrameKey,
+});
 // The LLM calls in flight, pushed on the same feed (server/llm-inflight.ts): this process's own
 // counter, the other processes' live records, and each peer's own count while a browser listens.
 configureLlmInflight({
@@ -252,24 +276,11 @@ const attentionSignals = new AttentionSignals({
   liveRecords: () => readLiveRecords({ includeOwn: true }),
   decodeWorkers: (presence) => decodeWorkers(presence),
   duties: teamDuties,
-  adapters: defaultAdapters,
   redact: (value) => serverRedactor().redactDeep(value),
   changed: nudgeMarks,
 });
 attentionSignals.start();
 onAgentSettled((path) => attentionSignals.turnSettled(path));
-startSessionTags({
-  list: listSessions,
-  onAgentSettled,
-  held: (path) => !!chatHandle(path),
-  provider: decisions,
-  settings: decisionSettings,
-  ready: () => {
-    const s = decisionRuntime().chain.status();
-    return { ready: s.ready, ...(s.reason ? { reason: s.reason } : {}) };
-  },
-  publish: (progress) => publishFeed({ type: "tags_backfill", progress }),
-});
 onTagsChanged(() => nudgeMarks());
 // Merge readiness (§chat.worktrees/readiness) is git and the file; its one follow-up check per
 // merge (§app.decisions/merge-followup) goes through the same seam, only with attention signals on.

@@ -5,8 +5,8 @@ While the **align** minor mode is on (§chat/mode-menu), the agent agrees with t
 build before building it, and records each agreement as an **alignment**: a structured document it
 keeps with one tool, `align`, from pi's `mode` extension (`pi-config/extensions/mode`). A session
 can hold several alignments at once, one per concern. The user never edits one: they answer in
-chat, and the agent records the answer. Sova shows each alignment as a card in the transcript, a
-chip in the composer, and a count on the session's row. It works the same in the TUI and in Sova,
+chat, and the agent records the answer. Sova shows each alignment as a card in the transcript, in
+the composer's waiting badge, and a count on the session's row. It works the same in the TUI and in Sova,
 for sessions Sova holds and sessions it only watches, with one web-only shortcut: in a chat Sova
 holds, the card can tick recommendations to take, pick an option as a question's answer, and go
 with all of the recommendations (§chat.alignment/card).
@@ -21,14 +21,17 @@ An alignment has an id `al_N` (the next number on the branch), a title, a one-li
 the concern, findings, approach steps, rejected alternatives (each with why), and questions. Items
 have ids that are never reused within the document: findings `fN`, approach steps `aN`, rejected
 alternatives `xN`, questions `qN`. A question has a topic, the ask, optional context, optional
-options (each a label and its trade-off), a **recommendation** (the choice and why), and, once
+options (each a label and its trade-off: one plain line saying what happens if the user picks it —
+what they will see, what it costs and what it buys; the tool's field asks the agent for exactly that),
+a **recommendation** (the choice and why), and, once
 answered, a **decision**: its text, who made it (`user`, or `accepted-recommendation` when the user
 took the recommendation), and when. A question can also be dropped, with why, and reopened.
 
 An alignment can also hold **technical notes** (`tN`, never reused like the other ids): the files,
 code and technical detail a plan written for a reader who doesn't read code leaves out of its other
 fields (§chat.alignment/style). A document records the **writing style** in effect at its latest
-change (`style`: `simplified` or `pm`; absent for Default). In a session started with Visuals on
+change (`style`: `default` for Technical, `simplified` or `pm`); a document from before Technical
+was recorded has none, and reads as no style. In a session started with Visuals on
 (§chat.alignment/visuals), a question can carry a **visual** `{kind, source}` — a `vis` drawing's
 kind and its source, the same text a `vis` fence would hold — and the document one of its own; at
 most 3 per alignment. A document without technical notes, a style or visuals reads exactly as before:
@@ -45,7 +48,7 @@ extension and Sova's card apply the same rule.
 or marked done; `implementing` when it was marked so; otherwise `aligning` while any question is
 open or it has no questions yet, and `confirmed` once every question is decided or dropped. Only
 the transitions no data can show are explicit: implementing, done, dropped, and back to open.
-Done and dropped are terminal; everything else is **open** for the chip and the session's count.
+Done and dropped are terminal; everything else is **open** for the composer's badge and the session's count.
 
 ## §chat.alignment/tool — The `align` tool
 
@@ -144,7 +147,7 @@ server.
 **Older sessions** keep their `align-doc` entries from before the tool (a markdown document the
 extension parsed from the agent's reply). They are read-only history: their card renders as it did
 (the newest one on the branch, as one line that opens a read-only viewer), nothing parses markdown
-any more, and they count toward no chip, row or digest.
+any more, and they count toward no badge, row or digest.
 
 ## §chat.alignment/model — What keeps the agent on it
 
@@ -164,9 +167,9 @@ any more, and they count toward no chip, row or digest.
   own no-edit rule names no exception: the bridge does; in a remote session the worker reports the
   JSON and the agent creates inline), and the agent imports that file, never retyping it. The tool's
   own description and guidelines carry the core of it too, since they sit in pi's tools section.
-- **Writing style and Visuals.** A non-Default writing style adds its paragraph to the align block
-  (§chat.alignment/style), and Visuals on adds the visuals paragraph after it
-  (§chat.alignment/visuals); with Default and Visuals off the block is exactly as before. With
+- **Writing style and Visuals.** The Project manager and Simplified styles add their paragraph to
+  the align block (§chat.alignment/style), and Visuals on adds the visuals paragraph after it
+  (§chat.alignment/visuals); with Technical and Visuals off the block is exactly as before. With
   Delegate on, the bridge paragraph also tells the agent to copy the writing style paragraph, when the
   align block or a later note carries one, word for word into the planning worker's brief; the bridge's
   own words never depend on the style. In a chat started with Visuals on, the bridge also has the
@@ -247,7 +250,9 @@ an `align` call: it is the message, not its working.
   <ol class="align-questions">
     <li class="align-q" data-state="open">
       <p class="align-q-head"><span class="text-mono">q3</span> <strong>Pace limit</strong>
-        <span class="chip"><i class="chip-dot"></i>Open</span></p>
+        <span class="chip"><i class="chip-dot"></i>Open</span>
+        <!-- triage (§app.decisions/align-triage), open questions only, while it has an answer -->
+        <span class="chip chip-error align-q-stakes" title="Guessed by Jev.">Deletes data</span></p>
       <p class="align-q-ask">How often may it start a run on its own?</p>
       <p class="align-q-context">…context…</p>
       <ol class="align-q-options">
@@ -317,8 +322,9 @@ an `align` call: it is the message, not its working.
   closed disclosure "Technical notes · {n}", its notes listed by id like the approach steps (same
   id column, same text column, the same inline code and bold). Review lines and blockers are never
   folded into it, whatever the style.
-- **Writing style.** A document written in a non-Default style says so at the end of its meta line:
-  "· Simplified style" or "· Project manager style". Default adds nothing.
+- **Writing style.** Every document that records its style says so at the end of its meta line:
+  "· Project manager style", "· Simplified style" or "· Technical style". A document that records
+  none (an older one) shows no style.
 - **Visuals.** A question's visual is drawn under its context, before its options, and the
   document's under the summary, each with the chat's own `vis` drawing (the same figure, Source
   toggle and Copy a `vis` fence in a reply gets). A visual whose source doesn't parse shows its
@@ -351,6 +357,8 @@ an `align` call: it is the message, not its working.
   Overseer, a project overseer or a baton session. Even there, only the **newest revision** of an
   **open** alignment (not done or dropped) with **at least one open question** answers; every
   earlier revision, an older session's `align-doc` card and a settled document stay read-only.
+  A feature request chat's plans are answered by its owner on the owner page instead, on a plan
+  card of their own (§app.project-assistant/feature-chats); in Sova its card stays read-only.
   With adversarial review switched on, the same newest card's foot also shows for its review
   button or verdict, with or without an open question (§chat.alignment-review/card).
 - **Take a recommendation (tick).** Each open question's recommendation becomes the label
@@ -394,55 +402,23 @@ an `align` call: it is the message, not its working.
 - While a run streams, the call's card appears as soon as its result arrives, from the result's
   own snapshot; the settled transcript renders the same card.
 
-## §chat.alignment/chip — The chip in the composer
+## §chat.alignment/chip — The alignments in the composer's badge
 
-In a chat's composer, the run-status row carries an alignment chip **immediately left of the
-Inputs trigger** (§chat/composer): "{n} aligns · {decided}/{total} decided" ("1 align · 5/7 decided"), where
-`n` is the open alignments on the branch and `decided`/`total` count their decided and all their
-live (not dropped) questions, the same counts the rows show. They count the whole branch, even
-rows the thread hasn't fetched (§chat.transcript/rendering). It is omitted when no alignment is open, and the row shows for it alone. The
-chip and the Inputs trigger sit together at the row's right end. In a narrow composer's run-status
-row (§chat.transcript/streaming) it is the one control that may give way: when nothing else can,
-its count ends in an ellipsis ("1 align · 0/8…"), and its accessible name keeps the whole count.
+A chat's open alignments show in the composer's waiting badge (§chat.composer/waiting-badge), inside
+the message box; the run-status row carries no alignment chip. The badge's counts are the branch's
+open alignments, their decided questions and all their live (not dropped) questions, the same counts
+the rows show. They count the whole branch, even rows the thread hasn't fetched
+(§chat.transcript/rendering).
 
-```html
-<button type="button" class="run-status-link run-status-align" aria-haspopup="menu" aria-expanded="false"
-        aria-label="2 open alignments, 10 of 15 questions decided — show alignments">
-  <span class="icon icon-sm" style="--icon:url(/icons/chat.svg)" aria-hidden="true"></span>
-  <span class="text-num">2 aligns · 10/15 decided</span>
-  <span class="icon icon-sm" style="--icon:url(/icons/chevron-down.svg)" aria-hidden="true"></span>
-</button>
-<div class="model-menu action-menu align-menu" popover="auto" role="menu" aria-label="Open alignments">
-  <div class="align-menu-item" role="menuitem" tabindex="0"
-       aria-label="al_3 Autonomy settings: 5 of 7 questions decided — jump to its card">
-    <span class="text-mono align-menu-id">al_3</span>
-    <span class="align-menu-title" title="Autonomy settings">Autonomy settings</span>
-    <span class="align-menu-bar" aria-hidden="true"><span class="align-menu-fill align-menu-fill-warn" style="width:71%"></span></span>
-    <span class="chip chip-count chip-warn"><i class="chip-dot"></i>5/7</span>
-  </div>
-  <div class="align-menu-item" role="menuitem" tabindex="0"
-       aria-label="al_1 Queue shape: implementing, no questions — jump to its card">
-    <span class="text-mono align-menu-id">al_1</span>
-    <span class="align-menu-title" title="Queue shape">Queue shape</span>
-    <span class="chip chip-accent"><i class="chip-dot"></i>Implementing</span>
-  </div>
-</div>
-```
-
-- **Expanding** it (a menu button, `aria-expanded`; ↑/↓ move between rows, Home/End go to the
-  first/last, Escape closes) lists each open alignment on one line: those with an open question
-  first, each group the last touched first. A row reads left to right: its id (mono, muted), its
-  title (one line, cut with an ellipsis, the whole title on hover), a thin progress bar of its
-  decided questions out of its live ones, and a round count chip "{decided}/{live}" ("5/7"). The
-  bar and the chip are warn while any question is open and success once all are decided. An
-  alignment with no live questions shows its status word in the status chip's tone instead of
-  the bar and count. The summary is not shown, nor any question. Rows are 44px tall at every
-  width. The panel opens above the chip when it fits, 340px wide from 768px; under 768px it is
-  the menus' bottom sheet.
-- **Choosing one** jumps to that alignment's newest card in the transcript (the jump's highlight
+- **Listed in the dialog.** The badge's dialog (§chat.composer/waiting-dialog) lists each open
+  alignment: those with an open question first, each group the last touched first. Each shows its
+  title, a meter of its decided questions out of its live ones, the topic of its next open question,
+  and Show in Chat. An alignment with no live questions shows its status word instead of the
+  meter.
+- **Show in Chat** jumps to that alignment's newest card in the transcript (the jump's highlight
   included), building older rows first when the thread hasn't reached it; if the card isn't on
   screen, a toast says so.
-- The counts follow the transcript as it streams: a live `align` result updates the chip before
+- The counts follow the transcript as it streams: a live `align` result updates the badge before
   the run settles.
 
 ## §chat.alignment/session-mark — The session's open questions
@@ -455,7 +431,7 @@ document comes after the user's last prompt (a wake nudge, a partner's link mess
 batch, §chat.topics/row, is not one, and neither is a message an Overseer sent, the one its
 `sova-overseer-sent` mark names, §app.overseer/sent-marker: alignment questions are the user's).
 Once the user has spoken again and the agent moved on without touching an alignment, or align is
-turned off (nothing could record an answer), the questions stay on the card and the chip but leave
+turned off (nothing could record an answer), the questions stay on the card and the composer's badge but leave
 the row mark, Needs you and push; the next align result that changes a document brings them back.
 Files with no `align` tool result are only searched for it, never parsed; after the first one, each
 change parses only the lines appended since (a file that shrank or was rewritten is read again).
@@ -465,7 +441,7 @@ change parses only the lines appended since (a file that shrank or was rewritten
   is hidden from assistive tech, and the hidden words "3 open questions. " (1: "1 open question. ")
   carry it. The title is "3 open questions in 2 alignments", or, when one alignment asks,
   "3 open questions in al_4 {its title}". It takes precedence over the
-  asks-you and looping marks, never clears on a visit (it is a fact of the session, not news), hides on the open
+  asks-you mark, never clears on a visit (it is a fact of the session, not news), hides on the open
   session like every line-1 mark, and hides while this tab runs a turn there.
 - **Needs you.** An idle, unarchived session with open questions is an act item of the attention
   digest, kind `open-questions` ("3 open questions in al_3 Autonomy settings" or "… in 2
@@ -496,7 +472,9 @@ The align mode's writing style and Visuals are one file, `<agent dir>/mode-align
 boolean. One module, `pi-config/extensions/mode/align-settings.ts` (node built-ins only, beside
 `mode/spec.ts`), owns it: the shape, a strict parse (another version, an unknown key, a style outside
 the three or a non-boolean `visuals` is malformed, with a sentence naming the field), a reader that
-reads a missing or malformed file as Default with Visuals off, and an atomic writer. Settings →
+reads a missing or malformed file as Project manager with Visuals off, and an atomic writer. The
+stored `default` is the style the user reads as **Technical**; it is kept as written, never migrated
+or rewritten, so every device and the mesh keep accepting the file. Settings →
 Alignment writes it (§app.settings-dialog/alignment). The mode extension reads it, in the TUI and in
 every runtime Sova hosts — the style at each turn boundary, Visuals at each session start — and
 Sova's server reads Visuals at a chat's first start (§chat.alignment/visuals). With the mesh on it
@@ -510,28 +488,34 @@ file does.
 ## §chat.alignment/style — Writing style
 
 The writing style shapes what the agent writes into an alignment the user reads; it never changes
-the tool, the ops or what a review records.
+the tool, the ops or what a review records. There are three, listed in this order everywhere:
+Project manager, Simplified, Technical. A user who has saved none (a new user, a new device, a
+missing or unreadable file, §chat.alignment/settings-file) gets **Project manager**.
 
-- **Default** adds no text: the align block is today's.
-- **Simplified** adds one paragraph: short sentences in everyday words; about 5 findings and 6
-  approach steps at most; a file named only when the user must recognise it; and each question's
-  context says what changes for the user with each answer.
 - **Project manager** adds one paragraph: the fields the user reads describe only screens,
   controls, wording, states and flows — no file paths, function or component names, APIs or code;
   questions a project manager can answer; and a consequence rule: a technical choice with an effect
   a user would notice (speed, cost, data kept or lost, limits, something hard to undo) is asked as a
   product question. "Never leave a decision out because it is technical." The technical detail goes in
   the alignment's technical notes.
+- **Simplified** adds one paragraph: short sentences in everyday words; about 5 findings and 6
+  approach steps at most; a file named only when the user must recognise it; and each question's
+  context says what changes for the user with each answer.
+- **Technical** (stored as `default`) adds no text: the align block is the one written before
+  writing styles, with files, code and technical trade-offs in the plan.
 
 **How it reaches a chat.** The style is read at each turn boundary. Its paragraph joins the align
 block when the prompt's head is built — the first run after the session's start or its last
 compaction (§chat.mode-menu/minor-toggle-keeps-prompt) — and the block is never rewritten
 mid-session. A later change reaches an open chat with align on as **one** hidden `mode-note` at its
-next run, once per change: the new style's paragraph, or, back to Default, that the earlier style
-paragraph no longer applies. The note's details record the style it told and the head's, so a
+next run, once per change: the new style's paragraph, or, switching to Technical, that the earlier
+"Writing style" paragraph no longer applies and alignments carry the files, code and technical
+trade-offs they need from now on. A chat whose user never saved a style switches to Project manager
+this way at its next message. The note's details record the style it told and the head's, so a
 reopened chat neither tells it twice nor loses what its head was built with. A head built in a style
-other than Default records that style when it is built; a chat with no such record whose head was
-sent since its last compaction (an older one included) had a Default head. So a chat reopened after
+other than Technical records that style when it is built; a chat with no such record whose head was
+sent since its last compaction (an older one included) had a Technical head, whatever the default
+is now. So a chat reopened after
 the style changed, with no note yet, rebuilds its head byte for byte and gets the change as that one
 note at its next run. Nothing about the
 style rides the per-prompt `align-state` note. Align turned on later by a note carries the align

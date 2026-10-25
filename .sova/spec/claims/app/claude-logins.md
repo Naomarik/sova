@@ -437,7 +437,8 @@ Every process that runs `claude` on an added login — a chat's child (in Sova o
 a Claude Code worker's included), model discovery, the topic summarizer — is tracked per login, with whether it
 is in the middle of a turn. On Linux, a `claude` process that keeps no such record (one started
 before this version, or by hand with `CLAUDE_CONFIG_DIR` set to the login's directory) is found by
-that variable and counts as busy: its login is not lent, not returned for idleness, and at a cut it
+that variable (the process list is read again at least once a minute, and at once before a login is
+lent, returned or cut; only `claude` processes have their environment read) and counts as busy: its login is not lent, not returned for idleness, and at a cut it
 is stopped too. When a login starts leaving a device, a chat's idle child on it is
 stopped (its next turn starts on the device's next login, as after a model change, and shows
 the move as a note, §app.claude-logins/login-moved); a Claude Code worker's

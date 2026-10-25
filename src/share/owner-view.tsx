@@ -29,6 +29,21 @@ import type { OwnerRequestRow, OwnerVersionRow } from "../../shared/project-assi
 import { isDeadLink, OwnerLoadError, type OwnerProblemKind } from "../lib/owner-problem";
 import { type AbilityLine, abilityLines, openCount, requestsLine } from "../lib/owner-abilities";
 import { AbilityList, Chevron } from "./owner-abilities-view";
+import { ShareComposer, type SendOutcome } from "./ShareComposer";
+import { Reply } from "./thread";
+import { batonKinds } from "./markdown";
+
+/** The owner's own feature request chat (§app.project-assistant/feature-chats): their message and End Chat, by the
+    conversation's handle; absent in the preview (read only). */
+export interface FeatureApi {
+  send(conversation: string, text: string): Promise<{ ok: true } | { ok: false; code: string; message: string }>;
+  end(conversation: string): Promise<boolean>;
+}
+
+/** The owner closes and reopens their own requests (§app.project-assistant/closing); absent (the preview): no buttons. */
+export interface RequestsApi {
+  act(handle: string, action: "close" | "reopen"): Promise<boolean>;
+}
 
 /**
  * The Owner page (§app.owner-page/page): Home, a project, a conversation. Read-only. It renders
@@ -72,6 +87,10 @@ export function OwnerPage(props: {
   assistant?: AssistantApi;
   /** A version's Open address (`/i/<token>/v/<handle>`); absent in the preview: no Open. */
   versionHref?(handle: string): string;
+  /** The owner's feature request chat writes through this; absent: read only. */
+  feature?: FeatureApi;
+  /** Close and Reopen on the Requests tab; absent: read only. */
+  requests?: RequestsApi;
 }) {
   const key = createMemo(() => JSON.stringify(props.route));
   const [answer, setAnswer] = createSignal<OwnerAnswer | null>(null);
@@ -310,6 +329,7 @@ export function OwnerPage(props: {
                     pick={pick}
                     prefill={prefill}
                     takePrefill={() => setPrefill(null)}
+                    conversationLink={(id) => link({ kind: "conversation", id })}
                     onDeadLink={(err) => {
                       // The link itself failed on the chat's read: the page's own dead-link screen.
                       if (err.asked) setAsking("asked");
@@ -319,7 +339,7 @@ export function OwnerPage(props: {
                 )}
               </Match>
               <Match when={"projects" in d() && props.route.kind === "requests"}>
-                <RequestsView home={d() as OwnerHome} now={now()} link={link} />
+                <RequestsView home={d() as OwnerHome} now={now()} link={link} api={props.preview ? undefined : props.requests} reload={() => void read()} />
               </Match>
               <Match when={"projects" in d()}>
                 <HomeView home={d() as OwnerHome} now={now()} link={link} preview={props.preview} versionHref={props.versionHref} assistant={!!props.assistant} lines={lines()} pick={pick} />
@@ -328,7 +348,15 @@ export function OwnerPage(props: {
                 <ProjectView project={d() as OwnerProject} now={now()} link={link} />
               </Match>
               <Match when={true}>
-                <ConversationView conv={d() as OwnerConversation} now={now()} link={link} tourBase={props.tourBase} />
+                <ConversationView
+                  conv={d() as OwnerConversation}
+                  now={now()}
+                  link={link}
+                  tourBase={props.tourBase}
+                  feature={props.preview ? undefined : props.feature}
+                  subscribe={props.preview ? undefined : props.assistant?.subscribe}
+                  reload={() => void read()}
+                />
               </Match>
             </Switch>
           )}
@@ -453,7 +481,12 @@ function Section(props: { id: string; title: string; line?: JSX.Element; attenti
 /** Rows waiting on the owner. Read-only in v1: they answer through the link the operator sent. */
 function WaitingSection(props: { waiting: OwnerWaiting[]; op: string; now: number; link: Link; withProject: boolean }) {
   return (
-    <Section id="owner-waiting" title="Waiting on you" attention line={`${waitingLine(props.waiting.length)} Answer it using the link ${props.op} sent you for it.`}>
+    <Section
+      id="owner-waiting"
+      title="Waiting on you"
+      attention
+      line={`${waitingLine(props.waiting.length)}${props.waiting.some((w) => !w.feature) ? ` Answer it using the link ${props.op} sent you for it.` : " Open it to answer here."}`}
+    >
       <ul class="owner-list">
         <For each={props.waiting}>
           {(w) => (
@@ -482,27 +515,138 @@ const REQUEST_STATUS: Record<OwnerRequestRow["status"], OwnerChipWord> = {
   started: { word: "Being worked on", tone: "info" },
   done: { word: "Done", tone: "success" },
   declined: { word: "Not planned", tone: undefined },
+  closed: { word: "Closed", tone: undefined },
 };
 
-function RequestsSection(props: { requests: OwnerRequestRow[]; now: number; heading?: boolean }) {
+const isOpenRow = (r: OwnerRequestRow): boolean => r.status === "with-team" || r.status === "started";
+
+function RequestRow(props: { r: OwnerRequestRow; now: number; api?: RequestsApi; busy: boolean; onClose(r: OwnerRequestRow): void; onReopen(r: OwnerRequestRow): void }) {
+  const r = () => props.r;
+  const closed = () => r().status === "closed";
   return (
-    <Section id="owner-requests" title="Your requests" h1={props.heading}>
-      <ul class="owner-list">
-        <For each={props.requests}>
-          {(r) => (
-            <li class="owner-row owner-row-static">
-              <span class="owner-row-main">
-                <span class="owner-row-title">{r.title}</span>
-                <span class="owner-meta">
-                  {REQUEST_KIND[r.kind]} · {r.project} · <Ago at={r.at} now={props.now} />
-                </span>
-              </span>
-              <ChipWord chip={REQUEST_STATUS[r.status]} />
-            </li>
-          )}
-        </For>
-      </ul>
-    </Section>
+    <li class="owner-row owner-row-static" classList={{ "owner-row-closed": closed() }}>
+      <span class="owner-row-main">
+        <span class="owner-row-title">{r().title}</span>
+        <span class="owner-meta">
+          {REQUEST_KIND[r().kind]} · {r().project} · <Show when={closed()} fallback={<Ago at={r().at} now={props.now} />}>
+            {r().closedBy === "assistant" ? "Closed by your Project Assistant" : "Closed by you"} · <Ago at={r().at} now={props.now} />
+          </Show>
+        </span>
+      </span>
+      <ChipWord chip={r().plan === "planning" ? { word: "Planning with you", tone: "info" } : r().plan === "agreed" ? { word: "Plan agreed", tone: "success" } : REQUEST_STATUS[r().status]} />
+      <Show when={props.api && isOpenRow(r())}>
+        <button type="button" class="button button-ghost owner-request-act" disabled={props.busy} aria-label={`Close: ${r().title}`} onClick={() => props.onClose(r())}>
+          Close
+        </button>
+      </Show>
+      <Show when={props.api && closed()}>
+        <button type="button" class="button owner-request-act" disabled={props.busy} aria-label={`Reopen: ${r().title}`} onClick={() => props.onReopen(r())}>
+          Reopen
+        </button>
+      </Show>
+    </li>
+  );
+}
+
+/** The owner's requests (§app.project-assistant/requests): the rest newest first, then the ones they closed under a
+    greyed Closed group, each with Reopen; an open one has Close, asked first in a sheet (§app.project-assistant/closing). */
+function RequestsSection(props: { requests: OwnerRequestRow[]; now: number; heading?: boolean; api?: RequestsApi; reload?(): void }) {
+  const rest = () => props.requests.filter((r) => r.status !== "closed");
+  const closed = () => props.requests.filter((r) => r.status === "closed");
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const [asking, setAsking] = createSignal<OwnerRequestRow | null>(null);
+  let sheet: HTMLDialogElement | undefined;
+  let opener: HTMLElement | null = null;
+  const act = async (r: OwnerRequestRow, action: "close" | "reopen") => {
+    if (!props.api || busy()) return;
+    setBusy(true);
+    setError(null);
+    const ok = await props.api.act(r.handle, action).catch(() => false);
+    setBusy(false);
+    if (ok) props.reload?.();
+    else setError("That didn't go through. Try again in a minute.");
+  };
+  const askClose = (r: OwnerRequestRow) => {
+    opener = document.activeElement as HTMLElement | null;
+    setAsking(r);
+    sheet?.showModal();
+  };
+  const confirmClose = () => {
+    const r = asking();
+    sheet?.close();
+    if (r) void act(r, "close");
+  };
+  const rowOf = (r: OwnerRequestRow) => <RequestRow r={r} now={props.now} api={props.api} busy={busy()} onClose={askClose} onReopen={(x) => void act(x, "reopen")} />;
+  return (
+    <>
+      <Section id="owner-requests" title="Your requests" h1={props.heading}>
+        <Show when={rest().length} fallback={<p class="owner-empty">Nothing open right now.</p>}>
+          <ul class="owner-list">
+            <For each={rest()}>{rowOf}</For>
+          </ul>
+        </Show>
+        <Show when={error()}>
+          <p class="owner-note" role="alert">
+            {error()}
+          </p>
+        </Show>
+      </Section>
+      <Show when={closed().length}>
+        <Section id="owner-requests-closed" title="Closed">
+          <ul class="owner-list owner-list-closed">
+            <For each={closed()}>{rowOf}</For>
+          </ul>
+        </Section>
+      </Show>
+      <Show when={props.api}>
+        <dialog
+          ref={(el) => {
+            sheet = el;
+            const onKey = (e: KeyboardEvent) => {
+              if (e.key !== "Escape") return;
+              e.preventDefault();
+              e.stopPropagation();
+              el.close();
+            };
+            el.addEventListener("keydown", onKey);
+            onCleanup(() => el.removeEventListener("keydown", onKey));
+          }}
+          class="modal owner-sheet"
+          aria-labelledby="owner-close-title"
+          aria-describedby="owner-close-line"
+          onClose={() => {
+            setAsking(null);
+            if (opener?.isConnected) opener.focus();
+            opener = null;
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) sheet?.close();
+          }}
+        >
+          <div class="sheet-grip" aria-hidden="true" />
+          <div class="modal-head">
+            <h2 class="modal-title" id="owner-close-title">
+              Close this request?
+            </h2>
+          </div>
+          <div class="modal-body">
+            <Show when={asking()}>{(r) => <p class="owner-row-title">{r().title}</p>}</Show>
+            <p class="owner-note" id="owner-close-line">
+              The team will stop on it. You can reopen it later.
+            </p>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="button button-ghost" onClick={() => sheet?.close()}>
+              Keep It
+            </button>
+            <button type="button" class="button button-primary" onClick={confirmClose}>
+              Close
+            </button>
+          </div>
+        </dialog>
+      </Show>
+    </>
   );
 }
 
@@ -601,7 +745,7 @@ function HomeView(props: {
 }
 
 /** The Requests tab (#r): every one of the owner's requests, newest first. */
-function RequestsView(props: { home: OwnerHome; now: number; link: Link }) {
+function RequestsView(props: { home: OwnerHome; now: number; link: Link; api?: RequestsApi; reload(): void }) {
   const rs = () => props.home.requests ?? [];
   return (
     <Show
@@ -620,7 +764,7 @@ function RequestsView(props: { home: OwnerHome; now: number; link: Link }) {
         </>
       }
     >
-      <RequestsSection requests={rs()} now={props.now} heading />
+      <RequestsSection requests={rs()} now={props.now} heading api={props.api} reload={props.reload} />
     </Show>
   );
 }
@@ -799,8 +943,103 @@ function ProjectView(props: { project: OwnerProject; now: number; link: Link }) 
   );
 }
 
-function ConversationView(props: { conv: OwnerConversation; now: number; link: Link; tourBase?(conversation: string, handle: string): string }) {
+function ConversationView(props: {
+  conv: OwnerConversation;
+  now: number;
+  link: Link;
+  tourBase?(conversation: string, handle: string): string;
+  feature?: FeatureApi;
+  subscribe?: AssistantApi["subscribe"];
+  reload(): void;
+}) {
   const c = () => props.conv;
+  /** The owner's own feature request chat (§app.project-assistant/feature-chats): they write here while they hold it. */
+  const feature = () => c().feature;
+  const canWrite = () => !!props.feature && feature()?.canWrite === true;
+  const [draft, setDraft] = createSignal("");
+  const [sending, setSending] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const [streaming, setStreaming] = createSignal<string | null>(null);
+  const [ending, setEnding] = createSignal<"idle" | "confirm" | "sending">("idle");
+  // Live: the page's socket says when this chat changed (read it again) and carries its reply as it is written.
+  createEffect(
+    on(
+      () => (feature() && props.subscribe ? c().id : null),
+      (id) => {
+        if (!id || !props.subscribe) return;
+        const off = props.subscribe((m) => {
+          if (m.type === "conversation" && m.conversation === id) {
+            setStreaming(null);
+            props.reload();
+          } else if (m.type === "conversation-streaming" && m.conversation === id) setStreaming(m.text);
+        });
+        onCleanup(off);
+      },
+    ),
+  );
+  // Without a socket frame (a dropped socket), a reply in flight is read again every 3 s while the owner waits.
+  createEffect(
+    on(
+      () => (feature() && !canWrite() && c().state === "open" ? c().id : null),
+      (id) => {
+        if (!id) return;
+        const t = setInterval(() => document.visibilityState === "visible" && props.reload(), 3000);
+        onCleanup(() => clearInterval(t));
+      },
+    ),
+  );
+  // After a send, read again every 3 s until the reply is in (or 3 minutes passed): the socket's frame may never
+  // come (a dropped socket, a gateway that doesn't pass /ws/i).
+  const [awaiting, setAwaiting] = createSignal<number | null>(null);
+  createEffect(
+    on(awaiting, (since) => {
+      if (since === null) return;
+      const t = setInterval(() => {
+        const items = c().items;
+        const last = items[items.length - 1];
+        const replied = items.length > since && !!last && !(last.kind === "message" && last.by === "you");
+        if (replied || c().state !== "open" || Date.now() - startedAt > 180_000) setAwaiting(null);
+        else if (document.visibilityState === "visible") props.reload();
+      }, 3000);
+      const startedAt = Date.now();
+      onCleanup(() => clearInterval(t));
+    }),
+  );
+  const say = async (text: string): Promise<boolean> => {
+    if (!props.feature || sending()) return false;
+    setSending(true);
+    setError(null);
+    try {
+      const out = await props.feature.send(c().id, text);
+      if (out.ok) {
+        setAwaiting(c().items.length + 1);
+        props.reload();
+        return true;
+      }
+      setError(out.code === "rate-limited" ? "Too many messages. Wait a minute." : out.code === "not-holder" ? "Someone else has this chat right now. You can read along." : out.message || "Your message didn't go through. Try again.");
+      return false;
+    } finally {
+      setSending(false);
+    }
+  };
+  const send = async (text: string): Promise<SendOutcome> => ((await say(text)) ? "sent" : "kept");
+  const end = async () => {
+    if (!props.feature) return;
+    setEnding("sending");
+    const ok = await props.feature.end(c().id).catch(() => false);
+    setEnding("idle");
+    if (ok) props.reload();
+    else setError("That didn't go through. Try again in a minute.");
+  };
+  const note = () => {
+    const f = feature();
+    if (!f) return null;
+    if (c().status.kind === "plan-agreed") return `You agreed this plan. ${c().operator.first} decides when it's built.`;
+    if (c().status.kind === "closed") return "This chat has ended.";
+    if (f.canWrite) return `Plan it here with the assistant. Nothing is built until ${c().operator.first} decides.`;
+    const s = c().status;
+    return `${"first" in s ? s.first : c().operator.first} has it right now. You can read along.`;
+  };
   return (
     <>
       <a class="owner-back" {...props.link({ kind: "project", id: c().project })}>
@@ -811,14 +1050,81 @@ function ConversationView(props: { conv: OwnerConversation; now: number; link: L
         <div class="owner-row-chips">
           <ChipWord chip={conversationChip(c().status)} />
         </div>
-        <p class="owner-note">
-          You can read this conversation. You can't write here.
-          <Show when={c().yourTurn}> It's your turn in this conversation. Answer it using the link {c().operator.first} sent you.</Show>
-        </p>
+        <Show
+          when={note()}
+          fallback={
+            <p class="owner-note">
+              You can read this conversation. You can't write here.
+              <Show when={c().yourTurn}> It's your turn in this conversation. Answer it using the link {c().operator.first} sent you.</Show>
+            </p>
+          }
+        >
+          <p class="owner-note">{note()}</p>
+        </Show>
       </header>
       <section class="owner-thread" aria-label="Conversation">
-        <For each={c().items}>{(it) => <Item item={it} reader drawings={c().drawings} tour={props.tourBase ? { base: handle => props.tourBase!(c().id, handle) } : undefined} />}</For>
+        <For each={c().items}>
+          {(it) => (
+            <Item
+              item={it}
+              reader
+              drawings={c().drawings}
+              tour={props.tourBase ? { base: (handle) => props.tourBase!(c().id, handle) } : undefined}
+              answerPlan={canWrite() ? say : undefined}
+            />
+          )}
+        </For>
+        <Show when={streaming()}>
+          <article class="share-msg share-msg-reply" aria-label="Facilitator" aria-busy="true">
+            <span class="share-who">Facilitator</span>
+            <Reply text={streaming()!} streaming kinds={batonKinds(c().drawings?.html === true)} />
+          </article>
+        </Show>
       </section>
+      <Show when={canWrite()}>
+        <ShareComposer
+          class="owner-assistant-composer owner-feature-composer"
+          id="owner-feature-text"
+          label="Your message"
+          placeholder="Write a message"
+          maxLength={4000}
+          sendKey="mod-enter"
+          draft={draft}
+          setDraft={setDraft}
+          error={error}
+          photos={() => null}
+          uploadPhoto={() => {
+            throw new Error("Photos can't be sent here.");
+          }}
+          sending={sending}
+          send={(text) => send(text)}
+        />
+      </Show>
+      <Show when={!canWrite() && error()}>
+        <p class="owner-note" role="alert">
+          {error()}
+        </p>
+      </Show>
+      <Show when={props.feature && feature()?.canEnd}>
+        <div class="owner-feature-end">
+          <Show
+            when={ending() !== "idle"}
+            fallback={
+              <button type="button" class="button button-ghost" onClick={() => setEnding("confirm")}>
+                End Chat
+              </button>
+            }
+          >
+            <p class="owner-note">End this chat? You can't write in it after.</p>
+            <button type="button" class="button" disabled={ending() === "sending"} onClick={() => void end()}>
+              End Chat
+            </button>
+            <button type="button" class="button button-ghost" onClick={() => setEnding("idle")}>
+              Cancel
+            </button>
+          </Show>
+        </div>
+      </Show>
     </>
   );
 }

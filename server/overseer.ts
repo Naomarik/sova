@@ -18,11 +18,12 @@ import {
   type OverseerSaveResult,
   type OverseerSettings,
   type OverseerSettingsInfo,
+  type SessionFeedMessage,
   type SessionSummary,
   type SovaConfirmItem,
 } from "../shared/protocol";
 import { setArchived } from "./archived-sessions";
-import { type AttentionRow, blockerCount, blockerKey, buildDigest, mergedBranch, workerErrorTime } from "./attention";
+import { type AttentionRow, blockerCount, blockerKey, buildDigest, mergedBranch, NEVER_BRIEFED, workerErrorTime } from "./attention";
 import { readIndex, stakeholderAttention } from "./orgs";
 import { heldAttention } from "./project-holds";
 import { conflictAttention } from "./decisions";
@@ -88,7 +89,7 @@ import { type Redactor, redactExtensionMessages, serverRedactor } from "./overse
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { UnreadReplies } from "./unread-replies";
-import { cleanupSessions, endingOf, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions } from "./sessions-index";
+import { cleanupSessions, endingOf, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions, summaryReads, type SummaryReads } from "./sessions-index";
 import { getSessionInsight } from "./insights";
 import { branchLabels, cardsOnBranch, runNote, runNoteSessionIds, type SessionNow, sessionsInPlay, sessionsInPlayText, type Touched } from "./overseer-run-note";
 import { changedText, openingOn, toldOn, type LivePart, type OpeningDetails } from "./overseer-opening";
@@ -104,8 +105,10 @@ import type { ServerToolDecl } from "../shared/chat-runtime";
 import { archiveWorktrees } from "./archive-worktrees";
 import { markOwned } from "./write-guard";
 import { signalTextOf, teamStallOf } from "./signals-store";
+import { openOfferOf } from "./session-offers";
 import { readDecisionSettings } from "./decide-settings";
 import { onAttentionChanged } from "./attention-memo";
+import { sessionFeed } from "./session-feed";
 import { notifyBlockers, pushWanted, resetPushState } from "./push";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { overseerMemoryOf } from "./memory/settings";
@@ -271,17 +274,28 @@ export async function clearOverseer(): Promise<OverseerInfo> {
 const unread = new UnreadReplies();
 const unreadReplies = (path: string, since: number | undefined): Promise<number> => unread.count(path, since);
 
-export async function overseerInfo(): Promise<OverseerInfo> {
+/** The Overseer's state. `list`, the session feed's own (§app.decisions/push): its history rows and
+    digest come from it, with no read of their own; without it, the stores every history row reads
+    are read once for all of them. */
+export async function overseerInfo(list?: readonly SessionSummary[]): Promise<OverseerInfo> {
   const cur = await ensureOverseer();
   const st = readOverseerState();
   const history: OverseerInfo["history"] = [];
+  const byId = list ? new Map(list.map((s) => [s.id, s])) : null;
+  let reads: SummaryReads | undefined;
   for (const id of st?.history ?? []) {
+    const row = byId?.get(id);
+    if (row) {
+      history.push({ id, path: row.path, title: row.title, lastActiveAt: row.lastActiveAt });
+      continue;
+    }
     const p = await pathOfId(id);
     if (!p) continue;
-    const s = await getSessionSummary(p);
+    reads ??= summaryReads();
+    const s = await getSessionSummary(p, undefined, reads);
     if (s) history.push({ id, path: p, title: s.title, lastActiveAt: s.lastActiveAt });
   }
-  const digest = await attentionDigest();
+  const digest = await attentionDigest(list);
   const seenAt = readSeen()[cur.id];
   return {
     path: cur.path,
@@ -307,16 +321,19 @@ function noteFailedRise(path: string, failed: number, now: number): number {
   failedRise.set(path, { failed, at });
   return at;
 }
-let digestMemo: { at: number; value: Promise<ReturnType<typeof buildDigest>> } | null = null;
+let digestMemo: { at: number; value: Promise<ReturnType<typeof buildDigest>>; list?: readonly SessionSummary[] } | null = null;
 onAttentionChanged(() => (digestMemo = null));
 onSessionPrompted(() => (digestMemo = null));
 
-/** The digest, memoised ~3s (the badge rides a poll). */
-export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
+/** The digest, memoised ~3s. `list` (the session feed's own, §app.decisions/push) builds it from
+    that list, reusing a memo built from the same list; the memo then serves requests too. */
+export function attentionDigest(list?: readonly SessionSummary[]): Promise<ReturnType<typeof buildDigest>> {
   const now = Date.now();
-  if (digestMemo && now - digestMemo.at < DIGEST_MS) return digestMemo.value;
+  if (digestMemo && now - digestMemo.at < DIGEST_MS && (!list || digestMemo.list === list)) return digestMemo.value;
+  // While nothing changed since the feed's last list, that list is current: no build of its own.
+  const fed = list ?? sessionFeed()?.cleanRows(now) ?? undefined;
   const value = (async () => {
-    const sessions = await listSessions();
+    const sessions = fed ?? (await listSessions());
     const records = readLiveRecords({ includeOwn: true });
     const byPath = new Map<string, { failed: number; since: number; errorTimes: number[] }>();
     for (const r of records) {
@@ -356,6 +373,7 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
         ...(aliases[s.id] ? { alias: aliases[s.id] } : {}),
         ...(reviews.has(s.path) ? { playbook: reviews.get(s.path)! } : {}),
         ...(signIns.has(s.id) ? { tourSignIn: signIns.get(s.id)! } : {}),
+        ...offerField(s),
       };
     });
     // Items of no session: an org project's missing stakeholder, its held acts and conflicts routed to the operator
@@ -365,11 +383,18 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     // WhatsApp sending down (§app.outreach/sender-health): from the sender's last reading, no round trip.
     return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...senderAttention(), ...ownerAttention(), ...conflictAttention(), ...restartItems(sessions), ...deploys]);
   })();
-  digestMemo = { at: now, value };
+  digestMemo = { at: now, value, ...(fed ? { list: fed } : {}) };
   value.catch(() => {
     if (digestMemo?.value === value) digestMemo = null;
   });
   return value;
+}
+
+/** The session's open offer card (§chat.offers/card) as a digest row's field: a Needs you item, idle or working. */
+function offerField(s: SessionSummary): { offer?: { title: string; at: number } } {
+  if (s.archived) return {};
+  const o = openOfferOf(s.id);
+  return o ? { offer: { title: o.title, at: Number.isFinite(o.at) ? o.at : 0 } } : {};
 }
 
 function teamStallField(id: string): { teamStall?: { since: number; names: string[] } } {
@@ -378,9 +403,24 @@ function teamStallField(id: string): { teamStall?: { since: number; names: strin
 }
 
 /** The digest as the wire has it (no badge). */
-export async function attentionForWire(): Promise<AttentionDigest> {
-  const { badge: _badge, ...digest } = await attentionDigest();
+export async function attentionForWire(list?: readonly SessionSummary[]): Promise<AttentionDigest> {
+  const { badge: _badge, ...digest } = await attentionDigest(list);
   return digest;
+}
+
+/** What the session feed pushes after each comparison, from its own list (§app.decisions/push): the
+    digest, and the Overseer's state once it has a conversation (the feed never creates one). */
+export async function feedFrames(list: readonly SessionSummary[]): Promise<SessionFeedMessage[]> {
+  const frames: SessionFeedMessage[] = [{ type: "attention", digest: await attentionForWire(list) }];
+  if (readOverseerState()?.current) frames.push({ type: "overseer", info: await overseerInfo(list) });
+  return frames;
+}
+
+/** What of a feed frame is compared: the digest's build time alone is no change. */
+export function feedFrameKey(f: SessionFeedMessage): string {
+  if (f.type !== "attention") return JSON.stringify(f);
+  const { generatedAt: _at, ...rest } = f.digest;
+  return JSON.stringify(rest);
 }
 
 // ---- settings ----------------------------------------------------------------------------------
@@ -1250,6 +1290,8 @@ export function briefText(items: Pick<AttentionItem, "kind" | "title" | "id" | "
   return redactor().redact(`${OVERSEER_BRIEF_PREFIX} ${items.length === 1 ? "A new blocker" : `${items.length} new blockers`} appeared while you were idle:\n${lines.join("\n")}`);
 }
 
+let feedHold: (() => void) | null = null;
+
 async function tick(ignoreGap = false): Promise<{ briefed: string[] } | { error: string }> {
   await applySettingsNow();
   const settings = readOverseerSettings();
@@ -1258,6 +1300,13 @@ async function tick(ignoreGap = false): Promise<{ briefed: string[] } | { error:
   // every proactivity. With nothing to send to, the digest is read only for a brief.
   const wanted = pushWanted();
   if (!wanted) resetPushState();
+  // The loop holds the session feed while it reads the digest, so the digest comes from the feed's
+  // change-driven list (§app.decisions/push) instead of a list built every tick.
+  if ((st || wanted) && !feedHold) feedHold = sessionFeed()?.add(() => {}) ?? null;
+  else if (!st && !wanted && feedHold) {
+    feedHold();
+    feedHold = null;
+  }
   if (!st && !wanted) return { briefed: [] }; // no Overseer yet and no phone to tell: nothing to do
   const digest = await attentionDigest();
   const act = digest.items.filter((i) => i.tier === "act");
@@ -1269,12 +1318,14 @@ async function tick(ignoreGap = false): Promise<{ briefed: string[] } | { error:
   if ((readSeen()[st.current] ?? 0) > lastBriefAt || isViewing(st.current)) unattended = 0;
   const chat = chatHandle(path)?.mirror;
   const idle = !chat || (!chat.running && chat.queue.web === 0);
-  const counts = new Map(act.map((i) => [blockerKey(i), blockerCount(i)]));
-  const d = briefDecision({ current: act.map(blockerKey), counts, announced, proactivity: settings.proactivity, now: Date.now(), lastBriefAt: ignoreGap ? 0 : lastBriefAt, unattended: ignoreGap ? 0 : unattended, overseerIdle: idle });
+  // An option card waiting for the user is Needs you but never a brief (§app.overseer/attention-digest).
+  const briefable = act.filter((i) => !NEVER_BRIEFED.has(i.kind));
+  const counts = new Map(briefable.map((i) => [blockerKey(i), blockerCount(i)]));
+  const d = briefDecision({ current: briefable.map(blockerKey), counts, announced, proactivity: settings.proactivity, now: Date.now(), lastBriefAt: ignoreGap ? 0 : lastBriefAt, unattended: ignoreGap ? 0 : unattended, overseerIdle: idle });
   const before = announced;
   announced = d.announced;
   if (!d.brief.length) return { briefed: [] };
-  const text = briefText(act.filter((i) => d.brief.includes(blockerKey(i))));
+  const text = briefText(briefable.filter((i) => d.brief.includes(blockerKey(i))));
   try {
     const overseer = await acquireChatHandle(path);
     // Keyed by what it briefs (§app.chat-processes/server-messages): sent again after a lost answer, one turn.

@@ -8,6 +8,70 @@ import { CHAT_ENTRIES } from "./chat.ts";
 const orgId: CommandParam = { type: "string", description: "The organization's id", in: "path", required: true };
 const requestId: CommandParam = { type: "string", description: "The owner request's id (or_…)", in: "path", required: true };
 
+const projectId: CommandParam = { type: "string", description: "The project's id", in: "path", required: true };
+const instance: CommandParam = { type: "string", description: "The version's copy (its instance id)", in: "path", required: true };
+const versionParams = { "org-id": { ...orgId, key: "id" }, "project-id": { ...projectId, key: "pid" }, instance: { ...instance, key: "instance" } };
+const versionRoute = (fixed?: Record<string, unknown>) => ({ method: "PUT" as const, path: "/api/orgs/:id/projects/:pid/versions/:instance", ...(fixed ? { fixed } : {}) });
+
+/** The versions on the owner's page and their summaries, on the project page's Owner Page card (§app.project-assistant/versions). */
+const ORG_VERSION_SUMMARY_ENTRIES: CommandEntry[] = [
+  {
+    id: "org.project.versions",
+    label: "Show Owner's Versions",
+    summary: "The versions of a project on the owner's page, each with its summary as kept (automatic, the team's rewrite, hidden).",
+    effect: "looks",
+    params: { "org-id": { ...orgId, key: "id" }, "project-id": { ...projectId, key: "pid" } },
+    route: { method: "GET", path: "/api/orgs/:id/projects/:pid/versions" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
+    id: "org.project.version.rewrite",
+    label: "Rewrite Summary",
+    summary: "Replace a version's summary on the owner's page with your own words.",
+    effect: "changes",
+    params: { ...versionParams, text: { type: "string", description: "The summary the owner reads", in: "body", required: true } },
+    route: versionRoute(),
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "org.project.version.automatic",
+    label: "Use Automatic",
+    summary: "Show a version's automatic summary again instead of your rewrite.",
+    effect: "changes",
+    params: versionParams,
+    route: versionRoute({ text: null }),
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "org.project.version.hide",
+    label: "Hide Summary",
+    summary: "Hide a version's summary from the owner and their assistant.",
+    effect: "changes",
+    params: versionParams,
+    route: versionRoute({ hidden: true }),
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "org.project.version.show",
+    label: "Show Summary",
+    summary: "Show a hidden version summary to the owner again.",
+    effect: "changes",
+    params: versionParams,
+    route: versionRoute({ hidden: false }),
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+];
+
 /** An owner request's answers on the org's Requests tab (§app.project-assistant/request-chat). */
 const ORG_OWNER_REQUEST_ENTRIES: CommandEntry[] = [
   {
@@ -39,6 +103,17 @@ const ORG_OWNER_REQUEST_ENTRIES: CommandEntry[] = [
     effect: "changes",
     params: { "org-id": { ...orgId, key: "id" }, "request-id": { ...requestId, key: "rid" } },
     route: { method: "POST", path: "/api/orgs/:id/owner/requests/:rid", fixed: { status: "declined" } },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "org.owner.request.noted",
+    label: "Got It",
+    summary: "Note an owner request the owner closed while it was being worked on: its Needs you item ends.",
+    effect: "changes",
+    params: { "org-id": { ...orgId, key: "id" }, "request-id": { ...requestId, key: "rid" } },
+    route: { method: "POST", path: "/api/orgs/:id/owner/requests/:rid", fixed: { noted: true } },
     sessionKey: null,
     sessionFile: "never",
     meshNeed: "admin",
@@ -287,6 +362,22 @@ export const OTHER_ENTRIES: CommandEntry[] = [
     meshNeed: "sessions",
   },
   {
+    id: "insights.session.inbox",
+    label: "Team Member Inbox",
+    summary: "A team member's inbox, read-only: its items, or with an item id that item's whole message.",
+    effect: "looks",
+    params: {
+      session: { type: "session", description: "The session that owns the team", in: "query", key: "path", required: true },
+      team: { type: "string", description: "The team id (team_01)", in: "query", key: "team", required: true },
+      worker: { type: "string", description: "The member's worker id (ag_03)", in: "query", key: "worker", required: true },
+      item: { type: "string", description: "An item id (i_2a): answer that item's whole message", in: "query", key: "item" },
+    },
+    route: { method: "GET", path: "/api/insights/session/inbox" },
+    sessionKey: "path",
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
     id: "sova.health",
     label: "Server Health",
     summary: "What this server runs: its start, its commit and its runtime.",
@@ -433,6 +524,19 @@ export const OTHER_ENTRIES: CommandEntry[] = [
     meshNeed: "admin",
   },
   {
+    id: "settings.assistant-default.set",
+    label: "Set the Project Assistant's Default Model",
+    summary: "Set or clear the model and thinking every organization's Project Assistant uses unless it picks its own.",
+    effect: "changes",
+    params: {
+      assistant: { type: "json", description: "The default: {model: \"provider/model\", thinking?}, or null to clear it", in: "body", required: true },
+    },
+    route: { method: "PUT", path: "/api/settings/project-assistant" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
     id: "push.test",
     label: "Send Test Notification",
     summary: "Send the test notification to every registered device.",
@@ -459,5 +563,6 @@ export const OTHER_ENTRIES: CommandEntry[] = [
     meshNeed: "full",
   },
   ...ORG_OWNER_REQUEST_ENTRIES,
+  ...ORG_VERSION_SUMMARY_ENTRIES,
   ...CHAT_ENTRIES,
 ];

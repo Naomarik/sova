@@ -726,7 +726,7 @@ test("visuals: only in a session started with Visuals on; on questions and the d
 	assert.deepEqual(Object.keys(ALIGN_VISUAL_FIELDS).sort(), ["create", "edit_doc", "edit_question"]);
 });
 
-test("style: a changing call records the non-Default style in effect; Default records none and clears it", () => {
+test("style: a changing call records the style in effect, Technical (\"default\") included; a doc with none names none", () => {
 	const pm = applyAlignCall([], { ops: [CREATE] }, { ...env, style: "pm" }).details.doc!;
 	assert.equal(pm.style, "pm");
 	assert.match(toMarkdown(pm), /· v1 · Project manager style/);
@@ -735,8 +735,11 @@ test("style: a changing call records the non-Default style in effect; Default re
 	const simple = applyAlignCall([pm], { ops: [{ op: "decide", q: "q1", decision: "Full" }] }, { ...env, style: "simplified" }).details.doc!;
 	assert.equal(simple.style, "simplified", "the latest change's style");
 	const plain = applyAlignCall([simple], { ops: [{ op: "decide", q: "q2", decision: "JSONL" }] }, { ...env, style: "default" }).details.doc!;
-	assert.equal("style" in plain, false);
+	assert.equal(plain.style, "default", "Technical is recorded, so its card can name it");
+	assert.match(toMarkdown(plain), /· v\d+ · Technical style/);
+	assert.deepEqual(normalizeAlignDetails(JSON.parse(JSON.stringify({ v: 1, doc: plain, changes: [], line: "" })))?.doc, plain, "a recorded \"default\" reads back");
 	const none = applyAlignCall([], { ops: [CREATE] }, env).details.doc!;
 	assert.equal("style" in none, false, "no style given (an older host): no field");
+	assert.doesNotMatch(toMarkdown(none), / style/, "an older document with no style names none");
 	assert.equal(normalizeAlignDetails({ v: 1, doc: { ...pm, style: "expert" }, changes: [], line: "" })?.doc, undefined, "an unknown style is malformed");
 });

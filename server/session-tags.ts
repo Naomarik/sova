@@ -1,46 +1,23 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { open, stat } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
-import {
-  type DecisionSettings,
-  type SessionSummary,
-  type SessionTags,
-  TAG_TOPICS,
-  type TagTopic,
-} from "../shared/protocol";
+import { open } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import type { SessionTags } from "../shared/protocol";
 import type { HEntry } from "../shared/harness";
 import { isLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
-import { type Answer, DecisionError, type DecisionProvider, type Question } from "./decide";
-import { maySend, terminalSession } from "./decide-settings";
+import type { Answer } from "./decide";
 import { joinedText, lineEntry } from "./harness/pi/reader";
-import { serverRedactor } from "./overseer-redact";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
-import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
 
 /**
- * Session tags (plan §5): a topic and a "throwaway" probability per session, answered
- * through the decision seam (server/decide.ts) — this module never knows which provider answered —
- * plus the user's own manual tags. Stored in `<stateRoot>/session-tags.json`, keyed by session id
- * like titles/archive/groups: a sidecar only, never a byte into a JSONL (a TUI-owned file is read
- * with our own tail scan, never opened for writing).
- *
- * The store keeps the RAW answers; the wire (`tagsFor`) applies the fixed thresholds, so moving a
- * threshold needs no re-classification.
+ * Session tags: the user's own manual tags per session (§app.decisions/session-tags). Automatic
+ * tags (a topic and a "throwaway" guess) are retired: nothing here asks a decision provider any
+ * more. A topic or throwaway answer stored before stays readable in the store and is never sent.
+ * Stored in `<stateRoot>/session-tags.json`, keyed by session id like titles/archive/groups: a
+ * sidecar only, never a byte into a JSONL.
  */
 
-/** A choice answer shows on the wire at this confidence or above (the formula in server/decide.ts). */
-export const TAG_CONFIDENCE_MIN = 0.5;
-/** Throwaway is a boolean: shown when P(yes) ≥ this — its own confidence |2p−1| is then ≥ 0.5, the
-    same gate as the choices, read on the yes side only (a "no" is never a tag). */
-export const THROWAWAY_P_MIN = 0.75;
-/** A session whose last reply changed is re-tagged at most this often: bounded churn while it runs. */
-export const RETAG_MIN_MS = 60 * 60 * 1000;
-/** Excerpt caps (characters) — with the short fields the state stays under ~2k tokens. */
-export const LAST_ASSISTANT_MAX = 1500;
-export const LAST_USER_MAX = 600;
-const FIELD_MAX = 300;
 /** Manual tags: the ideas store's rule (server/overseer-ideas.ts cleanTags). */
 export const USER_TAG_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 export const USER_TAGS_MAX = 8;
@@ -48,46 +25,6 @@ export const USER_TAGS_MAX = 8;
 const CHUNK = 16 * 1024;
 const MAX_TAIL = 256 * 1024;
 const NL = 0x0a;
-
-// --- questions -------------------------------------------------------------------------------
-
-const TOPIC_RUBRIC: Record<TagTopic, string> = {
-  feature: "Building new functionality or a new capability.",
-  bugfix: "Finding and fixing a defect, crash or wrong behaviour.",
-  refactor: "Restructuring or cleaning up code without changing what it does.",
-  tests: "Writing, fixing or running tests.",
-  docs: "Writing or editing documentation, READMEs, specs or other prose.",
-  infra: "Servers, deployment, CI, networking, builds or developer tooling.",
-  research: "Investigating, reading or comparing options to answer a question, without changing code.",
-  planning: "Designing or planning work before it is implemented.",
-  review: "Reviewing code, a change, a pull request or someone else's work.",
-  data: "Processing, analysing, cleaning or migrating data.",
-  config: "Changing configuration, settings or dotfiles.",
-  experiment: "A prototype, a spike, or trying something out to see if it works.",
-  chore: "Routine maintenance: dependency bumps, renames, housekeeping.",
-  other: "None of the above fits.",
-};
-
-/** The two questions; ids are the store's contract. Built from the fixed taxonomy in the protocol.
-    There is no `status` question any more: merge readiness (server/merge-readiness.ts) answers it
-    from git and the file. Records stored with a status answer stay readable; it is never sent. */
-export const TAG_QUESTIONS: Record<"topic" | "throwaway", Question> = {
-  topic: {
-    type: "choice",
-    instructions:
-      "Which kind of work is this coding-assistant session mainly about? `title` is the user's first request; `summary` and `now` summarise the session when present; `last_assistant` is the assistant's latest reply.",
-    options: Object.fromEntries(TAG_TOPICS.map((t) => [t, TOPIC_RUBRIC[t]])),
-  },
-  throwaway: {
-    type: "boolean",
-    instructions:
-      "Is this a test or scratch session with no lasting work — a trial prompt to try a model or a feature, a greeting, or a one-off question nobody will come back to?",
-    criteria: {
-      true: "A test, trial or scratch session; nothing in it is meant to last.",
-      false: "Real work the user may come back to.",
-    },
-  },
-};
 
 // --- the store -------------------------------------------------------------------------------
 
@@ -206,18 +143,11 @@ export function tagRecord(id: string): TagRecord | undefined {
 
 // --- the wire --------------------------------------------------------------------------------
 
-/** A stored record as the wire carries it: fixed thresholds over the raw answers; undefined when
-    nothing passes and there are no manual tags. */
+/** A stored record as the wire carries it: the manual tags only (a stored topic or throwaway
+    answer, from when tags were automatic, is never sent); undefined when there are none. */
 export function wireTags(rec: TagRecord | undefined): SessionTags | undefined {
-  if (!rec) return undefined;
-  const out: SessionTags = {};
-  const t = rec.answers?.topic;
-  if (t?.type === "choice" && t.confidence >= TAG_CONFIDENCE_MIN && (TAG_TOPICS as readonly string[]).includes(t.choice)) out.topic = t.choice as TagTopic;
-  // A stored `status` answer (the retired status tag) is kept in the store and never sent.
-  const w = rec.answers?.throwaway;
-  if (w?.type === "boolean" && w.p >= THROWAWAY_P_MIN) out.throwaway = true;
-  if (rec.user?.length) out.user = [...rec.user];
-  return Object.keys(out).length ? out : undefined;
+  if (!rec?.user?.length) return undefined;
+  return { user: [...rec.user] };
 }
 
 /** The overlay listSessions/getSessionSummary lay over a row (1 s read cache, like seen.ts). */
@@ -311,31 +241,6 @@ export function dropSessionTags(ids: string[]): void {
   emit(gone);
 }
 
-// --- eligibility -----------------------------------------------------------------------------
-
-/**
- * Why a row is not sent for tagging, or null when it may be. The privacy rules (feature switch,
- * excluded folders, never-send-TUI with decide-settings' `terminalSession`) are `maySend`, the one
- * gate both features share. `held` = this server hosts the chat (index.ts passes heldChat);
- * without it every external session counts as a terminal one — the conservative side. `defer` = eligible later (a turn
- * is running); the others are never sent while the settings stand.
- */
-export function tagSkipReason(
-  row: SessionSummary,
-  settings: DecisionSettings,
-  opts: { home?: string; held?: (path: string) => boolean } = {},
-): "feature-off" | "excluded" | "tui" | "overseer" | "worker" | "baton" | "empty" | "defer" | null {
-  const gate = maySend(settings, "tags", { cwd: row.cwd, terminal: terminalSession(row, opts.held?.(row.path) ?? false) }, opts.home);
-  if (!gate.ok) return gate.reason;
-  if (row.overseer || row.projectOverseer) return "overseer";
-  // Outsiders' words are never sent to a decision model for tagging.
-  if (row.baton) return "baton";
-  if (row.workerSession) return "worker";
-  if (row.draftPreview !== undefined) return "empty";
-  if (row.busy || row.activity?.state === "working") return "defer";
-  return null;
-}
-
 // --- input (head/tail only) ------------------------------------------------------------------
 
 /** An entry's text blocks, joined by newlines (images left out, notes kept). */
@@ -386,182 +291,4 @@ export async function readTailTurn(path: string, size: number): Promise<{ turnId
   } finally {
     await fh.close();
   }
-}
-
-const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
-const head = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
-/** The END of a reply is where its conclusion is. */
-const tail = (s: string, n: number) => (s.length > n ? `…${s.slice(-(n - 1))}` : s);
-
-function durationWords(ms: number): string {
-  const min = Math.round(ms / 60000);
-  if (min < 2) return "under two minutes";
-  if (min < 90) return `about ${min} minutes`;
-  const h = Math.round(min / 60);
-  if (h < 48) return `about ${h} hours`;
-  return `about ${Math.round(h / 24)} days`;
-}
-
-/** The decision state for one session: named, capped, pre-computed facts (Jev does no date
-    arithmetic), redacted before it leaves the process. */
-export function tagState(
-  row: Pick<SessionSummary, "title" | "originalTitle" | "outlineGist" | "outlineNow" | "cwd" | "model" | "createdAt" | "lastActiveAt">,
-  turn: { assistant: string; user: string | null },
-  now: number,
-  redact: <T>(v: T) => T = (v) => serverRedactor().redactDeep(v),
-): Record<string, string | number> {
-  const created = Date.parse(row.createdAt);
-  const active = Date.parse(row.lastActiveAt);
-  const state: Record<string, string | number> = {
-    title: head(oneLine(row.originalTitle ?? row.title), FIELD_MAX),
-    ...(row.outlineGist ? { summary: head(oneLine(row.outlineGist), FIELD_MAX) } : {}),
-    ...(row.outlineNow ? { now: head(oneLine(row.outlineNow), FIELD_MAX) } : {}),
-    project: basename(row.cwd) || row.cwd,
-    ...(row.model ? { model: row.model } : {}),
-    ...(Number.isFinite(created) && Number.isFinite(active) ? { duration: durationWords(Math.max(0, active - created)) } : {}),
-    ...(Number.isFinite(active) ? { days_idle: Math.max(0, Math.floor((now - active) / 86_400_000)) } : {}),
-    ...(turn.user ? { last_user: head(turn.user.trim(), LAST_USER_MAX) } : {}),
-    last_assistant: tail(turn.assistant.trim(), LAST_ASSISTANT_MAX),
-  };
-  return redact(state);
-}
-
-// --- classification --------------------------------------------------------------------------
-
-/** Whether a stored record needs a (re-)classification for a reply `turnId` at `now`. */
-export function needsTagging(rec: TagRecord | undefined, turnId: string, now: number): boolean {
-  if (!rec?.basis || rec.at === undefined) return true;
-  if (rec.basis.turnId === turnId) return false;
-  return now - rec.at >= RETAG_MIN_MS;
-}
-
-export interface TaggerDeps {
-  /** The decision chain (never names a provider). */
-  provider: () => DecisionProvider;
-  settings: () => DecisionSettings;
-  /** This server hosts the chat at `path` (heldChat) — for the never-send-TUI rule. */
-  held?: (path: string) => boolean;
-  now?: () => number;
-  redact?: <T>(v: T) => T;
-}
-
-export type TagOutcome =
-  | { kind: "tagged"; tags: SessionTags | undefined }
-  | { kind: "fresh" } // already classified for this reply (or within the re-tag bound)
-  | { kind: "skipped"; reason: string } // not eligible, or no finished reply yet
-  | { kind: "failed"; error: DecisionError | Error };
-
-/** After a failed classification the live pass leaves that session alone this long (in memory):
-    one bad transcript must not cost a provider call every tick. The backfill ignores it. */
-export const RETRY_FAILED_MS = 15 * 60 * 1000;
-
-/** Classify one session now if it needs it. Never throws; one in flight per session id. */
-export class SessionTagger {
-  private inflight = new Map<string, Promise<TagOutcome>>();
-  private failedAt = new Map<string, number>();
-  constructor(private readonly deps: TaggerDeps) {}
-
-  private now() {
-    return this.deps.now?.() ?? Date.now();
-  }
-
-  /** The never-send-TUI "held" check the tagger was given (the live pass and backfill share it). */
-  get held(): (path: string) => boolean {
-    return this.deps.held ?? (() => false);
-  }
-
-  /** A failure of this session is recent enough that the live pass should not retry it yet. */
-  coolingDown(id: string): boolean {
-    const at = this.failedAt.get(id);
-    return at !== undefined && this.now() - at < RETRY_FAILED_MS;
-  }
-
-  tag(row: SessionSummary, opts: { signal?: AbortSignal } = {}): Promise<TagOutcome> {
-    const running = this.inflight.get(row.id);
-    if (running) return running;
-    const p = this.run(row, opts)
-      .then((out) => {
-        if (out.kind === "failed") this.failedAt.set(row.id, this.now());
-        else this.failedAt.delete(row.id);
-        return out;
-      })
-      .finally(() => this.inflight.delete(row.id));
-    this.inflight.set(row.id, p);
-    return p;
-  }
-
-  private async run(row: SessionSummary, opts: { signal?: AbortSignal }): Promise<TagOutcome> {
-    try {
-      const settings = this.deps.settings();
-      const reason = tagSkipReason(row, settings, { ...(this.deps.held ? { held: this.deps.held } : {}) });
-      if (reason) return { kind: "skipped", reason };
-      const st = await stat(row.path);
-      const turn = await readTailTurn(row.path, st.size);
-      if (!turn || !turn.assistant.trim()) return { kind: "skipped", reason: "no-reply" };
-      const now = this.now();
-      if (!needsTagging(readStore().sessions[row.id], turn.turnId, now)) return { kind: "fresh" };
-      const state = tagState(row, turn, now, this.deps.redact);
-      // The usage ledger: the tags' decision is the session's one-shot.
-      const result = await withUsageContext({ owner: row.id, cwd: row.cwd, kind: "oneshot" }, () =>
-        this.deps.provider().decide({ purpose: "tags", state, questions: TAG_QUESTIONS, dedupeKey: `tags:${row.id}`, ...(opts.signal ? { signal: opts.signal } : {}) }),
-      );
-      const a = result.answers;
-      let before: SessionTags | undefined;
-      const store = update((s) => {
-        const cur = s.sessions[row.id];
-        before = wireTags(cur);
-        s.sessions[row.id] = {
-          at: now,
-          basis: { turnId: turn.turnId, size: st.size },
-          answers: { ...(a.topic ? { topic: a.topic } : {}), ...(a.throwaway ? { throwaway: a.throwaway } : {}) },
-          provider: result.provider,
-          model: result.model,
-          ...(cur?.user ? { user: cur.user } : {}),
-        };
-        return true;
-      });
-      const after = wireTags(store.sessions[row.id]);
-      if (!sameTags(before, after)) emit([{ id: row.id, path: row.path, tags: after }]);
-      return { kind: "tagged", tags: after };
-    } catch (err) {
-      return { kind: "failed", error: err instanceof Error ? err : new Error(String(err)) };
-    }
-  }
-}
-
-/**
- * The live pass: tags sessions with a finished reply since tags were switched on (`liveSince`),
- * one at a time. Older sessions are the backfill's (server/tags-backfill.ts). Switching the feature
- * off clears `liveSince`, so switching it on again starts a new window rather than silently
- * sending everything that happened in between.
- */
-export async function liveTagPass(rows: SessionSummary[], tagger: SessionTagger, settings: DecisionSettings, now: number): Promise<number> {
-  if (!settings.features.tags) {
-    if (readStore().liveSince !== undefined) update((s) => (s.liveSince !== undefined ? (delete s.liveSince, true) : false));
-    return 0;
-  }
-  let since = readStore().liveSince;
-  if (since === undefined) {
-    since = now;
-    update((s) => {
-      if (s.liveSince !== undefined) return false;
-      s.liveSince = now;
-      return true;
-    });
-    return 0; // nothing can have finished after "now"
-  }
-  let n = 0;
-  for (const row of rows) {
-    const active = Date.parse(row.lastActiveAt);
-    if (!(active >= since)) continue;
-    if (tagSkipReason(row, settings, { held: tagger.held }) || tagger.coolingDown(row.id)) continue;
-    const rec = readStore().sessions[row.id];
-    // Cheap pre-check before the tail read: classified within the bound → nothing to do yet.
-    if (rec?.at !== undefined && now - rec.at < RETAG_MIN_MS && rec.basis && rec.basis.size === (await stat(row.path).catch(() => null))?.size) continue;
-    const out = await tagger.tag(row);
-    if (out.kind === "tagged") n++;
-    // A chain with nothing to try: stop this pass rather than walk every row into the same wall.
-    if (out.kind === "failed" && out.error instanceof DecisionError && out.error.failure === "unavailable") break;
-  }
-  return n;
 }

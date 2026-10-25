@@ -244,6 +244,9 @@ function foldEntryOf(h: HEntry | undefined): Record<string, unknown> | null {
   return null;
 }
 
+/** Every alignment document of a branch's neutral entries, root first, folded by the extension. */
+export const alignDocsIn = (history: readonly (HEntry | undefined)[]): AlignDocument[] => foldAlignments(history.map(foldEntryOf)).docs;
+
 /** openAlignmentsOf over neutral entries (a branch, or a transcript's row sources), root first. */
 export const openAlignmentsIn = (history: readonly (HEntry | undefined)[]) => openAlignmentsOf(history.map(foldEntryOf));
 

@@ -425,6 +425,36 @@ export function worktreeStamp(dir: string): string | null {
   }
 }
 
+/** What a worktree's readiness reads from Git that a commit, checkout, add, branch switch or base
+ * move changes, as stat stamps read without Git (no spawn): worktreeStamp (its index, HEAD, branch
+ * ref and packed-refs, under the main repo's .git/worktrees/<name>/ for a linked one) plus the
+ * base branch's ref (`baseBranch`, and master, main and origin's HEAD target). "gone" for a missing
+ * folder; null when its layout can't be named. The session feed's readiness watch compares it
+ * every few seconds (§app.decisions/push). */
+export function gitInputsStamp(dir: string, baseBranch?: string): string | null {
+  const tree = worktreeStamp(dir);
+  if (tree === null || tree === "gone") return tree;
+  const layout = plainLayout(dir);
+  if (!layout || layout === "gone") return tree;
+  const stat = (path: string): string => {
+    try {
+      const st = statSync(path, { bigint: true });
+      return `${st.ino}:${st.size}:${st.mtimeNs}`;
+    } catch {
+      return "absent";
+    }
+  };
+  const refs = new Set(["refs/heads/master", "refs/heads/main", "refs/remotes/origin/HEAD", "packed-refs"]);
+  if (baseBranch && /^[\w./-]+$/.test(baseBranch) && !baseBranch.includes("..")) refs.add(`refs/heads/${baseBranch}`);
+  try {
+    const origin = /^ref: (refs\/[^\r\n]+)/.exec(readFileSync(join(layout.commonDir, "refs/remotes/origin/HEAD"), "utf8"))?.[1];
+    if (origin) refs.add(origin);
+  } catch {
+    // no origin HEAD
+  }
+  return [tree, ...[...refs].map((r) => `${r}=${stat(join(layout.commonDir, r))}`)].join("\0");
+}
+
 const CONTEXT_MOVED = Symbol("Git configuration context moved");
 
 function contextScope(layout: Layout): string {

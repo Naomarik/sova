@@ -100,6 +100,12 @@ const lastToolResult = (m: ScriptedModel): ToolResult => {
   return [...msgs].reverse().find((x) => x.role === "toolResult")!;
 };
 const textOf = (r: ToolResult) => r.content.map((c) => c.text ?? "").join("");
+/** The system prompt the model's last request ran on. */
+const systemPromptOf = (m: ScriptedModel): string => {
+  const ctx = m.calls.at(-1)!.context as { systemPrompt?: string; messages: { role: string; content: unknown }[] };
+  // pi records the system prompt by its sections, as a system message.
+  return `${ctx.systemPrompt ?? ""}${JSON.stringify(ctx.messages.find((x) => x.role === "system") ?? "")}`;
+};
 
 let model: ScriptedModel;
 let path = "";
@@ -140,6 +146,14 @@ describe("start_version (§app.project-assistant/tools)", () => {
     assert.equal(tryRequests().length, 1, "the open request stands");
     const view = await pa.assistantView(org.id);
     assert.ok(!view.messages.some((m) => m.versions?.length), "no Open button without a start");
+    // What it offers follows the switches (§app.project-assistant/offers): a new project's column is all Off, so the
+    // reply ran with no fix and no planning chat, and its prompt offers no start of a version that isn't running.
+    const names = piSession(await acquireChat(path)).getActiveToolNames();
+    for (const t of ["start_fix", "start_feature_chat"]) assert.ok(!names.includes(t), `no ${t}: ${names.join(",")}`);
+    for (const t of ["owner_versions", "start_version", "deploy", "report_issue"]) assert.ok(names.includes(t), `has ${t}`);
+    const prompt = systemPromptOf(model);
+    assert.match(prompt, /isn't started from here/);
+    assert.doesNotMatch(prompt, /start_fix|start_feature_chat|planning chat/);
   });
 
   test("the operator starts the copy from Branches: once it is seen running, the open `try` request is done and leaves Needs you", async () => {
@@ -190,6 +204,20 @@ describe("start_version (§app.project-assistant/tools)", () => {
     assert.equal(textOf(again), "Current version of Archery website is running. Its Open button is in this chat and on the home page.");
     assert.equal(runActs().length, acts + 1, "no second act");
     assert.equal((await pa.assistantView(org.id)).messages.filter((m) => m.versions?.length).length, 2);
+    assert.match(systemPromptOf(model), /offer to start it with `start_version`/, "On: starting one is offered");
+    // Off with the copy running: opening it is always offered, and the owner still gets its Open button.
+    await po.patchProjectOverseer(project.id, { powers: { assistant: { copiesRun: false } } });
+    const off = await ask("Can I open it?", { name: "start_version", arguments: {} }, "It's running: use the Open button.");
+    assert.equal(textOf(off), "Current version of Archery website is running. Its Open button is in this chat and on the home page.");
+    assert.ok(piSession(await acquireChat(path)).getActiveToolNames().includes("start_version"));
+    const offPrompt = systemPromptOf(model);
+    assert.match(offPrompt, /One that is running or starting can always be opened/);
+    assert.match(offPrompt, /isn't started from here/);
+    const offRows = (await pa.assistantView(org.id)).messages.filter((m) => m.versions?.length);
+    assert.equal(offRows.length, 3, "the Open button, with the switch Off");
+    assert.deepEqual([offRows[2]!.text, offRows[2]!.versions![0]!.state], ["It's running: use the Open button.", "running"]);
+    assert.equal(runActs().length, acts + 1, "no act");
+    await po.patchProjectOverseer(project.id, { powers: { assistant: { copiesRun: true } } });
     // Nothing stops it on its own: the operator does (here, the test).
     // Its owner-bound preview is an active link on the copy, so the operator confirms the stop.
     assert.equal((await projectEngine().run("down", { instance }, { kind: "operator" })).error?.code, "needs-confirm");
@@ -240,12 +268,20 @@ describe("start_version (§app.project-assistant/tools)", () => {
     }
   });
 
-  test("a project with no copies lists no versions and starts nothing", async () => {
+  test("a project with no copies: nothing to try where copies can't be shown; else the Current version's copy is made (q6)", async () => {
     mutateRegistry((r) => {
       r.instances = r.instances.filter((i) => i.id !== instance);
     });
     const t = tools.assistantTools({ orgId: org.id, sessionId: "s_pa", owner: () => ({ id: alp.id, name: alp.name }), branch: () => [] }).find((x) => x.name === "start_version")!;
-    const out = (await t.execute("c3", {} as never, undefined, undefined, undefined as never)) as { content: { text: string }[] };
-    assert.equal(out.content[0]!.text, "Archery website has no versions to try.");
+    writeFileSync(join(site, ".sova", "project.json"), JSON.stringify({ ...DEF, share: { ...DEF.share, allow: false } }));
+    try {
+      const out = (await t.execute("c3", {} as never, undefined, undefined, undefined as never)) as { content: { text: string }[] };
+      assert.equal(out.content[0]!.text, "Archery website has no versions to try.");
+    } finally {
+      writeFileSync(join(site, ".sova", "project.json"), JSON.stringify(DEF));
+    }
+    const made = (await t.execute("c4", {} as never, undefined, undefined, undefined as never)) as { content: { text: string }[] };
+    assert.match(made.content[0]!.text, /^Current version of Archery website is starting\./);
+    assert.ok(readRegistry().instances.some((i) => realpathSync(i.checkout) === realpathSync(site)), "the main checkout's copy was made");
   });
 });

@@ -1,11 +1,16 @@
 import type { Context, Hono } from "hono";
-import type { AssistantInfo } from "../shared/project-assistant";
+import type { AssistantInfo, PricedPick, VersionSummaryRow } from "../shared/project-assistant";
 import { WORK_KINDS } from "../shared/powers";
 import { attentionChanged } from "./attention-memo";
-import { OrgError, readOrgOrPlaceholder } from "./orgs";
+import { OrgError, readIndex, readOrgOrPlaceholder, readProjects } from "./orgs";
+import { projectVersions } from "./owner-versions";
+import { setVersionSummary, summaryPatchOf, teamRows } from "./version-summaries";
 import { assistantSeesImages, currentAssistantPath, ensureAssistant, refreshAssistant } from "./project-assistant";
+import { assistantReplyState } from "./project-assistant-ready";
+import { assistantDefault, assistantPicksAdopted, markAssistantPicksAdopted, readBatonSettings, writeAssistantDefault, writeBatonSettings } from "./baton-settings";
+import type { BatonSettings } from "../shared/baton";
 import { pricedPick } from "./project-assistant-prices";
-import { assistantModelFor, orgRequests, readAssistantStore, setAssistantModels, setRequestStatus } from "./project-assistant-store";
+import { adoptDefaultPicks, effectiveAssistantModel, noteClosedRequest, orgRequests, samePick, setAssistantModels, setRequestStatus } from "./project-assistant-store";
 import { assistantProjects } from "./project-assistant-tools";
 import { HasChatError, startRequestChat, withChats } from "./owner-request-chat";
 import { projectOverseerPaths, readPoSettings, sessionIdOfFile } from "./project-overseer-store";
@@ -46,23 +51,92 @@ const projectModels = (projectId: string) => {
   }
 };
 
-/** The Owner card's Project Assistant part. */
+/** The Owner card's Project Assistant part: each kind resolved (its own pick, else the default) with its source. */
 export async function assistantInfo(orgId: string): Promise<AssistantInfo> {
   readOrgOrPlaceholder(orgId);
-  const s = readAssistantStore(orgId);
+  const fallback = assistantDefault();
   const models: AssistantInfo["models"] = {};
-  for (const k of WORK_KINDS) models[k] = pricedPick(s.models[k] ?? null);
+  for (const k of WORK_KINDS) {
+    const r = effectiveAssistantModel(orgId, k, null, fallback);
+    models[k] = r ? { ...pricedPick(r.pick)!, source: r.source } : null;
+  }
   const projects = assistantProjects(orgId).map((pr) => {
     const o = projectModels(pr.id);
-    const coding = assistantModelFor(orgId, "coding", o);
-    const gathering = assistantModelFor(orgId, "gathering", o);
-    return { projectId: pr.id, name: pr.name, coding: { pick: pricedPick(coding.pick), source: coding.source }, gathering: { pick: pricedPick(gathering.pick), source: gathering.source } };
+    const coding = effectiveAssistantModel(orgId, "coding", o, fallback);
+    const gathering = effectiveAssistantModel(orgId, "gathering", o, fallback);
+    return {
+      projectId: pr.id,
+      name: pr.name,
+      coding: { pick: pricedPick(coding?.pick ?? null), source: coding?.source ?? null },
+      gathering: { pick: pricedPick(gathering?.pick ?? null), source: gathering?.source ?? null },
+    };
   });
   const path = await currentAssistantPath(orgId);
-  return { models, projects, sessionId: path ? sessionIdOfFile(path) : null, requests: await withChats(orgRequests(orgId)), seesPhotos: await assistantSeesImages(orgId).catch(() => false) };
+  const reply = await assistantReplyState(orgId).catch(() => null);
+  return {
+    models,
+    default: pricedPick(fallback),
+    ready: reply?.ready === true,
+    replyProblem: reply?.problem ?? null,
+    projects,
+    sessionId: path ? sessionIdOfFile(path) : null,
+    requests: await withChats(orgRequests(orgId)),
+    seesPhotos: await assistantSeesImages(orgId).catch(() => false),
+  };
+}
+
+/** GET /api/baton/settings: the host's settings, the Project Assistant's default with its price. */
+export function batonSettingsView(): BatonSettings {
+  const s = readBatonSettings();
+  return { ...s, assistant: pricedPick(s.assistant ?? null) };
+}
+
+/** PUT /api/baton/settings (Settings → Organizations' Save Changes): never the assistant's default (its own route). */
+export function saveBatonSettings(body: unknown): BatonSettings {
+  const result = writeBatonSettings(body);
+  if ("error" in result) throw new OrgError(result.error, 400);
+  return { ...result, assistant: pricedPick(result.assistant ?? null) };
+}
+
+/**
+ * PUT /api/settings/project-assistant {assistant} (Settings → Organizations' Save Changes, when the
+ * default changed): its own route so a mesh peer needs `admin` for it, as for an org's own pick
+ * (server/mesh/access.ts: `settings` writes). Saving the host's FIRST default adopts, once, every
+ * org's pick that equals it exactly (§app.project-assistant/models); later saves never clear a pick.
+ * A change refreshes every owner page's assistant view (orgs that follow it move with it).
+ */
+export function saveAssistantDefault(body: unknown): { assistant: PricedPick | null } {
+  const before = assistantDefault();
+  const result = writeAssistantDefault(body);
+  if ("error" in result) throw new OrgError(result.error, 400);
+  const next = result.assistant;
+  if (next && !assistantPicksAdopted()) {
+    if (!before) adoptDefaultPicks(next);
+    markAssistantPicksAdopted();
+  }
+  if (!(before && next ? samePick(before, next) : before === next))
+    for (const o of readIndex().orgs) {
+      try {
+        refreshAssistant(o.id);
+      } catch {
+        /* a view refresh is best-effort */
+      }
+    }
+  return { assistant: pricedPick(next) };
+}
+
+/** A project's versions on the owner's page, with their summaries as kept (the team's view). */
+async function versionSummaryRows(orgId: string, projectId: string): Promise<VersionSummaryRow[]> {
+  const project = readProjects(orgId).find((x) => x.id === projectId);
+  if (!project) throw new OrgError("Unknown project", 404);
+  return teamRows(orgId, projectId, await projectVersions(orgId, project).catch(() => []));
 }
 
 export function registerAssistantRoutes(app: Hono<any>): void {
+  app.put(
+    "/api/settings/project-assistant",
+    handle(async (c) => c.json(saveAssistantDefault(await body(c)))),
+  );
   app.get(
     "/api/orgs/:id/owner/assistant",
     handle(async (c) => c.json(await assistantInfo(p(c, "id")))),
@@ -81,8 +155,10 @@ export function registerAssistantRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const id = p(c, "id");
       const b = await body(c);
-      if (b.status !== "done" && b.status !== "declined") throw new OrgError('status is "done" or "declined".');
-      setRequestStatus(id, p(c, "rid"), b.status);
+      // Got It on a request the owner closed while it was being worked on (§app.project-assistant/closing).
+      if (b.noted === true && b.status === undefined) noteClosedRequest(id, p(c, "rid"));
+      else if (b.status !== "done" && b.status !== "declined") throw new OrgError('status is "done" or "declined", or { noted: true }.');
+      else setRequestStatus(id, p(c, "rid"), b.status);
       return c.json(await assistantInfo(id));
     }),
   );
@@ -98,6 +174,22 @@ export function registerAssistantRoutes(app: Hono<any>): void {
       throw err;
     }
   });
+  // The versions on the owner's page with their summaries, for the project page's Owner Page card; Rewrite, Use
+  // Automatic, Hide and Show (§app.project-assistant/versions).
+  app.get(
+    "/api/orgs/:id/projects/:pid/versions",
+    handle(async (c) => c.json(await versionSummaryRows(p(c, "id"), p(c, "pid")))),
+  );
+  app.put(
+    "/api/orgs/:id/projects/:pid/versions/:instance",
+    handle(async (c) => {
+      const [id, pid] = [p(c, "id"), p(c, "pid")];
+      const patch = summaryPatchOf(await body(c));
+      if (!readProjects(id).some((x) => x.id === pid)) throw new OrgError("Unknown project", 404);
+      setVersionSummary(id, pid, p(c, "instance"), patch);
+      return c.json(await versionSummaryRows(id, pid));
+    }),
+  );
   // Open Assistant Chat: the owner's conversation, made when there is none yet.
   app.post(
     "/api/orgs/:id/owner/assistant/open",

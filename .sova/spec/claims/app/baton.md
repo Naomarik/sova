@@ -44,7 +44,8 @@ Scoped `show_tour` presents only checked, operator-reviewed editions already bou
   and `startedVia` are ignored.
 - **Who started it, and why.** Every start records it in the statechart's start data as `started {by,
   overseerId?, why?}`: `by` is `operator` (the Start form, Send to person…), `overseer` (the global
-  Overseer's `sova_gather start`) or `project-overseer` (`sova_start_gathering`, `sova_offer`, a
+  Overseer's `sova_gather start`), `assistant` (the Project Assistant's `start_feature_chat`,
+  §app.project-assistant/feature-chats) or `project-overseer` (`sova_start_gathering`, `sova_offer`, a
   planned gathering the statechart starts later); `overseerId` is that overseer's conversation; `why` is
   the overseer's required reason, one or two sentences for the operator (§app.overseer/org-people-facing,
   §app.project-overseer/tools). The operator's Start form asks for no reason. A request body's
@@ -112,6 +113,10 @@ Scoped `show_tour` presents only checked, operator-reviewed editions already bou
   (§app.organizations/privacy). While the session can draw, the prompt ends with the gathering
   drawing guide, and while it can read links it says how (§app.baton/abilities); otherwise it says
   it cannot change files, run commands or browse.
+- **A feature request chat** (§app.project-assistant/feature-chats) is a gathering session with its
+  own loadout: the tools above but `propose_roster_edit`, `read_link`, `inspect_files` and
+  `confirm_file`, plus a Sova-served `align`; its prompt adds the planning section that claim
+  describes.
 - It has no mode (no mode extension loads); its composer has no mode switch. What it can do is its
   abilities (§app.baton/abilities), shown and changed on its strip.
 - **Budget**: a message limit — messages in, outsiders' and operator's together (the wrap-up's
@@ -181,7 +186,8 @@ Scoped `show_tour` presents only checked, operator-reviewed editions already bou
   holder's live link is kept, else Get Link (§app.baton/links); New Link while the holder has a live
   link (its row says "Makes a new link and deletes the one you sent before" under its label),
   Hand On… when it isn't the primary, What It's Told (§app.baton/told) and, while the org has an
-  owner, Hide From / Show To {first name} (§app.owner-page/controls). Below a separator, last: Delete
+  owner, Hide From / Show To {first name} (§app.owner-page/controls), never on a feature request chat
+  (§app.project-assistant/feature-chats). Below a separator, last: Delete
   Link (while the holder has a live link) and Close Session (until the session is closed). Neither
   acts on one press: each opens the menu's confirm screen with its words: Delete Link's "The link
   stops working for good." with **Delete?** and **Cancel** (§app.baton/links); Close Session's
@@ -191,7 +197,9 @@ Scoped `show_tour` presents only checked, operator-reviewed editions already bou
   no-photos note and **Started by** fold under a **Details** disclosure (folded each time the session
   opens, no preview, a 44 px summary), above Why and goal, each on a line of its own. From 768 px
   they are shown, under the bar: one line "{org} · {project}", then It can: with its checkboxes and
-  Started by on one line (wrapping only when it must).
+  Started by on one line (wrapping only when it must). A feature request chat
+  (§app.project-assistant/feature-chats) shows "Feature request · {owner's first name}" before
+  Started by.
 - **It can:** has three checkboxes in one order: `Draw`, then `Interactive drawings (HTML)` right
   after it, then `Read links` (§app.baton/abilities). Interactive drawings counts only with Draw: while
   Draw is off its box is disabled and its label muted with it. Each box is a 44 px target, and the
@@ -211,7 +219,9 @@ Scoped `show_tour` presents only checked, operator-reviewed editions already bou
 - **Started by.** The strip always has one line after **It can:** (beside it from 768 px wide,
   under it inside the strip's **Details** fold below that, §app.baton/strip-layout): "Started by you · {relative
   time}", "Started by the {project} overseer · {relative time}" or "Started by you, via the
-  Overseer · {relative time}" (the time is the session's start). The overseer part links to that
+  Overseer · {relative time}" or "Started by the Project Assistant · {relative time}" (a feature
+  request chat, §app.project-assistant/feature-chats; its Why says what the owner asked for) (the
+  time is the session's start). The overseer part links to that
   overseer: the project's overseer page, or the Overseer (its current conversation, else that
   conversation read-only from its History).
 - **Where it comes from.** Read from the statechart's `started` (§app.baton/goal-and-loadout). A session
@@ -462,7 +472,13 @@ Tour pictures and public explanation follow the same active-branch, offer cut an
   composer stays at the bottom of the screen; from 768 px it follows the conversation directly
   and pins to the bottom only once the conversation is taller than the window. An on-screen
   keyboard shrinks the page (`interactive-widget=resizes-content`), so the composer stays above it.
-- Never: thinking, tool calls or results, the system prompt, the model, session id, path or cwd,
+- **A plan card**, in a feature request chat only (§app.project-assistant/feature-chats): the one
+  tool result that crosses, built field by field from a successful `align` result's document
+  (title, summary, findings, steps, what was ruled out, questions with their options, recommendation
+  and decision, and drawings), each text through the same filter as a reply and each drawing
+  through the markup backstop; never its technical notes, ids of anything but its own questions,
+  or anything else of the call. Each plan shows once, at its latest result.
+- Never: thinking, tool calls or results (but a feature request chat's plan card), the system prompt, the model, session id, path or cwd,
   the project or org beyond the public title, the goal, any profile field, any roster person's id,
   other sessions, or any other Sova UI. A message row's sender is its name plus a label, `you` (the
   viewer's own), `operator`, or `person-<n>` numbered within that view; the page marks its own rows
@@ -855,6 +871,8 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   Organizations region's Needs you (§app.session-list/organizations), never the global one. The operator's reply clears it.
 - When a person holds the baton through a hand-off with no live link, the same item says "Send
   <name> their link: <question>"; getting the link, or sending it (§app.outreach/send), clears it.
+  Never for the owner holding their own feature request chat: they answer on their owner page
+  (§app.project-assistant/feature-chats).
 - An open offer whose invitees don't all have a live link (started in-process with `mintLink:
   false`) says "Send <names of those without one> their link: <question>" the same way, until
   every invitee has one.
@@ -866,9 +884,9 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   (§app.organizations/org-cards), until it is answered.
 - Any change to a baton session's statechart or its links (Get Link, a reply, Extend, Take back, a
   hand-off, approve, decline, close) re-diffs the session list at once (a baton session's state is
-  part of what the list compares), and the page re-reads the attention digest whenever it re-reads the list for
-  the session feed's `list_changed` (the Organizations region's Needs you lists the digest's
-  items), so its Needs-you item clears within a second, whichever tab or host page made the change.
+  part of what the list compares), and that comparison pushes the changed attention digest to
+  every window (`attention`, §app.decisions/push; the Organizations region's Needs you lists the
+  digest's items), so its Needs-you item clears within a second, whichever tab or host page made the change.
 - Baton sessions are not classified by attention signals (§app.decisions/attention-signals).
 - A composer send the session refuses (someone else holds the baton, it is done, the budget is
   spent) comes back on `/ws/chat` as an error with code `refused` and the reason, never `internal`.

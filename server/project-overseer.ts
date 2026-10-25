@@ -109,6 +109,7 @@ import {
   projectEnvelope,
   projectHost,
   projectSid,
+  editProject,
   resumeOverseer,
   watchSid,
 } from "./projects/spaces";
@@ -128,7 +129,11 @@ import {
   writePoSettings,
   type ProjectOverseerPaths,
 } from "./project-overseer-store";
-import { PO_BUILTINS, PO_UNATTENDED_WRITE_REFUSAL, projectOverseerTools, type PoToolHost } from "./project-overseer-tools";
+import { PO_BUILTINS, PO_UNATTENDED_WRITE_REFUSAL, powersLine, projectOverseerTools, type PoToolHost } from "./project-overseer-tools";
+import { settingsIndex } from "../shared/settings-reference";
+import { appendHistory, recordKept, setSettingsDeps } from "./project-settings";
+import type { SettingsBy, SettingsHistoryRow } from "../shared/project-settings";
+import { putOverseerMemorySwitch } from "./memory/routes";
 
 /**
  * The project overseer (§app/project-overseer): one special session per project. Like the
@@ -500,13 +505,20 @@ export async function projectOverseerChat(projectId: string): Promise<ReturnType
 }
 
 /** PATCH …/overseer: settings, then the held idle runtime brought to the model/thinking. */
-export async function patchProjectOverseer(projectId: string, body: unknown): Promise<ProjectOverseerInfo> {
+export async function patchProjectOverseer(projectId: string, body: unknown, by: SettingsBy = { kind: "operator", via: "page" }): Promise<ProjectOverseerInfo> {
+  await patchProjectOverseerRows(projectId, body, by);
+  return projectOverseerInfo(projectId);
+}
+
+/** PATCH …/overseer, with each changed field one line of the settings history as `by` (§app.project-overseer/settings): the rows written. */
+export async function patchProjectOverseerRows(projectId: string, body: unknown, by: SettingsBy, meta: { card?: string; revertOf?: string } = {}): Promise<SettingsHistoryRow[]> {
   projectOf(projectId);
   const p = projectOverseerPaths(projectId);
   // A thinking level the model doesn't offer: refused when the patch names it, else brought to pi's level and saved.
   const models = await listModels().catch(() => []);
   const before = readPoSettings(p);
   const s = patchPoSettings(p, body, (next, patch) => fitThinking(next, patch, models, loadDefaults().model ?? null));
+  const rows = recordKept(projectId, before, s, by, { ...meta, resumed: (body as { resume?: unknown }).resume === true });
   // The watch runs on the settings as saved: a raised limit releases what it held (the statechart's).
   await syncWatchSettings(projectId);
   // Resume (or, one release, an old client's level) lifts the brake: it ends the pause an attach put on it; on an
@@ -531,8 +543,26 @@ export async function patchProjectOverseer(projectId: string, body: unknown): Pr
       throw new OrgError(err instanceof Error ? err.message : String(err));
     }
   }
-  return projectOverseerInfo(projectId);
+  return rows;
 }
+
+// The settings cards apply through the same writes as the page (server/project-settings.ts; set here: no import cycle).
+setSettingsDeps({
+  patch: (projectId, body, by, meta) => patchProjectOverseerRows(projectId, body, by, meta),
+  async memory(projectId, body, by, meta = {}) {
+    const p = projectOverseerPaths(projectId);
+    const before = readPoSettings(p);
+    const out = await putOverseerMemorySwitch(before.memory, body, (memory) => writePoSettings(p, { ...readPoSettings(p), memory }), await projectOverseerChat(projectId));
+    if ("error" in out) throw new OrgError(out.error);
+    return recordKept(projectId, before, readPoSettings(p), by, meta);
+  },
+  async rename(projectId, name, by, meta = {}) {
+    const from = projectOf(projectId).name;
+    await editProject(projectId, { name });
+    const to = projectOf(projectId).name;
+    return from === to ? [] : appendHistory(projectId, [{ field: "project.name", from, to, by, ...(meta.card ? { card: meta.card } : {}), ...(meta.revertOf ? { revertOf: meta.revertOf } : {}) }]);
+  },
+});
 
 // ---- the prompt ------------------------------------------------------------------------------------
 
@@ -554,8 +584,10 @@ export function projectOverseerValues(projectId: string, now = new Date()): Reco
   const values: Record<string, string> = {
     NOW: now.toString(),
     PROJECT: project.name,
-    AUTONOMY: `${eff.autonomy} — ${autonomyMeaning(eff.autonomy, placed)}`,
-    AUTONOMY_REASON: eff.reason ? ` (${eff.reason})` : "",
+    // What it may do on its own: the powers in force (the brake's reason when one holds them all Off).
+    AUTONOMY: powersLine(powersOf(projectId, settings), placed),
+    AUTONOMY_REASON: "",
+    SETTINGS: settingsIndex(placed),
     CAPS: limitsText(settings, placed),
     ROOT: project.root,
     CODING_MODE: codingModeNowWords(),
@@ -586,7 +618,7 @@ export function projectLiveParts(values: Readonly<Record<string, string>>): Live
   const v = (k: string) => values[k] ?? "";
   return [
     { key: "PROJECT", title: "The project's name", text: v("PROJECT") },
-    { key: "AUTONOMY", title: "Level in force now", text: `${v("AUTONOMY")}${v("AUTONOMY_REASON")}` },
+    { key: "AUTONOMY", title: "What you may do on your own now", text: `${v("AUTONOMY")}${v("AUTONOMY_REASON")}` },
     { key: "CAPS", title: "Limits", text: v("CAPS") },
     { key: "CODING_MODE", title: "The mode a coding session you start with no mode named starts in", text: v("CODING_MODE") },
     { key: "ROOT", title: "Root", text: v("ROOT") },
@@ -1491,7 +1523,9 @@ export type AssistantActInput =
   | { act: "build/start"; basis: { kind: "owner-request"; id: string }; prompt: string; title?: string; model?: { model: string; thinking?: string | null } | null }
   | { act: "deploy/run"; basis?: { kind: "owner-request"; id: string }; target?: string; commit?: string; why?: string }
   /** start_version: `up` of one copy the owner's versions list holds (its instance id; start_version checked it). */
-  | { act: "services/run"; instance: string; root: string; waitMs?: number };
+  | { act: "services/run"; instance: string; root: string; waitMs?: number }
+  /** start_version's Current version when the main checkout has no copy yet: a bare `up` of the main checkout makes it. */
+  | { act: "services/run"; main: true; root: string; waitMs?: number };
 /** `services/run` taken: `up` goes on; `done` settles once it ends (ok, or the engine's failure code). */
 export type CopyStart = Promise<{ ok: true } | { ok: false; code: string; message: string }>;
 export type AssistantActResult = { taken: true; held: boolean; holdRef?: string; until?: string; sessionId?: string; done?: CopyStart } | { taken: false; code: string; sentence: string };
@@ -1543,7 +1577,7 @@ export async function assistantAct(projectId: string, a: AssistantActInput, o: {
  * only after the engine's own checks. Answers within `waitMs`: a refusal (the act's, or the engine's before or during
  * a quick up) as `{taken: false}`; the act taken, with `done` following the up that goes on.
  */
-async function assistantCopyStart(projectId: string, a: { instance: string; root: string; waitMs?: number }, envelope: Envelope): Promise<AssistantActResult> {
+async function assistantCopyStart(projectId: string, a: { instance: string; root: string; waitMs?: number } | { main: true; root: string; waitMs?: number }, envelope: Envelope): Promise<AssistantActResult> {
   let wasTaken = false;
   let taken!: () => void;
   const actTaken = new Promise<"taken">((r) => (taken = () => r("taken")));
@@ -1553,7 +1587,10 @@ async function assistantCopyStart(projectId: string, a: { instance: string; root
     taken();
   };
   const { projectEngine } = await import("./project-services/routes");
-  const ran = projectEngine().run("up", { instance: a.instance }, { kind: "assistant", id: "project-assistant", root: a.root, up: a.instance, act });
+  const ran =
+    "main" in a
+      ? projectEngine().run("up", { project: a.root }, { kind: "assistant", id: "project-assistant", root: a.root, upMain: true, act })
+      : projectEngine().run("up", { instance: a.instance }, { kind: "assistant", id: "project-assistant", root: a.root, up: a.instance, act });
   const done: CopyStart = ran.then(
     (r) => (r.error ? { ok: false as const, code: r.error.code, message: r.error.message } : { ok: true as const }),
     (err) => ({ ok: false as const, code: err instanceof OrgError ? (err.code ?? "refused") : "start-failed", message: err instanceof Error ? err.message : String(err) }),
@@ -1584,9 +1621,15 @@ onOrgChange((engine, change) => {
   for (const sid of change.sessions) {
     if (!sid.startsWith("build/") || fixesNoted.has(sid)) continue;
     const d = hostOf(engine).data(sid) as { basis?: { kind?: unknown; id?: unknown }; path?: unknown; projectId?: unknown; sessionId?: unknown } | null;
-    if (!d || d.basis?.kind !== "owner-request" || typeof d.basis.id !== "string" || typeof d.path !== "string" || !d.path) continue;
+    if (!d || d.basis?.kind !== "owner-request" || typeof d.basis.id !== "string") continue;
+    // Set up once its session file exists: the build's own record holds the path (its statechart data never did).
+    const [, pid = "", bid = ""] = sid.split("/");
+    const sessionId = String(d.sessionId ?? bid);
+    const projectId = String(d.projectId ?? pid);
+    const path = typeof d.path === "string" && d.path ? d.path : (readBuild(projectId, sessionId)?.path ?? "");
+    if (!path) continue;
     fixesNoted.add(sid);
-    const e = { projectId: String(d.projectId ?? ""), orgId: engine, basisId: d.basis.id, sessionId: String(d.sessionId ?? sid.split("/").at(-1)) };
+    const e = { projectId, orgId: engine, basisId: d.basis.id, sessionId };
     for (const fn of fixStartedHooks)
       try {
         fn(e);

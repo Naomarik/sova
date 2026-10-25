@@ -18,9 +18,9 @@ export interface AlignmentSettings {
 
 /** Each style as Settings lists it, with its one-line description. */
 export const ALIGN_STYLE_OPTIONS: readonly { id: AlignStyle; label: string; description: string }[] = [
-  { id: "default", label: "Default", description: "Today's detail: files, code and technical trade-offs." },
-  { id: "simplified", label: "Simplified", description: "Short sentences in everyday words, fewer items." },
   { id: "pm", label: "Project manager", description: "Screens, wording and behaviour only; no code. Technical detail folded into notes." },
+  { id: "simplified", label: "Simplified", description: "Short sentences in everyday words, fewer items." },
+  { id: "default", label: "Technical", description: "Files, code and technical trade-offs in the plan." },
 ];
 
 export const sameAlignment = (a: AlignmentSettings, b: AlignmentSettings): boolean => a.style === b.style && a.visuals === b.visuals && a.review === b.review;

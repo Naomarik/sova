@@ -38,6 +38,7 @@ the parent session so old references cannot target unrelated new workers.
 | `team_add`         | Add members to a live session team; history teams remain read-only.             |
 | `team_list`        | Inspect teams, actual member state, declared scope, and bounded actions.         |
 | `team_eject`       | Release an ended member's seat in a session team (parent only; see below).       |
+| `team_succeed`     | Replace a team's ended coordinator or monitor, once none with that duty is live. |
 
 Team members additionally get `team_msg`, `team_inbox`, `team_ask`, and for an
 orchestrator member `team_roster` and `team_steer`, through a restricted member
@@ -80,8 +81,14 @@ Spawn a batch:
 
 Agent options work both inside `agents` and in the single-worker shorthand:
 
-- `count`: positive integer; default 1. At most 8 workers per call and 12 live
-  workers overall. Idle, steerable workers still consume a live slot.
+- `count`: positive integer; default 1. There is no per-request limit; a chat runs at most
+  24 workers at once. Idle, steerable workers and every team member (a team's coordinator
+  and monitor included) still consume a live slot. A request that would pass 24 is refused
+  before anything starts: the refusal says how many the request needs, how many are live,
+  how many more fit and how many to stop with `agent_kill`, and names the idle workers.
+  It is worded for the caller (`team_create` names the members asked for and the coordinator
+  or monitor it adds; `team_add`, `agent_spawn`, a successor and a resume count only what
+  they start). Nothing is ever stopped to make room.
 - `backend`: default `pi`; `claude-code` runs a Claude model on Sova's tools (below). Its
   defaults and validation apply; it does not inherit the parent's model/tools/effort.
 - `backendOptions`: options owned by the selected backend (unsupported for Pi; for
@@ -129,7 +136,15 @@ Agent options work both inside `agents` and in the single-worker shorthand:
   in the copy; Pi inserts a synthetic empty result for it. Requires a persisted
   parent session; an ephemeral (`--no-session`) parent cannot fork.
 
-Do not mix `agents` with shorthand options. The whole batch is validated before
+Beside `agents`, the settings `backend`, `model`, `effort`, `cwd`, `wake`, `tools`,
+`systemPrompt`, `backendOptions`, `extensions` and `useWorktreeConfig` are shared: each
+applies to every agent that leaves it out, and the call is refused (naming the setting and
+the `agents[i]` that differ) if an agent sets a different value. A `prompt` beside `agents`
+is every agent's prompt only when no agent has its own. `name`, `count`, `fork` and
+`agentType` stay inside each agent and are refused beside `agents`. `agents` (and a team's
+`members`) given as a JSON string of a list of objects is read as that list. These reads run
+before pi's schema check (`prepareArguments`), and every refusal is a plain sentence naming
+the setting, never the schema's own words. The whole batch is validated before
 any child starts (including backend checks such as a Claude spawn's model, tools and options).
 If a factory throws during creation, already-created batch members are stopped;
 no partial run or completion wake is published. The failed `agent_spawn` waits
@@ -438,6 +453,14 @@ exact-member stop (`x`, then `x` again), and the monitor's `o` code-fold toggle.
 parent editor while any team has a member that has not been stopped (killed members drop out of it;
 `team_list` and `/team` keep them).
 
+A member takes `role`, `prompt`, `ownedPaths`, `orchestrator`, `backend`, `model`, `effort`,
+`tools`, `systemPrompt`, `cwd`, `wake`, `backendOptions` and `extensions` (by `agent_spawn`'s
+rules, loaded beside its team tools; a successor keeps them). `count`, `fork`, `agentType` and
+unknown settings are refused, naming the setting; a missing role, prompt, team name or objective
+is refused, never filled in. `team_create`'s result has a `Standing roles` line naming the
+coordinator and monitor Sova added and each one turned off, and by what. A team created past 24
+members, the added coordinator and monitor included, is refused before anything starts.
+
 Teams reuse `agent_spawn`'s caps, validation, rollback, permission prompts, wake
 behavior, retention, and shutdown. There is no separate process manager, and
 ownership is not a filesystem lock. Members can message each other and ask the
@@ -477,8 +500,9 @@ An ejected member keeps its role reserved (roles stay unique for the team's
 life), its worker ID, transcript and action history. It no longer counts in the
 team's state counts (`team_list` and `team_roster` show a separate `N ejected`
 and mark its line `· ejected <time>`), is left out of "Other members" in new
-members' headers, is skipped by a `team_msg` to `all`, and a direct `team_msg`
-or `team_steer` to it fails saying it was ejected. `agent_resume` refuses it.
+members' headers, is skipped by a `team_msg` to `all` (named on its info line), and
+a direct `team_msg` or `team_steer` to it goes to its newest live successor, else
+fails saying it was ejected. `agent_resume` refuses it.
 The `/team` widget hides it like a stopped member; the workspace roster marks
 it `· ejected`. Sova's Agents page and subagents pane show an `Ejected` chip.
 
@@ -505,9 +529,9 @@ Member tools:
 
 | Tool           | Who          | Behavior                                                                                         |
 | -------------- | ------------ | ------------------------------------------------------------------------------------------------ |
-| `team_msg`     | any member   | `{ to, message }`; `to` is a sibling role, worker ID, or `all`. Returns per-recipient acceptance. |
-| `team_inbox`   | any member   | `{ limit? }`; re-reads messages and orchestrator instructions delivered to this member.           |
-| `team_ask`     | any member   | `{ question }`; surfaces the question to the operator; the answer arrives as a later message.     |
+| `team_msg`     | any member   | `{ to, message, subject?, urgent?, replyTo?, needsReply? }`; `replyTo` closes that item in your inbox, `needsReply` stores a question; `to` is a sibling role, worker ID, or `all`. Queues an inbox item per recipient and answers at once (`Queued for <role> (<id>): item i_N`). |
+| `team_inbox`   | any member   | `{ action?: list \| open \| done \| sent, ids?, note?, limit? }`; the member's inbox, served by the parent. |
+| `team_ask`     | any member   | `{ question, subject? }`; to the routing coordinator as a `question` item, else to the operator; the answer arrives later. |
 | `team_roster`  | orchestrator | Live roster of the member's own team with states, ownership and recent actions.                  |
 | `team_steer`   | orchestrator | `{ to, message, mode? }`; instructions for one sibling. Same acceptance semantics as `agent_steer`. |
 
@@ -520,16 +544,18 @@ derives the sender from the directory (a request body is never trusted for
 identity), validates scope against the team store, and performs the action
 itself through the same `steerWorker` path the tools and workspaces use:
 
-- A message becomes a steer to the recipient prefixed
-  `[Team message from <role> (<id>), team_NN]` with a reply hint that names the
-  recipient's real tool (`team_msg`). Recipients get the backend's normal
-  steering (seen at their next step, or a fresh task if idle, which is the wake-up).
-  `all` reaches every live sibling, never the sender; partial failures are
-  reported per recipient. Every recipient also gets a copy in its inbox file.
+- A message becomes an **item** in each recipient's inbox (see "Team inbox"
+  below) and the tool answers as soon as it is stored. `all` is one copy per live
+  sibling, never the sender; stopped and ejected members are named on one
+  `skipped (stopped): …` line, never reported as failures. A message to a member
+  that was succeeded goes to its newest live successor (`forwarded to …`); one to
+  a stopped member with no successor is refused, naming `agent_resume`.
 - `team_steer` is accepted only from an orchestrator, only for one sibling of
   its own team (never itself, never `all`, never another team). The text is
   prefixed `[Instruction from orchestrator <role> (<id>), team_NN]` and the
-  requested `mode` is passed through.
+  requested `mode` is passed through. It is a direct instruction: delivered in
+  full on the recipient's delivery lane (below), with an `instruction` copy in
+  its inbox as history.
 - `team_ask` posts a `team-question` message into the parent session
   (`deliverAs: "followUp", triggerTurn: true`, so an idle parent starts a turn
   even for `wake: false` members) that names the worker ID and tells the parent
@@ -541,6 +567,79 @@ itself through the same `steerWorker` path the tools and workspaces use:
   source `member` or `orchestrator` and kind `message`, `question`, `steer`,
   `followUp` or `redirect`; failed deliveries (recipient gone, wrong scope) are
   recorded as `failed`. Acceptance never means execution.
+
+### Team inbox
+
+Every team message and every notice the parent sends a member (end-of-task
+reports to the coordinator, handover notices, team additions, the monitor's
+notices, `wake_nudge` fires) is an item in the recipient's inbox, so none is
+refused because the member is busy, starting or asleep, and none is lost.
+
+- **Storage** (`inbox.ts`, node builtins only): one append-only
+  `<mailbox root>/team_NN/ag_NN/items.jsonl` per member; the parent is its only
+  writer (a member's `team_inbox` is a mailbox request of type `inbox`). Ops:
+  `add`, `status`, `listed`, `move`, `return`; the fold skips a torn line. Item
+  ids `i_<base36>` are unique and increasing across the whole parent session
+  (never reused, a hint file `inbox-seq.json` covers compaction). An item has a
+  subject (≤120 chars, default its first line), the message (≤8,000), `urgent`,
+  `replyTo`, kind (`message`, `question`, `report`, `handover`, `notice`,
+  `instruction`) and status `new → read → addressed` with an optional note;
+  an addressed item records `closedBy` (`member` for `done`, `reply` for a
+  `replyTo` answer, `auto` for the safety net; absent = member, older lines).
+  Compaction keeps every open item and the newest 2,000 others per member.
+- **Delivery lane** (`delivery.ts`): every steer to a worker, the main thread's
+  `agent_steer` and the `/team` workspace's included, runs on a serial lane per
+  worker, so the worker's single-steer guard is never hit concurrently and
+  "agent is still starting" is waited out while the worker is live; a redirect
+  goes ahead of queued entries, never the one in flight.
+- **Wakes**: an idle member's normal items are gathered for 3 s, then it gets one
+  list (`[Team inbox: N new (k urgent) — …]`, at most 20 lines, urgent first,
+  subjects only: a member must open an item to see it; a list of exactly one
+  item shows it in full and counts as opening it; an item listed before and
+  still unopened is marked `(unopened)`). It ends with a **Still open** block
+  (≤5 lines: items opened and not closed, questions first) and the footer
+  telling the member to close each item in the same step as the work. An
+  urgent item wakes it at once. A busy member gets urgent items at its next step (a
+  mid-turn steer) and normal ones when its turn ends. One wake is in flight per
+  member; a failed wake is retried after 5 s, 15 s, 60 s, then every 5 min while
+  the member is live (team action `wake retry`).
+- **Inbox zero** (§app.teams/inbox-zero): opened items are tagged with the
+  worker's task (`fold.ts` `inboxTurn()`; a wake's items with its steer number
+  until that steer's run begins, `steerTask()`), so a wake accepted after a run
+  ended but before its settle was handled belongs to the next turn. At each
+  settle (before the routed report) the parent closes, `closedBy: "auto"`, every
+  open non-question item seen in a task that has ended; never an unseen item,
+  never one read with no turn record (before this change). `replyTo` closes an
+  item of any kind; `team_msg` `needsReply: true` stores a `question`.
+- **The gate** (§app.teams/inbox-gate): a wake that starts an idle member's turn
+  and lists unopened items carries `[Open your inbox first: team_inbox open …]`;
+  `member.ts` then refuses every tool but `team_inbox`, `team_msg` and
+  `team_ask` (`tool_call` block) until an item is opened. A later user message
+  that is not a wake (a direct instruction) lifts it for the turn.
+- **Older member code**: `member.ts` writes `caps.json` (`{"inbox":1}`) into its
+  directory at load. A member picked back up without it (or on a backend without
+  team tools) gets each item in full on the lane, plus the legacy `inbox.jsonl`
+  copy its old `team_inbox` reads. A new member whose parent is on older code
+  falls back to that copy for `team_inbox list`.
+- **Moving and returning** (`inbox-lifecycle.ts`): every end (stopped, failed, ejected, found
+  ended after a reload, retired) counts as the end of the member's turn, so first every item it
+  opened in a recorded turn that is not a question closes automatically (`closedBy: "auto"`); handled
+  news is never returned as "not addressed" nor moved. Then: at retirement the old member's open items move
+  to its successor (ids and senders kept, `movedFrom` recorded, listed to it); a member that ends
+  with a live successor hands them on the same way. A member that ends with none (stopped, failed,
+  ejected, or found ended after a reload) returns them: one "not addressed" notice per sender — a
+  member sender gets a `notice` item, Sova's own items go to the routing coordinator, and the main
+  thread's (or any whose sender has ended too) come back to the main chat as a displayed
+  `team-notice` message that starts no turn. After a reload the parent folds every
+  `items.jsonl`, returns the items of members found ended, and wakes each live member for items it
+  was never listed.
+- `team_roster` and `team_list` show each member's open count (`3 open items`), with its
+  unanswered questions and the oldest one's wait (`3 open items (1 question unanswered 20 min)`),
+  and one team line, `Inbox: N open · closed by members M · automatically A`; a queued answer
+  notes a recipient with more than 50 open items.
+- **Reports name what is left**: a member's report routed to its coordinator, and the
+  coordinator's own completion to the parent, end with `[Left open: i_7 question from writer
+  (opened); i_9 report (unopened)]` when items are still open after the turn-end safety net.
 
 `orchestrator: true` is a per-member flag on `team_create` / `team_add`. It is
 sibling-scoped coordination only: the orchestrator can see its team and steer
@@ -578,7 +677,10 @@ for that call with a warning line in the result; the extension never writes the 
   `orchestrator: true` on the first tuple that passes the spawn checks (backend loaded, model
   policy, pi registry / backend validation): primary, then fallback; neither → the team is not
   created. A single caller orchestrator becomes the coordinator instead; two are refused, as is a
-  caller member on a synthesized role. It does no implementation (its header says so) and gains
+  caller member on a synthesized role, and so is an orchestrator `team_add`ed to a team with a
+  coordinator. The refusal says only the coordinator is the orchestrator, that it hands over with
+  `team_succeed`, that a member that only watches needs no mark, and (when no coordinator is
+  live) that the main chat can start a replacement. It does no implementation (its header says so) and gains
   `team_report` and `team_succeed`. It routes the work the main thread assigned and never invents
   tasks: its header quotes each teammate's prompt (first 1,500 chars, then a marker), and its
   `team_roster` lists every non-duty member's assignment with every main-thread steer to it (up to
@@ -586,7 +688,8 @@ for that call with a warning line in the result; the extension never writes the 
   inherits its predecessor's assignment and steers. Tasks and steers are also written to the
   session as `subagents-team-assignment-v1` entries (`task`, `steer`, `inherit`), which a reload
   folds back, so a resumed coordinator's roster still lists them. Members the main
-  thread adds later with `team_add` are announced to it as a follow-up with their tasks. Its header
+  thread adds later with `team_add` are announced to it as a `notice` item with their tasks (the
+  `team_add` result says it was queued, or that no coordinator is live to tell). Its header
   also says: the main thread's steers are assignments it must not countermand, and it never tells
   a member that main-thread work (a successor's inherited steers included) is not its work; the
   roster, the header and the handover message label every such steer as binding; succeed a flagged
@@ -595,8 +698,9 @@ for that call with a warning line in the result; the extension never writes the 
   monitor either); `defaults: { monitor: false }` drops only the monitor. Coordination is fixed at
   creation; `team_add` never retrofits it.
 - **Routing.** Everyone else is `wake: false`. Their completions go to the routing coordinator
-  (the newest live member with the coordinator duty) as a follow-up, and their `team_ask`
-  questions too; the parent sees neither. The coordinator's completion reaches the parent and
+  (the newest live member with the coordinator duty) as `report` items (urgent when the task
+  failed; with no live coordinator left to take one, the parent gets it, woken), and their `team_ask`
+  questions as `question` items; the parent sees neither. The coordinator's completion reaches the parent and
   starts a turn only when no other member (monitor aside) is working. `team_report` shows the
   parent a `team-report` message (displayed, `triggerTurn: false`); `team_ask` from the
   coordinator stays a `team-question` (the `team_create` result and `team_list` say so instead of
@@ -626,7 +730,7 @@ for that call with a warning line in the result; the extension never writes the 
   from (`<agent dir>/cache/usage-status.json`); a window whose `resetsAt` has passed shows as
   reset (usage unknown), never AT/OVER, so a stale cache cannot keep a team paused. `wake_nudge` is served by the parent (a member
   cannot start its own turn): the wake-nudge extension's bounds (10 s – 24 h, `at` up to 60 s
-  past clamps, 5 pending), a fire is a follow-up steer. **An idle team costs no monitor turns:** a
+  past clamps, 5 pending), a fire is an urgent `notice` item from Sova. **An idle team costs no monitor turns:** a
   nudge that comes due while no other member is working, and the team is not paused (a monitor
   `pause` notice not yet followed by `resume`), is held — one per monitor, later ones collapse into
   it, `list` shows it, `cancel` drops it — and delivered at the first refresh that sees a teammate
@@ -635,7 +739,8 @@ for that call with a warning line in the result; the extension never writes the 
   scheduling is refused until one works. Pending nudges are kept in the mailbox (`nudges.json`)
   and re-armed, held or not, by the next manager after a reload or restart. The pause is read
   back from the `pause`/`resume` events on the branch at `session_start`, and a paused team's
-  monitor that rejoins (reattached, or `agent_resume`) is sent the resume check at once.
+  monitor that rejoins (reattached, or `agent_resume`) is sent the resume check at once, as an
+  urgent `notice` item.
 - **Context column.** `team_roster` and `team_list` show `context 123k/200k (61%)` per live
   member: the worker's `contextTokens` over the spawned model's window (a Claude model: the
   catalog's, through the extension's `claudeContextWindow` — 1M for `[1m]` or a natively 1M
@@ -645,16 +750,21 @@ for that call with a warning line in the result; the extension never writes the 
   session without an id uses `unsaved-<pid>-<time>`), named in each worker's and the coordinator's
   header. The monitor has no file tools and no note: it briefs its successor over `team_msg`, and
   its successor's task is the monitor task ("you take over from <old>"), with `team_ready` like any
-  successor. `team_succeed { role }` (routing coordinator only, itself included) starts
+  successor (an ended monitor's successor is told nobody is left to ask). `team_succeed { role }`
+  (routing coordinator only, itself included) starts
   `<base>-<n+1>` (`builder` → `builder-2` → `builder-3`) on the same backend, model, effort, tools,
-  system prompt, cwd, backend options, ownership and duty. **A live worker writes its note
+  system prompt, cwd, backend options, extensions, ownership and duty. The main chat's own
+  `team_succeed { team, role }` does the same for a coordinator or monitor only, only for the
+  newest one with that duty and only while none with that duty is live (working, idle or
+  stopping), so two coordinators are never live at once; the old member has ended, so the
+  successor starts at once and the old member's seat is released (action source `parent`). **A live worker writes its note
   first:** it is told, as a redirect so the instruction lands ahead of anything queued for it, to
   finish its step, write the note and end its turn, and the successor starts as soon as the note
   file exists (checked at every mailbox poll and every settle: no settle is needed, since
   follow-ups queued on the old member keep it from settling), when the old member ends, or after
   `handover.retireTimeoutMinutes`, whichever comes first. Started without a note, the successor is
   told the note may be missing and to ask its predecessor. The routing coordinator gets a
-  follow-up naming the successor and the real reason it started, read from the note at that moment
+  `handover` item naming the successor and the real reason it started, read from the note at that moment
   (`<role>'s note is written`, `<role> ended after/without writing its note`, `timed out waiting
   for <role>'s note`, or `the wait ran out just as <role>'s note appeared`). Main-thread follow-ups
   still queued on the old member are not removed (no backend-neutral way to clear a worker's
@@ -671,7 +781,35 @@ for that call with a warning line in the result; the extension never writes the 
   steers under the same binding label. The old member
   is killed when the successor calls `team_ready` — at once if the old member is idle, otherwise
   as soon as its current turn ends (it may be answering the successor; `team_ready`'s reply says
-  so) — or `handover.retireTimeoutMinutes` after the successor starts, whichever is first.
+  so) — or `handover.retireTimeoutMinutes` after the successor starts, whichever is first. Both
+  handover instructions go on the old member's delivery lane: never refused because a delivery is
+  in progress, a redirect lands after that one; the `team_succeed` result says the old member was
+  told to brief its successor only when that delivery was taken, else that it could not be told.
+- **Runtime fallback.** The primary/fallback choice is made again while the team runs. A member
+  with the coordinator or monitor duty whose turn ends with a failed task moves to its fallback at
+  once when the error says its model is out of usage (`../provider-limits/usage-out.ts`: usage,
+  credits, quota, balance or billing ran out, a usage limit was reached — monthly, weekly or 5-hour
+  included, such as Ollama's `429: {"message":"you (…) have reached your monthly usage limit, add
+  usage credits: …"}` or the Claude Code bridge's `You've hit your limit · resets 3pm` once every
+  login is out — or the sign-in no longer works), and otherwise on its 3rd failed turn in a row (a
+  good turn resets the count); a single 429 rate limit keeps today's path. Only once per member,
+  only while it runs its role's current primary, never while a handover involving it is pending.
+  The member is stopped, its seat ejected first (source `system`, so a full team of 24 still gets
+  it), and its successor starts at once on the fallback through the main chat's replacement path
+  (no note asked for, nothing to retire): a monitor's runs its first check at once; a coordinator's
+  is told its predecessor stopped without a note and why, and routes the team from its start. The
+  failed turn's own completion goes nowhere; the routing coordinator gets one `handover` item when
+  the monitor switched; the `handover` event's detail is `successor <role> (<ag_NN>) on
+  <backend>/<model>; fallback: primary <tuple> <reason>`, with a `handover` action row (Sova shows
+  it as "Monitor moved to its fallback <model>: <primary model> <reason>."). With no fallback that
+  can run, a monitor is stopped (one `notice` item for the coordinator, one `team-notice` in the
+  main chat) and a coordinator is reported to the main chat once (a `team-notice`), and keeps
+  running. The model is marked out for an hour as a `subagents-dead-tuple-v1` entry (`{version: 1,
+  backend, model, reason, at, teamId?, duty?}`), replayed from all of the session's entries at
+  `session_start`: every tuple check (standing roles, the members default, successors) refuses it
+  meanwhile, and a team whose duty switched stays on its fallback. A failed monitor turn that
+  doesn't switch, with no pending or held `wake_nudge`, gets its next check scheduled by the parent
+  (`everyMinutes`), so the monitor never goes silent.
 - **Records.** Team actions gain `report`, `handover`, `retire`, `wrap-up`, `pause`, `resume`
   (sources `monitor`, `system`); handover, retire, wrap-up, pause and resume are also appended as
   `subagents-team-event-v1` entries (`{version, teamId, kind, workerId, role, at, detail?}`; a

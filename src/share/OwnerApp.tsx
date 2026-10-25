@@ -1,7 +1,7 @@
 import { createSignal, onCleanup } from "solid-js";
 import type { OwnerRoute } from "../lib/owner-words";
 import { ownerHash, parseOwnerHash, readsHome } from "../lib/owner-words";
-import { type OwnerAnswer, OwnerPage } from "./owner-view";
+import { type FeatureApi, type OwnerAnswer, OwnerPage, type RequestsApi } from "./owner-view";
 import { OwnerLoadError, ownerProblemOf } from "../lib/owner-problem";
 import type { AssistantApi } from "./assistant-view";
 import type { AssistantSend, AssistantServerMessage, AssistantView } from "../../shared/project-assistant";
@@ -103,6 +103,28 @@ const assistant: AssistantApi = {
   },
 };
 
+/** The owner's own feature request chat (§app.project-assistant/feature-chats): a message, and End Chat. */
+const feature: FeatureApi = {
+  async send(conversation, text) {
+    const res = await fetch(`/api/i/${TOKEN}/c/${encodeURIComponent(conversation)}/message`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) }).catch(() => null);
+    if (res?.status === 202) return { ok: true };
+    const refusal = (await res?.json().catch(() => ({}))) as { code?: string; error?: string } | undefined;
+    return { ok: false, code: refusal?.code ?? (res?.status === 429 ? "rate-limited" : "failed"), message: refusal?.error ?? "" };
+  },
+  async end(conversation) {
+    const res = await fetch(`/api/i/${TOKEN}/c/${encodeURIComponent(conversation)}/end`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }).catch(() => null);
+    return res?.status === 202;
+  },
+};
+
+/** The owner's Close and Reopen on their requests (§app.project-assistant/closing). */
+const requests: RequestsApi = {
+  async act(handle, action) {
+    const res = await fetch(`/api/i/${TOKEN}/requests/${encodeURIComponent(handle)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) }).catch(() => null);
+    return res?.status === 202;
+  },
+};
+
 export function OwnerApp() {
   const [route, setRoute] = createSignal<OwnerRoute>(parseOwnerHash(location.hash));
   const onHash = () => {
@@ -111,5 +133,5 @@ export function OwnerApp() {
   };
   window.addEventListener("hashchange", onHash);
   onCleanup(() => window.removeEventListener("hashchange", onHash));
-  return <OwnerPage route={route()} load={load} href={ownerHash} tourBase={(conversation, handle) => `/api/i/${TOKEN}/c/${encodeURIComponent(conversation)}/tours/${encodeURIComponent(handle)}`} onTitle={(t) => (document.title = t)} ask={ask} assistant={assistant} versionHref={(h) => `/i/${TOKEN}/v/${h}`} />;
+  return <OwnerPage route={route()} load={load} href={ownerHash} tourBase={(conversation, handle) => `/api/i/${TOKEN}/c/${encodeURIComponent(conversation)}/tours/${encodeURIComponent(handle)}`} onTitle={(t) => (document.title = t)} ask={ask} assistant={assistant} feature={feature} requests={requests} versionHref={(h) => `/i/${TOKEN}/v/${h}`} />;
 }

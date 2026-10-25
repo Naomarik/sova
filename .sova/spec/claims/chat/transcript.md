@@ -204,6 +204,10 @@ ordinary tool-call and tool-result.
 
 **tour.** A valid compact `record_tour` or `show_tour` projection (§app.tours/editions) renders its tour/progress card at the call's position and suppresses the paired result's duplicate row. It remains visible outside compressed thinking/tool groups. Hide tools also keeps every tour request, progress and failure row visible, even before a valid card projection exists, so waiting and cancellation never disappear into hidden work. Only a checked edition opens as a readable tour; malformed or failed results remain safe ordinary tool rows, never plausible finished tours.
 
+**offer.** An `offer` call that showed a card (§chat.offers/card) renders the card at the call's
+position, and the paired result draws nothing; Hide tools keeps it. A refused `offer` call stays an
+ordinary tool-call and tool-result.
+
 **wake.** A fired wake-nudge (pi-config's `wake_nudge` tool): under the hood a real `role:"user"`
 message tagged `[wake_nudge n1] …` (shared/wake.ts `parseWakeNudge`), but it never reads as "You" —
 a machine event fired the turn, not the person. Same `.toolcard` shell as tool-call/tool-result
@@ -579,16 +583,13 @@ Driven by `ChatServerMessage.event`. Streaming working blocks follow the same br
   renders whenever any of the three has something to show,
   so an idle session with messages still has one. The subagents trigger follows the same two forms
   (words wide, its ring and a count narrow, §app/subagents-pane). The triggers never shrink, so none
-  runs its words into the next. The alignment chip doesn't either, except in the narrow form once
-  nothing else can give: its count then ends in an ellipsis ("1 align · 0/8…"), its full text still
-  its accessible name. At 344px that is every state with the subagents trigger and the inputs
-  trigger beside it; at 390px only a rare state's.
+  runs its words into the next. Open alignments and option cards are not in this row: they are the
+  waiting badge inside the message box (§chat.composer/waiting-badge).
   **Nothing moves.** The row is 20px tall whatever it carries (the triggers' net height) with its
   own 16px bottom margin, so the textarea and the composer keep their place between idle and
   working and as the step changes. The row's gap and each trigger's inline padding are 8px in the
   wide form; in the narrow one they are 6px and a trigger's parts sit 4px apart, so a working row
-  with the subagents trigger, the alignment chip and the inputs trigger stays on one line inside
-  the composer at 344px.
+  with the subagents trigger and the inputs trigger stays on one line inside the composer at 344px.
 - **End of turn** (`agent_settled`, or `agent_end` if that's all you get). Remove the live dots
   and the run status; the row's one dot stays while a subagent still works. Replace the optimistic items with the server's canonical ones if it sends
   them. Announce "Reply finished." in the polite live region; announce nothing per delta.
@@ -824,7 +825,7 @@ virtualized.
   and text selection reach every row built so far: the newest 400 or so, and every row the
   reader has scrolled up to or a jump has built. A row held but not built, or not fetched, is not
   in the page, so the browser's own find does not reach it; the Timeline, the outline's Jump to
-  Message, Open in Session, the card chip and a card reference still reach every row on the
+  Message, Open in Session, the waiting dialog's Show in Chat and a card reference still reach every row on the
   branch, since each jump builds (and if need be fetches) its target first (below). A row off
   screen is skipped by layout and paint
   (`content-visibility: auto`), at a height estimated from its kind, its text and its images
@@ -858,7 +859,7 @@ virtualized.
   the rows they don't carry: the ids of their inputs and, apart, of those the user typed, how many messages they hold, whether
   any is a reply, and the alignments still open among them (each one's newest revision there,
   and its row); so does each fetch, of the rows above what it returns. The inputs count, Fan
-  Out's "up to message {n}", Undo last turn and the composer's alignment chip
+  Out's "up to message {n}", Undo last turn and the composer's waiting badge
   (§chat.alignment/chip) count the rows held plus those, so they're right from the first `hello`
   on, with no older row fetched. A newer revision among the rows held, or live, takes an
   alignment's place: one done or dropped there is no longer open.
@@ -893,7 +894,9 @@ virtualized.
   left at the end that gained rows while away, kept or brought by that `hello` or snapshot, stops
   at the last row read: that row's bottom at the bottom of the view, not following, with "Jump to
   Latest · N new" counting the rows below it, unless they're short enough that the view is still
-  within 80px of the end. One that gained none stays at the end, following, as does one whose last
+  within 80px of the end: a transcript that fits on screen with them, or overflows it by less than
+  80px, counts as within 80px and stays at the end, following, with no Jump to Latest. One that
+  gained none stays at the end, following, as does one whose last
   row read isn't among its rows, or one the reader has scrolled or touched first. A kept
   spot whose row the `hello` didn't keep is fetched and placed then, unless the view has moved
   from the end meanwhile. Any other open lands at the end. A reload keeps nothing. Rows kept this
@@ -1105,7 +1108,8 @@ unchanged.
   (`GET /api/settings/subagents?path=`) and its memory outline come from its file.
 - **Refusals after the paint.** A chat that turns out to be open in a TUI, or written by an unknown
   process, reopens read only over the rows already shown (§chat.transcript/live-watch). A chat that
-  can't open (its folder is gone) shows the open-failure banner (§app.shell/the-open-failure-banner)
+  can't open (its remote placeholder folder is gone, its folder can't be reached; a local folder
+  that is gone opens in the home folder instead, §app.shell/missing-folder-home) shows the open-failure banner (§app.shell/the-open-failure-banner)
   over them. A start that fails for now keeps them and retries: once on the server, quietly; if
   that fails too, the tab shows "This chat didn't start." and keeps reconnecting.
 
@@ -1369,7 +1373,8 @@ main-pane rows.
 - **Read once.** It reads when it appears, and again only if it is asked about a different
   session; then it disappears until both new answers are in. An answer that arrives after the
   card has gone, or for a session it no longer shows, is dropped. Nothing on it polls or links: no
-  Refresh button, no timer, no anchors, and a commit's age is worked out when the card draws and
+  Refresh button, no timer, no anchors (a file's name is a button that reads that one file when
+  pressed, /setup-card-open-file), and a commit's age is worked out when the card draws and
   doesn't tick. The loadout is redrawn in two cases only, both from
   /setup-card-toggles: a flip of a row's switch draws the server's answer in place, and when the
   chat says the switch window has opened after the first read, the loadout is read again,
@@ -1458,8 +1463,10 @@ The files pi puts into the prompt, in the order it loads them.
   with no role. The APPEND_SYSTEM.md sources come last, in the order they are appended, each
   marked "appended to the system prompt". The role is muted caption text after the path, not a
   chip.
-- **The row.** The path with the home folder written `~` (the full path when it isn't under home,
-  or before home is known), on one line and cut with an ellipsis when it doesn't fit. The full
+- **The row.** A file inside the session's own folder is named by its path from that folder, with
+  no folder before it (`AGENTS.md`, `.pi/APPEND_SYSTEM.md`). Any other file is its path with the
+  home folder written `~` (the full path when it isn't under home, or before home is known). The
+  name is on one line and cut with an ellipsis when it doesn't fit. The full
   path is in the row's `title`. Then the role, if any, then its token estimate
   (/setup-card-figures).
 - **Where the list comes from.** The same read as Skills (/setup-card-skills): the session's own
@@ -1683,6 +1690,37 @@ skills it is offered, for this one session only.
 - **Accessibility.** Each switch is a checkbox labelled "Load {path}" (the path as the row shows
   it) for a file and "Offer {name}" for a skill, checked when on, reachable by keyboard.
 
+## §chat.transcript/setup-card-open-file — Setup card: reading a context file or skill
+
+Each row's name in Context and Skills (/setup-card-context, /setup-card-skills), the
+`SYSTEM.md` and `APPEND_SYSTEM.md` rows included, is a button that opens that file in the
+markdown viewer (§app/markdown-viewer), on Rendered: the whole text as it is on disk now.
+
+```html
+<span class="setup-name">
+  <button class="setup-path setup-open" type="button" aria-label="Read ~/AGENTS.md">~/AGENTS.md</button>
+</span>
+```
+
+- **What opens.** The viewer's title is the name as the row shows it (`~/AGENTS.md`, a skill's
+  name), its subtitle the full path. A skill opens its `SKILL.md` only, never the rest of its
+  folder. Source and Copy are the viewer's own, so Source shows the exact file, frontmatter
+  included.
+- **The look.** The name keeps its mono text and its place; it underlines on hover and takes the
+  standard focus ring. Its accessible name is "Read {name}". A row switched off
+  (/setup-card-toggles) still opens, and its switch stays a control of its own: pressing the name
+  never flips it.
+- **The read.** Pressing the name asks the server for that file's text,
+  `GET /api/sessions/context/file?path=<session file>&file=<listed path>`, then opens the viewer.
+  The server serves only a path that this session's own setup read lists (context, skills,
+  `SYSTEM.md`, `APPEND_SYSTEM.md`), so the request reads no other file on disk; any other path is a
+  404, "That file isn't in this session's system context." A remote session has no rows to press,
+  and its request is refused. A file over 1 MB is refused with "That file is over 1 MB, too big to
+  show here." Whatever goes wrong is a toast that starts "Couldn't open that file." and gives the
+  server's reason; the viewer doesn't open.
+- **Not cached, not pre-read.** Nothing is read until a name is pressed, and each press reads the
+  file again.
+
 ## §chat.transcript/empty-worktrees — The worktrees line under a new session
 
 A new session's empty state (the "Empty (new session)" row of States, above) ends, below its
@@ -1823,7 +1861,7 @@ whole row as the target, and its Arguments and Output.
 
 The timeline breaks at anything that is the message rather than the working — a user or assistant
 message, a report, a card tool (`sova_card`, `sova_confirm`, `sova_link`, `sova_unlink`, `align`,
-`session_send`, `sova_create_session`, or `show_changes` with valid successful details),
+`session_send`, `sova_create_session`, `show_changes` with valid successful details, or `offer` with a card, §chat.offers/card),
 a compaction, a topic, a wake, a worktree merge — so a card tool is never swallowed into a step. Tour tools `record_tour` and `show_tour` also break the timeline, including their safe request/progress/failure rows before a valid card projection; Hide tools never conceals them (§app.tours/recording).
 No step summary draws as a card; the expanded thinking aside is the only subtly shaded content.
 

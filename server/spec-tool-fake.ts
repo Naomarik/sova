@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { DraftToolRunner, ToolResult } from "./spec-draft-writer";
-import { readSpecFs, serialize, type Layout } from "../pi-config/extensions/spec/core/layout.mjs";
+import { CLAIMS_POINTER, readSpecFs, serialize, type Layout } from "../pi-config/extensions/spec/core/layout.mjs";
 
 /**
  * Tests only (nothing in the server imports this). The spec draft tool's commands the decisions
@@ -99,14 +99,16 @@ function run(root: string, args: string[]): ToolResult {
     if (!write) return ok({ written: false, name });
     const existed = existsSync(join(spec, "manifest.json"));
     // The settings through the shared reader (any layout); `new` copies the tree literally, as the real tool does.
-    const current: Manifest = existed ? readManifest(spec).manifest : { formatVersion: 1, claims: {} };
+    // No spec yet: the real tool's starter, format 2 (records beside each claim file).
+    const starter = { formatVersion: 2, claims: CLAIMS_POINTER };
+    const current: Manifest = existed ? readManifest(spec).manifest : { formatVersion: 2, claims: {} };
     const claimsRoot = (current.claimsRoot ?? "claims").replace(/\/+$/, "");
     // The edit copy, and (when there was a spec) the base it started from: literal copies both.
     for (const to of existed ? [draftSpec, join(draft, "base")] : [draftSpec]) {
       mkdirSync(to, { recursive: true });
       if (existsSync(join(spec, claimsRoot))) cpSync(join(spec, claimsRoot), join(to, claimsRoot), { recursive: true });
       if (existed) cpSync(join(spec, "manifest.json"), join(to, "manifest.json"));
-      else writeJson(join(to, "manifest.json"), current);
+      else writeJson(join(to, "manifest.json"), starter);
     }
     const purpose = values.get("--purpose")?.[0] ?? "";
     writeJson(draftJson, { format: "sova-spec-draft/1", name, createdAt: new Date().toISOString(), purpose, base: { specExisted: existed, claimsRoot, files: {} }, evidence: [], promotions: [] });

@@ -1200,7 +1200,9 @@ class Round {
   // The spec's records in `tree` as the core reads them (`records`): "ok", "mixed" (held both ways), "broken" (they
   // don't read: an unreadable manifest, a bad record file) or "unknown" (no answer). Only "ok" lets a merge commit.
   async recordsState(tree) {
-    if (!existsSync(join(tree, MANIFEST)) || !existsSync(join(this.specCore, "sova-spec.mjs"))) return { state: "ok" };
+    if (!existsSync(join(tree, MANIFEST))) return { state: "ok" };
+    // A spec with no spec tool to read it can't be told apart from a mixed one: never committed unread.
+    if (!existsSync(join(this.specCore, "sova-spec.mjs"))) return { state: "unknown", why: "no spec tool to read the records" };
     const r = await run(process.execPath, [join(this.specCore, "sova-spec.mjs"), "records", "--root", tree, "--json"], { cwd: tree, timeoutMs: 60_000 });
     let j;
     try { j = JSON.parse(r.stdout); } catch { return { state: "unknown", why: r.timedOut ? "the spec tool timed out" : `the spec tool printed no JSON (exit ${r.code})` }; }

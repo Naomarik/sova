@@ -1556,6 +1556,7 @@ const makeLayoutBranches = () => {
   const cut = (name, file, text) => { git(main, "worktree", "add", "-q", wt(name), "-b", name); commit(wt(name), file, text, `${name}: ${file}`); };
   cut("feat/plain", "plain.txt", "plain\n");
   cut("feat/plain-garbage", "plain2.txt", "plain\n");
+  cut("feat/plain-notool", "plain3.txt", "plain\n");
   cut("feat/v1side", ".sova/spec/claims/v1-marker", "v1\n");
   cut("feat/v1side-refused", ".sova/spec/claims/v1-marker", "v1\n");
   cut("feat/records-broken", ".sova/spec/manifest.json", "{ not json\n");
@@ -1607,7 +1608,7 @@ test("check: a clean merge that leaves the spec in both record layouts is finish
   assert.equal(git(wt("feat/v1side"), "status", "--porcelain", "--untracked-files=all"), "");
 });
 
-test("check: a merge whose spec can't be finished, whose records don't read, or that the tool can't answer for, is aborted as it was", async () => {
+test("check: a merge whose spec can't be finished, whose records don't read, or that no tool answers for, is aborted as it was", async () => {
   makeLayoutBranches();
   const masterBefore = git(main, "rev-parse", "master");
   const refusedHead = headOf("feat/v1side-refused");
@@ -1628,5 +1629,12 @@ test("check: a merge whose spec can't be finished, whose records don't read, or 
   assert.equal(garbage.code, 1, garbage.out);
   assert.match(garbage.out, /leaves a spec whose records the spec tool couldn't read \(the spec tool printed no JSON \(exit 2\)\): the merge was aborted/);
   asItWas("feat/plain-garbage", garbageHead);
+
+  // A spec and no spec tool to read it: never committed unread.
+  const noToolHead = headOf("feat/plain-notool");
+  const noTool = await run(["check", "feat/plain-notool"], { env: { SOVA_ROUND_SPEC_CORE: join(root, "no-spec-core") } });
+  assert.equal(noTool.code, 1, noTool.out);
+  assert.match(noTool.out, /leaves a spec whose records the spec tool couldn't read \(no spec tool to read the records\): the merge was aborted/);
+  asItWas("feat/plain-notool", noToolHead);
   assert.equal(git(main, "rev-parse", "master"), masterBefore, "check wrote to master");
 });

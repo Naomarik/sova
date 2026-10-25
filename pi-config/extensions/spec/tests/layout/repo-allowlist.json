@@ -80,8 +80,8 @@
       },
       {
         "rule": "names-manifest",
-        "text": "if (!existsSync(join(tree, MANIFEST)) || !existsSync(join(this.specCore, \"sova-spec.mjs\"))) return { state: \"ok\" };",
-        "reason": "existence probe before the post-merge records check (no spec, nothing to check); the records themselves are read by `sova-spec.mjs records`"
+        "text": "if (!existsSync(join(tree, MANIFEST))) return { state: \"ok\" };",
+        "reason": "existence probe before the post-merge records check: no spec there, nothing to read; reads no record"
       }
     ],
     "scripts/sim/contracts.mjs": [

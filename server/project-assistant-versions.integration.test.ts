@@ -268,12 +268,20 @@ describe("start_version (§app.project-assistant/tools)", () => {
     }
   });
 
-  test("a project with no copies lists no versions and starts nothing", async () => {
+  test("a project with no copies: nothing to try where copies can't be shown; else the Current version's copy is made (q6)", async () => {
     mutateRegistry((r) => {
       r.instances = r.instances.filter((i) => i.id !== instance);
     });
     const t = tools.assistantTools({ orgId: org.id, sessionId: "s_pa", owner: () => ({ id: alp.id, name: alp.name }), branch: () => [] }).find((x) => x.name === "start_version")!;
-    const out = (await t.execute("c3", {} as never, undefined, undefined, undefined as never)) as { content: { text: string }[] };
-    assert.equal(out.content[0]!.text, "Archery website has no versions to try.");
+    writeFileSync(join(site, ".sova", "project.json"), JSON.stringify({ ...DEF, share: { ...DEF.share, allow: false } }));
+    try {
+      const out = (await t.execute("c3", {} as never, undefined, undefined, undefined as never)) as { content: { text: string }[] };
+      assert.equal(out.content[0]!.text, "Archery website has no versions to try.");
+    } finally {
+      writeFileSync(join(site, ".sova", "project.json"), JSON.stringify(DEF));
+    }
+    const made = (await t.execute("c4", {} as never, undefined, undefined, undefined as never)) as { content: { text: string }[] };
+    assert.match(made.content[0]!.text, /^Current version of Archery website is starting\./);
+    assert.ok(readRegistry().instances.some((i) => realpathSync(i.checkout) === realpathSync(site)), "the main checkout's copy was made");
   });
 });

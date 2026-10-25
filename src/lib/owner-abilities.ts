@@ -107,5 +107,6 @@ export const openCount = (rs: readonly Pick<OwnerRequestRow, "status">[] | undef
     request being planned with the owner reads Planning with you, so it is not with the team. */
 export function requestsLine(rs: readonly Pick<OwnerRequestRow, "status" | "plan">[]): string {
   const team = rs.filter((r) => r.status === "with-team" && r.plan !== "planning").length;
-  return team ? `Your requests: ${team} with the team ›` : `Your requests: ${rs.length} ›`;
+  // The ones the owner closed are left out (§app.project-assistant/closing).
+  return team ? `Your requests: ${team} with the team ›` : `Your requests: ${rs.filter((r) => r.status !== "closed").length} ›`;
 }

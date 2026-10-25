@@ -573,10 +573,12 @@ same engine in-process, never over HTTP:
   `needs-confirm`: the operator does it.
 - **The Project Assistant** (the `assistant` caller, §app.project-assistant/tools): only `up`, and
   only of the one instance its `start_version` named, which must be a copy the owner's versions list
-  holds (§app.project-assistant/versions), and only once the project statechart took its
-  `services/run` act (`copiesRun` in the Project Assistant column, in the operator's turns too).
-  Every other verb, and `up` of any other instance, is `forbidden`; the self-host rule refuses it
-  like any caller but the operator.
+  holds (§app.project-assistant/versions), or, when the main checkout has no copy yet, a bare `up`
+  of the main checkout (which creates the Current version's copy, §app.project-assistant/tools),
+  and only once the project statechart took its `services/run` act (`copiesRun` in the Project
+  Assistant column, in the operator's turns too). Every other verb, `up` of any other instance or
+  checkout, and a bare `up` while the main checkout has a copy, is `forbidden`; the self-host rule
+  refuses it like any caller but the operator.
 
 `share` (§app.project-services/share) is the operator's, confirmed; the project overseer's through its statechart's act `services/share` (power `share`, people-facing, held like a preview), run only after every
 check of the share passed, so a refused share never reaches the statechart; the global Overseer's is

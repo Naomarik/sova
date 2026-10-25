@@ -1,13 +1,13 @@
 /**
- * The share build's theme (§app.owner-page/page): `System` follows the device's light or dark setting and changes with
- * it; `Light` and `Dark` are a visitor's pick, remembered in this browser for the share address (`localStorage`), so
- * every page of the build follows it from its first frame. It only sets `data-theme` on <html> (the design tokens'
- * switch, src/design/tokens.css); the operator app's themes are the main listener's and never reach here.
+ * The share build's theme (§app.owner-page/page): until a visitor picks, it follows the device's light or dark setting
+ * and changes with it; the toggle's pick (light or dark) is remembered in this browser for the share address
+ * (`localStorage`), so every page of the build follows it from its first frame. An older stored `system` reads as no
+ * pick. It only sets `data-theme` on <html> (the design tokens' switch, src/design/tokens.css); the operator app's
+ * themes are the main listener's and never reach here.
  */
 import { createSignal } from "solid-js";
 
-export type ThemePick = "system" | "light" | "dark";
-export const THEME_PICKS: readonly ThemePick[] = ["system", "light", "dark"];
+export type Theme = "light" | "dark";
 const KEY = "sova-share:theme";
 
 const storage = (): Storage | null => {
@@ -17,21 +17,22 @@ const storage = (): Storage | null => {
     return null;
   }
 };
-const readPick = (): ThemePick => {
+const readPick = (): Theme | null => {
   try {
     const v = storage()?.getItem(KEY);
-    return v === "light" || v === "dark" ? v : "system";
+    return v === "light" || v === "dark" ? v : null;
   } catch {
-    return "system";
+    return null;
   }
 };
 const media = (): MediaQueryList | null => (typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: light)") : null);
+const device = (): Theme => (media()?.matches ? "light" : "dark");
 
-const [pick, setPickSignal] = createSignal<ThemePick>(readPick());
-export { pick as themePick };
+const [pick, setPick] = createSignal<Theme | null>(readPick());
+const [deviceTheme, setDeviceTheme] = createSignal<Theme>(device());
 
-/** What the page draws now: the pick, or the device's setting under System. */
-export const resolvedTheme = (p: ThemePick = pick()): "light" | "dark" => (p === "system" ? (media()?.matches ? "light" : "dark") : p);
+/** What the page draws now: the visitor's pick, or the device's setting. */
+export const resolvedTheme = (): Theme => pick() ?? deviceTheme();
 
 const apply = () => document.documentElement.setAttribute("data-theme", resolvedTheme());
 
@@ -39,21 +40,22 @@ const apply = () => document.documentElement.setAttribute("data-theme", resolved
 export function startTheme(): void {
   apply();
   media()?.addEventListener("change", () => {
-    if (pick() === "system") apply();
+    setDeviceTheme(device());
+    apply();
   });
   window.addEventListener("storage", (e) => {
     if (e.key !== KEY) return;
-    setPickSignal(readPick());
+    setPick(readPick());
     apply();
   });
 }
 
-/** The visitor's pick: drawn at once, remembered in this browser. */
-export function setThemePick(p: ThemePick): void {
-  setPickSignal(p);
+/** The toggle: draw the opposite of what shows now, and remember it in this browser. */
+export function toggleTheme(): void {
+  const next: Theme = resolvedTheme() === "dark" ? "light" : "dark";
+  setPick(next);
   try {
-    if (p === "system") storage()?.removeItem(KEY);
-    else storage()?.setItem(KEY, p);
+    storage()?.setItem(KEY, next);
   } catch {
     // blocked storage: the pick holds for this page only
   }

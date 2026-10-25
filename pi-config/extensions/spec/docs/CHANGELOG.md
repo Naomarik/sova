@@ -848,8 +848,9 @@ would list master's changes instead.
       before the merge commit, and stages the record files merge-manifest wrote;
     - `.sova/spec/.gitignore` admits `claims/**/*.json`.
   - §: + §tools.spec/record-layout; §tools.spec/git-merge, §tools.spec/conflict-recovery,
-    §tools.spec/census-note and §chat.merge-round/driver reworded (draft `spec-store`; the exact list is
-    `foreign --base <first parent> --head <commit>` at landing).
+    §tools.spec/census-note, §chat.merge-round/driver reworded, §tools/spec (its new child) (drafts
+    `spec-store`, `spec-store-2`, promoted on the branch at 9eca2773; `foreign --base 9b7297f8 --head
+    9eca2773`).
   - Numbers: every read command (check, map, map app, graph, where by words and by path, toc out/in/down,
     read, read --whole, scope, impact, impact --near, packet, census, foreign) gives byte-identical JSON on
     Sova's spec at 9b7297f8 in format 1 and converted to format 2 at the same path (17 of 17); `migrate`

@@ -83,8 +83,14 @@ export const handBackText = (branch, drafts, topic) =>
   `${branch} isn't landing yet: its docs aren't official. Your spec drafts aren't promoted: ${draftsShown(drafts)}. Promote them on ${branch} and commit that (the user's go-ahead to merge covers it: don't ask for it again; delete a draft that holds nothing to land, and say so), then answer READY ${branch} <the new head sha> ${answerOn(topic)}. The merge round never promotes them.`;
 
 /** The hand-back for a branch whose merge with master conflicts in the spec: the owner merges and promotes again on top. */
-export const specConflictText = (branch, files, topic) =>
-  `${branch} isn't landing yet: merging master into it conflicts in the spec (${files.slice(0, 4).join(", ")}${files.length > 4 ? `, +${files.length - 4} more` : ""}). Merge master into ${branch} yourself and recover the spec as PROMOTE.md says: take master's whole spec with \`git checkout --no-overlay master -- .sova/spec/manifest.json .sova/spec/claims\`, resolve the rest and commit the merge, promote your drafts again with the same --ids (re-record stale evidence), and commit the claims (the user's go-ahead to merge covers it: don't ask for it again). Then answer READY ${branch} <the new head sha> ${answerOn(topic)}.`;
+// layout 2 (each area's records beside its claim file): only the clashing areas are taken from master and redone.
+export const specConflictText = (branch, files, topic, layout = 1) => {
+  const areas = [...new Set(files.filter((f) => /^\.sova\/spec\/claims\/.*\.(md|json)$/.test(f)).map((f) => f.replace(/\.(md|json)$/, "")))].sort();
+  const take = layout === 2
+    ? `take master's copy of only the areas that clashed, each claim file with its record file, with \`git checkout --no-overlay master -- ${areas.length ? areas.flatMap((a) => [`${a}.md`, `${a}.json`]).join(" ") : ".sova/spec/claims/<area>.md .sova/spec/claims/<area>.json"}\`, resolve the rest and commit the merge, promote again only your changes to those areas with the same --ids (re-record stale evidence)`
+    : "take master's whole spec with `git checkout --no-overlay master -- .sova/spec/manifest.json .sova/spec/claims`, resolve the rest and commit the merge, promote your drafts again with the same --ids (re-record stale evidence)";
+  return `${branch} isn't landing yet: merging master into it conflicts in the spec (${files.slice(0, 4).join(", ")}${files.length > 4 ? `, +${files.length - 4} more` : ""}). Merge master into ${branch} yourself and recover the spec as PROMOTE.md says: ${take}, and commit the claims (the user's go-ahead to merge covers it: don't ask for it again). Then answer READY ${branch} <the new head sha> ${answerOn(topic)}.`;
+};
 
 /** The notice for a landed branch's owner. Drafts left unpromoted are named, with where their copy was kept. */
 export const landedText = (branch, sha, drafts = [], kept = null) =>
@@ -93,6 +99,8 @@ export const landedText = (branch, sha, drafts = [], kept = null) =>
 
 /** Files of the spec a merge left conflicted: the manifest and the claims (drafts are never tracked). */
 export const specConflicts = (files) => files.filter((f) => f === ".sova/spec/manifest.json" || f.startsWith(".sova/spec/claims/"));
+// A layout-2 record file (the records of one area, beside its claim file).
+const isRecordFile = (f) => f.startsWith(".sova/spec/claims/") && f.endsWith(".json");
 
 /** Drafts not confirmed promoted, each named with up to four of its § ids, or "status unreadable" (ids null). */
 export const draftsShown = (drafts) =>
@@ -1183,6 +1191,30 @@ class Round {
     return { exit: 1, lines: [`${owner}: NOT READY: ${a.why}`], next: "leave it queued and say why in the report" };
   }
 
+  // Master's record layout (1 or 2), from its committed manifest.json settings.
+  async masterLayout() {
+    const { main } = await this.repo();
+    const r = await git(main, ["show", `refs/heads/master:${MANIFEST}`]);
+    try { return r.code === 0 && JSON.parse(r.stdout).formatVersion === 2 ? 2 : 1; } catch { return 1; }
+  }
+  // Whether the spec in `tree` holds records both ways (a mixed record layout): the core's own reading.
+  async mixedLayout(tree) {
+    if (!existsSync(join(tree, MANIFEST)) || !existsSync(join(this.specCore, "sova-spec.mjs"))) return false;
+    const r = await run(process.execPath, [join(this.specCore, "sova-spec.mjs"), "records", "--root", tree, "--json"], { cwd: tree, timeoutMs: 60_000 });
+    try { return JSON.parse(r.stdout).findings.some((f) => f.code === "layout-mixed"); } catch { return false; }
+  }
+  // merge-manifest --write over a merge in progress, then the files it wrote staged when the spec checks.
+  async mergeRecords(tree) {
+    const mm = await run(process.execPath, [join(this.specCore, "sova-spec-draft.mjs"), "merge-manifest", "--write", "--root", tree, "--json"], { cwd: tree, timeoutMs: 60_000 });
+    let out = {};
+    try { out = JSON.parse(mm.stdout); } catch { out = {}; }
+    const files = Array.isArray(out.files) && out.files.length ? out.files : [MANIFEST];
+    const what = files.length > 1 || files[0] !== MANIFEST ? "The spec's records" : "manifest.json";
+    const ok = mm.code === 0 && (await run(process.execPath, [join(this.specCore, "sova-spec.mjs"), "check", "--root", tree, "--json"], { cwd: tree, timeoutMs: 60_000 })).code !== 2;
+    if (ok) await gitOut(tree, ["add", "-A", "--", ...files], "add");
+    return { ok, what, why: mm.timedOut ? "timed out" : `exit ${mm.code}` };
+  }
+
   async check() {
     const { branch, tree, head: before } = await this.branchArg();
     if (!tree) stop(1, `${branch} has no worktree: the round works only in a branch's own worktree.`);
@@ -1198,17 +1230,16 @@ class Round {
 
     // Merge current master into the branch, in its own worktree.
     if (f.behind > 0) {
-      const m = await git(tree, ["merge", "--no-edit", "refs/heads/master"], { timeoutMs: 120_000 });
+      // Stopped before its commit, so the spec's record layout is looked at after every merge (below).
+      const m = await git(tree, ["merge", "--no-edit", "--no-commit", "refs/heads/master"], { timeoutMs: 120_000 });
       if (m.code !== 0) {
         let conflicted = (await gitOut(tree, ["diff", "--name-only", "--diff-filter=U"], "diff")).split("\n").filter(Boolean);
         if (!conflicted.length) stop(2, `git merge master failed in ${tree}: ${firstLine(m)}`);
-        if (conflicted.includes(MANIFEST)) {
-          const mm = await run(process.execPath, [join(this.specCore, "sova-spec-draft.mjs"), "merge-manifest", "--write", "--root", tree, "--json"], { cwd: tree, timeoutMs: 60_000 });
-          const ok = mm.code === 0 && (await run(process.execPath, [join(this.specCore, "sova-spec.mjs"), "check", "--root", tree, "--json"], { cwd: tree, timeoutMs: 60_000 })).code !== 2;
-          if (ok) {
-            await gitOut(tree, ["add", "--", MANIFEST], "add");
-            lines.push("manifest.json conflict merged by the spec tool's merge-manifest --write.");
-          } else lines.push(`manifest.json: merge-manifest --write didn't resolve it (${mm.timedOut ? "timed out" : `exit ${mm.code}`}).`);
+        // The records (manifest.json, or per-area claims/**/*.json record files) merge per record, across layouts too.
+        if (conflicted.includes(MANIFEST) || conflicted.some(isRecordFile)) {
+          const mm = await this.mergeRecords(tree);
+          if (mm.ok) lines.push(`${mm.what} conflict merged by the spec tool's merge-manifest --write.`);
+          else lines.push(`${mm.what}: merge-manifest --write didn't resolve it (${mm.why}).`);
           conflicted = (await gitOut(tree, ["diff", "--name-only", "--diff-filter=U"], "diff")).split("\n").filter(Boolean);
         }
         const spec = specConflicts(conflicted);
@@ -1222,14 +1253,25 @@ class Round {
           this.event("check", { branch, head: before, ok: false });
           this.saveState();
           const who = rec.ask?.owner ?? ownerOf(rec)?.owner;
-          return { exit: 1, lines: [...lines, `Merging master into ${branch} conflicts in the spec (${spec.join(", ")}): the merge was aborted, so ${tree} is as it was. Handed back: its owner merges master in and promotes again on top.`, who ? `session_send to ${who}:` : "For its owner (none known: the user's call):", specConflictText(branch, spec, rec.ask?.topic)], next: who ? "send the hand-back (only when the owner is idle); check again once it answers READY at a new head" : "tell the user: no owner is known to re-promote it" };
+          return { exit: 1, lines: [...lines, `Merging master into ${branch} conflicts in the spec (${spec.join(", ")}): the merge was aborted, so ${tree} is as it was. Handed back: its owner merges master in and promotes again on top.`, who ? `session_send to ${who}:` : "For its owner (none known: the user's call):", specConflictText(branch, spec, rec.ask?.topic, spec.some(isRecordFile) || (await this.masterLayout()) === 2 ? 2 : 1)], next: who ? "send the hand-back (only when the owner is idle); check again once it answers READY at a new head" : "tell the user: no owner is known to re-promote it" };
         }
         if (conflicted.length) {
           return { exit: 1, lines: [...lines, `Merging master into ${branch} conflicts in ${conflicted.length} file${conflicted.length === 1 ? "" : "s"}: ${conflicted.slice(0, 5).join(", ")}${conflicted.length > 5 ? ` and ${conflicted.length - 5} more` : ""}.`, `They're left in ${tree} for you; if one isn't clear-cut, ask the owner.`], next: `resolve, commit in ${tree}, then round.mjs check ${branch}` };
         }
-        const c = await git(tree, ["commit", "--no-edit"], { timeoutMs: 60_000 });
-        if (c.code !== 0) stop(2, `committing the merge failed in ${tree}: ${firstLine(c)}`);
       }
+      // After every merge: a spec left holding records both ways (one side's single manifest.json list, the other's
+      // per-area record files) is finished here, per record, before the merge commit.
+      if (await this.mixedLayout(tree)) {
+        const mm = await this.mergeRecords(tree);
+        if (!mm.ok || (await this.mixedLayout(tree))) {
+          const ab = await git(tree, ["merge", "--abort"], { timeoutMs: 60_000 });
+          if (ab.code !== 0) stop(2, `git merge --abort failed in ${tree}: ${firstLine(ab)}`);
+          return { exit: 1, lines: [...lines, `Merging master into ${branch} leaves its spec holding records both ways, and merge-manifest --write couldn't finish it (${mm.why ?? "still mixed"}): the merge was aborted, so ${tree} is as it was.`], next: `run sova-spec-draft.mjs merge-manifest --root ${tree} --write while merging master in ${tree} by hand, then round.mjs check ${branch}` };
+        }
+        lines.push("The merge left the spec holding records both ways; merge-manifest --write finished it per record.");
+      }
+      const c = await git(tree, ["commit", "--no-edit"], { timeoutMs: 60_000 });
+      if (c.code !== 0) stop(2, `committing the merge failed in ${tree}: ${firstLine(c)}`);
       lines.push(`Merged master ${master.slice(0, 7)} into ${branch}.`);
     }
     const head = await gitOut(main, ["rev-parse", `refs/heads/${branch}`], "rev-parse");

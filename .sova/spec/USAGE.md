@@ -175,6 +175,14 @@ Without them, Git falls back to its line merge. Both sides changing the same rec
 block of one declaration (a list item, a table row, a paragraph), still conflict; `merge-claims`
 then leaves Git's conflict markers, with both sides' prose.
 
+Sova's records are in format version 1: one list in `manifest.json`. The tools also read and write
+format 2, where each area's records sit in `claims/<path>.json` beside its claim file
+([core/README.md](../../pi-config/extensions/spec/core/README.md), "Record layouts"). A script that
+needs the records runs `node pi-config/extensions/spec/core/sova-spec.mjs records --root . --json`
+(`--at REV` for a revision) instead of reading `manifest.json`. `sova-spec-draft.mjs migrate` converts
+between the two; it hasn't been run on Sova's spec. A spec left holding records both ways is refused
+(`layout-mixed`) with the one command that finishes it.
+
 [DRAFTS.md](../../pi-config/extensions/spec/DRAFTS.md) has the layout, the lock and the limits.
 
 ## Review packets

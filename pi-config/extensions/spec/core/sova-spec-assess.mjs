@@ -8,6 +8,7 @@ import { resolve, join, dirname, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInspection } from "./sova-spec.mjs";
 import { inspectDraft } from "./sova-spec-draft.mjs";
+import { assemble, layoutOf, claimsRootOf } from "./layout.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url)), STORE = ".sova/spec/assessments", FORMAT = "sova-spec-assessment/1";
 const MAX_FILE = 2 * 1024 * 1024, MAX_TOTAL = 32 * 1024 * 1024, MAX_RECEIPTS = 100;
@@ -232,8 +233,8 @@ async function capture(root, q) {
   if (check.exit === 2) throw new Fail(2, "graph-untrusted", "selected graph cannot be trusted");
   const mf = await inspect(root, `${q.spec}/manifest.json`);
   if (mf.state !== "present") throw new Fail(2, "graph-untrusted", "manifest unavailable");
-  const manifest = json(mf.buf.toString("utf8"), "manifest");
-  if (!obj(manifest.claims)) throw new Fail(2, "core-contract", "manifest claims unavailable");
+  let manifest = json(mf.buf.toString("utf8"), "manifest");
+  if (layoutOf(manifest) === 1 && !obj(manifest.claims)) throw new Fail(2, "core-contract", "manifest claims unavailable");
   const inputs = new Map(); let total = 0;
   const add = async (path, role, claim) => {
     const p = rel(path) ?? String(path); let entry = inputs.get(p);
@@ -245,6 +246,22 @@ async function capture(root, q) {
     return entry;
   };
   await add(`${q.spec}/manifest.json`, "manifest"); await add(`${q.spec}/README.md`, "optional-policy");
+  // Layout 2: the records are the per-area record files the graph was read from, bound as inputs like the manifest.
+  if (layoutOf(manifest) === 2) {
+    const pre = `${q.spec}/${claimsRootOf(manifest) ?? "claims"}/`, texts = new Map(), mds = new Set();
+    for (const { path } of graphSources.files) {
+      if (!path.startsWith(pre)) continue;
+      if (path.endsWith(".md")) { mds.add(path.slice(pre.length)); continue; }
+      if (!path.endsWith(".json")) continue;
+      const r = await inspect(root, path);
+      if (r.state !== "present") throw new Fail(2, "graph-untrusted", "a record file is unavailable");
+      texts.set(path.slice(pre.length), r.buf.toString("utf8"));
+      await add(path, "records");
+    }
+    const a = assemble(manifest, texts, mds, { specRel: q.spec });
+    if (a.problems.length || !a.manifest) throw new Fail(2, "graph-untrusted", "the per-area records do not load");
+    manifest = a.manifest;
+  }
   let changedFiles = q.paths;
   if (!q.paths.length && q.base) {
     const c = reader.census({ base: q.base, related: true });
@@ -316,6 +333,12 @@ async function capture(root, q) {
     if (baseCheck.exit === 2) throw new Fail(2, "draft-untrusted", "draft baseline unavailable");
     await add(`.sova/spec/drafts/${q.draft}/base/manifest.json`, "draft-baseline");
     for (const d of baseCheck.declarations ?? []) await add(`.sova/spec/drafts/${q.draft}/base/${d.file.replace(/^.*?\/base\//, "")}`, "draft-baseline");
+    // A layout-2 baseline keeps its records beside its claim files: those are baseline inputs too.
+    const bm = await inspect(root, `.sova/spec/drafts/${q.draft}/base/manifest.json`);
+    let bmObj = null; try { bmObj = bm.state === "present" ? JSON.parse(bm.buf.toString("utf8")) : null; } catch { bmObj = null; }
+    if (layoutOf(bmObj) === 2) for (const f of sorted([...new Set((baseCheck.declarations ?? []).map((d) => d.file.replace(/^.*?\/base\//, "").replace(/\.md$/, ".json")))])) {
+      if ((await inspect(root, `.sova/spec/drafts/${q.draft}/base/${f}`)).state === "present") await add(`.sova/spec/drafts/${q.draft}/base/${f}`, "draft-baseline");
+    }
   }
   const claims = [];
   for (const [id, reasons] of [...candidates].sort(([a], [b]) => a.localeCompare(b))) {

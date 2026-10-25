@@ -30,6 +30,11 @@
     ".sova/playbooks/merge-round/scripts/round.mjs": [
       {
         "rule": "names-manifest",
+        "text": ": \"take master's whole spec with `git checkout --no-overlay master -- .sova/spec/manifest.json .sova/spec/claims`, resolve the rest and commit the merge, promote your drafts again with the same --ids (re-record stale evidence)\";",
+        "reason": "the format 1 hand-back text naming the files for git checkout; reads nothing"
+      },
+      {
+        "rule": "names-manifest",
         "text": "export const specConflicts = (files) => files.filter((f) => f === \".sova/spec/manifest.json\" || f.startsWith(\".sova/spec/claims/\"));",
         "reason": "conflict path filter over git's unmerged list; reads no record"
       },
@@ -40,23 +45,28 @@
       },
       {
         "rule": "names-manifest",
-        "text": "if (conflicted.includes(MANIFEST)) {",
-        "reason": "conflict step: the manifest path is in git's unmerged list; it then runs the draft tool's merge-manifest, which reads through layout.mjs"
+        "text": "const r = await git(main, [\"show\", `refs/heads/master:${MANIFEST}`]);",
+        "reason": "masterLayout: reads only master's formatVersion to word the hand-back (format 1 whole-spec, format 2 per area); never its records"
       },
       {
         "rule": "names-manifest",
-        "text": "await gitOut(tree, [\"add\", \"--\", MANIFEST], \"add\");",
-        "reason": "conflict step: git add of the file merge-manifest wrote; reads no record"
+        "text": "if (!existsSync(join(tree, MANIFEST)) || !existsSync(join(this.specCore, \"sova-spec.mjs\"))) return false;",
+        "reason": "existence probe before asking the core's records command about a mixed layout; reads no record"
       },
       {
         "rule": "names-manifest",
-        "text": "lines.push(\"manifest.json conflict merged by the spec tool's merge-manifest --write.\");",
-        "reason": "conflict step's report line; names the file, reads nothing"
+        "text": "const files = Array.isArray(out.files) && out.files.length ? out.files : [MANIFEST];",
+        "reason": "conflict handling: matches and stages the paths merge-manifest wrote (the settings file among them); reads no record"
       },
       {
         "rule": "names-manifest",
-        "text": "} else lines.push(`manifest.json: merge-manifest --write didn't resolve it (${mm.timedOut ? \"timed out\" : `exit ${mm.code}`}).`);",
-        "reason": "conflict step's report line; names the file, reads nothing"
+        "text": "const what = files.length > 1 || files[0] !== MANIFEST ? \"The spec's records\" : \"manifest.json\";",
+        "reason": "conflict handling: matches and stages the paths merge-manifest wrote (the settings file among them); reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (conflicted.includes(MANIFEST) || conflicted.some(isRecordFile)) {",
+        "reason": "conflict handling: matches and stages the paths merge-manifest wrote (the settings file among them); reads no record"
       },
       {
         "rule": "names-manifest",
@@ -103,6 +113,31 @@
         "rule": "names-manifest",
         "text": "const manifest = JSON.parse(readFileSync(join(specDirOf(root), \"manifest.json\"), \"utf8\")) as { claimsRoot?: string };",
         "reason": "meta-only read of the top-level claimsRoot (a pre-existing gap the plan leaves out of scope); reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (spec.state !== \"present\" || !spec.manifest || refused) throw new Error(refused?.message ?? `${specDir} has no readable manifest.json`);",
+        "reason": "error text naming the directory that has no readable settings file; reads nothing"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "if (!manifest.claims[lid]) {",
+        "reason": "the records the shared reader assembled (readSpecFs over layout.mjs), in either layout; written back with layout.mjs serialize; reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "manifest.claims[lid] = { kind: \"note\", authority: \"accepted\" };",
+        "reason": "the records the shared reader assembled (readSpecFs over layout.mjs), in either layout; written back with layout.mjs serialize; reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "const existing = manifest.claims[d.recordId!];",
+        "reason": "the records the shared reader assembled (readSpecFs over layout.mjs), in either layout; written back with layout.mjs serialize; reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "manifest.claims[d.recordId!] = rec;",
+        "reason": "the records the shared reader assembled (readSpecFs over layout.mjs), in either layout; written back with layout.mjs serialize; reads no file"
       },
       {
         "rule": "names-manifest",
@@ -155,6 +190,73 @@
         "rule": "names-manifest",
         "text": "const has = await git(top, [\"cat-file\", \"-e\", `${t}:manifest.json`]);",
         "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record (git cat-file -e at a revision)"
+      }
+    ],
+    "server/spec-tool-fake.ts": [
+      {
+        "rule": "names-manifest",
+        "text": "const existed = existsSync(join(spec, \"manifest.json\"));",
+        "reason": "existence probe: asks only whether a spec is there; reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const current: Manifest = existed ? readJson<Manifest>(join(spec, \"manifest.json\")) : { formatVersion: 1, claims: {} };",
+        "reason": "test fake's `new`: reads only claimsRoot from the settings file to copy the claims tree literally, as the real tool does"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (existed) cpSync(join(spec, \"manifest.json\"), join(to, \"manifest.json\"));",
+        "reason": "test fake's `new`: a literal copy of the settings file and claims tree (any layout), or the format 1 starter"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "else writeJson(join(to, \"manifest.json\"), current);",
+        "reason": "test fake's `new`: a literal copy of the settings file and claims tree (any layout), or the format 1 starter"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "ids: ids.map((id) => ({ id, kind: dm.claims[id]?.[\"kind\"] ?? null, deleted: !dm.claims[id], recordSha: sha(JSON.stringify(dm.claims[id] ?? null)), textSha256: sha(textOf(join(draftSpec, fileOf(id, claimsRoot)), id)) })),",
+        "reason": "the fake's record type; its records come from readSpecFs and go back through layout.mjs serialize"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "const plan = sha(JSON.stringify({ ids, records: ids.map((id) => dm.claims[id] ?? null), files: files.map((f) => [f, existsSync(join(draftSpec, f)) ? readFileSync(join(draftSpec, f), \"utf8\") : null]) }));",
+        "reason": "the fake's record type; its records come from readSpecFs and go back through layout.mjs serialize"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const existed = existsSync(join(spec, \"manifest.json\"));",
+        "reason": "existence probe: asks only whether a spec is there; reads no record"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "const added: Manifest[\"claims\"] = {};",
+        "reason": "the fake's record type; its records come from readSpecFs and go back through layout.mjs serialize"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "if (!dm.claims[id]) delete current.claims[id];",
+        "reason": "the fake's record type; its records come from readSpecFs and go back through layout.mjs serialize"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "else if (id in current.claims) current.claims[id] = dm.claims[id]!;",
+        "reason": "the fake's record type; its records come from readSpecFs and go back through layout.mjs serialize"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "else added[id] = dm.claims[id]!;",
+        "reason": "the fake's record type; its records come from readSpecFs and go back through layout.mjs serialize"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "current.claims = withNewRecords(current.claims, added);",
+        "reason": "the fake's record type; its records come from readSpecFs and go back through layout.mjs serialize"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "writeJson(draftJson, { ...dj, promotions: [...dj.promotions, { at: new Date().toISOString(), plan, ids, meta: [\"formatVersion\"], files: [...files, \"manifest.json\"] }] });",
+        "reason": "the fake's promotion receipt names the files it wrote (format 1); reads nothing"
       }
     ]
   }

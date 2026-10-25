@@ -22,6 +22,7 @@ import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { resolve, join, dirname, posix } from "node:path";
 import { fileURLToPath } from "node:url";
+import { layoutOf, claimsRootOf, dirKindsOf, recordFileOf } from "./layout.mjs";
 
 const CORE = join(dirname(fileURLToPath(import.meta.url)), "sova-spec.mjs");
 const FORMAT = "sova-spec-review/1";
@@ -91,18 +92,19 @@ function normRel(raw) {
   const n = posix.normalize(s).replace(/\/$/, "");
   return n === "." || n === ".." || n.startsWith("../") ? null : n;
 }
-function refusalOf(rel) {
+// recordPair: a layout-2 record file beside its claim file, read for its records whatever its name.
+function refusalOf(rel, recordPair = false) {
   const low = rel.toLowerCase(), under = (d) => low === d || low.startsWith(d + "/"); // case-insensitive filesystems alias
   if (under(REVIEWS) || under(`${SPEC}/.cache`)) return "review/cache storage is never its own input";
   const segs = rel.split("/");
   if (segs.some((s) => SECRET_DIRS.has(s.toLowerCase()))) return "secret, config or runtime-state directory";
-  if (SECRET_FILE.test(segs.at(-1))) return "secret or credential file";
+  if (!recordPair && SECRET_FILE.test(segs.at(-1))) return "secret or credential file";
   return null;
 }
 
 // Read a project-relative file: every component lstat'ed, no symlinks, regular file, size-bounded.
-async function inspect(root, rel) {
-  const why = refusalOf(rel);
+async function inspect(root, rel, recordPair = false) {
+  const why = refusalOf(rel, recordPair);
   if (why) return { state: "refused", why };
   const segs = rel.split("/");
   let cur = root;
@@ -208,6 +210,13 @@ function contract(j, status) {
 }
 
 // ---------------------------------------------------------------- capture
+// The spec's record layout, from manifest.json's settings alone (never its records). → {layout, claimsRoot, dirKinds}
+async function recordLayout(root) {
+  const r = await inspect(root, MANIFEST);
+  let m = null;
+  try { m = r.state === "present" ? JSON.parse(r.buf?.toString("utf8") ?? "null") : null; } catch { m = null; }
+  return { layout: layoutOf(m), claimsRoot: claimsRootOf(m) ?? "claims", dirKinds: dirKindsOf(m) };
+}
 // One capture: current closure from core, then exact bytes of every input it names, plus `extra`
 // retained paths (an old packet's inputs, so removed dependencies are still compared).
 async function capture(root, id, extra = []) {
@@ -222,11 +231,14 @@ async function capture(root, id, extra = []) {
     want.set(key, e);
   };
   add(MANIFEST, "manifest"); add(POLICY, "policy");
+  // Layout 2 keeps each area's records beside its claim file: those of every passage in the closure are inputs too.
+  const lay = await recordLayout(root);
+  if (lay.layout === 2) for (const p of core.passages) add(`${SPEC}/${lay.claimsRoot}/${recordFileOf(p.id, lay.dirKinds)}`, "records", p.id);
   for (const p of core.passages) { add(p.file, "claim", p.id); for (const e of p.provenance.entries) add(e.file, "incumbent", p.id); }
   for (const c of core.code) for (const cl of c.claims) add(c.path, "code", cl);
   for (const x of extra) if (!want.has(x)) want.set(x, { path: x, roles: new Set(), claims: new Set(), derived: false, bad: !normRel(x) });
   for (const e of [...want.values()].sort(byPath)) {
-    const r = e.bad ? { state: "refused", why: "not a project-relative path" } : await inspect(root, e.path);
+    const r = e.bad ? { state: "refused", why: "not a project-relative path" } : await inspect(root, e.path, e.roles.has("records") && e.roles.size === 1);
     if (r.state === "present") cap.total += r.bytes;
     cap.inputs.push({ path: e.path, roles: [...e.roles].sort(), claims: [...e.claims].sort(), derived: e.derived, ...r });
   }

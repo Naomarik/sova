@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { DraftToolRunner, ToolResult } from "./spec-draft-writer";
+import { readSpecFs, serialize, type Layout } from "../pi-config/extensions/spec/core/layout.mjs";
 
 /**
  * Tests only (nothing in the server imports this). The spec draft tool's commands the decisions
@@ -28,6 +29,12 @@ const ok = (more: Record<string, unknown> = {}): ToolResult => ({ exit: 0, json:
 const refused = (exit: 1 | 2, code: string, message: string): ToolResult => ({ exit, json: { exit, findings: [{ severity: exit === 2 ? "error" : "warn", code, message }] } });
 
 type Manifest = { formatVersion?: number; claimsRoot?: string; claims: Record<string, Record<string, unknown>> };
+/** A spec directory's records in either layout, through the spec tools' shared reader. */
+function readManifest(dir: string): { layout: Layout; recordFiles: string[]; manifest: Manifest } {
+  const s = readSpecFs(dir, ".");
+  if (s.state !== "present" || !s.manifest) throw new Error(`${dir}: no readable spec`);
+  return { layout: s.layout, recordFiles: s.recordFiles, manifest: s.manifest as unknown as Manifest };
+}
 const readJson = <T>(file: string): T => JSON.parse(readFileSync(file, "utf8")) as T;
 const writeJson = (file: string, v: unknown) => writeFileSync(file, `${JSON.stringify(v, null, 2)}\n`);
 
@@ -106,7 +113,7 @@ function run(root: string, args: string[]): ToolResult {
   }
   if (!existsSync(draftJson)) return refused(2, "draft-missing", `no draft ${name}`);
   const dj = readJson<{ evidence: unknown[]; promotions: unknown[] }>(draftJson);
-  const dm = readJson<Manifest>(join(draftSpec, "manifest.json"));
+  const dm = readManifest(draftSpec).manifest;
   const claimsRoot = (dm.claimsRoot ?? "claims").replace(/\/+$/, "");
   const ids = [...(values.get("--id") ?? [])].sort();
   if (cmd === "check" || cmd === "status") return ok({ name });
@@ -132,7 +139,8 @@ function run(root: string, args: string[]): ToolResult {
     if (!write) return ok({ written: false, name, ids, plan });
     if (values.get("--plan")?.[0] !== plan) return refused(1, "plan-stale", "the draft changed since the preview");
     const existed = existsSync(join(spec, "manifest.json"));
-    const current: Manifest = existed ? readJson<Manifest>(join(spec, "manifest.json")) : { formatVersion: dm.formatVersion ?? 1, ...(dm.claimsRoot ? { claimsRoot: dm.claimsRoot } : {}), claims: {} };
+    const cur = existed ? readManifest(spec) : { layout: (dm.formatVersion === 2 ? 2 : 1) as Layout, recordFiles: [] as string[], manifest: { formatVersion: dm.formatVersion ?? 1, ...(dm.claimsRoot ? { claimsRoot: dm.claimsRoot } : {}), claims: {} } as Manifest };
+    const current = cur.manifest;
     const added: Manifest["claims"] = {};
     for (const id of ids) {
       if (!dm.claims[id]) delete current.claims[id];
@@ -144,7 +152,12 @@ function run(root: string, args: string[]): ToolResult {
       mkdirSync(dirname(join(spec, f)), { recursive: true });
       cpSync(join(draftSpec, f), join(spec, f));
     }
-    writeJson(join(spec, "manifest.json"), current);
+    // Written in current's layout, as the real tool's promotion does.
+    for (const [rel, text] of serialize(cur.layout, current, { prevRecordFiles: cur.recordFiles })) {
+      if (text === null) continue;
+      mkdirSync(dirname(join(spec, rel)), { recursive: true });
+      writeFileSync(join(spec, rel), text);
+    }
     writeJson(draftJson, { ...dj, promotions: [...dj.promotions, { at: new Date().toISOString(), plan, ids, meta: ["formatVersion"], files: [...files, "manifest.json"] }] });
     return ok({ written: true, name, ids, plan });
   }

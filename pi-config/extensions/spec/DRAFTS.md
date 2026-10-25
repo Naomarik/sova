@@ -28,6 +28,7 @@ node $d drafts [--days N] [--worktrees]                 --root DIR [--json]
 node $d prune --approved FILE [--write]                 --root DIR [--json]
 node $d prune --official [--from DIR] [--write]         --root DIR [--json]
 node $d merge-manifest [--base F --ours F --theirs F] [--write]   --root DIR [--json]
+node $d migrate [--reverse] [--drafts | --draft NAME] [--write]     --root DIR [--json]
 node $d merge-claims --base F --ours F --theirs F [--path P] [--write]   --root DIR [--json]
 ```
 
@@ -369,7 +370,44 @@ depend on which side landed first; the output is 2-space JSON, as promotion writ
   ```
 
   Git runs it at the repository top; it writes `%A` on success and exits 1 on a same-key conflict,
-  which Git reports as a conflict with ours' bytes in place.
+  which Git reports as a conflict with ours' bytes in place. Sides in different record layouts
+  (format 1 on one side, 2 on the other) exit 1 (`layout-mismatch`) and write nothing, so Git keeps
+  the conflict for the index mode below.
+- **Records beside each claim file (format version 2), or a merge across layouts.** When a side of the
+  merge is in format 2, a `claims/**/*.json` record file is conflicted, or the merged tree holds records
+  both ways, `merge-manifest` reads base, ours and theirs from the merge's own commits (merge-base, HEAD,
+  MERGE_HEAD), merges per record and per setting as above, and `--write` writes `manifest.json` plus every
+  record file in the default branch tip's layout (`layouts` and `files` in its output). Stage what it
+  wrote, never the claims folder whole while a claim file still has markers. Without a merge in progress
+  it refuses (`not-merging`). Two branches changing different fields of one record in a format 2 record
+  file combine in Git's own line merge, and `foreign --landing` lists the record as `handResolved`.
+
+## Record layouts and `migrate`
+
+Records are kept one of two ways (`core/README.md`, "Record layouts"): format 1, every record in
+`manifest.json`; format 2, each area's records in `claims/<path>.json` beside `claims/<path>.md`. Every
+command reads both; a promotion writes in current's layout and `agree` in the draft's, so a format 1
+draft promotes into a format 2 current with its evidence still valid. A tree holding records both ways
+is refused (`layout-mixed`, exit 2) with the command that finishes it.
+
+```sh
+node $d migrate [--reverse] [--drafts | --draft NAME] [--write] --root DIR [--json]
+```
+
+`migrate` converts the current spec to format 2 (`--reverse`: back to 1), and with `--drafts` every
+draft's `base/` and `spec/` (only the named one with `--draft NAME`, leaving current as it is). Without
+`--write` it previews: `from`, `to`, `records`, `recordFiles`, `files[]` and `identity`. It refuses to
+finish unless the converted form reads back with the same ids, records and settings and the core's
+`check` of it (declarations, counts, frontier, code, findings) equals today's; with `--write` it reads
+the written spec back through the core, and undoes the conversion if that differs. A converted draft's
+`status` and `diff` must answer exactly as before; its old files are kept in
+`drafts/<name>/.layout-backup/v<from>/`, and `--reverse` restores them byte for byte while the draft's
+records still match. With `--write` it refuses (exit 1) while `.sova/spec` has uncommitted or untracked
+changes (`migrate-dirty`), a promotion is pending, or the drafts lock is held; a spec already in the
+target format is `already-v1` / `already-v2`. On a mixed tree it finishes the move (into the default
+branch tip's layout), refusing a record that differs between its two places (`record-duplicate`).
+Commit the result as one commit of its own; a `.sova/spec/.gitignore` that doesn't admit
+`claims/**/*.json` is named in `next`.
 
 ## A claims conflict in a Git merge
 

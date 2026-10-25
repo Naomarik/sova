@@ -164,6 +164,11 @@ test("R4: ready, or asking 'Shall I merge it into master?' → a decide item (ne
   assert.deepEqual(r.readinessItems({ ...row({}), readiness: ready } as SessionSummary), [{ tier: "decide", kind: "ready-to-merge", since: 43, detail: "Ready to merge: feat/a" }]);
   assert.deepEqual(r.readinessItems(row({ busy: true })), []);
   assert.deepEqual(r.readinessItems(row({ archived: true })), []);
+  // A branch with a landing says its word (§chat.worktrees/ready-to-land), as the tree's reason does.
+  for (const [state, word] of [["ready", "Ready to land"], ["specs", "Landing specs"]] as const) {
+    const landing = r.sessionReadinessOf([{ path: "/wt/a", branch: "feat/a", state: "waiting-approval", why: "checks passed", landing: { state, commit: "h1" } }], {}, 44);
+    assert.deepEqual(r.readinessItems({ ...row({}), readiness: landing } as SessionSummary), [{ tier: "decide", kind: "ready-to-merge", since: 44, detail: `${word}: feat/a` }]);
+  }
 });
 
 test("replyBody cuts closing Also updates lines", () => {
@@ -1167,16 +1172,13 @@ test("b2: one uncommitted file, a commit ahead, idle, check ok: ready to merge w
 test("Ready to land: decisions off falls back to the code-only conditions; a running turn, a failing check or an open question stops it; drafts left read Landing specs and Sova tells the session once per commit", async () => {
   const { fileLandingStore, landingOf, specsWhyOf } = await import("./ready-to-land");
   const t = { readable: true, merged: false, dirty: false, ahead: 2, head: "d".repeat(40) };
-  const s = { running: false, openQuestions: 0, lastCheck: { at: 1, ok: true } };
-  assert.equal(landingOf(t, s, "off", false, undefined)?.state, "ready", "decisions off: code-only");
-  assert.equal(landingOf(t, s, "no", false, undefined), undefined, "decisions on, not finished");
-  assert.equal(landingOf(t, s, "no", true, undefined)?.state, "ready", "held for this head");
-  assert.equal(landingOf(t, { ...s, running: true }, "yes", true, undefined), undefined);
-  assert.equal(landingOf(t, { ...s, lastCheck: { at: 1, ok: false } }, "yes", true, undefined), undefined);
-  assert.equal(landingOf(t, { ...s, openQuestions: 1 }, "yes", true, undefined), undefined);
-  assert.equal(landingOf({ ...t, conflicts: 2 }, s, "yes", true, undefined), undefined);
-  assert.equal(landingOf({ ...t, tempCommit: "WIP x" }, s, "yes", true, undefined), undefined);
-  assert.deepEqual(landingOf(t, s, "yes", false, ["a", "b"], "the tools are missing"), { state: "specs", commit: t.head, drafts: ["a", "b"], specsWhy: "the tools are missing" });
+  assert.equal(landingOf(t, "ready", "off", false, undefined)?.state, "ready", "decisions off: code-only");
+  assert.equal(landingOf(t, "waiting-approval", "no", false, undefined), undefined, "decisions on, not finished");
+  assert.equal(landingOf(t, "ready", "no", true, undefined)?.state, "ready", "held for this head");
+  // A running turn, a failing check, an open question, a conflict or a temporary commit: readiness isn't ready.
+  for (const state of ["in-progress", "blocked", "stale", "merged"] as const) assert.equal(landingOf(t, state, "yes", true, undefined), undefined, state);
+  assert.equal(landingOf({ ...t, dirty: true, dirtyCount: 1 }, "ready", "yes", true, undefined), undefined, "ready with an uncommitted file isn't Ready to land");
+  assert.deepEqual(landingOf(t, "ready", "yes", false, ["a", "b"], "the tools are missing"), { state: "specs", commit: t.head, drafts: ["a", "b"], specsWhy: "the tools are missing" });
   assert.equal(specsWhyOf("Done.\nCan't land specs: the spec tools aren't installed here."), "the spec tools aren't installed here");
   assert.equal(specsWhyOf("Nothing to say."), undefined);
 

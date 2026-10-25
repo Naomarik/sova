@@ -105,6 +105,7 @@ export function readinessChip(w: Pick<SessionWorktreeInfo, "readiness">): Worktr
 export function readinessReason(w: Pick<SessionWorktreeInfo, "readiness">): string | null {
   const r = w.readiness;
   if (r?.reason) return r.reason;
+  // An older peer's reading may have no reason: its state and why instead.
   if (!r?.why) return null;
   const label = r.state === "merged" ? "Merged" : readinessChip(w)!.label;
   return `${label} · ${r.why}`;

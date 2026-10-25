@@ -11,7 +11,7 @@ import { canonical, normalizeMergeDetails, type TrackedWorktree, WORKTREE_MERGE_
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { asksUserOf } from "./signals-store";
 import { isCaptain } from "./merge-board";
-import { unpromotedDraftNames } from "./spec-drafts-state";
+import { unofficialDrafts } from "./spec-drafts-state";
 import { blockedNoteText, type Finished, fileLandingStore, finishedOf, type LandingBlocker, landingBlockers, landingOf, landingReason, type LandingStore, specsNudgeText, specsWhyOf } from "./ready-to-land";
 import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
@@ -247,8 +247,10 @@ export function readinessItems(s: SessionSummary): { tier: AttentionTier; kind: 
   if (!r || s.archived) return [];
   const running = s.busy || s.activity?.state === "working";
   const out: { tier: AttentionTier; kind: AttentionKind; since: number; detail: string }[] = [];
-  if ((r.badge === "waiting" || r.badge === "ready") && r.branch && !running)
-    out.push({ tier: "decide", kind: "ready-to-merge", since: r.since, detail: `${r.badge === "waiting" ? "Waiting for your OK" : "Ready to merge"}: ${r.branch}` });
+  // The landing's own word when the branch has one (§chat.worktrees/ready-to-land), as every reader writes it.
+  const landing = r.trees.find((t) => t.branch === r.branch)?.landing?.state;
+  const word = landing ? (landing === "ready" ? "Ready to land" : "Landing specs") : r.badge === "waiting" ? "Waiting for your OK" : "Ready to merge";
+  if ((r.badge === "waiting" || r.badge === "ready") && r.branch && !running) out.push({ tier: "decide", kind: "ready-to-merge", since: r.since, detail: `${word}: ${r.branch}` });
   if (r.followUp?.weight === "significant") out.push({ tier: "decide", kind: "merged-open-work", since: r.since, detail: `Merged with open work: ${r.followUp.cue}` });
   return out;
 }
@@ -511,7 +513,7 @@ const defaultDeps = (): ReadinessDeps => ({
   treeStamp: (dir) => worktreeInsights.quietStamp(dir),
   inputsStamp: gitInputsStamp,
   finished: finishedOf,
-  drafts: (dir) => unpromotedDraftNames(dir),
+  drafts: (dir) => unofficialDrafts(dir),
   landing: fileLandingStore(),
   nudge: async (path, text) => (await import("./session-offers")).sendToSession(path, text),
   landingOffered: async (dir) => {
@@ -646,7 +648,7 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
     if (landingOn) {
       const held = deps.landing.held(s.id, t.path);
       const heldHere = !!held && held.commit === tf.head;
-      landing = landingOf(tf, sf, finished, heldHere, drafts, specsWhy);
+      landing = landingOf(tf, r.state, finished, heldHere, drafts, specsWhy);
       // Finished but not Ready to land: what the session can fix, for Sova's once-per-commit note.
       if (!landing && finished === "yes" && tf.head) {
         const blockers = landingBlockers(tf, sf, drafts);
@@ -691,7 +693,7 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
   const r = sessionReadinessOf(trees, { ...(newest ? { lastMerge: { at: newest.at, branch: newest.branch } } : {}), restartPending, pushPending, followUp }, lastReplyAt);
   if (!r || !newest) return r;
   // The branch status line (§chat.worktrees/readiness): code only, for the newest merge.
-  const drafts = newest.path && existsSync(newest.path) ? unpromotedDraftNames(newest.path)?.length : undefined;
+  const drafts = newest.path && existsSync(newest.path) ? unofficialDrafts(newest.path)?.length : undefined;
   const status: BranchStatus = {
     branch: newest.branch,
     commit: newest.sha.slice(0, 7),

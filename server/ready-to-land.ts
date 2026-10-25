@@ -1,13 +1,13 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { WorktreeLanding } from "../shared/protocol";
+import type { ReadinessState, WorktreeLanding } from "../shared/protocol";
 import { isExcluded, readDecisionSettings } from "./decide-settings";
 import { stateRoot } from "./state-root";
 import { latestOutcome } from "./turn-outcomes";
 
 /**
  * Ready to land (§chat.worktrees/ready-to-land): a worktree's head commit whose work is finished, kept
- * once it is so for that commit. The pure rule is `landingLive` (the code-only conditions) plus
+ * once it is so for that commit. The pure rule is `landingLive` (the code-only conditions, on the tree's readiness) plus
  * "finished" (`finishedOf`, the turn card's outcome; the code-only conditions alone when Decisions'
  * attention signals are off). The store, `<state root>/ready-to-land.json`, keeps per session and tree
  * the commit that was Ready to land and whether Sova told the session to land its specs for it:
@@ -44,16 +44,11 @@ export interface LandingSession {
     excluded), so the code-only conditions decide alone. */
 export type Finished = "yes" | "no" | "off";
 
-/** The live conditions (§chat.worktrees/ready-to-land): no uncommitted file at all, a commit ahead,
-    no conflict, no temporary commit, the newest check not failing, no open question, nothing running. Pure. */
-export function landingLive(t: LandingTree, s: LandingSession): boolean {
-  if (!t.readable || t.merged || !t.head) return false;
-  if (t.dirty || (t.dirtyCount ?? 0) > 0) return false;
-  if (!t.ahead || t.ahead < 1) return false;
-  if (t.conflicts || t.tempCommit) return false;
-  if (s.lastCheck && !s.lastCheck.ok) return false;
-  return s.openQuestions === 0 && !s.running;
-}
+/** The live conditions (§chat.worktrees/ready-to-land): the tree's readiness is ready or waiting (a commit ahead,
+    no conflict, no temporary commit, the newest check not failing, no open question, nothing running), with
+    a head and no uncommitted file at all. Pure. */
+export const landingLive = (t: LandingTree, state: ReadinessState): boolean =>
+  !!t.head && !t.dirty && !t.dirtyCount && (state === "ready" || state === "waiting-approval");
 
 /** One thing that keeps a finished branch from Ready to land, as Sova's note counts it, and what fixes it. */
 export interface LandingBlocker {
@@ -73,8 +68,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
  * running, an open question: none of those is the session's to fix now). Pure.
  */
 export function landingBlockers(t: LandingTree, s: LandingSession, drafts: readonly string[] | undefined): LandingBlocker[] | undefined {
-  if (!t.readable || t.merged || !t.head || !t.ahead || t.ahead < 1) return undefined;
-  if (s.running || s.openQuestions > 0) return undefined;
+  if (!t.readable || t.merged || !t.head || !t.ahead || s.running || s.openQuestions > 0) return undefined;
   const out: LandingBlocker[] = [];
   const dirty = t.dirtyCount ?? (t.dirty ? 1 : 0);
   if (dirty > 0) {
@@ -107,8 +101,8 @@ export const specsWhyOf = (reply: string | undefined): string | undefined => {
 };
 
 /** A tree's landing, or undefined. `held`: the store says this head was Ready to land already. Pure. */
-export function landingOf(t: LandingTree, s: LandingSession, finished: Finished, held: boolean, drafts: readonly string[] | undefined, specsWhy?: string): WorktreeLanding | undefined {
-  if (!landingLive(t, s)) return undefined;
+export function landingOf(t: LandingTree, state: ReadinessState, finished: Finished, held: boolean, drafts: readonly string[] | undefined, specsWhy?: string): WorktreeLanding | undefined {
+  if (!landingLive(t, state)) return undefined;
   if (!held && finished === "no") return undefined;
   const left = drafts?.length ? [...drafts] : undefined;
   return { state: left ? "specs" : "ready", commit: t.head!, ...(left ? { drafts: left } : {}), ...(left && specsWhy ? { specsWhy } : {}) };

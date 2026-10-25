@@ -102,8 +102,8 @@ export interface StoredSchedule {
   fires: StoredFire[];
   day?: { key: string; n: number };
   /** merge-ready: each worktree path that fired, with its branch, the landing commit it fired for, and
-      when (keeper clock) (§chat.schedules/merge-ready). */
-  ready?: Record<string, { branch: string; commit?: string; at: number }>;
+      when (keeper clock) (§chat.schedules/merge-ready). A row stored before commits were has none, so it reads fresh. */
+  ready?: Record<string, { branch: string; commit: string; at: number }>;
   /** A long-running schedule's own session (§chat.schedules/store). */
   session?: { id: string; path: string };
   /** The device that runs it (its host id). */

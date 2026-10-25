@@ -21,9 +21,9 @@ const stamp = (path: string): string => {
 
 const cache = new Map<string, { stamps: string; names: string[] }>();
 
-/** The names of the drafts in `<dir>/.sova/spec/drafts/` not official, sorted (§chat.worktrees/ready-to-land);
+/** The names of the drafts in `<dir>/.sova/spec/drafts/` not official (or unreadable), sorted (§chat.worktrees/ready-to-land);
     undefined when the folder has none. */
-export function unpromotedDraftNames(dir: string): string[] | undefined {
+export function unofficialDrafts(dir: string): string[] | undefined {
   const specRoot = join(dir, ".sova", "spec");
   const draftsDir = join(specRoot, "drafts");
   let names: string[];
@@ -39,9 +39,10 @@ export function unpromotedDraftNames(dir: string): string[] | undefined {
   const read: string[] = [draftsDir];
   for (const n of names) {
     const r = draftOfficial(specRoot, join(draftsDir, n), draftsDir);
-    if (!r) continue;
-    read.push(...r.read);
-    if (!r.official) left.push(n);
+    // Unreadable: nobody knows its state, so it isn't official (as the merge round's check reads it too).
+    if (r) read.push(...r.read);
+    else read.push(join(draftsDir, n, "draft.json"));
+    if (!r?.official) left.push(n);
   }
   const stamps = JSON.stringify([...new Set(read)].map((p) => [p, stamp(p)]));
   if (cache.size > 200) cache.clear();

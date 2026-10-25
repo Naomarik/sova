@@ -16,7 +16,7 @@ import { fieldShape, checkFields, frameOf, frameFinding, aboutDelivered } from "
 import { lookCommand, graphMain, nearMain, occurs } from "./graph.mjs";
 import { mapMain } from "./map.mjs";
 import { whereMain } from "./where.mjs";
-import { assemble, readSpecGit, fixFor } from "./layout.mjs";
+import { assemble, readSpecGit, fixFor, isMerging, mixedFix } from "./layout.mjs";
 
 const ID_SRC = String.raw`§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?/[a-z][a-z-]*`;
 const ID_RE = new RegExp(`^${ID_SRC}$`);
@@ -208,7 +208,12 @@ function loadManifest(root, specRel) {
   const mPath = join(root, specRel, "manifest.json");
   if (!existsSync(mPath)) { add("error", "manifest-not-found", `no ${specRel}/manifest.json under ${root}`); return null; }
   const text = tryRead(() => readInput(root, `${specRel}/manifest.json`), (e) => add("error", "manifest-unreadable", `manifest.json: ${e}`));
-  return text === null ? null : parseManifest(text, specRel);
+  const n = findings.length, ctx = text === null ? null : parseManifest(text, specRel);
+  // A Git merge left the file unparsed (conflict markers): the one command that merges it per record.
+  const bad = !ctx && text !== null ? findings.slice(n).find((f) => f.code === "manifest-unreadable") : null;
+  if (bad && specRel === DEFAULT_SPEC && isMerging(root))
+    bad.message += `; a Git merge is in progress: run ${mixedFix({ root, merging: true })} (it merges the records per record, across layouts too), then stage what it wrote`;
+  return ctx;
 }
 
 // A manifest's text, from a file or a Git object. → ctx without root/claims/decls | null (error added)

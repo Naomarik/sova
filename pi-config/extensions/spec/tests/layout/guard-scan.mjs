@@ -22,7 +22,9 @@ export const LAYOUT_MODULE = "pi-config/extensions/spec/core/layout.mjs";
 // Rule forms (each is proved on fixtures in tests/layout-guard.test.mjs):
 //   names-manifest: the records file's name, or a MANIFEST constant standing for it.
 //   reads-claims:   `.claims` off something named like a parsed manifest (m, mf, man, manifest, *Manifest, *manifest),
-//                   `["claims"]` in any quotes, or `{ claims } = JSON.parse(...)` / `.claims` straight off JSON.parse(...).
+//                   `["claims"]` in any quotes, `{ claims } = JSON.parse(...)` / `.claims` straight off JSON.parse(...),
+//                   or a claims key used as a record map on any name: `x.claims[id]`, `x.claims = …`, `id in x.claims`,
+//                   `Object.keys(x.claims)` and kin.
 export const RULES = {
   "names-manifest": [/manifest\.json/, /\bMANIFEST\b/],
   "reads-claims": [
@@ -30,6 +32,12 @@ export const RULES = {
     /\[\s*(["'`])claims\1\s*\]/,
     /\{[^}]*\bclaims\b[^}]*\}\s*=\s*JSON\.parse\b/,
     /JSON\.parse\([^;]*\)\s*(?:\?\.|\.)\s*claims(?![\w$])/,
+    // object-style use of a claims key on any name (a record map is indexed, assigned, deleted from or listed;
+    // the graph's Map of claims is used through .get/.has/.size and iteration, which these never match)
+    /\.claims\s*\[/,
+    /\.claims\s*(?:\?\?|\|\||&&)?=(?!=)/,
+    /\bin\s+[\w$.?]+\.claims(?![\w$])/,
+    /\bObject\.(?:keys|entries|values|hasOwn|assign|fromEntries)\(\s*[\w$.?]+\.claims(?![\w$])/,
   ],
 };
 

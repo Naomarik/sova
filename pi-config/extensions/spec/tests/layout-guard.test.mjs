@@ -31,6 +31,14 @@ const FLAGGED = [
   ["bracket, backticks", "const c = parsed[`claims`];", ["reads-claims"]],
   ["destructured off JSON.parse", "const { claims } = JSON.parse(text);", ["reads-claims"]],
   ["straight off JSON.parse", "const c = JSON.parse(readFileSync(p, \"utf8\")).claims;", ["reads-claims"]],
+  ["indexed on any name", "const rec = current.claims[id];", ["reads-claims"]],
+  ["assigned on any name", "current.claims[id] = dm.claims[id];", ["reads-claims"]],
+  ["deleted from on any name", "if (!dm.claims[id]) delete current.claims[id];", ["reads-claims"]],
+  ["replaced on any name", "current.claims = withNewRecords(current.claims, added);", ["reads-claims"]],
+  ["defaulted on any name", "spec.claims ??= {};", ["reads-claims"]],
+  ["`in` on any name", "if (id in current.claims) n++;", ["reads-claims"]],
+  ["listed on any name", "const ids = Object.keys(spec.claims ?? {});", ["reads-claims"]],
+  ["hasOwn on any name", "const has = (g, id) => Object.hasOwn(g.records.claims, id);", ["reads-claims"]],
   ["both on one line", `const c = JSON.parse(readFileSync(join(dir, ".sova/spec/manifest.json"), "utf8")).claims;`, ["names-manifest", "reads-claims"]],
 ];
 for (const [name, text, want] of FLAGGED) test(`guard rule form flagged: ${name}`, () => assert.deepEqual(rules(text), want, text));
@@ -43,6 +51,8 @@ const CLEAN = [
   ["a line comment", "// reads .sova/spec/manifest.json and m.claims"],
   ["a block comment line", " * the manifest.json and m.claims of a spec"],
   ["claimsRoot", "const croot = m.grammar?.claimsRoot ?? \"claims/\";"],
+  ["a comparison", "if (a.claims === b.claims) return;"],
+  ["iterating the graph's Map", "const ids = [...ctx.claims.keys()]; for (const [id] of ctx.claims) seen.add(id);"],
 ];
 for (const [name, text] of CLEAN) test(`guard rule form not flagged: ${name}`, () => assert.deepEqual(rules(text), [], text));
 

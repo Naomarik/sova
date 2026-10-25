@@ -1726,19 +1726,28 @@ format (`48k tok/min`), under the Tokens/min column (on a phone, on the row's mi
 - **Kept after a process goes.** A session's tokens stay on its row, attributed to it (a worker's to
   its parent's row), when its chat or worker process exits, idles out, is stopped, or reloads onto
   new code, until they age out of the window; a reload's new process adds to them, never replaces
-  them. Tokens from processes that ended before this server started are not there.
+  them. Once aged out they leave the server's memory too, whether or not a board is open (checked
+  at most once per 30 s slot on the store's own calls, never on a timer). Tokens from processes
+  that ended before this server started are not there.
 - **Delivered with the poll.** The server keeps each session's slots in memory from what its chat
-  processes already report with their state (no disk, no git, no new route, nothing per token) and
-  puts them on `GET /api/insights/agents` (`tokens`, `{}` when none), keyed by the row's session id:
+  processes already report with their state (no disk, no git, no new route, no timer, nothing per
+  token; a report that repeats the last one is compared in place and costs nothing more) and
+  puts them on `GET /api/insights/agents` only when the request asks (`?tokens=1`; then `tokens`,
+  `{}` when none; without it the answer has no `tokens` and the server does no token work), keyed by
+  the row's session id:
   only sessions with tokens in the last 5 minutes, each one compact string holding its last 5
   minutes' slots (from the oldest non-zero one) and its 30-minute total, its own and its workers'
   apart. The server builds that answer once per change and per 30 s slot; every poll in between
-  reads the same copy. Never on the `llm_inflight` frame, whose host part goes to peers. An older
-  server that sends no `tokens` at all: every row's dash says "This server doesn't report tokens
-  per session."
+  reads the same copy. Never on the `llm_inflight` frame, whose host part goes to peers. The app's
+  one agents poll (the sidebar's feed reads it on every page) asks only while the Agents board's
+  Board tab is shown, and entering the tab asks at once; the poll pauses while the browser tab is
+  hidden, and no second poll is added. Every other page's poll costs what it did without the
+  column. An older server that sends no `tokens` on a request that asked: every row's dash says
+  "This server doesn't report tokens per session."
 - **Moves by itself.** The browser reads the 5-minute means with the sidebar's
-  `tokenVelocityView()` once per answer that changed them and on one shared 30 s tick for the whole
-  board, which runs only while a shown row has tokens and the tab is visible; nothing is computed
+  `tokenVelocityView()` once per answer whose `tokens` read differently from the last and on one
+  shared 30 s tick for the whole board (an answer with the same `tokens` reuses the last reading
+  whole), which runs only while a shown row has tokens and the tab is visible; nothing is computed
   per row per redraw. The 30-minute figure in the sentence is the latest answer's.
 
 ## §app.insights/worktrees-endpoint — Which worktrees a session touched

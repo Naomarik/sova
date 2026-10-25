@@ -1220,7 +1220,14 @@
         "src/components/AgentsView.tsx",
         "src/agents-board.css",
         "shared/session-tokens-wire.ts",
-        "shared/session-tokens-wire.test.ts"
+        "shared/session-tokens-wire.test.ts",
+        "server/app.ts",
+        "server/insights-agents-tokens.integration.test.ts",
+        "shared/commands/other.ts",
+        "src/App.tsx",
+        "src/lib/api.ts",
+        "src/lib/agents-feed.ts",
+        "src/lib/agents-feed.test.ts"
       ],
       "agreed": {
         "by": "user",

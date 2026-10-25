@@ -113,7 +113,7 @@ A shown conversation can include its reviewed checked tour attachments (§app.to
   while a version is starting, every tab reads again every 3 seconds, so it moves to `Open` on
   whichever tab is showing.
 - **Its frame.** At the top of every view (the top of the left sidebar on a computer), Sova's mark
-  and the name "Sova", small, with the theme switch beside them (§app.owner-page/page). Each view's
+  and the name "Sova", small, with the theme toggle on the same row, to their right (§app.owner-page/page). Each view's
   main heading is the organization's name, and the browser tab's title is that name too; the
   view's own title (the greeting, a project's name, a conversation's title, `Project Assistant`,
   `Your requests`) comes under it.
@@ -350,11 +350,16 @@ Tour reads reveal only a checked public presentation bound to a conversation and
   (§app/shell), so an on-screen keyboard shrinks the page and a pinned composer stays above it. A
   reply's markdown reads as
   §app.session-share/reading describes.
-- **Light, dark or the device's.** A theme switch (`System`, `Light`, `Dark`) sits beside Sova's
-  mark. Until the visitor picks, the page follows the device's light or dark setting, and changes
-  with it. A pick is remembered in that browser for the share address (its `localStorage`), so
+- **Light, dark or the device's.** One small icon button, the theme toggle, sits on the same row
+  as Sova's mark and name, to their right (in the sidebar's top row on a computer, the slim top
+  bar on a phone), never a row of its own. Its icon shows the action: a sun while the page is
+  dark ("Switch to light theme"), a moon while it is light ("Switch to dark theme"), as both its
+  accessible label and its tooltip. Until the visitor clicks it, the page follows the device's
+  light or dark setting, and changes with it; a click draws the opposite of what shows and makes
+  that the pick. There is no "System" choice; a remembered "system" from before reads as no pick.
+  A pick is remembered in that browser for the share address (its `localStorage`), so
   every page of the share build opened there (the owner page, a hand-off page, a shared session,
-  a tour) follows it from its first frame; only the owner page shows the switch. The theme is set
+  a tour) follows it from its first frame; only the owner page shows the toggle. The theme is set
   by the page's own script before it draws (no inline script, the page's CSP unchanged), and the
   shell declares `color-scheme: light dark`, so the browser's own background matches before
   then. Drawings, frames, code and the photo viewer follow it (§app.baton/outsider-view).

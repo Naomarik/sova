@@ -150,8 +150,8 @@ The server runs on Bun; Node only when the user asks (server guide). An agent ne
 
 ## Product documentation
 
-`.sova/spec/` is the requirement for what Sova does: `manifest.json` plus `claims/<ns>/<name>.md`,
-under `§` IDs. A record labelled `authority: migrated`, `evidence: unreviewed` carries prose that is
+`.sova/spec/` is the requirement for what Sova does: `claims/<ns>/<name>.md`, under `§` IDs, each
+with its records in the `.json` beside it, plus `manifest.json` (settings). A record labelled `authority: migrated`, `evidence: unreviewed` carries prose that is
 the requirement, but nothing has checked that the code does it: verify the implementation before you
 claim a feature.
 

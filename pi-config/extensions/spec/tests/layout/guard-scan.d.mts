@@ -15,7 +15,9 @@ export function listSources(repo: string, roots: string[]): string[];
 export function globRe(glob: string): RegExp;
 export function compare(scans: Map<string, Hit[]>, allow: Allowlist): { problems: string[]; used: number; unlisted: (Hit & { file: string })[] };
 export function scanRepo(repo: string, files: string[]): Map<string, Hit[]>;
-export function growth(before: Allowlist, after: Allowlist): string[];
+export interface Replacement { file: string; rule: string; from: string; to: string }
+export function growth(before: Allowlist, after: Allowlist, opts?: { textOf?: (rel: string) => string | null; replaced?: Replacement[] }): string[];
+export function repoText(repo: string): (rel: string) => string | null;
 export function committedAllowlist(repo: string, rel: string): { at: string; allow: Allowlist } | null;
 export function draftAllowlist(scans: Map<string, Hit[]>, keep?: Allowlist): Allowlist;
 export function loadAllowlist(path: string): Allowlist;

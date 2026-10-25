@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { compare, growth, listSources, scanRepo, loadAllowlist } from "./layout/guard-scan.mjs";
+import { compare, growth, repoText, listSources, scanRepo, loadAllowlist } from "./layout/guard-scan.mjs";
 import { PRE_CUTOVER, REPO, noGit, showAt } from "./convert/lib.mjs";
 
 const LISTS = [
@@ -26,8 +26,10 @@ for (const [name, rel, roots] of LISTS) {
     const before = JSON.parse(showAt(PRE_CUTOVER, rel) ?? "null");
     assert.ok(before, `${rel} exists at ${PRE_CUTOVER.slice(0, 12)}`);
     const now = loadAllowlist(join(REPO, rel));
-    assert.deepEqual(growth(before, now), [], `grew past ${PRE_CUTOVER.slice(0, 12)}`);
+    const replaced = [];
+    assert.deepEqual(growth(before, now, { textOf: repoText(REPO), replaced }), [], `grew past ${PRE_CUTOVER.slice(0, 12)}`);
     assert.ok(entries(now) <= entries(before));
+    for (const r of replaced) t.diagnostic(`reworded in ${r.file} (${r.rule}): ${r.from.slice(0, 80)} → ${r.to.slice(0, 80)}`);
     t.diagnostic(`${entries(before)} entries at ${PRE_CUTOVER.slice(0, 12)}, ${entries(now)} now`);
   });
 }

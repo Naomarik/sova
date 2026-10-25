@@ -67,6 +67,10 @@ export function worktreeChips(
   return out;
 }
 
+/** What lands with a branch, for its reason line: "docs: 2 new, 1 changed" (server/ready-to-land.ts docsWords). */
+export const docsWords = (d: { drafts: number; added: number; changed: number }): string =>
+  `docs: ${[d.added ? `${d.added} new` : "", d.changed ? `${d.changed} changed` : ""].filter(Boolean).join(", ") || `${d.drafts} draft${d.drafts === 1 ? "" : "s"}`}`;
+
 /** The merge-readiness chip after the status chip (§chat.worktrees/readiness); none while merged,
     which the status chip already says, and none before the server has read git. */
 export function readinessChip(w: Pick<SessionWorktreeInfo, "readiness">): WorktreeChip | null {
@@ -75,12 +79,17 @@ export function readinessChip(w: Pick<SessionWorktreeInfo, "readiness">): Worktr
   const why = r.why ? `${r.why[0]!.toUpperCase()}${r.why.slice(1)}.` : "";
   // Finished at its head (§chat.worktrees/ready-to-land): said in place of Ready to merge / Waiting for your OK.
   const l = r.landing;
-  if (l?.state === "ready") return { label: "Ready to land", tone: "success", title: `The work is finished and committed at ${l.commit.slice(0, 7)}. ${why}`.trim() };
+  if (l?.state === "ready")
+    return { label: "Ready to land", tone: "success", title: `The work is finished and committed at ${l.commit.slice(0, 7)}.${l.docs ? ` Its spec drafts land with it (${docsWords(l.docs)}).` : ""} ${why}`.trim() };
   if (l?.state === "specs")
     return {
       label: "Landing specs",
       tone: l.specsWhy ? "warn" : "info",
-      title: l.specsWhy ? `Its specs can't land: ${l.specsWhy}` : `Finished; its spec drafts are being made official on the branch: ${(l.drafts ?? []).join(", ")}.`,
+      title: l.specsWhy
+        ? `Its specs can't land: ${l.specsWhy}`
+        : l.docs?.changedSinceGoAhead?.length
+          ? `Its spec drafts changed since your Land It: ${l.docs.changedSinceGoAhead.join(", ")}.`
+          : `Finished, but its spec drafts don't fit yet: ${(l.docs?.problems ?? l.drafts ?? []).join("; ")}.`,
     };
   switch (r.state) {
     case "ready":
@@ -105,10 +114,11 @@ export function readinessChip(w: Pick<SessionWorktreeInfo, "readiness">): Worktr
 export function readinessReason(w: Pick<SessionWorktreeInfo, "readiness">): string | null {
   const r = w.readiness;
   const l = r?.landing;
-  if (l?.state === "ready") return r!.reason ? r!.reason.replace(/^(?:Ready to merge|Waiting for your OK)\b/, "Ready to land") : "Ready to land";
+  if (l?.state === "ready") return [r!.reason ? r!.reason.replace(/^(?:Ready to merge|Waiting for your OK)\b/, "Ready to land") : "Ready to land", ...(l.docs ? [docsWords(l.docs)] : [])].join(" · ");
   if (l?.state === "specs") {
     const n = l.drafts?.length ?? 0;
-    return ["Landing specs", `${n} draft${n === 1 ? "" : "s"}`, ...(l.specsWhy ? [`can't land them: ${l.specsWhy}`] : [])].join(" · ");
+    const what = l.docs?.changedSinceGoAhead?.length ? "docs changed since Land It" : l.docs?.problems?.length ? "docs don't fit" : `${n} draft${n === 1 ? "" : "s"}`;
+    return ["Landing specs", what, ...(l.specsWhy ? [`can't land them: ${l.specsWhy}`] : [])].join(" · ");
   }
   if (r?.reason) return r.reason;
   if (!r?.why) return null;

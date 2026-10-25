@@ -126,3 +126,6 @@
 .waiting-item-foot .offer-card-actions > .offer-card-confirm { flex-basis: 100%; display: flex; flex-direction: column; gap: var(--space-2); }
 .waiting-item-foot .offer-card-actions > .offer-card-confirm > p { margin: 0; }
 .waiting-show { margin-left: auto; }
+
+/* The Landing card's docs line: the promises that land, one click away (§chat.offers/sova-landing). */
+.offer-card-docs-list { margin: var(--space-1) 0 0; padding-left: var(--space-4); font-size: var(--fs-caption); line-height: var(--lh-caption); }

@@ -1,7 +1,7 @@
 import { createEffect, createSignal, For, on, onCleanup, Show, type Accessor } from "solid-js";
 import { createStore } from "solid-js/store";
 import { createTouchMode } from "../lib/input-mode";
-import { composerEnterKeyHint, composerKeySends, composerPlaceholder, countFrom, type SendKey } from "../lib/share-composer";
+import { composerEnterKeyHint, composerKeySends, composerPlaceholder, composerSend, countFrom, type SendKey } from "../lib/share-composer";
 import { PhotoFormatError, processPhoto, sizeLabel, type UploadRefusal } from "./photos";
 import { filesWord } from "./files";
 
@@ -211,45 +211,20 @@ export function ShareComposer(props: {
   createEffect(on(props.draft, () => queueMicrotask(fit)));
 
   const copyOf = (list: readonly Attachment[]): Attachment[] => list.map((a) => ({ ...a }));
-  /** Put a refused send back: its words before anything typed since, its photos before any added since. */
-  const restore = (taken: { text: string; atts: Attachment[] }) => {
-    const now = props.draft();
-    props.setDraft(now.trim() ? `${taken.text}\n${now}` : taken.text);
-    const added = copyOf(atts).filter((a) => !taken.atts.some((t) => t.cid === a.cid));
-    setAtts([...taken.atts, ...added]);
-  };
   const send = async (e?: Event) => {
     e?.preventDefault();
-    const text = props.draft().trim();
-    if ((!text && !ready().length) || uploading()) return;
+    if ((!props.draft().trim() && !ready().length) || uploading()) return;
     setRefusal(null);
-    // Instant: the box empties now; what it held is kept here until the send settles.
-    const taken = props.optimistic?.() === true ? { text: props.draft(), atts: copyOf(atts) } : null;
-    const photos = copyOf(readyOf("photo"));
-    const files = copyOf(readyOf("file"));
-    if (taken) {
-      setAtts([]);
-      props.setDraft("");
-    }
-    let r = await props.send(text, photos, files, false);
-    // A staged photo or file expired (a restart, a day's wait): upload them again, once, and resend. The uploads run
-    // on the attachments themselves, so an instant send puts everything back in the box first and retries as a plain one.
-    if (typeof r === "object") {
-      const expired = r.expired;
-      if (taken) restore(taken);
-      const again = readyOf(expired);
-      const ok = again.length ? await Promise.all(again.map((a) => upload(a.cid))) : [false];
-      r = ok.every(Boolean) ? await props.send(text, copyOf(readyOf("photo")), copyOf(readyOf("file")), true) : "kept";
-      if (r !== "sent") return;
-    } else if (taken) {
-      // Sent: the page's row has the previews now. Refused: everything back in the box.
-      if (r !== "sent") restore(taken);
-      return;
-    }
-    if (r !== "sent") return;
-    // The previews now belong to the page's echo; the strip empties.
-    setAtts([]);
-    props.setDraft("");
+    await composerSend<Attachment>({
+      draft: props.draft,
+      setDraft: props.setDraft,
+      atts: () => atts,
+      setAtts: (list) => setAtts(list),
+      copy: copyOf,
+      upload,
+      send: props.send,
+      optimistic: props.optimistic?.() === true,
+    });
   };
 
   const placeholder = () => composerPlaceholder(props.sendKey, props.placeholder, touch());

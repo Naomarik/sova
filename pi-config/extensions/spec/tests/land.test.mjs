@@ -119,7 +119,7 @@ for (const layout of [1, 2]) {
   test(`${L} land previews without writing, then promotes every pending id of every draft at REV in one go, the kind picked per id`, () => {
     const { root } = project(layout, ["one", "two"]);
     const one = featureDraft(root, layout, "one");
-    const two = featureDraft(root, layout, "two");
+    const two = featureDraft(root, layout, "two", { authority: null }); // no authority: the landing labels it accepted
     // A note-kind record maps no code: doc-only, not commit evidence.
     setRecord(root, "two", layout, "§b/two-note", { kind: "note", authority: "accepted" }, undefined);
     put(join(root, D("two")), `claims/${areaPathOf("§b/two-note")}.md`, "# §b/two-note\n\nA note on two.\n");
@@ -153,7 +153,11 @@ for (const layout of [1, 2]) {
       }
       assert.match(e.verification, /Made official at landing: test/);
     }
-    assert.ok(core(root, "records").records?.["§b/two"], "the landed record reads back");
+    const twoRec = core(root, "records").records?.["§b/two"];
+    assert.ok(twoRec, "the landed record reads back");
+    assert.equal((typeof twoRec === "string" ? JSON.parse(twoRec) : twoRec).authority, "accepted", "a record with new prose and no authority lands accepted");
+    const draftRecs = layout === 1 ? JSON.parse(read(root, `${D("two")}/manifest.json`)).claims : JSON.parse(read(root, `${D("two")}/claims/${areaPathOf(two)}.json`));
+    assert.equal(draftRecs[two].authority, undefined, "set in the landing, never by editing the draft");
     assert.ok(core(root, "check").exit <= 1, "the landed spec checks");
     for (const name of ["one", "two"]) assert.deepEqual(draftJson(root, name).promotions.at(-1).landing, { commit: REV, by: "land-it" }, `${name}: the receipt names the landing`);
 

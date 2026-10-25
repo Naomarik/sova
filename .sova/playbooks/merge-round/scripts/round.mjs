@@ -1197,11 +1197,18 @@ class Round {
     const r = await git(main, ["show", `refs/heads/master:${MANIFEST}`]);
     try { return r.code === 0 && JSON.parse(r.stdout).formatVersion === 2 ? 2 : 1; } catch { return 1; }
   }
-  // Whether the spec in `tree` holds records both ways (a mixed record layout): the core's own reading.
-  async mixedLayout(tree) {
-    if (!existsSync(join(tree, MANIFEST)) || !existsSync(join(this.specCore, "sova-spec.mjs"))) return false;
+  // The spec's records in `tree` as the core reads them (`records`): "ok", "mixed" (held both ways), "broken" (they
+  // don't read: an unreadable manifest, a bad record file) or "unknown" (no answer). Only "ok" lets a merge commit.
+  async recordsState(tree) {
+    if (!existsSync(join(tree, MANIFEST)) || !existsSync(join(this.specCore, "sova-spec.mjs"))) return { state: "ok" };
     const r = await run(process.execPath, [join(this.specCore, "sova-spec.mjs"), "records", "--root", tree, "--json"], { cwd: tree, timeoutMs: 60_000 });
-    try { return JSON.parse(r.stdout).findings.some((f) => f.code === "layout-mixed"); } catch { return false; }
+    let j;
+    try { j = JSON.parse(r.stdout); } catch { return { state: "unknown", why: r.timedOut ? "the spec tool timed out" : `the spec tool printed no JSON (exit ${r.code})` }; }
+    const findings = Array.isArray(j?.findings) ? j.findings : [];
+    if (findings.some((f) => f.code === "layout-mixed")) return { state: "mixed" };
+    const bad = findings.find((f) => f.severity === "error");
+    if (bad || j?.exit === 2 || r.code === 2) return { state: "broken", why: bad ? `${bad.code}: ${bad.message}` : `exit ${r.code}` };
+    return { state: "ok" };
   }
   // merge-manifest --write over a merge in progress, then the files it wrote staged when the spec checks.
   async mergeRecords(tree) {
@@ -1259,17 +1266,24 @@ class Round {
           return { exit: 1, lines: [...lines, `Merging master into ${branch} conflicts in ${conflicted.length} file${conflicted.length === 1 ? "" : "s"}: ${conflicted.slice(0, 5).join(", ")}${conflicted.length > 5 ? ` and ${conflicted.length - 5} more` : ""}.`, `They're left in ${tree} for you; if one isn't clear-cut, ask the owner.`], next: `resolve, commit in ${tree}, then round.mjs check ${branch}` };
         }
       }
-      // After every merge: a spec left holding records both ways (one side's single manifest.json list, the other's
-      // per-area record files) is finished here, per record, before the merge commit.
-      if (await this.mixedLayout(tree)) {
+      // After every merge, before its commit, the spec's records must read: a spec left holding records both ways (one
+      // side's single manifest.json list, the other's per-area record files) is finished here, per record; one whose
+      // records don't read, or that the tool can't answer for, is never committed: the merge is aborted.
+      let rs = await this.recordsState(tree), finished = false;
+      if (rs.state === "mixed") {
         const mm = await this.mergeRecords(tree);
-        if (!mm.ok || (await this.mixedLayout(tree))) {
-          const ab = await git(tree, ["merge", "--abort"], { timeoutMs: 60_000 });
-          if (ab.code !== 0) stop(2, `git merge --abort failed in ${tree}: ${firstLine(ab)}`);
-          return { exit: 1, lines: [...lines, `Merging master into ${branch} leaves its spec holding records both ways, and merge-manifest --write couldn't finish it (${mm.why ?? "still mixed"}): the merge was aborted, so ${tree} is as it was.`], next: `run sova-spec-draft.mjs merge-manifest --root ${tree} --write while merging master in ${tree} by hand, then round.mjs check ${branch}` };
-        }
-        lines.push("The merge left the spec holding records both ways; merge-manifest --write finished it per record.");
+        rs = mm.ok ? await this.recordsState(tree) : { state: "mixed", why: `merge-manifest --write: ${mm.why}` };
+        finished = rs.state === "ok";
+        if (rs.state === "mixed" && mm.ok) rs.why = "still mixed after merge-manifest --write";
       }
+      if (rs.state !== "ok") {
+        const ab = await git(tree, ["merge", "--abort"], { timeoutMs: 60_000 });
+        if (ab.code !== 0) stop(2, `git merge --abort failed in ${tree}: ${firstLine(ab)}`);
+        const what = rs.state === "mixed" ? "leaves its spec holding records both ways, and it couldn't be finished" : rs.state === "broken" ? "leaves spec records that don't read" : "leaves a spec whose records the spec tool couldn't read";
+        return { exit: 1, lines: [...lines, `Merging master into ${branch} ${what} (${rs.why ?? "no reason given"}): the merge was aborted, so ${tree} is as it was.`],
+          next: rs.state === "mixed" ? `merge master in ${tree} by hand and run sova-spec-draft.mjs merge-manifest --root ${tree} --write before committing, then round.mjs check ${branch}` : `look at the spec's records in ${tree} merged with master (sova-spec.mjs records --json), then round.mjs check ${branch}` };
+      }
+      if (finished) lines.push("The merge left the spec holding records both ways; merge-manifest --write finished it per record.");
       const c = await git(tree, ["commit", "--no-edit"], { timeoutMs: 60_000 });
       if (c.code !== 0) stop(2, `committing the merge failed in ${tree}: ${firstLine(c)}`);
       lines.push(`Merged master ${master.slice(0, 7)} into ${branch}.`);

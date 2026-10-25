@@ -125,8 +125,22 @@ else process.exit(0);
   writeFileSync(join(bin, "systemctl"), `#!/bin/sh\necho "$@" >> ${JSON.stringify(systemctlLog)}\necho 0\n`);
   writeFileSync(join(bin, "systemd-run"), `#!/bin/sh\necho "systemd-run $@" >> ${JSON.stringify(systemctlLog)}\n`);
   for (const f of ["pnpm", "systemctl", "systemd-run"]) chmodSync(join(bin, f), 0o755);
-  writeFileSync(join(core, "sova-spec.mjs"), `const c = process.argv[2];
+  writeFileSync(join(core, "sova-spec.mjs"), `import { existsSync, readFileSync } from "node:fs";
+const c = process.argv[2];
 const bad = process.env.FAKE_SPEC_BAD === "1";
+// records: mixed when the tree holds both layouts' markers (claims/v1-marker and claims/v2-marker.json); broken when
+// manifest.json isn't JSON; FAKE_RECORDS_GARBAGE=1 prints no JSON at all.
+if (c === "records") {
+  if (process.env.FAKE_RECORDS_GARBAGE === "1") { console.log("not json"); process.exit(2); }
+  const spec = process.argv[process.argv.indexOf("--root") + 1] + "/.sova/spec";
+  let readable = true;
+  try { JSON.parse(readFileSync(spec + "/manifest.json", "utf8")); } catch { readable = false; }
+  const mixed = existsSync(spec + "/claims/v1-marker") && existsSync(spec + "/claims/v2-marker.json");
+  const findings = mixed ? [{ severity: "error", code: "layout-mixed", message: "holds records two ways; One command finishes it: sova-spec-draft.mjs migrate --write" }]
+    : readable ? [] : [{ severity: "error", code: "manifest-unreadable", message: "manifest.json: not JSON" }];
+  console.log(JSON.stringify({ exit: findings.length ? 2 : 0, findings }));
+  process.exit(findings.length ? 2 : 0);
+}
 console.log(JSON.stringify(c === "census" ? { census: { unclaimed: bad ? ["src/x.ts"] : [] } } : { exit: bad ? 2 : 0 }));
 if (bad && c === "check") process.exitCode = 2;
 `);
@@ -136,6 +150,11 @@ const rootDir = a[a.indexOf("--root") + 1];
 if (a[0] === "merge-manifest") {
   if (process.env.FAKE_MANIFEST_REFUSE === "1") { console.log(JSON.stringify({ exit: 1, conflicts: [{ key: "claims.§x", kind: "record" }] })); process.exit(1); }
   writeFileSync(rootDir + "/.sova/spec/manifest.json", '{"merged":true}\\n');
+  // A tree holding both layouts' markers is finished into the per-area layout: the old layout's marker goes.
+  if (existsSync(rootDir + "/.sova/spec/claims/v1-marker")) {
+    rmSync(rootDir + "/.sova/spec/claims/v1-marker");
+    console.log(JSON.stringify({ exit: 0, files: [".sova/spec/manifest.json", ".sova/spec/claims/v1-marker"] }));
+  }
 }
 // FAKE_DRAFT_IDS: {draft: [ids not promoted]}; a draft it lists with none has one record already current;
 // one it lists as "garbage" reads as unreadable; FAKE_DRAFTS_GARBAGE=1 makes the whole reading non-JSON.
@@ -1526,4 +1545,88 @@ test("landingAnswerAt: a later Not Yet on the way stops the carry; the newest an
   assert.equal(await kind({ goAheads: [go(A, "2026-10-24T00:00:00Z")], notYet: [] }, "d".repeat(40)), null, "a commit of its own: no answer");
   assert.equal(await kind({ goAheads: [go(A, "2026-10-24T00:00:00Z"), go(B, "2026-10-24T00:10:00Z")], notYet: [no(B, "2026-10-24T00:05:00Z")] }, C), "go-ahead", "a go-ahead at B after its Not Yet");
   assert.equal(await kind({ goAheads: [go(B, "2026-10-24T00:05:00Z")], notYet: [no(B, "2026-10-24T00:05:00Z")] }, B), "not-yet", "a tie is Not Yet");
+});
+
+// ---------------------------------------------------------------- the spec's record layout after a master merge
+// Branches cut before master gains the per-area layout's marker; each merge of master is clean in Git.
+const layoutCase = { made: false };
+const makeLayoutBranches = () => {
+  if (layoutCase.made) return;
+  layoutCase.made = true;
+  const cut = (name, file, text) => { git(main, "worktree", "add", "-q", wt(name), "-b", name); commit(wt(name), file, text, `${name}: ${file}`); };
+  cut("feat/plain", "plain.txt", "plain\n");
+  cut("feat/plain-garbage", "plain2.txt", "plain\n");
+  cut("feat/v1side", ".sova/spec/claims/v1-marker", "v1\n");
+  cut("feat/v1side-refused", ".sova/spec/claims/v1-marker", "v1\n");
+  cut("feat/records-broken", ".sova/spec/manifest.json", "{ not json\n");
+  commit(main, ".sova/spec/claims/v2-marker.json", "{}\n", "master: per-area records");
+};
+const headOf = (name) => git(wt(name), "rev-parse", "HEAD");
+const merging = (name) => { try { git(wt(name), "rev-parse", "-q", "--verify", "MERGE_HEAD"); return true; } catch { return false; } };
+const asItWas = (name, head) => {
+  assert.equal(headOf(name), head, `${name}: no commit was made`);
+  assert.equal(merging(name), false, `${name}: no merge left in progress`);
+  assert.equal(git(wt(name), "status", "--porcelain", "--untracked-files=all"), "", `${name}: the tree is as it was`);
+};
+
+test("check: a clean master merge still makes the merge commit Git's own merge makes", async () => {
+  makeLayoutBranches();
+  const before = headOf("feat/plain"), master = git(main, "rev-parse", "master");
+  // What the round's merge made before it stopped short of the commit: `git merge --no-edit refs/heads/master`.
+  const old = join(root, "old-merge");
+  git(main, "worktree", "add", "-q", "--detach", old, before);
+  git(old, "-c", "user.name=t", "-c", "user.email=t@t", "merge", "-q", "--no-edit", "refs/heads/master");
+  // (Detached there, Git names the target HEAD; on the branch it names the branch.)
+  const [tree, subject] = [git(old, "rev-parse", "HEAD^{tree}"), git(old, "log", "-1", "--format=%s").replace(/ into HEAD$/, " into feat/plain")];
+  git(main, "worktree", "remove", "--force", old);
+  const r = await run(["check", "feat/plain"]);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /Merged master [0-9a-f]{7} into feat\/plain\./);
+  assert.doesNotMatch(r.out, /records both ways/);
+  assert.equal(git(wt("feat/plain"), "rev-parse", "HEAD^1"), before, "first parent: the branch");
+  assert.equal(git(wt("feat/plain"), "rev-parse", "HEAD^2"), master, "second parent: master");
+  assert.equal(git(wt("feat/plain"), "rev-parse", "HEAD^{tree}"), tree, "the tree Git's merge gives");
+  assert.equal(git(wt("feat/plain"), "log", "-1", "--format=%s"), subject, "the message the one-step merge gave");
+  assert.match(subject, /^Merge branch '.*master' into feat\/plain$/);
+  assert.equal(merging("feat/plain"), false);
+  assert.equal(git(wt("feat/plain"), "status", "--porcelain", "--untracked-files=all"), "");
+});
+
+test("check: a clean merge that leaves the spec in both record layouts is finished by merge-manifest before the merge commit", async () => {
+  makeLayoutBranches();
+  const before = headOf("feat/v1side");
+  const r = await run(["check", "feat/v1side"]);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /records both ways; merge-manifest --write finished it per record/);
+  assert.equal(git(wt("feat/v1side"), "rev-parse", "HEAD^1"), before);
+  assert.equal(git(wt("feat/v1side"), "rev-parse", "HEAD^2"), git(main, "rev-parse", "master"));
+  // The committed merge is never mixed: the old layout's marker went in the same commit, the new one stayed.
+  assert.equal(git(wt("feat/v1side"), "ls-tree", "--name-only", "HEAD", ".sova/spec/claims/v1-marker"), "");
+  assert.equal(git(wt("feat/v1side"), "ls-tree", "--name-only", "HEAD", ".sova/spec/claims/v2-marker.json"), ".sova/spec/claims/v2-marker.json");
+  assert.equal(git(wt("feat/v1side"), "show", "HEAD:.sova/spec/manifest.json"), '{"merged":true}');
+  assert.equal(git(wt("feat/v1side"), "status", "--porcelain", "--untracked-files=all"), "");
+});
+
+test("check: a merge whose spec can't be finished, whose records don't read, or that the tool can't answer for, is aborted as it was", async () => {
+  makeLayoutBranches();
+  const masterBefore = git(main, "rev-parse", "master");
+  const refusedHead = headOf("feat/v1side-refused");
+  const refused = await run(["check", "feat/v1side-refused"], { env: { FAKE_MANIFEST_REFUSE: "1" } });
+  assert.equal(refused.code, 1, refused.out);
+  assert.match(refused.out, /leaves its spec holding records both ways, and it couldn't be finished \(merge-manifest --write: exit 1\): the merge was aborted/);
+  assert.match(refused.out, /next: merge master in .* merge-manifest --root .* --write before committing/);
+  asItWas("feat/v1side-refused", refusedHead);
+
+  const brokenHead = headOf("feat/records-broken");
+  const broken = await run(["check", "feat/records-broken"]);
+  assert.equal(broken.code, 1, broken.out);
+  assert.match(broken.out, /leaves spec records that don't read \(manifest-unreadable: manifest\.json: not JSON\): the merge was aborted/);
+  asItWas("feat/records-broken", brokenHead);
+
+  const garbageHead = headOf("feat/plain-garbage");
+  const garbage = await run(["check", "feat/plain-garbage"], { env: { FAKE_RECORDS_GARBAGE: "1" } });
+  assert.equal(garbage.code, 1, garbage.out);
+  assert.match(garbage.out, /leaves a spec whose records the spec tool couldn't read \(the spec tool printed no JSON \(exit 2\)\): the merge was aborted/);
+  asItWas("feat/plain-garbage", garbageHead);
+  assert.equal(git(main, "rev-parse", "master"), masterBefore, "check wrote to master");
 });

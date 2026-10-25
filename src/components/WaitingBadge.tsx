@@ -3,7 +3,7 @@ import { Portal } from "solid-js/web";
 import type { OverseerCard } from "../../shared/overseer-card";
 import type { OfferCard } from "../../shared/session-offers";
 import type { AlignEntry } from "../lib/align";
-import { cardNumeral, countSize, dash, dotXs, progressLength, RING_ARC, RING_R, waitingCounts, waitingLabel, waitingLook, type WaitingCounts, type WaitingLook } from "../lib/waiting";
+import { cardNumeral, countSize, countText, countY, dash, dotXs, progressLength, RING_ARC, RING_R, waitingCounts, waitingLabel, waitingLook, type WaitingCounts, type WaitingLook } from "../lib/waiting";
 import type { OfferControls } from "./OfferCard";
 import { WaitingDialog } from "./WaitingDialog";
 import "../waiting.css";
@@ -44,8 +44,8 @@ export function WaitingGlyph(props: { counts: WaitingCounts; look: WaitingLook }
         <circle r={RING_R} class="waiting-badge-progress" stroke-dasharray={dash(progressLength(c()))} transform="rotate(135)" />
       </Show>
       <Show when={withAlignments()}>
-        <text class="waiting-badge-count" y="6" style={{ "font-size": `${countSize(c().open)}px` }}>
-          {c().open}
+        <text class="waiting-badge-count" y={countY(c().open)} style={{ "font-size": `${countSize(c().open)}px` }}>
+          {countText(c().open)}
         </text>
         <For each={dotXs(c().alignments)}>{(x) => <circle class="waiting-badge-dot" cx={x} cy="17" r="2" />}</For>
       </Show>

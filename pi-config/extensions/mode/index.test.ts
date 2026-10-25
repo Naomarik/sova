@@ -439,10 +439,15 @@ test("spec: the shell prefix resolves the agent dir the way pi does", () => {
 });
 
 test("spec: the prompt names the trusted tools, their real flags, and the draft workflow", () => {
-	const spec = buildMinorPrompt("spec");
-	assert.ok(spec.includes(`start each bash command with exactly this, never a guessed path:\n\n\`\`\`sh\n${SPEC_CORE_SHELL}\n\`\`\``));
+	// The guide is two parts (§tools.spec/writing-on-demand): the short one rides every turn, the writing
+	// procedure is handed over once. Every rule below holds of the two together; each part's own pins follow.
+	const short = buildMinorPrompt("spec");
 	const here = dirname(fileURLToPath(import.meta.url));
 	const coreDir = join(here, "../spec/core");
+	const writing = readFileSync(join(coreDir, "../WRITING.md"), "utf8").trimEnd();
+	const spec = `${short}\n\n${writing}`;
+	assert.ok(short.includes(`start each bash command with exactly this, never a guessed path:\n\n\`\`\`sh\n${SPEC_CORE_SHELL}\n\`\`\``));
+	assert.ok(!writing.includes(SPEC_CORE_SHELL), "the shell line is the short part's alone (minor.ts reads it there)");
 	// Every tool the prompt runs from $core ships in the linked directory, and so does the README it points to.
 	const named = [...new Set([...spec.matchAll(/"\$core\/([\w.-]+\.mjs)"/g)].map((m) => m[1]))];
 	assert.deepEqual(named, ["sova-spec.mjs", "sova-spec-draft.mjs"]);
@@ -488,7 +493,8 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 		assert.match(spec, new RegExp(`\`${cmd}\\b`), `${cmd} is named`);
 	}
 	// Task reading pulls: contents, then one passage; whole-chain packet/scope remain machine inspection.
-	assert.match(spec, /only reads: `where <path\|name\|topic words>`, `map`, `toc '<§id>' --dir out\|in\|down\|up\|mentions`, `read '<§id>' \[--whole\] \[--no-frame\]`, `impact '<§id>' \[--near\]`, `check`, `census`, and whole-chain `packet`\/`scope '<§id>'` \(machine inspection\); `--cursor <next>` continues a page; `--spec <dir>` reads a draft\./);
+	assert.match(short, /only reads: `where <path\|name\|topic words>`, `map`, `toc '<§id>' --dir out\|in\|down\|up\|mentions`, `read '<§id>' \[--whole\] \[--no-frame\]`, `impact '<§id>' \[--near\]`; `--cursor <next>` continues a page\./);
+	assert.match(writing, /also takes `check`, `census`, and whole-chain `packet`\/`scope '<§id>'` \(machine inspection\); `--spec <dir>` reads a draft\./, "machine inspection rides with the writing procedure");
 	for (const cmd of ["foreign", "map", "where", "toc", "read"]) assert.doesNotMatch(usage("sova-spec.mjs", cmd), /unknown command/, `${cmd} is a core command`);
 	assert.doesNotMatch(spec, /--budget/, "every default budget fits a passage: the guide spends no words on it");
 	// A project's copy is foreign code: inspected and asked about, never run blind.
@@ -522,7 +528,9 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /Promote only what is implemented and verified\. A refusal is resolved, never forced\./);
 	assert.match(spec, /Write `"requires": \[\]` only after investigating; otherwise omit the key/);
 	// Mandatory: every behavior change is spec'd, and only a declared no-behavior change is exempt.
-	assert.match(spec, /Every behavior change is spec'd\. Exempt from drafts, not census: work changing no behavior \(refactor, tests, tooling\), decided from passages you read, never memory; a test that fails or flakes because of product code is that code's behavior fix, never test-only; say you claim the exemption\./, "a flaky test's product cause is no test-only exemption");
+	assert.match(short, /Every behavior change is spec'd\. Before your first edit that changes behavior, read `\$core\/\.\.\/WRITING\.md`, the writing procedure \(it also arrives once, with your first `\[spec census\]` note or an alignment's go-ahead\)\./, "the short part sends the agent to the procedure before it changes behavior");
+	assert.match(short, /Work changing no behavior \(refactor, tests, tooling\) needs no draft: say you claim the exemption\./);
+	assert.match(writing, /\nExempt from drafts, not census: work changing no behavior \(refactor, tests, tooling\), decided from passages you read, never memory; a test that fails or flakes because of product code is that code's behavior fix, never test-only; say you claim the exemption\./, "a flaky test's product cause is no test-only exemption");
 	assert.match(spec, /Behavior no claim covers gets a new claim in a feature draft before coding\. Write its sentence before the first code edit; `new` alone isn't enough\. When the task's go-ahead already agrees to it, run `agree` on it then, before that edit, not at the end\./, "the claim, and its agreement, come before the code");
 	assert.ok(spec.indexOf("Before coding:") < spec.indexOf("before coding.") && spec.indexOf("before coding.") < spec.indexOf("Documentation changes only through drafts"), "the new claim is a before-coding step");
 	// Only what the task changed is claimed; neighbours are linked, never spec'd.
@@ -556,12 +564,19 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	// Agreed decisions: one pointer to the shortcut, whose rules PROMOTE.md says once; the Agree step itself rides the align result.
 	assert.match(spec, /For decisions the user agreed to, `agree <name> --id '<§id>' --by <who> --verification <text> --write` stamps `agreed` with where the go-ahead is \(`\$SPEC_AGREE_SOURCE` if set, no `--source`; else `--source <ref>`, never a description; else report it ready, never stamp\) and promotes what maps no code \(`\$core\/\.\.\/PROMOTE\.md`\)\./);
 	assert.ok(!spec.includes("Agree step"), "the Agree step is the align result's, never the guide's");
-	const words = spec.split(/\s+/).length;
-	assert.ok(words <= 966, `short enough to ride every turn: growing it is a deliberate change (${words} words)`);
+	// The short part: finding your way, and nothing of the writing steps.
+	assert.match(short, /Finding your way:\n1\. Search with `where` and 3–5 of the task's words, never one \(`where password reset email expiry`\), or a path or name; if no hit fits, try other words once, then `map`\.\n2\. `read` what fits/);
+	assert.match(short, /\n3\. Verify in the code: open the files a claim lists and confirm\. Labels are declared, never proof; where claim and code disagree, say so: the code is what runs\./);
+	assert.match(short, /\n4\. Cite files: every finding names the code file or commit it rests on\. In briefs, plans and answers, report the product, not this procedure\./);
+	for (const gone of ["sova-spec-draft.mjs", "promote", "--commit", "Also updates", "manifest.json", "packet"]) assert.ok(!short.includes(gone), `the short part leaves the writing steps to the procedure: ${gone}`);
+	const words = short.split(/\s+/).length;
+	assert.ok(words <= 320, `short enough to ride every turn: growing it is a deliberate change (${words} words)`);
+	const procedureWords = writing.split(/\s+/).length;
+	assert.ok(procedureWords <= 990, `the writing procedure, handed over once: growing it is a deliberate change (${procedureWords} words)`);
 });
 
 test("spec: the guide's doc-only cases are the draft tool's: each one it names is accepted, and every case the tool's rule lists is named", () => {
-	const guide = buildMinorPrompt("spec");
+	const guide = readFileSync(new URL("../spec/WRITING.md", import.meta.url), "utf8");
 	const named = guide.match(/`--doc-only` \(([^)]*)\)/)?.[1]?.split(", ");
 	assert.ok(named, "the guide names the doc-only cases in one parenthesis");
 	const draftTool = fileURLToPath(new URL("../spec/core/sova-spec-draft.mjs", import.meta.url));
@@ -677,7 +692,7 @@ test("spec: shipped task-reading argv lists contents, then delivers one passage 
 });
 
 test("spec: shipped missing-spec guidance distinguishes refusal causes and preserves orphaned claims", () => {
-	const guide = buildMinorPrompt("spec");
+	const guide = readFileSync(new URL("../spec/WRITING.md", import.meta.url), "utf8"); // the writing procedure carries it
 	const cause = guide.match(/`cause: (manifest-not-found)` means no spec: start a draft/);
 	assert.ok(cause, "the guide names the actual bounded missing-spec cause");
 	const dir = tmp();
@@ -1140,8 +1155,11 @@ test("SPEC_WORKER_NOTE: the parent promotes, the brief is the go-ahead, and upda
 	assert.match(SPEC_WORKER_NOTE, /parent session started you, and it promotes/);
 	assert.match(SPEC_WORKER_NOTE, /Promote, commit or record `--commit` evidence only when your brief says to, and then only on its branch, never by landing on the default branch/);
 	assert.match(SPEC_WORKER_NOTE, /Your brief is your go-ahead/);
-	// The note leans on spec-mode.md's own wording; a rewrite there must revisit the note.
-	for (const phrase of ["`--commit`", "Also updates", "draft", "promote"]) assert.ok(SPEC_INSTRUCTIONS.includes(phrase.replace(/`/g, "")) || SPEC_INSTRUCTIONS.includes(phrase), phrase);
+	// The note leans on the writing procedure's own wording; a rewrite there must revisit the note.
+	const writing = readFileSync(new URL("../spec/WRITING.md", import.meta.url), "utf8");
+	for (const phrase of ["`--commit`", "Also updates", "draft", "promote"]) assert.ok(writing.includes(phrase), phrase);
+	// The procedure's Workers section carries the same duties, word for word, for a worker it reaches through the census.
+	assert.ok(writing.includes(`\nIf you are a worker: ${SPEC_WORKER_NOTE.replace(/^You are a worker: /, "")}`), "WRITING.md's worker paragraph is the note");
 	assert.ok(SPEC_WORKER_NOTE.endsWith("List each foreign § you updated in your final report."), "a worker lists, never asks");
 	assert.ok(!SPEC_INSTRUCTIONS.includes(SPEC_WORKER_NOTE), "spec-mode.md itself stays the parent's text");
 });

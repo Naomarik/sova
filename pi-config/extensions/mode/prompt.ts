@@ -244,7 +244,9 @@ export function buildAlignStyleNote(from: AlignStyle, to: AlignStyle): string {
 /**
  * Appended to the spec block in a worker's prompt (never the parent's): spec-mode.md is written to the
  * session that plans, promotes and briefs, and stays byte-identical, so what differs for a worker is said
- * here. The parent promotes; the worker's brief can say otherwise.
+ * here. The parent promotes; the worker's brief can say otherwise. The writing procedure's Workers paragraph
+ * (`spec/WRITING.md`, which the census hands a worker, that section first) says the same words; index.test.ts
+ * holds them equal.
  */
 export const SPEC_WORKER_NOTE = `You are a worker: a parent session started you, and it promotes on its own branch before calling it ready. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started. Promote, commit or record \`--commit\` evidence only when your brief says to, and then only on its branch, never by landing on the default branch; otherwise say what is ready to promote. List each foreign § you updated in your final report.`;
 

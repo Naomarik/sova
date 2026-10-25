@@ -6,14 +6,14 @@ alsoUpdate: ["pi-config/extensions/spec/docs/CHANGELOG.md"]
 
 The spec system: the `.sova/spec` tools, the `spec` minor mode that tells agents to run them, and its hooks. This
 guide is for changing the system. To follow the discipline while working on Sova, AGENTS.md points at
-`pi-config/extensions/mode/spec-mode.md`.
+`pi-config/extensions/mode/spec-mode.md` and, before a behavior change, `pi-config/extensions/spec/WRITING.md`.
 
 ## What lives here, and its own docs
 
 | Piece | Where | Its docs |
 |---|---|---|
 | The tools (read-only core, drafts, review, assessment) | `pi-config/extensions/spec/core/*.mjs` | [`spec/README.md`](../../../pi-config/extensions/spec/README.md), [`core/README.md`](../../../pi-config/extensions/spec/core/README.md), [`DRAFTS.md`](../../../pi-config/extensions/spec/DRAFTS.md), [`PROMOTE.md`](../../../pi-config/extensions/spec/PROMOTE.md) |
-| The mode's text, injected while spec is on | `pi-config/extensions/mode/spec-mode.md` | (it is the text) |
+| The mode's text in two parts: the short one injected while spec is on, the writing procedure handed over once | `pi-config/extensions/mode/spec-mode.md`, `pi-config/extensions/spec/WRITING.md` | (they are the text) |
 | The mode's hooks, worker checks and brief | `mode/minor.ts`, `mode/prompt.ts`, `mode/spec-guard.ts`, `mode/spec-worker.ts`, `subagents/spec-brief.ts`, `worktrees/spec.ts` | [`MODE.md`](../../../pi-config/extensions/spec/docs/MODE.md), every piece and how they connect |
 | Goals, history, ledger | `pi-config/extensions/spec/docs/` | [`README.md`](../../../pi-config/extensions/spec/docs/README.md): [`GOALS.md`](../../../pi-config/extensions/spec/docs/GOALS.md), [`EVOLUTION.md`](../../../pi-config/extensions/spec/docs/EVOLUTION.md), [`CHANGELOG.md`](../../../pi-config/extensions/spec/docs/CHANGELOG.md) |
 | Sova's own spec, and how to run the tools in this repo | `.sova/spec/` | [`.sova/spec/README.md`](../../../.sova/spec/README.md), [`.sova/spec/USAGE.md`](../../../.sova/spec/USAGE.md) |
@@ -30,11 +30,17 @@ The requirement is §tools/spec (`.sova/spec/claims/tools/spec.md`); MODE.md des
   it works in any project, not just Sova; source code carries no `§` ids; it stays light.
 - **The tools stay standalone.** Node standard library only; they import nothing from pi, Sova or the rest of
   pi-config. They are not a pi extension (no `index.ts`).
-- **The mode text is one copy.** `spec-mode.md` is the only text; everything else quotes or loads it. `minor.ts` reads
-  it once at load and refuses to load (pi and Sova's server alike) unless it holds exactly one single-line `sh` block.
-  `mode/index.test.ts` pins it: every flag it spells is parsed by its command, its `--doc-only` cases are the draft
-  tool's own, and its word count is capped. `subagents/spec-brief.ts` quotes its rules by anchor, so moving a rule can
-  break the worker brief.
+- **The mode text is two parts, each one copy.** `spec-mode.md` (finding your way, rides every turn) and
+  `spec/WRITING.md` (the writing procedure, never in the prompt) are the only texts; everything else quotes or loads
+  them. `minor.ts` reads `spec-mode.md` once at load and refuses to load (pi and Sova's server alike) unless it holds
+  exactly one single-line `sh` block. The census hook reads `WRITING.md` from the installed tools at hand-over
+  (`CensusHook.takeProcedure`). `mode/index.test.ts` pins both: every flag they spell is parsed by its command, the
+  procedure's `--doc-only` cases are the draft tool's own, and each part's word count is capped. `subagents/spec-brief.ts`
+  quotes rules from both by anchor, so moving a rule can break the worker brief, and `SPEC_WORKER_NOTE` must equal
+  the procedure's Workers paragraph.
+- **A change to the short part needs a measured run.** Since al_3 (round 3 of the context test), a change to
+  `spec-mode.md` is measured with an arm on the context-test set and its numbers recorded in the CHANGELOG entry; a
+  `WRITING.md` change needs its tests and a changelog entry.
 - **The spec writer.** `mode-spec.json` (agent dir, `mode/spec.ts`, read by `server/spec-settings.ts`) is the spec
   mode's writer: one backend, model and effort plus an optional fallback, or `null` (the session writes the spec
   itself). It seeds and backs the subagent profiles' spec writer, syncs like the other mode files, and is re-read at
@@ -69,6 +75,7 @@ The requirement is §tools/spec (`.sova/spec/claims/tools/spec.md`); MODE.md des
 - **When commands or output change:** `core/README.md`, `spec/README.md`, `DRAFTS.md` / `PROMOTE.md` (the draft
   tool), `.sova/spec/USAGE.md`, the site page `site/src/content/docs/modes/spec.md`, and the usage line
   (`tests/usage.test.mjs` pins it to the commands).
-- **`spec-mode.md`:** `mode/index.test.ts`'s pins, the brief's anchors (`subagents/spec-brief.test.ts`), the site
-  page, and an UPGRADING step.
+- **`spec-mode.md` or `spec/WRITING.md`:** `mode/index.test.ts`'s pins, the brief's anchors
+  (`subagents/spec-brief.test.ts`), the review-smoke fixture (`mode/tests/fixtures/flag-off-master.json`, for
+  `spec-mode.md`), the site page, and an UPGRADING step.
 - Commit spec docs by explicit path, as `.sova/spec/README.md` shows; drafts and reviews stay local.

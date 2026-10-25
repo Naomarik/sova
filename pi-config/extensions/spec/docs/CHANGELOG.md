@@ -806,6 +806,40 @@ would list master's changes instead.
     mode). Constraint 5 (light): the mode text grows 37 words.
   - Upgrade: see UPGRADING step 11.
 
+### 2026-10-26
+
+- **The mode text splits: finding your way for everyone, the writing steps when behavior changes.**
+  - Commit: on branch `feat/spec-slim` (alignment al_3); not on master yet. It lands only if round 3
+    passes its pre-registered rule.
+  - Why: in round 2 of the context test (spec-ctx-2026-10-25, 12 real requests), briefs with the spec
+    found 60% of the facts that mattered against 67% without it. They spent 26 items on documentation
+    process against 9, and 52 items named no file against 15. But that round changed the content and
+    the instructions together. About two thirds of the 964-word text rode every turn but mattered only
+    once an agent changed behavior.
+  - Changed:
+    - `mode/spec-mode.md` is now the short finding-your-way part: search, read, verify in the code,
+      cite files, report the product. It also says where the writing procedure is. 964 → 306 words,
+      cap 966 → 320.
+    - New `spec/WRITING.md` holds the writing procedure (drafts, agree, evidence, promotion, machine
+      inspection and a `## Workers` section). Its sentences are today's, word for word, so the meaning
+      is the same. 976 words, cap 990.
+    - The procedure reaches a session once per chat, as text appended to a tool result. It comes with
+      the session's first `[spec census]` note of any kind or, with align on, the go-ahead's result,
+      unless the agent read it first. A compaction re-arms it; a reopened session restores it from its
+      history. It never enters the prompt, so a Claude Code chat doesn't restart for it.
+    - A worker's hand-over (`spec-worker.ts`) leads with its Workers section.
+    - The fallback worker brief is generated from both parts and keeps every rule it carried, plus the
+      finding-your-way steps and the Workers paragraph. Its commands gain `where` and `map`.
+    - `SPEC_WORKER_NOTE` is unchanged, and a test pins it to the Workers paragraph.
+    - The replay agent arm copies `WRITING.md` into its work directory.
+  - §: +§tools.spec/writing-on-demand, §tools.spec/mode-reading, §tools.spec/census-note,
+    §tools.spec/align-agree, §chat.mode-menu/workers, §site.docs/spec-mode (draft `spec-slim-guide`).
+  - Numbers: round 3 (three arms A no spec / B today / C short part, 12 tasks × 2, pooled blind
+    grading, plus a 6-task edit check). Recall A/B/C, C − B [CI] and the verdict are filled in from
+    round 3's report before landing. Constraint 5 (light): 964 → 306 words ride every turn; the
+    976-word procedure is sent once per chat.
+  - Upgrade: see UPGRADING step 12.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -980,3 +1014,11 @@ The tools are Node standard library only. Nothing is installed.
     committing them. A merge process of your own that promoted drafts at landing stops doing so; one that
     removed worktrees should keep a copy of their unpromoted drafts first. New: `prune --official [--from
     DIR]` deletes only drafts the tool confirms are already official.
+12. **The 2026-10-26 split mode text** (branch `feat/spec-slim`). The spec extension ships a new file,
+    `spec/WRITING.md`, beside `PROMOTE.md`; `install.sh` links the whole `spec` directory, so it arrives
+    with the tools. A project that points its agents at `mode/spec-mode.md` now gets only the short
+    finding-your-way part. Its own agent instructions must also name the writing procedure, before
+    behavior-changing edits: `$core/../WRITING.md` for the installed copy, or the path in this repo, as
+    Sova's `AGENTS.md` does. Without the mode on, nothing hands it over. With the mode on, the first
+    `[spec census]` note carries it once. A hook of your own that parses census notes sees it after the
+    digest, from its `Writing procedure (once` head.

@@ -890,8 +890,9 @@ would list master's changes instead.
   - §: +§tools.spec/writing-on-demand, §tools.spec/mode-reading, §tools.spec/census-note,
     §tools.spec/align-agree, §chat.mode-menu/workers, §site.docs/spec-mode, §tools.spec/context-packets,
     §tools.spec/agree-source-relay, §tools/spec, §chat.alignment/tool, §chat.mode-menu/codemode (draft
-    `spec-slim-guide`, promoted on the branch at 526e0a07; `foreign --base 9b7297f8 --head 526e0a07`).
-    Base: 9b7297f8.
+    `spec-slim-guide`, promoted on the branch at 526e0a07; `foreign --base 9b7297f8 --head 526e0a07`,
+    and after merging al_6 landing 1 `foreign --base ca8ab14e --head 814d49a8`, give the same list).
+    Base: ca8ab14e (was 9b7297f8).
   - Numbers: round 3 of the context test (pre-registered, PREREG-ctx3 sha256 a67ad622…fbca; report
     sha256 0eaa5cfd…9ffb). Three arms on the same 12 real requests × 2: A no spec, B today's text
     (9b7297f8), C the short part (brief runs at 328788c3, edit check at 07265a27); graded item by item

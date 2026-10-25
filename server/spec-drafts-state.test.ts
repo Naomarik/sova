@@ -1,51 +1,120 @@
-// The branch status line's spec part (§chat.worktrees/readiness): a draft counts as promoted when
-// every spec file it changed reads the same in the worktree's current spec. Plain temp folders.
+// Which drafts aren't official (§chat.worktrees/readiness, §tools.spec/draft-official): the server calls the
+// draft tool's own rule, so these cases hold for the merge round's check too (its tests run the tool). Plain
+// temp folders shaped as the draft tool writes them: draft.json, base/, spec/.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { after, test } from "node:test";
+import { promotionClaims } from "../pi-config/extensions/spec/core/official.mjs";
 import { scratchRoot } from "./test-scratch";
-import { unpromotedDrafts } from "./spec-drafts-state";
+import { unpromotedDraftNames } from "./spec-drafts-state";
+
+const unpromotedDrafts = (dir: string) => unpromotedDraftNames(dir)?.length;
 
 const root = scratchRoot("sova-spec-drafts-state-");
 after(() => rmSync(root, { recursive: true, force: true }));
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+const F = "claims/a.md";
+/** A claim file with two claims; `x` and `y` are their prose. */
+const file = (x: string, y = "y says one thing.") => `# §a — A\n\nThe lede.\n\n## §a/x — X\n\n${x}\n\n## §a/y — Y\n\n${y}\n`;
+const put = (p: string, text: string) => {
+  mkdirSync(dirname(p), { recursive: true });
+  writeFileSync(p, text);
+};
+const spec = (wt: string) => join(wt, ".sova", "spec");
+const dir = (wt: string, name: string) => join(spec(wt), "drafts", name);
 
-function draft(dir: string, name: string, base: Record<string, string>, files: Record<string, string>) {
-  const d = join(dir, ".sova", "spec", "drafts", name);
-  mkdirSync(join(d, "spec", "claims"), { recursive: true });
-  writeFileSync(join(d, "draft.json"), JSON.stringify({ format: "sova-spec-draft/1", name, base: { files: Object.fromEntries(Object.entries(base).map(([k, v]) => [k, sha(v)])) } }));
-  for (const [rel, text] of Object.entries(files)) writeFileSync(join(d, "spec", rel), text);
+/** A draft of `wt` made from its current a.md, proposing `prop`. */
+function draft(wt: string, name: string, prop: string) {
+  const d = dir(wt, name);
+  const base = readFileSync(join(spec(wt), F), "utf8");
+  put(join(d, "base", F), base);
+  put(join(d, "spec", F), prop);
+  put(join(d, "draft.json"), JSON.stringify({ format: "sova-spec-draft/1", name, base: { files: { [F]: sha(base) } }, evidence: [], promotions: [] }));
+}
+/** Promote it as the tool does: current a.md becomes `wrote`, and the receipt records it (`legacy`: no claims). */
+function promote(wt: string, name: string, wrote: string, legacy = false) {
+  const d = dir(wt, name);
+  const meta = JSON.parse(readFileSync(join(d, "draft.json"), "utf8"));
+  const claims = promotionClaims(F, readFileSync(join(d, "base", F)), readFileSync(join(d, "spec", F)), Buffer.from(wrote));
+  meta.promotions.push({ at: new Date().toISOString(), ids: ["§a/x"], files: [F], after: { [F]: sha(wrote) }, ...(legacy ? {} : { claims }) });
+  writeFileSync(join(d, "draft.json"), JSON.stringify(meta));
+  writeFileSync(join(spec(wt), F), wrote);
+}
+let n = 0;
+function tree(): string {
+  const wt = join(root, `wt${n++}`);
+  put(join(spec(wt), F), file("x says one thing."));
+  return wt;
 }
 
-test("no drafts folder: undefined; a changed file not yet current: unpromoted; once current: promoted", () => {
-  const wt = join(root, "wt");
-  mkdirSync(join(wt, ".sova", "spec", "claims"), { recursive: true });
+test("no drafts folder: undefined; a claim not yet current: not official; once current: official", () => {
+  const wt = tree();
   assert.equal(unpromotedDrafts(wt), undefined);
-  writeFileSync(join(wt, ".sova", "spec", "claims", "a.md"), "old a");
-  writeFileSync(join(wt, ".sova", "spec", "manifest.json"), "{}");
-  draft(wt, "feat", { "claims/a.md": "old a", "manifest.json": "{}" }, { "claims/a.md": "new a", "manifest.json": "{}" });
-  assert.equal(unpromotedDrafts(wt), 1, "a.md changed in the draft, not in the current spec");
-  writeFileSync(join(wt, ".sova", "spec", "claims", "a.md"), "new a");
-  assert.equal(unpromotedDrafts(wt), 0, "promoted: the current file now reads as the draft's");
-  draft(wt, "other", { "manifest.json": "{}" }, { "manifest.json": '{"x":1}' });
-  assert.equal(unpromotedDrafts(wt), 1);
+  draft(wt, "feat", file("x says another."));
+  assert.deepEqual(unpromotedDraftNames(wt), ["feat"]);
+  writeFileSync(join(spec(wt), F), file("x says another."));
+  assert.equal(unpromotedDrafts(wt), 0);
 });
 
-test("promoted into a spec that had moved: the current file is a merge, and the recorded promotion counts", () => {
-  const wt = join(root, "wt-merged");
-  mkdirSync(join(wt, ".sova", "spec", "claims"), { recursive: true });
-  writeFileSync(join(wt, ".sova", "spec", "claims", "a.md"), "new a + master's edit");
-  draft(wt, "feat", { "claims/a.md": "old a" }, { "claims/a.md": "new a" });
-  assert.equal(unpromotedDrafts(wt), 1, "no promotion recorded: the merge is not the draft's copy");
-  const meta = join(wt, ".sova", "spec", "drafts", "feat", "draft.json");
-  const d = JSON.parse(readFileSync(meta, "utf8"));
-  const at = (ms: number) => new Date(ms).toISOString();
-  writeFileSync(meta, JSON.stringify({ ...d, promotions: [{ at: at(Date.now() - 3_600_000), files: ["claims/a.md"] }] }));
-  assert.equal(unpromotedDrafts(wt), 1, "a promotion from before the draft's last edit to the file is no promotion of that edit");
-  writeFileSync(meta, JSON.stringify({ ...d, promotions: [{ at: at(Date.now() + 1000), files: ["claims/other.md"] }] }));
-  assert.equal(unpromotedDrafts(wt), 1, "a promotion that wrote other files says nothing of this one");
-  writeFileSync(meta, JSON.stringify({ ...d, promotions: [{ at: at(Date.now() + 1000), files: ["claims/a.md"] }] }));
+test("(a) draft A promoted, then draft B rewords the same claim and is promoted: A is official", () => {
+  for (const legacy of [false, true]) {
+    const wt = tree();
+    draft(wt, "a", file("x as A says it."));
+    promote(wt, "a", file("x as A says it."));
+    draft(wt, "b", file("x as B rewords it."));
+    assert.deepEqual(unpromotedDraftNames(wt), ["b"], "B's reword isn't current yet");
+    promote(wt, "b", file("x as B rewords it."), legacy);
+    assert.deepEqual(unpromotedDraftNames(wt), [], `A's claim reads what B's promotion wrote${legacy ? " (a receipt from before claims were recorded)" : ""}`);
+  }
+});
+
+test("(b) draft A promoted, then a catch-up merge takes master's bytes: A isn't official; a hand edit isn't either", () => {
+  const wt = tree();
+  draft(wt, "a", file("x as A says it."));
+  promote(wt, "a", file("x as A says it."));
   assert.equal(unpromotedDrafts(wt), 0);
+  writeFileSync(join(spec(wt), F), file("x as master says it."));
+  assert.deepEqual(unpromotedDraftNames(wt), ["a"], "the merge overwrote what the promotion wrote");
+  writeFileSync(join(spec(wt), F), file("x as A says it, edited by hand."));
+  assert.deepEqual(unpromotedDraftNames(wt), ["a"]);
+});
+
+test("a merge that changes only another claim of the same file changes nothing; a promotion that merged inside the claim counts", () => {
+  const wt = tree();
+  draft(wt, "a", file("x as A says it."));
+  promote(wt, "a", file("x as A says it."));
+  writeFileSync(join(spec(wt), F), file("x as A says it.", "y as master moved it."));
+  assert.equal(unpromotedDrafts(wt), 0, "master's edit to y leaves A's x as A says it");
+  // Promoted into a spec that had moved inside x itself: the receipt records what it wrote.
+  const wt2 = tree();
+  draft(wt2, "a", file("x as A says it."));
+  promote(wt2, "a", file("x as A says it, and master's line."));
+  assert.equal(unpromotedDrafts(wt2), 0);
+});
+
+test("a Git merge of another block of the same claim keeps it official; a new claim beside master's new one too", () => {
+  const wt = tree();
+  draft(wt, "a", file("x says one thing.\n\n- one more line from A"));
+  promote(wt, "a", file("x says one thing.\n\n- one more line from A"));
+  // master changed x's first paragraph; merge-claims merged the blocks: neither side's text, both changes.
+  writeFileSync(join(spec(wt), F), file("x as master says it.\n\n- one more line from A"));
+  assert.equal(unpromotedDrafts(wt), 0, "A's added block is there");
+  writeFileSync(join(spec(wt), F), file("x as master says it."));
+  assert.deepEqual(unpromotedDraftNames(wt), ["a"], "A's added block is gone");
+  // A adds a claim; master adds another to the same file (more blank lines between declarations).
+  const wt2 = tree();
+  draft(wt2, "a", `${file("x says one thing.")}\n## §a/z — Z\n\nA's new claim.\n`);
+  promote(wt2, "a", `${file("x says one thing.")}\n## §a/z — Z\n\nA's new claim.\n`);
+  writeFileSync(join(spec(wt2), F), `${file("x says one thing.")}\n## §a/w — W\n\nMaster's new claim.\n\n## §a/z — Z\n\nA's new claim.\n`);
+  assert.equal(unpromotedDrafts(wt2), 0);
+});
+
+test("a draft changed again after its promotion isn't official, though current still reads what it wrote", () => {
+  const wt = tree();
+  draft(wt, "a", file("x as A says it."));
+  promote(wt, "a", file("x as A says it, and master's line."));
+  writeFileSync(join(dir(wt, "a"), "spec", F), file("x as A says it now."));
+  assert.deepEqual(unpromotedDraftNames(wt), ["a"]);
 });

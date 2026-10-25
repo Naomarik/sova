@@ -322,10 +322,28 @@ repository too) and writes nothing. Each row has the draft's age in days since i
 | `active` | anything else | keep |
 | `unreadable` | `status` refuses it (corrupt, base tampered) | keep: look by hand |
 
-Each draft also lists `promotedConflict`: the ids it promoted before that current now says
-differently (counted in `current`, so its state may still be `promoted`). A merge process that
-holds a branch until its drafts are promoted counts them as not promoted, and `prune --official`
-keeps such a draft. The default branch is the one `promote` uses: origin's HEAD, else `master`, else `main`. A
+### Official
+
+One rule says whether a draft is official, in `core/official.mjs`, a function of its own that a
+host may import (it reads files only: no Git, no process): `drafts`, `prune --official` and Sova's
+readiness all call it. A draft is official in a work tree when every claim it changed reads, in
+that tree's current spec, what the draft says or what a promotion recorded in that tree wrote for
+it, other than the text the draft started from; prose also counts when its blocks carry the
+draft's change (each block it added is there, each it removed is gone; blocks as `merge-claims`
+merges them), as a Git merge of another change to the same claim leaves it. A claim is one § id's
+record in `manifest.json`, or its prose (its declaration's span in its claim file); a claim file's
+non-blank lines outside every declaration, and each other manifest key, are one claim more. Every promotion receipt records, beside
+`after`, `claims`: `{unit: [hash as the draft said it, hash as written]}` for each claim it
+wrote. So a draft whose claim a later draft of the same tree reworded and promoted is official; one
+a catch-up merge overwrote with the base branch's text, or a hand edit changed, isn't; a merge that
+changed only other claims of the same file, or other blocks of the same claim, changes nothing. A receipt from before `claims` counts,
+for the ids it names, what its draft says now.
+
+In `drafts`, an id current says differently counts as current when the draft is official there.
+Each draft also lists `promotedConflict`: the ids in conflict it promoted before, which are not
+official (counted in `current`, so its state may still be `promoted`). A merge process that holds
+a branch until its drafts are official counts them as not promoted, and `prune --official` keeps
+such a draft. The default branch is the one `promote` uses: origin's HEAD, else `master`, else `main`. A
 project without Git gets no `landed`. The exit is 1 when any draft is other than `active`.
 A promotion preview or write adds one line (`staleDrafts`) when other drafts in its project had
 no activity for longer than the age limit, with the `drafts` command to run.
@@ -341,8 +359,8 @@ and keeps every other one, listed with why (`kept`). Without `--from` it reads t
 drafts as `drafts` does and deletes those it reads `promoted` with no `promotedConflict`, under the same lock and the same
 refusal of an interrupted promotion. With `--from DIR` it reads each draft folder directly in `DIR`
 (copies kept outside the project, such as the ones a merge round keeps when it removes a landed
-worktree) against the project's current spec alone, without Git: a copy whose changed records are
-all already current, at least one, is deleted; one with a record pending or in conflict, one that
+worktree) against the project's current spec alone by the same rule, without Git: a copy that
+changes at least one claim, every one official, is deleted; one with a record pending or in conflict, one that
 changes nothing, and one it can't read are kept. Without `--write` it lists what it would delete.
 No other command deletes a draft.
 

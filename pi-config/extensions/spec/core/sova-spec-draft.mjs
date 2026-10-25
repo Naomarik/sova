@@ -34,10 +34,11 @@ import { constants } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { resolve, join, dirname, posix, relative } from "node:path";
-import { realpathSync, existsSync, mkdtempSync, writeFileSync, rmSync, readdirSync, readFileSync, openSync, readSync, closeSync, cpSync } from "node:fs";
+import { realpathSync, existsSync, mkdtempSync, writeFileSync, rmSync, readdirSync, readFileSync, openSync, readSync, closeSync } from "node:fs";
 import { tmpdir, hostname, homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createInspection, declarationSpans } from "./sova-spec.mjs";
+import { blocksOf, draftOfficial, promotionClaims } from "./official.mjs";
 
 const CORE = join(dirname(fileURLToPath(import.meta.url)), "sova-spec.mjs");
 const FORMAT = "sova-spec-draft/1";
@@ -541,23 +542,7 @@ function mergeSpans(B, C, P, within = null) {
   });
   return { text, ids: new Map(out.map((s) => [s.id, s.text])), marked };
 }
-// One declaration's lines grouped into blocks, the units a Git merge driver merges a declaration by when both sides
-// changed it: a list item with its wrapped lines (a nested item starts its own), a table row, a heading, a fenced
-// block's lines one by one, a paragraph, a blank line. → [block text without its last newline] | null (can't)
-const BLOCK_SEP = "\uE000", BLOCK_GAP = "\uE001";
-function blocksOf(text) {
-  if (text.includes(BLOCK_SEP) || text.includes(BLOCK_GAP) || !text.endsWith("\n")) return null;
-  const out = []; let fence = false, open = false;
-  for (const l of text.slice(0, -1).split("\n")) {
-    const isFence = /^\s*(```|~~~)/.test(l);
-    const starts = fence || isFence || !l.trim() || /^\s*([-*+]|\d+[.)])\s/.test(l) || /^\s*\|/.test(l) || /^#{1,6}\s/.test(l);
-    if (isFence) fence = !fence;
-    if (open && !starts) out[out.length - 1] += "\n" + l;
-    else out.push(l);
-    open = !isFence && !fence && !!l.trim() && !/^#{1,6}\s/.test(l) && !/^\s*\|/.test(l);
-  }
-  return out;
-}
+const BLOCK_SEP = "\uE000", BLOCK_GAP = "\uE001"; // blocksOf (official.mjs) refuses text holding either
 // Git's line merge run over blocks instead of lines: changes to blocks that are neither the same nor neighbours merge;
 // anything else conflicts, with Git's markers around whole blocks. → {text, conflict} | null
 function mergeBlocks(root, b, c, p) {
@@ -1415,7 +1400,9 @@ async function cmdPromote(root, o) {
     const d = structuredClone(p.a.d);
     d.promotions.push({ at: new Date().toISOString(), plan: p.planSha, ids: p.out.ids, meta: p.out.meta, files: p.targets.map((t) => t.path),
       // Each current-spec file's SHA-256 after the write (null: removed), so a hook can tell promoted bytes from a hand edit.
-      after: Object.fromEntries(p.targets.filter((t) => t.storage !== "draft").map((t) => [t.path, t.after])) });
+      after: Object.fromEntries(p.targets.filter((t) => t.storage !== "draft").map((t) => [t.path, t.after])),
+      // Each claim it wrote, as the draft said it and as written, so the one rule (official.mjs) knows them.
+      claims: Object.assign({}, ...p.targets.filter((t) => t.storage !== "draft").map((t) => promotionClaims(t.path, p.a.base.files.get(t.path)?.buf ?? null, p.a.prop.files.get(t.path)?.buf ?? null, p.cand.get(t.path) ?? null))) });
     const receipt = Buffer.from(JSON.stringify(d, null, 2) + "\n");
     await applyTxn(root, o.name, p.targets, p.cand, { before: p.a.sha, buf: receipt });
     return { exit: 0, written: true, ...p.out, ...landingOf(root, p.g, p.a, p.bases), ...(await staleDraftsNote(root, o)) };
@@ -1578,12 +1565,15 @@ async function draftReport(root, name, now, days, tip, branch) {
   }
   const s = await statusOut(root, a);
   const promoted = new Set(a.d.promotions.flatMap((p) => p.ids ?? []));
-  let pending = s.ids.filter((i) => i.current === "pending").map((i) => i.id);
-  const conflict = s.ids.filter((i) => i.current === "conflict" && !promoted.has(i.id)).map((i) => i.id);
-  const current = s.ids.filter((i) => i.current === "already-current" || (i.current === "conflict" && promoted.has(i.id))).map((i) => i.id);
-  // Promoted by this draft before, and now different in current: counted current here, but a caller that must know
-  // the draft's own text is still what the tree says (a merge round's hold-back) reads them apart.
-  const promotedConflict = s.ids.filter((i) => i.current === "conflict" && promoted.has(i.id)).map((i) => i.id);
+  // The one rule (official.mjs) decides each id current doesn't already say: official ones count current.
+  const off = draftOfficial(join(root, SPEC), join(root, draftRel(name)), join(root, DRAFTS));
+  const isOff = (i) => i.current === "already-current" || (off && !off.notOfficial.includes(i.id));
+  let pending = s.ids.filter((i) => i.current === "pending" && !isOff(i)).map((i) => i.id);
+  const conflict = s.ids.filter((i) => i.current === "conflict" && !isOff(i) && !promoted.has(i.id)).map((i) => i.id);
+  const current = s.ids.filter((i) => isOff(i) || (i.current === "conflict" && promoted.has(i.id))).map((i) => i.id);
+  // Promoted by this draft before, and not official now: counted current here, but a caller that must know the
+  // draft's own text is still what the tree says (a merge round's hold-back) reads them apart.
+  const promotedConflict = s.ids.filter((i) => i.current === "conflict" && !isOff(i) && promoted.has(i.id)).map((i) => i.id);
   // Pending here but already on the default branch, byte for byte (its record, and every claim file it is in): this work
   // tree's current lags the branch it was merged into. Any other difference keeps it pending.
   const onBranch = [];
@@ -1743,8 +1733,8 @@ async function pruneOfficialHere(root, o) {
   });
 }
 // `prune --official --from DIR`: each draft folder in DIR (copies kept outside the project) read against the project's
-// current spec alone, in a throwaway root with no Git: deleted only when every record it changes, at least one, is
-// already current. Anything else, or anything unreadable, is kept.
+// current spec by the one rule (official.mjs), with no Git: deleted only when it changes at least one claim and every
+// one is official. Anything else, or anything unreadable, is kept.
 async function pruneOfficialFrom(root, o) {
   const from = resolve(o.from);
   const st = await lstat(from).catch(() => null);
@@ -1753,24 +1743,11 @@ async function pruneOfficialFrom(root, o) {
   const targets = [], kept = [];
   for (const e of (await readdir(from, { withFileTypes: true })).sort((a, b) => (a.name < b.name ? -1 : 1))) {
     if (!NAME_RE.test(e.name)) continue;
-    const where = join(from, e.name);
-    if (!e.isDirectory()) { kept.push({ name: e.name, draft: where, state: "unreadable", reasons: ["not a plain directory"] }); continue; }
-    const t = mkdtempSync(join(tmpdir(), "sova-spec-official-"));
-    try {
-      // The project's current spec without its drafts, and this one copy as the only draft.
-      cpSync(specDir, join(t, SPEC), { recursive: true, verbatimSymlinks: true, filter: (src) => relative(specDir, src).split(/[\\/]/)[0] !== "drafts" });
-      cpSync(where, join(t, draftRel(e.name)), { recursive: true, verbatimSymlinks: true });
-      let ids;
-      try { ids = (await statusOut(t, await analyze(t, e.name))).ids; } catch (err) {
-        if (!(err instanceof Fail)) throw err;
-        kept.push({ name: e.name, draft: where, state: "unreadable", reasons: [`${err.code}: ${err.message}`] });
-        continue;
-      }
-      const notCurrent = ids.filter((i) => i.current !== "already-current");
-      if (ids.length && !notCurrent.length) targets.push({ name: e.name, draft: where, draftSha256: await draftHash(t, e.name) });
-      else kept.push({ name: e.name, draft: where, state: ids.length ? "pending" : "empty",
-        reasons: ids.length ? [`not official yet: ${notCurrent.map((i) => `${i.id} (${i.current})`).join(", ")}`] : ["changes nothing, so nothing confirms it"] });
-    } finally { rmSync(t, { recursive: true, force: true }); }
+    const where = join(from, e.name), r = e.isDirectory() ? draftOfficial(specDir, where, from) : undefined;
+    if (!r) kept.push({ name: e.name, draft: where, state: "unreadable", reasons: [e.isDirectory() ? "draft.json is missing or unreadable" : "not a plain directory"] });
+    else if (r.official && r.changed) targets.push({ name: e.name, draft: where });
+    else kept.push({ name: e.name, draft: where, state: r.changed ? "pending" : "empty",
+      reasons: r.changed ? [`not official yet: ${r.notOfficial.join(", ") || "bytes outside any §"}`] : ["changes nothing, so nothing confirms it"] });
   }
   if (!o.write) return { exit: 0, mode: "official", from, written: false, deleted: [], wouldDelete: targets, kept, refusals: [] };
   const deleted = [];

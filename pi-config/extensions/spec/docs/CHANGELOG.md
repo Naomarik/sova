@@ -806,6 +806,39 @@ would list master's changes instead.
     mode). Constraint 5 (light): the mode text grows 37 words.
   - Upgrade: see UPGRADING step 11.
 
+### 2026-10-26
+
+- **One rule says whether a draft is official, and Sova and the merge round both call it.**
+  - Commit: on branch `feat/landing-dependable`; not on master yet: the merge round folds it in.
+  - Why: Sova's readiness called a draft promoted when any promotion wrote its files after its last edit
+    (so a catch-up merge that took master's spec read the same as a reword), while `drafts` marked an id in
+    conflict whenever any file it sits in had a file-level conflict, so the merge round handed back
+    branches whose drafts were official (steer-keys, flow-legibility, owner-page-sova).
+  - Changed:
+    - `core/official.mjs` (new, Node builtins and `sova-spec.mjs`'s `declarationSpans` only; types in
+      `official.d.mts`): `draftOfficial(specDir, draftDir, draftsDir)` compares per claim (a record, a
+      declaration's prose, the non-blank lines outside every declaration): official when current says what
+      the draft says or what a promotion recorded in the tree wrote, other than what the draft started from,
+      or, for prose, its blocks carry the draft's change (as `merge-claims` leaves a claim both sides
+      changed). `blocksOf` moved here from `sova-spec-draft.mjs`, which imports it.
+    - `promote --write`: each receipt also records `claims` (`{unit: [said, wrote]}`); older receipts count
+      what their draft says now, for the ids they name.
+    - `drafts`: an id current says differently counts current when the rule calls it official;
+      `promotedConflict` keeps only the ones it doesn't. Output shape unchanged.
+    - `prune --official --from DIR` reads each copy with the rule (no temp copy of the spec, no `status`);
+      `deleted`/`wouldDelete` entries from `--from` no longer carry `draftSha256`.
+    - The merge round: `go <branch> [without-specs]` records the user's word as a go-ahead; `landed` tidies
+      official drafts out of a worktree whose check passed, after copying them to `tidied/<head>/`.
+  - §: §tools.spec/draft-official (+), §tools.spec/draft-hygiene, §chat.worktrees/readiness,
+    §chat.worktrees/ready-to-land, §chat.merge-round/round, §chat.merge-round/driver,
+    §chat.schedules/merge-ready (draft `landing-dependable`).
+  - Goal 4 (code and spec agree after building), measured on the live worktrees: `drafts` on
+    `sova-project-page-copies` read 44 ids in `promotedConflict` across 4 drafts (each record and prose
+    equal to current, checked by hand on §app.merge-queue/card); with the rule, 0. On `sova-spec-sidebar-scroll`
+    (master's spec taken in a catch-up merge, never promoted again) both readings keep its 2 drafts unofficial
+    on §app.session-list/content-rules and /search. 62 drafts across Sova's worktrees: about 70 ms each.
+  - Upgrade: see UPGRADING step 12.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -843,6 +876,7 @@ The tools are Node standard library only. Nothing is installed.
    | `toc.mjs`, `read.mjs` | The pull path |
    | `map.mjs`, `where.mjs`, `topic.mjs`, `graph.mjs` | The look views and `impact --near`; `topic.mjs` ranks `where`'s topic rows |
    | `fields.mjs` | The optional record fields and the frame |
+   | `official.mjs` | The one rule for whether a draft is official (`drafts`, `prune --official`, a host's own readiness) |
    | `sova-spec-draft.mjs` | Drafts, evidence, promotion, `merge-manifest`, `merge-claims` |
    | `sova-spec-review.mjs` | The review companion |
    | `sova-spec-assess.mjs` | The assessment companion |
@@ -980,3 +1014,7 @@ The tools are Node standard library only. Nothing is installed.
     committing them. A merge process of your own that promoted drafts at landing stops doing so; one that
     removed worktrees should keep a copy of their unpromoted drafts first. New: `prune --official [--from
     DIR]` deletes only drafts the tool confirms are already official.
+12. **One rule for official drafts** (branch `feat/landing-dependable`). Copy `core/official.mjs` with the
+    tools (step 1). Promotions now record `claims` in their receipt; nothing else changes shape. A merge
+    process of your own that judged drafts by `promotedConflict` gets fewer false hand-backs; one that reads
+    `draftSha256` from `prune --official --from` reads the name instead.

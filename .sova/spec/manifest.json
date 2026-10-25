@@ -17329,7 +17329,12 @@
         "pi-config/extensions/mode/spec-worker.ts",
         "pi-config/extensions/mode/index.ts",
         "pi-config/extensions/subagents/index.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-25T21:07Z",
+        "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
+      }
     },
     "§tools/spec": {
       "kind": "surface",
@@ -17933,9 +17938,9 @@
         "§chat.worktrees/merge-board"
       ],
       "agreed": {
-        "by": "omar (user)",
-        "at": "2026-10-24T18:10Z",
-        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
+        "by": "naomarik",
+        "at": "2026-10-25T21:45Z",
+        "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
       }
     },
     "§app.access/callers": {
@@ -18335,8 +18340,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T15:13Z",
-        "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+        "at": "2026-10-25T21:07Z",
+        "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
       }
     },
     "§tools.spec/inspection-safety": {
@@ -20155,6 +20160,54 @@
         "by": "naomarik",
         "at": "2026-10-22T23:48Z",
         "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#24177c8f"
+      }
+    },
+    "§tools.spec/record-layout": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/git-merge",
+        "§tools.spec/conflict-recovery"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/layout.mjs",
+        "pi-config/extensions/spec/core/layout.d.mts",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/core/sova-spec-review.mjs",
+        "pi-config/extensions/spec/core/sova-spec-assess.mjs",
+        "pi-config/extensions/spec/core/toc.mjs",
+        "pi-config/extensions/spec/core/graph.mjs",
+        "pi-config/extensions/mode/spec-guard.ts",
+        "server/spec-lookup.ts",
+        "server/spec-draft-writer.ts",
+        "server/conversation-draft.ts",
+        "server/spec-tool-fake.ts",
+        ".sova/playbooks/merge-round/scripts/round.mjs",
+        ".sova/playbooks/release/scripts/docs-drift.mjs",
+        "scripts/sim/lib/lookup-probe.ts",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/docs/CHANGELOG.md",
+        "pi-config/extensions/spec/docs/MODE.md",
+        "site/src/content/docs/modes/spec.md",
+        "pi-config/extensions/spec/tests/layout.test.mjs",
+        "pi-config/extensions/spec/tests/layout-areas.test.mjs",
+        "pi-config/extensions/spec/tests/layout-findings.test.mjs",
+        "pi-config/extensions/spec/tests/layout-guard.test.mjs",
+        "pi-config/extensions/spec/tests/migrate.test.mjs",
+        "pi-config/extensions/spec/tests/cross-layout-merge.test.mjs",
+        "pi-config/extensions/spec/tests/pre-cutover-merge.test.mjs",
+        "pi-config/extensions/spec/tests/spec-fixture.mjs",
+        "server/spec-layout-boundary.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-25T21:52Z",
+        "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
       }
     },
     "§tools.spec/review-playbook": {
@@ -23858,7 +23911,12 @@
         "pi-config/extensions/spec/DRAFTS.md",
         "pi-config/extensions/spec/tests/draft.test.mjs",
         "pi-config/extensions/spec/tests/claims-merge.test.mjs"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-25T21:07Z",
+        "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
+      }
     },
     "§tools.spec/draft-output": {
       "kind": "behavior",

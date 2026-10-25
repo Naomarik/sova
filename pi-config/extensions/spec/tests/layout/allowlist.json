@@ -1,0 +1,475 @@
+{
+  "_": "Lines allowed to name the spec's records file (manifest.json) or read a claims key directly, outside core/layout.mjs. Exact trimmed text + rule, with a reason. This list only shrinks: see tests/layout/guard-scan.mjs.",
+  "paths": [],
+  "lines": {
+    "pi-config/extensions/mode/prompt.ts": [
+      {
+        "rule": "names-manifest",
+        "text": "return `Spec writer: draft claims and evidence records are written by one worker, spawned with agent_spawn on exactly this backend, model and effort → ${routeTarget(route, \"handing off spec writing\")} Give it the relevant spec passages quoted literally, the files the task changed, and the verification you did. It writes only under \\`.sova/spec/drafts/\\`, never current \\`claims/\\` or \\`manifest.json\\`; you check its draft, run the checks and the census, and promote yourself.${retry}`;",
+        "reason": "prompt text telling the spec writer which current files it never writes; names the file, reads nothing"
+      }
+    ],
+    "pi-config/extensions/mode/spec-guard.ts": [
+      {
+        "rule": "names-manifest",
+        "text": "return view?.unmerged?.find((p) => p === `${SPEC_REL}/manifest.json` || p.endsWith(`/${SPEC_REL}/manifest.json`));",
+        "reason": "merge-conflict detection: matches the path in git's unmerged list (a globals or cross-layout conflict in v2); reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "return `take ${branch}'s whole spec with \\`git checkout --no-overlay ${branch} -- ${specDir}/manifest.json ${specDir}/claims\\` ` +",
+        "reason": "format 1 recovery text naming the files for a git checkout of master's whole spec; reads nothing"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (await exists(join(dir, SPEC_REL, \"manifest.json\"))) return dir;",
+        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const has = async (name: string) => Boolean(await io.exists(join(root, specOf(name), \"manifest.json\")));",
+        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const r = await io.exec(\"git\", [\"status\", \"--porcelain=v1\", \"-z\", \"--untracked-files=all\", \"--\", `:(glob)**/${SPEC_REL}/manifest.json`, `:(glob)**/${SPEC_REL}/claims/**`], {",
+        "reason": "git status pathspec for current-spec files (manifest.json and claims/**, record files included); reads no record"
+      }
+    ],
+    "pi-config/extensions/spec/core/sova-spec-assess.mjs": [
+      {
+        "rule": "names-manifest",
+        "text": "const mf = await inspect(root, `${q.spec}/manifest.json`);",
+        "reason": "the settings file is a bound assessment input (bytes and hash); its records go through layout.mjs in format 2"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "if (layoutOf(manifest) === 1 && !obj(manifest.claims)) throw new Fail(2, \"core-contract\", \"manifest claims unavailable\");",
+        "reason": "the assessment's records: the format 1 root, or (format 2) layout.mjs assemble over the bound record files"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "entry.roles = sorted([...entry.roles, role]); if (claim) entry.claims = sorted([...entry.claims, claim]);",
+        "reason": "a code entry's own list of claim ids (the claims that map one input file), not the spec's records"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "await add(`${q.spec}/manifest.json`, \"manifest\"); await add(`${q.spec}/README.md`, \"optional-policy\");",
+        "reason": "the settings file is a bound assessment input (bytes and hash); its records go through layout.mjs in format 2"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "for (const [id, record] of Object.entries(manifest.claims)) for (const raw of record.code ?? []) {",
+        "reason": "the assessment's records: the format 1 root, or (format 2) layout.mjs assemble over the bound record files"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "await add(`.sova/spec/drafts/${q.draft}/base/manifest.json`, \"draft-baseline\");",
+        "reason": "the settings file is a bound assessment input (bytes and hash); its records go through layout.mjs in format 2"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const bm = await inspect(root, `.sova/spec/drafts/${q.draft}/base/manifest.json`);",
+        "reason": "the settings file is a bound assessment input (bytes and hash); its records go through layout.mjs in format 2"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "const own = scope.passages.find((p) => p.id === id), rec = manifest.claims[id];",
+        "reason": "the assessment's records: the format 1 root, or (format 2) layout.mjs assemble over the bound record files"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const boundManifest = inputs.get(rel(`${q.spec}/manifest.json`));",
+        "reason": "the settings file is a bound assessment input (bytes and hash); its records go through layout.mjs in format 2"
+      }
+    ],
+    "pi-config/extensions/spec/core/sova-spec-draft.mjs": [
+      {
+        "rule": "names-manifest",
+        "text": "inputSources?.push({ path: where(\"manifest.json\"), state: \"absent\" });",
+        "reason": "readTree reads the settings file (kept in both layouts) as one file of the tree, with the draft tool's refusal rules; its records go through layout.mjs assemble"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const m = await readSource(root, where(\"manifest.json\"), inputSources, readPolicy);",
+        "reason": "readTree reads the settings file (kept in both layouts) as one file of the tree, with the draft tool's refusal rules; its records go through layout.mjs assemble"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "throw new Fail(2, \"orphaned-spec\", `${rel}/claims exists but ${rel}/manifest.json does not; nothing was changed — restore the manifest (or move the tree aside) before using drafts`);",
+        "reason": "message text naming the settings file to the user; reads nothing"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "throw new Fail(2, \"manifest-missing\", `${where(\"manifest.json\")} does not exist`);",
+        "reason": "message text naming the settings file to the user; reads nothing"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (m.state !== \"present\") throw new Fail(2, \"file-refused\", `${where(\"manifest.json\")}: ${m.why}`);",
+        "reason": "message text naming the settings file to the user; reads nothing"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "try { manifest = JSON.parse(m.buf.toString(\"utf8\")); } catch (e) { throw new Fail(2, \"manifest-unreadable\", `${where(\"manifest.json\")}: ${e.message}`); }",
+        "reason": "readTree parses the settings file (kept in both layouts) it read with the draft tool's refusal rules; its records go through layout.mjs assemble"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (!obj(manifest) || (layoutOf(manifest) === 1 && manifest.claims !== undefined && !obj(manifest.claims))) throw new Fail(2, \"manifest-unreadable\", `${where(\"manifest.json\")}: not an object with an object claims`);",
+        "reason": "message text naming the settings file to the user; reads nothing"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "if (!obj(manifest) || (layoutOf(manifest) === 1 && manifest.claims !== undefined && !obj(manifest.claims))) throw new Fail(2, \"manifest-unreadable\", `${where(\"manifest.json\")}: not an object with an object claims`);",
+        "reason": "readTree's shape check on the raw root: a format 1 root must hold an object claims (format 2 holds a pointer string) before layout.mjs assembles the records"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (!claimsRoot || claimsRoot === \"manifest.json\" || /^(drafts|reviews|tools|\\.txn)(\\/|$)/.test(claimsRoot))",
+        "reason": "readTree reads the settings file (kept in both layouts) as one file of the tree, with the draft tool's refusal rules; its records go through layout.mjs assemble"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "throw new Fail(2, \"claims-root-invalid\", `${where(\"manifest.json\")}: grammar.claimsRoot must be a plain directory inside the spec`);",
+        "reason": "message text naming the settings file to the user; reads nothing"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const files = new Map([[\"manifest.json\", m]]);",
+        "reason": "readTree reads the settings file (kept in both layouts) as one file of the tree, with the draft tool's refusal rules; its records go through layout.mjs assemble"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (mixed || !a.manifest) throw new Fail(2, \"layout-mixed\", mixed?.message ?? `${where(\"manifest.json\")}: records unreadable`);",
+        "reason": "message text naming the settings file to the user; reads nothing"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const isProseOf = (...trees) => (p) => p !== \"manifest.json\" && !trees.some((t) => t.layout === 2 && t.claimsRoot && isRecordFile(p, t.claimsRoot));",
+        "reason": "readTree reads the settings file (kept in both layouts) as one file of the tree, with the draft tool's refusal rules; its records go through layout.mjs assemble"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "const recOf = (t, id) => (t.manifest?.claims ?? {})[id];",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "const records = uniqSorted([base, cur, prop].flatMap((t) => Object.keys(t.manifest?.claims ?? {}))).map((id) => {",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "await writeFile(join(root, tmpRel, \"spec/manifest.json\"), STARTER, { flag: \"wx\" });",
+        "reason": "a project with no spec starts as the format 1 starter file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "m.claims ??= {};",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "for (const x of now.ids) m.claims[x.id] = x.record;",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const areas = uniqSorted(paths.filter((p) => /\\.(md|json)$/.test(p) && !p.endsWith(\"/manifest.json\")).map((p) => p.replace(/\\.(md|json)$/, \"\")));",
+        "reason": "conflict recovery text and conflicted-path matching: names the file for git, reads nothing"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const wholeRecovery = (branch) => `take ${branch}'s whole spec with \\`git checkout --no-overlay ${branch} -- ${SPEC}/manifest.json ${SPEC}/claims\\` ` +",
+        "reason": "conflict recovery text and conflicted-path matching: names the file for git, reads nothing"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const lay = a.cur.exists ? a.cur.layout : 1, isIndex = (f) => f.endsWith(\"/manifest.json\") || (lay === 2 && f.endsWith(\".json\"));",
+        "reason": "conflict recovery text and conflicted-path matching: names the file for git, reads nothing"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "m.claims ??= {};",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "for (const r of records) if (r.merge === \"apply\") { const p = recOf(a.prop, r.id); if (p === undefined) delete m.claims[r.id]; else if (r.id in m.claims) m.claims[r.id] = p; else added[r.id] = p; }",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "m.claims = withNewRecords(m.claims, added);",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "try { m = JSON.parse(text); } catch (e) { throw new Fail(2, \"manifest-unreadable\", `${side} manifest.json: ${e.message}`); }",
+        "reason": "merge-manifest's format 1 driver parses manifest.json's three sides (base, ours, theirs) Git hands it; format 2 sides go through readSpecGit"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (!obj(m) || (layoutOf(m) === 1 && m.claims !== undefined && !obj(m.claims))) throw new Fail(2, \"manifest-unreadable\", `${side} manifest.json is not an object with an object claims`);",
+        "reason": "message text naming the settings file to the user; reads nothing"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "if (!obj(m) || (layoutOf(m) === 1 && m.claims !== undefined && !obj(m.claims))) throw new Fail(2, \"manifest-unreadable\", `${side} manifest.json is not an object with an object claims`);",
+        "reason": "merge-manifest: Git hands the format 1 driver manifest.json's three stages (and its index mode reads them); format 2 sides go through readSpecGit"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "return layoutOf(m) === 2 && !obj(m.claims) ? { ...m, claims: {} } : m;",
+        "reason": "merge-manifest: Git hands the format 1 driver manifest.json's three stages (and its index mode reads them); format 2 sides go through readSpecGit"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "for (const k of uniqOrdered([...Object.keys(o), ...Object.keys(top), \"claims\"])) if (k === \"claims\") merged.claims = v2 ? CLAIMS_POINTER : claims; else if (k in top) merged[k] = top[k];",
+        "reason": "merge-manifest's root merge: writes the merged root, records under claims in format 1 or the pointer string in format 2"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "for (const k of uniqOrdered([\"formatVersion\", ...ours.order, ...Object.keys(top), \"claims\"])) if (k === \"claims\") manifest.claims = records; else if (k === \"formatVersion\") manifest.formatVersion = layout; else if (k in top) manifest[k] = top[k];",
+        "reason": "merge-manifest: Git hands the format 1 driver manifest.json's three stages (and its index mode reads them); format 2 sides go through readSpecGit"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "next: `run sova-spec.mjs check, resolve any claim-file (*.md) conflicts, then git add ${SPEC}/manifest.json and the record files it wrote (never the claims folder whole while a claim file still has conflict markers)` };",
+        "reason": "message text naming the settings file to the user; reads nothing"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "throw new Fail(1, \"layout-mismatch\", `the merge's sides keep records in different layouts (base ${vs[0] ?? \"none\"}, ours ${vs[1]}, theirs ${vs[2]}); nothing was written and Git keeps manifest.json conflicted: when the merge stops, run sova-spec-draft.mjs merge-manifest --root ${root} --write, which merges per record and writes the default branch's layout`,",
+        "reason": "message text naming the settings file to the user; reads nothing"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const path = `${g.prefix ? `${g.prefix}/` : \"\"}${SPEC}/manifest.json`;",
+        "reason": "merge-manifest: Git hands the format 1 driver manifest.json's three stages (and its index mode reads them); format 2 sides go through readSpecGit"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const stages = git(root, [\"ls-files\", \"-u\", \"-z\", \"--full-name\", \"--\", `${SPEC}/manifest.json`]);",
+        "reason": "merge-manifest: Git hands the format 1 driver manifest.json's three stages (and its index mode reads them); format 2 sides go through readSpecGit"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const recs = (git(root, [\"ls-files\", \"-u\", \"-z\", \"--\", SPEC]).out ?? \"\").split(\"\\0\").filter(Boolean).map((l) => l.split(\"\\t\")[1]).filter((p) => p.endsWith(\".json\") && !p.endsWith(\"/manifest.json\") && p !== \"manifest.json\");",
+        "reason": "merge-manifest index mode: lists the unmerged per-area record files (claims/**/*.json) to route the merge through readSpecGit; reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (!have.has(\"2\") || !have.has(\"3\")) throw new Fail(1, \"not-conflicted\", `${SPEC}/manifest.json is not in a merge conflict (no index stages 2 and 3); nothing to merge`);",
+        "reason": "message text naming the settings file to the user; reads nothing"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "else await withLock(root, async () => { await refusePending(root); await writeAtomic(await ownDir(root, SPEC, false), \"manifest.json\", m.text); });",
+        "reason": "merge-manifest index mode, format 1: writes the record-level merge of manifest.json's index stages"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "return { exit: 0, ...out, written: true, ...(driver ? {} : { next: `run sova-spec.mjs check, resolve any claims/ conflicts, then git add ${SPEC}/manifest.json` }) };",
+        "reason": "message text naming the settings file to the user; reads nothing"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "const m = t.manifest, rootRecs = obj(m.claims) ? m.claims : {};",
+        "reason": "migrate converts between the two layouts, so it sees both forms of one tree; every reading of the result goes back through layout.mjs assemble"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "const v = layoutOf(m), mixed = v === 2 ? obj(m.claims) : nFile > 0 && recordFiles.some((p) => /\"§/.test(t.files.get(p).buf.toString(\"utf8\")));",
+        "reason": "migrate converts between the two layouts, so it sees both forms of one tree; every reading of the result goes back through layout.mjs assemble"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (differ.length) throw new Fail(2, \"record-duplicate\", `${differ.slice(0, 5).join(\", \")}${differ.length > 5 ? \", …\" : \"\"}: a record in manifest.json \"claims\" differs from the one in its area's record file; settle which is right by hand (keep one), then run migrate again; nothing was converted`);",
+        "reason": "message text naming the settings file to the user; reads nothing"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const rootObj = JSON.parse(after.get(\"manifest.json\").toString(\"utf8\")), croot = t.claimsRoot, inClaims = (p) => p.slice(croot.length + 1);",
+        "reason": "migrate converts between the two layouts, so it sees both forms of one tree; every reading of the result goes back through layout.mjs assemble"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "const want = r.manifest.claims ?? {}, got = back.manifest?.claims ?? {};",
+        "reason": "migrate converts between the two layouts, so it sees both forms of one tree; every reading of the result goes back through layout.mjs assemble"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (!cur.exists) throw new Fail(2, \"spec-missing\", `${SPEC}/manifest.json does not exist; there is nothing to convert`);",
+        "reason": "message text naming the settings file to the user; reads nothing"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const kept = await readFileSafe(root, `${draftRel(n)}/.layout-backup/v${to}/${side}/manifest.json`);",
+        "reason": "migrate converts between the two layouts, so it sees both forms of one tree; every reading of the result goes back through layout.mjs assemble"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (obj(k) && layoutOf(k) === 1 && canon(k.claims ?? {}) === canon(now.claims ?? {}) && metaPrint(k) === metaPrint(now)) { part.writes.set(\"manifest.json\", kept.buf); part.restored = true; }",
+        "reason": "migrate converts between the two layouts, so it sees both forms of one tree; every reading of the result goes back through layout.mjs assemble"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "for (const path of [\"manifest.json\", ...p.tree.files.keys()].filter((x, i, a) => a.indexOf(x) === i && (x === \"manifest.json\" || isRecordFile(x, p.tree.claimsRoot)))) {",
+        "reason": "migrate converts between the two layouts, so it sees both forms of one tree; every reading of the result goes back through layout.mjs assemble"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const next = plans.length ? `${ignored.length ? `Git ignores ${ignored.length} of the record files (${ignored[0]}${ignored.length > 1 ? \", …\" : \"\"}): add \\`!/${cur.claimsRoot}/**/*.json\\` to ${SPEC}/.gitignore, then ` : \"\"}commit ${SPEC} (git add ${SPEC}/manifest.json ${SPEC}/${cur.claimsRoot}) as one commit of its own` : undefined;",
+        "reason": "migrate converts between the two layouts, so it sees both forms of one tree; every reading of the result goes back through layout.mjs assemble"
+      }
+    ],
+    "pi-config/extensions/spec/core/sova-spec-review.mjs": [
+      {
+        "rule": "names-manifest",
+        "text": "const SPEC = \".sova/spec\", REVIEWS = `${SPEC}/reviews`, MANIFEST = `${SPEC}/manifest.json`, POLICY = `${SPEC}/README.md`;",
+        "reason": "the settings file is a bound review input (its bytes and hash), never parsed for records; format 2 record files are bound too"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const r = await inspect(root, MANIFEST);",
+        "reason": "recordLayout reads only the settings (format version, claims root, directory kinds) to bind format 2 record files as inputs; never its records"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "add(MANIFEST, \"manifest\"); add(POLICY, \"policy\");",
+        "reason": "the settings file is a bound review input (its bytes and hash), never parsed for records; format 2 record files are bound too"
+      }
+    ],
+    "pi-config/extensions/spec/core/sova-spec.mjs": [
+      {
+        "rule": "names-manifest",
+        "text": "if (existsSync(join(d, opt.spec, \"manifest.json\"))) return d;",
+        "reason": "findSpec existence probe: the settings file names a spec in both layouts; reads no record"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const link = linkOnPath(root, `${specRel}/manifest.json`);",
+        "reason": "loadManifest reads the settings file (kept in both layouts) through the core's refusal rules; its records go through layout.mjs assemble"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const mPath = join(root, specRel, \"manifest.json\");",
+        "reason": "loadManifest reads the settings file (kept in both layouts) through the core's refusal rules; its records go through layout.mjs assemble"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (!existsSync(mPath)) { add(\"error\", \"manifest-not-found\", `no ${specRel}/manifest.json under ${root}`); return null; }",
+        "reason": "message text naming the settings file to the user; reads nothing"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "const text = tryRead(() => readInput(root, `${specRel}/manifest.json`), (e) => add(\"error\", \"manifest-unreadable\", `manifest.json: ${e}`));",
+        "reason": "loadManifest reads the settings file (kept in both layouts) through the core's refusal rules; its records go through layout.mjs assemble"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "add(\"error\", \"manifest-unreadable\", `manifest.json: ${e.message}`, { file: `${specRel}/manifest.json` }); return null;",
+        "reason": "message text naming the settings file to the user; reads nothing"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "if (!m || typeof m !== \"object\" || Array.isArray(m)) { add(\"error\", \"manifest-unreadable\", \"manifest.json is not an object\"); return null; }",
+        "reason": "message text naming the settings file to the user; reads nothing"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "if (!v2 && (!m.claims || typeof m.claims !== \"object\" || Array.isArray(m.claims))) { add(\"error\", \"manifest-unreadable\", \"manifest.claims must be an object\"); return null; }",
+        "reason": "format 1's version gate in parseManifest: a format 1 root must hold an object claims before layout.mjs assembles it; reads no record"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "for (const id of Object.keys(m.claims).sort()) {",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "const rec = m.claims[id];",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "ctx.claims = validateRecords(ctx);",
+        "reason": "assigns the graph's Map of validated records (built from what layout.mjs assembled); reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "for (const [id, d] of ctx.decls) if (!ctx.claims.has(id) && !Object.hasOwn(ctx.m.claims, id))",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "else if (s.state === \"absent\") add(\"error\", \"manifest-not-found\", `no ${DEFAULT_SPEC}/manifest.json at ${commit.slice(0, 12)}`);",
+        "reason": "message text naming the settings file to the user; reads nothing"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "recs = ctx.m.claims;",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "return new Set(ok ? Object.keys(cur.m.claims) : []);",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "ctx.claims = validateRecords(ctx);",
+        "reason": "assigns the graph's Map of validated records (built from what layout.mjs assembled); reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "sets.push(new Set(Object.keys(g.m.claims)));",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "const has = (ctx, id) => Object.hasOwn(ctx.m.claims, id);",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "const all = [...new Set([...Object.keys(b.m.claims), ...Object.keys(h.m.claims)])].sort();",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "if (canonRec(b.m.claims[id]) !== canonRec(h.m.claims[id])) mark(id, \"record\");",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "const has = (ctx, id) => Object.hasOwn(ctx.m.claims, id);",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "const ids = [...new Set([h, ...gs].flatMap((g) => Object.keys(g.m.claims)))].sort();",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "reads-claims",
+        "text": "const same = (g, id) => has(g, id) === has(h, id) && (g.decls.get(id)?.text ?? null) === (h.decls.get(id)?.text ?? null) && canonRec(g.m.claims[id]) === canonRec(h.m.claims[id]);",
+        "reason": "the records here are the ones layout.mjs assembled (core: recordsOf/loadAt over assemble/readSpecGit; draft tool: readTree over assemble), in either layout; this reads no file"
+      },
+      {
+        "rule": "names-manifest",
+        "text": "else if (!root) add(\"error\", \"manifest-not-found\", `no ${opt.spec}/manifest.json in this directory or any parent`);",
+        "reason": "message text naming the settings file to the user; reads nothing"
+      }
+    ],
+    "pi-config/extensions/worktrees/spec.ts": [
+      {
+        "rule": "names-manifest",
+        "text": "const hasSpec = async (rev: string) => (await git([\"cat-file\", \"-e\", `${rev}:.sova/spec/manifest.json`], top)).code === 0;",
+        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record (git cat-file -e at a revision)"
+      }
+    ]
+  }
+}

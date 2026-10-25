@@ -92,7 +92,11 @@ for (const layout of [1, 2]) {
     const w = run(root, "refresh", "feat", "--write");
     assert.equal(w.exit, 0, JSON.stringify(w.findings));
     assert.equal(w.written, true);
+    assert.equal(w.rebased, true);
+    assert.deepEqual(w.conflicts, []);
     assert.deepEqual(files(join(root, B("feat"))), official(root), "base/ is current, file for file");
+    const baseFiles = JSON.parse(read(root, ".sova/spec/drafts/feat/draft.json")).base.files;
+    assert.deepEqual(Object.fromEntries(Object.entries(baseFiles).sort()), Object.fromEntries(Object.entries(official(root)).sort()), "draft.json's base hashes follow");
     assert.equal(read(root, D("feat", "claims/a/top.md")), read(root, ".sova/spec/claims/a/top.md"), "master's §a/top taken into spec/");
     assert.equal(read(root, D("feat", `claims/${areaPathOf("§b/new")}.md`)), "# §b/new\n\nNew does one thing.\n", "the draft's own change kept");
     assert.deepEqual(changedIds(root, "feat"), ["§b/new"], "the draft changes only its own record now");
@@ -112,24 +116,35 @@ for (const layout of [1, 2]) {
     const officialBefore = official(root);
     assert.equal(land(root).exit, 1, "before the refresh the landing refuses: a clash");
     const draftBefore = files(join(root, ".sova/spec/drafts/edit"));
-    assert.equal(run(root, "refresh", "edit").written, false);
+    const pv = run(root, "refresh", "edit");
+    assert.equal(pv.exit, 1);
+    assert.equal(pv.written, false);
+    assert.deepEqual(pv.conflicts, [{ id: "§a/top", file: "claims/a/top.md", kind: "prose" }]);
     assert.deepEqual(files(join(root, ".sova/spec/drafts/edit")), draftBefore, "the preview writes nothing");
 
     const w = run(root, "refresh", "edit", "--write");
     assert.equal(w.written, true, JSON.stringify(w));
     assert.equal(w.exit, 1, "a conflict to rewrite is something to act on");
-    assert.ok(JSON.stringify(w.conflicts ?? w.findings).includes("§a/top"), `names the declaration: ${JSON.stringify(w)}`);
+    assert.deepEqual(w.conflicts, [{ id: "§a/top", file: "claims/a/top.md", kind: "prose" }]);
     assert.deepEqual(official(root), officialBefore, "refresh never writes the current spec");
     assert.deepEqual(files(join(root, B("edit"))), official(root), "base/ is current");
     const block = read(root, D("edit", "claims/a/top.md"));
     assert.ok(block.includes("and Y on the branch") && block.includes("and Z on master"), `both texts:\n${block}`);
     assert.equal(block.split("and Y on the branch").length, 2, "the draft's text once");
     assert.equal(block.split("and Z on master").length, 2, "current's text once");
+    const lines = block.split("\n");
+    const at = (l) => lines.indexOf(l);
+    const open = at("<<<<<<< current: §a/top changed here since the draft was made"), mid = at("======="), close = at(">>>>>>> draft");
+    assert.ok(open >= 0 && open < mid && mid < close, `one marked block, markers exactly as specified:\n${block}`);
+    const cur = lines.slice(open + 1, mid).join("\n"), mine = lines.slice(mid + 1, close).join("\n");
+    assert.ok(cur.includes("and Z on master") && !cur.includes("and Y on the branch"), "current's text above the divider");
+    assert.ok(mine.includes("and Y on the branch") && !mine.includes("and Z on master"), "the draft's text below it");
 
     // The block itself never lands as prose.
     const held = land(root, "--write");
     assert.equal(held.exit, 1, `a marked block doesn't land: ${JSON.stringify(held)}`);
-    assert.ok(held.findings.some((f) => f.draft === "edit" && (f.id === "§a/top" || String(f.message).includes("§a/top"))), JSON.stringify(held.findings));
+    assert.ok(held.findings.some((f) => f.draft === "edit" && f.id === "§a/top" && f.code === "conflict-markers"), JSON.stringify(held.findings));
+    assert.ok(run(root, "promote", "edit", "--id", "§a/top").exit !== 0, "a manual promote refuses the block too");
     assert.deepEqual(official(root), officialBefore);
 
     // The chat rewrites it into one text and checks it again: no clash any more (base is current), and it lands.

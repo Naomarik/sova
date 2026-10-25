@@ -159,7 +159,8 @@ for (const layout of [1, 2]) {
     const draftRecs = layout === 1 ? JSON.parse(read(root, `${D("two")}/manifest.json`)).claims : JSON.parse(read(root, `${D("two")}/claims/${areaPathOf(two)}.json`));
     assert.equal(draftRecs[two].authority, undefined, "set in the landing, never by editing the draft");
     assert.ok(core(root, "check").exit <= 1, "the landed spec checks");
-    for (const name of ["one", "two"]) assert.deepEqual(draftJson(root, name).promotions.at(-1).landing, { commit: REV, by: "land-it" }, `${name}: the receipt names the landing`);
+    assert.deepEqual(draftJson(root, "one").promotions.at(-1).landing, { commit: REV, by: "land-it" }, "one: the receipt names the landing");
+    assert.deepEqual(draftJson(root, "two").promotions.at(-1).landing, { commit: REV, by: "land-it", authority: ["§b/two"] }, "two: and the record it labelled accepted");
 
     // paths: exactly the official spec files that changed, repo-relative; never a draft file.
     const changed = [...git(root, "diff", "--name-only", "HEAD", "--", ".sova/spec").split("\n"), ...git(root, "ls-files", "--others", "--exclude-standard", "--", ".sova/spec").split("\n")].filter(Boolean);
@@ -282,6 +283,33 @@ for (const layout of [1, 2]) {
     assert.deepEqual(tree(root), before, "official spec and both drafts' draft.json as they were");
     for (const left of [".sova/spec/.txn", ".sova/spec/drafts/.land"]) assert.ok(!existsSync(join(root, left)), `no ${left}`);
     assert.equal(land(root, "HEAD", "--write").exit, 0, "once writable, it lands");
+  });
+
+  test(`${L} agree stamps a decision with no code and leaves it pending; the landing makes it official beside a code draft, agree's text standing as the chat's note`, () => {
+    const { root } = project(layout, ["feat"]);
+    featureDraft(root, layout, "feat");
+    assert.equal(run(root, "new", "decided", "--write").exit, 0);
+    const id = "§c/decided";
+    setRecord(root, "decided", layout, id, { kind: "behavior", requires: [] }, `# ${id}\n\nA title shows at most 60 characters.\n`);
+    git(root, "add", "-A"); git(root, "commit", "-q", "--allow-empty", "-m", "code");
+    const before = tree(root, { official: true });
+    const a = run(root, "agree", "decided", "--id", id, "--by", "user", "--source", "review:r9", "--verification", "the user decided 60 in alignment al_9", "--write");
+    assert.equal(a.exit, 0, JSON.stringify(a));
+    assert.deepEqual(tree(root, { official: true }), before, "agree writes nothing official");
+    assert.deepEqual(pendingOf(root, "decided"), [id], "the decision stays pending in its draft");
+    const w = land(root, "HEAD", "--write");
+    assert.equal(w.exit, 0, `no verification-missing for the agreed record: ${JSON.stringify(w.findings)}`);
+    assert.deepEqual(pendingOf(root, "decided"), []);
+    assert.deepEqual(pendingOf(root, "feat"), []);
+    const rec = core(root, "records").records?.[id];
+    assert.ok(rec, "the decision is official");
+    const r = typeof rec === "string" ? JSON.parse(rec) : rec;
+    assert.equal(r.agreed?.by, "user");
+    assert.equal(r.agreed?.source, "review:r9", "with its stamp as agree made it");
+    const e = [...draftJson(root, "decided").evidence].reverse().find((x) => x.landing === true && x.ids.some((y) => y.id === id));
+    assert.ok(e, "the landing recorded its own evidence");
+    assert.equal(e.mode, "doc-only", "no code: doc-only");
+    assert.ok(e.verification.includes("the user decided 60 in alignment al_9"), `agree's text stands as the note: ${e.verification}`);
   });
 
   test(`${L} draftsHash: sha256 over the sorted '<draft>/<path under spec/> <sha256>' lines; draft.json is not in it; null with no draft`, () => {

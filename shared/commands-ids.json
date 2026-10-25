@@ -142,7 +142,13 @@
     "project.overseer.settings.set",
     "session.align.triage",
     "session.workers.checks",
-    "session.context.file"
+    "session.context.file",
+    "org.owner.request.noted",
+    "org.project.versions",
+    "org.project.version.rewrite",
+    "org.project.version.automatic",
+    "org.project.version.hide",
+    "org.project.version.show"
   ],
   "retired": [
     "settings.agents.get"

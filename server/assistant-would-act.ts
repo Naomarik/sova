@@ -4,7 +4,7 @@ import { powerOffSentence, type ModelPick, type PowerId, type PowerMap, type Wor
 import type { OwnerAbilityOutcome } from "../shared/owner";
 import { CONTRACT_FILE, parseDefinition } from "../shared/project-contract";
 import { readProjects } from "./orgs";
-import { projectVersions } from "./owner-versions";
+import { currentVersionMakeable, projectVersions } from "./owner-versions";
 import { effectiveAssistantModel } from "./project-assistant-store";
 import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 
@@ -93,7 +93,8 @@ const serverFacts: WouldActFacts = {
     const p = readProjects(orgId).find((x) => x.id === projectId);
     if (!p) return false;
     const vs = await projectVersions(orgId, p).catch(() => []);
-    return vs.some((v) => v.endpoint !== null);
+    // A listed version that could be opened, or the Current version's copy start_version could make (q6).
+    return vs.some((v) => v.endpoint !== null) || (!vs.some((v) => v.current) && (await currentVersionMakeable(p).catch(() => null)) !== null);
   },
   async engine(projectId, event, payload) {
     try {

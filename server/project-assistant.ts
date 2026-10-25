@@ -181,7 +181,7 @@ async function withVersions(orgId: string, msgs: RawMessage[]): Promise<Assistan
     for (const h of m.versionHandles ?? [])
       if (!rows.has(h)) {
         const v = await ownerVersionOf(orgId, h).catch(() => null);
-        rows.set(h, v ? (versionRows([v], r)[0] ?? null) : null);
+        rows.set(h, v ? (versionRows([v], r, orgId)[0] ?? null) : null);
       }
   return msgs.map(({ versionHandles, featureSession, ...m }) => {
     const versions = (versionHandles ?? []).map((h) => rows.get(h)).filter((x): x is OwnerVersionRow => !!x);

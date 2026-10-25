@@ -331,12 +331,15 @@
       "pi-config/extensions/spec/docs/CHANGELOG.md",
       "pi-config/extensions/spec/PROMOTE.md",
       "pi-config/extensions/spec/DRAFTS.md",
-      "pi-config/extensions/spec/README.md"
+      "pi-config/extensions/spec/README.md",
+      "pi-config/extensions/spec/tests/convert-precut.test.mjs",
+      "pi-config/extensions/spec/tests/pre-cutover-merge.test.mjs",
+      "pi-config/extensions/spec/docs/MODE.md"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-25T21:07Z",
-      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
+      "at": "2026-10-25T23:48Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
     }
   },
   "§tools.spec/graph-payload": {
@@ -529,12 +532,19 @@
       "pi-config/extensions/spec/tests/cross-layout-merge.test.mjs",
       "pi-config/extensions/spec/tests/pre-cutover-merge.test.mjs",
       "pi-config/extensions/spec/tests/spec-fixture.mjs",
-      "server/spec-layout-boundary.test.ts"
+      "server/spec-layout-boundary.test.ts",
+      "pi-config/extensions/spec/tests/layout-order.test.mjs",
+      "pi-config/extensions/spec/tests/draft.test.mjs",
+      "pi-config/extensions/spec/tests/convert-records.test.mjs",
+      "pi-config/extensions/spec/tests/convert-commands.test.mjs",
+      "pi-config/extensions/spec/tests/convert-reverse.test.mjs",
+      "pi-config/extensions/spec/tests/convert-starter.test.mjs",
+      "pi-config/extensions/spec/tests/convert/lib.mjs"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-25T21:52Z",
-      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
+      "at": "2026-10-25T23:48Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
     }
   },
   "§tools.spec/review-playbook": {

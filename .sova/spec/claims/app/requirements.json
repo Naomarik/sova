@@ -93,7 +93,9 @@
       "server/reconcile.test.ts",
       "server/test-wait.ts",
       "server/reconcile.integration.test.ts",
-      "server/spec-tool-fake.ts"
+      "server/spec-tool-fake.ts",
+      "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+      "server/overseer-org-part.test.ts"
     ],
     "requires": [
       "§app.requirements/decisions"

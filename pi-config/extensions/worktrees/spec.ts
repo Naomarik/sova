@@ -2,10 +2,11 @@
  * What a merge leaves to do in the project's spec (`.sova/spec/`), for the merge note the model reads: warnings it
  * can act on, from the spec core's landing lists (`sova-spec.mjs foreign --landing`) and the drafts' evidence. It
  * only reads: git by argument list (the extension's `Git`) and the sibling spec tools run with node, never a shell.
+ * Before the merge, landDocs makes the worktree's drafts official on its branch (one docs commit), or refuses it.
  * A project without a spec, or an install without the spec tools, gets nothing. Node builtins only.
  */
 import { execFile } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { cpSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Git } from "./git.ts";
 
@@ -91,13 +92,14 @@ export async function mergeSpecReport(git: Git, req: MergeSpecRequest, opts: { c
 		for (const d of landing.unpromotedDrafts) {
 			const own = d.worktree === top || d.worktree === req.path;
 			const them = d.ids.length === 1 ? "it" : "them";
-			// The owner promotes on its own branch before landing; after a landing on the default branch they are never
-			// promoted there: the draft stays in the worktree until promoted on a fresh branch.
+			// A merge makes the worktree's own drafts official first (landDocs), so its own left here were left on
+			// purpose (withoutDocs); they land only from a branch whose worktree holds the draft.
+			const they = them === "it" ? "it" : "they", lands = them === "it" ? "it lands" : "they land";
 			const what = !own
-				? `its session promotes ${them}`
+				? `${lands} when that worktree's branch lands`
 				: req.onDefault
-					? `${them === "it" ? "it" : "they"} didn't land with the code; the draft stays in ${d.worktree}/${DRAFTS}/${d.draft} until promoted on a fresh branch from the default branch, never on it directly`
-					: `promote ${them} on the branch it merged into, before that branch lands`;
+					? `${they} didn't land with the code; the draft stays in ${d.worktree}/${DRAFTS}/${d.draft} until it lands with a fresh branch from the default branch (copy it into that worktree's ${DRAFTS}/), never on it directly`
+					: `${they} didn't land with the code; copy the draft into the worktree of the branch it merged into, so ${lands} with that branch`;
 			warnings.push({
 				text: `draft ${d.draft}${own ? "" : ` in ${d.worktree}`} has ${d.ids.length} unpromoted record${d.ids.length === 1 ? "" : "s"} (${d.ids.join(", ")}): ${what}`,
 				key: `${d.worktree}\0${d.draft}\0${d.ids.join(",")}`,
@@ -110,13 +112,6 @@ export async function mergeSpecReport(git: Git, req: MergeSpecRequest, opts: { c
 		warnings.push({ text: `the merge's unmapped files and unpromoted drafts could not be computed (${why}); check them yourself` });
 	}
 
-	// Evidence commits the merged branch does not contain: a rebase after evidence orphaned them.
-	const evidence = new Map<string, string>();
-	for (const d of draftsIn(req.path)) for (const c of d.evidenceCommits) evidence.set(c, d.name);
-	for (const [c, name] of evidence) {
-		if ((await git(["merge-base", "--is-ancestor", c, req.branchSha], top)).code !== 0)
-			warnings.push({ text: `evidence commit ${short(c)} (draft ${name}) is not on ${req.branch}: a rebase after evidence orphans it; re-record evidence against the commit that landed` });
-	}
 	const targetTop = await checkoutOf(git, top, req.after);
 	return { warnings, ...(landing ? { landing } : {}), ...(targetTop ? { top: targetTop } : {}) };
 }
@@ -133,26 +128,93 @@ async function checkoutOf(git: Git, cwd: string, sha: string): Promise<string | 
 	return undefined;
 }
 
-/** Drafts in a worktree and the commits their evidence names; unreadable ones are skipped. */
-function draftsIn(root: string): { name: string; evidenceCommits: string[] }[] {
+/** The drafts in a worktree, by name (a folder holding a draft.json). */
+function draftNames(root: string): string[] {
 	const dir = join(root, DRAFTS);
-	let names: string[];
 	try {
-		names = readdirSync(dir).filter((n) => /^[a-z0-9][a-z0-9_-]{0,63}$/.test(n)).sort();
+		return readdirSync(dir).filter((n) => /^[a-z0-9][a-z0-9_-]{0,63}$/.test(n) && existsSync(join(dir, n, "draft.json"))).sort();
 	} catch {
 		return [];
 	}
-	const out: { name: string; evidenceCommits: string[] }[] = [];
-	for (const name of names) {
-		try {
-			const d = JSON.parse(readFileSync(join(dir, name, "draft.json"), "utf8"));
-			const commits = (Array.isArray(d?.evidence) ? d.evidence : []).map((e: { commit?: unknown }) => e?.commit).filter((c: unknown): c is string => typeof c === "string" && /^[0-9a-f]{40,64}$/.test(c));
-			out.push({ name, evidenceCommits: [...new Set<string>(commits)] });
-		} catch {
-			// not a draft
-		}
+}
+
+/** One problem the draft tool's land found (its JSON findings). */
+export interface DocsFinding {
+	draft?: string | null;
+	id?: string | null;
+	code: string;
+	message: string;
+	fix?: string;
+}
+
+/** What the docs step before a merge did (§chat.worktrees/tool): nothing to land, a docs commit, or a refusal. */
+export type DocsLanding =
+	| { state: "none" }
+	| { state: "landed"; sha: string; subject: string; drafts: string[]; counts: { added: number; changed: number; removed: number } }
+	| { state: "refused"; findings: DocsFinding[]; text: string };
+
+/**
+ * Before a worktree's branch is merged, its spec drafts are made official on it: the draft tool's `land --write` at
+ * the branch's head, then one commit of exactly the spec files it wrote, with its message and the trailer
+ * `Sova-Spec-Landing: worktree-tool`. A project with no spec, a worktree with no draft, or an install without the spec
+ * tools has nothing to do. When land refuses, nothing is written or committed, and the merge must not run.
+ */
+export async function landDocs(git: Git, req: { path: string; branch: string; target?: string }, opts: { coreDir?: string; node?: Node } = {}): Promise<DocsLanding> {
+	const tool = join(opts.coreDir ?? SPEC_CORE_DIR, "sova-spec-draft.mjs");
+	const node = opts.node ?? runNode;
+	if (!existsSync(join(req.path, ".sova", "spec", "manifest.json")) || !draftNames(req.path).length || !existsSync(tool)) return { state: "none" };
+	const head = (await git(["rev-parse", "HEAD"], req.path)).stdout.trim();
+	if (!/^[0-9a-f]{40,64}$/.test(head)) return { state: "none" };
+	// The spec's own files must be as committed: the docs commit holds exactly what land wrote.
+	const dirty = (await git(["status", "--porcelain", "--", ".sova/spec"], req.path)).stdout.trim();
+	if (dirty) return refusedOf(req.branch, [{ code: "spec-uncommitted", message: `the spec has uncommitted changes (${dirty.split("\n")[0].trim()})`, fix: "commit or undo them first" }]);
+	// A merge that can't run anyway (it doesn't merge cleanly, or it can only fast-forward and can't) gets no docs commit.
+	const targetSha = req.target ? (await git(["rev-parse", "--verify", "-q", `refs/heads/${req.target}`], req.path)).stdout.trim() : "";
+	const clean = async (sha: string) => !targetSha || (await git(["merge-tree", "--write-tree", "--no-messages", targetSha, sha], req.path)).code === 0;
+	if (!(await clean(head))) return { state: "none" };
+	// draft.json is all land writes in a draft: kept, so a docs commit taken back puts the drafts back as they were.
+	const kept = new Map(draftNames(req.path).map((n) => [n, readFileSync(join(req.path, DRAFTS, n, "draft.json"))]));
+	const verification = `Made official at the merge of ${req.branch} at ${short(head)} by the worktree tool`;
+	const j = json((await node([tool, "land", "--commit", head, "--by", "the worktree tool's merge", "--verification", verification, "--write", "--root", req.path, "--json"], req.path)).stdout);
+	if (!j || typeof j.exit !== "number") return refusedOf(req.branch, [{ code: "land-no-answer", message: "the draft tool's land gave no answer" }]);
+	if (j.exit === 0 && j.nothingToLand) return { state: "none" };
+	if (j.exit !== 0 || !j.written) return refusedOf(req.branch, Array.isArray(j.findings) ? j.findings : [{ code: "land-refused", message: "the draft tool's land refused" }]);
+	const paths = (Array.isArray(j.paths) ? j.paths : []).filter((p: unknown): p is string => typeof p === "string" && p.startsWith(".sova/spec/") && !p.startsWith(`${DRAFTS}/`));
+	if (!paths.length) return { state: "none" };
+	const add = await git(["add", "--", ...paths], req.path);
+	if (add.code !== 0) throw new Error(`Staging the docs failed: ${add.stderr.trim()}`);
+	const msg = j.commitMessage ?? {};
+	const c = await git(["commit", "--no-verify", "-m", String(msg.subject || `Spec: land drafts at ${short(head)}`), "-m", String(msg.body || verification), "-m", "Sova-Spec-Landing: worktree-tool"], req.path);
+	if (c.code !== 0) throw new Error(`Committing the docs failed: ${c.stderr.trim()}`);
+	const sha = (await git(["rev-parse", "HEAD"], req.path)).stdout.trim();
+	// The docs that landed on the target meanwhile clash with these: the docs commit is taken back, nothing changed.
+	if (!(await clean(sha))) {
+		const mt = await git(["merge-tree", "--write-tree", "--name-only", "--no-messages", targetSha, sha], req.path);
+		const files = mt.stdout.split("\n").slice(1).map((l) => l.trim()).filter((l) => l.startsWith(".sova/spec/"));
+		const back = await git(["reset", "--keep", head], req.path);
+		if (back.code !== 0) throw new Error(`The docs commit ${short(sha)} clashes with ${req.target} and couldn't be taken back: ${back.stderr.trim()}`);
+		for (const [n, buf] of kept) writeFileSync(join(req.path, DRAFTS, n, "draft.json"), buf);
+		const landed = new Set<string>((Array.isArray(j.drafts) ? j.drafts : []).flatMap((d: { ids?: unknown }) => (Array.isArray(d?.ids) ? d.ids : [])));
+		const ids = files.flatMap((f) => {
+			try {
+				return [...readFileSync(join(req.path, f), "utf8").matchAll(/^#{1,2} (§[^\s]+)/gm)].map((m) => m[1]).filter((id) => landed.has(id));
+			} catch {
+				return [];
+			}
+		});
+		return refusedOf(req.branch, (ids.length ? [...new Set(ids)] : [null]).map((id) => ({ id, code: "conflict", message: `${id ?? "the drafts"} changed on ${req.target} since the drafts were made (${files.join(", ") || "the spec"})`, fix: "merge it into this branch, then run the draft tool's refresh on the draft and rewrite what it marks" })));
 	}
-	return out;
+	const counts = { added: Number(j.counts?.added) || 0, changed: Number(j.counts?.changed) || 0, removed: Number(j.counts?.removed) || 0 };
+	return { state: "landed", sha, subject: String(msg.subject ?? ""), drafts: (Array.isArray(j.drafts) ? j.drafts : []).map((d: { name?: unknown }) => String(d?.name)), counts };
+}
+
+function refusedOf(branch: string, findings: DocsFinding[]): DocsLanding {
+	const list = findings.slice(0, 8).map((f) => `${f.id ?? (f.draft ? `draft ${f.draft}` : f.code)}${f.draft && f.id ? ` (draft ${f.draft})` : ""}: ${f.message}${f.fix ? `; fix: ${f.fix}` : ""}`);
+	return {
+		state: "refused",
+		findings,
+		text: `Nothing was merged: ${branch}'s spec drafts don't fit, so they can't land with it, and nothing was written. ${list.join(". ")}${findings.length > 8 ? `. And ${findings.length - 8} more` : ""}. Fix them in the drafts (that needs no commit), then merge again. Merge with withoutDocs: true only when the user says to leave the drafts behind.`,
+	};
 }
 
 /**
@@ -167,6 +229,34 @@ export function specLines(r: MergeSpecReport, said?: Set<string>): string[] {
 			said.add(w.key);
 		}
 		out.push(`Spec warning: ${w.text}`);
+	}
+	return out;
+}
+
+/**
+ * Decisions agreed in the main checkout ride with a new worktree's branch (§chat.worktrees/tool): each draft there
+ * holding a record not yet official that carries `agreed` is copied, whole, into the new worktree's drafts, unless
+ * one of that name is there already, so it becomes official when that branch lands. The main checkout keeps its copy.
+ * Read through the draft tool (`drafts`) and the spec's own record reader. → the names copied
+ */
+export async function carryAgreedDrafts(git: Git, req: { from: string; to: string }, opts: { coreDir?: string; node?: Node } = {}): Promise<string[]> {
+	const coreDir = opts.coreDir ?? SPEC_CORE_DIR;
+	const tool = join(coreDir, "sova-spec-draft.mjs");
+	const node = opts.node ?? runNode;
+	const top = (await git(["rev-parse", "--show-toplevel"], req.from)).stdout.trim();
+	if (!top || top === req.to || !draftNames(top).length || !existsSync(tool) || !existsSync(join(req.to, ".sova", "spec", "manifest.json"))) return [];
+	const j = json((await node([tool, "drafts", "--root", top, "--json"], top)).stdout);
+	const rows: { name?: unknown; pending?: unknown }[] = Array.isArray(j?.drafts) ? j.drafts : [];
+	const { readSpecFs } = await import(join(coreDir, "layout.mjs"));
+	const out: string[] = [];
+	for (const r of rows) {
+		const name = typeof r.name === "string" ? r.name : "";
+		const pending = Array.isArray(r.pending) ? r.pending.filter((x): x is string => typeof x === "string") : [];
+		if (!name || !pending.length || existsSync(join(req.to, DRAFTS, name))) continue;
+		const spec = readSpecFs(top, `${DRAFTS}/${name}/spec`);
+		if (spec?.state !== "present" || !pending.some((id) => spec.records?.[id]?.agreed)) continue;
+		cpSync(join(top, DRAFTS, name), join(req.to, DRAFTS, name), { recursive: true, errorOnExist: true });
+		out.push(name);
 	}
 	return out;
 }

@@ -77,7 +77,8 @@ dirs, §chat.sandbox/what-on-enforces) unless the session's sandbox is Off
 only it starts under the sandbox in **write-only** confinement: its writes go only to the
 worktree, its git dirs and a private scratch tmp (and the sandbox's private copies of the host
 caches). Its reads are the host's, no secret is hidden, the network is the host's (its resolver
-included) and the environment is passed as it is. No policy file is read for it.
+included) and the environment is passed as it is, but for `TMPDIR` (below) and the
+sandbox's own git config, `GIT_CONFIG_SYSTEM` (§chat.sandbox/git-cleanup). No policy file is read for it.
 
 - **`/tmp`.** On Linux it sees the host's `/tmp` read-only, so a file another session wrote
   there (a brief) is readable, and every Unix socket found there as its command or its process

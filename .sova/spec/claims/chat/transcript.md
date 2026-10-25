@@ -1577,6 +1577,7 @@ heading is `Repository`, with no count and no total.
       <span class="setup-subject" title="spec: the three commits' claims, promoted from their draft">spec: the three commits' claims, promoted from their draft</span>
       <span class="setup-ago">2h ago</span></li>
   </ul>
+  <p class="setup-git setup-gitdir">…folder icon… <span>Git folder</span> <span class="setup-num">25 GB</span></p>   <!-- /setup-card-git-folder -->
   <p class="setup-note">…at most one note, when there is one…</p>
 </div>
 ```
@@ -1599,6 +1600,8 @@ heading is `Repository`, with no count and no total.
 - **Commits.** Up to three rows, newest first (/setup-card-figures). An unborn repository shows
   none and no line in their place, since the head already says "no commits yet". Any other
   repository with none to show gets "The last commits couldn't be read." in their place.
+- **The git folder.** After the commits, the git folder's size and, when its cleanup looks stuck
+  or overdue, a warning (/setup-card-git-folder).
 - **A cut status.** When git status's output hit its size cap, every count is a lower bound. The
   changes line reads `At least {tallies}`, or `Not fully read` when nothing was tallied, and
   never `Clean`. The note says "Git status was cut short, so these counts are lower bounds."
@@ -1652,6 +1655,37 @@ repository around the folder. Two of its figures:
   figure that isn't there is dropped rather than zeroed: a row the server sent no estimate for shows
   no figure at all (never its size, never `≈0 tokens` for a file nobody counted), and a total
   without estimates keeps bytes and lines.
+
+## §chat.transcript/setup-card-git-folder — Setup card: the git folder's size, and when its cleanup is stuck
+
+Right after the commits (or the line standing in their place), the Repository group of a new
+session's setup card has one more row: how big the repository's git folder is, and a short warning
+when git's cleanup looks stuck or hasn't run for a long time (§app/git-cleanup). Only the setup
+card shows it; the session pane's Repository section doesn't.
+
+```html
+<p class="setup-git setup-gitdir" title="~/webapps/sova/.git">…folder icon… <span>Git folder</span> <span class="setup-num">25 GB</span></p>
+<p class="setup-git setup-gitdir-warn">…alert icon… <span>Git's cleanup looks stuck: multi-pack-index.lock was left 3d ago.</span></p>   <!-- only with a warning -->
+```
+
+- **The size.** Every file in the repository's git folder, the one a linked worktree shares with
+  its main checkout, each file's size summed, never by running `du`. The words are `Git folder
+  {size}`, the size in binary units with one decimal under 10 (`812 B`, `4.2 MB`, `25 GB`), and
+  the row's title is the folder (`~/…` here). A count that stopped at its limit of 50,000 entries
+  reads `Git folder at least {size}`. The server reads it with the rest of the group and reuses it
+  for 5 minutes per git folder, so a big repository is not walked on every card. A session on a
+  target, or a folder the server couldn't read, shows no row.
+- **Stuck.** When `objects/pack/multi-pack-index.lock` or
+  `objects/info/commit-graphs/commit-graph-chain.lock` in that folder is more than 1 hour old, a
+  second row reads "Git's cleanup looks stuck: {lock name} was left {age}.", the age in the app's
+  relative words ("2h ago", "3d ago", "Mar 4"). Its title is the lock's full path and "If no git
+  command is running, deleting it lets cleanup finish."
+- **Overdue.** Otherwise, when the folder holds more than 50 pack files, or more than 6,700 loose
+  objects (git's own `gc.auto` default), the row reads "Git hasn't cleaned up here in a while:
+  {n} pack files.", "…: {n} loose objects.", or with both "…: {n} pack files and {n} loose
+  objects." (digits with thousands commas).
+- At most one warning, stuck first. It is drawn in warn ink with the alert icon, and its words
+  carry it alone.
 
 ## §chat.transcript/setup-card-toggles — Setup card: switching context files and skills off
 

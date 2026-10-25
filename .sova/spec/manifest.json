@@ -414,9 +414,9 @@
         "§app.chat-processes/code-pickup"
       ],
       "agreed": {
-        "by": "omar (al_2 go-ahead)",
-        "at": "2026-10-19T22:18Z",
-        "source": "pi-session:398db362-660a-4f63-967c-d28758e5179f#a09c9175"
+        "by": "user",
+        "at": "2026-10-25T23:29Z",
+        "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
       },
       "evidence": "verified"
     },
@@ -983,6 +983,60 @@
       ],
       "requires": [],
       "evidence": "verified"
+    },
+    "§app.git-cleanup/no-background": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/git-cleanup",
+        "§app/idle-git-cache",
+        "§chat.sandbox/git-cleanup",
+        "§app.chat-processes/supervision"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T22:36Z",
+        "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
+      },
+      "code": [
+        "server/git-no-background.ts",
+        "server/git-no-background.test.ts",
+        "server/chat-runtime/supervisor.ts",
+        "server/chat-runtime/supervisor.test.ts",
+        "server/workspace-git.ts",
+        "server/project-worktrees.ts",
+        "server/updates/runner.ts",
+        "server/updates/runner.test.ts",
+        "server/project-services/deploy.ts",
+        "server/worktrees.ts",
+        "pi-config/extensions/sandbox/env.ts",
+        "pi-config/extensions/sandbox/tests/unit/env.unit.test.ts"
+      ]
+    },
+    "§app.git-cleanup/scheduled": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/git-cleanup",
+        "§app.projects/registration"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T22:36Z",
+        "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
+      },
+      "code": [
+        "server/git-maintenance.ts",
+        "server/git-maintenance.test.ts",
+        "server/git-maintenance.integration.test.ts",
+        "server/projects/spaces.ts",
+        "server/index.ts",
+        "scripts/run-tests.mjs",
+        "server/testing/hermetic-server.ts",
+        "package.json"
+      ]
     },
     "§app.insights/aggregate-chips-live-vs-working": {
       "kind": "behavior",
@@ -2799,6 +2853,28 @@
         "§app.harness/session-open",
         "§app.overseer/dialog-answers",
         "§app/extensions"
+      ]
+    },
+    "§app/git-cleanup": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/idle-git-cache"
+      ],
+      "notOwned": [
+        "§chat.sandbox/git-cleanup",
+        "§app.chat-processes/supervision",
+        "§chat.transcript/setup-card-git-folder"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T22:36Z",
+        "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
+      },
+      "code": [
+        "server/git-no-background.ts",
+        "server/git-maintenance.ts"
       ]
     },
     "§app/insights": {
@@ -4877,6 +4953,30 @@
       },
       "evidence": "reviewed"
     },
+    "§chat.transcript/setup-card-git-folder": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§chat.transcript/setup-card-repository"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T22:36Z",
+        "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
+      },
+      "code": [
+        "server/git-folder.ts",
+        "server/git-folder.test.ts",
+        "server/git-folder.integration.test.ts",
+        "server/git-summary.ts",
+        "shared/protocol.ts",
+        "src/lib/session-setup.ts",
+        "src/lib/session-setup.test.ts",
+        "src/components/SessionSetup.tsx",
+        "src/design/base.css"
+      ]
+    },
     "§chat.transcript/setup-card-open-file": {
       "kind": "behavior",
       "authority": "accepted",
@@ -5661,11 +5761,13 @@
         "server/git-summary.ts",
         "src/components/SessionDetails.tsx",
         "server/git-summary.test.ts",
-        "server/git-summary.integration.test.ts"
+        "server/git-summary.integration.test.ts",
+        "src/components/SessionSetup.tsx"
       ],
       "agreed": {
-        "by": "user (al_3 go-ahead)",
-        "at": "2026-10-14T16:11Z"
+        "by": "user",
+        "at": "2026-10-25T23:29Z",
+        "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
       }
     },
     "§chat.transcript/setup-card-skills": {
@@ -5855,6 +5957,29 @@
         "pi-config/extensions/sandbox/backends/unsupported.ts",
         "pi-config/extensions/sandbox/index.ts",
         "pi-config/extensions/sandbox/tools.ts"
+      ]
+    },
+    "§chat.sandbox/git-cleanup": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§chat.sandbox/what-on-enforces",
+        "§app.git-cleanup/no-background"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T22:36Z",
+        "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
+      },
+      "code": [
+        "pi-config/extensions/sandbox/env.ts",
+        "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+        "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
+        "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts",
+        "pi-config/extensions/sandbox/tests/unit/darwin-seatbelt.unit.test.ts",
+        "pi-config/extensions/sandbox/tests/unit/env.unit.test.ts",
+        "pi-config/extensions/sandbox/README.md"
       ]
     },
     "§chat.sandbox/limits": {
@@ -10435,8 +10560,9 @@
         "pi-config/extensions/sandbox/README.md"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "by": "user",
+        "at": "2026-10-25T23:29Z",
+        "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
       }
     },
     "§chat.worktrees/worktree-config": {
@@ -10837,7 +10963,8 @@
         "server/project-coding-read.test.ts",
         "server/project-overseer-fast.integration.test.ts",
         "server/overseer-org-view.ts",
-        "src/lib/coding-worktrees-fresh.browser.test.ts"
+        "src/lib/coding-worktrees-fresh.browser.test.ts",
+        "server/worktree-targeted-removal.test.ts"
       ],
       "agreed": {
         "by": "user",

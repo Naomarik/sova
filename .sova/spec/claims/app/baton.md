@@ -516,7 +516,7 @@ Tour pictures and public explanation follow the same active-branch, offer cut an
   it is drawn the page's current colour tokens (the frame's, §chat.markdown/visuals) and a
   sans-serif font are set as its defaults, which its own styles override, so `var(--color-…)`
   text matches the chat; a page that changes theme (the Share sheet's Preview, or the share
-  build's own theme switch, §app.owner-page/page) draws it again in the new colours. A `vis html` runs in a sandboxed frame (§chat.markdown/visuals)
+  build's own theme toggle, §app.owner-page/page) draws it again in the new colours. A `vis html` runs in a sandboxed frame (§chat.markdown/visuals)
   only while the session can draw interactive drawings (§app.baton/abilities; the view carries
   `drawings: {html}` from the session's abilities as they are now). Otherwise `html`, and always
   `code`, and a block that doesn't parse, shows one muted line, "A drawing couldn't be shown

@@ -809,8 +809,8 @@ would list master's changes instead.
 ### 2026-10-26
 
 - **The mode text splits: finding your way for everyone, the writing steps when behavior changes.**
-  - Commit: on branch `feat/spec-slim` (alignment al_3); not on master yet. It lands only if round 3
-    passes its pre-registered rule.
+  - Commit: on branch `feat/spec-slim` (alignment al_3); not on master yet. Round 3 passed its
+    pre-registered rule (KEEP), the condition for landing.
   - Why: in round 2 of the context test (spec-ctx-2026-10-25, 12 real requests), briefs with the spec
     found 60% of the facts that mattered against 67% without it. They spent 26 items on documentation
     process against 9, and 52 items named no file against 15. But that round changed the content and
@@ -839,10 +839,24 @@ would list master's changes instead.
     §tools.spec/agree-source-relay, §tools/spec, §chat.alignment/tool, §chat.mode-menu/codemode (draft
     `spec-slim-guide`, promoted on the branch at 526e0a07; `foreign --base 9b7297f8 --head 526e0a07`).
     Base: 9b7297f8.
-  - Numbers: round 3 (three arms A no spec / B today / C short part, 12 tasks × 2, pooled blind
-    grading, plus a 6-task edit check). Recall A/B/C, C − B [CI] and the verdict are filled in from
-    round 3's report before landing. Constraint 5 (light): 964 → 306 words ride every turn; the
-    976-word procedure is sent once per chat.
+  - Numbers: round 3 of the context test (pre-registered, PREREG-ctx3 sha256 a67ad622…fbca; report
+    sha256 0eaa5cfd…9ffb). Three arms on the same 12 real requests × 2: A no spec, B today's text
+    (9b7297f8), C the short part (brief runs at 328788c3, edit check at 07265a27); graded item by item
+    with the arms pooled. Verdict under its rule §7.2: **KEEP** (not worse than B).
+    - Recall A / B / C: 60.6 / 55.2 / 56.6. C − B +1.5 [−4.1, +7.2]; B − A −5.4 [−9.0, −1.3];
+      C − A −3.9 [−9.3, +0.9].
+    - Wrong items per brief, C − B: −0.04 [−0.38, +0.25]. Misled 0 / 0, reinvented 0 / 0.
+    - Process items per brief B 1.79 → C 1.58 (A 1.00); items naming no file B 3.50 → C 2.71 (A 0.79).
+    - Tokens per brief (geometric mean) B 204k → C 189k.
+    - Edit check (t02 t03 t04 t05 t08 t09, real builds): claim before the first code edit B 5/6,
+      C 5/6. In 5 of 6 C builds the agent read `WRITING.md` itself before any code edit; in t02 the
+      procedure arrived once with the first census note (the safety net, counted a miss), and that
+      agent called its change a defect fix with no claim, as B's t02 agent did. A draft with no error
+      finding: 5/6 in both arms (`check` exit 0: 0/6 in both, since it exits 1 on any note).
+    - Blinding: tell check 40%, grader arm guesses 35%, double-grade κ 0.87.
+    - Constraint 5 (light): 964 → 306 words ride every turn; the 976-word procedure is sent once per
+      chat. The verdict holds for spec-mode.md sha256 bd4831dc… and WRITING.md 95381eb5… only: a
+      change to either needs a new measured run.
   - Upgrade: see UPGRADING step 12.
 
 ## Integration → master

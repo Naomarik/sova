@@ -75,7 +75,7 @@ const uniqSorted = (a) => [...new Set(a)].sort();
 // ---------------------------------------------------------------- args
 const FLAGS = { new: ["purpose", "write", "all"], status: [], diff: ["against"], check: ["base", "all"],
   evidence: ["id", "by", "verification", "commit", "snapshot", "doc-only", "note", "path", "log", "write"],
-  land: ["commit", "by", "verification", "write"],
+  land: ["commit", "by", "verification", "write"], refresh: ["write"],
   agree: ["id", "by", "verification", "at", "source", "write"],
   promote: ["id", "all", "meta", "file", "plan", "write", "own-base", "days"], recover: ["write"],
   drafts: ["days", "worktrees"], prune: ["approved", "official", "from", "write"], "merge-manifest": ["base", "ours", "theirs", "write"],
@@ -164,7 +164,7 @@ function parseArgs(argv) {
 }
 const USAGE = "usage: sova-spec-draft <new NAME [--purpose T] | status NAME | diff NAME [--against base|current] | check NAME | " +
   "evidence NAME --id §x --by WHO --verification T (--commit REV|--snapshot|--doc-only|--note) [--path P] [--log FILE] | " +
-  "land --commit REV --by WHO --verification T | " +
+  "land --commit REV --by WHO --verification T | refresh NAME | " +
   "agree NAME --id §x --by WHO --verification T [--source REF] [--at ISO] | " +
   "promote NAME (--id §x|--all) [--meta K] [--file P] [--plan SHA] [--own-base REV]... [--days N] | check NAME [--base REV] | recover | " +
   "drafts [--days N] [--worktrees] | prune (--approved FILE | --official [--from DIR]) | " +
@@ -533,7 +533,7 @@ function mergeSpans(B, C, P, within = null) {
   const m3 = (b, c, p, what) => { if (p === b || c === p) return c; if (c === b) return p; conflicts.push(what); return c; };
   const m3d = (b, c, p, id) => {
     if (p === b || c === p || c === b || !within) return m3(b, c, p, id);
-    const r = within(b, c, p);
+    const r = within(b, c, p, id);
     if (!r) return m3(b, c, p, id);
     if (r.conflict) marked.push(id);
     return r.text;
@@ -751,8 +751,11 @@ async function analyze(root, name, readPolicy, inputSources) {
     if (sha(buf) === f.current) { f.merge = "same"; continue; }
     Object.assign(f, { merge: "merge", merged: { buf, sha256: sha(buf), ids: m.ids } });
   }
+  const defaulted = new Set(d.promotions.flatMap((x) => (Array.isArray(x?.landing?.authority) ? x.landing.authority : [])));
   const records = uniqSorted([base, cur, prop].flatMap((t) => Object.keys(t.manifest?.claims ?? {}))).map((id) => {
-    const b = canon(recOf(base, id)), c = canon(recOf(cur, id)), p = canon(recOf(prop, id));
+    // A record the landing gave `authority: "accepted"` (it had none) reads as the draft's record with that label.
+    const p0 = recOf(prop, id), p = canon(p0 && defaulted.has(id) && p0.authority === undefined ? { ...p0, authority: "accepted" } : p0);
+    const b = canon(recOf(base, id)), c = canon(recOf(cur, id));
     return { id, merge: merge3(b, c, p), base: b && sha(b), current: c && sha(c), proposed: p && sha(p) };
   });
   const meta = uniqSorted([base, cur, prop].flatMap((t) => Object.keys(t.manifest ?? {}))).filter((k) => k !== "claims").map((key) => {
@@ -1282,8 +1285,10 @@ async function plan(root, o) {
   // Whole files move: every changed identifier in a promoted file must be selected too.
   const files = a.files.filter((f) => f.merge !== "unchanged" && (f.ids.some((id) => ids.has(id)) || fileSel.has(f.path)));
   for (const f of files) { const missing = f.ids.filter((id) => !ids.has(id)); if (missing.length) refuse("selection-incomplete", `${f.path} also carries unselected changes to ${missing.join(", ")}; files move whole, so select them too (with their evidence) or revert them in the draft`); }
-  const records = a.records.filter((r) => r.merge !== "unchanged" && ids.has(r.id));
-  const meta = a.meta.filter((m) => m.merge !== "unchanged" && metaSel.has(m.key));
+  // refresh takes the draft's record or setting where both sides changed it (its prose gets a marked block instead).
+  const mine = (u) => (o.refresh && u.merge === "conflict" ? { ...u, merge: "apply" } : u);
+  const records = a.records.filter((r) => r.merge !== "unchanged" && ids.has(r.id)).map(mine);
+  const meta = a.meta.filter((m) => m.merge !== "unchanged" && metaSel.has(m.key)).map(mine);
   for (const u of [...files.map((f) => ({ what: f.spanConflicts ? `${f.path}: ${f.spanConflicts.join(", ")}` : f.path, merge: f.merge })), ...records.map((r) => ({ what: `record ${r.id}`, merge: r.merge })), ...meta.map((m) => ({ what: `manifest ${m.key}`, merge: m.merge }))])
     if (u.merge === "conflict") refuse("conflict", `${u.what} changed in current since the draft was made, differently; current and draft are left as they are: ${IN_TREE_RECOVERY}`);
 
@@ -1291,7 +1296,9 @@ async function plan(root, o) {
   const notes = [];
   for (const id of [...ids].filter((x) => a.changed.has(x) && !a.changed.get(x).deleted && !landed(x)).sort()) {
     const auth = recOf(a.prop, id)?.authority;
-    if (auth === "candidate") refuse("candidate-label", `${id} is still labelled authority "candidate" in the draft; a promoted record is current, so relabel it ("accepted" once the user adopted it) before recording evidence`);
+    // New or rewritten prose with no label lands accepted: set on this plan's own reading, never in the draft.
+    if (auth === undefined && o.landing && a.changed.get(id).text) { o.landing.accepted.add(id); Object.assign(recOf(a.prop, id), { authority: "accepted" }); }
+    else if (auth === "candidate") refuse("candidate-label", `${id} is still labelled authority "candidate" in the draft; a promoted record is current, so relabel it ("accepted" once the user adopted it) before recording evidence`);
     else if (auth !== "accepted" && auth !== "migrated") refuse("authority-missing", `${id} declares no authority label; set "authority": "accepted" (or keep "migrated" for ported text) in the draft record before recording evidence`);
     const bad = agreedProblem(recOf(a.prop, id));
     if (bad) refuse("agreed-invalid", `${id}: ${bad}`);
@@ -1312,6 +1319,11 @@ async function plan(root, o) {
       const n = agreedKeptOnChange(a, id, was, curDecls);
       if (n) notes.push(n);
     }
+  }
+  // Conflict markers (refresh writes them around a declaration both sides changed) never land.
+  for (const id of [...ids].filter((x) => a.changed.has(x) && !a.changed.get(x).deleted).sort()) {
+    const t = declText(a.prop, a.pc.decls.get(id));
+    if (t && /^(<<<<<<< |=======$|>>>>>>> )/m.test(t)) refuse("conflict-markers", `${id} still holds the conflict block refresh wrote: rewrite it as one text (current's change and yours), delete the marker lines, then land again`);
   }
   const evidence = [];
   for (const id of [...ids].filter((x) => a.changed.has(x) && !landed(x)).sort()) {
@@ -1564,6 +1576,7 @@ async function cmdLand(root, o) {
     const problems = [], entries = [];
     for (const id of ids) {
       const c = a.changed.get(id);
+      if (!c.deleted && auth(id) === "candidate") continue; // a proposal never lands, so it needs no note (promote's candidate-label says why it holds)
       // The chat's own word on what it verified: the newest entry naming the id, a note or evidence recorded the old way.
       const e = [...a.d.evidence].reverse().find((x) => x.ids.some((y) => y.id === id) && typeof x.verification === "string" && x.verification.trim() && !x.landing);
       const bound = e?.ids.find((y) => y.id === id);
@@ -1586,7 +1599,7 @@ async function cmdLand(root, o) {
       entries.push({ recordedAt: at, by: o.by, verification: `${o.verification} | the chat's note (${e.by}, ${e.recordedAt}): ${e.verification}`.slice(0, 8000), mode: docOnly ? "doc-only" : "commit",
         ids: [{ id, kind: c.kind, deleted: c.deleted, ...c.binding }], ...(docOnly ? {} : { commit }), inputs, landing: true });
     }
-    const p = await plan(root, { name, id: [], all: true, meta: [], file: [], "own-base": [], landing: { entries, current } });
+    const p = await plan(root, { name, id: [], all: true, meta: [], file: [], "own-base": [], landing: { entries, current, accepted: new Set() } });
     // Each refusal named by its § where it has one: a file's refusal (a clash in a claim file) by the draft's ids in it.
     for (const r of p.refusals) {
       if (/^evidence-/.test(r.code) && problems.length) continue;
@@ -1651,11 +1664,12 @@ async function cmdLand(root, o) {
         const cur = await loadDraft(root, s.name);
         cur.d.evidence.push(...s.entries);
         await saveDraft(root, cur.rel, cur.d);
-        const p = await plan(root, { name: s.name, id: [], all: true, meta: [], file: [], "own-base": [], landing: { entries: [], current: s.current } });
+        const accepted = new Set();
+        const p = await plan(root, { name: s.name, id: [], all: true, meta: [], file: [], "own-base": [], landing: { entries: [], current: s.current, accepted } });
         if (p.refusals.length) throw new Fail(1, p.refusals[0].code, `${s.name}: ${p.refusals.map((r) => r.message).join("; ")}`);
         if (!p.targets.length) continue;
         const d = structuredClone(p.a.d);
-        d.promotions.push({ at: new Date().toISOString(), plan: p.planSha, ids: p.out.ids.filter((id) => !s.current.has(id)), meta: p.out.meta, files: p.targets.map((t) => t.path), landing: { commit, by: o.by },
+        d.promotions.push({ at: new Date().toISOString(), plan: p.planSha, ids: p.out.ids.filter((id) => !s.current.has(id)), meta: p.out.meta, files: p.targets.map((t) => t.path), landing: { commit, by: o.by, ...(accepted.size ? { authority: [...accepted].sort() } : {}) },
           after: Object.fromEntries(p.targets.filter((t) => t.storage !== "draft").map((t) => [t.path, t.after])) });
         await applyTxn(root, s.name, p.targets, p.cand, { before: p.a.sha, buf: Buffer.from(JSON.stringify(d, null, 2) + "\n") });
       }
@@ -1670,6 +1684,82 @@ async function cmdLand(root, o) {
     const paths = uniqSorted([...before.keys(), ...after.keys()].filter((rel) => rel.startsWith(`${SPEC}/`) && !rel.startsWith(`${DRAFTS}/`) && (before.get(rel) ? sha(before.get(rel)) : null) !== (after.get(rel) ? sha(after.get(rel)) : null)));
     await rm(join(root, LAND), { recursive: true, force: true });
     return done(now, { written: true, nothingToLand: false, paths });
+  });
+}
+
+// ---------------------------------------------------------------- refresh
+// Move a draft onto the current spec: its base becomes current, and its spec/ is the per-declaration three-way merge
+// promote computes. A declaration both sides changed is written into the draft as one marked block, current's text
+// and the draft's, for the chat to rewrite (land and promote refuse it until then); a record both changed keeps the
+// draft's. Notes and evidence stay bound to what the chat wrote.
+const MARK_OPEN = (id) => `<<<<<<< current: ${id} changed here since the draft was made`, MARK_MID = "=======", MARK_CLOSE = ">>>>>>> draft";
+const nl = (t) => (t === "" || t.endsWith("\n") ? t : `${t}\n`);
+const markBlock = (id, c, p) => `${MARK_OPEN(id)}\n${nl(c)}${MARK_MID}\n${nl(p)}${MARK_CLOSE}\n`;
+async function cmdRefresh(root, o) {
+  const build = async () => {
+    const a = await analyze(root, o.name);
+    if (!a.cur.exists) throw new Fail(1, "no-current", "there is no current spec to move the draft onto");
+    const sameBase = treePrint(a.base) === treePrint(a.cur);
+    const cc = await declsOf(root, SPEC);
+    const conflicts = [], files = new Map();
+    for (const f of a.files) {
+      const cur = a.cur.files.get(f.path)?.buf ?? null, mine = a.prop.files.get(f.path)?.buf ?? null;
+      if (f.merge === "unchanged" || f.merge === "same") { files.set(f.path, cur); continue; }
+      if (f.merge === "apply") { files.set(f.path, mine); continue; }
+      if (f.merge === "merge") { files.set(f.path, f.merged.buf); continue; }
+      // Both changed the file: per declaration, a declaration both changed as one marked block.
+      let m = null;
+      if (f.base && f.current && f.proposed && cc.exit !== 2 && a.bc.exit !== 2 && a.pc.exit !== 2) {
+        const cuts = [[a.base, a.bc], [a.cur, cc], [a.prop, a.pc]].map(([t, x]) => cutFile(t.files.get(f.path).buf, x.decls, f.path));
+        m = cuts.every(Boolean) ? mergeSpans(...cuts, (b, c, p, id) => ({ text: markBlock(id, c, p), conflict: true })) : null;
+      }
+      if (m && !m.conflicts) {
+        files.set(f.path, Buffer.from(m.text, "utf8"));
+        for (const id of m.marked) conflicts.push({ id, file: f.path, kind: "prose" });
+        continue;
+      }
+      const c = cur?.toString("utf8") ?? "", p = mine?.toString("utf8") ?? "";
+      files.set(f.path, Buffer.from(markBlock(f.ids[0] ?? f.path, c, p), "utf8"));
+      conflicts.push({ id: f.ids[0] ?? null, file: f.path, kind: "file" });
+    }
+    // Records and settings: promote's own candidate, the draft's record or setting where both changed it.
+    const p = await plan(root, { name: o.name, id: [], all: true, meta: [], file: [], "own-base": [], refresh: true });
+    for (const r of a.records) if (r.merge === "conflict") conflicts.push({ id: r.id, file: null, kind: "record" });
+    for (const x of a.meta) if (x.merge === "conflict") conflicts.push({ id: x.key, file: null, kind: "record" });
+    const spec = new Map(p.cand);
+    for (const [path, buf] of files) { if (buf === null) spec.delete(path); else spec.set(path, buf); }
+    const changedHere = [...cc.decls].filter(([id, d]) => a.bc.decls.get(id)?.textSha256 !== d.textSha256).map(([id]) => id);
+    const merged = changedHere.filter((id) => !conflicts.some((c) => c.id === id)).sort();
+    return { a, spec, conflicts: conflicts.sort((x, y) => String(x.id).localeCompare(String(y.id))), merged, sameBase };
+  };
+  const show = (b) => ({ name: o.name, rebased: !b.sameBase, merged: b.merged, conflicts: b.conflicts });
+  const first = await build();
+  if (first.sameBase) return { exit: 0, written: false, ...show(first) };
+  if (!o.write) return { exit: first.conflicts.length ? 1 : 0, written: false, ...show(first) };
+  return withLock(root, async () => {
+    await refusePending(root);
+    const b = await build();
+    if (JSON.stringify(show(b)) !== JSON.stringify(show(first))) throw new Fail(1, "race", "the draft or the current spec changed while the refresh was prepared; retry");
+    const rel = draftRel(o.name), tmpRel = `${DRAFTS}/.refresh-${randomBytes(6).toString("hex")}`;
+    await mkdir(join(root, tmpRel));
+    try {
+      for (const [side, tree] of [["base", new Map([...b.a.cur.files].map(([p, f]) => [p, f.buf]))], ["spec", b.spec]]) {
+        await mkdir(join(root, tmpRel, side));
+        for (const [p, buf] of tree) { await mkdir(join(root, tmpRel, side, dirname(p)), { recursive: true }); await writeFile(join(root, tmpRel, side, p), buf, { flag: "wx" }); }
+      }
+      const g = await gitInfo(root), commit = g.git ? resolveCommit(root, "HEAD") : null;
+      const d = structuredClone(b.a.d);
+      d.base = { specExisted: true, claimsRoot: b.a.cur.claimsRoot ?? "claims", files: Object.fromEntries([...b.a.cur.files].map(([p, f]) => [p, f.sha256])), ...(commit ? { commit } : {}) };
+      d.refreshes = [...(Array.isArray(d.refreshes) ? d.refreshes : []), { at: new Date().toISOString(), merged: b.merged, conflicts: b.conflicts.map((c) => c.id) }];
+      await writeFile(join(root, tmpRel, "draft.json"), JSON.stringify(d, null, 2) + "\n", { flag: "wx" });
+      // Swap in: the old base/ and spec/ go only once the new ones are whole.
+      const old = `${DRAFTS}/.refresh-old-${randomBytes(6).toString("hex")}`;
+      await mkdir(join(root, old));
+      for (const x of ["base", "spec", "draft.json"]) if (await exists(join(root, rel, x))) await rename(join(root, rel, x), join(root, old, x));
+      for (const x of ["base", "spec", "draft.json"]) await rename(join(root, tmpRel, x), join(root, rel, x));
+      await rm(join(root, old), { recursive: true, force: true });
+    } finally { await rm(join(root, tmpRel), { recursive: true, force: true }); }
+    return { exit: b.conflicts.length ? 1 : 0, written: true, ...show(b), ...(b.conflicts.length ? { next: `rewrite each marked block in ${rel}/spec as one text (current's change and yours), delete the marker lines, then record your note again where you changed a promise` } : {}) };
   });
 }
 
@@ -2508,7 +2598,7 @@ async function evaluate(argv, readPolicy, inputSources) {
     out.root = root;
     if (await ownDir(root, SPEC, false).catch(() => { throw new Fail(2, "symlink-refused", `${SPEC} or .sova is not a plain directory`); }) === null && o.cmd !== "new")
       throw new Fail(2, "draft-missing", `no ${SPEC} under ${root}`);
-    const cmds = { new: cmdNew, status: cmdStatus, diff: cmdDiff, check: cmdCheck, evidence: cmdEvidence, agree: cmdAgree, promote: cmdPromote, land: cmdLand, recover: cmdRecover, drafts: cmdDrafts, prune: cmdPrune, "merge-manifest": cmdMergeManifest, "merge-claims": cmdMergeClaims, migrate: cmdMigrate };
+    const cmds = { new: cmdNew, status: cmdStatus, diff: cmdDiff, check: cmdCheck, evidence: cmdEvidence, agree: cmdAgree, promote: cmdPromote, land: cmdLand, refresh: cmdRefresh, recover: cmdRecover, drafts: cmdDrafts, prune: cmdPrune, "merge-manifest": cmdMergeManifest, "merge-claims": cmdMergeClaims, migrate: cmdMigrate };
     out = { ...out, ...(await cmds[o.cmd](root, o)) };
   } catch (e) {
     if (!(e instanceof Fail)) e = new Fail(2, "internal", e.stack ?? String(e));

@@ -87,7 +87,8 @@ also update Y" list live in its guide: read the guide of every area your task to
   captain lands, pushes and restarts; **Not Yet** leaves it until a new commit. A card exists only once
   the branch is Ready to land and queued: a session tells the user to press Land It only when its
   chat shows that card, and otherwise says what still blocks it (Sova's note names it). A branch
-  with no owner chat gets no card: the captain asks for the user's typed OK instead. A Land It
+  with no owner chat gets no card: the captain asks for the user's typed OK instead. The user's word
+  in the captain's chat ("merge it") always lands a branch once its checks pass, card or not. A Land It
   survives the captain's clean master merge into the branch. No merge into master needs a
   recorded go-ahead. A project without a captain declares its own landing offer, or none.
 - **Specs land with the branch.** Sova tells a finished session once per commit to promote its spec

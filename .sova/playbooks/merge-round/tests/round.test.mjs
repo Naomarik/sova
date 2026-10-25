@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { acquireLock, alsoUpdateNudges, areaGuides, dirtyPaths, expandArgs, failingTestFiles, globRe, groupOf, guideFrontMatter, hasScript, homeShown, landingAnswer, landingAnswerAt, needsRestart, ownerOf, parseBatch, parseBoard, parseLanding, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
+import { acquireLock, alsoUpdateNudges, goAheadWord, areaGuides, dirtyPaths, expandArgs, failingTestFiles, globRe, groupOf, guideFrontMatter, hasScript, homeShown, landingAnswer, landingAnswerAt, needsRestart, ownerOf, parseBatch, parseBoard, parseLanding, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
 
 const ROUND = fileURLToPath(new URL("../scripts/round.mjs", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -152,18 +152,19 @@ if (a[0] === "drafts") {
   });
   console.log(JSON.stringify({ exit: 0, drafts }));
 }
-// prune --official --from DIR: deletes the copies FAKE_OFFICIAL names; FAKE_PRUNE_FAIL=1 fails, deleting nothing.
+// prune --official [--from DIR] [--write]: the drafts (or copies) FAKE_OFFICIAL names are official, deleted only with
+// --write; FAKE_PRUNE_FAIL=1 fails, deleting nothing.
 if (a[0] === "prune") {
   writeFileSync(process.env.FAKE_PRUNE_LOG, JSON.stringify(a) + "\\n", { flag: "a" });
   if (process.env.FAKE_PRUNE_FAIL === "1") { console.log("not json"); process.exit(2); }
-  const from = a[a.indexOf("--from") + 1];
-  const official = JSON.parse(process.env.FAKE_OFFICIAL || "[]");
-  const deleted = [], kept = [];
+  const from = a.includes("--from") ? a[a.indexOf("--from") + 1] : rootDir + "/.sova/spec/drafts";
+  const write = a.includes("--write"), official = JSON.parse(process.env.FAKE_OFFICIAL || "[]");
+  const hit = [], kept = [];
   for (const name of readdirSync(from).sort()) {
-    if (official.includes(name)) { rmSync(from + "/" + name, { recursive: true, force: true }); deleted.push({ name }); }
+    if (official.includes(name)) { if (write) rmSync(from + "/" + name, { recursive: true, force: true }); hit.push({ name }); }
     else kept.push({ name, state: "pending", reasons: [] });
   }
-  console.log(JSON.stringify({ exit: 0, deleted, kept }));
+  console.log(JSON.stringify({ exit: 0, deleted: write ? hit : [], wouldDelete: hit, kept }));
 }
 `);
 
@@ -415,7 +416,8 @@ test("note, ask and reply: never a busy owner, never twice in a row, never the s
   const busy = await run(["ask", "feat/clean", `topic=${TOPIC}`]);
   assert.equal(busy.code, 1);
   assert.match(busy.out, /busy/);
-  assert.equal((await run(["note", "feat/clean", `owner=${OWNER}`, "chip=ready", "idle=yes", "source=session_detail"])).code, 0);
+  assert.equal((await run(["note", "feat/clean", `owner=${OWNER}`, "chip=ready", "idle=yes"])).code, 0);
+  assert.equal((await run(["note", "feat/clean", `owner=${OWNER}`, "chip=ready", "idle=yes", "source=user"])).code, 2, "the user's word is go, never a note field");
   const noTopic = await run(["ask", "feat/clean"]);
   assert.equal(noTopic.code, 2);
   assert.match(noTopic.out, /topic=<name> is required/);
@@ -1050,7 +1052,8 @@ test("pure board rules: the file's shape, the owner rule and the groups", () => 
   assert.equal(g({ board }, row("ready", { ...L, commit: "old" })), "not-ready", "Ready to land at another head");
   assert.equal(g({ board }, row("ready", { state: "specs", commit: "h", drafts: ["d"] })), "not-ready", "landing its specs");
   assert.equal(g({ board }, row("ready", { state: "specs", commit: "h", drafts: ["d"], specsWhy: "no tools" })), "ask", "its specs can't land: the card offers Merge Without Specs…");
-  assert.equal(g({ board, source: "user", chip: "ready" }, row("ready", null)), "ask", "the user named it: asked the old way");
+  // The user's word in the captain's chat (`go`): a go-ahead, straight to check, whatever the board reads.
+  assert.equal(g({ board }, row("in-progress", null), 0, { answer: { kind: "go-ahead", by: "chat" } }), "check", "the user's word");
   // The Landing card: shown, waiting; refused, asked again; the user's answer at this head.
   const queued = { board, ask: { queued: "lq_1", head: "h", at: 1, owner: "A" } };
   assert.equal(g(queued, row("ready"), 0, { queued: { at: 1, card: "of_1" } }), "waiting");
@@ -1081,8 +1084,11 @@ test("groupOf: the owner's READY or the user's Land It checks, a green check lan
     assert.equal(g({ ...ready, ...green }, row, { answer }), "not-ready");
     assert.equal(g({ board }, row, { answer }), "not-ready");
   }
-  const named = { board, source: "user", chip: "ready", answer: { kind: "ready", head: "h" } };
-  assert.equal(g(named, null), "check", "the user named it, its owner said READY");
+  // The user's word needs no owner, board row or ask: an archived owner's branch, or one no session tracks.
+  const word = { answer: { kind: "go-ahead", by: "chat" } };
+  assert.equal(g({ board: { ...board, status: "archived" } }, null, word), "check");
+  assert.equal(g({}, null, word), "check");
+  assert.equal(goAheadWord("chat"), "word in this chat");
 });
 
 test("also-update rules: globs, the guides' front-matter and which touched areas missed their files", () => {
@@ -1337,6 +1343,37 @@ test("landed deletes kept draft copies only when the draft tool confirms them of
   assert.ok(!existsSync(old), "an emptied folder of copies is removed");
 });
 
+test("landed tidies the drafts already official out of the worktree once its check passed at that head, a copy kept", async () => {
+  const br = "feat/tidy";
+  git(main, "worktree", "add", "-q", wt(br), "-b", br);
+  const head = commit(wt(br), "tidy.txt", "t\n", "tidy: a file");
+  const exclude = join(main, ".git", "info", "exclude");
+  const was = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
+  writeFileSync(exclude, `${was}.sova/spec/drafts/\n`);
+  const drafts = join(wt(br), ".sova", "spec", "drafts");
+  for (const n of ["done", "open"]) { mkdirSync(join(drafts, n), { recursive: true }); writeFileSync(join(drafts, n, "draft.json"), `{"name":"${n}"}\n`); }
+  git(main, "merge", "-q", "--no-edit", "--no-ff", br);
+  const copy = join(agent, "sova", "playbooks", "merge-round", "tidied", head);
+  const env = { FAKE_OFFICIAL: JSON.stringify(["done"]), FAKE_DRAFT_IDS: JSON.stringify({ done: [], open: ["§o/x"] }) };
+  try {
+    const owned = await run(["landed", br], { env });
+    assert.doesNotMatch(owned.out, /Official drafts/, "no passing check at this head (its owner merged it): nothing tidied");
+    assert.deepEqual(readdirSync(drafts).sort(), ["done", "open"]);
+    const st = JSON.parse(readFileSync(stateFile, "utf8"));
+    st.branches[br].check = { head, masterSha: git(main, "rev-parse", "master"), ok: true, needs: [], flaky: [], preexisting: [], at: Date.now() };
+    writeFileSync(stateFile, JSON.stringify(st));
+    const r = await run(["landed", br], { env });
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, new RegExp(`^Official drafts tidied out of the worktree \\(a copy of its drafts at .*/tidied/${head}/\\): done\\.$`, "m"));
+    assert.deepEqual(readdirSync(drafts), ["open"], "a draft that isn't official stays");
+    assert.equal(readFileSync(join(copy, "done", "draft.json"), "utf8"), '{"name":"done"}\n');
+  } finally {
+    rmSync(drafts, { recursive: true, force: true });
+    rmSync(copy, { recursive: true, force: true });
+    writeFileSync(exclude, was);
+  }
+});
+
 test("B1: a § the draft promoted before, now in conflict after taking master's spec without re-promoting, is not promoted: READY and check hand it back", async () => {
   // Its own repository with a real spec and the real draft tool: the hold-back reads what the tool says.
   const REAL_CORE = join(REPO_ROOT, "pi-config", "extensions", "spec", "core");
@@ -1468,6 +1505,34 @@ test("Ready to land: ask queues the branch for Sova's Landing card; status reads
   } finally {
     writeFileSync(stateFile, saved);
     for (const f of [queueFile, shownFile, landingFile, boardFile]) rmSync(f, { force: true });
+  }
+});
+
+test("go: the user's word in this chat is a go-ahead at the head, straight to check whatever the board reads; a later Not Yet holds it", async () => {
+  const landingFile = join(agent, "sova", "landing.json");
+  const saved = readFileSync(stateFile, "utf8");
+  try {
+    git(main, "worktree", "add", "-q", "-b", "feat/word", wt("feat/word"), "master");
+    writeFileSync(join(wt("feat/word"), "word.txt"), "word\n");
+    git(wt("feat/word"), "add", "word.txt");
+    git(wt("feat/word"), "commit", "-q", "-m", "word");
+    const head = git(main, "rev-parse", "feat/word");
+    writeBoard([["feat/word", "in-progress", OWNER, "busy"]]);
+    const group = async () => JSON.parse((await run(["status", "--json"])).out).branches.find((b) => b.branch === "feat/word").group;
+    assert.equal(await group(), "not-ready");
+    const go = await run(["go", "feat/word"]);
+    assert.equal(go.code, 0, go.out);
+    assert.match(go.out, /^next: round\.mjs check feat\/word$/m);
+    assert.equal(await group(), "check", "in progress, its owner busy: the user's word checks it anyway");
+    assert.match((await run(["status"])).out, new RegExp(`the user's go-ahead \\(word in this chat\\) at ${head.slice(0, 7)}`));
+    writeFileSync(landingFile, JSON.stringify({ v: 1, goAheads: [], notYet: [{ branch: "feat/word", commit: head, at: new Date(Date.now() + 60_000).toISOString() }] }));
+    assert.equal(await group(), "not-ready", "a Not Yet pressed after the word holds it");
+    assert.equal((await run(["go", "feat/word", "now"])).code, 2, "only without-specs");
+  } finally {
+    writeFileSync(stateFile, saved);
+    rmSync(landingFile, { force: true });
+    git(main, "worktree", "remove", "--force", wt("feat/word"));
+    git(main, "branch", "-D", "feat/word");
   }
 });
 

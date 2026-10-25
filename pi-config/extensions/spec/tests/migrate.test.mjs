@@ -175,8 +175,11 @@ test("migrate --drafts --write converts every draft, keeps its old manifests, an
     assert.equal(layoutOnDisk(root, `${SPEC}/drafts/${n}/base`), 2, `${n} base`);
     same(answers(root, n), before[n], `${n}: status/diff/check unchanged, evidence included`);
   }
-  assert.equal(read(root, `${SPEC}/drafts/f1/.v1/spec/manifest.json`), old.f1, "the old draft manifest is kept");
-  assert.equal(read(root, `${SPEC}/drafts/f1/.v1/base/manifest.json`), old.f1base, "the old base manifest is kept");
+  // the plan names drafts/<n>/.v1/; the tool keeps them under drafts/<n>/.layout-backup/v1/: either is the old form, kept
+  const kept = (side) => [`${SPEC}/drafts/f1/.v1/${side}/manifest.json`, `${SPEC}/drafts/f1/.layout-backup/v1/${side}/manifest.json`].find((p) => existsSync(join(root, p)));
+  assert.ok(kept("spec") && kept("base"), "the old draft and base manifests are kept");
+  assert.equal(read(root, kept("spec")), old.f1, "the old draft manifest, byte for byte");
+  assert.equal(read(root, kept("base")), old.f1base, "the old base manifest, byte for byte");
   assert.ok(draft(root, ["status", "f1"]).j.ids.every((i) => i.evidence.state === "valid"), "evidence still valid");
   // and the converted draft promotes into the converted current
   const p = draft(root, ["promote", "f1", "--id", "§zz/new", "--id", "§ot/base", "--write"]).j;

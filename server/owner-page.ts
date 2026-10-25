@@ -367,7 +367,17 @@ function requestRows(ctx: Ctx): OwnerRequestRow[] {
   const names = new Map(ctx.projects.map((p) => [p.id, p.name]));
   return orgRequests(ctx.orgId)
     .filter((r) => names.has(r.projectId))
-    .map((r) => ({ handle: handleOf("r", r.id), project: ctx.r.redact(names.get(r.projectId)!), kind: r.kind, title: ctx.r.redact(ctx.r.said(r.title)), status: r.status, at: r.updatedAt, ...planOfRequest(ctx, r) }));
+    .map((r) => ({
+      handle: handleOf("r", r.id),
+      project: ctx.r.redact(names.get(r.projectId)!),
+      kind: r.kind,
+      title: ctx.r.redact(ctx.r.said(r.title)),
+      status: r.status,
+      at: r.updatedAt,
+      // Who closed it for the owner (§app.project-assistant/closing): never a person id, only you or your assistant.
+      ...(r.status === "closed" && r.closed ? { closedBy: r.closed.by.kind === "assistant" ? ("assistant" as const) : ("you" as const) } : {}),
+      ...planOfRequest(ctx, r),
+    }));
 }
 
 /** A `feature` request's chat as it stands (§app.project-assistant/feature-chats): planning while open, agreed once
@@ -386,7 +396,7 @@ function planOfRequest(ctx: Ctx, r: { kind: string; status: string; sessionId?: 
 /** Versions you can try of the shown projects (§app.project-assistant/versions); never an address. */
 async function versionsOf(ctx: Ctx): Promise<OwnerVersionRow[]> {
   const out: OwnerVersionRow[] = [];
-  for (const p of ctx.projects) out.push(...versionRows(await projectVersions(ctx.orgId, p).catch(() => []), ctx.r));
+  for (const p of ctx.projects) out.push(...versionRows(await projectVersions(ctx.orgId, p).catch(() => []), ctx.r, ctx.orgId));
   return out;
 }
 

@@ -11,8 +11,8 @@ import { canonical, normalizeMergeDetails, type TrackedWorktree, WORKTREE_MERGE_
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { asksUserOf } from "./signals-store";
 import { isCaptain } from "./merge-board";
-import { unpromotedDraftNames, unpromotedDrafts } from "./spec-drafts-state";
-import { blockedNoteText, type Finished, fileLandingStore, finishedOf, type LandingBlocker, landingBlockers, landingOf, type LandingStore, specsNudgeText, specsWhyOf } from "./ready-to-land";
+import { unpromotedDraftNames } from "./spec-drafts-state";
+import { blockedNoteText, type Finished, fileLandingStore, finishedOf, type LandingBlocker, landingBlockers, landingOf, landingReason, type LandingStore, specsNudgeText, specsWhyOf } from "./ready-to-land";
 import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
 import { WORKTREES } from "./harness/state-kinds";
@@ -174,6 +174,9 @@ function treeState(t: TreeFacts, s: SessionFacts): { state: ReadinessState; why?
   const why = dirty > 0 ? `${checks} · ${uncommittedWords(dirty, t.dirtyFiles)}` : checks;
   return s.asks ? { state: "waiting-approval", why } : { state: "ready", why };
 }
+
+/** A merged tree whose drafts aren't official: never plain Merged (§chat.worktrees/readiness). */
+export const lostDraftsReason = (n: number): string => `Nothing left to land, but its spec drafts didn't make it · ${n} draft${n === 1 ? "" : "s"}`;
 
 const TEMP_RE = /^(?:temp|wip)\b|^(?:fixup|squash|amend)!/i;
 /** The newest temporary commit subject, if any. */
@@ -638,10 +641,11 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
     if (tf.headAt) heads[t.path] = tf.headAt;
     const r = treeReadiness(tf, sf);
     let landing: WorktreeReadiness["landing"];
+    // Drafts that aren't official: a landing's, or a merged tree's that didn't make it (§chat.worktrees/readiness).
+    const drafts = tf.readable && (landingOn || tf.merged) ? deps.drafts(t.path) : undefined;
     if (landingOn) {
       const held = deps.landing.held(s.id, t.path);
       const heldHere = !!held && held.commit === tf.head;
-      const drafts = tf.readable && !tf.merged ? deps.drafts(t.path) : undefined;
       landing = landingOf(tf, sf, finished, heldHere, drafts, specsWhy);
       // Finished but not Ready to land: what the session can fix, for Sova's once-per-commit note.
       if (!landing && finished === "yes" && tf.head) {
@@ -659,7 +663,8 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
       state: r.state,
       ...((tf.readable ? tf.merged : tf.gone !== "unmerged" && (tf.tracked === "merged" || tf.gone === "merged")) ? { merged: true as const } : {}),
       ...(r.why ? { why: r.why } : {}),
-      reason: r.reason,
+      // One word wherever the reason is written (§chat.worktrees/ready-to-land).
+      reason: landing ? landingReason(landing, tf.ahead) : r.state === "merged" && drafts?.length ? lostDraftsReason(drafts.length) : r.reason,
       ...(tf.dirty && tf.dirtyCount ? { dirtyCount: tf.dirtyCount, dirtyFiles: tf.dirtyFiles ?? [] } : {}),
       ...(tf.conflicts ? { conflicts: tf.conflicts } : {}),
       ...(hasNoCommits(tf) ? { noCommits: true as const } : {}),
@@ -686,7 +691,7 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
   const r = sessionReadinessOf(trees, { ...(newest ? { lastMerge: { at: newest.at, branch: newest.branch } } : {}), restartPending, pushPending, followUp }, lastReplyAt);
   if (!r || !newest) return r;
   // The branch status line (§chat.worktrees/readiness): code only, for the newest merge.
-  const drafts = newest.path && existsSync(newest.path) ? unpromotedDrafts(newest.path) : undefined;
+  const drafts = newest.path && existsSync(newest.path) ? unpromotedDraftNames(newest.path)?.length : undefined;
   const status: BranchStatus = {
     branch: newest.branch,
     commit: newest.sha.slice(0, 7),

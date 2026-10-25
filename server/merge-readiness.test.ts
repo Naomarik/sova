@@ -279,7 +279,8 @@ test("computeReadiness end to end with git faked: waiting for the OK, then merge
   const waiting = await r.computeReadiness(summary(path), facts!);
   assert.equal(waiting?.badge, "waiting");
   // Decisions off (the test state root's default): the code-only conditions decide Ready to land (§chat.worktrees/ready-to-land).
-  assert.deepEqual(waiting?.trees, [{ path: "/wt/agents-row-dropdown", branch: "feat/agents-row-dropdown", state: "waiting-approval", why: "no check run seen", reason: "Waiting for your OK · no check run seen · 1 commit ahead", landing: { state: "ready", commit: "h1" } }]);
+  // The reason line says Ready to land itself, so every reader writes the same word; the state stays waiting underneath.
+  assert.deepEqual(waiting?.trees, [{ path: "/wt/agents-row-dropdown", branch: "feat/agents-row-dropdown", state: "waiting-approval", why: "no check run seen", reason: "Ready to land · 1 commit ahead", landing: { state: "ready", commit: "h1" } }]);
   // The attention signal's answer for this very reply wins over the fallback.
   r.configureReadiness({ asksUser: () => ({ turnId: (lines.at(-1) as { id: string }).id, asks: false }) });
   assert.equal((await r.computeReadiness(summary(path), facts!))?.badge, "ready");
@@ -290,6 +291,11 @@ test("computeReadiness end to end with git faked: waiting for the OK, then merge
   // R3: a rebased merge train changed the shas: merged by content.
   status = { ...status, merged: "content", ahead: 3 };
   assert.equal((await r.computeReadiness(summary(path), facts!))?.badge, "merged");
+  // Merged by content, but its drafts aren't official (a catch-up merge took master's spec): never plain Merged.
+  r.configureReadiness({ drafts: () => ["sidebar-scroll-stable", "sidebar-scroll-stable-2"] });
+  const lost = await r.computeReadiness(summary(path), facts!);
+  assert.deepEqual([lost?.badge, lost?.trees[0]?.state, lost?.trees[0]?.reason], ["merged", "merged", "Nothing left to land, but its spec drafts didn't make it · 2 drafts"]);
+  r.configureReadiness({ drafts: () => undefined });
   // HEAD still at its base: never merged, whatever ancestry says (the 01a0eef8 shape).
   status = { ...status, merged: "ancestor", ahead: 0, head: "b0", dirty: true };
   assert.equal((await r.computeReadiness(summary(path), facts!))?.trees[0]?.state, "in-progress");
@@ -1043,7 +1049,8 @@ test("idle unmerged sessions (§app/idle-git-cache): no Git between 5-minute rea
 
     writeFileSync(driver, "exit 0\n");
     await tick(1);
-    assert.equal(reason(), "Ready to merge · no check run seen · 2 commits ahead", "a change to the merge driver's code alone shows at the next listing");
+    // Decisions off: the code-only conditions make it Ready to land, which its reason says (§chat.worktrees/ready-to-land).
+    assert.equal(reason(), "Ready to land · 2 commits ahead", "a change to the merge driver's code alone shows at the next listing");
 
     calls.length = 0;
     commit(main, "b.txt", "master moves");

@@ -4,7 +4,8 @@ import { ownerHash, parseOwnerHash, readsHome } from "../lib/owner-words";
 import { type FeatureApi, type OwnerAnswer, OwnerPage, type RequestsApi } from "./owner-view";
 import { OwnerLoadError, ownerProblemOf } from "../lib/owner-problem";
 import type { AssistantApi } from "./assistant-view";
-import type { AssistantSend, AssistantServerMessage, AssistantView } from "../../shared/project-assistant";
+import type { AssistantOlder, AssistantSend, AssistantServerMessage, AssistantView } from "../../shared/project-assistant";
+import type { OwnerConversationOlder } from "../../shared/owner";
 import { visitTab } from "./visit-tab";
 import { uploadPhoto } from "./photos";
 
@@ -23,6 +24,14 @@ const storage = (): Storage | null => {
   }
 };
 const VISIT = visitTab(storage());
+/** This browser's stores for "new since your last visit" (§app.owner-page/content): the share address's own. */
+const seenStores = () => {
+  try {
+    return { local: localStorage, session: sessionStorage };
+  } catch {
+    return undefined;
+  }
+};
 
 const apiPath = (r: OwnerRoute): string =>
   `/api/i/${TOKEN}${r.kind === "project" ? `/p/${r.id}` : r.kind === "conversation" ? `/c/${r.id}` : ""}?v=${VISIT}`;
@@ -63,6 +72,12 @@ const assistant: AssistantApi = {
     const problem = await failure(res, "assistant");
     if (problem) throw problem;
     return (await res.json()) as AssistantView;
+  },
+  // An earlier page (§app.project-assistant/chat, Paged): read as the chat's own read is.
+  async older(before) {
+    const res = await fetch(`/api/i/${TOKEN}/assistant/older?before=${before}`, { cache: "no-store" }).catch(() => null);
+    if (!res?.ok) throw new OwnerLoadError("failed");
+    return (await res.json()) as AssistantOlder;
   },
   async send(text, images) {
     const body: AssistantSend = { text, ...(images?.length ? { images } : {}) };
@@ -117,6 +132,13 @@ const feature: FeatureApi = {
   },
 };
 
+/** A conversation's earlier items (§app.owner-page/content). */
+async function olderItems(conversation: string, before: number): Promise<OwnerConversationOlder> {
+  const res = await fetch(`/api/i/${TOKEN}/c/${encodeURIComponent(conversation)}/older?before=${before}`, { cache: "no-store" }).catch(() => null);
+  if (!res?.ok) throw new OwnerLoadError("failed");
+  return (await res.json()) as OwnerConversationOlder;
+}
+
 /** The owner's Close and Reopen on their requests (§app.project-assistant/closing). */
 const requests: RequestsApi = {
   async act(handle, action) {
@@ -133,5 +155,5 @@ export function OwnerApp() {
   };
   window.addEventListener("hashchange", onHash);
   onCleanup(() => window.removeEventListener("hashchange", onHash));
-  return <OwnerPage route={route()} load={load} href={ownerHash} tourBase={(conversation, handle) => `/api/i/${TOKEN}/c/${encodeURIComponent(conversation)}/tours/${encodeURIComponent(handle)}`} onTitle={(t) => (document.title = t)} ask={ask} assistant={assistant} feature={feature} requests={requests} versionHref={(h) => `/i/${TOKEN}/v/${h}`} />;
+  return <OwnerPage route={route()} load={load} href={ownerHash} tourBase={(conversation, handle) => `/api/i/${TOKEN}/c/${encodeURIComponent(conversation)}/tours/${encodeURIComponent(handle)}`} onTitle={(t) => (document.title = t)} ask={ask} assistant={assistant} feature={feature} requests={requests} olderItems={olderItems} versionHref={(h) => `/i/${TOKEN}/v/${h}`} seen={seenStores()} />;
 }

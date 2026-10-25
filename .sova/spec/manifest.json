@@ -1408,12 +1408,18 @@
         "src/lib/share-composer.ts",
         "src/lib/share-composer.test.ts",
         "src/share/owner.css",
-        "server/project-assistant-ready.ts"
+        "server/project-assistant-ready.ts",
+        "shared/project-assistant.ts",
+        "src/share/load-older.ts",
+        "src/lib/paged.ts",
+        "src/lib/paged.test.ts",
+        "server/project-assistant-media.integration.test.ts",
+        "server/org-routes.ts"
       ],
       "agreed": {
-        "by": "Omar",
-        "at": "2026-10-23T21:49Z",
-        "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#4f6c19c9"
+        "by": "omar (user)",
+        "at": "2026-10-25T16:19Z",
+        "source": "pi-session:01a173c3-7183-70d4-a656-e47ab7fd7392#93a64791"
       }
     },
     "§app.project-assistant/closing": {
@@ -9024,8 +9030,16 @@
         "src/delete-button.css",
         "src/lib/two-step.ts",
         "server/share-message.integration.test.ts",
-        "server/public-links.integration.test.ts"
-      ]
+        "server/public-links.integration.test.ts",
+        "server/owner-answer.ts",
+        "server/owner-answer.test.ts",
+        "server/owner-page.ts"
+      ],
+      "agreed": {
+        "by": "omar (user)",
+        "at": "2026-10-25T16:19Z",
+        "source": "pi-session:01a173c3-7183-70d4-a656-e47ab7fd7392#93a64791"
+      }
     },
     "§app.baton/needs-you": {
       "kind": "behavior",
@@ -9180,16 +9194,19 @@
         "src/vis/kinds/frame/svg-image.test.ts",
         "server/tours/public-view.ts",
         "src/share/ShareComposer.tsx",
-        "server/feature-chat-view.test.ts"
+        "server/feature-chat-view.test.ts",
+        "src/share/theme.ts",
+        "src/share/owner-view.tsx",
+        "server/owner-page.ts"
       ],
       "requires": [
         "§app.organizations/privacy",
         "§app/tours"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-22T09:37Z",
-        "source": "pi-session:4dbe354b-e46f-46a6-8617-0cedc16ff81f#4b53db3a"
+        "by": "omar (user)",
+        "at": "2026-10-25T18:32Z",
+        "source": "pi-session:01a173c3-7183-70d4-a656-e47ab7fd7392#cbe59d9a"
       }
     },
     "§app.baton/rejected": {
@@ -9228,7 +9245,9 @@
         "server/share/rate-limit.ts",
         "server/share-rate-limit.test.ts",
         "server/tour-routes.ts",
-        "server/tours/bindings-app.integration.test.ts"
+        "server/tours/bindings-app.integration.test.ts",
+        "server/share-router.test.ts",
+        "server/owner-page.integration.test.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -9236,9 +9255,9 @@
         "§app/tours"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-20T12:19Z",
-        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#2d6e96df"
+        "by": "omar (user)",
+        "at": "2026-10-25T16:19Z",
+        "source": "pi-session:01a173c3-7183-70d4-a656-e47ab7fd7392#93a64791"
       }
     },
     "§app.organizations/decisions": {
@@ -11376,12 +11395,24 @@
         "src/lib/share-follow.test.ts",
         "server/owner-page-tabs.integration.test.ts",
         "src/share/owner.css",
-        "src/lib/owner-abilities.ts"
+        "src/lib/owner-abilities.ts",
+        "src/share/brand.tsx",
+        "src/share/load-older.ts",
+        "src/lib/paged.ts",
+        "src/lib/paged.test.ts",
+        "src/lib/owner-seen.ts",
+        "src/lib/owner-seen.test.ts",
+        "server/owner-answer.ts",
+        "server/owner-answer.test.ts",
+        "server/project-assistant.ts",
+        "server/org-routes.ts",
+        "src/lib/api.ts",
+        "src/components/OwnerCard.tsx"
       ],
       "agreed": {
-        "by": "Omar (al_1 go-ahead)",
-        "at": "2026-10-24T21:08Z",
-        "source": "pi-session:3ca7d7a1-521f-40ef-8493-5da871963c1c#56f51242"
+        "by": "omar (user)",
+        "at": "2026-10-25T20:05Z",
+        "source": "pi-session:01a173c3-7183-70d4-a656-e47ab7fd7392#7bd7cdaa"
       }
     },
     "§app.owner-page/controls": {
@@ -11451,12 +11482,14 @@
         "src/share/thread.tsx",
         "server/share/edge.ts",
         "server/share/routes.ts",
-        "server/baton-view.ts"
+        "server/baton-view.ts",
+        "src/lib/owner-words.ts",
+        "src/lib/owner-words.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-22T09:37Z",
-        "source": "pi-session:4dbe354b-e46f-46a6-8617-0cedc16ff81f#4b53db3a"
+        "by": "omar (user)",
+        "at": "2026-10-25T16:19Z",
+        "source": "pi-session:01a173c3-7183-70d4-a656-e47ab7fd7392#93a64791"
       }
     },
     "§app.owner-page/link": {
@@ -11519,12 +11552,13 @@
         "server/share/routes.ts",
         "server/version-summaries.ts",
         "server/version-summaries.test.ts",
-        "server/owner-versions.ts"
+        "server/owner-versions.ts",
+        "shared/owner.ts"
       ],
       "agreed": {
-        "by": "Omar (al_1 go-ahead)",
-        "at": "2026-10-24T21:08Z",
-        "source": "pi-session:3ca7d7a1-521f-40ef-8493-5da871963c1c#56f51242"
+        "by": "omar (user)",
+        "at": "2026-10-25T16:19Z",
+        "source": "pi-session:01a173c3-7183-70d4-a656-e47ab7fd7392#93a64791"
       }
     },
     "§app.owner-page/owner": {
@@ -11582,12 +11616,15 @@
         "src/share/assistant-view.tsx",
         "server/owner-page-tabs.integration.test.ts",
         "server/share-router.test.ts",
-        "server/owner-request-close.test.ts"
+        "server/owner-request-close.test.ts",
+        "src/share/theme.ts",
+        "src/share/brand.tsx",
+        "server/org-routes.ts"
       ],
       "agreed": {
-        "by": "Omar (al_1 go-ahead)",
-        "at": "2026-10-24T21:48Z",
-        "source": "pi-session:3ca7d7a1-521f-40ef-8493-5da871963c1c#56f51242"
+        "by": "omar (user)",
+        "at": "2026-10-25T18:32Z",
+        "source": "pi-session:01a173c3-7183-70d4-a656-e47ab7fd7392#cbe59d9a"
       }
     },
     "§app.owner-page/rejected": {
@@ -11670,13 +11707,19 @@
         "server/tour-routes.ts",
         "src/share/thread.tsx",
         "server/share/edge.ts",
-        "server/share/routes.ts"
+        "server/share/routes.ts",
+        "src/share/brand.tsx"
       ],
       "notOwned": [
         "§app.baton/share-listener",
         "§app.baton/outsider-view",
         "§app.organizations/org-page"
-      ]
+      ],
+      "agreed": {
+        "by": "omar (user)",
+        "at": "2026-10-25T16:19Z",
+        "source": "pi-session:01a173c3-7183-70d4-a656-e47ab7fd7392#93a64791"
+      }
     },
     "§design.copy-deck/owner-page": {
       "kind": "note",

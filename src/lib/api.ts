@@ -1,4 +1,4 @@
-import type { AssistantInfo, AssistantView, PricedPick, VersionSummaryRow } from "../../shared/project-assistant";
+import type { AssistantInfo, AssistantOlder, AssistantView, PricedPick, VersionSummaryRow } from "../../shared/project-assistant";
 import type { ModelPick, WorkModels } from "../../shared/powers";
 import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
 import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow } from "../../shared/project-settings";
@@ -103,7 +103,7 @@ import type {
   MeshPreset,
   MeshSessionsView as MeshSessions,
 } from "../../shared/mesh-access";
-import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
+import type { OwnerConversation, OwnerConversationOlder, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
 import type { NamedChange, OrgDetail, OrgsInfo, PersonHours, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
 import type { EventDetail, EvidenceView, HistoryChain, HistoryPacket, HistoryPage, HistoryQuery } from "../../shared/org-history";
 import type { BatonOutreach, SendLinkAnswer } from "../../shared/outreach";
@@ -1285,6 +1285,11 @@ export const startOwnerRequestChat = (id: string, rid: string) => request<{ sess
 export const openAssistantChat = (id: string) => request<{ sessionId: string; path: string }>(assistantUrl(id, "assistant/open"), jsonInit("POST"));
 /** The assistant's conversation as the owner sees it (the preview); no token, no use. */
 export const previewAssistant = (id: string) => request<AssistantView>(assistantUrl(id, "preview?assistant=1"));
+/** An earlier page of it (§app.project-assistant/chat, Paged). */
+export const previewAssistantOlder = (id: string, before: number) => request<AssistantOlder>(assistantUrl(id, `preview?assistant=1&before=${before}`));
+/** A conversation's earlier items on the preview (§app.owner-page/content). */
+export const previewConversationOlder = (id: string, c: string, before: number) =>
+  request<OwnerConversationOlder>(`/api/orgs/${encodeURIComponent(id)}/owner/preview?c=${encodeURIComponent(c)}&before=${before}`);
 
 /** Show this project on the owner's page, or not. */
 export const setProjectOwnerHidden = (id: string, pid: string, ownerHidden: boolean) =>

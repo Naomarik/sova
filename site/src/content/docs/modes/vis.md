@@ -73,6 +73,12 @@ A sequence starts complete. **Step Through** walks it one message at a time with
 Next ("Step 3 of 8"), dimming the later steps, and **Show All** ends the walk. Nothing plays by
 itself.
 
+A flow or state drawing never cuts its words: questions are wide hexagons, and every label,
+note and frame title wraps to as many lines as it needs. Tap or click a shape to follow it: its
+neighbours stay lit, the rest fades, and a panel under the drawing shows its full text with
+buttons to the shapes before and after it. Tap it again, or press Escape, to clear. With the
+keyboard, Tab to the drawing, move between shapes with the arrow keys and pick with Enter.
+
 A drawing never widens the chat: a wide one shrinks to fit, then scrolls sideways inside its own
 box, at phone widths too. While the agent is still writing a block, its place holds a box reading
 "Drawing {kind}…", so the reply doesn't jump when it finishes.

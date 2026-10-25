@@ -63,7 +63,9 @@ environment every runner starts in, and the hermetic dev server.
 - Tests run on Bun only through the runner (`pnpm test`, `test:int`): it sets HOME before bun starts
   (Bun's `os.homedir()` ignores an in-process change), puts the real node and `mise bin-paths` first
   on PATH (shims refuse in a throwaway HOME; tests spawn `node` and `python3`), and sets
-  `SOVA_PRICES_FETCH=off`. `bun test` itself runs with TZ=UTC and NODE_ENV=test, unlike `node --test`.
+  `SOVA_PRICES_FETCH=off` and `SOVA_GIT_MAINTENANCE=off` (no server a test starts registers a
+  repository with git's scheduled maintenance or starts its timers; `server/git-maintenance*.test.ts`
+  drive it with a throwaway global config and a stand-in scheduler). `bun test` itself runs with TZ=UTC and NODE_ENV=test, unlike `node --test`.
 - **No real Claude.** On both runtimes the runner puts a stand-in `claude` (`scripts/fake-claude.mjs`)
   first on every test process's PATH: code under test resolves the Claude program from PATH, and the
   inherited one holds the installed CLI (a paid model). A test that needs another `claude` sets its

@@ -1200,6 +1200,34 @@
         "at": "2026-10-13T19:52Z"
       }
     },
+    "§app.insights/session-token-rate": {
+      "kind": "behavior",
+      "requires": [
+        "§app.insights/token-velocity",
+        "§app.insights/team-cards"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-tokens.ts",
+        "server/session-tokens.test.ts",
+        "server/chat-host.ts",
+        "server/chat-host.test.ts",
+        "server/insights.ts",
+        "shared/protocol.ts",
+        "src/lib/agents-board.ts",
+        "src/lib/agents-board.test.ts",
+        "src/components/AgentsView.tsx",
+        "src/agents-board.css",
+        "shared/session-tokens-wire.ts",
+        "shared/session-tokens-wire.test.ts"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T20:41Z",
+        "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
+      }
+    },
     "§app.insights/sidebar-foot": {
       "kind": "behavior",
       "authority": "accepted",
@@ -1228,7 +1256,12 @@
         "src/lib/agents-board.ts",
         "src/lib/agents-board.test.ts",
         "src/lib/api.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T20:41Z",
+        "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
+      }
     },
     "§app.insights/team-cards": {
       "kind": "behavior",
@@ -1252,9 +1285,9 @@
         "src/lib/session-row-menu.snapshot.json"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "user",
+        "at": "2026-10-25T20:41Z",
+        "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
       }
     },
     "§app.insights/tokens-motion-and-accessibility": {
@@ -1300,8 +1333,9 @@
         "src/design/base.css"
       ],
       "agreed": {
-        "by": "Omar (al_1 go-ahead)",
-        "at": "2026-10-13T16:19Z"
+        "by": "user",
+        "at": "2026-10-25T20:41Z",
+        "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
       }
     },
     "§app.new-session-dialog/slow-targets": {
@@ -7040,7 +7074,12 @@
         "src/lib/session-row-menu.test.ts",
         "src/lib/session-row-menu.snapshot.json",
         "scenarios/session-menu.json"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T20:41Z",
+        "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
+      }
     },
     "§app.extensions/trust": {
       "kind": "behavior",
@@ -20700,8 +20739,9 @@
         "§app.insights/llm-inflight"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-13T02:51Z"
+        "by": "user",
+        "at": "2026-10-25T20:41Z",
+        "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
       }
     },
     "§app.session-list/working-now": {

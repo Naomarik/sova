@@ -1,8 +1,10 @@
 import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
-import { ASSISTANT_TEXT_MAX, type AssistantServerMessage, type AssistantView } from "../../shared/project-assistant";
+import { ASSISTANT_TEXT_MAX, type AssistantMessage, type AssistantOlder, type AssistantServerMessage, type AssistantView } from "../../shared/project-assistant";
 import { OFFLINE_PAGE, RECONNECT_BACKOFF_MS } from "../../shared/public-links";
 import { assistantProblemText, isDeadLink, OwnerLoadError } from "../lib/owner-problem";
-import { keepUnchanged, nearEnd } from "../lib/share-follow";
+import { nearEnd } from "../lib/share-follow";
+import { emptyPaged, hasOlder, mergeNewest, prependOlder, type Paged } from "../lib/paged";
+import { createOlderLoader } from "./load-older";
 import { batonKinds } from "./markdown";
 import type { UploadRefusal } from "./photos";
 import { ShareComposer, type Attachment, type SendOutcome, type Upload } from "./ShareComposer";
@@ -27,6 +29,8 @@ const STARTING_MS = 3000;
 
 export interface AssistantApi {
   load(): Promise<AssistantView>;
+  /** The page of messages before message `before` (§app.project-assistant/chat, Paged); absent: an older server, no paging. */
+  older?(before: number): Promise<AssistantOlder>;
   /** Absent: read only (the operator's preview). `images`: staged photo ids. */
   send?(text: string, images?: string[]): Promise<{ ok: true } | { ok: false; code: string; message: string }>;
   /** Stage a photo (the composer's upload); absent: no photos. */
@@ -75,6 +79,15 @@ export function AssistantChat(props: {
   conversationLink?(id: string): { href: string; onClick(e: MouseEvent): void };
 }) {
   const [view, setView] = createSignal<AssistantView | null>(null);
+  /** The messages on screen: the newest page and every earlier page loaded, merged by `n` (never replaced). */
+  const [paged, setPaged] = createSignal<Paged<AssistantMessage>>(emptyPaged());
+  const messages = () => paged().rows;
+  /** The message just sent, shown at once as `Sending…` until the conversation holds it (§app.project-assistant/chat):
+      its text, its photos' device previews, the newest message number when it was sent, and whether the chat took it. */
+  const [pending, setPending] = createSignal<{ text: string; thumbs: string[]; after: number; accepted: boolean } | null>(null);
+  /** Earlier pages load only once the chat first scrolled to its newest message. */
+  const [armed, setArmed] = createSignal(false);
+  const [sentinelEl, setSentinelEl] = createSignal<HTMLDivElement>();
   const [streaming, setStreaming] = createSignal("");
   const [draft, setDraft] = createSignal("");
   const [sending, setSending] = createSignal(false);
@@ -120,14 +133,32 @@ export function AssistantChat(props: {
       window.removeEventListener("wheel", onWheel);
     });
   }
+  const lastN = () => messages()[messages().length - 1]?.n ?? 0;
   const apply = (v: AssistantView) => {
-    // Only what changed is drawn again: a drawing keeps its state through the re-reads.
-    setView({ ...v, messages: keepUnchanged(view()?.messages ?? [], v.messages) });
+    // Merged by message number: earlier pages stay, and only what changed is drawn again (a drawing keeps its state).
+    const next = mergeNewest(paged(), { rows: v.messages, older: v.older ?? 0 }, (m) => m.n);
+    setPaged(next);
+    setView(v);
     setStreaming(v.busy ? (v.streaming ?? "") : "");
     setProblem(null);
     offlineDelay = RECONNECT_BACKOFF_MS.first;
+    // The conversation holds the message just sent: its own copy replaces the Sending… row.
+    const p = pending();
+    if (p?.accepted && next.rows.some((m) => m.role === "owner" && m.n > p.after)) setPending(null);
     toBottom();
+    if (!armed()) requestAnimationFrame(() => requestAnimationFrame(() => setArmed(true)));
   };
+  const older = createOlderLoader({
+    sentinel: sentinelEl,
+    more: () => armed() && !!props.api.older && hasOlder(paged()),
+    async load() {
+      const first = messages()[0];
+      if (!first || !props.api.older) return true;
+      const page = await props.api.older(first.n);
+      setPaged((p) => prependOlder(p, { rows: page.messages, older: page.older }, (m) => m.n));
+      return true;
+    },
+  });
   const reload = () =>
     props.api
       .load()
@@ -180,7 +211,8 @@ export function AssistantChat(props: {
     ),
   );
 
-  const busy = () => !!view()?.busy;
+  /** A reply is being written, or the chat just took the owner's message and its reply is starting. */
+  const busy = () => !!view()?.busy || !!pending()?.accepted;
   // "Wait for the answer first." goes once the answer is done; the box still holds the text.
   createEffect(
     on(busy, (b) => {
@@ -221,14 +253,19 @@ export function AssistantChat(props: {
     setSending(true);
     setError("");
     const ids = photos.flatMap((a) => (a.id ? [a.id] : []));
+    // At once: the owner's message at the end, marked Sending…, with their photos as the device shows them.
+    setPending({ text, thumbs: photos.flatMap((a) => (a.thumb ? [a.thumb] : [])), after: lastN(), accepted: false });
+    toBottom(true);
     const r = await props.api.send(text, ids.length ? ids : undefined).catch(() => ({ ok: false as const, code: "failed", message: "" }));
     setSending(false);
     if (!r.ok) {
-      // A staged photo expired: the composer uploads it again once and resends.
+      // Refused: the row leaves; the composer puts the words and photos back (or uploads an expired photo once).
+      setPending(null);
       if (r.code === "photo-expired" && !again && ids.length) return { expired: "photo" };
       setError(sendRefusal(r.code, props.op));
       return "kept";
     }
+    setPending((p) => (p ? { ...p, accepted: true } : p));
     toBottom(true);
     void reload();
     box?.input.focus();
@@ -244,8 +281,8 @@ export function AssistantChat(props: {
   return (
     <>
       <header class="owner-head owner-chat-head">
-        <h1 class="owner-org">Project Assistant</h1>
-        <Show when={hasLines() && view()?.messages.length}>
+        <h2 class="owner-title">Project Assistant</h2>
+        <Show when={hasLines() && messages().length}>
           <button type="button" class="button button-ghost owner-ask-what" onClick={openSheet}>
             What Can I Ask?
           </button>
@@ -276,12 +313,30 @@ export function AssistantChat(props: {
         }}
       </Show>
       <section class="owner-thread owner-assistant" aria-label="Conversation with the Project Assistant" aria-live="polite" ref={list}>
-        <Show when={view()}>
+        <div
+          class="owner-older"
+          ref={setSentinelEl}
+        >
+          <Show when={older.loading()}>
+            <p class="owner-meta" role="status">
+              Loading earlier messages…
+            </p>
+          </Show>
+          <Show when={older.failed()}>
+            <p class="owner-meta" role="alert">
+              Earlier messages didn't load.{" "}
+              <button type="button" class="button button-sm" onClick={() => older.retry()}>
+                Try Again
+              </button>
+            </p>
+          </Show>
+        </div>
+        <Show when={view() && !hasOlder(paged())}>
           <article class="share-msg share-msg-reply" aria-label="Project Assistant">
             <span class="share-who">Project Assistant</span>
             <p class="share-text">Hi {props.first}. I know your projects and what has been agreed so far. Ask me anything, tell me about a problem, or ask for something new.</p>
           </article>
-          <Show when={hasLines() && !view()!.messages.length && !busy()}>
+          <Show when={hasLines() && !messages().length && !pending() && !busy()}>
             <ul class="owner-suggestions" aria-label="Suggestions">
               <For each={props.lines}>
                 {(l) => (
@@ -295,7 +350,7 @@ export function AssistantChat(props: {
             </ul>
           </Show>
         </Show>
-        <For each={view()?.messages ?? []}>
+        <For each={messages()}>
           {(m) => (
             <article class="share-msg" classList={{ "share-msg-own": m.role === "owner", "share-msg-reply": m.role === "assistant" }} aria-label={who(m.role, m.name)}>
               <span class="share-who" classList={{ "visually-hidden": m.role === "owner" }}>
@@ -318,6 +373,20 @@ export function AssistantChat(props: {
             </article>
           )}
         </For>
+        <Show when={pending()}>
+          {(p) => (
+            <article class="share-msg share-msg-own owner-pending" aria-label="You, sending" aria-busy="true">
+              <span class="share-who visually-hidden">You</span>
+              <Show when={p().thumbs.length}>
+                <MessagePhotos srcs={p().thumbs} from="you" own />
+              </Show>
+              <Show when={p().text}>
+                <LinkedText text={p().text} />
+              </Show>
+              <span class="owner-meta owner-pending-state">Sending…</span>
+            </article>
+          )}
+        </Show>
         <Show when={busy()}>
           <article class="share-msg share-msg-reply" aria-label="Project Assistant, writing">
             <span class="share-who">Project Assistant · writing</span>
@@ -346,6 +415,7 @@ export function AssistantChat(props: {
             blocked={() => busy() || view()?.ready === false}
             sending={sending}
             send={send}
+            optimistic={() => !busy() && !sending() && view()?.ready !== false}
             ref={(b) => {
               box = b;
               setBoxReady(true);

@@ -66,8 +66,11 @@ const ROUTES: { method: string; re: RegExp }[] = [
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}$`) },
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/p/q_[a-z2-9]{8}$`) },
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/c/k_[a-z2-9]{8}$`) },
+  // A conversation's earlier items, and the Project Assistant's earlier messages (§app.owner-page/page): `?before=<n>`.
+  { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/c/k_[a-z2-9]{8}/older$`) },
+  { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/assistant/older$`) },
   { method: "POST", re: new RegExp(`^/i/${TOKEN}/ask-link$`) },
-  // The owner's own feature request chat (§app.project-assistant/feature-chats): a message, and End Chat.
+  // The owner's message (their answer, or in their own feature request chat, §app.owner-page/content), and End Chat.
   { method: "POST", re: new RegExp(`^/api/i/${TOKEN}/c/k_[a-z2-9]{8}/(?:message|end)$`) },
   // The owner closes or reopens their own request (§app.project-assistant/closing).
   { method: "POST", re: new RegExp(`^/api/i/${TOKEN}/requests/r_[a-z2-9]{8}$`) },

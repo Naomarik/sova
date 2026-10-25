@@ -228,7 +228,11 @@ found so far (pi 1.0.3).
   the queue wakes on `agent_settled` is handed off synchronously inside that window, so its turn takes
   this path (quirk P5): it still starts, and its failure surfaces through the previous call's failure
   handling, which every `harness.send()` call site in `server/chat-manager.ts` attaches (`.catch`, or
-  the returned `turn`). Topic batches (`server/topic-delivery.ts`, `ChatSession.deliverTopicBatch`)
+  the returned `turn`). A keyed item (a worker's steer or follow-up) is the exception: its message
+  must carry its send key (`server/send-keys.ts`, §app.chat-processes/worker-instructions), and a
+  deferred turn runs outside the send's async context, so `acceptPrompt` queues a keyed send made in
+  the window and the queue holds a keyed item until the window has passed. Topic batches
+  (`server/topic-delivery.ts`, `ChatSession.deliverTopicBatch`)
   stay out of that window on purpose: a settle only schedules a drain on a timer, after the web queue's
   own hand-off, and a batch counts as delivered at its user entry's `message_end` (the
   `sova-topic-delivered` marker), never when its `prompt()` resolves.

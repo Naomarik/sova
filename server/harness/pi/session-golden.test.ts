@@ -413,7 +413,7 @@ test("S1: a message-less session with a recorded model: open/attach/dispose writ
   golden("S1-open-first-prompt", [path], trace);
 });
 
-test("S2: two steers mid-turn (one image-only): Sova's queue, one item in the SDK at a time, nothing stranded", async () => {
+test("S2: two steers mid-turn (one image-only) land together: both in the SDK at once, one reply, nothing stranded", async () => {
   const model = new ScriptedModel();
   const trace = new Trace();
   const path = sessionFile();
@@ -424,7 +424,7 @@ test("S2: two steers mid-turn (one image-only): Sova's queue, one item in the SD
   await until(() => model.calls.length === 1, "the first model call");
   send(chat, trace, a, "A", { type: "steer", text: "steer one", clientId: "c2" });
   send(chat, trace, b, "B", { type: "steer", text: "", images: [{ data: PNG, mimeType: "image/png" }], clientId: "c3" });
-  await until(() => trace.has('sdk steer ["steer one"'), "the first steer's hand-off");
+  await until(() => trace.has('sdk steer ["",[{"type":"image"'), "the second steer's hand-off, beside the first");
   trace.step("release the reply");
   release();
   await idle(chat);

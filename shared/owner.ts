@@ -14,7 +14,10 @@
  * GET /i/<token>                        the share build's shell (it routes /i/ to the Owner page)
  * GET /api/i/<token>                    -> OwnerHome
  * GET /api/i/<token>/p/<q_…>            -> OwnerProject (404: unknown or not shown)
- * GET /api/i/<token>/c/<k_…>            -> OwnerConversation (404: unknown or hidden)
+ * GET /api/i/<token>/c/<k_…>            -> OwnerConversation (404: unknown or hidden): its newest page of items
+ * GET /api/i/<token>/c/<k_…>/older?before=<n> -> OwnerConversationOlder (the items before position n)
+ * POST /api/i/<token>/c/<k_…>/message    body { text } -> 202 { ok } (the owner's answer while it waits on them, or a
+ *                                       message in their feature request chat) | 409 { code: "not-holder" | "taken" | "budget" | "closed" } | 404 | 429
  * Dead links: 410 { error, code: "gone", why?: "expired", asked?: true } with no names (`expired`: it
  * turned off after 7 days unused, and may ask for a new one); unknown: 404 { error, code: "not-found" }.
  *
@@ -136,6 +139,20 @@ export interface OwnerHome {
   assistant?: { ready: boolean };
   /** What the assistant can do for the owner, per shown project; absent while it isn't ready. */
   abilities?: OwnerAbilities;
+  /** Every shown conversation of every shown project, for Home's Conversations (Outstanding and History,
+      §app.owner-page/content). Absent from an older server. */
+  conversations?: OwnerHomeConversation[];
+}
+
+/** A conversation on Home's Conversations: a project's row, with its project and when it got where it is. */
+export interface OwnerHomeConversation extends OwnerConversationRow {
+  /** The project's handle (q_…) and name. */
+  project: string;
+  projectName: string;
+  /** While open: since when it waits where it is (the hand-off or offer that put it there, else its start). */
+  since: string;
+  /** Once finished, agreed or ended: when (its close, else its last activity). */
+  endedAt?: string;
 }
 
 /** Someone asked in the project's conversations. */
@@ -228,9 +245,21 @@ export interface OwnerConversation extends BatonView {
   /** Present only on the owner's own feature request chat (§app.project-assistant/feature-chats): they write here
       (`canWrite` while they hold it and it is open) and may end it (`canEnd` while it is open). */
   feature?: { canWrite: boolean; canEnd: boolean };
+  /** Any other conversation, while it waits on the owner and their message would be taken now (§app.owner-page/content,
+      Answering on the page): the page shows its message box. */
+  canAnswer?: true;
+  /** How many items come before `items` (the newest page). Absent from an older server: all were sent. */
+  older?: number;
   org: { name: string };
   operator: OwnerName;
   updatedAt: string;
+}
+
+/** GET /api/i/<token>/c/<k_…>/older?before=<n>: up to a page of the items before position n of the conversation's
+    filtered view, and how many come before them. */
+export interface OwnerConversationOlder {
+  items: BatonView["items"];
+  older: number;
 }
 
 // ---- operator side ---------------------------------------------------------------------------------

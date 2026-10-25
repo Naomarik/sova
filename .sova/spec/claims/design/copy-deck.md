@@ -127,11 +127,11 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Regenerate landed | SR "Regenerating from your message." (the rewound message's own copy stays §chat/timeline's) |
 | Blocked, mutating actions (`title`) | Stop the current turn first. · Wait for the compaction to finish. · This session is open in a terminal, so Sova won't write to it. · Only a chat open in Sova can rewind. / …can regenerate. · A rewind is already in progress. / A regenerate is already in progress. · a message still on its way out (server refusal `queued`, which happens with isStreaming FALSE — the client cannot pre-check it): the server's own sentence, "A message is still on its way out. Wait for it to send, or press Stop, then rewind." / "…then regenerate." · a reply to a wake nudge: "That reply answered a scheduled wake-up, not a message you sent, so there's nothing to send again." (permanent — it outranks every state that clears on its own, and the server refuses it too with `regenerate_refused` reason "wake") · a reply to a tour's sign-in notice: "That reply answered a tour's sign-in notice, not a message you sent, so there's nothing to send again." (permanent the same way; the server refuses it too, reason "wake", naming the notice) · the composer's own reason while the chat can't write (Switching model…, Reconnecting. Your draft is kept., This session is archived. Unarchive it to send.) |
 | Blocked Share (`title`) | Sova is still reading this session's details. Share enables itself once they load. |
-| Queued message head | `Sending…` (nothing holds it yet) · `Queued` (the server says it does), each a dot AND the word · the author is `You`, `Overseer` (eye icon) for a message the Overseer sent (`sova_send`), or `Sent by Sova` for a message the session queued for itself (a group send, a remote status probe) |
-| Remove blocked (`title`) | Not queued yet. This can be removed once the server has it. · Already sent. It can't be removed now. · Removing… · Only a chat open in Sova can remove a queued message. |
+| Queued message head | `Sending…` (nothing holds it yet, or the server has handed it to the agent: no Remove in either case, not even a disabled one) · `Queued` (the server says it holds it), each a dot AND the word · the author is `You`, `Overseer` (eye icon) for a message the Overseer sent (`sova_send`), or `Sent by Sova` for a message the session queued for itself (a group send, a remote status probe) |
+| Remove blocked (`title`) | Already sent. It can't be removed now. · Removing… · Only a chat open in Sova can remove a queued message. |
 | Remove landed | SR "Removed from the queue." in every tab, including the one that asked. Delete is a DISCARD: the message does NOT come back to the composer (that is Stop's job, §chat/composer "Stop"), so no sentence claims it did |
 | A queued message that will never be sent (`queue_item_gone`) | dropped (an extension handled it instead): SR "That message was handled without being sent. It's back in the composer." · failed (the hand-off was refused): SR "That message couldn't be sent. It's back in the composer." — both only in the tab that sent it, which is the only one with a composer to put it in · an Overseer card's click, here or wherever an unsent message would come back: toast and SR "Your click didn't reach the Overseer. Click again.", its card's buttons back, nothing in the composer (§app.overseer/confirm) |
-| Remove refused | Already sent. It can't be removed now. · That message isn't in the queue anymore. · "pi queued work of its own alongside this message, so it can't be taken back on its own. Press Stop to clear the queue." (NOT transient: that row's Remove stays off from then on, so the copy never invites a retry that cannot succeed) · The session is busy right now. Try again in a moment. · unknown code: "Couldn't remove it from the queue. {server message}" |
+| Remove refused | Already sent. It can't be removed now. · That message isn't in the queue anymore. · handed to the agent meanwhile: "Couldn't remove it from the queue. It's already with the agent, which takes it at its next step. Stop takes it back." · from a server on older code only: "pi queued work of its own alongside this message, so it can't be taken back on its own. Press Stop to clear the queue." (NOT transient: that row's Remove stays off from then on, so the copy never invites a retry that cannot succeed) · The session is busy right now. Try again in a moment. · unknown code: "Couldn't remove it from the queue. {server message}" |
 | Fork landed | SR "Opened a fork. The original conversation is unchanged."; opens the independent session, with no model prompt |
 | Blocked Fork (`title`) | Open this session as a chat in Sova to fork it. · This session is open in a terminal. Fork it from an idle chat in Sova. · A session action is already in progress. · Stop the current turn first. · Wait for the compaction to finish. · the composer's own reason while paused; server refusals stay on the selected reply |
 
@@ -1083,9 +1083,16 @@ ago", "1 hour ago"; the exact date and time as the element's title. Every count 
 
 | Where | Copy |
 |---|---|
-| Browser tab title | `{org}` |
+| Browser tab title | `{org}` · with conversations waiting on the owner: `({n}) {org}` |
+| Top of every view | Sova's mark (no text alternative) and "sova" (lower case) · the theme toggle to its right on the same row, one icon button (a sun while dark, a moon while light) labelled and titled "Switch to light theme" / "Switch to dark theme" · then the view's main heading `{org}` |
 | Greeting | "Hi {first}. Here's how your projects are going." |
-| Tabs | `Home` · `Assistant` · `Requests` (with the open count as a badge, "{n}"; its label for screen readers "Requests, {n} open") |
+| Tabs | `Home` (with the waiting-on-you count as a badge, "{n}"; its label for screen readers "Home, {n} waiting on you") · `Assistant` · `Requests` (with the open count as a badge, "{n}"; its label for screen readers "Requests, {n} open") |
+| New since the last visit | chip `New` (info), on a project card, an update, a conversation row and a request |
+| Conversations on Home, heading | "Conversations" · tabs `Outstanding` · `History` · select label "Project", options "All projects" then each project's name (only with 2 or more projects) |
+| …Outstanding row | "{conversation title}" · "{project} · since {time}" · its status chip (below) |
+| …History row | "{conversation title}" · "{project} · finished {time}" (ended: "{project} · ended {time}") · its status chip |
+| …none | Outstanding: "{n} finished so far. Nothing is open right now." (with none finished: "No conversations yet.") · History: "{n} still open. Nothing has finished yet." |
+| …show all | `Show All {n} Conversations` |
 | Project Assistant card | heading "What it can do for you" · `Open the Chat` (primary) · not ready: the Assistant's not-ready line, no list |
 | …lines (name · how) | "Ask about your projects" · "Answers right away" — "Report a problem" · "Goes to the team at once" — "Ask for something new" · "Written up with you, then sent to the team" — "Get a problem fixed" · now "Starts right away", held "Starts on its own in a few minutes", team "The team decides when to start it" — "Try the latest version" · now "Starts right away, with an Open button", team "The team starts it for you" — "Release a new version" · now "Starts right away", held "Starts on its own in a few minutes", team "The team releases it" — "Plan something new with you" (in place of "Ask for something new" while some project opens one) · now "Opens a chat with you right away" · a project where it goes to the team: "the team plans it for {projects}" |
 | …projects that differ | "{line}: {segment}, {segment}" with segments, in this order: "right away for {projects}" · "on its own for {projects}" · team: fix "the team starts it for {projects}", version "the team starts it for {projects}", release "the team releases it for {projects}" · `{projects}` "A", "A and B", "A, B and C" |
@@ -1106,7 +1113,7 @@ ago", "1 hour ago"; the exact date and time as the element's title. Every count 
 | Waiting on you, heading | "Waiting on you" |
 | …line | "1 question is waiting for your answer." / "{n} questions are waiting for your answer." |
 | …row | "{conversation title}" · "{project} · asked {time}" |
-| …hint | "Answer it using the link {op} sent you for it." · when every row is the owner's own feature request chat: "Open it to answer here." |
+| …hint | "Open it to answer here." |
 | Projects, heading | "Your projects" |
 | Project card, counts | "Talked to {n} people · {n} decisions · {n} pieces of work finished" — singulars "1 person", "1 decision", "1 piece of work" |
 | …no updates yet | "No updates yet." |
@@ -1133,12 +1140,14 @@ ago", "1 hour ago"; the exact date and time as the element's title. Every count 
 | …status chips | `Waiting on you` (warn) · `Waiting on {first}` (info) · `With {op}` (info) · `Asked {n} people` (info) · `Finished` (success) · `Ended` (neutral) |
 | …none | "No conversations yet." |
 | …show all | `Show All {n} Conversations` |
-| Conversation, line | "You can read this conversation. You can't write here." |
+| Conversation, line | "You can read this conversation. You can't write here." · while it waits on the owner: "It's your turn in this conversation. Answer it here." |
+| …composer (answering) | placeholder "Write a message" · `Send` (primary, icon) · refused: someone else holds it "It's not your turn in this conversation right now." · offer taken "Someone else is answering right now." · at the limit "This conversation has reached its message limit. {op} has been told." · ended "This conversation has ended." · too many "Too many messages. Wait a minute." · other "Your message didn't go through. Try again." |
+| …earlier items | while they load: "Loading earlier messages…" · failed: "Earlier messages didn't load." · `Try Again` |
 | Feature request chat (§app.project-assistant/feature-chats) | status chips `Planning with you` (warn) · `With {first}` (info) · `Plan agreed` (success) · `Ended` (neutral) · line while the owner holds it: "Plan it here with the assistant. Nothing is built until {op} decides." · while someone else holds it: "{first} has it right now. You can read along." · composer placeholder "Write a message" · `Send` (primary) · `End Chat` (ghost; confirm "End this chat? You can't write in it after." · `End Chat` · `Cancel`) · ended: "This chat has ended." · plan agreed: "You agreed this plan. {op} decides when it's built." |
 | …plan card | card head "The plan" (agreed: "The plan · agreed"; dropped: "The plan · set aside") · its title and summary · headings "What we found" · "The plan" · "Ruled out" · "Questions" · a question: "{qN} · {topic}" · its ask · options lettered a, b…, the recommended one marked "Recommended" · "Why we recommend it: {why}" · decided: "Answer: {decision}" · a drawing it can't show: "A drawing couldn't be shown here." · buttons `Send My Answers` (primary) · `Go With Recommendations` (secondary) · the message they send, in the alignment card's words: "{al_N}: take your recommendation on q1. My answers: 2b — {option}." · "{al_N}: go with your recommendations for every open question." |
 | …in the assistant's chat | `Open Feature Chat` (secondary) under the assistant's message |
 | …requests | status `Planning with you` (info) while its chat is open, `Plan agreed` (success) once agreed |
-| …when it's the owner's turn | "It's your turn in this conversation. Answer it using the link {op} sent you." |
+| …when it's the owner's turn | "It's your turn in this conversation. Answer it here." |
 | Footer | "Only people with this link can open this page. If someone else gets it, tell {op} and they'll turn it off." |
 | Link turned off unused (410) | "This link turned off after a week without use." / "It turns itself off so nobody else can use it later. You can ask for a new one." · `Ask for a New Link` (primary) · asked: "You asked for a new link. It will come the same way this one did." · failed: "That didn't go through. Try again in a minute." |
 | Link no longer active (410) | "This link is no longer active." / "Ask the person who sent it for a new one." |
@@ -1148,6 +1157,8 @@ ago", "1 hour ago"; the exact date and time as the element's title. Every count 
 | …greeting (the first bubble, from "Project Assistant") | "Hi {first}. I know your projects and what has been agreed so far. Ask me anything, tell me about a problem, or ask for something new." |
 | …senders | owner: "You" · operator: "{op}" · assistant: "Project Assistant" |
 | …composer | placeholder "Write a message. Enter sends" while Enter sends, "Write a message" after a touch · `Send` (primary) · while it writes: "Writing…" |
+| …a message just sent | the owner's bubble at once, marked `Sending…` (with their photos' previews) |
+| …earlier messages | while they load: "Loading earlier messages…" · failed: "Earlier messages didn't load." · `Try Again` |
 | …photos | paperclip `Attach Photos` (icon only, its label) · while an upload runs: "Waiting for photos to finish." · the pending strip and its refusals as on a hand-off page (§design.copy-deck/gathering-images) · a picture pasted or dropped while photos are off: "Photos can't be sent here." · photo alt: "Your photo" / "Your photo {i} of {n}" |
 | …a version in an answer | the Versions row above, inside the assistant's bubble |
 | …a drawing that can't be shown | "A drawing couldn't be shown here." |

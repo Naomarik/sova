@@ -833,7 +833,10 @@ would list master's changes instead.
     - `SPEC_WORKER_NOTE` is unchanged, and a test pins it to the Workers paragraph.
     - The replay agent arm copies `WRITING.md` into its work directory.
   - §: +§tools.spec/writing-on-demand, §tools.spec/mode-reading, §tools.spec/census-note,
-    §tools.spec/align-agree, §chat.mode-menu/workers, §site.docs/spec-mode (draft `spec-slim-guide`).
+    §tools.spec/align-agree, §chat.mode-menu/workers, §site.docs/spec-mode, §tools.spec/context-packets,
+    §tools.spec/agree-source-relay, §tools/spec, §chat.alignment/tool, §chat.mode-menu/codemode (draft
+    `spec-slim-guide`, promoted on the branch at 526e0a07; `foreign --base 9b7297f8 --head 526e0a07`).
+    Base: 9b7297f8.
   - Numbers: round 3 (three arms A no spec / B today / C short part, 12 tasks × 2, pooled blind
     grading, plus a 6-task edit check). Recall A/B/C, C − B [CI] and the verdict are filled in from
     round 3's report before landing. Constraint 5 (light): 964 → 306 words ride every turn; the

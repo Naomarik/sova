@@ -1424,14 +1424,16 @@ button in its composer foot, before Quick Actions, reading "memory" with a check
 and a clock while it is off (named "Overseer memory: on" or "…: off"). It opens a popover with the
 same rows as the mode menu's Memory type panel (§chat.mode-menu/memory-panel): first a `memory`
 checkbox row like the mode menu's (its description the chosen type's, its detail line the type's
-while on), then the types, UniiChat's "Read the design ↗", and Summary size. The switch is read
+while on), then the types, and nothing else: no design link and no Summary size (its size is
+Settings → Memory's, §chat.memory/overseer). The rows scroll between the popover's top and its foot
+line, which stays put, so on a short window none is cut off. The switch is read
 once for its label and again at each opening; a failed read shows "Couldn't read the Overseer's
 memory." Each pick writes `PUT /api/overseer/memory` at once and keeps the popover open (a pick of
-the current type or size writes nothing); the foot line reads "From the Overseer's next turn. Its
+the current type writes nothing); the foot line reads "From the Overseer's next turn. Its
 coding sessions never get memory." A refused write shows "Couldn't change the Overseer's memory."
 with the reason, and its memory is unchanged. Its run-status row shows memory's status
-like any chat's (§chat.composer/memory-status). With no saved choice it reads on, UniiChat at
-128 KB (§chat.memory/overseer), so a new Overseer's button shows the check. Each project overseer
+like any chat's (§chat.composer/memory-status). With no saved choice it reads on, UniiChat
+(§chat.memory/overseer), so a new Overseer's button shows the check. Each project overseer
 has the same button and popover for its own memory (§app.project-overseer/memory-switch).
 
 ## §app.overseer/head-layout — The head at every width

@@ -2260,10 +2260,11 @@
       "requires": [
         "§app.settings-dialog/modes",
         "§app.settings-dialog/save-bar",
-        "§app.settings-dialog/summaries"
+        "§app.settings-dialog/summaries",
+        "§chat.memory/settings"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/MemorySettings.tsx",
         "src/lib/memory-settings-draft.ts",
@@ -2271,7 +2272,9 @@
         "src/lib/settings-nav.ts",
         "src/lib/api.ts",
         "src/lib/memory-ui.test.ts",
-        "src/lib/settings-nav.test.ts"
+        "src/lib/settings-nav.test.ts",
+        "src/lib/memory-help.ts",
+        "src/lib/memory-ui.ts"
       ]
     },
     "§app.settings-dialog/models": {
@@ -3485,7 +3488,8 @@
       "requires": [
         "§chat/memory",
         "§app.harness/state",
-        "§chat.mode-menu/menu"
+        "§chat.mode-menu/menu",
+        "§chat.memory/settings"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -3495,7 +3499,10 @@
         "server/chat-manager.ts",
         "server/memory/settings.ts",
         "server/mode.ts",
-        "server/memory/chat-memory.test.ts"
+        "server/memory/chat-memory.test.ts",
+        "server/memory/settings.test.ts",
+        "src/lib/api.ts",
+        "server/automation-session.ts"
       ]
     },
     "§chat.memory/full-ids": {
@@ -3521,7 +3528,8 @@
         "§chat.memory/tree",
         "§chat.memory/turn",
         "§chat.memory/zoomable",
-        "§chat.memory/summarizer"
+        "§chat.memory/summarizer",
+        "§app.settings-dialog/memory"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -3565,7 +3573,9 @@
       "kind": "behavior",
       "requires": [
         "§chat/memory",
-        "§chat.memory/where"
+        "§chat.memory/where",
+        "§chat.memory/settings",
+        "§chat.memory/choice"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -3581,7 +3591,8 @@
         "server/overseer-runtime.test.ts",
         "server/testing/overseer-memory.ts",
         "server/overseer-memory-claude.integration.test.ts",
-        "server/memory/overseer-outline.test.ts"
+        "server/memory/overseer-outline.test.ts",
+        "server/overseer-store.ts"
       ]
     },
     "§chat.memory/preparing": {
@@ -3653,7 +3664,8 @@
       "code": [
         "server/memory/settings.ts",
         "server/memory/routes.ts",
-        "server/memory/settings.test.ts"
+        "server/memory/settings.test.ts",
+        "shared/protocol.ts"
       ]
     },
     "§chat.memory/status": {
@@ -3745,7 +3757,8 @@
     "§chat.memory/types": {
       "kind": "behavior",
       "requires": [
-        "§chat/memory"
+        "§chat/memory",
+        "§chat.memory/settings"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -3819,7 +3832,9 @@
       "requires": [
         "§chat.mode-menu/menu",
         "§chat.subagent-profiles/menu",
-        "§design/menu-rows"
+        "§design/menu-rows",
+        "§chat.memory/settings",
+        "§chat.memory/help"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -5025,7 +5040,7 @@
         "§chat/mode-menu"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/memory/engine.ts",
         "shared/memory.ts",
@@ -7378,7 +7393,8 @@
       "kind": "behavior",
       "requires": [
         "§app.overseer/quick-actions",
-        "§chat.mode-menu/memory-panel"
+        "§chat.mode-menu/memory-panel",
+        "§chat.memory/overseer"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -7388,7 +7404,8 @@
         "src/components/ChatView.tsx",
         "src/lib/api.ts",
         "src/lib/memory-ui.test.ts",
-        "src/lib/memory-ui.ts"
+        "src/lib/memory-ui.ts",
+        "src/app.css"
       ]
     },
     "§app.overseer/navigation": {
@@ -9707,7 +9724,7 @@
     "§app.project-overseer/settings": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/project-settings.ts",
         "server/project-settings-git.ts",

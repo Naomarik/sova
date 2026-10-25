@@ -40,6 +40,11 @@ export interface FeatureApi {
   end(conversation: string): Promise<boolean>;
 }
 
+/** The owner closes and reopens their own requests (§app.project-assistant/closing); absent (the preview): no buttons. */
+export interface RequestsApi {
+  act(handle: string, action: "close" | "reopen"): Promise<boolean>;
+}
+
 /**
  * The Owner page (§app.owner-page/page): Home, a project, a conversation. Read-only. It renders
  * what the server sends and nothing else; the share build (OwnerApp, from the link) and the
@@ -84,6 +89,8 @@ export function OwnerPage(props: {
   versionHref?(handle: string): string;
   /** The owner's feature request chat writes through this; absent: read only. */
   feature?: FeatureApi;
+  /** Close and Reopen on the Requests tab; absent: read only. */
+  requests?: RequestsApi;
 }) {
   const key = createMemo(() => JSON.stringify(props.route));
   const [answer, setAnswer] = createSignal<OwnerAnswer | null>(null);
@@ -332,7 +339,7 @@ export function OwnerPage(props: {
                 )}
               </Match>
               <Match when={"projects" in d() && props.route.kind === "requests"}>
-                <RequestsView home={d() as OwnerHome} now={now()} link={link} />
+                <RequestsView home={d() as OwnerHome} now={now()} link={link} api={props.preview ? undefined : props.requests} reload={() => void read()} />
               </Match>
               <Match when={"projects" in d()}>
                 <HomeView home={d() as OwnerHome} now={now()} link={link} preview={props.preview} versionHref={props.versionHref} assistant={!!props.assistant} lines={lines()} pick={pick} />
@@ -508,27 +515,138 @@ const REQUEST_STATUS: Record<OwnerRequestRow["status"], OwnerChipWord> = {
   started: { word: "Being worked on", tone: "info" },
   done: { word: "Done", tone: "success" },
   declined: { word: "Not planned", tone: undefined },
+  closed: { word: "Closed", tone: undefined },
 };
 
-function RequestsSection(props: { requests: OwnerRequestRow[]; now: number; heading?: boolean }) {
+const isOpenRow = (r: OwnerRequestRow): boolean => r.status === "with-team" || r.status === "started";
+
+function RequestRow(props: { r: OwnerRequestRow; now: number; api?: RequestsApi; busy: boolean; onClose(r: OwnerRequestRow): void; onReopen(r: OwnerRequestRow): void }) {
+  const r = () => props.r;
+  const closed = () => r().status === "closed";
   return (
-    <Section id="owner-requests" title="Your requests" h1={props.heading}>
-      <ul class="owner-list">
-        <For each={props.requests}>
-          {(r) => (
-            <li class="owner-row owner-row-static">
-              <span class="owner-row-main">
-                <span class="owner-row-title">{r.title}</span>
-                <span class="owner-meta">
-                  {REQUEST_KIND[r.kind]} · {r.project} · <Ago at={r.at} now={props.now} />
-                </span>
-              </span>
-              <ChipWord chip={r.plan === "planning" ? { word: "Planning with you", tone: "info" } : r.plan === "agreed" ? { word: "Plan agreed", tone: "success" } : REQUEST_STATUS[r.status]} />
-            </li>
-          )}
-        </For>
-      </ul>
-    </Section>
+    <li class="owner-row owner-row-static" classList={{ "owner-row-closed": closed() }}>
+      <span class="owner-row-main">
+        <span class="owner-row-title">{r().title}</span>
+        <span class="owner-meta">
+          {REQUEST_KIND[r().kind]} · {r().project} · <Show when={closed()} fallback={<Ago at={r().at} now={props.now} />}>
+            {r().closedBy === "assistant" ? "Closed by your Project Assistant" : "Closed by you"} · <Ago at={r().at} now={props.now} />
+          </Show>
+        </span>
+      </span>
+      <ChipWord chip={r().plan === "planning" ? { word: "Planning with you", tone: "info" } : r().plan === "agreed" ? { word: "Plan agreed", tone: "success" } : REQUEST_STATUS[r().status]} />
+      <Show when={props.api && isOpenRow(r())}>
+        <button type="button" class="button button-ghost owner-request-act" disabled={props.busy} aria-label={`Close: ${r().title}`} onClick={() => props.onClose(r())}>
+          Close
+        </button>
+      </Show>
+      <Show when={props.api && closed()}>
+        <button type="button" class="button owner-request-act" disabled={props.busy} aria-label={`Reopen: ${r().title}`} onClick={() => props.onReopen(r())}>
+          Reopen
+        </button>
+      </Show>
+    </li>
+  );
+}
+
+/** The owner's requests (§app.project-assistant/requests): the rest newest first, then the ones they closed under a
+    greyed Closed group, each with Reopen; an open one has Close, asked first in a sheet (§app.project-assistant/closing). */
+function RequestsSection(props: { requests: OwnerRequestRow[]; now: number; heading?: boolean; api?: RequestsApi; reload?(): void }) {
+  const rest = () => props.requests.filter((r) => r.status !== "closed");
+  const closed = () => props.requests.filter((r) => r.status === "closed");
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const [asking, setAsking] = createSignal<OwnerRequestRow | null>(null);
+  let sheet: HTMLDialogElement | undefined;
+  let opener: HTMLElement | null = null;
+  const act = async (r: OwnerRequestRow, action: "close" | "reopen") => {
+    if (!props.api || busy()) return;
+    setBusy(true);
+    setError(null);
+    const ok = await props.api.act(r.handle, action).catch(() => false);
+    setBusy(false);
+    if (ok) props.reload?.();
+    else setError("That didn't go through. Try again in a minute.");
+  };
+  const askClose = (r: OwnerRequestRow) => {
+    opener = document.activeElement as HTMLElement | null;
+    setAsking(r);
+    sheet?.showModal();
+  };
+  const confirmClose = () => {
+    const r = asking();
+    sheet?.close();
+    if (r) void act(r, "close");
+  };
+  const rowOf = (r: OwnerRequestRow) => <RequestRow r={r} now={props.now} api={props.api} busy={busy()} onClose={askClose} onReopen={(x) => void act(x, "reopen")} />;
+  return (
+    <>
+      <Section id="owner-requests" title="Your requests" h1={props.heading}>
+        <Show when={rest().length} fallback={<p class="owner-empty">Nothing open right now.</p>}>
+          <ul class="owner-list">
+            <For each={rest()}>{rowOf}</For>
+          </ul>
+        </Show>
+        <Show when={error()}>
+          <p class="owner-note" role="alert">
+            {error()}
+          </p>
+        </Show>
+      </Section>
+      <Show when={closed().length}>
+        <Section id="owner-requests-closed" title="Closed">
+          <ul class="owner-list owner-list-closed">
+            <For each={closed()}>{rowOf}</For>
+          </ul>
+        </Section>
+      </Show>
+      <Show when={props.api}>
+        <dialog
+          ref={(el) => {
+            sheet = el;
+            const onKey = (e: KeyboardEvent) => {
+              if (e.key !== "Escape") return;
+              e.preventDefault();
+              e.stopPropagation();
+              el.close();
+            };
+            el.addEventListener("keydown", onKey);
+            onCleanup(() => el.removeEventListener("keydown", onKey));
+          }}
+          class="modal owner-sheet"
+          aria-labelledby="owner-close-title"
+          aria-describedby="owner-close-line"
+          onClose={() => {
+            setAsking(null);
+            if (opener?.isConnected) opener.focus();
+            opener = null;
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) sheet?.close();
+          }}
+        >
+          <div class="sheet-grip" aria-hidden="true" />
+          <div class="modal-head">
+            <h2 class="modal-title" id="owner-close-title">
+              Close this request?
+            </h2>
+          </div>
+          <div class="modal-body">
+            <Show when={asking()}>{(r) => <p class="owner-row-title">{r().title}</p>}</Show>
+            <p class="owner-note" id="owner-close-line">
+              The team will stop on it. You can reopen it later.
+            </p>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="button button-ghost" onClick={() => sheet?.close()}>
+              Keep It
+            </button>
+            <button type="button" class="button button-primary" onClick={confirmClose}>
+              Close
+            </button>
+          </div>
+        </dialog>
+      </Show>
+    </>
   );
 }
 
@@ -627,7 +745,7 @@ function HomeView(props: {
 }
 
 /** The Requests tab (#r): every one of the owner's requests, newest first. */
-function RequestsView(props: { home: OwnerHome; now: number; link: Link }) {
+function RequestsView(props: { home: OwnerHome; now: number; link: Link; api?: RequestsApi; reload(): void }) {
   const rs = () => props.home.requests ?? [];
   return (
     <Show
@@ -646,7 +764,7 @@ function RequestsView(props: { home: OwnerHome; now: number; link: Link }) {
         </>
       }
     >
-      <RequestsSection requests={rs()} now={props.now} heading />
+      <RequestsSection requests={rs()} now={props.now} heading api={props.api} reload={props.reload} />
     </Show>
   );
 }

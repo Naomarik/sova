@@ -12401,6 +12401,52 @@
         "source": "pi-session:33293739-4bbd-4563-a110-edb5562c0699#d0b1f86c"
       }
     },
+    "§chat.markdown/vis-flow-focus": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/visuals",
+        "§chat.markdown/vis-flow-sections"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/vis/kinds/flow/View.tsx",
+        "src/vis/kinds/flow/focus.ts",
+        "src/vis/kinds/flow/focus.test.ts",
+        "src/vis/kinds/flow/focus.browser.test.ts",
+        "src/vis/kinds/flow/flow.css",
+        "src/vis/svg.tsx",
+        "scripts/e2e/flow-focus.mjs",
+        "scripts/e2e/flow-focus/main.tsx",
+        "scripts/e2e/flow-focus/index.html"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T21:06Z",
+        "source": "pi-session:db608be6-c8e2-491a-8c10-d6e779b04b00#7992844d"
+      }
+    },
+    "§chat.markdown/vis-flow-text": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/visuals",
+        "§chat.markdown/vis-flow-groups"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/vis/kinds/flow/layout.ts",
+        "src/vis/kinds/flow/layout.test.ts",
+        "src/vis/kinds/flow/View.tsx",
+        "src/vis/kinds/flow/groups.test.ts",
+        "src/vis/kinds/flow/layout-master.json"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T21:06Z",
+        "source": "pi-session:db608be6-c8e2-491a-8c10-d6e779b04b00#7992844d"
+      }
+    },
     "§chat.markdown/visuals": {
       "kind": "behavior",
       "authority": "accepted",
@@ -12530,8 +12576,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-20T12:44Z",
-        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#2d6e96df"
+        "at": "2026-10-24T21:06Z",
+        "source": "pi-session:db608be6-c8e2-491a-8c10-d6e779b04b00#7992844d"
       }
     },
     "§chat.mode-menu/minor-toggle-keeps-prompt": {
@@ -14187,7 +14233,12 @@
         "src/vis/guide.test.ts",
         "src/vis/kinds/flow/groups.test.ts",
         "src/vis/kinds/flow/layout-master.json"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T21:41Z",
+        "source": "pi-session:db608be6-c8e2-491a-8c10-d6e779b04b00#7992844d"
+      }
     },
     "§chat.markdown/vis-matrix-tones": {
       "kind": "behavior",
@@ -23102,8 +23153,9 @@
         "site/package.json"
       ],
       "agreed": {
-        "by": "omar",
-        "at": "2026-10-15T21:59Z"
+        "by": "naomarik",
+        "at": "2026-10-24T21:06Z",
+        "source": "pi-session:db608be6-c8e2-491a-8c10-d6e779b04b00#7992844d"
       }
     },
     "§app.installer/ref": {

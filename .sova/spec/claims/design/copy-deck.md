@@ -1084,7 +1084,7 @@ ago", "1 hour ago"; the exact date and time as the element's title. Every count 
 | Where | Copy |
 |---|---|
 | Browser tab title | `{org}` · with conversations waiting on the owner: `({n}) {org}` |
-| Top of every view | Sova's mark (no text alternative) and "Sova" · the theme toggle to its right on the same row, one icon button (a sun while dark, a moon while light) labelled and titled "Switch to light theme" / "Switch to dark theme" · then the view's main heading `{org}` |
+| Top of every view | Sova's mark (no text alternative) and "sova" (lower case) · the theme toggle to its right on the same row, one icon button (a sun while dark, a moon while light) labelled and titled "Switch to light theme" / "Switch to dark theme" · then the view's main heading `{org}` |
 | Greeting | "Hi {first}. Here's how your projects are going." |
 | Tabs | `Home` (with the waiting-on-you count as a badge, "{n}"; its label for screen readers "Home, {n} waiting on you") · `Assistant` · `Requests` (with the open count as a badge, "{n}"; its label for screen readers "Requests, {n} open") |
 | New since the last visit | chip `New` (info), on a project card, an update, a conversation row and a request |

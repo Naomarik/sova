@@ -113,7 +113,7 @@ A shown conversation can include its reviewed checked tour attachments (§app.to
   while a version is starting, every tab reads again every 3 seconds, so it moves to `Open` on
   whichever tab is showing.
 - **Its frame.** At the top of every view (the top of the left sidebar on a computer), Sova's mark
-  and the name "Sova", small, with the theme toggle on the same row, to their right (§app.owner-page/page). Each view's
+  and the name "sova" (lower case), small, with the theme toggle on the same row, to their right (§app.owner-page/page). Each view's
   main heading is the organization's name, and the browser tab's title is that name too; the
   view's own title (the greeting, a project's name, a conversation's title, `Project Assistant`,
   `Your requests`) comes under it.

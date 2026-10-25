@@ -1,6 +1,6 @@
 // Helpers for the cutover tests (convert-*.test.mjs): al_6 landing 2 converts Sova's REAL spec to format 2 in one
 // commit. These read the real repository's history, never a fixture: the cutover commit is found in HEAD's
-// first-parent history as the commit whose .sova/spec/manifest.json is format 2 while its first parent's is format 1.
+// history as the oldest non-merge commit whose .sova/spec/manifest.json is format 2 while its parent's is format 1.
 // SOVA_CONVERT_AT=<rev> points the tests at another candidate cutover commit (a regenerated one, say);
 // SOVA_CONVERT_HEAD=<rev> searches another history (SOVA_CONVERT_HEAD=ca8ab14 shows the tests failing before it).
 // Records are read here straight from Git objects (ls-tree + cat-file), independently of core/layout.mjs, so a
@@ -39,12 +39,14 @@ export function formatAt(rev) {
 }
 
 /**
- * The cutover commit in HEAD's first-parent history: { cutover, base } where base is its first parent, or null.
- * The oldest such commit wins (a rollback and a second cutover would make a later one; the first is the landing).
+ * The cutover commit in HEAD's history: { cutover, base } where base is its parent, or null. Only non-merge commits
+ * count: the merge that lands the branch on master, and a pre-cutover branch's merge of the converted master, also
+ * flip the format from their first parent, but they are not the cutover. The oldest in topological order wins (a
+ * rollback and a second cutover would make a later one; the first is the landing).
  */
 export function findCutover(head = process.env.SOVA_CONVERT_HEAD || "HEAD") {
   if (process.env.SOVA_CONVERT_AT) { const c = revParse(process.env.SOVA_CONVERT_AT); return { cutover: c, base: revParse(`${c}^1`) }; }
-  const revs = rgit("log", "--first-parent", "--format=%H", head, "--", `${SPEC}/manifest.json`).split("\n").filter(Boolean).reverse();
+  const revs = rgit("log", "--no-merges", "--topo-order", "--format=%H", head, "--", `${SPEC}/manifest.json`).split("\n").filter(Boolean).reverse();
   for (const c of revs) {
     if (formatAt(c) !== 2) continue;
     const p = gitRaw(["rev-parse", `${c}^1`]);
@@ -134,6 +136,6 @@ export const noGit = !hasGit ? "no git" : !hasRev(PRE_CUTOVER) ? `pre-cutover co
 /** The cutover, asserted present: until landing 2's commit is on HEAD's history, every cutover test fails here. */
 export function requireCutover() {
   const c = findCutover();
-  assert.ok(c, `no cutover commit on ${process.env.SOVA_CONVERT_HEAD || "HEAD"}'s first-parent history (a commit whose ${SPEC}/manifest.json is formatVersion 2 while its first parent's is 1); its spec is format ${formatAt(process.env.SOVA_CONVERT_HEAD || "HEAD")}`);
+  assert.ok(c, `no cutover commit in ${process.env.SOVA_CONVERT_HEAD || "HEAD"}'s history (a commit whose ${SPEC}/manifest.json is formatVersion 2 while its first parent's is 1); its spec is format ${formatAt(process.env.SOVA_CONVERT_HEAD || "HEAD")}`);
   return c;
 }

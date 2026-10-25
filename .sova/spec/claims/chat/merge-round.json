@@ -1,0 +1,87 @@
+{
+  "§chat.merge-round/driver": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      ".sova/playbooks/merge-round/scripts/round.mjs",
+      ".sova/playbooks/merge-round/tests/round.test.mjs",
+      "server/merge-round-rules.test.ts"
+    ],
+    "requires": [
+      "§chat.merge-round/private-names",
+      "§chat.worktrees/readiness",
+      "§chat.worktrees/merge-board"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-25T21:45Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
+    }
+  },
+  "§chat.merge-round/landing-suites": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      ".sova/playbooks/merge-round/scripts/round.mjs",
+      ".sova/playbooks/merge-round/tests/round.test.mjs"
+    ],
+    "requires": [
+      "§chat.merge-round/driver"
+    ]
+  },
+  "§chat.merge-round/private-names": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      ".sova/playbooks/merge-round/scripts/discover-names.mjs",
+      ".sova/playbooks/merge-round/tests/discover-names.test.mjs",
+      ".sova/playbooks/merge-round/scripts/leak-scan.mjs",
+      ".sova/playbooks/merge-round/tests/leak-scan.test.mjs"
+    ],
+    "requires": []
+  },
+  "§chat.merge-round/round": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      ".sova/playbooks/merge-round/PLAYBOOK.md",
+      ".sova/playbooks/merge-round/references/push-restart.md",
+      ".sova/playbooks/merge-round/references/round.md",
+      ".sova/playbooks/merge-round/references/check.md",
+      ".sova/playbooks/merge-round/references/land.md",
+      "AGENTS.md"
+    ],
+    "requires": [
+      "§chat.schedules/fire",
+      "§chat.worktrees/readiness",
+      "§chat.profiles/singleton",
+      "§chat.worktrees/merge-board"
+    ],
+    "agreed": {
+      "by": "omar (user)",
+      "at": "2026-10-24T18:10Z",
+      "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
+    }
+  },
+  "§chat/merge-round": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      ".sova/playbooks/merge-round/PLAYBOOK.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-10T10:39Z"
+    },
+    "notOwned": [
+      "§chat.worktrees/readiness",
+      "§chat.worktrees/merge-board",
+      "§chat/schedules"
+    ]
+  }
+}

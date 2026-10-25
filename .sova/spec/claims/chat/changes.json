@@ -1,0 +1,194 @@
+{
+  "§chat.changes/diff-renderer": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/diff/types.ts",
+      "src/lib/diff/parse.ts",
+      "src/lib/diff/line-diff.ts",
+      "src/lib/diff/intraline.ts",
+      "src/lib/diff/highlight.ts",
+      "src/lib/diff/render.ts",
+      "src/lib/diff/index.ts",
+      "src/lib/diff.test.ts",
+      "src/components/DiffView.tsx",
+      "src/design/diff.css",
+      "src/design/tokens.css"
+    ]
+  },
+  "§chat.changes/endpoint": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.worktrees/entry",
+      "§chat.worktrees/merge-card"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/git-diff.ts",
+      "pi-config/extensions/show-changes/folders.ts",
+      "pi-config/extensions/worktrees/git.ts",
+      "server/index.ts",
+      "server/app.ts",
+      "shared/protocol.ts",
+      "server/git-diff.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-24T21:15Z",
+      "source": "pi-session:845202a8-f94d-433d-ade4-5d3b1e4d109f#0aaaaa18"
+    }
+  },
+  "§chat.changes/entry": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.worktrees/merge-card",
+      "§chat.worktrees/pane",
+      "§chat.changes/viewer"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/WorktreeMergeCard.tsx",
+      "src/components/SessionDetails.tsx",
+      "src/components/ChatView.tsx",
+      "src/components/WatchView.tsx",
+      "src/components/ChangesViewer.tsx",
+      "src/components/ChangesViewer.css",
+      "src/components/Thread.tsx",
+      "src/app.css"
+    ]
+  },
+  "§chat.changes/show-changes-card": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/ChangesViewer.tsx",
+      "src/components/ChangesViewer.css",
+      "src/components/Thread.tsx",
+      "server/show-changes-pinned.test.ts"
+    ],
+    "requires": [
+      "§chat.changes/show-changes-tool",
+      "§chat.changes/steps"
+    ],
+    "agreed": {
+      "by": "user (al_1 go-ahead)",
+      "at": "2026-10-14T10:01Z"
+    }
+  },
+  "§chat.changes/show-changes-tool": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.worktrees/entry",
+      "§chat.changes/endpoint"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/show-changes/index.ts",
+      "pi-config/extensions/show-changes/details.ts",
+      "pi-config/extensions/show-changes/input.ts",
+      "pi-config/extensions/show-changes/git.ts",
+      "pi-config/extensions/show-changes/folders.ts",
+      "pi-config/extensions/worktrees/git.ts",
+      "pi-config/extensions/show-changes/details.test.ts",
+      "pi-config/extensions/show-changes/git.test.ts",
+      "pi-config/extensions/show-changes/folders.test.ts",
+      "pi-config/extensions/show-changes/index.test.ts",
+      "pi-config/extensions/show-changes/tests/run.mjs",
+      "pi-config/extensions/show-changes/tests/runtime.mjs",
+      "pi-config/extensions/show-changes/README.md",
+      "pi-config/README.md",
+      "pi-config/extensions/show-changes/coverage.ts",
+      "pi-config/extensions/show-changes/hunks.ts",
+      "pi-config/extensions/show-changes/coverage.test.ts",
+      "src/lib/show-changes-coverage.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-17T17:42Z"
+    }
+  },
+  "§chat.changes/steps": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/changes-steps.ts",
+      "src/lib/changes-steps.test.ts"
+    ],
+    "requires": [
+      "§chat.changes/show-changes-tool"
+    ],
+    "agreed": {
+      "by": "user (al_1 go-ahead)",
+      "at": "2026-10-14T10:01Z"
+    }
+  },
+  "§chat.changes/tool-card-diff": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.changes/diff-renderer",
+      "§chat.transcript/transcript-items"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/ToolCard.tsx",
+      "src/lib/tool-diff-stats.ts",
+      "src/lib/tool-diff-stats.test.ts",
+      "src/components/Thread.tsx",
+      "src/design/diff.css"
+    ]
+  },
+  "§chat.changes/tree": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/changes-tree.ts",
+      "src/lib/changes-tree.test.ts",
+      "src/components/ChangesViewer.tsx",
+      "src/components/ChangesViewer.css"
+    ],
+    "requires": []
+  },
+  "§chat.changes/viewer": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/ChangesViewer.tsx",
+      "src/components/ChangesViewer.css",
+      "src/lib/changes-view.ts",
+      "src/lib/changes-view.test.ts"
+    ],
+    "requires": [
+      "§chat.changes/endpoint",
+      "§chat.changes/diff-renderer",
+      "§chat.changes/tree",
+      "§chat.changes/steps"
+    ],
+    "agreed": {
+      "by": "user (al_1 go-ahead)",
+      "at": "2026-10-14T10:01Z"
+    }
+  },
+  "§chat/changes": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/ChangesViewer.tsx"
+    ],
+    "notOwned": [
+      "§chat.worktrees/merge-card",
+      "§chat.worktrees/pane",
+      "§chat.transcript/transcript-items"
+    ]
+  }
+}

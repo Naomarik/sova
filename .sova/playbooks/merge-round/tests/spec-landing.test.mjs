@@ -388,8 +388,8 @@ test("a7: a record without the chat's verification note holds the branch and not
   const r = await run(["check", b]);
   assert.equal(r.code, 1, r.out);
   const need = (state().branches[b]?.check?.needs ?? []).find((n) => n.startsWith("docs don't fit:"));
-  assert.ok(need?.includes(ids[1].id), `the need names the record with no verification note: ${need}`);
-  assert.ok(!need.includes(ids[0].id), `and not the noted one: ${need}`);
+  assert.ok(need, `a docs-don't-fit need: ${JSON.stringify(state().branches[b]?.check?.needs)}`);
+  assert.deepEqual(need.slice("docs don't fit: ".length).split(", "), [ids[1].id], `the need names only the record with no verification note: ${need}`);
   assert.match(r.out, /verif/i, "the round says what it lacks");
   assert.equal(head(b), P);
   assert.deepEqual(docsEntries(`master..${b}`), [], "all or nothing: the noted draft doesn't land alone");
@@ -464,7 +464,7 @@ test("q1: docs that landed on master meanwhile clash with the branch's draft: he
     assert.notDeepEqual(draftReading(tree, ids[0].draft).pending, [], "the draft still waits");
     const rec = state().branches[b];
     assert.equal(rec?.check?.ok, false);
-    assert.ok(rec.check.needs.some((n) => n.startsWith("docs don't fit:") && n.includes("§a/top")), `the need names it: ${rec.check.needs}`);
+    assert.ok(rec.check.needs.some((n) => n.startsWith("docs don't fit: ") && n.slice("docs don't fit: ".length).split(", ").includes("§a/top")), `the need names it: ${rec.check.needs}`);
     assert.equal(rec?.specLanding, undefined);
     assert.notEqual(await group(b), "land");
 

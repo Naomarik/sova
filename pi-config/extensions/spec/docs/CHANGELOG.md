@@ -889,8 +889,11 @@ would list master's changes instead.
       across the cutover with nothing to report;
     - docs: `.sova/spec/README.md`, `USAGE.md`, `DRAFTS.md`, `core/README.md`, `spec/README.md`, `MODE.md`,
       the site page.
-  - §: (computed after promotion with `foreign --base <first parent> --head <commit>`; expected
-    §tools.spec/record-layout, §tools.spec/git-merge, §app.requirements/drafts-with-provenance reworded.)
+  - §: §tools.spec/record-layout, §tools.spec/git-merge (both agreed again under the al_6 go-ahead),
+    §app.requirements/drafts-with-provenance reworded; §app.requirements/decisions,
+    §app.requirements/conversation-drafts, §tools.spec/record-fields: "manifest record" becomes "record"
+    (draft `spec-convert`, promoted on the branch at 1f3b2aab; `foreign --base 2cfcb2df --head 1f3b2aab`
+    gives the same list, and `foreign --base ca8ab14 --head 4a5684d2`, the conversion alone, gives none).
   - Numbers: the identity check at the conversion commit: `records` equal (1,168), settings equal but
     `formatVersion`; `check`, `graph`, `map`, `census`, `where`, `toc`, `read`, `impact`, `scope` and `packet`
     JSON byte-identical before and after; `foreign --base ca8ab14 --head <conversion>` gives `foreign`,

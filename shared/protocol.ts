@@ -4559,6 +4559,11 @@ export type SessionFeedMessage =
       to live, busy/activity or lastActiveAt). No payload: the client refetches the list
       (coalesced). */
   | { type: "list_changed" }
+  /** The session groups changed (a group made, renamed, reordered or deleted, or a session put into
+      or taken out of one, by any client or the Overseer: server/session-groups.ts writes it). No
+      payload: the client re-reads GET /api/session-groups and the list. Never on connect. Additive:
+      a client that predates it ignores it. */
+  | { type: "groups_changed" }
   /** The logical LLM calls in flight on this host and every connected host: sent once on every
       connect, then on each change of the total or its coverage. Never a reason to re-read the
       list. */

@@ -1,6 +1,7 @@
 // A group's guide line collapses it (§app.session-list/guide-lines), in a real Chrome: the app's own build, served from
 // a scratch build with every request answered here (no server, no network). Measured, never hard-coded: each line's
-// centre against its head's chevron (every kind of group), and for a folder, a Projects-region project and its Done
+// centre against its head's chevron (every kind of group), a user group's members flat under its name (the operator's own
+// coding session among them, counted; an overseer-started build not drawn), and for a folder, a Projects-region project and its Done
 // against its rows' state-rail axis too (the line breaks around each rail item, ringed in the row's own ground); an
 // org's line one piece down past its projects; nested lines' boxes apart; then a press 5px off a line's centre collapses its group (an org, a folder, a Done, a project)
 // through the head's own path, the choice holds through a refresh (a folder's in sessionStorage), and the head ends up
@@ -11,7 +12,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { after, before, test } from "node:test";
-import type { Browser, Page } from "playwright-core";
+import type { Browser, Page, WebSocketRoute } from "playwright-core";
 import type { ProjectSummary } from "../shared/projects";
 import type { SessionGroup, SessionSummary } from "../shared/protocol";
 import { launchTourBrowser } from "./tours/browser";
@@ -34,7 +35,7 @@ after(async () => {
   await browser?.close();
 });
 
-// ── The data, all invented (/w/… paths): a folder of 30 rows, a user group over two folders, one org of two projects
+// ── The data, all invented (/w/… paths): a folder of 30 rows, a user group over two folders and the operator's own build, one org of two projects
 // (the first with 30 running and 30 finished coding sessions), a standalone project with 30 sessions, an archive.
 const T0 = Date.parse("2026-10-20T12:00:00.000Z");
 const iso = (minAgo: number) => new Date(T0 - minAgo * 60_000).toISOString();
@@ -98,8 +99,11 @@ function world(): World {
   const solo = "/w/projects/solo";
   projects.push({ id: "prj_solo", name: "Solo", root: solo, origin: "folder", createdAt: iso(9999), space: { kind: "standalone" } } as unknown as ProjectSummary);
   for (let i = 0; i < 30; i++) {
-    sessions.push(row(`solo-${i}`, solo, `Solo job ${i}`, 200 + i, { project: { projectId: "prj_solo", projectName: "Solo", kind: "coding" } } as Partial<SessionSummary>));
+    // solo-0, its overseer's own build, was filed in the group before the rule: kept on the server, never drawn there.
+    sessions.push(row(`solo-${i}`, solo, `Solo job ${i}`, 200 + i, { project: { projectId: "prj_solo", projectName: "Solo", kind: "coding" }, ...(i === 0 ? { groupId: GROUP.id } : {}) } as Partial<SessionSummary>));
   }
+  // The operator's own coding session in Solo, filed in the group: drawn there, newest of its members.
+  sessions.push(row("solo-mine", solo, "My Solo build", 250, { groupId: GROUP.id, project: { projectId: "prj_solo", projectName: "Solo", kind: "coding", operator: true } } as Partial<SessionSummary>));
   for (let i = 0; i < 6; i++) {
     sessions.push(row(`solo-done-${i}`, solo, `Solo merged ${i}`, 260 + i, { project: { projectId: "prj_solo", projectName: "Solo", kind: "coding", finished: true } } as Partial<SessionSummary>));
   }
@@ -108,12 +112,18 @@ function world(): World {
 
 const CONTENT: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".json": "application/json", ".webmanifest": "application/manifest+json" };
 
+/** The page's session feed socket (WS /ws/watch?feed=sessions), stubbed: a test pushes frames on it. */
+let feedSocket: WebSocketRoute | null = null;
+
 async function open(w: World, width: number): Promise<Page> {
   const phone = width < 768;
   const ctx = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: phone, isMobile: phone });
   const page = await ctx.newPage();
   const json = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
-  await page.routeWebSocket(/.*/, () => {});
+  feedSocket = null;
+  await page.routeWebSocket(/.*/, (ws) => {
+    if (ws.url().includes("feed=sessions")) feedSocket = ws;
+  });
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     if (url.origin !== ORIGIN) return route.abort();
@@ -152,7 +162,6 @@ const HOSTS = {
   done: ".sidebar-orgs:not(.sidebar-projects) .org-section .org-project:first-of-type .org-group:last-of-type > .org-done",
   folder: ".sidebar-folders .session-group",
   group: ".sidebar-groups .group-section",
-  groupFolder: ".sidebar-groups .group-section > .session-group",
   day: ".sidebar-archive .archive-date",
   dayFolder: ".sidebar-archive .archive-date > .session-group",
   project: ".sidebar-projects .org-project",
@@ -168,12 +177,11 @@ async function openHead(page: Page, sel: string) {
   await page.waitForTimeout(150);
 }
 
-/** Opens what the measurements need: the Groups region, the group and its first folder, the Archive's first day and
+/** Opens what the measurements need: the Groups region and the group, the Archive's first day and
     its first folder, the Folders folder, the org's big Done. */
 async function openAll(page: Page) {
   await openHead(page, ".sidebar-groups");
   await openHead(page, HOSTS.group);
-  await openHead(page, HOSTS.groupFolder);
   await openHead(page, ".sidebar-archive");
   await openHead(page, HOSTS.day);
   await openHead(page, HOSTS.dayFolder);
@@ -275,14 +283,14 @@ for (const width of [1280, 320]) {
       assert.ok(Math.abs(g.line - g.boxLeft - (g.boxRight - g.boxLeft) / 2) <= 0.5, `${k}: the box is centred on the line`);
       assert.ok(Math.abs(g.boxRight - g.boxLeft - 12) <= 0.5, `${k}: the box is 12px wide`);
     }
-    for (const k of ["folder", "groupFolder", "dayFolder", "project", "projectDone"] as Host[]) {
+    for (const k of ["folder", "dayFolder", "project", "projectDone"] as Host[]) {
       const g = await geometry(page, HOSTS[k]);
       assert.notEqual(g.rail, null, `${k}: has rows of its own`);
       assert.ok(Math.abs(g.line - g.rail!) <= 0.5, `${k}: the line's centre ${g.line} is its rows' rail axis ${g.rail}`);
       const edge = await page.evaluate((s) => getComputedStyle(document.querySelector(s)!).borderLeftWidth, HOSTS[k]);
       assert.equal(edge, "0px", `${k}: no edge rule any more`);
     }
-    for (const k of ["folder", "groupFolder", "dayFolder", "project"] as Host[]) {
+    for (const k of ["folder", "dayFolder", "project"] as Host[]) {
       // On screen first: elementFromPoint answers nothing outside the viewport.
       await page.evaluate((s) => {
         const list = document.querySelector<HTMLElement>(".sidebar-list")!;
@@ -312,7 +320,7 @@ for (const width of [1280, 320]) {
     assert.ok(org.projects >= 2);
     assert.ok(Math.abs(org.lineBottom - org.lastBottom) <= 1, `the org's line runs to its last project's end (${org.lineBottom} vs ${org.lastBottom})`);
     // Nested lines' boxes never overlap.
-    for (const [outer, inner] of [["group", "groupFolder"], ["day", "dayFolder"], ["project", "projectDone"]] as [Host, Host][]) {
+    for (const [outer, inner] of [["day", "dayFolder"], ["project", "projectDone"]] as [Host, Host][]) {
       const o = await geometry(page, HOSTS[outer]);
       const i = await geometry(page, HOSTS[inner]);
       assert.ok(o.boxRight <= i.boxLeft + 0.01, `${outer}'s box (to ${o.boxRight}) ends before ${inner}'s (from ${i.boxLeft})`);
@@ -428,31 +436,64 @@ test("a press on a Projects-region project's rail line folds it as its arrow doe
   await page.context().close();
 });
 
-test("a group's line and its folder's stand apart: a press beside each goes to that line", async () => {
-  const page = await open(world(), 1280);
+for (const width of [1280, 320]) {
+  test(`${width}px: a group's members are flat under its name, the operator's own build among them, its line beside them`, async () => {
+    const page = await open(world(), width);
+    await openAll(page);
+    const g = await page.evaluate((sel) => {
+      const host = document.querySelector<HTMLElement>(sel)!;
+      const list = document.querySelector<HTMLElement>(".sidebar-list")!;
+      list.scrollTop += host.getBoundingClientRect().top - list.getBoundingClientRect().top;
+      const rows = [...host.querySelectorAll<HTMLElement>(":scope > ul.list > li.session-row-shell")];
+      return {
+        folders: host.querySelectorAll(".session-group, h4, .session-group-path").length,
+        every: host.querySelectorAll("li.session-row-shell").length,
+        titles: rows.map((r) => r.querySelector(".list-title")!.textContent!.trim()),
+        texts: rows.map((r) => r.textContent ?? ""),
+        count: host.querySelector(":scope > summary > .text-num")!.textContent!.trim(),
+        rowLeft: Math.min(...rows.map((r) => r.getBoundingClientRect().left)),
+        lastBottom: rows[rows.length - 1]!.getBoundingClientRect().bottom,
+      };
+    }, HOSTS.group);
+    assert.equal(g.folders, 0, "no folder section, folder heading or path inside a group");
+    assert.equal(g.every, g.titles.length, "every row is the group's own list item");
+    // Newest activity first, the operator's build (250 min ago) ahead of the folder rows (300+), the overseer's not there.
+    assert.deepEqual(g.titles, ["My Solo build", "Folder task 0", "Folder task 1", "Folder task 2", "Folder task 3", "Side task 0", "Side task 1", "Side task 2", "Side task 3"]);
+    assert.equal(g.count, "9", "the count includes the operator's build and leaves out the overseer's");
+    for (const t of g.texts) assert.ok(!t.includes("/w/") && !t.includes("folders/") && !t.includes("projects/"), `no folder on a group row: ${t}`);
+    // Its line is beside the rows, clear of them, and runs down past the last.
+    const o = await geometry(page, HOSTS.group);
+    assert.ok(o.line + 1 + 2 <= g.rowLeft + 0.01, `the group's drawn line (centre ${o.line}) stands clear of its rows (from ${g.rowLeft})`);
+    assert.ok(o.boxRight - g.rowLeft <= 2.01, `its press box reaches at most 2px over the rows' edge, as before (${o.boxRight} vs ${g.rowLeft})`);
+    assert.ok(o.boxBottom >= g.lastBottom - 1, `the line runs past the last row (${o.boxBottom} vs ${g.lastBottom})`);
+    // A press 5px beside the line still lands on it.
+    await pointOn(page, HOSTS.group, 5);
+    await page.context().close();
+  });
+}
+
+test("an operator build added to an existing group shows up in it at once, on the feed's groups_changed push", async () => {
+  const w = world();
+  const mine = w.sessions.find((x) => x.id === "solo-mine")!;
+  delete mine.groupId;
+  const page = await open(w, 1280);
   await openAll(page);
-  const o = await geometry(page, HOSTS.group);
-  const i = await geometry(page, HOSTS.groupFolder);
-  // Low in the folder's last row: below the title's line, where the rail has no item.
-  const y = await page.evaluate((sel) => {
-    const folder = document.querySelector<HTMLElement>(sel)!;
-    const list = document.querySelector<HTMLElement>(".sidebar-list")!;
-    list.scrollTop += folder.getBoundingClientRect().top - list.getBoundingClientRect().top - 100;
-    const rows = folder.querySelectorAll(".session-row-shell");
-    return rows[rows.length - 1]!.getBoundingClientRect().bottom - 6;
-  }, HOSTS.groupFolder);
-  const at = (x: number) =>
-    page.evaluate(
-      ({ x, y }) => {
-        const el = document.elementFromPoint(x, y);
-        return el?.classList.contains("guide-line") ? (el.parentElement!.classList.contains("group-section") ? "group" : "folder") : "other";
-      },
-      { x, y },
-    );
-  assert.equal(await at(o.line + 5), "group");
-  assert.equal(await at(i.line - 5), "folder");
-  assert.equal(await at(i.line + 5), "folder");
-  assert.equal(await at((o.line + i.line) / 2), "other", "nothing presses between the two boxes");
+  const titles = () => page.evaluate((sel) => [...document.querySelectorAll(`${sel} > ul.list > li .list-title`)].map((t) => t.textContent!.trim()), HOSTS.group);
+  assert.ok(!(await titles()).includes("My Solo build"));
+  for (let i = 0; i < 100 && !feedSocket; i++) await page.waitForTimeout(50);
+  assert.ok(feedSocket, "the page opened its session feed");
+  // Another window (or the Overseer) filed it: the server's list now says so, and the feed pushes the change.
+  mine.groupId = GROUP.id;
+  feedSocket!.send(JSON.stringify({ type: "groups_changed" }));
+  let now: string[] = [];
+  for (let i = 0; i < 40; i++) {
+    now = await titles();
+    if (now.includes("My Solo build")) break;
+    await page.waitForTimeout(50);
+  }
+  assert.equal(now[0], "My Solo build", `the row is in its group, newest first, with no focus and no poll; got ${JSON.stringify(now)}`);
+  assert.equal(await page.locator(`${HOSTS.group} > summary > .text-num`).textContent(), "9");
+  assert.equal(await page.locator(`${HOSTS.group} .session-group`).count(), 0, "still flat");
   await page.context().close();
 });
 

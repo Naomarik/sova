@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionSummary } from "../../shared/protocol";
-import { archiveDateOpen, archiveOpen, foldersOpen, inFolders, isMainThread, isOrdinarySession, isOrgSession, isOwnedSession, isProjectOwned, isTopSession, listedWithLocalProject, sidebarRegion, storedFoldersOpen } from "./regions";
+import { archiveDateOpen, archiveOpen, foldersOpen, groupRefusal, inFolders, isGroupable, isMainThread, isOrdinarySession, isOrgSession, isOwnedSession, isProjectOwned, isTopSession, listedWithLocalProject, ORG_GROUP_REASON, PROJECT_GROUP_REASON, sidebarRegion, storedFoldersOpen } from "./regions";
 import { groupSections } from "./session-groups";
 import { groupByCreation } from "./session-order";
 import { FOLDERS_KEY } from "./storage-keys";
@@ -70,9 +70,42 @@ test("a session only in a project's folder is ordinary: its usual region, and gr
   const placed: Pick<SessionSummary, "project" | "folderOrg" | "org"> = { project: folder, folderOrg: { orgId: "o", orgName: "O", projectId: "p", projectName: "P" } };
   assert.equal(isOrdinarySession(placed), true);
   assert.equal(isOrgSession(placed), false);
+  // The groups read isGroupable: the folder session sits in its group; an overseer-started build (no `operator`) doesn't.
   const rows = [{ id: "f", groupId: "g1", project: folder }, { id: "c", groupId: "g1", project: coding }] as SessionSummary[];
-  const [g] = groupSections(rows.filter(isOrdinarySession), [{ id: "g1", name: "G" } as never], false);
-  assert.deepEqual(g!.sessions.map((x) => x.id), ["f"], "the folder session sits in its group");
+  const [g] = groupSections(rows.filter(isGroupable), [{ id: "g1", name: "G" } as never], false);
+  assert.deepEqual(g!.sessions.map((x) => x.id), ["f"], "the folder session sits in its group, the overseer's build does not");
+});
+
+test("groups admit the operator's own coding session, and only the groups: it stays out of Folders and keeps its project's place", () => {
+  const p = (kind: "folder" | "coding" | "overseer", operator?: true) => ({ projectId: "p", projectName: "P", kind, ...(operator ? { operator } : {}) }) as SessionSummary["project"];
+  const web = { live: null, origin: "web", archived: false } as Pick<SessionSummary, "live" | "origin" | "archived">;
+  const mine = { ...web, id: "mine", groupId: "g1", project: p("coding", true) } as SessionSummary;
+  const theirs = { ...web, id: "theirs", groupId: "g1", project: p("coding") } as SessionSummary;
+  const overseer = { ...web, id: "po", groupId: "g1", project: p("overseer") } as SessionSummary;
+  const org = { ...web, id: "org", groupId: "g1", org: { orgId: "o", orgName: "O", kind: "coding" }, project: p("coding", true) } as SessionSummary;
+  const plain = { ...web, id: "plain", groupId: "g1" } as SessionSummary;
+  // Unchanged: the operator's build is no ordinary session, so Folders, Needs you and the Archive never list it.
+  assert.equal(isOrdinarySession(mine), false);
+  assert.equal(isProjectOwned(mine), true);
+  assert.equal(inFolders(mine, true), false);
+  assert.equal(sidebarRegion(mine), "projects");
+  // The groups widen it.
+  assert.equal(isGroupable(mine), true);
+  assert.equal(groupRefusal(mine), null);
+  assert.equal(isGroupable(plain), true);
+  assert.equal(groupRefusal(plain), null);
+  // Still refused: the overseer's own build, a project overseer's conversation, an org session (its line wins).
+  assert.equal(isGroupable(theirs), false);
+  assert.equal(groupRefusal(theirs), PROJECT_GROUP_REASON);
+  assert.equal(isGroupable(overseer), false);
+  assert.equal(groupRefusal(overseer), PROJECT_GROUP_REASON);
+  assert.equal(isGroupable(org), false);
+  assert.equal(groupRefusal(org), ORG_GROUP_REASON);
+  assert.equal(groupRefusal({ ...theirs, archived: true }), null, "an archived standalone build is ordinary again");
+  // Its group holds it and counts it; the refused rows are kept on the server but not drawn.
+  const [g] = groupSections([mine, theirs, overseer, org, plain].filter(isGroupable), [{ id: "g1", name: "G" } as never], false);
+  assert.deepEqual(g!.sessions.map((x) => x.id), ["mine", "plain"]);
+  assert.equal(g!.sessions.length, 2, "the count a group shows and its drop tile says");
 });
 
 test("owned (no group, the selection skips it): an org row and a project's build or overseer; never a folder session", () => {

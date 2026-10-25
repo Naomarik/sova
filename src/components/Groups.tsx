@@ -1,6 +1,7 @@
 import { createSignal, For, onMount, Show } from "solid-js";
 import { GROUP_NAME_MAX, type SessionSummary } from "../../shared/protocol";
 import { createGroup, groupNameOf, loadSessionGroups, quoted, sessionGroups, setSessionGroup } from "../lib/session-groups";
+import { groupRefusal } from "../lib/regions";
 import { announce, toast } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
 
@@ -103,8 +104,9 @@ export function MoveToGroupMenu(props: {
   const [error, setError] = createSignal<string | null>(null);
   const [active, setActive] = createSignal(0);
 
-  /** An organization's session is never grouped (§app.session-list/organizations; the server refuses too). */
-  const orgRefusal = () => (props.session.org ? "Organization sessions stay with their project." : null);
+  /** An organization's session, a project's overseer conversation and a build its overseer started are never grouped
+      (§app.session-list/groups; the server refuses too). The operator's own coding session is. */
+  const orgRefusal = () => groupRefusal(props.session);
   const current = () => props.session.groupId ?? null;
   const currentName = () => groupNameOf(sessionGroups(), props.session.groupId ?? undefined);
   /** The radio rows in keyboard order: "No group" first, then each group in creation order. */

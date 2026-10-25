@@ -21,6 +21,7 @@ import {
   NEW_TILE,
   openAnnouncement,
   ORG_GROUP_REASON,
+  PROJECT_GROUP_REASON,
   type Point,
   REMOVE_TILE,
 } from "./drag-overlay";
@@ -151,7 +152,7 @@ const info = (over: Partial<DragInfo> = {}): DragInfo => ({
   path: "/s/1.jsonl",
   title: "Fix the build",
   groupId: null,
-  org: false,
+  groupRefusal: null,
   orgProject: null,
   archivedProject: null,
   peer: null,
@@ -190,12 +191,20 @@ test("a grouped row: its group is Current and inert, and Remove names the group"
 });
 
 test("an organization session: groups and New group refused once, in words; out of a group still works", () => {
-  const t = dropTiles(info({ org: true, groupId: "g2" }), GROUPS, COUNTS);
+  const t = dropTiles(info({ groupRefusal: ORG_GROUP_REASON, groupId: "g2" }), GROUPS, COUNTS);
   assert.equal(t.groupNote, ORG_GROUP_REASON);
   assert.deepEqual(dropAction(NEW_TILE, t), { kind: "refused", reason: ORG_GROUP_REASON });
   assert.deepEqual(dropAction("g1", t), { kind: "refused", reason: ORG_GROUP_REASON });
   assert.deepEqual(dropAction(REMOVE_TILE, t), { kind: "group", groupId: null });
   assert.deepEqual(dropAction(ARCHIVE_TILE, t), { kind: "archive" }, "archive goes to its project's Done list");
+});
+
+test("a project's own session: refused in the project's words; out of a group still works", () => {
+  const t = dropTiles(info({ groupRefusal: PROJECT_GROUP_REASON, groupId: "g2" }), GROUPS, COUNTS);
+  assert.equal(t.groupNote, PROJECT_GROUP_REASON);
+  assert.deepEqual(dropAction(NEW_TILE, t), { kind: "refused", reason: PROJECT_GROUP_REASON });
+  assert.deepEqual(dropAction("g1", t), { kind: "refused", reason: PROJECT_GROUP_REASON });
+  assert.deepEqual(dropAction(REMOVE_TILE, t), { kind: "group", groupId: null });
 });
 
 test("a peer's session: no group of this host, no Current, no Remove — its group id is the peer's", () => {
@@ -265,7 +274,7 @@ test("ghostTarget: the card says where a drop would put the row, and when it wou
   assert.deepEqual(ghostTarget("g2", t, grouped), { text: "Move to “Home”", refused: false });
   assert.deepEqual(ghostTarget("g1", t, grouped), { text: "Already in “Work”", refused: true });
   assert.deepEqual(ghostTarget(REMOVE_TILE, t, grouped), { text: "Remove from “Work”", refused: false });
-  const org = info({ org: true });
+  const org = info({ groupRefusal: ORG_GROUP_REASON });
   const o = dropTiles(org, GROUPS, COUNTS);
   assert.deepEqual(ghostTarget("g2", o, org), { text: "Can't drop here", refused: true });
   assert.deepEqual(ghostTarget(NEW_TILE, o, org), { text: "Can't drop here", refused: true });

@@ -1,4 +1,5 @@
 import type { SessionProject } from "../shared/protocol";
+import { isArchived } from "./archived-sessions";
 import { buildStartedBy, readEngineBuilds, type BuildRow } from "./build-loadout";
 import { buildMerged } from "./build-merged";
 import { openEngineIds } from "./org-engine";
@@ -79,6 +80,21 @@ export function projectSessionLookup(): ProjectSessionLookup {
       return pid ? { ...ref(pid), kind: "folder" } : undefined;
     },
   };
+}
+
+export const PROJECT_NOT_GROUPED = "Project sessions stay with their project.";
+
+/**
+ * Why a session can't join a group because a registered project owns it (the assign route's 400, §app.session-list/groups):
+ * its overseer's conversations and the builds its overseer started on its own. The operator's own coding session can be
+ * grouped, and so can a standalone build the operator archived (it is ordinary again, src/lib/regions.ts), as can a
+ * session only in a project's folder. Organization sessions are the org lookup's refusal, checked first. Null: it can.
+ */
+export function projectGroupRefusal(path: string, id: string): string | null {
+  const p = projectSessionLookup().of(path, id);
+  if (!p || p.kind === "folder") return null;
+  if (p.kind === "coding" && (p.operator === true || isArchived(id))) return null;
+  return PROJECT_NOT_GROUPED;
 }
 
 /** Why a session file may not be deleted (Clean Up, an empty husk's archive): it is a standalone project's

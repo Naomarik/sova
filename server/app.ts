@@ -80,7 +80,7 @@ import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemo
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
 import { codingSpecRefusal } from "./project-coding-mode";
-import { projectCodingIds } from "./project-sessions";
+import { projectCodingIds, projectGroupRefusal } from "./project-sessions";
 import { configureSession } from "./sessions-configure";
 import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
 import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
@@ -507,9 +507,14 @@ export function buildApp(deps: AppDeps) {
     const path = resolveSessionPath(typeof body.path === "string" ? body.path : null);
     if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
-    // Organization sessions live under their project, never in a group (a removal still works, for
-    // an assignment made before that rule).
-    if (body.groupId !== null && isOrgSession(path, idOf(path))) return c.json({ error: ORG_NOT_GROUPED }, 400);
+    // Organization sessions, and a project's overseer conversations and the builds its overseer started, live under
+    // their project, never in a group; the operator's own coding session may join one (a removal always works, for an
+    // assignment made before that rule).
+    if (body.groupId !== null) {
+      if (isOrgSession(path, idOf(path))) return c.json({ error: ORG_NOT_GROUPED }, 400);
+      const refused = projectGroupRefusal(path, idOf(path));
+      if (refused) return c.json({ error: refused }, 400);
+    }
     const r = assignSession(idOf(path), body.groupId, label.label, body.index as number | undefined);
     return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);
   });

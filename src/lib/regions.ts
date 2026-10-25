@@ -41,8 +41,8 @@ export const isArchivedStandaloneBuild = (s: Pick<SessionSummary, "org" | "proje
 export const isOperatorBuild = (s: Pick<SessionSummary, "workerSession" | "overseer" | "org" | "project">): boolean =>
   isMainThread(s) && !s.org && s.project?.kind === "coding" && s.project.operator === true;
 
-/** An organization's or a project's own session: it lives in that region and never joins a group (the drag lock, bulk
-    Move to Group, the archive toasts). A session only in a project's folder is not owned. */
+/** An organization's or a project's own session: it lives in that region (the archive toasts). A session only in a
+    project's folder is not owned. Whether it joins a group is `isGroupable`'s: the operator's own builds do. */
 export const isOwnedSession = (s: Pick<SessionSummary, "org" | "project">): boolean => isOrgSession(s) || isProjectOwned(s);
 
 /**
@@ -54,6 +54,23 @@ export const isOwnedSession = (s: Pick<SessionSummary, "org" | "project">): bool
  */
 export const isOrdinarySession = (s: Pick<SessionSummary, "workerSession" | "overseer" | "org" | "project"> & { archived?: boolean }): boolean =>
   isMainThread(s) && !isOrgSession(s) && (!isProjectOwned(s) || isArchivedStandaloneBuild(s));
+
+/**
+ * Whether a session can be in a group (§app.session-list/groups): every ordinary session, and the operator's own coding
+ * sessions (`isOperatorBuild`), as Recent adds them back. It widens only the groups — their sections, counts, the drag
+ * lock, Move into group — never `isOrdinarySession`, so those builds stay out of Folders, Needs you and the Archive.
+ * Organization sessions, a project's overseer conversations and the builds its overseer started on its own never are.
+ */
+export const isGroupable = (s: Pick<SessionSummary, "workerSession" | "overseer" | "org" | "project"> & { archived?: boolean }): boolean =>
+  isOrdinarySession(s) || isOperatorBuild(s);
+
+export const ORG_GROUP_REASON = "Organization sessions stay with their project.";
+export const PROJECT_GROUP_REASON = "Project sessions stay with their project.";
+
+/** Why a row can't join a group, in the words the controls say (the server's 400 says the same); null when it can.
+    Taking one out of a group always works. */
+export const groupRefusal = (s: Pick<SessionSummary, "workerSession" | "overseer" | "org" | "project"> & { archived?: boolean }): string | null =>
+  isOrgSession(s) ? ORG_GROUP_REASON : isGroupable(s) || !isProjectOwned(s) ? null : PROJECT_GROUP_REASON;
 
 /**
  * A session a project of this computer lists (§app.projects/folder-sessions): in a registered, not archived project's

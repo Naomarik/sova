@@ -832,6 +832,8 @@ would list master's changes instead.
       finding-your-way steps and the Workers paragraph. Its commands gain `where` and `map`.
     - `SPEC_WORKER_NOTE` is unchanged, and a test pins it to the Workers paragraph.
     - The replay agent arm copies `WRITING.md` into its work directory.
+    - A codemode script's call that hands the procedure over passes it whole to the script's result, the
+      one the model reads (`mode/tests/codemode-handover.mjs`).
   - §: +§tools.spec/writing-on-demand, §tools.spec/mode-reading, §tools.spec/census-note,
     §tools.spec/align-agree, §chat.mode-menu/workers, §site.docs/spec-mode, §tools.spec/context-packets,
     §tools.spec/agree-source-relay, §tools/spec, §chat.alignment/tool, §chat.mode-menu/codemode (draft

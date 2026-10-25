@@ -8,6 +8,12 @@ import { stateHash } from "../project-services/store";
 import type { ExitCause } from "../../shared/chat-runtime-wire";
 import { stateRoot } from "../state-root";
 import { GC_TIMER_OFF } from "./gc-timer";
+import { writeGitCleanupConfig } from "../../pi-config/extensions/sandbox/env.ts";
+
+/** Sova's git system config for chat processes (§app.git-cleanup/no-background): the machine's own,
+ * then maintenance.auto=false and gc.auto=0, so nothing a chat runs starts a background cleanup
+ * that a stop or a reload of its unit would cut off. Written by the sandbox's own writer. */
+export const chatGitConfigPath = (agentDir: string) => join(agentDir, "sova", "git", "no-background-cleanup.gitconfig");
 
 /**
  * The chat supervisor (al_3 stage 2, design §3): starts an ordinary chat's process as a systemd
@@ -193,7 +199,8 @@ export function scrubChatProcessEnv(env: NodeJS.ProcessEnv = process.env): strin
  * The environment a chat process starts with (design §1.2): the server's (in-process chats see it
  * whole today), minus DENY and CHAT_PROCESS_ENV; PATH with Sova's Bun first and the Claude program's directory next (so the
  * chat finds the same `claude` the server resolved, whatever its cwd's mise config says), then the
- * server's PATH; HOME; PI_CODING_AGENT_DIR; Bun's GC timer off (server/chat-runtime/gc-timer.ts). `extra`
+ * server's PATH; HOME; PI_CODING_AGENT_DIR; Bun's GC timer off (server/chat-runtime/gc-timer.ts);
+ * GIT_CONFIG_SYSTEM naming chatGitConfigPath (written here; left out when it can't be). `extra`
  * (the chat's own `SOVA_CHAT_*`) goes last and wins.
  */
 export function chatEnv(o: { serverEnv: NodeJS.ProcessEnv; bun: string; claude?: string | null; home: string; agentDir: string; extra?: Record<string, string> }): Record<string, string> {
@@ -205,6 +212,11 @@ export function chatEnv(o: { serverEnv: NodeJS.ProcessEnv; bun: string; claude?:
   env.HOME = o.home;
   env.PI_CODING_AGENT_DIR = o.agentDir;
   env[GC_TIMER_OFF.name] = GC_TIMER_OFF.value;
+  const gitConfig = chatGitConfigPath(o.agentDir);
+  if (writeGitCleanupConfig(gitConfig, o.serverEnv)) {
+    delete env.GIT_CONFIG_NOSYSTEM;
+    env.GIT_CONFIG_SYSTEM = gitConfig;
+  }
   return { ...env, ...o.extra };
 }
 

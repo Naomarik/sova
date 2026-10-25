@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { after, beforeEach, test } from "node:test";
 import { envFileText, SystemdDriver, systemdRunArgv, type Exec } from "../project-services/drivers";
 import { FakeDriver } from "./fake-driver";
-import { CHAT_PROCESS_ENV, chatDriver, chatEnv, chatProcessAlive, chatSocketPath, ChatSupervisor, chooseChatHost, exitOfLog, sweepOldChildren, nextEpoch, scrubChatProcessEnv, supervisorConfig, type ChatDeath, type SupervisorDeps } from "./supervisor";
+import { execFileSync } from "node:child_process";
+import { CHAT_PROCESS_ENV, chatDriver, chatEnv, chatGitConfigPath, chatProcessAlive, chatSocketPath, ChatSupervisor, chooseChatHost, exitOfLog, sweepOldChildren, nextEpoch, scrubChatProcessEnv, supervisorConfig, type ChatDeath, type SupervisorDeps } from "./supervisor";
 import { GC_TIMER_OFF } from "./gc-timer";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-chat-supervisor-"));
@@ -979,6 +980,23 @@ test("the chat env turns Bun's GC timer off, whatever the server's own env says"
   const base = { bun: "/opt/bun/bin/bun", home: "/h", agentDir: "/h/a" };
   assert.equal(chatEnv({ ...base, serverEnv: { LANG: "C" } })[GC_TIMER_OFF.name], GC_TIMER_OFF.value);
   assert.equal(chatEnv({ ...base, serverEnv: { [GC_TIMER_OFF.name]: "0" } })[GC_TIMER_OFF.name], GC_TIMER_OFF.value);
+});
+
+test("the chat env names Sova's git system config: git run by the chat starts no background cleanup", (t) => {
+  const agentDir = mkdtempSync(join(tmpdir(), "chat-gitcfg-"));
+  t.after(() => rmSync(agentDir, { recursive: true, force: true }));
+  const env = chatEnv({ serverEnv: { LANG: "C", GIT_CONFIG_NOSYSTEM: "1" }, bun: "/opt/bun/bin/bun", home: agentDir, agentDir });
+  assert.equal(env.GIT_CONFIG_SYSTEM, chatGitConfigPath(agentDir));
+  assert.equal(env.GIT_CONFIG_NOSYSTEM, undefined, "it would make git skip the file");
+  // Never a variable that turns the idle git cache off (§app/idle-git-cache).
+  assert.equal(env.GIT_CONFIG_COUNT, undefined);
+  assert.equal(env.GIT_CONFIG_PARAMETERS, undefined);
+  const git = (key: string) => execFileSync("git", ["config", "--get", key], { env: { PATH: process.env.PATH!, HOME: agentDir, GIT_CONFIG_SYSTEM: env.GIT_CONFIG_SYSTEM! }, encoding: "utf8" }).trim();
+  assert.deepEqual([git("maintenance.auto"), git("gc.auto")], ["false", "0"]);
+  // An agent dir that can't be written: the chat still starts, without the variable.
+  const blocked = join(agentDir, "file");
+  writeFileSync(blocked, "");
+  assert.equal(chatEnv({ serverEnv: { LANG: "C" }, bun: "/opt/bun/bin/bun", home: agentDir, agentDir: blocked }).GIT_CONFIG_SYSTEM, undefined);
 });
 
 test("a chat process's own variables: never inherited from its server, and deleted from a server's env at boot", () => {

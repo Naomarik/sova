@@ -2061,7 +2061,7 @@
     "§app.session-list/groups": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/design/base.css",
         "src/components/Groups.tsx",
@@ -2084,12 +2084,13 @@
         "shared/protocol.ts",
         "src/app.css",
         "server/session-feed.integration.test.ts",
-        "server/sidebar-guide-lines.integration.test.ts"
+        "server/sidebar-guide-lines.integration.test.ts",
+        "src/App.tsx"
       ],
       "agreed": {
         "by": "omar",
-        "at": "2026-10-25T14:41Z",
-        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#a7888af6"
+        "at": "2026-10-26T19:03Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#809e113a"
       }
     },
     "§app.session-list/guide-lines": {
@@ -5470,7 +5471,17 @@
     "§workspace.groups/data": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-26T19:03Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#809e113a"
+      },
+      "code": [
+        "src/App.tsx",
+        "src/lib/regions.ts",
+        "src/lib/regions.test.ts"
+      ]
     },
     "§workspace.groups/decisions": {
       "kind": "note",
@@ -10676,8 +10687,8 @@
       ],
       "agreed": {
         "by": "omar",
-        "at": "2026-10-25T14:41Z",
-        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#a7888af6"
+        "at": "2026-10-26T19:03Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#809e113a"
       }
     },
     "§app.session-list/organizations": {
@@ -16414,8 +16425,8 @@
       ],
       "agreed": {
         "by": "omar",
-        "at": "2026-10-25T14:41Z",
-        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#a7888af6"
+        "at": "2026-10-26T19:03Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#809e113a"
       }
     },
     "§chat.markdown/vis-wireframe-items": {
@@ -23891,8 +23902,8 @@
       ],
       "agreed": {
         "by": "omar",
-        "at": "2026-10-25T14:57Z",
-        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#a7888af6"
+        "at": "2026-10-26T19:03Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#809e113a"
       }
     },
     "§app.server-runtime/pi-workers": {

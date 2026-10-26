@@ -861,6 +861,54 @@ would list master's changes instead.
     census 131 → 127 → 137. Merge-collision numbers after the conversion: at 1 and 2 weeks after landing 2.
   - Upgrade: see UPGRADING step 12.
 
+- **One rule says whether a draft is official, and Sova and the merge round both call it.**
+  - Commit: on branch `feat/landing-dependable`; not on master yet: the merge round folds it in.
+  - Why: Sova's readiness called a draft promoted when any promotion wrote its files after its last edit
+    (so a catch-up merge that took master's spec read the same as a reword), while `drafts` marked an id in
+    conflict whenever any file it sits in had a file-level conflict, so the merge round handed back
+    branches whose drafts were official (steer-keys, flow-legibility, owner-page-sova).
+  - Changed:
+    - `core/official.mjs` (new, Node builtins and `sova-spec.mjs`'s `declarationSpans` only; types in
+      `official.d.mts`): `draftOfficial(specDir, draftDir, draftsDir)` compares per claim (a record, a
+      declaration's prose, the non-blank lines outside every declaration): official when current says what
+      the draft says or what a promotion recorded in the tree wrote, other than what the draft started from,
+      or, for prose, its blocks carry the draft's change (as `merge-claims` leaves a claim both sides
+      changed). `blocksOf` moved here from `sova-spec-draft.mjs`, which imports it.
+    - `promote --write`: each receipt also records `claims` (`{unit: [said, wrote]}`); older receipts count
+      what their draft says now, for the ids they name.
+    - `drafts`: an id current says differently counts current when the rule calls it official;
+      `promotedConflict` keeps only the ones it doesn't. Output shape unchanged.
+    - `prune --official --from DIR` reads each copy with the rule (no temp copy of the spec, no `status`);
+      `deleted`/`wouldDelete` entries from `--from` no longer carry `draftSha256`.
+    - The merge round: `go <branch> [without-specs]` records the user's word as a go-ahead; `landed` tidies
+      official drafts out of a worktree whose check passed, after copying them to `tidied/<head>/`.
+  - §: §tools.spec/draft-official (+), §tools.spec/draft-hygiene, §chat.worktrees/readiness,
+    §chat.worktrees/ready-to-land, §chat.merge-round/round, §chat.merge-round/driver,
+    §chat.schedules/merge-ready (draft `landing-dependable`).
+  - Goal 4 (code and spec agree after building), measured on the live worktrees: `drafts` on
+    `sova-project-page-copies` read 44 ids in `promotedConflict` across 4 drafts (each record and prose
+    equal to current, checked by hand on §app.merge-queue/card); with the rule, 0. On `sova-spec-sidebar-scroll`
+    (master's spec taken in a catch-up merge, never promoted again) both readings keep its 2 drafts unofficial
+    on §app.session-list/content-rules and /search. 62 drafts across Sova's worktrees: about 70 ms each.
+  - Upgrade: see UPGRADING step 13.
+
+- **One verdict: `drafts` reports the rule's `official`, and every reader holds on it.**
+  - Commit: on branch `feat/landing-dependable`; not on master yet: the merge round folds it in.
+  - Why: `drafts` turned the rule into per-id lists and dropped a claim outside any § (a manifest key,
+    a claim file's lines outside its declarations), so a draft the rule called not official read with
+    nothing pending, and the merge round's check passed what Sova's readiness held (review F1).
+  - Changed:
+    - `drafts`: each row carries `official` (false for an unreadable draft); its ids sort by the verdict, and
+      one made unofficial only outside any § reads `active` with a reason. The default-branch shortcut that
+      counted an id current when it was byte-equal on the default branch is gone.
+    - `prune --official` reads each folder by the rule directly, in the project as with `--from`: one loop,
+      `kept` states `pending`, `empty` or `unreadable`, and no `draftSha256`.
+  - §: §tools.spec/draft-official, §tools.spec/draft-hygiene (draft `landing-dependable-2`).
+  - Goal 4 (code and spec agree after building): `tests/draft-official.test.mjs` "one verdict" (a draft
+    changing only a manifest key, current holding a third value) failed before (`drafts` gave no verdict,
+    `pending: []`) and passes after. Tool tests 587 pass, 0 fail.
+  - Upgrade: see UPGRADING step 13.
+
 - **Sova's spec keeps each area's records beside its claim file; new specs start that way** (al_6, landing 2:
   the conversion).
   - Commit: on branch `feat/spec-convert`; not on master yet. The conversion is one commit of its own
@@ -918,7 +966,7 @@ would list master's changes instead.
     branch rebuilds it instead, with the same records and values and the same identity check, but the ids
     grouped by area rather than in the old file's order; restore the `.gitattributes` line in that commit.
     The tools read both layouts, so neither needs a tool change.
-  - Upgrade: see UPGRADING step 13.
+  - Upgrade: see UPGRADING step 14.
 
 ## Integration → master
 
@@ -957,6 +1005,7 @@ The tools are Node standard library only. Nothing is installed.
    | `toc.mjs`, `read.mjs` | The pull path |
    | `map.mjs`, `where.mjs`, `topic.mjs`, `graph.mjs` | The look views and `impact --near`; `topic.mjs` ranks `where`'s topic rows |
    | `fields.mjs` | The optional record fields and the frame |
+   | `official.mjs` | The one rule for whether a draft is official (`drafts`, `prune --official`, a host's own readiness) |
    | `sova-spec-draft.mjs` | Drafts, evidence, promotion, `merge-manifest`, `merge-claims` |
    | `sova-spec-review.mjs` | The review companion |
    | `sova-spec-assess.mjs` | The assessment companion |
@@ -977,7 +1026,7 @@ The tools are Node standard library only. Nothing is installed.
      'node <tools dir>/sova-spec-draft.mjs merge-claims --root . --base %O --ours %A --theirs %B --path %P --write'
    ```
 
-   A format 2 spec (step 13; every spec started since then) adds only the `claims/**/*.md` line and
+   A format 2 spec (step 14; every spec started since then) adds only the `claims/**/*.md` line and
    the `merge-claims` driver: its `manifest.json` and record files take Git's line merge.
    Two branches that change different records, or different declarations of one claim file, then
    merge without a conflict, and the result doesn't depend on which landed first. One record or one
@@ -1104,7 +1153,13 @@ The tools are Node standard library only. Nothing is installed.
     Scripts that read records from `manifest.json` switch to `sova-spec.mjs records --json` (or import
     `layout.mjs`). A merge process of your own that runs `merge-manifest --write` on a `manifest.json`
     conflict should also run it on a conflicted `claims/**/*.json`, and stage the `files` it lists.
-13. **New specs start in format 2** (2026-10-26, branch `feat/spec-convert`). Copy
+13. **One rule for official drafts** (branch `feat/landing-dependable`). Copy `core/official.mjs` with the
+    tools (step 1). Promotions now record `claims` in their receipt; nothing else changes shape. A merge
+    process of your own that judged drafts by `promotedConflict` gets fewer false hand-backs; one that reads
+    `draftSha256` from `prune --official --from` reads the name instead. A process that holds work until a
+    draft is official reads the `drafts` row's `official`, never its state or lists; `prune --official`
+    without `--from` now keeps drafts as `pending`, `empty` or `unreadable`, without `draftSha256`.
+14. **New specs start in format 2** (2026-10-26, branch `feat/spec-convert`). Copy
     `core/sova-spec-draft.mjs` again (step 1). Nothing is required of an existing spec: it keeps its
     format until you run `migrate`. A project with no spec now gets format 2 from its first `new`: its
     records go in `claims/<path>.json` beside each claim file, so if `.sova/spec/.gitignore` denies

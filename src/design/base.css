@@ -594,6 +594,14 @@ input.input { text-overflow: ellipsis; }
 .setup-oid         { flex: none; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
 .setup-subject     { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink); }
 .setup-ago         { flex: none; color: var(--color-ink-muted); white-space: nowrap; }
+.setup-gitdir .setup-num { margin-left: 0; }
+/* Stuck or overdue cleanup: warn ink with the alert icon; the words carry it on their own, and
+   wrap beside the icon rather than under it. */
+.setup-gitdir-warn       { flex-wrap: nowrap; align-items: flex-start; }
+.setup-gitdir-warn > span { min-width: 0; }
+.setup-gitdir-warn,
+.setup-gitdir-warn .icon { color: var(--status-warn); }
+.setup-gitdir-warn .icon { flex: none; margin-top: 2px; }
 /* The Tools group (§chat.transcript/setup-card-tools): a disclosure of disclosures, closed by
    default. Each summary is the whole 44px target; the twist turns when it opens. The heading keeps
    the section's eyebrow, the total its mono figures, so a closed group reads like the others. */

@@ -32,7 +32,7 @@ export const MEMORY_TYPE_INFO: readonly MemoryTypeInfo[] = [
   },
 ];
 
-/** The Memory type panel's suggested view sizes, in KB (the view merges from the size down to half of it). */
+/** Settings → Memory's suggested Summary sizes, in KB (a UniiChat view merges from the size down to half of it). */
 export const MEMORY_SIZES: readonly number[] = [16, 32, 64, 128, 256];
 
 export const isMemoryType = (v: unknown): v is MemoryType => typeof v === "string" && (MEMORY_TYPES as readonly string[]).includes(v);

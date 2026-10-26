@@ -1,11 +1,13 @@
 /**
  * The user's answers on a branch's Landing card (§chat.offers/sova-landing; §chat.worktrees/landing-answers):
- * Land It (a go-ahead) or Not Yet for a branch at one commit, kept per user outside every repository:
+ * Land It (a go-ahead) or Not Yet for a branch at one commit, and the user's go-ahead typed in the branch's own
+ * chat (`worktree land`, `by: "owner-chat"`), kept per user outside every repository:
  *
  *   <state root>/landing.json
  *   { "v": 1, "goAheads": [ { branch, commit, session?, at, by, withoutSpecs? } ], "notYet": [ { branch, commit, session?, at } ] }
  *
- * Sova's server writes it (a click on a Landing card); the merge round's driver reads it as the user's word.
+ * Sova's server writes it (a click on a Landing card), and so does the `worktree` tool's `land` (the user's typed
+ * word, read by `typedGoAhead`); the merge round's driver reads it as the user's word.
  * Nothing enforces it: no merge needs a recorded go-ahead.
  *
  * Node builtins only (the extension runs in every chat). Writes re-read the file, merge and replace it
@@ -18,8 +20,9 @@ import { dirname, join, resolve } from "node:path";
 export const LANDING_FILE_NAME = "landing.json";
 /** Records kept per list, newest last. */
 export const LANDING_KEPT = 200;
-/** Who recorded a go-ahead: a Land It click, or (records from before the merge guard was removed) a Merge Branch press. */
-export type GoAheadBy = "land-it" | "page";
+/** Who recorded a go-ahead: a Land It click, the user's word typed in the branch's own chat (`worktree land`), or
+ *  (records from before the merge guard was removed) a Merge Branch press. */
+export type GoAheadBy = "land-it" | "owner-chat" | "page";
 
 export interface GoAhead {
 	branch: string;
@@ -67,7 +70,7 @@ const str = (v: unknown): v is string => typeof v === "string" && v.length > 0 &
 
 function cleanGoAhead(v: unknown): GoAhead | null {
 	if (!isRec(v) || !str(v.branch) || typeof v.commit !== "string" || !SHA.test(v.commit) || !str(v.at)) return null;
-	if (v.by !== "land-it" && v.by !== "page") return null;
+	if (v.by !== "land-it" && v.by !== "owner-chat" && v.by !== "page") return null;
 	return { branch: v.branch, commit: v.commit, ...(str(v.session) ? { session: v.session } : {}), at: v.at, by: v.by, ...(v.withoutSpecs === true ? { withoutSpecs: true as const } : {}) };
 }
 
@@ -132,4 +135,24 @@ export function answerAt(data: LandingData, branch: string, commit: string): { k
 export function goAheadFor(branch: string, commit: string, file: string = landingFile()): GoAhead | undefined {
 	const hit = answerAt(readLanding(file), branch, commit);
 	return hit?.kind === "go-ahead" ? hit.goAhead : undefined;
+}
+
+/** Sova's own messages and other sessions' arrive as user messages too: none of them is the user's typed word. */
+const NOT_TYPED = /^\s*(?:sova:|\[from session |\[schedule |go ahead: land )/i;
+/** Before the verb: words that make it a question, a condition or a refusal rather than the word to land now. */
+const NOT_NOW = /\b(?:don'?t|dont|do not|never|not|no|should|shall|why|what|how|whether|when|once|after|before|until|if|wait|hold)\b/;
+
+/**
+ * The user's go-ahead in their own words (§chat.worktrees/tool, `land`): the first line asks to land or merge
+ * ("land it", "ok, merge it", "go ahead and land feat/x"), the verb within its first 40 characters and nothing
+ * before it that asks, waits or refuses, and "not yet", "don't" or "do not" nowhere in that line. "without
+ * specs" anywhere in the message lands it without its specs. → {withoutSpecs} | null (not a go-ahead).
+ */
+export function typedGoAhead(text: string): { withoutSpecs: boolean } | null {
+	if (typeof text !== "string" || NOT_TYPED.test(text)) return null;
+	const line = (text.trim().split("\n")[0] ?? "").toLowerCase();
+	const verb = /\b(?:land|merge)\b/.exec(line);
+	if (!verb || verb.index > 40 || NOT_NOW.test(line.slice(0, verb.index))) return null;
+	if (/\bnot yet\b|\bdon'?t\b|\bdo not\b/.test(line)) return null;
+	return { withoutSpecs: /\bwithout (?:its |the |any )?specs?\b/i.test(text) };
 }

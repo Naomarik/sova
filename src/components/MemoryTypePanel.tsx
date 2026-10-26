@@ -1,30 +1,27 @@
-import { For, Show } from "solid-js";
+import { For } from "solid-js";
 import type { ChatMemoryChoice, MemoryType, MemoryTypeInfo } from "../../shared/protocol";
-import { sizeChoices, sizeLabel, typesOf } from "../lib/memory-ui";
+import { typesOf } from "../lib/memory-ui";
 import { Icon } from "./ui";
 
 /**
  * The Memory type panel's rows (§chat.mode-menu/memory-panel): one radio per type — its name,
- * author and one-line description, UniiChat's write-up link under it — then Summary size, one
- * radio per suggested size. Rows only: the caller's popover holds the header, the foot and the
- * keys (`panelKeys`). The mode menu and the Overseer's memory switch draw the same rows.
+ * author and one-line description — and nothing else (each type's Summary size is Settings →
+ * Memory's; the design write-up is linked from its help card). Rows only: the caller's popover holds
+ * the header, the foot and the keys (`panelKeys`), and scrolls the rows between them
+ * (`.memory-panel-scroll`). The mode menu and the Overseer's memory switch draw the same rows.
  */
 export function MemoryTypePanel(props: {
   /** Element ids stay unique per pane. */
   idPrefix: string;
   types: readonly MemoryTypeInfo[] | undefined;
-  sizes: readonly number[] | undefined;
   /** The chat's choice; null until known (nothing checked). */
   choice: ChatMemoryChoice | null;
   busy: boolean;
-  onPick(patch: { type?: MemoryType; size?: number }): void;
+  onPick(type: MemoryType): void;
 }) {
   const types = () => typesOf(props.types);
-  const shownType = () => props.choice?.type ?? "uniichat";
-  const sizes = () => sizeChoices(props.sizes, props.choice?.size);
-  const defaultSize = () => types().find((t) => t.id === shownType())?.defaultSize;
-  const pick = (patch: { type?: MemoryType; size?: number }) => {
-    if (!props.busy) props.onPick(patch);
+  const pick = (type: MemoryType) => {
+    if (!props.busy) props.onPick(type);
   };
   return (
     <div class="model-menu-list memory-panel" role="menu" aria-label="Memory type">
@@ -34,57 +31,22 @@ export function MemoryTypePanel(props: {
         </div>
         <For each={types()}>
           {(t) => (
-            <>
-              <div
-                class="popover-item popover-item-detail"
-                role="menuitemradio"
-                id={`${props.idPrefix}-type-${t.id}`}
-                tabindex="-1"
-                aria-checked={props.choice?.type === t.id ? "true" : "false"}
-                aria-disabled={props.busy ? "true" : undefined}
-                onClick={() => pick({ type: t.id })}
-              >
-                <Icon name="check" small class="popover-item-check" />
-                <span class="popover-item-text">
-                  <span class="popover-item-label">
-                    {t.label} <span class="memory-type-by">· {t.by}</span>
-                  </span>
-                  <span class="popover-item-desc">{t.description}</span>
-                </span>
-              </div>
-              <Show when={t.link}>
-                {(href) => (
-                  <a class="popover-item memory-type-link" role="menuitem" tabindex="-1" href={href()} target="_blank" rel="noopener noreferrer">
-                    <span class="popover-item-text">
-                      <span class="popover-item-label">Read the design ↗</span>
-                    </span>
-                  </a>
-                )}
-              </Show>
-            </>
-          )}
-        </For>
-      </div>
-      <div class="model-menu-group" role="group" aria-labelledby={`${props.idPrefix}-sizes`}>
-        <div class="list-group-label" id={`${props.idPrefix}-sizes`}>
-          Summary size
-        </div>
-        <For each={sizes()}>
-          {(s) => (
             <div
-              class="popover-item"
+              class="popover-item popover-item-detail"
               role="menuitemradio"
-              id={`${props.idPrefix}-size-${s}`}
+              id={`${props.idPrefix}-type-${t.id}`}
               tabindex="-1"
-              aria-checked={props.choice?.size === s ? "true" : "false"}
+              aria-checked={props.choice?.type === t.id ? "true" : "false"}
               aria-disabled={props.busy ? "true" : undefined}
-              onClick={() => pick({ size: s })}
+              onClick={() => pick(t.id)}
             >
               <Icon name="check" small class="popover-item-check" />
-              <span class="popover-item-label text-num">{sizeLabel(shownType(), s)}</span>
-              <Show when={s === defaultSize()}>
-                <span class="popover-item-end memory-size-default">default</span>
-              </Show>
+              <span class="popover-item-text">
+                <span class="popover-item-label">
+                  {t.label} <span class="memory-type-by">· {t.by}</span>
+                </span>
+                <span class="popover-item-desc">{t.description}</span>
+              </span>
             </div>
           )}
         </For>

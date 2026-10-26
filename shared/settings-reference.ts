@@ -209,10 +209,10 @@ export const SETTINGS_REFERENCE: Record<SettingId, ReferenceEntry> = {
     id: "overseer.memory",
     label: "Its memory",
     where: "sova",
-    summary: "Whether the overseer keeps a memory across conversations, its type and size.",
-    edit: '{setting: "memory", on: true|false, type?: "uniichat"|"zoomable", size?: <bytes>}',
+    summary: "Whether the overseer keeps a memory across conversations, and its type (its size is Settings → Memory's, for every chat).",
+    edit: '{setting: "memory", on: true|false, type?: "uniichat"|"zoomable"}',
     grant: null,
-    keys: { on: "memory on or off", type: '"uniichat" or "zoomable"', size: "its size in bytes" },
+    keys: { on: "memory on or off", type: '"uniichat" or "zoomable"' },
     changedAt: "its chat page's memory switch",
   },
   "project.name": {

@@ -9,7 +9,8 @@ import { readBranch } from "./harness/pi/reader";
 import { extensionEntries } from "./harness/pi/state";
 import { markShutdown } from "./wrapup-recovery";
 import { startBudgetRecount } from "./baton-recount";
-import { openRegisteredProjects } from "./projects/spaces";
+import { listProjects, openRegisteredProjects } from "./projects/spaces";
+import { startGitMaintenance } from "./git-maintenance";
 import { reconcileProjectServices } from "./project-services/routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
@@ -154,6 +155,9 @@ rollForwardCopies();
 await openAttachedOrgs();
 await openRegisteredProjects();
 await finishImports();
+// Every project's repository on git's scheduled maintenance, since nothing Sova starts runs git's
+// background cleanup any longer: now, every 6 hours, and on each add.
+startGitMaintenance(() => listProjects().map((p) => p.root));
 // Deleted chats' leftover tours (§app.session-list/archive-cleanup): one pass now that every session
 // root is registered, then a cheap retry each minute. Any doubt about an owner keeps its tours.
 export const tourSweep = startTourSweep();

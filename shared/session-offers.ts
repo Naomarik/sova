@@ -36,7 +36,7 @@ export const FILE_MAX_BYTES = 64 * 1024;
 export const RARE_MIN_SHOWN = 5;
 export const RARE_SHARE = 0.2;
 
-export const CONDITIONS = ["branch-ready", "waiting-for-ok", "tree-clean", "no-open-alignment", "has-merge-captain", "ready-to-land", "specs-promoted", "specs-left", "docs-fit"] as const;
+export const CONDITIONS = ["branch-ready", "waiting-for-ok", "tree-clean", "no-open-alignment", "has-merge-captain", "ready-to-land", "specs-promoted", "specs-left", "docs-fit", "specs-why"] as const;
 export type OfferCondition = (typeof CONDITIONS)[number];
 export const REPEATS = ["once-per-commit", "once-per-reply", "once-per-session"] as const;
 export type OfferRepeat = (typeof REPEATS)[number];

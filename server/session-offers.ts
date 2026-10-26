@@ -389,6 +389,7 @@ const CONDITION_WORDS: Record<OfferCondition, string> = {
   "specs-promoted": "the branch holds no spec draft left unpromoted",
   "specs-left": "the branch holds spec drafts left unpromoted",
   "docs-fit": "the branch is ready to land with its docs",
+  "specs-why": "the session said why its spec drafts can't land",
 };
 
 /** The trees a condition reads: the one the offer is shown for, else every tree of the session. */
@@ -406,6 +407,8 @@ async function conditionHolds(c: OfferCondition, s: SessionSummary, root: string
       return !unpromotedDraftNames(folder)?.length;
     case "specs-left":
       return !!unpromotedDraftNames(folder)?.length;
+    case "specs-why":
+      return (await trees()).some((t) => !!t.landing?.specsWhy);
     case "docs-fit":
       return (await trees()).some((t) => t.landing?.state === "ready" || reLand(t.landing));
     case "tree-clean": {

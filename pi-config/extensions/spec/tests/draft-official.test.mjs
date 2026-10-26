@@ -93,3 +93,20 @@ test("one verdict: a draft changing only a top-level manifest key, current holdi
   assert.notEqual(k.state, "promoted");
   assert.deepEqual(run(root, "prune", "--official", "--write").deleted, []);
 });
+
+test("either layout: a record a format 1 draft changed reads official when current keeps it, as said, in a format 2 record file, and not when it says else", async () => {
+  const { draftOfficial } = await import("../core/official.mjs");
+  const root = project();
+  assert.equal(run(root, "new", "r", "--write").exit, 0);
+  const changed = { ...CLAIMS["§b/other"], code: ["lib/other.txt", "lib/more.txt"] };
+  write(root, ".sova/spec/drafts/r/spec/manifest.json", JSON.stringify({ formatVersion: 1, claims: { ...CLAIMS, "§b/other": changed } }, null, 2) + "\n");
+  const asFormat2 = (rec) => {
+    write(root, ".sova/spec/manifest.json", JSON.stringify({ formatVersion: 2, claims: "records live beside each claim file, in claims/**/*.json" }, null, 2) + "\n");
+    write(root, ".sova/spec/claims/b/other.json", JSON.stringify({ "§b.other/two": CLAIMS["§b.other/two"], "§b/other": rec }, null, 2) + "\n");
+  };
+  const off = () => draftOfficial(join(root, ".sova/spec"), join(root, ".sova/spec/drafts/r"), join(root, ".sova/spec/drafts"));
+  asFormat2(changed);
+  assert.deepEqual([off().official, off().notOfficial], [true, []], "the record moved files, its text is the draft's");
+  asFormat2(CLAIMS["§b/other"]);
+  assert.deepEqual([off().official, off().notOfficial], [false, ["§b/other"]]);
+});

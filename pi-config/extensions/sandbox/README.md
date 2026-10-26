@@ -119,6 +119,18 @@ commits work, so a sandboxed session can move other branches' refs there. Its ho
 | `darwin-seatbelt` | `/usr/bin/sandbox-exec -f <profile>`, a Seatbelt profile generated per policy (a 0600 file named by its hash beside the session tmp; never inline `-p`) | no remapping: hidden paths are refused (EPERM) rather than emptied, no `/tmp` mapping (bash uses `$TMPDIR`), shadowed caches are read-only with the tool variables (`XDG_CACHE_HOME`, `npm_config_cache`, `MAVEN_OPTS`) pointed at the private copy; SBPL is last-match-wins, so the write rules go shallow to deep (`writeLayers`); mach services denied except a short allowlist, Keychain always denied; the proxy is reached through a host TCP relay on one loopback port, and `localPorts` are allowed; setuid programs cannot run |
 | `unsupported` | nothing: every sandboxed tool refuses | Windows and the rest |
 
+**Git's background cleanup.** Every process a sandboxed command starts ends with it, so a
+`git maintenance run --auto --detach` started by a commit, merge or fetch would be killed partway
+(a killed run can leave `objects/pack/multi-pack-index.lock` behind, and every later run then writes
+a whole pack and gives up). Both backends add `GIT_CONFIG_SYSTEM` after the allowlist, naming
+`sova-no-background-cleanup.gitconfig` in the session tmp (`$TMPDIR` inside): the machine's own
+system config copied in, then `maintenance.auto = false` and `gc.auto = 0` (`env.ts`
+`addGitCleanupEnv`), and drop `GIT_CONFIG_NOSYSTEM`. It is git's lowest level: a repository's or the
+user's own `maintenance.auto`/`gc.auto`, `-c`, or a command's own `GIT_CONFIG_SYSTEM` or
+`GIT_CONFIG_NOSYSTEM` still override it; a command's own `GIT_CONFIG_COUNT` does not drop it. The
+file holds no `[include]` of its own (a machine config with includes is included by path instead).
+Sova's server gives its chat processes the same file through `writeGitCleanupConfig`.
+
 User-facing notes for macOS: `pi-config/sandbox-policy/darwin/CLAUDE.md`.
 
 ## Session resources
@@ -137,7 +149,7 @@ tmp, and a host TCP relay to the proxy socket lives until that socket is gone.
 | `policy.ts` | extension | load/validate, tighten-only project file, canonical paths, read/write verdicts |
 | `tools.ts` | extension | `stockDefinitions`, `confinedDefinitions` |
 | `launch.ts` | extension | `encodeLaunchScope`, `decodeLaunchScope`: the `confine` answer's scope |
-| `backend.ts`, `backends/*`, `env.ts`, `proxy.ts` | backend | the seam, bwrap, Seatbelt, env allowlist, proxy |
+| `backend.ts`, `backends/*`, `env.ts`, `proxy.ts` | backend | the seam, bwrap, Seatbelt, env allowlist and the git cleanup config, proxy |
 | `tests/unit/*.test.ts` | backend | unit tests of the backend files |
 | `tests/*.unit.test.ts` | extension | unit tests of the four files above (`index.unit.test.ts` drives the factory on a fake `pi`) |
 | `tests/*` (other) | red-team | contract and escape suite |

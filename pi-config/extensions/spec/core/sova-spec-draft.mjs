@@ -14,6 +14,8 @@
 //   prune --official [--from DIR] [--write]              delete only drafts the tool confirms are already official
 //   merge-manifest [--base F --ours F --theirs F] [--write]  record-level 3-way merge of manifest.json (a Git conflict)
 //   merge-claims --base F --ours F --theirs F [--path P] [--write]  per-declaration 3-way merge of a claim file (a Git merge driver)
+//   migrate [--reverse] [--drafts | --draft NAME] [--write]  convert the records between one list in manifest.json (format 1)
+//            and one list beside each claim file (format 2); previews unless --write, and checks it reads back the same
 // All take --root DIR (required) and [--json]. Writes happen only with --write, only under
 // .sova/spec/drafts/ (`prune --write` deletes there, only drafts its list names or it confirms official; `prune --official --from DIR` deletes in DIR), except `promote --write`/`recover --write`
 // (and `agree --write`, through promote), which also write .sova/spec/manifest.json
@@ -39,6 +41,7 @@ import { tmpdir, hostname, homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createInspection, declarationSpans } from "./sova-spec.mjs";
 import { blocksOf, draftOfficial, promotionClaims } from "./official.mjs";
+import { assemble, serialize, isRecordFile, readSpecGit, readSpecFs, fixFor, mixedFix, layoutOf, withNewRecords as placeNewRecords, CLAIMS_POINTER } from "./layout.mjs";
 
 const CORE = join(dirname(fileURLToPath(import.meta.url)), "sova-spec.mjs");
 const FORMAT = "sova-spec-draft/1";
@@ -76,8 +79,8 @@ const FLAGS = { new: ["purpose", "write", "all"], status: [], diff: ["against"],
   agree: ["id", "by", "verification", "at", "source", "write"],
   promote: ["id", "all", "meta", "file", "plan", "write", "own-base", "days"], recover: ["write"],
   drafts: ["days", "worktrees"], prune: ["approved", "official", "from", "write"], "merge-manifest": ["base", "ours", "theirs", "write"],
-  "merge-claims": ["base", "ours", "theirs", "path", "write"] };
-const BOOL = new Set(["json", "write", "snapshot", "doc-only", "all", "worktrees", "official"]), MULTI = new Set(["id", "path", "meta", "file", "own-base"]);
+  "merge-claims": ["base", "ours", "theirs", "path", "write"], migrate: ["reverse", "drafts", "draft", "write"] };
+const BOOL = new Set(["json", "write", "snapshot", "doc-only", "all", "worktrees", "official", "reverse", "drafts"]), MULTI = new Set(["id", "path", "meta", "file", "own-base"]);
 function parseArgs(argv) {
   const o = { pos: [], id: [], path: [], meta: [], file: [], "own-base": [], seen: new Set() };
   for (let i = 0; i < argv.length; i++) {
@@ -85,7 +88,7 @@ function parseArgs(argv) {
     if (!a.startsWith("--")) { o.pos.push(a); continue; }
     const k = a.slice(2);
     if (BOOL.has(k)) { o[k] = true; o.seen.add(k); continue; }
-    if (!["root", "purpose", "against", "by", "verification", "at", "source", "commit", "log", "plan", "base", "ours", "theirs", "days", "approved", "from", ...MULTI].includes(k)) throw new Fail(2, "usage", `unknown flag ${a}`);
+    if (!["root", "purpose", "against", "by", "verification", "at", "source", "commit", "log", "plan", "base", "ours", "theirs", "days", "approved", "from", "draft", ...MULTI].includes(k)) throw new Fail(2, "usage", `unknown flag ${a}`);
     if (i + 1 >= argv.length) throw new Fail(2, "usage", `${a} needs a value`);
     if (MULTI.has(k)) o[k].push(argv[++i]); else o[k] = argv[++i];
     o.seen.add(k);
@@ -107,6 +110,12 @@ function parseArgs(argv) {
     if (name !== undefined) throw new Fail(2, "usage", `${cmd} takes no arguments`);
     const sides = ["base", "ours", "theirs"].filter((k) => o[k] !== undefined).length;
     if (sides !== 0 && sides !== 3) throw new Fail(2, "usage", "merge-manifest takes all of --base, --ours and --theirs (a merge driver's %O %A %B), or none (the index stages)");
+    return o;
+  }
+  if (cmd === "migrate") {
+    if (name !== undefined) throw new Fail(2, "usage", "migrate takes no arguments (name a draft with --draft NAME)");
+    if (o.drafts && o.draft !== undefined) throw new Fail(2, "usage", "migrate takes --drafts (every draft) or --draft NAME, not both");
+    if (o.draft !== undefined && !NAME_RE.test(o.draft)) throw new Fail(2, "usage", `draft name must match ${NAME_RE}`);
     return o;
   }
   if (cmd === "merge-claims") {
@@ -150,7 +159,7 @@ const USAGE = "usage: sova-spec-draft <new NAME [--purpose T] | status NAME | di
   "agree NAME --id §x --by WHO --verification T [--source REF] [--at ISO] | " +
   "promote NAME (--id §x|--all) [--meta K] [--file P] [--plan SHA] [--own-base REV]... [--days N] | check NAME [--base REV] | recover | " +
   "drafts [--days N] [--worktrees] | prune (--approved FILE | --official [--from DIR]) | " +
-  "merge-manifest [--base F --ours F --theirs F] | merge-claims --base F --ours F --theirs F [--path P]> --root DIR [--write] [--json]";
+  "merge-manifest [--base F --ours F --theirs F] | merge-claims --base F --ours F --theirs F [--path P] | migrate [--reverse] [--drafts | --draft NAME]> --root DIR [--write] [--json]";
 
 // ---------------------------------------------------------------- paths and bytes
 function normRel(raw) {
@@ -202,10 +211,13 @@ async function readOpen(abs) {
   } finally { await fh.close(); }
 }
 // Capture-local metadata from the exact safe bytes used by read-only assessment triage.
-async function readSource(root, path, inputSources, readPolicy) {
+async function readSource(root, path, inputSources, readPolicy, { recordPair = false } = {}) {
   const low = path.toLowerCase();
   const storage = readPolicy === "assessment" && [".sova/spec/assessments", ".sova/spec/reviews", ".sova/spec/.cache"].some(d => low === d || low.startsWith(d + "/"));
-  const r = storage ? { state: "refused", why: "receipt/cache storage is not an input" } : await readFileSafe(root, path);
+  // A record file beside its claim file is read whatever its name (an area may be called `secrets`); its directory is still checked.
+  const r = storage ? { state: "refused", why: "receipt/cache storage is not an input" }
+    : recordPair && secretOf(dirname(path) + "/x") ? { state: "refused", why: secretOf(dirname(path) + "/x") }
+    : await readFileSafe(root, path, { secrets: !recordPair });
   if (inputSources) inputSources.push({ path, state: r.state,
     ...(r.state === "present" ? { sha256: r.sha256, bytes: r.bytes } : {}), ...(r.why ? { why: r.why } : {}) });
   return r;
@@ -241,7 +253,7 @@ async function writeNew(dir, name, data) {
 // ---------------------------------------------------------------- spec trees
 // One spec tree at project-relative `rel`: manifest.json plus every file under its claimsRoot.
 // Files are keyed relative to `rel`. A symlink, special file or unreadable file anywhere is exit 2.
-async function readTree(root, rel, optional, inputSources, readPolicy) {
+async function readTree(root, rel, optional, inputSources, readPolicy, { raw = false } = {}) {
   const where = (p) => `${rel}/${p}`;
   if ((await ownDir(root, rel, false)) === null) {
     if (optional) {
@@ -260,7 +272,7 @@ async function readTree(root, rel, optional, inputSources, readPolicy) {
   if (m.state !== "present") throw new Fail(2, "file-refused", `${where("manifest.json")}: ${m.why}`);
   let manifest;
   try { manifest = JSON.parse(m.buf.toString("utf8")); } catch (e) { throw new Fail(2, "manifest-unreadable", `${where("manifest.json")}: ${e.message}`); }
-  if (!obj(manifest) || (manifest.claims !== undefined && !obj(manifest.claims))) throw new Fail(2, "manifest-unreadable", `${where("manifest.json")}: not an object with an object claims`);
+  if (!obj(manifest) || (layoutOf(manifest) === 1 && manifest.claims !== undefined && !obj(manifest.claims))) throw new Fail(2, "manifest-unreadable", `${where("manifest.json")}: not an object with an object claims`);
   const claimsRoot = normRel(manifest.grammar?.claimsRoot ?? "claims/");
   if (!claimsRoot || claimsRoot === "manifest.json" || /^(drafts|reviews|tools|\.txn)(\/|$)/.test(claimsRoot))
     throw new Fail(2, "claims-root-invalid", `${where("manifest.json")}: grammar.claimsRoot must be a plain directory inside the spec`);
@@ -274,7 +286,8 @@ async function readTree(root, rel, optional, inputSources, readPolicy) {
       const p = `${sub}/${n}`, st = await lstat(join(root, rel, p));
       if (st.isSymbolicLink()) throw new Fail(2, "symlink-refused", `${where(p)} is a symlink; drafts never copy or follow links`);
       if (st.isDirectory()) { await walk(p); continue; }
-      const r = st.isFile() ? await readSource(root, where(p), inputSources, readPolicy) : { state: "refused", why: "not a regular file" };
+      const recordPair = n.endsWith(".json") && names.includes(n.replace(/\.json$/, ".md"));
+      const r = st.isFile() ? await readSource(root, where(p), inputSources, readPolicy, { recordPair }) : { state: "refused", why: "not a regular file" };
       if (r.state !== "present") throw new Fail(2, "file-refused", `${where(p)}: ${r.why ?? r.state}`);
       files.set(p, r); total += r.bytes;
     }
@@ -283,7 +296,28 @@ async function readTree(root, rel, optional, inputSources, readPolicy) {
   if (cst?.isSymbolicLink()) throw new Fail(2, "symlink-refused", `${where(claimsRoot)} is a symlink`);
   if (cst?.isDirectory()) { await ownDir(root, `${rel}/${claimsRoot}`, false); await walk(claimsRoot); }
   if (total > MAX_TOTAL_BYTES) throw new Fail(1, "oversize", `${rel} holds ${total} bytes > ${MAX_TOTAL_BYTES}`);
-  return { exists: true, claimsRoot, manifest, files, total };
+  if (raw) return { exists: true, claimsRoot, manifest, files, total, raw: true };
+  // Records through the shared layout module: `manifest` holds every record under `claims` in either layout.
+  const inClaims = (p) => p.slice(claimsRoot.length + 1);
+  const recTexts = new Map([...files].filter(([p]) => isRecordFile(p, claimsRoot)).map(([p, f]) => [inClaims(p), f.buf.toString("utf8")]));
+  const mds = new Set([...files.keys()].filter((p) => p.startsWith(`${claimsRoot}/`) && p.endsWith(".md")).map(inClaims));
+  const a = assemble(manifest, recTexts, mds, { fix: fixFor(root, rel), specRel: rel });
+  const mixed = a.problems.find((p) => p.code === "layout-mixed");
+  if (mixed || !a.manifest) throw new Fail(2, "layout-mixed", mixed?.message ?? `${where("manifest.json")}: records unreadable`);
+  return { exists: true, claimsRoot, layout: a.layout, manifest: a.manifest, files, recordFiles: a.layout === 2 ? a.recordFiles : [], total };
+}
+// A file of the tree that is prose or support, not the records (manifest.json, or a layout-2 record file).
+const isProseOf = (...trees) => (p) => p !== "manifest.json" && !trees.some((t) => t.layout === 2 && t.claimsRoot && isRecordFile(p, t.claimsRoot));
+// The files a tree is written as after its records or settings change, in `layout`: Map(rel → Buffer | null).
+const recordWrites = (layout, m, tree) => new Map([...serialize(layout, m, { prevRecordFiles: tree?.recordFiles ?? [] })].map(([p, t]) => [p, t === null ? null : Buffer.from(t)]));
+// Write `writes` (Map rel → Buffer | null) into the tree at `rel`, only the files whose bytes change; null deletes.
+async function writeTreeFiles(root, rel, tree, writes) {
+  for (const [p, b] of writes) {
+    if (b === null) { if (tree.files.has(p)) await unlink(join(await ownDir(root, `${rel}/${dirname(p)}`.replace(/\/\.$/, ""), false), posix.basename(p))); continue; }
+    if (tree.files.get(p)?.sha256 === sha(b)) continue;
+    const dir = await ownDir(root, dirname(p) === "." ? rel : `${rel}/${dirname(p)}`, true);
+    await writeAtomic(dir, posix.basename(p), b);
+  }
 }
 const treePrint = (t) => [...t.files].map(([p, f]) => `${p} ${f.sha256}`).join("\n");
 
@@ -671,7 +705,7 @@ async function analyze(root, name, readPolicy, inputSources) {
   const bc = base.exists ? await declsOf(root, `${rel}/base`, readPolicy, inputSources) : { exit: 0, findings: [], decls: new Map() };
 
   const fileSha = (t, p) => t.files.get(p)?.sha256 ?? null;
-  const files = uniqSorted([...base.files.keys(), ...cur.files.keys(), ...prop.files.keys()]).filter((p) => p !== "manifest.json").map((path) => {
+  const files = uniqSorted([...base.files.keys(), ...cur.files.keys(), ...prop.files.keys()]).filter(isProseOf(base, cur, prop)).map((path) => {
     const b = fileSha(base, path), c = fileSha(cur, path), p = fileSha(prop, path);
     const ids = uniqSorted([...bc.decls, ...pc.decls].filter(([, x]) => x.file === path).map(([id]) => id));
     let changedIds = ids.filter((id) => bc.decls.get(id)?.textSha256 !== pc.decls.get(id)?.textSha256);
@@ -1150,7 +1184,7 @@ async function cmdAgree(root, o) {
       const m = structuredClone(now.a.prop.manifest);
       m.claims ??= {};
       for (const x of now.ids) m.claims[x.id] = x.record;
-      await writeAtomic(await ownDir(root, `${now.a.rel}/spec`, false), "manifest.json", JSON.stringify(m, null, 2) + "\n");
+      await writeTreeFiles(root, `${now.a.rel}/spec`, now.a.prop, recordWrites(now.a.prop.layout, m, now.a.prop));
     }
     return now;
   });
@@ -1185,7 +1219,17 @@ async function cmdAgree(root, o) {
 
 // Build the promotion: selected units, conflicts, evidence, the full candidate tree, and the file plan.
 // The one recovery for a spec conflict a Git merge leaves; PROMOTE.md says it in the same words, with `master` for the default branch.
-const mergeRecovery = (branch) => `take ${branch}'s whole spec with \`git checkout --no-overlay ${branch} -- ${SPEC}/manifest.json ${SPEC}/claims\` ` +
+// The recovery from a spec conflict a Git merge left. Layout 1 (one record list): the whole spec. Layout 2: only the
+// areas that clashed, each claim file with its record file. paths: the conflicted spec files (repo-relative).
+const mergeRecovery = (branch, layout = 1, paths = []) => layout === 2 ? areaRecovery(branch, paths) : wholeRecovery(branch);
+function areaRecovery(branch, paths) {
+  const areas = uniqSorted(paths.filter((p) => /\.(md|json)$/.test(p) && !p.endsWith("/manifest.json")).map((p) => p.replace(/\.(md|json)$/, "")));
+  const files = areas.length ? areas.flatMap((a) => [`${a}.md`, `${a}.json`]).join(" ") : `${SPEC}/claims/<area>.md ${SPEC}/claims/<area>.json`;
+  return `take ${branch}'s copy of only the areas that clashed, each claim file with its record file, with \`git checkout --no-overlay ${branch} -- ${files}\` ` +
+    "(never `--ours`, and never a claim file without its record file), commit the merge, promote again only the branch's changes to those areas with the same `--id`s " +
+    "(re-record evidence that `status` calls stale; re-apply a draft that is gone in a new draft from current), then commit the claims";
+}
+const wholeRecovery = (branch) => `take ${branch}'s whole spec with \`git checkout --no-overlay ${branch} -- ${SPEC}/manifest.json ${SPEC}/claims\` ` +
   "(never `--ours` and never one file at a time: the merge driver may already have merged the manifest, and the branch's other claim files would then lack their records), " +
   "commit the merge, promote the branch's drafts again with the same `--id`s (re-record evidence that `status` calls stale; re-apply a draft that is gone in a new draft from current), then commit the claims";
 const IN_TREE_RECOVERY = "revert those declarations in the draft's spec/ to their base/ text and promote the rest, or start a new draft from current";
@@ -1199,12 +1243,13 @@ async function plan(root, o) {
   // A Git merge left the spec conflicted, or left it not loading: one recovery, never a hand fix.
   const branch = (g.git && defaultBranch(root)) || "master";
   const unmerged = g.git ? uniqSorted((git(root, ["ls-files", "-u", "--", SPEC]).out ?? "").split("\n").filter(Boolean).map((l) => l.split("\t")[1])) : [];
-  if (unmerged.length) refuse("spec-merge-conflict", unmerged.every((f) => f.endsWith("/manifest.json"))
-    ? `${unmerged.join(", ")} is unmerged in Git's index: run merge-manifest, then --write, and stage it; if it refuses, ${mergeRecovery(branch)}`
-    : `${unmerged.join(", ")} ${unmerged.length === 1 ? "is" : "are"} unmerged in Git's index: ${mergeRecovery(branch)}`);
+  const lay = a.cur.exists ? a.cur.layout : 1, isIndex = (f) => f.endsWith("/manifest.json") || (lay === 2 && f.endsWith(".json"));
+  if (unmerged.length) refuse("spec-merge-conflict", unmerged.every(isIndex)
+    ? `${unmerged.join(", ")} ${lay === 2 && unmerged.length > 1 ? "are" : "is"} unmerged in Git's index: run merge-manifest, then --write, and stage it; if it refuses, ${mergeRecovery(branch, lay, unmerged)}`
+    : `${unmerged.join(", ")} ${unmerged.length === 1 ? "is" : "are"} unmerged in Git's index: ${mergeRecovery(branch, lay, unmerged)}`);
   const curJ = a.cur.exists ? await runCore(root, SPEC) : null;
   const curDecls = new Map((curJ?.declarations ?? []).map((d) => [d.id, { ...d, file: d.file.startsWith(`${SPEC}/`) ? d.file.slice(SPEC.length + 1) : d.file }]));
-  if (curJ?.exit === 2) refuse("current-invalid", `the current spec's graph does not load (exit 2: ${curJ.findings.filter((f) => f.severity === "error").slice(0, 3).map((f) => `${f.code} ${f.message}`).join("; ")}); if a Git merge left it so, ${mergeRecovery(branch)}`);
+  if (curJ?.exit === 2) refuse("current-invalid", `the current spec's graph does not load (exit 2: ${curJ.findings.filter((f) => f.severity === "error").slice(0, 3).map((f) => `${f.code} ${f.message}`).join("; ")}); if a Git merge left it so, ${mergeRecovery(branch, a.cur.exists ? a.cur.layout : 1, unmerged)}`);
   const undeclared = a.files.filter((f) => f.merge !== "unchanged" && !f.ids.length);
   const ids = new Set(o.all ? a.changed.keys() : o.id);
   const fileSel = new Set(o.all ? undeclared.map((f) => f.path) : o.file);
@@ -1258,10 +1303,12 @@ async function plan(root, o) {
   }
 
   // Candidate = current tree with only the selected units replaced.
-  const cand = new Map([...a.cur.files].filter(([p]) => p !== "manifest.json").map(([p, f]) => [p, f.buf]));
+  const cand = new Map([...a.cur.files].filter(([p]) => isProseOf(a.cur)(p)).map(([p, f]) => [p, f.buf]));
   for (const f of files) if (f.merge === "apply") { if (f.proposed === null) cand.delete(f.path); else cand.set(f.path, a.prop.files.get(f.path).buf); }
     else if (f.merge === "merge") cand.set(f.path, f.merged.buf);
-  let manifestBuf = a.cur.files.get("manifest.json")?.buf ?? null;
+  // The records and settings are written in current's layout (a new spec takes the draft's).
+  const layout = a.cur.exists ? a.cur.layout : a.prop.layout;
+  let recordBufs = new Map([...a.cur.files].filter(([p]) => !isProseOf(a.cur)(p)).map(([p, f]) => [p, f.buf]));
   if (records.some((r) => r.merge === "apply") || meta.some((m) => m.merge === "apply")) {
     const m = structuredClone(a.cur.manifest ?? {});
     for (const x of meta) if (x.merge === "apply") { if (a.prop.manifest[x.key] === undefined) delete m[x.key]; else m[x.key] = a.prop.manifest[x.key]; }
@@ -1269,9 +1316,9 @@ async function plan(root, o) {
     const added = {};
     for (const r of records) if (r.merge === "apply") { const p = recOf(a.prop, r.id); if (p === undefined) delete m.claims[r.id]; else if (r.id in m.claims) m.claims[r.id] = p; else added[r.id] = p; }
     m.claims = withNewRecords(m.claims, added);
-    manifestBuf = Buffer.from(JSON.stringify(m, null, 2) + "\n");
+    recordBufs = recordWrites(layout, m, a.cur);
   }
-  if (manifestBuf) cand.set("manifest.json", manifestBuf);
+  for (const [p, b] of recordBufs) if (b !== null) cand.set(p, b);
   const targets = uniqSorted([...a.cur.files.keys(), ...cand.keys()]).map((path) => ({ path, before: a.cur.files.get(path)?.sha256 ?? null, after: cand.has(path) ? sha(cand.get(path)) : null }))
     .filter((t) => t.before !== t.after);
 
@@ -1331,13 +1378,17 @@ function ownBases(root, g, o) {
   const fork = git(root, ["merge-base", "HEAD", tip]);
   return uniqSorted([tip, ...(fork.status === 0 ? [fork.out.trim()] : [])]);
 }
+// The records committed at `rev`, in either layout, through the shared module. → object | null (no spec, or unreadable)
+function recordsAt(root, g, rev) {
+  const s = readSpecGit(root, rev, { prefix: g.prefix ?? "", specRel: SPEC });
+  return s.state === "present" && s.manifest && !s.problems.some((p) => p.code !== "symlink-refused") ? s.records : null;
+}
 // The claim ids at each base, read from Git. → id => boolean (own)
 function ownPredicate(root, g, bases) {
   if (!bases.length) return () => false;
   const sets = bases.map((c) => {
-    const r = git(root, ["show", `${c}:${g.prefix ? `${g.prefix}/` : ""}${SPEC}/manifest.json`]);
-    if (r.status !== 0) return new Set();
-    try { return new Set(Object.keys(JSON.parse(r.out)?.claims ?? {})); } catch { return new Set(); }
+    const recs = recordsAt(root, g, c);
+    return new Set(recs ? Object.keys(recs) : []);
   });
   return (id) => sets.every((k) => !k.has(id));
 }
@@ -1417,7 +1468,8 @@ async function applyTxn(root, name, targets, cand, receipt) {
   const drafts = await ownDir(root, DRAFTS, true);
   const txn = join(drafts, ".txn");
   await mkdir(txn);
-  const entries = [...targets, { storage: "draft", path: `${name}/draft.json`, before: receipt.before, after: sha(receipt.buf) }].map((t, i) => ({ ...t, i }));
+  // receipt null: a write with no draft receipt (migrate's conversion of the current spec).
+  const entries = [...targets, ...(receipt ? [{ storage: "draft", path: `${name}/draft.json`, before: receipt.before, after: sha(receipt.buf) }] : [])].map((t, i) => ({ ...t, i }));
   const before = new Map();
   for (const t of entries) before.set(t.i, await readFileSafe(root, targetRel(t)));
   for (const t of entries) if ((before.get(t.i).sha256 ?? null) !== t.before || !["present", "absent"].includes(before.get(t.i).state)) {
@@ -1751,25 +1803,19 @@ const uniqOrdered = (a) => [...new Set(a)];
 // last record; an area's first record goes right before the first record whose area sorts after its own, or last.
 // Records already there keep their place.
 const areaOf = (id) => id.slice(0, id.indexOf("/") >>> 0);
-export function withNewRecords(claims, added) {
-  const keys = Object.keys(claims);
-  for (const id of Object.keys(added).sort()) {
-    const area = areaOf(id), own = keys.flatMap((k, i) => (areaOf(k) === area ? [i] : []));
-    let at = own.length ? own.find((i) => keys[i] > id) ?? own.at(-1) + 1 : keys.findIndex((k) => areaOf(k) > area);
-    if (at < 0) at = keys.length;
-    keys.splice(at, 0, id);
-  }
-  return Object.fromEntries(keys.map((k) => [k, k in added ? added[k] : claims[k]]));
-}
+// (The one copy lives in the layout module.)
+export const withNewRecords = placeNewRecords;
 function mergeManifests(bText, oText, tText) {
   const parse = (text, side) => {
     if (text === null || !text.trim()) return {};
     let m;
     try { m = JSON.parse(text); } catch (e) { throw new Fail(2, "manifest-unreadable", `${side} manifest.json: ${e.message}`); }
-    if (!obj(m) || (m.claims !== undefined && !obj(m.claims))) throw new Fail(2, "manifest-unreadable", `${side} manifest.json is not an object with an object claims`);
-    return m;
+    if (!obj(m) || (layoutOf(m) === 1 && m.claims !== undefined && !obj(m.claims))) throw new Fail(2, "manifest-unreadable", `${side} manifest.json is not an object with an object claims`);
+    // Layout 2's root holds no records (its claims is a pointer): merge its settings, keep the pointer.
+    return layoutOf(m) === 2 && !obj(m.claims) ? { ...m, claims: {} } : m;
   };
   const [b, o, t] = [parse(bText, "base"), parse(oText, "ours"), parse(tText, "theirs")];
+  const v2 = layoutOf(o) === 2 && layoutOf(t) === 2;
   const conflicts = [], taken = [];
   const meta = (m) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== "claims"));
   const top = mergeObjects(meta(b), meta(o), meta(t), "meta", conflicts, taken);
@@ -1779,9 +1825,71 @@ function mergeManifests(bText, oText, tText) {
     Object.fromEntries(Object.entries(merged0).filter(([k]) => !(k in (o.claims ?? {})))));
   // Ours' key order, with claims where ours had them (or last).
   const merged = {};
-  for (const k of uniqOrdered([...Object.keys(o), ...Object.keys(top), "claims"])) if (k === "claims") merged.claims = claims; else if (k in top) merged[k] = top[k];
+  for (const k of uniqOrdered([...Object.keys(o), ...Object.keys(top), "claims"])) if (k === "claims") merged.claims = v2 ? CLAIMS_POINTER : claims; else if (k in top) merged[k] = top[k];
   return { conflicts, taken, text: JSON.stringify(merged, null, 2) + "\n" };
 }
+const versionOf = (text) => { try { const m = JSON.parse(text); return obj(m) ? layoutOf(m) : null; } catch { return null; } };
+// The layout a merge in progress happens in: 2 only when ours and theirs (MERGE_HEAD, when there is one) are both 2.
+function mergeLayout(root) {
+  const top = git(root, ["rev-parse", "--show-prefix"]), pre = top.status === 0 ? top.out.trim().replace(/\/$/, "") : "";
+  const lay = (rev) => { const s = readSpecGit(root, rev, { prefix: pre, specRel: SPEC }); return s.state === "present" ? s.layout : 1; };
+  return lay("HEAD") === 2 && (resolveCommit(root, "MERGE_HEAD") === null || lay("MERGE_HEAD") === 2) ? 2 : 1;
+}
+// Index mode across layouts, or over per-area record files: base, ours and theirs from the merge's commits, merged
+// per record and per setting, written in the default branch tip's layout. → the merge-manifest result
+async function mergeAcrossLayouts(root, g, o) {
+  const mergeHead = resolveCommit(root, "MERGE_HEAD");
+  if (!mergeHead) throw new Fail(2, "not-merging", "records in per-area files are merged from the merge's own commits, and no merge is in progress (MERGE_HEAD is missing: a rebase or cherry-pick?); abort it and merge instead");
+  const mb = git(root, ["merge-base", "HEAD", mergeHead]), base = mb.status === 0 ? mb.out.trim() : null;
+  const side = (rev, name) => {
+    if (!rev) return { layout: null, meta: {}, records: {}, order: [] };
+    const s = readSpecGit(root, rev, { prefix: g.prefix ?? "", specRel: SPEC });
+    if (s.state === "error") throw new Fail(2, "git-failed", s.message);
+    if (s.state === "absent") return { layout: null, meta: {}, records: {}, order: [] };
+    const bad = s.problems.find((p) => p.code !== "symlink-refused");
+    if (bad || !s.manifest) throw new Fail(2, bad?.code ?? "manifest-unreadable", `${name} (${rev.slice(0, 12)}): ${bad?.message ?? "records unreadable"}`);
+    return { layout: s.layout, meta: Object.fromEntries(Object.entries(s.meta).filter(([k]) => k !== "formatVersion")), records: s.records, order: Object.keys(s.manifest) };
+  };
+  const [b, ours, theirs] = [side(base, "base"), side("HEAD", "ours"), side(mergeHead, "theirs")];
+  const conflicts = [], taken = [];
+  const top = mergeObjects(b.meta, ours.meta, theirs.meta, "meta", conflicts, taken);
+  const merged0 = mergeObjects(b.records, ours.records, theirs.records, "claim", conflicts, taken);
+  const records = withNewRecords(Object.fromEntries(Object.entries(merged0).filter(([k]) => k in ours.records)),
+    Object.fromEntries(Object.entries(merged0).filter(([k]) => !(k in ours.records))));
+  const tip = defaultBranch(root), tipSide = tip ? readSpecGit(root, tip, { prefix: g.prefix ?? "", specRel: SPEC }) : null;
+  const layout = tipSide?.state === "present" ? tipSide.layout : theirs.layout ?? ours.layout ?? 1;
+  const manifest = {};
+  for (const k of uniqOrdered(["formatVersion", ...ours.order, ...Object.keys(top), "claims"])) if (k === "claims") manifest.claims = records; else if (k === "formatVersion") manifest.formatVersion = layout; else if (k in top) manifest[k] = top[k];
+  const out = { mode: "index", layouts: { base: b.layout, ours: ours.layout, theirs: theirs.layout, written: layout }, conflicts, fromTheirs: taken, written: false };
+  const branch = tip || "master";
+  if (conflicts.length) {
+    const dirKinds = manifest.grammar?.directoryKinds ?? ["section"];
+    const areas = conflicts.filter((c) => c.kind === "claim").map((c) => `${SPEC}/${manifest.grammar?.claimsRoot?.replace(/\/+$/, "") || "claims"}/${claimFileOfId(c.key, dirKinds)}`);
+    throw new Fail(1, "manifest-conflict", `${conflicts.length} key(s) changed differently on both sides (${conflicts.map((c) => `${c.kind} ${c.key}`).join(", ")}); nothing was written: ${mergeRecovery(branch, layout, areas)}`, out);
+  }
+  if (!o.write) return { exit: 0, ...out };
+  const files = await withLock(root, async () => {
+    await refusePending(root);
+    const dir = await ownDir(root, SPEC, false);
+    const croot = (manifest.grammar?.claimsRoot ?? "claims/").replace(/\/+$/, "");
+    const prev = [];
+    const walk = async (sub) => { for (const e of await readdir(join(dir, sub), { withFileTypes: true }).catch(() => [])) { const p = `${sub}/${e.name}`; if (e.isDirectory()) await walk(p); else if (e.isFile() && isRecordFile(p, croot)) prev.push(p); } };
+    await walk(croot);
+    const written = [];
+    for (const [p, text] of serialize(layout, manifest, { prevRecordFiles: prev })) {
+      if (text === null) { await unlink(join(dir, p)).catch((e) => { if (e.code !== "ENOENT") throw e; }); written.push(`${SPEC}/${p}`); continue; }
+      await writeAtomic(await ownDir(root, `${SPEC}/${dirname(p)}`.replace(/\/\.$/, ""), true), posix.basename(p), text);
+      written.push(`${SPEC}/${p}`);
+    }
+    return written;
+  });
+  return { exit: 0, ...out, written: true, files,
+    next: `run sova-spec.mjs check, resolve any claim-file (*.md) conflicts, then git add ${SPEC}/manifest.json and the record files it wrote (never the claims folder whole while a claim file still has conflict markers)` };
+}
+const claimFileOfId = (id, dirKinds) => {
+  const [ns, name] = id.slice(1).split("/"), parts = ns.split(".");
+  return (dirKinds.includes(parts[0]) ? [...parts, name].join("/") : parts.length > 1 ? `${parts[0]}/${parts[1]}` : `${ns}/${name}`) + ".json";
+};
 async function cmdMergeManifest(root, o) {
   const driver = o.ours !== undefined;
   let texts, target;
@@ -1794,12 +1902,22 @@ async function cmdMergeManifest(root, o) {
     };
     texts = [await read(o.base, "base"), await read(o.ours, "ours"), await read(o.theirs, "theirs")];
     target = resolve(o.ours);
+    // Sides in different layouts: Git keeps its conflict, and the index mode finishes it once Git stops.
+    const vs = texts.map((t) => (t === null || !t.trim() ? null : versionOf(t)));
+    if (vs.includes(2) && vs.some((v) => v === 1))
+      throw new Fail(1, "layout-mismatch", `the merge's sides keep records in different layouts (base ${vs[0] ?? "none"}, ours ${vs[1]}, theirs ${vs[2]}); nothing was written and Git keeps manifest.json conflicted: when the merge stops, run sova-spec-draft.mjs merge-manifest --root ${root} --write, which merges per record and writes the default branch's layout`,
+        { mode: "driver", conflicts: [], fromTheirs: [], written: false });
   } else {
     const g = await gitInfo(root);
     if (!g.git) throw new Fail(2, "not-git", "merge-manifest without --base/--ours/--theirs reads Git's index stages; this is not a Git project");
     const path = `${g.prefix ? `${g.prefix}/` : ""}${SPEC}/manifest.json`;
     const stages = git(root, ["ls-files", "-u", "-z", "--full-name", "--", `${SPEC}/manifest.json`]);
     const have = new Set(stages.out?.split("\0").filter(Boolean).map((l) => l.split(/\s+/)[2]) ?? []);
+    // Per-area record files in conflict, or a side in layout 2: merged from the commits, across layouts.
+    const recs = (git(root, ["ls-files", "-u", "-z", "--", SPEC]).out ?? "").split("\0").filter(Boolean).map((l) => l.split("\t")[1]).filter((p) => p.endsWith(".json") && !p.endsWith("/manifest.json") && p !== "manifest.json");
+    const stageV = (n) => { if (!have.has(n)) return null; const r = git(root, ["cat-file", "blob", `:${n}:${path}`]); return r.status === 0 ? versionOf(r.out) : null; };
+    const mixedNow = () => resolveCommit(root, "MERGE_HEAD") !== null && readSpecFs(root, SPEC).problems?.some((p) => p.code === "layout-mixed");
+    if (recs.length || ["1", "2", "3"].some((n) => stageV(n) === 2) || (!have.has("2") && mixedNow())) return mergeAcrossLayouts(root, g, o);
     if (!have.has("2") || !have.has("3")) throw new Fail(1, "not-conflicted", `${SPEC}/manifest.json is not in a merge conflict (no index stages 2 and 3); nothing to merge`);
     const stage = (n) => { if (!have.has(n)) return null; const r = git(root, ["cat-file", "blob", `:${n}:${path}`]); if (r.status !== 0) throw new Fail(2, "git-failed", `git cat-file :${n}:${path}: ${r.err.trim()}`); return r.out; };
     texts = [stage("1"), stage("2"), stage("3")];
@@ -1849,7 +1967,7 @@ async function cmdMergeClaims(root, o) {
   const m = mergeClaimTexts(root, ...texts);
   if (m.marked !== undefined) {
     if (o.write) await save(m.marked);
-    throw new Fail(1, "claims-conflict", `${path ?? "the claim file"}: changed differently on both sides: ${m.conflicts.join(", ")}; ${o.write ? "Git's conflict markers are in the file, around both sides' blocks" : "nothing was written"}; then ${mergeRecovery(defaultBranch(root) || "master")}`,
+    throw new Fail(1, "claims-conflict", `${path ?? "the claim file"}: changed differently on both sides: ${m.conflicts.join(", ")}; ${o.write ? "Git's conflict markers are in the file, around both sides' blocks" : "nothing was written"}; then ${mergeRecovery(defaultBranch(root) || "master", mergeLayout(root), path ? [path] : [])}`,
       { mode: "driver", path, merge: "blocks", conflicts: m.conflicts, written: !!o.write });
   }
   if (m.text !== undefined) {
@@ -1868,7 +1986,179 @@ async function cmdMergeClaims(root, o) {
   if (o.write) await save(r.out);
   const out = { mode: "driver", path, merge: "lines", conflicts: m.conflicts ?? [], ...(m.why ? { why: m.why } : {}), written: !!o.write };
   if (r.status === 0 && !m.conflicts) return { exit: 0, ...out };
-  throw new Fail(1, "claims-conflict", `${path ?? "the claim file"}: ${m.conflicts ? `changed differently on both sides: ${m.conflicts.join(", ")}` : `${m.why}, and Git's line merge conflicts`}; ${o.write ? "Git's conflict markers are in the file, with both sides' prose" : "nothing was written"}; then ${mergeRecovery(defaultBranch(root) || "master")}`, out);
+  throw new Fail(1, "claims-conflict", `${path ?? "the claim file"}: ${m.conflicts ? `changed differently on both sides: ${m.conflicts.join(", ")}` : `${m.why}, and Git's line merge conflicts`}; ${o.write ? "Git's conflict markers are in the file, with both sides' prose" : "nothing was written"}; then ${mergeRecovery(defaultBranch(root) || "master", mergeLayout(root), path ? [path] : [])}`, out);
+}
+
+// ---------------------------------------------------------------- migrate
+// Convert a spec tree between layout 1 (every record in manifest.json) and layout 2 (each area's records beside its
+// claim file), or finish a mixed one. Records, settings and the core's check must be the same before and after.
+const checkPrint = (j, root) => JSON.stringify({ declarations: j.declarations, counts: j.counts, frontier: j.frontier, code: j.code,
+  findings: j.findings.map(({ file, ...f }) => ({ ...f, ...(file && !/manifest\.json$|\.json$/.test(file) ? { file } : {}) })) }).split(root).join("<root>");
+const metaPrint = (m) => canon(Object.fromEntries(Object.entries(m ?? {}).filter(([k]) => k !== "claims" && k !== "formatVersion")));
+// A raw tree's records, in whatever layout (mixed included). → {layout: 1|2|"mixed", manifest (every record under claims), recordFiles}
+function treeRecords(t, rel, root) {
+  const croot = t.claimsRoot, inClaims = (p) => p.slice(croot.length + 1);
+  const recordFiles = [...t.files.keys()].filter((p) => isRecordFile(p, croot));
+  const texts = new Map(recordFiles.map((p) => [inClaims(p), t.files.get(p).buf.toString("utf8")]));
+  const mds = new Set([...t.files.keys()].filter((p) => p.startsWith(`${croot}/`) && p.endsWith(".md")).map(inClaims));
+  const m = t.manifest, rootRecs = obj(m.claims) ? m.claims : {};
+  const as2 = assemble({ ...m, formatVersion: 2, claims: CLAIMS_POINTER }, texts, mds, { specRel: rel });
+  const fileRecs = as2.records, nFile = Object.keys(fileRecs).length;
+  const v = layoutOf(m), mixed = v === 2 ? obj(m.claims) : nFile > 0 && recordFiles.some((p) => /"§/.test(t.files.get(p).buf.toString("utf8")));
+  if (v === 2 || mixed) {
+    const bad = as2.problems.find((p) => p.code !== "records-orphaned" && p.code !== "manifest-unreadable");
+    if (bad) throw new Fail(2, bad.code, `${bad.message}; nothing was converted`);
+  }
+  if (!mixed) return { layout: v, manifest: v === 2 ? as2.manifest : m, recordFiles: v === 2 ? recordFiles : [] };
+  const differ = Object.keys(fileRecs).filter((id) => id in rootRecs && canon(rootRecs[id]) !== canon(fileRecs[id]));
+  if (differ.length) throw new Fail(2, "record-duplicate", `${differ.slice(0, 5).join(", ")}${differ.length > 5 ? ", …" : ""}: a record in manifest.json "claims" differs from the one in its area's record file; settle which is right by hand (keep one), then run migrate again; nothing was converted`);
+  const only = Object.fromEntries(Object.entries(fileRecs).filter(([id]) => !(id in rootRecs)));
+  const manifest = { ...m, claims: withNewRecords(rootRecs, only) };
+  return { layout: "mixed", manifest, recordFiles };
+}
+// The files tree `t` becomes in layout `to`, checked by reading them back: Map(rel → Buffer | null).
+function convertTree(t, rel, root, to) {
+  const r = treeRecords(t, rel, root);
+  const writes = recordWrites(to, r.manifest, { recordFiles: r.recordFiles });
+  // Read the written form back through the shared module: the same ids, records and settings.
+  const after = new Map([...t.files].map(([p, f]) => [p, f.buf]));
+  for (const [p, b] of writes) if (b === null) after.delete(p); else after.set(p, b);
+  const rootObj = JSON.parse(after.get("manifest.json").toString("utf8")), croot = t.claimsRoot, inClaims = (p) => p.slice(croot.length + 1);
+  const texts = new Map([...after].filter(([p]) => isRecordFile(p, croot)).map(([p, b]) => [inClaims(p), b.toString("utf8")]));
+  const mds = new Set([...after.keys()].filter((p) => p.startsWith(`${croot}/`) && p.endsWith(".md")).map(inClaims));
+  const back = assemble(rootObj, to === 2 ? texts : new Map(), mds, { specRel: rel });
+  const want = r.manifest.claims ?? {}, got = back.manifest?.claims ?? {};
+  const identity = {
+    ids: canon(Object.keys(want).sort()) === canon(Object.keys(got).sort()),
+    records: Object.keys(want).every((id) => canon(want[id]) === canon(got[id])),
+    meta: metaPrint(r.manifest) === metaPrint(back.manifest),
+    layout: back.layout === to && !back.problems.some((p) => p.code === "layout-mixed"),
+  };
+  return { from: r.layout, to, writes: new Map([...writes].filter(([p, b]) => (b === null ? t.files.has(p) : t.files.get(p)?.sha256 !== sha(b)))), identity, records: Object.keys(want).length,
+    recordFiles: [...writes].filter(([p, b]) => b !== null && isRecordFile(p, croot)).length };
+}
+// The default branch tip's layout, for finishing a mixed tree. → 1 | 2 | null
+function tipLayout(root, g) {
+  const tip = g.git && defaultBranch(root);
+  if (!tip) return null;
+  const s = readSpecGit(root, tip, { prefix: g.prefix ?? "", specRel: SPEC });
+  return s.state === "present" ? s.layout : null;
+}
+async function draftPrint(root, name) {
+  const strip = (x) => JSON.parse(JSON.stringify(x));
+  try { return canon({ status: strip(await cmdStatus(root, { name })), diff: strip(await cmdDiff(root, { name })) }); }
+  catch (e) { if (e instanceof Fail) return `fail ${e.code}`; throw e; }
+}
+async function cmdMigrate(root, o) {
+  const g = await gitInfo(root);
+  const cur = await readTree(root, SPEC, true, undefined, undefined, { raw: true });
+  const names = o.drafts ? await draftNames(root) : o.draft !== undefined ? [o.draft] : [];
+  for (const n of names) if (!(await ownDir(root, draftRel(n), false))) throw new Fail(2, "draft-missing", `no draft ${draftRel(n)}`);
+  // What converts: the current spec (unless only --draft is named) and the named drafts' base/ and spec/.
+  const onlyDraft = o.draft !== undefined;
+  const pick = (r) => (o.reverse ? 1 : r.layout === "mixed" ? tipLayout(root, g) ?? 2 : 2);
+  const plans = [];
+  if (!onlyDraft) {
+    if (!cur.exists) throw new Fail(2, "spec-missing", `${SPEC}/manifest.json does not exist; there is nothing to convert`);
+    const r = treeRecords(cur, SPEC, root), to = pick(r);
+    if (r.layout !== to) plans.push({ where: SPEC, tree: cur, ...convertTree(cur, SPEC, root, to) });
+    else if (!o.drafts) throw new Fail(1, `already-v${to}`, `${SPEC} is already in format version ${to}; nothing to convert`, { from: r.layout, to, written: false });
+  }
+  const draftPlans = [];
+  for (const n of names) {
+    const parts = [];
+    for (const side of ["base", "spec"]) {
+      const rel = `${draftRel(n)}/${side}`, t = await readTree(root, rel, true, undefined, undefined, { raw: true });
+      if (!t.exists) continue;
+      const r = treeRecords(t, rel, root), to = pick(r);
+      if (r.layout === to) continue;
+      const part = { side, where: rel, tree: t, ...convertTree(t, rel, root, to) };
+      // Back to a layout this draft was converted from: its kept bytes, when its records and settings still match them.
+      const kept = await readFileSafe(root, `${draftRel(n)}/.layout-backup/v${to}/${side}/manifest.json`);
+      if (kept.state === "present" && to === 1) {
+        let k = null;
+        try { k = JSON.parse(kept.buf.toString("utf8")); } catch { k = null; }
+        const now = treeRecords(t, rel, root).manifest;
+        if (obj(k) && layoutOf(k) === 1 && canon(k.claims ?? {}) === canon(now.claims ?? {}) && metaPrint(k) === metaPrint(now)) { part.writes.set("manifest.json", kept.buf); part.restored = true; }
+      }
+      parts.push(part);
+    }
+    draftPlans.push({ name: n, parts });
+  }
+  if (!plans.length && !draftPlans.some((d) => d.parts.length) && !onlyDraft) throw new Fail(1, `already-v${o.reverse ? 1 : 2}`, `${SPEC} and its drafts are already in format version ${o.reverse ? 1 : 2}; nothing to convert`, { written: false });
+  if (onlyDraft && !draftPlans[0].parts.length) throw new Fail(1, `already-v${o.reverse ? 1 : 2}`, `draft ${o.draft} is already in format version ${o.reverse ? 1 : 2}; nothing to convert`, { written: false });
+  const all = [...plans, ...draftPlans.flatMap((d) => d.parts)];
+  const identity = { ids: all.every((p) => p.identity.ids), records: all.every((p) => p.identity.records), meta: all.every((p) => p.identity.meta), layout: all.every((p) => p.identity.layout) };
+  const summary = () => ({ from: plans[0]?.from ?? draftPlans.find((d) => d.parts.length)?.parts[0].from, to: plans[0]?.to ?? (o.reverse ? 1 : 2),
+    records: plans[0]?.records ?? null, recordFiles: plans[0]?.recordFiles ?? null,
+    files: plans[0] ? [...plans[0].writes].map(([p, b]) => ({ path: `${SPEC}/${p}`, action: b === null ? "delete" : plans[0].tree.files.has(p) ? "replace" : "create" })) : [],
+    drafts: draftPlans.map((d) => ({ name: d.name, parts: d.parts.map((p) => ({ side: p.side, from: p.from, to: p.to, files: p.writes.size, ...(p.restored ? { restored: true } : {}) })) })) });
+  if (!Object.values(identity).every(Boolean)) throw new Fail(2, "identity-failed", `converting would not read back as the same records and settings (${Object.entries(identity).filter(([, v]) => !v).map(([k]) => k).join(", ")}); nothing was written`, { identity, written: false });
+  // The core's own reading of the converted current spec, in a scratch copy, before anything is written.
+  if (plans.length) {
+    // Both sides in scratch copies of the same shape (the spec alone), so only the layout differs between them.
+    const tmp = await mkdtemp(join(tmpdir(), "sova-spec-migrate-"));
+    try {
+      const now = new Map([...cur.files].map(([p, f]) => [p, f.buf])), after = new Map(now);
+      for (const [p, b] of plans[0].writes) if (b === null) after.delete(p); else after.set(p, b);
+      const put = async (dir, files) => { for (const [p, b] of files) { await mkdir(join(tmp, dir, SPEC, dirname(p)), { recursive: true }); await writeFile(join(tmp, dir, SPEC, p), b); } return join(tmp, dir); };
+      const [a, b] = [await put("a", now), await put("b", after)];
+      const j = await runCore(b, SPEC);
+      identity.check = plans[0].from === "mixed" ? j.exit !== 2 : checkPrint(await runCore(a, SPEC), a) === checkPrint(j, b);
+    } finally { await rm(tmp, { recursive: true, force: true }); }
+    if (!identity.check) throw new Fail(2, "identity-failed", `the core's check of the converted spec differs from today's (declarations, counts, frontier, code or findings); nothing was written`, { identity, written: false });
+  }
+  if (!o.write) return { exit: 0, written: false, ...summary(), identity };
+  return withLock(root, async () => {
+    await refusePending(root);
+    if (g.git && plans.length) {
+      const st = git(root, ["status", "--porcelain", "-z", "--untracked-files=all", "--", SPEC]);
+      if (st.status !== 0) throw new Fail(2, "git-failed", "git status failed");
+      const dirty = st.out.split("\0").filter(Boolean);
+      if (dirty.length) throw new Fail(1, "migrate-dirty", `${SPEC} has uncommitted changes (${dirty.slice(0, 3).map((l) => l.slice(3)).join(", ")}${dirty.length > 3 ? ", …" : ""}); commit or set them aside first, so the conversion is one commit of its own; nothing was written`, { written: false });
+    }
+    const printsBefore = new Map();
+    for (const d of draftPlans) if (d.parts.length) printsBefore.set(d.name, await draftPrint(root, d.name));
+    if (plans.length) {
+      const p = plans[0], targets = [...p.writes].map(([path, b]) => ({ path, before: cur.files.get(path)?.sha256 ?? null, after: b === null ? null : sha(b) }));
+      const before = p.from === "mixed" ? null : await runCore(root, SPEC);
+      await applyTxn(root, "migrate", targets, new Map([...p.writes].filter(([, b]) => b !== null)), null);
+      // Read back from disk through the core: the same check as before, or the conversion is undone.
+      const j = await runCore(root, SPEC);
+      if (before ? checkPrint(before, root) !== checkPrint(j, root) : j.exit === 2) {
+        const back = targets.map((t) => ({ path: t.path, before: t.after, after: t.before }));
+        await applyTxn(root, "migrate", back, new Map(back.filter((t) => t.after !== null).map((t) => [t.path, cur.files.get(t.path).buf])), null);
+        throw new Fail(2, "identity-failed", "the converted spec, read back from disk, does not check the same as before; the conversion was undone", { identity: { ...identity, check: false }, written: false });
+      }
+    }
+    const converted = [];
+    for (const d of draftPlans) {
+      if (!d.parts.length) continue;
+      const backup = `${draftRel(d.name)}/.layout-backup`;
+      for (const p of d.parts) {
+        // The draft's files as they were, kept beside it (drafts are local) so --reverse or a hand restore can bring them back.
+        for (const path of ["manifest.json", ...p.tree.files.keys()].filter((x, i, a) => a.indexOf(x) === i && (x === "manifest.json" || isRecordFile(x, p.tree.claimsRoot)))) {
+          const f = p.tree.files.get(path);
+          if (f) await writeAtomic(await ownDir(root, `${backup}/v${p.from === "mixed" ? "mixed" : p.from}/${p.side}/${dirname(path)}`.replace(/\/\.$/, ""), true), posix.basename(path), f.buf);
+        }
+        await writeTreeFiles(root, p.where, p.tree, p.writes);
+      }
+      if (d.parts.some((p) => p.side === "base")) {
+        const ld = await (async () => { const raw = await readSource(root, `${draftRel(d.name)}/draft.json`); return JSON.parse(raw.buf.toString("utf8")); })();
+        const base = await readTree(root, `${draftRel(d.name)}/base`, true, undefined, undefined, { raw: true });
+        ld.base.files = Object.fromEntries([...base.files].map(([p, f]) => [p, f.sha256]));
+        await saveDraft(root, draftRel(d.name), ld);
+      }
+      const after = await draftPrint(root, d.name), was = printsBefore.get(d.name);
+      if (was !== "fail layout-mixed" && after !== was) throw new Fail(2, "identity-failed", `draft ${d.name}: status or diff changed in the conversion; its old files are in ${backup}/ (copy them back over base/ and spec/, and restore draft.json's base.files)`, { identity, written: true });
+      converted.push(d.name);
+    }
+    // Record files Git would ignore never reach the commit: say so, with the one line that admits them.
+    const recs = plans.length ? [...plans[0].writes].filter(([p, b]) => b !== null && isRecordFile(p, cur.claimsRoot)).map(([p]) => `${SPEC}/${p}`) : [];
+    const ignored = g.git && recs.length ? (git(root, ["check-ignore", "--stdin"], false, recs.join("\n") + "\n").out ?? "").split("\n").filter(Boolean) : [];
+    const next = plans.length ? `${ignored.length ? `Git ignores ${ignored.length} of the record files (${ignored[0]}${ignored.length > 1 ? ", …" : ""}): add \`!/${cur.claimsRoot}/**/*.json\` to ${SPEC}/.gitignore, then ` : ""}commit ${SPEC} (git add ${SPEC}/manifest.json ${SPEC}/${cur.claimsRoot}) as one commit of its own` : undefined;
+    return { exit: 0, written: true, ...summary(), identity: { ...identity, drafts: converted.length === draftPlans.filter((d) => d.parts.length).length }, ...(ignored.length ? { ignored } : {}), next };
+  });
 }
 
 // ---------------------------------------------------------------- output
@@ -1914,6 +2204,8 @@ function human(out) {
     if (out.staleDrafts) L.push(`${out.staleDrafts.count} other draft(s) here had no activity for over ${out.staleDrafts.days} days: \`${out.staleDrafts.command}\` says which are left behind`);
     if (!out.written && !(out.refusals ?? []).length) L.push(`plan ${out.plan} — write with: promote ${out.name} … --plan ${out.plan} --write`);
   }
+  if (out.command === "migrate" && out.to !== undefined) L.push(`migrate: format ${out.from} → ${out.to}, ${out.records ?? "?"} record(s) in ${out.recordFiles ?? 0} record file(s); ${out.files?.length ?? 0} file(s) ${out.written ? "written" : "to write (preview; --write applies it)"}${out.drafts?.length ? `; drafts: ${out.drafts.map((d) => `${d.name} (${d.parts.length ? d.parts.map((p) => p.side).join("+") : "already"})`).join(", ")}` : ""}`,
+    `identity: ${Object.entries(out.identity ?? {}).map(([k, v]) => `${k} ${v ? "same" : "DIFFERS"}`).join(", ")}`);
   if (out.command === "merge-manifest" && out.mode) L.push(`merge-manifest (${out.mode}): ${out.conflicts.length ? `${out.conflicts.length} conflict(s): ${out.conflicts.map((c) => `${c.kind} ${c.key}`).join(", ")}` : `${out.fromTheirs.length} key(s) from theirs`} ${out.written ? "(written)" : "(nothing written)"}`);
   if (out.command === "merge-claims" && out.mode) L.push(`merge-claims${out.path ? ` ${out.path}` : ""}: merged per ${out.merge === "declarations" ? "declaration" : "line (Git's merge)"}${out.conflicts.length ? `; ${out.conflicts.length} conflict(s): ${out.conflicts.join(", ")}` : ""} ${out.written ? "(written)" : "(nothing written)"}`);
   if (out.command === "drafts" && out.drafts) {
@@ -1947,7 +2239,7 @@ async function evaluate(argv, readPolicy, inputSources) {
     out.root = root;
     if (await ownDir(root, SPEC, false).catch(() => { throw new Fail(2, "symlink-refused", `${SPEC} or .sova is not a plain directory`); }) === null && o.cmd !== "new")
       throw new Fail(2, "draft-missing", `no ${SPEC} under ${root}`);
-    const cmds = { new: cmdNew, status: cmdStatus, diff: cmdDiff, check: cmdCheck, evidence: cmdEvidence, agree: cmdAgree, promote: cmdPromote, recover: cmdRecover, drafts: cmdDrafts, prune: cmdPrune, "merge-manifest": cmdMergeManifest, "merge-claims": cmdMergeClaims };
+    const cmds = { new: cmdNew, status: cmdStatus, diff: cmdDiff, check: cmdCheck, evidence: cmdEvidence, agree: cmdAgree, promote: cmdPromote, recover: cmdRecover, drafts: cmdDrafts, prune: cmdPrune, "merge-manifest": cmdMergeManifest, "merge-claims": cmdMergeClaims, migrate: cmdMigrate };
     out = { ...out, ...(await cmds[o.cmd](root, o)) };
   } catch (e) {
     if (!(e instanceof Fail)) e = new Fail(2, "internal", e.stack ?? String(e));

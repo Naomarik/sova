@@ -112,27 +112,26 @@ new session, and needs no model to re-arm it.
   `Reason: Claude login <name> is ready again.`, then `Your last turn stopped at that Claude login's
   usage limit, which has now reset. Continue where you left off.`
 
-## §chat.schedules/merge-ready — Waking when a branch is Ready to land
+## §chat.schedules/merge-ready — Waking when a branch is ready to merge
 
-- **The trigger.** `merge-ready` fires when a branch in the playbook's project turns **Ready to
-  land** on Sova's merge board (§chat.worktrees/merge-board): its row's landing reads Ready to land
-  (§chat.worktrees/ready-to-land), and its owner session is idle. The project's branches are the
-  board's rows of worktrees of the same git repository as the project root. A row that is only
-  Ready to merge or Waiting for your OK, Landing specs, or whose owner is busy or archived, doesn't
-  fire. The keeper reads the board only while some approved, active schedule has a `merge-ready`
-  trigger.
-- **Once per landing commit.** A branch fires once for each commit it is Ready to land at: when a
-  worktree's row turns Ready to land at a commit it last fired for neither at that branch nor at
-  that commit, it fires, at once, however recently the schedule fired for anything else. A branch
-  already seen Ready to merge that turns Ready to land counts as new, and so does one whose landing
-  commit changed; leaving and coming back at the same commit doesn't. While the board hasn't read
-  every session yet, a branch missing from it is unknown: it neither fires nor is forgotten. A
-  branch not Ready to land for 7 days after it last fired is forgotten.
-- **Collected, then named together.** A transition waits, unlogged, only while the run this
-  schedule last fired into is still running or holds a queued message. The branches that turned
-  Ready to land meanwhile go out together in the next fire, sorted by name, as its Reason line:
-  `Reason: Ready to land: feat/a, feat/b.`, naming at most 5 and then `, and N more`. Any attempt
-  to fire (fired, or skipped by a cap) spends the transitions it named.
+- **The trigger.** `merge-ready` fires when a branch in the playbook's project turns ready to merge
+  on Sova's merge board (§chat.worktrees/merge-board): its row reads Ready to merge or Waiting for
+  your OK, and its owner session is idle. The project's branches are the board's rows of worktrees
+  of the same git repository as the project root. A row whose owner is busy or archived, or in any
+  other state, doesn't fire. The keeper reads the board only while some approved, active schedule
+  has a `merge-ready` trigger.
+- **Once per turn to ready.** A branch fires once when it turns ready, and again only after it has
+  been seen not ready since and at least 30 minutes have passed since it last fired, or when its
+  worktree now holds another branch. While the board hasn't read every session yet, a branch
+  missing from it is unknown: it neither fires nor counts as having left. A branch not seen for
+  7 days is forgotten.
+- **Collected, then named together.** A transition waits, unlogged, while the run this schedule
+  last fired into is still running or holds a queued message, and while less than 30 minutes have
+  passed since this schedule last fired for any trigger. The branches that turned ready meanwhile
+  go out together in the next fire, sorted by name, as its Reason line: `Reason: Ready to merge:
+  feat/a, feat/b (waiting for an OK).`, naming at most 5 and then `, and N more`. A branch that is
+  Waiting for your OK carries ` (waiting for an OK)`. Any attempt to fire (fired, or skipped by a
+  cap) spends the transitions it named.
 - **The timed triggers keep their share of the day.** A merge-ready fire is skipped, and logged
   ("merge-ready leaves today's last N of 48 fires to the timed triggers"), once today's fires reach
   48 minus the most fires the schedule's timed triggers can make in a day, so a backstop such as

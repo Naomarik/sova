@@ -4,7 +4,7 @@
 // A draft is official in a work tree when every claim it changed reads, in that tree's current spec, what the draft
 // says or what a promotion recorded in that tree wrote for it, other than what the draft started from; prose also
 // counts when its blocks carry the draft's change, as a Git merge of another change to the same claim leaves it. A
-// claim is a unit of one spec file: `r:§id` a record in manifest.json, `m:key` another manifest key, `t:§id` a
+// claim is a unit of one spec file: `r:§id` a record (in manifest.json, or a format 2 record file), `m:key` another manifest key, `t:§id` a
 // declaration's prose span, and `f:<file>` a file's non-blank lines outside every declaration (a whole file that is
 // neither). Each promotion receipt records `claims`: {unit: [hash the draft said, hash written]}; a receipt without
 // it counts, for the ids and files it names, what its own draft now says.
@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { declarationSpans } from "./sova-spec.mjs";
+import { ROOT_FILE, assemble, isRecordFile } from "./layout.mjs";
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 const obj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -39,12 +40,15 @@ export function blocksOf(text) {
 function cut(rel, buf) {
   const units = new Map(), texts = new Map();
   if (!buf) return { units, texts };
-  if (rel === "manifest.json") {
-    let m = null;
-    try { m = JSON.parse(buf.toString("utf8")); } catch {}
-    if (obj(m)) {
-      for (const [k, v] of Object.entries(m)) if (k !== "claims") units.set(`m:${k}`, sha(JSON.stringify(sortKeys(v))));
-      for (const [id, rec] of Object.entries(obj(m.claims) ? m.claims : {})) units.set(`r:${id}`, sha(JSON.stringify(sortKeys(rec))));
+  // Records, in either layout (layout.mjs): the root file's settings and, in format 1, its records; a format 2
+  // record file beside a claim file holds records only.
+  if (rel === ROOT_FILE || isRecordFile(rel)) {
+    let v = null;
+    try { v = JSON.parse(buf.toString("utf8")); } catch {}
+    if (obj(v)) {
+      const { meta, records } = rel === ROOT_FILE ? assemble(v) : { meta: {}, records: v };
+      for (const [k, x] of Object.entries(meta)) units.set(`m:${k}`, sha(JSON.stringify(sortKeys(x))));
+      for (const [id, rec] of Object.entries(records)) units.set(`r:${id}`, sha(JSON.stringify(sortKeys(rec))));
       return { units, texts };
     }
   } else if (rel.endsWith(".md")) {
@@ -103,7 +107,16 @@ export function draftOfficial(specDir, draftDir, draftsDir) {
   try { others = readdirSync(draftsDir, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith(".")).map((e) => join(draftsDir, e.name)).filter((x) => x !== draftDir); } catch {}
   const receipts = [{ d, mine: true }, ...others.map((dir) => ({ dir, d: draftJson(dir) }))].filter((x) => Array.isArray(x.d?.promotions));
   const read = [join(draftDir, "draft.json"), ...others.map((x) => join(x, "draft.json"))], notOfficial = new Set();
-  let official = true, changed = 0;
+  let official = true, changed = 0, recs = null;
+  const curRecords = () => {
+    if (recs) return recs;
+    recs = new Map();
+    for (const rel of [ROOT_FILE, ...filesUnder(specDir, "claims").filter((f) => isRecordFile(f))]) {
+      read.push(join(specDir, rel));
+      for (const [k, h] of claimUnits(rel, readOr(join(specDir, rel)))) if (k.startsWith("r:")) recs.set(k, h);
+    }
+    return recs;
+  };
   for (const rel of [...new Set([...filesUnder(own), ...Object.keys(d.base.files)])].sort()) {
     const mine = readOr(join(own, rel));
     if ((mine ? sha(mine) : undefined) === d.base.files[rel]) continue; // not changed by this draft
@@ -115,7 +128,8 @@ export function draftOfficial(specDir, draftDir, draftsDir) {
     for (const { dir, d: w, mine: self } of receipts) {
       let theirs = null;
       for (const pr of w.promotions) {
-        if (obj(pr?.claims)) { for (const [k, v] of Object.entries(pr.claims)) if (Array.isArray(v) && (!self || v[0] === (p.units.get(k) ?? null))) add(k, v[1]); continue; }
+        const said = pr?.claims; // the receipt's {unit: [said, wrote]}, not spec records
+        if (obj(said)) { for (const [k, v] of Object.entries(said)) if (Array.isArray(v) && (!self || v[0] === (p.units.get(k) ?? null))) add(k, v[1]); continue; }
         if (self || !Array.isArray(pr?.files) || !pr.files.includes(rel)) continue;
         if (!theirs) { read.push(join(dir, "spec", rel)); theirs = claimUnits(rel, readOr(join(dir, "spec", rel))); }
         const ids = new Set(Array.isArray(pr.ids) ? pr.ids : []);
@@ -125,7 +139,8 @@ export function draftOfficial(specDir, draftDir, draftsDir) {
     for (const k of changedUnits(b.units, p.units)) {
       changed++;
       // A write the draft started from (an earlier promotion its baseline already had) speaks for nothing it changed.
-      const c = cur.units.get(k);
+      // A record reads wherever current keeps it (format 1's manifest.json or a format 2 record file).
+      const c = k.startsWith("r:") ? curRecords().get(k) : cur.units.get(k);
       if (c === p.units.get(k) || (c && c !== b.units.get(k) && wrote.has(`${k}\0${c}`))) continue;
       if (c && p.texts.has(k) && carries(b.texts.get(k), cur.texts.get(k), p.texts.get(k))) continue;
       official = false;

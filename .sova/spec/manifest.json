@@ -414,9 +414,9 @@
         "§app.chat-processes/code-pickup"
       ],
       "agreed": {
-        "by": "omar (al_2 go-ahead)",
-        "at": "2026-10-19T22:18Z",
-        "source": "pi-session:398db362-660a-4f63-967c-d28758e5179f#a09c9175"
+        "by": "user",
+        "at": "2026-10-25T23:29Z",
+        "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
       },
       "evidence": "verified"
     },
@@ -983,6 +983,60 @@
       ],
       "requires": [],
       "evidence": "verified"
+    },
+    "§app.git-cleanup/no-background": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/git-cleanup",
+        "§app/idle-git-cache",
+        "§chat.sandbox/git-cleanup",
+        "§app.chat-processes/supervision"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T22:36Z",
+        "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
+      },
+      "code": [
+        "server/git-no-background.ts",
+        "server/git-no-background.test.ts",
+        "server/chat-runtime/supervisor.ts",
+        "server/chat-runtime/supervisor.test.ts",
+        "server/workspace-git.ts",
+        "server/project-worktrees.ts",
+        "server/updates/runner.ts",
+        "server/updates/runner.test.ts",
+        "server/project-services/deploy.ts",
+        "server/worktrees.ts",
+        "pi-config/extensions/sandbox/env.ts",
+        "pi-config/extensions/sandbox/tests/unit/env.unit.test.ts"
+      ]
+    },
+    "§app.git-cleanup/scheduled": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/git-cleanup",
+        "§app.projects/registration"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T23:45Z",
+        "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
+      },
+      "code": [
+        "server/git-maintenance.ts",
+        "server/git-maintenance.test.ts",
+        "server/git-maintenance.integration.test.ts",
+        "server/projects/spaces.ts",
+        "server/index.ts",
+        "scripts/run-tests.mjs",
+        "server/testing/hermetic-server.ts",
+        "package.json"
+      ]
     },
     "§app.insights/aggregate-chips-live-vs-working": {
       "kind": "behavior",
@@ -2799,6 +2853,28 @@
         "§app.harness/session-open",
         "§app.overseer/dialog-answers",
         "§app/extensions"
+      ]
+    },
+    "§app/git-cleanup": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/idle-git-cache"
+      ],
+      "notOwned": [
+        "§chat.sandbox/git-cleanup",
+        "§app.chat-processes/supervision",
+        "§chat.transcript/setup-card-git-folder"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T22:36Z",
+        "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
+      },
+      "code": [
+        "server/git-no-background.ts",
+        "server/git-maintenance.ts"
       ]
     },
     "§app/insights": {
@@ -4877,6 +4953,30 @@
       },
       "evidence": "reviewed"
     },
+    "§chat.transcript/setup-card-git-folder": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§chat.transcript/setup-card-repository"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T23:45Z",
+        "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
+      },
+      "code": [
+        "server/git-folder.ts",
+        "server/git-folder.test.ts",
+        "server/git-folder.integration.test.ts",
+        "server/git-summary.ts",
+        "shared/protocol.ts",
+        "src/lib/session-setup.ts",
+        "src/lib/session-setup.test.ts",
+        "src/components/SessionSetup.tsx",
+        "src/design/base.css"
+      ]
+    },
     "§chat.transcript/setup-card-open-file": {
       "kind": "behavior",
       "authority": "accepted",
@@ -5661,11 +5761,13 @@
         "server/git-summary.ts",
         "src/components/SessionDetails.tsx",
         "server/git-summary.test.ts",
-        "server/git-summary.integration.test.ts"
+        "server/git-summary.integration.test.ts",
+        "src/components/SessionSetup.tsx"
       ],
       "agreed": {
-        "by": "user (al_3 go-ahead)",
-        "at": "2026-10-14T16:11Z"
+        "by": "user",
+        "at": "2026-10-25T23:29Z",
+        "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
       }
     },
     "§chat.transcript/setup-card-skills": {
@@ -5855,6 +5957,29 @@
         "pi-config/extensions/sandbox/backends/unsupported.ts",
         "pi-config/extensions/sandbox/index.ts",
         "pi-config/extensions/sandbox/tools.ts"
+      ]
+    },
+    "§chat.sandbox/git-cleanup": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§chat.sandbox/what-on-enforces",
+        "§app.git-cleanup/no-background"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T22:36Z",
+        "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
+      },
+      "code": [
+        "pi-config/extensions/sandbox/env.ts",
+        "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+        "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
+        "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts",
+        "pi-config/extensions/sandbox/tests/unit/darwin-seatbelt.unit.test.ts",
+        "pi-config/extensions/sandbox/tests/unit/env.unit.test.ts",
+        "pi-config/extensions/sandbox/README.md"
       ]
     },
     "§chat.sandbox/limits": {
@@ -7127,8 +7252,8 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-25T22:33Z",
-        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§app.overseer/caps": {
@@ -7476,9 +7601,9 @@
         "§app.project-overseer/coding-worktrees"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-25T22:33Z",
-        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+        "by": "naomarik",
+        "at": "2026-10-20T15:52Z",
+        "source": "pi-session:01a158a6-750f-7276-9b13-ca61fad634cd#ec45ecfd"
       },
       "evidence": "verified"
     },
@@ -10370,8 +10495,8 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-25T22:33Z",
-        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+        "at": "2026-10-24T09:23Z",
+        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§chat.worktrees/sandbox": {
@@ -10435,8 +10560,9 @@
         "pi-config/extensions/sandbox/README.md"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "by": "user",
+        "at": "2026-10-25T23:29Z",
+        "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
       }
     },
     "§chat.worktrees/worktree-config": {
@@ -10837,7 +10963,8 @@
         "server/project-coding-read.test.ts",
         "server/project-overseer-fast.integration.test.ts",
         "server/overseer-org-view.ts",
-        "src/lib/coding-worktrees-fresh.browser.test.ts"
+        "src/lib/coding-worktrees-fresh.browser.test.ts",
+        "server/worktree-targeted-removal.test.ts"
       ],
       "agreed": {
         "by": "user",
@@ -14753,9 +14880,9 @@
         "§app.decisions/attention-signals"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-25T22:33Z",
-        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+        "by": "naomarik",
+        "at": "2026-10-23T14:32Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
       }
     },
     "§app.shell/viewport": {
@@ -16398,8 +16525,7 @@
         "server/schedules.ts",
         "server/schedule-routes.ts",
         "shared/schedules.test.ts",
-        "server/schedules.test.ts",
-        "server/schedules-carry.test.ts"
+        "server/schedules.test.ts"
       ],
       "requires": [
         "§chat.schedules/fire",
@@ -16407,8 +16533,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-25T20:43Z",
-        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+        "at": "2026-10-10T10:39Z"
       }
     },
     "§chat.schedules/where-shown": {
@@ -17204,7 +17329,12 @@
         "pi-config/extensions/mode/spec-worker.ts",
         "pi-config/extensions/mode/index.ts",
         "pi-config/extensions/subagents/index.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-25T21:07Z",
+        "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
+      }
     },
     "§tools/spec": {
       "kind": "surface",
@@ -17762,8 +17892,7 @@
         ".sova/playbooks/merge-round/references/round.md",
         ".sova/playbooks/merge-round/references/check.md",
         ".sova/playbooks/merge-round/references/land.md",
-        "AGENTS.md",
-        ".sova/playbooks/merge-round/references/start.md"
+        "AGENTS.md"
       ],
       "requires": [
         "§chat.schedules/fire",
@@ -17772,9 +17901,9 @@
         "§chat.worktrees/merge-board"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-25T22:33Z",
-        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+        "by": "omar (user)",
+        "at": "2026-10-24T18:10Z",
+        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
       }
     },
     "§chat/merge-round": {
@@ -17786,8 +17915,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-25T21:42Z",
-        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+        "at": "2026-10-10T10:39Z"
       },
       "notOwned": [
         "§chat.worktrees/readiness",
@@ -17810,9 +17938,9 @@
         "§chat.worktrees/merge-board"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-25T22:33Z",
-        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+        "by": "naomarik",
+        "at": "2026-10-25T21:45Z",
+        "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
       }
     },
     "§app.access/callers": {
@@ -18187,32 +18315,10 @@
         "pi-config/extensions/spec/tests/draft-hygiene.test.mjs"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-25T22:33Z",
-        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+        "by": "naomarik",
+        "at": "2026-10-22T03:34Z",
+        "source": "pi-session:ecc675e0-f5e1-4efc-915d-91012183b844#6f4c32b2"
       }
-    },
-    "§tools.spec/draft-official": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "pi-config/extensions/spec/core/official.mjs",
-        "pi-config/extensions/spec/core/official.d.mts",
-        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
-        "pi-config/extensions/spec/tests/draft-official.test.mjs",
-        "server/spec-drafts-state.ts",
-        "server/spec-drafts-state.test.ts"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-25T22:33Z",
-        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
-      },
-      "requires": [
-        "§tools.spec/promotion-integrity",
-        "§tools.spec/git-merge"
-      ]
     },
     "§tools.spec/git-merge": {
       "kind": "behavior",
@@ -18234,8 +18340,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T15:13Z",
-        "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+        "at": "2026-10-25T21:07Z",
+        "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
       }
     },
     "§tools.spec/inspection-safety": {
@@ -18464,12 +18570,7 @@
         "§chat.worktrees/readiness",
         "§app.overseer/tools",
         "§chat.memory/overseer"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-25T21:42Z",
-        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
-      }
+      ]
     },
     "§app.insights/sidebar-foot-phone": {
       "kind": "behavior",
@@ -20059,6 +20160,54 @@
         "by": "naomarik",
         "at": "2026-10-22T23:48Z",
         "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#24177c8f"
+      }
+    },
+    "§tools.spec/record-layout": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/git-merge",
+        "§tools.spec/conflict-recovery"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/layout.mjs",
+        "pi-config/extensions/spec/core/layout.d.mts",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/core/sova-spec-review.mjs",
+        "pi-config/extensions/spec/core/sova-spec-assess.mjs",
+        "pi-config/extensions/spec/core/toc.mjs",
+        "pi-config/extensions/spec/core/graph.mjs",
+        "pi-config/extensions/mode/spec-guard.ts",
+        "server/spec-lookup.ts",
+        "server/spec-draft-writer.ts",
+        "server/conversation-draft.ts",
+        "server/spec-tool-fake.ts",
+        ".sova/playbooks/merge-round/scripts/round.mjs",
+        ".sova/playbooks/release/scripts/docs-drift.mjs",
+        "scripts/sim/lib/lookup-probe.ts",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/docs/CHANGELOG.md",
+        "pi-config/extensions/spec/docs/MODE.md",
+        "site/src/content/docs/modes/spec.md",
+        "pi-config/extensions/spec/tests/layout.test.mjs",
+        "pi-config/extensions/spec/tests/layout-areas.test.mjs",
+        "pi-config/extensions/spec/tests/layout-findings.test.mjs",
+        "pi-config/extensions/spec/tests/layout-guard.test.mjs",
+        "pi-config/extensions/spec/tests/migrate.test.mjs",
+        "pi-config/extensions/spec/tests/cross-layout-merge.test.mjs",
+        "pi-config/extensions/spec/tests/pre-cutover-merge.test.mjs",
+        "pi-config/extensions/spec/tests/spec-fixture.mjs",
+        "server/spec-layout-boundary.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-25T21:52Z",
+        "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
       }
     },
     "§tools.spec/review-playbook": {
@@ -23762,7 +23911,12 @@
         "pi-config/extensions/spec/DRAFTS.md",
         "pi-config/extensions/spec/tests/draft.test.mjs",
         "pi-config/extensions/spec/tests/claims-merge.test.mjs"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-25T21:07Z",
+        "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
+      }
     },
     "§tools.spec/draft-output": {
       "kind": "behavior",

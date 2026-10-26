@@ -1435,8 +1435,8 @@ export function Sidebar(props: {
       reads these, never `all()`/`hits()`: an organization's session lives only in its own region. */
   const ordinary = createMemo(() => all().filter(isOrdinarySession));
   const ordinaryHits = createMemo(() => hits().filter(isOrdinarySession));
-  /** What a group holds (§app.session-list/groups): every ordinary session, and the operator's own coding sessions,
-      which stay out of every other ordinary surface. */
+  /** What a group holds (§app.session-list/groups): every main thread no organization owns, a project's own sessions
+      included (its overseer's conversations, the builds it or the operator started), which stay out of every other ordinary surface. */
   const groupableAll = createMemo(() => all().filter(canJoinGroup));
   const groupableHits = createMemo(() => hits().filter(canJoinGroup));
   /** Each group's session count, as its section counts them, for its tile in the overlay and the picker. */

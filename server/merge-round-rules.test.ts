@@ -200,3 +200,25 @@ test("round.mjs stops the carry at a later Not Yet recorded by landing.ts: A pre
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// The user's "land it" typed in the branch's own chat (§chat.worktrees/tool, `land`): what landing.ts records is a
+// go-ahead the driver reads as the user's word, named as typed in its own chat, never as a Land It.
+test("a go-ahead worktree land records reads in round.mjs as the user's word typed in its own chat", async () => {
+  const round = (await import(ROUND)) as RoundAnswer & { parseLanding: (text: string) => { goAheads: unknown[]; notYet: unknown[] }; goAheadWord: (by: string) => string };
+  const landing = await import("../pi-config/extensions/worktrees/landing.ts");
+  const { readFileSync, rmSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { scratchRoot } = await import("./test-scratch");
+  const dir = scratchRoot("sova-typed-");
+  try {
+    const file = join(dir, "landing.json");
+    const sha = "c".repeat(40);
+    landing.recordGoAhead({ branch: "feat/typed", commit: sha, session: "s1", at: "2026-10-26T10:00:00Z", by: "owner-chat", withoutSpecs: true }, file);
+    const answer = round.landingAnswer(round.parseLanding(readFileSync(file, "utf8")), "feat/typed", sha) as { kind: string; by: string; withoutSpecs: boolean } | null;
+    assert.deepEqual(answer, { kind: "go-ahead", by: "owner-chat", withoutSpecs: true });
+    assert.equal(round.goAheadWord(answer!.by), "word typed in its own chat");
+    assert.equal(round.goAheadWord("land-it"), "Land It");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

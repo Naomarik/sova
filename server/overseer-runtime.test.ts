@@ -1193,9 +1193,9 @@ describe("the Overseer's memory (§chat.memory/overseer)", () => {
     assert.ok(chat.memoryHost(), "the engine's host is the chat's own");
   });
 
-  test("with no saved choice it is on, UniiChat at 128 KB, whatever the chats' saved default; an explicit off stays off", async () => {
-    const { saveDefaultMemoryChoice } = await import("./memory/settings");
-    saveDefaultMemoryChoice({ type: "zoomable", size: 64 });
+  test("with no saved choice it is on, UniiChat at Settings' size (128 KB), whatever the chats' saved default; an explicit off stays off", async () => {
+    const { saveDefaultMemoryType } = await import("./memory/settings");
+    saveDefaultMemoryType("zoomable");
     writeOverseerSettings(overseerStore.defaultSettings());
     assert.equal(readOverseerSettings().memory, undefined, "no memory key");
     const chat = await overseerChat();

@@ -47,6 +47,9 @@ The requirement is §tools/spec (`.sova/spec/claims/tools/spec.md`); MODE.md des
   each turn boundary by every session with spec on, in either major mode.
 - **Never run the replay suite while working.** `tests/replay` is a landing gate the merge round runs, one at a time per
   machine, when a landing touches `spec/core/`, `spec/tests/replay/` or `mode/spec-guard.ts`. Without `SOVA_SPEC_REPLAY=1` every test in it skips.
+- **What Sova imports.** `server/spec-drafts-state.ts` imports `core/official.mjs` (types in `official.d.mts`), the
+  one rule for whether a draft is official, and through it `sova-spec.mjs`: both stay free of work at import. An
+  edit to either can break Sova's typecheck and readiness: run `pnpm run typecheck` and `pnpm test` too.
 - **One copy of the tools.** The spec tools exist only in `core/`, run through the installed extension (`$core`).
   No project, Sova included, keeps a copy; a copy found in a project is that project's code, never run without asking.
 

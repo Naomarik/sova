@@ -676,7 +676,7 @@ answer anything, and they never send a message into a chat.
 ## §chat.mode-menu/memory-panel — The memory row and its Memory type panel
 
 The `memory` row is in a chat's minor modes only while that chat's `mode` message carries `memory`
-(its choice of type and size, which a chat whose runtime can run memory sends, §chat.memory/where);
+(its type, and the size Settings gives that type, which a chat whose runtime can run memory sends, §chat.memory/where);
 a chat whose message has none lists the other minor modes and no memory row. It is the last minor
 row, after `codemode`, a checkbox like the others: clicking it turns memory on or off and keeps the
 menu open. Its description is the chosen type's row description and, while memory is on, its detail
@@ -686,20 +686,18 @@ line names the type ("UniiChat — by Victor Taelin", "Zoomable compaction — S
   inside it, named "Memory type", with a 44px target, next in the roving focus) swaps the menu for
   the **Memory type** panel in the same popover, the Subagents picker's pattern: a Back header
   titled "Memory type", then, under a **Type** label, one `menuitemradio` row per type — its name, its author ("by Victor
-  Taelin", "Sova") and its one-line description, the chat's type checked — with UniiChat's "Read the
-  design ↗" under it, a link (a sibling of the row, opening Taelin's write-up in a new tab).
-- **Size.** Under the types, **Summary size**: one `menuitemradio` row per suggested size, the
-  chat's size checked and a size outside the list shown as its own checked row. For UniiChat a size
-  reads as the range the view keeps, "64–128 KB" for 128 (it grows to the size and merges to half
-  of it); for zoomable compaction as the size the compacted lines get, "32 KB". The type's own
-  default size says "default".
-- **Picking** a type or a size posts `{ memory: { type } }` or `{ memory: { size } }` for this chat
-  (§chat.memory/choice) and keeps the panel open; the check moves when the chat's `mode` message
-  says so. The foot line reads "This chat only. Kept while memory is off." While a pick is saving
+  Taelin", "Sova") and its one-line description, the chat's type checked. That is all the panel
+  holds: no link and no size (each type's Summary size is Settings → Memory's, §chat.memory/settings;
+  the design write-up is linked from its help card, §chat.memory/help). The chevron's description
+  reads "Choose this chat's memory type".
+- **Scrolling.** The rows scroll between the Back header and the foot, which stay put, as in the
+  Subagents picker, so on a short window (or in the phone's sheet) no row is ever cut off.
+- **Picking** a type posts `{ memory: { type } }` for this chat (§chat.memory/choice) and keeps the
+  panel open; the check moves when the chat's `mode` message says so. The foot line reads "This chat only. Kept while memory is off." While a pick is saving
   the rows are `aria-disabled`; a refused pick shows "Couldn't change memory." with the reason, and
   the choice is unchanged.
-- **Save as default** saves the chat's type and size with its modes (§chat.memory/choice), and
-  reads "Already the default" only while they also match the saved default (`GET /api/mode`'s
+- **Save as default** saves the chat's type with its modes (§chat.memory/choice), and reads
+  "Already the default" only while it also matches the saved default type (`GET /api/mode`'s
   `memory`).
 
 ## §chat.mode-menu/strict — strict: Delegate without edit and write
@@ -799,7 +797,7 @@ What the trigger and the menu show in each state, from a mode not known yet to a
 | Project mode's tools changed since approval | Row on, state line "Its tools changed since you approved them…"; its tool calls are refused |
 | Project mode broken | Row off, `aria-disabled`, state line "Can't turn on: {problem}" |
 | Project mode switch failed | The same "Couldn't switch the mode." banner |
-| Memory type or size refused (§chat.mode-menu/memory-panel) | Error banner "Couldn't change memory." with the reason, in the panel. The choice is unchanged |
+| Memory type refused (§chat.mode-menu/memory-panel) | Error banner "Couldn't change memory." with the reason, in the panel. The choice is unchanged |
 
 ## §chat.mode-menu/tokens — Tokens
 

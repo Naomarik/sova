@@ -1,5 +1,5 @@
 // GET /api/memory for an overseer's conversation no one holds (the cold outline): its memory is its own switch, not a
-// mode it never has. No saved choice reads on, UniiChat at 128 KB; a saved off reads off. Nothing is opened.
+// mode it never has. No saved choice reads on, UniiChat at Settings' size (128 KB); a saved off reads off. Nothing is opened.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -52,7 +52,7 @@ describe("an overseer's outline, nothing holding it", async () => {
     assert.notEqual(on.status.state, "off");
     store.writePoSettings(p, { ...store.readPoSettings(p), memory: { on: false, type: "zoomable", size: 64 } });
     const off = await outline(path);
-    assert.deepEqual([off.on, off.type, off.size, off.status.state], [false, "zoomable", 64, "off"]);
+    assert.deepEqual([off.on, off.type, off.size, off.status.state], [false, "zoomable", 32, "off"], "the stored 64 is ignored: Settings' zoomable size");
   });
 
   test("the main Overseer with no saved memory: on", async () => {

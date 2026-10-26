@@ -31,7 +31,7 @@ import { sessionsChanged } from "./list-generation";
 import { projectRootOf } from "./project-root";
 import { runFingerprint, runsApproved } from "./session-offers-trust";
 import { stateRoot } from "./state-root";
-import { unpromotedDraftNames } from "./spec-drafts-state";
+import { unofficialDrafts } from "./spec-drafts-state";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
 import { LANDING_FILE_NAME, recordGoAhead, recordNotYet } from "../pi-config/extensions/worktrees/landing.ts";
 
@@ -395,9 +395,9 @@ async function conditionHolds(c: OfferCondition, s: SessionSummary, root: string
     case "ready-to-land":
       return (await trees()).some((t) => t.landing?.state === "ready" || !!t.landing?.specsWhy);
     case "specs-promoted":
-      return !unpromotedDraftNames(folder)?.length;
+      return !unofficialDrafts(folder)?.length;
     case "specs-left":
-      return !!unpromotedDraftNames(folder)?.length;
+      return !!unofficialDrafts(folder)?.length;
     case "tree-clean": {
       const r = await deps.git(["status", "--porcelain"], s.cwd).catch(() => ({ code: 1, stdout: "x" }));
       return r.code === 0 && r.stdout.trim() === "";
@@ -478,7 +478,7 @@ export async function showOffer(input: ShowInput): Promise<OfferCard> {
   }
   if (!shown.length) throw new OfferRefusal(`None of "${input.offer}"'s buttons fits now. ${projectWords}`);
   const facts = await factsOf(folder, root);
-  facts.drafts = unpromotedDraftNames(folder)?.join(", ");
+  facts.drafts = unofficialDrafts(folder)?.join(", ");
   const moment = momentOf(def.repeat, facts.head, input.replyId ?? `at:${s.lastActiveAt ?? ""}`);
   if (rec.cards.some((c) => c.name === input.offer && c.moment === moment)) throw new OfferRefusal(`"${input.offer}" was already shown ${MOMENT_WORDS[def.repeat]}. ${projectWords}`);
   // One open offer at a time: a new one never replaces it (an open card whose offer left the file is withdrawn, and a

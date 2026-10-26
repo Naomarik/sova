@@ -42,7 +42,7 @@ project's own modes as one row), and links to the feature and setup pages.
 ## §site.docs/modes — Modes (`/docs/modes/`)
 
 The major and minor modes side by side, switching them per chat from the composer's mode menu,
-the default for new sessions (memory's type and size with it), strict, a short memory section that
+the default for new sessions (memory's type with it), strict, a short memory section that
 links to its own page (§site.docs/memory), the terminal's commands, what workers get (spec, and each
 project mode that says so), and the sessions that choose their own mode, and a project's own minor modes (§site.docs/project-modes).
 
@@ -174,7 +174,7 @@ The memory minor mode: what it does and that the transcript never changes, turni
 mode menu, the two types (UniiChat, credited to Victor Taelin with a link to his design, and
 zoomable compaction), the Memory type panel and Save as default, the `zoom` and `date` tools,
 updating, preparing and problems, rewind and fork, the Session pane's Memory outline, Settings →
-Memory and its help, where memory can't be on (the terminal, workers, coding sessions, session
+Memory with each type's summary size and its help, where memory can't be on (the terminal, workers, coding sessions, session
 profiles), and the overseers' own switches, on by default.
 
 ## §site.docs/updates — Updates (`/docs/updates/`)

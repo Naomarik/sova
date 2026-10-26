@@ -9,6 +9,9 @@ import {
   alignmentLine,
   cardNumeral,
   dash,
+  countSize,
+  countText,
+  countY,
   dotXs,
   newestFirst,
   nextOpenTopic,
@@ -165,5 +168,23 @@ describe("the badge's place in the box", () => {
   test("one line tall inside the border, so a one-line box is exactly its band and stays centred", () => {
     assert.equal(decl("height"), "calc(var(--control-md) - 2 * var(--stroke-icon))");
     assert.equal(decl("place-items"), "center");
+  });
+});
+
+describe("countSize: the middle number's size", () => {
+  test("14 units for one digit, 11.5 for two, 9.2 for 99+", () => {
+    assert.equal(countSize(3), 14);
+    assert.equal(countSize(9), 14);
+    assert.equal(countSize(20), 11.5);
+    assert.equal(countSize(99), 11.5);
+    assert.equal(countSize(120), 9.2);
+  });
+  test("above 99 it reads 99+", () => {
+    assert.equal(countText(20), "20");
+    assert.equal(countText(99), "99");
+    assert.equal(countText(120), "99+");
+  });
+  test("its baseline sits 0.36 × its size below the centre", () => {
+    assert.deepEqual([countY(3), countY(20), countY(120)], [5, 4.1, 3.3]);
   });
 });

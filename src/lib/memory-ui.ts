@@ -16,7 +16,7 @@ export const typeInfo = (listed: readonly MemoryTypeInfo[] | undefined, type: Me
 const kb = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}`;
 
 /**
- * A size as the panel reads it. UniiChat's view grows to the size and merges down to half of it,
+ * A size as Settings → Memory reads it. UniiChat's view grows to the size and merges down to half of it,
  * so it reads as the range it keeps ("64–128 KB"); zoomable compaction's is the size the compacted
  * lines get ("32 KB").
  */
@@ -24,7 +24,7 @@ export function sizeLabel(type: MemoryType, size: number): string {
   return type === "uniichat" ? `${kb(size / 2)}–${kb(size)} KB` : `${kb(size)} KB`;
 }
 
-/** The sizes the panel offers: the suggested ones, plus the chat's own when it isn't one of them. */
+/** The sizes Settings → Memory offers: the suggested ones, plus the stored one when it isn't one of them. */
 export function sizeChoices(sizes: readonly number[] | undefined, current: number | undefined): number[] {
   const list = sizes?.length ? [...sizes] : [...MEMORY_SIZES];
   if (current !== undefined && !list.includes(current)) list.push(current);
@@ -103,6 +103,11 @@ export function memoryRowText(types: readonly MemoryTypeInfo[] | undefined, choi
   return { description: t.rowDescription, detail: on ? t.detail : null };
 }
 
-/** Whether a chat's memory choice is the saved default; unknown on either side is not. */
+/** Whether a chat's memory type is the saved default's (Save as default saves the type only); unknown on
+    either side is not. */
+export const sameMemoryType = (a: ChatMemoryChoice | null | undefined, b: ChatMemoryChoice | null | undefined): boolean =>
+  !!a && !!b && a.type === b.type;
+
+/** Whether two memory choices are the same, type and size. */
 export const sameMemoryChoice = (a: ChatMemoryChoice | null | undefined, b: ChatMemoryChoice | null | undefined): boolean =>
   !!a && !!b && a.type === b.type && a.size === b.size;

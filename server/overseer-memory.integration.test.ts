@@ -34,7 +34,7 @@ const po = await import("./project-overseer");
 const store = await import("./project-overseer-store");
 const overseer = await import("./overseer");
 const { readOverseerSettings, writeOverseerSettings } = await import("./overseer-store");
-const { saveDefaultMemoryChoice } = await import("./memory/settings");
+const { saveDefaultMemoryType } = await import("./memory/settings");
 const { registerProjectOverseerRoutes } = await import("./project-overseer-routes");
 const { settled } = await import("./workspace-git");
 
@@ -155,7 +155,7 @@ describe("a project overseer's memory", async () => {
 
     // Clear keeps the choice; the new conversation runs without memory.
     const cleared = await po.clearProjectOverseer(project.id);
-    assert.deepEqual(cleared.settings.memory, { on: false, type: "uniichat", size: 128 });
+    assert.deepEqual(cleared.settings.memory, { on: false, type: "uniichat" }, "no size written: the size is Settings'");
     assert.equal((await req("GET")).body.on, false, "still off after Clear");
     const next = await open(cleared.path!);
     assert.equal(next.chat.memory.choice().on, false);
@@ -173,7 +173,8 @@ describe("a project overseer's memory", async () => {
     await chat.memory.engine().idle();
     await until(() => log.some((m) => m.type === "memory_status"), "a memory_status message");
     assert.equal((await req("PUT", { on: "yes" })).status, 400);
-    assert.equal((await req("PUT", { size: 3 })).status, 400);
+    assert.equal((await req("PUT", { type: "nope" })).status, 400);
+    assert.equal((await req("PUT", { size: 3 })).status, 200, "a size is ignored, not refused: the size is Settings'");
     assert.equal(store.readPoSettings(p).memory?.on, true, "refused writes changed nothing");
     assert.equal((await app.request("/api/projects/prj_nope/overseer/memory")).status, 404, "an unknown project");
   });
@@ -181,7 +182,7 @@ describe("a project overseer's memory", async () => {
 
 describe("the main Overseer's memory", () => {
   test("new, with no saved choice and a Zoomable default saved for chats: on, UniiChat, and its request carries the view", async () => {
-    saveDefaultMemoryChoice({ type: "zoomable", size: 64 });
+    saveDefaultMemoryType("zoomable");
     const { memory: _m, ...rest } = readOverseerSettings();
     writeOverseerSettings(rest);
     const { path } = await overseer.ensureOverseer();

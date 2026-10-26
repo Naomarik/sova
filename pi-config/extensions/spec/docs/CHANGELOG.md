@@ -911,13 +911,16 @@ would list master's changes instead.
 
 - **Sova's spec keeps each area's records beside its claim file; new specs start that way** (al_6, landing 2:
   the conversion).
-  - Commit: on branch `feat/spec-convert`; not on master yet. The conversion is one commit of its own
-    (`.sova/spec/manifest.json`, 101 new `.sova/spec/claims/**/*.json`, `.gitattributes`); if master moves
-    before it lands, that commit is made again on the new tip with `migrate --write`, never merged.
+  - Commit: on branch `feat/spec-convert`; not on master yet. The conversion is one commit of its own:
+    first 516ca52b (`.sova/spec/manifest.json`, 101 new `.sova/spec/claims/**/*.json`, `.gitattributes`).
+    Master then moved; the merge of master, 2bf59cab, finished the spec with `merge-manifest --write`, which
+    writes the default branch's layout (format 1, with all 36 records master had changed), and c4874336
+    converts the merged spec again: plain `migrate --write` output, `manifest.json` and 102 record files,
+    nothing else. c4874336 is the conversion that lands.
   - Why: landing 1 shipped the tools with Sova's spec still in format 1; this converts it, so two branches
     meet in one record file only when they change the same area.
   - Changed:
-    - Sova's spec is format 2 (`migrate --write`): 1,168 records leave `manifest.json` for 101 record files
+    - Sova's spec is format 2 (`migrate --write`): 1,174 records leave `manifest.json` for 102 record files
       beside their claim files; `manifest.json` keeps the settings and the `claims` string;
     - `.gitattributes` drops `.sova/spec/manifest.json merge=sova-spec-manifest` (kept:
       `merge=sova-spec-claims` for `claims/**/*.md`); `manifest.json` and the record files merge with Git's
@@ -940,29 +943,33 @@ would list master's changes instead.
   - §: §tools.spec/record-layout, §tools.spec/git-merge (both agreed again under the al_6 go-ahead),
     §app.requirements/drafts-with-provenance reworded; §app.requirements/decisions,
     §app.requirements/conversation-drafts, §tools.spec/record-fields: "manifest record" becomes "record"
-    (draft `spec-convert`, promoted on the branch at 1f3b2aab; `foreign --base 2cfcb2df --head 1f3b2aab`
-    gives the same list, and `foreign --base ca8ab14 --head 4a5684d2`, the conversion alone, gives none).
-  - Numbers: the identity check at the conversion commit: `records` equal (1,168), settings equal but
-    `formatVersion`; `check`, `graph`, `map`, `census`, `where`, `toc`, `read`, `impact`, `scope` and `packet`
-    JSON byte-identical before and after; `foreign --base ca8ab14 --head <conversion>` gives `foreign`,
-    `changes` and `created` empty; `git check-ignore` ignores none of the 101 record files and `git
-    ls-files` tracks all 101. Size: one `manifest.json` of 793,538 bytes (the plan's "787 KB") becomes a
-    4,305-byte `manifest.json` and 101 record files (740,292 bytes in all): median 5,025 bytes
-    (`mesh/remote-sessions`, 12 records), largest 33,749 bytes (`app/overseer`, 50 records), then
-    `app/project-overseer` 32,361 and `app/insights` 25,672; an agent editing a draft's records edits one
-    of those instead of the whole list. Latency (median of 15 interleaved runs, Node, ca8ab14's tools on its
+    (draft `spec-convert`, promoted on the branch at 8c5a9359; `foreign --base 24973451 --head 8c5a9359`
+    gives the same list; `foreign` over either conversion alone, 27019745..516ca52b or 2bf59cab..c4874336,
+    gives none).
+  - Numbers: the identity check at c4874336 against its parent, the merge: `records` equal (1,174),
+    settings equal but `formatVersion`; `check`, `graph`, `map`, `census`, `where`, `toc`, `read`, `impact`,
+    `scope` and `packet` JSON byte-identical before and after; `foreign --base 2bf59cab --head c4874336`
+    gives `foreign`, `changes` and `created` empty; `git check-ignore` ignores none of the 102 record files
+    and `git ls-files` tracks all 102. Every one of the 36 records the merge took from master reads at
+    c4874336 with master's values (`records --at master` against `records`). Size, measured at c4874336:
+    one `manifest.json` of 800,680 bytes at the merge (793,538 at 27019745, the plan's "787 KB") becomes a
+    4,305-byte `manifest.json` and 102 record files (747,039 bytes in all): median 4,967 bytes (between
+    `app/server-runtime` 4,908 and `mesh/remote-sessions` 5,025), largest 33,949 bytes (`app/overseer`, 50
+    records), then `app/project-overseer` 32,411 and `app/insights` 25,672; an agent editing a draft's
+    records edits one of those instead of the whole list. Latency (median of 15 interleaved runs, Node, 27019745's tools on its
     format 1 spec against this branch's tools on the converted spec, both as plain copies, on a loaded
     machine), after `freshOrder` in `layout.mjs` dropped its comparator sort (same order, byte-identical
     output): records +6 ms (+12–17%), all other commands ≤ +7% (check, map, where, read, toc, impact,
     packet, scope, census). This misses the plan's ±10% latency target for `records`; the main thread
-    accepted the miss. Merge collisions before the conversion (`merge-collisions.mjs --since 2026-09-23 --until ca8ab14`,
+    accepted the miss. Merge collisions before the conversion (`merge-collisions.mjs --since 2026-09-23 --until 27019745`,
     688 merges, all format 1): both sides changed the records file in 309 (45%), Git's line merge
     conflicted in 118 (17%); re-laid one file per area, both sides changed one area's file in 100 (15%)
     and Git conflicted in 30 (4%); the same record changed two ways in 29; 27 merges took one side's whole
     spec, dropping the other side's own change, and 7 took one area's pair; 34 re-apply commits in 32.9
     days (7.2 a week). After: at 1 and 2 weeks (`--since <conversion commit>`).
-  - Rollback: revert the conversion commit to get the old `manifest.json` (and the `.gitattributes` line)
-    back byte for byte. Once anything has been promoted in format 2, `migrate --reverse --write` on a fresh
+  - Rollback: revert the conversion commit (c4874336) to get the format 1 `manifest.json` back byte for
+    byte as the merge 2bf59cab left it, and restore the `.gitattributes` line (516ca52b dropped it) in the
+    same commit. Once anything has been promoted in format 2, `migrate --reverse --write` on a fresh
     branch rebuilds it instead, with the same records and values and the same identity check, but the ids
     grouped by area rather than in the old file's order; restore the `.gitattributes` line in that commit.
     The tools read both layouts, so neither needs a tool change.

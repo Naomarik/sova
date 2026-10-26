@@ -28,6 +28,7 @@ node $d drafts [--days N] [--worktrees]                 --root DIR [--json]
 node $d prune --approved FILE [--write]                 --root DIR [--json]
 node $d prune --official [--from DIR] [--write]         --root DIR [--json]
 node $d merge-manifest [--base F --ours F --theirs F] [--write]   --root DIR [--json]
+node $d migrate [--reverse] [--drafts | --draft NAME] [--write]     --root DIR [--json]
 node $d merge-claims --base F --ours F --theirs F [--path P] [--write]   --root DIR [--json]
 ```
 
@@ -322,10 +323,29 @@ repository too) and writes nothing. Each row has the draft's age in days since i
 | `active` | anything else | keep |
 | `unreadable` | `status` refuses it (corrupt, base tampered) | keep: look by hand |
 
-Each draft also lists `promotedConflict`: the ids it promoted before that current now says
-differently (counted in `current`, so its state may still be `promoted`). A merge process that
-holds a branch until its drafts are promoted counts them as not promoted, and `prune --official`
-keeps such a draft. The default branch is the one `promote` uses: origin's HEAD, else `master`, else `main`. A
+### Official
+
+One rule says whether a draft is official, in `core/official.mjs`, a function of its own that a
+host may import (it reads files only: no Git, no process): `drafts`, `prune --official` and Sova's
+readiness all call it. A draft is official in a work tree when every claim it changed reads, in
+that tree's current spec, what the draft says or what a promotion recorded in that tree wrote for
+it, other than the text the draft started from; prose also counts when its blocks carry the
+draft's change (each block it added is there, each it removed is gone; blocks as `merge-claims`
+merges them), as a Git merge of another change to the same claim leaves it. A claim is one § id's
+record in `manifest.json`, or its prose (its declaration's span in its claim file); a claim file's
+non-blank lines outside every declaration, and each other manifest key, are one claim more. Every promotion receipt records, beside
+`after`, `claims`: `{unit: [hash as the draft said it, hash as written]}` for each claim it
+wrote. So a draft whose claim a later draft of the same tree reworded and promoted is official; one
+a catch-up merge overwrote with the base branch's text, or a hand edit changed, isn't; a merge that
+changed only other claims of the same file, or other blocks of the same claim, changes nothing. A receipt from before `claims` counts,
+for the ids it names, what its draft says now.
+
+In `drafts`, each draft carries the rule's verdict, `official` (true or false; false for one it
+can't read), and the ids sort by it: an id the rule calls official counts as current; the others are
+`pending`, `conflict`, or `promotedConflict` (in conflict, promoted by this draft before; counted
+in `current` too, so its state may still be `promoted`). A draft made unofficial only by a manifest
+key or lines outside any § names no id, and reads `active`. A merge process that holds a branch
+until its drafts are official reads `official`. The default branch is the one `promote` uses: origin's HEAD, else `master`, else `main`. A
 project without Git gets no `landed`. The exit is 1 when any draft is other than `active`.
 A promotion preview or write adds one line (`staleDrafts`) when other drafts in its project had
 no activity for longer than the age limit, with the `drafts` command to run.
@@ -337,12 +357,11 @@ A name with no draft, a hash that no longer matches, or an interrupted promotion
 refuses the whole prune and deletes nothing. It deletes nothing it was not given.
 
 `prune --official` needs no list: it deletes only drafts the tool confirms are already official
-and keeps every other one, listed with why (`kept`). Without `--from` it reads the project's own
-drafts as `drafts` does and deletes those it reads `promoted` with no `promotedConflict`, under the same lock and the same
-refusal of an interrupted promotion. With `--from DIR` it reads each draft folder directly in `DIR`
-(copies kept outside the project, such as the ones a merge round keeps when it removes a landed
-worktree) against the project's current spec alone, without Git: a copy whose changed records are
-all already current, at least one, is deleted; one with a record pending or in conflict, one that
+and keeps every other one, listed with why (`kept`). It reads each draft folder of the project's
+own drafts folder, or with `--from DIR` of `DIR` (copies kept outside the project, such as the ones
+a merge round keeps when it removes a landed worktree), against the project's current spec by the
+rule, without Git; in the project, under the same lock and the same refusal of an interrupted
+promotion. A draft that changes at least one claim, every one official, is deleted; one not official yet, one that
 changes nothing, and one it can't read are kept. Without `--write` it lists what it would delete.
 No other command deletes a draft.
 
@@ -369,7 +388,44 @@ depend on which side landed first; the output is 2-space JSON, as promotion writ
   ```
 
   Git runs it at the repository top; it writes `%A` on success and exits 1 on a same-key conflict,
-  which Git reports as a conflict with ours' bytes in place.
+  which Git reports as a conflict with ours' bytes in place. Sides in different record layouts
+  (format 1 on one side, 2 on the other) exit 1 (`layout-mismatch`) and write nothing, so Git keeps
+  the conflict for the index mode below.
+- **Records beside each claim file (format version 2), or a merge across layouts.** When a side of the
+  merge is in format 2, a `claims/**/*.json` record file is conflicted, or the merged tree holds records
+  both ways, `merge-manifest` reads base, ours and theirs from the merge's own commits (merge-base, HEAD,
+  MERGE_HEAD), merges per record and per setting as above, and `--write` writes `manifest.json` plus every
+  record file in the default branch tip's layout (`layouts` and `files` in its output). Stage what it
+  wrote, never the claims folder whole while a claim file still has markers. Without a merge in progress
+  it refuses (`not-merging`). Two branches changing different fields of one record in a format 2 record
+  file combine in Git's own line merge, and `foreign --landing` lists the record as `handResolved`.
+
+## Record layouts and `migrate`
+
+Records are kept one of two ways (`core/README.md`, "Record layouts"): format 1, every record in
+`manifest.json`; format 2, each area's records in `claims/<path>.json` beside `claims/<path>.md`. Every
+command reads both; a promotion writes in current's layout and `agree` in the draft's, so a format 1
+draft promotes into a format 2 current with its evidence still valid. A tree holding records both ways
+is refused (`layout-mixed`, exit 2) with the command that finishes it.
+
+```sh
+node $d migrate [--reverse] [--drafts | --draft NAME] [--write] --root DIR [--json]
+```
+
+`migrate` converts the current spec to format 2 (`--reverse`: back to 1), and with `--drafts` every
+draft's `base/` and `spec/` (only the named one with `--draft NAME`, leaving current as it is). Without
+`--write` it previews: `from`, `to`, `records`, `recordFiles`, `files[]` and `identity`. It refuses to
+finish unless the converted form reads back with the same ids, records and settings and the core's
+`check` of it (declarations, counts, frontier, code, findings) equals today's; with `--write` it reads
+the written spec back through the core, and undoes the conversion if that differs. A converted draft's
+`status` and `diff` must answer exactly as before; its old files are kept in
+`drafts/<name>/.layout-backup/v<from>/`, and `--reverse` restores them byte for byte while the draft's
+records still match. With `--write` it refuses (exit 1) while `.sova/spec` has uncommitted or untracked
+changes (`migrate-dirty`), a promotion is pending, or the drafts lock is held; a spec already in the
+target format is `already-v1` / `already-v2`. On a mixed tree it finishes the move (into the default
+branch tip's layout), refusing a record that differs between its two places (`record-duplicate`).
+Commit the result as one commit of its own; a `.sova/spec/.gitignore` that doesn't admit
+`claims/**/*.json` is named in `next`.
 
 ## A claims conflict in a Git merge
 

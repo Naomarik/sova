@@ -3,7 +3,8 @@
 
 Sova's own repository ships one scheduled playbook, **Merge round** (`.sova/playbooks/merge-round/`),
 run by the project profile **Merge captain** (`.sova/profiles/merge-captain.json`, One at a time)
-when a branch in its repository turns ready to merge (§chat.schedules/merge-ready), every 6 hours,
+when a branch in its repository turns Ready to land or gets the user's go-ahead typed in its own
+chat (§chat.schedules/merge-ready), every 6 hours,
 and after a Claude limit resets (§chat/schedules). A round finds finished branches,
 checks each one, lands it on master, removes its worktree when git allows it, pushes it and
 restarts the live server when that is safe. The
@@ -36,15 +37,16 @@ after each landing, since every other branch is then checked against the new mas
   order given.
 - **The board.** Each round reads Sova's merge board (§chat.worktrees/merge-board), the Ready to
   merge chip's own rule set (§chat.worktrees/readiness), through the driver's `status`, whole and
-  never filtered through `grep`, `head` or `tail`. A wake whose Reason reads `Ready to merge: …`
-  names the branches that just turned ready. A branch to queue is one the board reads Ready to land;
+  never filtered through `grep`, `head` or `tail`. A wake whose Reason reads `Ready to land: …`
+  names the branches that just turned Ready to land (§chat.schedules/merge-ready), and one that also
+  reads `Go-ahead typed in its own chat: …` names branches the user told, in their own chat, to land
+  (checked at once, below). A branch to queue is one the board reads Ready to land;
   Ready to merge and Waiting for your OK alone are not finished work. The owner of a branch is the session the board names, never a guess from
   session files or titles. An owner the board can't name yet (Sova hasn't read every session) is
   unknown, left for a later round and never "no owner"; when the board is missing or old, owners
   are unknown and nothing lands that round. A branch whose owner is archived, or whose worktree no
   session tracks, is the user's call: told to the user once and never merged on the captain's own
-  say: the user naming a branch to land is that say, and counts as its owner's READY, recorded with
-  the driver's `note`. Commits on master the captain didn't land (an owner's own merge) get
+  say: the user's word in the captain's chat (below) is that say. Commits on master the captain didn't land (an owner's own merge) get
   typecheck, tests and build before they are pushed.
 - **Verify.** The chip can be wrong (it doesn't know intent, and its checks-passed isn't tied to
   the branch's head), so before accepting a branch the captain reads the owner's transcript
@@ -58,21 +60,35 @@ after each landing, since every other branch is then checked against the new mas
   needs to know a captain exists. The user answers on the card: **Land It** records the go-ahead
   and sends it to the captain, which is the OK: the branch, checked green, lands, pushes and
   restarts without the user being asked again, and the check's own clean merge of master never
-  cancels it. **Not Yet** leaves the branch until its head changes. The captain doesn't poll: Land It's message wakes it, and `status`
-  reads the recorded go-aheads and Not Yets. A branch the user names to land in the captain's own
-  chat, or one with no card (Sova refused to show it and said why), is asked the old way: with
-  `session_send`, for a `READY <branch> <sha>` or `NOT READY: <why>` pushed with `queue_push` to
-  the captain's own topic (`queue_open merge`, the same each round while the session lives,
-  §chat.topics/open), piped into the driver's `reply`. Either the owner's READY at the head or the
-  user's Land It lets a branch be checked and landed. The captain tells the user to press Land It only for a branch whose card Sova showed (`status` says
-  so), naming the owner's chat by its title with a link to it (`#/sid/<id>`); a branch with no owner
-  chat (owner archived, or no session tracks its worktree) has no card, so the captain asks the
-  user for a typed OK in its own chat instead ("say land <branch> here"). It never
+  cancels it. **Not Yet** leaves the branch until its head changes. The captain doesn't poll: Land It's message wakes it, a go-ahead
+  typed in the owner's chat wakes it through the merge-ready trigger (§chat.schedules/merge-ready), and `status`
+  reads the recorded go-aheads and Not Yets. No owner is asked in words whether its branch is ready:
+  a branch whose card Sova refused to show (it says why) lands only on the user's word, which the
+  captain asks for once. A hand-back goes to the owner, and once the owner commits the fix the branch
+  shows Ready to land again and is queued at its new head. Only the user's go-ahead (Land It, or
+  their word below) lets a branch be checked and landed. The captain mentions Land It only for a branch whose card Sova showed (`status` says
+  so), naming the owner's chat by its title with a link to it (`#/sid/<id>`), and says the user may
+  as well type "land it" there; for any other branch it never tells the user to press a card or wait
+  for one, but asks for their word: "land it" typed in the owner's chat, or "land <branch>" in the
+  captain's own. A branch with no owner chat (owner archived, or no session tracks its worktree) has
+  no card, so the captain asks the user for a typed OK in its own chat instead ("say land <branch> here"). It never
   asks a busy session. Notes arrive
   only between turns, so the captain reads the owner again just before landing; a hold that arrives
   after a landing is reported to the owner and the user, never undone. A session that needs to
-  reach the captain is told the topic's name by `session_send`, never given a second topic; the
+  reach the captain (a hold, a question) is told the name of its topic (`queue_open merge`, the
+  same each round while the session lives, §chat.topics/open) by `session_send`, never given a second topic; the
   captain itself answers with `session_send`, since it can't push to its own topic.
+- **The user's word always lands it.** When the user tells the captain in its own chat to land a
+  branch ("merge it", "land feat/x"), that is the go-ahead, and the Landing card is only a
+  shortcut for it: the captain records it with the driver's `go`, and the branch goes straight to
+  the check and lands once the check passes, without waiting for Ready to land or a card,
+  whatever the board reads and whoever owns it. The check still holds it for
+  anything it finds, spec drafts that aren't official included, unless the user said to land it
+  without its specs (`go <branch> without-specs`, as Merge Without Specs… does). The user's word
+  typed in the branch's own chat ("land it", "merge it") is the same go-ahead: that chat's agent
+  records it (`worktree land`, §chat.worktrees/tool, kept with the Land Its,
+  §chat.worktrees/landing-answers), it wakes the captain, and the captain checks and lands the
+  branch exactly as on Land It, card or not.
 - **Each branch** is merged with master in its worktree, checked (typecheck, the unit tests and
   then all the integration tests (§app.server-runtime/test-tiers), each with timeouts near their
   baseline, each touched pi-config extension's suite, build; a test file failing in the full run
@@ -91,11 +107,16 @@ after each landing, since every other branch is then checked against the new mas
 - **Specs land with the code.** A branch's spec drafts are its owner's to promote, on that branch,
   before it lands: Sova itself tells the owner once per commit (§chat.worktrees/ready-to-land), and
   the branch reads Landing specs until they are committed, so nobody asks the user for it and there
-  is never a second, specs-only landing. The captain promotes none. A check that finds a draft not
-  confirmed promoted hands the branch back to its owner with the drafts named; so does a merge of
-  master into the branch that conflicts in the spec, for the owner to merge master in itself and
-  promote again on top of it. Only the user's **Merge Without Specs…** on the Landing card lands a
-  branch with drafts left, which the landed notice then names for a fresh branch. A branch whose
+  is never a second, specs-only landing. The captain promotes none. Whether a draft is official is
+  one rule, the draft tool's (§tools.spec/draft-official), the same Sova's own readiness calls. A
+  check that finds a draft that isn't official hands the branch back to its owner with the drafts
+  named; so does a merge of master into the branch that conflicts in the spec, for the owner to
+  merge master in itself and promote again on top of it. Only the user's **Merge Without Specs…**
+  on the Landing card, or their word to land it without its specs, lands a branch with drafts
+  left, which the landed notice then names for a fresh branch. At landing, once its check passed,
+  the drafts that are official are tidied out of the worktree, a copy of its drafts kept aside until
+  a later landing finds them official in master, so a draft that
+  already landed never holds a later landing there. A branch whose
   owner is gone stays the user's call. Unclaimed files and a failing census still hold nothing:
   the merge round's spec checks are a safety net under the owner's own promotion, never a gate of
   their own.
@@ -124,14 +145,16 @@ after each landing, since every other branch is then checked against the new mas
   time it recurs; names origin already has in public; any deploy
   to a peer; landing a branch with no live owner (owner archived, or no session tracks its
   worktree) or one without the user's go-ahead. Everything else, a branch the user pressed Land It
-  on (or its owner answered READY for) and checked green, lands and pushes without asking.
+  on or told the captain, or the branch's own chat, to land, checked green, lands and pushes
+  without asking.
 - **Never:** force-push or rewrite pushed history; `filter-branch` or `read-tree` on master, or
   `update-ref` on it outside a scrub the user approved for that case; a private name written inline
   in a command; another session's project instance touched, or its worktree changed beyond the
   check's master merge (and a rebuilt `node_modules`), without its OK.
 - **The report** each round: shas merged, push result, restart state, the branches with no live owner (each the first time it is the user's call, with the typed OK that lands it), the branches
-  whose Landing card waits for the user (each naming the owner's chat with its link), owners asked
-  and their answers, anything handed back and why. A quiet round (nothing asked, checked, landed or
+  whose Landing card Sova showed and that wait for the user's Land It or typed word (each naming the
+  owner's chat with its link), the branches
+  queued for a card, anything handed back and why. A quiet round (nothing queued, checked, landed or
   pushed, and nothing new for the user) reports one line: "Nothing new on the merge board."
 
 ## §chat.merge-round/driver — The round's driver
@@ -155,8 +178,7 @@ shell and under a timeout.
   never calls Sova's API about sessions and never holds Sova's token. A board that is missing, not
   version 1, or written more than 5 minutes ago is not read: owners are unknown. Each board reading
   of a branch (owner, owner status, state, reason) is kept in its state record. What the captain
-  learns another way it records with `note <branch> owner=<id> chip=ready|waiting|none idle=yes|no
-  [source=<word>]`, which names the owner only while it is newer than the board's reading; the
+  learns another way it records with `note <branch> owner=<id> idle=yes|no`, which names the owner only while it is newer than the board's reading; the
   owner's status comes from the newest reading of that owner. Its only HTTP is `GET /api/health`,
   best effort, to read the head the live server started at.
 - **The restart need** is the live server's `head` from `GET /api/health` against master: a
@@ -180,28 +202,19 @@ shell and under a timeout.
   restart (§chat.worktrees/readiness's rule). It
   also says whether the main checkout is on master, how many files are dirty there, and how far it
   is from origin/master.
-- **`ask <branch> [topic=<name>]`** reads the board again, and refuses a branch with no known
-  owner, an archived owner (the user's call), an owner not idle, an owner reading older than 15
-  minutes, and an owner asked in the last 10 minutes. For a branch the board reads Ready to land
-  (or Landing specs with the owner's reason it can't land them) it **queues** it: it appends
-  `{branch, path, head, owner, captain}` to `<state root>/landing-queue.json`, for Sova to show the
-  owner the Landing card (§chat.offers/sova-landing), and its `next:` line says not to poll: Land
-  It's message arrives by itself. `status` then shows, per branch, whether Sova showed the card or
-  why it didn't. Any other branch is asked the old way, which needs the name `queue_open` gave the
-  round's topic (a bare base name is refused): it records the topic with the ask and prints the text
-  to `session_send`: `Is <branch> ready to merge at its current head? Reply with queue_push, topic
-  "<name>", text one line: READY <branch> <the head sha you checked>, or NOT READY: <why>.`, which
-  never holds the head's sha. When the branch's worktree holds spec drafts not confirmed promoted
-  (the draft tool's `drafts` reading: records pending, records in conflict, whether the draft never
-  promoted them or promoted them before and the branch now says them differently, as after taking
-  master's spec in a conflict without promoting again, or a reading that fails, the spec tools
-  missing included), the text ends with one more sentence naming each such draft with up to four of
-  those § ids, or "status unreadable", telling the owner to promote them on its branch and commit
-  that before it answers READY, that the user's go-ahead to merge covers it, and that a READY with
-  them left is handed back; with none the text is as above. **A recorded go-ahead** (Land It, in
-  `<state root>/landing.json`, §chat.worktrees/landing-answers) for the branch at its current head,
-  or at an earlier head when every commit since is a clean merge of master, counts as the owner's
-  READY. A clean merge has exactly two parents, the earlier head first and a commit already on
+- **`ask <branch>`** reads the board again, and refuses a branch with no known owner, an archived
+  owner (the user's call), an owner not idle, an owner reading older than 15 minutes, a branch
+  already queued at its head, one whose Landing card Sova refused to show at its head (it says why,
+  and that the branch lands only on the user's word), and any branch the board doesn't read Ready to
+  land (or Landing specs with the owner's reason it can't land them) at its head: no owner is asked
+  in words. A branch it accepts it **queues**: it appends `{branch, path, head, owner, captain}` to
+  `<state root>/landing-queue.json`, for Sova to show the owner the Landing card
+  (§chat.offers/sova-landing), and its `next:` line says not to poll: Land It's message arrives by
+  itself. `status` then shows, per branch, whether Sova showed the card or why it didn't.
+  **A recorded go-ahead** (Land It, or the user's word typed in the branch's own chat, in
+  `<state root>/landing.json`, §chat.worktrees/landing-answers)
+  for the branch at its current head, or at an earlier head when every commit since is a clean merge
+  of master, counts. A clean merge has exactly two parents, the earlier head first and a commit already on
   master second, and its tree is exactly the one `git merge-tree --write-tree` makes of those two
   (no conflict, nothing edited by hand); the go-ahead carries through up to 20 of them, so the
   check's own merge of master, or master merged in again after it moved, never cancels the user's
@@ -209,45 +222,42 @@ shell and under a timeout.
   but master needs a new answer. Walking back from the head, the first commit with an answer
   decides by its newest answer, so a Not Yet there is never walked past. One recorded without specs
   also lets its check pass with drafts left, naming them.
-  **To check, to land.** A branch goes to "to check" on its owner's READY at its current head or a
-  go-ahead that counts there, and to "to land" once a check passed at its current head and master's
+  **`go <branch> [without-specs]`** records the user's word in the captain's own chat as their
+  go-ahead for the branch at its current head, in the driver's state, read exactly as a Land It
+  (with `without-specs`, as Merge Without Specs…): carried over clean master merges, and the newer
+  of it and a Not Yet at that commit decides. It needs no owner, board row or ask: `status` then
+  lists the branch under "to check" whatever the board reads, and `land` names the user's word.
+  **To check, to land.** A branch goes to "to check" on a go-ahead that counts at its current head, and to "to land" once a check passed at its current head and master's
   current sha. A Not Yet that decides the walk puts it in "not ready" until the head moves, green
   check or not. No answer is demanded at the exact head anywhere, `land` included.
-  **`reply <branch>`** reads the
-  delivered topic batches on stdin (§chat.topics/delivery) — every batch piped, when several arrive
-  together — or the owner's `session_read` output. A batch is read only against a recorded ask:
-  with none, it is refused. When no piped batch is on the ask's topic the answer is refused as
-  another topic's; in the batches that are, only the notes whose sender is the recorded owner count,
-  as the server framed them, so another session's READY never does. A note counts once and only for
-  the current ask: one stamped before the ask, or before the note the recorded answer came from,
-  doesn't count, and the ids of the notes already read are kept in the state, so a batch piped again
-  (a reused topic, the same head) or an older batch after a newer answer changes nothing. A
-  transcript of another session is refused, and in it only the owner's own reply rows (`ASSISTANT:`)
-  count. Either way it accepts only a whole line `READY <branch> <sha>`, whose sha (7 or more
-  characters) begins the branch's current head, or `NOT READY: <why>`. Any other sha is **stale**;
-  nothing else is an answer, so an echoed ask or a line elsewhere never counts. A READY at the
-  current head while the worktree still holds drafts not confirmed promoted is not taken: it is
-  recorded as handed back, and `reply` prints the hand-back to `session_send` to the owner (each
-  draft named, to promote and commit on its branch, then answer READY again on the same topic) and
-  exits 1.
 - **`check <branch>`** refuses a branch with no worktree, no commit ahead, uncommitted files or a
   TEMP-style subject. It merges master into the branch in its worktree, never on master. On
   conflicts it stops and leaves them to the captain, except the spec's: a conflicting
-  `.sova/spec/manifest.json` first goes through the spec tool's `merge-manifest --write`, and when a
-  spec file is still conflicted after that (any `claims/*.md` file, or a manifest `merge-manifest`
-  refuses) it aborts the merge, so the worktree is as it was, records the branch as handed back, and
-  prints the hand-back for the owner: merge master in itself, recover the spec as PROMOTE.md says
-  (master's whole spec, the merge committed, its drafts promoted again with the same `--id`s, the
-  claims committed), then answer READY again. It exits 1 and never says to resolve a spec conflict
-  itself. It then
+  `.sova/spec/manifest.json` or per-area record file (`claims/**/*.json`, §tools.spec/record-layout)
+  first goes through the spec tool's `merge-manifest --write`, which stages the files it wrote, and
+  when a spec file is still conflicted after that (any `claims/*.md` file, or a record
+  `merge-manifest` refuses) it aborts the merge, so the worktree is as it was, records a failed check at that
+  head, and prints the hand-back for the owner: merge master in itself, recover the spec as
+  PROMOTE.md says (master's whole spec, or with records beside each claim file only the areas that
+  clashed, the merge committed, its drafts promoted again with the same `--id`s, the claims
+  committed), so the branch shows Ready to land again. It exits 1 and never says to resolve a spec conflict itself.
+  After every merge of master, before the merge commit, it reads the spec's records with the spec
+  tool (`records`): a spec now holding records both ways (`layout-mixed`) is finished with
+  `merge-manifest --write`; when that can't finish it, when the records don't read (an unreadable
+  manifest, a bad record file), or when the tool gives no answer, it aborts the merge, so the
+  worktree is as it was, and says which. A clean merge is otherwise committed exactly as Git's
+  one-step merge commits it. It then
   runs the typecheck, `pnpm test` and then `pnpm test:int` (§app.server-runtime/test-tiers; a tree
   whose package.json has no `test:int` script skips it and says so), both without
   `CLAUDE_CONFIG_DIR`, each touched pi-config extension's
   line from `pi-config/README.md`'s Tests block, and the build, each in its own process group,
   killed whole at its timeout (the larger of a floor and twice the median of its earlier passing
   runs); then the spec tool's `check`, `census --changed --base master`, and each draft's status,
-  which it prints. A draft not confirmed promoted (as `ask` reads it) is a need, `docs not promoted:
-  <draft>, …`, and the check prints the same hand-back as `reply`; no spec check result, census or
+  which it prints. A draft not confirmed promoted is a need, `docs not promoted: <draft>, …`: one the
+  draft tool's `drafts` reading calls not official (its `official` verdict, §tools.spec/draft-official),
+  or a reading that fails, the spec tools missing included. The check then prints the hand-back for
+  the owner, naming each such draft with up to four of its § ids, or "status unreadable", to promote
+  and commit on its branch, so it shows Ready to land again; no spec check result, census or
   unclaimed file is a need. A
   test file that fails, in either tier, is run again on its own in the branch's worktree, through
   the same runner on the same runtime (`scripts/run-tests.mjs --runtime <bun|node> <file>`): one
@@ -267,25 +277,29 @@ shell and under a timeout.
   <sha>` or `needs: …`, is recorded against the branch's head and master's sha.
 - **`land <branch>`** never merges. With a landable check at the current head and the current
   master, it runs the same leak scan again and, only when it finds no hit, prints the `worktree`
-  tool's merge call, naming the user's Land It (and the commit it was pressed at) or else the
-  owner's READY; a moved head or master means check again, and a Not Yet that decides the walk
+  tool's merge call, naming the user's Land It or word, in the captain's chat or typed in the
+  branch's own (and the commit it was given at), or else
+  that none is recorded, so it lands only on the user's word; a moved head or master means check again, and a Not Yet that decides the walk
   above refuses it.
   **`landed <branch>`** verifies with git that the branch's head is in master, however it got there
   (a branch its owner merged has no check on record), builds the main checkout, records the restart
   need (one that can't be told counts as needed), and prints the notice for the owner, with the
   sentence "Its worktree folder was removed." to add only when the clean-up's remove succeeds.
-  When the landed branch's worktree still holds drafts not confirmed promoted (a branch its owner
-  merged itself, say), it first copies each such draft into
-  `<state root>/playbooks/merge-round/drafts/<head sha>/`, since removing the folder deletes the
-  worktree's own copy, and the notice goes on to say they didn't land with the code, naming each
+  It first runs the draft tool's `prune --official --from <folder> --write` against the main
+  checkout's spec on each folder of copies earlier landings kept under
+  `<state root>/playbooks/merge-round/drafts/`, which deletes only the copies the tool confirms are
+  already official there, and removes a folder left empty; a copy the tool can't confirm is kept,
+  and a prune that fails deletes nothing and is said. Then it copies the worktree's whole drafts
+  folder, once, into `drafts/<head sha>/`, since removing the folder deletes the worktree's own copy.
+  When the worktree still holds drafts not confirmed promoted (a branch its owner merged itself,
+  say), the notice goes on to say they didn't land with the code, naming each
   draft with up to four of those § ids, or "status unreadable", and that folder, for the owner to
   promote on a fresh branch from master by copying them into its worktree's `.sova/spec/drafts/`,
   never on master itself. A copy that fails withholds the clean up, so the folder and its drafts
   stay, and the notice names the worktree's own drafts folder instead. With none the notice is
-  unchanged. Every `landed` also runs the draft tool's `prune --official --from <folder> --write`
-  against the main checkout's spec on each folder of copies under that `drafts/` directory, which
-  deletes only the copies the tool confirms are already official there, and removes a folder left
-  empty; a copy the tool can't confirm is kept, and a prune that fails deletes nothing and is said.
+  unchanged. When a check passed at the landed head and the copy was kept, the tool's `prune
+  --official --write` tidies the drafts it confirms official out of the worktree; a prune that fails
+  is said.
   Its `next:` line is the clean-up: `git -C <main checkout> worktree remove -- <path>`, then `git -C
   <main checkout> branch -d -- <branch>`, then `push`. When git's record of that worktree can't
   be written from where the driver runs (a sandboxed captain), it prints instead that the clean-up
@@ -301,13 +315,16 @@ shell and under a timeout.
 - **`report`** prints the round report's skeleton from the state, listing each branch with no live
   owner once per head (`For you, once (no live owner): …`, each with "say land <branch> here to land
   it"), and each branch whose Landing card Sova showed at its current head, waiting for the user
-  (`Waiting for your Land It: <branch> at <sha7> in "<owner's title>" (#/sid/<id>)`). `status` and
+  (`Waiting for your Land It (or "land it" typed there): <branch> at <sha7> in "<owner's title>"
+  (#/sid/<id>)`); no other line of the driver tells the user to press a card or wait for one: a branch
+  whose card isn't showing lands on the user's word, typed in the owner's chat or given to the captain. `status` and
   `ask` name a queued branch's owner chat the same way, by title and link, never "its card is
   shown" alone. A quiet round prints only `Nothing new on the merge board.`
 
+Whether a draft is official is no copy: the driver reads the draft tool's `drafts`, and the
+server calls the same function of that tool (§tools.spec/draft-official).
 The two rules it shares with the server, which subjects are temporary and which changed files need a
-restart, are copies, held equal to `server/merge-readiness.ts`'s by a test over an enumerated table;
-so are the topic batch's format and the topic name's rule, held equal to `shared/topic-message.ts`'s.
+restart, are copies, held equal to `server/merge-readiness.ts`'s by a test over an enumerated table.
 
 ## §chat.merge-round/landing-suites — Extension suites and the spec replay at landing
 

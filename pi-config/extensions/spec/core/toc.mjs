@@ -56,6 +56,8 @@ const budgetOf = (raw, fallback) => raw === undefined ? fallback
 
 // ---------------------------------------------------------------- the graph, through the core's own parser
 // core: { findSpec, load, specDir, parentOf, findings: () => [], exitOf, DEFAULT_SPEC }
+// A spec holding records both ways is refused with the core's own words, which name the one command that finishes it.
+export const mixedCause = (findings) => { const f = findings.find((x) => x.code === "layout-mixed"); return f ? { cause: "layout-mixed", message: f.message } : {}; };
 export function openGraph(o, core) {
   if (o.spec !== undefined) {
     const s = core.specDir(o.spec);
@@ -68,7 +70,7 @@ export function openGraph(o, core) {
   const ctx = core.load(root, o.spec);
   const findings = core.findings();
   if (!ctx || core.exitOf(findings) === 2)
-    return { refused: "graph-untrusted", ...(findings.some((f) => f.code === "manifest-not-found") ? { cause: "manifest-not-found" } : {}) };
+    return { refused: "graph-untrusted", ...(findings.some((f) => f.code === "manifest-not-found") ? { cause: "manifest-not-found" } : {}), ...mixedCause(findings) };
   if (o.id !== undefined && (!ctx.claims.has(o.id) || !ctx.decls.has(o.id))) return { refused: "unknown-id", message: `${o.id} has no manifest record` };
   return { root, ctx };
 }

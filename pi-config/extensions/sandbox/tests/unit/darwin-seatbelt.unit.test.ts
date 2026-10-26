@@ -317,3 +317,17 @@ test("secretEnv: read from an fd by a shell inside, never on argv or in the env;
 		assert.equal(r.ok, false, JSON.stringify(secretEnv));
 	}
 });
+
+test("git under Seatbelt starts no background cleanup: GIT_CONFIG_SYSTEM names the file in the session tmp (real Seatbelt on macOS)", async (t) => {
+	const { policy, root, tmpDir } = setup(t);
+	// Off macOS a stand-in sandbox-exec drops `-f <profile>` and runs the command, so the env wiring is still exercised.
+	const fake = join(root, "sandbox-exec");
+	writeFileSync(fake, '#!/bin/sh\nshift 2\nexec "$@"\n', { mode: 0o755 });
+	const b = onMac ? new DarwinSeatbeltBackend() : new DarwinSeatbeltBackend({ sandboxExec: fake });
+	const res = await b.confine({ argv: ["/bin/sh", "-c", 'git config --get maintenance.auto; git config --get gc.auto; echo "$GIT_CONFIG_SYSTEM"'], cwd: policy.workspaceRoot, policy: { ...policy, env: { ...policy.env, GIT_CONFIG_NOSYSTEM: "1" } } });
+	assert.ok(res.ok, res.ok ? "" : res.reason);
+	const run = await runCapture(res.confined.argv, res.confined.env, policy.workspaceRoot, 20_000);
+	assert.equal(run.code, 0, run.output);
+	assert.deepEqual(run.output.trim().split("\n"), ["false", "0", join(realpathSync(tmpDir), "sova-no-background-cleanup.gitconfig")]);
+	assert.equal(res.confined.env.GIT_CONFIG_NOSYSTEM, undefined);
+});

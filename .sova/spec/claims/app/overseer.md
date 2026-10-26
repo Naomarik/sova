@@ -532,7 +532,9 @@ sessions are left out, and the coverage line counts them as skipped.
     or an ask whose session has work not merged (ready, built, uncommitted, at risk or lost) or
     that says merge, land, commit, build, start, go ahead or proceed; then open alignment
     questions; then other asks; the most recently active first within each.
-  - **Ready to merge**: a worktree ready, or waiting for the user's go-ahead.
+  - **Ready to land**: a worktree Ready to land at its head (§chat.worktrees/ready-to-land).
+  - **Landing specs**: one whose landing waits on its spec drafts.
+  - **Ready to merge**: any other worktree ready, or waiting for the user's go-ahead.
   - **Built, not merged**: a worktree with commits of its own in progress, blocked or stale
     (§chat.worktrees/readiness), one whose session is working now saying so.
   - **Uncommitted only (lost if the worktree goes)**: a worktree with at least one uncommitted
@@ -863,8 +865,9 @@ session is on which branch survives a compaction and a restart:
   last 24 hours. Never the Overseer's own. At most 15, the most recently touched first.
 - **Each row:** the session as a link, named summary-first (§app.overseer/session-names), its id
   as plain text, its state now (working, idle, needs-input, archived, or gone), each worktree it
-  tracks as "branch <name> (<badge>)" (the readiness badge, §chat.worktrees/readiness, else that
-  worktree's state, such as in-progress or blocked), when the Overseer last created or prompted it,
+  tracks as "branch <name> (<badge>)" (its landing while one holds, "ready to land" or "landing
+  specs", §chat.worktrees/ready-to-land; else the readiness badge, §chat.worktrees/readiness, else
+  that worktree's state, such as in-progress or blocked), when the Overseer last created or prompted it,
   and the kind of the last brief that named it and when. A line before the rows says which sessions
   these are (created, prompted or briefed about in the last 24 hours), and that the Overseer checks
   one with `sova_session` before saying what it is doing.
@@ -1294,7 +1297,8 @@ feed's last list while nothing has changed since it was built, and builds a list
   input.
 - **Ready to merge (decide)** (§chat.worktrees/readiness): an idle, unarchived session with a
   worktree ready, "Ready to merge: {branch}", or ready and waiting for the go-ahead, "Waiting for
-  your OK: {branch}". Never Needs you, a brief or a notification.
+  your OK: {branch}"; a worktree with a landing says its word instead, "Ready to land: {branch}" or
+  "Landing specs: {branch}" (§chat.worktrees/ready-to-land). Never Needs you, a brief or a notification.
 - **Merges (decide)** (§chat.worktrees/readiness): a merge the follow-up check
   (§app.decisions/merge-followup) calls significant, "Merged with open work: {cue}"; and one
   `restart-pending` item of no session, "Restart pending: {n} merge(s) changed the server since it

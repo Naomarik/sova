@@ -902,11 +902,12 @@ would list master's changes instead.
     4,305-byte `manifest.json` and 101 record files (740,292 bytes in all): median 5,025 bytes
     (`mesh/remote-sessions`, 12 records), largest 33,749 bytes (`app/overseer`, 50 records), then
     `app/project-overseer` 32,361 and `app/insights` 25,672; an agent editing a draft's records edits one
-    of those instead of the whole list. Latency, median of 15 interleaved runs on the same tool tree, the
-    spec at ca8ab14 in format 1 → converted (both as plain copies), Node, on a loaded machine: check 150 →
-    160 ms, map 180 → 193, where 455 → 471, read 71 → 80, toc 82 → 87, impact 75 → 82, packet 75 → 80,
-    census 162 → 167, records 47 → 55: about 5 to 10 ms more per call for reading 101 files instead of
-    one. Merge collisions before the conversion (`merge-collisions.mjs --since 2026-09-23 --until ca8ab14`,
+    of those instead of the whole list. Latency (median of 15 interleaved runs, Node, ca8ab14's tools on its
+    format 1 spec against this branch's tools on the converted spec, both as plain copies, on a loaded
+    machine), after `freshOrder` in `layout.mjs` dropped its comparator sort (same order, byte-identical
+    output): records +6 ms (+12–17%), all other commands ≤ +7% (check, map, where, read, toc, impact,
+    packet, scope, census). This misses the plan's ±10% latency target for `records`; the main thread
+    accepted the miss. Merge collisions before the conversion (`merge-collisions.mjs --since 2026-09-23 --until ca8ab14`,
     688 merges, all format 1): both sides changed the records file in 309 (45%), Git's line merge
     conflicted in 118 (17%); re-laid one file per area, both sides changed one area's file in 100 (15%)
     and Git conflicted in 30 (4%); the same record changed two ways in 29; 27 merges took one side's whole

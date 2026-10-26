@@ -70,13 +70,19 @@
         "server/chat-actions.integration.test.ts",
         "server/ws.ts",
         "server/app.ts",
-        "scenarios/chat-actions.json"
+        "scenarios/chat-actions.json",
+        "server/archive-reopen.test.ts"
       ],
       "requires": [
         "§app/chat-actions",
         "§chat.transcript/send-while-starting"
       ],
-      "evidence": "verified"
+      "evidence": "verified",
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-26T22:35Z",
+        "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
+      }
     },
     "§app.chat-actions/terminal-open": {
       "kind": "behavior",
@@ -250,9 +256,9 @@
         "§app.chat-processes/supervision"
       ],
       "agreed": {
-        "by": "naomarik (al_2 go-ahead)",
-        "at": "2026-10-21T22:49Z",
-        "source": "pi-session:62ba6e1a-1faf-49d5-8231-81171c89541b#e5270c27"
+        "by": "omar",
+        "at": "2026-10-26T22:15Z",
+        "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
       },
       "evidence": "verified"
     },
@@ -570,9 +576,9 @@
         "§app/worker-restore"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T20:29Z",
-        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#ddd8cd7b"
+        "by": "omar",
+        "at": "2026-10-26T22:15Z",
+        "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
       },
       "evidence": "verified"
     },
@@ -1306,9 +1312,9 @@
         "src/lib/session-row-menu.snapshot.json"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "omar",
+        "at": "2026-10-26T22:15Z",
+        "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
       }
     },
     "§app.insights/tokens-motion-and-accessibility": {
@@ -2225,7 +2231,7 @@
         "§app.session-list/recent"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
         "src/lib/storage-keys.ts",
@@ -2251,12 +2257,13 @@
         "src/lib/project-region.test.ts",
         "src/lib/section-reveal.ts",
         "src/lib/section-reveal.test.ts",
-        "src/lib/section-reveal.browser.test.ts"
+        "src/lib/section-reveal.browser.test.ts",
+        "src/components/Composer.tsx"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-21T14:42Z",
-        "source": "pi-session:d5060398-05c1-4e9b-a6a5-186d2888b9b8#483165cc"
+        "by": "omar",
+        "at": "2026-10-26T22:15Z",
+        "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
       }
     },
     "§app.session-list/search": {
@@ -3349,17 +3356,19 @@
     "§chat.composer/disabled-states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/components/ChatView.tsx",
         "src/components/Composer.tsx",
         "src/components/SessionView.tsx",
         "src/components/VoiceInput.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/lib/chat-wait.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-14T13:32Z"
+        "by": "omar",
+        "at": "2026-10-26T22:35Z",
+        "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
       }
     },
     "§chat.composer/memory-status": {
@@ -4836,14 +4845,26 @@
         "src/lib/error-feed.test.ts",
         "server/ws-open-retry.test.ts",
         "src/components/GroupView.tsx",
-        "src/components/SessionView.tsx"
+        "src/components/SessionView.tsx",
+        "server/archive-reopen.test.ts",
+        "src/lib/archived-open.browser.test.ts",
+        "server/session-prompt.ts",
+        "server/archived-sessions.ts",
+        "server/project-overseer.ts",
+        "server/overseer.ts",
+        "server/sessions-configure.ts",
+        "server/link-delivery.ts",
+        "server/session-powers.ts",
+        "server/group-prompt.ts",
+        "server/chat-workers.ts",
+        "server/chat-actions.ts"
       ],
       "agreed": {
-        "by": "naomarik (al_2 go-ahead)",
-        "at": "2026-10-21T22:49Z",
-        "source": "pi-session:62ba6e1a-1faf-49d5-8231-81171c89541b#e5270c27"
+        "by": "omar",
+        "at": "2026-10-26T22:15Z",
+        "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
       },
-      "evidence": "reviewed"
+      "evidence": "verified"
     },
     "§chat.transcript/landing-page": {
       "kind": "behavior",
@@ -5671,7 +5692,16 @@
     "§workspace.groups/member-states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-26T22:35Z",
+        "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
+      },
+      "code": [
+        "src/components/ChatView.tsx",
+        "src/components/Composer.tsx"
+      ]
     },
     "§workspace.groups/rejected": {
       "kind": "note",
@@ -6260,7 +6290,7 @@
         "§chat.sandbox/workers"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "pi-config/extensions/subagents/index.ts",
         "pi-config/extensions/subagents/registry.ts",
@@ -6280,11 +6310,13 @@
         "shared/protocol.ts",
         "pi-config/extensions/subagents/claude-workers.ts",
         "pi-config/extensions/subagents/claude-workers.test.ts",
-        "server/quiet-close-actions.test.ts"
+        "server/quiet-close-actions.test.ts",
+        "server/chat-host.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-14T13:46Z"
+        "by": "omar",
+        "at": "2026-10-26T22:15Z",
+        "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
       }
     },
     "§app.worker-restore/transcript-protocol": {

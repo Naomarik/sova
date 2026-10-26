@@ -116,7 +116,6 @@ const slow = (stem) => new RegExp(`^${stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"
  *  first: the order when no duration was recorded yet, in either tier. */
 const KNOWN_SLOW = [
   slow("server/statecharts-replay"),
-  slow("server/usage-helper/memory"),
   slow("server/reconcile"),
   slow("server/project-services/test-verb"),
   slow("server/mesh/mesh"),

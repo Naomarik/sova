@@ -12711,11 +12711,12 @@
         "server/vis-tools-sync.test.ts",
         "src/vis/guide.test.ts",
         "pi-config/extensions/mode/vis/html-svg.md",
-        "pi-config/extensions/mode/vis/overview.md"
+        "pi-config/extensions/mode/vis/overview.md",
+        "src/vis/kinds/wireframe/wireframe-text.integration.test.ts"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-26T21:58Z",
+        "at": "2026-10-26T22:46Z",
         "source": "pi-session:870ce3a5-70c4-4ee4-86d6-e43d0a143cb2#58d50ef4"
       }
     },

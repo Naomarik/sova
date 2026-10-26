@@ -1058,10 +1058,12 @@ A wireframe sizes its blocks by the room they have, so no label is crushed into 
   control its label, at most about 12 characters; an image its 96px thumbnail): up to 4 on a desktop
   screen, 2 on a phone, never fewer than 1. A grid in a narrow column or a dialog thus has fewer
   columns than one across the page. A `wide` tile spans 2 columns, or 1 in a one-column grid.
-- **Words, never letters.** Text wraps between words. A title (of a header, card, col, modal,
-  sheet, sidebar, item or heading) whose single word is wider than its box is cut short with an
-  ellipsis; other text breaks such a word only when it must. Its box never shrinks to a few letters
-  because of how the text could break.
+- **Words, never letters.** Text wraps between words, whatever the page around the figure sets. A
+  word wider than its box, in any block (a title, a subtitle, text, a stat's label or value, a
+  check's label, an item's right text, an alert, a toast, a table cell), is cut short with an
+  ellipsis on its own line, never broken between letters; a table's columns stay equal, so a long
+  word in a cell is cut rather than widening its column. The height estimate counts lines the same
+  way. Its box never shrinks to a few letters because of how the text could break.
 - **One source.** These widths and column counts come from the wireframe's own layout model
   (`layout.ts`), which the View applies to the drawing, the height estimate counts and the server's
   check reads, so the three agree.

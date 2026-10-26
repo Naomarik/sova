@@ -128,7 +128,7 @@ interface Comparison {
   error?: string;
 }
 
-interface Layout { top: string; linked: boolean; commonDir: string; gitDir: string }
+export interface Layout { top: string; linked: boolean; commonDir: string; gitDir: string }
 
 /** A trial merge's inputs besides its OIDs: the configured merge drivers' commands, and the
  * folders (repo-relative, "" the top) whose `.gitattributes` Git may read for it. */
@@ -215,7 +215,7 @@ function configsOf(layout: Layout): string[] | null {
 /** What commit history means: replacements, grafts, shallow boundaries and the configuration.
  * Reuse of HEAD, refs, logs and ancestry. Merge drivers and attributes don't change history, so
  * they are the merge token's business (§app/idle-git-cache). */
-function historyToken(layout: Layout): string | null {
+export function historyToken(layout: Layout): string | null {
   // Custom namespaces/files and injected configuration may name dependencies outside this
   // inventory. Unsupported inputs are delegated to Git, never assigned an indefinite token.
   if (process.env.GIT_REPLACE_REF_BASE || process.env.GIT_SHALLOW_FILE || process.env.GIT_CONFIG_COUNT || process.env.GIT_CONFIG_PARAMETERS) return null;

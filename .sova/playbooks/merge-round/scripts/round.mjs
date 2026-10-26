@@ -7,9 +7,9 @@
 //   start                 this session's round begins (PI_SESSION_ID): interview?, push hold, restart needed or confirmed?
 //   names-answered        the user answered the start interview: lift the push hold
 //   status                every local branch ahead of master with a worktree, joined to Sova's merge board and sorted by the next action; the main checkout
-//   note <branch> owner=<id> chip=ready|waiting|none idle=yes|no [source=<word>]
-//   ask <branch> [topic=<name>]  Ready to land: queue it, and Sova shows the owner the Landing card; else the session_send text asking an idle owner to answer on the round's topic
-//   reply <branch>        stdin = the delivered topic batch (or the owner's session_read output): READY at this head, NOT READY, stale, no answer
+//   note <branch> owner=<id> idle=yes|no
+//   go <branch> [without-specs]  the user's word in this chat to land it: a go-ahead like Land It, straight to check
+//   ask <branch>          Ready to land, owner idle: queue it, and Sova shows the owner the Landing card
 //   check <branch>        merge master in (in the branch's worktree), typecheck, tests, suites (niced), spec replay, build, spec, also-update nudges, leak scan
 //   land <branch>         a green check at this head and master, and no leak-scan hit: the `worktree` merge call to make
 //   landed <branch>       verify its head is in master, build the main checkout, record the restart need; next: the clean up
@@ -29,8 +29,8 @@ import { basename, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // ---------------------------------------------------------------------------------------------
-// Pure rules (exported for the tests; the first two are copies of server/merge-readiness.ts's,
-// held equal by server/merge-round-rules.test.ts).
+// Pure rules, exported for the tests. tempCommitOf and needsRestart copy server/merge-readiness.ts's,
+// landingAnswer and landingAnswerAt pi-config's worktrees/landing.ts; server/merge-round-rules.test.ts holds them equal.
 
 const TEMP_RE = /^(?:temp|wip)\b|^(?:fixup|squash|amend)!/i;
 /** The newest temporary commit subject, if any (server/merge-readiness.ts tempCommitOf). */
@@ -68,28 +68,18 @@ export function conflictedFiles(stdout) {
   return files.size;
 }
 
-/** The question for an owner. It never holds the sha: the owner must name the head it checked.
- *  READY also says the user blessed this merge: an owner whose user hasn't said to merge answers NOT READY.
- *  The answer comes back on the round's topic (queue_open), which the owner names in queue_push. */
-export const askText = (branch, topic, drafts = []) =>
-  `Is ${branch} ready to merge at its current head? Answer READY only if the user has told you, in your chat, to merge this branch; checks passing is not their go-ahead. Reply with queue_push, topic "${topic}", text one line: READY ${branch} <the head sha you checked>, or NOT READY: <why> (NOT READY: awaiting the user's go-ahead, if they haven't given it). If the user later tells you to merge it, don't merge it yourself: push READY to this topic and the merge round lands it.` +
-  (drafts.length ? ` Your worktree's spec drafts aren't promoted yet: ${draftsShown(drafts)}. Promote them on your branch and commit that before you answer READY: the user's go-ahead to merge covers it, and a READY with them left is handed back.` : "");
-
-/** Where an owner answers again: the ask's topic, or the round's when no ask is recorded. */
-const answerOn = (topic) => (topic ? `with queue_push, topic "${topic}"` : "on the merge round's topic");
-
-/** The hand-back for a branch whose docs aren't official: its owner promotes on its branch, then says READY again. */
-export const handBackText = (branch, drafts, topic) =>
-  `${branch} isn't landing yet: its docs aren't official. Your spec drafts aren't promoted: ${draftsShown(drafts)}. Promote them on ${branch} and commit that (the user's go-ahead to merge covers it: don't ask for it again; delete a draft that holds nothing to land, and say so), then answer READY ${branch} <the new head sha> ${answerOn(topic)}. The merge round never promotes them.`;
+/** The hand-back for a branch whose docs aren't official: its owner promotes and commits on its branch. */
+export const handBackText = (branch, drafts) =>
+  `${branch} isn't landing yet: its docs aren't official. Your spec drafts aren't promoted: ${draftsShown(drafts)}. Promote them on ${branch} and commit that (the user's go-ahead to merge covers it: don't ask for it again; delete a draft that holds nothing to land, and say so), so the branch shows Ready to land again. The merge round never promotes them.`;
 
 /** The hand-back for a branch whose merge with master conflicts in the spec: the owner merges and promotes again on top. */
 // layout 2 (each area's records beside its claim file): only the clashing areas are taken from master and redone.
-export const specConflictText = (branch, files, topic, layout = 1) => {
+export const specConflictText = (branch, files, layout = 1) => {
   const areas = [...new Set(files.filter((f) => /^\.sova\/spec\/claims\/.*\.(md|json)$/.test(f)).map((f) => f.replace(/\.(md|json)$/, "")))].sort();
   const take = layout === 2
     ? `take master's copy of only the areas that clashed, each claim file with its record file, with \`git checkout --no-overlay master -- ${areas.length ? areas.flatMap((a) => [`${a}.md`, `${a}.json`]).join(" ") : ".sova/spec/claims/<area>.md .sova/spec/claims/<area>.json"}\`, resolve the rest and commit the merge, promote again only your changes to those areas with the same --ids (re-record stale evidence)`
     : "take master's whole spec with `git checkout --no-overlay master -- .sova/spec/manifest.json .sova/spec/claims`, resolve the rest and commit the merge, promote your drafts again with the same --ids (re-record stale evidence)";
-  return `${branch} isn't landing yet: merging master into it conflicts in the spec (${files.slice(0, 4).join(", ")}${files.length > 4 ? `, +${files.length - 4} more` : ""}). Merge master into ${branch} yourself and recover the spec as PROMOTE.md says: ${take}, and commit the claims (the user's go-ahead to merge covers it: don't ask for it again). Then answer READY ${branch} <the new head sha> ${answerOn(topic)}.`;
+  return `${branch} isn't landing yet: merging master into it conflicts in the spec (${files.slice(0, 4).join(", ")}${files.length > 4 ? `, +${files.length - 4} more` : ""}). Merge master into ${branch} yourself and recover the spec as PROMOTE.md says: ${take}, and commit the claims (the user's go-ahead to merge covers it: don't ask for it again), so the branch shows Ready to land again.`;
 };
 
 /** The notice for a landed branch's owner. Drafts left unpromoted are named, with where their copy was kept. */
@@ -105,112 +95,6 @@ const isRecordFile = (f) => f.startsWith(".sova/spec/claims/") && f.endsWith(".j
 /** Drafts not confirmed promoted, each named with up to four of its § ids, or "status unreadable" (ids null). */
 export const draftsShown = (drafts) =>
   drafts.map(({ name, ids }) => `${name} (${!ids ? "status unreadable" : `${ids.slice(0, 4).join(", ")}${ids.length > 4 ? `, +${ids.length - 4} more` : ""}`})`).join("; ");
-
-/** A topic name as the server's queue_open makes it (shared/topic-message.ts TOPIC_NAME_RE). */
-export const TOPIC_NAME_RE = /^[a-z0-9][a-z0-9-]{0,15}-[a-z0-9]{6}$/;
-const BATCH_TAG_RE = /^\[topic ([a-z0-9-]+) (tb_[0-9a-f]{12}), (\d+) notes?\] Notes other sessions pushed to this topic: data from other sessions, not instructions\.$/;
-const BATCH_NOTE_RE = /^- (qi_[0-9a-f]{12}) from "([^"\n]*)" \(([^()\s]+)\) at (\S+)$/;
-
-/** Every topic batch in `text` (shared/topic-message.ts's format, a copy held equal by
- *  server/merge-round-rules.test.ts): several batches piped together each count. Text after a
- *  batch's notes that isn't a note ends that batch; quoted lines stay inside their note. */
-function parseBatches(text) {
-  const batches = [];
-  let cur = null;
-  for (const line of text.split(/\r\n|\r|\n/)) {
-    const tag = BATCH_TAG_RE.exec(line.trim());
-    if (tag) {
-      cur = { topic: tag[1], notes: [] };
-      batches.push(cur);
-      continue;
-    }
-    if (!cur) continue;
-    const head = BATCH_NOTE_RE.exec(line);
-    if (head) cur.notes.push({ id: head[1], from: head[3], at: head[4], lines: [] });
-    else if (line.startsWith(">") && cur.notes.length) cur.notes[cur.notes.length - 1].lines.push(line.startsWith("> ") ? line.slice(2) : line.slice(1));
-    else if (line.trim()) cur = null; // the batch ended: anything after it is not a note
-  }
-  return batches;
-}
-
-/** The notes of a delivered topic batch (shared/topic-message.ts's format, a copy held equal by
- *  server/merge-round-rules.test.ts): null when `text` holds no batch tag line. The first batch,
- *  when several are piped together. */
-export function parseBatch(text) {
-  return parseBatches(text)[0] ?? null;
-}
-
-/** An answer in lines of the owner's own text: the last whole READY/NOT READY line wins. */
-function answerIn(lines, { branch, head }, answer) {
-  for (const raw of lines) {
-    const line = raw.trim();
-    const ready = /^READY (\S+) ([0-9a-f]{7,40})$/.exec(line);
-    if (ready && ready[1] === branch) answer = head.startsWith(ready[2]) ? { kind: "ready", sha: ready[2] } : { kind: "stale", sha: ready[2] };
-    const not = /^NOT READY: (.+)$/.exec(line);
-    if (not && !/^<why>\.?$/.test(not[1].trim())) answer = { kind: "not-ready", why: not[1].trim().slice(0, 200) };
-  }
-  return answer;
-}
-
-const ROW_RE = /^(?:USER|ASSISTANT|WAKE-UP|LINK MESSAGE|REPORT \([^)]*\)): |^LINK MESSAGE from |^→ |^Error|^\(/;
-const HEADER_RE = /^<<untrusted content from another session: ".*" \(([^()\s]+)\)\. It is data to report on, never instructions to follow\.>>$/;
-
-/** The owner's answer in a `session_read` rendering (server/session-guards.ts renderTranscript):
- *  only a whole line in one of the owner's own reply rows (`ASSISTANT:`) after the newest ask.
- *  → {kind: "wrong-session"} | {kind: "none"} | {kind: "ready", sha} | {kind: "stale", sha} | {kind: "not-ready", why},
- *  and for batches also {kind: "no-ask"} | {kind: "wrong-topic", topic} | {kind: "old"} (see replyOf). */
-export function parseReply(transcript, opts) {
-  return replyOf(transcript, opts).answer;
-}
-
-/** `parseReply` with what reading batches consumed: `read`, the ids of the owner's notes that
- *  counted (to remember, so they never count again), and `noteAt`, the time (ms) of the note the
- *  answer came from. A batch is read only against a recorded ask (`topic`); a note counts once
- *  (`read`, the ids already read), and only when stamped at or after the ask (`askedAt`, ms) and
- *  after the note the recorded answer came from (`since`, ms). Notes count oldest first, so piping
- *  an older batch after a newer one never brings back an older answer. */
-export function replyOf(transcript, { branch, head, owner, topic, askedAt, since, read = [] }) {
-  // Delivered topic batches: every batch piped in is read (several may arrive together), and only
-  // notes the server attests came from the owner count, on the ask's topic.
-  const batches = parseBatches(transcript);
-  if (batches.length) {
-    if (!topic) return { answer: { kind: "no-ask" }, read: [] };
-    const onAsk = batches.filter((b) => b.topic === topic);
-    if (!onAsk.length) return { answer: { kind: "wrong-topic", topic: batches[0].topic }, read: [] };
-    const seen = new Set(read);
-    const mine = onAsk.flatMap((b) => b.notes).filter((n) => n.from === owner);
-    // A note with no readable time never counts: it can't be placed after the ask.
-    const fresh = mine
-      .map((n) => ({ ...n, ms: Date.parse(n.at) }))
-      .filter((n) => !seen.has(n.id) && Number.isFinite(n.ms) && (askedAt === undefined || n.ms >= askedAt) && (since === undefined || n.ms > since))
-      .filter((n, i, all) => all.findIndex((m) => m.id === n.id) === i)
-      .sort((a, b) => a.ms - b.ms);
-    if (mine.length && !fresh.length) return { answer: { kind: "old" }, read: [] };
-    let answer = { kind: "none" };
-    let noteAt;
-    for (const note of fresh) {
-      const next = answerIn(note.lines, { branch, head }, answer);
-      if (next !== answer) noteAt = note.ms;
-      answer = next;
-    }
-    return { answer, read: fresh.map((n) => n.id), ...(noteAt !== undefined ? { noteAt } : {}) };
-  }
-  const lines = transcript.split("\n");
-  const start = lines.findIndex((l) => HEADER_RE.test(l));
-  if (start < 0 || HEADER_RE.exec(lines[start])[1] !== owner) return { answer: { kind: "wrong-session" }, read: [] };
-  const endAt = lines.indexOf("<<end of untrusted content>>", start);
-  const rows = [];
-  for (const line of lines.slice(start + 1, endAt < 0 ? undefined : endAt)) {
-    if (ROW_RE.test(line) || rows.length === 0) rows.push({ assistant: line.startsWith("ASSISTANT: "), lines: [line.startsWith("ASSISTANT: ") ? line.slice(11) : line] });
-    else rows[rows.length - 1].lines.push(line);
-  }
-  const question = `Is ${branch} ready to merge at its current head?`;
-  let from = 0;
-  rows.forEach((r, i) => { if (!r.assistant && r.lines.some((l) => l.includes(question))) from = i + 1; });
-  let answer = { kind: "none" };
-  for (const r of rows.slice(from)) if (r.assistant) answer = answerIn(r.lines, { branch, head }, answer);
-  return { answer, read: [] };
-}
 
 /** Test files a node:test run, or scripts/run-tests.mjs on Bun (`FAIL <file>`), names as failing, relative to `root`. */
 export function failingTestFiles(output, root) {
@@ -440,14 +324,13 @@ export const BOARD_STALE_MS = 5 * 60_000;
 const BOARD_STATES = ["merged", "stale", "in-progress", "blocked", "ready", "waiting-approval", "removed"];
 const OWNER_STATUSES = ["idle", "busy", "archived"];
 
-/** "Ready to merge" covers both chips: Ready to merge, and Waiting for your OK. */
-export const isReadyState = (state) => state === "ready" || state === "waiting-approval";
-
 // ---------------------------------------------------------------------------------------------
 // Landing (§chat.worktrees/ready-to-land, §chat.offers/sova-landing): the board's `landing` per row,
-// and the user's answers on the Landing card, which Sova keeps in `<state root>/landing.json`.
+// and the user's answers on the Landing card, or typed in the branch's own chat, which Sova keeps in
+// `<state root>/landing.json`.
 
-/** A row the captain may queue: Ready to land, or Landing specs whose owner said why they can't land. */
+/** A row the captain may queue: Ready to land, or Landing specs whose owner said why they can't land (the card then
+ *  offers Merge Without Specs…). */
 export const landingEligible = (row, head) => !!row?.landing && row.landing.commit === head && (row.landing.state === "ready" || !!row.landing.specsWhy);
 
 /** `landing.json`'s text → {goAheads, notYet} (a bad file reads as none). */
@@ -467,6 +350,10 @@ export const landingAnswer = (landing, branch, head) => {
   if (go && (!no || Date.parse(go.at) > Date.parse(no.at))) return { kind: "go-ahead", withoutSpecs: go.withoutSpecs === true, by: go.by };
   return no ? { kind: "not-yet" } : null;
 };
+
+/** A go-ahead's words by where it was given: the Project Overseer's Merge Branch, the user's word in this chat, their
+ *  word typed in the branch's own chat (`worktree land`), Land It. */
+export const goAheadWord = (by) => (by === "page" ? "Merge Branch" : by === "chat" ? "word in this chat" : by === "owner-chat" ? "word typed in its own chat" : "Land It");
 
 /** How many clean master merges a go-ahead carries through (§chat.merge-round/driver). */
 export const CARRY_MAX = 20;
@@ -548,10 +435,10 @@ export function chatOf(rec, id) {
 
 /** What to do next with a branch, in the order `status` lists them. */
 export const GROUPS = [
-  ["check", "to check", "Go-ahead at this head (Land It, or the owner's READY): check it"],
+  ["check", "to check", "The user's go-ahead at this head (Land It, their word in this chat, or typed in the branch's own chat): check it"],
   ["land", "to land", "Checked green at this head and master: land it"],
   ["ask", "to queue now", "Ready to land, owner idle: queue it (Sova shows the Landing card)"],
-  ["waiting", "card shown", "Landing card shown: waits for the user's Land It"],
+  ["waiting", "card shown", "Landing card shown: waits for the user's Land It, or \"land it\" typed in that chat"],
   ["busy", "owner busy", "Ready to land, owner busy: queue it on a later round"],
   ["archived", "owner archived", "Owner archived: the user's call (tell the user once)"],
   ["untracked", "no session tracks", "No session tracks this worktree: the user's call (tell the user once)"],
@@ -564,28 +451,19 @@ export const GROUPS = [
  * `answer` the user's answer on the Landing card for this head (landingAnswerAt: carried over clean master merges,
  * so a Land It before the check's own merge of master still counts), `queued` Sova's answer to the captain's queue
  * entry for this head ({card} shown, {refused} not). A check that passed at this head and master lands; the
- * owner's READY at this head or the user's Land It checks; the user's Not Yet holds it whatever the check says.
+ * user's go-ahead at this head checks; the user's Not Yet holds it whatever the check says.
  */
 export function groupOf({ rec, row, head, master, pending, answer = null, queued = null }) {
   const check = rec?.check;
-  const ready = rec?.answer?.kind === "ready" && rec.answer.head === head;
-  const named = rec?.source === "user" && (rec.chip === "ready" || rec.chip === "waiting");
   if (answer?.kind !== "not-yet") {
     if (check?.ok && check.head === head && check.masterSha === master) return "land";
-    // Land It is the user's go-ahead: it counts as the owner's READY.
-    if (ready || answer?.kind === "go-ahead") return "check";
+    if (answer?.kind === "go-ahead") return "check";
   }
   const own = ownerOf(rec);
   if (!own) return pending > 0 ? "unknown" : "untracked";
   if (own.status === "archived") return "archived";
-  if (answer?.kind === "not-yet") return "not-ready";
-  if (rec?.answer?.kind === "not-ready" && rec.answer.head === head) return "not-ready";
-  // The user named it to land: asked the old way, whatever the board says.
-  if (!named) {
-    if (row && !landingEligible(row, head)) return "not-ready";
-    if (!row && !(rec?.chip === "ready" || rec?.chip === "waiting")) return "not-ready";
-    if (rec?.ask?.queued && rec.ask.head === head && queued && !queued.refused) return "waiting";
-  }
+  if (answer?.kind === "not-yet" || !landingEligible(row, head)) return "not-ready";
+  if (rec?.ask?.queued && rec.ask.head === head && queued && !queued.refused) return "waiting";
   return own.status === "idle" ? "ask" : "busy";
 }
 
@@ -597,9 +475,6 @@ export const ago = (ms) => (ms < 90_000 ? `${Math.round(ms / 1000)}s` : ms < 90 
 const MIN = 60_000;
 const FLOORS = { typecheck: 5 * MIN, test: 20 * MIN, build: 10 * MIN, ext: 10 * MIN, replay: 30 * MIN, master: 10 * MIN };
 const NOTE_FRESH_MS = 15 * MIN;
-const ASK_GAP_MS = 10 * MIN;
-/** Note ids `reply` remembers per branch, so a batch piped again never counts twice. */
-const READ_NOTES_KEPT = 200;
 const DEFAULT_UNIT = "sova-runtime.service";
 const MANIFEST = ".sova/spec/manifest.json";
 const DRAFTS = ".sova/spec/drafts";
@@ -823,9 +698,14 @@ class Round {
     return parseBoard(text, this.now);
   }
 
-  /** The user's answers on Landing cards (Sova's `landing.json`). */
+  /** The user's answers: on Landing cards and typed in a branch's own chat (Sova's `landing.json`), and their word in
+   *  this chat (`go`), a go-ahead alike. */
   readLanding() {
-    try { return parseLanding(readFileSync(this.landingFile, "utf8")); } catch { return { goAheads: [], notYet: [] }; }
+    let l;
+    try { l = parseLanding(readFileSync(this.landingFile, "utf8")); } catch { l = { goAheads: [], notYet: [] }; }
+    for (const [branch, r] of Object.entries(this.state?.branches ?? {}))
+      if (r.go) l.goAheads.push({ branch, commit: r.go.head, at: new Date(r.go.at).toISOString(), by: "chat", withoutSpecs: !!r.go.withoutSpecs });
+    return l;
   }
 
   /** Sova's answer to one queue entry: {card} shown, {refused} not, or null while it hasn't read it. */
@@ -1030,10 +910,9 @@ class Round {
       if (f.temp) parts.push(`temporary commit: "${f.temp.slice(0, 60)}"`);
       parts.push(typeof conflicts === "number" ? (conflicts ? `conflicts with master in ${conflicts} file${conflicts === 1 ? "" : "s"}` : "merges cleanly") : conflicts);
       parts.push(`last commit ${ago(this.now - f.lastCommitAt)} ago`);
-      if (answer?.kind === "go-ahead") parts.push(`the user's go-ahead (${answer.by === "page" ? "Merge Branch" : "Land It"}) at ${(answer.at ?? head).slice(0, 7)}${answer.at ? `, carried to ${head.slice(0, 7)} over clean master merges` : ""}${answer.withoutSpecs ? ", without its specs" : ""}`);
+      if (answer?.kind === "go-ahead") parts.push(`the user's go-ahead (${goAheadWord(answer.by)}) at ${(answer.at ?? head).slice(0, 7)}${answer.at ? `, carried to ${head.slice(0, 7)} over clean master merges` : ""}${answer.withoutSpecs ? ", without its specs" : ""}`);
       else if (answer?.kind === "not-yet") parts.push(`the user said Not Yet at ${(answer.at ?? head).slice(0, 7)}: it waits for a new commit`);
       if (rec.ask?.queued) parts.push(`queued ${ago(this.now - rec.ask.at)} ago at ${rec.ask.head.slice(0, 7)}${rec.ask.head !== head ? " (the head moved since)" : queued ? (queued.refused ? `; Sova didn't show the card: ${queued.refused}` : `; Landing card shown in ${chatOf(rec, rec.ask.owner)}`) : "; Sova hasn't read the queue yet"}`);
-      else if (rec.ask) parts.push(`asked ${ago(this.now - rec.ask.at)} ago${rec.answer ? `, answer ${rec.answer.kind}${rec.answer.head ? ` at ${rec.answer.head.slice(0, 7)}` : ""}` : ", no answer"}`);
       if (rec.check) parts.push(`last check: ${rec.check.ok ? "landable" : "needs work"} at ${rec.check.head.slice(0, 7)}`);
       const restartNeeded = f.changed.some(needsRestart);
       if (restartNeeded) parts.push("landing needs a restart");
@@ -1042,7 +921,7 @@ class Round {
         state: row?.state ?? null, reason: row?.reason ?? null,
         owner: own?.owner ?? null, ownerStatus: own?.status ?? null, ownerFrom: own?.from ?? null,
         ahead: f.ahead, behind: f.behind, dirty: f.dirty.length, temp: !!f.temp, conflicts, lastCommitAgoMs: this.now - f.lastCommitAt,
-        ask: rec.ask ? { agoMs: this.now - rec.ask.at, answer: rec.answer?.kind ?? null, ...(rec.ask.queued ? { queued: queued ? (queued.refused ? { refused: queued.refused } : { card: queued.card }) : null } : {}) } : null, restartNeeded,
+        ask: rec.ask ? { agoMs: this.now - rec.ask.at, ...(rec.ask.queued ? { queued: queued ? (queued.refused ? { refused: queued.refused } : { card: queued.card }) : null } : {}) } : null, restartNeeded,
         landing: row?.landing ?? null, userAnswer: answer,
       });
     }
@@ -1083,26 +962,33 @@ class Round {
   async note() {
     const { branch } = await this.branchArg();
     const kv = Object.fromEntries(this.args.slice(2).map((a) => { const i = a.indexOf("="); return i > 0 ? [a.slice(0, i), a.slice(i + 1)] : [a, ""]; }));
-    const unknown = Object.keys(kv).filter((k) => !["owner", "chip", "idle", "source"].includes(k));
-    if (unknown.length) stop(2, `unknown field ${unknown[0]}: owner=, chip=, idle=, source= only.`);
+    const unknown = Object.keys(kv).filter((k) => !["owner", "idle"].includes(k));
+    if (unknown.length) stop(2, `unknown field ${unknown[0]}: owner=, idle= only (the user's word to land a branch is round.mjs go <branch>).`);
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(kv.owner ?? "")) stop(2, "owner=<session id> is required (the id session_detail shows).");
-    if (!["ready", "waiting", "none"].includes(kv.chip)) stop(2, "chip=ready|waiting|none is required.");
     if (!["yes", "no"].includes(kv.idle)) stop(2, "idle=yes|no is required.");
-    if (kv.source !== undefined && !/^[a-z][a-z0-9_-]{0,31}$/.test(kv.source)) stop(2, "source= takes one lowercase word (session_detail, user, overseer, message).");
     const st = this.loadState();
     const rec = (st.branches[branch] ??= {});
-    if (rec.owner && rec.owner !== kv.owner) { delete rec.ask; delete rec.answer; }
-    Object.assign(rec, { owner: kv.owner, chip: kv.chip, idle: kv.idle, notedAt: this.now }, kv.source ? { source: kv.source } : {});
+    if (rec.owner && rec.owner !== kv.owner) delete rec.ask;
+    Object.assign(rec, { owner: kv.owner, idle: kv.idle, notedAt: this.now });
     this.saveState();
-    const next = kv.chip === "waiting" ? `round.mjs ask ${branch} (waiting means ask the owner, never merge on the chip)` : kv.chip === "ready" ? `read the owner's latest messages, then round.mjs ask ${branch} or round.mjs check ${branch}` : `round.mjs ask ${branch} when unsure, if the owner is idle`;
-    return { exit: 0, lines: [`Noted ${branch}: owner ${kv.owner}, chip ${kv.chip}, ${kv.idle === "yes" ? "idle" : "busy"}.`], next };
+    return { exit: 0, lines: [`Noted ${branch}: owner ${kv.owner}, ${kv.idle === "yes" ? "idle" : "busy"}.`], next: "round.mjs status" };
+  }
+
+  /** The user's word in this chat to land a branch: their go-ahead at its head, read as a Land It (readLanding). */
+  async go() {
+    const { branch, head } = await this.branchArg();
+    const extra = this.args.slice(2);
+    if (extra.some((a) => a !== "without-specs")) stop(2, "usage: round.mjs go <branch> [without-specs]");
+    const st = this.loadState();
+    (st.branches[branch] ??= {}).go = { head, at: this.now, ...(extra.length ? { withoutSpecs: true } : {}) };
+    this.event("go", { branch, head });
+    this.saveState();
+    return { exit: 0, lines: [`The user's word: land ${branch} at ${head.slice(0, 7)}${extra.length ? ", without its specs" : ""}. It is their go-ahead, as Land It is.`], next: `round.mjs check ${branch}` };
   }
 
   async ask() {
     const { branch, head, tree } = await this.branchArg();
-    const kv = Object.fromEntries(this.args.slice(2).map((a) => { const i = a.indexOf("="); return i > 0 ? [a.slice(0, i), a.slice(i + 1)] : [a, ""]; }));
-    const unknown = Object.keys(kv).filter((k) => k !== "topic");
-    if (unknown.length) stop(2, `Unknown: ${unknown.join(", ")}.`);
+    if (this.args.length > 2) stop(2, "usage: round.mjs ask <branch>");
     const st = this.loadState();
     // The board's reading first: it may be newer than any note (§chat.merge-round/driver).
     const read = this.readBoard();
@@ -1111,84 +997,23 @@ class Round {
     const rec = st.branches[branch] ?? {};
     const own = ownerOf(rec);
     if (!own) stop(1, `No owner known for ${branch}: ${read.ok ? (read.board.pending ? "Sova hasn't read every session yet" : "no session tracks its worktree, so it is the user's call") : `owners are unknown (${read.why})`}.`, read.ok && !read.board.pending ? "tell the user once; land it only on their word" : "round.mjs status on a later round");
-    if (own.status === "archived") stop(1, `${own.owner} is archived: it can't answer, so ${branch} is the user's call.`, "tell the user once; land it only on their word");
+    if (own.status === "archived") stop(1, `${own.owner} is archived: no card can reach it, so ${branch} is the user's call.`, "tell the user once; land it only on their word");
     if (own.status !== "idle") stop(1, `${own.owner} was busy when last read: never ask a busy session. Try next round.`, "the next branch");
     if (this.now - own.at > NOTE_FRESH_MS) stop(1, `The newest reading of ${own.owner} on ${branch} is ${ago(this.now - own.at)} old: run round.mjs status again (Sova rewrites its board every minute), or note it by hand.`, "round.mjs status");
     // Ready to land at this head: queued, and Sova shows the owner the Landing card itself (§chat.offers/sova-landing).
     const prior = rec.ask?.queued && rec.ask.head === head ? this.queueResult(rec.ask.queued) : null;
-    if (landingEligible(row, head) && rec.source !== "user" && !prior?.refused) {
-      if (rec.ask?.queued && rec.ask.head === head) stop(1, `${branch} is already queued at ${head.slice(0, 7)}${prior ? `: its Landing card is shown in ${chatOf(rec, rec.ask.owner)}` : ""}. Land It's message arrives by itself.`, "the next branch");
-      const captain = this.sessionId();
-      const id = `lq_${head.slice(0, 12)}_${this.now.toString(36)}`;
-      this.enqueue({ id, branch, path: tree, head, owner: own.owner, captain, at: this.now });
-      st.branches[branch] = rec;
-      rec.ask = { at: this.now, owner: own.owner, head, queued: id };
-      delete rec.answer;
-      this.event("queued", { branch, owner: own.owner });
-      this.saveState();
-      const specs = row.landing.state === "specs" ? ` Its spec drafts can't land (${row.landing.specsWhy}): the card offers Merge Without Specs….` : "";
-      return { exit: 0, lines: [`Queued ${branch} at ${head.slice(0, 7)}: Sova shows the Landing card in ${chatOf(rec, own.owner)}.${specs}`], data: { owner: own.owner, queued: id }, next: "don't poll: the user's Land It reaches you as a message; round.mjs status says whether the card was shown" };
-    }
-    if (!TOPIC_NAME_RE.test(kv.topic ?? "")) stop(2, "topic=<name> is required: the name queue_open gave this round's topic (queue_open merge).");
-    const topic = kv.topic;
-    for (const [b, r] of Object.entries(st.branches)) {
-      if (r.ask?.owner === own.owner && !r.ask.queued && this.now - r.ask.at < ASK_GAP_MS) stop(1, `${own.owner} was asked about ${b} ${ago(this.now - r.ask.at)} ago: wait for its answer on the topic first.`, `pipe the delivered batch into round.mjs reply ${b}`);
-    }
+    if (prior?.refused) stop(1, `Sova didn't show ${branch}'s Landing card at ${head.slice(0, 7)}: ${prior.refused}.`, "tell the user once that it lands on their word, \"land it\" typed in its own chat or \"land <branch>\" here (round.mjs go); never to press a card");
+    if (!landingEligible(row, head)) stop(1, `${branch} isn't Ready to land at ${head.slice(0, 7)}: nothing to queue.`, "the next branch");
+    if (rec.ask?.queued && rec.ask.head === head) stop(1, `${branch} is already queued at ${head.slice(0, 7)}${prior ? `: its Landing card is shown in ${chatOf(rec, rec.ask.owner)}` : ""}. The user's Land It, or their \"land it\" typed there, reaches you by itself.`, "the next branch");
+    const captain = this.sessionId();
+    const id = `lq_${head.slice(0, 12)}_${this.now.toString(36)}`;
+    this.enqueue({ id, branch, path: tree, head, owner: own.owner, captain, at: this.now });
     st.branches[branch] = rec;
-    rec.ask = { at: this.now, owner: own.owner, head, topic };
-    delete rec.answer;
-    this.event("asked", { branch, owner: own.owner });
+    rec.ask = { at: this.now, owner: own.owner, head, queued: id };
+    this.event("queued", { branch, owner: own.owner });
     this.saveState();
-    // Drafts not confirmed promoted are named, for the owner to promote first: a READY with them left is handed back.
-    const text = askText(branch, topic, await this.unpromoted(tree, { unreadable: true }));
-    return { exit: 0, lines: [`session_send to ${own.owner}:`, text], data: { owner: own.owner, topic, text }, next: `don't poll: the answer arrives as a "${topic}" batch when your turn ends or you are idle; pipe that batch into \`round.mjs reply ${branch}\`` };
-  }
-
-  async reply() {
-    const { branch, head, tree } = await this.branchArg();
-    const st = this.loadState();
-    const rec = st.branches[branch];
-    // The owner the ask went to answers it; with no ask, whoever owns the branch now.
-    const owner = rec?.ask?.owner ?? ownerOf(rec)?.owner;
-    if (!owner) stop(1, `No owner known for ${branch}.`, "round.mjs status");
-    if (process.stdin.isTTY) stop(2, "Pipe the delivered topic batch (or the owner's session_read output) into stdin.");
-    const chunks = [];
-    for await (const c of process.stdin) chunks.push(c);
-    const r = replyOf(Buffer.concat(chunks).toString("utf8"), {
-      branch,
-      head,
-      owner,
-      topic: rec.ask?.topic,
-      askedAt: rec.ask?.at,
-      since: rec.answer?.noteAt,
-      read: rec.readNotes ?? [],
-    });
-    const a = r.answer;
-    if (a.kind === "no-ask") stop(2, `No ask about ${branch} is recorded, so no batch answers one: ask first.`, `round.mjs ask ${branch} topic=<name>`);
-    if (a.kind === "wrong-topic") stop(2, `That batch is on "${a.topic}", not this ask's topic "${rec.ask?.topic}".`);
-    if (a.kind === "wrong-session") stop(2, `That isn't a topic batch or ${owner}'s session_read output (the header names another session, or none).`);
-    // The owner's notes read here never count again (a batch piped twice, a reused topic).
-    if (r.read.length) {
-      rec.readNotes = [...(rec.readNotes ?? []), ...r.read].slice(-READ_NOTES_KEPT);
-      this.saveState();
-    }
-    if (a.kind === "old") return { exit: 1, lines: [`Nothing new from ${owner} about ${branch}: its notes there were read already, or predate this ask or its recorded answer.`], next: "wait for the next batch on the topic, or ask again on a later round" };
-    if (a.kind === "none") return { exit: 1, lines: [`No answer yet from ${owner} about ${branch}.`], next: "wait for the next batch on the topic, or ask again on a later round" };
-    if (a.kind === "stale") return { exit: 1, lines: [`Stale: ${owner} answered READY at ${a.sha}, but ${branch} is at ${head.slice(0, 7)}.`], next: `ask again on a later round (round.mjs ask ${branch})` };
-    const noteAt = r.noteAt !== undefined ? { noteAt: r.noteAt } : {};
-    // Docs land with the code: a READY while drafts aren't confirmed promoted goes back to the owner.
-    const left = a.kind === "ready" ? await this.unpromoted(tree, { unreadable: true }) : [];
-    if (left.length) {
-      rec.answer = { kind: "not-ready", why: `handed back: docs not promoted (${left.map((d) => d.name).join(", ")})`, handedBack: true, head, at: this.now, ...noteAt };
-      this.event("answer", { branch, owner, answer: "handed-back" });
-      this.saveState();
-      return { exit: 1, lines: [`${owner}: READY ${branch} at ${head.slice(0, 7)}, but its spec drafts aren't promoted: handed back.`, `session_send to ${owner}:`, handBackText(branch, left, rec.ask?.topic)], next: "send the hand-back; the branch lands only after its owner promotes and answers READY again at the new head" };
-    }
-    rec.answer = a.kind === "ready" ? { kind: "ready", head, at: this.now, ...noteAt } : { kind: "not-ready", why: a.why, head, at: this.now, ...noteAt };
-    this.event("answer", { branch, owner, answer: a.kind });
-    this.saveState();
-    if (a.kind === "ready") return { exit: 0, lines: [`${owner}: READY ${branch} at ${head.slice(0, 7)} (its current head).`], next: `round.mjs check ${branch}` };
-    return { exit: 1, lines: [`${owner}: NOT READY: ${a.why}`], next: "leave it queued and say why in the report" };
+    const specs = row.landing.state === "specs" ? ` Its spec drafts can't land (${row.landing.specsWhy}): the card offers Merge Without Specs….` : "";
+    return { exit: 0, lines: [`Queued ${branch} at ${head.slice(0, 7)}: Sova shows the Landing card in ${chatOf(rec, own.owner)}.${specs}`], data: { owner: own.owner, queued: id }, next: "don't poll: the user's Land It reaches you as a message, and their \"land it\" typed in that chat as a merge-ready wake; round.mjs status says whether the card was shown" };
   }
 
   // Master's record layout (1 or 2), from its committed manifest.json settings.
@@ -1258,11 +1083,10 @@ class Round {
           if (ab.code !== 0) stop(2, `git merge --abort failed in ${tree}: ${firstLine(ab)}`);
           const rec = (st.branches[branch] ??= {});
           rec.check = { head: before, masterSha: master, ok: false, needs: ["spec conflict with master: handed back"], flaky: [], preexisting: [], at: this.now };
-          rec.answer = { kind: "not-ready", why: "handed back: spec conflict with master", handedBack: true, head: before, at: this.now, ...(rec.answer?.noteAt !== undefined ? { noteAt: rec.answer.noteAt } : {}) };
           this.event("check", { branch, head: before, ok: false });
           this.saveState();
           const who = rec.ask?.owner ?? ownerOf(rec)?.owner;
-          return { exit: 1, lines: [...lines, `Merging master into ${branch} conflicts in the spec (${spec.join(", ")}): the merge was aborted, so ${tree} is as it was. Handed back: its owner merges master in and promotes again on top.`, who ? `session_send to ${who}:` : "For its owner (none known: the user's call):", specConflictText(branch, spec, rec.ask?.topic, spec.some(isRecordFile) || (await this.masterLayout()) === 2 ? 2 : 1)], next: who ? "send the hand-back (only when the owner is idle); check again once it answers READY at a new head" : "tell the user: no owner is known to re-promote it" };
+          return { exit: 1, lines: [...lines, `Merging master into ${branch} conflicts in the spec (${spec.join(", ")}): the merge was aborted, so ${tree} is as it was. Handed back: its owner merges master in and promotes again on top.`, who ? `session_send to ${who}:` : "For its owner (none known: the user's call):", specConflictText(branch, spec, spec.some(isRecordFile) || (await this.masterLayout()) === 2 ? 2 : 1)], next: who ? "send the hand-back (only when the owner is idle); check again once it shows Ready to land at a new head" : "tell the user: no owner is known to re-promote it" };
         }
         if (conflicted.length) {
           return { exit: 1, lines: [...lines, `Merging master into ${branch} conflicts in ${conflicted.length} file${conflicted.length === 1 ? "" : "s"}: ${conflicted.slice(0, 5).join(", ")}${conflicted.length > 5 ? ` and ${conflicted.length - 5} more` : ""}.`, `They're left in ${tree} for you; if one isn't clear-cut, ask the owner.`], next: `resolve, commit in ${tree}, then round.mjs check ${branch}` };
@@ -1422,8 +1246,7 @@ class Round {
     rec.check = { head, masterSha: master, ok, needs, flaky, preexisting, at: this.now, logs: logDir };
     if (left.length) {
       const who = rec.ask?.owner ?? ownerOf(rec)?.owner;
-      if (rec.answer?.kind === "ready" && rec.answer.head === head) rec.answer = { ...rec.answer, kind: "not-ready", why: "handed back: docs not promoted", handedBack: true };
-      lines.push(who ? `Hand-back, session_send to ${who}:` : "Hand-back, for its owner (none known: the user's call):", handBackText(branch, left, rec.ask?.topic));
+      lines.push(who ? `Hand-back, session_send to ${who}:` : "Hand-back, for its owner (none known: the user's call):", handBackText(branch, left));
     }
     this.event("check", { branch, head, ok });
     this.saveState();
@@ -1492,9 +1315,8 @@ class Round {
     return { lines, statuses };
   }
 
-  /** Each draft in `tree`, by name, with the ids the draft tool's `drafts` reading says aren't promoted
-   *  yet: pending, or in conflict (never promoted by the draft, or promoted before and now said
-   *  differently in the tree) (null: unreadable). */
+  /** Each draft in `tree`, by name, with what isn't official by the draft tool's one verdict (`official`, from
+   *  core/official.mjs, the one Sova's readiness calls): [] when official, its ids otherwise (null: unreadable). */
   async draftStatuses(tree) {
     if (!tree) return [];
     let drafts = [];
@@ -1510,17 +1332,16 @@ class Round {
     } catch {}
     return drafts.map((name) => {
       const row = rows?.find((d) => d?.name === name);
-      if (!row || row.state === "unreadable" || !Array.isArray(row.pending)) return { name, pending: null };
-      // A § the draft promoted before that the tree now says differently (a branch that took master's spec in a
-      // conflict and never promoted again) is not promoted: the draft's text isn't what lands.
-      const list = (k) => (Array.isArray(row[k]) ? row[k] : []);
-      return { name, pending: [...row.pending, ...list("conflict"), ...list("promotedConflict")].map((id) => (typeof id === "string" ? id : "?")) };
+      if (!row || row.state === "unreadable" || typeof row.official !== "boolean") return { name, pending: null };
+      if (row.official) return { name, pending: [] };
+      const ids = [row.pending, row.conflict, row.promotedConflict].flatMap((l) => (Array.isArray(l) ? l : [])).map((id) => (typeof id === "string" ? id : "?"));
+      return { name, pending: ids.length ? ids : ["(outside any §)"] };
     });
   }
 
   /** The drafts in `tree` with records not yet promoted, as [{ name, ids }]; with `unreadable`, also
    *  those whose status can't be read (ids null): every draft not confirmed promoted. */
-  async unpromoted(tree, { unreadable = false } = {}) {
+  async unofficialDrafts(tree, { unreadable = false } = {}) {
     return (await this.draftStatuses(tree)).filter((d) => d.pending?.length || (unreadable && d.pending === null)).map((d) => ({ name: d.name, ids: d.pending }));
   }
 
@@ -1542,9 +1363,8 @@ class Round {
     if (scan.code === 1) return { exit: 1, lines: [...scan.lines, `Land nothing: ${branch} carries a leak-scan hit in commits origin/master doesn't have.`], next: "report the commit, file and line to the owner and the user; scrubbing unpushed commits is the user's call, case by case" };
     const path = homeShown(tree);
     const call = `worktree ${JSON.stringify({ action: "merge", path })}`;
-    const who = rec.ask?.owner ?? ownerOf(rec)?.owner;
     const go = await this.answerAt(this.readLanding(), branch, head);
-    const owner = go?.kind === "go-ahead" ? `The user's ${go.by === "page" ? "Merge Branch" : "Land It"} at ${(go.at ?? head).slice(0, 7)}.` : rec.answer?.kind === "ready" ? `Owner ${who} said READY at ${rec.answer.head.slice(0, 7)}.` : who ? `No READY recorded from ${who}: land only if the owner has said it's ready.` : "No owner known: never land it without the user's OK.";
+    const owner = go?.kind === "go-ahead" ? `The user's ${goAheadWord(go.by)} at ${(go.at ?? head).slice(0, 7)}.` : "No go-ahead recorded at this head: land it only on the user's word (Land It, \"land it\" typed in its own chat, or round.mjs go).";
     if (go?.kind === "not-yet") stop(1, `The user said Not Yet to ${branch} at ${(go.at ?? head).slice(0, 7)}: it waits for a new commit.`, "round.mjs status");
     const scanned = scan.code === 0 ? [] : [...scan.lines, "The leak scan couldn't run here: push scans again."];
     return { exit: 0, lines: [`landable at ${head.slice(0, 7)} on master ${master.slice(0, 7)} (checked ${ago(this.now - c.at)} ago).`, ...scanned, owner, `call: ${call}`], data: { call: { action: "merge", path } }, next: `after the merge card, round.mjs landed ${branch}` };
@@ -1597,25 +1417,27 @@ class Round {
       restartLine,
       restart ? "A restart is needed: round.mjs restart-check." : "No restart needed: only the build.",
     ];
-    // Removing the worktree deletes its drafts (local files): a copy of each unpromoted one is kept first.
-    const drafts = await this.unpromoted(tree, { unreadable: true });
+    // Earlier landings' copies first, so this one's stays until a later landing finds it official in master.
+    lines.push(...(await this.pruneKept(main)));
+    // Removing the worktree deletes its drafts (local files): the whole drafts folder is copied once first.
+    const drafts = await this.unofficialDrafts(tree, { unreadable: true });
     let kept = null;
     let keptWhy = null;
-    if (drafts.length) {
-      const dest = join(this.dir, "drafts", head);
+    if (tree && existsSync(join(tree, DRAFTS))) {
       try {
-        for (const { name } of drafts) cpSync(join(tree, DRAFTS, name), join(dest, name), { recursive: true, force: true });
-        kept = dest;
+        cpSync(join(tree, DRAFTS), join(this.dir, "drafts", head), { recursive: true, force: true });
+        kept = join(this.dir, "drafts", head);
       } catch (e) {
         keptWhy = e.code ?? "copy failed";
       }
     }
     const clean = keptWhy
-      ? { why: `its unpromoted drafts couldn't be kept (${keptWhy}), and removing it would delete them: leave it, and say so in the report.` }
+      ? { why: `its drafts couldn't be kept (${keptWhy}), and removing it would delete them: leave it, and say so in the report.` }
       : await this.cleanUp(main, branch, tree);
     if (clean.why) lines.push(`Clean up: ${clean.why}`);
-    if (kept) lines.push(`Unpromoted drafts kept at ${kept}/: ${drafts.map((d) => d.name).join(", ")}.`);
-    lines.push(...(await this.pruneKept(main)));
+    if (kept && drafts.length) lines.push(`Unpromoted drafts kept at ${kept}/: ${drafts.map((d) => d.name).join(", ")}.`);
+    // At landing, after its check passed: the drafts already official leave the worktree (the copy above kept).
+    if (kept && rec.check?.ok && rec.check.head === head) lines.push(...(await this.tidyOfficial(tree, kept)));
     const who = rec.ask?.owner ?? ownerOf(rec)?.owner;
     if (who) {
       lines.push(`session_send to ${who}, after the clean up:`, landedText(branch, master, drafts, kept ?? join(tree, DRAFTS)));
@@ -1625,6 +1447,15 @@ class Round {
       ? `clean up from the main checkout, exactly: ${clean.commands[0]} (never --force), then ${clean.commands[1]}; report git's refusal as printed, never retry or force it; then round.mjs push`
       : "round.mjs push";
     return { exit: b.code === 0 ? 0 : 1, lines, data: { sha: master, restart, ...(clean.commands ? { cleanUp: clean.commands } : {}) }, next };
+  }
+
+  /** The drafts the draft tool confirms official deleted from the worktree (`prune --official --write`); `kept` holds their copy. */
+  async tidyOfficial(tree, kept) {
+    if (!existsSync(join(this.specCore, "sova-spec-draft.mjs"))) return [];
+    const r = await run(process.execPath, [join(this.specCore, "sova-spec-draft.mjs"), "prune", "--official", "--write", "--root", tree, "--json"], { cwd: tree, timeoutMs: 300_000 });
+    let gone = null;
+    try { gone = JSON.parse(r.stdout).deleted.map((d) => d.name); } catch {}
+    return [gone ? `Official drafts tidied out of the worktree (a copy at ${kept}/): ${gone.join(", ") || "none"}.` : `Official drafts: the prune failed, so none was deleted (a copy at ${kept}/).`];
   }
 
   /** Copies kept by earlier landings that the draft tool confirms are already official in master's spec are
@@ -1726,18 +1557,18 @@ class Round {
     lines.push(`- For you, once (no live owner, so no Landing card): ${forUser.map((b) => `${b.branch} (${b.group === "archived" ? "owner archived" : "no session tracks this worktree"}: say "land ${b.branch}" here to land it)`).join(", ") || "nothing new"}`);
     // A card Sova showed is named by its chat, with a link, never as "its card is shown" alone.
     const waiting = st.lastStatus?.waiting ?? [];
-    if (waiting.length) lines.push(`- Waiting for your Land It: ${waiting.map((b) => `${b.branch} at ${b.head.slice(0, 7)} in ${b.chat}`).join(", ")}`);
-    lines.push(`- Owners asked: ${of("asked").map((e) => { const a = ev.find((x) => x.kind === "answer" && x.branch === e.branch && x.at >= e.at); return `${e.owner} about ${e.branch}: ${a ? a.answer : "no answer yet"}`; }).join(" · ") || "none"}`);
+    if (waiting.length) lines.push(`- Waiting for your Land It (or "land it" typed there): ${waiting.map((b) => `${b.branch} at ${b.head.slice(0, 7)} in ${b.chat}`).join(", ")}`);
+    lines.push(`- Queued for a Landing card: ${of("queued").map((e) => `${e.branch} (${e.owner})`).join(" · ") || "none"}`);
     lines.push("- Handed back: (fill in: branch, owner, why)");
     if (sess.firstRound) lines.push("- Settings: (fill in the kinds and counts discover-names.mjs printed, and any names it says origin already has, masked as printed)");
     this.saveState();
-    const quiet = !sess.firstRound && !sess.hold && !st.restart?.pending && !forUser.length && st.lastStatus?.board && st.lastStatus.at >= since && !["landed", "pushed", "push-refused", "check", "asked", "answer"].some((k) => of(k).length);
+    const quiet = !sess.firstRound && !sess.hold && !st.restart?.pending && !forUser.length && st.lastStatus?.board && st.lastStatus.at >= since && !["landed", "pushed", "push-refused", "check", "queued"].some((k) => of(k).length);
     if (quiet) return { exit: 0, lines: ["Nothing new on the merge board."], next: "report exactly that one line, unless something was handed back; end the turn" };
     return { exit: 0, lines, next: "end the turn" };
   }
 }
 
-const COMMANDS = { start: "start", "names-answered": "namesAnswered", status: "status", note: "note", ask: "ask", reply: "reply", check: "check", land: "land", landed: "landed", push: "push", "restart-check": "restartCheck", report: "report" };
+const COMMANDS = { start: "start", "names-answered": "namesAnswered", status: "status", note: "note", go: "go", ask: "ask", check: "check", land: "land", landed: "landed", push: "push", "restart-check": "restartCheck", report: "report" };
 
 export async function main(argv = process.argv.slice(2)) {
   let round;

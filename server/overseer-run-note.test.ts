@@ -252,6 +252,10 @@ describe("the sessions in play (§app.overseer/sessions-in-play)", async () => {
     const r = { trees: [{ path: "/a", branch: "feat/a", state: "merged" }, { path: "/b", branch: "feat/b", state: "in-progress" }], badge: "restart", branch: "feat/a", since: 0 } as never;
     assert.deepEqual(branchLabels(r), ["branch feat/a (merged, restart pending)", "branch feat/b (in-progress)"]);
     assert.deepEqual(branchLabels(undefined), []);
+    // A landing is said in its own words, whatever the badge (§chat.worktrees/ready-to-land).
+    const c = "c".repeat(40);
+    const landing = { trees: [{ path: "/a", branch: "feat/a", state: "waiting-approval", landing: { state: "ready", commit: c } }, { path: "/b", branch: "feat/b", state: "ready", landing: { state: "specs", commit: c, drafts: ["d"] } }], badge: "waiting", branch: "feat/a", since: 0 } as never;
+    assert.deepEqual(branchLabels(landing), ["branch feat/a (ready to land)", "branch feat/b (landing specs)"]);
   });
 
   test("each row: link, id, state, branches, when prompted, the last brief; a gone session says so; nothing in play writes nothing", () => {

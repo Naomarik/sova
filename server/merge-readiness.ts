@@ -11,8 +11,8 @@ import { canonical, normalizeMergeDetails, type TrackedWorktree, WORKTREE_MERGE_
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { asksUserOf } from "./signals-store";
 import { isCaptain } from "./merge-board";
-import { unpromotedDraftNames, unpromotedDrafts } from "./spec-drafts-state";
-import { blockedNoteText, type Finished, fileLandingStore, finishedOf, type LandingBlocker, landingBlockers, landingOf, type LandingStore, specsNudgeText, specsWhyOf } from "./ready-to-land";
+import { unofficialDrafts } from "./spec-drafts-state";
+import { blockedNoteText, type Finished, fileLandingStore, finishedOf, type LandingBlocker, landingBlockers, landingOf, landingReason, type LandingStore, specsNudgeText, specsWhyOf } from "./ready-to-land";
 import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
 import { WORKTREES } from "./harness/state-kinds";
@@ -175,6 +175,9 @@ function treeState(t: TreeFacts, s: SessionFacts): { state: ReadinessState; why?
   return s.asks ? { state: "waiting-approval", why } : { state: "ready", why };
 }
 
+/** A merged tree whose drafts aren't official: never plain Merged (§chat.worktrees/readiness). */
+export const lostDraftsReason = (n: number): string => `Nothing left to land, but its spec drafts didn't make it · ${n} draft${n === 1 ? "" : "s"}`;
+
 const TEMP_RE = /^(?:temp|wip)\b|^(?:fixup|squash|amend)!/i;
 /** The newest temporary commit subject, if any. */
 export const tempCommitOf = (subjects: readonly string[]): string | undefined => subjects.find((s) => TEMP_RE.test(s.trim()));
@@ -244,8 +247,10 @@ export function readinessItems(s: SessionSummary): { tier: AttentionTier; kind: 
   if (!r || s.archived) return [];
   const running = s.busy || s.activity?.state === "working";
   const out: { tier: AttentionTier; kind: AttentionKind; since: number; detail: string }[] = [];
-  if ((r.badge === "waiting" || r.badge === "ready") && r.branch && !running)
-    out.push({ tier: "decide", kind: "ready-to-merge", since: r.since, detail: `${r.badge === "waiting" ? "Waiting for your OK" : "Ready to merge"}: ${r.branch}` });
+  // The landing's own word when the branch has one (§chat.worktrees/ready-to-land), as every reader writes it.
+  const landing = r.trees.find((t) => t.branch === r.branch)?.landing?.state;
+  const word = landing ? (landing === "ready" ? "Ready to land" : "Landing specs") : r.badge === "waiting" ? "Waiting for your OK" : "Ready to merge";
+  if ((r.badge === "waiting" || r.badge === "ready") && r.branch && !running) out.push({ tier: "decide", kind: "ready-to-merge", since: r.since, detail: `${word}: ${r.branch}` });
   if (r.followUp?.weight === "significant") out.push({ tier: "decide", kind: "merged-open-work", since: r.since, detail: `Merged with open work: ${r.followUp.cue}` });
   return out;
 }
@@ -508,7 +513,7 @@ const defaultDeps = (): ReadinessDeps => ({
   treeStamp: (dir) => worktreeInsights.quietStamp(dir),
   inputsStamp: gitInputsStamp,
   finished: finishedOf,
-  drafts: (dir) => unpromotedDraftNames(dir),
+  drafts: (dir) => unofficialDrafts(dir),
   landing: fileLandingStore(),
   nudge: async (path, text) => (await import("./session-offers")).sendToSession(path, text),
   landingOffered: async (dir) => {
@@ -638,11 +643,12 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
     if (tf.headAt) heads[t.path] = tf.headAt;
     const r = treeReadiness(tf, sf);
     let landing: WorktreeReadiness["landing"];
+    // Drafts that aren't official: a landing's, or a merged tree's that didn't make it (§chat.worktrees/readiness).
+    const drafts = tf.readable && (landingOn || tf.merged) ? deps.drafts(t.path) : undefined;
     if (landingOn) {
       const held = deps.landing.held(s.id, t.path);
       const heldHere = !!held && held.commit === tf.head;
-      const drafts = tf.readable && !tf.merged ? deps.drafts(t.path) : undefined;
-      landing = landingOf(tf, sf, finished, heldHere, drafts, specsWhy);
+      landing = landingOf(tf, r.state, finished, heldHere, drafts, specsWhy);
       // Finished but not Ready to land: what the session can fix, for Sova's once-per-commit note.
       if (!landing && finished === "yes" && tf.head) {
         const blockers = landingBlockers(tf, sf, drafts);
@@ -659,7 +665,8 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
       state: r.state,
       ...((tf.readable ? tf.merged : tf.gone !== "unmerged" && (tf.tracked === "merged" || tf.gone === "merged")) ? { merged: true as const } : {}),
       ...(r.why ? { why: r.why } : {}),
-      reason: r.reason,
+      // One word wherever the reason is written (§chat.worktrees/ready-to-land).
+      reason: landing ? landingReason(landing, tf.ahead) : r.state === "merged" && drafts?.length ? lostDraftsReason(drafts.length) : r.reason,
       ...(tf.dirty && tf.dirtyCount ? { dirtyCount: tf.dirtyCount, dirtyFiles: tf.dirtyFiles ?? [] } : {}),
       ...(tf.conflicts ? { conflicts: tf.conflicts } : {}),
       ...(hasNoCommits(tf) ? { noCommits: true as const } : {}),
@@ -686,7 +693,7 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
   const r = sessionReadinessOf(trees, { ...(newest ? { lastMerge: { at: newest.at, branch: newest.branch } } : {}), restartPending, pushPending, followUp }, lastReplyAt);
   if (!r || !newest) return r;
   // The branch status line (§chat.worktrees/readiness): code only, for the newest merge.
-  const drafts = newest.path && existsSync(newest.path) ? unpromotedDrafts(newest.path) : undefined;
+  const drafts = newest.path && existsSync(newest.path) ? unofficialDrafts(newest.path)?.length : undefined;
   const status: BranchStatus = {
     branch: newest.branch,
     commit: newest.sha.slice(0, 7),

@@ -1,7 +1,7 @@
 // Run through tests/run.mjs (pi imports resolve from the installed package).
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -310,6 +310,51 @@ test("no merge guard: a session that isn't the captain merges into master with n
 		const out = await f.call(c, { action: "merge", path: t });
 		assert.match(out.content[0].text, /^Merged feat\/g into master/);
 		assert.equal(sh(r.main, "rev-parse", "master"), head, "master is the branch's head");
+	} finally {
+		r.done();
+	}
+});
+
+test("land records the user's go-ahead typed in this chat for the branch at its head, and only then", async () => {
+	const r = repo();
+	try {
+		const file = join(r.root, "state", "landing.json");
+		const f = fakePi();
+		worktrees(f.pi, { landingFile: () => file, now: () => Date.parse("2026-10-26T10:00:00Z") });
+		const tree = join(r.root, "wt-x");
+		sh(r.main, "worktree", "add", "-q", "-b", "feat/x", tree);
+		writeFileSync(join(tree, "b.txt"), "two\n");
+		sh(tree, "add", "b.txt");
+		sh(tree, "commit", "-q", "-m", "two");
+		const head = sh(tree, "rev-parse", "HEAD");
+		const c = f.ctx(tree); // the session runs in the worktree: it needn't track it
+		await f.fire("session_start", c);
+		const say = (text: string) => f.entries.push({ type: "message", message: { role: "user", content: [{ type: "text", text }] } } as never);
+		const recorded = () => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).goAheads : []);
+		// Not the user's word: refused, nothing recorded.
+		say("Sova: feat/x is finished. Once nothing blocks it, the user can type \"land it\" here.");
+		await assert.rejects(f.call(c, { action: "land" }), /Only the user's own word lands a branch/);
+		say("don't merge it yet");
+		await assert.rejects(f.call(c, { action: "land" }), /Only the user's own word/);
+		assert.deepEqual(recorded(), []);
+		// Their word, but something is uncommitted: the go-ahead is for a commit.
+		say("land it");
+		writeFileSync(join(tree, "c.txt"), "loose\n");
+		await assert.rejects(f.call(c, { action: "land" }), /1 uncommitted file: the go-ahead is for a commit/);
+		assert.deepEqual(recorded(), []);
+		rmSync(join(tree, "c.txt"));
+		const out = await f.call(c, { action: "land" });
+		assert.match(out.content[0].text, /Recorded the user's go-ahead to land feat\/x at [0-9a-f]{7}\. The merge captain checks it and lands it once its checks pass/);
+		assert.doesNotMatch(out.content[0].text, /press|Land It/);
+		assert.deepEqual(recorded(), [{ branch: "feat/x", commit: head, session: "s1", at: "2026-10-26T10:00:00.000Z", by: "owner-chat" }]);
+		// Without its specs, as the user said; by its branch name once tracked.
+		await f.call(c, { action: "attach", path: tree });
+		say("ok, merge it without its specs");
+		await f.call(c, { action: "land", path: "feat/x" });
+		assert.equal(recorded().at(-1).withoutSpecs, true);
+		// The branch everything lands into has nothing to land.
+		say("land it");
+		await assert.rejects(f.call(f.ctx(r.main), { action: "land" }), /on master, which branches land into/);
 	} finally {
 		r.done();
 	}

@@ -3725,9 +3725,9 @@ export type SovaConfirmItem =
 /** Who started a copy, as its card row shows it. */
 export type CopyStarter = { kind: "session"; id: string; title: string } | { kind: "operator" | "overseer" | "conform" | "other"; label: string };
 
-/** Why a process holding a copy port is a leftover: its folder is deleted or missing, it runs outside any git
-    checkout, or its branch is already merged into the main checkout's. */
-export type LeftoverReason = "folder-gone" | "not-a-checkout" | "branch-on-main";
+/** Why a process holding a copy port is a leftover: its folder is deleted or missing, or its branch's own commits are
+    already merged into the main checkout's. */
+export type LeftoverReason = "folder-gone" | "branch-on-main";
 
 /** The longest note one confirm item may carry. */
 export const CONFIRM_NOTE_MAX = 220;

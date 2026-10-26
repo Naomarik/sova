@@ -792,7 +792,7 @@ export function normalizeCardItem(v: unknown): CardItem | undefined {
     }
     case "leftover":
       if (!nonEmpty(v.project) || !nonEmpty(v.projectName) || !count(v.slot) || !count(v.port) || !count(v.pid) || !nonEmpty(v.start) || !str(v.command) || !nonEmpty(v.folder)) return undefined;
-      if (v.reason !== "folder-gone" && v.reason !== "not-a-checkout" && v.reason !== "branch-on-main") return undefined;
+      if (v.reason !== "folder-gone" && v.reason !== "branch-on-main") return undefined;
       if (v.unit !== undefined && !nonEmpty(v.unit)) return undefined;
       base = {
         kind: "leftover",
@@ -1024,7 +1024,6 @@ const copyFacts = (it: Extract<SovaConfirmItem, { kind: "copy" }>): string =>
 /** Why a leftover process may be stopped, in words (the card row and the model's echo). */
 export const LEFTOVER_REASON_TEXT: Record<LeftoverReason, string> = {
   "folder-gone": "its folder was deleted",
-  "not-a-checkout": "it runs outside any git checkout",
   "branch-on-main": "its branch is already merged into the main checkout's",
 };
 

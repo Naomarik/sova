@@ -79,7 +79,7 @@ export interface CopyVerbs {
 }
 
 const COPIES_HELP =
-  " leftovers {project} lists each process holding one of the project's copy ports (slots 1 to 16) that no copy of Sova's owns: safe to stop (its folder was deleted, it runs outside any git checkout, or its branch is already merged) or in use, with why. " +
+  " leftovers {project} lists each process holding one of the project's copy ports (slots 1 to 16) that no copy of Sova's owns: safe to stop (its folder was deleted, or its branch's own commits are already merged) or in use, with why. " +
   "In the turn the user's click on a sova_card card opens, and only for a row whose chosen label names the act: teardown or reset of a copy you did not start (items.copies), down or teardown of a copy with share links (its row shows them), and stop-leftover {project, port} of a leftover process (items.leftovers; Sova checks it is still the same process). A typed yes never counts. A teardown keeps a folder's uncommitted edits in that folder (its worktree step says kept): tell them so. A project's main copy (slot 0) and stopping a shared service are never yours.";
 
 const ONBOARD_HELP =

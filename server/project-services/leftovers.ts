@@ -12,10 +12,10 @@ import { locksDir, readRegistry, tryLock, type Registry } from "./store";
 /**
  * Leftover processes (§app.overseer/copies): a process that listens on one of a project's copy ports
  * (slots 1 to 16, as the main checkout's definition numbers them) and that no copy of Sova's owns. One
- * whose folder is deleted or missing, that runs outside any git checkout, or that runs in a worktree of
- * the project whose commit the main checkout's branch already holds is safe to stop; anything else is in
- * use. Never offered, whatever its folder: Sova's own server and its children, `sova-runtime.service`, a
- * chat process, a copy's or shared service's unit (this state root's or another's), slot 0's adopted unit,
+ * whose folder is deleted or missing, or that runs in a clean worktree of the project whose branch has
+ * commits of its own now on the main checkout's branch, is safe to stop; anything else (outside any git
+ * checkout included) is in use. Never offered, whatever its folder: Sova's own server and its children,
+ * `sova-runtime.service`, a chat process and anything a chat started (its descendants, its unit), a copy's or shared service's unit (this state root's or another's), slot 0's adopted unit,
  * and a listener this user can't read. Linux only (/proc). Everything the host gives is injected, so the
  * rules are tested over fakes.
  */
@@ -136,13 +136,18 @@ export function unitOfCgroup(text: string | null): string | null {
 
 /** Why a pid is never offered, or null. */
 export function protectedWhy(pid: number, h: Pick<LeftoverHost, "selfPid" | "ppid" | "cgroup" | "isChatProcess" | "ownedByCopy">, adoptedUnits: readonly string[] = []): string | null {
-  for (let p: number | null = pid, n = 0; p && p > 1 && n < 64; p = h.ppid(p), n++) if (p === h.selfPid) return "Sova's own server";
+  // The process and every ancestor: Sova's server, or a chat (a server a chat's tool started by hand is the chat's).
+  for (let p: number | null = pid, n = 0; p && p > 1 && n < 64; p = h.ppid(p), n++) {
+    if (p === h.selfPid) return "Sova's own server";
+    if (h.isChatProcess(p)) return p === pid ? "a chat process" : "a process a chat started";
+  }
   const cg = h.cgroup(pid) ?? "";
+  // Reparented (nohup, setsid): still inside the chat's unit, which lives while the chat does.
+  if (/\/sova-chat-[^/\n]*\.service/.test(cg)) return "a process a chat started";
   if (cg.includes("/sova-runtime.service")) return "Sova's own server (sova-runtime.service)";
   const own = h.cgroup(h.selfPid);
   const ownUnit = unitOfCgroup(own);
   if (ownUnit && unitOfCgroup(cg) === ownUnit && ownUnit.endsWith(".service")) return "Sova's own server's unit";
-  if (h.isChatProcess(pid)) return "a chat process";
   if (/\/sova-(svc|hook)-/.test(cg) || h.ownedByCopy(pid)) return "a copy's own process";
   for (const u of adoptedUnits) if (cg.includes(`/${u.endsWith(".service") ? u : `${u}.service`}`)) return `slot 0's adopted unit ${u}`;
   return null;
@@ -184,7 +189,7 @@ export async function judgeFolder(project: string, folder: string, h: Pick<Lefto
   if (folder.endsWith(" (deleted)") || !h.exists(folder)) return { safe: true, reason: "folder-gone" };
   const top = await h.git(folder, ["rev-parse", "--show-toplevel"]);
   // git's own "not a git repository" (exit 128); a git that could not run says nothing about the folder.
-  if (top.code === 128) return { safe: true, reason: "not-a-checkout" };
+  if (top.code === 128) return { safe: false, why: "it runs outside any git checkout" };
   if (top.code !== 0 || !top.stdout.trim()) return { safe: false, why: "its folder can't be read with git" };
   const checkout = canonical(top.stdout.trim());
   const root = canonical(project);
@@ -199,7 +204,17 @@ export async function judgeFolder(project: string, folder: string, h: Pick<Lefto
   if (dirty.stdout.trim()) return { safe: false, why: "its worktree has uncommitted edits" };
   const head = await h.git(checkout, ["rev-parse", "HEAD"]);
   if (head.code !== 0 || !head.stdout.trim()) return { safe: false, why: "its worktree has no commit yet" };
-  const merged = await h.git(root, ["merge-base", "--is-ancestor", head.stdout.trim(), "HEAD"]);
+  const tip = head.stdout.trim();
+  // Merged means a commit of its own is now on the main branch: the branch moved past the commit it was created
+  // from (its reflog's creation entry). A fresh branch with nothing of its own is a worktree just cut, in use.
+  const branch = await h.git(checkout, ["symbolic-ref", "-q", "--short", "HEAD"]);
+  if (branch.code !== 0 || !branch.stdout.trim()) return { safe: false, why: "its worktree is not on a branch" };
+  const log = await h.git(root, ["reflog", "show", "--format=%H %gs", `refs/heads/${branch.stdout.trim()}`, "--"]);
+  const entries = log.code === 0 ? log.stdout.split("\n").map((l) => l.trim()).filter(Boolean) : [];
+  const created = entries.at(-1);
+  if (!created || !/^[0-9a-f]{7,} branch: Created from /.test(created)) return { safe: false, why: "its branch's history can't be read, so whether it was merged can't be told" };
+  if (created.split(" ")[0] === tip) return { safe: false, why: "its branch has no commits of its own" };
+  const merged = await h.git(root, ["merge-base", "--is-ancestor", tip, "HEAD"]);
   return merged.code === 0 ? { safe: true, reason: "branch-on-main" } : { safe: false, why: "its branch has commits not on the main checkout's branch" };
 }
 
@@ -291,6 +306,5 @@ export function leftoverLine(r: LeftoverView): string {
 
 export const REASON_WORDS: Record<LeftoverReason, string> = {
   "folder-gone": "its folder was deleted",
-  "not-a-checkout": "it runs outside any git checkout",
   "branch-on-main": "its branch is already merged into the main checkout's",
 };

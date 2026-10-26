@@ -33,8 +33,14 @@ before(() => {
   git(["init", "-q", "-b", "main"]);
   git(["add", "-A"]);
   git(["commit", "-q", "-m", "fixture"]);
-  // A merged worktree (its commit is on main), one with a commit main doesn't have, and a dirty merged one.
+  // A fresh worktree (no commits of its own), a merged one (its own commit now on main), one with a commit main doesn't
+  // have, and a dirty one.
   git(["worktree", "add", "-q", "-b", "done", join(parent, "done")]);
+  git(["worktree", "add", "-q", "-b", "merged", join(parent, "merged")]);
+  writeFileSync(join(parent, "merged", "m.txt"), "m");
+  git(["add", "-A"], join(parent, "merged"));
+  git(["commit", "-q", "-m", "merged work"], join(parent, "merged"));
+  git(["merge", "-q", "--ff-only", "merged"]);
   git(["worktree", "add", "-q", "-b", "open", join(parent, "open")]);
   writeFileSync(join(parent, "open", "x.txt"), "x");
   git(["add", "-A"], join(parent, "open"));
@@ -90,12 +96,13 @@ test("the copy ports are each usable slot's numbered ports; a fixed port is no c
   assert.equal(L.copyPortsOf(join(parent, "plain")), null, "no definition: no copy ports");
 });
 
-test("safe to stop: a deleted or missing folder, a folder outside git, a merged worktree; anything else is in use, with why", async () => {
+test("safe to stop: a deleted or missing folder, a worktree whose own commits are merged; anything else is in use, with why", async () => {
   const h = fakeHost({});
   assert.deepEqual(await L.judgeFolder(project, "/x/y (deleted)", h), { safe: true, reason: "folder-gone" });
   assert.deepEqual(await L.judgeFolder(project, join(parent, "missing"), h), { safe: true, reason: "folder-gone" });
-  assert.deepEqual(await L.judgeFolder(project, join(parent, "plain"), h), { safe: true, reason: "not-a-checkout" });
-  assert.deepEqual(await L.judgeFolder(project, join(parent, "done"), h), { safe: true, reason: "branch-on-main" });
+  assert.deepEqual(await L.judgeFolder(project, join(parent, "plain"), h), { safe: false, why: "it runs outside any git checkout" });
+  assert.deepEqual(await L.judgeFolder(project, join(parent, "done"), h), { safe: false, why: "its branch has no commits of its own" }, "a worktree just cut, HEAD on main's commit");
+  assert.deepEqual(await L.judgeFolder(project, join(parent, "merged"), h), { safe: true, reason: "branch-on-main" });
   assert.deepEqual(await L.judgeFolder(project, join(parent, "open"), h), { safe: false, why: "its branch has commits not on the main checkout's branch" });
   assert.deepEqual(await L.judgeFolder(project, join(parent, "dirty"), h), { safe: false, why: "its worktree has uncommitted edits" });
   assert.deepEqual(await L.judgeFolder(project, project, h), { safe: false, why: "it runs in the project's main checkout" });
@@ -112,8 +119,10 @@ test("never offered: Sova's server and its children, sova-runtime.service, a cha
   const cg = (text: string) => ({ ...h, cgroup: (pid: number) => (pid === 1000 ? "0::/a/b/term.scope\n" : text) });
   assert.match(L.protectedWhy(3000, cg("0::/user.slice/user@1000.service/app.slice/sova-runtime.service\n"))!, /sova-runtime\.service/);
   assert.equal(L.protectedWhy(3000, cg("0::/user.slice/user@1000.service/app.slice/sova-svc-abc123-demo-1-web.service\n")), "a copy's own process");
-  assert.equal(L.protectedWhy(3000, cg("0::/user.slice/user@1000.service/sova-chats.slice/sova-chat-abc-1.service\n")), null, "a chat unit's other process is not the chat itself");
+  assert.equal(L.protectedWhy(3000, cg("0::/user.slice/user@1000.service/sova-chats.slice/sova-chat-abc-1.service\n")), "a process a chat started", "reparented, still in the chat's unit");
   assert.equal(L.protectedWhy(3000, { ...cg("0::/x.scope\n"), isChatProcess: (p: number) => p === 3000 }), "a chat process");
+  const chain = { ...cg("0::/x.scope\n"), ppid: (p: number) => (p === 3000 ? 2990 : p === 2990 ? 2980 : 1), isChatProcess: (p: number) => p === 2980 };
+  assert.equal(L.protectedWhy(3000, chain), "a process a chat started", "a chat's grandchild: a server it started by hand");
   assert.equal(L.protectedWhy(3000, { ...cg("0::/x.scope\n"), ownedByCopy: (p: number) => p === 3000 }), "a copy's own process", "a detached copy's, by the supervisor's records");
   assert.equal(L.protectedWhy(3000, cg("0::/user.slice/user@1000.service/app.slice/myapp.service\n"), ["myapp"]), "slot 0's adopted unit myapp");
   assert.equal(L.unitOfCgroup("0::/user.slice/user@1000.service/app.slice/dev-web.service\n"), "dev-web.service");
@@ -121,15 +130,16 @@ test("never offered: Sova's server and its children, sova-runtime.service, a cha
 
 test("the finder lists each holder with its verdict; a copy's own process is left out; elsewhere it says it can't tell", async () => {
   const h = fakeHost({
-    [BASE + 1]: { pid: 4001, cwd: join(parent, "done"), cmd: "node\0web.mjs\0--token=secret-abc\0" },
+    [BASE + 1]: { pid: 4001, cwd: join(parent, "merged"), cmd: "node\0web.mjs\0--token=secret-abc\0" },
     [BASE + 2]: { pid: 4002, cwd: join(parent, "open") },
     [BASE + 3]: { pid: 4003, cwd: "/", cgroup: "0::/u/sova-svc-ff-demo-2-web.service\n" },
-    [BASE + 4]: { pid: 4004, cwd: join(parent, "plain"), cgroup: "0::/user.slice/user@1000.service/app.slice/dev-web.service\n" },
+    [BASE + 4]: { pid: 4004, cwd: "/old/wt (deleted)", cgroup: "0::/user.slice/user@1000.service/app.slice/dev-web.service\n" },
+    [BASE + 5]: { pid: 4005, cwd: join(parent, "plain") },
   });
   const r = await L.findLeftovers(project, h);
   assert.ok(!("error" in r));
   const rows = (r as { rows: import("./leftovers").LeftoverView[] }).rows;
-  assert.deepEqual(rows.map((x) => [x.port, x.slot, x.verdict.safe]), [[BASE + 1, 1, true], [BASE + 2, 2, false], [BASE + 4, 4, true]]);
+  assert.deepEqual(rows.map((x) => [x.port, x.slot, x.verdict.safe]), [[BASE + 1, 1, true], [BASE + 2, 2, false], [BASE + 4, 4, true], [BASE + 5, 5, false]]);
   assert.equal(rows[0]!.command, "node web.mjs --token=[redacted]", "redacted");
   assert.equal(rows[2]!.unit, "dev-web.service");
   assert.match(L.leftoverLine(rows[0]!), /safe to stop: its branch is already merged/);
@@ -138,7 +148,7 @@ test("the finder lists each holder with its verdict; a copy's own process is lef
 });
 
 test("stop-leftover checks it is still the same process and still safe; a unit of its own is stopped whole, else signals", async () => {
-  const procs = { [BASE + 1]: { pid: 5001, cwd: join(parent, "plain"), start: "777" } } as Record<number, { pid: number; cwd: string; start?: string; cgroup?: string }>;
+  const procs = { [BASE + 1]: { pid: 5001, cwd: "/a/gone (deleted)", start: "777" } } as Record<number, { pid: number; cwd: string; start?: string; cgroup?: string }>;
   const h = fakeHost(procs);
   // The pid was reused: another start time.
   assert.deepEqual(await L.stopLeftover({ project, port: BASE + 1, pid: 5001, start: "776" }, h), { ok: false, text: L.LEFTOVER_CHANGED });
@@ -147,7 +157,7 @@ test("stop-leftover checks it is still the same process and still safe; a unit o
   assert.deepEqual(ok, { ok: true, text: `Stopped pid 5001: port ${BASE + 1} of slot 1 is free.` });
   assert.deepEqual(h.signals, ["SIGTERM:5001"]);
   // A process that ignores SIGTERM gets SIGKILL after 5 s, only while it is still the same process.
-  const stubborn = { [BASE + 2]: { pid: 5002, cwd: join(parent, "plain"), start: "1" } } as Record<number, { pid: number; cwd: string; start?: string }>;
+  const stubborn = { [BASE + 2]: { pid: 5002, cwd: "/b/gone (deleted)", start: "1" } } as Record<number, { pid: number; cwd: string; start?: string }>;
   const h2 = fakeHost(stubborn, {});
   h2.signal = (pid, sig) => {
     h2.signals.push(`${sig}:${pid}`);
@@ -157,7 +167,7 @@ test("stop-leftover checks it is still the same process and still safe; a unit o
   assert.equal(killed.ok, true, killed.text);
   assert.deepEqual(h2.signals, ["SIGTERM:5002", "SIGKILL:5002"]);
   // Its own user service: stopped whole, never signalled.
-  const svc = { [BASE + 3]: { pid: 5003, cwd: join(parent, "plain"), cgroup: "0::/user.slice/user@1000.service/app.slice/dev-web.service\n" } } as Record<number, { pid: number; cwd: string; cgroup?: string }>;
+  const svc = { [BASE + 3]: { pid: 5003, cwd: "/c/gone (deleted)", cgroup: "0::/user.slice/user@1000.service/app.slice/dev-web.service\n" } } as Record<number, { pid: number; cwd: string; cgroup?: string }>;
   const h3 = fakeHost(svc);
   const unit = await L.stopLeftover({ project, port: BASE + 3, pid: 5003, start: "100" }, h3);
   assert.equal(unit.ok, true, unit.text);
@@ -176,4 +186,24 @@ test("a copy's own registered checkout is never a leftover's folder", async () =
   const { readRegistry } = await import("./store");
   const v = await L.judgeFolder(project, join(parent, "done"), { exists: () => true, git: realGit, registry: () => readRegistry() });
   assert.deepEqual(v, { safe: false, why: "it runs in the folder of copy demo-reg" });
+});
+
+test("a server a chat started by hand in a fresh worktree is never offered, though its folder is clean and on main's commit", async () => {
+  const procs = { [BASE + 6]: { pid: 6001, cwd: join(parent, "done"), ppid: 6000 } } as Record<number, { pid: number; cwd: string; ppid?: number }>;
+  const h = fakeHost(procs, { isChatProcess: (p) => p === 6000 });
+  const r = (await L.judgePort(project, 6, BASE + 6, h)) as import("./leftovers").LeftoverView;
+  assert.deepEqual(r.verdict, { safe: false, why: "a process a chat started" });
+  // Even in a genuinely merged worktree.
+  const m = (await L.judgePort(project, 6, BASE + 6, fakeHost({ [BASE + 6]: { pid: 6001, cwd: join(parent, "merged"), ppid: 6000 } }, { isChatProcess: (p) => p === 6000 }))) as import("./leftovers").LeftoverView;
+  assert.equal(m.verdict.safe, false);
+});
+
+test("a card refuses a process outside any git checkout, and lists one whose folder is gone", async () => {
+  const { leftoverItem } = await import("../overseer-copies");
+  const h = fakeHost({ [BASE + 1]: { pid: 7001, cwd: join(parent, "plain") }, [BASE + 2]: { pid: 7002, cwd: "/x/wt (deleted)" } });
+  const refused = await leftoverItem(project, BASE + 1, h, () => "Demo");
+  assert.ok("refused" in refused);
+  assert.match((refused as { refused: string }).refused, /which is in use: it runs outside any git checkout/);
+  const row = await leftoverItem(project, BASE + 2, h, () => "Demo");
+  assert.equal((row as { reason?: string }).reason, "folder-gone");
 });

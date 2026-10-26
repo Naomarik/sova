@@ -410,7 +410,6 @@ function ItemNumber(props: { item: SovaConfirmItem }) {
 /** Why a leftover process may be stopped, as its row says it. */
 const LEFTOVER_REASON_LABEL: Record<Extract<SovaConfirmItem, { kind: "leftover" }>["reason"], string> = {
   "folder-gone": "Its folder was deleted",
-  "not-a-checkout": "Runs outside any git checkout",
   "branch-on-main": "Its branch is already merged",
 };
 

@@ -72,6 +72,24 @@ describe("SessionTokenStore", () => {
     assert.equal(s.size, 0);
   });
 
+  test("a part idle over the last 5 minutes but not over 30 still sends its 30-minute total", () => {
+    const s = store();
+    s.note(main("m"), report("pm", [60]));
+    s.note(worker("w1", "m"), report("p1", [400]));
+    s.release("w1");
+    // Six minutes on: the worker's tokens are out of the 5-minute window, inside the 30-minute one.
+    clock += 12 * TOKEN_BUCKET_MS;
+    s.note(main("m"), report("pm", [60, ...new Array<number>(11).fill(0), 30]));
+    assert.deepEqual(s.view()["m"], { end: SLOT + 12, own: [30], own30: 90, workers30: 400 });
+    // And the other way round: own idle over the last 5 minutes, a worker writing.
+    const t = store();
+    t.note(main("m"), report("pm", [70]));
+    clock += 12 * TOKEN_BUCKET_MS;
+    t.note(main("m"), report("pm", [70, ...new Array<number>(12).fill(0)]));
+    t.note(worker("w1", "m"), report("p1", [5]));
+    assert.deepEqual(t.view()["m"], { end: SLOT + 12, own30: 70, workers: [5], workers30: 5 });
+  });
+
   test("a reload's new process adds to the old one's tokens, never replaces them", () => {
     const s = store();
     s.note(main("m"), report("old", [300]));

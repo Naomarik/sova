@@ -7,8 +7,9 @@ import type { SessionTokens } from "./protocol";
 
 /**
  * `"{end} {own30} {workers30} {own} {workers}"`, plus ` p` when partial: `end` the server's 30 s
- * epoch slot, `own30`/`workers30` the 30-minute totals, `own`/`workers` the last 5 minutes' slots
- * joined by commas, oldest first and ending at `end` (`-` for none).
+ * epoch slot, `own30`/`workers30` the 30-minute totals (0 for none; a part with no 5-minute slots
+ * still has one), `own`/`workers` the last 5 minutes' slots joined by commas, oldest first and
+ * ending at `end` (`-` for none).
  */
 export function encodeSessionTokens(t: SessionTokens): string {
   const list = (l: readonly number[] | undefined) => (l && l.length ? l.join(",") : "-");
@@ -32,5 +33,13 @@ export function decodeSessionTokens(s: unknown): SessionTokens | null {
   const own = list(f[3]);
   const workers = list(f[4]);
   if (!Number.isSafeInteger(end) || !Number.isSafeInteger(own30) || !Number.isSafeInteger(workers30) || own === null || workers === null) return null;
-  return { end, ...(own ? { own, own30 } : {}), ...(workers ? { workers, workers30 } : {}), ...(f[5] === "p" ? { partial: true as const } : {}) };
+  // A part's 30-minute total stands without its 5-minute list: it can be idle over 5 and not over 30.
+  return {
+    end,
+    ...(own ? { own } : {}),
+    ...(own || own30 > 0 ? { own30 } : {}),
+    ...(workers ? { workers } : {}),
+    ...(workers || workers30 > 0 ? { workers30 } : {}),
+    ...(f[5] === "p" ? { partial: true as const } : {}),
+  };
 }

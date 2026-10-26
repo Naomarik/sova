@@ -419,6 +419,10 @@ test("rates: the sidebar's 5-minute mean, own and workers apart, and the 30-minu
   assert.equal(later.five, 0, "5 minutes later the window is past every slot");
   assert.equal(later.thirty, 200);
   assert.equal(rowRates({ a: encodeSessionTokens({ end: at, own: slots(600, 10), own30: 6000 }) }, NOW + 60_000).get("a")!.five, 960, "a minute on, two slots fewer");
+  // Workers idle over the last 5 minutes but not over 30: their tokens stay in the 30-minute figure.
+  const idleWorkers = rowRates({ a: encodeSessionTokens({ end: at, own: slots(600, 10), own30: 6000, workers30: 3000 }) }, NOW).get("a")!;
+  assert.equal(idleWorkers.workers5, 0);
+  assert.equal(idleWorkers.thirty, 300);
   assert.equal(rowRates(undefined, NOW).size, 0);
   assert.equal(rowRates({ a: "not a row" }, NOW).size, 0, "a malformed row reads as no tokens");
 });

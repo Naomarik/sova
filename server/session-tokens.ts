@@ -184,7 +184,8 @@ export class SessionTokenStore {
   /**
    * Per board row (the root session's id), its own and its workers' tokens at `now`: only rows
    * with tokens in the last 5 minutes, each with those 5 minutes' slots (from the oldest non-zero
-   * one) and its 30 minutes' total: what the row's figures need, and no more.
+   * one) and each part's 30 minutes' total, sent even when that part's 5 minutes are empty: what
+   * the row's figures need, and no more.
    */
   view(): Record<string, SessionTokens> {
     return this.current().view;
@@ -233,15 +234,15 @@ export class SessionTokenStore {
       const own = recent(row.own);
       const workers = recent(row.workers);
       if (!own && !workers) continue;
+      // Each part's 30-minute total goes whenever it has one, even when that part wrote nothing in
+      // the last 5 minutes: the row's 30-minute figure counts both parts whole.
       const t: SessionTokens = { end };
-      if (own) {
-        t.own = own;
-        t.own30 = sum(row.own!);
-      }
-      if (workers) {
-        t.workers = workers;
-        t.workers30 = sum(row.workers!);
-      }
+      if (own) t.own = own;
+      const own30 = row.own ? sum(row.own) : 0;
+      if (own30 > 0) t.own30 = own30;
+      if (workers) t.workers = workers;
+      const workers30 = row.workers ? sum(row.workers) : 0;
+      if (workers30 > 0) t.workers30 = workers30;
       if (row.partial) t.partial = true;
       out[rootId] = t;
     }

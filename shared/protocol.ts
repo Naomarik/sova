@@ -3114,13 +3114,14 @@ export interface AgentsInsight {
 
 /** One board row's output tokens: its last 5 minutes as 30 s epoch slots (`end` = the server's
     current slot), oldest first, each list starting at its oldest non-zero slot and ending at `end`,
-    and each list's 30-minute total. A list absent = no tokens in the last 5 minutes. Sent encoded
+    and each part's 30-minute total. A list absent = no tokens in the last 5 minutes; a total absent =
+    none in the last 30 (a part idle over 5 minutes still sends its total). Sent encoded
     (shared/session-tokens-wire.ts). */
 export interface SessionTokens {
   end: number;
   /** The session's own chat processes'. */
   own?: number[];
-  /** Its 30-minute total, with `own`. */
+  /** Its 30-minute total, present even without `own` when it wrote only earlier in the 30. */
   own30?: number;
   /** Its workers', at any depth. */
   workers?: number[];

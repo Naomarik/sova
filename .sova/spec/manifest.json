@@ -7357,8 +7357,48 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T18:28Z",
-        "source": "pi-session:01a15538-3d82-74c0-b458-b5235540d614#203f4764"
+        "at": "2026-10-26T18:32Z",
+        "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
+      }
+    },
+    "§app.overseer/copies": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "server/project-services/leftovers.ts",
+        "server/project-services/leftovers.test.ts",
+        "server/overseer-copies.ts",
+        "server/overseer-copies.test.ts",
+        "server/overseer-confirm.ts",
+        "shared/overseer-card.ts",
+        "shared/protocol.ts",
+        "src/components/OverseerCards.tsx",
+        "server/project-services/engine.ts",
+        "server/project-services/tools.ts",
+        "server/overseer-tools.ts",
+        "server/project-overseer-tools.ts",
+        "server/project-overseer.ts",
+        "server/chat-manager.ts",
+        "server/overseer-prompt.md",
+        "server/project-overseer-prompt.md",
+        "server/project-services/copy-approvals.test.ts",
+        "server/overseer-card-tool.ts",
+        "server/chat-queue-clients.test.ts",
+        "src/design/base.css",
+        "server/agent-loadouts.snapshot.json"
+      ],
+      "requires": [
+        "§app.overseer/confirm",
+        "§app.overseer/org-people-facing",
+        "§app.project-services/callers",
+        "§app.project-services/teardown",
+        "§app.project-services/instances"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-26T18:32Z",
+        "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
       }
     },
     "§app.overseer/dialog-answers": {
@@ -7762,7 +7802,8 @@
         "server/app.ts",
         "server/agent-loadouts.test.ts",
         "server/agent-loadouts.snapshot.json",
-        "server/overseer-roundup.ts"
+        "server/overseer-roundup.ts",
+        "server/overseer-copies.test.ts"
       ],
       "requires": [
         "§app.overseer/caps",
@@ -7772,8 +7813,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-20T10:36Z",
-        "source": "pi-session:01a158a6-750f-7276-9b13-ca61fad634cd#f6fb6e3b"
+        "at": "2026-10-26T18:32Z",
+        "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
       }
     },
     "§app.settings-dialog/overseer": {
@@ -9947,12 +9988,18 @@
         "server/baton.ts",
         "server/org-history-preview.test.ts",
         "server/agent-loadouts.test.ts",
-        "server/agent-loadouts.snapshot.json"
+        "server/agent-loadouts.snapshot.json",
+        "server/overseer-copies.test.ts"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
         "§app.organizations/field-authority"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-26T18:32Z",
+        "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
+      }
     },
     "§app.project-overseer/watch-loop": {
       "kind": "behavior",
@@ -12956,7 +13003,9 @@
         "server/overseer-sender.ts",
         "server/chat-compact.test.ts",
         "server/queue.test.ts",
-        "server/chat-queue-clients.test.ts"
+        "server/chat-queue-clients.test.ts",
+        "server/overseer-copies.ts",
+        "server/overseer-copies.test.ts"
       ],
       "requires": [
         "§app.overseer/confirm",
@@ -12968,8 +13017,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T17:08Z",
-        "source": "pi-session:01a15500-4be1-7306-a0f9-1fe0d5e9f90e#cf4c45cb"
+        "at": "2026-10-26T18:32Z",
+        "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
       }
     },
     "§app.overseer/org-project-overseers": {
@@ -16963,7 +17012,12 @@
         "server/project-overseer-tools-statecharts.integration.test.ts",
         "statecharts/test/sova/statecharts/refit/general_projects_test.cljs",
         "server/overseer-org-part.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-26T18:32Z",
+        "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
+      }
     },
     "§mesh.public/preview-serve": {
       "kind": "behavior",
@@ -16992,7 +17046,10 @@
       "evidence": "reviewed",
       "code": [
         "src/components/ChatView.tsx",
-        "src/components/OverseerCards.tsx"
+        "src/components/OverseerCards.tsx",
+        "server/chat-manager.ts",
+        "server/project-overseer.ts",
+        "server/chat-queue-clients.test.ts"
       ],
       "requires": [
         "§app.overseer/confirm",
@@ -17000,7 +17057,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T08:08Z"
+        "at": "2026-10-26T18:32Z",
+        "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
       }
     },
     "§app.organizations/statechart-migration": {
@@ -17517,12 +17575,14 @@
         "server/chat-host.ts",
         "server/chat-handle.ts",
         "server/project-services/worker-verbs.test.ts",
-        "server/project-services/slots.test.ts"
+        "server/project-services/slots.test.ts",
+        "server/project-services/copy-approvals.test.ts",
+        "server/overseer-copies.ts"
       ],
       "agreed": {
-        "by": "Omar (al_1 go-ahead)",
-        "at": "2026-10-24T21:46Z",
-        "source": "pi-session:3ca7d7a1-521f-40ef-8493-5da871963c1c#56f51242"
+        "by": "naomarik",
+        "at": "2026-10-26T18:32Z",
+        "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
       }
     },
     "§app.project-services/conform": {
@@ -17656,8 +17716,14 @@
         "server/project-services/share.test.ts",
         "server/project-services/share.integration.test.ts",
         "server/project-services/adopt.test.ts",
-        "server/project-services/adopt.integration.test.ts"
-      ]
+        "server/project-services/adopt.integration.test.ts",
+        "server/project-services/copy-approvals.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-26T18:32Z",
+        "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
+      }
     },
     "§app.project-services/instances": {
       "kind": "behavior",
@@ -19773,8 +19839,14 @@
         "server/preview-kept.ts",
         "server/preview-links.ts",
         "server/share/preview-proxy.ts",
-        "scripts/sova-project.mjs"
-      ]
+        "scripts/sova-project.mjs",
+        "server/project-services/copy-approvals.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-26T18:32Z",
+        "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
+      }
     },
     "§app.project-services/services-ui": {
       "kind": "behavior",

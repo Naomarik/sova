@@ -179,7 +179,9 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   running instances on this host (`sova_project_verbs`, §app.project-services/callers: status,
   logs and doctor at any time, the other verbs (`share` is the operator's: `needs-confirm`; `revoke`
   is its own), and `onboard`, which starts the Project verbs
-  playbook on a registered project (§app.project-runtime/onboard), in a turn the user started).
+  playbook on a registered project (§app.project-runtime/onboard), in a turn the user started; its
+  `leftovers` read and, in the turn a card click opens, teardown, reset and stop of copies it did not
+  start and `stop-leftover`, §app.overseer/copies).
 - **Sending (`sova_send`) is typing in that session's composer.** Idle, with subagents working or
   not, the message starts a turn. Mid-turn it is **queued as a follow-up** behind the running turn
   by default: a queued row in that session, "Queued", which the user can remove until it is
@@ -716,7 +718,8 @@ jumps to it (§app.overseer/links).
   (§app.overseer/org-tools). The global Overseer's cards also take orgs attached here (`{id, note?}`,
   by id or exact name) and folders to add as projects (`{root, org?, name?, note?}`: an absolute
   folder of this host or `~/…`, resolved to its checkout root; one the Overseer's file guard denies,
-  or that is not a local folder, matches nothing; §app.overseer/org-project-add). Sessions are addressed in
+  or that is not a local folder, matches nothing; §app.overseer/org-project-add). Both overseers' cards
+  also take running copies (`copies`) and leftover processes (`leftovers`), §app.overseer/copies. Sessions are addressed in
   any form the tools print them (§app.overseer/tools), and any session on this host will do (a
   card only points at it: TUI-live or archived is fine); ideas by their § id (a former id resolves
   to the idea it was renamed to); todos by their `td_` id. The server resolves every id when the card
@@ -759,7 +762,8 @@ jumps to it (§app.overseer/links).
   a run streams too: a card the run raised and then replaced or changed again draws, at its earlier
   call, that one line, never live buttons, so only its newest snapshot takes a click.
   - The items sit between the detail and the buttons, one compact row each, numbered: ideas, then
-    todos, then orgs, then folders, then projects, then people, then sessions. An org row is an in-app
+    todos, then orgs, then folders, then projects, then people, then copies, then leftover processes
+    (§app.overseer/copies), then sessions. An org row is an in-app
     link to its page, reading its name. A folder row reads its checkout root (monospace), then its name
     when one was given, then "into {org}" or "standalone", and "from {folder}" when it was normalized.
     A project row is an in-app link to its project page,
@@ -774,7 +778,7 @@ jumps to it (§app.overseer/links).
     A todo row is its text.
   - Under each row, its note in body text (not muted), up to 2 lines and then clamped; a row
     without a note has nothing under it.
-  - Ideas, todos, orgs, folders, projects and people always show: a card's effect on them (ticking a todo,
+  - Ideas, todos, orgs, folders, projects, people, copies and leftover processes always show: a card's effect on them (ticking a todo,
     closing an idea, a person's links stopping) is never behind a toggle. Only sessions collapse: past 8 sessions the card shows the first 8 and a **Show
     all N sessions** toggle (Show fewer, open), so the rows it reveals are only ever sessions; a card
     with 9 sessions shows all 9, since hiding one row saves nothing.
@@ -787,7 +791,8 @@ jumps to it (§app.overseer/links).
   op, the buttons come back and the note keeps the card in front of the model. While the card is
   open, "Or type your answer." follows the buttons. A card that may gate an act that reaches people
   or ends something, the global Overseer's card listing a person, a project, an org, a folder or a
-  gathering session (`clickOnly`), has no such hint: only its click approves that act. A click that
+  gathering session, and either overseer's card listing a copy or a leftover process (`clickOnly`),
+  has no such hint: only its click approves that act. A click that
   doesn't reach the Overseer (the chat refuses it, is restarting, reloads or closes before taking
   it, its connection ends before the chat opens, or the queued click leaves undelivered) never goes
   into the composer, where sending it again would be typed text that approves nothing: its card's
@@ -816,8 +821,8 @@ jumps to it (§app.overseer/links).
   again."
 - **The project overseer** raises the same card with the same tool: it says "the operator" where
   this one says "the user", and it resolves only the sessions it may read (the project's coding and
-  gathering sessions, §app/project-overseer), its own ideas and its own todos; it takes no people,
-  projects or org links.
+  gathering sessions, §app/project-overseer), its own ideas and its own todos, and its own project's
+  copies and leftover processes (§app.overseer/copies); it takes no people, projects or org links.
 
 ## §app.overseer/run-note — The run note: the time, and what cleared
 
@@ -888,11 +893,80 @@ session is on which branch survives a compaction and a restart:
 - In a project overseer's current conversation its open cards take clicks as the global
   Overseer's do: an option's click sends "c_4 b: <its reply, else its label>" as the operator's next
   message, the card shows "Sent: b" while that turn runs and its buttons come back when the turn
-  ends, and "Or type your answer." follows the buttons. The click is only that message: it approves
-  nothing and shows no approval state, since the project overseer's cards carry no `at` or `rule`.
+  ends, and "Or type your answer." follows the buttons. The click is only that message and shows no
+  approval state, since the project overseer's cards carry no `at` or `rule`; it approves nothing
+  but the copy and leftover-process acts of a card that lists copies or leftover processes
+  (§app.overseer/copies). Such a card is click-only: it has no "Or type your answer." hint, and the
+  click carries its mark to the project overseer as the global Overseer's does.
   A click that doesn't reach it comes back as the global Overseer's does (§app.overseer/confirm):
   its buttons, never the composer, with the same note.
 - An earlier project overseer conversation stays read only: its cards show no live buttons.
+
+## §app.overseer/copies — Copies and leftover processes, behind a click
+
+The Overseer, and each project overseer within its own project, can tear down, reset or stop any
+running copy of a project (§app/project-services), whoever started it, and stop a leftover process
+that holds one of a project's copy ports, but only in the turn the user's click on a card listing
+that copy or process opens. No helper session is needed.
+
+- **Rows.** `sova_card`'s `items` take `copies: [{instance, note?, default?, choices?}]` (an instance
+  id as `status` prints it) and `leftovers: [{project, port, note?, default?, choices?}]`. Each copy is
+  its own row, never a session's: it shows the copy's branch (or its folder's name when it has none),
+  its project, slot and state (running, stopped or broken), and the session that started it (its
+  title, as a link) or who else did (the operator, an overseer, conformance). Chips say when its folder
+  has uncommitted edits ("Uncommitted edits, kept in its folder") or is gone ("Folder gone"), how many
+  active share links it has ("2 share links"), and when the session that started it is working now.
+  A leftover row shows its port and slot, the command it runs (redacted, at most 120 characters), its
+  folder, and why it is a leftover: its folder was deleted, it runs outside any git checkout, or its
+  branch is already merged into the main checkout's. Both always show, never behind the sessions'
+  toggle; they sit after people and before sessions. The rows are a snapshot, never a link URL.
+- **What a card refuses.** An instance id that matches nothing refuses the card as any unknown id
+  does; a project's main copy (slot 0, Sova's own live server's included) refuses it with "A project's
+  main copy is never on a card."; a project overseer's card refuses any copy or port outside its own
+  project; a leftover the finder (below) does not call safe to stop refuses it with the finder's reason.
+- **Click-only.** A card with a copy or leftover row is click-only (no "Or type your answer."), for
+  both overseers. Typed text never approves, whatever it says, nor does a Retry of the click, a later
+  turn, or a card already answered, superseded or dropped: the exact-click test of
+  §app.overseer/org-people-facing.
+- **Only a choice naming the act approves it.** Sova checks each row's choice itself: for a per-item
+  Apply, a row approves only the act its chosen label names ("Tear Down…" a teardown, "Reset…" a
+  reset, "Stop…" a stop of a copy or of a leftover process); for a card-level option, the option's
+  label must start with that word ("Tear Down All"). Keep, Not Now, Cancel and any other label approve
+  nothing, even as a card-wide button. A row the click gave no choice approves nothing.
+- **What the click opens.** In that turn, through `sova_project_verbs`: `teardown` and `reset` of a
+  copy the caller did not start; `down` and `teardown` of a copy with active share links (its row
+  shows the count; teardown ends them as always, §app.project-services/share); and `stop-leftover`.
+  Without such a click those answer `needs-confirm` with a sentence telling it to ask with `sova_card`,
+  listing the copy under `copies` (or the port under `leftovers`). A plain `down` of a copy without
+  share links, and every verb on a copy the caller started, keep their rules
+  (§app.project-services/callers). Stopping a shared service stays the operator's, and slot 0 stays out
+  of reach: no click approves either. A project overseer's act still goes through its statechart, and
+  the click turn is the operator's, so it is taken whatever its powers say.
+- **Uncommitted edits stay.** Teardown of a copy whose folder has uncommitted edits goes ahead and
+  keeps the folder (the worktree is removed only when clean, and the branch never,
+  §app.project-services/teardown); the reply says the edits were kept in their folder, as teardown's
+  skipped worktree step says. A copy whose folder is gone tears down too.
+- **Leftover processes.** `sova_project_verbs leftovers {project}` (a read, any turn) lists, for each
+  usable slot of 1 to 16, each of the project's copy ports a process listens on that no running copy
+  of Sova's owns: its port and slot, pid, command, folder, and either "safe to stop" with why, or "in
+  use" with why. Safe to stop means its folder is deleted or missing, it runs outside any git
+  checkout, or it runs in a clean worktree of the project (never the main checkout, never a registered
+  copy's) whose branch is already merged into the main checkout's branch; a worktree with uncommitted
+  edits is in use. Never offered, whatever
+  its folder: Sova's own server and its child processes, the `sova-runtime.service` unit, a chat
+  process, any process of a copy's or shared service's unit, slot 0's adopted unit, and a listener
+  this user can't read. `stop-leftover {project, port}` stops one in the click's turn, after checking
+  that the port is still held by the same process (same pid and start time) and that it is still safe;
+  otherwise "It is no longer the process your card listed: nothing was stopped.", or "It is no longer
+  safe to stop: {why}. Nothing was stopped.". A process in a user
+  service unit of its own (not Sova's) is stopped by stopping that unit; any other gets SIGTERM, then
+  SIGKILL if the port is not free within 5 s. The result names the port and slot it freed. Telling who
+  holds a port needs Linux; elsewhere both say "Sova can't tell which process holds a port on this
+  computer."
+- **Told to the model.** The tools' descriptions and both prompts say when to raise such a card (every
+  copy or process under `copies` or `leftovers`, per-row choices such as Tear Down / Reset / Stop / Keep
+  with each row's default on its recommendation), to act in the turn the click opens, to relay kept
+  edits and each refusal as the result gives it, and that a typed yes never counts.
 
 ## §app.overseer/transcript-window — Only the rows shown or jumped to
 
@@ -2133,7 +2207,8 @@ organization write (§app.overseer/caps); a refusal takes nothing.
   act in the turn the user's click starts." `extend`, `decline`, `unarchive` and every other op
   need no card. So the card itself never invites a typed answer: a global Overseer card listing a
   person, a project, a folder, an org or a gathering session drops its "Or type your answer." hint
-  (§app.overseer/confirm).
+  (§app.overseer/confirm). The same click test gates the copy and leftover-process acts of both
+  overseers, where Sova also checks each row's choice (§app.overseer/copies).
 - **Counted.** `start` and `offer` count against the gathering cap; the other `sova_gather` ops
   are org writes (§app.overseer/caps).
 

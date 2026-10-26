@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import type { ReadinessState, WorktreeLanding } from "../shared/protocol";
 import { isExcluded, readDecisionSettings } from "./decide-settings";
 import { stateRoot } from "./state-root";
-import { latestOutcome } from "./turn-outcomes";
+import { latestOutcome, type TurnOutcomeRecord } from "./turn-outcomes";
 
 /**
  * Ready to land (§chat.worktrees/ready-to-land): a worktree's head commit whose work is finished, kept
@@ -116,13 +116,22 @@ export function landingReason(l: WorktreeLanding, ahead?: number): string {
   return ["Landing specs", `${n} draft${n === 1 ? "" : "s"}`, ...(l.specsWhy ? [`can't land them: ${l.specsWhy}`] : [])].join(" · ");
 }
 
+/** Whether one turn outcome says the last reply's work is finished (§chat.worktrees/ready-to-land): it is
+    that reply's, and it did what was asked, or it waits only for the go-ahead to land, merge, push or
+    restart, from the user or the merge captain. Pure. */
+export function finishedFromOutcome(rec: TurnOutcomeRecord | undefined, lastReplyId: string | undefined): "yes" | "no" {
+  if (!rec || !lastReplyId || rec.turnId !== lastReplyId) return "no";
+  if (rec.outcome === "did-what-was-asked") return "yes";
+  const waits = rec.outcome === "waiting-on-user" || rec.outcome === "waiting-on-team";
+  return waits && rec.askKind === "restart-or-merge-go" ? "yes" : "no";
+}
+
 /** Whether a session's turns get an outcome at all, and the last reply's: the default `finished`. */
 export function finishedOf(sessionId: string, cwd: string, lastReplyId: string | undefined): Finished {
   const settings = readDecisionSettings();
   if (!settings.features.attention || !settings.jev.enabled || isExcluded(settings, cwd)) return "off";
   if (!lastReplyId) return "no";
-  const rec = latestOutcome(sessionId);
-  return rec && rec.turnId === lastReplyId && rec.outcome === "did-what-was-asked" ? "yes" : "no";
+  return finishedFromOutcome(latestOutcome(sessionId), lastReplyId);
 }
 
 // ---- the store ------------------------------------------------------------------------------------

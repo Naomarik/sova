@@ -7252,8 +7252,8 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-24T09:23Z",
-        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+        "at": "2026-10-25T22:33Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
       }
     },
     "§app.overseer/caps": {
@@ -7601,9 +7601,9 @@
         "§app.project-overseer/coding-worktrees"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-20T15:52Z",
-        "source": "pi-session:01a158a6-750f-7276-9b13-ca61fad634cd#ec45ecfd"
+        "by": "user",
+        "at": "2026-10-25T22:33Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
       },
       "evidence": "verified"
     },
@@ -10495,8 +10495,8 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-24T09:23Z",
-        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+        "at": "2026-10-25T22:33Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
       }
     },
     "§chat.worktrees/sandbox": {
@@ -14880,9 +14880,9 @@
         "§app.decisions/attention-signals"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "user",
+        "at": "2026-10-25T22:33Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
       }
     },
     "§app.shell/viewport": {
@@ -16525,7 +16525,8 @@
         "server/schedules.ts",
         "server/schedule-routes.ts",
         "shared/schedules.test.ts",
-        "server/schedules.test.ts"
+        "server/schedules.test.ts",
+        "server/schedules-carry.test.ts"
       ],
       "requires": [
         "§chat.schedules/fire",
@@ -16533,7 +16534,8 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-10T10:39Z"
+        "at": "2026-10-25T20:43Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
       }
     },
     "§chat.schedules/where-shown": {
@@ -17892,7 +17894,8 @@
         ".sova/playbooks/merge-round/references/round.md",
         ".sova/playbooks/merge-round/references/check.md",
         ".sova/playbooks/merge-round/references/land.md",
-        "AGENTS.md"
+        "AGENTS.md",
+        ".sova/playbooks/merge-round/references/start.md"
       ],
       "requires": [
         "§chat.schedules/fire",
@@ -17901,9 +17904,9 @@
         "§chat.worktrees/merge-board"
       ],
       "agreed": {
-        "by": "omar (user)",
-        "at": "2026-10-24T18:10Z",
-        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
+        "by": "user",
+        "at": "2026-10-25T22:33Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
       }
     },
     "§chat/merge-round": {
@@ -17915,7 +17918,8 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-10T10:39Z"
+        "at": "2026-10-25T21:42Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
       },
       "notOwned": [
         "§chat.worktrees/readiness",
@@ -17938,9 +17942,9 @@
         "§chat.worktrees/merge-board"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-25T21:45Z",
-        "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
+        "by": "user",
+        "at": "2026-10-26T06:34Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#ded2d92c"
       }
     },
     "§app.access/callers": {
@@ -18315,10 +18319,33 @@
         "pi-config/extensions/spec/tests/draft-hygiene.test.mjs"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-22T03:34Z",
-        "source": "pi-session:ecc675e0-f5e1-4efc-915d-91012183b844#6f4c32b2"
+        "by": "user",
+        "at": "2026-10-25T22:33Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
       }
+    },
+    "§tools.spec/draft-official": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/spec/core/official.mjs",
+        "pi-config/extensions/spec/core/official.d.mts",
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/draft-official.test.mjs",
+        "server/spec-drafts-state.ts",
+        "server/spec-drafts-state.test.ts"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-26T06:34Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#ded2d92c"
+      },
+      "requires": [
+        "§tools.spec/promotion-integrity",
+        "§tools.spec/git-merge",
+        "§tools.spec/record-layout"
+      ]
     },
     "§tools.spec/git-merge": {
       "kind": "behavior",
@@ -18570,7 +18597,12 @@
         "§chat.worktrees/readiness",
         "§app.overseer/tools",
         "§chat.memory/overseer"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T21:42Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+      }
     },
     "§app.insights/sidebar-foot-phone": {
       "kind": "behavior",

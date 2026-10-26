@@ -222,7 +222,11 @@ no model call (`server/merge-readiness.ts`):
   worktree whose folder is gone reads as what its work came to (below, **removed**). Git is the
   source, never the merge card: a branch merged by someone else reads merged, and a card whose
   branch git no longer finds merged does not. A worktree still tracked active once git finds it
-  merged is merged with a **cleanup** follow-up.
+  merged is merged with a **cleanup** follow-up. A merged tree whose folder still holds spec
+  drafts that aren't official (§tools.spec/draft-official), as when a catch-up merge took the
+  base's spec and the drafts were never promoted again, is still merged, but its reason never
+  says plain Merged: it reads "Nothing left to land, but its spec drafts didn't make it · 2
+  drafts", the count of those drafts.
 - **stale** — merged, but the tree has uncommitted changes while nothing runs in the session:
   never "merged". A branch with no commit of its own is never merged, dirty or not.
 - **in progress** — a turn is running or subagents are working in the session, the tree has
@@ -310,24 +314,26 @@ draft(s) not promoted)". Merged and the commit come from the merge card; pushed 
 `origin` branch (left out when there is no `origin`); live when this server already runs the
 merge (it started after it, or the merge changed no server file), else restart owed; spec from
 the merged worktree's own `.sova/spec/drafts/`, while that folder still exists: a draft counts as
-promoted when every spec file it changed now reads the same in the worktree's current spec, or a
-promotion the draft records wrote that file after the draft's last edit to it (a promotion into a
-spec that had moved merges the two, so the current file is not the draft's copy). The
+promoted when it is official (§tools.spec/draft-official), the one rule the merge round's check
+reads too; a draft that rule can't read counts as not promoted. The
 line is the first line of the badge's `title` (§app.session-list/anatomy) and travels with the
 row (`SessionSummary.readiness.status`).
 
 Routine session-list and merge-readiness refreshes never query spec assessment status or
 recapture assessment inputs, including for idle merged worktrees, and never run a spec tool.
-The one spec fact readiness carries is the status line's draft count, read from the drafts'
-files and kept until one of them changes. Readiness carries no other spec observation, and the
-row and its title display none. Ordinary git readiness, bash checks,
+The spec facts readiness carries are which drafts aren't official (an unreadable one included), for the status line's count,
+a merged tree's reason and the landing (§chat.worktrees/ready-to-land), worked out by the draft
+rule's own function in the server's process from the drafts' files and kept until one of them
+changes. Readiness carries no other spec observation, and the row and its title display none. Ordinary git readiness, bash checks,
 attention items, and routine follow-ups keep the rules above. Explicit companion CLI
 assessments remain separate and available; their observations are not passed tests or release
 gates.
 
 **In the attention digest** (§app.overseer/attention-digest), decide tier, never Needs you, a brief
 or a phone notification: "Ready to merge: {branch}" for a ready worktree and "Waiting for your OK:
-{branch}" for one waiting for the go-ahead, while the session is idle; "Merged with open work:
+{branch}" for one waiting for the go-ahead, while the session is idle, except that a worktree with a
+landing says its landing's word, "Ready to land: {branch}" or "Landing specs: {branch}"
+(§chat.worktrees/ready-to-land), as its reason line does; "Merged with open work:
 {cue}" for a merge the follow-up check calls significant; and one "Restart pending" item for the
 whole server, however many sessions' merges ask for it, naming how many merges and their
 branches.
@@ -353,7 +359,8 @@ in `<state root>/ready-to-land.json`, even when a later reply asks nothing or it
 something else; it goes when the branch's head moves, the branch lands, or a live condition above
 stops holding (a new uncommitted file, a failing check, an open question, a turn running).
 
-**Specs land with the branch.** When the worktree holds spec drafts not yet promoted, the landing
+**Specs land with the branch.** When the worktree holds spec drafts that aren't official
+(§tools.spec/draft-official), the landing
 reads **Landing specs** instead (the Session tab's chip, its line "Landing specs · 2 drafts", and
 the merge board, §chat.worktrees/merge-board). Sova then tells the session once per head commit,
 as a message in its chat, to make its specs official on its own branch (promote its drafts) and
@@ -374,9 +381,17 @@ specs message above is sent instead. Nothing is sent while a turn runs, for an a
 terminal session, or when the outcome doesn't say the work is finished (or no outcome is ever
 recorded for the session).
 
-The Session tab's chip reads **Ready to land** (or **Landing specs**) in place of Ready to merge or
-Waiting for your OK while it holds; every other reader of readiness (the row's badge, the digest,
-the offers' `branch-ready`) is unchanged.
+**One word wherever it is written.** While a landing holds, the worktree's reason line itself
+reads it, in place of Ready to merge or Waiting for your OK: "Ready to land · 3 commits ahead",
+or "Landing specs · 2 drafts" (with "· can't land them: <why>" once the session said why). Every
+reader that writes the reason shows it as is: the Session tab's chip and line, the merge board
+(§chat.worktrees/merge-board) and so the merge round's `status`, `session_detail`, and the
+branch labels the Overseer's and the agents' session lists print ("branch feat/x (ready to
+land)"). The merge-ready wake names such branches the same way (§chat.schedules/merge-ready),
+and so do the attention digest's decide item ("Ready to land: feat/x", §chat.worktrees/readiness)
+and the Overseer's roundup, whose sections "Ready to land" and "Landing specs" list such branches
+apart from Ready to merge (§app.overseer/roundup). The row's lit count and badge and the offers'
+`branch-ready` still read the readiness state, which stays ready or waiting for your OK underneath.
 
 ## §chat.worktrees/landing-answers — Land It and Not Yet are kept, never enforced
 

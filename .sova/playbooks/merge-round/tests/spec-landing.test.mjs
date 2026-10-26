@@ -109,6 +109,8 @@ const docsEntries = (range) => git(main, "log", "--format=%H", `--grep=^${TRAILE
 const changedBy = (sha) => git(main, "diff", "--name-only", `${sha}^1`, sha).split("\n").filter(Boolean);
 const isSpecPath = (p) => p.startsWith(".sova/spec/");
 /** The official spec in a worktree's files, as git sees them against a rev: no difference at all → "". */
+/** Spec paths changed between two revs, sorted. */
+const specPathsChanged = (from, to) => git(main, "diff", "--name-only", from, to, "--", ".sova/spec").split("\n").filter(Boolean).sort();
 const specDiff = (cwd, rev) => git(cwd, "diff", "--name-only", rev, "--", ".sova/spec");
 
 // ---------------------------------------------------------------- the project: a small spec, one claim
@@ -218,6 +220,7 @@ test("a5: after Land It a failing build hands the branch back unchanged with its
   assert.match(failed.out, /^build: FAILED/m);
   assert.equal(head(b), P, "the branch head is exactly what the user pressed Land It at");
   assert.deepEqual(docsEntries(`master..${b}`), [], "no docs entry");
+  assert.deepEqual(specPathsChanged(P, head(b)), [], "no spec path changed from the pre-check head");
   assert.equal(git(tree, "status", "--porcelain", "--untracked-files=all"), "", "nothing left in the worktree");
   assert.equal(specDiff(tree, "refs/heads/master"), "", "the official spec in the worktree is master's");
   assert.ok(!existsSync(join(tree, `.sova/spec/claims/${ids[0].id.slice(1)}.md`)), "the claim is not official");
@@ -256,7 +259,8 @@ test("a5 (main thread's ruling): behind master, a build failing after Land It le
   const b = "feat/behindfail";
   const { P, ids, tree } = makeBranch(b);
   const masterBefore = git(main, "rev-parse", "master");
-  const MS = commit(main, { "lib/meanwhile.txt": "meanwhile\n" }, "master: moves on meanwhile");
+  // Master's move carries docs of its own, so "no spec path changed but master's" is a real comparison.
+  const MS = commit(main, { "lib/meanwhile.txt": "meanwhile\n", ".sova/spec/claims/a/top.md": "# §a/top\n\nThe top does X, and W since another landing.\n" }, "master: moves on meanwhile, docs included");
   reset([b]);
   pressLandIt(b, P);
   try {
@@ -274,6 +278,10 @@ test("a5 (main thread's ruling): behind master, a build failing after Land It le
     git(scratch, "checkout", "-q", "--detach", P);
     git(scratch, "merge", "-q", "--no-edit", MS);
     assert.equal(git(main, "rev-parse", `${M}^{tree}`), git(scratch, "rev-parse", "HEAD^{tree}"), "the merge holds exactly what a plain merge makes");
+    assert.equal(git(scratch, "merge-tree", "--write-tree", P, MS).split("\n")[0], git(main, "rev-parse", `${M}^{tree}`), "and what git merge-tree --write-tree makes");
+    // (4) no spec path changed from the pre-check head but what master's merge brought.
+    assert.deepEqual(specPathsChanged(P, M), specPathsChanged(masterBefore, MS), "only master's own spec change");
+    assert.deepEqual(specPathsChanged(P, M), [".sova/spec/claims/a/top.md"], "the fixture's master did change the spec");
     rmSync(scratch, { recursive: true, force: true });
     // (3) the branch's spec is that merge's, none of its drafts applied, in history and in the worktree.
     assert.equal(git(main, "rev-parse", `${M}:.sova/spec`), git(main, "rev-parse", `${MS}:.sova/spec`), "the merge's spec is master's (the branch committed none)");
@@ -308,6 +316,7 @@ test("a5: a failing test or typecheck after Land It writes no docs either; once 
     assert.equal(r.code, 1, r.out);
     assert.equal(head(b), P, mode);
     assert.deepEqual(docsEntries(`master..${b}`), [], mode);
+    assert.deepEqual(specPathsChanged(P, head(b)), [], `${mode}: no spec path changed`);
     assert.deepEqual(draftReading(tree, ids[0].draft).pending, [ids[0].id], mode);
     const ok = await run(["check", b]);
     assert.equal(ok.code, 0, ok.out);

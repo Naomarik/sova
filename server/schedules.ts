@@ -23,7 +23,6 @@ import {
   scheduleOf,
   scheduleText,
   wakeInstruction,
-  type ReadyBranch,
   type ScheduleHeader,
   type Trigger,
 } from "../shared/schedules";
@@ -46,7 +45,7 @@ import { stateRoot } from "./state-root";
  * a time session), or a new session, with a `[schedule sN]` message that carries the playbook itself
  * (§chat.schedules/delivery). It also watches this host's Claude logins, and on a limit's reset
  * continues the schedule's sessions that stopped at it (§chat.schedules/limit-reset), and wakes it
- * when a branch in its project turns ready to merge on Sova's merge board
+ * when a branch in its project turns Ready to land on Sova's merge board
  * (§chat.schedules/merge-ready). Nothing fires unapproved.
  *
  * Everything that touches sessions, profiles, files, logins or the clock is injected (`KeeperDeps`),
@@ -60,9 +59,7 @@ export const DEFAULT_TICK_MS = 30_000;
 export const PAUSED_UNOPENED = `Paused after ${UNOPENED_PAUSE} runs nobody opened.`;
 export const CHANGED = "Changed since you approved it";
 export const OTHER_DEVICE = "Runs on another device: this one fires nothing for it.";
-/** A branch fires again no sooner than this after it last fired (§chat.schedules/merge-ready). */
-export const MERGE_READY_QUIET_MS = 30 * 60_000;
-/** A branch remembered this long after it was last seen ready, then forgotten. */
+/** A branch remembered this long after it last fired, then forgotten once it isn't Ready to land. */
 const MERGE_READY_FORGET_MS = 7 * 24 * 3600_000;
 /** How many fires each schedule keeps (the panel shows the last few; the pause counts back 10). */
 const KEEP_FIRES = 30;
@@ -104,9 +101,12 @@ export interface StoredSchedule {
   next?: { at: number; trigger: string };
   fires: StoredFire[];
   day?: { key: string; n: number };
-  /** merge-ready: each worktree path that fired, with its branch, when (keeper clock), and `out`
-      once it was seen not ready since (§chat.schedules/merge-ready). */
-  ready?: Record<string, { branch: string; at: number; out?: true }>;
+  /** merge-ready: each worktree path that fired, with its branch, the landing commit it fired for, and
+      when (keeper clock) (§chat.schedules/merge-ready). A row stored before commits were has none, so it reads fresh. */
+  ready?: Record<string, { branch: string; commit: string; at: number }>;
+  /** merge-ready: each worktree path woken for the user's go-ahead typed in its own chat, with the commit the
+      go-ahead names (§chat.schedules/merge-ready). */
+  typed?: Record<string, { branch: string; commit: string; at: number }>;
   /** A long-running schedule's own session (§chat.schedules/store). */
   session?: { id: string; path: string };
   /** The device that runs it (its host id). */
@@ -257,6 +257,8 @@ export interface KeeperDeps {
   /** Sova's merge board (§chat.worktrees/merge-board): `pending` sessions not read yet, and the
       rows in a project. Absent: merge-ready never fires. */
   board?(): Promise<{ pending: number; rowsIn(root: string): BoardRow[] } | null>;
+  /** The user's go-aheads typed in a branch's own chat (`landing.json`, `by: "owner-chat"`), oldest first. */
+  typedGoAheads?(): { branch: string; commit: string }[];
   /** Tell the Overseer (under Brief Me only). */
   brief?(text: string): void;
   zone?(): string;
@@ -881,39 +883,47 @@ export class ScheduleKeeper {
   }
 
   /**
-   * merge-ready (§chat.schedules/merge-ready): fire once for the branches in the schedule's project
-   * that newly read ready to merge with an idle owner. A row the board hasn't read yet (`pending`)
-   * is unknown: it neither fires nor counts as having left. While the last run is still going the
+   * merge-ready (§chat.schedules/merge-ready): fire, at once, for the branches in the schedule's project
+   * that read Ready to land with an idle owner at a commit they haven't fired for. A row the board hasn't
+   * read yet (`pending`) is unknown: it is never forgotten. While the last run is still going the
    * transition waits, unlogged; any fire attempt (fired, skipped by a cap, refused) spends it.
    */
   private async mergeReady(s: StoredSchedule, ev: Evaluated, board: { pending: number; rowsIn(root: string): BoardRow[] }): Promise<void> {
     const now = this.deps.now();
     const rows = board.rowsIn(s.root);
     const seen = (s.ready ??= {});
-    const readyNow = new Set<string>();
-    const fresh: (ReadyBranch & { path: string })[] = [];
+    const fresh: { path: string; branch: string; commit: string }[] = [];
     for (const r of rows) {
-      if ((r.state !== "ready" && r.state !== "waiting-approval") || r.owner.status !== "idle") continue;
-      readyNow.add(r.path);
+      if (r.landing?.state !== "ready" || r.owner.status !== "idle") continue;
       const prev = seen[r.path];
-      if (!prev || prev.branch !== r.branch || (prev.out && now - prev.at >= MERGE_READY_QUIET_MS)) fresh.push({ path: r.path, branch: r.branch, waiting: r.state === "waiting-approval" });
+      if (prev?.branch !== r.branch || prev.commit !== r.landing.commit) fresh.push({ path: r.path, branch: r.branch, commit: r.landing.commit });
     }
     for (const [path, prev] of Object.entries(seen)) {
-      if (readyNow.has(path)) continue;
       const row = rows.find((r) => r.path === path);
-      if (!row && board.pending > 0) continue; // not read yet: unknown, never "left"
-      if (!row && now - prev.at >= MERGE_READY_FORGET_MS) delete seen[path];
-      else prev.out = true;
+      if (row?.landing?.state === "ready" || (!row && board.pending > 0)) continue; // ready, or not read yet
+      if (now - prev.at >= MERGE_READY_FORGET_MS) delete seen[path];
     }
-    if (!fresh.length) return;
-    // Held, unlogged and unseen, so they go out together later: within 30 minutes of this
-    // schedule's last fire of any trigger, and while that run is in flight.
-    const lastFire = s.fires[s.fires.length - 1];
-    if (lastFire && now - lastFire.at < MERGE_READY_QUIET_MS) return;
+    // The user's go-ahead typed in a branch's own chat wakes the round too, whatever its row reads: once per commit.
+    const typedSeen = (s.typed ??= {});
+    const goAheads = this.deps.typedGoAheads?.() ?? [];
+    const typed: { path: string; branch: string; commit: string }[] = [];
+    for (const r of rows) {
+      const g = goAheads.filter((x) => x.branch === r.branch).at(-1);
+      const prev = typedSeen[r.path];
+      if (g && (prev?.branch !== r.branch || prev.commit !== g.commit)) typed.push({ path: r.path, branch: r.branch, commit: g.commit });
+    }
+    for (const [path, prev] of Object.entries(typedSeen)) {
+      if (rows.some((r) => r.path === path) || board.pending > 0) continue;
+      if (now - prev.at >= MERGE_READY_FORGET_MS) delete typedSeen[path];
+    }
+    if (!fresh.length && !typed.length) return;
+    // Held, unlogged and unseen, so they go out together later, while the run it last fired into is in flight.
     const last = [...s.fires].reverse().find((f) => f.path);
     if (last?.path && this.deps.busy(last.path)) return;
     fresh.sort((a, b) => a.branch.localeCompare(b.branch));
-    for (const f of fresh) seen[f.path] = { branch: f.branch, at: now };
+    typed.sort((a, b) => a.branch.localeCompare(b.branch));
+    for (const f of fresh) seen[f.path] = { branch: f.branch, commit: f.commit, at: now };
+    for (const f of typed) typedSeen[f.path] = { branch: f.branch, commit: f.commit, at: now };
     // The day's timed fires keep their room under the cap: merge-ready never takes it.
     const tz = this.zone(ev);
     const reserved = maxFiresPerDay(ev.triggers!).n;
@@ -921,7 +931,7 @@ export class ScheduleKeeper {
       this.log(s, MERGE_READY, "skipped", { why: `merge-ready leaves today's last ${reserved} of ${MAX_FIRES_PER_DAY} fires to the timed triggers` });
       return;
     }
-    await this.fire(s, ev, MERGE_READY, undefined, mergeReadyReason(fresh));
+    await this.fire(s, ev, MERGE_READY, undefined, mergeReadyReason(fresh.map((f) => f.branch), typed.map((f) => f.branch)));
   }
 
   /** One tick: limit resets first, then merge-ready transitions, then every approved schedule that is due. */

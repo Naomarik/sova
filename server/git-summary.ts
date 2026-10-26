@@ -43,8 +43,9 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
-import type { GitChange, GitCommit, GitFileChange, GitRepoSummary, GitSummary, GitWhere } from "../shared/protocol";
+import type { GitChange, GitCommit, GitFileChange, GitFolderReading, GitRepoSummary, GitSummary, GitWhere } from "../shared/protocol";
 import type { ExecResult } from "./files";
+import { gitFolderReading } from "./git-folder";
 import { lineHeader } from "./harness/pi/reader";
 import { classifyFailure, parseTargetCwd, runOnTarget, type TargetRunResult } from "./targets";
 
@@ -78,6 +79,8 @@ export interface GitDeps {
   exists?: (path: string) => boolean;
   now?: () => number;
   nonce?: () => string;
+  /** The git folder's reading (default: git-folder.ts's cached one). */
+  gitFolder?: (commonDir: string) => Promise<GitFolderReading | null>;
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +104,9 @@ export function gitScript(nonce: string): string {
     // from any subfolder, and a root with a newline in it would have to survive a `cd`.
     `if ! g 3 rev-parse --show-toplevel >/dev/null 2>&1; then m toperr -; { g 3 rev-parse --show-toplevel 2>&1 >/dev/null; m toperr $?; } | head -c ${CAP.top}; exit 0; fi`,
     `m top -; { g 3 rev-parse --show-toplevel 2>/dev/null; m top $?; } | head -c ${CAP.top}`,
+    // The git folder a linked worktree shares with its main checkout: the card's size reads it
+    // (server/git-folder.ts). Local reads only use it.
+    `m commondir -; { g 3 rev-parse --path-format=absolute --git-common-dir 2>/dev/null; m commondir $?; } | head -c ${CAP.top}`,
     `m status -; { g 6 status --porcelain=v2 --branch -z --untracked-files=normal 2>/dev/null; m status $?; } | head -c ${CAP.status}`,
     `m log -; { g 3 log -${RECENT_COMMITS} --format=%H%x00%ct%x00%s 2>/dev/null; m log $?; } | head -c ${CAP.log}`,
     // Worktree against HEAD, or against the empty tree before the first commit (hash-object, not a
@@ -563,7 +569,15 @@ async function read(p: Exclude<Plan, { kind: "refuse" }>, deps: GitDeps, now: ()
       ? unavailable(`Sova couldn't enter ${place.cwd}.`)
       : unavailable(`This session's folder no longer exists: ${place.cwd}.`);
   }
-  return summarize(sections, place, now());
+  const summary = summarize(sections, place, now());
+  // The git folder's size and cleanup state, on its own (longer) cache: never on a target.
+  const cd = sections.get("commondir");
+  const commonDir = cd?.code === 0 && cd.out.endsWith("\n") ? cd.out.slice(0, -1) : null;
+  if (summary.state === "repo" && commonDir && isAbsolute(commonDir)) {
+    const folder = await (deps.gitFolder ?? gitFolderReading)(commonDir);
+    if (folder) summary.gitFolder = folder;
+  }
+  return summary;
 }
 
 /**

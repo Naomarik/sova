@@ -540,8 +540,10 @@ if (!linuxReady) {
 		eq(leaked.length, 0, `forbidden variables visible inside: ${leaked.join(", ")}`);
 		// Widening check: baseEnv plus the documented backend additions. PWD/OLDPWD/SHLVL/_ are set by
 		// the wrapped bash itself, not the backend; NODE_USE_ENV_PROXY pairs with the proxy vars.
+		// GIT_CONFIG_SYSTEM names the backend's git config in the session tmp, so sandboxed git never
+		// starts background maintenance/gc the sandbox would cut off (env.ts addGitCleanupEnv).
 		const allowedBasis = new Set([...Object.keys(baseEnv()), "TMPDIR", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
-			"http_proxy", "https_proxy", "all_proxy", "no_proxy", "NODE_USE_ENV_PROXY",
+			"http_proxy", "https_proxy", "all_proxy", "no_proxy", "NODE_USE_ENV_PROXY", "GIT_CONFIG_SYSTEM",
 			"PI_SESSION_ID", "PI_SESSION_FILE", "PWD", "OLDPWD", "SHLVL", "_"]);
 		const unexpected = inside.filter((k) => !allowedBasis.has(k));
 		console.log(`       env inside: ${inside.join(" ")}`);

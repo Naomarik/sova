@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, Show, type Accessor } from "solid-js";
 import type { ChatMemoryChoice, ChatProjectModes, ChatServerMessage, MemoryType, ModeApplies, ModeInfo, ProjectMinorInfo, ProjectModeApprovalNeeded } from "../../shared/protocol";
-import { memoryRowText, sameMemoryChoice } from "../lib/memory-ui";
+import { memoryRowText, sameMemoryChoice, sameMemoryType } from "../lib/memory-ui";
 import { focusPanel, MemoryTypePanel, panelKeys } from "./MemoryTypePanel";
 import { ApiError, getChatMode, getMode, getSubagentProfiles, pickSubagentProfile, postMode, putSubagentProfiles, saveModeDefault } from "../lib/api";
 import type { SubagentProfilesInfo } from "../../shared/subagent-profiles";
@@ -77,7 +77,7 @@ const MEMORY_TYPE: Item = {
   kind: "action",
   id: "memory-type",
   label: "Memory type",
-  description: "Choose this chat's memory type and summary size",
+  description: "Choose this chat's memory type",
 };
 /** The Subagents group row: opens the profile picker panel. */
 const SUBAGENTS: Item = {
@@ -238,7 +238,7 @@ export function ModeMenu(props: { control: ModeControl }) {
    * and the library's own `default`, so the answer is the file's, not a guess from the last press
    * or from a switch's reply.
    */
-  const alreadyDefault = () => isDefaultAll(defaultMode(), shown(), profiles()) && (!memChoice() || sameMemoryChoice(defaultMemory(), memChoice()));
+  const alreadyDefault = () => isDefaultAll(defaultMode(), shown(), profiles()) && (!memChoice() || sameMemoryType(defaultMemory(), memChoice()));
   const saveState = (): "idle" | "saving" | "done" => (saving() ? "saving" : alreadyDefault() ? "done" : "idle");
 
   const focusItem = (i: number) => {
@@ -271,16 +271,15 @@ export function ModeMenu(props: { control: ModeControl }) {
     setMemPanel(false);
     focusItem(items().findIndex((it) => it.id === MEMORY_TYPE.id));
   };
-  /** A type or size for this chat (§chat.memory/choice): the menu stays open; the check moves with the "mode" message. */
-  const pickMemory = async (patch: { type?: MemoryType; size?: number }) => {
+  /** A type for this chat (§chat.memory/choice): the menu stays open; the check moves with the "mode" message. */
+  const pickMemory = async (type: MemoryType) => {
     if (busy()) return;
-    const c = memChoice();
-    if (c && (patch.type ?? c.type) === c.type && (patch.size ?? c.size) === c.size) return;
+    if (memChoice()?.type === type) return;
     setBusy(true);
     setMemError(null);
     try {
       wakeChat();
-      setInfo(await postMode({ memory: patch }, props.control.path));
+      setInfo(await postMode({ memory: { type } }, props.control.path));
     } catch (err) {
       const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
       setMemError(`${why}. Your memory choice is unchanged.`);
@@ -851,7 +850,7 @@ export function ModeMenu(props: { control: ModeControl }) {
           when={!memPanel()}
           fallback={
             <>
-              {/* The Memory type panel (§chat.mode-menu/memory-panel): Back, the types and sizes, a foot line. */}
+              {/* The Memory type panel (§chat.mode-menu/memory-panel): Back, the types (scrolling between), a foot line. */}
               <div class="composer-flyout-head">
                 <button type="button" class="button button-sm button-ghost composer-flyout-back" onClick={closeMemPanel}>
                   <Icon name="chevron-left" small />
@@ -860,14 +859,13 @@ export function ModeMenu(props: { control: ModeControl }) {
                 <span class="model-menu-head-title">Memory type</span>
               </div>
               <Show when={memError()}>{(why) => <Banner tone="error" title="Couldn't change memory." body={why()} />}</Show>
-              <div ref={memPanelEl}>
+              <div class="memory-panel-scroll" ref={memPanelEl}>
                 <MemoryTypePanel
                   idPrefix={paneId("memory-panel")}
                   types={info()?.memory?.types}
-                  sizes={info()?.memory?.sizes}
                   choice={memChoice()}
                   busy={busy()}
-                  onPick={(patch) => void pickMemory(patch)}
+                  onPick={(type) => void pickMemory(type)}
                 />
               </div>
               <div class="mode-menu-foot">

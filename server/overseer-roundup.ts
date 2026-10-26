@@ -124,12 +124,12 @@ export function projectFilter(v: unknown, projects: () => readonly ProjectSummar
 
 // ---- merge buckets -----------------------------------------------------------------------------
 
-export type TreeBucket = "ready" | "built" | "at-risk" | "unconfirmed" | "uncommitted" | "leftover";
+export type TreeBucket = "land" | "specs" | "ready" | "built" | "at-risk" | "unconfirmed" | "uncommitted" | "leftover";
 
 /** Which roundup section a worktree's readiness puts it in, or null (merged, empty, nothing to do).
     "leftover" is a merged worktree left with uncommitted files: counted, never listed. */
 export function treeBucket(t: WorktreeReadiness): TreeBucket | null {
-  if (t.state === "ready" || t.state === "waiting-approval") return "ready";
+  if (t.state === "ready" || t.state === "waiting-approval") return t.landing ? (t.landing.state === "ready" ? "land" : "specs") : "ready";
   if (t.state === "removed") {
     if (t.why === "not merged") return "at-risk";
     if (t.why === "no record of a merge") return "unconfirmed";
@@ -307,6 +307,8 @@ const SECTIONS = [
   ["lost", "Lost (on no branch)"],
   ["at-risk", "At risk (removed without a merge)"],
   ["needs", "Needs your answer"],
+  ["land", "Ready to land"],
+  ["specs", "Landing specs"],
   ["ready", "Ready to merge"],
   ["built", "Built, not merged"],
   ["uncommitted", "Uncommitted only (lost if the worktree goes)"],
@@ -316,7 +318,7 @@ const SECTIONS = [
 ] as const;
 type SectionKey = (typeof SECTIONS)[number][0];
 /** Sections whose rows show branches. */
-const TREE_SECTIONS = new Set<SectionKey>(["lost", "at-risk", "ready", "built", "uncommitted", "unconfirmed"]);
+const TREE_SECTIONS = new Set<SectionKey>(["lost", "at-risk", "land", "specs", "ready", "built", "uncommitted", "unconfirmed"]);
 
 const NOTES: Partial<Record<SectionKey, string>> = {
   unconfirmed: "(Folder gone, no record of a merge: a squash landing leaves none, so never call it not merged.)",
@@ -452,7 +454,7 @@ export function renderRoundup(input: RoundupInput): { text: string; details: Rec
   // Needs your answer: the digest's act items, open alignment questions and the final reply's
   // question, one row per session not archived, ranked. On the first page also the items of no
   // session and of sessions outside the window; skipped sessions' items only counted.
-  const WORK: SectionKey[] = ["lost", "at-risk", "ready", "built", "uncommitted"];
+  const WORK: SectionKey[] = ["lost", "at-risk", "land", "specs", "ready", "built", "uncommitted"];
   const hasWork = (s: SessionSummary) => WORK.some((k) => sections.get(k)!.has(s.id));
   const need = (s: SessionSummary, f: string, rank: number) => {
     const r = rowOf("needs", s.id, head(s));

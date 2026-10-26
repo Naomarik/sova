@@ -18,7 +18,6 @@ import type {
   SessionsDirInfo,
   AttentionDigest,
   ChatModeResult,
-  ChatMemoryChoice,
   ProjectModeApproval,
   MemoryOpen,
   MemoryOutline,
@@ -506,7 +505,7 @@ export const getChatMode = (path: string) => request<ChatModeResult>(`/api/mode?
  * without its hash is refused with 409, whose body (ProjectModeApprovalNeeded) is on the ApiError.
  */
 export const postMode = (
-  patch: { mode?: string; minorModes?: string[]; memory?: Partial<ChatMemoryChoice>; projectModes?: string[]; approve?: ProjectModeApproval[]; approveHooks?: ProjectModeApproval[] },
+  patch: { mode?: string; minorModes?: string[]; memory?: { type: MemoryType }; projectModes?: string[]; approve?: ProjectModeApproval[]; approveHooks?: ProjectModeApproval[] },
   path?: string,
 ) =>
   request<ModeInfo | ChatModeResult>(`/api/mode${path ? `?path=${encodeURIComponent(path)}` : ""}`, {
@@ -534,11 +533,11 @@ export const getMemoryOptions = () => request<DelegateOptions>("/api/settings/me
 export const putMemorySettings = (settings: MemorySettings) =>
   request<MemorySaveResult>("/api/settings/memory", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) });
 export const getOverseerMemory = () => request<OverseerMemoryInfo>("/api/overseer/memory");
-export const putOverseerMemory = (patch: { on?: boolean; type?: MemoryType; size?: number }) =>
+export const putOverseerMemory = (patch: { on?: boolean; type?: MemoryType }) =>
   request<OverseerMemoryInfo>("/api/overseer/memory", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
 /** A project overseer's own memory switch: the Overseer's shape. */
 export const getProjectOverseerMemory = (projectId: string) => request<OverseerMemoryInfo>(`/api/projects/${encodeURIComponent(projectId)}/overseer/memory`);
-export const putProjectOverseerMemory = (projectId: string, patch: { on?: boolean; type?: MemoryType; size?: number }) =>
+export const putProjectOverseerMemory = (projectId: string, patch: { on?: boolean; type?: MemoryType }) =>
   request<OverseerMemoryInfo>(`/api/projects/${encodeURIComponent(projectId)}/overseer/memory`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
 
 /** POST /api/sandbox?path=… { state, on }: set that held chat's sandbox state (§chat.sandbox/states)

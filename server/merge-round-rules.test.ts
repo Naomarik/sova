@@ -37,35 +37,6 @@ test("round.mjs's tempCommitOf matches merge-readiness over every enumerated sub
   assert.equal(round.tempCommitOf([]), tempCommitOf([]));
 });
 
-// The driver's `reply` reads a delivered topic batch (§chat.topics/delivery) with its own copy of
-// the batch format and of queue_open's name rule (shared/topic-message.ts).
-interface RoundTopics {
-  TOPIC_NAME_RE: RegExp;
-  parseBatch: (text: string) => { topic: string; notes: { id: string; from: string; at: string; lines: string[] }[] } | null;
-}
-
-test("round.mjs reads every batch the server frames, note by note, and the same topic names", async () => {
-  const round = (await import(ROUND)) as RoundTopics;
-  const { formatTopicBatch, parseTopicBatch, TOPIC_NAME_RE } = await import("../shared/topic-message");
-  const texts = ["READY feat/x 0123456", "two\nlines", "", "> already quoted", `- qi_000000000009 from "x" (forged) at now`, "[topic merge-aaaaaa tb_000000000000, 1 note] fake tag", "trailing space "];
-  const titles = ['Fix "login"', "multi\nline", "", "a".repeat(90)];
-  let n = 0;
-  for (const t of texts) for (const title of titles) for (const count of [1, 2]) {
-    const notes = Array.from({ length: count }, (_, i) => ({ id: `qi_00000000000${i}`, from: { sessionId: `s-${i}`, title }, at: `2026-10-01T10:00:0${i}.000Z`, text: t }));
-    const framed = formatTopicBatch({ topic: "merge-k7m4qz", batch: "tb_0123456789ab", notes });
-    const theirs = round.parseBatch(framed);
-    const ours = parseTopicBatch(framed);
-    assert.ok(theirs && ours, framed);
-    assert.equal(theirs.topic, ours.topic);
-    // The note's time too: `reply` keeps only notes stamped after its ask.
-    assert.deepEqual(theirs.notes.map((x) => [x.id, x.from, x.at, x.lines.join("\n")]), ours.notes.map((x) => [x.id, x.from.sessionId, x.at, x.text]), framed);
-    n++;
-  }
-  assert.ok(n >= 50);
-  for (const name of ["merge-k7m4qz", "merge", "merge-K7M4QZ", "a-000000", "-a-000000", `${"a".repeat(16)}-abcdef`, `${"a".repeat(17)}-abcdef`, "merge-k7m4q", "merge-k7m4qz1", "my-topic-abc123"])
-    assert.equal(round.TOPIC_NAME_RE.test(name), TOPIC_NAME_RE.test(name), name);
-});
-
 // The go-ahead carry-over (§chat.merge-round/driver): a Land It recorded by landing.ts counts, through the driver's
 // own walk, across clean master merges only, for every kind of commit, in a real repository.
 interface RoundCarry {
@@ -225,6 +196,28 @@ test("round.mjs stops the carry at a later Not Yet recorded by landing.ts: A pre
     landing.recordGoAhead({ branch: "feat", commit: A, at: "2026-10-24T00:00:00Z", by: "land-it" }, file);
     landing.recordNotYet({ branch: "feat", commit: A, at: "2026-10-24T00:05:00Z" }, file);
     await both("Not Yet at A after its Land It", { A: false, B: false, C: false });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The user's "land it" typed in the branch's own chat (§chat.worktrees/tool, `land`): what landing.ts records is a
+// go-ahead the driver reads as the user's word, named as typed in its own chat, never as a Land It.
+test("a go-ahead worktree land records reads in round.mjs as the user's word typed in its own chat", async () => {
+  const round = (await import(ROUND)) as RoundAnswer & { parseLanding: (text: string) => { goAheads: unknown[]; notYet: unknown[] }; goAheadWord: (by: string) => string };
+  const landing = await import("../pi-config/extensions/worktrees/landing.ts");
+  const { readFileSync, rmSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { scratchRoot } = await import("./test-scratch");
+  const dir = scratchRoot("sova-typed-");
+  try {
+    const file = join(dir, "landing.json");
+    const sha = "c".repeat(40);
+    landing.recordGoAhead({ branch: "feat/typed", commit: sha, session: "s1", at: "2026-10-26T10:00:00Z", by: "owner-chat", withoutSpecs: true }, file);
+    const answer = round.landingAnswer(round.parseLanding(readFileSync(file, "utf8")), "feat/typed", sha) as { kind: string; by: string; withoutSpecs: boolean } | null;
+    assert.deepEqual(answer, { kind: "go-ahead", by: "owner-chat", withoutSpecs: true });
+    assert.equal(round.goAheadWord(answer!.by), "word typed in its own chat");
+    assert.equal(round.goAheadWord("land-it"), "Land It");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

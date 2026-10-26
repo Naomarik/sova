@@ -35,7 +35,9 @@
 // keeps it, and refuses to run if os.homedir() disagrees. Bun's default per-test timeout is 5 s and
 // node:test has none: --timeout=60000 unless you pass one. PATH gets the real node's directory and
 // mise's tool paths first (shims refuse an untrusted config in a throwaway HOME), and
-// SOVA_PRICES_FETCH=off (bun test sets no NODE_TEST_CONTEXT). bun test itself sets TZ=UTC and
+// SOVA_PRICES_FETCH=off (bun test sets no NODE_TEST_CONTEXT), and SOVA_GIT_MAINTENANCE=off (a server a
+// test starts registers no repository with git's scheduled maintenance and starts no systemd
+// timer; server/git-maintenance.ts's own tests drive it with their own deps). bun test itself sets TZ=UTC and
 // NODE_ENV=test. Both runtimes: a stand-in `claude` (scripts/fake-claude.mjs) leads every test
 // process's PATH, so no test runs the installed Claude CLI, or a paid model through it; a test that
 // needs another `claude` sets its own PATH.
@@ -425,6 +427,7 @@ function hermeticEnv() {
     SOVA_TEST_HOME: root,
     PATH: [fakeClaudeDir(root), path.dirname(process.execPath), misePaths, process.env.PATH ?? ""].filter(Boolean).join(path.delimiter),
     SOVA_PRICES_FETCH: "off",
+    SOVA_GIT_MAINTENANCE: "off",
     // No per-server copy of the code (§app.chat-processes/code-generations): a server a test starts has
     // its state root here, on another filesystem than the checkout, where each copy is ~350 MB.
     SOVA_CHAT_CODE: "live",

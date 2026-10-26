@@ -368,6 +368,12 @@ Scoped `show_tour` presents only checked, operator-reviewed editions already bou
   forwarded link never reveals that its person left. An unknown token answers 404. An
   open page on a link that stops reading is told `gone` and closed (4410) within 30 seconds, even
   when nothing in the session changes (a sweep; expiry changes nothing in the session).
+- **The organization's owner answers without a link** (§app.owner-page/content): while a
+  conversation shown on their owner page waits on them (they hold its current hand-off, or an open
+  offer reached them, or they hold that offer's lease), their owner page writes their message into
+  it under the same rules as a link of that round: the same baton lock (holder, lease, message
+  limit), the same refusals and the same 10 a minute, text only. It mints, reads and turns off no
+  link, and the hand-off's own link still works as above.
 - Whenever a minted link may not open from outside, Sova says so: the response carrying it also
   carries `linkWarning` and its `linkWarningCode`, one of six (`off`, `unverified`, `unreachable`,
   `not-accepted`, `unconfirmed`, `sleeps`; texts in §design.copy-deck/public-links). The address's
@@ -459,6 +465,14 @@ Tour pictures and public explanation follow the same active-branch, offer cut an
   messages carry "You" for screen readers only, their side and fill marking them. While the view
   loads, the status line says "Loading the conversation." under a placeholder title; that text is
   never the page's heading.
+- **Theme.** The page follows the device's light or dark setting, or the theme a visitor picked
+  on an owner page in that browser (§app.owner-page/page); the photo viewer, code and drawings
+  follow it too.
+- **The same view on the owner page.** The owner page's conversation (§app.owner-page/content)
+  is this view with the organization's owner as the viewer, paged (its newest 60 items, then
+  earlier ones on request, never other items); while the conversation waits on the owner it
+  carries this composer's text field, and their message is taken as a link's would be
+  (§app.baton/links).
 - **The composer** appears only while the link writes: one rounded field holding the textarea,
   the attach control (§app.baton/images) on its left and an icon-only Send ("Send", "Sending")
   on its right. The textarea starts at one line and grows with its text up to a cap, then
@@ -501,8 +515,8 @@ Tour pictures and public explanation follow the same active-branch, offer cut an
   of its own), centred, shrunk only when the column is narrower, never stretched to fill it. Before
   it is drawn the page's current colour tokens (the frame's, §chat.markdown/visuals) and a
   sans-serif font are set as its defaults, which its own styles override, so `var(--color-…)`
-  text matches the chat; a page that changes theme (the Share sheet's Preview) draws it again in
-  the new colours. A `vis html` runs in a sandboxed frame (§chat.markdown/visuals)
+  text matches the chat; a page that changes theme (the Share sheet's Preview, or the share
+  build's own theme toggle, §app.owner-page/page) draws it again in the new colours. A `vis html` runs in a sandboxed frame (§chat.markdown/visuals)
   only while the session can draw interactive drawings (§app.baton/abilities; the view carries
   `drawings: {html}` from the session's abilities as they are now). Otherwise `html`, and always
   `code`, and a block that doesn't parse, shows one muted line, "A drawing couldn't be shown
@@ -615,7 +629,9 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   visit id riding along as `?v=` on the view and the socket (§app.baton/visits); and, for the owner
   page, only `GET /i/<token>`, `GET /api/i/<token>` and its `/p/<q_handle>` and `/c/<k_handle>`,
   `GET` and `POST /api/i/<token>/assistant`, `POST /api/i/<token>/assistant/image` and `GET
-  /api/i/<token>/assistant/img/<n>` (§app.project-assistant/photos), `GET /i/<token>/v/<v_handle>`, `POST /i/<token>/ask-link`
+  /api/i/<token>/assistant/img/<n>` (§app.project-assistant/photos), `GET
+  /api/i/<token>/assistant/older` and `GET /api/i/<token>/c/<k_handle>/older` (earlier pages), `POST
+  /api/i/<token>/c/<k_handle>/message` and `/end`, `POST /api/i/<token>/requests/<r_handle>`, `GET /i/<token>/v/<v_handle>`, `POST /i/<token>/ask-link`
   and the WebSocket `/ws/i?token=` (§app.owner-page/page, §app/project-assistant); and, for session shares, only `GET /s/<token>`, `GET /api/s/<token>`,
   `GET /api/s/<token>/img/<n>` and the WebSocket `/ws/s?token=` (§app/session-share). A new socket
   of a link's own is named `/ws/<kind>/<name>` (§mesh.public/share-protocol). Every other path

@@ -287,7 +287,8 @@ export async function removeScratch(git: Git, project: string, branches: readonl
       const r = await git(["worktree", "remove", "--force", "--force", "--", path], project);
       if (r.code !== 0 || existsSync(path)) {
         rmSync(path, { recursive: true, force: true });
-        await git(["worktree", "prune"], project);
+        // Only this one's record: a bare `worktree prune` forgets every worktree whose folder is missing.
+        await git(["worktree", "remove", "--force", "--force", "--", path], project);
       }
     }
   }

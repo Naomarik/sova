@@ -147,3 +147,39 @@ export function parseOwnerHash(hash: string): OwnerRoute {
 }
 export const ownerHash = (r: OwnerRoute): string =>
   r.kind === "home" ? "#" : r.kind === "assistant" ? "#a" : r.kind === "requests" ? "#r" : r.kind === "project" ? `#p/${r.id}` : `#c/${r.id}`;
+
+// ---- Home's Conversations (§app.owner-page/content): Outstanding and History -------------------------------------
+
+/** Where an open conversation sits in Outstanding: on the owner first, then on someone else, then with the team;
+    null once it finished, was agreed or ended (History). */
+export function outstandingRank(s: OwnerConversationStatus): 0 | 1 | 2 | null {
+  switch (s.kind) {
+    case "waiting-on-you":
+    case "planning":
+      return 0;
+    case "waiting-on":
+    case "offered":
+      return 1;
+    case "with-operator":
+      return 2;
+    default:
+      return null;
+  }
+}
+
+/** Home's conversations split into Outstanding (on you, then someone else, then the team; newest first within each)
+    and History (the most recently ended first), narrowed to one project's handle when one is picked. */
+export function conversationTabs<T extends { status: OwnerConversationStatus; project: string; since: string; endedAt?: string }>(rows: readonly T[], project?: string | null): { outstanding: T[]; history: T[] } {
+  const mine = project ? rows.filter((r) => r.project === project) : [...rows];
+  const outstanding = mine
+    .filter((r) => outstandingRank(r.status) !== null)
+    .sort((a, b) => outstandingRank(a.status)! - outstandingRank(b.status)! || b.since.localeCompare(a.since));
+  const history = mine.filter((r) => outstandingRank(r.status) === null).sort((a, b) => (b.endedAt ?? b.since).localeCompare(a.endedAt ?? a.since));
+  return { outstanding, history };
+}
+
+/** A History row's time line: "{project} · finished {time}", or "ended" for one that ended. */
+export const historyLine = (s: OwnerConversationStatus): "finished" | "ended" => (s.kind === "closed" ? "ended" : "finished");
+
+/** The browser tab's title (§design.copy-deck/owner-page): the org, led by how many conversations wait on the owner. */
+export const ownerTabTitle = (org: string, waiting: number): string => (waiting > 0 ? `(${waiting}) ${org}` : org);

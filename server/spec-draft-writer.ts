@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { REQUIREMENTS_NS, type DecisionRow } from "../shared/decisions";
 import { provenanceOf, specSlug } from "./decisions";
 import { LOCAL_ONLY_IGNORE } from "./project-worktrees";
+import { readSpecFs, serialize } from "../pi-config/extensions/spec/core/layout.mjs";
 
 /**
  * The deterministic spec writer (§app.requirements/drafts-with-provenance, /promotion): decisions
@@ -280,8 +281,11 @@ export interface SpecEdit {
  * bytes changed.
  */
 export function applyToSpecDir(specDir: string, edit: SpecEdit, opts: { proseOnly?: boolean } = {}): string[] {
-  const manifestPath = join(specDir, "manifest.json");
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { claimsRoot?: string; claims: Record<string, Record<string, unknown>> };
+  // The records in either layout, through the spec tools' shared reader; written back in the same layout.
+  const spec = readSpecFs(specDir, ".");
+  const refused = spec.state === "present" ? spec.problems.find((p) => p.code === "layout-mixed" || p.code === "manifest-unreadable") : undefined;
+  if (spec.state !== "present" || !spec.manifest || refused) throw new Error(refused?.message ?? `${specDir} has no readable manifest.json`);
+  const manifest = spec.manifest as { claimsRoot?: string; claims: Record<string, Record<string, unknown>> };
   const claimsRoot = join(specDir, (manifest.claimsRoot ?? "claims").replace(/\/+$/, ""));
   const changed = new Set<string>();
   let manifestChanged = false;
@@ -330,7 +334,15 @@ export function applyToSpecDir(specDir: string, edit: SpecEdit, opts: { proseOnl
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, joinClaimFile(parsed));
   }
-  if (manifestChanged) writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  if (manifestChanged) {
+    for (const [rel, text] of serialize(spec.layout, manifest, { prevRecordFiles: spec.recordFiles })) {
+      const abs = join(specDir, rel);
+      if (text === null) { rmSync(abs, { force: true }); continue; }
+      if (existsSync(abs) && readFileSync(abs, "utf8") === text) continue;
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, text);
+    }
+  }
   return [...changed].sort();
 }
 
@@ -406,8 +418,8 @@ export function specHash(root: string): string {
 /** The current spec's manifest records by id (empty when there is none). */
 export function currentClaims(root: string): Record<string, unknown> {
   try {
-    const m = JSON.parse(readFileSync(join(specDirOf(root), "manifest.json"), "utf8"));
-    return m && typeof m.claims === "object" && m.claims !== null ? m.claims : {};
+    const spec = readSpecFs(specDirOf(root), ".");
+    return spec.state === "present" && spec.manifest && !spec.problems.some((p) => p.code === "layout-mixed") ? spec.records : {};
   } catch {
     return {};
   }

@@ -2,7 +2,7 @@
 // hand-off pages keep Ctrl+Enter, §app.baton/outsider-view).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { composerEnterKeyHint, composerKeySends, composerPlaceholder, countFrom } from "./share-composer";
+import { composerEnterKeyHint, composerKeySends, composerPlaceholder, composerSend, countFrom } from "./share-composer";
 
 const key = (k: string, mods: Partial<{ shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; isComposing: boolean }> = {}) => ({ key: k, shiftKey: false, ctrlKey: false, metaKey: false, isComposing: false, ...mods });
 
@@ -49,4 +49,35 @@ test("enterkeyhint is send only while Enter sends; hand-off pages set none", () 
 
 test("the count starts at 80% of the limit (3,200 of the 4,000 both pages take)", () => {
   assert.equal(countFrom(4000), 3200);
+});
+
+test("instant send: a photo expired, the retry sends the first text and leaves what was added meanwhile", async () => {
+  type A = { cid: string; kind: "photo" | "file"; state: string; id?: string };
+  let draft = "hello";
+  let atts: A[] = [{ cid: "p1", kind: "photo", state: "ready", id: "s1" }];
+  const sends: { text: string; photos: string[]; again: boolean }[] = [];
+  await composerSend<A>({
+    draft: () => draft,
+    setDraft: (t) => (draft = t),
+    atts: () => atts,
+    setAtts: (l) => (atts = l),
+    copy: (l) => l.map((a) => ({ ...a })),
+    upload: async (cid) => {
+      atts = atts.map((a) => (a.cid === cid ? { ...a, id: `${a.id}x` } : a));
+      return true;
+    },
+    send: async (text, photos, _files, again) => {
+      sends.push({ text, photos: photos.map((p) => p.cid), again });
+      if (again) return "sent";
+      // Typed and attached while the first send was in flight.
+      draft = "more";
+      atts = [...atts, { cid: "p2", kind: "photo", state: "ready", id: "s2" }];
+      return { expired: "photo" };
+    },
+    optimistic: true,
+  });
+  assert.deepEqual(sends.map((s) => s.text), ["hello", "hello"]);
+  assert.deepEqual(sends[1]!.photos, ["p1"], "the retry sends only what the first send took");
+  assert.equal(draft, "more");
+  assert.deepEqual(atts.map((a) => a.cid), ["p2"]);
 });

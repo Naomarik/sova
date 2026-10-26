@@ -10,12 +10,14 @@
 # Drafts are working proposals; base/ and evidence/ snapshot source bytes.
 /drafts/
 
-# Claims are Markdown only. The root *secret*/*credential* rules would hide claims about
-# secrets, so claims/ is default-deny: descend every directory, admit only *.md, then
-# re-ignore the root's directory rules. Non-Markdown support files belong outside claims/.
+# Claims are Markdown, and (format version 2) each claim file's records in the *.json beside it.
+# The root *secret*/*credential* rules would hide claims about secrets, so claims/ is
+# default-deny: descend every directory, admit only *.md and their *.json records, then
+# re-ignore the root's directory rules. Any other support file belongs outside claims/.
 /claims/**
 !/claims/**/
 !/claims/**/*.md
+!/claims/**/*.json
 /claims/**/node_modules/
 /claims/**/dist/
 /claims/**/tmp/

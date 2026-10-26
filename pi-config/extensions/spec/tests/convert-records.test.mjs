@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { CORE, recordFiles, CLAIMS_POINTER, byCodePoint, env } from "./layout/lib.mjs";
-import { SPEC, REPO, requireBases, recordsAt, canon, rgit, archiveInto, scratch, noGit, lsTree, showAt } from "./convert/lib.mjs";
+import { SPEC, REPO, MERGED_MASTER, isAncestor, hasRev, requireBases, recordsAt, canon, rgit, archiveInto, scratch, noGit, lsTree, showAt } from "./convert/lib.mjs";
 
 const toolAt = (args) => {
   const r = spawnSync(process.execPath, [CORE, ...args, "--root", REPO, "--json"], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, env: env(scratch("home")) });
@@ -41,6 +41,25 @@ describe("the cutover commit converts Sova's spec without changing a record", { 
     // an oldest-first locator, after a merge back to format 1 and a second conversion, fails here
     const later = rgit("log", "--no-merges", "--format=%H %P", `${C.cutover}..HEAD`, "--", `${SPEC}/manifest.json`).split("\n").filter(Boolean).map((l) => l.split(" "));
     for (const [c, p] of later) assert.ok(!(fmt(c) === 2 && fmt(p) === 1), `${c.slice(0, 12)} converts again after ${C.cutover.slice(0, 12)}`);
+  });
+
+  test("the flip's parent contains the master it merged, and every record of that master is in its manifest.json", (t) => {
+    load();
+    assert.ok(hasRev(MERGED_MASTER), `${MERGED_MASTER.slice(0, 12)} is not in this clone (history rewritten? repin with SOVA_CONVERT_MASTER)`);
+    assert.ok(isAncestor(MERGED_MASTER, C.base), `the flip's parent ${C.base.slice(0, 12)} does not contain ${MERGED_MASTER.slice(0, 12)}: an older flip, cut before the merge`);
+    const m = recordsAt(MERGED_MASTER);
+    assert.equal(m.manifest.formatVersion, 1, "the merged master is format 1");
+    assert.deepEqual(Object.keys(m.records).filter((i) => !(i in A.records)), [], "no record of the merged master is missing from the flip's parent");
+    assert.ok(Object.values(A.fileOf).every((f) => f === "manifest.json"), "the flip's parent keeps every record in manifest.json (format 1, no record file)");
+    t.diagnostic(`flip parent ${C.base.slice(0, 12)} contains ${MERGED_MASTER.slice(0, 12)} (${Object.keys(m.records).length} records there, ${Object.keys(A.records).length} in the parent); pre-landing master found: ${C.pre.slice(0, 12)}`);
+  });
+
+  test("every record in the flip's parent's manifest.json is in the flip's per-area files, value for value", () => {
+    load();
+    const ids = Object.keys(A.manifest.claims);
+    assert.ok(ids.length > 1000);
+    const bad = ids.filter((i) => !B.fileOf[i] || !B.fileOf[i].startsWith("claims/") || !B.fileOf[i].endsWith(".json") || JSON.stringify(B.records[i]) !== JSON.stringify(A.manifest.claims[i]));
+    assert.deepEqual(bad, [], "each in a claims/**/*.json, the same bytes");
   });
 
   test("no record of the pre-landing master is lost on the way to the cutover", () => {

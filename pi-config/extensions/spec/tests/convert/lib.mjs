@@ -18,6 +18,12 @@ import { REPO, SPEC, tmp, hasGit } from "../layout/lib.mjs";
 
 export { REPO, SPEC };
 export const TOOLS = "pi-config/extensions/spec/core";
+/**
+ * The one pinned commit, by the main thread's decision: the master commit landing 2 merged before its conversion
+ * (format 1). The flip's parent must contain it, so an older flip cut before that merge can never pass for the
+ * conversion that lands. SOVA_CONVERT_MASTER=<rev> repins it after a history rewrite or a regenerated flip.
+ */
+export const MERGED_MASTER = process.env.SOVA_CONVERT_MASTER || "6f712fb84dbbc0673541998e4d8a24330ce08704";
 
 const gitRaw = (args, opts = {}) => spawnSync("git", ["-C", REPO, ...args], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024, ...opts });
 export function rgit(...args) {
@@ -135,7 +141,7 @@ export const exists = (root, rel) => existsSync(join(root, rel));
 export const noGit = !hasGit ? "no git" : false;
 
 const tryRev = (rev) => { const r = gitRaw(["rev-parse", "--verify", "-q", `${rev}^{commit}`]); return r.status === 0 ? r.stdout.trim() : null; };
-const isAncestor = (a, b) => gitRaw(["merge-base", "--is-ancestor", a, b]).status === 0;
+export const isAncestor = (a, b) => gitRaw(["merge-base", "--is-ancestor", a, b]).status === 0;
 const memo = new Map();
 const once = (key, f) => { if (!memo.has(key)) memo.set(key, f()); return memo.get(key); };
 

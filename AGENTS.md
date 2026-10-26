@@ -73,6 +73,7 @@ also update Y" list live in its guide: read the guide of every area your task to
   `pnpm test:int -- --landing` at landing (the everyday integration set plus the slow groups the
   branch triggers, `scripts/test-groups.mjs`); a release runs every group. Verify on Bun (the
   runner's default, the user's runtime); Node only when the user asks.
+- Tests wait on events, not fixed sleeps (testing guide, "Writing tests: wait on conditions").
 - Never run the spec replay suite (`pi-config/extensions/spec/tests/replay`) while working: it is a
   landing gate the merge round runs.
 - Editing `statecharts/`: start `pnpm statecharts:watch` first and run `pnpm statecharts:test`; never

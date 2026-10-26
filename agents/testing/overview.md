@@ -154,6 +154,22 @@ Each is data a change may regenerate only on purpose, never to hide a regression
   `scripts/sova-scenario.mjs`'s header; `pnpm run scenario [<file>…]` runs them by hand. A new
   scenario file is picked up with no other change.
 
+## Writing tests: wait on conditions
+
+- Wait on the event that ends a window, never on the clock: poll for it with a deadline (`until`,
+  `waitFor`, a loop of short `setTimeout`s with a bound). Make the deadline generous; it costs nothing
+  when the event comes, and a busy machine needs it.
+- A fixed wait over 2 s only proves an absence (nothing doubled, nothing restarted, no second
+  delivery). Start it after the event a repeat would follow, keep it as short as that event's own
+  timing allows, and name that event in a comment: "the feed re-diffs at most once a second, so 2 s
+  holds a re-diff or two".
+- A scripted model reply that must stay open through a step is held, not made long: the
+  chat-runtime trial's stand-in model keeps a `[long N #tag]` reply streaming while the trial holds
+  its tag (`mock.hold(tag)`, then `mock.hold(tag, false)`), however long the step takes under load.
+- `node scripts/fixed-wait-scan.mjs --base <rev> [--json]` lists the setTimeout/sleep/delay
+  literals over 2000 ms a change adds to test files since the merge base. It is a note for a person
+  to check, never a failure.
+
 ## When you change X, also update Y
 
 | You change | Also |

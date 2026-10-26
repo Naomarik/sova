@@ -208,6 +208,22 @@ describe("fold and normalize", () => {
     assert.equal(normalizeCardDetails({ v: 1, changes: [], line: "", closed: c }), undefined, "closed is always superseded");
   });
 
+  test("a stored card's copy and leftover rows read back as they were; a malformed one makes the card unreadable (§app.overseer/copies)", () => {
+    const copy = { kind: "copy", id: "demo-a", project: "/p/demo", projectName: "Demo", slot: 1, branch: null, checkout: "/p/wt/a", state: "stopped", startedBy: { kind: "session", id: "s-1", title: "Fix" }, edits: "uncommitted", links: 1, working: true } as const;
+    const left = { kind: "leftover", id: "5174:42:9", project: "/p/demo", projectName: "Demo", slot: 1, port: 5174, pid: 42, start: "9", command: "vite", folder: "/x (deleted)", reason: "folder-gone", unit: "dev.service" } as const;
+    const made = applyCardCall([], { ops: [{ op: "create", title: "Clean up?", choices: ["Tear Down", "Stop", "Keep"] }] }, { now: "2026-10-26T10:00:00.000Z", prepared: { items: [{ ...copy, default: "a" }, { ...left, default: "b" }], hrefs: [], clickOnly: true } }).details.card!;
+    assert.deepEqual(normalizeCard(structuredClone(made)), made);
+    assert.equal(made.clickOnly, true);
+    const bad = (row: Record<string, unknown>) => normalizeCard({ ...made, items: [{ ...made.items[0]!, ...row }, made.items[1]!] });
+    assert.equal(bad({ state: "gone" }), undefined);
+    assert.equal(bad({ startedBy: { kind: "session", id: "" } }), undefined);
+    assert.equal(bad({ edits: "some" }), undefined);
+    assert.equal(normalizeCard({ ...made, items: [made.items[0]!, { ...made.items[1]!, reason: "bored" }] }), undefined);
+    // Its click: the Apply composes each row's label, and the row's choice is what the server checks.
+    assert.equal(itemsClick(made, { 1: "a", 2: "c" }), "c_1: 1a Tear Down, 2c Keep");
+    assert.deepEqual(matchCardClick(made, "c_1: 1a Tear Down, 2c Keep"), { card: "c_1", items: { 1: "a", 2: "c" } });
+  });
+
   test("https only, no credentials", () => {
     assert.equal(safeHttpsUrl("https://github.com/x/y/pull/1"), "https://github.com/x/y/pull/1");
     assert.equal(safeHttpsUrl("http://example.com"), null);

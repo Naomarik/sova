@@ -3,13 +3,16 @@ import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import type { HookCtx, ToolCtx, ToolSpec } from "../../shared/harness";
+import type { ClickChoice } from "../../shared/overseer-card";
 import { DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, VERB_PARAMS, VERBS, type VerbParam, type VerbResult } from "../../shared/project-contract";
 import { redactingTool, serverRedactor, type Redactor } from "../overseer-redact";
 import { toPiTool } from "../harness/pi/tools";
 import { WORKTREES } from "../harness/state-kinds";
 import { stateView } from "../harness/state-view";
 import { projectRootOf } from "../project-root";
-import type { Caller, ProjectEngine, VerbAct } from "./engine";
+import type { Caller, CopyApproval, ProjectEngine, VerbAct } from "./engine";
+import { approvedLeftover, LEFTOVER_CLICK_REFUSAL } from "../overseer-copies";
+import { findLeftovers, LEFTOVER_UNSUPPORTED, leftoverLine, stopLeftover, type LeftoverHost } from "./leftovers";
 import { registerInstanceNote, resultNote, sessionNote } from "./note";
 
 /**
@@ -56,18 +59,46 @@ const PARAMS = paramsOf([...VERBS, ...DEPLOY_VERBS], false);
 /** The Overseers' parameters: the verbs, plus `onboard` (the Project verbs playbook, §app.project-runtime/onboard). */
 const OVERSEER_PARAMS = paramsOf([...VERBS, ...DEPLOY_VERBS, "onboard"], true);
 
+/** The Overseers' copy verbs (§app.overseer/copies): `leftovers` (a read) and `stop-leftover` (behind a card's click). */
+export const COPY_VERBS = ["leftovers", "stop-leftover"] as const;
+/** With them: their verbs in the enum, and `port`. */
+const COPIES_PARAMS = (() => {
+  const p = paramsOf([...VERBS, ...DEPLOY_VERBS, "onboard", ...COPY_VERBS], true);
+  return { ...p, properties: { ...p.properties, port: { type: "integer", minimum: 1, maximum: 65535, description: "stop-leftover: the copy port the leftover process holds, as leftovers lists it." } } };
+})();
+
+/** What the Overseers' copy verbs need (§app.overseer/copies). */
+export interface CopyVerbs {
+  /** The click that opened this turn: each card row it touched and the label chosen for it (null: no click). */
+  clicks(): readonly ClickChoice[] | null;
+  /** The engine's approval hook over the same click. */
+  approved: CopyApproval;
+  host(): LeftoverHost;
+  /** The only project they reach (the project overseer's), else any the call names. */
+  root?(): Promise<string>;
+}
+
+const COPIES_HELP =
+  " leftovers {project} lists each process holding one of the project's copy ports (slots 1 to 16) that no copy of Sova's owns: safe to stop (its folder was deleted, it runs outside any git checkout, or its branch is already merged) or in use, with why. " +
+  "In the turn the user's click on a sova_card card opens, and only for a row whose chosen label names the act: teardown or reset of a copy you did not start (items.copies), down or teardown of a copy with share links (its row shows them), and stop-leftover {project, port} of a leftover process (items.leftovers; Sova checks it is still the same process). A typed yes never counts. A teardown keeps a folder's uncommitted edits in that folder (its worktree step says kept): tell them so. A project's main copy (slot 0) and stopping a shared service are never yours.";
+
 const ONBOARD_HELP =
   " onboard {why} starts the Project verbs playbook as a coding session on its own branch (counted and held like a coding session's start): it writes or updates .sova/project.json, proves it with conform and proposes it on its branch; the operator merges it, never you.";
 
 /** The playbook's start for a verb tool (the Overseers'): the text the model reads and the details. */
 export type OnboardRun = (why: string, params: Record<string, unknown>) => Promise<{ text: string; details: Record<string, unknown> }>;
 
+/** The sentence the tools without the click power say about a linked copy's down. */
+const COPY_LINK_RULE = ", and down of a copy with an active link is the operator's (needs-confirm)";
+
 const VERB_HELP =
   "Verbs over the project's .sova/project.json, each answering one JSON result (ok, changed, state, steps, services, data, error {code, message}). " +
   "create (a worktree's instance: slot, ports, data, setup), up (start and wait until ready; creates first), down (stop; keeps data), apply (build + reload each running service, wait until ready), " +
   "status, logs, doctor (preflight), reset (fresh data), teardown (the only destructive verb: stops, deletes its data, removes a worktree Sova cut; never the branch), conform (Sova's conformance suite in two scratch copies), " +
   "test (runs the project's test command in that instance, starting what it requires; tests {pass, passed, failed, failures…}; error tests-failed when it did not pass, unsupported when the project declares none). " +
-  "share {instance, endpoint, days?} gives a running copy a preview link to one endpoint the definition lists in share.endpoints (never anything else; never a copy whose data is sensitive); the result names the link by its id, never its URL, which only the operator sees. revoke {link} or {instance, endpoint?} ends links at once (never held). Teardown ends every link of its copy, and down of a copy with an active link is the operator's (needs-confirm). " +
+  "share {instance, endpoint, days?} gives a running copy a preview link to one endpoint the definition lists in share.endpoints (never anything else; never a copy whose data is sensitive); the result names the link by its id, never its URL, which only the operator sees. revoke {link} or {instance, endpoint?} ends links at once (never held). Teardown ends every link of its copy" +
+  COPY_LINK_RULE +
+  ". " +
   "Error busy: another verb is running on that instance; try again later. " +
   "Deploy (a target of the definition's deploy section, never an instance): deploy.status {target?} (each target's standing, last deploy and history) and deploy.logs {target | deploy} read; deploy.check {ref?} proves a recipe offline (programs, host values, credentials by presence; runs nothing).";
 
@@ -144,17 +175,49 @@ export interface VerbToolOptions {
   onboard?: OnboardRun;
   /** Who ships through this tool, in its words. */
   deploy: keyof typeof DEPLOY_HELP;
+  /** The Overseers' copy verbs (absent: not offered). */
+  copies?: CopyVerbs;
+}
+
+/** `leftovers` and `stop-leftover` (§app.overseer/copies), answered in the model's words. */
+async function copyVerb(c: CopyVerbs, p: Record<string, unknown>): Promise<{ text: string; details: Record<string, unknown> }> {
+  const verb = String(p.verb);
+  const named = typeof p.project === "string" && p.project.trim() ? ((await projectRootOf(p.project.trim())) ?? p.project.trim()) : null;
+  const own = c.root ? await c.root() : null;
+  const project = own ?? named;
+  if (!project) return { text: `${verb} failed: invalid-request: name the project (its root).`, details: { verb, error: "invalid-request" } };
+  if (own && named && named !== own) return { text: `${verb} failed: forbidden: this caller acts only on its own project (${own}).`, details: { verb, error: "forbidden" } };
+  const h = c.host();
+  if (verb === "leftovers") {
+    const r = await findLeftovers(project, h);
+    if ("error" in r) return { text: `leftovers: ${r.error}`, details: { verb, project, error: r.error === LEFTOVER_UNSUPPORTED ? "unsupported" : "invalid-definition" } };
+    const lines = [...r.rows.map(leftoverLine), ...r.unreadable.map((u) => `port ${u.port} (slot ${u.slot}) — in use: ${u.why}`)];
+    return {
+      text: lines.length ? `leftovers of ${project} (${r.rows.filter((x) => x.verdict.safe).length} safe to stop):\n${lines.map((l) => `- ${l}`).join("\n")}` : `leftovers of ${project}: no process but Sova's copies holds a copy port.`,
+      details: { verb, project, rows: r.rows, unreadable: r.unreadable },
+    };
+  }
+  const port = typeof p.port === "number" ? p.port : Number.NaN;
+  if (!Number.isInteger(port)) return { text: "stop-leftover failed: invalid-request: give port (the copy port leftovers lists).", details: { verb, error: "invalid-request" } };
+  const row = approvedLeftover(c.clicks(), project, port);
+  if (!row) return { text: `stop-leftover failed: needs-confirm: ${LEFTOVER_CLICK_REFUSAL}`, details: { verb, project, port, error: "needs-confirm" } };
+  const r = await stopLeftover({ project, port, pid: row.pid, start: row.start }, h);
+  return { text: r.ok ? `stop-leftover: ${r.text}` : `stop-leftover failed: ${r.text}`, details: { verb, project, port, ok: r.ok, ...(r.ok ? {} : { error: "refused" }) } };
 }
 
 export function projectVerbsTool(o: VerbToolOptions): Tool {
   const tool: Tool = {
     name: o.name,
     label: o.label,
-    description: `${o.description} ${VERB_HELP}${DEPLOY_HELP[o.deploy]}${o.onboard ? ONBOARD_HELP : ""}`,
+    description: `${o.description} ${o.copies ? VERB_HELP.replace(COPY_LINK_RULE, "") : VERB_HELP}${DEPLOY_HELP[o.deploy]}${o.onboard ? ONBOARD_HELP : ""}${o.copies ? COPIES_HELP : ""}`,
     promptSnippet: o.promptSnippet,
-    parameters: (o.onboard ? OVERSEER_PARAMS : PARAMS) as unknown as Tool["parameters"],
+    parameters: (o.copies ? COPIES_PARAMS : o.onboard ? OVERSEER_PARAMS : PARAMS) as unknown as Tool["parameters"],
     async execute(_id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: ToolCtx) {
       const p = (params ?? {}) as Record<string, unknown>;
+      if (o.copies && (COPY_VERBS as readonly string[]).includes(String(p.verb))) {
+        const out = await copyVerb(o.copies, p);
+        return { content: [{ type: "text" as const, text: out.text }], details: { v: 1, ...out.details } };
+      }
       if (o.onboard && p.verb === "onboard") {
         const out = await o.onboard(typeof p.why === "string" ? p.why.trim() : "", p);
         return { content: [{ type: "text" as const, text: out.text }], details: { v: 1, ...out.details } };
@@ -256,20 +319,22 @@ export function sessionVerbsTool(engine: () => ProjectEngine): Tool {
 export type LooseExec = (id: string, params: any, signal?: AbortSignal, onUpdate?: unknown, ctx?: unknown) => Promise<any>;
 
 /** The global Overseer's `sova_project_verbs`: any project; its act wrapper keeps acts to turns the user started. */
-export function overseerVerbsTool(engine: () => ProjectEngine, overseerId: () => string, wrap: (exec: LooseExec) => LooseExec, onboard?: OnboardRun): Tool {
+export function overseerVerbsTool(engine: () => ProjectEngine, overseerId: () => string, wrap: (exec: LooseExec) => LooseExec, onboard?: OnboardRun, copies?: CopyVerbs): Tool {
   const t = projectVerbsTool({
     name: "sova_project_verbs",
     label: "Project verbs",
-    description:
-      "Run any project's instances on this host: status/logs/doctor anywhere; create, up, down, apply, test and conform in a turn the user started; revoke a copy's share links. Reset and teardown of an instance you did not create, stopping a shared service, stopping a copy with an active share link, and share itself, are the operator's (needs-confirm): tell them.",
+    description: copies
+      ? "Run any project's instances on this host: status/logs/doctor and leftovers anywhere; create, up, down, apply, test and conform in a turn the user started; revoke a copy's share links. Tearing down or resetting a copy you did not start, stopping a copy with an active share link, and stopping a leftover process run only in the turn the user's click on a card listing it opens (below). Stopping a shared service, any project's main copy (slot 0), and share itself, are the operator's (needs-confirm): tell them."
+      : "Run any project's instances on this host: status/logs/doctor anywhere; create, up, down, apply, test and conform in a turn the user started; revoke a copy's share links. Reset and teardown of an instance you did not create, stopping a shared service, stopping a copy with an active share link, and share itself, are the operator's (needs-confirm): tell them.",
     promptSnippet: "status, logs and lifecycle (create/up/down/apply/reset/teardown/conform) of a project's running instances",
     engine,
     deploy: "overseer",
     defaultProject: async () => null,
-    caller: async () => ({ kind: "overseer", id: overseerId() }),
+    caller: async () => ({ kind: "overseer", id: overseerId(), ...(copies ? { approved: copies.approved } : {}) }),
     ...(onboard ? { onboard } : {}),
+    ...(copies ? { copies } : {}),
   });
-  const reads = new Set<string>(["status", "logs", "doctor", ...DEPLOY_READ_VERBS]);
+  const reads = new Set<string>(["status", "logs", "doctor", "leftovers", ...DEPLOY_READ_VERBS]);
   const exec = t.execute as unknown as LooseExec;
   const acted = wrap(exec);
   const execute: LooseExec = (id, params, signal, onUpdate, ctx) => (reads.has(String(params?.verb)) ? exec : acted)(id, params, signal, onUpdate, ctx);
@@ -278,17 +343,19 @@ export function overseerVerbsTool(engine: () => ProjectEngine, overseerId: () =>
 
 /** The project overseer's `sova_project_verbs`: its own project only; every verb but the reads is its project
     statechart's act (`act`), which checks its power and throws the statechart's refusal. */
-export function projectOverseerVerbsTool(engine: () => ProjectEngine, who: { id: () => string; root: () => string; act: VerbAct; onboard?: OnboardRun }): Tool {
+export function projectOverseerVerbsTool(engine: () => ProjectEngine, who: { id: () => string; root: () => string; act: VerbAct; onboard?: OnboardRun; copies?: CopyVerbs }): Tool {
   return projectVerbsTool({
     name: "sova_project_verbs",
     label: "Project verbs",
-    description:
-      "Run this project's instances (one running copy per worktree): status/logs/doctor, down and revoke always (revoke never held); create/up/apply/test/conform need the power to create, start and update running copies, reset/teardown the power to reset or tear them down, share the power to share a version to try (people-facing: held like a preview); in a turn the operator started, every verb whatever the switches say. Reset and teardown only of instances you created; stopping a shared service or a copy with an active share link is the operator's (needs-confirm). You never see a share link's URL: send it to a person with sova_send_to_person and its preview id, or the operator has it.",
+    description: who.copies
+      ? "Run this project's instances (one running copy per worktree): status/logs/doctor, leftovers, down and revoke always (revoke never held); create/up/apply/test/conform need the power to create, start and update running copies, reset/teardown the power to reset or tear them down, share the power to share a version to try (people-facing: held like a preview); in a turn the operator started, every verb whatever the switches say. Reset and teardown of instances you did not create, stopping a copy with an active share link, and stop-leftover run only in the turn the operator's click on your card listing it opens (below); stopping a shared service, and the project's main copy (slot 0), are the operator's (needs-confirm). Only this project. You never see a share link's URL: send it to a person with sova_send_to_person and its preview id, or the operator has it."
+      : "Run this project's instances (one running copy per worktree): status/logs/doctor, down and revoke always (revoke never held); create/up/apply/test/conform need the power to create, start and update running copies, reset/teardown the power to reset or tear them down, share the power to share a version to try (people-facing: held like a preview); in a turn the operator started, every verb whatever the switches say. Reset and teardown only of instances you created; stopping a shared service or a copy with an active share link is the operator's (needs-confirm). You never see a share link's URL: send it to a person with sova_send_to_person and its preview id, or the operator has it.",
     promptSnippet: "status, logs and lifecycle of the project's running instances, and its deploy act (each verb as its power allows)",
     engine,
     deploy: "projectOverseer",
     defaultProject: async () => (await projectRootOf(who.root())) ?? who.root(),
-    caller: async () => ({ kind: "project-overseer", id: who.id(), root: (await projectRootOf(who.root())) ?? who.root(), act: who.act }),
+    caller: async () => ({ kind: "project-overseer", id: who.id(), root: (await projectRootOf(who.root())) ?? who.root(), act: who.act, ...(who.copies ? { approved: who.copies.approved } : {}) }),
     ...(who.onboard ? { onboard: who.onboard } : {}),
+    ...(who.copies ? { copies: who.copies } : {}),
   });
 }

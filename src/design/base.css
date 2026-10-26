@@ -6662,6 +6662,10 @@ a.subagent-row { text-decoration: none; }
 .overseer-confirm-item-name { min-width: 0; overflow-wrap: anywhere; }
 .overseer-confirm-item-meta { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); white-space: nowrap; }
 .overseer-confirm-idea-id { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }
+/* A copy or leftover process row's second line (§app.overseer/copies): who started it, its command and folder. */
+.overseer-confirm-item-detail { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: var(--space-2); row-gap: var(--space-1); min-width: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.overseer-confirm-item-command, .overseer-confirm-item-path { font-size: var(--fs-mono); color: var(--color-ink-2); min-width: 0; overflow-wrap: anywhere; }
+.overseer-confirm-item-starter { min-width: 0; overflow-wrap: anywhere; color: var(--color-ink-muted); }
 /* The Overseer's note: what the item is and why the card acts on it. Body ink,
    not muted — it is the reason to read the row; two lines, then clamped. */
 .overseer-confirm-item-note {

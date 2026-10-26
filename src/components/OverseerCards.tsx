@@ -407,6 +407,81 @@ function ItemNumber(props: { item: SovaConfirmItem }) {
   );
 }
 
+/** Why a leftover process may be stopped, as its row says it. */
+const LEFTOVER_REASON_LABEL: Record<Extract<SovaConfirmItem, { kind: "leftover" }>["reason"], string> = {
+  "folder-gone": "Its folder was deleted",
+  "not-a-checkout": "Runs outside any git checkout",
+  "branch-on-main": "Its branch is already merged",
+};
+
+const COPY_STATE: Record<Extract<SovaConfirmItem, { kind: "copy" }>["state"], string> = { running: "Running", stopped: "Stopped", broken: "Broken" };
+
+/** A copy's row: its branch (or folder), project, slot and state; who started it; its edits, links and session at work. */
+function CopyRow(props: { item: Extract<SovaConfirmItem, { kind: "copy" }>; children?: JSX.Element }) {
+  const it = props.item;
+  const name = it.branch ?? it.checkout.split("/").filter(Boolean).pop() ?? it.checkout;
+  /** The starting session's route and its title now (else the snapshot's). */
+  const starter = () => {
+    const s = it.startedBy;
+    if (s.kind !== "session") return null;
+    sessionIndexVersion();
+    const v = resolveAppLink(`sova://s/${s.id}`, sessionIndex(), groupLinkIndex());
+    return { href: v?.kind === "route" ? v.href : null, title: (v?.kind === "route" ? v.title : undefined) ?? s.title };
+  };
+  return (
+    <li class="overseer-confirm-item">
+      <span class="overseer-confirm-item-line">
+        <ItemNumber item={it} />
+        <span class="overseer-confirm-item-name text-mono" title={it.checkout}>
+          {name}
+        </span>
+        <span class="overseer-confirm-item-meta">
+          {it.projectName} · slot {it.slot} · {COPY_STATE[it.state]}
+        </span>
+        <Show when={it.edits !== "clean"}>
+          <span class="chip chip-warn">
+            <span class="chip-dot" />
+            {it.edits === "uncommitted" ? "Uncommitted edits, kept in its folder" : "Folder gone"}
+          </span>
+        </Show>
+        <Show when={it.links}>
+          {(n) => (
+            <span class="chip chip-warn">
+              <span class="chip-dot" />
+              {n()} {n() === 1 ? "share link" : "share links"}
+            </span>
+          )}
+        </Show>
+        <Show when={it.working}>
+          <span class="chip chip-info">
+            <span class="chip-dot" />
+            Its session is working
+          </span>
+        </Show>
+      </span>
+      <span class="overseer-confirm-item-detail">
+        <span class="overseer-confirm-item-starter">
+          Started by{" "}
+          <Show when={starter()} fallback={it.startedBy.kind === "session" ? it.startedBy.title : (it.startedBy as { label: string }).label}>
+            {(s) => (
+              <Show when={s().href} fallback={s().title}>
+                {(href) => (
+                  <a href={href()} title={s().title}>
+                    {s().title}
+                  </a>
+                )}
+              </Show>
+            )}
+          </Show>
+        </span>
+        <span class="text-mono overseer-confirm-item-path">{it.id}</span>
+      </span>
+      <ItemNote note={it.note} />
+      {props.children}
+    </li>
+  );
+}
+
 /** `since`: an open card's createdAt; a session row whose session the list shows active after it
     says "Changed since asked" (§app.overseer/confirm). */
 function ConfirmItemRow(props: { item: SovaConfirmItem; since?: string; children?: JSX.Element }) {
@@ -464,6 +539,34 @@ function ConfirmItemRow(props: { item: SovaConfirmItem; since?: string; children
           <Show when={it.asked}>
             <span class="overseer-confirm-item-meta">from {it.asked}</span>
           </Show>
+        </span>
+        <ItemNote note={it.note} />
+        {props.children}
+      </li>
+    );
+  // A running copy (§app.overseer/copies): its own row, by name, with the session that started it and what a teardown keeps.
+  if (it.kind === "copy") return <CopyRow item={it}>{props.children}</CopyRow>;
+  // A process holding one of the project's copy ports, and why it is a leftover.
+  if (it.kind === "leftover")
+    return (
+      <li class="overseer-confirm-item">
+        <span class="overseer-confirm-item-line">
+          <ItemNumber item={it} />
+          <span class="overseer-confirm-item-name text-mono">:{it.port}</span>
+          <span class="overseer-confirm-item-meta">
+            {it.projectName} · slot {it.slot} · pid <span class="text-mono">{it.pid}</span>
+          </span>
+        </span>
+        <span class="overseer-confirm-item-detail">
+          <Show when={it.command}>
+            <span class="text-mono overseer-confirm-item-command" title={it.command}>
+              {it.command}
+            </span>
+          </Show>
+          <span class="text-mono overseer-confirm-item-path" title={it.folder}>
+            {it.folder}
+          </span>
+          <span class="overseer-confirm-item-meta">{LEFTOVER_REASON_LABEL[it.reason]}</span>
         </span>
         <ItemNote note={it.note} />
         {props.children}

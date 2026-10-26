@@ -76,6 +76,8 @@ import type { Envelope, LedgerCounts } from "./org-envelope";
 import { ledgerOf } from "./org-stamp";
 import { rowsOf } from "./transcript";
 import { joinedText, readBranch } from "./harness/pi/reader";
+import { confirmedClicks } from "./overseer-copies";
+import type { ClickChoice } from "../shared/overseer-card";
 import { projectOverseerUnread } from "./project-overseer-unread";
 import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
@@ -177,6 +179,13 @@ function attendedOf(rt: Rt): boolean {
   const run = serverToolCall();
   if (run && run.call.chatId === rt.chatId) return run.call.attended;
   return (rt.chatId ? chatHandle(rt.chatId)?.mirror.attended : false) ?? false;
+}
+/** The operator's click that opened this run, per card row with its chosen label (§app.overseer/copies): only a
+    server-hosted tool's run of this overseer's chat carries the click's mark; anything else has none. */
+function clicksOf(rt: Rt): ClickChoice[] | null {
+  const run = serverToolCall();
+  if (!run || run.call.chatId !== rt.chatId) return null;
+  return confirmedClicks(run.call.card, run.chat.branch(), (h) => joinedText(h, { images: false }));
 }
 function rtOf(projectId: string): Rt {
   let rt = rts.get(projectId);
@@ -689,6 +698,7 @@ function toolHost(rt: Rt): PoToolHost {
     settings,
     effective: () => powersOf(projectId, settings()),
     attended: () => rt.attended(),
+    confirmedClicks: () => clicksOf(rt),
     overseerId: () => readPoState(paths)?.current ?? "",
     engine,
     gaps: () => gapsOf(engine(), projectId),

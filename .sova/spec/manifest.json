@@ -1544,8 +1544,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-20T12:19Z",
-        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#2d6e96df"
+        "at": "2026-10-26T21:58Z",
+        "source": "pi-session:870ce3a5-70c4-4ee4-86d6-e43d0a143cb2#58d50ef4"
       }
     },
     "§app.project-assistant/feature-chats": {
@@ -12458,8 +12458,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T00:54Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
+        "at": "2026-10-26T21:58Z",
+        "source": "pi-session:870ce3a5-70c4-4ee4-86d6-e43d0a143cb2#58d50ef4"
       }
     },
     "§chat.alignment/session-mark": {
@@ -12692,6 +12692,33 @@
         "source": "pi-session:db608be6-c8e2-491a-8c10-d6e779b04b00#7992844d"
       }
     },
+    "§chat.markdown/vis-wireframe-room": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/vis-wireframe",
+        "§chat.markdown/visuals"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/vis/kinds/wireframe/layout.ts",
+        "src/vis/kinds/wireframe/layout.test.ts",
+        "src/vis/kinds/wireframe/View.tsx",
+        "src/vis/kinds/wireframe/wireframe.css",
+        "pi-config/extensions/mode/vis/wireframe.md",
+        "server/vis-check.ts",
+        "server/vis-check.test.ts",
+        "server/vis-tools-sync.test.ts",
+        "src/vis/guide.test.ts",
+        "pi-config/extensions/mode/vis/html-svg.md",
+        "pi-config/extensions/mode/vis/overview.md"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-26T21:58Z",
+        "source": "pi-session:870ce3a5-70c4-4ee4-86d6-e43d0a143cb2#58d50ef4"
+      }
+    },
     "§chat.markdown/visuals": {
       "kind": "behavior",
       "authority": "accepted",
@@ -12821,8 +12848,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-24T21:06Z",
-        "source": "pi-session:db608be6-c8e2-491a-8c10-d6e779b04b00#7992844d"
+        "at": "2026-10-26T21:58Z",
+        "source": "pi-session:870ce3a5-70c4-4ee4-86d6-e43d0a143cb2#58d50ef4"
       }
     },
     "§chat.mode-menu/minor-toggle-keeps-prompt": {
@@ -23948,7 +23975,12 @@
         "§chat.alignment/tool",
         "§chat.alignment-review/flag",
         "§chat.mode-menu/minor-toggle-keeps-prompt"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-26T21:58Z",
+        "source": "pi-session:870ce3a5-70c4-4ee4-86d6-e43d0a143cb2#58d50ef4"
+      }
     },
     "§design.copy-deck/settings-alignment": {
       "kind": "note",

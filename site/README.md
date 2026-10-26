@@ -69,7 +69,8 @@ Set `SOVA_SITE_URL` to the address the site is served from so link previews get 
   with an H.264 fallback, checked before it replaces the old one; nothing but the pointer is drawn
   into it, its captions are page text from the cue list in the manifest; the phone section shows
   stills only) and
-  `pnpm run screens:verify`. A reworded caption or chapter needs only `pnpm run screens:video -- --cues`, no new
+  `pnpm run screens:verify`. Videos are gitignored and live on disk only, in the main checkout's
+  `public/video/`; never commit them. The deploy adds them to its export (Deploy below). A reworded caption or chapter needs only `pnpm run screens:video -- --cues`, no new
   recording. The video shows real provider and model names; the footer says the replies are
   scripted and Sova isn't affiliated with the model makers. Commit the story with what they wrote. The pages take each image's
   alt text and size from the manifest; the build turns the masters into AVIF and WebP and never
@@ -108,10 +109,15 @@ Leave Cloudflare Web Analytics off: the page promises no analytics.
 
 The Pages project is not connected to Git: a push to master deploys nothing. Deploy by hand with
 wrangler, from a build of the commit you mean to publish (a `git archive` of it, so no checkout
-is touched):
+is touched). The archive has no hero video (videos are gitignored), so add it before the build:
+`site/scripts/add-video.mjs` copies every video the screens manifest references from
+`$SOVA_SITE_VIDEO_DIR` (default: the main checkout's `site/public/video`, found with git from the
+current directory) into the export, and exits non-zero, publishing nothing, when any is missing:
 
 ```sh
-cd site
+export=$(mktemp -d) && git archive <sha> | tar -x -C "$export"
+node site/scripts/add-video.mjs "$export"   # from the checkout; stop here if it refuses
+cd "$export/site"
 pnpm install --frozen-lockfile
 SOVA_SITE_URL=https://sova.naomarik.com/ pnpm run build
 node scripts/check-docs-leaks.mjs

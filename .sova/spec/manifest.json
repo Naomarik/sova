@@ -24804,7 +24804,7 @@
     "§app.tours/viewer": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/TourViewer.tsx",
         "src/components/TourViewer.css",
@@ -24829,15 +24829,20 @@
         "src/lib/tour-progress-save.ts",
         "src/lib/tour-progress-save.test.ts",
         "src/design/tokens.css",
-        "src/lib/tour-ui.test.ts"
+        "src/lib/tour-ui.test.ts",
+        "src/lib/tour-player.ts",
+        "src/lib/tour-player.browser.test.ts",
+        "src/lib/tour-nav.test.ts",
+        "src/lib/tour-nav-fixture.ts"
       ],
       "requires": [
         "§app.tours/editions",
         "§app.tours/requests"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-16T05:54Z"
+        "by": "naomarik",
+        "at": "2026-10-26T18:33Z",
+        "source": "pi-session:e1b3946e-ff64-40da-b9bf-fbab6d752eee#7d8e9311"
       }
     },
     "§app/tours": {

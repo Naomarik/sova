@@ -1,7 +1,7 @@
 // Run: pnpm test -- server/test-groups.test.ts. The integration tier's slow groups (scripts/test-groups.mjs,
 // §app.server-runtime/test-tiers): what a landing runs, and what a session's `--changed` adds, by trigger.
 import assert from "node:assert/strict";
-import { existsSync, globSync } from "node:fs";
+import { existsSync, globSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { GROUPS, globRe, groupOf, selectFiles, setKey, triggersHit } from "../scripts/test-groups.mjs";
@@ -33,6 +33,13 @@ describe("which group a file is in", () => {
       assert.ok(onDisk.filter((f) => !g.except.includes(f)).length > 5, `${g.name} matches no file on disk`);
     }
     for (const t of GROUPS.flatMap((g) => g.triggers).filter((t) => !t.includes("*"))) assert.ok(existsSync(join(REPO, t)), `trigger ${t} names no file`);
+  });
+
+  test("every file the testing guide watches (the test setup) triggers every group", () => {
+    const guide = readFileSync(join(REPO, "agents/testing/overview.md"), "utf8");
+    const watches: string[] = JSON.parse(/^watches:\s*(\[.*\])\s*$/m.exec(guide)?.[1] ?? "[]");
+    assert.ok(watches.length > 5, "the guide's front-matter lists its watched files");
+    for (const g of GROUPS) for (const f of watches) assert.deepEqual(triggersHit([f])[g.name], [f], `${f} doesn't trigger ${g.name}`);
   });
 
   test("globs: ** any depth, * within one segment", () => {

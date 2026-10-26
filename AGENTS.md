@@ -69,7 +69,9 @@ also update Y" list live in its guide: read the guide of every area your task to
 - `pnpm run typecheck` and `pnpm run build` must pass.
 - Tests (testing guide): `pnpm test` is the unit tier, in-process only; run it constantly.
   `pnpm test:int` is the integration tier (`*.integration.test.ts`); while working run
-  `pnpm test:int --changed` before asking to land. The merge round runs both tiers at landing. Verify
+  `pnpm test:int --changed` before asking to land. The merge round runs `pnpm test` and `pnpm test:int -- --landing` at landing (the everyday
+  integration set plus the slow groups the branch triggers, `scripts/test-groups.mjs`); a release runs
+  every group. Verify
   on Bun (the runner's default, the user's runtime); Node only when the user asks.
 - Never run the spec replay suite (`pi-config/extensions/spec/tests/replay`) while working: it is a
   landing gate the merge round runs.

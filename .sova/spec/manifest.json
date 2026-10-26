@@ -373,6 +373,10 @@
         "server/baton-view.ts",
         "server/chat-runtime/trial-s3-acts.integration.test.ts",
         "server/chat-runtime/trial-s3-baton.integration.test.ts",
+        "server/chat-runtime/trial-s3-baton-restart.integration.test.ts",
+        "server/chat-runtime/trial-s3-baton-take.integration.test.ts",
+        "server/chat-runtime/trial-s3-baton-hand.integration.test.ts",
+        "server/chat-runtime/trial-s3-baton-kill.integration.test.ts",
         "server/chat-runtime/trial-s3-looks-powers.integration.test.ts",
         "server/chat-runtime/trial-s3-overseer.integration.test.ts",
         "server/chat-runtime/host.test.ts"
@@ -556,7 +560,9 @@
         "server/resource-monitor.ts",
         "server/chat-runtime/trial-s4-workers.integration.test.ts",
         "server/chat-runtime/trial-s4-reload.integration.test.ts",
+        "server/chat-runtime/trial-s4-reload-crash.integration.test.ts",
         "server/chat-runtime/trial-s4-teams.integration.test.ts",
+        "server/chat-runtime/trial-s4-team-nudge.integration.test.ts",
         "server/chat-runtime/trial-s4-crash.integration.test.ts",
         "server/chat-runtime/trial-s4-hidden.integration.test.ts",
         "server/chat-runtime/trial-s4-off.integration.test.ts",
@@ -962,7 +968,6 @@
         "server/index.ts",
         "server/attention-memo.ts",
         "server/events.test.ts",
-        "server/events-hermetic.integration.test.ts",
         "server/events.integration.test.ts"
       ],
       "requires": [
@@ -24476,6 +24481,8 @@
         "server/tours/runner-signin-settle.integration.test.ts",
         "server/tours/runner-signin-landed.integration.test.ts",
         "server/tours/runner-signin-inplace.integration.test.ts",
+        "server/tours/runner-signin-midtour.integration.test.ts",
+        "server/tours/runner-signin-inplace.integration.fixture.ts",
         "server/tours/runner-signin.integration.fixture.ts"
       ],
       "requires": [
@@ -24692,6 +24699,8 @@
         "server/tours/resumed-notice.test.ts",
         "server/app.ts",
         "server/tours/runner-signin-inplace.integration.test.ts",
+        "server/tours/runner-signin-midtour.integration.test.ts",
+        "server/tours/runner-signin-inplace.integration.fixture.ts",
         "server/tours/runner-signin.integration.fixture.ts"
       ],
       "requires": [

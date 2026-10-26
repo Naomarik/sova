@@ -104,6 +104,9 @@ export interface StoredSchedule {
   /** merge-ready: each worktree path that fired, with its branch, the landing commit it fired for, and
       when (keeper clock) (§chat.schedules/merge-ready). A row stored before commits were has none, so it reads fresh. */
   ready?: Record<string, { branch: string; commit: string; at: number }>;
+  /** merge-ready: each worktree path woken for the user's go-ahead typed in its own chat, with the commit the
+      go-ahead names (§chat.schedules/merge-ready). */
+  typed?: Record<string, { branch: string; commit: string; at: number }>;
   /** A long-running schedule's own session (§chat.schedules/store). */
   session?: { id: string; path: string };
   /** The device that runs it (its host id). */
@@ -254,6 +257,8 @@ export interface KeeperDeps {
   /** Sova's merge board (§chat.worktrees/merge-board): `pending` sessions not read yet, and the
       rows in a project. Absent: merge-ready never fires. */
   board?(): Promise<{ pending: number; rowsIn(root: string): BoardRow[] } | null>;
+  /** The user's go-aheads typed in a branch's own chat (`landing.json`, `by: "owner-chat"`), oldest first. */
+  typedGoAheads?(): { branch: string; commit: string }[];
   /** Tell the Overseer (under Brief Me only). */
   brief?(text: string): void;
   zone?(): string;
@@ -898,12 +903,27 @@ export class ScheduleKeeper {
       if (row?.landing?.state === "ready" || (!row && board.pending > 0)) continue; // ready, or not read yet
       if (now - prev.at >= MERGE_READY_FORGET_MS) delete seen[path];
     }
-    if (!fresh.length) return;
+    // The user's go-ahead typed in a branch's own chat wakes the round too, whatever its row reads: once per commit.
+    const typedSeen = (s.typed ??= {});
+    const goAheads = this.deps.typedGoAheads?.() ?? [];
+    const typed: { path: string; branch: string; commit: string }[] = [];
+    for (const r of rows) {
+      const g = goAheads.filter((x) => x.branch === r.branch).at(-1);
+      const prev = typedSeen[r.path];
+      if (g && (prev?.branch !== r.branch || prev.commit !== g.commit)) typed.push({ path: r.path, branch: r.branch, commit: g.commit });
+    }
+    for (const [path, prev] of Object.entries(typedSeen)) {
+      if (rows.some((r) => r.path === path) || board.pending > 0) continue;
+      if (now - prev.at >= MERGE_READY_FORGET_MS) delete typedSeen[path];
+    }
+    if (!fresh.length && !typed.length) return;
     // Held, unlogged and unseen, so they go out together later, while the run it last fired into is in flight.
     const last = [...s.fires].reverse().find((f) => f.path);
     if (last?.path && this.deps.busy(last.path)) return;
     fresh.sort((a, b) => a.branch.localeCompare(b.branch));
+    typed.sort((a, b) => a.branch.localeCompare(b.branch));
     for (const f of fresh) seen[f.path] = { branch: f.branch, commit: f.commit, at: now };
+    for (const f of typed) typedSeen[f.path] = { branch: f.branch, commit: f.commit, at: now };
     // The day's timed fires keep their room under the cap: merge-ready never takes it.
     const tz = this.zone(ev);
     const reserved = maxFiresPerDay(ev.triggers!).n;
@@ -911,7 +931,7 @@ export class ScheduleKeeper {
       this.log(s, MERGE_READY, "skipped", { why: `merge-ready leaves today's last ${reserved} of ${MAX_FIRES_PER_DAY} fires to the timed triggers` });
       return;
     }
-    await this.fire(s, ev, MERGE_READY, undefined, mergeReadyReason(fresh.map((f) => f.branch)));
+    await this.fire(s, ev, MERGE_READY, undefined, mergeReadyReason(fresh.map((f) => f.branch), typed.map((f) => f.branch)));
   }
 
   /** One tick: limit resets first, then merge-ready transitions, then every approved schedule that is due. */

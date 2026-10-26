@@ -283,7 +283,7 @@ if (opts["--plan"]) {
   const sum = integ.reduce((n, f) => n + ms(f), 0);
   const longest = integ.reduce((n, f) => Math.max(n, ms(f)), 0);
   console.log(JSON.stringify({
-    v: 1, files, ran: picked?.ran ?? null, skipped: picked?.skipped ?? [], jobs,
+    v: 1, files, groups: GROUPS.map(({ name, title, landing }) => ({ name, title, landing })), ran: picked?.ran ?? null, skipped: picked?.skipped ?? [], jobs,
     timed: integ.filter((f) => ms(f) > 0).length, estimateMs: Math.max(longest, Math.round(sum / jobs)), longestMs: longest,
   }));
   process.exit(0);

@@ -24,7 +24,7 @@
 // Every child runs by argv with no shell, in its own process group, under a timeout.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { accessSync, chmodSync, constants, cpSync, createWriteStream, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, chmodSync, closeSync, constants, cpSync, createWriteStream, existsSync, linkSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -574,6 +574,36 @@ export function draftsChanged(pressed, now) {
   return names.filter((n) => (pressed.each[n] ?? null) !== (now?.each?.[n] ?? null));
 }
 
+/** The lock every writer of landing.json holds while it re-reads, merges and replaces the file (landing.ts
+ *  withLandingLock, the same protocol: `<file>.lock` made with O_EXCL, a lock older than 10 s taken over, 5 s wait). */
+export function withLandingLock(file, fn) {
+  mkdirSync(dirname(file), { recursive: true });
+  const lock = `${file}.lock`, end = Date.now() + 5_000;
+  for (;;) {
+    try { closeSync(openSync(lock, "wx", 0o600)); break; } catch (e) {
+      if (e?.code !== "EEXIST") throw e;
+      try { if (Date.now() - statSync(lock).mtimeMs > 10_000) { unlinkSync(lock); continue; } } catch { continue; }
+      if (Date.now() > end) throw new Error(`landing.json stayed locked for 5 s (${lock})`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+    }
+  }
+  try { return fn(); } finally { try { unlinkSync(lock); } catch {} }
+}
+
+/** Append the round's docs entry to landing.json, keeping everything else the file holds: under the lock, re-read,
+ *  appended (newest 200), replaced atomically. */
+export function appendDocsEntry(file, entry) {
+  withLandingLock(file, () => {
+    let d = {};
+    try { d = JSON.parse(readFileSync(file, "utf8")); } catch {}
+    if (d?.v !== 1 || typeof d !== "object") d = { v: 1, goAheads: [], notYet: [] };
+    d.docsEntries = [...(Array.isArray(d.docsEntries) ? d.docsEntries : []).filter((e) => e?.sha !== entry.sha), entry].slice(-200);
+    const tmp = `${file}.${process.pid}.round.tmp`;
+    writeFileSync(tmp, `${JSON.stringify(d, null, 2)}\n`, { mode: 0o600 });
+    renameSync(tmp, file);
+  });
+}
+
 /** The board file's text → {ok: true, board: {at, pending, rows}} | {ok: false, why}. */
 export function parseBoard(text, now) {
   let b;
@@ -895,14 +925,7 @@ class Round {
   /** Record a docs entry the round committed in `landing.json` (§chat.worktrees/landing-answers), keeping everything else
    *  the file holds: re-read, appended (newest 200), replaced atomically. */
   recordDocsEntry(entry) {
-    let d = {};
-    try { d = JSON.parse(readFileSync(this.landingFile, "utf8")); } catch {}
-    if (d?.v !== 1 || typeof d !== "object") d = { v: 1, goAheads: [], notYet: [] };
-    d.docsEntries = [...(Array.isArray(d.docsEntries) ? d.docsEntries : []).filter((e) => e?.sha !== entry.sha), entry].slice(-200);
-    mkdirSync(dirname(this.landingFile), { recursive: true });
-    const tmp = `${this.landingFile}.${process.pid}.round.tmp`;
-    writeFileSync(tmp, `${JSON.stringify(d, null, 2)}\n`, { mode: 0o600 });
-    renameSync(tmp, this.landingFile);
+    appendDocsEntry(this.landingFile, entry);
   }
 
   /** Sova's answer to one queue entry: {card} shown, {refused} not, or null while it hasn't read it. */

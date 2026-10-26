@@ -13,7 +13,7 @@
  * Node builtins only (the extension runs in every chat). Writes re-read the file, merge and replace it
  * atomically; a damaged file reads as no records.
  */
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -135,23 +135,68 @@ function writeLanding(file: string, data: LandingData): void {
 	renameSync(tmp, file);
 }
 
+/** How long a writer waits for the file's lock, and when a lock left behind counts as stale. */
+export const LANDING_LOCK_WAIT_MS = 5_000;
+export const LANDING_LOCK_STALE_MS = 10_000;
+const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/**
+ * Every writer of landing.json (Sova's server here, the merge round's driver, round.mjs withLandingLock, the same
+ * protocol) holds `<file>.lock`, made with O_EXCL, while it re-reads, merges and replaces the file, so a go-ahead and
+ * the round's docs entry written at once never drop each other. A lock older than LANDING_LOCK_STALE_MS is taken over.
+ */
+export function withLandingLock<T>(file: string, fn: () => T): T {
+	mkdirSync(dirname(file), { recursive: true });
+	const lock = `${file}.lock`;
+	const end = Date.now() + LANDING_LOCK_WAIT_MS;
+	for (;;) {
+		try {
+			closeSync(openSync(lock, "wx", 0o600));
+			break;
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+			try {
+				if (Date.now() - statSync(lock).mtimeMs > LANDING_LOCK_STALE_MS) {
+					unlinkSync(lock);
+					continue;
+				}
+			} catch {
+				continue; // gone meanwhile: try again
+			}
+			if (Date.now() > end) throw new Error(`${LANDING_FILE_NAME} stayed locked for ${LANDING_LOCK_WAIT_MS / 1000} s (${lock}).`);
+			pause(10);
+		}
+	}
+	try {
+		return fn();
+	} finally {
+		try {
+			unlinkSync(lock);
+		} catch {}
+	}
+}
+
 /** Record the user's go-ahead for a branch at one commit (a newer one for the same branch and commit replaces it). */
 export function recordGoAhead(rec: GoAhead, file: string = landingFile()): void {
 	const ok = cleanGoAhead(rec);
 	if (!ok) throw new Error("Not a go-ahead: it needs a branch and a full commit sha.");
-	const d = readLanding(file);
-	d.goAheads = [...d.goAheads.filter((g) => !(g.branch === ok.branch && g.commit === ok.commit)), ok];
-	d.notYet = d.notYet.filter((n) => !(n.branch === ok.branch && n.commit === ok.commit));
-	writeLanding(file, d);
+	withLandingLock(file, () => {
+		const d = readLanding(file);
+		d.goAheads = [...d.goAheads.filter((g) => !(g.branch === ok.branch && g.commit === ok.commit)), ok];
+		d.notYet = d.notYet.filter((n) => !(n.branch === ok.branch && n.commit === ok.commit));
+		writeLanding(file, d);
+	});
 }
 
 /** Record the user's Not Yet for a branch at one commit. */
 export function recordNotYet(rec: NotYet, file: string = landingFile()): void {
 	const ok = cleanNotYet(rec);
 	if (!ok) throw new Error("Not a Not Yet: it needs a branch and a full commit sha.");
-	const d = readLanding(file);
-	d.notYet = [...d.notYet.filter((n) => !(n.branch === ok.branch && n.commit === ok.commit)), ok];
-	writeLanding(file, d);
+	withLandingLock(file, () => {
+		const d = readLanding(file);
+		d.notYet = [...d.notYet.filter((n) => !(n.branch === ok.branch && n.commit === ok.commit)), ok];
+		writeLanding(file, d);
+	});
 }
 
 /**

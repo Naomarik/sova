@@ -2064,7 +2064,12 @@
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css"
-      ]
+      ],
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-26T21:59Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#f2caca06"
+      }
     },
     "§app.session-list/anatomy": {
       "kind": "behavior",
@@ -2148,9 +2153,9 @@
         "server/sidebar-scroll.integration.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-25T22:30Z",
-        "source": "pi-session:777149c4-3887-4782-8c20-99e67344e685#fcb0ec8f"
+        "by": "omar",
+        "at": "2026-10-26T21:59Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#f2caca06"
       }
     },
     "§app.session-list/groups": {
@@ -2167,12 +2172,24 @@
         "src/lib/group-open.ts",
         "src/lib/group-open.test.ts",
         "src/lib/session-groups.ts",
-        "src/lib/session-groups.test.ts"
+        "src/lib/session-groups.test.ts",
+        "src/lib/regions.ts",
+        "src/lib/regions.test.ts",
+        "src/lib/session-order.ts",
+        "server/project-sessions.ts",
+        "server/project-sessions.test.ts",
+        "server/session-groups.ts",
+        "server/session-feed.ts",
+        "src/lib/session-feed.ts",
+        "shared/protocol.ts",
+        "src/app.css",
+        "server/session-feed.integration.test.ts",
+        "server/sidebar-guide-lines.integration.test.ts"
       ],
       "agreed": {
         "by": "omar",
-        "at": "2026-10-23T23:10Z",
-        "source": "pi-session:3f2248f5-f2ff-4447-a7d5-c7b38e115af6#b8fd14ae"
+        "at": "2026-10-26T21:59Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#f2caca06"
       }
     },
     "§app.session-list/guide-lines": {
@@ -2198,8 +2215,8 @@
       ],
       "agreed": {
         "by": "omar",
-        "at": "2026-10-23T23:10Z",
-        "source": "pi-session:3f2248f5-f2ff-4447-a7d5-c7b38e115af6#b8fd14ae"
+        "at": "2026-10-26T21:59Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#f2caca06"
       }
     },
     "§app.session-list/recent": {
@@ -2215,8 +2232,9 @@
         "src/lib/home-sessions.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-12T12:35Z"
+        "by": "omar",
+        "at": "2026-10-26T21:59Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#f2caca06"
       }
     },
     "§app.session-list/regions-top-and-archive": {
@@ -2254,9 +2272,9 @@
         "src/lib/section-reveal.browser.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-21T14:42Z",
-        "source": "pi-session:d5060398-05c1-4e9b-a6a5-186d2888b9b8#483165cc"
+        "by": "omar",
+        "at": "2026-10-26T21:59Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#f2caca06"
       }
     },
     "§app.session-list/search": {
@@ -5443,7 +5461,8 @@
         "src/lib/readiness.ts",
         "src/lib/needs-you.ts",
         "src/lib/signals.ts",
-        "src/lib/overseer-menu.ts"
+        "src/lib/overseer-menu.ts",
+        "src/lib/regions.ts"
       ]
     },
     "§design.copy-deck/slash-commands": {
@@ -8099,16 +8118,17 @@
         "src/lib/session-feed.browser.test.ts",
         "server/chat-handle-remote.ts",
         "server/worktrees.ts",
-        "server/merge-readiness.test.ts"
+        "server/merge-readiness.test.ts",
+        "server/session-groups.ts"
       ],
       "requires": [
         "§app.decisions/attention-signals",
         "§app.decisions/session-tags"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T20:31Z",
-        "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#76a2e465"
+        "by": "omar",
+        "at": "2026-10-26T21:59Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#f2caca06"
       }
     },
     "§app.decisions/session-tags": {
@@ -10875,8 +10895,9 @@
         "server/worker-sessions.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-12T12:35Z"
+        "by": "omar",
+        "at": "2026-10-26T21:59Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#f2caca06"
       }
     },
     "§app.session-list/organizations": {
@@ -16637,7 +16658,12 @@
         "src/lib/optimistic-archive.test.ts",
         "src/lib/archive-block.ts",
         "src/lib/archive-block.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-26T21:59Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#f2caca06"
+      }
     },
     "§chat.markdown/vis-wireframe-items": {
       "kind": "behavior",
@@ -24199,8 +24225,9 @@
         "§app.projects/seam"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-17T18:00Z"
+        "by": "omar",
+        "at": "2026-10-26T21:59Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#f2caca06"
       }
     },
     "§app.server-runtime/pi-workers": {

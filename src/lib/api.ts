@@ -1,4 +1,4 @@
-import type { AssistantInfo, AssistantView, PricedPick, VersionSummaryRow } from "../../shared/project-assistant";
+import type { AssistantInfo, AssistantOlder, AssistantView, PricedPick, VersionSummaryRow } from "../../shared/project-assistant";
 import type { ModelPick, WorkModels } from "../../shared/powers";
 import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
 import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow } from "../../shared/project-settings";
@@ -18,7 +18,6 @@ import type {
   SessionsDirInfo,
   AttentionDigest,
   ChatModeResult,
-  ChatMemoryChoice,
   ProjectModeApproval,
   MemoryOpen,
   MemoryOutline,
@@ -104,7 +103,7 @@ import type {
   MeshPreset,
   MeshSessionsView as MeshSessions,
 } from "../../shared/mesh-access";
-import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
+import type { OwnerConversation, OwnerConversationOlder, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
 import type { NamedChange, OrgDetail, OrgsInfo, PersonHours, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
 import type { EventDetail, EvidenceView, HistoryChain, HistoryPacket, HistoryPage, HistoryQuery } from "../../shared/org-history";
 import type { BatonOutreach, SendLinkAnswer } from "../../shared/outreach";
@@ -506,7 +505,7 @@ export const getChatMode = (path: string) => request<ChatModeResult>(`/api/mode?
  * without its hash is refused with 409, whose body (ProjectModeApprovalNeeded) is on the ApiError.
  */
 export const postMode = (
-  patch: { mode?: string; minorModes?: string[]; memory?: Partial<ChatMemoryChoice>; projectModes?: string[]; approve?: ProjectModeApproval[]; approveHooks?: ProjectModeApproval[] },
+  patch: { mode?: string; minorModes?: string[]; memory?: { type: MemoryType }; projectModes?: string[]; approve?: ProjectModeApproval[]; approveHooks?: ProjectModeApproval[] },
   path?: string,
 ) =>
   request<ModeInfo | ChatModeResult>(`/api/mode${path ? `?path=${encodeURIComponent(path)}` : ""}`, {
@@ -534,11 +533,11 @@ export const getMemoryOptions = () => request<DelegateOptions>("/api/settings/me
 export const putMemorySettings = (settings: MemorySettings) =>
   request<MemorySaveResult>("/api/settings/memory", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) });
 export const getOverseerMemory = () => request<OverseerMemoryInfo>("/api/overseer/memory");
-export const putOverseerMemory = (patch: { on?: boolean; type?: MemoryType; size?: number }) =>
+export const putOverseerMemory = (patch: { on?: boolean; type?: MemoryType }) =>
   request<OverseerMemoryInfo>("/api/overseer/memory", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
 /** A project overseer's own memory switch: the Overseer's shape. */
 export const getProjectOverseerMemory = (projectId: string) => request<OverseerMemoryInfo>(`/api/projects/${encodeURIComponent(projectId)}/overseer/memory`);
-export const putProjectOverseerMemory = (projectId: string, patch: { on?: boolean; type?: MemoryType; size?: number }) =>
+export const putProjectOverseerMemory = (projectId: string, patch: { on?: boolean; type?: MemoryType }) =>
   request<OverseerMemoryInfo>(`/api/projects/${encodeURIComponent(projectId)}/overseer/memory`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
 
 /** POST /api/sandbox?path=… { state, on }: set that held chat's sandbox state (§chat.sandbox/states)
@@ -1286,6 +1285,11 @@ export const startOwnerRequestChat = (id: string, rid: string) => request<{ sess
 export const openAssistantChat = (id: string) => request<{ sessionId: string; path: string }>(assistantUrl(id, "assistant/open"), jsonInit("POST"));
 /** The assistant's conversation as the owner sees it (the preview); no token, no use. */
 export const previewAssistant = (id: string) => request<AssistantView>(assistantUrl(id, "preview?assistant=1"));
+/** An earlier page of it (§app.project-assistant/chat, Paged). */
+export const previewAssistantOlder = (id: string, before: number) => request<AssistantOlder>(assistantUrl(id, `preview?assistant=1&before=${before}`));
+/** A conversation's earlier items on the preview (§app.owner-page/content). */
+export const previewConversationOlder = (id: string, c: string, before: number) =>
+  request<OwnerConversationOlder>(`/api/orgs/${encodeURIComponent(id)}/owner/preview?c=${encodeURIComponent(c)}&before=${before}`);
 
 /** Show this project on the owner's page, or not. */
 export const setProjectOwnerHidden = (id: string, pid: string, ownerHidden: boolean) =>

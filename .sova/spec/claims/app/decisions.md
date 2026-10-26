@@ -324,7 +324,7 @@ appends (one line each).
   in or leaves the list, or a row's live record, running state, last activity, archived flag or
   title changes (a stored title changes in Sova's title store, never in the file: the Overseer's
   rename, the automatic namer's, §app.session-list/auto-titles), or its merge readiness changes
-  (read from git in the background, §chat.worktrees/readiness), or the group it is in changes. The sidebar then reads the list again: at once if its last such read was at least a
+  (read from git in the background, §chat.worktrees/readiness). The sidebar then reads the list again: at once if its last such read was at least a
   second ago, otherwise once, a second after that read, however many more arrive meanwhile. It
   also reads the list after every reconnect of the feed, since the list may have changed while
   the socket was down. The feed adds no polling of its own. The in-flight count adds none in the
@@ -333,11 +333,6 @@ appends (one line each).
   the live-record folder every 30 s, or every 5 s where the folder can't be watched; it never
   reads the list. So a session started in a TUI reaches
   the sidebar within seconds, without a reload.
-- Every write to the session groups (a group made, renamed, reordered or deleted, a session put
-  into or taken out of one, by any window or the Overseer) sends `groups_changed` (no payload;
-  never on connect) at once, from the group store itself, not after a comparison: each window
-  reads its groups and the list again (§app.session-list/groups), and reads its groups after every
-  reconnect too. A window that predates it ignores it.
 - The sidebar holds the feed open while it is mounted. Once the snapshot arrives, the feed's
   signals, tags and turn error replace the list's on this server's rows, matched by session path (rows from mesh peers keep their list
   fields); each change applies at once, and a cleared field is removed. While the socket is not

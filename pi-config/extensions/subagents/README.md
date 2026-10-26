@@ -173,7 +173,22 @@ reported with outcome `error` and an error naming the earlier failure, even if
 the queued continuation succeeded. Automatic retries and overflow-compaction
 retries are not treated as failures.
 
-A Pi steer's task (and its `finalOutput`) begins at Pi's next run start, or at
+Every steer and follow-up is sent under a key of its own, and a worker whose chat
+process names keys in its feed (its state's `keys`; every worker started on current
+code) tags the user message Pi delivers with that key. Its task (and its
+`finalOutput`) begins exactly at that message: never at another run's start, never
+at another message with the same text, so two identical instructions are two tasks.
+An accepted instruction whose turn never started (Stop pressed while it was queued,
+the worker's process died, a turn that failed before it began) is reported plainly:
+one transcript line, "This instruction was accepted but never ran: …", and the same
+line in the error of the next completion; with nothing else running that completion
+comes at once, as an error, so nothing waits for a delivery that can't come.
+
+A worker still running code from before keys (it keeps its code through a parent's
+reload) names none, and gets the older, best-effort correlation below. It and this
+list go in a later follow-up, once no such worker runs.
+
+There, a Pi steer's task (and its `finalOutput`) begins at Pi's next run start, or at
 the steer's user message when Pi delivers it inside the running run. Pi expands
 `/skill:` commands and prompt templates, and input extensions may transform text,
 before queueing, so the manager follows Pi's `queue_update` events: the entry Pi

@@ -13,7 +13,7 @@
 export type TimesTrigger = { kind: "times"; days: number[]; minutes: number[]; src: string };
 export type EveryTrigger = { kind: "every"; minutes: number; src: string };
 export type LimitTrigger = { kind: "limit-reset"; src: "claude-limit-reset" };
-/** A branch in the playbook's project turns ready to merge with an idle owner (§chat.schedules/merge-ready). */
+/** A branch in the playbook's project turns Ready to land with an idle owner (§chat.schedules/merge-ready). */
 export type MergeReadyTrigger = { kind: "merge-ready"; src: "merge-ready" };
 export type Trigger = TimesTrigger | EveryTrigger | LimitTrigger | MergeReadyTrigger;
 
@@ -297,20 +297,16 @@ export function fireHead(id: string, trigger: string, playbook: string, reason: 
 /** A wake's instruction: run the playbook again, re-reading its entry file (PLAYBOOK.md or SKILL.md, as read at this fire). */
 export const wakeInstruction = (title: string, dir: string, entry: string): string => `Run the playbook "${title}" again: read ${dir}/${entry} first, since it may have changed.`;
 
-/** One branch the merge board shows ready (§chat.schedules/merge-ready): Ready to merge, or Waiting for an OK. */
-export interface ReadyBranch {
-  branch: string;
-  waiting: boolean;
-}
-
 /** How many branches a merge-ready reason names before "and N more". */
 export const MERGE_READY_NAMED = 5;
 
-/** A merge-ready fire's reason: "Ready to merge: feat/x, feat/y (waiting for an OK)." */
-export function mergeReadyReason(branches: readonly ReadyBranch[]): string {
-  const named = branches.slice(0, MERGE_READY_NAMED).map((b) => (b.waiting ? `${b.branch} (waiting for an OK)` : b.branch));
-  const more = branches.length - named.length;
-  return `Ready to merge: ${named.join(", ")}${more > 0 ? `, and ${more} more` : ""}.`;
+/** A merge-ready fire's reason (§chat.schedules/merge-ready): "Ready to land: feat/x, feat/y." */
+export function mergeReadyReason(branches: readonly string[], typed: readonly string[] = []): string {
+  const named = (bs: readonly string[]) => {
+    const more = bs.length - MERGE_READY_NAMED;
+    return `${bs.slice(0, MERGE_READY_NAMED).join(", ")}${more > 0 ? `, and ${more} more` : ""}.`;
+  };
+  return [branches.length ? `Ready to land: ${named(branches)}` : "", typed.length ? `Go-ahead typed in its own chat: ${named(typed)}` : ""].filter(Boolean).join(" ");
 }
 
 export const LIMIT_RESET_INSTRUCTION = "Your last turn stopped at that Claude login's usage limit, which has now reset. Continue where you left off.";

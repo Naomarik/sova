@@ -174,11 +174,19 @@ are kept, and what the foot and its model indicator show.
     body line height, so it stays centred in the box.
   - Empty or whitespace-only text doesn't send, and Send is `aria-disabled` with no reason text,
     because the reason is obvious.
-- **Send.** Sends `{type:"prompt"}`. Clear the textarea only after the socket accepts the message.
+- **Send.** Sends `{type:"steer"}`, as every message typed here does, whether or not a reply runs:
+  idle, the server starts a turn with it exactly as with a prompt (the same checks, the same holds
+  while a turn is starting or a compaction runs, the message marked as yours); busy, it is a steer,
+  even when this pane hasn't seen the reply start yet (a quick second message). Only sends that are
+  not typed here stay `{type:"prompt"}`, a follow-up mid-turn: a playbook (§chat/playbooks), a quick
+  action, a review button and a card's confirm click. `/compact` is still Sova's own request, never a
+  message. Clear the textarea only after the socket accepts the message.
   Show the user bubble optimistically and resume auto-follow.
-- **While streaming.** Send stays available and its label changes to `Steer`, which sends
-  `{type:"steer"}`. The placeholder becomes "Steer the current turn…" (plus the key hint when Enter
-  sends, see Keys). `Stop`
+- **While streaming.** Send stays available and its label changes to `Steer`. Steers sent while
+  the turn runs land together: each reaches the agent at its next step, in the order sent, each its
+  own message, and the one reply after them answers them all (§chat.transcript/a-queued-message).
+  The placeholder becomes "Steer the current turn…" (plus the key hint when Enter sends, see Keys).
+  `Stop`
   (`.button-destructive`, outlined, never filled, one word so the button stays narrow) sends
   `{type:"abort"}`. Show it only while streaming, after Steer. `Esc` does **not** abort, to prevent
   accidental stops. While a dictation is recording, `Esc` cancels the recording and nothing else
@@ -575,22 +583,27 @@ wrapped message reads as one column beside it, at the 390px phone width too.
     <svg viewBox="-20 -22 40 42" aria-hidden="true">
       <circle r="14" class="waiting-badge-track" stroke-dasharray="65.97 87.96" transform="rotate(135)" />
       <circle r="14" class="waiting-badge-progress" stroke-dasharray="26.39 87.96" transform="rotate(135)" />
-      <text class="waiting-badge-count" y="3.5">3</text>
-      <circle class="waiting-badge-dot" cx="-3" cy="16" r="1.5" /><circle class="waiting-badge-dot" cx="3" cy="16" r="1.5" />
-      <text class="waiting-badge-cards" y="-11">I</text>
+      <text class="waiting-badge-count" y="5">3</text>
+      <circle class="waiting-badge-dot" cx="-3" cy="17" r="2" /><circle class="waiting-badge-dot" cx="3" cy="17" r="2" />
+      <text class="waiting-badge-cards" y="-9">I</text>
     </svg>
   </button>
   <textarea class="input textarea composer-input" …></textarea>
 </div>
 ```
 
-- **The ring.** A 270° arc open at the bottom: its track in border-strong, and over it in the
+- **Its size.** The glyph draws 30px wide and about 31px tall, so its number and numeral read at
+  a glance; it still sits on the bottom text line and never makes the box taller.
+- **The ring.** A 270° arc open at the bottom: its track in border-strong (stroke 2.6 units), and over it in the
   accent the share of questions decided, `decided / total` over the live (not dropped) questions
   of the branch's open alignments, the counts the alignment rows show (§chat.alignment/chip).
-- **The middle number** is the open (undecided) questions of those alignments.
-- **The dots** under it are one per open alignment, centred, 6 units apart (closer together past
+- **The middle number** is the open (undecided) questions of those alignments, bold (weight
+  700) at 14 units, 11.5 units for two digits; above 99 it reads "99+" at 9.2 units. Its
+  baseline sits at 0.36 × its size below the centre.
+- **The dots** under it are one per open alignment, radius 2 units, centred, 6 units apart (closer together past
   6, so they stay within the ring's width).
-- **The numeral on top**, in the accent, counts the open option cards: I, II, III, IV, then V+
+- **The numeral on top**, in the accent, in a serif (Georgia, bold, 12.5 units) with a surface-coloured halo so it
+  reads over the ring, counts the open option cards: I, II, III, IV, then V+
   for 5 or more; it is left out at 0. An option card is any open offer card of the session
   (§chat.offers/card), whatever offer the project declared, and in the Overseer's chat any of its
   open cards (§app.overseer/confirm). It never depends on which offer a card is: there are no

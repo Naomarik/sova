@@ -1219,8 +1219,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 /* The memory row's detail line, under its description, while it is on. */
 .mode-menu-detail { color: var(--color-ink-2); }
 .memory-type-by { font-weight: var(--fw-regular); color: var(--color-ink-muted); }
-.memory-type-link .popover-item-label { color: var(--color-accent); }
-.memory-size-default { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* The memory menus' rows scroll as one between the popover's fixed head and foot (the Subagents
+   picker's pattern), so a short window cuts none off; the lists inside don't scroll on their own. */
+.memory-panel-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.memory-panel-scroll > .model-menu-list { flex: none; overflow: visible; }
 /* A project overseer's memory switch is the foot's last control, alone in its accessory: the accessory
    already reaches the right edge, so the trigger drops the edge margin it would otherwise be squeezed by. */
 .composer-foot .composer-accessory:not(:has(.quick-actions-trigger)) > .overseer-memory-trigger { margin-right: 0; }

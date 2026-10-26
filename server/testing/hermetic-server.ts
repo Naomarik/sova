@@ -305,6 +305,7 @@ export async function startHermeticServer(opts: HermeticServerOptions = {}): Pro
       SOVA_PRICES_FETCH: "off",
       SOVA_USAGE_POLL: "off",
       SOVA_UPDATES_CHECK: "off",
+      SOVA_GIT_MAINTENANCE: "off",
       SOVA_CHAT_DRIVER: "detached",
       SOVA_CHAT_CODE: "live",
       GIT_CEILING_DIRECTORIES: tmpdir(),

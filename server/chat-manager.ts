@@ -69,8 +69,8 @@ import { ChatMemory } from "./memory/chat";
 import { readOverseerSettings } from "./overseer-store";
 
 /** An overseer's own memory switch in force: the Overseer's from the state root's
-    overseer.json, a project overseer's from the file its loadout names; no saved choice = on, UniiChat 128 KB. */
-function overseerMemoryNow(file: string | undefined): OverseerMemorySetting {
+    overseer.json, a project overseer's from the file its loadout names; no saved choice = on, UniiChat; the size is Settings → Memory's for the type. */
+function overseerMemoryNow(file: string | undefined): OverseerMemoryInForce {
   if (!file) return overseerMemoryOf(readOverseerSettings().memory);
   let raw: unknown;
   try {
@@ -86,7 +86,7 @@ import { isApproved, isApprovedByUser, recordApproval } from "./project-mode-app
 import { ModeActions, notHereFor, type ModeCommandOutcome } from "./mode-commands";
 import { projectModesOf, restoreProjectSnapshots } from "../pi-config/extensions/mode/state.ts";
 import { PROJECT_MODE_PREFIX, type ProjectModeRef } from "../shared/project-modes";
-import { applyMemoryPatch, overseerMemoryOf, type OverseerMemorySetting, parseOverseerMemory, saveDefaultMemoryChoice } from "./memory/settings";
+import { overseerMemoryOf, type OverseerMemoryInForce, parseOverseerMemory, saveDefaultMemoryType } from "./memory/settings";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension, sessionInstanceNote } from "./project-services/tools";
@@ -106,6 +106,7 @@ import { reviewSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
 import { alignForPick } from "./align-settings";
 import { agentRoot } from "./state-root";
+import { SendKeys } from "./send-keys";
 import { UserTurns } from "./user-turns";
 import { markBackground } from "../pi-config/extensions/provider-limits/gate.ts";
 
@@ -957,8 +958,10 @@ type Sender = { kind: "overseer"; overseerId?: string } | { kind: "baton"; by: s
 
 /** A message whose user entry still needs its sender marker. `itemId`: it rode in on a queue
     item; `held` while that item has not departed, so the settle sweep leaves the mark alone (its
-    message may still be in the SDK's queue). */
-type SenderMark = { text: string; sender: Sender; itemId?: string; held?: boolean };
+    message may still be in the SDK's queue). `sender` null: a queue item with no sender, marked only
+    to keep its place, so a later item with the same text (several are in pi at once when steers land
+    together) never takes this one's message: marks match in hand-off order, first in, first out. */
+type SenderMark = { text: string; sender: Sender | null; itemId?: string; held?: boolean };
 
 /** `customType` of the invisible marker beside a delivered topic batch (§chat.topics/delivery). */
 export const TOPIC_DELIVERED_ENTRY = "sova-topic-delivered";
@@ -1077,6 +1080,9 @@ class ChatSession {
   private behind: Promise<void> | null = null;
   /** The person's turns, where the loadout tells them apart (SpecialLoadoutResult.attribution). */
   userTurns: UserTurns | null = null;
+  /** Which keyed send each user message came from (§app.chat-processes/worker-instructions); watched on
+      every session the runtime builds. */
+  sendKeys = new SendKeys();
   /** The tag the next run's `run.start` names (ChatSendInput.runTag), until a run starts. */
   runTag: { next?: string } = {};
   /** This runtime is the Overseer's. */
@@ -1217,9 +1223,10 @@ class ChatSession {
 
   /**
    * Sova's own outgoing queue (server/queue.ts). Every message that would have gone straight
-   * into the SDK's queue goes here first, and exactly one of ours is inside the SDK at a time —
-   * which is what makes a single queued message removable at all (the SDK can only clear the lot).
-   * A message sent to an IDLE session never enters it: there is nothing to queue behind.
+   * into the SDK's queue goes here first: one follow-up of ours inside the SDK at a time, or every
+   * waiting steer at once (they land together, at the agent's next step). What it still holds is
+   * removable one by one (the SDK can only clear the lot). A message sent to an IDLE session never
+   * enters it: there is nothing to queue behind.
    */
   readonly queue: WebQueue = new WebQueue({
     sdk: {
@@ -1236,6 +1243,8 @@ class ChatSession {
     streaming: () => this.harness.isRunning(),
     // A Claude login switch landing holds it too, so the next turn starts on the new login.
     paused: () => this.isCompacting() || this.starting !== null || this.loginApplying,
+    // A keyed item waits out pi's settle window, so its message is labelled (quirk P5).
+    settling: () => this.harness.inSettleWindow(),
     // Every clear of the SDK's queue (Stop, the Overseer's stop, a removal) keeps the link messages
     // in it: they are never the user's to take back (§mesh.links/delivery).
     clearSdkQueue: () => this.clearSdkQueue(),
@@ -1250,6 +1259,8 @@ class ChatSession {
     // reason but "delivered", so whichever client wants to offer it back to a composer can.
     onGone: (item, reason) => {
       this.settleSenderMark(item.id, reason === "delivered");
+      // Gone undelivered: nothing will hand its message over any more (a delivered one: its turn's end, or pi's queue, decides).
+      if (reason !== "delivered") this.sendKeys.done(item.key);
       this.broadcast({ type: "queue_item_gone", itemId: item.id, reason, ...(reason === "delivered" ? {} : { text: item.text }) });
     },
     onChange: (items) => this.broadcast({ type: "queue", items }),
@@ -1341,7 +1352,8 @@ class ChatSession {
   }
 
   /**
-   * Give ONE queued message to the SDK. The queue calls this and nothing else does.
+   * Give ONE queued message to the SDK (several steers go in one after another, each its own call).
+   * The queue calls this and nothing else does.
    *
    * It resolves when the message has been ACCEPTED, never when its turn ends. That distinction is
    * the whole reason the idle branch is not awaited: `AgentSession.prompt()` on an idle session
@@ -1357,15 +1369,17 @@ class ChatSession {
     this.assertModelAllowed();
     this.flushDeferredAppends();
     const images = item.images as ImageInput[] | undefined;
-    const toSdk = <T>(send: () => T) => this.toSdk(item.origin, send, item.confirm);
+    // The message goes in labelled with its send's key (§app.chat-processes/worker-instructions).
+    const toSdk = <T>(send: () => T) => this.sendKeys.run(item.key, () => this.toSdk(item.origin, send, item.confirm));
     // What the extensions' input handlers are told: a person's input, or Sova's own (§app.overseer/input-source).
     const source = inputSourceOf(item);
     // The sender's mark goes in with the message, never earlier: a held item is not in the SDK,
     // so a message the user types meanwhile with the same text must not take its mark. It stays
-    // until the message ends (markSend) or the item departs undelivered (onGone).
+    // until the message ends (markSend) or the item departs undelivered (onGone). An item with no
+    // sender gets a place-keeping mark: marks match first in, first out (SenderMark).
     const sender = senderOfItem(item);
-    const mark: SenderMark | null = sender ? { text: item.text, sender, itemId: item.id, held: true } : null;
-    if (mark) this.senderMarks.push(mark);
+    const mark: SenderMark = { text: item.text, sender, itemId: item.id, held: true };
+    this.senderMarks.push(mark);
     if (sender?.kind === "session") this.profileState?.run?.expectHop(item.text, sender.hop);
     if (!streaming) {
       // Idle: this starts a turn. Its own failure belongs in this session's pane, like every other
@@ -1373,8 +1387,10 @@ class ChatSession {
       // the text back to the composer for a message that HAS been sent).
       const turn = toSdk(() => this.tracked(item.text, () => this.harness.send(item.text, { images, source })));
       this.noteStarting(turn);
+      // Its turn over: its message ran or never will (one held back for a compaction goes in again).
+      if (item.key !== undefined) turn.then(() => this.sendKeys.done(item.key), (err) => this.keyedTurnFailed(item.key!, err));
       turn.catch((err) => {
-        if (mark) this.dropSenderMark(mark);
+        this.dropSenderMark(mark);
         if (this.heldForCompaction(err, { ...item, id: undefined })) return;
         this.reportTurnFailure(err);
         // A turn that never started emits no event, so nothing would wake the queue and every
@@ -1392,6 +1408,11 @@ class ChatSession {
     await toSdk(() => this.tracked(item.text, () => this.harness.send(item.text, { images, delivery: item.kind, source }))).catch((err) => {
       if (!this.heldForCompaction(err, { ...item, id: undefined })) throw err;
     });
+  }
+
+  /** A keyed turn failed: its message never ran, unless it is held for a compaction to go in again (heldForCompaction). */
+  private keyedTurnFailed(key: string, err: unknown): void {
+    if (!isCompactionInProgress(err) || this.disposed) this.sendKeys.done(key);
   }
 
   /** Hand a message to the SDK. Where the loadout tells the person's turns apart (the Overseer, a
@@ -1427,11 +1448,12 @@ class ChatSession {
       session?: WebQueueItem["session"];
       confirm?: WebQueueItem["confirm"];
       byPerson?: WebQueueItem["byPerson"];
+      key?: string;
     },
   ): boolean {
     if (!isCompactionInProgress(err) || this.disposed) return false;
     // A confirm card's click keeps its mark, and a person's message stays theirs, through the hold
-    // (§app.overseer/org-people-facing).
+    // (§app.overseer/org-people-facing); a keyed send keeps its key (§app.chat-processes/worker-instructions).
     this.queue.enqueue({
       kind: item.kind,
       text: item.text,
@@ -1443,6 +1465,7 @@ class ChatSession {
       ...(item.session ? { session: item.session } : {}),
       ...(item.confirm ? { confirm: item.confirm } : {}),
       ...(item.byPerson ? { byPerson: true as const } : {}),
+      ...(item.key !== undefined ? { key: item.key } : {}),
     });
     return true;
   }
@@ -2298,11 +2321,11 @@ class ChatSession {
       sessionId: () => this.harness.id,
       cwd: () => this.harness.cwd || undefined,
       branch: () => this.harness.branch(),
-      // An overseer (the Overseer, a project overseer) has no mode entry: its switch, type and size are its own
-      // overseer.json's, on by default.
+      // An overseer (the Overseer, a project overseer) has no mode entry: its switch and type are its own
+      // overseer.json's, on by default; the size is Settings' for the type (§chat.memory/overseer).
       record: () => {
         const o = this.overseerMemory();
-        return o ? { v: 1, type: o.type, size: o.size } : (this.harness.state.branch().latest(MEMORY)?.data ?? null);
+        return o ? { v: 1, type: o.type } : (this.harness.state.branch().latest(MEMORY)?.data ?? null);
       },
       on: () => this.overseerMemory()?.on ?? this.modeState.minorModes.includes("memory"),
       send: (msg) => this.broadcast(msg),
@@ -2311,7 +2334,7 @@ class ChatSession {
   }
 
   /** An overseer's own memory switch in force, or undefined for every other chat (its memory is its mode's). */
-  private overseerMemory(): OverseerMemorySetting | undefined {
+  private overseerMemory(): OverseerMemoryInForce | undefined {
     if (this.overseer) return overseerMemoryNow(undefined);
     if ((this.special === "project-overseer" || this.special === "project-assistant") && this.specialSpec?.memory && this.specialSpec.memorySettings) return overseerMemoryNow(this.specialSpec.memorySettings);
     return undefined;
@@ -2338,18 +2361,17 @@ class ChatSession {
   }
 
   /**
-   * Write this chat's memory choice (§chat.memory/choice): a `sova-memory` record on its branch, the
-   * patch over the current choice. Kept while memory is off. Refused where a mode switch would be.
+   * Write this chat's memory type (§chat.memory/choice): a `sova-memory` record on its branch. Kept while
+   * memory is off. Refused where a mode switch would be. No size: every chat uses Settings' for its type.
    */
-  writeMemoryChoice(patch: Partial<{ type: "uniichat" | "zoomable"; size: number }>): void {
+  writeMemoryChoice(patch: { type?: "uniichat" | "zoomable" }): void {
     if (this.disposed || this.foreignWrite || this.hasForeignWrites()) throw new ModeRefusedError("This chat can't be written now.");
     assertNotLive(this.path);
-    const cur = this.memory.choiceNow();
-    const next = applyMemoryPatch(cur, patch);
-    if (next.type === cur.type && next.size === cur.size && this.harness.state.branch().latest(MEMORY)) return;
+    if (!patch.type) return;
     const prev = this.harness.state.branch().latest(MEMORY)?.data;
+    if (prev && prev.type === patch.type) return;
     this.flushDeferredAppends();
-    this.harness.state.append(MEMORY, { v: 1, type: next.type, size: next.size, ...(prev?.on !== undefined ? { on: prev.on } : {}) });
+    this.harness.state.append(MEMORY, { v: 1, type: patch.type, ...(prev?.on !== undefined ? { on: prev.on } : {}) });
     markOwned(this.path);
   }
 
@@ -2437,7 +2459,7 @@ class ChatSession {
     }
     try {
       const memory = this.memoryOffered() ? this.memory.choiceNow() : undefined;
-      if (memory) saveDefaultMemoryChoice(memory);
+      if (memory) saveDefaultMemoryType(memory.type);
       return modeInfo(writeMode(defaultPatchOf(this.modeState)), memory);
     } catch (err) {
       throw new ModeRefusedError(`The subagent profile default "${profile}" WAS saved, but the mode default was not: ${err instanceof Error ? err.message : String(err)}`);
@@ -2886,6 +2908,8 @@ class ChatSession {
       confirm?: string;
       /** A person typed it elsewhere (a group batch): its input source is `interactive` (inputSourceOf). */
       byPerson?: true;
+      /** The key it was sent under: its message is labelled with it (§app.chat-processes/worker-instructions). */
+      key?: string;
     },
   ): { queued: boolean; turn: Promise<void> } {
     // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
@@ -2902,13 +2926,16 @@ class ChatSession {
     // a queue that some messages could skip would not be a queue.
     // A compaction running is the same: pi refuses every prompt until it ends, so the message is
     // held, and the queue hands it over (as a fresh turn) at compaction_end.
-    if (this.harness.isRunning() || this.isCompacting() || this.starting) {
+    // A keyed message in pi's settle window is queued too: a prompt now would be deferred past the send
+    // that labels it (quirk P5), and the queue hands it over once the window has passed.
+    const key = opts?.key;
+    if (this.harness.isRunning() || this.isCompacting() || this.starting || (key !== undefined && this.harness.inSettleWindow())) {
       const overseer = opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {};
       const baton = opts?.sentByBaton ? { baton: opts.sentByBaton } : {};
       const fromSession = opts?.sentBySession ? { session: opts.sentBySession } : {};
       const confirm = opts?.confirm ? { confirm: opts.confirm } : {};
       const byPerson = opts?.byPerson ? { byPerson: true as const } : {};
-      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton, ...fromSession, ...confirm, ...byPerson });
+      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton, ...fromSession, ...confirm, ...byPerson, ...(key !== undefined ? { key } : {}) });
       return { queued: true, turn: Promise.resolve() };
     }
     this.flushDeferredAppends();
@@ -2926,8 +2953,9 @@ class ChatSession {
     if (send) this.senderMarks.push(send);
     if (opts?.sentBySession) this.profileState?.run?.expectHop(text, opts.sentBySession.hop);
     const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
-    const turn = this.toSdk(origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm);
+    const turn = this.sendKeys.run(key, () => this.toSdk(origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm));
     this.noteStarting(turn);
+    if (key !== undefined) turn.then(() => this.sendKeys.done(key), (err) => this.keyedTurnFailed(key, err));
     if (send)
       turn.catch(() => {
         const i = this.senderMarks.indexOf(send);
@@ -2948,6 +2976,7 @@ class ChatSession {
         ...(opts?.sentBySession ? { session: opts.sentBySession } : {}),
         ...(opts?.confirm ? { confirm: opts.confirm } : {}),
         ...(opts?.byPerson ? { byPerson: true as const } : {}),
+        ...(key !== undefined ? { key } : {}),
       };
       if (!this.heldForCompaction(err, item)) throw err;
     };
@@ -2973,15 +3002,18 @@ class ChatSession {
    * (walking back past custom entries to the user entry) behave exactly as on any user turn.
    */
   private markSend(text: string): void {
+    // The oldest mark with this text is this message's: messages enter in the order they were handed over.
     const i = this.senderMarks.findIndex((s) => s.text === text);
     if (i < 0) return;
     const [send] = this.senderMarks.splice(i, 1);
+    const sender = send!.sender;
+    if (!sender) return; // a place-keeping mark: this message has no sender
     queueMicrotask(() => {
       if (this.disposed || this.foreignWrite) return;
       const leaf = this.harness.leafId();
       const entry = leaf ? this.harness.entry(leaf) : undefined;
       if (entry?.kind !== "user") return;
-      const markerId = appendSenderMarker(this.harness.state, entry.id!, send?.sender ?? { kind: "overseer" });
+      const markerId = appendSenderMarker(this.harness.state, entry.id!, sender);
       markOwned(this.path);
       const marker = this.harness.entry(markerId);
       if (marker) {
@@ -3527,31 +3559,19 @@ class ChatSession {
     return history;
   }
 
-  /** The `steer` case of handle(), whose failures `fail` reports to the sender. */
+  /**
+   * The `steer` case of handle(), whose failures `fail` reports to the sender: the composer's typed
+   * message, whatever the tab believed about the run (src/lib/send-frame.ts). It takes the same
+   * accept path as the composer's prompt (acceptPrompt: the write guards, a blank no-op, the topics
+   * pause lifted, held while a turn starts, a compaction runs or a keyed send would be deferred, the
+   * person's turn marked), as a steer: busy, it waits in Sova's queue and lands at the agent's next
+   * step with every other waiting steer; idle, it starts its turn as a prompt does.
+   */
   private steer(client: ChatClient, msg: Extract<ChatClientMessage, { type: "steer" }>, clientId: string | undefined, fail: (err: unknown) => void): void {
-    assertNotLive(this.path);
-    this.assertNoForeignWrites();
     this.assertModelAllowed();
-    const text = String(msg.text ?? "");
-    const images = parseImages(msg.images);
-    if (!text.trim() && !images) return;
-    this.setTopicsPaused(false);
-    // Mid-turn, this is a steer and goes through Sova's queue so it stays removable; idle,
-    // there is nothing to queue behind, so it starts its turn straight away (and the
-    // extension-command split lives in handOffQueued, which both paths reach). While a
-    // compaction runs it is held the same way, and goes in when the compaction ends.
-    if (this.harness.isRunning() || this.isCompacting()) {
-      this.queue.enqueue({ kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId });
-      this.ackSend(client, clientId, true);
-      return;
-    }
-    this.flushDeferredAppends();
-    this.ackSend(client, clientId, false);
-    this.toSdk("client", () => this.tracked(text, () => this.harness.send(text, { images })))
-      .catch((err) => {
-        if (!this.heldForCompaction(err, { kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId })) throw err;
-      })
-      .catch(fail);
+    const { queued, turn } = this.acceptPrompt(String(msg.text ?? ""), parseImages(msg.images), "client", clientId, { delivery: "steer" });
+    this.ackSend(client, clientId, queued);
+    turn.catch(fail);
   }
 
   /**
@@ -4324,12 +4344,15 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
   // A special loadout's run events and the person's turns (SpecialLoadoutResult.attribution): one
   // for the chat, kept across the runtimes it builds.
   const runs: RunHearing = { turns: null, tag: {} };
+  // Which keyed send each user message came from, on every session this runtime builds (§app.chat-processes/worker-instructions).
+  const sendKeys = new SendKeys();
   /** The last build's special loadout, if this chat is a special kind's. */
   const last: { special: { spec: SpecialSpec; port: SpecialPort } | null } = { special: null };
   const worker = presetWorkers.get(path) ?? null;
   const build = async ({ cwd, read }: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
-    // A worker chat (§app.chat-processes/workers) is its loadout and nothing else.
-    if (worker) return workerBuild(worker, path);
+    // A worker chat (§app.chat-processes/workers) is its loadout and nothing else, its messages labelled
+    // with the keys of the sends they came from (§app.chat-processes/worker-instructions).
+    if (worker) return { ...workerBuild(worker, path), built: (session) => sendKeys.watch(session) };
     if (!launch.recorded) {
       const now = alignLaunchOf(read.state);
       if (now.recorded || launch.data === null) Object.assign(launch, now);
@@ -4448,6 +4471,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
       },
       forkCacheRouting: !special,
       built: (session) => {
+        sendKeys.watch(session);
         if (profile.run) {
           const run = profile.run;
           run.turns.watch(session);
@@ -4489,6 +4513,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
       forgetSpecial(path);
       onDisposed();
     });
+    chat.sendKeys = sendKeys;
     chat.cwdFallback = fallback;
     // A Stop pressed before a restart still pauses its topic batches (§chat.topics/delivery).
     chat.topicsPaused = topicStore().receiverPaused(path);

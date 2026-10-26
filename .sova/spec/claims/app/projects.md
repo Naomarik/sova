@@ -142,9 +142,7 @@ started: from the project, from New Session's folder tab, from a TUI or from Cla
   project page's "Started by" rule) is listed as `SessionSummary.project`
   `{kind: "coding", operator: true}`; one the project's overseer started has no `operator`. The
   marker is additive: an older server sends none, which reads as the overseer's. It is how the
-  operator's own coding sessions also reach Recent (§app.session-list/recent); one the project's
-  overseer started doesn't. Either can join a group (§app.session-list/groups), as can the
-  project overseer's conversations.
+  operator's own coding sessions also reach Recent (§app.session-list/recent).
 - **Every other session in the folder is listed as the project's.** Reading the list, a session no
   marker or build claims belongs to the project whose folder its `cwd` is in, as
   `SessionSummary.project` `{kind: "folder"}`, never `finished`: an overseer marker, then a build,

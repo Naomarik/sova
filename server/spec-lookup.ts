@@ -7,6 +7,7 @@ import { cutBytes, defuse, maskNames, outsiderTitle, projectOutsider, wrapSpec, 
 import { operatorName, readRoster } from "./orgs";
 import { readProject } from "./projects/spaces";
 import { stateRoot } from "./state-root";
+import { readSpecFs } from "../pi-config/extensions/spec/core/layout.mjs";
 
 /**
  * The spec look-up (§app.spec-lookup/tool, /outsider-view, /overview): `spec_lookup` and, for
@@ -466,9 +467,13 @@ export function specSummary(specRoot: string, key: string | null = null): SpecSu
   const cached = key && !key.startsWith("worktree:") ? summaries.get(key) : undefined;
   if (cached) return cached;
   const dir = join(specRoot, ".sova", "spec");
-  const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")) as { claimsRoot?: string; grammar?: { claimsRoot?: string }; claims?: Record<string, unknown> };
+  // The records in either layout, through the spec tools' shared reader (a mixed layout is refused there).
+  const spec = readSpecFs(specRoot);
+  const refused = spec.state === "present" ? spec.problems.find((p) => p.code === "layout-mixed" || p.code === "manifest-unreadable") : undefined;
+  if (spec.state !== "present" || refused) throw new Error(refused?.message ?? "the spec has no manifest");
+  const manifest = spec.meta as { claimsRoot?: string; grammar?: { claimsRoot?: string } };
   const claimsRoot = (manifest.grammar?.claimsRoot ?? manifest.claimsRoot ?? "claims/").replace(/\/+$/, "");
-  const ids = Object.keys(manifest.claims ?? {});
+  const ids = Object.keys(spec.records);
   const areas = ids
     .filter((id) => /^§[^./]+\/[^/]+$/.test(id))
     .sort()

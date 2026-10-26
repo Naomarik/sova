@@ -13,9 +13,9 @@ import { imageForToken, refreshShare, viewForToken } from "./hub";
 import { assertBudget, countUpload, dropStaged, ensureSweep, isPhotoType, photoCount, PhotoRefusal, photosFor, stagePhoto, takeStaged, type SdkImage } from "../baton-images";
 import { askForNewLink, noteOwnerUse, ownerAccess } from "../owner";
 import { attentionChanged } from "../attention-memo";
-import { ownerVersionOf, ownerView } from "../owner-page";
+import { ownerConversationOlder, ownerVersionOf, ownerView } from "../owner-page";
 import { openVersion, STARTING_PAGE } from "../owner-versions";
-import { AssistantRefusal, assistantPhoto, assistantPhotoLimits, assistantStagingKey, assistantView, sendOwnerMessage } from "../project-assistant";
+import { AssistantRefusal, assistantOlder, assistantPhoto, assistantPhotoLimits, assistantStagingKey, assistantView, sendOwnerMessage } from "../project-assistant";
 import { assistantReady } from "../project-assistant-ready";
 import { ASSISTANT_TEXT_MAX } from "../../shared/project-assistant";
 import { mountSessionShareRoutes } from "./session-routes";
@@ -407,6 +407,38 @@ export function createShareApp(): Hono {
     if (classify(c.req.header("user-agent")).kind === "person") noteOwnerUse(access);
     return c.json(await assistantView(access.orgId));
   });
+  // Earlier pages (§app.project-assistant/chat, Paged; §app.owner-page/page): the chat's, and a conversation's.
+  const beforeOf = (c: Context): number | null => {
+    const raw = c.req.query("before") ?? "";
+    return /^(?:0|[1-9][0-9]{0,6})$/.test(raw) ? Number(raw) : null;
+  };
+  app.get("/api/i/:token/assistant/older", async (c) => {
+    const token = c.req.param("token");
+    if (ownerTokenLimited(token)) return c.json(refusal("rate-limited", "Too many requests. Wait a minute."), 429);
+    const access = ownerAccess(token);
+    if (!access.ok) return ownerDead(c, access);
+    const before = beforeOf(c);
+    if (before === null) return c.json(refusal("bad-request", "before is a message number."), 400);
+    if (classify(c.req.header("user-agent")).kind === "person") noteOwnerUse(access);
+    return c.json(await assistantOlder(access.orgId, before));
+  });
+  app.get("/api/i/:token/c/:handle/older", async (c) => {
+    const token = c.req.param("token");
+    if (ownerTokenLimited(token)) return c.json(refusal("rate-limited", "Too many requests. Wait a minute."), 429);
+    const access = ownerAccess(token);
+    if (!access.ok) return ownerDead(c, access);
+    const before = beforeOf(c);
+    if (before === null) return c.json(refusal("bad-request", "before is a position."), 400);
+    try {
+      const page = await ownerConversationOlder(access.orgId, c.req.param("handle"), before);
+      if (classify(c.req.header("user-agent")).kind === "person") noteOwnerUse(access);
+      return c.json(page);
+    } catch (err) {
+      // An unknown handle, a hidden conversation and a project switched off answer alike.
+      if (err instanceof OrgError && err.status === 404) return c.json(refusal("missing", "Not found."), 404);
+      throw err;
+    }
+  });
   app.post("/api/i/:token/assistant", async (c) => {
     const token = c.req.param("token");
     const access = ownerAccess(token);
@@ -540,9 +572,11 @@ export function createShareApp(): Hono {
     noteOwnerUse(access);
     return c.json({ ok: true }, 202);
   };
+  // The owner's message: in their feature request chat, or their answer to a conversation that waits on them
+  // (§app.owner-page/content, Answering on the page), taken as a hand-off link's would be.
   app.post(
     "/api/i/:token/c/:handle/message",
-    featureRoute(async (orgId, personId, handle, body) => (await import("../feature-chats")).sendOwnerFeatureMessage(orgId, personId, handle, body.text), ["text"]),
+    featureRoute(async (orgId, personId, handle, body) => (await import("../owner-answer")).sendOwnerPageMessage(orgId, personId, handle, body.text), ["text"]),
   );
   app.post(
     "/api/i/:token/c/:handle/end",

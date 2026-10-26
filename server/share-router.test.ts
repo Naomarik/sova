@@ -50,6 +50,8 @@ test("every address the edge's strict routes admit for a kind routes to that kin
     ["GET", `/api/i/${t}`, "i"],
     ["GET", `/api/i/${t}/p/q_abcdefgh`, "i"],
     ["GET", `/api/i/${t}/c/k_abcdefgh`, "i"],
+    ["GET", `/api/i/${t}/c/k_abcdefgh/older`, "i"],
+    ["GET", `/api/i/${t}/assistant/older`, "i"],
     ["POST", `/i/${t}/ask-link`, "i"],
     ["GET", `/api/i/${t}/assistant`, "i"],
     ["POST", `/api/i/${t}/assistant`, "i"],

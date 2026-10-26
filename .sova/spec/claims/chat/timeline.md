@@ -76,6 +76,9 @@ parts sit together, and the first of them takes the one `margin-left:auto` (§ap
   the chat doesn't hold, the hello's summary lists the ones typed by the user apart from its list
   of every input (`OlderSummary.ownInputs`; Undo last turn still reads the list of every input),
   and a sender marker the chat holds for one of those rows takes it out of the count. The count stays visible: it is a fact about the session, whether or not the pane is open.
+  While a turn runs it also counts each message you typed that the agent has already taken in it,
+  a steer included, the moment it lands rather than when the turn ends; a message still waiting to
+  be taken isn't on the branch yet and isn't counted.
 - **Hidden at 0**, and hidden means *absent*: a session nobody has written to yet shows no control,
   not a greyed one. Before the chat's `hello` it shows the count known with rows kept for the
   session (§chat.transcript/rendering), when there is one. Otherwise, when the session is known to

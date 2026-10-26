@@ -104,18 +104,18 @@ which is also its live view: its tool calls render as tool cards as they happen.
 ## §app.project-overseer/memory-switch — Its memory switch
 
 Each project overseer has memory (§chat.memory/overseer) on the same terms as the Overseer: on by
-default (UniiChat at 128 KB) for every project overseer that hasn't chosen, existing ones
+default (UniiChat, at Settings → Memory's size) for every project overseer that hasn't chosen, existing ones
 included, and off once someone switches it off, across Clear. Its switch is `GET`/`PUT
-/api/projects/:pid/overseer/memory` `{on, type, size}` (the answer as `/api/overseer/memory`'s,
-404 for an unknown project, 400 for a bad body), saved as `memory` in that project's
+/api/projects/:pid/overseer/memory` `{on, type}` (the answer as `/api/overseer/memory`'s, its size
+Settings → Memory's and a PUT's `size` ignored, 404 for an unknown project, 400 for a bad body), saved as `memory` in that project's
 overseer `overseer.json` (§app.project-overseer/identity) and read at each of its turns; a
 `PATCH …/overseer` of its other settings keeps it. The summaries stay in this host's agent dir,
 beside the conversation (§chat.memory/log).
 
 - **The button.** On its chat page (§app.project-overseer/page), its composer foot carries the
   Overseer's memory button and popover (§app.overseer/memory-switch) at its right end, named
-  "Project overseer memory: on" or "…: off": the `memory` checkbox row, the types and Summary
-  size. A failed read shows "Couldn't read the project overseer's memory.", a refused write
+  "Project overseer memory: on" or "…: off": the `memory` checkbox row and the types (no
+  size: Settings → Memory's). A failed read shows "Couldn't read the project overseer's memory.", a refused write
   "Couldn't change the project overseer's memory." with the reason; the foot line reads "From the
   project overseer's next turn. Its coding sessions never get memory."
 - **Its turns.** Switched on (or on by default) in a conversation with history, it is prepared in
@@ -590,8 +590,8 @@ user row.
   patch, the spec patch and the copy limit's edit): a key a parser reads with no reference entry fails a test. Archiving has
   an entry too (`project.archive`): it says archiving is yours on the project page, with its own confirm.
 - **Structured edits, checked by the same parsers.** `edits` name a setting, never a path:
-  `{setting: "overseer", patch}` (the overseer settings' fields), `{setting: "memory", on, type?,
-  size?}`, `{setting: "project", name?, stakeholder?, ownerHidden?, frozen?}` (the last three an
+  `{setting: "overseer", patch}` (the overseer settings' fields), `{setting: "memory", on, type?}`
+  (a `size` is ignored: its size is Settings → Memory's, §chat.memory/overseer), `{setting: "project", name?, stakeholder?, ownerHidden?, frozen?}` (the last three an
   organization's project only: a standalone project's is refused in words), `{setting: "profile", id, profile | null}`, `{setting:
   "playbook", id, text | null}`, `{setting: "copies", limit: 1–16 | null}` (null: back to the
   main checkout's file's value), `{setting: "mode", id, text | null}`, `{setting: "offers", file |

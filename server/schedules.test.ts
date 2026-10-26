@@ -39,6 +39,8 @@ interface Harness {
   slots: { free: number };
   /** The merge board the keeper reads (null: unreadable). Rows in ROOT's repository are ROOT's. */
   board: { value: { pending: number; rows: BoardRow[] } | null };
+  /** The user's go-aheads typed in a branch's own chat (landing.json, by owner-chat). */
+  typed: { branch: string; commit: string }[];
   log(): { outcome: string; why?: string; trigger: string }[];
   /** A new keeper on the same store: a server restart. */
   restart(): Keeper;
@@ -77,6 +79,7 @@ function harness(opts: { when?: string; singleton?: boolean; start?: string } = 
   const turns = new Map<string, { failed: boolean; at: number; login?: string }>();
   const slots = { free: 5 };
   const board: Harness["board"] = { value: { pending: 0, rows: [] } };
+  const typed: Harness["typed"] = [];
   const file = join(dir, "schedules.json");
   const logFile = join(dir, "schedule-runs.jsonl");
   let made = 0;
@@ -118,6 +121,7 @@ function harness(opts: { when?: string; singleton?: boolean; start?: string } = 
       seenAt: (id) => seen.get(id) ?? 0,
       logins: () => logins,
       lastTurn: async (path) => turns.get(path) ?? null,
+      typedGoAheads: () => typed,
       async board() {
         const b = board.value;
         return b && { pending: b.pending, rowsIn: (root: string) => b.rows.filter((r) => r.repo === `${root}/.git`) };
@@ -137,6 +141,7 @@ function harness(opts: { when?: string; singleton?: boolean; start?: string } = 
     turns,
     slots,
     board,
+    typed,
     file,
     log: () =>
       readFileSync(logFile, "utf8")
@@ -478,62 +483,109 @@ test("the first sight of a schedule tells the Overseer once; an invalid one or a
   assert.deepEqual(briefs, ["The playbook Merge round in sova wants to run on a schedule (Every 30 min). It fires only once the user approves it in the Playbooks dialog or on your permits chip."]);
 });
 
-/** A board row in ROOT's repository (or another's), owned by `owner`. */
-const row = (branch: string, state: BoardRow["state"], status: BoardRow["owner"]["status"] = "idle", repo = `${ROOT}/.git`): BoardRow => ({
+/** A board row in ROOT's repository (or another's), owned by `owner`; `landing`: Ready to land at that commit. */
+const row = (branch: string, state: BoardRow["state"], status: BoardRow["owner"]["status"] = "idle", repo = `${ROOT}/.git`, landing?: BoardRow["landing"]): BoardRow => ({
   path: `/work/.worktrees/${branch.replace(/\//g, "-")}`,
   branch,
   repo,
   state,
   reason: state,
+  ...(landing ? { landing } : {}),
   readAt: "2026-10-05T09:00:00.000Z",
   owner: { id: `owner-${branch}`, title: `Owner of ${branch}`, status, profile: null, lastActiveAt: "2026-10-05T09:00:00.000Z" },
 });
+const C1 = "1".repeat(40);
+const C2 = "2".repeat(40);
+/** A row Ready to land at `commit` (§chat.worktrees/ready-to-land). */
+const land = (branch: string, status: BoardRow["owner"]["status"] = "idle", commit = C1, repo?: string) => row(branch, "ready", status, repo, { state: "ready", commit });
+const mergeReadyFires = (h: ReturnType<typeof harness>) => h.log().filter((l) => l.trigger === "merge-ready" && l.outcome === "fired").length;
 
-test("merge-ready: a branch turning ready with an idle owner wakes the round once, naming it", async () => {
+test("merge-ready: a branch turning Ready to land with an idle owner wakes the round at once, naming it", async () => {
   const h = harness({ when: "merge-ready; every 6h", singleton: true });
   const s = await approve(h);
   assert.equal(s.text, "When a branch is ready to merge · Every 6 hours");
-  h.board.value!.rows.push(row("feat/busy", "ready", "busy"), row("feat/archived", "waiting-approval", "archived"), row("feat/wip", "in-progress"), row("feat/elsewhere", "ready", "idle", "/other/.git"));
+  h.board.value!.rows.push(
+    land("feat/busy", "busy"),
+    land("feat/archived", "archived"),
+    row("feat/merge-only", "ready"),
+    row("feat/waiting", "waiting-approval"),
+    row("feat/specs", "ready", "idle", undefined, { state: "specs", commit: C1, drafts: ["d"] }),
+    land("feat/elsewhere", "idle", C1, "/other/.git"),
+  );
   await tickAt(h, "2026-10-05T09:01:00Z");
-  assert.equal(h.created.length, 0, "a busy or archived owner, a branch in progress or in another repository: nothing");
-  h.board.value!.rows.push(row("feat/x", "ready"), row("feat/y", "waiting-approval"));
+  assert.equal(h.created.length, 0, "a busy or archived owner, Ready to merge or Waiting for your OK alone, Landing specs, another repository: nothing");
+  h.board.value!.rows.push(land("feat/x"), land("feat/y"));
   await tickAt(h, "2026-10-05T09:01:30Z");
   assert.equal(h.created.length, 1);
-  assert.match(h.created[0]!.text, /^\[schedule s1\] Scheduled run fired \(merge-ready, playbook merge-round\)\.\nReason: Ready to merge: feat\/x, feat\/y \(waiting for an OK\)\.\n\n/);
+  assert.match(h.created[0]!.text, /^\[schedule s1\] Scheduled run fired \(merge-ready, playbook merge-round\)\.\nReason: Ready to land: feat\/x, feat\/y\.\n\n/);
   await tickAt(h, "2026-10-05T09:02:00Z");
   await tickAt(h, "2026-10-05T09:30:00Z");
-  assert.equal(h.created.length + h.woken.length, 1, "still ready: no second fire");
-  // The busy owner goes idle: a new transition, and only that branch is named.
-  h.board.value!.rows[0] = row("feat/busy", "ready", "idle");
+  assert.equal(h.created.length + h.woken.length, 1, "still Ready to land at the same commit: no second fire");
+  // The busy owner goes idle: a new transition, named alone, at once: no quiet gap after the last fire.
+  h.board.value!.rows[0] = land("feat/busy");
   await tickAt(h, "2026-10-05T09:31:00Z");
-  assert.equal(h.woken.length, 0, "under 30 minutes since the schedule last fired: held");
-  await tickAt(h, "2026-10-05T09:32:00Z");
   assert.equal(h.woken.length, 1);
-  assert.match(h.woken[0]!.text, /\nReason: Ready to merge: feat\/busy\.\nRun the playbook "Merge round" again/);
+  assert.match(h.woken[0]!.text, /\nReason: Ready to land: feat\/busy\.\nRun the playbook "Merge round" again/);
 });
 
-test("merge-ready: an owner flipping working and ready never brings a burst; back after 30 minutes it fires again", async () => {
+test("merge-ready: the user's go-ahead typed in a branch's own chat wakes the round at once, whatever its row reads, once per commit", async () => {
+  const h = harness({ when: "merge-ready", singleton: true });
+  await approve(h);
+  h.board.value!.rows.push(row("feat/typed", "in-progress", "busy"), land("feat/elsewhere", "idle", C1, "/other/.git"));
+  await tickAt(h, "2026-10-05T09:00:00Z");
+  assert.equal(h.created.length, 0, "not Ready to land, owner busy: nothing yet");
+  h.typed.push({ branch: "feat/typed", commit: C1 }, { branch: "feat/elsewhere", commit: C1 }, { branch: "feat/gone", commit: C1 });
+  await tickAt(h, "2026-10-05T09:01:00Z");
+  assert.equal(h.created.length, 1, "the typed go-ahead wakes it, card or not; another repository's and a branch the board doesn't list don't");
+  assert.match(h.created[0]!.text, /\nReason: Go-ahead typed in its own chat: feat\/typed\.\n\n/);
+  await tickAt(h, "2026-10-05T09:30:00Z");
+  assert.equal(h.created.length + h.woken.length, 1, "the same go-ahead: no second wake");
+  // A new commit and a new go-ahead, together with a branch turning Ready to land: one fire names both.
+  h.typed.push({ branch: "feat/typed", commit: C2 });
+  h.board.value!.rows.push(land("feat/ready"));
+  await tickAt(h, "2026-10-05T10:00:00Z");
+  assert.equal(h.woken.length, 1);
+  assert.match(h.woken[0]!.text, /\nReason: Ready to land: feat\/ready\. Go-ahead typed in its own chat: feat\/typed\.\n/);
+});
+
+test("merge-ready: leaving and coming back at the same commit never fires again; a new landing commit fires at once", async () => {
   const h = harness({ when: "merge-ready", singleton: true });
   const s = await approve(h);
   assert.equal(s.next, undefined, "only an event trigger: no next time");
-  h.board.value!.rows.push(row("feat/x", "ready"));
+  h.board.value!.rows.push(land("feat/x"));
   await tickAt(h, "2026-10-05T09:00:00Z");
   assert.equal(h.created.length, 1);
-  for (const [i, state] of (["in-progress", "ready", "in-progress", "waiting-approval"] as const).entries()) {
-    h.board.value!.rows[0] = row("feat/x", state);
-    await tickAt(h, `2026-10-05T09:0${i + 1}:00Z`);
+  for (const [i, r] of [row("feat/x", "in-progress"), land("feat/x"), row("feat/x", "ready"), land("feat/x"), land("feat/x", "busy"), land("feat/x")].entries()) {
+    h.board.value!.rows[0] = r;
+    await tickAt(h, `2026-10-05T${String(10 + i).padStart(2, "0")}:00:00Z`);
   }
-  assert.equal(h.woken.length, 0, "back inside 30 minutes: no fire");
-  await tickAt(h, "2026-10-05T09:31:00Z");
-  assert.equal(h.woken.length, 1, "it left and came back, and 30 minutes passed");
-  await tickAt(h, "2026-10-05T10:31:00Z");
-  assert.equal(h.woken.length, 1, "never left since: no fire");
+  assert.equal(h.woken.length, 0, "back at the commit it fired for: nothing, however long it was away");
+  h.board.value!.rows[0] = land("feat/x", "idle", C2);
+  await tickAt(h, "2026-10-05T16:01:00Z");
+  assert.equal(h.woken.length, 1, "Ready to land at a new commit");
 });
 
-test("merge-ready: a branch not read yet is unknown, never \"left\"; an unreadable board fires nothing", async () => {
+test("merge-ready: a branch seen Ready to merge that turns Ready to land fires once, ten minutes after a timed fire", async () => {
+  const h = harness({ when: "merge-ready; every 6h", singleton: true });
+  await approve(h);
+  await tickAt(h, "2026-10-05T09:00:00Z"); // primes the next timed fire (12:00)
+  h.board.value!.rows.push(row("feat/x", "ready"));
+  await tickAt(h, "2026-10-05T11:55:00Z");
+  assert.equal(mergeReadyFires(h), 0, "Ready to merge alone: no wake");
+  await tickAt(h, "2026-10-05T12:00:00Z");
+  assert.equal(h.created.length + h.woken.length, 1, "the timed fire");
+  h.board.value!.rows[0] = land("feat/x");
+  await tickAt(h, "2026-10-05T12:10:00Z");
+  await tickAt(h, "2026-10-05T12:11:00Z");
+  await tickAt(h, "2026-10-05T12:40:00Z");
+  assert.equal(mergeReadyFires(h), 1, "exactly one merge-ready fire, ten minutes after the timed one");
+  assert.match(h.woken.at(-1)!.text, /\nReason: Ready to land: feat\/x\.\n/);
+});
+
+test("merge-ready: a branch not read yet is unknown, never forgotten; an unreadable board fires nothing", async () => {
   const h = harness({ when: "merge-ready", singleton: true });
   await approve(h);
-  h.board.value!.rows.push(row("feat/x", "ready"));
+  h.board.value!.rows.push(land("feat/x"));
   await tickAt(h, "2026-10-05T09:00:00Z");
   assert.equal(h.created.length, 1);
   // A restart: the board hasn't read the owner yet.
@@ -542,66 +594,48 @@ test("merge-ready: a branch not read yet is unknown, never \"left\"; an unreadab
   await tickAt(h, "2026-10-05T09:40:00Z");
   h.board.value = null;
   await tickAt(h, "2026-10-05T09:41:00Z");
-  h.board.value = { pending: 0, rows: [row("feat/x", "ready")] };
+  h.board.value = { pending: 0, rows: [land("feat/x")] };
   await tickAt(h, "2026-10-05T09:42:00Z");
-  assert.equal(h.woken.length, 0, "unread is not a departure, so the same ready branch fires nothing new");
-  h.board.value = { pending: 3, rows: [row("feat/x", "ready"), row("feat/new", "ready")] };
+  assert.equal(h.woken.length, 0, "the same branch at the same commit fires nothing new");
+  h.board.value = { pending: 3, rows: [land("feat/x"), land("feat/new")] };
   await tickAt(h, "2026-10-05T09:43:00Z");
-  assert.equal(h.woken.length, 1, "a ready branch it has read fires while others are still pending");
-  assert.match(h.woken[0]!.text, /Reason: Ready to merge: feat\/new\./);
+  assert.equal(h.woken.length, 1, "a branch it has read fires while others are still pending");
+  assert.match(h.woken[0]!.text, /Reason: Ready to land: feat\/new\./);
 });
 
-test("merge-ready: waits, unlogged, while the last run goes, then names every branch that turned ready", async () => {
+test("merge-ready: waits, unlogged, while the last run goes, then names every branch that turned Ready to land", async () => {
   const h = harness({ when: "merge-ready", singleton: true });
   await approve(h);
-  h.board.value!.rows.push(row("feat/a", "ready"));
+  h.board.value!.rows.push(land("feat/a"));
   await tickAt(h, "2026-10-05T09:00:00Z");
   const path = h.sessions[0]!.path;
   h.busy.add(path);
   const logged = h.log().length;
-  h.board.value!.rows.push(row("feat/b", "ready"));
+  h.board.value!.rows.push(land("feat/b"));
   await tickAt(h, "2026-10-05T09:01:00Z");
-  h.board.value!.rows.push(row("feat/c", "waiting-approval"));
-  await tickAt(h, "2026-10-05T09:02:00Z");
-  assert.equal(h.woken.length, 0);
-  assert.equal(h.log().length, logged, "a wait logs nothing");
+  h.board.value!.rows.push(land("feat/c"));
   await tickAt(h, "2026-10-05T09:31:00Z");
-  assert.equal(h.woken.length, 0, "30 minutes passed, but the run is still going");
+  assert.equal(h.woken.length, 0, "the run is still going");
   assert.equal(h.log().length, logged, "a wait logs nothing");
   h.busy.clear();
   await tickAt(h, "2026-10-05T09:32:00Z");
   assert.equal(h.woken.length, 1);
-  assert.match(h.woken[0]!.text, /Reason: Ready to merge: feat\/b, feat\/c \(waiting for an OK\)\./);
+  assert.match(h.woken[0]!.text, /Reason: Ready to land: feat\/b, feat\/c\./);
 });
 
 test("merge-ready: the running-at-once cap skips once and spends the transition; the reason names at most five", async () => {
   const h = harness({ when: "merge-ready", singleton: true });
   await approve(h);
-  for (const b of ["a", "b", "c", "d", "e", "f", "g"]) h.board.value!.rows.push(row(`feat/${b}`, "ready"));
+  for (const b of ["a", "b", "c", "d", "e", "f", "g"]) h.board.value!.rows.push(land(`feat/${b}`));
   await tickAt(h, "2026-10-05T09:00:00Z");
-  assert.match(h.created[0]!.text, /Reason: Ready to merge: feat\/a, feat\/b, feat\/c, feat\/d, feat\/e, and 2 more\./);
+  assert.match(h.created[0]!.text, /Reason: Ready to land: feat\/a, feat\/b, feat\/c, feat\/d, feat\/e, and 2 more\./);
   h.slots.free = 0;
-  h.board.value!.rows.push(row("feat/h", "ready"));
-  await tickAt(h, "2026-10-05T09:31:00Z");
-  await tickAt(h, "2026-10-05T09:32:00Z");
+  h.board.value!.rows.push(land("feat/h"));
+  await tickAt(h, "2026-10-05T09:01:00Z");
+  await tickAt(h, "2026-10-05T09:02:00Z");
   const skips = h.log().filter((l) => l.trigger === "merge-ready" && l.outcome === "skipped");
   assert.equal(skips.length, 1, "logged once");
   assert.equal(h.woken.length, 0);
-});
-
-test("merge-ready: one fire per 30 minutes per schedule; branches turning ready meanwhile go out together", async () => {
-  const h = harness({ when: "merge-ready; every 6h", singleton: true });
-  await approve(h);
-  const fires = () => h.created.length + h.woken.length;
-  h.board.value!.rows.push(row("feat/x", "ready"));
-  await tickAt(h, "2026-10-05T09:01:00Z");
-  assert.equal(fires(), 1);
-  h.board.value!.rows.push(row("feat/y", "ready"));
-  await tickAt(h, "2026-10-05T09:03:00Z");
-  assert.equal(fires(), 1, "inside 30 minutes of the last fire: held");
-  await tickAt(h, "2026-10-05T09:31:00Z");
-  assert.equal(fires(), 2);
-  assert.match(h.woken.at(-1)!.text, /\nReason: Ready to merge: feat\/y\.\n/);
 });
 
 test("merge-ready never takes the day's last fires from the timed triggers", async () => {
@@ -612,7 +646,7 @@ test("merge-ready never takes the day's last fires from the timed triggers", asy
   const store = JSON.parse(readFileSync(h.file, "utf8"));
   store.schedules[0].day = { key: "2026-10-05", n: 44 };
   writeFileSync(h.file, JSON.stringify(store));
-  h.board.value!.rows.push(row("feat/x", "ready"));
+  h.board.value!.rows.push(land("feat/x"));
   await tickAt(h, "2026-10-05T11:00:00Z");
   assert.equal(h.created.length + h.woken.length, 0);
   assert.match(h.log().at(-1)!.why!, /leaves today's last 4 of 48 fires to the timed triggers/);

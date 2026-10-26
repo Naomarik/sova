@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { WebSocket } from "ws";
 import { OPERATOR } from "../shared/baton";
 import type { HEntry } from "../shared/harness";
-import { ASSISTANT_TEXT_MAX, type AssistantMessage, type AssistantServerMessage, type AssistantView, type OwnerVersionRow } from "../shared/project-assistant";
+import { ASSISTANT_TEXT_MAX, pageOf, type AssistantMessage, type AssistantOlder, type AssistantServerMessage, type AssistantView, type OwnerVersionRow } from "../shared/project-assistant";
 import type { BatonPhotoSettings } from "../shared/baton";
 import { acquireChatHandle, chatHandle, isSessionBusy } from "./chat-handle";
 import { dropStaged, PhotoRefusal, takeStaged, type SdkImage } from "./baton-images";
@@ -15,7 +15,7 @@ import { createSessionFile } from "./harness/pi/state";
 import { joinedText, readBranch } from "./harness/pi/reader";
 import { stateView } from "./harness/state-view";
 import { BATON_SENT, PROJECT_ASSISTANT } from "./harness/state-kinds";
-import { operatorName, orgDir, OrgError, ownerOf, readIndex, readRoster } from "./orgs";
+import { operatorName, orgDir, OrgError, ownerOf, readIndex, readProjects, readRoster } from "./orgs";
 import { sessionIdOfFile } from "./project-overseer-store";
 import { canonicalPath } from "./paths";
 import { conversationOf, readAssistantStore, setConversation } from "./project-assistant-store";
@@ -95,8 +95,36 @@ export async function currentAssistantPath(orgId: string): Promise<string | null
 
 // ---- the owner's view -----------------------------------------------------------------------------
 
-/** How many messages the view carries (the newest). */
-export const VIEW_MESSAGES = 200;
+/** How many messages the view, and each earlier page, carries (§app.project-assistant/chat, Paged). */
+export { ASSISTANT_PAGE as VIEW_MESSAGES } from "../shared/project-assistant";
+
+/** Parsed branches by path, reused while the file is unchanged (its size and mtime): a poll or a push never
+    parses the whole conversation again when nothing was written. The newest few conversations only. */
+const branchCache = new Map<string, { size: number; mtimeMs: number; branch: HEntry[] }>();
+const BRANCH_CACHE_MAX = 16;
+
+/** A conversation's active branch, parsed again only when its file changed since the last read. */
+export async function assistantBranch(path: string): Promise<HEntry[]> {
+  let st: { size: number; mtimeMs: number };
+  try {
+    st = statSync(path);
+  } catch {
+    branchCache.delete(path);
+    return [];
+  }
+  const hit = branchCache.get(path);
+  if (hit && hit.size === st.size && hit.mtimeMs === st.mtimeMs) {
+    // Most recently used last, so the oldest goes first.
+    branchCache.delete(path);
+    branchCache.set(path, hit);
+    return hit.branch;
+  }
+  const branch = await readBranch(path).catch((): HEntry[] => []);
+  branchCache.delete(path);
+  branchCache.set(path, { size: st.size, mtimeMs: st.mtimeMs, branch });
+  while (branchCache.size > BRANCH_CACHE_MAX) branchCache.delete(branchCache.keys().next().value!);
+  return branch;
+}
 
 /** Who wrote a user message, as the owner's view shows it: its sent mark, else the team (the operator's name). */
 const authorOf = (marks: ReturnType<typeof stateView>, e: HEntry): string => (e.id ? (marks.byTarget(BATON_SENT, e.id)?.data.by ?? OPERATOR) : OPERATOR);
@@ -161,8 +189,10 @@ export function assistantMessages(orgId: string, branch: readonly HEntry[]): Raw
       feature = null;
     }
   }
-  return out.slice(-VIEW_MESSAGES);
+  return out;
 }
+
+export { pageOf };
 
 /** Each message's version handles as rows, resolved now (state included); a version no longer listed is dropped. A
     feature request chat it opened becomes its `Open Feature Chat` row while it is the current owner's to read
@@ -217,11 +247,21 @@ export async function assistantView(orgId: string): Promise<AssistantView> {
   const path = await currentAssistantPath(orgId);
   const limits = ready ? await assistantPhotoLimits(orgId).catch(() => null) : null;
   const photos = limits ? { photos: { perMessage: limits.perMessage, maxBytes: limits.maxBytes } } : {};
-  if (!path) return { ready, busy: false, messages: [], ...photos };
-  const branch = await readBranch(path).catch((): HEntry[] => []);
+  if (!path) return { ready, busy: false, messages: [], older: 0, ...photos };
+  const branch = await assistantBranch(path);
   const busy = isSessionBusy(path);
   const streaming = busy ? streams.get(path) : undefined;
-  return { ready, busy, messages: await withVersions(orgId, assistantMessages(orgId, branch)), ...(streaming ? { streaming } : {}), ...photos };
+  // The newest page only (§app.project-assistant/chat, Paged): earlier ones come from assistantOlder.
+  const page = pageOf(assistantMessages(orgId, branch));
+  return { ready, busy, messages: await withVersions(orgId, page.messages), older: page.older, ...(streaming ? { streaming } : {}), ...photos };
+}
+
+/** The page of messages before message `before` (GET /api/i/<token>/assistant/older?before=<n>). */
+export async function assistantOlder(orgId: string, before: number): Promise<AssistantOlder> {
+  const path = await currentAssistantPath(orgId);
+  if (!path) return { messages: [], older: 0 };
+  const page = pageOf(assistantMessages(orgId, await assistantBranch(path)), before);
+  return { messages: await withVersions(orgId, page.messages), older: page.older };
 }
 
 /** The owner's n-th photo (assistantPhotos order), or null. */
@@ -229,7 +269,7 @@ export async function assistantPhoto(orgId: string, n: number): Promise<{ data: 
   if (!Number.isInteger(n) || n < 0) return null;
   const path = await currentAssistantPath(orgId);
   if (!path) return null;
-  return assistantPhotos(await readBranch(path).catch((): HEntry[] => []))[n] ?? null;
+  return assistantPhotos(await assistantBranch(path))[n] ?? null;
 }
 
 // ---- the owner's messages -------------------------------------------------------------------------
@@ -259,7 +299,11 @@ export async function sendOwnerMessage(orgId: string, raw: unknown, imageIds: re
   if (limits && imageIds.length > limits.perMessage) throw new AssistantRefusal("too-many", `Up to ${limits.perMessage} photos per message.`, 400);
   const owner = ownerOf(orgId);
   const key = owner ? assistantStagingKey(orgId, owner.id) : "";
-  // The photos, read before anything is sent: an expired one sends the page back to upload it.
+  // Busy is checked before any staged photo is read (§app.project-assistant/chat): a refused send leaves every
+  // staged photo where it was, so the same send goes through once the answer is done.
+  const conv = await ensureAssistant(orgId);
+  if (isSessionBusy(conv.path)) throw new AssistantRefusal("busy", "Wait for the answer first.");
+  // The photos, read (never removed) before anything is sent: an expired one sends the page back to upload it.
   let images: SdkImage[] | undefined;
   if (imageIds.length)
     try {
@@ -268,8 +312,6 @@ export async function sendOwnerMessage(orgId: string, raw: unknown, imageIds: re
       if (err instanceof PhotoRefusal) throw new AssistantRefusal(err.code, err.message, err.status);
       throw err;
     }
-  const conv = await ensureAssistant(orgId);
-  if (isSessionBusy(conv.path)) throw new AssistantRefusal("busy", "Wait for the answer first.");
   let chat;
   try {
     chat = await acquireChatHandle(conv.path);
@@ -357,15 +399,21 @@ export function endAssistantStream(orgId: string, path: string): void {
   refreshAssistant(orgId);
 }
 
-// ---- the owner's feature request chats on the same socket (§app.project-assistant/feature-chats) ----------------
+// ---- the owner's conversations on the same socket (§app.owner-page/content, §app.project-assistant/feature-chats) ----
 
-/** The org and the owner's handle of a feature request chat the current owner opened, or null. */
+/** The org and the owner's handle of a conversation shown on the current owner's page (their own feature request
+    chat, or any other shown one: its project not switched off, it not hidden from them), or null. */
 async function ownersChat(sessionId: string): Promise<{ orgId: string; handle: string; publicTitle: string } | null> {
   const row = batonById(sessionId)?.row;
   if (!row || !sockets.has(row.orgId)) return null;
   const owner = ownerOf(row.orgId)?.id;
-  const { ownersFeatureChat } = await import("./feature-chats");
-  return owner && ownersFeatureChat(row.orgId, sessionId, owner) ? { orgId: row.orgId, handle: handleOf("k", sessionId), publicTitle: row.publicTitle } : null;
+  if (!owner) return null;
+  const { featureChatOf, ownersFeatureChat, shownToOwner } = await import("./feature-chats");
+  const feature = !!featureChatOf(row.orgId, sessionId);
+  const shown = feature
+    ? ownersFeatureChat(row.orgId, sessionId, owner)
+    : shownToOwner(row, owner) && !row.hiddenFromOwner && readProjects(row.orgId).some((p) => p.id === row.projectId && !p.ownerHidden);
+  return shown ? { orgId: row.orgId, handle: handleOf("k", sessionId), publicTitle: row.publicTitle } : null;
 }
 
 const conversationPending = new Set<string>();

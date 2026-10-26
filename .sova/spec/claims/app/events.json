@@ -1,0 +1,84 @@
+{
+  "§app.events/backpressure": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "server/events-ws.ts",
+      "server/events-ws.test.ts",
+      "server/events.integration.test.ts"
+    ],
+    "requires": [],
+    "evidence": "verified"
+  },
+  "§app.events/idle": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "server/events.ts",
+      "server/index.ts",
+      "server/events.test.ts",
+      "scripts/perf-events.mjs"
+    ],
+    "requires": [
+      "§app.decisions/push"
+    ],
+    "evidence": "verified"
+  },
+  "§app.events/listeners": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "server/ws.ts",
+      "server/mesh/access.ts",
+      "server/events-access.test.ts",
+      "server/events.integration.test.ts"
+    ],
+    "requires": [
+      "§mesh.peers/grants"
+    ],
+    "evidence": "verified"
+  },
+  "§app.events/names": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "shared/events.ts",
+      "server/events.ts",
+      "server/events-ws.ts",
+      "server/index.ts",
+      "server/attention-memo.ts",
+      "server/events.test.ts",
+      "server/events-hermetic.integration.test.ts",
+      "server/events.integration.test.ts"
+    ],
+    "requires": [
+      "§app.decisions/push"
+    ],
+    "evidence": "verified"
+  },
+  "§app.events/resume": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "shared/events.ts",
+      "server/events.ts",
+      "server/events-ws.ts",
+      "server/events.test.ts",
+      "server/events-ws.test.ts",
+      "server/events.integration.test.ts"
+    ],
+    "requires": [],
+    "evidence": "verified"
+  },
+  "§app/events": {
+    "kind": "surface",
+    "authority": "accepted",
+    "code": [
+      "shared/events.ts",
+      "server/events.ts",
+      "server/events-ws.ts",
+      "server/ws.ts"
+    ],
+    "evidence": "reviewed"
+  }
+}

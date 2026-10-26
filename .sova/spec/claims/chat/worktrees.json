@@ -1,0 +1,337 @@
+{
+  "§chat.worktrees/cleanup": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/worktree-cleanup.ts",
+      "server/worktree-cleanup.test.ts",
+      "server/worktree-cleanup.integration.test.ts",
+      "server/test-wait.ts",
+      "server/removed-worktrees.ts",
+      "server/index.ts",
+      "shared/protocol.ts",
+      "server/app.ts"
+    ],
+    "requires": [
+      "§chat.worktrees/merged-state",
+      "§chat.worktrees/entry"
+    ]
+  },
+  "§chat.worktrees/dirty-freshness": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/worktrees.ts",
+      "server/worktrees.test.ts",
+      "server/merge-readiness.ts",
+      "server/merge-readiness.test.ts",
+      "server/merge-readiness.integration.test.ts",
+      "server/worktree-cleanup.ts",
+      "server/session-feed-watch.ts",
+      "server/session-feed.integration.test.ts"
+    ],
+    "requires": [
+      "§chat.worktrees/readiness",
+      "§app/idle-git-cache",
+      "§chat.worktrees/cleanup"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-22T23:48Z",
+      "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#24177c8f"
+    }
+  },
+  "§chat.worktrees/entry": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/worktrees/state.ts",
+      "pi-config/extensions/worktrees/index.ts",
+      "pi-config/extensions/worktrees/state.test.ts",
+      "server/worktrees-state.ts",
+      "server/insights.ts"
+    ]
+  },
+  "§chat.worktrees/inherit": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.worktrees/entry"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/worktrees/state.ts",
+      "server/worktrees-state.ts",
+      "src/components/SessionDetails.tsx"
+    ]
+  },
+  "§chat.worktrees/landing-answers": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/worktrees/landing.ts",
+      "pi-config/extensions/worktrees/landing.test.ts",
+      "pi-config/extensions/worktrees/index.ts",
+      "pi-config/extensions/worktrees/index.test.ts",
+      "server/project-overseer.ts",
+      "server/project-overseer-routes.ts",
+      "server/projects/runtime.ts",
+      "server/projects/runtime-routes.ts",
+      "server/project-coding-runtime.test.ts",
+      "pi-config/extensions/worktrees/README.md",
+      "agents/extensions/worktrees/overview.md"
+    ],
+    "requires": [
+      "§chat.worktrees/tool",
+      "§chat.offers/sova-landing"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-26T06:39Z",
+      "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#ded2d92c"
+    }
+  },
+  "§chat.worktrees/merge-board": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/merge-board.ts",
+      "server/merge-board.test.ts",
+      "server/merge-readiness.ts",
+      "server/schedule-routes.ts"
+    ],
+    "requires": [
+      "§chat.worktrees/readiness"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-24T09:23Z",
+      "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+    }
+  },
+  "§chat.worktrees/merge-card": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.worktrees/tool"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/worktrees/index.ts",
+      "pi-config/extensions/worktrees/git.ts",
+      "pi-config/extensions/worktrees/index.test.ts",
+      "pi-config/extensions/worktrees/git.test.ts",
+      "pi-config/extensions/worktrees/spec.ts",
+      "pi-config/extensions/worktrees/spec.test.ts",
+      "pi-config/extensions/worktrees/state.ts",
+      "server/transcript.ts",
+      "server/worktrees-state.ts",
+      "server/worktrees-state.test.ts",
+      "shared/protocol.ts",
+      "src/components/WorktreeMergeCard.tsx",
+      "src/components/Thread.tsx",
+      "src/lib/worktrees.ts",
+      "src/app.css"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-22T03:00Z",
+      "source": "pi-session:ecc675e0-f5e1-4efc-915d-91012183b844#6f4c32b2"
+    }
+  },
+  "§chat.worktrees/merged-state": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.worktrees/entry"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/worktrees/git.ts",
+      "pi-config/extensions/worktrees/git.test.ts"
+    ]
+  },
+  "§chat.worktrees/pane": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.worktrees/entry",
+      "§chat.worktrees/inherit"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/insights.ts",
+      "server/worktrees-state.ts",
+      "server/worktrees-state.test.ts",
+      "shared/protocol.ts",
+      "src/components/SessionDetails.tsx",
+      "src/lib/worktrees.ts",
+      "src/lib/worktrees.test.ts",
+      "src/app.css",
+      "src/components/SessionPane.tsx"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T14:32Z",
+      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+    }
+  },
+  "§chat.worktrees/readiness": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/merge-readiness.ts",
+      "server/spec-drafts-state.ts",
+      "server/spec-drafts-state.test.ts",
+      "server/merge-readiness.test.ts",
+      "server/merge-readiness.integration.test.ts",
+      "shared/protocol.ts",
+      "src/lib/readiness.ts",
+      "src/lib/readiness.test.ts",
+      "src/components/Sidebar.tsx",
+      "server/removed-worktrees.ts"
+    ],
+    "requires": [
+      "§chat.worktrees/entry",
+      "§chat.worktrees/merge-card",
+      "§chat.alignment/session-mark",
+      "§app.decisions/attention-signals"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-25T22:33Z",
+      "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+    }
+  },
+  "§chat.worktrees/ready-to-land": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/merge-readiness.ts",
+      "server/ready-to-land.ts",
+      "server/merge-readiness.test.ts",
+      "server/spec-drafts-state.ts",
+      "shared/protocol.ts",
+      "src/lib/worktrees.ts",
+      "src/lib/worktrees.test.ts"
+    ],
+    "requires": [
+      "§chat.worktrees/readiness",
+      "§app.decisions/attention-signals"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-26T06:39Z",
+      "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#ded2d92c"
+    }
+  },
+  "§chat.worktrees/sandbox": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.worktrees/tool",
+      "§chat.sandbox/what-on-enforces"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/worktrees/index.ts",
+      "pi-config/extensions/sandbox/index.ts",
+      "pi-config/extensions/sandbox/policy.ts",
+      "pi-config/extensions/sandbox/tests/policy.unit.test.ts"
+    ]
+  },
+  "§chat.worktrees/tool": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.worktrees/entry"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/worktrees/index.ts",
+      "pi-config/extensions/worktrees/git.ts",
+      "pi-config/extensions/worktrees/git.test.ts",
+      "pi-config/extensions/worktrees/index.test.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/worktrees/landing.ts",
+      "pi-config/extensions/worktrees/landing.test.ts",
+      "pi-config/extensions/worktrees/README.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-26T06:39Z",
+      "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#ded2d92c"
+    }
+  },
+  "§chat.worktrees/workers": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.worktrees/entry",
+      "§chat.sandbox/workers"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/index.test.ts",
+      "pi-config/extensions/subagents/restore.test.ts",
+      "pi-config/extensions/worktrees/state.ts",
+      "pi-config/extensions/sandbox/index.ts",
+      "pi-config/extensions/sandbox/policy.ts",
+      "pi-config/extensions/sandbox/state.ts",
+      "pi-config/extensions/sandbox/backend.ts",
+      "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+      "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
+      "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts",
+      "pi-config/extensions/sandbox/launch.ts",
+      "pi-config/extensions/sandbox/tools.ts",
+      "pi-config/extensions/sandbox/tests/tools.unit.test.ts",
+      "pi-config/extensions/sandbox/README.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-25T23:29Z",
+      "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
+    }
+  },
+  "§chat.worktrees/worktree-config": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.worktrees/workers"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/runner.ts",
+      "pi-config/extensions/subagents/registry.ts",
+      "pi-config/extensions/subagents/index.test.ts",
+      "pi-config/extensions/subagents/README.md",
+      "scripts/hermetic-agent-dir.mjs",
+      "pi-config/extensions/sandbox/env.ts"
+    ]
+  },
+  "§chat/worktrees": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/worktrees/index.ts",
+      "pi-config/extensions/worktrees/state.ts",
+      "pi-config/extensions/worktrees/README.md"
+    ],
+    "notOwned": [
+      "§chat/merge-round",
+      "§chat/sandbox",
+      "§app.decisions/attention-signals"
+    ]
+  }
+}

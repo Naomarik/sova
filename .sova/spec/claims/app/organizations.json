@@ -1,0 +1,695 @@
+{
+  "§app.organizations/about": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/orgs.ts",
+      "server/org-routes.ts",
+      "shared/orgs.ts",
+      "server/project-overseer.ts",
+      "server/project-overseer-prompt.md",
+      "src/components/OrgsView.tsx",
+      "src/lib/api.ts",
+      "src/lib/org-about.ts",
+      "src/orgs.css",
+      "server/orgs.test.ts",
+      "server/project-overseer.test.ts",
+      "server/spec-tool-fake.ts",
+      "server/org-portable.test.ts",
+      "server/org-about-privacy.test.ts",
+      "server/org-about-privacy.integration.test.ts",
+      "src/lib/org-about.test.ts",
+      "server/overseer-org-view.ts",
+      "statecharts/src/sova/statecharts/org.cljc"
+    ],
+    "requires": [
+      "§app.organizations/workspace-repo",
+      "§app.organizations/org-page",
+      "§app.project-overseer/identity"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-10T10:38Z"
+    }
+  },
+  "§app.organizations/archive": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/orgs.ts",
+      "shared/orgs.ts",
+      "server/org-routes.ts",
+      "server/project-overseer.ts",
+      "server/baton.ts",
+      "src/components/OrgsView.tsx",
+      "src/components/ProjectPage.tsx",
+      "src/lib/api.ts",
+      "server/overseer-org-tools.test.ts",
+      "server/search-tools-fake.ts",
+      "server/org-sessions.ts",
+      "server/project-overseer-routes.ts",
+      "shared/protocol.ts",
+      "src/components/Sidebar.tsx",
+      "src/lib/org-region.ts",
+      "src/lib/org-tabs.ts",
+      "src/components/InsightsPage.tsx",
+      "src/components/ProjectOverseerPanel.tsx",
+      "src/orgs.css",
+      "src/projects.css",
+      "server/session-feed.ts",
+      "server/session-feed.test.ts"
+    ],
+    "requires": [
+      "§app.organizations/projects",
+      "§app.organizations/org-page",
+      "§app.project-overseer/watch-loop",
+      "§app.project-overseer/new-coding-session"
+    ]
+  },
+  "§app.organizations/decisions": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed"
+  },
+  "§app.organizations/field-authority": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/orgs.ts",
+      "server/orgs.test.ts",
+      "server/baton-offers.test.ts",
+      "server/baton-offers.integration.test.ts",
+      "server/test-wait.ts",
+      "server/org-routes.ts",
+      "statecharts/src/sova/statecharts/rules/person.cljc",
+      "statecharts/src/sova/statecharts/person.cljc"
+    ],
+    "requires": [
+      "§app.organizations/roster"
+    ]
+  },
+  "§app.organizations/files-card": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app/file-intake",
+      "§app.organizations/project-page"
+    ],
+    "code": [
+      "server/project-files-routes.ts",
+      "src/components/ProjectFilesCard.tsx",
+      "src/components/ProjectPage.tsx",
+      "src/lib/api.ts",
+      "shared/project-files.ts",
+      "src/projects.css"
+    ]
+  },
+  "§app.organizations/history-and-revert": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/orgs.ts",
+      "src/components/OrgsView.tsx",
+      "server/orgs.test.ts",
+      "server/org-routes.ts",
+      "server/baton-offers.test.ts",
+      "server/baton-offers.integration.test.ts",
+      "server/test-wait.ts",
+      "src/lib/profile-changes.ts",
+      "src/lib/profile-changes.test.ts",
+      "src/components/PersonPage.tsx",
+      "server/person-page.ts",
+      "statecharts/src/sova/statecharts/person.cljc",
+      "server/org-effects.ts"
+    ]
+  },
+  "§app.organizations/holder": {
+    "kind": "behavior",
+    "requires": [
+      "§app.organizations/registry",
+      "§app.organizations/workspace-repo",
+      "§app.organizations/portability"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/org-holder.ts",
+      "server/org-holder.test.ts",
+      "server/orgs.ts",
+      "server/org-routes.ts",
+      "server/workspace-git.ts",
+      "src/lib/api.ts",
+      "src/components/OrgsView.tsx",
+      "statecharts/src/sova/statecharts/org.cljc",
+      "server/org-effects.ts"
+    ]
+  },
+  "§app.organizations/host-offline": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/org-host-offline.ts",
+      "src/lib/org-host-offline.test.ts",
+      "src/components/OrgsView.tsx"
+    ]
+  },
+  "§app.organizations/org-cards": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/orgs.ts",
+      "server/org-routes.ts",
+      "server/org-list.test.ts",
+      "src/components/OrgsView.tsx",
+      "src/lib/org-cards.ts",
+      "src/lib/org-cards.test.ts",
+      "src/orgs.css",
+      "server/orgs.ts",
+      "src/lib/org-tabs.ts",
+      "src/lib/org-tabs.test.ts"
+    ],
+    "requires": [
+      "§app.organizations/registry",
+      "§app.organizations/referrals"
+    ]
+  },
+  "§app.organizations/org-page": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/OrgsView.tsx",
+      "src/lib/org-tabs.ts",
+      "src/lib/org-tabs.test.ts",
+      "src/lib/orgs-route.ts",
+      "src/lib/orgs-route.test.ts",
+      "src/orgs.css",
+      "src/App.tsx",
+      "src/components/ProjectPage.tsx",
+      "server/org-routes.ts",
+      "shared/orgs.ts",
+      "server/org-list.test.ts",
+      "src/lib/org-page-route.ts",
+      "src/lib/org-page-route.browser.test.ts",
+      "src/lib/org-source.ts",
+      "src/lib/org-source.browser.test.ts",
+      "src/components/PersonForm.tsx",
+      "src/lib/profile-changes.ts",
+      "src/components/PersonPage.tsx",
+      "src/components/InsightsPage.tsx",
+      "src/lib/person-patch.ts",
+      "src/lib/person-patch.test.ts",
+      "src/components/OwnerCard.tsx",
+      "src/lib/commit-now.ts",
+      "src/lib/commit-now.test.ts",
+      "src/lib/api.ts",
+      "server/org-reload.test.ts",
+      "server/orgs.ts",
+      "server/org-routes.test.ts",
+      "src/components/OrgWhatsAppCard.tsx"
+    ],
+    "requires": [
+      "§app.organizations/org-cards",
+      "§app/baton"
+    ]
+  },
+  "§app.organizations/org-sessions": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/org-sessions.ts",
+      "server/org-sessions.test.ts",
+      "server/sessions-index.ts",
+      "server/project-overseer.ts",
+      "server/project-overseer-store.ts",
+      "server/attention.ts",
+      "server/index.ts",
+      "server/app.ts",
+      "shared/protocol.ts",
+      "src/lib/org-region.ts",
+      "src/lib/org-region.test.ts",
+      "server/build-merged.ts",
+      "server/build-merged.test.ts",
+      "server/baton.ts",
+      "server/visits.ts",
+      "shared/baton.ts",
+      "server/baton-progress.test.ts"
+    ]
+  },
+  "§app.organizations/person-page": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.organizations/org-page",
+      "§app.organizations/roster",
+      "§app.organizations/history-and-revert",
+      "§app.organizations/privacy",
+      "§app.baton/links",
+      "§app.baton/outsider-view",
+      "§app.baton/visits",
+      "§app.requirements/decisions",
+      "§app.requirements/routing",
+      "§app.tours/handoffs"
+    ],
+    "code": [
+      "src/components/PersonPage.tsx",
+      "src/lib/person-page.ts",
+      "src/lib/person-page.test.ts",
+      "src/person.css",
+      "src/components/PersonForm.tsx",
+      "server/person-page.ts",
+      "server/org-routes.ts",
+      "shared/orgs.ts",
+      "server/baton-links.ts",
+      "server/baton.ts",
+      "src/lib/api.ts",
+      "src/lib/orgs-route.ts",
+      "src/components/InsightsPage.tsx",
+      "server/person-page.test.ts",
+      "src/lib/minute-clock.ts",
+      "server/tours/bindings-scope.ts",
+      "server/tours/bindings-routes.ts",
+      "server/tours/bindings-routes.test.ts",
+      "server/tours/public-view.ts",
+      "server/tour-routes.ts"
+    ]
+  },
+  "§app.organizations/portability": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/orgs.ts",
+      "server/baton.ts",
+      "server/baton-loadout.ts",
+      "server/project-overseer.ts",
+      "server/project-overseer-store.ts",
+      "server/chat-manager.ts",
+      "server/sessions-index.ts",
+      "shared/project-overseer.ts",
+      "src/components/OrgsView.tsx",
+      "src/components/ProjectOverseerPanel.tsx",
+      "src/components/ProjectOverseerHead.tsx",
+      "server/org-portable.test.ts",
+      "server/visits.ts",
+      "server/person-page.ts",
+      "src/lib/org-region.ts",
+      "server/decisions.ts",
+      "server/reconcile.ts",
+      "shared/decisions.ts",
+      "server/org-routes.ts",
+      "server/org-holder.ts",
+      "server/decision-markers-attach.test.ts",
+      "server/org-history/bootstrap.test.ts",
+      "server/tours/bindings.ts",
+      "server/tours/store.ts",
+      "server/workspace-git.ts",
+      "server/tours/bindings-routes.ts",
+      "server/tours/bindings-portable.integration.test.ts",
+      "server/share/hub.ts",
+      "server/tours/bindings-portable-host.ts"
+    ],
+    "requires": [
+      "§app.organizations/workspace-repo",
+      "§app.organizations/registry",
+      "§app.project-overseer/autonomy-levels",
+      "§app.baton/links",
+      "§app/tours"
+    ]
+  },
+  "§app.organizations/privacy": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/orgs.ts",
+      "server/baton-loadout.ts",
+      "server/share/hub.ts",
+      "server/baton-view.ts",
+      "server/baton-view.test.ts",
+      "server/orgs.test.ts",
+      "server/baton-guards.test.ts",
+      "src/components/PersonPage.tsx",
+      "server/person-page.ts",
+      "server/owner-page.ts",
+      "server/org-host/log.ts",
+      "server/org-host/privacy.test.ts",
+      "src/share/markdown.ts",
+      "server/tours/public-view.ts"
+    ]
+  },
+  "§app.organizations/project-page": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.organizations/org-page",
+      "§app.organizations/archive",
+      "§app.organizations/stakeholder",
+      "§app/project-overseer",
+      "§app.project-overseer/limits",
+      "§app.project-overseer/reviews",
+      "§app.project-overseer/coding-worktrees",
+      "§app.project-overseer/pipeline",
+      "§app.project-overseer/ideas-and-todos",
+      "§app.project-costs/card",
+      "§app/requirements",
+      "§mesh.public/preview-card",
+      "§app.owner-page/controls"
+    ],
+    "code": [
+      "src/components/ProjectPage.tsx",
+      "src/components/ProjectOverseerPanel.tsx",
+      "src/components/ProjectCostCard.tsx",
+      "src/components/PipelineCard.tsx",
+      "src/components/OrgsView.tsx",
+      "src/lib/orgs-route.ts",
+      "src/lib/project-page.ts",
+      "src/lib/project-page.test.ts",
+      "src/projects.css",
+      "src/lib/projects-route.ts",
+      "src/components/ProjectOrgPart.tsx",
+      "src/lib/page-cache.ts",
+      "src/lib/page-cache.test.ts",
+      "src/lib/poll.ts",
+      "src/components/ui.tsx",
+      "src/components/ProjectsView.tsx",
+      "server/project-overseer-fast.integration.test.ts",
+      "src/components/PowersGrid.tsx",
+      "src/lib/powers-view.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T14:32Z",
+      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+    }
+  },
+  "§app.organizations/projects": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/orgs.ts",
+      "shared/orgs.ts",
+      "src/components/OrgsView.tsx",
+      "server/project-overseer.test.ts",
+      "server/spec-tool-fake.ts"
+    ]
+  },
+  "§app.organizations/referrals": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/baton-loadout.ts",
+      "server/baton-prompt.md",
+      "server/orgs.ts",
+      "server/baton.ts",
+      "server/attention.ts",
+      "server/org-routes.ts",
+      "src/components/BatonStrip.tsx",
+      "src/components/OrgsView.tsx",
+      "server/baton-offers.test.ts",
+      "server/baton-offers.integration.test.ts",
+      "server/test-wait.ts",
+      "server/baton-handoff.test.ts",
+      "statecharts/src/sova/statecharts/person.cljc"
+    ],
+    "requires": [
+      "§app.organizations/roster",
+      "§app.organizations/field-authority"
+    ]
+  },
+  "§app.organizations/registry": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/orgs.ts",
+      "server/org-routes.ts",
+      "server/workspace-git.ts",
+      "server/orgs.test.ts",
+      "server/org-holder.ts",
+      "statecharts/src/sova/statecharts/org.cljc",
+      "server/org-reload.test.ts",
+      "server/owner.ts",
+      "server/org-routes.test.ts"
+    ]
+  },
+  "§app.organizations/roster": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/orgs.ts",
+      "shared/orgs.ts",
+      "src/components/OrgsView.tsx",
+      "server/orgs.test.ts",
+      "server/baton.ts",
+      "server/baton-loadout.ts",
+      "server/baton-handoff.test.ts",
+      "server/owner.ts",
+      "statecharts/src/sova/statecharts/rules/person.cljc",
+      "statecharts/src/sova/statecharts/person.cljc"
+    ]
+  },
+  "§app.organizations/stakeholder": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.requirements/routing",
+      "§app.organizations/roster"
+    ],
+    "code": [
+      "server/orgs.ts",
+      "server/orgs.test.ts",
+      "server/org-routes.ts",
+      "server/org-list.test.ts",
+      "server/attention.ts",
+      "server/person-page.ts",
+      "shared/orgs.ts",
+      "shared/protocol.ts",
+      "src/components/ProjectPage.tsx",
+      "src/components/PersonPage.tsx",
+      "src/components/Sidebar.tsx",
+      "src/lib/stakeholder.ts",
+      "src/lib/stakeholder.test.ts",
+      "src/lib/org-region.ts",
+      "src/lib/org-region.test.ts",
+      "src/lib/api.ts",
+      "src/projects.css"
+    ]
+  },
+  "§app.organizations/statechart-migration": {
+    "kind": "behavior",
+    "requires": [
+      "§app.organizations/workspace-repo",
+      "§app.organizations/registry"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/statechart-migration.ts",
+      "server/statechart-migration.test.ts",
+      "server/orgs.ts",
+      "server/workspace-git.ts",
+      "server/fixtures/statechart-migration/state/host.json",
+      "server/fixtures/statechart-migration/state/org-charts/org_fv6duzwx/journal/001790796500000-1-000001.json",
+      "server/fixtures/statechart-migration/state/org-charts/org_fv6duzwx/log/2026-09.jsonl",
+      "server/fixtures/statechart-migration/state/org-charts/org_fv6duzwx/residence/residence%2Forg_fv6duzwx.edn",
+      "server/fixtures/statechart-migration/state/org-charts/org_fv6duzwx/watch/watch%2Forg_fv6duzwx%2Fprj_vf7kedf7.edn",
+      "server/fixtures/statechart-migration/ws/charts/log/2026-09.jsonl",
+      "server/fixtures/statechart-migration/ws/charts/org/org%2Forg_fv6duzwx.edn",
+      "server/fixtures/statechart-migration/ws/charts/person/person%2Forg_fv6duzwx%2Fp_gbz8wawg.edn",
+      "server/fixtures/statechart-migration/ws/charts/project/project%2Forg_fv6duzwx%2Fprj_vf7kedf7.edn",
+      "server/fixtures/statechart-migration/ws/charts/reconciler/reconciler%2Forg_fv6duzwx%2Fprj_vf7kedf7.edn",
+      "server/fixtures/statechart-migration/ws/roster-history.jsonl"
+    ]
+  },
+  "§app.organizations/working-hours": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "statecharts/src/sova/statecharts/engine/hold_policy.cljc",
+      "shared/pipeline.ts",
+      "shared/protocol.ts",
+      "src/components/PipelineCard.tsx",
+      "src/components/Sidebar.tsx",
+      "src/lib/pipeline-view.ts",
+      "src/lib/pipeline-view.test.ts",
+      "server/org-hours.test.ts",
+      "src/lib/working-hours.ts",
+      "src/lib/working-hours.test.ts",
+      "statecharts/src/sova/statecharts/rules/hours.cljc",
+      "statecharts/test/sova/statecharts/refit/hours_test.cljc",
+      "src/components/PersonForm.tsx",
+      "src/components/PersonPage.tsx",
+      "src/components/OrgsView.tsx",
+      "src/components/ProjectOverseerPanel.tsx",
+      "src/orgs.css",
+      "src/lib/person-patch.test.ts",
+      "src/lib/profile-changes.test.ts",
+      "src/lib/profile-changes.ts",
+      "server/reconcile.ts",
+      "server/baton.ts",
+      "server/org-routes.ts",
+      "server/project-overseer.ts",
+      "shared/baton.ts",
+      "shared/decisions.ts",
+      "shared/project-overseer.ts",
+      "server/reconcile.test.ts",
+      "server/test-wait.ts",
+      "server/reconcile.integration.test.ts",
+      "server/spec-tool-fake.ts",
+      "src/lib/api.ts",
+      "src/components/BatonStrip.tsx",
+      "src/components/ProjectPage.tsx",
+      "statecharts/src/sova/statecharts/base.cljc",
+      "statecharts/test/sova/statecharts/refit/holds_test.cljs",
+      "server/org-host/index.ts",
+      "statecharts/src/sova/statecharts/engine/core.cljs",
+      "src/components/CompanyHoursCard.tsx",
+      "src/components/HoursFields.tsx",
+      "src/lib/person-page.ts",
+      "src/lib/person-page.test.ts",
+      "statecharts/test/sova/statecharts/refit/company_hours_test.cljc",
+      "server/orgs.ts",
+      "server/org-engine.ts",
+      "server/person-page.ts",
+      "statecharts/src/sova/statecharts/org.cljc",
+      "statecharts/src/sova/statecharts/person.cljc",
+      "statecharts/src/sova/statecharts/baton.cljc",
+      "server/statecharts.ts",
+      "server/statecharts.test.ts",
+      "statecharts/src/sova/statecharts/api.cljs"
+    ],
+    "requires": [
+      "§app.organizations/roster",
+      "§app.project-overseer/holds"
+    ]
+  },
+  "§app.organizations/workspace-repo": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/workspace-git.ts",
+      "server/orgs.ts",
+      "server/paths.ts",
+      "server/sessions-index.ts",
+      "server/baton.ts",
+      "server/baton-loadout.ts",
+      "server/orgs.test.ts",
+      "server/baton.test.ts",
+      "server/sessions-index-roots.test.ts",
+      "server/workspace-commits.ts",
+      "server/workspace-commits.test.ts",
+      "server/index.ts",
+      "server/app.ts",
+      "shared/orgs.ts",
+      "src/components/OrgsView.tsx",
+      "server/reconcile.ts",
+      "server/baton-wrapup.ts",
+      "server/project-overseer.ts",
+      "server/project-overseer-store.ts",
+      "server/org-portable.test.ts",
+      "server/visits.ts",
+      "src/components/Sidebar.tsx",
+      "server/project-updates.ts",
+      "server/person-links.ts",
+      "server/org-holder.ts",
+      "server/baton-progress.test.ts",
+      "shared/baton.ts",
+      "server/org-effects.ts",
+      "statecharts/src/sova/statecharts/residence.cljc",
+      "statecharts/test/sova/statecharts/refit/residence_test.cljs",
+      "statecharts/src/sova/statecharts/engine/queue.cljs",
+      "server/tours/bindings.ts",
+      "server/tours/store.ts",
+      "server/org-routes.ts",
+      "server/tours/bindings-routes.ts",
+      "server/tours/bindings-portable.integration.test.ts",
+      "server/share/hub.ts",
+      "server/tours/bindings-backup.integration.test.ts",
+      "server/tours/bindings-portable-host.ts"
+    ],
+    "agreed": {
+      "by": "user (al_1: let's just have it an hour)",
+      "at": "2026-10-17T08:45Z"
+    }
+  },
+  "§app.organizations/wrap-up": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/baton-wrapup.ts",
+      "server/baton-loadout.ts",
+      "server/orgs.ts",
+      "server/baton-view.ts",
+      "server/share/hub.ts",
+      "server/transcript.ts",
+      "src/components/OrgsView.tsx",
+      "server/baton-offers.test.ts",
+      "server/baton-offers.integration.test.ts",
+      "server/test-wait.ts",
+      "src/lib/wrapup-rows.ts",
+      "src/lib/wrapup-rows.test.ts",
+      "src/components/Thread.tsx",
+      "server/baton-guards.ts",
+      "server/baton-guards.test.ts",
+      "server/wrapup-recovery.ts",
+      "server/wrapup-recovery.test.ts",
+      "server/wrapup-routes.ts",
+      "server/stream-guard-runtime.test.ts",
+      "server/stream-guard-runtime.integration.test.ts",
+      "server/baton.ts",
+      "server/index.ts",
+      "src/components/BatonStrip.tsx",
+      "src/lib/api.ts",
+      "server/app.ts"
+    ],
+    "requires": [
+      "§app.organizations/field-authority",
+      "§app.organizations/history-and-revert",
+      "§chat.transcript/runaway-stream"
+    ]
+  },
+  "§app/organizations": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/orgs.ts",
+      "server/orgs.ts",
+      "server/org-routes.ts",
+      "src/components/OrgsView.tsx",
+      "src/lib/orgs-route.ts",
+      "src/lib/orgs-route.test.ts",
+      "src/orgs.css",
+      "src/lib/api.ts",
+      "src/App.tsx",
+      "src/lib/org-cards.ts",
+      "src/components/PersonPage.tsx",
+      "src/components/Sidebar.tsx",
+      "server/tours/bindings.ts"
+    ],
+    "notOwned": [
+      "§app/baton",
+      "§app/project-overseer",
+      "§app/outreach"
+    ]
+  }
+}

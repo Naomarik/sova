@@ -1,0 +1,547 @@
+{
+  "§app.session-list/accessibility": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/Sidebar.tsx",
+      "src/design/base.css"
+    ]
+  },
+  "§app.session-list/anatomy": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/Sidebar.tsx",
+      "src/lib/readiness.ts",
+      "src/lib/readiness.test.ts",
+      "src/components/RowPlace.tsx",
+      "src/lib/row-place.ts",
+      "src/lib/session-row.test.ts",
+      "src/lib/session-row.snapshot.json"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T14:32Z",
+      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+    }
+  },
+  "§app.session-list/archive-by-date": {
+    "kind": "behavior",
+    "requires": [
+      "§app.session-list/regions-top-and-archive"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/Sidebar.tsx",
+      "src/lib/storage-keys.ts",
+      "src/lib/archive.ts",
+      "src/lib/archive.test.ts",
+      "src/lib/regions.ts",
+      "src/lib/section-reveal.ts"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-10-23T23:10Z",
+      "source": "pi-session:3f2248f5-f2ff-4447-a7d5-c7b38e115af6#b8fd14ae"
+    }
+  },
+  "§app.session-list/archive-cleanup": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/sessions-index.ts",
+      "src/components/Sidebar.tsx",
+      "server/sessions-index.test.ts",
+      "server/tours/lifecycle.ts",
+      "server/tours/lifecycle.test.ts",
+      "server/tours/lifecycle-import.test.ts",
+      "server/tours/ownership.ts",
+      "server/tours/ownership.test.ts",
+      "server/tours/sweep.ts",
+      "server/tours/sweep.test.ts",
+      "server/index.ts",
+      "server/tours/sweep-startup.integration.test.ts"
+    ]
+  },
+  "§app.session-list/archive-org-guard": {
+    "kind": "behavior",
+    "requires": [
+      "§app.session-list/cleanup-org-guard",
+      "§app.organizations/workspace-repo",
+      "§app.tours/storage"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/sessions-index.ts",
+      "server/archive-org-guard.test.ts",
+      "server/sessions-index.test.ts",
+      "server/tours/lifecycle.ts",
+      "server/tours/lifecycle.test.ts",
+      "server/tours/lifecycle-import.test.ts",
+      "server/tours/ownership.ts",
+      "server/tours/ownership.test.ts",
+      "server/tours/sweep.ts",
+      "server/tours/sweep.test.ts"
+    ]
+  },
+  "§app.session-list/auto-titles": {
+    "kind": "behavior",
+    "requires": [
+      "§app.session-list/session-titles",
+      "§app.settings-dialog/summaries",
+      "§app.decisions/push",
+      "§mesh.remote-sessions/list"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/session-autotitle.ts",
+      "server/session-autotitle.test.ts",
+      "server/decide-llm.ts",
+      "server/index.ts",
+      "server/app.ts",
+      "shared/protocol.ts",
+      "src/lib/auto-title.ts",
+      "src/lib/auto-title.test.ts",
+      "src/lib/api.ts",
+      "src/components/Sidebar.tsx",
+      "src/app.css",
+      "server/session-titles.ts",
+      "src/components/SessionView.tsx",
+      "src/components/SessionTitleSettings.tsx",
+      "server/overseer-tools.ts",
+      "server/overseer-tools.test.ts"
+    ]
+  },
+  "§app.session-list/cleanup-org-guard": {
+    "kind": "behavior",
+    "requires": [
+      "§app.session-list/archive-cleanup",
+      "§app.organizations/workspace-repo"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/sessions-index.ts",
+      "server/cleanup-org-guard.test.ts"
+    ]
+  },
+  "§app.session-list/content-rules": {
+    "kind": "behavior",
+    "requires": [
+      "§app.shell/remote-session-chips",
+      "§chat.composer/behavior",
+      "§chat.context-window/sidebar-ring"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/Sidebar.tsx",
+      "shared/protocol.ts",
+      "src/lib/readiness.ts",
+      "src/lib/readiness.test.ts",
+      "src/components/RowPlace.tsx",
+      "src/components/AutomationsShelf.tsx",
+      "src/lib/for-key.ts",
+      "src/lib/for-key.browser.test.ts",
+      "src/lib/list-scroll-hold.ts",
+      "src/lib/list-scroll-hold.test.ts",
+      "server/sidebar-scroll.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-25T22:30Z",
+      "source": "pi-session:777149c4-3887-4782-8c20-99e67344e685#fcb0ec8f"
+    }
+  },
+  "§app.session-list/drop-overlay": {
+    "kind": "behavior",
+    "requires": [
+      "§app.session-list/groups",
+      "§app.session-list/regions-top-and-archive"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/lib/drag-overlay.ts",
+      "src/lib/drag-overlay.test.ts",
+      "src/components/DropOverlay.tsx",
+      "src/components/Sidebar.tsx",
+      "src/lib/drag-archive.ts",
+      "src/lib/drag-archive.test.ts",
+      "src/lib/hold-select.ts",
+      "src/lib/hold-select.test.ts",
+      "src/design/base.css",
+      "src/App.tsx",
+      "src/lib/optimistic-archive.ts",
+      "src/lib/optimistic-archive.test.ts",
+      "src/lib/archive-block.ts",
+      "src/lib/archive-block.test.ts"
+    ]
+  },
+  "§app.session-list/group-picker": {
+    "kind": "behavior",
+    "requires": [
+      "§app.session-list/groups",
+      "§app.session-list/drop-overlay",
+      "§workspace.groups/routes"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/GroupPicker.tsx",
+      "src/lib/group-picker.ts",
+      "src/lib/group-picker.test.ts",
+      "src/components/Sidebar.tsx",
+      "src/design/base.css"
+    ]
+  },
+  "§app.session-list/groups": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/design/base.css",
+      "src/components/Groups.tsx",
+      "src/components/Sidebar.tsx",
+      "server/index.ts",
+      "server/app.ts",
+      "server/session-groups-index.test.ts",
+      "src/lib/group-open.ts",
+      "src/lib/group-open.test.ts",
+      "src/lib/session-groups.ts",
+      "src/lib/session-groups.test.ts"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-10-23T23:10Z",
+      "source": "pi-session:3f2248f5-f2ff-4447-a7d5-c7b38e115af6#b8fd14ae"
+    }
+  },
+  "§app.session-list/guide-lines": {
+    "kind": "behavior",
+    "requires": [
+      "§app.session-list/content-rules",
+      "§app.session-list/organizations",
+      "§app.session-list/groups",
+      "§app.session-list/archive-by-date",
+      "§app.projects/list",
+      "§app.session-list/accessibility"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/Sidebar.tsx",
+      "src/lib/guide-line.ts",
+      "src/lib/list-scroll-hold.ts",
+      "src/app.css",
+      "src/lib/guide-line.test.ts",
+      "server/sidebar-guide-lines.integration.test.ts",
+      "src/design/base.css"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-10-23T23:10Z",
+      "source": "pi-session:3f2248f5-f2ff-4447-a7d5-c7b38e115af6#b8fd14ae"
+    }
+  },
+  "§app.session-list/listing-reuse": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/sessions-index.ts",
+      "server/list-generation.ts",
+      "server/sessions-index.test.ts",
+      "server/index.ts",
+      "server/ws.ts",
+      "server/archived-sessions.ts",
+      "server/archived-sessions.test.ts",
+      "server/session-titles.ts",
+      "server/seen.ts",
+      "server/drafts.ts",
+      "server/session-groups.ts",
+      "server/session-tags.ts",
+      "server/signals-store.ts",
+      "server/web-sessions.ts",
+      "server/decide-settings.ts",
+      "server/chat-manager.ts",
+      "server/write-guard.ts",
+      "server/orgs.ts",
+      "server/overseer-store.ts",
+      "server/preview-kept.ts",
+      "server/sessions-context.test.ts",
+      "server/session-summary-route.test.ts",
+      "server/session-profiles-runtime.test.ts",
+      "server/org-sessions.test.ts",
+      "server/app.ts",
+      "server/session-feed.ts",
+      "server/session-feed.test.ts",
+      "server/schedule-routes.ts",
+      "server/chat-handle-remote.ts",
+      "server/chat-handle-remote.test.ts"
+    ],
+    "requires": [
+      "§app/session-list",
+      "§app.decisions/push"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-22T22:15Z",
+      "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#24177c8f"
+    }
+  },
+  "§app.session-list/needs-you": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/needs-you.ts",
+      "shared/needs-you.ts",
+      "src/lib/needs-you.test.ts",
+      "src/components/Sidebar.tsx",
+      "src/App.tsx",
+      "src/app.css",
+      "src/lib/list-refresh.ts",
+      "src/lib/list-refresh.test.ts",
+      "server/attention-memo.ts",
+      "server/attention-memo.test.ts",
+      "server/org-routes.ts",
+      "server/overseer.ts",
+      "server/attention.ts",
+      "src/lib/api.ts",
+      "src/design/base.css",
+      "src/lib/org-region.ts",
+      "src/components/PlaybookReview.tsx",
+      "server/tours/sign-in-notice.ts",
+      "server/tours/sign-in-notice.test.ts"
+    ],
+    "requires": [
+      "§app.overseer/attention-digest",
+      "§app.overseer/proactivity",
+      "§app.session-list/recent",
+      "§app.session-list/groups",
+      "§app.session-list/spine"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-24T09:23Z",
+      "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+    }
+  },
+  "§app.session-list/ordinary-surfaces": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/regions.ts",
+      "src/lib/regions.test.ts",
+      "src/lib/recent.ts",
+      "src/lib/recent.test.ts",
+      "src/lib/home-sessions.ts",
+      "src/lib/home-sessions.test.ts",
+      "src/components/Groups.tsx",
+      "src/components/Sidebar.tsx",
+      "server/worker-sessions.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-12T12:35Z"
+    }
+  },
+  "§app.session-list/organizations": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.session-list/ordinary-surfaces",
+      "§app.organizations/org-sessions",
+      "§app.organizations/archive"
+    ],
+    "code": [
+      "src/components/Sidebar.tsx",
+      "src/lib/org-region.ts",
+      "src/lib/org-region.test.ts",
+      "src/lib/drag-archive.ts",
+      "src/lib/drag-archive.test.ts",
+      "src/lib/session-actions.ts",
+      "src/app.css",
+      "src/design/base.css",
+      "src/components/ui.tsx",
+      "public/icons/building.svg",
+      "src/orgs.css",
+      "server/org-sessions.ts",
+      "server/session-feed.ts",
+      "src/lib/built-once.ts",
+      "src/lib/built-once.browser.test.ts",
+      "src/lib/section-reveal.ts",
+      "src/lib/section-reveal.test.ts",
+      "src/lib/section-reveal.browser.test.ts"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-10-23T23:10Z",
+      "source": "pi-session:3f2248f5-f2ff-4447-a7d5-c7b38e115af6#b8fd14ae"
+    }
+  },
+  "§app.session-list/recent": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/recent.ts",
+      "src/lib/recent.test.ts",
+      "src/lib/profile-cards.test.ts",
+      "src/lib/regions.ts",
+      "src/lib/home-sessions.ts",
+      "src/lib/home-sessions.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-12T12:35Z"
+    }
+  },
+  "§app.session-list/regions-top-and-archive": {
+    "kind": "behavior",
+    "requires": [
+      "§app.session-list/recent"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/Sidebar.tsx",
+      "src/lib/storage-keys.ts",
+      "src/lib/regions.ts",
+      "src/lib/recent.ts",
+      "server/sessions-index.ts",
+      "src/lib/regions.test.ts",
+      "server/index.ts",
+      "server/app.ts",
+      "src/lib/session-actions.ts",
+      "src/components/ChatView.tsx",
+      "src/lib/api.ts",
+      "src/lib/drag-archive.ts",
+      "server/archive-org-guard.test.ts",
+      "src/components/SessionDetails.tsx",
+      "src/App.tsx",
+      "src/lib/optimistic-archive.ts",
+      "src/lib/optimistic-archive.test.ts",
+      "src/app.css",
+      "src/lib/drag-archive.test.ts",
+      "src/components/AgentsView.tsx",
+      "src/lib/project-region.ts",
+      "src/lib/project-region.test.ts",
+      "src/lib/section-reveal.ts",
+      "src/lib/section-reveal.test.ts",
+      "src/lib/section-reveal.browser.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-21T14:42Z",
+      "source": "pi-session:d5060398-05c1-4e9b-a6a5-186d2888b9b8#483165cc"
+    }
+  },
+  "§app.session-list/search": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/Sidebar.tsx",
+      "src/lib/signals.ts",
+      "src/lib/org-region.ts",
+      "src/design/base.css",
+      "src/lib/text-entry.ts",
+      "src/lib/text-entry.test.ts",
+      "src/lib/list-scroll-hold.ts",
+      "server/sidebar-scroll.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-25T22:30Z",
+      "source": "pi-session:777149c4-3887-4782-8c20-99e67344e685#fcb0ec8f"
+    }
+  },
+  "§app.session-list/session-titles": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/session-titles.ts",
+      "server/session-titles.test.ts"
+    ]
+  },
+  "§app.session-list/spine": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/spine.ts",
+      "src/lib/storage-keys.ts",
+      "src/components/Sidebar.tsx",
+      "src/app.css",
+      "src/lib/archive.ts"
+    ],
+    "requires": [
+      "§app.session-list/recent",
+      "§app.session-list/accessibility",
+      "§app.shell/spine-column",
+      "§app.session-list/working-now",
+      "§app.insights/token-velocity"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-17T18:00Z"
+    }
+  },
+  "§app.session-list/states": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/Sidebar.tsx",
+      "server/index.ts",
+      "server/app.ts",
+      "shared/protocol.ts",
+      "src/lib/api.ts"
+    ]
+  },
+  "§app.session-list/tokens": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "verified"
+  },
+  "§app.session-list/working-now": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/work-now.ts",
+      "src/lib/work-now.test.ts",
+      "src/components/Sidebar.tsx",
+      "src/App.tsx",
+      "src/lib/ui-state.ts",
+      "src/components/ChatView.tsx",
+      "src/design/base.css"
+    ],
+    "requires": [
+      "§app.session-list/search",
+      "§mesh.remote-sessions/host-filter"
+    ]
+  },
+  "§app/session-list": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "notOwned": [
+      "§app.projects/list",
+      "§app.overseer/attention-digest",
+      "§app.insights/token-velocity"
+    ]
+  }
+}

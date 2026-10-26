@@ -24757,7 +24757,7 @@
     "§app.tours/viewer": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/TourViewer.tsx",
         "src/components/TourViewer.css",

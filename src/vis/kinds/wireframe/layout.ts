@@ -10,7 +10,6 @@
  * blocks whose text is cramped, which the server's vis check reads (wireframeCramped).
  */
 
-import { wrap } from "../../core/text";
 import { htmlMeasure, type Measure, type WeightedMeasure } from "../tree/measure";
 import { isContainer, type Device, type WBlock, type WireframeSpec, type WScreen } from "./parse";
 
@@ -124,10 +123,11 @@ type M = { r: Measure; b: Measure };
 /** What a walk records (screenLayout): last write wins, the cramped blocks once each. */
 type Plan = { modals: Map<string, number>; grids: Map<string, number>; cramped: Map<string, Cramp> };
 
-const lines = (s: string, w: number, px: number, measure: Measure) => (s ? wrap(s, Math.max(20, w), 99, px, measure).length : 0);
+/** Every block's text wraps as wireframe.css draws it: between words, an overlong word on its own line, cut short (wordLines). */
+const lines = (s: string, w: number, px: number, measure: Measure) => wordLines(s, w, px, measure);
 
 /**
- * A title's lines (wireframe.css's .vis-wf-txt): it wraps between words, and after / . - _ in a long one, and a word
+ * A text's lines as wireframe.css draws every block's text: it wraps between words, and after / . - _ in a long one, and a word
  * still wider than the line is cut short with an ellipsis on a line of its own, never broken between letters.
  */
 function wordLines(s: string, w: number, px: number, measure: Measure): number {

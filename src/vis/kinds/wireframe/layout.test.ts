@@ -626,3 +626,29 @@ test("wireframe room: the cramped check flags text with no room, and the palette
   // Short text in a narrow box that fits on its line is not cramped: a badge, an icon-sized button.
   assert.deepEqual(wireframeCramped(spec('row\n  button "OK"\n  button "No"\n  button "Yes"\n  button "Go"')), []);
 });
+
+test("wireframe room: the cramped check flags the original desktop crush, swatch cards about 27px wide", () => {
+  // The palette editor as it first drew: a 360px dialog (336px inside), its row 2:3 giving the controls a 131px column,
+  // and a grid always 4 columns there: (131 - 3 × 8) / 4 ≈ 27px a card, about 5px inside. A grid now follows its room, so
+  // the same squeeze is forced with a row: four cards side by side in the 1:4 column of a desktop page (≈146px), ≈30px each.
+  const crushed = spec(`device: desktop
+row 1:4
+  col
+    row
+      card "Background" "#FBF4EA"
+      card "Text" "#3A2A1E"
+      card "Main color" "#C8553D"
+      card "Surface" "#FFFDF8"
+  text "Preview"`);
+  const cramped = wireframeCramped(crushed);
+  assert.deepEqual(cramped.map((c) => [c.type, c.text]), [["card", "Background"], ["card", "Text"], ["card", "Main color"], ["card", "Surface"]]);
+  for (const c of cramped) {
+    assert.ok(c.width <= 10, `${c.text}: ${c.width}px inside, as the original ~5px`);
+    assert.ok(c.reason === "word" || c.reason === "narrow", c.reason);
+  }
+  // Every one is "word": even "Text" is wider than its room, the letter-a-line case.
+  assert.deepEqual([...new Set(cramped.map((c) => c.reason))], ["word"]);
+  // Two to a line in the same column is still too narrow (≈ 69px, ≈ 47px inside, under 12ch); a full-width row has room.
+  assert.ok(wireframeCramped(spec('device: desktop\nrow 1:4\n  col\n    row\n      card "Background colour"\n      card "Main color"\n  text "Preview"')).length > 0);
+  assert.deepEqual(wireframeCramped(spec('device: desktop\nrow\n  card "Background" "#FBF4EA"\n  card "Text" "#3A2A1E"\n  card "Main color" "#C8553D"\n  card "Surface" "#FFFDF8"')), []);
+});

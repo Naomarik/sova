@@ -4,10 +4,11 @@
    heights): ./layout.ts estimates the drawing's height from the same numbers, keep the two in step.
    What the drawing sizes from its content (a desktop dialog's width, a grid's columns) layout.ts decides
    and the View sets on the block (--wf-cols, width); the rules here are only the first paint's fallback.
-   Text wraps between words, never between letters (§chat.markdown/vis-wireframe-room): a title's word
-   too wide for its box is cut short (.vis-wf-txt), other text breaks such a word only when it must. */
+   Text wraps between words, never between letters (§chat.markdown/vis-wireframe-room): a word too wide
+   for its box is cut short with an ellipsis, in every block (layout.ts counts lines the same way: wordLines). */
 
-.vis-wf { display: flex; flex-direction: column; gap: var(--space-2); }
+/* Never between letters, whatever the page around the figure sets (§chat.markdown/vis-wireframe-room). */
+.vis-wf { display: flex; flex-direction: column; gap: var(--space-2); overflow-wrap: normal; word-break: normal; }
 /* The overlays' and mark badges' z-indexes stay inside the drawing: never above the page's own sticky parts (a share page's composer). */
 .vis-wf-strip { isolation: isolate; }
 
@@ -101,7 +102,7 @@
 .vis-wf-header { position: relative; display: flex; align-items: center; gap: 8px; min-height: 40px; box-sizing: border-box; margin: -10px -10px 0; padding: 6px 10px; border-bottom: var(--stroke-thin) solid var(--color-border); }
 .vis-wf-has-side .vis-wf-header { margin: -12px -12px 0; padding: 6px 12px; }
 /* The controls beside the title take their labels' width (up to 70% of the header); the title shrinks first, wrapping between words. */
-.vis-wf-header-title { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; font-size: var(--fs-heading-s); line-height: 22px; font-weight: var(--fw-semibold); overflow-wrap: break-word; }
+.vis-wf-header-title { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; font-size: var(--fs-heading-s); line-height: 22px; font-weight: var(--fw-semibold); }
 .vis-wf-header-title .vis-wf-sub { font-weight: var(--fw-regular); line-height: 16px; }
 .vis-wf-header-end { flex: 0 0 auto; min-width: 0; max-width: 70%; display: flex; align-items: center; gap: 6px; }
 .vis-wf-header .vis-wf-button { min-height: 28px; padding: 0 10px; min-width: 0; flex-wrap: nowrap; }
@@ -190,12 +191,16 @@
 .vis-wf-card.vis-tone-none, .vis-wf-stat.vis-tone-none { --vis-stroke: var(--color-border); }
 .vis-wf-card > .vis-wf-sub { margin-top: -6px; }
 /* A title and its chip: on one line while the title keeps 12ch, else the chip on a line of its own under it (2px apart). */
-.vis-wf-title { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-weight: var(--fw-semibold); overflow-wrap: break-word; }
-/* A title's text: between words, and a word wider than its box cut short with an ellipsis, never broken between letters. */
-:is(.vis-wf-title, .vis-wf-header-title, .vis-wf-item-main, .vis-wf-heading-text) > .vis-wf-txt { overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
+.vis-wf-title { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-weight: var(--fw-semibold); }
+/* Text between words, and a word wider than its box cut short with an ellipsis, never broken between letters:
+   a title's text, and the boxes that hold only text… */
+:is(.vis-wf-title, .vis-wf-header-title, .vis-wf-item-main, .vis-wf-heading-text) > .vis-wf-txt,
+.vis-wf-sub, .vis-wf-item-end, .vis-wf-stat-label, .vis-wf-stat-value, .vis-wf-check-label, .vis-wf-table th { overflow: hidden; text-overflow: ellipsis; }
+/* …and text that shares its block with a chip or a mark number: a box of its own, as wide as the block at most. */
+:is(.vis-wf-text, .vis-wf-table td) > .vis-wf-txt, :is(.vis-wf-alert, .vis-wf-toast) > span:first-child { display: inline-block; max-width: 100%; vertical-align: top; overflow: hidden; text-overflow: ellipsis; }
 .vis-wf-title > :first-child:not(.vis-wf-go) { flex: 1 1 12ch; min-width: 0; }
 :is(.vis-wf-title, .vis-wf-heading-text) > .vis-wf-go { flex: 0 1 auto; min-width: 0; max-width: min(120px, 100%); }
-.vis-wf-sub { font-size: var(--fs-micro); line-height: 16px; color: var(--color-ink-muted); overflow-wrap: break-word; }
+.vis-wf-sub { font-size: var(--fs-micro); line-height: 16px; color: var(--color-ink-muted); }
 .vis-wf-list { position: relative; display: flex; flex-direction: column; min-width: 0; border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); }
 .vis-wf-list-title { padding: 6px 10px 0; font-size: var(--fs-micro); line-height: 16px; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
 /* One line: the lead blocks, the title over the detail (never under 12ch), the right text, then the other blocks
@@ -205,9 +210,9 @@
 .vis-wf-list > .vis-wf-item:first-child { border-top-left-radius: inherit; border-top-right-radius: inherit; }
 .vis-wf-list > .vis-wf-item:last-child { border-bottom-left-radius: inherit; border-bottom-right-radius: inherit; }
 .vis-wf-main > .vis-wf-item, .vis-wf-col > .vis-wf-item, .vis-wf-card > .vis-wf-item { padding-inline: 0; }
-.vis-wf-item-main { flex: 1 1 12ch; min-width: 0; display: flex; flex-direction: column; overflow-wrap: break-word; }
+.vis-wf-item-main { flex: 1 1 12ch; min-width: 0; display: flex; flex-direction: column; }
 .vis-wf-item-main > .vis-wf-go { margin-top: 2px; }
-.vis-wf-item-end { flex: none; max-width: 40%; font-size: var(--fs-micro); color: var(--color-ink-muted); text-align: end; overflow-wrap: break-word; }
+.vis-wf-item-end { flex: none; max-width: 40%; font-size: var(--fs-micro); color: var(--color-ink-muted); text-align: end; }
 .vis-wf-item.vis-wf-on { background: var(--color-accent-tint); }
 /* At the item's right, each block at its own width, wrapping, never wider than the item; a row among them is part of the group. */
 .vis-wf-item-trail { flex: 0 1 auto; max-width: 100%; min-width: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; margin-left: auto; }
@@ -215,9 +220,10 @@
 .vis-wf-item > .vis-wf-item-trail > *, .vis-wf-item > .vis-wf-item-trail > .vis-wf-row > :not(.vis-wf-row-go, .vis-em-badge) { flex: 0 1 auto; min-width: 0; max-width: 100%; align-self: center; }
 .vis-wf-item-trail .vis-wf-button > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vis-wf-table { position: relative; min-width: 0; border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); overflow: hidden; font-size: var(--fs-micro); line-height: 16px; }
-.vis-wf-table table { width: 100%; border-collapse: collapse; margin: 0; }
-.vis-wf-table th { height: 26px; box-sizing: border-box; padding: 5px 8px; overflow-wrap: break-word; text-align: left; font-weight: var(--fw-semibold); color: var(--color-ink-muted); background: var(--color-sunken); border: 0; }
-.vis-wf-table td { height: 26px; box-sizing: border-box; padding: 5px 8px; border: 0; border-top: var(--stroke-thin) solid var(--color-border); overflow-wrap: break-word; }
+/* Equal columns (layout.ts's table estimate), so a cell's long word is cut short instead of widening its column. */
+.vis-wf-table table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 0; }
+.vis-wf-table th { height: 26px; box-sizing: border-box; padding: 5px 8px; text-align: left; font-weight: var(--fw-semibold); color: var(--color-ink-muted); background: var(--color-sunken); border: 0; }
+.vis-wf-table td { height: 26px; box-sizing: border-box; padding: 5px 8px; border: 0; border-top: var(--stroke-thin) solid var(--color-border); }
 /* A toned row (a diff's added or removed line, a failed check) takes its tone's fill. */
 .vis-wf-table tr:not(.vis-tone-none) td { background: var(--vis-fill); }
 .vis-wf-table tr.vis-wf-em td:first-child { box-shadow: inset 3px 0 0 var(--wf-mark); }
@@ -241,8 +247,8 @@
 .vis-wf-heading-end .vis-wf-button { min-height: 28px; padding: 0 10px; }
 /* Like a title: its chip and its controls stay beside it while it keeps 12ch, else they wrap under it. */
 .vis-wf-heading-text > :first-child:not(.vis-wf-go, .vis-wf-heading-end) { flex: 1 1 12ch; min-width: 0; }
-.vis-wf-heading-text { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-size: var(--fs-body); line-height: 22px; font-weight: var(--fw-semibold); overflow-wrap: break-word; }
-.vis-wf-text { position: relative; color: var(--color-ink-2); overflow-wrap: break-word; }
+.vis-wf-heading-text { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-size: var(--fs-body); line-height: 22px; font-weight: var(--fw-semibold); }
+.vis-wf-text { position: relative; color: var(--color-ink-2); }
 .vis-wf-text.vis-tone-muted { color: var(--color-ink-muted); }
 .vis-wf-ph { display: flex; flex-direction: column; gap: 5px; padding: 3px 0; }
 .vis-wf-ph i { display: block; height: 7px; border-radius: var(--r-full); background: var(--color-sunken); border: var(--stroke-thin) solid var(--color-border); }
@@ -262,8 +268,8 @@
 /* Squeezed (in a row, at an item's right), a badge's label is cut short, never spilling into its neighbour; its mark number stays outside. */
 .vis-wf-badge-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .vis-wf-stat { position: relative; min-width: 0; padding: 6px 10px; border: var(--stroke-thin) solid var(--vis-stroke); border-radius: var(--r-md); background: var(--color-surface); }
-.vis-wf-stat-label { font-size: var(--fs-micro); line-height: 16px; color: var(--color-ink-muted); overflow-wrap: break-word; }
-.vis-wf-stat-value { font-size: var(--fs-heading-m); line-height: 26px; font-weight: var(--fw-semibold); overflow-wrap: break-word; }
+.vis-wf-stat-label { font-size: var(--fs-micro); line-height: 16px; color: var(--color-ink-muted); }
+.vis-wf-stat-value { font-size: var(--fs-heading-m); line-height: 26px; font-weight: var(--fw-semibold); }
 .vis-wf-stat-delta { font-size: var(--fs-micro); line-height: 16px; color: var(--color-ink-muted); }
 .vis-wf-stat:not(.vis-tone-none) .vis-wf-stat-delta { color: var(--vis-stroke); }
 .vis-wf-chart { position: relative; display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 6px 10px 8px; border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); }
@@ -300,7 +306,7 @@
 .vis-wf-search .vis-wf-field-box { justify-content: flex-start; border-radius: var(--r-full); }
 .vis-wf-search .vis-wf-field-value { flex: 1; }
 .vis-wf-check { position: relative; display: flex; align-items: center; gap: 8px; min-height: 20px; min-width: 0; }
-.vis-wf-check-label { flex: 1; min-width: 0; overflow-wrap: break-word; }
+.vis-wf-check-label { flex: 1; min-width: 0; }
 .vis-wf-control { position: relative; flex: none; width: 14px; height: 14px; box-sizing: border-box; border: 1.5px solid var(--color-border-strong); border-radius: var(--r-xs); background: var(--color-surface); }
 .vis-wf-radio .vis-wf-control { border-radius: var(--r-full); }
 .vis-wf-on > .vis-wf-control { border-color: var(--color-accent); background: var(--color-accent); box-shadow: inset 0 0 0 2px var(--color-surface); }
@@ -318,9 +324,9 @@
 .vis-wf-empty > b { font-weight: var(--fw-semibold); }
 .vis-wf-empty > :is(.vis-wf-button, .vis-wf-link) { margin-top: 6px; }
 .vis-wf-loading { position: relative; display: flex; flex-direction: column; gap: 6px; }
-.vis-wf-alert { position: relative; padding: 7px 10px; border: var(--stroke-thin) solid var(--vis-stroke); border-radius: var(--r-md); background: var(--vis-fill); box-shadow: inset 3px 0 0 var(--vis-stroke); overflow-wrap: break-word; }
+.vis-wf-alert { position: relative; padding: 7px 10px; border: var(--stroke-thin) solid var(--vis-stroke); border-radius: var(--r-md); background: var(--vis-fill); box-shadow: inset 3px 0 0 var(--vis-stroke); }
 .vis-wf-alert.vis-tone-none { --vis-stroke: var(--status-info); --vis-fill: var(--status-info-bg); }
-.vis-wf-toast { position: relative; padding: 8px 12px; border-radius: var(--r-md); background: var(--color-ink); color: var(--color-surface); box-shadow: var(--shadow-2); overflow-wrap: break-word; }
+.vis-wf-toast { position: relative; padding: 8px 12px; border-radius: var(--r-md); background: var(--color-ink); color: var(--color-surface); box-shadow: var(--shadow-2); }
 .vis-wf-divider { height: 0; border-top: var(--stroke-thin) solid var(--color-border); }
 .vis-wf-divider-row { position: relative; display: flex; align-items: center; gap: 6px; }
 .vis-wf-divider-row > .vis-wf-divider { flex: 1; }

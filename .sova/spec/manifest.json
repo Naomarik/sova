@@ -4353,9 +4353,9 @@
         "§chat.offers/from-another-chat"
       ],
       "agreed": {
-        "by": "omar (user)",
-        "at": "2026-10-24T17:42Z",
-        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
+        "by": "user",
+        "at": "2026-10-26T06:39Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#ded2d92c"
       }
     },
     "§chat.offers/tool": {
@@ -10397,9 +10397,9 @@
         "§chat.offers/sova-landing"
       ],
       "agreed": {
-        "by": "omar (user)",
-        "at": "2026-10-24T17:42Z",
-        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
+        "by": "user",
+        "at": "2026-10-26T06:39Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#ded2d92c"
       }
     },
     "§chat.worktrees/merge-board": {
@@ -10495,8 +10495,8 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-25T22:33Z",
-        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+        "at": "2026-10-26T06:39Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#ded2d92c"
       }
     },
     "§chat.worktrees/sandbox": {
@@ -10526,12 +10526,15 @@
         "pi-config/extensions/worktrees/git.ts",
         "pi-config/extensions/worktrees/git.test.ts",
         "pi-config/extensions/worktrees/index.test.ts",
-        "pi-config/extensions/subagents/index.ts"
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/worktrees/landing.ts",
+        "pi-config/extensions/worktrees/landing.test.ts",
+        "pi-config/extensions/worktrees/README.md"
       ],
       "agreed": {
-        "by": "omar (user)",
-        "at": "2026-10-24T17:42Z",
-        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
+        "by": "user",
+        "at": "2026-10-26T06:39Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#ded2d92c"
       }
     },
     "§chat.worktrees/workers": {
@@ -16534,8 +16537,8 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-25T20:43Z",
-        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+        "at": "2026-10-26T06:39Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#ded2d92c"
       }
     },
     "§chat.schedules/where-shown": {
@@ -17905,8 +17908,8 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-25T22:33Z",
-        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+        "at": "2026-10-26T06:39Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#ded2d92c"
       }
     },
     "§chat/merge-round": {
@@ -17918,8 +17921,8 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-25T21:42Z",
-        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+        "at": "2026-10-26T07:08Z",
+        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#ded2d92c"
       },
       "notOwned": [
         "§chat.worktrees/readiness",
@@ -17943,7 +17946,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-26T06:34Z",
+        "at": "2026-10-26T06:39Z",
         "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#ded2d92c"
       }
     },

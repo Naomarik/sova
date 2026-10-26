@@ -46,9 +46,19 @@ by argument list with no shell, locally only (a remote session refuses it).
   commit; a conflict is aborted and reported, changing nothing). Where it is not checked out, only
   a fast-forward is done. No merge needs a recorded go-ahead, into `main` or `master` included
   (§chat.worktrees/landing-answers).
+- **land** `{path?}`: records the user's go-ahead, typed in this chat ("land it", "merge it"), to
+  land the worktree's branch, for the merge captain (§chat.worktrees/landing-answers). It is taken
+  only when the user's newest message in the chat says to land or merge (a message that says not
+  to, such as "don't merge it" or "not yet", is refused); one that also says "without specs"
+  records the go-ahead without the branch's specs. The worktree is one the session tracks, or by
+  default the worktree the session's own folder is in; it must be on a branch with no uncommitted
+  files, since the go-ahead is for its head commit. It merges nothing itself: the captain checks the
+  branch and lands it once the check passes, as on Land It. The tool's guidance tells the agent
+  to record the user's typed go-ahead with it, and never to tell the user to press a Landing card or
+  wait for one instead.
 - **list**: the set with each worktree's status.
 
-`detach` and `merge` take the worktree's path or its branch name. Every answer lists the
+`detach`, `merge` and `land` take the worktree's path or its branch name. Every answer lists the
 resulting set.
 
 ## §chat.worktrees/sandbox — With the sandbox on
@@ -374,9 +384,10 @@ but a worktree it tracks isn't Ready to land at its head for reasons the session
 (uncommitted files, spec drafts not promoted, conflicts with its base, a temporary commit subject,
 a failing check run), and the project's offers file has an offer shown only when Ready to land
 (`ready-to-land`, as Sova's own Landing offer), Sova tells the session once per head commit, as a
-message in its chat, what still blocks its landing card, each blocker counted ("1 uncommitted file,
-11 spec drafts to make official"): to fix them on its branch, and that the card shows only once
-nothing does. That message never mentions Land It. When spec drafts are the only thing left, the
+message in its chat, what still blocks its landing, each blocker counted ("1 uncommitted file,
+11 spec drafts to make official"): to fix them on its branch, and that once nothing does, the
+user's go-ahead lands it: when they type "land it" in that chat, the session records it with
+`worktree land` (§chat.worktrees/tool). That message never mentions Land It or a card. When spec drafts are the only thing left, the
 specs message above is sent instead. Nothing is sent while a turn runs, for an archived or
 terminal session, or when the outcome doesn't say the work is finished (or no outcome is ever
 recorded for the session).
@@ -398,9 +409,13 @@ apart from Ready to merge (§app.overseer/roundup). The row's lit count and badg
 Sova keeps the user's answers on a branch's Landing card (§chat.offers/sova-landing) in
 `<state root>/landing.json`, outside every repository: a go-ahead (Land It, or Merge Without
 Specs… with the branch's spec drafts left behind) or a Not Yet, each for the branch at the commit
-the card was shown for, the newest 200 of each kept. Both may be recorded at one commit: the later
+the card was shown for, the newest 200 of each kept. The user's go-ahead typed in the branch's own
+chat is kept there the same way, recorded by that chat's `worktree land` (§chat.worktrees/tool)
+for the branch at its head commit and marked as typed in the owner's chat; it counts exactly as a
+Land It, with or without specs as the user said. Both may be recorded at one commit: the later
 recorded time wins, and Not Yet wins a tie or a time that can't be read. The merge round's driver
-reads them as the user's word (§chat.merge-round/driver); nothing else acts on them.
+reads them as the user's word (§chat.merge-round/driver), and a typed go-ahead also wakes the
+captain (§chat.schedules/merge-ready); nothing else acts on them.
 
 Nothing enforces them. No merge needs a recorded go-ahead: the `worktree` tool's merge
 (§chat.worktrees/tool) and the Project Overseer's Merge Branch

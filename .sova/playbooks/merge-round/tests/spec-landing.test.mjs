@@ -252,6 +252,52 @@ test("a5: after Land It a failing build hands the branch back unchanged with its
   assert.match(land.out, new RegExp(`^landable at ${D.slice(0, 7)} `, "m"), "it lands at the docs entry, code and docs together");
 });
 
+test("a5 (main thread's ruling): behind master, a build failing after Land It leaves only the round's clean master merge, no drafts applied, drafts pending, and the press carried: a passing re-check lands the docs on it with no new press", async () => {
+  const b = "feat/behindfail";
+  const { P, ids, tree } = makeBranch(b);
+  const masterBefore = git(main, "rev-parse", "master");
+  const MS = commit(main, { "lib/meanwhile.txt": "meanwhile\n" }, "master: moves on meanwhile");
+  reset([b]);
+  pressLandIt(b, P);
+  try {
+    const failed = await run(["check", b], { env: { FAKE_PNPM_MODE: "build-fail" } });
+    assert.equal(failed.code, 1, failed.out);
+    assert.match(failed.out, /^build: FAILED/m);
+    const M = head(b);
+    // (1) no commit beyond the round's clean master merge.
+    assert.deepEqual(git(main, "rev-list", "--first-parent", `${P}..${M}`).split("\n").filter(Boolean), [M], "one first-parent commit past P: the merge");
+    assert.deepEqual(docsEntries(`${P}..${M}`), [], "no docs entry");
+    // (2) exactly two parents, P and master, and nothing else in it: its tree is a plain git merge of the two, made in a scratch clone.
+    assert.deepEqual(git(main, "rev-list", "--parents", "-n", "1", M).split(" ").slice(1), [P, MS]);
+    const scratch = mkdtempSync(join(root, "scratch-"));
+    git(root, "clone", "-q", "--no-checkout", main, scratch);
+    git(scratch, "checkout", "-q", "--detach", P);
+    git(scratch, "merge", "-q", "--no-edit", MS);
+    assert.equal(git(main, "rev-parse", `${M}^{tree}`), git(scratch, "rev-parse", "HEAD^{tree}"), "the merge holds exactly what a plain merge makes");
+    rmSync(scratch, { recursive: true, force: true });
+    // (3) the branch's spec is that merge's, none of its drafts applied, in history and in the worktree.
+    assert.equal(git(main, "rev-parse", `${M}:.sova/spec`), git(main, "rev-parse", `${MS}:.sova/spec`), "the merge's spec is master's (the branch committed none)");
+    assert.equal(specDiff(tree, M), "", "the worktree's spec is the merge's");
+    assert.equal(git(tree, "status", "--porcelain", "--untracked-files=all"), "");
+    assert.ok(!existsSync(join(tree, `.sova/spec/claims/${ids[0].id.slice(1)}.md`)), "the draft's claim isn't official");
+    // (4) the drafts still read pending.
+    assert.deepEqual(draftReading(tree, ids[0].draft).pending, [ids[0].id]);
+    // (5) the press at P carries across M: the passing control lands the docs on M with no new press.
+    const ok = await run(["check", b]);
+    assert.equal(ok.code, 0, ok.out);
+    const D = head(b);
+    assert.equal(git(main, "rev-parse", `${D}^1`), M, "the docs entry sits on the merge");
+    assert.deepEqual(docsEntries(`${P}..${D}`), [D]);
+    assert.equal(await group(b), "land", "the press at P counts at D, across the merge and the docs entry");
+    const land = await run(["land", b]);
+    assert.equal(land.code, 0, land.out);
+    assert.match(land.out, new RegExp(`^The user's Land It at ${P.slice(0, 7)}\\.$`, "m"));
+  } finally {
+    git(main, "update-ref", "refs/heads/master", masterBefore);
+    git(main, "reset", "-q", "--hard", masterBefore);
+  }
+});
+
 test("a5: a failing test or typecheck after Land It writes no docs either; once they pass, the docs land", async () => {
   for (const mode of ["test-fail", "typecheck-fail"]) {
     const b = `feat/${mode}`;

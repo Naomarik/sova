@@ -16,7 +16,7 @@ import { EmBadge } from "../../emphasis";
 import { visIcon } from "../../icons";
 import type { ViewProps } from "../../types";
 import { wireframeIcon } from "./icons";
-import { FRAME_GAP, fitStrip } from "./layout";
+import { FRAME_GAP, fitStrip, screenLayout } from "./layout";
 import type { WBlock, WireframeSpec, WScreen } from "./parse";
 import "./wireframe.css";
 
@@ -70,6 +70,21 @@ export default function WireframeView(props: ViewProps<WireframeSpec>) {
   /** The pane's width (the scroller's), once laid out: what fitStrip fits to. */
   const [width, setWidth] = createSignal(0);
   const fit = createMemo(() => (width() > 0 ? fitStrip(spec, width()) : undefined));
+  /** What layout.ts sizes from the content, each screen at its frame's width (§chat.markdown/vis-wireframe-room): a
+      desktop dialog's width and each grid's columns, by block key (keys are unique across screens). The estimate
+      reserved the height from the same layout; before the first measure, wireframe.css's fallbacks draw. */
+  const sized = createMemo(() => {
+    const f = fit();
+    const modals = new Map<string, number>();
+    const grids = new Map<string, number>();
+    if (f)
+      spec.screens.forEach((s, i) => {
+        const l = screenLayout(s, f.widths[i]!, undefined, spec.screens.map((_, k) => nameOf(k)));
+        for (const [k, v] of l.modals) modals.set(k, v);
+        for (const [k, v] of l.grids) grids.set(k, v);
+      });
+    return { modals, grids };
+  });
 
   /** Where the strip scrolls to show screen `i` from its start. */
   const leftOf = (shot: HTMLElement) => Math.max(0, scroller.scrollLeft + shot.getBoundingClientRect().left - scroller.getBoundingClientRect().left - FRAME_GAP / 4);
@@ -238,7 +253,7 @@ export default function WireframeView(props: ViewProps<WireframeSpec>) {
   };
   const Txt = (p: { s: string | undefined; class?: string }) => (
     <Show when={p.s}>
-      <span class={p.class} classList={{ "vis-mono": looksLikePath(p.s!) }}>
+      <span class={`vis-wf-txt${p.class ? ` ${p.class}` : ""}`} classList={{ "vis-mono": looksLikePath(p.s!) }}>
         <Breakable s={p.s!} />
       </span>
     </Show>
@@ -328,7 +343,7 @@ export default function WireframeView(props: ViewProps<WireframeSpec>) {
       case "modal":
       case "sheet":
         return (
-          <div class={c(`vis-wf-${b.type}`)}>
+          <div class={c(`vis-wf-${b.type}`)} style={b.type === "modal" && sized().modals.has(b.key) ? { width: `${sized().modals.get(b.key)}px` } : undefined}>
             <Show when={t[0]}>
               <div class="vis-wf-title">
                 <Txt s={t[0]} />
@@ -360,7 +375,7 @@ export default function WireframeView(props: ViewProps<WireframeSpec>) {
         );
       case "grid":
         return (
-          <div class={c("vis-wf-grid")}>
+          <div class={`${c("vis-wf-grid")}${sized().grids.get(b.key) === 1 ? " vis-wf-grid-1" : ""}`} style={sized().grids.has(b.key) ? { "--wf-cols": String(sized().grids.get(b.key)) } : undefined}>
             {kids()}
             <Go from={b} />
             {badge()}

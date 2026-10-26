@@ -145,7 +145,7 @@ export const ALIGN_STYLE_PARAGRAPHS: Record<AlignStyle, string | undefined> = {
  * The paragraph after the align block (and the style's) while the session started with Visuals on
  * (§chat.alignment/visuals). Its words never depend on the style, so it never changes mid-session.
  */
-export const ALIGN_VISUALS_PARAGRAPH = `Visuals: a question, or the alignment itself, can carry a visual {kind, source} on the card (exactly what a \`vis\` fence would hold; at most 3 per alignment; never a vis fence in your reply). Draw one where it explains faster than words: a wireframe for a question about a screen; a flow, state or steps for a change in behaviour. Before the first visual of each kind, call vis_guide with that kind. In the Project manager writing style never use the code, tree or layers kinds.`;
+export const ALIGN_VISUALS_PARAGRAPH = `Visuals: a question, or the alignment itself, can carry a visual {kind, source} on the card (exactly what a \`vis\` fence would hold; at most 3 per alignment; never a vis fence in your reply). Draw one where it explains faster than words: a wireframe for a simple screen or a flow across screens; an html prototype for a screen beyond a simple one (look and feel, panes side by side, an editor in a dialog, a dense desktop layout); a flow, state or steps for a change in behaviour. Before the first visual of each kind, call vis_guide with that kind. In the Project manager writing style never use the code, tree or layers kinds.`;
 
 /**
  * The vis guide's files as a worker can read them (it has no vis_guide): `shared.md`, then `<kind>.md`.

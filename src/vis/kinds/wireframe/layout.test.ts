@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseVis } from "../../parse";
 import { unweighted } from "../tree/measure";
-import { estimateHeight, fitStrip, frameWidth, MIN_STRIP_SCALE, stripWidth } from "./layout";
+import { DESKTOP_MODAL, estimateHeight, fitStrip, frameWidth, MIN_STRIP_SCALE, ROOMY_MODAL, screenLayout, stripWidth, wireframeCramped } from "./layout";
 import type { WireframeSpec } from "./parse";
 import { PREVIEWS as PREVIEWS_FENCE, ROWS as ROWS_FENCES } from "./previews.fixture";
 
@@ -400,6 +400,57 @@ test("wireframe layout: the screen buttons are one line at any width", () => {
   assert.equal(estimateHeight(six, 296, flat), 36 + 8 + strip);
 });
 
+/** A desktop palette editor in a dialog: the fence that drew as a crushed column when a desktop dialog was always 360px
+    and a grid always 4 columns (a real fence, 2026-10-26). */
+const PALETTE_BODY = `title: The palette editor
+caption: Controls on the left, a realistic mini page in the palette's colors on the right; nothing is used until Use this palette.
+device: desktop
+modal "Edit palette · Warm"
+  row 2:3
+    col
+      tabs "Minimal 3, *Balanced 5, Rich 6"
+      grid
+        card "Background" "#FBF4EA"
+        card "Text" "#3A2A1E"
+        card "Main color" "#C8553D" on
+        card "Surface" "#FFFDF8"
+        card "Second color" "#E2A15F"
+        card "Accent" "#6B8F71"
+      input "Selected · Main color" "#C8553D" "Pick or type a color code"
+      text "From this color:"
+      grid
+        button "Complementary"
+        button "Analogous"
+        button "Triadic"
+        button "Split"
+        button "Tonal"
+      text "Text adjusted to stay readable."
+    card "Preview"
+      header "Name"
+        link "Work"
+        link "About"
+        link "Contact"
+      heading "Hero heading"
+      text "Body text on the background."
+      row
+        button "Main action" accent
+        button "Second action"
+      card "Card on the surface" "Supporting text"
+        link "Accent link"
+      row
+        badge "Success"
+        badge "Warning"
+        badge "Error"
+  row
+    button "Undo"
+    button "Reset"
+    button "Cancel" right
+    button "Use this palette" accent
+mark "Main color" "the selected swatch: change it, or build the other colored ones from it"
+mark "Preview" "uses every locked color: header, text, both buttons, surface, accent, status"
+mark "Text adjusted to stay readable." "shows only when text was adjusted"`;
+const PALETTE = spec(PALETTE_BODY);
+
 // Rendered heights of the drawing (`.vis-wf`) in the chat: captured 2026-09-29 from this branch's build
 // (uncommitted work on feat/vis-wireframe) in headless Chromium, dark theme, Inter; at 1280px the body's
 // content is 676px wide, at 390px 296px. Where a strip is scaled (fitStrip) the heights are the scaled
@@ -456,6 +507,11 @@ const RENDERED: [string, WireframeSpec, number, number][] = [
   ["a field and its button, row bottom", ROWS.apply, 296, 334],
   ["a link at a card's right edge, a thumbnail beside text", ROWS.signin, 676, 420],
   ["a link at a card's right edge, a thumbnail beside text", ROWS.signin, 296, 420],
+  // Captured 2026-10-27 on feat/wireframe-limits in headless Chromium, light theme (a scratch harness drawing Visual
+  // as the chat does); every row above re-measured unchanged there. The palette editor drew 1242px and 649px tall
+  // before its dialog and grids followed their room (§chat.markdown/vis-wireframe-room).
+  ["a palette editor in a desktop dialog (a real fence)", PALETTE, 676, 951],
+  ["a palette editor in a desktop dialog (a real fence)", PALETTE, 296, 509],
 ];
 
 test("wireframe layout: the estimate is within 15% of the rendered height", () => {
@@ -498,4 +554,75 @@ test("wireframe layout: what fits whole, what is scaled whole, and what scrolls 
   assert.equal(both.scrolls, true);
   assert.equal(both.frames[0], 1);
   assert.ok(both.frames[1]! < 1 && Math.abs(both.frames[1]! * both.widths[1]! - 284) < 1e-9);
+});
+
+// ---- Room (§chat.markdown/vis-wireframe-room) -------------------------------------------------------
+
+
+test("wireframe room: a desktop dialog holding a row, grid, col, table, sidebar or a form is 85% of the frame; a confirm stays 360px", () => {
+  const inner = 760 - 3;
+  const width = (body: string) => [...screenLayout(spec(`device: desktop\n${body}`).screens[0]!, 760, flat).modals.values()][0];
+  assert.equal(width('modal "Discard changes?"\n  text "Your edits are lost."\n  row right\n    button "Cancel"\n    button "Discard" error'), DESKTOP_MODAL, "a row of buttons alone is the dialog's actions, not a layout");
+  assert.equal(width('modal "Discard changes?"\n  row\n    text "Your edits are lost."\n    button "Discard" error'), Math.round(ROOMY_MODAL * inner), "a row with anything but buttons is a layout");
+  assert.equal(width('modal "Discard changes?"\n  text "Your edits are lost."\n  button "Discard" error'), DESKTOP_MODAL);
+  assert.equal(width('modal "Rename"\n  input "Name"\n  button "Save" accent'), DESKTOP_MODAL, "one field is still a confirm");
+  for (const inside of ['grid\n    card "A"', 'col\n    text "x"', 'table "A, B"', 'sidebar\n    text "x"', 'input "Name"\n  input "Email"', 'card "Group"\n    row\n      text "deep"'])
+    assert.equal(width(`modal "Edit"\n  ${inside}`), Math.round(ROOMY_MODAL * inner), inside);
+  // A phone dialog keeps the frame's width less its margins: no dialog sizing there.
+  assert.deepEqual([...screenLayout(spec('modal "Edit"\n  grid\n    card "A"').screens[0]!, 300, flat).modals], []);
+  // The palette editor's dialog, at the full desktop frame and at its narrowest.
+  assert.deepEqual([...screenLayout(PALETTE.screens[0]!, 760).modals.values()], [643]);
+  assert.deepEqual([...screenLayout(PALETTE.screens[0]!, 560).modals.values()], [473]);
+});
+
+test("wireframe room: a grid's columns follow the width it gets: 1 or 2 in a narrow column, never the device's 4", () => {
+  const cols = (body: string, frame: number) => [...screenLayout(spec(body).screens[0]!, frame, flat).grids.values()];
+  const tiles = 'grid\n    card "Background"\n    card "Text"\n    card "Main color"\n    card "Surface"';
+  // Across a desktop page: 4; a phone: 2.
+  assert.deepEqual(cols(`device: desktop\n${tiles.replace(/\n {4}/g, "\n  ")}`, 760), [4]);
+  assert.deepEqual(cols(tiles.replace(/\n {4}/g, "\n  "), 300), [2]);
+  // In a desktop row 1:4 the first column is about 130px: one tile a line, where it used to be 4.
+  const narrow = cols(`device: desktop\nrow 1:4\n  col\n    ${tiles.replace(/\n {4}/g, "\n      ")}\n  text "main"`, 760);
+  assert.equal(narrow.length, 1);
+  assert.ok(narrow[0]! >= 1 && narrow[0]! <= 2, `${narrow[0]} columns in a 130px column`);
+  assert.equal(narrow[0], 1);
+  // A grid of controls takes its labels' room; a wide tile in a 1-column grid still draws.
+  assert.deepEqual(cols('grid\n  button "Complementary"\n  button "Analogous"', 300), [2]);
+  assert.ok(estimateHeight(spec(`device: desktop\nrow 1:4\n  col\n    grid\n      card "A" wide\n      card "B"\n  text "main"`), 676) > 0);
+  // The palette editor: the swatches 2 a line, the harmony buttons 1, in its 2/5 column (they were 4 and 4).
+  assert.deepEqual([...screenLayout(PALETTE.screens[0]!, 760).grids.values()], [2, 1]);
+});
+
+test("wireframe room: one column of tiles is taller than four side by side, and the estimate counts it", () => {
+  const body = (w: string) => `device: desktop\nrow ${w}\n  col\n    grid\n      card "Background"\n      card "Text"\n      card "Main color"\n      card "Surface"\n  text "main"`;
+  // 1:1 gives the grid about 370px (3 or 4 tiles a line), 1:4 about 130px (one a line): four tile rows, not one.
+  assert.ok(estimateHeight(spec(body("1:4")), 676, flat) >= estimateHeight(spec(body("1:1")), 676, flat) + 2 * (36 + 8));
+});
+
+test("wireframe room: a title's word too wide for its box takes one line, cut short, never a line per few letters", () => {
+  // A card about 90px wide (68px inside) holding "Supercalifragilistic" (140px at 7px a letter): one line, not three.
+  const one = spec('device: desktop\nrow 1:6\n  card "Supercalifragilistic"\n  text "x"');
+  const two = spec('device: desktop\nrow 1:6\n  card "Super califragilistic"\n  text "x"');
+  assert.ok(!one.warnings?.length && !two.warnings?.length);
+  const h1 = estimateHeight(one, 676, flat);
+  assert.equal(estimateHeight(two, 676, flat) - h1, 18, "two words: one more line, never one per few letters");
+});
+
+test("wireframe room: the cramped check flags text with no room, and the palette editor now has room", () => {
+  // Four titled cards side by side on a phone: about 41px each, under any layout.
+  const cramped = wireframeCramped(spec('row\n  card "Background colour"\n  card "Text colour"\n  card "Main colour"\n  card "Surface colour"'));
+  assert.deepEqual(cramped.map((c) => [c.type, c.text, c.line]), [["card", "Background colour", 2], ["card", "Text colour", 3], ["card", "Main colour", 4], ["card", "Surface colour", 5]]);
+  assert.ok(cramped.every((c) => c.width < 50));
+  assert.deepEqual(cramped.map((c) => c.reason), ["word", "narrow", "narrow", "word"]);
+  // The same cards two a line: room.
+  assert.deepEqual(wireframeCramped(spec('row\n  card "Background colour"\n  card "Text colour"\nrow\n  card "Main colour"\n  card "Surface colour"')), []);
+  // Six table columns on a phone, a long button label in a row of four.
+  assert.ok(wireframeCramped(spec('table "Name, Email, Role, Team, Status, Joined"\n  item "Ada Lovelace" "ada@example.org" "Owner" "Core" "Active" "2024"')).length > 0);
+  // The palette editor: no block cramped at the full desktop frame, now that its dialog and grids follow their room…
+  assert.deepEqual(wireframeCramped(PALETTE), []);
+  // …and the same content in a phone dialog, where it can't have room, is cramped.
+  const phone = spec(`device: phone\n${PALETTE_BODY.replace(/^device: desktop\n/m, "")}`);
+  assert.ok(wireframeCramped(phone).some((c) => c.type === "card"), JSON.stringify(wireframeCramped(phone).slice(0, 3)));
+  // Short text in a narrow box that fits on its line is not cramped: a badge, an icon-sized button.
+  assert.deepEqual(wireframeCramped(spec('row\n  button "OK"\n  button "No"\n  button "Yes"\n  button "Go"')), []);
 });

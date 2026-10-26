@@ -1,7 +1,7 @@
 // al_6 landing 2: a project with no spec starts in format 2. `new` on such a project writes a format 2 draft root
 // (formatVersion 2, `claims` the pointer string, no records in it); a claim authored beside its record file,
 // evidenced and promoted, lands as manifest.json (settings only) + claims/<area>.md + claims/<area>.json, and
-// checks clean. Control: the pre-cutover draft tool (landing 1's, at ca8ab14) still starts format 1, so the
+// checks clean. Control: the pre-landing master's draft tool (landing 1's) still starts format 1, so the
 // assertions tell the two STARTERs apart.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { DRAFT, CLAIMS_POINTER, tmp, put, read, draft, core, editRecords, recordsOnDisk, layoutOnDisk, env } from "./layout/lib.mjs";
-import { PRE_CUTOVER, TOOLS, SPEC, archiveInto, scratch, noGit } from "./convert/lib.mjs";
+import { TOOLS, SPEC, archiveInto, scratch, noGit, requireBases } from "./convert/lib.mjs";
 
 const MD = "# §zz/first — First claim\n\nThe first thing this project documents. It lives in `src/a.ts`.\n";
 const REC = { kind: "behavior", authority: "accepted", code: ["src/a.ts"], requires: [] };
@@ -47,7 +47,7 @@ test("new on a project with no spec starts a format 2 draft; the first promotion
 
 test("control: the pre-cutover draft tool starts format 1 (the check above tells the STARTERs apart)", { skip: noGit }, () => {
   const old = scratch("starter-old");
-  archiveInto(PRE_CUTOVER, old, [TOOLS]);
+  archiveInto(requireBases().pre, old, [TOOLS]);
   const root = tmp("spec-convert-starter-");
   const r = spawnSync(process.execPath, [join(old, TOOLS, "sova-spec-draft.mjs"), "new", "first", "--write", "--root", root, "--json"], { encoding: "utf8", env: env(root) });
   assert.equal(r.status, 0, r.stdout + r.stderr);

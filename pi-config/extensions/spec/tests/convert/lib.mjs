@@ -1,8 +1,13 @@
 // Helpers for the cutover tests (convert-*.test.mjs): al_6 landing 2 converts Sova's REAL spec to format 2 in one
-// commit. These read the real repository's history, never a fixture: the cutover commit is found in HEAD's
-// history as the oldest non-merge commit whose .sova/spec/manifest.json is format 2 while its parent's is format 1.
-// SOVA_CONVERT_AT=<rev> points the tests at another candidate cutover commit (a regenerated one, say);
-// SOVA_CONVERT_HEAD=<rev> searches another history (SOVA_CONVERT_HEAD=ca8ab14 shows the tests failing before it).
+// commit. These read the real repository's history, never a fixture, and pin no commit id (history may be rewritten
+// and the conversion regenerated). Found in history:
+//   - the cutover: the NEWEST non-merge commit whose .sova/spec/manifest.json is format 2 while its parent's is 1
+//     (the conversion in force; an earlier one that a later merge took back to format 1 is superseded);
+//   - the pre-landing master: the master (or main) commit the branch last merged before the cutover, format 1;
+//   - the pre-al_6 tools: the parent of the commit that added core/layout.mjs.
+// SOVA_CONVERT_AT=<rev>, SOVA_CONVERT_BASE=<rev> and SOVA_PRE_AL6=<rev> override each; SOVA_CONVERT_HEAD=<rev> searches
+// another history (SOVA_CONVERT_HEAD=master, before landing 2, shows the tests failing). A commit the tests need and
+// cannot find fails them; nothing skips but a missing git.
 // Records are read here straight from Git objects (ls-tree + cat-file), independently of core/layout.mjs, so a
 // reader bug and a conversion bug cannot cancel out.
 import assert from "node:assert/strict";
@@ -12,10 +17,6 @@ import { join } from "node:path";
 import { REPO, SPEC, tmp, hasGit } from "../layout/lib.mjs";
 
 export { REPO, SPEC };
-/** master when landing 2 was cut: the last commit with Sova's spec in format 1 (landing 1 on it). */
-export const PRE_CUTOVER = "ca8ab14e5f71cb1b299cd1e56c39848335f20620";
-/** feat/spec-store's base on master: the spec tools before al_6 (no layout.mjs, the old merge helper). */
-export const PRE_AL6 = "9b7297f8b805149e1042068f60b9297097d67961";
 export const TOOLS = "pi-config/extensions/spec/core";
 
 const gitRaw = (args, opts = {}) => spawnSync("git", ["-C", REPO, ...args], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024, ...opts });
@@ -41,12 +42,12 @@ export function formatAt(rev) {
 /**
  * The cutover commit in HEAD's history: { cutover, base } where base is its parent, or null. Only non-merge commits
  * count: the merge that lands the branch on master, and a pre-cutover branch's merge of the converted master, also
- * flip the format from their first parent, but they are not the cutover. The oldest in topological order wins (a
- * rollback and a second cutover would make a later one; the first is the landing).
+ * flip the format from their first parent, but they are not the cutover. The newest in topological order wins: when
+ * a merge took the spec back to format 1 and it was converted again, the later conversion is the one that lands.
  */
 export function findCutover(head = process.env.SOVA_CONVERT_HEAD || "HEAD") {
   if (process.env.SOVA_CONVERT_AT) { const c = revParse(process.env.SOVA_CONVERT_AT); return { cutover: c, base: revParse(`${c}^1`) }; }
-  const revs = rgit("log", "--no-merges", "--topo-order", "--format=%H", head, "--", `${SPEC}/manifest.json`).split("\n").filter(Boolean).reverse();
+  const revs = rgit("log", "--no-merges", "--topo-order", "--format=%H", head, "--", `${SPEC}/manifest.json`).split("\n").filter(Boolean);
   for (const c of revs) {
     if (formatAt(c) !== 2) continue;
     const p = gitRaw(["rev-parse", `${c}^1`]);
@@ -130,8 +131,56 @@ export function archiveInto(rev, dir, paths = []) {
 export const scratch = (name) => tmp(`spec-convert-${name}-`);
 export const exists = (root, rel) => existsSync(join(root, rel));
 
-/** Skip reasons, so a skipped test says why (and a missing cutover is a failure, not a skip: see requireCutover). */
-export const noGit = !hasGit ? "no git" : !hasRev(PRE_CUTOVER) ? `pre-cutover commit ${PRE_CUTOVER.slice(0, 12)} not in this clone` : false;
+/** The one skip reason: no git at all. A commit the tests need and cannot find is a failure (see the finders). */
+export const noGit = !hasGit ? "no git" : false;
+
+const tryRev = (rev) => { const r = gitRaw(["rev-parse", "--verify", "-q", `${rev}^{commit}`]); return r.status === 0 ? r.stdout.trim() : null; };
+const isAncestor = (a, b) => gitRaw(["merge-base", "--is-ancestor", a, b]).status === 0;
+const memo = new Map();
+const once = (key, f) => { if (!memo.has(key)) memo.set(key, f()); return memo.get(key); };
+
+/**
+ * The master (or main) commit the branch last merged before the cutover: the tools and spec every chat had before
+ * landing 2, format 1. Before landing that is the merge base of the cutover with master; after landing, master's
+ * first-parent history holds the landing merge L (the cutover in L, not in L^1), and it is the merge base with L^1.
+ */
+export function preLandingMaster(cutover) {
+  return once(`pre:${cutover}`, () => {
+    if (process.env.SOVA_CONVERT_BASE) return revParse(process.env.SOVA_CONVERT_BASE);
+    for (const m of ["master", "main", "origin/master", "origin/main"]) {
+      const tip = tryRev(m);
+      if (!tip) continue;
+      let at = tip;
+      if (isAncestor(cutover, tip)) {
+        const landing = rgit("log", "--first-parent", "--merges", "--format=%H %P", tip).split("\n").filter(Boolean)
+          .map((l) => l.split(" ")).find(([x, p1]) => isAncestor(cutover, x) && !isAncestor(cutover, p1));
+        if (!landing) continue;
+        at = landing[1];
+      }
+      const mb = gitRaw(["merge-base", cutover, at]);
+      if (mb.status === 0 && formatAt(mb.stdout.trim()) === 1) return mb.stdout.trim();
+    }
+    return null;
+  });
+}
+/** The cutover and the pre-landing master, asserted found. */
+export function requireBases() {
+  const c = requireCutover();
+  const pre = preLandingMaster(c.cutover);
+  assert.ok(pre, `no format 1 master commit before the cutover ${c.cutover.slice(0, 12)} (no master/main, or the branch never merged one); set SOVA_CONVERT_BASE`);
+  return { ...c, pre };
+}
+/** The spec tools from before al_6: the parent of the commit that added core/layout.mjs (no layout.mjs, the old helper). */
+export function preAl6(cutover) {
+  return once(`al6:${cutover}`, () => {
+    if (process.env.SOVA_PRE_AL6) return revParse(process.env.SOVA_PRE_AL6);
+    const added = rgit("log", "--diff-filter=A", "--topo-order", "--format=%H", cutover, "--", `${TOOLS}/layout.mjs`).split("\n").filter(Boolean).pop();
+    assert.ok(added, `no commit adds ${TOOLS}/layout.mjs before ${cutover.slice(0, 12)}; set SOVA_PRE_AL6`);
+    const p = revParse(`${added}^1`);
+    assert.equal(showAt(p, `${TOOLS}/layout.mjs`), null, `${p.slice(0, 12)} has no layout.mjs`);
+    return p;
+  });
+}
 
 /** The cutover, asserted present: until landing 2's commit is on HEAD's history, every cutover test fails here. */
 export function requireCutover() {

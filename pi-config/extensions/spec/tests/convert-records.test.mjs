@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { CORE, recordFiles, CLAIMS_POINTER, byCodePoint, env } from "./layout/lib.mjs";
-import { PRE_CUTOVER, SPEC, REPO, requireCutover, recordsAt, canon, rgit, archiveInto, scratch, noGit, lsTree, showAt } from "./convert/lib.mjs";
+import { SPEC, REPO, requireBases, recordsAt, canon, rgit, archiveInto, scratch, noGit, lsTree, showAt } from "./convert/lib.mjs";
 
 const toolAt = (args) => {
   const r = spawnSync(process.execPath, [CORE, ...args, "--root", REPO, "--json"], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, env: env(scratch("home")) });
@@ -21,7 +21,7 @@ describe("the cutover commit converts Sova's spec without changing a record", { 
   let C, A, B;
   const load = () => {
     if (C) return;
-    C = requireCutover();
+    C = requireBases();
     A = recordsAt(C.base);
     B = recordsAt(C.cutover);
   };
@@ -30,8 +30,24 @@ describe("the cutover commit converts Sova's spec without changing a record", { 
     load();
     assert.equal(A.manifest.formatVersion, 1);
     assert.equal(B.manifest.formatVersion, 2);
-    const fromPre = rgit("diff", "--name-only", PRE_CUTOVER, C.base, "--", SPEC).trim();
-    t.diagnostic(`cutover ${C.cutover.slice(0, 12)} on ${C.base.slice(0, 12)}; spec changed since ${PRE_CUTOVER.slice(0, 12)}: ${fromPre ? fromPre.split("\n").length + " file(s)" : "none"}`);
+    const fromPre = rgit("diff", "--name-only", C.pre, C.base, "--", SPEC).trim();
+    t.diagnostic(`cutover ${C.cutover.slice(0, 12)} on ${C.base.slice(0, 12)}; pre-landing master ${C.pre.slice(0, 12)}; spec changed since it: ${fromPre ? fromPre.split("\n").length + " file(s)" : "none"}`);
+  });
+
+  test("the cutover is the newest conversion: no later commit converts again, and HEAD is format 2", () => {
+    load();
+    const fmt = (rev) => JSON.parse(showAt(rev, `${SPEC}/manifest.json`) ?? "{}").formatVersion;
+    assert.equal(fmt("HEAD"), 2);
+    // an oldest-first locator, after a merge back to format 1 and a second conversion, fails here
+    const later = rgit("log", "--no-merges", "--format=%H %P", `${C.cutover}..HEAD`, "--", `${SPEC}/manifest.json`).split("\n").filter(Boolean).map((l) => l.split(" "));
+    for (const [c, p] of later) assert.ok(!(fmt(c) === 2 && fmt(p) === 1), `${c.slice(0, 12)} converts again after ${C.cutover.slice(0, 12)}`);
+  });
+
+  test("no record of the pre-landing master is lost on the way to the cutover", () => {
+    load();
+    const pre = recordsAt(C.pre).records;
+    assert.ok(Object.keys(pre).length > 1000);
+    assert.deepEqual(Object.keys(pre).filter((i) => !(i in B.records)), [], `every record of ${C.pre.slice(0, 12)} is in the cutover`);
   });
 
   test("the same record ids, every record byte-identical (canonical and as written), the count unchanged", (t) => {
@@ -45,8 +61,8 @@ describe("the cutover commit converts Sova's spec without changing a record", { 
     assert.deepEqual(canonDiff, [], "canonically equal");
     const byteDiff = ia.filter((i) => JSON.stringify(A.records[i]) !== JSON.stringify(B.records[i]));
     assert.deepEqual(byteDiff, [], "key order inside each record kept (the values are byte-for-byte today's)");
-    const pre = recordsAt(PRE_CUTOVER);
-    t.diagnostic(`${ib.length} records (${Object.keys(pre.records).length} at ${PRE_CUTOVER.slice(0, 12)}) in ${B.recordFiles.length} record files`);
+    const pre = recordsAt(C.pre);
+    t.diagnostic(`${ib.length} records (${Object.keys(pre.records).length} at the pre-landing master ${C.pre.slice(0, 12)}) in ${B.recordFiles.length} record files`);
   });
 
   test("manifest.json keeps every project setting; only formatVersion and the records pointer change", () => {
@@ -88,8 +104,10 @@ describe("the cutover commit converts Sova's spec without changing a record", { 
 
   test(".gitattributes: the records' merge helper is retired, the claims helper stays, record files get Git's line merge", () => {
     load();
-    const before = showAt(C.base, ".gitattributes") ?? "", after = showAt(C.cutover, ".gitattributes") ?? "";
-    assert.match(before, /^\.sova\/spec\/manifest\.json merge=sova-spec-manifest$/m, "the base still had the helper (else this check proves nothing)");
+    // against the pre-landing master: a regenerated cutover (after a merge back to format 1) finds the attribute
+    // already retired on its own parent
+    const before = showAt(C.pre, ".gitattributes") ?? "", after = showAt(C.cutover, ".gitattributes") ?? "";
+    assert.match(before, /^\.sova\/spec\/manifest\.json merge=sova-spec-manifest$/m, "the pre-landing master still had the helper (else this check proves nothing)");
     assert.doesNotMatch(after, /sova-spec-manifest/, "no line routes anything to the manifest helper");
     assert.match(after, /^\.sova\/spec\/claims\/\*\*\/\*\.md merge=sova-spec-claims$/m, "the claims helper stays");
     assert.doesNotMatch(after, /\.json\s+merge=/, "no merge driver for the record files (question 3: combine, then the landing report lists it)");

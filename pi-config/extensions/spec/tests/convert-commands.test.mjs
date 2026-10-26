@@ -4,7 +4,7 @@
 // c1 one code, prose, record and new-claim change made in each tree's own layout), so the history commands
 // (census --changed, foreign) have something to compare. Allowed to differ: the root path, commit ids, cursor
 // tokens, and file-level counts and write targets, which are layout-specific by design and checked on their own.
-// A second pass runs the pre-cutover tools (landing 1's, at ca8ab14) on the old tree against this branch's tools on
+// A second pass runs the pre-landing master's tools (landing 1's) on the old tree against this branch's tools on
 // the new one: what a user sees across the landing. Fails until the cutover commit is on HEAD's history.
 import { test, describe, before } from "node:test";
 import assert from "node:assert/strict";
@@ -12,7 +12,7 @@ import { spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { core, draft, pages, normalizer, same, put, read, editRecords, recordsOnDisk, layoutOnDisk, hashTree, notDrafts, byCodePoint, env } from "./layout/lib.mjs";
-import { PRE_CUTOVER, SPEC, TOOLS, requireCutover, recordsAt, archiveInto, scratch, noGit } from "./convert/lib.mjs";
+import { SPEC, TOOLS, requireBases, recordsAt, archiveInto, scratch, noGit } from "./convert/lib.mjs";
 
 const g = (root, ...a) => { const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", root, ...a], { encoding: "utf8", env: env(root), maxBuffer: 256 * 1024 * 1024 }); assert.equal(r.status, 0, `git ${a.join(" ")}: ${r.stderr}`); return r.stdout.trim(); };
 const NEW_MD = "# §zz/convert-probe — Convert probe\n\nA note the cutover test adds on top of §app/access, in both layouts.\n";
@@ -20,7 +20,7 @@ const NEW_MD = "# §zz/convert-probe — Convert probe\n\nA note the cutover tes
 describe("Sova's real spec answers the same before and after the cutover", { skip: noGit }, () => {
   let OLD, NEW, ids, area, codeFile, ctx, dtarget, dmd, djson;
   before(() => {
-    const c = requireCutover();
+    const c = requireBases();
     const recs = recordsAt(c.base).records;
     const all = Object.keys(recs).sort(byCodePoint);
     ids = [
@@ -119,7 +119,7 @@ describe("Sova's real spec answers the same before and after the cutover", { ski
 
   test("across the landing: the pre-cutover tools on the old tree, this branch's tools on the new one", () => {
     const old = scratch("tools");
-    archiveInto(PRE_CUTOVER, old, [TOOLS]);
+    archiveInto(ctx.pre, old, [TOOLS]);
     const oldCore = (root, args) => {
       const r = spawnSync(process.execPath, [join(old, TOOLS, "sova-spec.mjs"), ...args, "--root", root, "--json"], { encoding: "utf8", env: env(root), maxBuffer: 256 * 1024 * 1024 });
       let j; try { j = JSON.parse(r.stdout); } catch { assert.fail(`old tools ${args.join(" ")}: ${r.stdout.slice(0, 400)}${r.stderr.slice(0, 400)}`); }

@@ -3,7 +3,7 @@
 // its first commit is `git archive` of the branch's base commit (so the merge base is that real tree), the branch
 // promotes with the tools in its own tree, and "master" is `git archive HEAD`. Git's three-way merge reads only
 // those three trees, so it merges exactly what the real branch would.
-// Cases: the branch cut at ca8ab14 (landing 1's tools) with its helper configured as USAGE.md says (a clone-relative
+// Cases: the branch cut at the pre-landing master (landing 1's tools; found in history, convert/lib.mjs) with its helper configured as USAGE.md says (a clone-relative
 // path, so the branch's own copy runs); the same branch with no helper; the same branch with a clone whose helper
 // points at the pre-al_6 tools; and a branch cut at the real pre-al_6 commit, running its own old helper.
 // Every case: Git stops, or the next check exits non-zero with layout-mixed; the check names the one command
@@ -15,7 +15,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { put, read, editRecords, recordsOnDisk, layoutOnDisk, codes, messages } from "./layout/lib.mjs";
-import { PRE_CUTOVER, PRE_AL6, SPEC, TOOLS, REPO, requireCutover, recordsAt, archiveInto, scratch, noGit, hasRev, showAt, canon } from "./convert/lib.mjs";
+import { SPEC, TOOLS, REPO, requireBases, preAl6, recordsAt, archiveInto, scratch, noGit, showAt, canon } from "./convert/lib.mjs";
 
 const CLAIM = "§zz/precut-branch";
 const CLAIM_MD = "# §zz/precut-branch — Pre-cutover branch\n\nThe branch's one new note, promoted before it merged the converted master.\n";
@@ -68,7 +68,7 @@ function promoteBranchClaim(R) {
   R.ok("add", "--", SPEC); R.ok("commit", "-qm", "branch: promote one new claim");
 }
 
-function scenario(name, { from, driver }) {
+function scenario(name, { from, driver, al6 }) {
   const R = repo(name);
   R.ok("init", "-q");
   archiveInto(from, R.root);
@@ -77,8 +77,8 @@ function scenario(name, { from, driver }) {
   if (driver === "pre-al6-copy") {
     // a clone whose helper is a copy of the pre-al_6 tools (configured by absolute path, as an older clone might)
     const old = scratch(`${name}-oldtools`);
-    archiveInto(PRE_AL6, old, [TOOLS]);
-    for (const [key, cmd] of driverLines(PRE_AL6)) R.ok("config", key, cmd.replace(/^node pi-config\/extensions\/spec\/core\/sova-spec-draft\.mjs/, `"${process.execPath}" ${join(old, TOOLS, "sova-spec-draft.mjs")}`));
+    archiveInto(al6, old, [TOOLS]);
+    for (const [key, cmd] of driverLines(al6)) R.ok("config", key, cmd.replace(/^node pi-config\/extensions\/spec\/core\/sova-spec-draft\.mjs/, `"${process.execPath}" ${join(old, TOOLS, "sova-spec-draft.mjs")}`));
   }
   R.ok("checkout", "-qb", "old");
   promoteBranchClaim(R);
@@ -90,16 +90,20 @@ function scenario(name, { from, driver }) {
 }
 const REPO_HEAD = () => spawnSync("git", ["-C", REPO, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
 
+// [name, base ("pre": the pre-landing master, "al6": the pre-al_6 commit), driver, a helper ran]
 const CASES = [
-  ["cut at ca8ab14, landing 1's helper configured per USAGE.md", { from: PRE_CUTOVER, driver: "usage" }, true],
-  ["cut at ca8ab14, no helper configured (Git's line merge)", { from: PRE_CUTOVER, driver: "none" }, false],
-  ["cut at ca8ab14, a clone whose helper is the pre-al_6 copy", { from: PRE_CUTOVER, driver: "pre-al6-copy" }, true],
-  ["cut at the pre-al_6 commit, its own old helper configured per its USAGE.md", { from: PRE_AL6, driver: "usage" }, true],
+  ["cut at the pre-landing master, landing 1's helper configured per USAGE.md", "pre", "usage", true],
+  ["cut at the pre-landing master, no helper configured (Git's line merge)", "pre", "none", false],
+  ["cut at the pre-landing master, a clone whose helper is the pre-al_6 copy", "pre", "pre-al6-copy", true],
+  ["cut at the pre-al_6 commit, its own old helper configured per its USAGE.md", "al6", "usage", true],
 ];
 
-describe("a pre-cutover branch merging the converted head is refused, never quietly merged", { skip: noGit || (!hasRev(PRE_AL6) && "pre-al_6 commit missing") }, () => {
-  for (const [name, opts, helper] of CASES) test(name, (t) => {
-    requireCutover();
+describe("a pre-cutover branch merging the converted head is refused, never quietly merged", { skip: noGit }, () => {
+  for (const [name, at, driver, helper] of CASES) test(name, (t) => {
+    const { cutover, pre } = requireBases();
+    const al6 = preAl6(cutover);
+    const opts = { from: at === "pre" ? pre : al6, driver, al6 };
+    t.diagnostic(`branch base ${opts.from.slice(0, 12)}; pre-al_6 tools ${al6.slice(0, 12)}; cutover ${cutover.slice(0, 12)}`);
     const head = REPO_HEAD();
     const want = recordsAt(head).records;
     const R = scenario(name.replace(/\W+/g, "-").slice(0, 40), opts);
@@ -125,7 +129,7 @@ describe("a pre-cutover branch merging the converted head is refused, never quie
     const got = recordsOnDisk(R.root).records;
     assert.equal(canon(got[CLAIM]), canon(CLAIM_REC), "the branch's claim is kept");
     const lost = Object.keys(want).filter((id) => !(id in got)), changed = Object.keys(want).filter((id) => id in got && canon(got[id]) !== canon(want[id]));
-    if (opts.from === PRE_CUTOVER) {
+    if (at === "pre") {
       assert.deepEqual([lost, changed], [[], []], "every record of the head, as the head has it");
       assert.deepEqual(Object.keys(got).filter((id) => !(id in want)), [CLAIM], "and nothing else");
     } else {

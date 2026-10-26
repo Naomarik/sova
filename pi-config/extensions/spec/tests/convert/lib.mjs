@@ -18,12 +18,6 @@ import { REPO, SPEC, tmp, hasGit } from "../layout/lib.mjs";
 
 export { REPO, SPEC };
 export const TOOLS = "pi-config/extensions/spec/core";
-/**
- * The one pinned commit, by the main thread's decision: the master commit landing 2 merged before its conversion
- * (format 1). The flip's parent must contain it, so an older flip cut before that merge can never pass for the
- * conversion that lands. SOVA_CONVERT_MASTER=<rev> repins it after a history rewrite or a regenerated flip.
- */
-export const MERGED_MASTER = process.env.SOVA_CONVERT_MASTER || "6f712fb84dbbc0673541998e4d8a24330ce08704";
 
 const gitRaw = (args, opts = {}) => spawnSync("git", ["-C", REPO, ...args], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024, ...opts });
 export function rgit(...args) {
@@ -168,6 +162,20 @@ export function preLandingMaster(cutover) {
     }
     return null;
   });
+}
+/**
+ * The master commit the flip's parent merged, derived from the branch (no pinned id, so a re-raced merge + flip needs
+ * no test commit): the flip's parent must be a merge whose second parent is merge-base(flip, master), found as
+ * preLandingMaster does (after landing, through the landing merge's first parent). SOVA_CONVERT_MASTER=<rev>
+ * overrides the derivation; the merge-parent check still applies. Fails hard when it can't be found.
+ */
+export function mergedMaster(cutover, base) {
+  const want = process.env.SOVA_CONVERT_MASTER ? revParse(process.env.SOVA_CONVERT_MASTER) : preLandingMaster(cutover);
+  assert.ok(want, `no merge-base of the flip ${cutover.slice(0, 12)} with master (no master/main?); set SOVA_CONVERT_MASTER`);
+  const parents = rgit("rev-list", "--parents", "-n", "1", base).trim().split(" ").slice(1);
+  assert.equal(parents.length, 2, `the flip's parent ${base.slice(0, 12)} must be the merge of master (it has ${parents.length} parent(s)): an older flip, cut before the merge?`);
+  assert.equal(parents[1], want, `the flip's parent ${base.slice(0, 12)} merged ${parents[1].slice(0, 12)}, not merge-base(flip, master) ${want.slice(0, 12)}`);
+  return want;
 }
 /** The cutover and the pre-landing master, asserted found. */
 export function requireBases() {

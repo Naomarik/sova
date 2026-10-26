@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { CORE, recordFiles, CLAIMS_POINTER, byCodePoint, env } from "./layout/lib.mjs";
-import { SPEC, REPO, MERGED_MASTER, isAncestor, hasRev, requireBases, recordsAt, canon, rgit, archiveInto, scratch, noGit, lsTree, showAt } from "./convert/lib.mjs";
+import { SPEC, REPO, mergedMaster, isAncestor, requireBases, recordsAt, canon, rgit, archiveInto, scratch, noGit, lsTree, showAt } from "./convert/lib.mjs";
 
 const toolAt = (args) => {
   const r = spawnSync(process.execPath, [CORE, ...args, "--root", REPO, "--json"], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, env: env(scratch("home")) });
@@ -45,7 +45,7 @@ describe("the cutover commit converts Sova's spec without changing a record", { 
 
   test("the flip's parent contains the master it merged, and every record of that master is in its manifest.json", (t) => {
     load();
-    assert.ok(hasRev(MERGED_MASTER), `${MERGED_MASTER.slice(0, 12)} is not in this clone (history rewritten? repin with SOVA_CONVERT_MASTER)`);
+    const MERGED_MASTER = mergedMaster(C.cutover, C.base);
     assert.ok(isAncestor(MERGED_MASTER, C.base), `the flip's parent ${C.base.slice(0, 12)} does not contain ${MERGED_MASTER.slice(0, 12)}: an older flip, cut before the merge`);
     const m = recordsAt(MERGED_MASTER);
     assert.equal(m.manifest.formatVersion, 1, "the merged master is format 1");

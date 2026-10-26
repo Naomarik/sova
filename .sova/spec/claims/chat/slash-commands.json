@@ -1,0 +1,238 @@
+{
+  "§chat.slash-commands/announcements": {
+    "kind": "behavior",
+    "authority": "migrated",
+    "evidence": "unreviewed"
+  },
+  "§chat.slash-commands/btw": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "pi-config/extensions/btw/index.ts",
+      "pi-config/extensions/btw/btw.ts",
+      "pi-config/extensions/btw/btw.test.ts",
+      "pi-config/extensions/btw/README.md",
+      "pi-config/README.md",
+      "server/chat-manager.ts",
+      "server/chat-idle-note.test.ts"
+    ],
+    "requires": [
+      "§chat.slash-commands/btw-chat",
+      "§chat.transcript/transcript-items"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-13T00:17Z"
+    },
+    "evidence": "verified"
+  },
+  "§chat.slash-commands/btw-chat": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "pi-config/extensions/btw/chat.ts",
+      "pi-config/extensions/btw/child.ts",
+      "pi-config/extensions/btw/btw.ts",
+      "pi-config/extensions/btw/btw.test.ts"
+    ],
+    "requires": [
+      "§app.chat-processes/workers"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-13T00:17Z"
+    },
+    "evidence": "verified"
+  },
+  "§chat.slash-commands/commands-row": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-22T15:11Z",
+      "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+    },
+    "code": [
+      "src/components/Composer.tsx",
+      "src/components/ComposerMenu.tsx"
+    ]
+  },
+  "§chat.slash-commands/commands-that-need-the-terminal-ui": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/lib/slash.ts",
+      "src/components/Composer.tsx",
+      "src/components/ChatView.tsx",
+      "src/lib/slash.test.ts"
+    ]
+  },
+  "§chat.slash-commands/compact-handoff": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/compact-handoff/index.ts",
+      "pi-config/extensions/compact-handoff/handoff.ts",
+      "pi-config/extensions/compact-handoff/index.test.ts",
+      "pi-config/extensions/compact-handoff/handoff.test.ts",
+      "pi-config/extensions/compact-handoff/tests/run.mjs",
+      "pi-config/extensions/compact-handoff/tests/runtime.mjs",
+      "pi-config/extensions/compact-handoff/README.md",
+      "pi-config/README.md",
+      "pi-config/extensions/compact-handoff/tests/compact-turn.mjs"
+    ],
+    "requires": [
+      "§chat.slash-commands/in-the-thread"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-13T01:48Z"
+    }
+  },
+  "§chat.slash-commands/compact-handoff-row": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/compact-handoff/run.ts",
+      "server/transcript.ts",
+      "shared/protocol.ts",
+      "src/components/Thread.tsx",
+      "src/lib/explain.ts",
+      "server/transcript-handoff.test.ts",
+      "src/lib/explain.test.ts"
+    ],
+    "requires": [
+      "§chat.slash-commands/in-the-thread",
+      "§chat.slash-commands/compact-handoff"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-13T03:59Z"
+    }
+  },
+  "§chat.slash-commands/contrast": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/design/tokens.css",
+      "src/design/base.css"
+    ]
+  },
+  "§chat.slash-commands/filtering-and-order": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/SlashMenu.tsx",
+      "src/lib/slash.ts",
+      "src/components/Composer.tsx"
+    ]
+  },
+  "§chat.slash-commands/in-the-thread": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/slash.ts",
+      "src/components/Composer.tsx",
+      "src/lib/change-rows.ts",
+      "src/components/ChatView.tsx",
+      "src/lib/slash.test.ts"
+    ],
+    "agreed": {
+      "by": "user (al_3 go-ahead)",
+      "at": "2026-10-14T16:11Z"
+    }
+  },
+  "§chat.slash-commands/keyboard-and-mouse": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/Composer.tsx",
+      "src/lib/input-mode.ts",
+      "src/components/CommandPalette.tsx"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-22T15:11Z",
+      "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+    }
+  },
+  "§chat.slash-commands/markup": {
+    "kind": "behavior",
+    "authority": "migrated",
+    "evidence": "unreviewed"
+  },
+  "§chat.slash-commands/tokens": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "about": [
+      "§chat.slash-commands/markup"
+    ]
+  },
+  "§chat.slash-commands/tui-palette-commands": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "pi-config/extensions/command-palette/index.ts",
+      "pi-config/extensions/command-palette/test.mjs",
+      "pi-config/extensions/command-palette/README.md",
+      "pi-config/README.md"
+    ]
+  },
+  "§chat.slash-commands/tui-subagents-command": {
+    "kind": "behavior",
+    "requires": [
+      "§app.subagents-pane/trigger"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/index.test.ts",
+      "pi-config/extensions/subagents/README.md",
+      "pi-config/extensions/claude-code/README.md"
+    ]
+  },
+  "§chat.slash-commands/when-the-menu-opens": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/lib/slash.ts",
+      "src/components/Composer.tsx"
+    ]
+  },
+  "§chat/slash-commands": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/chat-manager.ts",
+      "shared/protocol.ts",
+      "src/lib/slash.ts",
+      "src/components/SlashMenu.tsx",
+      "src/components/ChatView.tsx",
+      "src/components/Composer.tsx"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-22T15:35Z",
+      "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+    },
+    "notOwned": [
+      "§app/subagents-pane",
+      "§app.chat-processes/workers",
+      "§chat/composer"
+    ]
+  }
+}

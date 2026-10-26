@@ -1,0 +1,270 @@
+{
+  "§chat.profiles/after-first-message": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/ProfileChip.tsx",
+      "src/components/SessionView.tsx",
+      "src/components/Sidebar.tsx",
+      "src/components/Thread.tsx",
+      "src/lib/profile-start.ts"
+    ],
+    "requires": [
+      "§chat.profiles/model",
+      "§chat.profiles/picker",
+      "§chat.profiles/singleton"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-12T12:35Z"
+    }
+  },
+  "§chat.profiles/applying": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/session-profile-routes.ts",
+      "server/chat-manager.ts",
+      "server/index.ts",
+      "server/app.ts",
+      "server/session-profiles-runtime.test.ts",
+      "server/session-profile-cards.test.ts"
+    ],
+    "requires": [
+      "§chat.profiles/model",
+      "§chat.subagent-profiles/resolution"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-11T08:41Z"
+    }
+  },
+  "§chat.profiles/delivery": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/chat-manager.ts",
+      "server/queue.ts",
+      "server/transcript.ts",
+      "shared/protocol.ts",
+      "src/components/Thread.tsx",
+      "src/lib/live.ts",
+      "src/components/ProfileCards.tsx",
+      "src/components/SessionTimeline.tsx",
+      "shared/senders.ts"
+    ],
+    "requires": [
+      "§chat.profiles/session-tools",
+      "§app.overseer/sent-marker"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-19T21:32Z",
+      "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
+    }
+  },
+  "§chat.profiles/enforcement": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/chat-manager.ts",
+      "shared/profiles.ts",
+      "server/session-profiles-runtime.test.ts"
+    ],
+    "requires": [
+      "§chat.profiles/model"
+    ]
+  },
+  "§chat.profiles/limits": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/session-powers.ts",
+      "server/session-profiles.test.ts",
+      "server/session-profiles-runtime.test.ts",
+      "server/session-powers.integration.test.ts"
+    ],
+    "requires": [
+      "§chat.profiles/session-tools"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-12T18:54Z"
+    }
+  },
+  "§chat.profiles/live-commit": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/index.ts",
+      "server/mesh/mesh.test.ts",
+      "server/mesh/peer-wire-test-fixtures.ts",
+      "server/mesh/app-test-fixtures.ts",
+      "server/mesh/mesh.integration.test.ts",
+      "server/app.ts"
+    ],
+    "requires": []
+  },
+  "§chat.profiles/model": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "shared/profiles.ts",
+      "server/profiles-store.ts",
+      "server/session-profile.ts",
+      "server/sessions-index.ts",
+      "server/session-profiles.test.ts",
+      "shared/protocol.ts",
+      "src/lib/summary-diff.test.ts",
+      "server/harness/state-kinds.ts",
+      "docs/profiles.md"
+    ],
+    "requires": [],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-11T08:41Z"
+    }
+  },
+  "§chat.profiles/picker": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/ProfilePicker.tsx",
+      "src/components/ChatView.tsx",
+      "src/lib/profiles.ts",
+      "src/lib/change-rows.ts",
+      "src/lib/api.ts",
+      "src/app.css",
+      "src/components/ProfileGrid.tsx",
+      "server/session-profile-routes.ts",
+      "server/profiles-store.ts",
+      "src/lib/profile-cards.test.ts",
+      "server/session-profile-cards.test.ts"
+    ],
+    "requires": [
+      "§chat.profiles/model",
+      "§chat.transcript/setup-card"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-11T08:41Z"
+    }
+  },
+  "§chat.profiles/playbook": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "shared/profiles.ts",
+      "server/session-profiles-runtime.test.ts",
+      "server/overseer-tools.ts",
+      "src/components/ProfilePicker.tsx"
+    ],
+    "requires": [
+      "§chat.profiles/projects",
+      "§chat.playbooks/what-gets-sent"
+    ]
+  },
+  "§chat.profiles/projects": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/project-root.ts",
+      "server/profile-sources.ts",
+      "shared/profiles.ts",
+      "docs/profiles.md",
+      "server/profiles-store.ts",
+      "server/playbooks.ts",
+      "server/session-profiles.test.ts",
+      ".sova/profiles/merge-captain.json",
+      "server/session-profile-cards.test.ts"
+    ],
+    "requires": [
+      "§chat.profiles/model"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-11T08:41Z"
+    }
+  },
+  "§chat.profiles/session-tools": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/session-powers.ts",
+      "server/session-guards.ts",
+      "server/session-profile-routes.ts",
+      "server/session-profiles-runtime.test.ts",
+      "server/session-profiles.test.ts",
+      "shared/profiles.ts"
+    ],
+    "requires": [
+      "§chat.profiles/enforcement",
+      "§app.overseer/tools"
+    ]
+  },
+  "§chat.profiles/singleton": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/session-profile.ts",
+      "server/session-profile-routes.ts",
+      "server/sessions-index.ts",
+      "src/components/ProfilePicker.tsx",
+      "server/chat-manager.ts",
+      "server/index.ts",
+      "server/app.ts",
+      "server/overseer-tools.ts",
+      "src/components/ProfileGrid.tsx"
+    ],
+    "requires": [
+      "§chat.profiles/model",
+      "§chat.profiles/applying"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-11T08:41Z"
+    }
+  },
+  "§chat.profiles/trust": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/profile-trust.ts",
+      "server/session-profile.ts",
+      "server/session-profile-routes.ts",
+      "src/components/ProfilePicker.tsx",
+      "server/session-profiles.test.ts",
+      "src/components/ProfilesSettings.tsx",
+      "src/lib/api.ts"
+    ],
+    "requires": [
+      "§chat.profiles/projects"
+    ]
+  },
+  "§chat/profiles": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/profiles.ts"
+    ],
+    "notOwned": [
+      "§chat/subagent-profiles",
+      "§app.settings-dialog/profiles",
+      "§chat/playbooks"
+    ]
+  }
+}

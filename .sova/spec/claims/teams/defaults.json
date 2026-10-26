@@ -1,0 +1,227 @@
+{
+  "§teams.defaults/command": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/teams.ts",
+      "pi-config/extensions/subagents/mailbox.ts",
+      "pi-config/extensions/subagents/member.ts",
+      "pi-config/extensions/subagents/coordination.ts",
+      "pi-config/extensions/subagents/team-defaults.ts",
+      "pi-config/extensions/subagents/README.md"
+    ]
+  },
+  "§teams.defaults/coordinator": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/teams.ts",
+      "pi-config/extensions/subagents/mailbox.ts",
+      "pi-config/extensions/subagents/member.ts",
+      "pi-config/extensions/subagents/coordination.ts",
+      "pi-config/extensions/subagents/team-defaults.ts",
+      "pi-config/extensions/subagents/README.md",
+      "pi-config/extensions/subagents/inbox.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-24T10:31Z",
+      "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#22df1e4b"
+    }
+  },
+  "§teams.defaults/file": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/teams.ts",
+      "pi-config/extensions/subagents/mailbox.ts",
+      "pi-config/extensions/subagents/member.ts",
+      "pi-config/extensions/subagents/coordination.ts",
+      "pi-config/extensions/subagents/team-defaults.ts",
+      "pi-config/extensions/subagents/README.md",
+      "server/team-defaults.test.ts"
+    ]
+  },
+  "§teams.defaults/handover": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/teams.ts",
+      "pi-config/extensions/subagents/mailbox.ts",
+      "pi-config/extensions/subagents/member.ts",
+      "pi-config/extensions/subagents/coordination.ts",
+      "pi-config/extensions/subagents/team-defaults.ts",
+      "pi-config/extensions/subagents/README.md",
+      "shared/profiles.ts",
+      "pi-config/extensions/subagents/inbox.ts",
+      "pi-config/extensions/subagents/delivery.ts",
+      "pi-config/extensions/subagents/inbox-lifecycle.ts"
+    ],
+    "agreed": {
+      "by": "user (Omar)",
+      "at": "2026-10-23T21:42Z",
+      "source": "pi-session:74251d15-e6e2-46d5-8c62-d3d1a0187849#ce30380d"
+    }
+  },
+  "§teams.defaults/monitor": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/teams.ts",
+      "pi-config/extensions/subagents/mailbox.ts",
+      "pi-config/extensions/subagents/member.ts",
+      "pi-config/extensions/subagents/coordination.ts",
+      "pi-config/extensions/subagents/team-defaults.ts",
+      "pi-config/extensions/subagents/README.md",
+      "pi-config/extensions/subagents/inbox.ts",
+      "pi-config/extensions/subagents/delivery.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-24T10:31Z",
+      "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#22df1e4b"
+    }
+  },
+  "§teams.defaults/roster-context": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/teams.ts",
+      "pi-config/extensions/subagents/mailbox.ts",
+      "pi-config/extensions/subagents/member.ts",
+      "pi-config/extensions/subagents/coordination.ts",
+      "pi-config/extensions/subagents/team-defaults.ts",
+      "pi-config/extensions/subagents/README.md",
+      "pi-config/extensions/claude-code/context-window.ts",
+      "pi-config/extensions/subagents/inbox.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-24T10:31Z",
+      "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#22df1e4b"
+    }
+  },
+  "§teams.defaults/routing": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/teams.ts",
+      "pi-config/extensions/subagents/mailbox.ts",
+      "pi-config/extensions/subagents/member.ts",
+      "pi-config/extensions/subagents/coordination.ts",
+      "pi-config/extensions/subagents/team-defaults.ts",
+      "pi-config/extensions/subagents/README.md",
+      "pi-config/extensions/subagents/inbox.ts",
+      "pi-config/extensions/subagents/delivery.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-24T10:31Z",
+      "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#22df1e4b"
+    }
+  },
+  "§teams.defaults/runtime-fallback": {
+    "kind": "behavior",
+    "requires": [
+      "§teams.defaults/coordinator",
+      "§teams.defaults/monitor",
+      "§teams.defaults/handover",
+      "§teams.defaults/routing"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/index.test.ts",
+      "pi-config/extensions/subagents/README.md",
+      "pi-config/docs/native-teams.md",
+      "pi-config/extensions/provider-limits/usage-out.ts",
+      "pi-config/extensions/provider-limits/usage-out.test.ts",
+      "pi-config/extensions/provider-limits/gate.ts",
+      "server/reports.ts",
+      "server/reports.test.ts"
+    ],
+    "agreed": {
+      "by": "user (Omar)",
+      "at": "2026-10-23T22:36Z",
+      "source": "pi-session:74251d15-e6e2-46d5-8c62-d3d1a0187849#ce30380d"
+    }
+  },
+  "§teams.defaults/team-report": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/teams.ts",
+      "pi-config/extensions/subagents/mailbox.ts",
+      "pi-config/extensions/subagents/member.ts",
+      "pi-config/extensions/subagents/coordination.ts",
+      "pi-config/extensions/subagents/team-defaults.ts",
+      "pi-config/extensions/subagents/README.md"
+    ]
+  },
+  "§teams.defaults/wake-nudge": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/teams.ts",
+      "pi-config/extensions/subagents/mailbox.ts",
+      "pi-config/extensions/subagents/member.ts",
+      "pi-config/extensions/subagents/coordination.ts",
+      "pi-config/extensions/subagents/team-defaults.ts",
+      "pi-config/extensions/subagents/README.md",
+      "pi-config/extensions/subagents/inbox.ts",
+      "pi-config/extensions/subagents/delivery.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T02:25Z",
+      "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+    }
+  },
+  "§teams/defaults": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/teams.ts",
+      "pi-config/extensions/subagents/mailbox.ts",
+      "pi-config/extensions/subagents/member.ts",
+      "pi-config/extensions/subagents/coordination.ts",
+      "pi-config/extensions/subagents/team-defaults.ts",
+      "pi-config/extensions/subagents/README.md"
+    ],
+    "notOwned": [
+      "§app/teams",
+      "§chat.subagent-profiles/resolution",
+      "§app.claude-code-provider/catalog"
+    ]
+  }
+}

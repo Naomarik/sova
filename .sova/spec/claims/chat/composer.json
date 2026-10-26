@@ -1,0 +1,269 @@
+{
+  "§chat.composer/accessibility": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/Composer.tsx",
+      "src/components/VoiceInput.tsx"
+    ]
+  },
+  "§chat.composer/anatomy": {
+    "kind": "behavior",
+    "requires": [
+      "§chat/mode-menu",
+      "§chat.composer/composer-flyout",
+      "§chat/slash-commands",
+      "§chat.images/composer-attachments"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/ChatView.tsx",
+      "src/components/Composer.tsx",
+      "src/design/base.css",
+      "src/app.css",
+      "src/components/WaitingBadge.tsx",
+      "src/design/align-viewer.css",
+      "src/components/VoiceInput.tsx",
+      "src/design/voice.css",
+      "src/components/ComposerMenu.tsx"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-24T16:18Z",
+      "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#be7cefce"
+    }
+  },
+  "§chat.composer/behavior": {
+    "kind": "behavior",
+    "code": [
+      "src/components/Composer.tsx",
+      "src/lib/placeholder-fit.ts",
+      "src/lib/placeholder-fit.test.ts",
+      "src/components/ModelMenu.tsx",
+      "src/lib/input-mode.ts",
+      "src/lib/input-mode.test.ts",
+      "src/components/VoiceInput.tsx",
+      "src/design/base.css",
+      "src/lib/release-control.ts",
+      "src/lib/release-control.test.ts",
+      "src/components/ComposerMenu.tsx",
+      "src/lib/send-frame.ts",
+      "src/components/ChatView.tsx",
+      "server/chat-manager.ts",
+      "server/chat-queue-clients.test.ts",
+      "server/harness/pi/chat-wiring.test.ts"
+    ],
+    "requires": [
+      "§chat.images/composer-attachments",
+      "§chat.voice/button"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-25T15:55Z",
+      "source": "pi-session:4805896b-dd1c-464a-a653-c071229c3d1c#1f1f2b81"
+    }
+  },
+  "§chat.composer/composer-flyout": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/chat-manager.ts",
+      "server/index.ts",
+      "server/app.ts",
+      "server/sandbox-state.ts",
+      "shared/protocol.ts",
+      "src/components/ChatView.tsx",
+      "src/components/ComposerMenu.tsx",
+      "src/lib/api.ts",
+      "src/lib/sandbox.ts",
+      "src/components/Composer.tsx",
+      "src/lib/sandbox.test.ts",
+      "src/commands/palette-open.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-22T15:11Z",
+      "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+    }
+  },
+  "§chat.composer/disabled-states": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/ChatView.tsx",
+      "src/components/Composer.tsx",
+      "src/components/SessionView.tsx",
+      "src/components/VoiceInput.tsx",
+      "src/design/base.css"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-14T13:32Z"
+    }
+  },
+  "§chat.composer/file-index-deadline": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/files.ts",
+      "server/files.test.ts",
+      "server/files.integration.test.ts"
+    ]
+  },
+  "§chat.composer/known-on-switch": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.composer/behavior",
+      "§chat.composer/disabled-states",
+      "§chat.mode-menu/trigger",
+      "§chat.composer/sandbox-shield",
+      "§app.claude-logins/active-login"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/composer-known.ts",
+      "src/lib/composer-known.test.ts",
+      "src/components/ChatView.tsx",
+      "src/components/Composer.tsx",
+      "src/components/ModeMenu.tsx",
+      "src/App.tsx",
+      "shared/protocol.ts",
+      "server/sessions-index.ts",
+      "server/chat-manager.ts",
+      "server/session-summary-chat.test.ts",
+      "server/claude-login-state.ts"
+    ]
+  },
+  "§chat.composer/memory-status": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.transcript/streaming"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/Composer.tsx",
+      "src/components/ChatView.tsx",
+      "src/lib/memory-ui.ts",
+      "src/lib/memory-ui.test.ts",
+      "src/app.css"
+    ]
+  },
+  "§chat.composer/sandbox-shield": {
+    "kind": "behavior",
+    "requires": [
+      "§chat/sandbox"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "public/icons/shield.svg",
+      "server/chat-manager.ts",
+      "server/sandbox-state.ts",
+      "shared/protocol.ts",
+      "src/components/ChatView.tsx",
+      "src/components/Composer.tsx",
+      "src/components/ui.tsx",
+      "src/design/base.css",
+      "src/lib/sandbox.ts",
+      "public/icons/shield-on.svg",
+      "public/icons/shield-partial.svg",
+      "public/icons/shield-off.svg",
+      "src/components/ComposerMenu.tsx",
+      "src/lib/sandbox.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-22T15:11Z",
+      "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+    }
+  },
+  "§chat.composer/tokens": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/design/base.css"
+    ],
+    "about": [
+      "§chat.composer/anatomy"
+    ]
+  },
+  "§chat.composer/waiting-badge": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.composer/anatomy",
+      "§chat.alignment/chip",
+      "§chat.offers/card",
+      "§app.overseer/confirm"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/WaitingBadge.tsx",
+      "src/lib/waiting.ts",
+      "src/lib/waiting.test.ts",
+      "src/waiting.css",
+      "src/components/Composer.tsx",
+      "src/components/ChatView.tsx"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-25T22:42Z",
+      "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#647a463a"
+    }
+  },
+  "§chat.composer/waiting-dialog": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.composer/waiting-badge",
+      "§chat.offers/card",
+      "§chat.offers/buttons",
+      "§chat.alignment/chip",
+      "§app.overseer/confirm"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/WaitingDialog.tsx",
+      "src/components/OfferCard.tsx",
+      "src/lib/waiting.ts",
+      "src/lib/waiting.test.ts",
+      "src/waiting.css",
+      "src/components/ChatView.tsx"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-24T09:23Z",
+      "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+    }
+  },
+  "§chat/composer": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/Composer.tsx",
+      "src/components/ComposerMenu.tsx"
+    ],
+    "notOwned": [
+      "§chat/slash-commands",
+      "§chat/model-menu",
+      "§chat.voice/button"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-22T15:11Z",
+      "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+    }
+  }
+}

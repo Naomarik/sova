@@ -1,0 +1,184 @@
+{
+  "§app.teams/inbox": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§teams.defaults/routing",
+      "§teams.defaults/handover",
+      "§app.worker-restore/resume"
+    ],
+    "code": [
+      "pi-config/extensions/subagents/mailbox.ts",
+      "pi-config/extensions/subagents/member.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/teams.ts",
+      "pi-config/extensions/subagents/README.md",
+      "pi-config/docs/native-teams.md",
+      "pi-config/extensions/subagents/inbox-lifecycle.ts",
+      "pi-config/extensions/subagents/inbox-lifecycle.test.ts",
+      "pi-config/extensions/subagents/inbox.ts",
+      "pi-config/extensions/subagents/delivery.ts",
+      "pi-config/extensions/subagents/delivery.test.ts",
+      "pi-config/extensions/subagents/inbox.test.ts",
+      "pi-config/extensions/subagents/index.test.ts",
+      "pi-config/extensions/subagents/mailbox.test.ts",
+      "pi-config/extensions/subagents/member.test.ts",
+      "pi-config/extensions/subagents/reattach.test.ts",
+      "pi-config/extensions/subagents/restore.test.ts",
+      "pi-config/extensions/subagents/fold.ts",
+      "pi-config/extensions/subagents/contracts.ts",
+      "pi-config/extensions/subagents/inbox-zero.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T16:59Z",
+      "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#c38b4920"
+    }
+  },
+  "§app.teams/inbox-gate": {
+    "kind": "behavior",
+    "requires": [
+      "§app.teams/inbox"
+    ],
+    "authority": "accepted",
+    "code": [
+      "pi-config/extensions/subagents/inbox.ts",
+      "pi-config/extensions/subagents/delivery.ts",
+      "pi-config/extensions/subagents/member.ts",
+      "pi-config/extensions/subagents/mailbox.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/fold.ts",
+      "pi-config/extensions/subagents/contracts.ts",
+      "pi-config/extensions/subagents/README.md",
+      "pi-config/extensions/subagents/inbox.test.ts",
+      "pi-config/extensions/subagents/delivery.test.ts",
+      "pi-config/extensions/subagents/member.test.ts",
+      "pi-config/extensions/subagents/inbox-zero.test.ts",
+      "pi-config/extensions/subagents/index.test.ts",
+      "pi-config/extensions/subagents/reattach.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T20:03Z",
+      "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#c38b4920"
+    }
+  },
+  "§app.teams/inbox-zero": {
+    "kind": "behavior",
+    "requires": [
+      "§app.teams/inbox"
+    ],
+    "authority": "accepted",
+    "code": [
+      "pi-config/extensions/subagents/inbox.ts",
+      "pi-config/extensions/subagents/delivery.ts",
+      "pi-config/extensions/subagents/member.ts",
+      "pi-config/extensions/subagents/mailbox.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/fold.ts",
+      "pi-config/extensions/subagents/contracts.ts",
+      "pi-config/extensions/subagents/README.md",
+      "pi-config/extensions/subagents/inbox.test.ts",
+      "pi-config/extensions/subagents/delivery.test.ts",
+      "pi-config/extensions/subagents/member.test.ts",
+      "pi-config/extensions/subagents/inbox-zero.test.ts",
+      "pi-config/extensions/subagents/index.test.ts",
+      "pi-config/extensions/subagents/reattach.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T20:03Z",
+      "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#c38b4920"
+    }
+  },
+  "§app.teams/requests": {
+    "kind": "behavior",
+    "requires": [
+      "§app.teams/running-limit",
+      "§app.teams/seats"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/teams.ts",
+      "pi-config/extensions/subagents/README.md",
+      "pi-config/docs/native-teams.md",
+      "pi-config/extensions/subagents/index.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T01:03Z",
+      "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#0a19ba49"
+    }
+  },
+  "§app.teams/running-limit": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/README.md",
+      "pi-config/docs/native-teams.md",
+      "pi-config/extensions/subagents/index.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T01:03Z",
+      "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#0a19ba49"
+    }
+  },
+  "§app.teams/seats": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.worker-restore/restore",
+      "§app.worker-restore/resume"
+    ],
+    "code": [
+      "pi-config/extensions/subagents/teams.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/team-widget.ts",
+      "pi-config/extensions/subagents/team-modal.ts",
+      "pi-config/extensions/subagents/README.md",
+      "server/insights.ts",
+      "shared/protocol.ts",
+      "server/insights-eject.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T02:25Z",
+      "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+    }
+  },
+  "§app.teams/wait-completion": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§teams.defaults/routing"
+    ],
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/index.test.ts",
+      "pi-config/extensions/subagents/README.md"
+    ]
+  },
+  "§app/teams": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "pi-config/extensions/subagents/teams.ts",
+      "pi-config/extensions/subagents/index.ts"
+    ],
+    "notOwned": [
+      "§teams.defaults/routing",
+      "§app/worker-restore",
+      "§app.insights/team-cards"
+    ]
+  }
+}

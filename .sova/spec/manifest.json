@@ -2161,7 +2161,7 @@
     "§app.session-list/groups": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/design/base.css",
         "src/components/Groups.tsx",
@@ -2184,11 +2184,12 @@
         "shared/protocol.ts",
         "src/app.css",
         "server/session-feed.integration.test.ts",
-        "server/sidebar-guide-lines.integration.test.ts"
+        "server/sidebar-guide-lines.integration.test.ts",
+        "src/App.tsx"
       ],
       "agreed": {
         "by": "omar",
-        "at": "2026-10-26T21:59Z",
+        "at": "2026-10-26T22:02Z",
         "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#f2caca06"
       }
     },
@@ -5646,7 +5647,17 @@
     "§workspace.groups/data": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/App.tsx",
+        "src/lib/regions.ts",
+        "src/lib/regions.test.ts"
+      ],
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-26T22:02Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#f2caca06"
+      }
     },
     "§workspace.groups/decisions": {
       "kind": "note",
@@ -10896,7 +10907,7 @@
       ],
       "agreed": {
         "by": "omar",
-        "at": "2026-10-26T21:59Z",
+        "at": "2026-10-26T22:02Z",
         "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#f2caca06"
       }
     },
@@ -16661,7 +16672,7 @@
       ],
       "agreed": {
         "by": "omar",
-        "at": "2026-10-26T21:59Z",
+        "at": "2026-10-26T22:02Z",
         "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#f2caca06"
       }
     },
@@ -24226,7 +24237,7 @@
       ],
       "agreed": {
         "by": "omar",
-        "at": "2026-10-26T21:59Z",
+        "at": "2026-10-26T22:02Z",
         "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#f2caca06"
       }
     },

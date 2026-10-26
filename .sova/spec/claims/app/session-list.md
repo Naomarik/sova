@@ -880,18 +880,20 @@ loses nothing. `GET /api/session-groups` lists them; the other routes are in `sh
 list: a grouped session still shows under Folders, its project's block or the Archive, so the same row can
 appear in a group and below it at once. A session belongs to **at most one** group.
 
-**Who can be grouped.** Every ordinary session (§app.session-list/ordinary-surfaces), and the
-operator's own coding sessions: a standalone project's build the operator started (`project.kind`
-`coding` with `operator`), which a group draws and counts like any other member while it keeps its
-place in its project's block (`isGroupable` in `src/lib/regions.ts`). **Organization sessions,
-a project's overseer conversations and the builds a project's overseer started on its own are never
-grouped**, like the Overseer's files: the Groups region never draws one, and the drop overlay's group
-tiles, the session pane's `Move into group`, the Overseer and the server
-(`POST /api/session-groups/assign`, 400) all refuse it — an organization's session with
-"Organization sessions stay with their project.", a project's with "Project sessions stay with
-their project." — on the disabled control, as its reason, before the press (the Overseer says the
+**Who can be grouped.** Every main thread that no organization owns (`canJoinGroup` in
+`src/lib/regions.ts`): every ordinary session (§app.session-list/ordinary-surfaces), and a
+registered project's own sessions as well — its overseer's conversations and its builds, whether
+the operator or the project's overseer started them. A group draws and counts such a session like any
+other member while it keeps its place in its project's block; it still stays out of Folders, Needs
+you, Recent and the Archive as before. **Organization sessions are never grouped**, like the
+Overseer's files and worker sessions: the Groups region never draws one, and the drop overlay's
+group tiles, the session pane's `Move into group`, the Overseer and the server
+(`POST /api/session-groups/assign`, 400) all refuse it with "Organization sessions stay with their
+project." — on the disabled control, as its reason, before the press (the Overseer says the
 server's reason in its reply). An assignment made before this rule is kept on the server and not
-drawn; a group left holding only such sessions shows as empty.
+drawn; a group left holding only such sessions shows as empty. A group opened as a workspace
+(§workspace.groups/data) lists exactly the sessions its sidebar group draws, by the same rule
+(`groupMembersOf`).
 
 **Every open window sees a change at once.** Creating, renaming, reordering or deleting a group,
 and putting a session into one or taking it out (from any window, the session pane or the
@@ -1272,13 +1274,12 @@ is the same gesture with a mouse and a thumb: one Pointer Events path. The pure 
 - **The row's current group** is marked `Current` and inert: a drop there does nothing.
 - **Tiles that can't take the row are disabled, and say why in words.** The overlay always
   opens. An organization session can't join a group: the new-group and group tiles are disabled,
-  and the head's note says "Organization sessions stay with their project." once. A project's
-  overseer conversation and a build its overseer started on its own are refused the same way, with
-  "Project sessions stay with their project."; the operator's own coding session is not refused,
-  and each group tile's count includes the operator's coding sessions it holds. A peer's
+  and the head's note says "Organization sessions stay with their project." once. A project's own
+  session — its overseer's conversation or any of its builds — is not refused, and each group
+  tile's count includes the project sessions it holds. A peer's
   session gets "Groups hold this host's sessions only. That one lives on {host}." in the same
   way (a peer's own groups aren't this host's, so it gets no `Current` or `Remove` tile). Taking
-  an organization or project session out of a group still works. Archive, when it can't archive, says why
+  an organization session out of a group still works. Archive, when it can't archive, says why
   under its label: "Can't archive: {reason}" in `archiveBlockReason`'s words (open in a TUI, not
   started in Sova, mid-turn, with subagents working). A row that is already archived says
   "Already archived.", and an external row the Archive already lists says "Already in the
@@ -1710,18 +1711,18 @@ for the same reason: something other than the operator runs them.
   archived): it is listed with its project only. The overview's `{live} live` still counts it;
 - the **Archive cleanup**: its counts, its sweeps and its one-session list (§app.session-list/archive-cleanup;
   the server's guard is §app.session-list/cleanup-org-guard);
-- the **Groups** region and every way into a group (§app.session-list/groups), which, as Recent
-  does, add back the operator's own coding sessions (a standalone project's build marked
-  `operator`): those can be grouped and are drawn in their group, while they stay out of Folders,
-  Needs you and the Archive and keep their place in their project's block;
+- the **Groups** region and every way into a group (§app.session-list/groups), which add back
+  every session a registered project owns (its overseer's conversations and its builds, whoever
+  started them): those can be grouped and are drawn in their group, while they stay out of Folders,
+  Needs you, Recent (but for the operator's own builds) and the Archive and keep their place in their project's block;
 - the **recent folders** offered for a new session (`GET /api/cwds`, the New Session dialog's Recent
   folders, `sova_list_folders`): never the Overseer's folder
   (`<stateRoot>/overseer/`), never an attached org's workspace dir, and never a folder only an org's
   own conversations (a hand-off, a project overseer) ran in. A project root is still offered once an
   ordinary or coding session has run there: the operator codes there.
 
-The rule is one predicate on the client, `isOrdinarySession` in `src/lib/regions.ts` (Recent and
-the groups widen it with `isOperatorBuild`, the groups through `isGroupable`, never by changing it): a main thread
+The rule is one predicate on the client, `isOrdinarySession` in `src/lib/regions.ts` (Recent widens it with `isOperatorBuild`, and the groups read their own rule, `canJoinGroup`: every
+main thread with no `org`; neither changes it): a main thread
 (not a worker, not an Overseer file) with no `org` that no registered project owns. A project owns
 its overseer's conversations and its builds (`project.kind` `overseer` or `coding`), which its own
 region lists (§app.projects/list), until the operator archives a standalone project's build: then it

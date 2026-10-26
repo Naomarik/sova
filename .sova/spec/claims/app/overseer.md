@@ -917,8 +917,8 @@ that copy or process opens. No helper session is needed.
   has uncommitted edits ("Uncommitted edits, kept in its folder") or is gone ("Folder gone"), how many
   active share links it has ("2 share links"), and when the session that started it is working now.
   A leftover row shows its port and slot, the command it runs (redacted, at most 120 characters), its
-  folder, and why it is a leftover: its folder was deleted, it runs outside any git checkout, or its
-  branch is already merged into the main checkout's. Both always show, never behind the sessions'
+  folder, and why it is a leftover: its folder was deleted, or its branch's own commits are already
+  merged into the main checkout's. Both always show, never behind the sessions'
   toggle; they sit after people and before sessions. The rows are a snapshot, never a link URL.
 - **What a card refuses.** An instance id that matches nothing refuses the card as any unknown id
   does; a project's main copy (slot 0, Sova's own live server's included) refuses it with "A project's
@@ -949,12 +949,15 @@ that copy or process opens. No helper session is needed.
 - **Leftover processes.** `sova_project_verbs leftovers {project}` (a read, any turn) lists, for each
   usable slot of 1 to 16, each of the project's copy ports a process listens on that no running copy
   of Sova's owns: its port and slot, pid, command, folder, and either "safe to stop" with why, or "in
-  use" with why. Safe to stop means its folder is deleted or missing, it runs outside any git
-  checkout, or it runs in a clean worktree of the project (never the main checkout, never a registered
-  copy's) whose branch is already merged into the main checkout's branch; a worktree with uncommitted
-  edits is in use. Never offered, whatever
+  use" with why. Safe to stop means only: its folder is deleted or missing, or it runs in a clean
+  worktree of the project (never the main checkout, never a registered copy's) whose branch has
+  commits of its own that are now on the main checkout's branch (it moved past the commit it was
+  created from, as its reflog records). Anything else is in use: a process outside any git checkout, a
+  worktree with uncommitted edits, a branch with no commits of its own (a worktree just cut), or one
+  whose history can't be read. Never offered, whatever
   its folder: Sova's own server and its child processes, the `sova-runtime.service` unit, a chat
-  process, any process of a copy's or shared service's unit, slot 0's adopted unit, and a listener
+  process and any process a chat started (one with a chat or Sova's server among its ancestors, or
+  inside a chat's unit), any process of a copy's or shared service's unit, slot 0's adopted unit, and a listener
   this user can't read. `stop-leftover {project, port}` stops one in the click's turn, after checking
   that the port is still held by the same process (same pid and start time) and that it is still safe;
   otherwise "It is no longer the process your card listed: nothing was stopped.", or "It is no longer

@@ -7306,7 +7306,7 @@
     "§app.overseer/confirm": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/overseer-confirm.ts",
         "server/overseer-tools.ts",
@@ -7348,7 +7348,8 @@
         "src/lib/run-status.ts",
         "src/lib/run-status.test.ts",
         "src/app.css",
-        "src/design/align-viewer.css"
+        "src/design/align-viewer.css",
+        "src/lib/overseer-card-rows.test.ts"
       ],
       "requires": [
         "§app.overseer/tools",
@@ -7364,7 +7365,7 @@
     "§app.overseer/copies": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/project-services/leftovers.ts",
         "server/project-services/leftovers.test.ts",
@@ -7386,7 +7387,8 @@
         "server/overseer-card-tool.ts",
         "server/chat-queue-clients.test.ts",
         "src/design/base.css",
-        "server/agent-loadouts.snapshot.json"
+        "server/agent-loadouts.snapshot.json",
+        "src/lib/overseer-card-rows.test.ts"
       ],
       "requires": [
         "§app.overseer/confirm",
@@ -7397,7 +7399,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-26T18:32Z",
+        "at": "2026-10-26T19:25Z",
         "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
       }
     },

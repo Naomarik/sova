@@ -81,9 +81,6 @@ import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
 import { markOwned } from "./write-guard";
 import { OrgError } from "./org-error";
-import { goAheadFor, LANDING_REFUSAL, mergeNeedsGoAhead, recordGoAhead } from "../pi-config/extensions/worktrees/landing.ts";
-import { runGit } from "../pi-config/extensions/worktrees/git.ts";
-import { landingFileOf } from "./session-offers";
 import {
   ceilingOf,
   contributedBlockers,
@@ -1145,32 +1142,9 @@ async function worktreeAct(projectId: string, sessionId: unknown, event: "build/
   return path;
 }
 
-/**
- * The merge guard on Merge Branch (§chat.worktrees/merge-guard): in a project whose offers file, as the
- * target branch holds it, says `"mainMerges": "go-ahead"`, a merge into main or master needs the user's
- * go-ahead for the branch at its current head. Pressed on the operator's own page (`byPage`), the press
- * is that go-ahead, and is recorded; asked any other way, it is refused without one.
- */
-async function landingGuard(projectId: string, sessionId: unknown, byPage: boolean): Promise<void> {
-  if (typeof sessionId !== "string" || !sessionId) return;
-  const row = readBuild(projectId, sessionId);
-  if (!row) return;
-  const root = projectOf(projectId).root;
-  const w = await withWorktreePath(row, root).catch(() => null);
-  if (!w) return;
-  const { branch, target } = w.worktree;
-  if (!(await mergeNeedsGoAhead(runGit, root, target))) return;
-  const r = await runGit(["rev-parse", "--verify", "-q", `refs/heads/${branch}^{commit}`], root);
-  const head = r.code === 0 ? r.stdout.trim() : "";
-  if (!head) return;
-  if (byPage) return recordGoAhead({ branch, commit: head, session: sessionId, at: new Date().toISOString(), by: "page" }, landingFileOf());
-  if (!goAheadFor(branch, head, landingFileOf())) throw new OrgError(LANDING_REFUSAL, 409);
-}
-
 /** POST …/worktrees/merge: Merge Branch, into its target in the project root's checkout. */
-export async function mergeCodingWorktree(projectId: string, sessionId: unknown, opts: { byPage: boolean } = { byPage: false }): Promise<ProjectWorktrees> {
+export async function mergeCodingWorktree(projectId: string, sessionId: unknown): Promise<ProjectWorktrees> {
   projectOf(projectId);
-  await landingGuard(projectId, sessionId, opts.byPage);
   // The branch reached its target: the build statechart tells the overseer (build/merged), which can't see the
   // operator merge otherwise; git's refusal too (build/merge-refused), unless the root's own checkout is the operator's.
   await worktreeAct(projectId, sessionId, "build/merge");
@@ -1549,7 +1523,9 @@ export type AssistantActInput =
   | { act: "build/start"; basis: { kind: "owner-request"; id: string }; prompt: string; title?: string; model?: { model: string; thinking?: string | null } | null }
   | { act: "deploy/run"; basis?: { kind: "owner-request"; id: string }; target?: string; commit?: string; why?: string }
   /** start_version: `up` of one copy the owner's versions list holds (its instance id; start_version checked it). */
-  | { act: "services/run"; instance: string; root: string; waitMs?: number };
+  | { act: "services/run"; instance: string; root: string; waitMs?: number }
+  /** start_version's Current version when the main checkout has no copy yet: a bare `up` of the main checkout makes it. */
+  | { act: "services/run"; main: true; root: string; waitMs?: number };
 /** `services/run` taken: `up` goes on; `done` settles once it ends (ok, or the engine's failure code). */
 export type CopyStart = Promise<{ ok: true } | { ok: false; code: string; message: string }>;
 export type AssistantActResult = { taken: true; held: boolean; holdRef?: string; until?: string; sessionId?: string; done?: CopyStart } | { taken: false; code: string; sentence: string };
@@ -1601,7 +1577,7 @@ export async function assistantAct(projectId: string, a: AssistantActInput, o: {
  * only after the engine's own checks. Answers within `waitMs`: a refusal (the act's, or the engine's before or during
  * a quick up) as `{taken: false}`; the act taken, with `done` following the up that goes on.
  */
-async function assistantCopyStart(projectId: string, a: { instance: string; root: string; waitMs?: number }, envelope: Envelope): Promise<AssistantActResult> {
+async function assistantCopyStart(projectId: string, a: { instance: string; root: string; waitMs?: number } | { main: true; root: string; waitMs?: number }, envelope: Envelope): Promise<AssistantActResult> {
   let wasTaken = false;
   let taken!: () => void;
   const actTaken = new Promise<"taken">((r) => (taken = () => r("taken")));
@@ -1611,7 +1587,10 @@ async function assistantCopyStart(projectId: string, a: { instance: string; root
     taken();
   };
   const { projectEngine } = await import("./project-services/routes");
-  const ran = projectEngine().run("up", { instance: a.instance }, { kind: "assistant", id: "project-assistant", root: a.root, up: a.instance, act });
+  const ran =
+    "main" in a
+      ? projectEngine().run("up", { project: a.root }, { kind: "assistant", id: "project-assistant", root: a.root, upMain: true, act })
+      : projectEngine().run("up", { instance: a.instance }, { kind: "assistant", id: "project-assistant", root: a.root, up: a.instance, act });
   const done: CopyStart = ran.then(
     (r) => (r.error ? { ok: false as const, code: r.error.code, message: r.error.message } : { ok: true as const }),
     (err) => ({ ok: false as const, code: err instanceof OrgError ? (err.code ?? "refused") : "start-failed", message: err instanceof Error ? err.message : String(err) }),
@@ -1642,9 +1621,15 @@ onOrgChange((engine, change) => {
   for (const sid of change.sessions) {
     if (!sid.startsWith("build/") || fixesNoted.has(sid)) continue;
     const d = hostOf(engine).data(sid) as { basis?: { kind?: unknown; id?: unknown }; path?: unknown; projectId?: unknown; sessionId?: unknown } | null;
-    if (!d || d.basis?.kind !== "owner-request" || typeof d.basis.id !== "string" || typeof d.path !== "string" || !d.path) continue;
+    if (!d || d.basis?.kind !== "owner-request" || typeof d.basis.id !== "string") continue;
+    // Set up once its session file exists: the build's own record holds the path (its statechart data never did).
+    const [, pid = "", bid = ""] = sid.split("/");
+    const sessionId = String(d.sessionId ?? bid);
+    const projectId = String(d.projectId ?? pid);
+    const path = typeof d.path === "string" && d.path ? d.path : (readBuild(projectId, sessionId)?.path ?? "");
+    if (!path) continue;
     fixesNoted.add(sid);
-    const e = { projectId: String(d.projectId ?? ""), orgId: engine, basisId: d.basis.id, sessionId: String(d.sessionId ?? sid.split("/").at(-1)) };
+    const e = { projectId, orgId: engine, basisId: d.basis.id, sessionId };
     for (const fn of fixStartedHooks)
       try {
         fn(e);

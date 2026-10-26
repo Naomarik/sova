@@ -171,6 +171,13 @@ a.owner-row:focus-visible { outline: var(--focus-ring); outline-offset: calc(var
 .owner-row-static { align-items: center; }
 /* Open: the standard (medium, 44px) button, kept at its own width beside the row's text. */
 .owner-version-open { flex: none; }
+/* What a version changes (§app.project-assistant/versions): body text under the meta line. */
+.owner-version-summary { color: var(--color-ink); font-size: var(--fs-body); line-height: var(--lh-body); }
+/* Close and Reopen on a request (§app.project-assistant/closing): beside the chip, at the standard 44px. */
+.owner-request-act { flex: none; min-height: 44px; }
+/* The owner's closed requests: greyed, below the others. */
+.owner-row-closed .owner-row-title,
+.owner-row-closed .owner-meta { color: var(--color-ink-muted); }
 
 /* ---- The page's frame and its three tabs (§app.owner-page/content, /page). ----------------------
    `.owner-page` is the query container (named `owner`): the 768 split asks the page's own width, so
@@ -363,3 +370,48 @@ dialog.owner-sheet::backdrop { background: var(--scrim); }
 .owner-feature-end { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-3); }
 .owner-feature-end .button { min-height: 44px; }
 .owner-feature-open { align-self: flex-start; margin-top: var(--space-2); min-height: 44px; text-decoration: none; display: inline-flex; align-items: center; }
+
+/* ---- Its frame (§app.owner-page/content): Sova's mark small at the top, the theme toggle to its right, the
+   organization's name the main heading. On a phone the mark rides a slim bar above each view; on a computer it
+   heads the sidebar instead (the bar hides). Tokens only. ------------------------------------------------- */
+.share-brand { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--tap-min); }
+.share-brand-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-ink-2);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-heading);
+}
+.share-brand-mark { --icon: url("../../public/icons/sova-mark.svg"); width: 18px; height: 18px; color: var(--color-accent); }
+.share-theme-toggle { flex: none; min-width: var(--tap-min); min-height: var(--tap-min); color: var(--color-ink-muted); }
+.owner-frame { display: flex; flex-direction: column; gap: var(--space-2); }
+.owner-org-name { overflow-wrap: anywhere; }
+.owner-topbar { margin-top: calc(var(--space-2) * -1); }
+.owner-nav-brand { display: none; }
+.owner-preview .owner-topbar { margin-top: 0; }
+
+/* Something new since this browser's previous visit: the chip, beside the row's own. */
+.owner-new { flex: none; }
+
+/* Home's Conversations: the two tabs and the project select in one bar, then the rows. */
+.owner-conv-bar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-2) var(--space-4); padding: 0 var(--space-4) var(--space-2); }
+.owner-conv-tabs { flex: none; border-bottom: 0; }
+.owner-conv-tabs .tab { min-height: var(--tap-min); }
+.owner-conv-filter { display: flex; flex-direction: column; gap: var(--space-1); min-width: 12rem; }
+.owner-conv-filter .select { min-height: var(--tap-min); }
+
+/* Earlier pages: the sentinel above the first row, with its loading and failed lines. */
+.owner-older { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); min-height: 1px; }
+.owner-older .button { min-height: var(--tap-min); }
+
+/* A message just sent (§app.project-assistant/chat): the owner's bubble, quieter until the chat holds it. */
+.owner-pending { opacity: 0.75; }
+.owner-pending-state { display: block; margin-top: var(--space-1); text-align: right; }
+
+@container owner (min-width: 768px) {
+  .owner-page-tabs .owner-topbar { display: none; }
+  .owner-page-tabs .owner-topbar.owner-topbar-always { display: flex; }
+  .owner-nav .owner-nav-brand { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 0 var(--space-2) var(--space-3); margin-bottom: var(--space-2); border-bottom: var(--stroke-thin) solid var(--color-border); }
+}

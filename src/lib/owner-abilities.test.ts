@@ -110,6 +110,10 @@ test("Home's requests line and the tab's open count", () => {
   assert.equal(requestsLine([{ status: "with-team" }]), "Your requests: 1 with the team ›");
   assert.equal(requestsLine([{ status: "with-team" }, { status: "with-team" }, { status: "done" }]), "Your requests: 2 with the team ›");
   assert.equal(requestsLine([{ status: "started" }, { status: "done" }]), "Your requests: 2 ›");
+  // The ones the owner closed are left out of the line and the tab's count (§app.project-assistant/closing).
+  assert.equal(requestsLine([{ status: "started" }, { status: "closed" }, { status: "closed" }]), "Your requests: 1 ›");
+  assert.equal(requestsLine([{ status: "with-team" }, { status: "closed" }]), "Your requests: 1 with the team ›");
+  assert.equal(openCount([{ status: "with-team" }, { status: "closed" }]), 1);
   // A feature request whose chat is open reads Planning with you, never with the team (found driving the page);
   // once its plan is agreed it is with the team again.
   assert.equal(requestsLine([{ status: "with-team", plan: "planning" }]), "Your requests: 1 ›");

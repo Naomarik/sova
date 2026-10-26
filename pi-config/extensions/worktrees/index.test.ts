@@ -1,12 +1,11 @@
 // Run through tests/run.mjs (pi imports resolve from the installed package).
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import worktrees from "./index.ts";
-import { recordGoAhead } from "./landing.ts";
 import { restoreActive, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE, WORKTREES_STATE_EVENT } from "./state.ts";
 
 const sh = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -290,94 +289,72 @@ test("in a spec project the warnings are said once: a tool merge's answer (its c
 	}
 });
 
-test("merge guard: a project with mainMerges go-ahead merges into master only on a go-ahead for that exact head; the captain is exempt; elsewhere unchanged", async () => {
+test("no merge guard: a session that isn't the captain merges into master with no recorded go-ahead, even where the offers file still names mainMerges", async () => {
 	const r = repo();
-	const goAheads = join(r.root, "state", "landing.json");
 	try {
-		// The switch, as master holds it.
+		// The retired switch, as master may still hold it: it does nothing.
 		mkdirSync(join(r.main, ".sova"));
 		writeFileSync(join(r.main, ".sova", "offers.json"), JSON.stringify({ version: 1, mainMerges: "go-ahead", offers: {} }));
 		sh(r.main, "add", ".sova/offers.json");
-		sh(r.main, "commit", "-q", "-m", "guard on");
+		sh(r.main, "commit", "-q", "-m", "leftover switch");
 		const f = fakePi();
-		worktrees(f.pi, { landingFile: () => goAheads });
+		worktrees(f.pi);
 		const c = f.ctx(r.main);
 		await f.fire("session_start", c);
 		await f.call(c, { action: "create", name: "g" });
 		const t = join(r.root, ".worktrees", "repo-g");
-		// The branch tries to switch the guard off in its own copy: the target's copy decides.
-		writeFileSync(join(t, ".sova", "offers.json"), JSON.stringify({ version: 1, offers: {} }));
 		writeFileSync(join(t, "g.txt"), "g\n");
-		sh(t, "add", "-A");
+		sh(t, "add", "g.txt");
 		sh(t, "commit", "-q", "-m", "g");
-		const before = sh(r.main, "rev-parse", "master");
-		await assert.rejects(f.call(c, { action: "merge", path: t }), /only with your go-ahead for this exact commit: press Land It/);
-		assert.equal(sh(r.main, "rev-parse", "master"), before, "nothing merged");
-		// A go-ahead for an older commit doesn't count.
-		const old = sh(t, "rev-parse", "HEAD");
-		recordGoAhead({ branch: "feat/g", commit: old, at: new Date().toISOString(), by: "land-it" }, goAheads);
-		writeFileSync(join(t, "g2.txt"), "g2\n");
-		sh(t, "add", "g2.txt");
-		sh(t, "commit", "-q", "-m", "g2");
-		await assert.rejects(f.call(c, { action: "merge", path: t }), /press Land It/);
-		assert.equal(sh(r.main, "rev-parse", "master"), before);
-		// Land It at the current head: it merges.
-		recordGoAhead({ branch: "feat/g", commit: sh(t, "rev-parse", "HEAD"), at: new Date().toISOString(), by: "land-it" }, goAheads);
+		const head = sh(t, "rev-parse", "HEAD");
 		const out = await f.call(c, { action: "merge", path: t });
 		assert.match(out.content[0].text, /^Merged feat\/g into master/);
-
-		// Another branch into a non-main branch: unguarded.
-		await f.call(c, { action: "create", name: "side" });
-		const side = join(r.root, ".worktrees", "repo-side");
-		sh(r.main, "branch", "integration");
-		writeFileSync(join(side, "s.txt"), "s\n");
-		sh(side, "add", "s.txt");
-		sh(side, "commit", "-q", "-m", "s");
-		const outSide = await f.call(c, { action: "merge", path: side, target: "integration" });
-		assert.match(outSide.content[0].text, /^Merged feat\/side into integration/);
+		assert.equal(sh(r.main, "rev-parse", "master"), head, "master is the branch's head");
 	} finally {
 		r.done();
 	}
 });
 
-test("merge guard: the merge captain's session lands without a recorded go-ahead", async () => {
+test("land records the user's go-ahead typed in this chat for the branch at its head, and only then", async () => {
 	const r = repo();
 	try {
-		mkdirSync(join(r.main, ".sova"));
-		writeFileSync(join(r.main, ".sova", "offers.json"), JSON.stringify({ version: 1, mainMerges: "go-ahead", offers: {} }));
-		sh(r.main, "add", ".sova/offers.json");
-		sh(r.main, "commit", "-q", "-m", "guard on");
-		const f = fakePi("cap");
-		worktrees(f.pi, { landingFile: () => join(r.root, "none.json") });
-		f.entries.push({ type: "custom", customType: "sova-profile", data: { v: 1, profile: { id: "merge-captain", label: "Merge Captain" } } });
-		const c = f.ctx(r.main);
-		await f.fire("session_start", c);
-		await f.call(c, { action: "create", name: "cap" });
-		const t = join(r.root, ".worktrees", "repo-cap");
-		writeFileSync(join(t, "c.txt"), "c\n");
-		sh(t, "add", "c.txt");
-		sh(t, "commit", "-q", "-m", "c");
-		const out = await f.call(c, { action: "merge", path: t });
-		assert.match(out.content[0].text, /^Merged feat\/cap into master/);
-	} finally {
-		r.done();
-	}
-});
-
-test("merge guard: a project without the switch merges into master as before", async () => {
-	const r = repo();
-	try {
+		const file = join(r.root, "state", "landing.json");
 		const f = fakePi();
-		worktrees(f.pi, { landingFile: () => join(r.root, "none.json") });
-		const c = f.ctx(r.main);
+		worktrees(f.pi, { landingFile: () => file, now: () => Date.parse("2026-10-26T10:00:00Z") });
+		const tree = join(r.root, "wt-x");
+		sh(r.main, "worktree", "add", "-q", "-b", "feat/x", tree);
+		writeFileSync(join(tree, "b.txt"), "two\n");
+		sh(tree, "add", "b.txt");
+		sh(tree, "commit", "-q", "-m", "two");
+		const head = sh(tree, "rev-parse", "HEAD");
+		const c = f.ctx(tree); // the session runs in the worktree: it needn't track it
 		await f.fire("session_start", c);
-		await f.call(c, { action: "create", name: "free" });
-		const t = join(r.root, ".worktrees", "repo-free");
-		writeFileSync(join(t, "f.txt"), "f\n");
-		sh(t, "add", "f.txt");
-		sh(t, "commit", "-q", "-m", "f");
-		const out = await f.call(c, { action: "merge", path: t });
-		assert.match(out.content[0].text, /^Merged feat\/free into master/);
+		const say = (text: string) => f.entries.push({ type: "message", message: { role: "user", content: [{ type: "text", text }] } } as never);
+		const recorded = () => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).goAheads : []);
+		// Not the user's word: refused, nothing recorded.
+		say("Sova: feat/x is finished. Once nothing blocks it, the user can type \"land it\" here.");
+		await assert.rejects(f.call(c, { action: "land" }), /Only the user's own word lands a branch/);
+		say("don't merge it yet");
+		await assert.rejects(f.call(c, { action: "land" }), /Only the user's own word/);
+		assert.deepEqual(recorded(), []);
+		// Their word, but something is uncommitted: the go-ahead is for a commit.
+		say("land it");
+		writeFileSync(join(tree, "c.txt"), "loose\n");
+		await assert.rejects(f.call(c, { action: "land" }), /1 uncommitted file: the go-ahead is for a commit/);
+		assert.deepEqual(recorded(), []);
+		rmSync(join(tree, "c.txt"));
+		const out = await f.call(c, { action: "land" });
+		assert.match(out.content[0].text, /Recorded the user's go-ahead to land feat\/x at [0-9a-f]{7}\. The merge captain checks it and lands it once its checks pass/);
+		assert.doesNotMatch(out.content[0].text, /press|Land It/);
+		assert.deepEqual(recorded(), [{ branch: "feat/x", commit: head, session: "s1", at: "2026-10-26T10:00:00.000Z", by: "owner-chat" }]);
+		// Without its specs, as the user said; by its branch name once tracked.
+		await f.call(c, { action: "attach", path: tree });
+		say("ok, merge it without its specs");
+		await f.call(c, { action: "land", path: "feat/x" });
+		assert.equal(recorded().at(-1).withoutSpecs, true);
+		// The branch everything lands into has nothing to land.
+		say("land it");
+		await assert.rejects(f.call(f.ctx(r.main), { action: "land" }), /on master, which branches land into/);
 	} finally {
 		r.done();
 	}

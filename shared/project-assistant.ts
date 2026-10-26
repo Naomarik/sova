@@ -4,19 +4,23 @@
  * Imported by the server, the operator app and the share build, so it imports only types.
  *
  * Share listener (T = the owner token):
- * GET  /api/i/T/assistant        -> AssistantView
+ * GET  /api/i/T/assistant        -> AssistantView (the newest VIEW page; `older` before it)
+ * GET  /api/i/T/assistant/older?before=<n> -> AssistantOlder (the page before message n)
  * POST /api/i/T/assistant        body { text, images? } -> 202 { ok: true } | 409 { code: "not-ready" | "busy" | "no-photos" | "photo-expired" } | 400 too-many | 429
  * POST /api/i/T/assistant/image  raw image bytes -> 201 { id, size, mime } | 409 no-photos | 413 | 400 | 429 | 507 (§app.project-assistant/photos)
  * GET  /api/i/T/assistant/img/<n> -> the n-th photo of the chat's view (AssistantImage.n)
  * WS   /ws/i?token=T&v=<tab>     server -> client AssistantServerMessage; client messages ignored
  * GET  /i/T/v/<v_…>              -> 302 to the version (an owner-bound preview link) | 404 | 410
  * POST /i/T/ask-link             -> 202 { ok, askedAt } | 409 (still works) | 410 | 404 (§app.owner-page/link)
+ * POST /api/i/T/requests/<r_…>   body { action: "close" | "reopen" } -> 202 { ok: true } | 404 | 409 { code: "closed" | "not-yours" } | 429
+ *                                (the owner closes or reopens their own request, §app.project-assistant/closing)
  * OwnerHome gains `requests`, `versions` and `assistant` (shared/owner.ts).
  *
  * Operator routes (main listener only):
  * GET  /api/orgs/:id/owner/assistant              -> AssistantInfo
  * PUT  /api/orgs/:id/owner/assistant              body { models: WorkModels } -> AssistantInfo (a kind's null: follow the default)
- * POST /api/orgs/:id/owner/requests/:rid          body { status: "done" | "declined" } -> AssistantInfo
+ * POST /api/orgs/:id/owner/requests/:rid          body { status: "done" | "declined" } | { noted: true } -> AssistantInfo
+ *      ({ noted: true }: Got It on a request the owner closed while it was being worked on)
  * POST /api/orgs/:id/owner/assistant/open         -> { sessionId, path } (Open Assistant Chat; makes it when none)
  * POST /api/orgs/:id/owner/requests/:rid/chat     -> { sessionId, path } (Start Chat, §app.project-assistant/request-chat)
  *      | 404 unknown | 409 { code: "closed" } | 409 { code: "has-chat", sessionId, path } | 409 { code: "not-started" } (its note not written; nothing linked)
@@ -36,11 +40,21 @@ export interface ProjectAssistantMarkerData {
 
 export type OwnerRequestKind = "bug" | "outage" | "question" | "feature" | "fix" | "deploy" | "try";
 export const OWNER_REQUEST_KINDS: readonly OwnerRequestKind[] = ["bug", "outage", "question", "feature", "fix", "deploy", "try"];
-export type OwnerRequestStatus = "with-team" | "started" | "done" | "declined";
+export type OwnerRequestStatus = "with-team" | "started" | "done" | "declined" | "closed";
+
+/** Closed: done or declined by the team, or closed by the owner (§app.project-assistant/closing). The one test every
+    reader uses: a closed request takes no new chat, leaves the to-do lists, and nothing moves it on its own. */
+export const isRequestClosed = (status: OwnerRequestStatus): boolean => status === "done" || status === "declined" || status === "closed";
+
+/** Who closed (or reopened) a request for the owner: the owner on their page, or their assistant on their yes. */
+export interface OwnerRequestBy {
+  kind: "owner" | "assistant";
+  personId: string;
+}
 
 /** A kind and a status in the operator's words (the Requests tab, the request note). */
 export const OWNER_REQUEST_KIND_WORD: Record<OwnerRequestKind, string> = { bug: "Problem", outage: "App down", question: "Question", feature: "New feature", fix: "Fix", deploy: "Release", try: "Version to try" };
-export const OWNER_REQUEST_STATUS_WORD: Record<OwnerRequestStatus, string> = { "with-team": "With the team", started: "Being worked on", done: "Done", declined: "Declined" };
+export const OWNER_REQUEST_STATUS_WORD: Record<OwnerRequestStatus, string> = { "with-team": "With the team", started: "Being worked on", done: "Done", declined: "Declined", closed: "Closed by the owner" };
 
 /** The note type of a request put in the chat Start Chat opened (§app.project-assistant/request-chat). */
 export const OWNER_REQUEST_NOTE = "sova-owner-request";
@@ -89,6 +103,11 @@ export interface OwnerRequest {
   sessionId?: string;
   /** The chat Start Chat linked, newest (its `linked` line; it changes no status). */
   linked?: { sessionId: string; at: string };
+  /** While `closed`: who closed it, when, the status it was closed from, and whether the operator pressed Got It
+      (only asked of one closed while `started`). */
+  closed?: { by: OwnerRequestBy; at: string; prior: OwnerRequestStatus; noted?: boolean };
+  /** A `try` request: the id of the version's copy it asked for (absent on one filed before). */
+  version?: string;
   /** Operator routes only: the request's chat (the linked one, else the fix's session), present
       only while it exists and isn't archived (worked out at read time). `startedAt`: when Start
       Chat linked it; absent for a fix's session. */
@@ -106,6 +125,9 @@ export interface OwnerRequestRow {
   title: string;
   status: OwnerRequestStatus;
   at: string;
+  /** A closed request (status `closed`): "you" when the owner closed it on their page, "assistant" when their
+      Project Assistant did on their yes. */
+  closedBy?: "you" | "assistant";
   /** A `feature` request's feature request chat, as it stands now (§app.project-assistant/feature-chats):
       "planning" while it is open, "agreed" once done; worked out at read time. */
   plan?: "planning" | "agreed";
@@ -116,11 +138,35 @@ export interface OwnerVersionRow {
   /** v_…: opened at /i/<token>/v/<handle>. */
   handle: string;
   project: string;
-  /** "Current version", "Fix: {title}" or "Fix {n} · started {date}". */
+  /** "Current version", "Fix: {title}" or "Work in progress · started {date}", unique within its project (a repeat gets " (2)"). */
   label: string;
   /** "starting": the assistant started it and it hasn't answered yet; "failed": it didn't start
       (§app.project-assistant/versions). */
   state: "running" | "starting" | "not-running" | "failed";
+  /** One or two plain sentences on what it changes against the Current version, when one is shown (written
+      automatically or by the team, cleaned for the owner; §app.project-assistant/versions). */
+  summary?: string;
+}
+
+/** A version on the team's Owner Page card, with its summary as stored (operator-side):
+ * GET /api/orgs/:id/projects/:pid/versions -> VersionSummaryRow[]
+ * PUT /api/orgs/:id/projects/:pid/versions/:instance  body { text?: string | null, hidden?: boolean } -> VersionSummaryRow[]
+ *     (text: Rewrite; null: Use Automatic; hidden: Hide / Show) */
+export interface VersionSummaryRow {
+  /** The copy's instance id. */
+  instance: string;
+  label: string;
+  /** The Current version (it has no summary). */
+  current: boolean;
+  state: OwnerVersionRow["state"];
+  /** What the owner is shown now (before the outsider filter), or null. */
+  summary: string | null;
+  /** Where the shown one comes from; "hidden" while the team hides it. */
+  source: "auto" | "team" | "hidden" | null;
+  hidden: boolean;
+  /** The automatic one and the team's rewrite, as kept. */
+  auto: string | null;
+  team: string | null;
 }
 
 /** A photo in a message: `n` numbers the photos of THIS view in order (fetched from
@@ -160,12 +206,32 @@ export interface AssistantView {
   ready: boolean;
   /** A reply is being written now. */
   busy: boolean;
-  /** The last 200, oldest first. */
+  /** The newest page (50), oldest first; each `n` counts from the conversation's first message. */
   messages: AssistantMessage[];
+  /** How many messages come before `messages` (0: it starts at the first). Absent from an older server: all were sent. */
+  older?: number;
   /** The reply so far, while it is written. */
   streaming?: string;
   /** Present only while photos are on and the reply model sees images: the composer shows its paperclip. */
   photos?: { perMessage: number; maxBytes: number };
+}
+
+/** How many messages the chat's view, and each earlier page, carries (§app.project-assistant/chat, Paged). */
+export const ASSISTANT_PAGE = 50;
+
+/** One page of messages: those with `n` below `before` (all, when absent), the newest `size` of them, and how many
+    come before the page. `n` counts from the conversation's first message, so pages merge by it. */
+export function pageOf<T extends { n: number }>(all: readonly T[], before?: number, size = ASSISTANT_PAGE): { messages: T[]; older: number } {
+  const upto = before === undefined ? all.length : all.findIndex((m) => m.n >= before);
+  const end = upto < 0 ? all.length : upto;
+  const start = Math.max(0, end - size);
+  return { messages: all.slice(start, end), older: start };
+}
+
+/** GET /api/i/T/assistant/older?before=<n>: up to a page of the messages before message n, and how many come before them. */
+export interface AssistantOlder {
+  messages: AssistantMessage[];
+  older: number;
 }
 
 export type AssistantServerMessage =

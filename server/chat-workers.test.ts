@@ -106,6 +106,19 @@ beforeEach(() => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("WorkerRegistry", () => {
+  test("a watcher's state says whether the worker's process names send keys; a process on older code says nothing (§app.chat-processes/worker-instructions)", async () => {
+    const { procs, handles } = fakeProcs();
+    const r = reg(procs);
+    const ref = await r.start(start("k", null));
+    const states: { keys?: true }[] = [];
+    r.watch(ref.chatId, null, (f) => void (f.t === "state" && states.push(f.state)));
+    assert.equal(states.at(-1)!.keys, undefined, "an older process's mirror names no keys");
+    const h = handles[0]!;
+    h.mirror = { ...h.mirror, worker: { ...h.mirror.worker, keys: true } as never };
+    r.onState(h as unknown as RemoteChatHandle);
+    assert.equal(states.at(-1)!.keys, true);
+  });
+
   test("a start makes the session file, writes the record, opens the process, sends the task once under its key", async () => {
     const { procs, handles } = fakeProcs();
     const r = reg(procs);

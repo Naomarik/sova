@@ -1,15 +1,14 @@
 /**
- * Landing go-aheads (§chat/offers, the Landing offer; §chat.worktrees/merge-guard): the user's go-ahead
- * to land a branch at one exact commit, kept per user outside every repository, so a branch can't
- * grant its own:
+ * The user's answers on a branch's Landing card (§chat.offers/sova-landing; §chat.worktrees/landing-answers):
+ * Land It (a go-ahead) or Not Yet for a branch at one commit, and the user's go-ahead typed in the branch's own
+ * chat (`worktree land`, `by: "owner-chat"`), kept per user outside every repository:
  *
  *   <state root>/landing.json
  *   { "v": 1, "goAheads": [ { branch, commit, session?, at, by, withoutSpecs? } ], "notYet": [ { branch, commit, session?, at } ] }
  *
- * Sova's server writes it (a Land It click on a Landing card, the operator's own Merge Branch); the
- * merge round's driver and this extension's `worktree merge` read it. A project turns the guard on in
- * its offers file (`"mainMerges": "go-ahead"`), read from the target branch itself, so a branch can't
- * switch it off for its own merge.
+ * Sova's server writes it (a click on a Landing card), and so does the `worktree` tool's `land` (the user's typed
+ * word, read by `typedGoAhead`); the merge round's driver reads it as the user's word.
+ * Nothing enforces it: no merge needs a recorded go-ahead.
  *
  * Node builtins only (the extension runs in every chat). Writes re-read the file, merge and replace it
  * atomically; a damaged file reads as no records.
@@ -17,25 +16,13 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import type { Git } from "./git.ts";
 
 export const LANDING_FILE_NAME = "landing.json";
-/** The offers file's key that turns the guard on, and its one value. */
-export const MAIN_MERGES_KEY = "mainMerges";
-export const MAIN_MERGES_GO_AHEAD = "go-ahead";
-/** The branches the guard covers. */
-export const MAIN_BRANCHES = ["main", "master"] as const;
 /** Records kept per list, newest last. */
 export const LANDING_KEPT = 200;
-/** The merge captain's profile id (server/merge-board.ts CAPTAIN_PROFILE). */
-export const CAPTAIN_PROFILE = "merge-captain";
-/** The session's profile entry (shared/profiles.ts PROFILE_ENTRY). */
-export const PROFILE_ENTRY = "sova-profile";
-
-export const LANDING_REFUSAL =
-	"This project lands branches on master only with your go-ahead for this exact commit: press Land It on the branch's landing card.";
-
-export type GoAheadBy = "land-it" | "page";
+/** Who recorded a go-ahead: a Land It click, the user's word typed in the branch's own chat (`worktree land`), or
+ *  (records from before the merge guard was removed) a Merge Branch press. */
+export type GoAheadBy = "land-it" | "owner-chat" | "page";
 
 export interface GoAhead {
 	branch: string;
@@ -83,7 +70,7 @@ const str = (v: unknown): v is string => typeof v === "string" && v.length > 0 &
 
 function cleanGoAhead(v: unknown): GoAhead | null {
 	if (!isRec(v) || !str(v.branch) || typeof v.commit !== "string" || !SHA.test(v.commit) || !str(v.at)) return null;
-	if (v.by !== "land-it" && v.by !== "page") return null;
+	if (v.by !== "land-it" && v.by !== "owner-chat" && v.by !== "page") return null;
 	return { branch: v.branch, commit: v.commit, ...(str(v.session) ? { session: v.session } : {}), at: v.at, by: v.by, ...(v.withoutSpecs === true ? { withoutSpecs: true as const } : {}) };
 }
 
@@ -132,43 +119,40 @@ export function recordNotYet(rec: NotYet, file: string = landingFile()): void {
 	writeLanding(file, d);
 }
 
-/** The go-ahead recorded for this branch at exactly this commit, if any. */
+/**
+ * The user's newest answer for this branch at exactly this commit: a go-ahead, or Not Yet. Both may be recorded
+ * at one commit (Not Yet doesn't clear a go-ahead); the later `at` wins, and Not Yet wins a tie or a time that
+ * can't be read. The merge round's driver keeps a copy (round.mjs landingAnswer), held equal by a test.
+ */
+export function answerAt(data: LandingData, branch: string, commit: string): { kind: "go-ahead"; goAhead: GoAhead } | { kind: "not-yet" } | undefined {
+	const go = data.goAheads.filter((g) => g.branch === branch && g.commit === commit).at(-1);
+	const no = data.notYet.filter((n) => n.branch === branch && n.commit === commit).at(-1);
+	if (go && (!no || Date.parse(go.at) > Date.parse(no.at))) return { kind: "go-ahead", goAhead: go };
+	return no ? { kind: "not-yet" } : undefined;
+}
+
+/** The go-ahead for this branch at exactly this commit, if it is the newest answer there (answerAt). */
 export function goAheadFor(branch: string, commit: string, file: string = landingFile()): GoAhead | undefined {
-	return readLanding(file).goAheads.filter((g) => g.branch === branch && g.commit === commit).at(-1);
+	const hit = answerAt(readLanding(file), branch, commit);
+	return hit?.kind === "go-ahead" ? hit.goAhead : undefined;
 }
 
-/** Whether the project's offers file, as the target branch holds it, turns the guard on. Pure. */
-export function mainMergesOn(offersText: string | null): boolean {
-	if (offersText === null) return false;
-	try {
-		const raw = JSON.parse(offersText) as unknown;
-		return isRec(raw) && raw[MAIN_MERGES_KEY] === MAIN_MERGES_GO_AHEAD;
-	} catch {
-		return false;
-	}
-}
+/** Sova's own messages and other sessions' arrive as user messages too: none of them is the user's typed word. */
+const NOT_TYPED = /^\s*(?:sova:|\[from session |\[schedule |go ahead: land )/i;
+/** Before the verb: words that make it a question, a condition or a refusal rather than the word to land now. */
+const NOT_NOW = /\b(?:don'?t|dont|do not|never|not|no|should|shall|why|what|how|whether|when|once|after|before|until|if|wait|hold)\b/;
 
-/** The offers file as `target` holds it, read through git (never the working tree a branch could edit); null when none. */
-export async function offersOnTarget(git: Git, cwd: string, target: string): Promise<string | null> {
-	const r = await git(["show", `refs/heads/${target}:.sova/offers.json`], cwd);
-	return r.code === 0 ? r.stdout : null;
-}
-
-/** Whether a merge into `target` needs the user's go-ahead: a main branch of a project that turned the guard on. */
-export async function mergeNeedsGoAhead(git: Git, cwd: string, target: string): Promise<boolean> {
-	if (!(MAIN_BRANCHES as readonly string[]).includes(target)) return false;
-	return mainMergesOn(await offersOnTarget(git, cwd, target));
-}
-
-/** The session's profile id from its branch's newest `sova-profile` entry (null: Default or none). */
-export function profileIdOf(branch: readonly unknown[]): string | null {
-	for (let i = branch.length - 1; i >= 0; i--) {
-		const e = branch[i];
-		if (!isRec(e) || e.type !== "custom" || e.customType !== PROFILE_ENTRY) continue;
-		const data = e.data;
-		if (!isRec(data)) return null;
-		const p = data.profile;
-		return isRec(p) && typeof p.id === "string" ? p.id : null;
-	}
-	return null;
+/**
+ * The user's go-ahead in their own words (§chat.worktrees/tool, `land`): the first line asks to land or merge
+ * ("land it", "ok, merge it", "go ahead and land feat/x"), the verb within its first 40 characters and nothing
+ * before it that asks, waits or refuses, and "not yet", "don't" or "do not" nowhere in that line. "without
+ * specs" anywhere in the message lands it without its specs. → {withoutSpecs} | null (not a go-ahead).
+ */
+export function typedGoAhead(text: string): { withoutSpecs: boolean } | null {
+	if (typeof text !== "string" || NOT_TYPED.test(text)) return null;
+	const line = (text.trim().split("\n")[0] ?? "").toLowerCase();
+	const verb = /\b(?:land|merge)\b/.exec(line);
+	if (!verb || verb.index > 40 || NOT_NOW.test(line.slice(0, verb.index))) return null;
+	if (/\bnot yet\b|\bdon'?t\b|\bdo not\b/.test(line)) return null;
+	return { withoutSpecs: /\bwithout (?:its |the |any )?specs?\b/i.test(text) };
 }

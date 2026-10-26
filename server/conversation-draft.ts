@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DraftItem } from "../shared/conversation-drafts";
+import { readSpecFs } from "../pi-config/extensions/spec/core/layout.mjs";
 import { REQUIREMENTS_NS, type DecisionRow } from "../shared/decisions";
 import {
   blocksOf,
@@ -289,8 +290,9 @@ const titleOf = (block: string | undefined, id: string): string => {
 
 function readClaims(specDir: string): Record<string, Record<string, unknown>> {
   try {
-    const m = JSON.parse(readFileSync(join(specDir, "manifest.json"), "utf8"));
-    return m && typeof m.claims === "object" && m.claims ? m.claims : {};
+    // The records in either layout, through the spec tools' shared reader ({} for none, or a mixed layout).
+    const spec = readSpecFs(specDir, ".");
+    return spec.state === "present" && spec.manifest && !spec.problems.some((p) => p.code === "layout-mixed") ? (spec.records as Record<string, Record<string, unknown>>) : {};
   } catch {
     return {};
   }

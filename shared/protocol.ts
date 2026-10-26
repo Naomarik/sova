@@ -1308,6 +1308,27 @@ export interface GitCommit {
   at: number;
 }
 
+/** A repository's git folder (the one a linked worktree shares with its main checkout), read by
+    stat: every file's size summed, and what says git's cleanup there is stuck or overdue. */
+export interface GitFolderReading {
+  /** The git folder, absolute. */
+  path: string;
+  /** Sum of the files' sizes; a lower bound when `partial`. */
+  bytes: number;
+  /** The walk stopped at its entry cap. */
+  partial: boolean;
+  /** `objects/pack/*.pack` files (always whole: the pack folder is walked first). */
+  packs: number;
+  /** Loose objects (`objects/xx/*`); a lower bound when `partial`. */
+  loose: number;
+  /** At most one, stuck first. `stuck`: a cleanup lock (multi-pack-index.lock or
+      commit-graph-chain.lock) more than an hour old, `since` its mtime (ms epoch). `overdue`: more
+      than 50 pack files or 6,700 loose objects; each count present only when it is over. */
+  warning: { kind: "stuck"; lock: string; path: string; since: number } | { kind: "overdue"; packs?: number; loose?: number } | null;
+  /** When it was read (ms epoch); a cached reading keeps its time. */
+  checkedAt: number;
+}
+
 /** Where the read ran: this machine, or the session's target. */
 export type GitWhere = { kind: "local" } | { kind: "remote"; target: string };
 
@@ -1340,6 +1361,10 @@ export interface GitRepoSummary {
       yet reads `lastCommit` instead and shows the one commit it has. A transitional read, not a
       permanent contract. */
   commits?: GitCommit[];
+  /** The repository's git folder, for the new-session card (server/git-folder.ts). Local
+      repositories only; absent on a target, when the folder couldn't be read, and from a server
+      older than the field. Additive. */
+  gitFolder?: GitFolderReading;
   /** Changed paths, conflicted first, then by path; cut at the server's cap (`filesTotal`). */
   files: GitFileChange[];
   /** Changed paths git reported, before the cap. */
@@ -1931,16 +1956,18 @@ export interface ProjectModeApprovalNeeded {
 // The `memory` minor mode: the model works from a summary of the whole chat (the VIEW: one-line
 // summaries, recent ones fine and old ones coarse) and opens any line word for word with its `zoom`
 // tool. Turned on from a chat's mode menu only (web; never the terminal, a worker or a profile) and,
-// for the Overseer, from its own toggle. Two types; each chat keeps its own type and view size.
+// for the Overseer, from its own toggle. Two types; each chat keeps its own type, and every chat uses
+// the view size Settings → Memory holds for its type (MemorySettings.sizes).
 //
 // POST /api/mode?path=… { minorModes?, memory?: Partial<ChatMemoryChoice> } -> ChatModeResult
-//                                  `memory` alone is a valid body (a type or size change; kept even while
-//                                  memory is off). 400 a bad type or size; 400 "memory" in minorModes for a
+//                                  `memory` alone is a valid body (a type change; kept even while memory is
+//                                  off). `memory.size` is ignored: the size is Settings'. 400 a bad type;
+//                                  400 "memory" in minorModes for a
 //                                  chat that can't have it (the Overseer: use its own route below; a baton or
 //                                  project-overseer session).
-// POST /api/mode?path=… { saveDefault: true } also saves this chat's memory choice as the default (the
+// POST /api/mode?path=… { saveDefault: true } also saves this chat's memory type as the default (the
 //                                  memory settings file's `default`).
-// POST /api/mode { minorModes?, memory? } (no path) writes the default only, as before.
+// POST /api/mode { minorModes?, memory? } (no path) writes the default only, as before (a memory type only).
 // GET  /api/memory?path=…        -> MemoryOutline (the lines the model sees now, oldest first; works for a
 //                                  chat that isn't open too. 400 no/bad path, 404 not a session)
 // GET  /api/memory/open?path=…&id=<first message>&n=<messages, a power of 2>
@@ -1948,17 +1975,21 @@ export interface ProjectModeApprovalNeeded {
 //                                  long ones in pages). 400 bad id/n, 404 no such line yet
 // GET  /api/settings/memory      -> MemorySettingsInfo (<agent dir>/mode-memory.json; missing → defaults)
 // GET  /api/settings/memory/options -> DelegateOptions (the same discovery as spec/options)
-// PUT  /api/settings/memory MemorySettings -> MemorySaveResult (replaces the summarizer; `default` absent keeps
-//                                  the stored one. 400 bad shape; unverifiable or policy-denied models save
-//                                  with a warning. Every chat's summarizer reads it at its next summary)
-// GET  /api/overseer/memory      -> OverseerMemoryInfo (no saved choice: on, UniiChat at 128 KB, whatever the
-//                                  chats' saved default is)
-// PUT  /api/overseer/memory { on?, type?, size? } -> OverseerMemoryInfo (kept in overseer.json; reaches the
-//                                  Overseer from its next turn. 400 bad body)
+// PUT  /api/settings/memory MemorySettings -> MemorySaveResult (replaces the summarizer and the sizes; `sizes`
+//                                  or `default` absent keeps the stored ones. 400 bad shape or a size outside
+//                                  [MEMORY_SIZE_MIN, MEMORY_SIZE_MAX]; unverifiable or policy-denied models save
+//                                  with a warning. Every chat's summarizer reads it at its next summary, and
+//                                  its size at its next turn or compaction)
+// GET  /api/overseer/memory      -> OverseerMemoryInfo (no saved choice: on, UniiChat, whatever the chats'
+//                                  saved default is; the size is Settings' for the type)
+// PUT  /api/overseer/memory { on?, type? } -> OverseerMemoryInfo (kept in overseer.json; reaches the
+//                                  Overseer from its next turn. `size` is ignored: the size is Settings'.
+//                                  400 bad body)
 // GET  /api/projects/:pid/overseer/memory -> OverseerMemoryInfo (that project overseer's own switch, on the
 //                                  same terms; 404 unknown project)
-// PUT  /api/projects/:pid/overseer/memory { on?, type?, size? } -> OverseerMemoryInfo (kept as `memory` in the
-//                                  project overseer's overseer.json; reaches it from its next turn. 400 bad body)
+// PUT  /api/projects/:pid/overseer/memory { on?, type? } -> OverseerMemoryInfo (kept as `memory` in the
+//                                  project overseer's overseer.json; reaches it from its next turn. `size` is
+//                                  ignored. 400 bad body)
 // WS (chat): { type: "memory_status", status } after hello while memory is on, and on every change
 //                                  (the turn it goes off included), only from a runtime with the memory
 //                                  engine (an ordinary chat, the Overseer, a project overseer). No message:
@@ -1986,22 +2017,22 @@ export interface MemoryTypeInfo {
   rowDescription: string;
   /** "UniiChat — by Victor Taelin" */
   detail: string;
-  /** "Read the design ↗" target, when the type has a write-up. */
+  /** The help card's "Read the design ↗" target, when the type has a write-up. */
   link?: string;
-  /** The view size (KB) a chat of this type uses until it picks one. */
+  /** The view size (KB) of this type until Settings → Memory sets one. */
   defaultSize: number;
 }
 
 /** A chat's memory choice. `size`: the view grows to `size` KB, then merges down to half of it
     (UniiChat's 64–128 KB is 128); for zoomable compaction, the size of the openable summary a
-    compaction leaves. */
+    compaction leaves. The type is the chat's; the size is always Settings' for that type. */
 export interface ChatMemoryChoice {
   type: MemoryType;
   size: number;
 }
 
-/** ModeInfo.memory: the choice, plus what can be chosen. `sizes`: the panel's suggested sizes (KB);
-    any whole number in [MEMORY_SIZE_MIN, MEMORY_SIZE_MAX] is accepted. */
+/** ModeInfo.memory: the choice, plus what can be chosen. `sizes`: the suggested sizes (KB) Settings →
+    Memory offers; any whole number in [MEMORY_SIZE_MIN, MEMORY_SIZE_MAX] is accepted there. */
 export interface MemoryModeInfo extends ChatMemoryChoice {
   types: MemoryTypeInfo[];
   sizes: number[];
@@ -2067,11 +2098,15 @@ export interface MemoryOutline {
 export type MemoryOpen = { lines: MemoryLine[] } | { message: MemoryMessage };
 
 /** <agent dir>/mode-memory.json. `summarizer`: who writes the summaries (default Claude Code
-    claude-haiku-5-5 at low effort); `default`: the choice new chats start from (Save as default). */
+    claude-haiku-5-5 at low effort); `sizes`: each type's view size (KB) every chat and the Overseer use
+    (absent on a write: keep the stored ones; always both on a read); `default`: the type new chats
+    start from (Save as default). An older file's `default.size` is read once into `sizes` and never
+    written again. */
 export interface MemorySettings {
   version: 1;
   summarizer: { primary: WorkerChoice; fallback: WorkerChoice | null };
-  default?: ChatMemoryChoice;
+  sizes?: Partial<Record<MemoryType, number>>;
+  default?: { type: MemoryType; size?: number };
 }
 
 export interface MemorySettingsInfo {
@@ -3013,13 +3048,18 @@ export interface TeamMember {
       to. Absent when the member has no items file, and from older servers. */
   inbox?: TeamInboxCounts;
 }
-export interface TeamInboxCounts { open: number; urgent: number; total: number }
+/** `closedByMember`: addressed items the member closed itself (`team_inbox done` or a reply);
+    `closedAutomatically`: addressed items Sova's safety net closed (§app.teams/inbox-zero). Both
+    absent from older servers, which show no summary line. */
+export interface TeamInboxCounts { open: number; urgent: number; total: number; closedByMember?: number; closedAutomatically?: number }
 export type TeamInboxKind = "message" | "question" | "report" | "handover" | "notice" | "instruction";
 export type TeamInboxStatus = "new" | "read" | "addressed";
 /** One item in a member's inbox, without its body (GET /api/insights/session/inbox). `from` is
     the sender (`workerId` "parent" for the main thread and for Sova); `movedFrom`: the members it
     was first sent to, oldest first, when a handover or a forward moved it here; `returned`: it was
-    sent back to its sender and is no longer open. Times are epoch ms. */
+    sent back to its sender and is no longer open; `closedBy`: how an addressed item was closed
+    (`member` by `team_inbox done`, `reply` by a reply naming it, `auto` by Sova's safety net),
+    absent on older items and from older servers (read as the member). Times are epoch ms. */
 export interface TeamInboxItemInfo {
   id: string;
   from: { role: string; workerId: string };
@@ -3034,7 +3074,9 @@ export interface TeamInboxItemInfo {
   replyTo?: string;
   movedFrom?: { role: string; workerId: string; at: number; why: "handover" | "forward" }[];
   returned?: { at: number; why: string };
+  closedBy?: TeamInboxClosedBy;
 }
+export type TeamInboxClosedBy = "member" | "reply" | "auto";
 /** GET /api/insights/session/inbox?path=&team=&worker=: one member's items, newest first.
     `items` is capped at the newest 500; `total` counts them all. */
 export interface TeamInboxView {
@@ -3397,9 +3439,10 @@ export interface OverseerSettings {
   explorer: WorkerChoice;
   /** Resume the runs a server restart cut off (§app.overseer/auto-resume). Absent = on. */
   autoResume?: boolean;
-  /** The Overseer's memory: its own switch, type and size. Absent = no choice made:
-      on, UniiChat at 128 KB. Written only by PUT /api/overseer/memory; a settings PUT keeps the stored one. */
-  memory?: { on: boolean; type: MemoryType; size: number };
+  /** The Overseer's memory (§chat.memory/overseer): its own switch and type. Absent = no choice made: on,
+      UniiChat. Written only by PUT /api/overseer/memory; a settings PUT keeps the stored one. `size`: an older
+      file's, kept but ignored (the size is Settings → Memory's for the type). */
+  memory?: { on: boolean; type: MemoryType; size?: number };
 }
 
 export interface OverseerSettingsInfo {
@@ -3457,6 +3500,7 @@ export type AttentionKind =
   | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
   | "held-act"            // act tier, never pushed: a statechart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
+  | "offer-waiting"       // act tier, never pushed or briefed: the session shows an open offer card (Land It, §chat.offers/card), idle or working
   | "tour-sign-in"        // act tier, never pushed: one of the session's tour recordings waits for the user to sign in on its card (§app.tours/sites; from the server's memory, gone on restart)
   | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Merge Branch (§app.project-runtime/review; the run's session, `playbook` set)
   | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project page)
@@ -3475,6 +3519,7 @@ export type AttentionKind =
   | "owner-outage"       // act tier, pushed (kind `owner-outage`): the owner reports the app is down
   | "owner-link-request" // act tier, never pushed: the owner asks for a new owner link (theirs turned off unused, §app.owner-page/link)
   | "owner-version-request" // act tier, never pushed: the owner asks to try a version that wasn't started (an open `try` request; `href` the project's Branches tab)
+  | "owner-request-closed" // act tier, never pushed: the owner closed a request the team was working on, until the operator's Got It (§app.project-assistant/closing)
   | "owner-feature-ended"; // act tier, never pushed: a feature request chat ended because its owner stopped being the owner (its request still with the team; `href` the Requests tab)
 
 export interface AttentionItem {

@@ -41,9 +41,9 @@ test("merge-ready: an event trigger with no times, its words, and the reason nam
   assert.equal(maxFiresPerDay(ok("merge-ready; every 30m")).n, 48, "it adds nothing to the per-day bound");
   assert.notEqual(pinSource({ triggers: ok("merge-ready; every 6h") }, { key: "k", remove: [], grant: [], singleton: true, overseerMayStart: false }), pinSource({ triggers: ok("every 6h") }, { key: "k", remove: [], grant: [], singleton: true, overseerMayStart: false }), "adding it asks again");
   assert.match(err("merge-ready-now"), /merge-ready/);
-  assert.equal(mergeReadyReason([{ branch: "feat/x", waiting: false }, { branch: "feat/y", waiting: true }]), "Ready to merge: feat/x, feat/y (waiting for an OK).");
-  const seven = ["a", "b", "c", "d", "e", "f", "g"].map((b) => ({ branch: `feat/${b}`, waiting: false }));
-  assert.equal(mergeReadyReason(seven), "Ready to merge: feat/a, feat/b, feat/c, feat/d, feat/e, and 2 more.");
+  assert.equal(mergeReadyReason(["feat/x", "feat/y"]), "Ready to land: feat/x, feat/y.");
+  const seven = ["a", "b", "c", "d", "e", "f", "g"].map((b) => `feat/${b}`);
+  assert.equal(mergeReadyReason(seven), "Ready to land: feat/a, feat/b, feat/c, feat/d, feat/e, and 2 more.");
 });
 
 test("one bad trigger makes the whole line invalid, with the exact error", () => {

@@ -442,6 +442,7 @@ export class WorkerRegistry {
       thinking: m?.thinking ?? l.rec.spec.thinking,
       lastSettled: m?.worker?.lastSettled ?? null,
       queue: l.queue,
+      ...(m?.worker?.keys ? { keys: true as const } : {}),
     };
   }
 

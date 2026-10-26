@@ -182,12 +182,14 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   playbook on a registered project (§app.project-runtime/onboard), in a turn the user started).
 - **Sending (`sova_send`) is typing in that session's composer.** Idle, with subagents working or
   not, the message starts a turn. Mid-turn it is **queued as a follow-up** behind the running turn
-  by default: a queued row in that session, "Queued", which the user can remove
-  (§chat.transcript/a-queued-message), and which goes in when the turn ends. With
+  by default: a queued row in that session, "Queued", which the user can remove until it is
+  handed to the agent (§chat.transcript/a-queued-message), and which goes in when the turn ends. With
   `delivery: "steer"` it is queued as a **steer** instead and goes into the running turn at its
   next step, as the composer's Steer does; the Overseer's prompt reserves that for a user who asked
   to interrupt or redirect the turn. A compaction running holds the message the same way until it
-  ends. Queued messages go in the order they were sent, one at a time, whatever their kind. A
+  ends. Queued messages go in the order they were sent: follow-ups one at a time, and every steer
+  waiting while the turn runs together, each its own message at the agent's next step; a steer sent
+  after a follow-up waits for that follow-up. A
   leading `/` runs that session's command, as in the composer. The tool's result says which
   happened: sent, queued behind the turn, queued as a steer, or held for the compaction. Never a
   terminal-owned, archived or worker session, and never the Overseer's own. The route is
@@ -530,7 +532,9 @@ sessions are left out, and the coverage line counts them as skipped.
     or an ask whose session has work not merged (ready, built, uncommitted, at risk or lost) or
     that says merge, land, commit, build, start, go ahead or proceed; then open alignment
     questions; then other asks; the most recently active first within each.
-  - **Ready to merge**: a worktree ready, or waiting for the user's go-ahead.
+  - **Ready to land**: a worktree Ready to land at its head (§chat.worktrees/ready-to-land).
+  - **Landing specs**: one whose landing waits on its spec drafts.
+  - **Ready to merge**: any other worktree ready, or waiting for the user's go-ahead.
   - **Built, not merged**: a worktree with commits of its own in progress, blocked or stale
     (§chat.worktrees/readiness), one whose session is working now saying so.
   - **Uncommitted only (lost if the worktree goes)**: a worktree with at least one uncommitted
@@ -792,14 +796,15 @@ jumps to it (§app.overseer/links).
 - **Approve-later and rule options.** An answer option may carry `at` (and `until`), which makes its
   click an approval for later, or `rule`, which makes its click adopt a standing rule; the button
   says so under its label, and the card shows the approval's state (§app.overseer/approvals).
-- **The composer chip.** While the Overseer's thread has open cards, its composer shows a chip
-  ("2 open cards") whose menu lists each one (id, title) and jumps to its card. It counts the open
-  cards of the whole branch, also those above the rows the view has loaded (the transcript's summary
-  of older rows carries each open card's newest snapshot and its row), and a jump to one of those
-  builds the older rows down to it first. The run-status row has exactly two ends, whatever it
-  carries: at the left the live dot, the step's icon and the subagents trigger; at the right,
-  together, "3 of 10 running" (§app.overseer/caps), the card chip, then the Inputs trigger last.
-  Nothing sits between the two ends.
+- **In the composer's badge.** While the Overseer's thread has open cards, the composer's waiting
+  badge (§chat.composer/waiting-badge) counts them as its option cards, and its dialog
+  (§chat.composer/waiting-dialog) lists each one (id, title) with Show in Chat, which jumps to its
+  card. It counts the open cards of the whole branch, also those above the rows the view has loaded
+  (the transcript's summary of older rows carries each open card's newest snapshot and its row), and
+  a jump to one of those builds the older rows down to it first. The run-status row carries no card
+  chip and has exactly two ends, whatever it carries: at the left the live dot, the step's icon and
+  the subagents trigger; at the right, together, "3 of 10 running" (§app.overseer/caps), then the
+  Inputs trigger last. Nothing sits between the two ends.
 - **Hide tool calls never folds it.** The card is the Overseer's question, not its working, so
   "Hide tool calls" leaves it (and its result) in the thread, like the link card
   (§app.overseer/links-tools).
@@ -860,8 +865,9 @@ session is on which branch survives a compaction and a restart:
   last 24 hours. Never the Overseer's own. At most 15, the most recently touched first.
 - **Each row:** the session as a link, named summary-first (§app.overseer/session-names), its id
   as plain text, its state now (working, idle, needs-input, archived, or gone), each worktree it
-  tracks as "branch <name> (<badge>)" (the readiness badge, §chat.worktrees/readiness, else that
-  worktree's state, such as in-progress or blocked), when the Overseer last created or prompted it,
+  tracks as "branch <name> (<badge>)" (its landing while one holds, "ready to land" or "landing
+  specs", §chat.worktrees/ready-to-land; else the readiness badge, §chat.worktrees/readiness, else
+  that worktree's state, such as in-progress or blocked), when the Overseer last created or prompted it,
   and the kind of the last brief that named it and when. A line before the rows says which sessions
   these are (created, prompted or briefed about in the last 24 hours), and that the Overseer checks
   one with `sova_session` before saying what it is doing.
@@ -893,7 +899,7 @@ session is on which branch survives a compaction and a restart:
 The Overseer's chat and its earlier conversations never fetch their older rows in the
 background, in a browser on this machine too: they hold the newest rows and the ones the reader
 scrolls up to or a jump fetches (§chat.transcript/rendering), so the end of a reply fetches again
-only those. The card chip still counts every open card on the branch, and the chip, a card
+only those. The composer's waiting badge still counts every open card on the branch, and its dialog, a card
 reference and the Timeline still reach every card and message on it: one above the rows held is
 fetched down to, then lands.
 
@@ -909,7 +915,7 @@ fetched down to, then lands.
   configurable in Settings → Overseer; a settings file without the two new ones reads them as their
   defaults.
 - **The running count shows.** While any Overseer-started session counts as running, the
-  Overseer's composer shows "3 of 10 running" beside its chips, from the same count the cap
+  Overseer's composer shows "3 of 10 running" in its run-status row, from the same count the cap
   checks, and the refusal and the prompt name Settings → Overseer → Limits. The text is a button
   that opens Settings → Overseer scrolled to Limits. The running-at-once refusal tells the model
   to tell the user in plain words which limit was reached and that it can be raised in Settings →
@@ -1221,9 +1227,14 @@ feed's last list while nothing has changed since it was built, and builds a list
   sign-in code for {origin} on the tour card."), dated by when it began waiting. It comes from the server's
   memory of waiting recordings, so it ends when the recording stops waiting, and with a restart, which
   interrupts it. Never a phone notification.
+- **Needs you, an option card** (§chat.offers/card): `offer-waiting` on a session, not archived, that
+  shows an open offer card (Land It is the only one Sova declares today), idle or working, "Waiting
+  on your answer: {the card's title}", dated by when the card was shown. It goes when the card is
+  answered, set to Not Now, no longer offered or replaced by a newer commit. Never a phone
+  notification and never a brief: it lists in Needs you and counts in "need you" only.
 - **Only real blockers are act.** The act tier — Needs you, the Overseer's "need you" count, its
   briefs and phone notifications — is exactly: open alignment questions on an unmerged branch, open dialogs, errored
-  turns, subagent errors, proposed playbook runs, failed deploys and deploy requests, tour recordings waiting for a sign-in, WhatsApp sending down, and the baton and roster hand-offs and held acts below. A team
+  turns, subagent errors, proposed playbook runs, open option cards (never briefed), failed deploys and deploy requests, tour recordings waiting for a sign-in, WhatsApp sending down, and the baton and roster hand-offs and held acts below. A team
   that seems stalled and a branch ready to merge are decide items: a line in the digest and a
   quiet mark on the session's row, never a brief.
 - **The softer tier: guesses.** A turn card's guesses (§app.decisions/attention-signals) — a
@@ -1286,7 +1297,8 @@ feed's last list while nothing has changed since it was built, and builds a list
   input.
 - **Ready to merge (decide)** (§chat.worktrees/readiness): an idle, unarchived session with a
   worktree ready, "Ready to merge: {branch}", or ready and waiting for the go-ahead, "Waiting for
-  your OK: {branch}". Never Needs you, a brief or a notification.
+  your OK: {branch}"; a worktree with a landing says its word instead, "Ready to land: {branch}" or
+  "Landing specs: {branch}" (§chat.worktrees/ready-to-land). Never Needs you, a brief or a notification.
 - **Merges (decide)** (§chat.worktrees/readiness): a merge the follow-up check
   (§app.decisions/merge-followup) calls significant, "Merged with open work: {cue}"; and one
   `restart-pending` item of no session, "Restart pending: {n} merge(s) changed the server since it
@@ -1416,14 +1428,16 @@ button in its composer foot, before Quick Actions, reading "memory" with a check
 and a clock while it is off (named "Overseer memory: on" or "…: off"). It opens a popover with the
 same rows as the mode menu's Memory type panel (§chat.mode-menu/memory-panel): first a `memory`
 checkbox row like the mode menu's (its description the chosen type's, its detail line the type's
-while on), then the types, UniiChat's "Read the design ↗", and Summary size. The switch is read
+while on), then the types, and nothing else: no design link and no Summary size (its size is
+Settings → Memory's, §chat.memory/overseer). The rows scroll between the popover's top and its foot
+line, which stays put, so on a short window none is cut off. The switch is read
 once for its label and again at each opening; a failed read shows "Couldn't read the Overseer's
 memory." Each pick writes `PUT /api/overseer/memory` at once and keeps the popover open (a pick of
-the current type or size writes nothing); the foot line reads "From the Overseer's next turn. Its
+the current type writes nothing); the foot line reads "From the Overseer's next turn. Its
 coding sessions never get memory." A refused write shows "Couldn't change the Overseer's memory."
 with the reason, and its memory is unchanged. Its run-status row shows memory's status
-like any chat's (§chat.composer/memory-status). With no saved choice it reads on, UniiChat at
-128 KB (§chat.memory/overseer), so a new Overseer's button shows the check. Each project overseer
+like any chat's (§chat.composer/memory-status). With no saved choice it reads on, UniiChat
+(§chat.memory/overseer), so a new Overseer's button shows the check. Each project overseer
 has the same button and popover for its own memory (§app.project-overseer/memory-switch).
 
 ## §app.overseer/head-layout — The head at every width

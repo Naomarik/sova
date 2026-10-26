@@ -2,7 +2,7 @@
   "name": "sova",
   "private": true,
   "license": "Apache-2.0",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "packageManager": "pnpm@12.6.0",
   "engines": {
@@ -22,7 +22,7 @@
     "e2e:transcript-jitter": "node scripts/e2e/transcript-jitter.mjs",
     "e2e:focus-view": "node scripts/e2e/focus-view.mjs",
     "scenario": "node scripts/sova-scenario.mjs",
-    "dev:hermetic": "node scripts/hermetic-agent-dir.mjs --unlock-url && PORT=${SOVA_PORT:-4810} SOVA_UPDATES_CHECK=${SOVA_UPDATES_CHECK:-off} PI_CODING_AGENT_DIR=\"$PWD/.agent\" scripts/start-server.sh",
+    "dev:hermetic": "node scripts/hermetic-agent-dir.mjs --unlock-url && PORT=${SOVA_PORT:-4810} SOVA_UPDATES_CHECK=${SOVA_UPDATES_CHECK:-off} SOVA_GIT_MAINTENANCE=${SOVA_GIT_MAINTENANCE:-off} PI_CODING_AGENT_DIR=\"$PWD/.agent\" scripts/start-server.sh",
     "dev:hermetic:node": "SOVA_RUNTIME=node pnpm run dev:hermetic",
     "prices:update": "tsx scripts/prices-update.mjs",
     "claude:catalog": "node scripts/claude-catalog.mjs",

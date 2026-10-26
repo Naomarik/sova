@@ -56,7 +56,7 @@ describe("the reader", () => {
     assert.ok(items);
     assert.deepEqual(items.map((i) => i.id).sort(), [a.id, b.id].sort());
     assert.equal(items.find((i) => i.id === a.id)?.note, "done, see commit");
-    assert.deepEqual(countsOf(items), { open: 1, urgent: 1, total: 2 });
+    assert.deepEqual(countsOf(items), { open: 1, urgent: 1, total: 2, closedByMember: 1, closedAutomatically: 0 });
     assert.equal(await readItems(itemsFileOf(mailbox, "team_01", "ag_09")), null, "no file, no inbox");
   });
 
@@ -90,7 +90,7 @@ describe("the reader", () => {
     assert.notEqual(statSync(file).ino, inoBefore, "a rewrite, not an append");
     const after = (await readItems(file))!;
     assert.deepEqual(after.map((i) => i.id).sort(), [...ids.slice(2)].sort(), "both open items and the newest 2 addressed");
-    assert.deepEqual(countsOf(after), { open: 2, urgent: 0, total: 4 });
+    assert.deepEqual(countsOf(after), { open: 2, urgent: 0, total: 4, closedByMember: 2, closedAutomatically: 0 });
   });
 
   test("the server never writes an inbox file", async () => {
@@ -119,6 +119,25 @@ describe("the reader", () => {
     assert.equal(inboxBody(items, "i_nope"), null);
   });
 
+  test("how each item was closed: a reply and an unmarked item count as the member, auto apart; only addressed items carry it", async () => {
+    const { mailbox } = session("closedby");
+    const store = new InboxStore(mailbox, { now: () => T0 });
+    const ids = ["done", "reply", "auto", "old", "open"].map((b) => store.add({ teamId: "team_01", from: lead, to: dev, kind: "message", body: b }).id);
+    const file = itemsFileOf(mailbox, "team_01", "ag_02");
+    // The status ops as the extension writes them (closedBy rides on `by`); an older line has none.
+    appendFileSync(file, jsonl(
+      { v: 1, op: "status", id: ids[0], status: "addressed", at: T0, by: "member" },
+      { v: 1, op: "status", id: ids[1], status: "addressed", at: T0, note: "answered in i_99", by: "reply" },
+      { v: 1, op: "status", id: ids[2], status: "addressed", at: T0, note: "closed automatically: seen, not closed by dev", by: "auto" },
+      { v: 1, op: "status", id: ids[3], status: "addressed", at: T0 },
+    ));
+    const items = (await readItems(file))!;
+    assert.deepEqual(countsOf(items), { open: 1, urgent: 0, total: 5, closedByMember: 3, closedAutomatically: 1 });
+    const view = inboxView("team_01", "ag_02", items);
+    const by = new Map(view.items.map((i) => [i.id, i.closedBy]));
+    assert.deepEqual([...ids].map((id) => by.get(id)), ["member", "reply", "auto", undefined, undefined]);
+  });
+
   test("ids are path segments, never a separator or a dot-dot; an unsaved session has no folder", () => {
     for (const ok of ["team_01", "ag_02", "i_2a"]) assert.ok(validSegment(ok), ok);
     for (const bad of ["", "..", "../x", "a/b", ".hidden", "x".repeat(65), undefined]) assert.ok(!validSegment(bad), String(bad));
@@ -138,7 +157,7 @@ describe("the session's insight and the route's reads", () => {
     store.returnItem(r.id, "dev stopped");
     const insight = await getSessionInsight(path);
     const members = new Map(insight.teams[0]!.members.map((m) => [m.workerId, m.inbox]));
-    assert.deepEqual(members.get("ag_02"), { open: 2, urgent: 1, total: 4 }, "an instruction copy and a returned item are not open");
+    assert.deepEqual(members.get("ag_02"), { open: 2, urgent: 1, total: 4, closedByMember: 0, closedAutomatically: 0 }, "an instruction copy and a returned item are not open");
     assert.equal(members.get("ag_01"), undefined, "no file, no counts");
     assert.ok(!("inbox" in insight.teams[0]!.members[0]!));
   });
@@ -153,7 +172,7 @@ describe("the session's insight and the route's reads", () => {
       teamId: "team_01",
       workerId: "ag_02",
       total: 1,
-      counts: { open: 1, urgent: 1, total: 1 },
+      counts: { open: 1, urgent: 1, total: 1, closedByMember: 0, closedAutomatically: 0 },
       items: [{ id: it.id, from: lead, kind: "question", subject: "Port?", urgent: true, status: "new", sentAt: T0 }],
     });
     const one = await getMemberInbox(path, "team_01", "ag_02", it.id);

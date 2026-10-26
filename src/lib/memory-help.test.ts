@@ -2,13 +2,13 @@
 // the engine's own, and the card opens on the saved default type.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MEMORY_SIZES, MEMORY_TYPE_INFO } from "../../shared/memory";
+import { MEMORY_TYPE_INFO } from "../../shared/memory";
 import { WAIT_MS } from "../../server/memory/engine";
 import { DEFAULT_SUMMARIZER } from "../../server/memory/settings";
 import { LIMIT } from "../../server/memory/tree";
 import { parseVis } from "../vis/parse";
 import { modelLabel } from "./format";
-import { HELP_DEFAULT_SUMMARIZER, HELP_LINE_CHARS, HELP_WAIT_SECONDS, initialHelpTab, MEMORY_HELP_SETTINGS, MEMORY_HELP_TABS } from "./memory-help";
+import { HELP_DEFAULT_SUMMARIZER, HELP_LINE_CHARS, HELP_WAIT_SECONDS, initialHelpTab, MEMORY_HELP_SETTINGS, MEMORY_HELP_TABS, SIZE_LINES, uniichatTokens } from "./memory-help";
 
 test("every drawing parses with no hard error and no warning", () => {
   for (const t of MEMORY_HELP_TABS) {
@@ -46,13 +46,23 @@ test("the figures it states are the engine's", () => {
   assert.match(all, new RegExp(`about ${HELP_LINE_CHARS} characters`));
   assert.match(all, /64–128 KB by default/);
   assert.match(all, /32 KB by default/);
-  assert.match(all, new RegExp(`\\(${MEMORY_SIZES[0]} to ${MEMORY_SIZES.at(-1)} KB\\)`));
+  assert.match(all, /Set on this page, one for each type/);
+  assert.match(all, /64–128 KB is about 16,000–32,000 tokens/, "the default size's cost, at about 4 bytes a token");
+  assert.ok(MEMORY_HELP_SETTINGS[0]!.text.includes(SIZE_LINES.zoomable) && MEMORY_HELP_SETTINGS[0]!.text.includes(SIZE_LINES.both), "Settings' own words");
   assert.match(all, new RegExp(`up to ${HELP_WAIT_SECONDS} seconds`));
+});
+
+test("a UniiChat size's cost follows the size picked, at about 4 bytes a token", () => {
+  assert.equal(uniichatTokens(128), "16,000–32,000");
+  assert.equal(uniichatTokens(16), "2,000–4,000");
+  assert.match(SIZE_LINES.uniichat(256), /\(128–256 KB is about 32,000–64,000 tokens\)/);
 });
 
 test("plain words: none of the engine's jargon", () => {
   const all = [...MEMORY_HELP_TABS.flatMap((t) => [...t.sentences, ...t.drawings.map((d) => d.body)]), ...MEMORY_HELP_SETTINGS.map((s) => `${s.term} ${s.text}`)].join(" ");
-  for (const word of ["rebase", "cache", "token", "prefix", "node"]) assert.doesNotMatch(all.toLowerCase(), new RegExp(`\\b${word}`), word);
+  for (const word of ["rebase", "cache", "prefix", "node"]) assert.doesNotMatch(all.toLowerCase(), new RegExp(`\\b${word}`), word);
+  // "tokens" only in Summary size's cost figure: Settings → Memory's agreed words, repeated here.
+  assert.doesNotMatch(all.replace(/is about [\d,]+–[\d,]+ tokens/g, "").toLowerCase(), /\btoken/, "token");
 });
 
 test("the card opens on the saved default type, else UniiChat", () => {

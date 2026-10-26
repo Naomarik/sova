@@ -202,7 +202,7 @@ for an earlier revision of the same alignment its one-line change row, at the ca
 call's own tool card renders nothing once this result is there. A failed `align` call stays an
 ordinary tool-call and tool-result.
 
-**tour.** A valid compact `record_tour` or `show_tour` projection (§app.tours/editions) renders its tour/progress card at the call's position and suppresses the paired result's duplicate row. It remains visible outside compressed thinking/tool groups. Hide tools also keeps every tour request, progress and failure row visible, even before a valid card projection exists, so waiting and cancellation never disappear into hidden work. Only a checked edition opens as a readable tour; malformed or failed results remain safe ordinary tool rows, never plausible finished tours.
+**tour.** A valid compact `record_tour` or `show_tour` projection (§app.tours/editions) renders its tour/progress card at the call's position when the call is its tour's newest successful tour call, and suppresses the paired result's duplicate row; an earlier call for the same tour is one tool line with what it reported then (§app.tours/one-card). It remains visible outside compressed thinking/tool groups. Hide tools also keeps every tour request, progress and failure row visible, even before a valid card projection exists, so waiting and cancellation never disappear into hidden work. Only a checked edition opens as a readable tour; malformed or failed results remain safe ordinary tool rows, never plausible finished tours.
 
 **offer.** An `offer` call that showed a card (§chat.offers/card) renders the card at the call's
 position, and the paired result draws nothing; Hide tools keeps it. A refused `offer` call stays an
@@ -492,10 +492,32 @@ extensions add under a reply comes after it, outside the strip, and never change
 ## §chat.transcript/a-queued-message — A queued message (§chat/composer, sending)
 
 A message of yours that hasn't been delivered says which state it is in, with a dot and the word:
-`Sending…` while nothing is known to hold it, `Queued` once the server says it does. Only a queued
-row carries an action — one `Remove this queued message` — and it is removed BY ITS ID, so a
-duplicate in the middle of three goes and its twins stay, and an images-only message is a row like
-any other. A delivered row never draws one: nothing can be recalled then. A queued row is not an
+`Sending…` while nothing is known to hold it, `Queued` once the server says it holds it, and
+`Sending…` again once the server has handed it to the agent, which takes it at its next step. Only
+a queued row carries an action — one `Remove this queued message` — and it is removed BY ITS ID, so
+a duplicate in the middle of three goes and its twins stay, and an images-only message is a row like
+any other. A row handed to the agent never draws one: it can no longer be taken back on its own, only
+by Stop, which takes every waiting message back to the composer, in order. A delivered row never
+draws one either: nothing can be recalled then. A `Sending…` row draws no Remove at all, not even a
+disabled one: before the server answers nothing holds it, and once handed over it can't be taken
+back on its own. A message the server holds behind a turn (a playbook's follow-up, a steer waiting
+behind one) turns `Queued` and gets its Remove when the server says so.
+
+**The live transcript keeps the session file's order at every moment.** A message waiting to be
+taken sits below everything the agent has done so far in the turn. When the agent takes it, its row
+moves to where it landed: after every step that ran before it, and before the steps after it. A step
+that ran before a steer is never drawn below that steer, so the live view, the view at the turn's
+end and the view after a reload read the same.
+
+**Messages sent while a reply runs land together.** Every steer waiting while a chat is busy (the
+composer's, and any other sender's, in every chat: main chats, workers, team members, the
+Overseer's) is handed to the agent at once, behind the steers it already holds, and the agent takes
+all of them at its next step: each its own message with its own images, in the order sent, and one
+reply after them answers them all. Their rows turn into sent messages at the same moment. Follow-ups
+(worker reports, wake-ups, a parent's follow-up instructions, a playbook) still go in one at a time,
+each when the one before it has been taken, and order holds across the two: a steer sent after a
+follow-up waits for that follow-up. A steer handed over in the instant the agent is already taking
+the ones before it can land at the step after them instead; nothing is lost or reordered. A queued row is not an
 `.entry`, so it wraps itself in a `display: contents` host that gives its Remove the same hover
 and tap region every other strip has.
 
@@ -530,7 +552,9 @@ dropped): the row goes, its text never reaches the composer, and its card's butt
 the note "Your click didn't reach the Overseer. Click again." (§app.overseer/confirm).
 
 A removal the server refuses because the agent already took the message says "Already sent. It
-can't be removed now.", and the row becomes the delivered message it turned out to be.
+can't be removed now.", and the row becomes the delivered message it turned out to be. One that
+reaches the server after the message was handed over is refused with "It's already with the agent,
+which takes it at its next step. Stop takes it back."
 
 ## §chat.transcript/streaming — Streaming (chat sessions)
 
@@ -583,16 +607,13 @@ Driven by `ChatServerMessage.event`. Streaming working blocks follow the same br
   renders whenever any of the three has something to show,
   so an idle session with messages still has one. The subagents trigger follows the same two forms
   (words wide, its ring and a count narrow, §app/subagents-pane). The triggers never shrink, so none
-  runs its words into the next. The alignment chip doesn't either, except in the narrow form once
-  nothing else can give: its count then ends in an ellipsis ("1 align · 0/8…"), its full text still
-  its accessible name. At 344px that is every state with the subagents trigger and the inputs
-  trigger beside it; at 390px only a rare state's.
+  runs its words into the next. Open alignments and option cards are not in this row: they are the
+  waiting badge inside the message box (§chat.composer/waiting-badge).
   **Nothing moves.** The row is 20px tall whatever it carries (the triggers' net height) with its
   own 16px bottom margin, so the textarea and the composer keep their place between idle and
   working and as the step changes. The row's gap and each trigger's inline padding are 8px in the
   wide form; in the narrow one they are 6px and a trigger's parts sit 4px apart, so a working row
-  with the subagents trigger, the alignment chip and the inputs trigger stays on one line inside
-  the composer at 344px.
+  with the subagents trigger and the inputs trigger stays on one line inside the composer at 344px.
 - **End of turn** (`agent_settled`, or `agent_end` if that's all you get). Remove the live dots
   and the run status; the row's one dot stays while a subagent still works. Replace the optimistic items with the server's canonical ones if it sends
   them. Announce "Reply finished." in the polite live region; announce nothing per delta.
@@ -828,7 +849,7 @@ virtualized.
   and text selection reach every row built so far: the newest 400 or so, and every row the
   reader has scrolled up to or a jump has built. A row held but not built, or not fetched, is not
   in the page, so the browser's own find does not reach it; the Timeline, the outline's Jump to
-  Message, Open in Session, the card chip and a card reference still reach every row on the
+  Message, Open in Session, the waiting dialog's Show in Chat and a card reference still reach every row on the
   branch, since each jump builds (and if need be fetches) its target first (below). A row off
   screen is skipped by layout and paint
   (`content-visibility: auto`), at a height estimated from its kind, its text and its images
@@ -862,7 +883,7 @@ virtualized.
   the rows they don't carry: the ids of their inputs and, apart, of those the user typed, how many messages they hold, whether
   any is a reply, and the alignments still open among them (each one's newest revision there,
   and its row); so does each fetch, of the rows above what it returns. The inputs count, Fan
-  Out's "up to message {n}", Undo last turn and the composer's alignment chip
+  Out's "up to message {n}", Undo last turn and the composer's waiting badge
   (§chat.alignment/chip) count the rows held plus those, so they're right from the first `hello`
   on, with no older row fetched. A newer revision among the rows held, or live, takes an
   alignment's place: one done or dropped there is no longer open.
@@ -1556,6 +1577,7 @@ heading is `Repository`, with no count and no total.
       <span class="setup-subject" title="spec: the three commits' claims, promoted from their draft">spec: the three commits' claims, promoted from their draft</span>
       <span class="setup-ago">2h ago</span></li>
   </ul>
+  <p class="setup-git setup-gitdir">…folder icon… <span>Git folder</span> <span class="setup-num">25 GB</span></p>   <!-- /setup-card-git-folder -->
   <p class="setup-note">…at most one note, when there is one…</p>
 </div>
 ```
@@ -1578,6 +1600,8 @@ heading is `Repository`, with no count and no total.
 - **Commits.** Up to three rows, newest first (/setup-card-figures). An unborn repository shows
   none and no line in their place, since the head already says "no commits yet". Any other
   repository with none to show gets "The last commits couldn't be read." in their place.
+- **The git folder.** After the commits, the git folder's size and, when its cleanup looks stuck
+  or overdue, a warning (/setup-card-git-folder).
 - **A cut status.** When git status's output hit its size cap, every count is a lower bound. The
   changes line reads `At least {tallies}`, or `Not fully read` when nothing was tallied, and
   never `Clean`. The note says "Git status was cut short, so these counts are lower bounds."
@@ -1631,6 +1655,38 @@ repository around the folder. Two of its figures:
   figure that isn't there is dropped rather than zeroed: a row the server sent no estimate for shows
   no figure at all (never its size, never `≈0 tokens` for a file nobody counted), and a total
   without estimates keeps bytes and lines.
+
+## §chat.transcript/setup-card-git-folder — Setup card: the git folder's size, and when its cleanup is stuck
+
+Right after the commits (or the line standing in their place), the Repository group of a new
+session's setup card has one more row: how big the repository's git folder is, and a short warning
+when git's cleanup looks stuck or hasn't run for a long time (§app/git-cleanup). Only the setup
+card shows it; the session pane's Repository section doesn't.
+
+```html
+<p class="setup-git setup-gitdir" title="~/webapps/sova/.git">…folder icon… <span>Git folder</span> <span class="setup-num">25 GB</span></p>
+<p class="setup-git setup-gitdir-warn">…alert icon… <span>Git's cleanup looks stuck: multi-pack-index.lock was left 3d ago.</span></p>   <!-- only with a warning -->
+```
+
+- **The size.** Every file in the repository's git folder, the one a linked worktree shares with
+  its main checkout, each file's size summed, never by running `du`. The words are `Git folder
+  {size}`, the size in binary units with one decimal under 10 (`812 B`, `4.2 MB`, `25 GB`), and
+  the row's title is the folder (`~/…` here). A count that stopped at its limit of 50,000 entries
+  reads `Git folder at least {size}`. The server reads it with the rest of the group and reuses it
+  for 5 minutes per git folder, so a big repository is not walked on every card. A session on a
+  target, or a folder the server couldn't read, shows no row.
+- **Stuck.** When one of git's cleanup locks in that folder (`objects/maintenance.lock`, `gc.pid`,
+  `objects/pack/multi-pack-index.lock`, `objects/info/commit-graphs/commit-graph-chain.lock`) is
+  more than 1 hour old, a
+  second row reads "Git's cleanup looks stuck: {lock name} was left {age}.", the age in the app's
+  relative words ("2h ago", "3d ago", "Mar 4"). Its title is the lock's full path and "If no git
+  command is running, deleting it lets cleanup finish."
+- **Overdue.** Otherwise, when the folder holds more than 50 pack files, or more than 6,700 loose
+  objects (git's own `gc.auto` default), the row reads "Git hasn't cleaned up here in a while:
+  {n} pack files.", "…: {n} loose objects.", or with both "…: {n} pack files and {n} loose
+  objects." (digits with thousands commas).
+- At most one warning, stuck first. It is drawn in warn ink with the alert icon, and its words
+  carry it alone.
 
 ## §chat.transcript/setup-card-toggles — Setup card: switching context files and skills off
 

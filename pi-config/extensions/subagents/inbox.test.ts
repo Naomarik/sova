@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { InboxStore, MAIN_THREAD, SOVA, foldItemsFile, foldItemsText, isOpen, itemsFile, readMemberItems, readTeamInboxes, subjectOf } from "./inbox.ts";
+import { InboxStore, MAIN_THREAD, SOVA, closedByOf, foldItemsFile, foldItemsText, isOpen, itemsFile, readMemberItems, readTeamInboxes, subjectOf } from "./inbox.ts";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-inbox-"));
 const dev = { role: "dev", workerId: "ag_02" };
@@ -128,5 +128,79 @@ test("compaction keeps every open item and the newest addressed ones, and never 
 		tiny.compact("ag_02");
 		assert.deepEqual(readMemberItems(path.join(root, "team_01", "ag_02")).map((i) => i.body), ["keep me"]);
 		assert.equal(new InboxStore(root).add({ teamId: "team_01", from: lead, to: dev, kind: "message", body: "next" }).id, `i_${(parseInt(before.id.slice(2), 36) + 1).toString(36)}`);
+	} finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// ── Inbox zero (§app.teams/inbox-zero) ──────────
+
+test("closedBy: written on the status op, folded from disk, kept by compaction; an old addressed line reads as closed by the member", () => {
+	const root = tmp();
+	try {
+		const s = new InboxStore(root, { keepClosed: 10 });
+		const a = s.add({ teamId: "team_01", from: lead, to: dev, kind: "message", body: "one" });
+		const b = s.add({ teamId: "team_01", from: lead, to: dev, kind: "message", body: "two" });
+		const c = s.add({ teamId: "team_01", from: lead, to: dev, kind: "message", body: "three" });
+		s.setStatus("ag_02", [a.id], "addressed", "merged");
+		s.setStatus("ag_02", [b.id], "addressed", "answered in i_9", "reply");
+		s.markSeen("ag_02", [c.id], { task: 0 });
+		assert.deepEqual(s.closeSeen("ag_02", 0).map((i) => i.id), [c.id]);
+		const fold = () => readMemberItems(path.join(root, "team_01", "ag_02")).map((i) => [i.id, i.status, i.closedBy, closedByOf(i)]);
+		const want = [[a.id, "addressed", "member", "member"], [b.id, "addressed", "reply", "reply"], [c.id, "addressed", "auto", "auto"]];
+		assert.deepEqual(fold(), want);
+		s.compact("ag_02");
+		assert.deepEqual(fold(), want, "compaction rewrites items as add ops and keeps closedBy");
+		assert.deepEqual(new InboxStore(root).list("ag_02").map((i) => i.closedBy), ["member", "reply", "auto"]);
+		const old = foldItemsText(`${JSON.stringify({ v: 1, op: "add", item: { ...a, status: "new" } })}\n${JSON.stringify({ v: 1, op: "status", id: a.id, status: "addressed", at: 5 })}\n`).get(a.id)!;
+		assert.equal(old.closedBy, undefined);
+		assert.equal(closedByOf(old), "member", "older lines: Addressed, closed by the member");
+		assert.deepEqual(s.closedCounts("team_01"), { member: 1, reply: 1, auto: 1, byWorker: new Map([["ag_02", { member: 1, reply: 1, auto: 1 }]]) });
+	} finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test("closeSeen: only seen, open, non-question items with a turn record, seen in a task that has ended", () => {
+	const root = tmp();
+	try {
+		const s = new InboxStore(root);
+		const mk = (kind: "message" | "question" | "report" | "notice" = "message") => s.add({ teamId: "team_01", from: lead, to: dev, kind, body: kind }).id;
+		const seen0 = mk(), report0 = mk("report"), notice0 = mk("notice"), question0 = mk("question"), unseen = mk(), seen1 = mk(), pending = mk(), returned = mk();
+		s.markSeen("ag_02", [seen0, report0, notice0, question0, returned], { task: 0 });
+		s.markSeen("ag_02", [seen1], { task: 1 });
+		s.markSeen("ag_02", [pending], { steer: 7 });
+		s.returnItem(returned, "not addressed: stopped");
+		const resolver = (no: number) => (no === 7 ? undefined : 0);
+		assert.deepEqual(s.closeSeen("ag_02", 0, resolver).map((i) => i.id), [seen0, report0, notice0]);
+		const st = (id: string) => s.get(id)!.status;
+		assert.deepEqual([st(question0), st(unseen), st(seen1), st(pending)], ["read", "new", "read", "read"], "never a question, an unseen item, a later task, a wake whose run has not begun");
+		assert.equal(s.get(returned)!.closedBy, undefined, "a returned item is not open: never closed");
+		// The steer's run began in task 1: it closes when task 1 ends.
+		assert.deepEqual(s.closeSeen("ag_02", 1, () => 1).map((i) => i.id), [seen1, pending]);
+		// Read before this change: no turn record, never closed automatically, even at the member's end.
+		const pre = s.add({ teamId: "team_01", from: lead, to: dev, kind: "message", body: "old" }).id;
+		s.setStatus("ag_02", [pre], "read");
+		assert.deepEqual(s.closeSeen("ag_02", 99), []);
+		assert.deepEqual(s.closeSeen("ag_02", "all"), []);
+		assert.ok(s.stillOpen("ag_02").some((i) => i.id === pre), "it is named in Still open instead");
+		assert.equal(s.stillOpen("ag_02")[0].id, question0, "questions first");
+		// Opened again now, it gets its record.
+		s.markSeen("ag_02", [pre], { task: 5 });
+		assert.deepEqual(s.closeSeen("ag_02", 5).map((i) => i.id), [pre]);
+		// After a reload, an item seen with a record (from before it) closes at the next settle.
+		const later = s.add({ teamId: "team_01", from: lead, to: dev, kind: "message", body: "later" }).id;
+		s.markSeen("ag_02", [later], { task: 40 });
+		const again = new InboxStore(root);
+		assert.equal(again.get(later)!.readTurn, 40);
+		assert.deepEqual(again.closeSeen("ag_02", 0).map((i) => i.id), [later]);
+	} finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test("a moved item loses its turn record (its new holder has seen nothing)", () => {
+	const root = tmp();
+	try {
+		const s = new InboxStore(root);
+		const a = s.add({ teamId: "team_01", from: lead, to: dev, kind: "message", body: "one" }).id;
+		s.markSeen("ag_02", [a], { task: 0 });
+		const moved = s.move(a, dev2, "handover")!;
+		assert.deepEqual([moved.status, moved.readTurn], ["new", undefined]);
+		assert.deepEqual(s.closeSeen("ag_05", 9), []);
 	} finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

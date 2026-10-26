@@ -24,6 +24,7 @@ import { ChatWorker } from "./chat-worker.ts";
 import type { WorkerHost } from "./worker-host.ts";
 import { MEMBER_ENV, awaitResponse, decodeMemberContext, memberPaths, memberToolNames, readInbox, requestId, writeRequest, type MailboxRequest } from "./mailbox.ts";
 import { readMemberItems, writeInboxCaps, type InboxItem } from "./inbox.ts";
+import { WAKE_FOOTER } from "./delivery.ts";
 
 import { BACKEND_DIALOG_EVENT, BACKEND_REGISTER_EVENT, BACKEND_DISCOVER_EVENT, registerBackend, type BackendRegistration } from "./contracts.ts";
 
@@ -2449,11 +2450,11 @@ async function waitFor(pred: () => unknown, what: string, ms = 2000): Promise<vo
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** One member's inbox as [id, kind, from role, status] rows. */
 const itemRows = (dir: string) => readMemberItems(dir).map((i) => [i.id, i.kind, i.from.role, i.status]);
-const INBOX_FOOT = "(Items shown in full above count as read. Answer an item with team_msg and replyTo set to its id.)";
+const INBOX_FOOT = WAKE_FOOTER;
 
-function teamHarness() {
+function teamHarness(extra: SubagentsOptions = {}) {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-index-mailbox-"));
-	const h = harness(eventBus(), { mailboxRoot: root, mailboxPollMs: 10, inboxDebounceMs: 30, inboxRetryMs: [30, 60] });
+	const h = harness(eventBus(), { mailboxRoot: root, mailboxPollMs: 10, inboxDebounceMs: 30, inboxRetryMs: [30, 60], ...extra });
 	/** Identity of any worker: pi members carry it in env, Claude members in their MCP server's env. */
 	const memberOf = (id: string, claude: any[] = []) => {
 		const w = [...h.workers, ...claude].find((w: any) => w.id === id);
@@ -2581,10 +2582,11 @@ test("member messages are queued as inbox items: answered at once, listed when a
 			"[Team inbox: 2 new — team_inbox open <ids> to read, done <ids> to mark addressed]",
 			"- i_2 message from lead — Document the API",
 			"- i_3 message from lead — Docs",
-			"    Second",
-			"    line",
+			"[Open your inbox first: team_inbox open i_2 i_3 — other tools are refused until you open one]",
 			INBOX_FOOT,
-		].join("\n"));
+		].join("\n"), "two items: subjects only (a member must open an item to see it); the wake starts its turn, so it is gated");
+		assert.deepEqual(itemRows(writerDir).map((r) => r[3]), ["new", "new"], "listed is not opened");
+
 		await pause(60);
 		assert.equal(writerWorker.steerCount, 1, "one wake for the gathered items");
 		// The Claude member answers through the same mailbox: sender identity comes from its directory.
@@ -3718,8 +3720,10 @@ test("the monitor: roster with context, thresholds and usage; notices recorded; 
 			assert.equal(s.ok, true, `fire ${i}`);
 			h.timers.at(-1)!.fn();
 		}
-		await waitFor(() => monitor.lastSteer?.message.includes("Wake limit"), "the 30th fire listed");
-		assert.match(monitor.lastSteer.message, /Wake limit \(30 fires with no teammate working\) reached: do not schedule more nudges/);
+		// Many fires wait at once: listed by subject (opened with team_inbox), every one in turn.
+		await waitFor(() => readMemberItems(h.memberOf("ag_03")!.dir).some((i) => i.body.includes("Wake limit") && i.listedAt !== undefined), "the 30th fire listed");
+		assert.match(readMemberItems(h.memberOf("ag_03")!.dir).find((i) => i.body.includes("Wake limit"))!.body, /Wake limit \(30 fires with no teammate working\) reached: do not schedule more nudges/);
+
 		assert.match((await h.ask("ag_03", { type: "nudge", nudge: { action: "schedule", delay: "10m" } })).text, /Wake limit/);
 		dev.status = "running";
 		assert.equal((await h.ask("ag_03", { type: "nudge", nudge: { action: "schedule", delay: "10m" } })).ok, true, "a working teammate resets the count");
@@ -4974,19 +4978,19 @@ test("team_inbox is served by the parent, the inbox's only writer: list, open, d
 		assert.equal(list.ok, true);
 		assert.match(list.text, /^2 open items:\n- i_1 \[new\] message from lead — Task 1 \(\d\d:\d\d:\d\d\)\n- i_2 \[new\] message from lead — FYI \(\d\d:\d\d:\d\d\)\nteam_inbox open <ids>/);
 		const opened = await h.ask("ag_02", { type: "inbox", action: "open", ids: ["i_1"] });
-		assert.match(opened.text, /^i_1 message from lead \(ag_01\) · [^\n]+ · read\nSubject: Task 1\nWrite the parser\.$/);
+		assert.match(opened.text, /^i_1 message from lead \(ag_01\) · [^\n]+ · read\nSubject: Task 1\nWrite the parser\.\n\n\(2 open left\)$/, "open ends with the count of open items left");
 		// The race: dev marks both addressed while lead's next message is being delivered, in the same poll.
 		const doneId = requestId(), msgId = requestId();
 		writeRequest(devDir, { version: 1, id: doneId, at: Date.now(), type: "inbox", action: "done", ids: ["i_1", "i_2"], note: "handled" });
 		writeRequest(leadDir, { version: 1, id: msgId, at: Date.now(), type: "message", to: "dev", message: "A new task" });
 		const [done, sent] = await Promise.all([awaitResponse(devDir, doneId, 3000, undefined, 5), awaitResponse(leadDir, msgId, 3000, undefined, 5)]);
-		assert.equal(done!.text, "Marked addressed: i_1, i_2 (note: handled).");
+		assert.match(done!.text, /^Marked addressed: i_1, i_2 \(note: handled\)\. [01] open left\.$/);
 		assert.equal(sent!.text, "Queued for dev (ag_02): item i_3");
 		assert.deepEqual(readMemberItems(devDir).map((i) => [i.id, i.status, i.note ?? ""]), [["i_1", "addressed", "handled"], ["i_2", "addressed", "handled"], ["i_3", "new", ""]], "the new item is kept");
 		// The sender looks up status and note; it is never woken for it.
 		const steersBefore = h.workers[0].steerCount;
 		const lookup = await h.ask("ag_01", { type: "inbox", action: "sent" });
-		assert.match(lookup.text, /^Items you sent \(newest last\):\ni_1 → dev \(ag_02\) \[addressed\] message: Task 1 · note: handled\ni_2 → dev \(ag_02\) \[addressed\] message: FYI · note: handled\ni_3 → dev \(ag_02\) \[new\] message: A new task$/);
+		assert.match(lookup.text, /^Items you sent \(newest last\):\ni_1 → dev \(ag_02\) \[closed by dev\] message: Task 1 · note: handled\ni_2 → dev \(ag_02\) \[closed by dev\] message: FYI · note: handled\ni_3 → dev \(ag_02\) \[new\] message: A new task$/);
 		await pause(50);
 		assert.equal(h.workers[0].steerCount, steersBefore);
 		// Marks only what the member holds.
@@ -5034,7 +5038,8 @@ test("a question moved to a successor keeps its id and sender; the successor's r
 		const answer = await h.ask("ag_05", { type: "message", to: "dev", message: "Use v2.", replyTo: qid });
 		assert.equal(answer.ok, true, answer.text);
 		const lookup = await h.ask("ag_02", { type: "inbox", action: "sent" });
-		assert.match(lookup.text, new RegExp(`${qid} → coordinator-2 \\(ag_05\\) \\[addressed\\] question: Which schema\\? · note: answered in i_\\w+`));
+		assert.match(lookup.text, new RegExp(`${qid} → coordinator-2 \\(ag_05\\) \\[answered in i_\\w+\\] question: Which schema\\?$`, "m"));
+
 		assert.deepEqual(readMemberItems(nextDir).find((i) => i.id === ownId), ownBefore, "its other items are unchanged");
 		// A message to the retired coordinator now reaches its successor, and the sender is told.
 		await waitFor(() => coordinator.status === "killed", "the old coordinator retired");
@@ -5182,6 +5187,8 @@ test("inbox lifecycle: at retirement the old member's open items move to its suc
 		const devDir = h.memberOf("ag_02")!.dir;
 		const sent = await h.ask("ag_03", { type: "message", to: "dev", message: "Found a bug in parse()" });
 		const id = /item (i_\w+)/.exec(sent.text)![1];
+		// A second item, so the wake at dev's turn end lists both by subject (a lone item would show in full, opened).
+		const other = /item (i_\w+)/.exec((await h.ask("ag_03", { type: "message", to: "dev", message: "And the lexer" })).text)![1];
 		await h.ask("ag_01", { type: "succeed", to: "dev" });
 		h.writeNote("dev");
 		dev.status = "running";
@@ -5197,7 +5204,8 @@ test("inbox lifecycle: at retirement the old member's open items move to its suc
 		const moved = readMemberItems(h.memberOf("ag_05")!.dir).find((i) => i.id === id)!;
 		assert.deepEqual([moved.from, moved.to, moved.movedFrom?.map((m) => [m.workerId, m.role, m.why])], [{ role: "qa", workerId: "ag_03" }, { role: "dev-2", workerId: "ag_05" }, [["ag_02", "dev", "handover"]]]);
 		assert.ok(!readMemberItems(devDir).some((i) => i.id === id), "gone from dev's inbox");
-		assert.equal(moved.status, "new", "new to its new holder, though dev had read it");
+		assert.equal(moved.status, "new", "new to its new holder");
+		assert.ok(readMemberItems(h.memberOf("ag_05")!.dir).some((i) => i.id === other), "both listed-but-unopened items moved");
 		successor.settle(); // busy on its first task: a normal item is listed when that turn ends
 		await waitFor(() => (successor.steered ?? []).some((s: any) => s.message.includes(`${id} message from qa (sent to dev) — Found a bug in parse()`)), "listed to dev-2");
 		await waitFor(() => dev.status === "killed", "dev retired");
@@ -5241,4 +5249,413 @@ test("a message to a member that ended while its successor is still to start is 
 			}
 		} finally { await h.cleanup(); }
 	}
+});
+
+// ── Inbox zero at every end (§app.teams/inbox "Moving and returning", §app.teams/inbox-zero) ──
+
+test("inbox zero: a member stopped with an opened item gets no not-addressed notice for it; it closes automatically, the question and the unopened item go back", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const qa = h.worker("ag_03");
+		const idOf = (r: { text: string }) => /item (i_\w+)/.exec(r.text)![1];
+		const news = idOf(await h.ask("ag_02", { type: "message", to: "qa", message: "FYI: the schema moved" }));
+		const question = idOf(await h.ask("ag_02", { type: "message", to: "qa", message: "Which port?", needsReply: true }));
+		const unopened = idOf(await h.ask("ag_02", { type: "message", to: "qa", message: "Later: the docs" }));
+		// qa opens the news and the question in its running turn, closes neither, and is stopped.
+		assert.equal((await h.ask("ag_03", { type: "inbox", action: "open", ids: [news, question] })).ok, true);
+		qa.exit();
+		const back = await assertItem(h, "ag_02", "notice", /^\[Not addressed: 2 item\(s\) returned from qa \(ag_03\)/);
+		assert.doesNotMatch(back.body, new RegExp(`${news}\\b`), "handled news is never returned as not addressed");
+		assert.match(back.body, new RegExp(`${question} question`));
+		assert.match(back.body, new RegExp(`${unopened} message`));
+		const items = readMemberItems(h.memberOf("ag_03")!.dir);
+		const closed = items.find((i) => i.id === news)!;
+		assert.deepEqual([closed.status, closed.closedBy, closed.note, closed.returned], ["addressed", "auto", "closed automatically: seen, not closed by qa", undefined]);
+		assert.ok(items.find((i) => i.id === question)?.returned, "an unanswered question always goes back");
+		assert.ok(items.find((i) => i.id === unopened)?.returned, "an unopened item is never closed for it");
+	} finally { await h.cleanup(); }
+});
+
+test("inbox zero: at retirement an item the old member opened closes automatically and never reaches the successor; an unopened one moves", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const dev = h.worker("ag_02");
+		const devDir = h.memberOf("ag_02")!.dir;
+		const idOf = (r: { text: string }) => /item (i_\w+)/.exec(r.text)![1];
+		// Three items: the wake at dev's turn end lists them by subject (none opened); dev opens one in that turn.
+		const seen = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "FYI: CI is green" }));
+		const unseen = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "Found a bug in parse()" }));
+		const unseen2 = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "And the lexer" }));
+		await h.ask("ag_01", { type: "succeed", to: "dev" });
+		h.writeNote("dev");
+		dev.status = "running";
+		dev.settle();
+		await waitFor(() => h.worker("ag_05"), "dev-2 started");
+		const successor = h.worker("ag_05");
+		await h.ask("ag_02", { type: "inbox", action: "open", ids: [seen] });
+		assert.equal((await h.ask("ag_05", { type: "ready" })).ok, true);
+		dev.settle();
+		await waitFor(() => readMemberItems(h.memberOf("ag_05")!.dir).some((i) => i.id === unseen), "the unopened item moved to dev-2");
+		assert.ok(readMemberItems(h.memberOf("ag_05")!.dir).some((i) => i.id === unseen2));
+		assert.ok(!readMemberItems(h.memberOf("ag_05")!.dir).some((i) => i.id === seen), "handled news never moves to the successor");
+		const closed = readMemberItems(devDir).find((i) => i.id === seen)!;
+		assert.deepEqual([closed.status, closed.closedBy], ["addressed", "auto"]);
+		successor.settle();
+		await waitFor(() => (successor.steered ?? []).some((s: any) => s.message.includes(unseen)), "listed to dev-2");
+		assert.ok(!(successor.steered ?? []).some((s: any) => s.message.includes(seen)), "never listed to dev-2");
+		assert.ok(!readMemberItems(h.memberOf("ag_03")!.dir).some((i) => /Not addressed/.test(i.body)));
+	} finally { await h.cleanup(); }
+});
+
+test("inbox zero: a report names what its member left open after the safety net; nothing open, no line", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const dev = h.worker("ag_02"), qa = h.worker("ag_03");
+		const idOf = (r: { text: string }) => /item (i_\w+)/.exec(r.text)![1];
+		const news = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "FYI: CI is green" }));
+		const question = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "Which port?", needsReply: true }));
+		const unopened = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "Later: docs" }));
+		await h.ask("ag_02", { type: "inbox", action: "open", ids: [news, question] });
+		dev.output = "built it";
+		dev.settle();
+		const report = await assertItem(h, "ag_01", "report", /Team report from dev/);
+		assert.ok(report.body.endsWith(`[Left open: ${question} question from qa (opened); ${unopened} message from qa (unopened)]`), report.body);
+		assert.doesNotMatch(report.body, new RegExp(`${news}\\b`), "the news closed at the turn's end, before the report");
+		qa.output = "tested";
+		qa.settle();
+		const second = await assertItem(h, "ag_01", "report", /Team report from qa/);
+		assert.doesNotMatch(second.body, /Left open/);
+	} finally { await h.cleanup(); }
+});
+
+test("inbox zero: the roster shows each member's unanswered question and its wait, and one team line split by who closed", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const idOf = (r: { text: string }) => /item (i_\w+)/.exec(r.text)![1];
+		await h.ask("ag_03", { type: "message", to: "dev", message: "Which port?", needsReply: true });
+		const fyi = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "FYI" }));
+		const other = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "Another" }));
+		await h.ask("ag_02", { type: "inbox", action: "done", ids: [fyi] });
+		const roster = (await h.ask("ag_01", { type: "roster" })).text;
+		assert.match(roster, /ag_02 dev \[pi, has team tools\] working \(running\) · context — · 2 open items \(1 question unanswered under 1 min\) · owns/);
+		assert.match(roster, /\nInbox: \d+ open · closed by members 1 · automatically 0$/);
+		assert.match((await h.call("team_list")).content[0].text, /\n {2}Inbox: \d+ open · closed by members 1 · automatically 0(\n|$)/);
+		assert.ok(other);
+	} finally { await h.cleanup(); }
+});
+
+// ── Inbox zero: the safety net at a member's settle, both measurement settings (§app.teams/inbox-zero) ──
+
+test("inbox zero: a seen item the member did not close closes automatically when its turn ends; a reply closes any item; needsReply is a question that waits", async () => {
+	const h = teamHarness();
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "lead", prompt: "coordinate", orchestrator: true }, { role: "dev", prompt: "build" }] });
+		const dev = h.workers.find((w: any) => w.id === "ag_02");
+		const devDir = h.memberOf("ag_02")!.dir;
+		const idOf = (r: { text: string }) => /item (i_\w+)/.exec(r.text)![1];
+		const fyi = idOf(await h.ask("ag_01", { type: "message", to: "dev", message: "FYI: CI is green" }));
+		const ask = idOf(await h.ask("ag_01", { type: "message", to: "dev", message: "Ping me when the parser builds" }));
+		const q = idOf(await h.ask("ag_01", { type: "message", to: "dev", message: "Which port?", needsReply: true }));
+		const item = (id: string) => readMemberItems(devDir).find((i) => i.id === id)!;
+		assert.equal(item(q).kind, "question", "needsReply makes it a question");
+		await h.ask("ag_02", { type: "inbox", action: "open", ids: [fyi] });
+		// dev's first turn ends without closing it.
+		dev.settle();
+		await waitFor(() => dev.steerCount === 1, "the wake for what still waits");
+		const wake = dev.lastSteer.message;
+		assert.match(wake, new RegExp(`^\\[Team inbox: 2 new — [^\\n]*\\]\\n- ${ask} message from lead — Ping me when the parser builds\\n- ${q} question from lead — Which port\\?\\n`), "subjects only");
+		assert.match(wake, new RegExp(`\\[Open your inbox first: team_inbox open ${ask} ${q} `), "an idle member's turn starts with the gate");
+		assert.deepEqual([item(fyi).status, item(fyi).closedBy, item(fyi).note], ["addressed", "auto", "closed automatically: seen, not closed by dev"]);
+		assert.doesNotMatch(wake, /Still open/);
+		// The member works its next turn: it opens both, answers one with replyTo, leaves the question.
+		await h.ask("ag_02", { type: "inbox", action: "open", ids: [ask, q] });
+		const reply = await h.ask("ag_02", { type: "message", to: "lead", message: "It builds.", replyTo: ask });
+		assert.equal(reply.ok, true, reply.text);
+		assert.deepEqual([item(ask).status, item(ask).closedBy], ["addressed", "reply"], "a reply closes any item, not only a question");
+		assert.match(item(ask).note!, /^answered in i_\w+$/);
+		dev.settle();
+		await pause(60);
+		assert.deepEqual([item(fyi).status, item(fyi).closedBy], ["addressed", "auto"], "still closed");
+		assert.equal(item(q).status, "read", "a question is never closed automatically");
+		const sent = (await h.ask("ag_01", { type: "inbox", action: "sent" })).text;
+		assert.match(sent, new RegExp(`${fyi} → dev \\(ag_02\\) \\[closed automatically\\] message: FYI: CI is green$`, "m"));
+		assert.match(sent, new RegExp(`${ask} → dev \\(ag_02\\) \\[answered in i_\\w+\\] message: `));
+		assert.match(sent, new RegExp(`${q} → dev \\(ag_02\\) \\[read\\] question: Which port\\?$`, "m"));
+	} finally { await h.cleanup(); }
+});
+
+// ── Runtime fallback of standing roles (§teams.defaults/runtime-fallback) ─────────────────────
+/** The real Ollama error a monitor whose monthly quota ran out ends every turn with. */
+const OLLAMA_MONTHLY = '429: {"message":"you (alex) have reached your monthly usage limit, add usage credits: …"}';
+/** The text a Claude Code member's turn ends with once the bridge has tried every Claude login (the CLI's own synthetic message, claude-code/tests/fixtures/failures/limit-rejected.ndjson; session-bridge.ts fail()). */
+const CLAUDE_ALL_LOGINS_OUT = "You've hit your limit · resets 3pm";
+/** A plain rate limit: retried where it happens, never a switch. */
+const PLAIN_429 = '429: {"code":"1302","message":"Rate limit reached for requests"}';
+const MONITOR_PRIMARY = { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" };
+const FALLBACK_FILE = {
+	...DEFAULTS_FILE,
+	coordinator: { ...DEFAULTS_FILE.coordinator, fallback: { backend: "pi", model: "test/model", effort: "high" } },
+	monitor: { ...DEFAULTS_FILE.monitor, primary: MONITOR_PRIMARY, fallback: { backend: "claude-code", model: "claude-sonnet-5-5", effort: "low" } },
+};
+/** A coordinated harness whose registry also knows the Ollama model the monitor's primary names. */
+function fallbackHarness(file: unknown = FALLBACK_FILE) {
+	const h = coordinatedHarness(file);
+	h.ctx.modelRegistry.find = (p: string, m: string) => ((p === "test" && m === "model") || (p === "ollama-cloud" && m === "deepseek-v4.1-flash") ? { provider: p, id: m } : undefined);
+	return h;
+}
+/** One failed turn, as the fold settles it: parked in `waiting`, task outcome "error", the provider's errorMessage as the error. */
+const failTurn = (w: any, error: string) => {
+	w.status = "running";
+	w.taskOutcome = "error";
+	w.settle(error);
+};
+const okTurn = (w: any) => {
+	w.status = "running";
+	w.taskOutcome = "success";
+	w.output = "checked";
+	w.settle();
+};
+const itemsOf = (h: { memberOf(id: string): { dir: string } | undefined }, id: string, kind?: string) => readMemberItems(h.memberOf(id)!.dir).filter((i) => !kind || i.kind === kind);
+const teamOps = (h: { appended: any[] }) => h.appended.filter((e) => e.customType === "subagents-team-v1").map((e) => e.data.op);
+const deadEntries = (h: { appended: any[] }) => h.appended.filter((e) => e.customType === "subagents-dead-tuple-v1").map((e) => e.data);
+
+test("runtime fallback: a monitor out of its monthly Ollama usage moves to its fallback once, its seat freed first; the coordinator gets one item", async () => {
+	const h = fallbackHarness();
+	try {
+		const created = await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		assert.match(created.content[0].text, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/);
+		const monitor = h.worker("ag_03");
+		assert.equal(monitor.model, "ollama-cloud/deepseek-v4.1-flash");
+		failTurn(monitor, OLLAMA_MONTHLY);
+		await waitFor(() => h.worker("ag_04"), "the monitor's successor");
+		const successor = h.worker("ag_04");
+		assert.equal(successor.name, "monitor-2");
+		assert.equal(successor.model, "claude-code-cli/claude-sonnet-5-5", "on the fallback");
+		assert.deepEqual([h.memberOf("ag_04")!.duty, h.memberOf("ag_04")!.successorOf], ["monitor", "monitor"]);
+		assert.equal(monitor.status, "killed", "the failed monitor is stopped");
+		assert.match(successor.task, /You take over from the monitor monitor \(ag_03\), which has already ended: there is nobody to ask and no team_ready to call\. Run your standing instruction now/, "its first check runs at once");
+		// The seat is released before the successor is added (a full team still gets it).
+		assert.deepEqual(teamOps(h), ["create", "eject", "add"]);
+		const ev = h.appended.filter((e) => e.customType === "subagents-team-event-v1" && e.data.kind === "handover").map((e) => e.data);
+		assert.equal(ev.length, 1);
+		assert.equal(ev[0].workerId, "ag_03");
+		assert.match(ev[0].detail, /^successor monitor-2 \(ag_04\) on pi\/claude-code-cli\/claude-sonnet-5-5; fallback: primary pi\/ollama-cloud\/deepseek-v4\.1-flash\/low hit its monthly usage limit \(429: /);
+		assert.deepEqual(deadEntries(h).map((d) => [d.backend, d.model, d.teamId, d.duty]), [["pi", "ollama-cloud/deepseek-v4.1-flash", undefined, undefined], ["pi", "ollama-cloud/deepseek-v4.1-flash", "team_01", "monitor"]]);
+		const list = (await h.call("team_list")).content[0].text;
+		assert.match(list, /system handover → ag_03 \(monitor\): accepted-or-queued — old member already ended; nothing to retire/, "a team action row");
+		await h.tick(60);
+		// One item about the switch, and no "failed" report for the turn.
+		const handover = itemsOf(h, "ag_01", "handover");
+		assert.equal(handover.length, 1);
+		assert.match(handover[0].body, /Monitor moved to its fallback claude-sonnet-5-5: ollama-cloud\/deepseek-v4\.1-flash hit its monthly usage limit\./);
+		assert.equal(itemsOf(h, "ag_01", "report").length, 0, "no urgent failed report");
+		// Its stop is said nowhere else: still one item.
+		await h.tick(60);
+		assert.equal(itemsOf(h, "ag_01").length, 1);
+		// The successor runs the fallback: its own failure is routed as before, never a second switch.
+		failTurn(successor, OLLAMA_MONTHLY);
+		await h.tick(60);
+		assert.equal(h.workers.length + h.created.length, 4, "a member not on its primary is not switched");
+	} finally { await h.cleanup(); }
+});
+
+test("runtime fallback: 3 failed turns in a row of any kind switch; a single 429 rate limit or a streak broken by a good turn doesn't; the backstop re-arms the check", async () => {
+	const h = fallbackHarness();
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const monitor = h.worker("ag_03");
+		const armed = () => h.timers.filter((t) => t.ms === 10 * 60_000).length;
+		failTurn(monitor, PLAIN_429);
+		await h.tick(60);
+		assert.equal(h.workers.length + h.created.length, 3, "a single rate limit is not a switch");
+		assert.equal(itemsOf(h, "ag_01", "report").length, 1, "it is reported as before");
+		assert.equal(armed(), 1, "the parent schedules the monitor's next check itself");
+		assert.equal((await h.ask("ag_03", { type: "nudge", nudge: { action: "list" } })).text.match(/scheduled by Sova after a failed check/g)?.length, 1);
+		failTurn(monitor, "Connection reset by peer");
+		await h.tick(60);
+		assert.equal(armed(), 1, "a pending check is not doubled");
+		okTurn(monitor);
+		failTurn(monitor, "Connection reset by peer");
+		failTurn(monitor, "Connection reset by peer");
+		await h.tick(60);
+		assert.equal(h.workers.length + h.created.length, 3, "a good turn starts the count again");
+		failTurn(monitor, "Connection reset by peer");
+		await waitFor(() => h.worker("ag_04"), "the successor after 3 failures in a row");
+		assert.equal(h.worker("ag_04").model, "claude-code-cli/claude-sonnet-5-5");
+		const ev = h.appended.find((e) => e.customType === "subagents-team-event-v1" && e.data.kind === "handover").data;
+		assert.match(ev.detail, /fallback: primary pi\/ollama-cloud\/deepseek-v4\.1-flash\/low failed 3 turns in a row \(Connection reset by peer\)$/);
+	} finally { await h.cleanup(); }
+});
+
+test("runtime fallback: with no fallback the dead monitor is stopped and said once; a dead coordinator is said to the main chat once", async () => {
+	const none = { ...FALLBACK_FILE, monitor: { ...FALLBACK_FILE.monitor, fallback: null }, coordinator: { ...FALLBACK_FILE.coordinator, fallback: null } };
+	const h = fallbackHarness(none);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const coordinator = h.worker("ag_01"), monitor = h.worker("ag_03");
+		failTurn(monitor, OLLAMA_MONTHLY);
+		await waitFor(() => monitor.status === "killed", "the monitor stopped");
+		await h.tick(60);
+		const items = itemsOf(h, "ag_01");
+		assert.equal(items.length, 1, "one item, no failed report");
+		assert.equal(items[0].kind, "notice");
+		assert.match(items[0].body, /Monitor monitor \(ag_03\) in team_01 stopped: its primary pi\/ollama-cloud\/deepseek-v4\.1-flash\/low hit its monthly usage limit \(429: .*\), and no fallback is set\./);
+		const notices = () => h.parentMessages("team-notice").map(([m, o]: any[]) => [m.content, o.triggerTurn]);
+		assert.equal(notices().length, 1);
+		assert.equal(notices()[0][1], false, "displayed, no turn");
+		// Stopped: its timers are gone, so nothing wakes the coordinator again.
+		for (const t of [...h.timers]) t.fn();
+		await h.tick(60);
+		assert.equal(itemsOf(h, "ag_01").length, 1, "no repeated follow-ups");
+		assert.equal(h.workers.length + h.created.length, 3, "nothing started");
+		// The coordinator: not stopped, said to the main chat once.
+		failTurn(coordinator, CLAUDE_ALL_LOGINS_OUT);
+		await h.tick(60);
+		assert.notEqual(coordinator.status, "killed");
+		assert.equal(notices().length, 2);
+		assert.match(notices()[1][0], /^Coordinator coordinator \(ag_01\) in team_01 can't run: its primary claude-code\/claude-opus-5-5\/medium hit its usage limit \(You've hit your limit · resets 3pm\), and no fallback is set\. .*team_succeed \{ team: "team_01", role: "coordinator" \}/);
+		assert.equal(completions(h).length, 0, "that turn's completion is the notice");
+		failTurn(coordinator, CLAUDE_ALL_LOGINS_OUT);
+		await h.tick(60);
+		assert.equal(notices().length, 2, "once per member");
+	} finally { await h.cleanup(); }
+});
+
+test("runtime fallback: a team with all 24 seats taken still gets the successor", async () => {
+	const h = fallbackHarness();
+	try {
+		const members = Array.from({ length: 22 }, (_, i) => ({ role: `m${i}`, prompt: `p${i}` }));
+		await h.call("team_create", { name: "Full", objective: "o", members });
+		await assert.rejects(h.call("team_add", { team: "Full", members: [{ role: "extra", prompt: "p" }] }), /would exceed 24 members/, "full");
+		const monitor = h.worker("ag_24");
+		assert.equal(h.memberOf("ag_24")!.duty, "monitor");
+		failTurn(monitor, OLLAMA_MONTHLY);
+		await waitFor(() => h.worker("ag_25"), "the successor of a full team's monitor");
+		assert.equal(h.worker("ag_25").name, "monitor-2");
+		const team = (await h.call("team_list")).content[0].text;
+		assert.match(team, /ag_24 monitor \(monitor\).*ejected/);
+		assert.match(team, /ag_25 monitor-2 \(monitor\)/);
+	} finally { await h.cleanup(); }
+});
+
+test("runtime fallback: a claude-code coordinator with every login out switches, and routing moves to its successor", async () => {
+	const h = fallbackHarness();
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const coordinator = h.worker("ag_01");
+		assert.equal(coordinator.model, "claude-code-cli/claude-opus-5-5");
+		failTurn(coordinator, CLAUDE_ALL_LOGINS_OUT);
+		await waitFor(() => h.worker("ag_04"), "the coordinator's successor");
+		const next = h.worker("ag_04");
+		assert.equal(next.name, "coordinator-2");
+		assert.deepEqual([next.model, next.effort], ["test/model", "high"], "on the fallback");
+		assert.deepEqual([h.memberOf("ag_04")!.duty, h.memberOf("ag_04")!.orchestrator], ["coordinator", true]);
+		assert.equal(coordinator.status, "killed");
+		assert.match(next.task, /coordinator stopped when its primary claude-code\/claude-opus-5-5\/medium hit its usage limit, without writing a handover note/);
+		assert.match(next.task, /Its assignment from the main thread:\nCoordinate this team toward the objective/);
+		assert.match(next.task, /- dev: none declared\n {2}Assigned task \(from the main thread\):\n {2}\| build/, "every teammate's assignment");
+		assert.equal(completions(h).length, 0, "the failed turn reaches nobody");
+		const ev = h.appended.find((e) => e.customType === "subagents-team-event-v1" && e.data.kind === "handover").data;
+		assert.match(ev.detail, /^successor coordinator-2 \(ag_04\) on pi\/test\/model; fallback: primary claude-code\/claude-opus-5-5\/medium hit its usage limit \(You've hit your limit · resets 3pm\)$/);
+		// Members now report to the successor.
+		const dev = h.worker("ag_02");
+		dev.output = "built";
+		dev.settle();
+		await assertItem(h, "ag_04", "report", /^\[Team report from dev \(ag_02\), team_01: finished — routed to you as coordinator\]/);
+	} finally { await h.cleanup(); }
+});
+
+test("runtime fallback: the out primary survives a reload; new teams, the members default and replacements skip it; after an hour it is tried again", async () => {
+	const h = fallbackHarness();
+	let entries: any[];
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		failTurn(h.worker("ag_03"), OLLAMA_MONTHLY);
+		await waitFor(() => h.worker("ag_04"), "the switch");
+		entries = h.appended.map((e, i) => ({ type: "custom", id: `e${i}`, customType: e.customType, data: e.data }));
+	} finally { await h.cleanup(); }
+	const reloaded = (at?: number) => {
+		const r = fallbackHarness();
+		const list = entries.map((e) => (e.customType === "subagents-dead-tuple-v1" && at !== undefined ? { ...e, data: { ...e.data, at } } : e));
+		r.ctx.sessionManager.getEntries = () => list;
+		return r;
+	};
+	const r = reloaded();
+	try {
+		await r.start();
+		const created = (await r.call("team_create", { name: "Next", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
+		assert.match(created, /monitor monitor added on claude-code\/claude-sonnet-5-5\/low \(fallback; primary pi\/ollama-cloud\/deepseek-v4\.1-flash\/low refused: it ran out at runtime .* ago \(hit its monthly usage limit\); it is tried again from /);
+		// The members default is a tuple check too.
+		await r.commands.get("team").handler("defaults", r.ctx);
+		const libPath = path.join(r.agentDir, "subagent-profiles.json");
+		const lib = JSON.parse(fs.readFileSync(libPath, "utf8"));
+		lib.profiles[0].members = { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" };
+		fs.writeFileSync(libPath, JSON.stringify(lib));
+		const added = (await r.call("team_add", { team: "Next", members: [{ role: "late", prompt: "p" }] })).content[0].text;
+		assert.match(added, /Members default pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(subagent profile "My setup"\) can't run here — it ran out at runtime/);
+		// A replacement from the main chat skips it as well.
+		const monitorId = (await r.call("team_list", { team: "Next" })).content[0].text.match(/(ag_\d+) monitor \(monitor\)/)[1];
+		r.worker(monitorId).exit();
+		const replaced = (await r.call("team_succeed", { team: "Next", role: "monitor" })).content[0].text;
+		assert.match(replaced, /^Started monitor-2 \(ag_\d+\) to succeed monitor \(ag_\d+\) on pi\/claude-code-cli\/claude-sonnet-5-5\/low/);
+	} finally { await r.cleanup(); }
+	const later = reloaded(Date.now() - 61 * 60_000);
+	try {
+		await later.start();
+		const created = (await later.call("team_create", { name: "Later", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
+		assert.match(created, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/, "after the hour the primary is tried again");
+	} finally { await later.cleanup(); }
+});
+
+test("runtime fallback: a streak of failures that aren't about usage never marks the model out for new teams", async () => {
+	// No fallback: the monitor is stopped after 3 generic failures, and a new team still starts on the primary.
+	const none = { ...FALLBACK_FILE, monitor: { ...FALLBACK_FILE.monitor, fallback: null } };
+	const h = fallbackHarness(none);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const monitor = h.worker("ag_03");
+		failTurn(monitor, "Connection reset by peer");
+		failTurn(monitor, PLAIN_429);
+		failTurn(monitor, "Connection reset by peer");
+		await waitFor(() => monitor.status === "killed", "the monitor stopped after 3 failures");
+		assert.deepEqual(deadEntries(h), [], "no chat-wide mark");
+		const next = (await h.call("team_create", { name: "Next", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
+		assert.match(next, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/);
+	} finally { await h.cleanup(); }
+	// With a fallback: the streak switches this team only; a new team starts on the primary.
+	const f = fallbackHarness();
+	try {
+		await f.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const monitor = f.worker("ag_03");
+		for (let i = 0; i < 3; i++) failTurn(monitor, "Connection reset by peer");
+		await waitFor(() => f.worker("ag_04"), "the successor after the streak");
+		assert.equal(f.worker("ag_04").model, "claude-code-cli/claude-sonnet-5-5", "this team moved to its fallback");
+		assert.deepEqual(deadEntries(f), [], "no chat-wide mark");
+		const next = (await f.call("team_create", { name: "Next", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
+		assert.match(next, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/);
+		// This team stays on its fallback: the monitor's replacement skips the primary.
+		f.worker("ag_04").exit();
+		const replaced = (await f.call("team_succeed", { team: "Crew", role: "monitor-2" })).content[0].text;
+		assert.match(replaced, /^Started monitor-3 \(ag_\d+\) to succeed monitor-2 \(ag_04\) on pi\/claude-code-cli\/claude-sonnet-5-5\/low/);
+	} finally { await f.cleanup(); }
+});
+
+test("runtime fallback: once the hour is over a new team retries the primary, while the team that switched stays on its fallback", async () => {
+	const h = fallbackHarness();
+	const realNow = Date.now;
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		failTurn(h.worker("ag_03"), OLLAMA_MONTHLY);
+		await waitFor(() => h.worker("ag_04"), "the switch");
+		Date.now = () => realNow() + 61 * 60_000;
+		const next = (await h.call("team_create", { name: "Next", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
+		assert.match(next, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/, "the mark expired");
+		h.worker("ag_04").exit();
+		const replaced = (await h.call("team_succeed", { team: "Crew", role: "monitor-2" })).content[0].text;
+		assert.match(replaced, /^Started monitor-3 \(ag_\d+\) to succeed monitor-2 \(ag_04\) on pi\/claude-code-cli\/claude-sonnet-5-5\/low/, "the switched team keeps its fallback");
+	} finally { Date.now = realNow; await h.cleanup(); }
 });

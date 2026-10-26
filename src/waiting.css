@@ -1,0 +1,129 @@
+/* ---- WAITING BADGE AND DIALOG (§chat.composer/waiting-badge, §chat.composer/waiting-dialog).
+   The badge sits inside the message box at its left edge, centred on the last text line: it is
+   pinned to the box's bottom, a --control-md band, which is the whole box while it holds one line
+   (its text centred in it), so one line looks the same and a taller message keeps the badge down
+   by Send. The text starts right of it on every line, so a wrapped message reads as one column
+   beside it. It adds no row. */
+
+.composer-field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.composer-field > .composer-input { width: 100%; }
+/* The text makes room only while the badge shows: the badge's 44px target, less the border it
+   sits inside, plus a hair of air. */
+.composer-field[data-waiting] > .composer-input { padding-left: calc(var(--tap-min) + var(--space-1)); }
+
+.waiting-badge {
+  position: absolute;
+  z-index: 1;
+  left: var(--stroke-icon);
+  bottom: var(--stroke-icon);
+  width: var(--tap-min);
+  height: calc(var(--control-md) - 2 * var(--stroke-icon));
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--color-ink);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard), opacity var(--dur-fast) var(--ease-standard);
+}
+.waiting-badge:hover { background: var(--color-sunken); }
+.waiting-badge:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+/* The reference glyph at 0.75 scale: 40 by 42 units, 30px wide and about 31px tall, inside the
+   box's one-line band, so the box keeps its height. */
+.waiting-badge-glyph { display: block; width: 30px; height: 31.5px; overflow: visible; }
+
+.waiting-badge-track,
+.waiting-badge-progress { fill: none; stroke-width: 2.6; stroke-linecap: round; }
+.waiting-badge-track { stroke: var(--color-border-strong); }
+.waiting-badge-progress { stroke: var(--color-accent); }
+.waiting-badge-count {
+  fill: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 14px; /* 11.5 for two digits, 9.2 for 99+: the inline style, countSize() */
+  font-weight: 700;
+  text-anchor: middle;
+  font-variant-numeric: tabular-nums;
+}
+.waiting-badge-dot { fill: var(--color-ink); }
+/* The numeral rides over the ring's top; a surface-coloured halo keeps it clear of the track. A
+   serif, as the agreed reference draws it (al_1): Inter's I and II read as bars. */
+.waiting-badge-cards {
+  fill: var(--color-accent);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 12.5px;
+  font-weight: 700;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--color-surface);
+  stroke-width: 4px;
+}
+
+/* Nothing undecided and no card: muted, the accent gone, low opacity. Still a button. */
+.waiting-badge[data-look="faded"] { opacity: .55; }
+.waiting-badge[data-look="faded"] .waiting-badge-progress { stroke: var(--color-ink-muted); }
+.waiting-badge[data-look="faded"] .waiting-badge-count,
+.waiting-badge[data-look="faded"] .waiting-badge-dot { fill: var(--color-ink-muted); }
+.waiting-badge[data-look="faded"]:hover,
+.waiting-badge[data-look="faded"]:focus-visible { opacity: 1; }
+
+/* An offer card's controls (OfferActions): a box only for focus handling, never for layout, in the
+   chat's card and in the dialog alike. */
+.offer-card-actions { display: contents; }
+
+/* ---- The dialog: the system's modal (a sheet below 768px), a list of bordered cards. */
+
+.waiting-dialog-head { display: flex; align-items: center; gap: var(--space-2); padding-block: var(--space-2); }
+.waiting-dialog-head .modal-title { flex: 1; min-width: 0; }
+.waiting-dialog-body { gap: var(--space-5); }
+.waiting-empty { margin: 0; color: var(--color-ink-2); }
+
+.waiting-group { display: flex; flex-direction: column; gap: var(--space-2); }
+.waiting-group-label {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
+.waiting-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--space-2); }
+
+.waiting-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  box-shadow: none;
+}
+.waiting-item-head { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+.waiting-item-id { flex: none; color: var(--color-ink-muted); }
+.waiting-item-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.waiting-item-note { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); }
+.waiting-item-status { display: flex; }
+.waiting-meter .meter-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+
+/* The card's own buttons, then Show in Chat; they wrap on a phone. */
+.waiting-item-foot { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-2); }
+.waiting-item-foot .offer-card-actions > .overseer-card-buttons { display: contents; }
+/* A button's confirm step takes the whole width: its question, then Cancel and the label again. */
+.waiting-item-foot .offer-card-actions > .offer-card-confirm { flex-basis: 100%; display: flex; flex-direction: column; gap: var(--space-2); }
+.waiting-item-foot .offer-card-actions > .offer-card-confirm > p { margin: 0; }
+.waiting-show { margin-left: auto; }

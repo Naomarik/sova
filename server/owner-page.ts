@@ -12,6 +12,8 @@ import type {
   OwnerAbilities,
   OwnerAbilityOutcome,
   OwnerConversation,
+  OwnerConversationOlder,
+  OwnerHomeConversation,
   OwnerConversationRow,
   OwnerConversationStatus,
   OwnerCounts,
@@ -28,7 +30,7 @@ import type {
   OwnerStatus,
   OwnerWaiting,
 } from "../shared/owner";
-import { allBatons, currentOffer, sessionPathOf } from "./baton";
+import { allBatons, budgetSpent, currentOffer, reachedBy, sessionPathOf } from "./baton";
 import { isSessionBusy } from "./chat-handle";
 import { readConflicts, readDecisionStore } from "./decisions";
 import { operatorName, orgDir, OrgError, ownerOf, readOrg, readProjects, readRoster } from "./orgs";
@@ -323,6 +325,67 @@ function rowOf(ctx: Ctx, f: RowFacts): OwnerConversationRow {
   return { id: f.handle, publicTitle: ctx.r.redact(f.row.publicTitle), status: f.status, createdAt: f.row.createdAt, messages: f.messages, lastActivityAt: f.lastActivityAt };
 }
 
+/** Since when an open conversation waits where it is: the hand-off or offer that put it there, else its start. */
+function sinceOf(ctx: Ctx, f: RowFacts): string {
+  const k = f.status.kind;
+  if (k === "waiting-on-you" || k === "planning") return askedAt(ctx, f);
+  const offer = currentOffer(f.row);
+  if (f.row.holder === null && offer) return offer.createdAt;
+  const holder = f.row.holder;
+  return [...f.row.handoffs].reverse().find((h) => h.to === holder)?.at ?? f.row.handoffs[f.row.handoffs.length - 1]?.at ?? f.row.createdAt;
+}
+
+const ENDED: ReadonlySet<OwnerConversationStatus["kind"]> = new Set(["done", "closed", "plan-agreed"]);
+
+/** A shown conversation as Home's Conversations lists it (§app.owner-page/content): a project's row, with its project
+    and its time. Field by field; nothing else of the row. */
+function homeConversationOf(ctx: Ctx, f: RowFacts, project: OwnerProjectCard): OwnerHomeConversation {
+  const base = rowOf(ctx, f);
+  const ended = ENDED.has(f.status.kind);
+  return {
+    id: base.id,
+    publicTitle: base.publicTitle,
+    status: base.status,
+    createdAt: base.createdAt,
+    messages: base.messages,
+    lastActivityAt: base.lastActivityAt,
+    project: project.id,
+    projectName: project.name,
+    since: ended ? (f.row.closedAt ?? f.lastActivityAt) : sinceOf(ctx, f),
+    ...(ended ? { endedAt: f.row.closedAt ?? f.lastActivityAt } : {}),
+  };
+}
+
+/** Why the owner's message would not be taken in this conversation now, or null when it would (§app.owner-page/content,
+    Answering on the page): the hand-off page's own rules (server/baton.ts accessOf) with the owner in a link's place.
+    The baton lock (noteMessage) decides again as the message enters. */
+export function answerRefusal(row: BatonSession, ownerId: string): "closed" | "budget" | "taken" | "not-holder" | null {
+  if (row.state === "closed" || row.state === "done") return "closed";
+  const offer = currentOffer(row);
+  let holds: boolean;
+  if (offer) {
+    const invited = offer.to.includes(ownerId) && reachedBy(offer, ownerId);
+    if (offer.state === "held" && offer.holder !== ownerId) return invited ? "taken" : "not-holder";
+    holds = offer.state === "held" ? offer.holder === ownerId : offer.state === "open" && invited;
+  } else {
+    const current = row.handoffs[row.handoffs.length - 1];
+    holds = row.holder === ownerId && current?.to === ownerId;
+  }
+  if (budgetSpent(row)) return "budget";
+  return holds ? null : "not-holder";
+}
+
+/** A conversation shown on the owner's page, by its handle, with its workspace folder; 404 otherwise (hidden, a project
+    switched off, another owner's feature request chat, a handle that never existed). */
+export function shownConversation(orgId: string, handle: string): { row: BatonSession; dir: string; ownerId: string } {
+  const ctx = contextOf(orgId, Date.now());
+  for (const project of ctx.projects) for (const row of ctx.rows.get(project.id) ?? []) if (handleOf("k", row.sessionId) === handle) return { row, dir: ctx.dir, ownerId: ctx.owner.id };
+  throw new OrgError("Not found", 404, "missing");
+}
+
+/** How many items a conversation's view carries, and each earlier page (§app.owner-page/content). */
+export const CONVERSATION_PAGE = 60;
+
 // ---- the three answers ------------------------------------------------------------------------------------
 
 export async function ownerHome(orgId: string, now = Date.now()): Promise<OwnerHome> {
@@ -330,6 +393,10 @@ export async function ownerHome(orgId: string, now = Date.now()): Promise<OwnerH
   const all = await Promise.all(ctx.projects.map((p) => assemble(ctx, p)));
   const cards = all.map((a) => a.card).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || a.name.localeCompare(b.name));
   const ready = await assistantReady(orgId);
+  // Home's Conversations (§app.owner-page/content): every shown conversation across the shown projects; the page groups them.
+  const conversations = all
+    .flatMap((a) => a.facts.map((f) => homeConversationOf(ctx, f, a.card)))
+    .sort((x, y) => (y.endedAt ?? y.since).localeCompare(x.endedAt ?? x.since));
   return {
     org: { name: ctx.orgName },
     owner: nameOf(ctx, ctx.owner.id),
@@ -341,6 +408,7 @@ export async function ownerHome(orgId: string, now = Date.now()): Promise<OwnerH
     versions: await versionsOf(ctx),
     assistant: { ready },
     ...(ready ? { abilities: await abilitiesOf(ctx, cards) } : {}),
+    conversations,
   };
 }
 
@@ -367,7 +435,17 @@ function requestRows(ctx: Ctx): OwnerRequestRow[] {
   const names = new Map(ctx.projects.map((p) => [p.id, p.name]));
   return orgRequests(ctx.orgId)
     .filter((r) => names.has(r.projectId))
-    .map((r) => ({ handle: handleOf("r", r.id), project: ctx.r.redact(names.get(r.projectId)!), kind: r.kind, title: ctx.r.redact(ctx.r.said(r.title)), status: r.status, at: r.updatedAt, ...planOfRequest(ctx, r) }));
+    .map((r) => ({
+      handle: handleOf("r", r.id),
+      project: ctx.r.redact(names.get(r.projectId)!),
+      kind: r.kind,
+      title: ctx.r.redact(ctx.r.said(r.title)),
+      status: r.status,
+      at: r.updatedAt,
+      // Who closed it for the owner (§app.project-assistant/closing): never a person id, only you or your assistant.
+      ...(r.status === "closed" && r.closed ? { closedBy: r.closed.by.kind === "assistant" ? ("assistant" as const) : ("you" as const) } : {}),
+      ...planOfRequest(ctx, r),
+    }));
 }
 
 /** A `feature` request's chat as it stands (§app.project-assistant/feature-chats): planning while open, agreed once
@@ -386,7 +464,7 @@ function planOfRequest(ctx: Ctx, r: { kind: string; status: string; sessionId?: 
 /** Versions you can try of the shown projects (§app.project-assistant/versions); never an address. */
 async function versionsOf(ctx: Ctx): Promise<OwnerVersionRow[]> {
   const out: OwnerVersionRow[] = [];
-  for (const p of ctx.projects) out.push(...versionRows(await projectVersions(ctx.orgId, p).catch(() => []), ctx.r));
+  for (const p of ctx.projects) out.push(...versionRows(await projectVersions(ctx.orgId, p).catch(() => []), ctx.r, ctx.orgId));
   return out;
 }
 
@@ -421,21 +499,44 @@ export async function ownerProject(orgId: string, handle: string, now = Date.now
   };
 }
 
+/** The conversation's whole filtered view, as the owner reads it: the thread never cut at an offer, briefings only
+    when addressed to them, senders opaque. Paged by position by its callers. */
+async function conversationItems(ctx: Ctx, row: BatonSession): Promise<{ view: Awaited<ReturnType<typeof readView>>; items: OwnerConversation["items"] }> {
+  const view = await readView(row, ctx.dir, ctx.owner.id);
+  return { view, items: opaqueSenders(view.items, ctx.owner.id) };
+}
+
+function conversationHit(ctx: Ctx, handle: string): { project: OrgProject; row: BatonSession } {
+  for (const project of ctx.projects) for (const row of ctx.rows.get(project.id) ?? []) if (handleOf("k", row.sessionId) === handle) return { project, row };
+  throw new OrgError("Not found", 404);
+}
+
+/** Up to a page of a conversation's items before position `before` (GET /api/i/<token>/c/<k_…>/older?before=<n>). */
+export async function ownerConversationOlder(orgId: string, handle: string, before: number, now = Date.now()): Promise<OwnerConversationOlder> {
+  const ctx = contextOf(orgId, now);
+  const hit = conversationHit(ctx, handle);
+  const { items } = await conversationItems(ctx, hit.row);
+  const end = Math.min(Math.max(0, before), items.length);
+  const start = Math.max(0, end - CONVERSATION_PAGE);
+  return { items: items.slice(start, end), older: start };
+}
+
 export async function ownerConversation(orgId: string, handle: string, now = Date.now()): Promise<OwnerConversation> {
   const ctx = contextOf(orgId, now);
-  let hit: { project: OrgProject; row: BatonSession } | null = null;
-  for (const project of ctx.projects) for (const row of ctx.rows.get(project.id) ?? []) if (handleOf("k", row.sessionId) === handle) hit = { project, row };
-  if (!hit) throw new OrgError("Not found", 404);
+  const hit = conversationHit(ctx, handle);
   const f = factsOf(ctx, hit.row);
-  // The owner reads the whole thread (never cut at an offer), briefings only when addressed to them.
-  const view = await readView(hit.row, ctx.dir, ctx.owner.id);
+  // The owner reads the whole thread (never cut at an offer), briefings only when addressed to them; the newest page.
+  const { view, items } = await conversationItems(ctx, hit.row);
+  const start = Math.max(0, items.length - CONVERSATION_PAGE);
+  const feature = !!featureChatOf(orgId, hit.row.sessionId);
   return {
     id: f.handle,
     project: handleOf("q", hit.project.id),
     projectName: ctx.r.redact(hit.project.name),
     status: f.status,
-    yourTurn: hit.row.holder === ctx.owner.id && (hit.row.state === "open" || hit.row.state === "needs-you"),
-    ...(featureChatOf(orgId, hit.row.sessionId)
+    yourTurn: f.status.kind === "waiting-on-you" || (hit.row.holder === ctx.owner.id && (hit.row.state === "open" || hit.row.state === "needs-you")),
+    ...(!feature && answerRefusal(hit.row, ctx.owner.id) === null ? { canAnswer: true as const } : {}),
+    ...(feature
       ? { feature: { canWrite: hit.row.holder === ctx.owner.id && (hit.row.state === "open" || hit.row.state === "needs-you") && hit.row.budget.messagesUsed < hit.row.budget.messagesMax, canEnd: hit.row.state === "open" || hit.row.state === "needs-you" } }
       : {}),
     org: { name: ctx.orgName },
@@ -446,7 +547,8 @@ export async function ownerConversation(orgId: string, handle: string, now = Dat
     holder: view.holder,
     drawings: view.drawings,
     viewer: { name: nameOf(ctx, ctx.owner.id).name, canWrite: false },
-    items: opaqueSenders(view.items, ctx.owner.id),
+    items: items.slice(start),
+    older: start,
   };
 }
 

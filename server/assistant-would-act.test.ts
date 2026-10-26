@@ -63,9 +63,9 @@ function facts(per: Record<string, Fixture>, seen: string[] = []): import("./ass
 }
 
 describe("assistantWouldAct: the order (stand-in facts)", () => {
-  const ask = (f: Fixture, ability: "fix" | "version" | "release", o: { attended?: boolean } = {}) => {
+  const ask = (f: Fixture, ability: "fix" | "version" | "release") => {
     would.setWouldActFactsForTest(facts({ p: f }));
-    return would.assistantWouldAct("org", "p", ability, o);
+    return would.assistantWouldAct("org", "p", ability);
   };
 
   test("each switch On: a fix and a release wait the waiting period, a version starts at once", async () => {
@@ -127,15 +127,6 @@ describe("assistantWouldAct: the order (stand-in facts)", () => {
     for (const a of ["fix", "version", "release"] as const) await would.assistantWouldAct("org", "p", a);
     assert.deepEqual(seen, ["p build/start", "p services/run", "p deploy/run"]);
   });
-
-  test("attended (the operator's own turn): switch, brake and engine are not asked; the model and the release steps are", async () => {
-    const seen: string[] = [];
-    would.setWouldActFactsForTest(facts({ p: { column: assistantDefaults(), braked: true } }, seen));
-    assert.equal((await would.assistantWouldAct("org", "p", "fix", { attended: true })).outcome, "now");
-    assert.deepEqual(seen, []);
-    would.setWouldActFactsForTest(facts({ p: { release: false } }));
-    assert.equal((await would.assistantWouldAct("org", "p", "release", { attended: true })).reason, "no-recipe");
-  });
 });
 
 // ---- a real org: the page and the tools on the same fixtures -------------------------------------------------
@@ -189,7 +180,8 @@ describe("the owner page's card asks the same question (§app.project-assistant/
     const fixShop = await run("start_fix", { project: "Rakiba Shop", title: "The cart is empty", text: "It shows nothing." });
     const releaseShop = await run("deploy", { project: "Rakiba Shop", why: "New prices." });
     assert.deepEqual([fixShop.started, releaseShop.started], [false, false], "the card's `team` is the tool's started: false");
-    assert.match(releaseShop.text, /^Asked the team to release it/);
+    // Rakiba Shop declares no release steps on disk, so no ask is filed: never "the team will release it".
+    assert.match(releaseShop.text, /^Filed with the team\. .*Don't say it is released or that the team will release it\.$/);
     assert.deepEqual(set, [], "nothing set off for a `team` answer");
     const versionShop = await run("start_version", { project: "Rakiba Shop" });
     assert.match(versionShop.text, /has no versions to try/, "version none: the tool has none either");
@@ -251,20 +243,20 @@ describe("assistantWouldAct: a feature request chat (§app.project-assistant/fea
       return f.reachable === false ? null : { refusal: f.refusal ?? null };
     },
   });
-  const ask = (f: Parameters<typeof featureFacts>[0], o: { attended?: boolean } = {}, seen: string[] = []) => {
+  const ask = (f: Parameters<typeof featureFacts>[0], seen: string[] = []) => {
     would.setWouldActFactsForTest(featureFacts(f, seen));
-    return would.assistantWouldAct("org", "p", "feature", o);
+    return would.assistantWouldAct("org", "p", "feature");
   };
 
   test("gather On, a gathering model, the placement takes the start: it opens right away, never held", async () => {
     const seen: string[] = [];
-    assert.deepEqual(await ask({}, {}, seen), { outcome: "now", reason: "ok" });
+    assert.deepEqual(await ask({}, seen), { outcome: "now", reason: "ok" });
     assert.deepEqual(seen, ["baton/start"], "the placement's gathering start is the act asked");
   });
 
   test("gather Off: the team, in the Project Assistant column's own words, and the placement is not asked", async () => {
     const seen: string[] = [];
-    const a = await ask({ column: assistantDefaults() }, {}, seen);
+    const a = await ask({ column: assistantDefaults() }, seen);
     assert.equal(a.outcome, "team");
     assert.equal(a.reason, "power-off");
     assert.match(a.sentence ?? "", /^Open feature request chats with the owner is off for the Project Assistant\./);
@@ -277,10 +269,5 @@ describe("assistantWouldAct: a feature request chat (§app.project-assistant/fea
     assert.equal((await ask({ reachable: false })).reason, "unreadable");
     const atOnce = await ask({ refusal: { code: "at-once", sentence: "5 of its gathering sessions are open, and the limit is 5 at once." } });
     assert.deepEqual([atOnce.outcome, atOnce.reason], ["team", "refused"]);
-  });
-
-  test("the operator's own turn skips the switch and the placement, never the model", async () => {
-    assert.deepEqual(await ask({ column: assistantDefaults() }, { attended: true }), { outcome: "now", reason: "ok" });
-    assert.equal((await ask({ gathering: false }, { attended: true })).reason, "no-model");
   });
 });

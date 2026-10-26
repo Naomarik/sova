@@ -4,15 +4,16 @@ import { powerOffSentence, type ModelPick, type PowerId, type PowerMap, type Wor
 import type { OwnerAbilityOutcome } from "../shared/owner";
 import { CONTRACT_FILE, parseDefinition } from "../shared/project-contract";
 import { readProjects } from "./orgs";
-import { projectVersions } from "./owner-versions";
+import { currentVersionMakeable, projectVersions } from "./owner-versions";
 import { effectiveAssistantModel } from "./project-assistant-store";
 import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 
 /**
  * The one question "what would the Project Assistant do if asked now?" (§app.project-assistant/abilities), asked
  * without doing anything. The owner page's card (server/owner-page.ts) and the assistant's own tools
- * (server/project-assistant-tools.ts: start_fix, deploy, start_version) both ask it, so what the owner is told and
- * what the tool does can't drift. The order, the first failing step answering `team`: settings readable and the
+ * (server/project-assistant-tools.ts: start_fix, deploy, start_version, start_feature_chat) and what its prompt and
+ * tool list offer at each reply (server/project-assistant-offers.ts) all ask it, so what the owner is told, what the
+ * assistant offers and what the tool does can't drift. The order, the first failing step answering `team`: settings readable and the
  * assistant column there; the act's switch; the brake (as the project page reads it); a fix's coding model; a
  * release's deploy target; the engine's own check of the act from the assistant, unattended (switch, brake,
  * limits, at-once caps, archived). Then a fix or a release is `held` while the waiting period is above 0; a version
@@ -92,7 +93,8 @@ const serverFacts: WouldActFacts = {
     const p = readProjects(orgId).find((x) => x.id === projectId);
     if (!p) return false;
     const vs = await projectVersions(orgId, p).catch(() => []);
-    return vs.some((v) => v.endpoint !== null);
+    // A listed version that could be opened, or the Current version's copy start_version could make (q6).
+    return vs.some((v) => v.endpoint !== null) || (!vs.some((v) => v.current) && (await currentVersionMakeable(p).catch(() => null)) !== null);
   },
   async engine(projectId, event, payload) {
     try {
@@ -135,32 +137,28 @@ const ENGINE_PAYLOAD: Record<AssistantAbility, Record<string, unknown>> = {
 const BRAKE_SENTENCE = "Nothing happens without the operator right now. Tell the owner it went to the team: it reaches the operator as a request.";
 
 /**
- * What the assistant would do for `ability` on `projectId` if asked now. `attended`: the operator started this turn
- * (their acts are never restricted), so the switch, the brake and the engine are not asked; the rest is.
+ * What the assistant would do for `ability` on `projectId` if asked now, always unattended: a turn the operator
+ * started in the assistant's chat gets no exception (§app.project-assistant/offers).
  */
-export async function assistantWouldAct(orgId: string, projectId: string, ability: AssistantAbility, o: { attended?: boolean } = {}): Promise<WouldAnswer> {
+export async function assistantWouldAct(orgId: string, projectId: string, ability: AssistantAbility): Promise<WouldAnswer> {
   const f = factsForTest ?? serverFacts;
   const team = (reason: WouldReason, sentence?: string): WouldAnswer => ({ outcome: "team", reason, ...(sentence ? { sentence } : {}) });
   if (ability === "version" && !(await f.hasVersion(orgId, projectId).catch(() => false))) return { outcome: "none", reason: "no-version" };
   const col = f.column(projectId);
-  if (!o.attended) {
-    if (!col.assistant) return team("unreadable", "Its settings can't be read now. Tell the owner it went to the team.");
-    if (!col.assistant[ABILITY_POWER[ability]]) return team("power-off", powerOffSentence(ABILITY_POWER[ability], "assistant"));
-    const b = await f.braked(projectId).catch(() => null);
-    if (b === null) return team("unreadable", "Its settings can't be read now. Tell the owner it went to the team.");
-    if (b) return team("brake", BRAKE_SENTENCE);
-  }
+  if (!col.assistant) return team("unreadable", "Its settings can't be read now. Tell the owner it went to the team.");
+  if (!col.assistant[ABILITY_POWER[ability]]) return team("power-off", powerOffSentence(ABILITY_POWER[ability], "assistant"));
+  const b = await f.braked(projectId).catch(() => null);
+  if (b === null) return team("unreadable", "Its settings can't be read now. Tell the owner it went to the team.");
+  if (b) return team("brake", BRAKE_SENTENCE);
   if (ability === "fix" && !f.codingModel(orgId, col.models)) return team("no-model", "no model is set for fixes");
   if (ability === "feature") {
     if (!f.gatheringModel?.(orgId, col.models)) return team("no-model", "no model is set for feature request chats");
-    if (o.attended) return { outcome: "now", reason: "ok" };
     const p = f.placement ? await f.placement(orgId, projectId, ACT_EVENT.feature, ENGINE_PAYLOAD.feature).catch(() => null) : null;
     if (!p) return team("unreadable", "The project can't be reached on this host now. Tell the owner it went to the team.");
     if (p.refusal) return team(p.refusal.code === "power-off" ? "power-off" : p.refusal.code === "brake" ? "brake" : "refused", p.refusal.sentence);
     return { outcome: "now", reason: "ok" };
   }
   if (ability === "release" && !(await f.hasRelease(projectId).catch(() => false))) return team("no-recipe", "the project has no release steps set up");
-  if (o.attended) return { outcome: "now", reason: "ok" };
   const e = await f.engine(projectId, ACT_EVENT[ability], ENGINE_PAYLOAD[ability]);
   if (!e) return team("unreadable", "The project can't be reached on this host now. Tell the owner it went to the team.");
   if (e.refusal) return team(e.refusal.code === "power-off" ? "power-off" : e.refusal.code === "brake" ? "brake" : "refused", e.refusal.sentence);

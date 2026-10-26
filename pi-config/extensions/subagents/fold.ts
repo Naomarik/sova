@@ -12,6 +12,16 @@
  *
  * `waiting` means: alive, idle, steerable. A task that FAILED still parks in `waiting` with
  * taskOutcome "error": the worker is fine, the work failed.
+ *
+ * Which instruction started which run (§app.chat-processes/worker-instructions): every steer and
+ * follow-up is sent under a key of its own. A keyed feed (`keyed`, WorkerState.keys) names that key
+ * on the user message pi delivers (`sendKey`), so the task boundary moves on an exact key match, and
+ * tells a keyed send whose message never ran (`send_dropped`), reported as one line. A feed that names
+ * no keys (a worker still on code from before them) gets the best-effort correlation below, from pi's
+ * queue_update and the message text.
+ * LEGACY: the text/queue correlation (QueuedSteer, trackQueue, isArmedDelivery/isSupersededDelivery's
+ * text branches, agent_start beginning the armed run) and the subagents README's "best-effort" list
+ * are deleted in al_7's follow-up, once no worker runs code from before keys.
  */
 import type { SteerMode, Worker } from "./contracts.ts";
 import { summarizeFileChange } from "./codefold.ts";
@@ -65,6 +75,12 @@ function stringList(value: unknown): string[] {
 
 /** What a steer delivery returns: accepted, rejected with why, or unknown (no answer: it may have been delivered all the same). */
 export type Delivery = { ok: true } | { ok: false; reason: string; unknown?: true };
+
+/** The line an accepted instruction that never ran leaves in the transcript and the next report. */
+export function neverRanLine(message: string): string {
+	const first = message.trim().split("\n")[0]!;
+	return `This instruction was accepted but never ran: ${first.length > 200 ? `${first.slice(0, 200)}…` : first}`;
+}
 
 export abstract class WorkerFold implements Worker {
 	readonly backend: string = "pi";
@@ -134,7 +150,13 @@ export abstract class WorkerFold implements Worker {
 	/** Queue entries still being followed: only the armed steer's and the superseded one's. */
 	private queuedSteers: QueuedSteer[] = [];
 	/** While a steer awaits its acceptance: the still-armed steer it superseded, and the seq its run began at (0 = not yet). */
-	private superseded: { queued: QueuedSteer | null; message: string | null; begunSeq: number } | null = null;
+	private superseded: { queued: QueuedSteer | null; message: string | null; key: string | null; begunSeq: number; no: number } | null = null;
+	/** Inbox turn record: every armed steer gets a number; tasks begun count from 0 (the first task). */
+	private armSeq = 0;
+	private armedNo = 0;
+	private tasksBegun = 0;
+	/** Ascending: steers numbered up to `upTo` had begun by task `task`. */
+	private steerTasks: { upTo: number; task: number }[] = [];
 	/** The previous task settled after the armed marker was pushed: until the armed run starts, its output is still current. */
 	private armedPredecessorSettled = false;
 	/** Output task boundaries as monotonic push sequence numbers (trimming may evict any marker). */
@@ -151,6 +173,17 @@ export abstract class WorkerFold implements Worker {
 	protected compactionActive = false;
 	/** Picked back up after a reload or a restart: a run that starts after a settle with no armed steer was steered by an earlier manager. */
 	protected adopted = false;
+	/** The feed names each user message's send key (WorkerState.keys): boundaries move on exact keys. Otherwise the legacy correlation. */
+	protected keyed = false;
+	/** The key the armed steer was sent under. */
+	private armedKey: string | null = null;
+	/** Accepted (or awaiting acceptance) instructions whose message has not been seen yet, key → text:
+	    tracked only while the feed is keyed (an unkeyed delivery names no key to clear one by). */
+	protected readonly outstanding = new Map<string, string>();
+	/** Between a run's start and its settle, as the feed says. */
+	protected runActive = false;
+	/** Never-ran lines the next report carries. */
+	private neverRan: string[] = [];
 
 	constructor(options: SpawnOptions, handlers: FoldHandlers, startedAt = Date.now()) {
 		this.id = options.id;
@@ -194,7 +227,9 @@ export abstract class WorkerFold implements Worker {
 				// Picked back up: a run after a settle this worker never armed was steered by an earlier manager. A fresh task.
 				if (this.adopted && !recovery && this.settleAnnounced && !this.armedAwaitingRun) this.beginAdoptedRun();
 				this.status = "running";
-				if (this.armedAwaitingRun && !recovery) {
+				this.runActive = true;
+				// LEGACY (no keys): the next run is taken as the armed steer's. A keyed feed names it on its message.
+				if (this.armedAwaitingRun && !recovery && !this.keyed) {
 					this.beginArmedRun();
 					// Before the pending steer is queued, this run can only be the superseded one's.
 					if (this.superseded && !this.superseded.begunSeq) this.superseded.begunSeq = this.taskBoundarySeq;
@@ -207,7 +242,12 @@ export abstract class WorkerFold implements Worker {
 				break;
 
 			case "agent_settled":
+				this.runActive = false;
 				this.processSettled();
+				break;
+
+			case "send_dropped":
+				if (typeof event.sendKey === "string") this.instructionNeverRan(event.sendKey);
 				break;
 
 			case "message_end": {
@@ -230,6 +270,9 @@ export abstract class WorkerFold implements Worker {
 				} else if (message.role === "toolResult") {
 					// Tool-reported usage is nested LLM work; it contributes to totals.
 					this.addUsage(message.usage);
+				} else if (message.role === "user" && (this.keyed || typeof event.sendKey === "string")) {
+					this.setKeyed(true);
+					this.keyedDelivery(typeof event.sendKey === "string" ? event.sendKey : undefined, textOf(message.content));
 				} else if (message.role === "user" && this.isSupersededDelivery(textOf(message.content))) {
 					this.beginSupersededRun();
 				} else if (message.role === "user" && this.armedAwaitingRun && this.isArmedDelivery(textOf(message.content))) {
@@ -243,7 +286,8 @@ export abstract class WorkerFold implements Worker {
 			}
 
 			case "queue_update":
-				this.trackQueue(event);
+				// LEGACY: only an unkeyed feed needs pi's queue to tell its steers apart.
+				if (!this.keyed) this.trackQueue(event);
 				break;
 
 			case "tool_execution_start": {
@@ -297,6 +341,78 @@ export abstract class WorkerFold implements Worker {
 				break;
 		}
 		this.touch();
+	}
+
+	/** The feed names send keys, or stops naming them (its worker's process changed code): what was
+	    outstanding under the other mode is no longer known, never reported as never run. */
+	protected setKeyed(on: boolean): void {
+		if (this.keyed === on) return;
+		this.keyed = on;
+		this.outstanding.clear();
+	}
+
+	/** A keyed feed's user message: the instruction whose key it names begins here (exact, never by text). */
+	private keyedDelivery(sendKey: string | undefined, text: string): void {
+		if (sendKey !== undefined) this.outstanding.delete(sendKey);
+		const s = this.superseded;
+		if (sendKey !== undefined && s && !s.begunSeq && this.steerPending && sendKey === s.key) this.beginSupersededRun();
+		else if (sendKey !== undefined && this.armedAwaitingRun && sendKey === this.armedKey) this.beginArmedRun();
+		else if (this.adopted && this.settleAnnounced === false && !this.armedAwaitingRun) {
+			// Picked back up mid-run: a later instruction an earlier manager sent (or an untagged message).
+			this.push("steer", text);
+		}
+	}
+
+	/**
+	 * An accepted instruction's message never ran and never will (Stop while it was queued, its turn
+	 * failed before it began, its process ended): one line, in the transcript and the next report. With
+	 * no run going, that report comes now, as an error; never a wait for a delivery that can't come.
+	 */
+	protected instructionNeverRan(key: string): void {
+		const message = this.outstanding.get(key);
+		if (message === undefined) return;
+		this.outstanding.delete(key);
+		const line = neverRanLine(message);
+		this.push("error", line);
+		if (this.armedAwaitingRun && key === this.armedKey) {
+			this.armedAwaitingRun = false;
+			this.armedSteerItem = null;
+			this.armedMessage = null;
+			this.armedQueued = null;
+			this.armedKey = null;
+			this.armedPredecessorSettled = false;
+		}
+		if (this.superseded?.key === key) this.superseded.key = null;
+		// The report owes this line: the settle that comes (or one now) announces it.
+		this.settleAnnounced = false;
+		this.neverRan.push(line);
+		if (!this.runActive) this.announceNeverRan();
+	}
+
+	/** No run is going to settle: report the never-ran lines now, as the outcome error. */
+	private announceNeverRan(): void {
+		this.taskError = this.neverRanLines().join("; ");
+		this.taskAborted = false;
+		this.processSettled();
+	}
+
+	/** The never-ran lines not reported yet (taken). */
+	protected neverRanLines(): string[] {
+		const lines = this.neverRan;
+		this.neverRan = [];
+		return lines;
+	}
+
+	/** A keyed worker's process died with instructions it accepted still unseen: none of them will run.
+	    Reported with the next settle (`runActive`), or at once in one report. One still awaiting its
+	    acceptance is not yet accepted: its send's answer says what became of it. */
+	protected dropOutstanding(): void {
+		if (!this.keyed || !this.outstanding.size) return;
+		const running = this.runActive;
+		this.runActive = true;
+		for (const key of [...this.outstanding.keys()]) if (!(this.steerPending && key === this.armedKey)) this.instructionNeverRan(key);
+		this.runActive = running;
+		if (!running && this.neverRan.length) this.announceNeverRan();
 	}
 
 	/**
@@ -354,6 +470,7 @@ export abstract class WorkerFold implements Worker {
 	/** The superseded steer's run began inside the running run: output from here on is not the predecessor's. */
 	private beginSupersededRun(): void {
 		this.superseded!.begunSeq = this.taskBoundarySeq = ++this.pushSeq;
+		this.markTaskBegun(this.superseded!.no);
 		this.taskError = undefined;
 		this.taskAborted = false;
 	}
@@ -378,6 +495,10 @@ export abstract class WorkerFold implements Worker {
 			error = `Earlier instructions failed before Pi continued queued instructions (${earlier})${error ? `; final run error: ${error}` : ""}`;
 			this.carriedFailures = [];
 		}
+		if (this.neverRan.length) {
+			error = [error, ...this.neverRan].filter(Boolean).join("; ");
+			this.neverRan = [];
+		}
 		this.taskOutcome = outcome;
 		if (error !== undefined) this.error = error;
 		else if (outcome === "success") this.error = undefined;
@@ -388,12 +509,37 @@ export abstract class WorkerFold implements Worker {
 	/** Picked back up: an unarmed run after a settled task (steered by an earlier manager) starts a new task. */
 	private beginAdoptedRun(): void {
 		this.taskBoundarySeq = ++this.pushSeq;
+		this.markTaskBegun(0);
 		this.settleAnnounced = false;
 		this.taskError = undefined;
 		this.taskAborted = false;
 		this.taskOutcome = undefined;
 		this.error = undefined;
 		this.carriedFailures = [];
+	}
+
+	/** A new task began; it carries every steer numbered up to `steerNo` that had not begun. */
+	private markTaskBegun(steerNo: number): void {
+		this.tasksBegun++;
+		const last = this.steerTasks[this.steerTasks.length - 1];
+		if (steerNo > (last?.upTo ?? 0)) {
+			this.steerTasks.push({ upTo: steerNo, task: this.tasksBegun });
+			if (this.steerTasks.length > 128) this.steerTasks.splice(0, this.steerTasks.length - 128);
+		}
+	}
+
+	/**
+	 * The inbox's turn record (§app.teams/inbox-zero): the task running now (0 = the first), and the
+	 * number of the newest accepted steer while its run has not begun (a wake taken now is seen in
+	 * that steer's task, not in the one running or just ended).
+	 */
+	inboxTurn(): { task: number; steer?: number } {
+		return this.armedAwaitingRun ? { task: this.tasksBegun, steer: this.armedNo } : { task: this.tasksBegun };
+	}
+	/** The task a numbered steer was delivered in, once it began; undefined while it has not. */
+	steerTask(no: number): number | undefined {
+		for (const e of this.steerTasks) if (e.upTo >= no) return e.task;
+		return undefined;
 	}
 
 	/** Record a failed run that Pi followed with queued instructions, and start the next run clean. */
@@ -407,9 +553,11 @@ export abstract class WorkerFold implements Worker {
 
 	/** The armed steer's run has begun: re-arm the announcement and make its marker the output boundary. */
 	private beginArmedRun(): void {
+		this.markTaskBegun(this.armedNo);
 		this.armedAwaitingRun = false;
 		this.armedPredecessorSettled = false;
 		this.armedMessage = null;
+		this.armedKey = null;
 		this.armedQueued = null;
 		this.pruneQueuedSteers();
 		this.taskBoundarySeq = ++this.pushSeq;
@@ -445,8 +593,10 @@ export abstract class WorkerFold implements Worker {
 
 	/** Why a steer can't be sent now, or null. */
 	protected abstract steerRefusal(): string | null;
-	/** Send the steer; its acceptance, rejection, or no answer (unknown). */
-	protected abstract deliver(message: string, mode: SteerMode | undefined, wasRunning: boolean): Promise<Delivery>;
+	/** A new key for the next steer or follow-up (each send its own). */
+	protected abstract nextSendKey(): string;
+	/** Send the steer under `key`; its acceptance, rejection, or no answer (unknown). */
+	protected abstract deliver(message: string, mode: SteerMode | undefined, wasRunning: boolean, key: string): Promise<Delivery>;
 
 	/**
 	 * Redirect the agent: a steer while it runs, a fresh prompt when idle. Resolves once the worker
@@ -493,11 +643,14 @@ export abstract class WorkerFold implements Worker {
 			armedSteerItem: this.armedSteerItem,
 			armedMessage: this.armedMessage,
 			armedQueued: this.armedQueued,
+			armedKey: this.armedKey,
 			armedPredecessorSettled: this.armedPredecessorSettled,
 			taskBoundarySeq: this.taskBoundarySeq,
 			armedBoundarySeq: this.armedBoundarySeq,
 		};
-		this.superseded = snapshot.armedAwaitingRun ? { queued: snapshot.armedQueued, message: snapshot.armedMessage, begunSeq: 0 } : null;
+		this.superseded = snapshot.armedAwaitingRun ? { queued: snapshot.armedQueued, message: snapshot.armedMessage, key: snapshot.armedKey, begunSeq: 0, no: this.armedNo } : null;
+		const priorArmedNo = this.armedNo;
+		const key = this.nextSendKey();
 
 		// Arm the new task BEFORE sending: its acceptance and the new task's events can arrive in either
 		// order, and those events must land in the NEW task (announced, parked, finalOutput scoped).
@@ -506,7 +659,10 @@ export abstract class WorkerFold implements Worker {
 		// Superseding a steer still awaiting its run: that earlier marker becomes a fixed boundary.
 		if (this.armedAwaitingRun) this.taskBoundarySeq = this.armedBoundarySeq;
 		this.armedAwaitingRun = true;
+		this.armedNo = ++this.armSeq;
 		this.armedMessage = message;
+		this.armedKey = key;
+		if (this.keyed) this.outstanding.set(key, message);
 		this.armedQueued = null;
 		this.armedPredecessorSettled = false;
 		this.settleAnnounced = false;
@@ -526,7 +682,7 @@ export abstract class WorkerFold implements Worker {
 		this.armedBoundarySeq = this.pushSeq;
 		this.touch();
 
-		const res = await this.deliver(message, mode, wasRunning);
+		const res = await this.deliver(message, mode, wasRunning, key);
 		this.steerPending = false;
 		const superseded = this.superseded;
 		this.superseded = null;
@@ -547,12 +703,15 @@ export abstract class WorkerFold implements Worker {
 			}
 			this.steerCount--;
 			if (res.unknown) this.push("error", `${res.reason}; this message may not have been delivered; the worker was not stopped:\n${message}`);
+			// Not accepted: never reported as an instruction that never ran (a refusal, or delivery unknown).
+			this.outstanding.delete(key);
 			if (superseded?.begunSeq) {
 				// The previously armed steer's run began while we waited: it is the current task now.
 				this.armedAwaitingRun = false;
 				this.armedSteerItem = null;
 				this.armedMessage = null;
 				this.armedQueued = null;
+				this.armedKey = null;
 				this.armedPredecessorSettled = false;
 				this.taskBoundarySeq = superseded.begunSeq;
 				this.pruneQueuedSteers();
@@ -561,9 +720,12 @@ export abstract class WorkerFold implements Worker {
 			}
 			// A previously accepted steer may still be awaiting ITS run: restore the armed bookkeeping.
 			this.armedAwaitingRun = snapshot.armedAwaitingRun;
+			this.armedNo = priorArmedNo;
+
 			this.armedSteerItem = snapshot.armedSteerItem;
 			this.armedMessage = snapshot.armedMessage;
 			this.armedQueued = snapshot.armedQueued;
+			this.armedKey = snapshot.armedKey;
 			this.taskBoundarySeq = snapshot.taskBoundarySeq;
 			this.armedBoundarySeq = snapshot.armedBoundarySeq;
 			this.armedPredecessorSettled = snapshot.armedPredecessorSettled || this.pendingSettled;

@@ -72,6 +72,10 @@ Every presented edition is immutable, complete and checked, with a distinct edit
 
 A re-record stages a replacement without changing the previous complete edition. Until the replacement passes all checks, the previous edition remains readable; failed, cancelled or interrupted attempts never replace it with a partial tour. Publication is atomic. A malformed or failed tool result shows a safe failure row, not a plausible finished card. Transcript rows retain only a bounded card projection and authorized references, not the full script, report or PNG bytes; full authoring input remains lazily accessible only to authorized readers.
 
+## §app.tours/one-card — One card per tour in a chat
+
+A chat shows one tour card per tour, at its newest successful tour call (`record_tour` or `show_tour`); each earlier call for that tour is one line with what it reported then ("A look at the app · 4 steps · queued"), which opens to the call's details like any other tool row; like the card, it never joins a compressed group of working rows, and "Hide tool calls" never hides it. The card moves down the chat as the tour is called again, and keeps its live progress there. While a reply streams, a tour call that finishes shows the card at once and the earlier one becomes its line at the same moment; the chat never shows two full cards for one tour. A failed tour call keeps its failure row and never takes or hides the card. Separate tours keep separate cards.
+
 ## §app.tours/viewer — Read steps, choose views, continue anywhere
 
 The viewer preserves the approved reading experience: desktop explanation in a side panel beside a large picture; phone explanation below the picture on a narrow screen, beside it when the screen is wide enough; chapters and a table of contents; Back and Next moving main steps; named chips choosing views within a step; short explanations and a few correctly positioned numbered callouts. Changing desktop/phone picture size does not silently change the selected main step or named view. Reference states are clearly labelled text, never simulated recordings.

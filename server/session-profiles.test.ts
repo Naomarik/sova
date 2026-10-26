@@ -471,6 +471,20 @@ describe("the run's hop", () => {
     run.observe(user("the user again"));
     assert.equal(run.hop, 0);
   });
+
+  test("two session messages with the same text in one step (steers land together) each take their own hop, in order", () => {
+    const run = new RunState(new SessionLimits("s", DEFAULT_LIMITS, null));
+    const user = (text: string) => harnessEventOf({ type: "message_start", message: { role: "user", content: [{ type: "text", text }] } });
+    run.observe(harnessEventOf({ type: "agent_start" }));
+    run.expectHop("same", 1);
+    run.expectHop("same", 3);
+    run.observe(user("same"));
+    assert.equal(run.hop, 1, "the first handed in");
+    run.observe(user("same"));
+    assert.equal(run.hop, 3, "then the second: the newest message's hop, never lost");
+    run.observe(user("same"));
+    assert.equal(run.hop, 0, "nothing more was expected: a message of yours");
+  });
 });
 
 describe("who a profile session sees", () => {

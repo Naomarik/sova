@@ -555,10 +555,12 @@ label a person reads says "sessions pane".
   start a bare 2px right of where the old rows' text did. The rail is reserved on **every** row, including the ones
   with nothing to say, so 278 titles start on one left edge instead of jittering with whatever
   chip the row happens to carry. Every folder, in every list (Folders, the Archive, each
-  group), wraps its head and rows in one guide rule: a 2px `--color-border` rule flush with the
-  pane edge, then 2px of padding, so the folder's content sits 4px in and reads as one block. The
-  rule sits outside the rows' 34px rail, whose hover and open-row fills start after it; a sticky
-  folder head keeps its own surface. The shell owns the divider, the hover
+  group), sets its head and rows 4px in from its own left edge (the pane edge in Folders; inside
+  a user group or an Archive day the folder itself sits one step in, beside that group's own
+  line), and an open folder draws one guide line down its rows' rail axis, under its chevron,
+  which sits on that axis: the arrow lines up with the rows' dots, and the line breaks around
+  each rail item (§app.session-list/guide-lines). Pressing the line collapses the open folder,
+  as its head does. A sticky folder head keeps its own surface. The shell owns the divider, the hover
   (`--color-sunken`) and the open-row tint (`--color-accent-tint`, via
   `.session-row-shell-current`), so the rail is skin, not a dead zone. Rail items are
   `<button type="button" tabindex="-1">` — pointer and AT affordances, never tab stops
@@ -685,13 +687,32 @@ label a person reads says "sessions pane".
   the only signal, because the head of the main pane repeats the title.
 - **Refreshing** (polling or a WS nudge). Update rows in place and never re-show the skeleton.
   Keep scroll position and focus. If the focused row moves, it stays focused.
+- **Only the user scrolls the list.** Nothing the app does moves what the session list shows:
+  not a refresh, not a click on a row, not a row or a Needs you item arriving or going away above
+  what is on screen, not a section above opening or closing on its own, not a search ending, on
+  every device (an iPhone or iPad included). Every section, project and row keeps its element
+  across refreshes (each is keyed by its id, a row by its path), so a refresh never tears down and
+  rebuilds what the user is looking at, and a focused row keeps its focus. The rows on screen hold
+  still: the first row in view stays exactly where it was, and what arrives or leaves above it
+  shifts the list's scroll offset by its own height so that nothing on screen moves. A row that
+  itself moves (into another state group or an open Done, or to another place in its list) or goes
+  away is never followed: the next row or section head in view that kept its place holds still
+  instead, so a moving row never carries the rest of the list with it. A list
+  scrolled to its very top stays at its top, so what arrives there shows. When the user opens or
+  closes a section themselves, the head they pressed is what holds still, except where the second
+  exception below scrolls the list instead. On a phone, where an open session puts the list away,
+  the list comes back where it was. Two exceptions, both presses the user makes: pressing a
+  region's count on the side strip (the spine, §app.session-list/spine) scrolls that region into
+  view, which is what the press asks for; and collapsing a group from its guide line while its
+  head has scrolled out above the list's top scrolls the list so the collapsed head sits at the
+  top (§app.session-list/guide-lines "Where you land").
 
 ## §app.session-list/needs-you — Needs you
 
 The top of the list, above Recent: the sessions blocked on you right now — a dialog open, an
 errored turn, a subagent that ended in an error, an idle session with open alignment questions
 whose branch is not merged (§chat.alignment/session-mark), a baton hand-off (the baton is with you, or a person needs
-their link, §app.baton/needs-you), and a tour recording waiting for you to sign in (§app.tours/sites); a roster proposal stays a decide item. Then, as a
+their link, §app.baton/needs-you), a tour recording waiting for you to sign in (§app.tours/sites), and an option card waiting for your answer, such as Land It (§chat.offers/card); a roster proposal stays a decide item. Then, as a
 **softer tier** under the blockers, the turn card's guesses (§app.overseer/attention-digest, soft
 items): a reply that waits on you (§app.decisions/asks-user) and a reply that says it is done
 without checking. A team gone quiet (§app.decisions/team-stall) is not here: it is a quiet mark
@@ -939,9 +960,11 @@ session to start one." — because dragging a row is the feature's front door (i
 - **Order.** Groups keep their creation order, so a rename or a new group never shuffles the list.
 Within a group, rows and folder groups follow the usual rule (newest `lastActiveAt` first), and
 the folder labels are `h4`, one level under the group's own label.
-- **Indent.** A group's folders carry the same guide rule as every other folder
-(§app.session-list/content-rules). Under a group name that rule is what tells its folders apart as
-the group's contents rather than siblings of its name.
+- **Indent.** An open group draws its own guide line under its chevron, and its folders sit one
+step in beside it (§app.session-list/guide-lines), each drawing the same guide line down its rows'
+rail as every other folder (§app.session-list/content-rules). Under a group name the line and the step are what tell its
+folders apart as the group's contents rather than siblings of its name; pressing the line collapses
+the group.
 - **The name row.** Twist, name, count, actions — and no folder icon. A group is the user's own
 name for a set of sessions, not a folder on disk, and the icon read as a claim about the file
 system directly above the `cwd` heads that really are one. Those keep their folder (or `terminal`)
@@ -1868,7 +1891,9 @@ projects (§app.projects/list).
   their own level, in the Projects region too (its projects are the project level): an org head
   is the pane's largest name (heading-s, semibold, full ink); a project head is a step down
   (body size, semibold, full ink, a muted `folder` icon before the name), set in one step under
-  its org behind a guide rule that runs down the project's block; its groups and states keep their
+  its org beside the org's guide line, one unbroken line centred under the org's chevron from its
+  head down past its last project (in the Projects region, with no org, the project's own guide
+  line runs from its arrow down its rows' rail instead; §app.session-list/guide-lines); its groups and states keep their
   quieter labels (the eyebrow and caption), and its rows are the unchanged rows. Counts stay muted.
   Consecutive projects are split by space and a rule, at every width.
 - **Order inside a project.** Rows by `lastActiveAt`, newest first, ties on `createdAt` then `id`
@@ -1909,7 +1934,8 @@ projects (§app.projects/list).
   waiting while it is live, or a web session not archived (the Folders rule); otherwise it is in
   Done, and once archived it is not in the region at all.
 - **Done** is a collapsed tail in each group (memory only, like the Archive's date sections), omitted
-  when empty; it replaces the old per-project Finished list. Like a folder's rows
+  when empty; open, its rows sit one step in beside its own guide line, under its chevron
+  (§app.session-list/guide-lines); it replaces the old per-project Finished list. Like a folder's rows
   (§app.session-list/content-rules), a Done builds its rows only once it is first open (by the
   operator, a search or the selected session) and keeps them after it closes, so a project whose
   folder holds hundreds of finished sessions costs its Done head alone. A **cleared overseer conversation** (an
@@ -2020,8 +2046,10 @@ usual folder groups inside each section. Sections, newest first, keyed on `lastA
 - **Look.** The summary is the `.list-group-label` eyebrow (mono, micro, uppercase, muted), plus
   semibold, at `--row-height`: a 16px twist in the folder icon's column, the name, and the count
   at the right. Hover inks it. It doesn't stick; the folder labels under it keep sticking. A
-  `--color-border` rule separates sections and sits under an open section's summary. No new
-  colors.
+  `--color-border` rule separates sections and sits under an open section's summary. An open
+  section draws a guide line under its chevron and its folders sit one step (`--space-5`) in
+  beside it;
+  pressing the line collapses the section (§app.session-list/guide-lines). No new colors.
 - **Accessibility.** AT reads the summary ("Today 4, collapsed"); it holds spans, not a heading,
   for the reason given under Regions. Folder labels inside stay `h3`, each inside its own folder
   `<summary>`. Tab reaches each summary,
@@ -2029,6 +2057,60 @@ usual folder groups inside each section. Sections, newest first, keyed on `lastA
 - **Row time vs section.** Row line 2 still uses `relativeTime`, which counts 24-hour spans, so
   just after midnight a row can read "3h ago" under Yesterday, or "yesterday" under Last 7 days.
   Accepted: the section answers "which day", and the row answers "how long ago".
+
+## §app.session-list/guide-lines — A group's guide line collapses it
+
+Every collapsible group inside a region has a guide line beside its contents, and pressing the
+line while the group is open collapses it. The groups are organizations, user groups, folders (in
+every list: Folders, inside a group, inside an Archive day), the Projects region's projects, every
+Done (an organization project's three, and a Projects-region project's "{n} done"), and every
+Archive day. The region bands themselves (Needs you, Groups, Automations, Projects, Folders,
+Organizations, Archive) have no line, and neither do the labels that don't collapse: an org's
+project heading, Conversations, Conflicts to settle, Sessions, their state labels, and Other.
+
+- **Every line runs down from its head's chevron**, its centre on the chevron's centre (within
+  half a pixel, at any zoom: both are placed from the same tokens), from the head down to the end
+  of the group's contents. An organization's line is one unbroken line down past all its
+  projects, never a piece per project. Two kinds:
+  - **Beside the contents**: an organization, a user group, an organization project's Done and
+    an Archive day. The chevron keeps its place (the head's `--space-4` inset plus half the 16px
+    icon), the line starts at the head's bottom, and the contents sit one step in to give it a
+    lane of its own: an org's projects and its Done's rows `--space-5` + `--space-1` (28px, where
+    an org's projects already sat), a user group's and an Archive day's folders `--space-5`
+    (24px), clear of the folder's own line further in.
+  - **Down the rows' rail**: a folder (in every list) and a Projects-region project, and that
+    project's "{n} done". The chevron sits on the axis of its rows' state rail (the rail's 2px
+    margin plus half its 30px column, from the row's left edge), so the arrow lines up with the
+    rows' dots, and the line runs down that axis behind the rail: a TUI chip, a Busy dot or a
+    worker count sits on top of it, each in a small ring of the row's own ground (its rest,
+    hover, focus or current tint, never a patch of another colour), so the line visibly breaks
+    around it. Across the open session's row the line takes `--color-border-strong`, since the
+    current tint is as dark as `--color-border` and the line would vanish there. The rows stay where they were (4px in), so no title loses width; the old 2px rule
+    at the group's left edge is gone. A project's "{n} done" sets its rows one step in
+    (`--space-5`), with its chevron on their rail's axis, clear of the project's own line.
+- **The look.** Every line is 2px of `--color-border`, as before. On hover the pointer becomes a
+  hand, the line takes `--color-border-strong`, its group's head lights up (the `--color-sunken`
+  hover fill and full ink) so you can see what will close, and a tooltip reads "Collapse {name}",
+  where {name} is what the head shows: the org's or group's name, the folder's path, the project's
+  name, "Done" (or "{n} done"), the day's name.
+- **What a press does.** The line is a transparent box about 12px wide (`--space-3`), centred on
+  the 2px line, so a press up to 6px either side of it lands. Nested lines (a folder's inside a
+  user group or an Archive day, a "{n} done" inside its project) stand far enough apart that
+  their boxes never overlap; were two ever closer, their boxes would split at the midpoint
+  between them. What sits on a line keeps its own press: a head on top of it (a sticky folder or
+  project head) and a rail item (its chip, dot or count). Pressing the line of an open group closes it exactly as pressing its head
+  would: the same `toggle`, so the choice is remembered the same way, in the same place
+  (a folder's and an Archive day's in `sessionStorage`, an org's, a group's, a Done's and a
+  project's in memory), and it counts as your own collapse while you are on a session inside it
+  (§app.session-list/organizations "Open by default"). A closed group draws no line.
+- **Where you land.** If the group's head had scrolled out of view above the list's top, the list
+  scrolls so the collapsed head sits at the top of the list, a sticky head included (its rows
+  vanish under it). If the head was in view, nothing moves.
+- **Keyboard and screen readers** keep using the head, which already opens and closes the group
+  (Enter or Space on its `<summary>`, or the project's arrow button). The line is `aria-hidden`,
+  has no `tabindex` and no role: a shortcut for a pointer, never another Tab stop. Its box is under
+  the 44px target minimum on purpose, as the rail's buttons are (§app.session-list/accessibility):
+  an affordance, not a destination, beside a head that is the full 44px control.
 
 ## §app.session-list/archive-cleanup — Archive cleanup
 
@@ -2205,8 +2287,9 @@ record whose transcript is gone.
 - **Keys.** `/` anywhere, while focus isn't in a text field, focuses the field (from the spine,
   the pane expands first, §app.session-list/spine). `Esc` inside the field clears the query
   first; a second `Esc`, on the empty field, leaves it (the split button returns), and focus goes
-  back to the list: the open
-  session's row, else the list's first row (with no row on screen the field simply loses focus).
+  back to the list without moving it: the open session's row if it is on screen, else the first
+  row on screen (with no row on screen the field simply loses focus). The list stays where it
+  was scrolled.
   Clear Search returns focus to the input.
 
 ## §app.session-list/working-now — Working now: the one count

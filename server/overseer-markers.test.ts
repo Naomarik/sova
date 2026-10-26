@@ -372,21 +372,42 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
     assert.deepEqual(t.steered, ["stop and use pnpm"], "handed to the SDK as a steer");
   });
 
-  test("a queued Overseer message the user removes leaves no marker and no pending mark", async () => {
+  test("a queued Overseer message taken back leaves no marker and no pending mark: a held one by Remove, a handed one by Stop", async () => {
     const t = await midTurn("pl6");
+    await sessionPrompt.promptSession(t.path, "first", await ov());
     await sessionPrompt.promptSession(t.path, "maybe later", await ov());
-    const id = t.snaps.at(-1)![0]!.id;
-    // Handed to the SDK already (it holds nothing else), so its mark is pending: the collision
-    // check that the removal below is what drops it.
+    const [first, later] = t.snaps.at(-1)!.map((i) => i.id);
+    // The first is handed to the SDK (it holds nothing else), so its mark is pending; the second
+    // follow-up is held behind it, unmarked.
     await until(() => t.chat.queue.snapshot()[0]?.state === "sending");
     assert.equal(t.pending().length, 1);
-    const out = await t.chat.queue.remove(id);
-    assert.equal(out.ok, true);
+    assert.equal((await t.chat.queue.remove(later!)).ok, true, "a held message is removed");
+    assert.equal(t.pending().length, 1, "and had no mark to drop");
+    const refused = await t.chat.queue.remove(first!);
+    assert.equal(refused.ok, false, "a handed one is not removable on its own (§chat.transcript/a-queued-message)");
+    // Stop takes it back (its drain; the abort after it would wait for the held reply): its mark goes with it.
+    const drained = await t.chat.queue.drain();
+    assert.deepEqual(drained.followUp, ["first"]);
     assert.deepEqual(t.pending(), []);
     t.release();
     await piSession(t.chat).waitForIdle();
     assert.deepEqual(userRows(t.path), [["hi", false], ["a long task", false]]);
     assert.ok(!readFileSync(t.path, "utf8").includes(OVERSEER_SENT_ENTRY));
+  });
+
+  test("two steers with the same text land together: the Overseer's mark goes on the Overseer's message, not the one before it", async () => {
+    const t = await midTurn("pl8");
+    // The user's own steer first, then the Overseer's with the same words: both are in pi at once.
+    t.chat.acceptPrompt("ok", undefined, "client", "c-ok", { delivery: "steer" });
+    const r = await sessionPrompt.promptSession(t.path, "ok", await ov(), "steer");
+    assert.deepEqual(r, { ok: true, queued: true, kind: "steer" });
+    await until(() => t.steered.length === 2);
+    t.release();
+    await until(() => userRows(t.path).filter(([x]) => x === "ok").length === 2);
+    await piSession(t.chat).waitForIdle();
+    await new Promise((res) => setTimeout(res, 10));
+    assert.deepEqual(userRows(t.path), [["hi", false], ["a long task", false], ["ok", false], ["ok", true]], "first in, first out");
+    assert.deepEqual(t.pending(), []);
   });
 
   test("an untagged send (no sender secret) queues the same way, without the Overseer flag", async () => {

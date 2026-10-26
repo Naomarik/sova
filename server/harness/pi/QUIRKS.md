@@ -40,11 +40,11 @@ Paths in "Where" are under `server/`.
 | P2 compaction-write-wrap | monkey-patch | `compactSession` (harness/pi/history-ops.ts), `PiHarnessSession.compact` (harness/pi/session.ts) | `AgentSession.compact`, `SessionManager.appendCompaction` | pi offers a pre-write hook for a compaction |
 | P3 compaction-error-text | error-text | `compactSession` (harness/pi/history-ops.ts), `isCompactionInProgress` (harness/pi/history-ops.ts) | `AgentSession.compact`, `AgentSession.prompt` | pi throws typed errors |
 | P4 already-processing | error-text | `isAlreadyProcessing` (harness/pi/session.ts), `ChatSession.linkToSdk` (chat-manager.ts) | `AgentSession.prompt`, `Agent.prompt` | pi throws a typed error |
-| P5 settle-window | private-read | `PiHarnessSession.inSettleWindow` (harness/pi/session.ts), `ChatSession.deliverTopicBatch` (chat-manager.ts) | `AgentSession._isEmittingAgentSettled`, `AgentSession.prompt`, `AgentSession._emitAgentSettled` | pi exposes the settle window, or stops deferring a prompt made inside it |
+| P5 settle-window | private-read | `PiHarnessSession.inSettleWindow` (harness/pi/session.ts), `ChatSession.deliverTopicBatch`, `ChatSession.acceptPrompt` (chat-manager.ts), `WebQueue.pumpOnce` (queue.ts) | `AgentSession._isEmittingAgentSettled`, `AgentSession.prompt`, `AgentSession._emitAgentSettled` | pi exposes the settle window, or stops deferring a prompt made inside it |
 | P6 refresh-context | semantic | `PiHarnessSession.appendUserMessage` (harness/pi/session.ts), `PiHarnessSession.refreshContext` (harness/pi/session.ts), `ChatSession.enterQueued` (chat-manager.ts) | `AgentSession.refreshContext`, `SessionManager.appendMessage` | never: a contract worth keeping a canary for |
-| P7 user-turns-wrap | monkey-patch | `watchUserMessages` (harness/pi/turns.ts), `UserTurns.watch` (user-turns.ts) | `Agent.prompt`, `Agent.steer`, `Agent.followUp`, `AgentSession.prompt`, `AgentSession.steer`, `AgentSession.followUp` | pi offers an input-identity hook |
+| P7 user-turns-wrap | monkey-patch | `watchUserMessages` (harness/pi/turns.ts), `UserTurns.watch` (user-turns.ts), `SendKeys.watch` (send-keys.ts) | `Agent.prompt`, `Agent.steer`, `Agent.followUp`, `AgentSession.prompt`, `AgentSession.steer`, `AgentSession.followUp` | pi offers an input-identity hook |
 | P8 stream-function | monkey-patch | `useSlicedProviderReads` (runtime-quirks.ts), `PiChatHost.useSlicedProviderReads` (harness/pi/host.ts) | `Agent.streamFunction` | the fetch-read-size Bun quirk retires (docs/bun-quirks.md), or pi takes a fetch option |
-| P9 queue-one-bit | semantic | `PiHarnessSession.queue` (harness/pi/session.ts), `SdkQueueView` (queue.ts), `WebQueue.sdkHolds` (queue.ts) | `Agent.hasQueuedMessages`, `Agent.continue`, `Agent.peekQueuedMessages`, `AgentSession.getSteeringMessages`, `AgentSession.getFollowUpMessages`, `AgentSession.clearQueue` | Sova adopts peekQueuedMessages(), or pi's mirror tracks delivery by identity |
+| P9 queue-one-bit | semantic | `PiHarnessSession.queue` (harness/pi/session.ts), `SdkQueueView` (queue.ts), `WebQueue.sdkTookHanded` (queue.ts) | `Agent.hasQueuedMessages`, `Agent.continue`, `Agent.peekQueuedMessages`, `AgentSession.getSteeringMessages`, `AgentSession.getFollowUpMessages`, `AgentSession.clearQueue` | Sova adopts peekQueuedMessages(), or pi's mirror tracks delivery by identity |
 | P10 leaf-is-last-line | semantic | `rewindSession` (harness/pi/history-ops.ts), `PiHarnessSession.rewindTo` (harness/pi/session.ts), `activeBranchLines` (harness/pi/fork.ts) | `AgentSession.navigateTree`, `SessionManager.open`, `SessionManager.getLeafId` | pi persists the leaf |
 | P11 create-defers / open-flushed | semantic | `createSessionFile` (harness/pi/state.ts), `appendToClosedFile` (harness/pi/state.ts) | `SessionManager.create`, `SessionManager.open`, `SessionManager.appendCustomEntry` | never: the two creation paths depend on it; keep the canary |
 | P12 message-end-before-persist | ordering | `PiHarnessSession.subscribe` (harness/pi/session.ts), `PiHarnessSession.persistedId` (harness/pi/session.ts), `ChatSession.markSend` (chat-manager.ts), `ChatSession.markTopic` (chat-manager.ts), `ChatSession.holdForEntryId` (chat-manager.ts) | `AgentSession.subscribe`, `AgentSession._handleAgentEvent`, `SessionManager.appendMessage` | pi emits after persisting, or gives the entry id with message_end |
@@ -63,6 +63,7 @@ Paths in "Where" are under `server/`.
 | P25 request-start | monkey-patch | `hearRequests` (harness/pi/session.ts), `keepHearingRequests` (harness/pi/session.ts), `PiHarnessSession.subscribe` (harness/pi/session.ts) | `Agent.streamFunction`, `StreamOptions.onPayload`, `createAgentSession` | pi emits a request-sent event of its own |
 | P26 native-extension-load | semantic | `extensionDepDrift` (harness/pi/own-code.ts) | `loadExtensions`, `getAliases`, jiti `tryNative` | pi resolves an extension's pi imports to its own copies without translating, whatever node_modules holds |
 | P27 headless-standins | monkey-patch | `installHeadless` (harness/pi/headless.ts), `standInSource` (harness/pi/headless.ts) | pi-tui `dist/` modules, `dist/modes/interactive/`, `dist/utils/syntax-highlight.js` | pi ships an entry point without its terminal drawing code |
+| P28 steer-all | monkey-patch | `steerAllAtOnce` (harness/pi/queue-modes.ts), `servicesForCwd` (harness/pi/open.ts), `WebQueue.pumpOnce` (queue.ts) | `SettingsManager.getSteeringMode`, `AgentSession.reload`, `AgentSession.syncQueueModesFromSettings`, `createAgentSession`, `PendingMessageQueue.peek` | pi takes a steering mode per session that no settings reload resets |
 | T1 scripted-model (test-only) | private-write | `ScriptedModel.attach` (harness/pi/testing/scripted-model.ts) | `AgentSession._modelRuntime`, `Agent.getApiKey`, `Agent.streamFunction` | pi offers a public test model hook |
 
 ## What each one relies on
@@ -93,7 +94,7 @@ Canary: `P4 already-processing: a prompt mid-run without streamingBehavior, and 
 
 ### P5 settle-window
 
-`_isEmittingAgentSettled` is true while `agent_settled` is emitted, and a `prompt()` made then is deferred: it resolves at once and its turn runs after the emit. The driving session reads it as `inSettleWindow()`; topic delivery stays out of that window.
+`_isEmittingAgentSettled` is true while `agent_settled` is emitted, and a `prompt()` made then is deferred: it resolves at once and its turn runs after the emit, outside the async context of the call that made it. The driving session reads it as `inSettleWindow()`; topic delivery stays out of that window, and so does a keyed send (a worker's steer or follow-up, §app.chat-processes/worker-instructions): `acceptPrompt` queues one, and the queue holds a keyed item until the window has passed, so its message is labelled with its key (send-keys.ts). The canary pins both: the deferred prompt runs unlabelled, the held keyed hand-off labelled once.
 
 Canary: `P5 settle-window: inside an agent_settled emit _isEmittingAgentSettled is true and a prompt resolves at once, its turn running after`.
 
@@ -107,7 +108,7 @@ Canary: `P6 refresh-context: a user entry appended outside a run reaches the age
 
 ### P7 user-turns-wrap
 
-`AgentSession` hands user input to `this.agent.prompt`/`steer`/`followUp` by property lookup, and the object it passes is the one later emitted in `message_start`, so wrapping those three tells a message the user sent from every other by identity. `watchUserMessages` wraps them once per agent; claimers registered later see the input first, as nested wraps did.
+`AgentSession` hands user input to `this.agent.prompt`/`steer`/`followUp` by property lookup, and the object it passes is the one later emitted in `message_start`, so wrapping those three tells a message the user sent from every other by identity. `watchUserMessages` wraps them once per agent; claimers registered later see the input first, as nested wraps did. `SendKeys.watch` claims the same way: a keyed send's message carries its key (§app.chat-processes/worker-instructions).
 
 Canary: `P7 user-turns-wrap: prompt, steer and followUp reach the agent by property lookup, and the object passed is the one message_start carries`.
 
@@ -119,7 +120,7 @@ Canary: `P8 stream-function: agent.streamFunction is read at each request, so on
 
 ### P9 queue-one-bit
 
-`agent.hasQueuedMessages()` is the real queue; the session's steering/follow-up mirror is spliced on `message_start` by text only, so an image-only steer stays in it after delivery; `clearQueue()` returns and clears both kinds; `continue()` drains steering before follow-ups. `peekQueuedMessages()` exists and is unused.
+`agent.hasQueuedMessages()` is the real queue; the session's steering/follow-up mirror is spliced on `message_start` by text only, so an image-only steer stays in it after delivery; `clearQueue()` returns and clears both kinds; `continue()` drains steering before follow-ups, so Sova never hands a steer in behind a follow-up of its own still in pi. With steering in all-mode (P26) a drain takes the whole steering lane, so an empty real queue proves every steer Sova handed in delivered. `peekQueuedMessages()` exists and is unused.
 
 Canary: `P9 queue-one-bit: an image-only steer stays in the mirror after delivery while the agent's queue is empty; clearQueue() returns both kinds; continue() takes steering first`.
 
@@ -218,6 +219,12 @@ Canary: `P26 native-extension-load: under Bun pi's loader imports an extension n
 A chat process replaces pi's terminal drawing code with stand-ins (§app.chat-processes/no-terminal-drawing): a Bun plugin, installed by `server/chat-runtime/main.ts` before pi loads, answers each module `STANDIN_FILTER` matches (pi-tui's screen, terminal and components, marked, pi's `modes/interactive/` but its theme, pi's syntax highlighter) with a module of the same export names, each an inert stand-in. Sova relies on three things pi does not promise: pi-tui keeps its text, key and colour helpers (`utils`, `keys`, `keybindings`, `fuzzy`, `colors`, `terminal-image`, …) in modules apart from its drawing ones, and its index re-exports each name from one of them; pi's theme imports none of the drawing modules (only the highlighter, inside its code-highlighting functions); and outside its terminal mode pi's code takes a drawing module only in terminal renderers, its CLI and its entry's re-exports, none of which a Sova chat calls. The canary checks the three statically; `headless.integration.test.ts` runs a chat process with every extension and a turn, logs every module replaced and every call that reached a stand-in, and compares pi-tui's export names with and without the stand-ins. `headless-files.json` snapshots every file of the folders the stand-ins reach into (pi-tui's `dist/`, pi's `dist/modes/interactive/` and `dist/utils/`, marked's `lib/`), each marked stand-in or kept; `headless.test.ts` fails on a file it doesn't know, one it lists that is gone (a moved helper), or a file the filter treats otherwise, until a person classifies it. A chat process warns once (`[headless] pi's terminal drawing code was called in this chat`) at the first stand-in call that isn't a construct.
 
 Canary: `P27 headless-standins: pi-tui keeps its text, key and colour helpers apart from its drawing modules, pi's theme takes only the highlighter, and outside its terminal mode pi takes a drawing module only in renderers, its CLI and its entry`.
+
+### P28 steer-all
+
+pi builds the agent's steering mode from `settingsManager.getSteeringMode()` when it creates a session (`createAgentSession`, `sdk.js`) and reads it again on every `AgentSession.reload()` (`syncQueueModesFromSettings`, right after `settingsManager.reload()` re-read settings.json). `steerAllAtOnce` replaces that getter on each runtime's own settings object (`servicesForCwd`), so the agent's steering queue (`PendingMessageQueue`) runs in `"all"` mode: every queued steer lands at the next step, each its own message, in the order queued, and a reload keeps it. `AgentSession.setSteeringMode` is never called: it saves into settings.json, which the user's terminal pi reads. Follow-ups keep pi's one-at-a-time. The web queue (`WebQueue.pumpOnce`) hands every waiting steer in behind the ones pi still holds, which only lands them together because of this mode.
+
+Canary: `P28 steer-all: with the getter replaced, every queued steer lands in one step, the mode survives reload(), and settings.json holds no steeringMode`.
 
 ### T1 scripted-model (test-only)
 

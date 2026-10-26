@@ -1,4 +1,4 @@
-import type { AssistantInfo, AssistantView, PricedPick } from "../../shared/project-assistant";
+import type { AssistantInfo, AssistantOlder, AssistantView, PricedPick, VersionSummaryRow } from "../../shared/project-assistant";
 import type { OrgClaudeLogin, ProjectClaudeLogin } from "../../shared/projects";
 import type { ModelPick, WorkModels } from "../../shared/powers";
 import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
@@ -6,7 +6,7 @@ import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, Settin
 import type { ProfilesListing } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
-import type { HostServicesView, ProjectServicesView, ServicesUiVerb } from "../../shared/services-view";
+import type { CopyLimitView, HostServicesView, ProjectServicesView, ServicesUiVerb } from "../../shared/services-view";
 import type { SubagentProfilesFile, SubagentProfilesInfo } from "../../shared/subagent-profiles";
 import type {
   VoiceDeviceInfo,
@@ -19,7 +19,6 @@ import type {
   SessionsDirInfo,
   AttentionDigest,
   ChatModeResult,
-  ChatMemoryChoice,
   ProjectModeApproval,
   MemoryOpen,
   MemoryOutline,
@@ -105,7 +104,7 @@ import type {
   MeshPreset,
   MeshSessionsView as MeshSessions,
 } from "../../shared/mesh-access";
-import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
+import type { OwnerConversation, OwnerConversationOlder, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
 import type { NamedChange, OrgDetail, OrgsInfo, PersonHours, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
 import type { EventDetail, EvidenceView, HistoryChain, HistoryPacket, HistoryPage, HistoryQuery } from "../../shared/org-history";
 import type { BatonOutreach, SendLinkAnswer } from "../../shared/outreach";
@@ -515,7 +514,7 @@ export const getChatMode = (path: string) => request<ChatModeResult>(`/api/mode?
  * without its hash is refused with 409, whose body (ProjectModeApprovalNeeded) is on the ApiError.
  */
 export const postMode = (
-  patch: { mode?: string; minorModes?: string[]; memory?: Partial<ChatMemoryChoice>; projectModes?: string[]; approve?: ProjectModeApproval[]; approveHooks?: ProjectModeApproval[] },
+  patch: { mode?: string; minorModes?: string[]; memory?: { type: MemoryType }; projectModes?: string[]; approve?: ProjectModeApproval[]; approveHooks?: ProjectModeApproval[] },
   path?: string,
 ) =>
   request<ModeInfo | ChatModeResult>(`/api/mode${path ? `?path=${encodeURIComponent(path)}` : ""}`, {
@@ -543,11 +542,11 @@ export const getMemoryOptions = () => request<DelegateOptions>("/api/settings/me
 export const putMemorySettings = (settings: MemorySettings) =>
   request<MemorySaveResult>("/api/settings/memory", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) });
 export const getOverseerMemory = () => request<OverseerMemoryInfo>("/api/overseer/memory");
-export const putOverseerMemory = (patch: { on?: boolean; type?: MemoryType; size?: number }) =>
+export const putOverseerMemory = (patch: { on?: boolean; type?: MemoryType }) =>
   request<OverseerMemoryInfo>("/api/overseer/memory", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
 /** A project overseer's own memory switch: the Overseer's shape. */
 export const getProjectOverseerMemory = (projectId: string) => request<OverseerMemoryInfo>(`/api/projects/${encodeURIComponent(projectId)}/overseer/memory`);
-export const putProjectOverseerMemory = (projectId: string, patch: { on?: boolean; type?: MemoryType; size?: number }) =>
+export const putProjectOverseerMemory = (projectId: string, patch: { on?: boolean; type?: MemoryType }) =>
   request<OverseerMemoryInfo>(`/api/projects/${encodeURIComponent(projectId)}/overseer/memory`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
 
 /** POST /api/sandbox?path=… { state, on }: set that held chat's sandbox state (§chat.sandbox/states)
@@ -1286,6 +1285,8 @@ export const assistantInfo = (id: string) => request<AssistantInfo>(assistantUrl
 export const setAssistantModels = (id: string, models: WorkModels) => request<AssistantInfo>(assistantUrl(id, "assistant"), jsonInit("PUT", { models }));
 /** Mark Done or Decline an owner request. */
 export const setOwnerRequest = (id: string, rid: string, status: "done" | "declined") => request<AssistantInfo>(assistantUrl(id, `requests/${encodeURIComponent(rid)}`), jsonInit("POST", { status }));
+/** Got It on a request the owner closed while it was being worked on (§app.project-assistant/closing): its Needs you item ends. */
+export const noteOwnerRequest = (id: string, rid: string) => request<AssistantInfo>(assistantUrl(id, `requests/${encodeURIComponent(rid)}`), jsonInit("POST", { noted: true }));
 /** Start Chat on an owner request: a new chat in its project with the request as a note
     (§app.project-assistant/request-chat). 409 `has-chat` carries the live chat's path, `closed` none. */
 export const startOwnerRequestChat = (id: string, rid: string) => request<{ sessionId: string; path: string }>(assistantUrl(id, `requests/${encodeURIComponent(rid)}/chat`), jsonInit("POST"));
@@ -1293,6 +1294,11 @@ export const startOwnerRequestChat = (id: string, rid: string) => request<{ sess
 export const openAssistantChat = (id: string) => request<{ sessionId: string; path: string }>(assistantUrl(id, "assistant/open"), jsonInit("POST"));
 /** The assistant's conversation as the owner sees it (the preview); no token, no use. */
 export const previewAssistant = (id: string) => request<AssistantView>(assistantUrl(id, "preview?assistant=1"));
+/** An earlier page of it (§app.project-assistant/chat, Paged). */
+export const previewAssistantOlder = (id: string, before: number) => request<AssistantOlder>(assistantUrl(id, `preview?assistant=1&before=${before}`));
+/** A conversation's earlier items on the preview (§app.owner-page/content). */
+export const previewConversationOlder = (id: string, c: string, before: number) =>
+  request<OwnerConversationOlder>(`/api/orgs/${encodeURIComponent(id)}/owner/preview?c=${encodeURIComponent(c)}&before=${before}`);
 
 /** Show this project on the owner's page, or not. */
 export const setProjectOwnerHidden = (id: string, pid: string, ownerHidden: boolean) =>
@@ -1301,6 +1307,11 @@ export const setProjectOwnerHidden = (id: string, pid: string, ownerHidden: bool
 export const setBatonHiddenFromOwner = (sid: string, hidden: boolean) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/owner`, jsonInit("POST", { hidden }));
 /** The project's updates on the owner's page, newest first, withdrawn ones included. */
 export const getProjectUpdates = (id: string, pid: string) => request<ProjectUpdate[]>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/updates`);
+/** The versions on the owner's page with their summaries (§app.project-assistant/versions). */
+export const getVersionSummaries = (id: string, pid: string) => request<VersionSummaryRow[]>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/versions`);
+/** Rewrite (`text`), Use Automatic (`text: null`), Hide or Show (`hidden`) a version's summary. */
+export const setVersionSummary = (id: string, pid: string, instance: string, body: { text?: string | null; hidden?: boolean }) =>
+  request<VersionSummaryRow[]>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/versions/${encodeURIComponent(instance)}`, jsonInit("PUT", body));
 export const withdrawProjectUpdate = (id: string, pid: string, uid: string) =>
   request<ProjectUpdate[]>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/updates/${encodeURIComponent(uid)}/withdraw`, jsonInit("POST"));
 
@@ -1409,6 +1420,9 @@ export const refreshPrices = () => request<PricesInfo>("/api/usage/prices/refres
 // ---- a project's software registry (§app/project-runtime) -------------------------------------------
 /** The project's copies on this host, for its Branches tab (§app.project-services/services-ui). */
 export const getProjectServices = (projectId: string) => request<ProjectServicesView>(`${projectPath(projectId)}/services`);
+/** Set this machine's copy limit for the project (null: back to the project's file's): the operator's own page only. */
+export const setCopyLimit = (projectId: string, cap: number | null) =>
+  request<{ limit: CopyLimitView }>(`${projectPath(projectId)}/services/limit`, jsonInit("PUT", { cap }));
 /** Run one verb on the project as the operator. A refusal is a result too (its `error`), never thrown;
     only an unreachable server or an unknown project throws. */
 export async function runProjectVerb(projectId: string, verb: ServicesUiVerb, body: Record<string, unknown>): Promise<VerbResult> {

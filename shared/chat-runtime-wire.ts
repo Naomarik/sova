@@ -189,7 +189,8 @@ export interface ChatRuntimeMirror extends ChatStateMirror {
       feed's process id (WorkerCursor.proc), the seq of its last feed frame, and how its last run
       settled. A server that sees a seq beyond the frames it got missed some (no server was linked):
       it reads them from the process's ring (feedSince). */
-  worker?: { parentSessionId: string; workerId: string; kind: WorkerKind; proc: string; seq?: number; lastSettled: WorkerState["lastSettled"] };
+  /** `keys`: its feed names each user message's send key and tells keyed sends that never ran (WorkerState.keys). */
+  worker?: { parentSessionId: string; workerId: string; kind: WorkerKind; proc: string; seq?: number; lastSettled: WorkerState["lastSettled"]; keys?: true };
   /** This process's model-call counts (proto 3), counted into the server's in-flight view. */
   llm?: LlmProcessSnapshot;
 }

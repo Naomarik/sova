@@ -3,7 +3,10 @@
 // - the foreign-write guard asks the driving session whether an appended line is ours (`hasEntry`);
 // - a topic batch handed over inside pi's settle window (P5) keeps its mark until its turn delivers it;
 // - an idle queued hand-off whose turn fails reports the failure into the pane, not as a hand-off failure;
-// - the stream guard hears each event before the chat's own listener does.
+// - the stream guard hears each event before the chat's own listener does;
+// - a worker's keyed send keeps its key to the message the model gets, in pi's settle window too, and one
+//   Stop drops is told as never run (§app.chat-processes/worker-instructions);
+// - steers sent mid-turn land together: each its own message (with its key), all before the one reply.
 // Real pi with a ScriptedModel (testing/scripted-model.ts), one throwaway PI_CODING_AGENT_DIR; ~/.pi is never
 // read or written and no real model is called.
 import assert from "node:assert/strict";
@@ -32,8 +35,12 @@ const { acquireChat, disposeAllChats } = await import("../../chat-manager");
 type Chat = Awaited<ReturnType<typeof acquireChat>>;
 type TopicBatchMark = import("../../chat-manager").TopicBatchMark;
 const { canonicalPath } = await import("../../paths");
+const { METHODS } = await import("../../chat-runtime/methods");
+const { WorkerFeed } = await import("../../chat-runtime/worker-feed");
+const { drainQueueThenAbort, setWorkerSpec } = await import("../../chat-manager");
 const { markOwned } = await import("../../write-guard");
 const { addWebSession } = await import("../../web-sessions");
+const { UserTurns } = await import("../../user-turns");
 
 after(async () => {
   await disposeAllChats();
@@ -65,9 +72,12 @@ function sessionFile(): string {
   return path;
 }
 
-/** A chat on the scripted model with one client whose every message (wire 1) lands in `log`. */
-async function openChat(onMessage?: (m: ChatServerMessage) => void) {
+/** A chat on the scripted model with one client whose every message (wire 1) lands in `log`; `worker`: opened
+    as a worker chat (its loadout only, as a worker's process opens it). */
+async function openChat(onMessage?: (m: ChatServerMessage) => void, o: { worker?: boolean } = {}) {
   const path = sessionFile();
+  if (o.worker)
+    setWorkerSpec(path, { kind: "worker", parent: { sessionId: "parent", path: "/parent.jsonl", workerId: "ag_01" }, cwd, model: null, thinking: null, builtins: null, extensions: [], flags: {}, appendSystemPrompt: null, env: {}, agentDir: null, lowered: true });
   const chat = await acquireChat(path, true);
   const model = new ScriptedModel().attach(piSession(chat));
   const log: ChatServerMessage[] = [];
@@ -160,6 +170,42 @@ describe("an idle queued hand-off whose turn fails", () => {
   });
 });
 
+describe("an idle composer steer starts a turn exactly as an idle prompt does", () => {
+  /** Two messages typed back to back on an idle chat, as `type` frames: what the server made of them. */
+  async function twoTyped(type: "prompt" | "steer") {
+    const { chat, model, client, log } = await openChat();
+    const turns = new UserTurns();
+    turns.watch(chat.harness);
+    chat.harness.subscribe((e) => void turns.observe(e));
+    chat.userTurns = turns;
+    let attended: boolean | undefined;
+    const release = model.hold();
+    model.reply(() => void (attended = turns.attended()));
+    chat.handle(client as never, { type, text: "first", clientId: "c1" });
+    const starting = chat.turnStarting;
+    // The second leaves before the first's run has begun (pi still awaiting its input handlers).
+    chat.handle(client as never, { type, text: "second", clientId: "c2" });
+    await until(() => model.calls.length >= 1, "the first turn's call");
+    release();
+    await idle(chat);
+    const users = model.calls.flatMap((c) => ((c.context as { messages: { role: string; content: unknown }[] }).messages).filter((m) => m.role === "user"));
+    const texts = [...new Set(users.map((m) => (Array.isArray(m.content) ? (m.content as { text?: string }[]).map((b) => b.text ?? "").join("") : String(m.content))))];
+    return {
+      acks: log.filter((m) => m.type === "send_ack").map((m) => [(m as { clientId: string }).clientId, (m as { queued: boolean }).queued]),
+      starting,
+      attended,
+      errors: errors(log).map((e) => e.message),
+      reached: ["first", "second"].filter((t) => texts.includes(t)),
+    };
+  }
+
+  test("the same accept path: acked, held while the turn starts, the user's turn, nothing refused", async () => {
+    const prompt = await twoTyped("prompt");
+    assert.deepEqual(prompt, { acks: [["c1", false], ["c2", true]], starting: true, attended: true, errors: [], reached: ["first", "second"] });
+    assert.deepEqual(await twoTyped("steer"), prompt);
+  });
+});
+
 describe("the stream guard's listener runs before the chat's", () => {
   test("a run's start clears the last trip before the chat forwards agent_start", async () => {
     let tripAtStart: unknown = "unseen";
@@ -175,4 +221,124 @@ describe("the stream guard's listener runs before the chat's", () => {
     await idle(chat);
     assert.equal(tripAtStart, null, "the guard (registered first) had already reset the trip");
   });
+});
+
+describe("a worker's keyed sends (§app.chat-processes/worker-instructions)", () => {
+  /** The worker host's send (chat-workers.ts deliver): the chat method, with its key. */
+  const send = (chat: Chat, text: string, key: string, delivery?: "steer" | "followUp") =>
+    METHODS.send(chat, { text, key, origin: "server", report: false, ...(delivery ? { delivery } : {}) }, { turns: new Map() });
+  /** A worker chat's feed over the chat, as its process attaches one (host.ts). */
+  const feedOf = (chat: Chat) => {
+    const events: { type: string; sendKey?: string; message?: { role?: string } }[] = [];
+    const feed = new WorkerFeed((f) => events.push(f.event as never));
+    const off = feed.attach(chat.harness, chat.sendKeys);
+    return { events, off };
+  };
+
+  for (const as of ["chat", "worker"] as const) {
+  test(`${as}: a keyed send made inside pi's settle window is queued, then delivered labelled with its key, once`, async () => {
+    const { chat, model } = await openChat(undefined, { worker: as === "worker" });
+    const { events, off } = feedOf(chat);
+    let receipt: unknown;
+    let inWindow: boolean | undefined;
+    let fired = false;
+    const offSettle = piSession(chat).subscribe((event) => {
+      if (event.type !== "agent_settled" || fired) return;
+      fired = true;
+      inWindow = chat.harness.inSettleWindow();
+      receipt = send(chat, "keyed in the window", "w:s1", "followUp");
+    });
+    model.reply({ text: "first" }, { text: "second" });
+    await chat.harness.send("one");
+    await until(() => model.calls.length >= 2, "the keyed turn");
+    await idle(chat);
+    offSettle();
+    off();
+    assert.equal(inWindow, true);
+    assert.deepEqual(receipt, { queued: true, turnId: null }, "held in Sova's queue, not deferred by pi");
+    const users = events.filter((e) => e.type === "message_start" && e.message?.role === "user");
+    assert.deepEqual(users.map((e) => e.sendKey ?? null), [null, "w:s1"], "the keyed message names its key, once; the unkeyed none");
+    assert.ok(!events.some((e) => e.type === "send_dropped"));
+  });
+
+  test(`${as}: a keyed steer delivered mid-run names its key; one Stop drains is told as never run, before the settle`, async () => {
+    const { chat, model } = await openChat(undefined, { worker: as === "worker" });
+    const { events, off } = feedOf(chat);
+    const gate = () => {
+      let open!: () => void;
+      const shut = new Promise<void>((r) => (open = r));
+      return { open, step: async () => (await shut, { text: "reply" }) };
+    };
+    const [a, b] = [gate(), gate()];
+    model.reply(a.step, b.step);
+    const run = chat.harness.send("long task");
+    await until(() => model.calls.length === 1, "the first reply, held");
+    await send(chat, "steer one", "w:s1", "steer");
+    await until(() => chat.harness.queue.hasQueued(), "the steer handed to pi");
+    a.open();
+    await until(() => model.calls.length === 2, "the steer's turn, held");
+    // A second steer goes in behind the held reply; then Stop drains it and aborts.
+    await send(chat, "steer two", "w:s2", "steer");
+    await until(() => chat.harness.queue.hasQueued(), "the second steer handed to pi");
+    await drainQueueThenAbort(chat.harness, () => {}, chat.queue);
+    b.open();
+    await run.catch(() => {});
+    await idle(chat);
+    off();
+    const users = events.filter((e) => e.type === "message_start" && e.message?.role === "user");
+    assert.deepEqual(users.map((e) => e.sendKey ?? null), [null, "w:s1"], "the delivered steer names its key");
+    const tail = events.map((e) => (e.type === "send_dropped" ? `dropped ${e.sendKey}` : e.type)).filter((t) => t === "agent_settled" || t.startsWith("dropped"));
+    assert.deepEqual(tail, ["dropped w:s2", "agent_settled"], "told once, before the settle");
+});
+
+  test(`${as}: two steers sent mid-turn land together: both user messages, each with its key, before the one reply`, async () => {
+    const { chat, model, client } = await openChat(undefined, { worker: as === "worker" });
+    const { events, off } = feedOf(chat);
+    const release = model.hold();
+    model.reply({ text: "working" }, { text: "one reply to both" });
+    const run = chat.harness.send("long task");
+    await until(() => model.calls.length === 1, "the first reply, held");
+    if (as === "chat") {
+      // The composer's mid-turn sends: `steer` frames.
+      chat.handle(client as never, { type: "steer", text: "steer one", clientId: "c1" });
+      chat.handle(client as never, { type: "steer", text: "steer two", clientId: "c2" });
+    } else {
+      await send(chat, "steer one", "w:s1", "steer");
+      await send(chat, "steer two", "w:s2", "steer");
+    }
+    await until(() => piSession(chat).getSteeringMessages().length === 2, "both steers handed to pi");
+    release();
+    await run;
+    await idle(chat);
+    off();
+    assert.equal(model.calls.length, 2, "one model call after the steers, for both");
+    const users = ((model.calls[1]!.context as { messages: { role: string; content: unknown }[] }).messages).filter((m) => m.role === "user");
+    const text = (m: { content: unknown }) => (Array.isArray(m.content) ? m.content.filter((c: { type?: string }) => c.type === "text").map((c: { text?: string }) => c.text).join("") : String(m.content));
+    assert.deepEqual(users.slice(-2).map(text), ["steer one", "steer two"], "each its own message, in the order sent");
+    const order = events.filter((e) => e.type === "message_start" && (e.message?.role === "user" || e.message?.role === "assistant")).map((e) => (e.message?.role === "user" ? `user ${e.sendKey ?? "-"}` : e.message?.role));
+    const keys = as === "worker" ? ["w:s1", "w:s2"] : ["-", "-"];
+    assert.deepEqual(order, ["user -", "assistant", `user ${keys[0]}`, `user ${keys[1]}`, "assistant"], "both before the one reply");
+    assert.equal(chat.queue.size, 0);
+  });
+
+  if (as === "worker")
+    test("worker: Stop with two keyed steers handed to pi: each is told as never run, before the settle", async () => {
+      const { chat, model } = await openChat(undefined, { worker: true });
+      const { events, off } = feedOf(chat);
+      const release = model.hold();
+      const run = chat.harness.send("long task");
+      await until(() => model.calls.length === 1, "the first reply, held");
+      await send(chat, "steer one", "w:s1", "steer");
+      await send(chat, "steer two", "w:s2", "steer");
+      await until(() => piSession(chat).getSteeringMessages().length === 2, "both steers handed to pi");
+      await drainQueueThenAbort(chat.harness, () => {}, chat.queue);
+      release();
+      await run.catch(() => {});
+      await idle(chat);
+      off();
+      const tail = events.map((e) => (e.type === "send_dropped" ? `dropped ${e.sendKey}` : e.type)).filter((t) => t === "agent_settled" || t.startsWith("dropped"));
+      assert.deepEqual(tail, ["dropped w:s1", "dropped w:s2", "agent_settled"], "one each, in order, before the settle");
+      assert.ok(!events.some((e) => e.type === "message_start" && e.sendKey), "neither ran");
+    });
+  }
 });

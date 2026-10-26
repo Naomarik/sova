@@ -27,6 +27,8 @@ export type OwnerStatus = "idle" | "busy" | "archived";
 
 export interface BoardOwner {
   id: string;
+  /** The session's title, so the merge captain names the owner's chat to the user. */
+  title: string;
   status: OwnerStatus;
   /** The session's profile id; null for Default. */
   profile: string | null;
@@ -40,7 +42,7 @@ export interface BoardRow {
   /** The common git directory the worktree belongs to (canonical); null when it can't be read. */
   repo: string | null;
   state: ReadinessState;
-  /** Readiness's reason line: "Waiting for your OK · checks passed · 3 commits ahead". */
+  /** Readiness's reason line: "Ready to land · 3 commits ahead", "Ready to merge · checks passed". */
   reason: string;
   /** Ready to land or Landing specs at its head (§chat.worktrees/ready-to-land); absent otherwise. */
   landing?: WorktreeLanding;
@@ -137,10 +139,10 @@ export function buildBoard(sessions: readonly SessionSummary[], inputs: BoardInp
       branch: tree.branch,
       repo: repoOf(path),
       state: tree.state,
-      reason: tree.reason ?? tree.state,
+      reason: tree.reason ?? tree.state, // a reading from an older peer may have no reason
       ...(tree.landing ? { landing: tree.landing } : {}),
       readAt: new Date(at).toISOString(),
-      owner: { id: s.id, status, profile: s.profile?.id ?? null, lastActiveAt: s.lastActiveAt },
+      owner: { id: s.id, title: s.title || "Untitled", status, profile: s.profile?.id ?? null, lastActiveAt: s.lastActiveAt },
     });
   }
   rows.sort((a, b) => a.path.localeCompare(b.path));

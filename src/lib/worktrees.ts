@@ -100,17 +100,12 @@ export function readinessChip(w: Pick<SessionWorktreeInfo, "readiness">): Worktr
 }
 
 /** The visible muted line under a worktree with a readiness, so a phone gets the reason without
-    hover: the server's `reason` ("Ready to merge · checks passed · 19 commits ahead"), else its
-    state and why. None with neither: the chip alone already says the state. */
+    hover: the server's `reason` ("Ready to land · 19 commits ahead", §chat.worktrees/ready-to-land), else
+    its state and why. None with neither: the chip alone already says the state. */
 export function readinessReason(w: Pick<SessionWorktreeInfo, "readiness">): string | null {
   const r = w.readiness;
-  const l = r?.landing;
-  if (l?.state === "ready") return r!.reason ? r!.reason.replace(/^(?:Ready to merge|Waiting for your OK)\b/, "Ready to land") : "Ready to land";
-  if (l?.state === "specs") {
-    const n = l.drafts?.length ?? 0;
-    return ["Landing specs", `${n} draft${n === 1 ? "" : "s"}`, ...(l.specsWhy ? [`can't land them: ${l.specsWhy}`] : [])].join(" · ");
-  }
   if (r?.reason) return r.reason;
+  // An older peer's reading may have no reason: its state and why instead.
   if (!r?.why) return null;
   const label = r.state === "merged" ? "Merged" : readinessChip(w)!.label;
   return `${label} · ${r.why}`;

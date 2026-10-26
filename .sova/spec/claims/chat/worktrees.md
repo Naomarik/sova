@@ -358,10 +358,14 @@ call beside its readiness (§chat.worktrees/readiness):
   temporary commit subject;
 - the session's newest check run isn't failing, it has no open alignment question, and nothing
   runs in it;
-- and **the work is finished**: the session's latest turn outcome (§app.decisions/attention-signals,
-  the turn card) says it did what was asked, which covers done and done-but-unverified. Whether the
-  last reply asks something doesn't matter: a finished reply that asks "shall I merge?" is still
-  Ready to land. When Decisions' attention signals are off, or turned off for the session's folder,
+- and **the work is finished**: the session's latest turn outcome for its last reply
+  (§app.decisions/attention-signals, the turn card) says either that it did what was asked, which
+  covers done and done-but-unverified, or that it waits only for the go-ahead to land, merge, push
+  or restart, whether from the user or the merge captain (outcome waiting-on-user or
+  waiting-on-team with ask kind restart-or-merge-go). Any other outcome, or a wait for anything
+  else (a choice, an approval, information), is not finished. Whether the last reply asks
+  something doesn't matter: a finished reply that asks "shall I merge?" or ends 'You can type
+  "land it" here' is still Ready to land. When Decisions' attention signals are off, or turned off for the session's folder,
   there is no outcome to read, and the code-only conditions above decide alone.
 
 Once a head commit is Ready to land it **stays** so for that commit, kept per session and worktree

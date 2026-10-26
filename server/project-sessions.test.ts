@@ -231,7 +231,7 @@ describe("startCoding's cwd: the root, inside it, or inside one of its worktrees
   });
 });
 
-describe("groups: the operator's own build may join one; a project's overseer conversations and its overseer's builds may not", () => {
+describe("groups: a project's own sessions may join one (its overseer's conversations, every build); an org's may not", () => {
   const assign = async (path: string, groupId: string | null) => {
     const res = await sova_app.request("/api/session-groups/assign", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, groupId }) });
     return { status: res.status, body: (await res.json()) as { ok?: true; error?: string } };
@@ -242,7 +242,7 @@ describe("groups: the operator's own build may join one; a project's overseer co
     return ((await res.json()) as { id: string }).id;
   };
 
-  test("POST /api/session-groups/assign: an operator build joins; an overseer's build, a project overseer's conversation and an org build get 400", async () => {
+  test("POST /api/session-groups/assign: an operator build, an overseer's build and a project overseer's conversation join; an org build gets 400", async () => {
     const g = await group();
     const mine = await po.startCoding(sovaP.id, { worktree: "later", cwd: sova });
     assert.deepEqual(await assign(mine.path, g), { status: 200, body: { ok: true } });
@@ -251,20 +251,23 @@ describe("groups: the operator's own build may join one; a project's overseer co
     const theirsId = "55555555-5555-4555-8555-555555555555";
     const theirs = sessionIn(sova, theirsId);
     await seedBuild(engineOf(sovaP.id)!, sovaP.id, { sessionId: theirsId, kind: "coding", path: theirs });
-    assert.deepEqual(await assign(theirs, g), { status: 400, body: { error: "Project sessions stay with their project." } });
+    assert.deepEqual(await assign(theirs, g), { status: 200, body: { ok: true } });
+    assert.equal(readAssignments()[theirsId], g);
 
     const overseer = await po.ensureProjectOverseer(sovaP.id);
-    const refused = await assign(overseer.path, g);
-    assert.equal(refused.status, 400);
-    assert.equal(refused.body.error, "Project sessions stay with their project.");
+    assert.deepEqual(await assign(overseer.path, g), { status: 200, body: { ok: true } });
+    assert.equal(readAssignments()[overseer.id], g);
 
     const placed = await po.startCoding(siteP.id, { worktree: "later", cwd: site });
     assert.deepEqual(await assign(placed.path, g), { status: 400, body: { error: "Organization sessions stay with their project." } });
+    assert.equal(readAssignments()[placed.sessionId], undefined, "nothing refused was written");
 
-    assert.equal(readAssignments()[theirsId], undefined, "nothing refused was written");
-    // Taking one out always works.
-    assert.deepEqual(await assign(theirs, null), { status: 200, body: { ok: true } });
-    assert.deepEqual(await assign(mine.path, null), { status: 200, body: { ok: true } });
+    // Still a project's: none of them leaves its project's place for Folders.
+    for (const [path, id, kind] of [[mine.path, mine.sessionId, "coding"], [theirs, theirsId, "coding"], [overseer.path, overseer.id, "overseer"]] as const)
+      assert.equal(projectSessionLookup().of(path, id, sova)?.kind, kind, id);
+    // Taking one out always works, an org session's included.
+    assert.deepEqual(await assign(placed.path, null), { status: 200, body: { ok: true } });
+    for (const path of [theirs, overseer.path, mine.path]) assert.deepEqual(await assign(path, null), { status: 200, body: { ok: true } });
   });
 
   test("every group write is pushed to the feed's listeners as groups_changed", async () => {
@@ -280,9 +283,10 @@ describe("groups: the operator's own build may join one; a project's overseer co
       await sova_app.request(`/api/session-groups/${g}`, { method: "DELETE" });
       assert.equal(got.filter((t) => t === "groups_changed").length, 4, `create, assign, rename, delete; got ${JSON.stringify(got)}`);
       // A refused assignment writes nothing, so it pushes nothing.
+      const g2 = await group();
+      const placed = await po.startCoding(siteP.id, { worktree: "later", cwd: site });
       const before = got.length;
-      const overseer = await po.ensureProjectOverseer(sovaP.id);
-      await assign(overseer.path, g);
+      assert.equal((await assign(placed.path, g2)).status, 400);
       assert.equal(got.slice(before).filter((t) => t === "groups_changed").length, 0);
     } finally {
       remove();

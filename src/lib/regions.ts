@@ -42,7 +42,7 @@ export const isOperatorBuild = (s: Pick<SessionSummary, "workerSession" | "overs
   isMainThread(s) && !s.org && s.project?.kind === "coding" && s.project.operator === true;
 
 /** An organization's or a project's own session: it lives in that region (the archive toasts). A session only in a
-    project's folder is not owned. Whether it joins a group is `isGroupable`'s: the operator's own builds do. */
+    project's folder is not owned. Whether it joins a group is `canJoinGroup`'s: a project's own sessions do. */
 export const isOwnedSession = (s: Pick<SessionSummary, "org" | "project">): boolean => isOrgSession(s) || isProjectOwned(s);
 
 /**
@@ -56,21 +56,25 @@ export const isOrdinarySession = (s: Pick<SessionSummary, "workerSession" | "ove
   isMainThread(s) && !isOrgSession(s) && (!isProjectOwned(s) || isArchivedStandaloneBuild(s));
 
 /**
- * Whether a session can be in a group (§app.session-list/groups): every ordinary session, and the operator's own coding
- * sessions (`isOperatorBuild`), as Recent adds them back. It widens only the groups — their sections, counts, the drag
- * lock, Move into group — never `isOrdinarySession`, so those builds stay out of Folders, Needs you and the Archive.
- * Organization sessions, a project's overseer conversations and the builds its overseer started on its own never are.
+ * Whether a session can be in a group (§app.session-list/groups): every main thread no organization owns, a registered
+ * project's own sessions included (its overseer's conversations, the builds it or the operator started). It decides only
+ * the groups — their sections, counts, the drag lock, Move into group, the group workspace — never `isOrdinarySession`,
+ * so a project's sessions stay out of Folders, Needs you, Recent and the Archive and show in their project's block too.
  */
-export const isGroupable = (s: Pick<SessionSummary, "workerSession" | "overseer" | "org" | "project"> & { archived?: boolean }): boolean =>
-  isOrdinarySession(s) || isOperatorBuild(s);
+export const canJoinGroup = (s: Pick<SessionSummary, "workerSession" | "overseer" | "org">): boolean =>
+  isMainThread(s) && !isOrgSession(s);
+
+/** A group's members, in the list's order: the rows assigned to it that can be in a group. The sidebar's group and the
+    group workspace both read this, so they list the same sessions (an org session assigned before that rule is kept but
+    not drawn). */
+export const groupMembersOf = <T extends Pick<SessionSummary, "workerSession" | "overseer" | "org" | "groupId">>(sessions: readonly T[], id: string): T[] =>
+  sessions.filter((s) => s.groupId === id && canJoinGroup(s));
 
 export const ORG_GROUP_REASON = "Organization sessions stay with their project.";
-export const PROJECT_GROUP_REASON = "Project sessions stay with their project.";
 
 /** Why a row can't join a group, in the words the controls say (the server's 400 says the same); null when it can.
     Taking one out of a group always works. */
-export const groupRefusal = (s: Pick<SessionSummary, "workerSession" | "overseer" | "org" | "project"> & { archived?: boolean }): string | null =>
-  isOrgSession(s) ? ORG_GROUP_REASON : isGroupable(s) || !isProjectOwned(s) ? null : PROJECT_GROUP_REASON;
+export const groupRefusal = (s: Pick<SessionSummary, "org">): string | null => (isOrgSession(s) ? ORG_GROUP_REASON : null);
 
 /**
  * A session a project of this computer lists (§app.projects/folder-sessions): in a registered, not archived project's

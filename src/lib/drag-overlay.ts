@@ -123,7 +123,7 @@ export interface DragInfo {
   title: string;
   /** The group it is in now; null for none. A peer's group is its own host's, so null there too. */
   groupId: string | null;
-  /** Why it can never join a group (an organization's or a project's own session, regions' `groupRefusal`), or null.
+  /** Why it can never join a group (an organization's session, regions' `groupRefusal`), or null.
       Taking one out is fine. */
   groupRefusal: string | null;
   /** The project the unarchive (Undo) toast names (drag-archive's `orgProjectOf`). */
@@ -164,7 +164,7 @@ export interface DropTiles {
   archiveDisabled: string | null;
 }
 
-export { ORG_GROUP_REASON, PROJECT_GROUP_REASON } from "./regions";
+export { ORG_GROUP_REASON } from "./regions";
 export const peerGroupReason = (peer: string) => `Groups hold this host's sessions only. That one lives on ${peer}.`;
 
 /** Every tile the overlay shows for this row, in order, with what each would do. */

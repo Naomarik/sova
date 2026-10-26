@@ -1,7 +1,7 @@
 // A group's guide line collapses it (§app.session-list/guide-lines), in a real Chrome: the app's own build, served from
 // a scratch build with every request answered here (no server, no network). Measured, never hard-coded: each line's
 // centre against its head's chevron (every kind of group), a user group's members flat under its name (the operator's own
-// coding session among them, counted; an overseer-started build not drawn), and for a folder, a Projects-region project and its Done
+// coding session and an overseer-started build among them, counted; an org's session not drawn), and for a folder, a Projects-region project and its Done
 // against its rows' state-rail axis too (the line breaks around each rail item, ringed in the row's own ground); an
 // org's line one piece down past its projects; nested lines' boxes apart; then a press 5px off a line's centre collapses its group (an org, a folder, a Done, a project)
 // through the head's own path, the choice holds through a refresh (a folder's in sessionStorage), and the head ends up
@@ -85,7 +85,9 @@ function world(): World {
     projects.push({ id: projectId, name: projectName, root, origin: "folder", createdAt: iso(9999), space: { kind: "org", orgId, orgName: "Acme" } } as unknown as ProjectSummary);
     const n = p === 0 ? 30 : 4;
     for (let i = 0; i < n; i++) {
-      sessions.push(row(`acme${p}-${i}`, root, `Acme ${p} job ${i}`, 20 + p * 100 + i, { org: { orgId, orgName: "Acme", projectId, projectName, kind: "coding" } } as Partial<SessionSummary>));
+      // acme1-0 was filed in the group before the rule: kept on the server, never drawn there (it is newer than every member).
+      const filed = p === 1 && i === 0 ? { groupId: GROUP.id } : {};
+      sessions.push(row(`acme${p}-${i}`, root, `Acme ${p} job ${i}`, 20 + p * 100 + i, { org: { orgId, orgName: "Acme", projectId, projectName, kind: "coding" }, ...filed } as Partial<SessionSummary>));
       if (p === 0) sessions.push(row(`acme${p}-done-${i}`, root, `Acme ${p} merged ${i}`, 500 + i, { org: { orgId, orgName: "Acme", projectId, projectName, kind: "coding", finished: true } } as Partial<SessionSummary>));
     }
   });
@@ -99,10 +101,10 @@ function world(): World {
   const solo = "/w/projects/solo";
   projects.push({ id: "prj_solo", name: "Solo", root: solo, origin: "folder", createdAt: iso(9999), space: { kind: "standalone" } } as unknown as ProjectSummary);
   for (let i = 0; i < 30; i++) {
-    // solo-0, its overseer's own build, was filed in the group before the rule: kept on the server, never drawn there.
+    // solo-0, its overseer's own build, is filed in the group: drawn there like any member.
     sessions.push(row(`solo-${i}`, solo, `Solo job ${i}`, 200 + i, { project: { projectId: "prj_solo", projectName: "Solo", kind: "coding" }, ...(i === 0 ? { groupId: GROUP.id } : {}) } as Partial<SessionSummary>));
   }
-  // The operator's own coding session in Solo, filed in the group: drawn there, newest of its members.
+  // The operator's own coding session in Solo, filed in the group: drawn there too.
   sessions.push(row("solo-mine", solo, "My Solo build", 250, { groupId: GROUP.id, project: { projectId: "prj_solo", projectName: "Solo", kind: "coding", operator: true } } as Partial<SessionSummary>));
   for (let i = 0; i < 6; i++) {
     sessions.push(row(`solo-done-${i}`, solo, `Solo merged ${i}`, 260 + i, { project: { projectId: "prj_solo", projectName: "Solo", kind: "coding", finished: true } } as Partial<SessionSummary>));
@@ -457,9 +459,10 @@ for (const width of [1280, 320]) {
     }, HOSTS.group);
     assert.equal(g.folders, 0, "no folder section, folder heading or path inside a group");
     assert.equal(g.every, g.titles.length, "every row is the group's own list item");
-    // Newest activity first, the operator's build (250 min ago) ahead of the folder rows (300+), the overseer's not there.
-    assert.deepEqual(g.titles, ["My Solo build", "Folder task 0", "Folder task 1", "Folder task 2", "Folder task 3", "Side task 0", "Side task 1", "Side task 2", "Side task 3"]);
-    assert.equal(g.count, "9", "the count includes the operator's build and leaves out the overseer's");
+    // Newest activity first: the overseer's build (200 min ago), the operator's (250), then the folder rows (300+); the
+    // org session filed before the rule (120) is not there.
+    assert.deepEqual(g.titles, ["Solo job 0", "My Solo build", "Folder task 0", "Folder task 1", "Folder task 2", "Folder task 3", "Side task 0", "Side task 1", "Side task 2", "Side task 3"]);
+    assert.equal(g.count, "10", "the count includes both project builds and leaves out the org's session");
     for (const t of g.texts) assert.ok(!t.includes("/w/") && !t.includes("folders/") && !t.includes("projects/"), `no folder on a group row: ${t}`);
     // Its line is beside the rows, clear of them, and runs down past the last.
     const o = await geometry(page, HOSTS.group);
@@ -491,8 +494,8 @@ test("an operator build added to an existing group shows up in it at once, on th
     if (now.includes("My Solo build")) break;
     await page.waitForTimeout(50);
   }
-  assert.equal(now[0], "My Solo build", `the row is in its group, newest first, with no focus and no poll; got ${JSON.stringify(now)}`);
-  assert.equal(await page.locator(`${HOSTS.group} > summary > .text-num`).textContent(), "9");
+  assert.equal(now[1], "My Solo build", `the row is in its group, in activity order, with no focus and no poll; got ${JSON.stringify(now)}`);
+  assert.equal(await page.locator(`${HOSTS.group} > summary > .text-num`).textContent(), "10");
   assert.equal(await page.locator(`${HOSTS.group} .session-group`).count(), 0, "still flat");
   await page.context().close();
 });

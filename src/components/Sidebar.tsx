@@ -13,7 +13,7 @@ import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../l
 import { type ArchiveGroupId, foldersWord, groupByArchiveDate, sessionsWord, startOfDay } from "../lib/archive";
 import { modelLabel, relativeTime, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, glanceLabel, glanceTitle, usageGlance, usageHref } from "../lib/insights";
-import { archiveDateOpen as archiveDateOpenRule, archiveOpen as archiveOpenRule, foldersOpen as foldersOpenRule, groupRefusal, inFolders, isGroupable, isMainThread, isOrdinarySession, isOrgSession, isTopSession, listedWithLocalProject, storedFoldersOpen } from "../lib/regions";
+import { archiveDateOpen as archiveDateOpenRule, archiveOpen as archiveOpenRule, foldersOpen as foldersOpenRule, canJoinGroup, groupMembersOf, groupRefusal, inFolders, isMainThread, isOrdinarySession, isOrgSession, isTopSession, listedWithLocalProject, storedFoldersOpen } from "../lib/regions";
 import {
   eyeLabel,
   doneOpen as doneOpenRule,
@@ -339,7 +339,7 @@ export function SessionRow(props: {
       path: row.path,
       title: row.title,
       groupId: row.groupId ?? null,
-      // An ordinary session and the operator's own build can be grouped; an org's or a project's own session can't.
+      // Any main thread can be grouped, a project's own sessions included; an org's session can't.
       groupRefusal: groupRefusal(row),
       orgProject: unarchivedProjectOf(row, host === null),
       archivedProject: archivedProjectOf(row),
@@ -1437,8 +1437,8 @@ export function Sidebar(props: {
   const ordinaryHits = createMemo(() => hits().filter(isOrdinarySession));
   /** What a group holds (§app.session-list/groups): every ordinary session, and the operator's own coding sessions,
       which stay out of every other ordinary surface. */
-  const groupableAll = createMemo(() => all().filter(isGroupable));
-  const groupableHits = createMemo(() => hits().filter(isGroupable));
+  const groupableAll = createMemo(() => all().filter(canJoinGroup));
+  const groupableHits = createMemo(() => hits().filter(canJoinGroup));
   /** Each group's session count, as its section counts them, for its tile in the overlay and the picker. */
   const groupCounts = createMemo(() => new Map(groupSections(groupableAll(), sessionGroups(), false).map((x) => [x.group.id, x.sessions.length])));
   /** The row is this computer's, not a mesh peer's: only this computer's sessions are listed under its projects. */
@@ -1510,11 +1510,10 @@ export function Sidebar(props: {
   /** One stay on the open session (lib/section-reveal): a new number each time the open session changes, never on a
       refresh. A section holding the open session opens for it until the user collapses it on this visit. */
   const { dismissed, noteToggle } = createSectionReveal(() => props.selected, dismissals);
-  // Org sessions and a project's own sessions are never grouped, so an assignment made before that rule is kept but
-  // not drawn.
+  // Org sessions are never grouped, so an assignment made before that rule is kept but not drawn.
   const sections = createMemo(() => groupSections(groupableHits(), sessionGroups(), searching()));
-  /** A group's rows, from the same hit list the sections were built from. */
-  const rowsOf = (id: string) => groupableHits().filter((s) => s.groupId === id);
+  /** A group's rows, from the same hit list the sections were built from, by the rule the group workspace reads. */
+  const rowsOf = (id: string) => groupMembersOf(groupableHits(), id);
   /** With no query the region always stands: its head carries the `+` that makes a group, the
       feature's front door. While searching it appears only when a group has a match. */
   const groupsShown = () => !searching() || sections().length > 0;

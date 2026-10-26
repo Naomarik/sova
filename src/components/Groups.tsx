@@ -104,8 +104,8 @@ export function MoveToGroupMenu(props: {
   const [error, setError] = createSignal<string | null>(null);
   const [active, setActive] = createSignal(0);
 
-  /** An organization's session, a project's overseer conversation and a build its overseer started are never grouped
-      (§app.session-list/groups; the server refuses too). The operator's own coding session is. */
+  /** An organization's session is never grouped (§app.session-list/groups; the server refuses too). A project's own
+      sessions are. */
   const orgRefusal = () => groupRefusal(props.session);
   const current = () => props.session.groupId ?? null;
   const currentName = () => groupNameOf(sessionGroups(), props.session.groupId ?? undefined);

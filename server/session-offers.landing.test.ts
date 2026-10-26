@@ -100,7 +100,7 @@ test("Ready to land with docs: the card's one line of counts, the § names behin
   assert.equal(card.docs?.line, "Lands with its docs: 2 new promises, 1 changed");
   assert.deepEqual(card.docs?.names, ["§x/a", "§x/b", "§x/c"]);
   assert.ok(!card.docs!.line.includes("§"), "names stay one click away, never in the line");
-  assert.equal(labels(card)[0], "Land It", "Land It no longer needs every draft promoted");
+  assert.deepEqual(labels(card), ["Land It", "Not Yet"], "Land It no longer needs every draft promoted, and Merge Without Specs… stays off a card whose docs fit");
 });
 
 test("the counts read right in the singular and with only one kind", async () => {
@@ -121,7 +121,7 @@ test("docs that don't fit: no Land It; Merge Without Specs… only once the chat
   landingTree = specs({ specsWhy: "the clash needs the user" });
   const card = await show(sid(), sid());
   assert.ok(!labels(card).includes("Land It"), `no Land It when the docs don't fit: ${labels(card)}`);
-  assert.ok(labels(card).includes("Merge Without Specs…"));
+  assert.deepEqual(labels(card), ["Merge Without Specs…", "Not Yet"]);
 });
 
 test("a14: Land It records the drafts as the card showed them, even if a draft changed before the click", async () => {

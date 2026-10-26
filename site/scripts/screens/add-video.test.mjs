@@ -1,4 +1,4 @@
-// node --test site/scripts/add-video.test.mjs — the deploy's video check refuses a missing video.
+// node --test site/scripts/screens/add-video.test.mjs — the deploy's video check refuses a missing video.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";

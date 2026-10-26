@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// node site/scripts/add-video.mjs <exported tree> — copy the hero videos into an exported tree before
+// node site/scripts/screens/add-video.mjs <exported tree> — copy the hero videos into an exported tree before
 // its site build, and refuse (exit 1) when any video the site references is missing. The videos are
 // gitignored and live on disk only, so a `git archive` export has none.
 // Source: $SOVA_SITE_VIDEO_DIR, else the main checkout's site/public/video (found with git from the
@@ -54,7 +54,7 @@ export function addVideo(tree, source) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const tree = process.argv[2];
   if (!tree) {
-    console.error("usage: node site/scripts/add-video.mjs <exported tree>");
+    console.error("usage: node site/scripts/screens/add-video.mjs <exported tree>");
     process.exit(2);
   }
   try {

@@ -1275,7 +1275,7 @@ test("Ready to land: ask queues the branch for Sova's Landing card; status reads
     // The owner's chat by its title and a link, never "its card is shown" alone; the report lists it too.
     assert.match(await line(), new RegExp(`Landing card shown in "Chat of ${OWNER}" \\(#/sid/${OWNER}\\)`));
     const rep = await run(["report"]);
-    assert.match(rep.out, new RegExp(`^- Waiting for your Land It: feat/landq at ${head.slice(0, 7)} in "Chat of ${OWNER}" \\(#/sid/${OWNER}\\)$`, "m"));
+    assert.match(rep.out, new RegExp(`^- Waiting for your Land It \\(or "land it" typed there\\): feat/landq at ${head.slice(0, 7)} in "Chat of ${OWNER}" \\(#/sid/${OWNER}\\)$`, "m"));
     writeFileSync(landingFile, JSON.stringify({ v: 1, goAheads: [], notYet: [{ branch: "feat/landq", commit: head, at: "x" }] }));
     assert.match(await line(), /the user said Not Yet at [0-9a-f]{7}: it waits for a new commit/);
     assert.equal(JSON.parse((await run(["status", "--json"])).out).branches.find((b) => b.branch === "feat/landq").group, "not-ready");
@@ -1338,6 +1338,32 @@ test("go: the user's word in this chat is a go-ahead at the head, straight to ch
     rmSync(landingFile, { force: true });
     git(main, "worktree", "remove", "--force", wt("feat/word"));
     git(main, "branch", "-D", "feat/word");
+  }
+});
+
+test("owner chat: the user's \"land it\" typed in the branch's own chat (worktree land) is a go-ahead at the head, straight to check, named as such", async () => {
+  const landingFile = join(agent, "sova", "landing.json");
+  const saved = readFileSync(stateFile, "utf8");
+  try {
+    git(main, "worktree", "add", "-q", "-b", "feat/typed", wt("feat/typed"), "master");
+    writeFileSync(join(wt("feat/typed"), "typed.txt"), "typed\n");
+    git(wt("feat/typed"), "add", "typed.txt");
+    git(wt("feat/typed"), "commit", "-q", "-m", "typed");
+    const head = git(main, "rev-parse", "feat/typed");
+    // Not Ready to land, no card ever shown: the typed word alone checks it.
+    writeBoard([["feat/typed", "in-progress", OWNER, "idle"]]);
+    const group = async () => JSON.parse((await run(["status", "--json"])).out).branches.find((b) => b.branch === "feat/typed").group;
+    assert.equal(await group(), "not-ready");
+    writeFileSync(landingFile, JSON.stringify({ v: 1, goAheads: [{ branch: "feat/typed", commit: head, session: OWNER, at: new Date().toISOString(), by: "owner-chat" }], notYet: [] }));
+    assert.equal(await group(), "check", "the user's typed word in the owner's chat checks it, card or not");
+    const st = (await run(["status"])).out;
+    assert.match(st, new RegExp(`the user's go-ahead \\(word typed in its own chat\\) at ${head.slice(0, 7)}`));
+    assert.doesNotMatch(st, /press/i);
+  } finally {
+    writeFileSync(stateFile, saved);
+    rmSync(landingFile, { force: true });
+    git(main, "worktree", "remove", "--force", wt("feat/typed"));
+    git(main, "branch", "-D", "feat/typed");
   }
 });
 

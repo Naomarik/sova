@@ -82,18 +82,22 @@ also update Y" list live in its guide: read the guide of every area your task to
   conflicts with master, the newest checks not failing, no open alignment questions, the session
   idle, and its latest turn outcome says the work is finished (with Decisions off: the code checks
   alone). It holds for that commit until the branch changes or lands.
-- **Who merges.** In Sova's repo the merge captain queues a Ready to land branch and Sova shows its
-  session the Landing card: **Land It** is your go-ahead, a shortcut for telling the captain, and the
-  captain lands, pushes and restarts; **Not Yet** leaves it until a new commit. A card exists only once
-  the branch is Ready to land and queued: a session tells the user to press Land It only when its
-  chat shows that card, and otherwise says what still blocks it (Sova's note names it). A branch
-  with no owner chat gets no card: the captain asks for the user's typed OK instead. The user's word
-  in the captain's chat ("merge it") always lands a branch once its checks pass, card or not. A Land It
-  survives the captain's clean master merge into the branch. No merge into master needs a
-  recorded go-ahead. A project without a captain declares its own landing offer, or none.
+- **Who merges.** In Sova's repo the merge captain lands branches on the user's go-ahead. **The user's
+  word lands a branch**: when the user types "land it" or "merge it" in the chat that owns the branch,
+  commit what is left and record it with `worktree land` (it refuses anything but their own newest
+  message); the captain is woken, checks the branch and lands, pushes and restarts once its checks
+  pass, card or not. Their word in the captain's chat does the same. Never tell the user to press
+  Land It or to wait for a Landing card: you can't see whether one is showing. When the work is done,
+  say what still blocks landing (Sova's note names it), or that they can type "land it" here. The
+  Landing card (Land It, Not Yet) is only a shortcut Sova may show once the branch is Ready to land
+  and queued; a branch with no owner chat gets none, and the captain asks for the user's typed OK. A
+  go-ahead survives the captain's clean master merge into the branch; a new commit of the branch's
+  own needs a new word. No merge into master needs a recorded go-ahead. A project without a captain
+  declares its own landing offer, or none.
 - **Specs land with the branch.** Sova tells a finished session once per commit to promote its spec
   drafts on its branch and commit them; the branch reads Landing specs until then. If it can't,
-  the card offers Merge Without Specs… behind a confirmation.
+  the user may land it without them: "land it without its specs" typed in the chat (`worktree land`
+  records that), or the card's Merge Without Specs….
 - **The one exception:** a Project Overseer's settings change card on Sova's own project lands its
   settings files on master at your Apply (§app.project-overseer/settings).
 

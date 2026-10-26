@@ -326,7 +326,8 @@ const OWNER_STATUSES = ["idle", "busy", "archived"];
 
 // ---------------------------------------------------------------------------------------------
 // Landing (§chat.worktrees/ready-to-land, §chat.offers/sova-landing): the board's `landing` per row,
-// and the user's answers on the Landing card, which Sova keeps in `<state root>/landing.json`.
+// and the user's answers on the Landing card, or typed in the branch's own chat, which Sova keeps in
+// `<state root>/landing.json`.
 
 /** A row the captain may queue: Ready to land, or Landing specs whose owner said why they can't land (the card then
  *  offers Merge Without Specs…). */
@@ -350,8 +351,9 @@ export const landingAnswer = (landing, branch, head) => {
   return no ? { kind: "not-yet" } : null;
 };
 
-/** A go-ahead's words by where it was given: the Project Overseer's Merge Branch, the user's word in this chat, Land It. */
-export const goAheadWord = (by) => (by === "page" ? "Merge Branch" : by === "chat" ? "word in this chat" : "Land It");
+/** A go-ahead's words by where it was given: the Project Overseer's Merge Branch, the user's word in this chat, their
+ *  word typed in the branch's own chat (`worktree land`), Land It. */
+export const goAheadWord = (by) => (by === "page" ? "Merge Branch" : by === "chat" ? "word in this chat" : by === "owner-chat" ? "word typed in its own chat" : "Land It");
 
 /** How many clean master merges a go-ahead carries through (§chat.merge-round/driver). */
 export const CARRY_MAX = 20;
@@ -433,10 +435,10 @@ export function chatOf(rec, id) {
 
 /** What to do next with a branch, in the order `status` lists them. */
 export const GROUPS = [
-  ["check", "to check", "The user's go-ahead at this head (Land It, or their word in this chat): check it"],
+  ["check", "to check", "The user's go-ahead at this head (Land It, their word in this chat, or typed in the branch's own chat): check it"],
   ["land", "to land", "Checked green at this head and master: land it"],
   ["ask", "to queue now", "Ready to land, owner idle: queue it (Sova shows the Landing card)"],
-  ["waiting", "card shown", "Landing card shown: waits for the user's Land It"],
+  ["waiting", "card shown", "Landing card shown: waits for the user's Land It, or \"land it\" typed in that chat"],
   ["busy", "owner busy", "Ready to land, owner busy: queue it on a later round"],
   ["archived", "owner archived", "Owner archived: the user's call (tell the user once)"],
   ["untracked", "no session tracks", "No session tracks this worktree: the user's call (tell the user once)"],
@@ -696,7 +698,8 @@ class Round {
     return parseBoard(text, this.now);
   }
 
-  /** The user's answers: on Landing cards (Sova's `landing.json`), and their word in this chat (`go`), a go-ahead alike. */
+  /** The user's answers: on Landing cards and typed in a branch's own chat (Sova's `landing.json`), and their word in
+   *  this chat (`go`), a go-ahead alike. */
   readLanding() {
     let l;
     try { l = parseLanding(readFileSync(this.landingFile, "utf8")); } catch { l = { goAheads: [], notYet: [] }; }
@@ -999,9 +1002,9 @@ class Round {
     if (this.now - own.at > NOTE_FRESH_MS) stop(1, `The newest reading of ${own.owner} on ${branch} is ${ago(this.now - own.at)} old: run round.mjs status again (Sova rewrites its board every minute), or note it by hand.`, "round.mjs status");
     // Ready to land at this head: queued, and Sova shows the owner the Landing card itself (§chat.offers/sova-landing).
     const prior = rec.ask?.queued && rec.ask.head === head ? this.queueResult(rec.ask.queued) : null;
-    if (prior?.refused) stop(1, `Sova didn't show ${branch}'s Landing card at ${head.slice(0, 7)}: ${prior.refused}.`, "tell the user once; it lands on their word (round.mjs go)");
+    if (prior?.refused) stop(1, `Sova didn't show ${branch}'s Landing card at ${head.slice(0, 7)}: ${prior.refused}.`, "tell the user once that it lands on their word, \"land it\" typed in its own chat or \"land <branch>\" here (round.mjs go); never to press a card");
     if (!landingEligible(row, head)) stop(1, `${branch} isn't Ready to land at ${head.slice(0, 7)}: nothing to queue.`, "the next branch");
-    if (rec.ask?.queued && rec.ask.head === head) stop(1, `${branch} is already queued at ${head.slice(0, 7)}${prior ? `: its Landing card is shown in ${chatOf(rec, rec.ask.owner)}` : ""}. Land It's message arrives by itself.`, "the next branch");
+    if (rec.ask?.queued && rec.ask.head === head) stop(1, `${branch} is already queued at ${head.slice(0, 7)}${prior ? `: its Landing card is shown in ${chatOf(rec, rec.ask.owner)}` : ""}. The user's Land It, or their \"land it\" typed there, reaches you by itself.`, "the next branch");
     const captain = this.sessionId();
     const id = `lq_${head.slice(0, 12)}_${this.now.toString(36)}`;
     this.enqueue({ id, branch, path: tree, head, owner: own.owner, captain, at: this.now });
@@ -1010,7 +1013,7 @@ class Round {
     this.event("queued", { branch, owner: own.owner });
     this.saveState();
     const specs = row.landing.state === "specs" ? ` Its spec drafts can't land (${row.landing.specsWhy}): the card offers Merge Without Specs….` : "";
-    return { exit: 0, lines: [`Queued ${branch} at ${head.slice(0, 7)}: Sova shows the Landing card in ${chatOf(rec, own.owner)}.${specs}`], data: { owner: own.owner, queued: id }, next: "don't poll: the user's Land It reaches you as a message; round.mjs status says whether the card was shown" };
+    return { exit: 0, lines: [`Queued ${branch} at ${head.slice(0, 7)}: Sova shows the Landing card in ${chatOf(rec, own.owner)}.${specs}`], data: { owner: own.owner, queued: id }, next: "don't poll: the user's Land It reaches you as a message, and their \"land it\" typed in that chat as a merge-ready wake; round.mjs status says whether the card was shown" };
   }
 
   // Master's record layout (1 or 2), from its committed manifest.json settings.
@@ -1361,7 +1364,7 @@ class Round {
     const path = homeShown(tree);
     const call = `worktree ${JSON.stringify({ action: "merge", path })}`;
     const go = await this.answerAt(this.readLanding(), branch, head);
-    const owner = go?.kind === "go-ahead" ? `The user's ${goAheadWord(go.by)} at ${(go.at ?? head).slice(0, 7)}.` : "No go-ahead recorded at this head: land it only on the user's word (Land It, or round.mjs go).";
+    const owner = go?.kind === "go-ahead" ? `The user's ${goAheadWord(go.by)} at ${(go.at ?? head).slice(0, 7)}.` : "No go-ahead recorded at this head: land it only on the user's word (Land It, \"land it\" typed in its own chat, or round.mjs go).";
     if (go?.kind === "not-yet") stop(1, `The user said Not Yet to ${branch} at ${(go.at ?? head).slice(0, 7)}: it waits for a new commit.`, "round.mjs status");
     const scanned = scan.code === 0 ? [] : [...scan.lines, "The leak scan couldn't run here: push scans again."];
     return { exit: 0, lines: [`landable at ${head.slice(0, 7)} on master ${master.slice(0, 7)} (checked ${ago(this.now - c.at)} ago).`, ...scanned, owner, `call: ${call}`], data: { call: { action: "merge", path } }, next: `after the merge card, round.mjs landed ${branch}` };
@@ -1554,7 +1557,7 @@ class Round {
     lines.push(`- For you, once (no live owner, so no Landing card): ${forUser.map((b) => `${b.branch} (${b.group === "archived" ? "owner archived" : "no session tracks this worktree"}: say "land ${b.branch}" here to land it)`).join(", ") || "nothing new"}`);
     // A card Sova showed is named by its chat, with a link, never as "its card is shown" alone.
     const waiting = st.lastStatus?.waiting ?? [];
-    if (waiting.length) lines.push(`- Waiting for your Land It: ${waiting.map((b) => `${b.branch} at ${b.head.slice(0, 7)} in ${b.chat}`).join(", ")}`);
+    if (waiting.length) lines.push(`- Waiting for your Land It (or "land it" typed there): ${waiting.map((b) => `${b.branch} at ${b.head.slice(0, 7)} in ${b.chat}`).join(", ")}`);
     lines.push(`- Queued for a Landing card: ${of("queued").map((e) => `${e.branch} (${e.owner})`).join(" · ") || "none"}`);
     lines.push("- Handed back: (fill in: branch, owner, why)");
     if (sess.firstRound) lines.push("- Settings: (fill in the kinds and counts discover-names.mjs printed, and any names it says origin already has, masked as printed)");

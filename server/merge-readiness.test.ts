@@ -1225,7 +1225,8 @@ test("a finished branch that can't be queued to land: Sova names what blocks its
   ]);
   const note = blockedNoteText("feat/x", t.head, landingBlockers({ ...t, dirty: true, dirtyCount: 1, dirtyFiles: ["notes/"] }, live, drafts)!);
   assert.match(note, /^Sova: feat\/x is finished at fffffff, but it can't be queued to land yet: 1 uncommitted folder, 11 spec drafts to make official\. /);
-  assert.doesNotMatch(note, /Land It/i);
+  assert.doesNotMatch(note, /Land It|card|press/);
+  assert.match(note, /Once nothing blocks it, the user's go-ahead lands it: when they type "land it" in this chat, record it with the worktree tool's land action\.$/);
 
   // End to end, through the published reading.
   const lines = chain([worktrees([tracked()], "2026-10-23T10:00:00.000Z"), assistant([{ type: "text", text: "Done." }], "stop", "2026-10-23T10:05:00.000Z")]);
@@ -1253,7 +1254,7 @@ test("a finished branch that can't be queued to land: Sova names what blocks its
     await settle();
     assert.equal(sent.length, 1);
     assert.match(sent[0]!, /^Sova: feat\/agents-row-dropdown is finished at 1111111, but it can't be queued to land yet: 1 uncommitted folder, 11 spec drafts to make official\./);
-    assert.doesNotMatch(sent[0]!, /Land It/i);
+    assert.doesNotMatch(sent[0]!, /Land It|card|press/);
     now += r.READINESS_TTL_MS + 1;
     r.readinessOverlay(row);
     await settle();

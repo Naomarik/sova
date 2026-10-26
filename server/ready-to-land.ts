@@ -85,11 +85,12 @@ export function landingBlockers(t: LandingTree, s: LandingSession, drafts: reado
 }
 
 /** The message Sova sends a finished session whose branch can't be offered for landing yet (§chat.worktrees/ready-to-land).
-    It names what blocks the card and never mentions Land It: there is no card to press. */
+    It names what blocks the landing and never mentions Land It or a card: there is no card to press. Once nothing
+    blocks it, the user's typed go-ahead lands it, which the session records with `worktree land`. */
 export function blockedNoteText(branch: string, commit: string, blockers: readonly LandingBlocker[]): string {
   const list = blockers.map((b) => b.text).join(", ");
   const fixes = blockers.map((b) => b.fix).join("; ");
-  return `Sova: ${branch} is finished at ${commit.slice(0, 7)}, but it can't be queued to land yet: ${list}. On ${branch}, ${fixes}. Its landing card shows only once nothing blocks it.`;
+  return `Sova: ${branch} is finished at ${commit.slice(0, 7)}, but it can't be queued to land yet: ${list}. On ${branch}, ${fixes}. Once nothing blocks it, the user's go-ahead lands it: when they type "land it" in this chat, record it with the worktree tool's land action.`;
 }
 
 /** The line a session answers with when it can't land its specs. */

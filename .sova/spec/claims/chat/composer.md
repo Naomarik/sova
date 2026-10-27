@@ -638,9 +638,7 @@ It holds two groups, each a list of bordered cards, and leaves out a group with 
   which act exactly as the card in the chat does (§chat.offers/card, §chat.offers/buttons): the
   same choice is sent for the same card, a button with a `confirm` asks its question first
   (Cancel, then its label again), and a card that is busy or can't be acted on here shows its
-  buttons disabled. A card with rows (§chat.offers/card, Rows) shows its rows, each with its
-  label, its owner link when it has one, and its own buttons, and its `all` button with its
-  confirm; a press answers that row of the card in the chat. A press answers the card in the chat; it never makes a second card. Each also
+  buttons disabled. A press answers the card in the chat; it never makes a second card. Each also
   has **Show in Chat**, which closes the dialog and jumps to the card. In the Overseer's chat its
   open cards are listed instead, by id and title, with Show in Chat only.
 - **Alignments.** Each open alignment shows its title, a meter "{decided}/{total}" of its live

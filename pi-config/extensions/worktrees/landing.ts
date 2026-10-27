@@ -1,7 +1,8 @@
 /**
  * The user's answers on a branch's Landing card (§chat.offers/sova-landing; §chat.worktrees/landing-answers):
- * Land It (a go-ahead) or Not Yet for a branch at one commit, and the user's go-ahead typed in the branch's own
- * chat (`worktree land`, `by: "owner-chat"`), kept per user outside every repository:
+ * Land It (a go-ahead) or Not Yet for a branch at one commit, the user's go-ahead typed in the branch's own
+ * chat (`worktree land`, `by: "owner-chat"`), and Go on a Ready to land row of an Overseer card the user applied
+ * (`by: "overseer-card"`, §app.overseer/card-land), kept per user outside every repository:
  *
  *   <state root>/landing.json
  *   { "v": 1, "goAheads": [ { branch, commit, session?, at, by, withoutSpecs?, in? } ], "notYet": [ { branch, commit, session?, at, in? } ] }
@@ -9,8 +10,9 @@
  * `in` (optional, additive) is the session the answer was given in, when that isn't the branch's own: the Merge
  * Captain's chat, for a row of its landing card or its driver's `go` (`by: "captain-chat"`).
  *
- * Sova's server writes it (a click on a Landing card), and so does the `worktree` tool's `land` (the user's typed
- * word, read by `typedGoAhead`); the merge round's driver reads it as the user's word.
+ * Sova's server writes it (a click on a Landing card, or Go on an Overseer card's land row), and so does the
+ * `worktree` tool's `land` (the user's typed word, read by `typedGoAhead`, never a message another sender sent:
+ * `newestUserMessage`); the merge round's driver reads it as the user's word.
  * Nothing enforces it: no merge needs a recorded go-ahead.
  *
  * Node builtins only (the extension runs in every chat). Writes re-read the file, merge and replace it
@@ -24,10 +26,10 @@ export const LANDING_FILE_NAME = "landing.json";
 /** Records kept per list, newest last. */
 export const LANDING_KEPT = 200;
 /** Who recorded a go-ahead: a Land It click, the user's word typed in the branch's own chat (`worktree land`), the
- *  user's word in the Merge Captain's chat (the round driver's `go`), or (records from before the merge guard was
- *  removed) a Merge Branch press. */
-export type GoAheadBy = "land-it" | "owner-chat" | "captain-chat" | "page";
-export const GO_AHEAD_BY: readonly GoAheadBy[] = ["land-it", "owner-chat", "captain-chat", "page"];
+ *  user's word in the Merge Captain's chat (the round driver's `go`), Go on an Overseer card's Ready to land row the
+ *  user applied, or (records from before the merge guard was removed) a Merge Branch press. */
+export type GoAheadBy = "land-it" | "owner-chat" | "captain-chat" | "overseer-card" | "page";
+export const GO_AHEAD_BY: readonly GoAheadBy[] = ["land-it", "owner-chat", "captain-chat", "overseer-card", "page"];
 
 export interface GoAhead {
 	branch: string;
@@ -144,6 +146,35 @@ export function answerAt(data: LandingData, branch: string, commit: string): { k
 export function goAheadFor(branch: string, commit: string, file: string = landingFile()): GoAhead | undefined {
 	const hit = answerAt(readLanding(file), branch, commit);
 	return hit?.kind === "go-ahead" ? hit.goAhead : undefined;
+}
+
+/** The invisible markers that name a user message another sender sent (§app.overseer/sent-marker): the Overseer's,
+ *  a baton participant's, another session's `session_send`. Spelled again here: the extension imports nothing of Sova. */
+export const SENT_MARKERS: Readonly<Record<string, string>> = {
+	"sova-overseer-sent": "the Overseer",
+	"sova-baton-sent": "a baton participant",
+	"sova-session-sent": "another session",
+};
+
+/**
+ * The newest user message on a session's branch (pi's entries, oldest first): its text, and, when a sent marker
+ * names it (§chat.worktrees/land-own-word), who sent it instead of the user. Only the newest counts: an older
+ * message is never looked at. → {text: ""} when there is none.
+ */
+export function newestUserMessage(branch: readonly unknown[]): { text: string; sentBy?: string } {
+	for (let i = branch.length - 1; i >= 0; i--) {
+		const e = branch[i] as { type?: unknown; id?: unknown; message?: { role?: unknown; content?: unknown } } | undefined;
+		if (e?.type !== "message" || e.message?.role !== "user") continue;
+		const c = e.message.content;
+		const text = typeof c === "string" ? c : Array.isArray(c) ? c.map((p) => (p && typeof p === "object" && (p as { type?: unknown }).type === "text" ? String((p as { text?: unknown }).text ?? "") : "")).join("\n") : "";
+		// A marker is written after its message: look only past it, toward the leaf.
+		for (let j = i + 1; j < branch.length && typeof e.id === "string"; j++) {
+			const m = branch[j] as { type?: unknown; customType?: unknown; data?: { targetId?: unknown } } | undefined;
+			if (m?.type === "custom" && typeof m.customType === "string" && Object.hasOwn(SENT_MARKERS, m.customType) && m.data?.targetId === e.id) return { text, sentBy: SENT_MARKERS[m.customType] };
+		}
+		return { text };
+	}
+	return { text: "" };
 }
 
 /** Sova's own messages and other sessions' arrive as user messages too: none of them is the user's typed word. */

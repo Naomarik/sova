@@ -68,6 +68,7 @@ import { addOwnPid } from "./live";
 import { meshLinks } from "./mesh/links";
 import { resumeCrashedChat } from "./overseer";
 import { setRemoteHosted } from "./resource-monitor";
+import { sessionTokens } from "./session-tokens";
 import { subagentSessionRefusal } from "./session-guards";
 import { getSessionSummary, idOf } from "./sessions-index";
 import { isArchived } from "./archived-sessions";
@@ -332,8 +333,10 @@ export class ChatHostRouter {
     if (h) {
       this.paths.delete(h.mirror.sessionId);
       this.workers.parentUnlinked(h);
-      // Its model calls are no longer counted here; its tokens stay in this server's ring until they age out.
+      // Its model calls are no longer counted here; its tokens stay in this server's ring until they age out,
+      // and on its board row too (§app.insights/session-token-rate).
       setChildCounts(llmKey(h.mirror.sessionId), undefined);
+      sessionTokens().release(h.mirror.sessionId);
     }
     this.remotes.delete(path);
     setRemoteHosted(path, null);
@@ -362,7 +365,14 @@ export class ChatHostRouter {
       // Every chat process's model calls, counted once here (§6 of the stage-4 design): its producer is
       // then folded, so its live record (an ordinary chat's) is never summed again. Never this
       // process's own counts (a chat host in this process, as in tests): they would count themselves.
-      if (m.llm && m.llm.producer !== producerId()) setChildCounts(llmKey(m.sessionId), m.llm);
+      if (m.llm && m.llm.producer !== producerId()) {
+        setChildCounts(llmKey(m.sessionId), m.llm);
+        // The same report, kept per session for its board row; a reload's new producer adds to it.
+        // A worker whose record isn't known (yet) lands on no row rather than on the wrong one.
+        const special = kindOfMirror(m);
+        const hidden = (!!special && special !== "powers") || (!w && !!m.worker);
+        sessionTokens().note(w ? { sessionId: m.sessionId, parent: w.parent.sessionId, hidden } : { sessionId: m.sessionId, hidden }, m.llm);
+      }
     },
     exit: (h, cause) => {
       const id = h.mirror.sessionId;

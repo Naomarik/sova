@@ -8,6 +8,7 @@
       "shownBy": "another-chat",
       "onlyIf": ["no-open-alignment", "ready-to-land"],
       "repeat": "once-per-commit",
+      "rows": { "max": 10, "all": { "label": "Land All", "about": "Tells the Merge Captain to land every branch on this card that needs no Merge Without Specs….", "confirm": "Land these branches? {rows}. The captain checks each, then lands, pushes and restarts." } },
       "buttons": [
         { "label": "Land It", "about": "Tells the Merge Captain to land this branch.", "send": "Go ahead: land {branch} at {commit}.", "to": "shower", "onlyIf": ["specs-promoted"], "landing": "go-ahead" },
         { "label": "Merge Without Specs…", "about": "Lands this commit now; its spec drafts stay behind for a fresh branch.", "send": "Go ahead: land {branch} at {commit} without its specs ({drafts}).", "to": "shower", "onlyIf": ["specs-left"], "confirm": "Land {branch} without its specs? These spec drafts stay behind, to promote later on a fresh branch from {base}: {drafts}.", "landing": "go-ahead-without-specs" },

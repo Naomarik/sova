@@ -3,7 +3,8 @@
 // record changes only its status, and a connected feed hears list_changed within 6 s; the record
 // asking for input reaches the feed as a pushed attention digest; nothing is pushed while nothing
 // changes. A commit in a session's worktree, with no write to its session file, flips the row's
-// merge readiness within about 6 s.
+// merge readiness within about 6 s. A group made or a session assigned through the API reaches two connected feeds
+// at once as groups_changed.
 import assert from "node:assert/strict";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, realpathSync, renameSync, writeFileSync } from "node:fs";
@@ -158,5 +159,59 @@ test("a commit in a session's worktree, with no session-file write, reaches a co
     assert.ok(changed.t - t0 <= 6_500, `list_changed after ${changed.t - t0} ms`);
   } finally {
     sock.close();
+  }
+});
+
+test("a group change made by any client reaches every connected feed at once as groups_changed", async () => {
+  const id = "01234567-89ab-7cde-8f01-00000000fe03";
+  const dir = join(s.agentDir, "sessions", "--groups-feed--");
+  mkdirSync(dir, { recursive: true });
+  const sessionFile = join(dir, `2026-10-22T00-00-20-000Z_${id}.jsonl`);
+  writeFileSync(
+    sessionFile,
+    [
+      { type: "session", version: 3, id, timestamp: "2026-10-22T00:00:20.000Z", cwd: s.work },
+      { type: "message", id: "m1", parentId: null, timestamp: "2026-10-22T00:00:21.000Z", message: { role: "user", content: [{ type: "text", text: "group me" }], timestamp: 1 } },
+    ]
+      .map((l) => JSON.stringify(l))
+      .join("\n") + "\n",
+  );
+  const headers = { "x-sova-token": s.token, "content-type": "application/json" };
+  // Two windows: what one does, the other hears.
+  const open = async () => {
+    const sock = new WebSocket(`${s.base.replace(/^http/, "ws")}/ws/watch?feed=sessions`, { headers: { "x-sova-token": s.token } });
+    const got: any[] = [];
+    sock.on("message", (d) => got.push(JSON.parse(String(d))));
+    await new Promise<void>((r, j) => (sock.once("open", () => r()), sock.once("error", j)));
+    return { sock, got };
+  };
+  const a = await open();
+  const b = await open();
+  const until = async (got: any[], pred: (m: any) => boolean, ms: number) => {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      if (got.some(pred)) return true;
+      await sleep(25);
+    }
+    return false;
+  };
+  try {
+    for (const w of [a, b]) assert.ok(await until(w.got, (m) => m.type === "marks" && m.full, 30_000), "no snapshot");
+    assert.ok(!a.got.some((m) => m.type === "groups_changed"), "nothing on connect");
+    const made = await fetch(`${s.base}/api/session-groups`, { method: "POST", headers, body: JSON.stringify({ name: "Spec audit" }) });
+    assert.equal(made.status, 201);
+    const group = ((await made.json()) as { id: string }).id;
+    for (const w of [a, b]) assert.ok(await until(w.got, (m) => m.type === "groups_changed", 2_000), "create was not pushed");
+    for (const w of [a, b]) w.got.length = 0;
+    const t0 = Date.now();
+    const assigned = await fetch(`${s.base}/api/session-groups/assign`, { method: "POST", headers, body: JSON.stringify({ path: sessionFile, groupId: group }) });
+    assert.equal(assigned.status, 200, await assigned.text());
+    for (const w of [a, b]) assert.ok(await until(w.got, (m) => m.type === "groups_changed", 2_000), `assign was not pushed; got ${JSON.stringify(w.got.map((m) => m.type))}`);
+    assert.ok(Date.now() - t0 < 2_000, "at once, not at a poll");
+    const listed = (await (await fetch(`${s.base}/api/session-groups`, { headers })).json()) as { id: string; members?: { id: string }[] }[];
+    assert.ok(listed.find((g) => g.id === group)?.members?.some((m) => m.id === id), "the re-read shows the member");
+  } finally {
+    a.sock.close();
+    b.sock.close();
   }
 });

@@ -106,6 +106,7 @@ import { reviewSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
 import { alignForPick } from "./align-settings";
 import { agentRoot } from "./state-root";
+import { ARCHIVED_REFUSAL } from "./archived-sessions";
 import { SendKeys } from "./send-keys";
 import { UserTurns } from "./user-turns";
 import { markBackground } from "../pi-config/extensions/provider-limits/gate.ts";
@@ -316,6 +317,15 @@ export class RefusedError extends Error {}
 
 /** The /ws/chat error code of a failure. */
 const errorCode = (err: unknown) => (err instanceof BusyError ? err.code : err instanceof RefusedError ? ("refused" as const) : ("internal" as const));
+
+/** An ordinary chat that is archived: it reads only until it is unarchived, so nothing opens it
+ *  (§chat.transcript/instant-open, "An archived chat"). /ws/chat answers it `closed` (`archived`),
+ *  never a retry; a request answers it 409 with its message. */
+export class ArchivedError extends RefusedError {
+  constructor() {
+    super(ARCHIVED_REFUSAL);
+  }
+}
 
 export class ModeRefusedError extends RefusedError {
   constructor(message = "The Overseer is always in normal mode.") {
@@ -1089,6 +1099,10 @@ class ChatSession {
   get overseer(): boolean {
     return this.special === "overseer";
   }
+  /** A card's click here carries its mark to the turn it opens: the Overseer's and a project overseer's. */
+  private get takesClicks(): boolean {
+    return this.special === "overseer" || this.special === "project-overseer";
+  }
   /** A client gesture this special kind refuses (a message for the client), or null. */
   specialRefuses(gesture: "rewind" | "regenerate" | "mode"): string | null {
     return this.specialSpec?.refuses[gesture] ?? null;
@@ -1417,10 +1431,10 @@ class ChatSession {
 
   /** Hand a message to the SDK. Where the loadout tells the person's turns apart (the Overseer, a
       project overseer), one the user sent from the UI (`origin` "client") is marked as it goes, so
-      the turn it opens is known as theirs by identity, not text; a confirm card's click only in the
-      Overseer. */
+      the turn it opens is known as theirs by identity, not text; a confirm card's click in the Overseer
+      and in a project overseer (whose copy cards it approves, §app.overseer/copies). */
   private toSdk<T>(origin: QueueItem["origin"], send: () => T, confirm?: string): T {
-    if (origin === "client" && this.userTurns) return this.userTurns.send(send, this.overseer ? confirm : undefined);
+    if (origin === "client" && this.userTurns) return this.userTurns.send(send, this.takesClicks ? confirm : undefined);
     // A profile session with powers tells the user's own messages by identity too (its limits).
     if (origin === "client" && this.profileState?.run) return this.profileState.run.turns.send(send);
     return send();
@@ -1807,12 +1821,12 @@ class ChatSession {
     return visToolsWanted(this.modeState.minorModes, this.alignLaunch?.data?.visuals ?? false);
   }
 
-  /** What the vis feedback extension asks this chat (server/vis-check.ts): its vis mode is this
-      chat's own mode, a message queued behind the run goes before any retry, and a runtime that may
-      no longer write the file adds nothing to it. */
+  /** What the vis feedback extension asks this chat (server/vis-check.ts): drawings are on when the vis
+      tools are wanted (this chat's own mode and launch Visuals), a message queued behind the run goes
+      before any retry, and a runtime that may no longer write the file adds nothing to it. */
   visCheckHost(): VisCheckHost {
     return {
-      visOn: () => this.modeState.minorModes.includes("vis"),
+      drawingsOn: () => this.visToolsOn(),
       visToolsOn: () => this.visToolsOn(),
       queued: () => this.queue.size > 0 || this.harness.queue.hasQueued(),
       writable: () => {
@@ -2591,14 +2605,14 @@ class ChatSession {
 
   /** This chat's Claude login with its waiting pick, as every tab is told it. */
   loginMessage(): ChatServerMessage {
-    const msg = claudeLoginMessage(this.harness.branch(), undefined, { pending: this.loginPending });
+    const msg = claudeLoginMessage(this.harness.branch(), undefined, { pending: this.loginPending, cwd: this.harness.cwd || undefined });
     this.noteLogin(msg.login);
     return msg;
   }
 
   /** The `claude_login` message every hello is followed by (claudeLoginAfterHello). */
   private loginAfterHello(): ChatServerMessage {
-    const msg = claudeLoginAfterHello(this.harness.branch(), undefined, { pending: this.loginPending }); // the branch's newest entry
+    const msg = claudeLoginAfterHello(this.harness.branch(), undefined, { pending: this.loginPending, cwd: this.harness.cwd || undefined }); // the branch's newest entry
     this.noteLogin(msg.login);
     return msg;
   }
@@ -2611,7 +2625,7 @@ class ChatSession {
   setClaudeLogin(login: string | null): void {
     assertNotLive(this.path);
     this.assertNoForeignWrites();
-    const current = chatClaudeLogin(this.harness.branch())?.id;
+    const current = chatClaudeLogin(this.harness.branch(), undefined, { cwd: this.harness.cwd || undefined })?.id;
     if (login !== null && login !== current) {
       if (!/^(default|l-[0-9a-f]{8})$/.test(login)) throw new Error("There's no such Claude login.");
       if (!(this.harness.model()?.ref ?? "").startsWith("claude-code-cli/")) throw new Error("This chat isn't on a Claude Code model.");
@@ -3409,8 +3423,9 @@ class ChatSession {
           this.assertModelAllowed();
           const images = parseImages(msg.images);
           const text = String(msg.text ?? "");
-          // A confirm card's click in the Overseer (never a typed answer): the turn it opens may act on the card's items.
-          const confirm = this.overseer && msg.type === "prompt" && typeof msg.confirm === "string" && msg.confirm ? msg.confirm : undefined;
+          // A confirm card's click in the Overseer or a project overseer (never a typed answer): the turn it opens may act on
+          // the card's items.
+          const confirm = this.takesClicks && msg.type === "prompt" && typeof msg.confirm === "string" && msg.confirm ? msg.confirm : undefined;
           const { queued, turn } = this.acceptPrompt(text, images, "client", clientId, confirm ? { confirm } : undefined);
           // The ack goes out NOW, not after the turn: it says whether a queue row exists, and a
           // client that learned that only at turn end would offer Remove for a sent message.
@@ -4383,7 +4398,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
           visRetry: () =>
             visCheckExtension(() => {
               const h = visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null;
-              return h ? { ...h, visOn: () => true, visToolsOn: () => false } : null;
+              return h ? { ...h, drawingsOn: () => true, visToolsOn: () => false } : null;
             }),
           log: (line) => console.warn(`[chat] ${kind}: ${line}`),
         })

@@ -134,41 +134,12 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   longest first by its own recorded times (`.cache/test-durations-integration.json`, beside the
   unit tier's `.cache/test-durations.json`). `pnpm test:all` runs both tiers, unit first, each at
   its own width. Files named on the command line run whatever their tier.
-- **Slow groups.** One builtins-only module, `scripts/test-groups.mjs`, names the integration
-  files that belong to a slow group, and what triggers each group: the paths whose change can
-  break it. **Chat processes** (`trial`) is `server/chat-runtime/trial-*.integration.test.ts`,
-  triggered by chats, workers, teams, the Overseer, batons, Claude Code and the extensions they
-  run (`server/chat-runtime/**`, `scripts/chat-runtime-trial/**`, `server/harness/**`,
-  `server/send-keys.ts`, the chat host, handle, manager and workers, `server/worker-*`,
-  `team-*`, `baton*`, `overseer*`, `project-overseer*`, `session-powers*`, `llm-inflight*`,
-  `playbook-host*`, `server/index.ts`, `server/app.ts`, `scripts/fake-claude.mjs`,
-  `scripts/stop-chats.ts`, and pi-config's `subagents`, `claude-code`, `btw`, `explain`,
-  `compact-handoff`, `llm-inflight`, `sessions` and `wake-nudge.ts`), by any change to
-  `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` or `mise.toml`, by the test setup (the
-  files the testing guide's front-matter `watches`), and by the groups module itself.
-  **Tours** (`tours`) is the tour tests that drive real Chrome, `server/tours/*.integration.test.ts`
-  except the nine that start no browser, triggered by tour code (`server/tours/**`,
-  `shared/tour*`, `server/project-services/tour-target*`, `server/share/tour-*`,
-  `server/tour-routes.ts`, `pi-config/extensions/sandbox/**`), the package files, the test setup
-  and the groups module. A changed test file triggers only the group it belongs to. Every other
-  integration file is the **everyday set**.
-- **`pnpm test:int --changed`** runs only the integration files a change may break: everyday files
-  whose import closure (relative imports, followed file to file) holds a file changed since the
-  merge base with `--base <rev>` (default `master`), committed, uncommitted or untracked, or that
-  sit in the same folder as a changed file, plus every file of each slow group whose triggers the
-  change touches (never a slow group's file by its imports alone). It prints how many files it
-  chose of how many and which groups it added and why; when it chooses none it runs nothing and
-  exits 0. An agent runs it before asking to land.
-- **`pnpm test:int -- --landing [--base <rev>]`** is what a landing runs (§chat.merge-round/driver):
-  the whole everyday set, plus Chat processes only when the change since the merge base touches
-  its triggers; Tours never run at landing. It prints one line per group it skipped, with its file
-  count, its recorded time and why (no change to its triggers, or never at landing). `--groups
-  <name,…|all>` runs only those groups' files, `--plan` prints the selection as JSON (the files,
-  the groups run and skipped, the lane count and an estimate from the recorded file times: their
-  sum over the lanes, never less than the longest file) and runs nothing. Plain `pnpm test:int`
-  still runs the whole tier, every group included, and a release runs it so
-  (`.sova/playbooks/release/references/checks.md`): there is no other catch-up run of the groups
-  landings skip.
+- **`pnpm test:int --changed`** runs only the integration files a change may break: those whose
+  import closure (relative imports, followed file to file) holds a file changed since the merge
+  base with `--base <rev>` (default `master`), committed, uncommitted or untracked, and those in the
+  same folder as a changed file. It prints how many files it chose of how many; when it chooses
+  none it runs nothing and exits 0. An agent runs it before asking to land; landing runs the whole
+  tier (§chat.merge-round/driver).
 - **The tier guard.** A second test preload (`scripts/test-tier-guard.mjs`) records, for each file
   in either tier, the programs it starts, the addresses it listens on or connects to, the URLs it
   fetches and whether it imports `server/index.ts`, merged into `.cache/test-audit.json`. By

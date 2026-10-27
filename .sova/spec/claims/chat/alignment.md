@@ -175,8 +175,9 @@ any more, and they count toward no badge, row or digest.
   own words never depend on the style. In a chat started with Visuals on, the bridge also has the
   planning worker draw: the file schema it quotes carries the document's and each question's
   `visual`, and it gives the agent a paragraph to copy word for word into the worker's brief —
-  draw where a picture explains faster than words (a wireframe for a question about a screen; a
-  flow, state or steps for a change in behaviour), at most 3, in the Project manager style never the
+  draw where a picture explains faster than words (a wireframe for a simple screen or a flow across
+  screens; a `vis html` prototype for a screen beyond a simple one; a flow, state or steps for a
+  change in behaviour), at most 3, in the Project manager style never the
   code, tree or layers kinds, after reading `shared.md` and the
   kind's own file in the vis guide's directory, named by its absolute path (the worker has no
   `vis_guide`). Visuals are fixed at the chat's start, so this never changes the bridge
@@ -533,8 +534,10 @@ question's or the document's `visual` (§chat.alignment/document).
   chat's profile override) at session start.
 - **The prompt.** With align on, a paragraph after the align block (and after the style's): visuals
   go in the align tool's `visual` fields, never as a vis fence in the reply; add one only when it
-  explains faster than words — a wireframe for a question about a screen, a flow, state or steps for
-  a change in behaviour; call `vis_guide` before the first visual of each kind; in the Project
+  explains faster than words — a wireframe for a simple screen or a flow across screens, a `vis
+  html` prototype for a screen beyond a simple one (look and feel, panes side by side, an editor in a
+  dialog, a dense desktop layout), a flow, state or steps for a change in behaviour; call
+  `vis_guide` before the first visual of each kind; in the Project
   manager style never the code, tree or layers kinds. Its words never depend on the style. With
   Delegate on, the planning worker draws them into the file it writes (§chat.alignment/model).
 - **The schema.** The `visual` fields are in the align tool's schema exactly when Visuals were on at
@@ -550,5 +553,6 @@ question's or the document's `visual` (§chat.alignment/document).
   chat's Visuals. Every place that syncs them — the mode extension's `vis_guide` and, in Sova's hosted
   sessions, `vis_check` at session start, after a switch made between runs, when a run starts and
   when it settles — asks that rule, so the tool set changes only when its answer does, never each run.
-  The repair of a reply's broken `vis` fences (Sova's vis retry) stays with vis alone. A worker gets
-  neither tool.
+  Sova's vis retry (§chat.markdown/visuals, "Feedback to the model") asks the same rule: in a chat
+  where align draws on its card, a card visual that doesn't draw, or a cramped wireframe, gets the
+  one hidden retry, fixed with `edit_question` or `edit_doc`. A worker gets neither tool.

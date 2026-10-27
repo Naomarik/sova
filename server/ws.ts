@@ -7,7 +7,7 @@ import { cappedWebSocketServer, streamWebSocketServer } from "./runtime-quirks";
 import type { ChatClientMessage, ChatServerMessage, LlmFeedMessage, SessionFeedMessage, V2EventFrame, WatchServerMessage } from "../shared/protocol";
 import { refuseUpgrade } from "./auth";
 import { isDirectLocal } from "./compression";
-import { acquireChatHandle, BusyError, ConfigError, type ChatClient } from "./chat-handle";
+import { acquireChatHandle, ArchivedError, BusyError, ConfigError, type ChatClient } from "./chat-handle";
 import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
 import { resolveSessionPath } from "./paths";
 import { trackViewer } from "./seen";
@@ -24,7 +24,7 @@ import { sharedWorkerWindowResolver } from "./models";
 import { contextTally, type Format, type WindowResolver } from "./worker-context";
 import { wireOf } from "./wire-rows";
 import { replyTimingsOf, sessionIdOfPath } from "./reply-facts";
-import { HAVE_MAX_CHARS, HAVE_PARAM, type WireVersion } from "../shared/protocol";
+import { CHAT_CLOSED_CLOSE_CODE, HAVE_MAX_CHARS, HAVE_PARAM, type WireVersion } from "../shared/protocol";
 import { unsentRefusal } from "../shared/chat-runtime";
 import { draftTexts, HeldSends, type Unsent } from "../shared/held-sends";
 import { putBackDraft } from "./drafts";
@@ -148,6 +148,17 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
       (err) => console.warn(`[ws/chat] ${id}: the chat didn't start (${err instanceof Error ? err.message : String(err)}); trying once more`),
     );
   } catch (err) {
+    // An archived chat (§chat.transcript/instant-open, "An archived chat"): read only, nothing started.
+    // The tab keeps its rows from the file and is told `closed`, with the code no tab retries; what
+    // it sent meanwhile goes back to its composer, or to the saved draft with no tab left.
+    if (err instanceof ArchivedError) {
+      const refusals = heldRefusals(early.splice(0));
+      if (gone) putBackDraft(id, draftTexts(held.takeAll()));
+      else for (const refusal of refusals) client.send(refusal);
+      client.send({ type: "closed", reason: "archived" });
+      ws.close(CHAT_CLOSED_CLOSE_CODE, "chat closed");
+      return;
+    }
     // Three outcomes, three close codes, because the client's retry policy keys off them:
     // 4409 busy (another process owns it), 4422 config (permanent — do NOT reconnect), 4500
     // internal (transient — backoff and retry).
@@ -189,7 +200,7 @@ export async function acquireWithRetry<T>(acquire: () => Promise<T>, giveUp: () 
   try {
     return await acquire();
   } catch (err) {
-    if (err instanceof BusyError || err instanceof ConfigError || giveUp()) throw err;
+    if (err instanceof BusyError || err instanceof ConfigError || err instanceof ArchivedError || giveUp()) throw err;
     onRetry?.(err);
     if (openRetry.ms > 0) await new Promise((r) => setTimeout(r, openRetry.ms));
     return acquire();

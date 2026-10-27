@@ -316,7 +316,7 @@ function anchors(c: CommandEntry): Anchor[] {
   if (c.id === "project.overseer.todo.update") return [{ anchor: { pid: "no-such-project", id: "x" }, refuse: true, kind: "refused" }, { anchor: (() => { const a: Record<string, unknown> = {}; pendingSetup.push(async () => { const d = join(root, `po-${c.id}`); mkdirSync(d, { recursive: true }); a.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d, name: c.id }))).body as { project: { id: string } }).project.id; /* its runtime registry's first read, done now: no write lands after the hash */ await (await import("./projects/runtime")).observe(String(a.pid)); await (await import("./org-engine")).hostOf(String(a.pid)).idle(); a.id = ((await sendTo(app, "POST", `/api/projects/${a.pid}/overseer/todos`, JSON.stringify({ text: "Anchor" }))).body as { todos: { id: string }[] }).todos[0]!.id; }); return a; })(), refuse: false, kind: "real" }];
   if (c.id === "project.overseer.todo.reorder") return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }, { anchor: (() => { const a: Record<string, unknown> = {}; pendingSetup.push(async () => { const d = join(root, `po-${c.id}`); mkdirSync(d, { recursive: true }); a.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d, name: c.id }))).body as { project: { id: string } }).project.id; /* its runtime registry's first read, done now: no write lands after the hash */ await (await import("./projects/runtime")).observe(String(a.pid)); await (await import("./org-engine")).hostOf(String(a.pid)).idle(); a.id = ((await sendTo(app, "POST", `/api/projects/${a.pid}/overseer/todos`, JSON.stringify({ text: "Anchor" }))).body as { todos: { id: string }[] }).todos[0]!.id; }); return a; })(), refuse: false, kind: "real" }];
   // A registered project (made in the set-up, its id written into the anchor) takes each body past the project's lookup to the route's own checks.
-  if (c.id === "project.update" || c.id === "project.worktree.merge" || c.id === "project.worktree.remove") {
+  if (c.id === "project.update" || c.id === "project.worktree.merge" || c.id === "project.worktree.remove" || c.id === "project.claude-login.set") {
     const v: Record<string, unknown> = {};
     pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
     return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }, { anchor: v, refuse: false, kind: "real" }];
@@ -627,6 +627,40 @@ const FIXTURES: Record<string, Fixture> = {
     },
     status: 200,
     oracle: async (_b, v) => assert.equal((await read("GET", `/api/projects/${v.pid}`)).name, "Renamed by the fuzz"),
+  },
+  "project.claude-login.get": {
+    values: () => {
+      const v: Record<string, unknown> = {};
+      pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
+      return v;
+    },
+    status: 200,
+  },
+  "project.claude-login.set": {
+    values: () => {
+      const v: Record<string, unknown> = { login: "default" };
+      pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
+      return v;
+    },
+    status: 200,
+    oracle: async (_b, v) => assert.equal((await read("GET", `/api/projects/${v.pid}/claude-login`)).setting, "default"),
+  },
+  "org.claude-login.get": {
+    values: () => {
+      const v: Record<string, unknown> = {};
+      pendingSetup.push(async () => { const org = await (await import("./orgs")).createOrg({ name: `Fuzz Org ${++n}`, dir: join(root, `org-${n}`) }); v["org-id"] = org.id; });
+      return v;
+    },
+    status: 200,
+  },
+  "org.claude-login.set": {
+    values: () => {
+      const v: Record<string, unknown> = { login: "default" };
+      pendingSetup.push(async () => { const org = await (await import("./orgs")).createOrg({ name: `Fuzz Org ${++n}`, dir: join(root, `org-${n}`) }); v["org-id"] = org.id; });
+      return v;
+    },
+    status: 200,
+    oracle: async (_b, v) => assert.equal((await read("GET", `/api/orgs/${v["org-id"]}/claude-login`)).setting, "default"),
   },
   "project.archive": {
     values: () => {

@@ -384,6 +384,7 @@ export const SETTINGS_REFERENCE: Record<SettingId, ReferenceEntry> = {
       "offers.<name>.shownBy": "who shows it",
       "offers.<name>.disabled": "off",
       "offers.<name>.buttons": "at most 4 buttons",
+      "offers.<name>.rows": "rows: {max ≤ 10, all?}",
       "buttons[].label": "the button's label",
       "buttons[].about": "one line under it",
       "buttons[].send": "a message it sends",

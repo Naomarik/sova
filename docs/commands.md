@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 482 |
-| Routes a catalogue entry points at | 117 |
-| Catalogue entries | 148 |
+| Routes registered | 486 |
+| Routes a catalogue entry points at | 121 |
+| Catalogue entries | 152 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -29,7 +29,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Pending (not yet a command) | 304 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 8 |
-| Hand-written tool specs | 123 |
+| Hand-written tool specs | 124 |
 
 ## Catalogue entries
 
@@ -105,6 +105,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.get` | Show Project | looks | `GET /api/projects/:pid` | sessions |
 | `project.create` | Add Project | changes | `POST /api/projects` | admin |
 | `project.update` | Edit Project | changes | `PATCH /api/projects/:pid` | admin |
+| `project.claude-login.get` | Show Project Claude Login | looks | `GET /api/projects/:pid/claude-login` | sessions |
+| `project.claude-login.set` | Set Project Claude Login | changes | `PUT /api/projects/:pid/claude-login` | admin |
 | `project.archive` | Archive Project | changes | `POST /api/projects/:pid/archive` | admin |
 | `project.unarchive` | Unarchive Project | changes | `POST /api/projects/:pid/unarchive` | admin |
 | `project.preview.off` | Turn Off Preview Link | changes | `POST /api/previews/:id/off` | admin |
@@ -176,6 +178,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `org.project.version.automatic` | Use Automatic | changes | `PUT /api/orgs/:id/projects/:pid/versions/:instance` | admin |
 | `org.project.version.hide` | Hide Summary | changes | `PUT /api/orgs/:id/projects/:pid/versions/:instance` | admin |
 | `org.project.version.show` | Show Summary | changes | `PUT /api/orgs/:id/projects/:pid/versions/:instance` | admin |
+| `org.claude-login.get` | Show Organization Claude Login | looks | `GET /api/orgs/:id/claude-login` | sessions |
+| `org.claude-login.set` | Set Organization Claude Login | changes | `PUT /api/orgs/:id/claude-login` | admin |
 | `chat.stop` | Stop | changes | `POST /api/chat/action` | sessions |
 | `chat.compact` | Compact | changes | `POST /api/chat/action` | sessions |
 | `chat.rewind` | Rewind | changes | `POST /api/chat/action` | sessions |
@@ -650,6 +654,8 @@ Approving what a project's files may make Sova do (an offers file's run buttons,
 | `POST /api/mode/command` | full | `chat.mode-command` |
 | `GET /api/models` | sessions | `models.list` |
 | `PUT /api/models/favorite` | sessions | `models.favorite` |
+| `GET /api/orgs/:id/claude-login` | sessions | `org.claude-login.get` |
+| `PUT /api/orgs/:id/claude-login` | admin | `org.claude-login.set` |
 | `POST /api/orgs/:id/owner/requests/:rid` | admin | `org.owner.request.decline`, `org.owner.request.done`, `org.owner.request.noted` |
 | `POST /api/orgs/:id/owner/requests/:rid/chat` | admin | `org.owner.request.chat` |
 | `GET /api/orgs/:id/projects/:pid/versions` | sessions | `org.project.versions` |
@@ -673,6 +679,8 @@ Approving what a project's files may make Sova do (an offers file's run buttons,
 | `GET /api/projects/:pid` | sessions | `project.get` |
 | `PATCH /api/projects/:pid` | admin | `project.update` |
 | `POST /api/projects/:pid/archive` | admin | `project.archive` |
+| `GET /api/projects/:pid/claude-login` | sessions | `project.claude-login.get` |
+| `PUT /api/projects/:pid/claude-login` | admin | `project.claude-login.set` |
 | `GET /api/projects/:pid/costs` | sessions | `project.costs` |
 | `GET /api/projects/:pid/files` | sessions | `project.files.list` |
 | `GET /api/projects/:pid/offers` | sessions | `project.offers.list` |
@@ -795,7 +803,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/overseer-org-part.ts` | 10 | `sova_decisions`, `sova_roster`, `sova_start_gathering`, `sova_offer`, `sova_close_gathering`, `sova_owner_update`, `sova_send_to_person`, `sova_send_status`, `sova_reconcile`, `sova_promote` |
 | `server/overseer-org-tools.ts` | 10 | `sova_orgs`, `sova_org_person`, `sova_projects`, `sova_org_project`, `sova_org`, `sova_roster`, `sova_owner`, `sova_project_decisions`, `sova_gather`, `sova_project_overseer` |
 | `server/overseer-todo-tools.ts` | 2 | `sova_todos`, `sova_todo` |
-| `server/overseer-tools.ts` | 23 | `sova_attention`, `sova_list_sessions`, `sova_outstanding`, `sova_search_sessions`, `sova_session`, `sova_public_links`, `sova_alignment`, `sova_read_session`, `sova_list_groups`, `sova_list_targets`, `sova_list_models`, `sova_list_subagent_profiles`, `sova_list_folders`, `sova_create_session`, `sova_send`, `sova_set_session`, `sova_archive`, `sova_group`, `sova_answer_dialog`, `sova_navigate`, `sova_note`, `sova_org_history`, `<computed: SPEC_LOOKUP_TOOL>` |
+| `server/overseer-tools.ts` | 24 | `sova_attention`, `sova_list_sessions`, `sova_outstanding`, `sova_search_sessions`, `sova_session`, `sova_public_links`, `sova_alignment`, `sova_read_session`, `sova_list_groups`, `sova_list_targets`, `sova_list_models`, `sova_list_subagent_profiles`, `sova_list_folders`, `sova_create_session`, `sova_send`, `sova_set_session`, `sova_archive`, `sova_land`, `sova_group`, `sova_answer_dialog`, `sova_navigate`, `sova_note`, `sova_org_history`, `<computed: SPEC_LOOKUP_TOOL>` |
 | `server/playbook-tools.ts` | 1 | `<computed: PLAYBOOK_READ_TOOL>` |
 | `server/project-assistant-tools.ts` | 7 | `report_issue`, `start_fix`, `deploy`, `owner_versions`, `start_version`, `start_feature_chat`, `requirement_agree` |
 | `server/project-overseer-tools.ts` | 18 | `sova_project`, `sova_list_subagent_profiles`, `sova_list_sessions`, `sova_read_session`, `sova_todos`, `sova_note`, `sova_idea`, `sova_previews`, `sova_preview`, `sova_create_session`, `sova_send`, `sova_files`, `sova_pipeline`, `sova_hold`, `sova_correct`, `sova_set_state`, `sova_settings`, `sova_todo` |

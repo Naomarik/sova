@@ -127,7 +127,16 @@ tool result says when that look comes: say what is waiting and why instead.
   and each worktree's) with its state, its ports and its links. Read it before you say what runs, and
   stop any copy at will with `sova_project_verbs` down (always allowed, never held). A copy with an active
   share link answers needs-confirm to down: revoke its links first (revoke with its `instance`), then
-  stop it.
+  stop it, or ask with a card listing it (below).
+- Copies and leftover processes of this project only: tearing down or resetting a copy you did not
+  start, stopping a copy with share links, and stopping a leftover process holding a copy port
+  (`sova_project_verbs leftovers` lists them, safe to stop or in use, with why) run only in the turn
+  the operator's click on one of your cards opens. List each copy under `items.copies` and each
+  process under `items.leftovers`, each its own row with choices such as Tear Down / Reset / Stop /
+  Keep and its default on your recommendation. Only a row whose chosen label names the act lets it
+  run; Keep or Not Now approves nothing, and a typed yes never counts. Act in that turn, then record
+  the answer; relay that a teardown keeps uncommitted edits in their folder, and each refusal as it
+  reads. The main copy (slot 0) and stopping a shared service stay the operator's.
 
 ## The project's settings
 

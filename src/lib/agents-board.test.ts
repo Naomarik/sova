@@ -3,36 +3,38 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AgentsInsight, LiveAgentSession, SessionSummary, TeamInfo, WorktreeStatus } from "../../shared/protocol";
 import {
-  allGone,
   boardGroups,
   boardRows,
   boardState,
   boardTotals,
-  compactLines,
   filterCounts,
   gistTitle,
   hasUnmerged,
   inDefaultScope,
-  linesShown,
   matchesSearch,
   money,
   orderTrees,
   passesFilter,
+  rateCell,
   rowDetail,
   rowHasDetail,
+  rateReader,
+  rowRates,
+  sameRateCell,
   sortRows,
   teamChips,
   teamForLink,
   totalsLine,
   workersChips,
-  treeLines,
   treeMerge,
+  treeTitle,
   treeName,
   visibleRows,
   workersLine,
   worktreePathsKey,
 } from "./agents-board";
 import { teamKey } from "./insights";
+import { encodeSessionTokens } from "../../shared/session-tokens-wire";
 
 const NOW = Date.parse("2026-09-27T15:00:00.000Z");
 const ago = (min: number) => new Date(NOW - min * 60_000).toISOString();
@@ -95,7 +97,46 @@ test("state: a question outranks work, work outranks what the last turn left, th
     "open questions need you until answered",
   );
   assert.equal(boardState(sess("a", { archived: true }), null, false).state, "archived");
-  assert.equal(boardState(sess("a", { archived: true }), agent("/s/a.jsonl"), false).state, "idle", "an archived session something runs in is not shown as archived");
+  assert.equal(boardState(sess("a", { archived: true }), agent("/s/a.jsonl"), false).state, "archived", "an archived session with an idle process is Archived, not Idle");
+});
+
+test("archived: only Working (while its turn or workers run) or Archived, never Needs you (§app.insights/team-cards)", () => {
+  const arch = (extra: Partial<SessionSummary> = {}) => sess("a", { origin: "web", archived: true, ...extra });
+  // Idle.
+  assert.deepEqual(boardState(arch(), null, false), { state: "archived", reason: null, word: "Archived" });
+  // Working: its turn (the tab's busy, the list's activity) or its workers.
+  assert.deepEqual(boardState(arch(), null, true), { state: "working", reason: null, word: "Working" });
+  assert.equal(boardState(arch({ activity: { state: "working" } }), null, false).state, "working");
+  assert.deepEqual(boardState(arch({ workers: { working: 2, total: 2 } }), null, false), { state: "working", reason: null, word: "Working (team)" });
+  assert.equal(boardState(arch(), agent("/s/a.jsonl", { workerCounts: { total: 1, working: 1, waiting: 0, done: 0, error: 0, killed: 0 } }), false).state, "working");
+  // Waiting on you, in every way a live one would: still Archived.
+  for (const extra of [
+    { activity: { state: "needs-input" as const } },
+    { pendingDialogs: 1 },
+    { turnError: { message: "429" } },
+    { activity: { state: "error" as const, error: "boom" } },
+    { signals: { kinds: ["asks-you"], at: 5, provider: "jev" } },
+    { align: { openDocs: 1, openQuestions: 2, questionDocs: 1, lead: { id: "al_1", title: "Export" } } },
+  ] as Partial<SessionSummary>[])
+    assert.deepEqual(boardState(arch(extra), null, false), { state: "archived", reason: null, word: "Archived" }, JSON.stringify(extra));
+});
+
+test("archived rows: in the default view only while working or open in a TUI; under Archived always; never under Needs you", () => {
+  const rows = boardRows(
+    [
+      sess("idle", { origin: "web", archived: true }),
+      sess("asks", { origin: "web", archived: true, pendingDialogs: 1 }),
+      sess("works", { origin: "web", archived: true, workers: { working: 1, total: 1 } }),
+      sess("turn", { origin: "web", archived: true }),
+      sess("ran", { origin: "web", archived: true, activity: { state: "idle" } }),
+      sess("tui", { origin: "web", archived: true, live: { pid: 1, status: "idle" } }),
+    ],
+    undefined,
+    (s) => s.id === "turn",
+  );
+  assert.deepEqual(rows.filter(inDefaultScope).map((r) => r.session.id), ["works", "turn", "tui"], "an idle or waiting archived session, its process still up or not, stays out");
+  assert.deepEqual(rows.filter((r) => passesFilter(r, "archived", undefined)).map((r) => r.session.id), ["idle", "asks", "works", "turn", "ran", "tui"]);
+  assert.deepEqual(rows.filter((r) => passesFilter(r, "needs-you", undefined)).map((r) => r.session.id), []);
 });
 
 test("the state's one word: code-derived Broken / Working (team), the card's waiting kind and done words", () => {
@@ -155,7 +196,7 @@ test("filters: each chip says what it means; Unmerged needs a reading; Archived 
   assert.deepEqual(counts, { live: 1, "needs-you": 2, "has-workers": 1, unmerged: 1, archived: 1 });
 });
 
-test("Needs you: archive eligibility wins over attention facts, search and a linked-team pin", () => {
+test("Needs you: an archived session is never in it, whatever it waits on, a search or a linked-team pin; it reads Archived", () => {
   const cases: { name: string; extra: Partial<SessionSummary>; host?: Partial<LiveAgentSession> }[] = [
     { name: "turn-error", extra: { turnError: { message: "429" } } },
     { name: "activity-error", extra: { activity: { state: "error", error: "failed" } } },
@@ -175,8 +216,8 @@ test("Needs you: archive eligibility wins over attention facts, search and a lin
     const sessions = [active, archived, legacy];
     const data = host ? insight(sessions.map((s) => agent(s.path, { ...host, teams: [team("linked", s.path)] }))) : undefined;
     const rows = boardRows(sessions, data, noBusy);
-    assert.ok(rows.every((r) => r.state === "needs-you"), `${name}: attention state stays intact`);
-    assert.equal(rows[1]!.reason, rows[0]!.reason, `${name}: archive does not erase the reason`);
+    assert.ok(rows[0]!.state === "needs-you" && rows[2]!.state === "needs-you", `${name}: an unarchived session's attention state stays intact`);
+    assert.deepEqual([rows[1]!.state, rows[1]!.word, rows[1]!.reason], ["archived", "Archived", null], `${name}: archived, never Needs you (§app.insights/team-cards)`);
     const expected = [active.id, legacy.id];
     assert.deepEqual(rows.filter((r) => passesFilter(r, "needs-you", undefined)).map((r) => r.session.id), expected, name);
     for (const query of ["", "TITLE", "no-match"]) {
@@ -193,7 +234,7 @@ test("Needs you: archive eligibility wins over attention facts, search and a lin
   }
 });
 
-test("archive exclusion is only Needs you: other scopes, pins and state precedence stay intact", () => {
+test("an archived session that works stays Working in every scope and pin; idle or waiting, it is Archived", () => {
   const s = sess("archived-live", { archived: true, origin: "web", activity: { state: "working" }, turnError: {}, workers: { total: 1, working: 1 } });
   const rows = boardRows([s], undefined, noBusy);
   const r = rows[0]!;
@@ -205,9 +246,9 @@ test("archive exclusion is only Needs you: other scopes, pins and state preceden
     assert.deepEqual(visibleRows(rows, { filter, query: "no-match", treesOf: none, pinned: s.path }), rows, `unchanged ${filter} pin bypass`);
   }
   const idle = boardRows([sess("idle", { archived: true })], insight([agent("/s/idle.jsonl")]), noBusy)[0]!;
-  assert.equal(idle.state, "idle", "an archived host record still derives idle");
+  assert.equal(idle.state, "archived", "an archived session with an idle host record is Archived");
   const blocked = boardRows([{ ...s, pendingDialogs: 1 }], undefined, () => true)[0]!;
-  assert.equal(blocked.state, "needs-you", "a dialog still outranks running work");
+  assert.equal(blocked.state, "working", "archived: running work shows, a dialog never makes it Needs you");
   assert.equal(passesFilter(blocked, "needs-you", undefined), false);
 });
 
@@ -266,11 +307,14 @@ test("money: symbol first, two decimals, a sub-cent spend is not $0.00", () => {
   assert.equal(money(0), "$0.00");
 });
 
-test("worktrees: merged either way, ahead/behind when not, and plain words for what's unknown", () => {
+test("worktrees: merged either way, unmerged in words when not, and plain words for what's unknown; never a count", () => {
   assert.deepEqual(treeMerge(tree("/t", { merged: "ancestor" })).kind, "merged");
   const content = treeMerge(tree("/t", { merged: "content" }));
-  assert.equal(content.kind === "merged" && content.text, "content merged");
-  assert.deepEqual(treeMerge(tree("/t", { merged: "no", ahead: 3, behind: 1 })), { kind: "diverged", ahead: 3, behind: 1 });
+  assert.equal(content.kind === "merged" && content.text, "merged");
+  assert.deepEqual(treeMerge(tree("/t", { merged: "no", ahead: 3, behind: 1 })), { kind: "unmerged", text: "unmerged", title: "Not merged into master." });
+  const title = treeTitle(tree("/t", { merged: "no", ahead: 3, behind: 1, added: 120, removed: 4, dirty: true }));
+  assert.equal(title, "feat/x · /t\nNot merged into master.\nUncommitted changes.");
+  assert.doesNotMatch(title, /\d+ ahead|behind|120|lines/, "no ahead/behind or line counts in the title");
   assert.deepEqual(treeMerge(tree("/t", { base: undefined })), { kind: "unknown", text: "no base" });
   assert.deepEqual(treeMerge({ path: "/t", source: "worker", exists: false }), { kind: "unknown", text: "gone" });
   assert.deepEqual(treeMerge(tree("/t", { error: "fatal" })), { kind: "unknown", text: "unreadable" });
@@ -297,22 +341,14 @@ test("a team link finds its team by key or bare id", () => {
   assert.equal(teamForLink(data, "team_01.zzz"), null, "a key that names no live team");
 });
 
-test("tree lines: both counts when the branch changes any; nothing for +0 −0 or an unread count", () => {
-  assert.deepEqual(treeLines(tree("/t", { added: 3, removed: 0 })), { added: 3, removed: 0 });
-  assert.equal(treeLines(tree("/t", { added: 0, removed: 0 })), null);
-  assert.equal(treeLines(tree("/t", { added: 3 })), null);
-});
-
 test("the open row: what it's about and where it stands, never the same fact twice", () => {
   const plain = boardRows([sess("a")], undefined, noBusy)[0]!;
-  const empty = rowDetail(plain, [tree("/t")]);
-  assert.equal(rowHasDetail(empty), false, "an idle session with one clean tree has nothing to say: no twist");
-  assert.deepEqual(empty.trees, [], "one clean tree is the cell already");
+  const one = rowDetail(plain, [tree("/t")]);
+  assert.equal(rowHasDetail(one), true, "one clean tree gets its line: no column shows it any more");
+  assert.deepEqual(one.trees.map((t) => t.path), ["/t"]);
   assert.equal(rowHasDetail(rowDetail(plain, undefined)), false, "trees not read yet");
-
-  const dirty = rowDetail(plain, [tree("/t", { dirty: true })]);
-  assert.equal(dirty.trees.length, 1, "one dirty tree gets its line");
-  assert.equal(rowDetail(plain, [tree("/t"), tree("/u")]).trees.length, 2, "2 trees get their lines");
+  assert.equal(rowHasDetail(rowDetail(plain, [])), false, "no tree, nothing else: no twist");
+  assert.deepEqual(rowDetail(plain, [tree("/m", { merged: "ancestor" }), tree("/u", { merged: "no" })]).trees.map((t) => t.path), ["/u", "/m"], "most useful first");
 
   const topics = boardRows([sess("b", { outlineTopics: 3 })], undefined, noBusy)[0]!;
   assert.equal(rowDetail(topics, []).topics, true);
@@ -402,17 +438,74 @@ test("tree order: unmerged, uncommitted, merged, the rest, gone; ties keep the s
   assert.equal(orderTrees(trees).length, trees.length);
 });
 
-test("all gone: two or more trees and none left; one gone tree still reads as a tree", () => {
-  const gone = (p: string) => tree(p, { exists: false });
-  assert.equal(allGone([gone("/a"), gone("/b")]), true);
-  assert.equal(allGone([gone("/a"), tree("/b")]), false);
-  assert.equal(allGone([gone("/a")]), false);
-  assert.equal(allGone([]), false);
+// ---- tokens a minute (§app.insights/session-token-rate) ------------------------------------------
+
+const SLOT_MS = 30_000;
+/** A list ending at the slot `now` falls in, `perSlot` in each of its last `slots` slots. */
+const slots = (perSlot: number, n: number) => new Array<number>(n).fill(perSlot);
+const at = Math.floor(NOW / SLOT_MS);
+
+test("rates: the sidebar's 5-minute mean, own and workers apart, and the 30-minute total over 30", () => {
+  // 10 slots (5 min) of 600 own + 300 workers: 1,200 + 600 a minute; 30 minutes: a sixth of that.
+  const r = rowRates({ a: encodeSessionTokens({ end: at, own: slots(600, 10), own30: 6000, workers: slots(300, 10), workers30: 3000 }) }, NOW).get("a")!;
+  assert.equal(r.own5, 1200);
+  assert.equal(r.workers5, 600);
+  assert.equal(r.five, 1800);
+  assert.equal(r.thirty, 300);
+  assert.equal(r.partial, false);
+  // The 5-minute window slides with the browser's clock alone; the 30-minute figure is the answer's.
+  const later = rowRates({ a: encodeSessionTokens({ end: at, own: slots(600, 10), own30: 6000 }) }, NOW + 5 * 60_000).get("a")!;
+  assert.equal(later.five, 0, "5 minutes later the window is past every slot");
+  assert.equal(later.thirty, 200);
+  assert.equal(rowRates({ a: encodeSessionTokens({ end: at, own: slots(600, 10), own30: 6000 }) }, NOW + 60_000).get("a")!.five, 960, "a minute on, two slots fewer");
+  // Workers idle over the last 5 minutes but not over 30: their tokens stay in the 30-minute figure.
+  const idleWorkers = rowRates({ a: encodeSessionTokens({ end: at, own: slots(600, 10), own30: 6000, workers30: 3000 }) }, NOW).get("a")!;
+  assert.equal(idleWorkers.workers5, 0);
+  assert.equal(idleWorkers.thirty, 300);
+  assert.equal(rowRates(undefined, NOW).size, 0);
+  assert.equal(rowRates({ a: "not a row" }, NOW).size, 0, "a malformed row reads as no tokens");
 });
 
-test("line counts: exact up to 9,999; past it both of the pair shorten", () => {
-  assert.deepEqual(["0", "840", "8.8k", "10k", "326k", "1M", "1.2M"], [0, 840, 8825, 9999, 326035, 999_999, 1_234_567].map(compactLines));
-  assert.deepEqual(linesShown({ added: 326035, removed: 8825 }), { added: "326k", removed: "8.8k", short: true });
-  assert.deepEqual(linesShown({ added: 9999, removed: 12 }), { added: "9999", removed: "12", short: false });
-  assert.deepEqual(linesShown({ added: 3, removed: 10000 }), { added: "3", removed: "10k", short: true });
+test("rates are worked out once per answer content and 30 s step: two identical polls compute once", () => {
+  let computed = 0;
+  const read = rateReader((t, now) => (computed++, rowRates(t, now)));
+  const row = encodeSessionTokens({ end: at, own: slots(600, 10), own30: 6000 });
+  // Two polls, each a fresh object with the same tokens (as two 5 s answers in one step are).
+  const first = read({ a: row, b: row }, 0, NOW);
+  const second = read({ a: row, b: row }, 0, NOW + 5_000);
+  assert.equal(computed, 1, "the identical second poll reuses the first's work");
+  assert.equal(second, first, "the same Map, so nothing downstream redraws");
+  // A changed answer, or the next 30 s step, works them out again; then the cache holds again.
+  read({ a: row }, 0, NOW + 10_000);
+  assert.equal(computed, 2, "different content: computed");
+  read({ a: row }, 1, NOW + 30_000);
+  assert.equal(computed, 3, "the next step: computed");
+  read({ a: row }, 1, NOW + 35_000);
+  assert.equal(computed, 3, "same content, same step: reused");
+  // No tokens (an answer that didn't ask) is a content too: computed once, then reused.
+  read(undefined, 1, NOW);
+  read(undefined, 1, NOW);
+  assert.equal(computed, 4);
+});
+
+test("the cell: the sidebar's format, a sentence with both windows and the split; a dash that says why", () => {
+  const live = sess("a");
+  const rate = { five: 48_000, thirty: 12_000, own5: 8_000, workers5: 40_000, partial: false };
+  const c = rateCell(live, rate, { reported: true, remote: false });
+  assert.equal(c.figure, "48k tok/min");
+  assert.equal(c.title, "Output tokens a minute: 48k over the last 5 minutes, 12k over 30 (this session 8.0k, its workers 40k). Replies still being written aren't counted yet.");
+  const partial = rateCell(live, { ...rate, partial: true }, { reported: true, remote: false });
+  assert.equal(partial.figure, "48k tok/min", "the figure stays bare");
+  assert.match(partial.title, /^Output tokens a minute: at least 48k .* Some calls' tokens can't be seen\. Replies still/);
+  // A terminal pi's own calls are unseen: its workers' figure is a floor.
+  const tui = sess("t", { live: { pid: 1, status: "idle" } });
+  assert.match(rateCell(tui, rate, { reported: true, remote: false }).title, /at least/);
+  assert.deepEqual(rateCell(tui, undefined, { reported: true, remote: false }), { figure: null, title: "Open in a terminal pi: Sova can't see its tokens." });
+  assert.deepEqual(rateCell(live, undefined, { reported: true, remote: true }), { figure: null, title: "On another host: its tokens aren't counted here." });
+  assert.equal(rateCell(live, rate, { reported: true, remote: true }).figure, null, "another host's row never shows this host's figure");
+  assert.deepEqual(rateCell(live, undefined, { reported: true, remote: false }), { figure: null, title: "No output in the last 5 minutes." });
+  assert.deepEqual(rateCell(live, { ...rate, five: 0 }, { reported: true, remote: false }).figure, null, "nothing in 5 minutes is idle");
+  assert.equal(rateCell(live, undefined, { reported: false, remote: false }).figure, null, "an older server: a dash");
+  assert.equal(sameRateCell(c, rateCell(live, { ...rate }, { reported: true, remote: false })), true);
+  assert.equal(sameRateCell(c, partial), false);
 });

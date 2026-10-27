@@ -111,8 +111,10 @@ interface SessionRecord {
   n: number;
   cards: StoredCard[];
   notNow: string[];
-  /** Landing rows waiting for the captain's open card to be answered (§chat.offers/landing-rows). */
+  /** Landing rows waiting for the captain's open card to be answered (§chat.offers/landing-rows), and the project
+      root and main branch the card they open is for. */
   rowsWaiting?: StoredRow[];
+  rowsWaitingAt?: { root: string; base?: string };
 }
 
 export interface OfferDeps {
@@ -263,6 +265,7 @@ function readRecord(sessionId: string): SessionRecord | null {
         cards,
         notNow: Array.isArray(raw.notNow) ? (raw.notNow as unknown[]).filter((x): x is string => typeof x === "string") : [],
         ...(waiting.length ? { rowsWaiting: waiting } : {}),
+        ...(isWaitingAt(raw.rowsWaitingAt) ? { rowsWaitingAt: raw.rowsWaitingAt } : {}),
       };
     }
   } catch {
@@ -300,6 +303,9 @@ function openEntryOf(rec: SessionRecord): { title: string; at: number; name: str
   }
   return { title: open.title, at: Date.parse(open.at), name: open.name, root: open.root, landing };
 }
+
+const isWaitingAt = (x: unknown): x is { root: string; base?: string } =>
+  !!x && typeof x === "object" && typeof (x as { root?: unknown }).root === "string" && ["string", "undefined"].includes(typeof (x as { base?: unknown }).base);
 
 function saveRecord(rec: SessionRecord): void {
   writeAtomic(recordFile(rec.sessionId), rec);
@@ -709,6 +715,16 @@ export async function chooseOffer(path: string, sessionId: string, cardId: strin
   if (card.state !== "open") throw new OfferRefusal("This card is no longer open.");
   if (card.rows) return chooseRow(path, rec, card, index, rowId);
   if (rowId !== undefined) throw new OfferRefusal("This card has no rows.", 400);
+  try {
+    return await chooseCard(path, sessionId, rec, card, index);
+  } finally {
+    // The card answered, withdrawn or replaced: rows waiting behind it open the captain's landing card.
+    if (openWaiting(rec)) saveRecord(rec);
+  }
+}
+
+/** A click on a card without rows (chooseOffer). */
+async function chooseCard(path: string, sessionId: string, rec: SessionRecord, card: StoredCard, index: number): Promise<OfferCard> {
   const button = card.buttons[index];
   if (!Number.isInteger(index) || !button) throw new OfferRefusal("No such button on this card.", 400);
   const live = stillOffered(rec, card);
@@ -896,13 +912,32 @@ function settleIn(sessionId: string): void {
 function closeIfDone(rec: SessionRecord, card: StoredCard): boolean {
   if (!card.rows || card.state !== "open" || card.rows.some((r) => r.state === "open")) return false;
   card.state = "chosen";
-  if (card.landingRows && rec.rowsWaiting?.length && liveOffer(readOffersFile(card.root), card.name)) {
-    const def = liveOffer(readOffersFile(card.root), card.name)!;
-    const max = Math.min(def.rows?.max ?? ROWS_MAX, ROWS_MAX);
-    const next = rec.rowsWaiting.splice(0, max);
-    if (!rec.rowsWaiting.length) delete rec.rowsWaiting;
-    rec.cards.push(landingCard(rec, card.root, card.name, card.base, def.rows?.all, next));
+  if (card.landingRows) rec.rowsWaitingAt ??= { root: card.root, ...(card.base ? { base: card.base } : {}) };
+  openWaiting(rec);
+  return true;
+}
+
+/** The most open rows the captain's landing card holds (§chat.offers/landing-rows), from the file's `rows.max`. */
+const landingMax = (def: OfferDef): number => Math.min(def.rows?.max ?? ROWS_MAX, ROWS_MAX);
+
+/**
+ * Once the captain's chat has no open card (its landing card answered, or any other card answered, withdrawn,
+ * replaced or set to Not Now), the rows waiting open the next landing card (§chat.offers/landing-rows).
+ * → whether it opened one (the caller saves).
+ */
+function openWaiting(rec: SessionRecord): boolean {
+  if (!rec.rowsWaiting?.length || rec.notNow.includes(LANDING_ROWS_OFFER)) return false;
+  if (rec.cards.some((c) => c.state === "open" && liveOffer(readOffersFile(c.root), c.name))) return false;
+  const at = rec.rowsWaitingAt ?? [...rec.cards].reverse().find((c) => c.landingRows);
+  if (!at) return false;
+  const def = liveOffer(readOffersFile(at.root), LANDING_ROWS_OFFER);
+  if (!def) return false;
+  const next = rec.rowsWaiting.splice(0, landingMax(def));
+  if (!rec.rowsWaiting.length) {
+    delete rec.rowsWaiting;
+    delete rec.rowsWaitingAt;
   }
+  rec.cards.push(landingCard(rec, at.root, LANDING_ROWS_OFFER, at.base, def.rows?.all, next));
   return true;
 }
 
@@ -957,6 +992,8 @@ export async function addLandingRow(input: LandingRowInput): Promise<{ card: str
   if (!def) return null;
   const rec = readRecord(input.captainId) ?? { v: 1 as const, sessionId: input.captainId, path: input.captainPath, snapshot: null, taken: false, takenAt: "", n: 0, cards: [], notNow: [] };
   if (rec.notNow.includes(LANDING_ROWS_OFFER)) return null;
+  // Rows left waiting behind a card that has closed since open their card first.
+  openWaiting(rec);
   const openLanding = rec.cards.find((c) => c.state === "open" && c.landingRows);
   const same = (r: StoredRow) => r.branch === input.branch && r.head === input.head;
   const hit = openLanding?.rows?.find(same);
@@ -992,15 +1029,17 @@ export async function addLandingRow(input: LandingRowInput): Promise<{ card: str
     defIdx: shown.map((b) => def.buttons.indexOf(b)),
     head: input.head,
   };
-  const max = Math.min(def.rows?.max ?? ROWS_MAX, ROWS_MAX);
+  // At most `max` open rows: answered rows leave room; the rows already waiting go first.
+  const max = landingMax(def);
   let out: { card: string; row: string } | { waiting: true };
-  if (openLanding && stillOffered(rec, openLanding) && openLanding.rows!.length < max) {
+  if (openLanding && stillOffered(rec, openLanding) && !rec.rowsWaiting?.length && openLanding.rows!.filter((r) => r.state === "open").length < max) {
     row.id = `r_${openLanding.rows!.length + 1}`;
     openLanding.rows!.push(row);
     out = { card: openLanding.id, row: row.id };
   } else if (openLanding?.state === "open" || rec.cards.some((c) => c.state === "open" && !c.landingRows && liveOffer(readOffersFile(c.root), c.name))) {
     // The captain's one open card is answered first: the row waits for it.
     (rec.rowsWaiting ??= []).push(row);
+    rec.rowsWaitingAt ??= { root, ...(facts.base ? { base: facts.base } : {}) };
     out = { waiting: true };
   } else {
     const card = landingCard(rec, root, LANDING_ROWS_OFFER, facts.base, def.rows?.all, [row]);
@@ -1077,6 +1116,7 @@ export function setNotNow(sessionId: string, path: string, offer: string, on: bo
     if (!rec.notNow.includes(offer)) rec.notNow.push(offer);
     for (const c of rec.cards) if (c.state === "open" && c.name === offer) c.state = "not-now";
   } else rec.notNow = rec.notNow.filter((n) => n !== offer);
+  openWaiting(rec);
   saveRecord(rec);
   return [...rec.notNow];
 }
@@ -1126,7 +1166,10 @@ export async function sessionOffers(sessionId: string, cwd: string | undefined):
     if (c.state !== "open") continue;
     if (!liveOffer(readOffersFile(c.root), c.name)) {
       c.state = "withdrawn";
-      if (c.landingRows) delete rec.rowsWaiting;
+      if (c.landingRows) {
+        delete rec.rowsWaiting;
+        delete rec.rowsWaitingAt;
+      }
       saveRecord(rec);
     } else if (c.rows?.some((r) => r.branch && r.head)) {
       let changed = false;
@@ -1137,6 +1180,7 @@ export async function sessionOffers(sessionId: string, cwd: string | undefined):
       }
     } else if ((await commitMoved(c)) === "moved") supersede(rec, c);
   }
+  if (openWaiting(rec)) saveRecord(rec);
   await landingProgress(rec);
   return { cards: rec.cards.map((c) => wireCard(c, rec)), notNow: [...rec.notNow], hasFile: hasFile || rec.cards.length > 0 };
 }

@@ -274,6 +274,69 @@ describe("the captain's landing card (§chat.offers/landing-rows)", () => {
     assert.equal(next.state, "open");
   });
 
+  /** Another (non-landing) card open in the captain's chat while `run` goes, the offers file restored after. */
+  let replies = 0;
+  async function withOtherCard(run: (otherId: string) => Promise<void>) {
+    const file = join(repo, ".sova", "offers.json");
+    const text = readFileSync(file, "utf8");
+    const parsed = JSON.parse(text) as { offers: Record<string, unknown> };
+    parsed.offers.ping = { when: "w", title: "Ping?", shownBy: "agent", repeat: "once-per-reply", buttons: [{ label: "Ping", about: "Pings.", send: "ping" }] };
+    try {
+      writeFileSync(file, JSON.stringify(parsed));
+      const other = await offers.showOffer({ path: pathOf(CAP), sessionId: CAP, offer: "ping", by: "agent", replyId: `ping-${++replies}` });
+      await run(other.id);
+    } finally {
+      writeFileSync(file, text);
+    }
+  }
+  const openLandingVia = async () => {
+    const app = new Hono();
+    registerSessionOfferRoutes(app);
+    const res = await app.request(`/api/session-offers?path=${encodeURIComponent(pathOf(CAP))}`);
+    assert.equal(res.status, 200);
+    return ((await res.json()) as { cards: { state: string; title: string; rows?: { branch?: string; state: string }[] }[] }).cards.find((c) => c.state === "open" && c.rows);
+  };
+
+  test("F1: a row parked behind another open card opens a landing card once that card is answered", async () => {
+    await withOtherCard(async (otherId) => {
+      const b = make("feat/behind-1");
+      const shown = await ask(b);
+      assert.deepEqual(shown.row, { waiting: true }, "the captain's one open card is answered first");
+      await offers.chooseOffer(pathOf(CAP), CAP, otherId, 0);
+      const open = await openLandingVia();
+      assert.ok(open, "a landing card opens from the waiting row");
+      assert.equal(open.title, "Branches ready to land");
+      assert.deepEqual(open.rows!.map((r) => [r.branch, r.state]), [[b.name, "open"]]);
+      assert.equal(offers.openOfferOf(CAP)?.title, "1 branch ready to land");
+    });
+  });
+
+  test("F1: Not Now on the other card brings up the waiting row too", async () => {
+    await withOtherCard(async () => {
+      const b = make("feat/behind-2");
+      assert.deepEqual((await ask(b)).row, { waiting: true });
+      offers.setNotNow(CAP, pathOf(CAP), "ping", true);
+      const open = await openLandingVia();
+      assert.deepEqual(open?.rows?.map((r) => [r.branch, r.state]), [[b.name, "open"]]);
+      offers.setNotNow(CAP, pathOf(CAP), "ping", false);
+    });
+  });
+
+  test("F2: at most 10 open rows: answered rows leave room on the open card", async () => {
+    const list = Array.from({ length: 10 }, (_, i) => make(`feat/room-${i}`));
+    for (const b of list) await ask(b);
+    const card = await captainCard();
+    assert.equal(card.rows!.length, 10);
+    for (const r of card.rows!.slice(0, 9)) await offers.chooseOffer(pathOf(CAP), CAP, card.id, r.buttons.findIndex((x) => x.label === "Not Yet"), r.id);
+    const eleventh = make("feat/room-10");
+    const shown = await ask(eleventh);
+    assert.deepEqual(shown.row, { card: card.id, row: "r_11" }, "9 answered: room for the 11th on the same card");
+    const now = await captainCard();
+    assert.equal(now.id, card.id);
+    assert.equal(now.rows!.filter((r) => r.state === "open").length, 2);
+    assert.equal(now.more, undefined, "nothing waits");
+  });
+
   test("the landing offer removed: the captain's card and the owners' cards read No longer offered", async () => {
     const b = make("feat/k");
     await ask(b);

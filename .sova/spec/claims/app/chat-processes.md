@@ -211,7 +211,9 @@ the chat again; only something that needs the chat does, such as sending from th
 someone sends to it or acts on it, opens it (a click, a reload, every pane of a workspace), brings
 its workspace tab to the front (§workspace.groups/layout-tabs), or another chat or the Overseer
 sends it a message, which starts a new process; a jump in its Timeline or scrolling up for older
-rows doesn't, they read the file (§chat.transcript/instant-open). Its `hello`
+rows doesn't, they read the file (§chat.transcript/instant-open). An archived chat is the
+exception: none of these starts it until someone unarchives it; opening it reads its file, and the
+rest is refused (§chat.transcript/instant-open, "An archived chat"). Its `hello`
 comes about 0.5 s after the socket opens for a 240 KB session and about 0.8 s for an 11 MB one
 (median on a hermetic server, detached chats, 2026-10-13), while its saved rows already show
 (§chat.transcript/instant-open). Its workers run on in their own processes; a waiting worker's process stops the same way, idle, and stays listed waiting (§app.chat-processes/workers).
@@ -404,7 +406,9 @@ passes its events back. A worker never runs inside the server's process.
   comes from its file, and a run that finished while the parent was away is announced to the parent
   once (waking it under the worker's `wake`), never twice and never lost. A steer sent after the
   reattach reaches the worker once. When a worker's run finishes and no parent chat picks it up
-  within 10 seconds, the server opens the parent chat once so that it takes the report. A parent that
+  within 10 seconds, the server opens the parent chat once so that it takes the report, unless the
+  parent is archived: archiving cancels a report's pending open, and an archived parent is never
+  opened for one (it takes the report when it is unarchived and next opens). A parent that
   doesn't open is tried again after 10, 30 and 90 seconds; the report counts as taken only once the
   parent opened, so one still not taken then is the next server's to deliver, if the worker is still running;
   otherwise the parent finds it when it next opens.

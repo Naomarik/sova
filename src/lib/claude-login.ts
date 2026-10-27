@@ -73,7 +73,9 @@ export function composerLogin(
   const text = login.email ?? login.name;
   const avatar = loginAvatar(login.id, text, logins);
   const who = [login.name !== text ? login.name : null, text, login.planLabel].filter(Boolean).join(" · ");
-  const how = login.recorded ? "This chat runs on this Claude login" : "This chat starts on this Claude login (first ready on this device)";
+  // Before the first record, the login may come from the chat's project or its organization (§app.claude-logins/project-login).
+  const from = login.source === "project" ? "set for this project" : login.source === "org" ? "set for this project's organization" : "first ready on this device";
+  const how = login.recorded ? "This chat runs on this Claude login" : `This chat starts on this Claude login (${from})`;
   return { text, avatar, title: `${how}: ${who}. Order and standing: Settings → Accounts.`, label: `Claude login: ${text}`, pending: false };
 }
 

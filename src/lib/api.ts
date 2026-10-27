@@ -1,4 +1,5 @@
 import type { AssistantInfo, AssistantOlder, AssistantView, PricedPick, VersionSummaryRow } from "../../shared/project-assistant";
+import type { OrgClaudeLogin, ProjectClaudeLogin } from "../../shared/projects";
 import type { ModelPick, WorkModels } from "../../shared/powers";
 import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
 import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow } from "../../shared/project-settings";
@@ -293,6 +294,14 @@ export const getTeamDefaults = () => request<TeamDefaultsInfo>("/api/settings/te
 
 /** Settings → Accounts: this host's Claude logins in order, their standing, and the add-login flow. */
 export const getClaudeAccounts = () => request<ClaudeAccountsInfo>("/api/claude/accounts");
+/** A project's Claude login (§app.claude-logins/project-login); a peer's project is asked on its peer. */
+export const getProjectClaudeLogin = (pid: string) => request<ProjectClaudeLogin>(`/api/projects/${encodeURIComponent(pid)}/claude-login`);
+export const putProjectClaudeLogin = (pid: string, login: string) =>
+  request<ProjectClaudeLogin>(`/api/projects/${encodeURIComponent(pid)}/claude-login`, { method: "PUT", body: JSON.stringify({ login }) });
+/** An organization's Claude login for its projects. */
+export const getOrgClaudeLogin = (id: string) => request<OrgClaudeLogin>(`/api/orgs/${encodeURIComponent(id)}/claude-login`);
+export const putOrgClaudeLogin = (id: string, login: string) =>
+  request<OrgClaudeLogin>(`/api/orgs/${encodeURIComponent(id)}/claude-login`, { method: "PUT", body: JSON.stringify({ login }) });
 /** The logins of the host that holds chat `path` (the query only routes the request there). */
 export const getChatClaudeAccounts = (path: string) =>
   request<ClaudeAccountsInfo>(`/api/claude/accounts?path=${encodeURIComponent(path)}`);

@@ -121,6 +121,9 @@ export function Composer(props: {
   path: string;
   readOnly?: ComposerReason | null;
   blocked?: ComposerReason | null;
+  /** An archived chat (§chat.transcript/instant-open, "An archived chat"): Unarchive in place of Send,
+      typing and the draft kept; `blocked` carries the reason. */
+  unarchive?: { run: () => void; busy: boolean } | null;
   running: boolean;
   /** A compaction runs (§chat.slash-commands/compact): Stop and the status row, but no Steer. */
   compacting?: boolean;
@@ -1248,7 +1251,21 @@ export function Composer(props: {
             />
           </div>
           <div class="composer-actions">
-            <Show when={!props.readOnly}>
+            <Show when={!props.readOnly && props.unarchive}>
+              {(u) => (
+                <button
+                  type="button"
+                  class="button button-primary"
+                  aria-disabled={u().busy ? "true" : undefined}
+                  aria-describedby={paneId("composer-reason")}
+                  onClick={() => !u().busy && u().run()}
+                >
+                  <Icon name="undo" small />
+                  <span class="button-label">Unarchive</span>
+                </button>
+              )}
+            </Show>
+            <Show when={!props.readOnly && !props.unarchive}>
               <button
                 ref={sendButton}
                 type="submit"

@@ -106,6 +106,7 @@ import { reviewSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
 import { alignForPick } from "./align-settings";
 import { agentRoot } from "./state-root";
+import { ARCHIVED_REFUSAL } from "./archived-sessions";
 import { SendKeys } from "./send-keys";
 import { UserTurns } from "./user-turns";
 import { markBackground } from "../pi-config/extensions/provider-limits/gate.ts";
@@ -316,6 +317,15 @@ export class RefusedError extends Error {}
 
 /** The /ws/chat error code of a failure. */
 const errorCode = (err: unknown) => (err instanceof BusyError ? err.code : err instanceof RefusedError ? ("refused" as const) : ("internal" as const));
+
+/** An ordinary chat that is archived: it reads only until it is unarchived, so nothing opens it
+ *  (§chat.transcript/instant-open, "An archived chat"). /ws/chat answers it `closed` (`archived`),
+ *  never a retry; a request answers it 409 with its message. */
+export class ArchivedError extends RefusedError {
+  constructor() {
+    super(ARCHIVED_REFUSAL);
+  }
+}
 
 export class ModeRefusedError extends RefusedError {
   constructor(message = "The Overseer is always in normal mode.") {
@@ -2591,14 +2601,14 @@ class ChatSession {
 
   /** This chat's Claude login with its waiting pick, as every tab is told it. */
   loginMessage(): ChatServerMessage {
-    const msg = claudeLoginMessage(this.harness.branch(), undefined, { pending: this.loginPending });
+    const msg = claudeLoginMessage(this.harness.branch(), undefined, { pending: this.loginPending, cwd: this.harness.cwd || undefined });
     this.noteLogin(msg.login);
     return msg;
   }
 
   /** The `claude_login` message every hello is followed by (claudeLoginAfterHello). */
   private loginAfterHello(): ChatServerMessage {
-    const msg = claudeLoginAfterHello(this.harness.branch(), undefined, { pending: this.loginPending }); // the branch's newest entry
+    const msg = claudeLoginAfterHello(this.harness.branch(), undefined, { pending: this.loginPending, cwd: this.harness.cwd || undefined }); // the branch's newest entry
     this.noteLogin(msg.login);
     return msg;
   }
@@ -2611,7 +2621,7 @@ class ChatSession {
   setClaudeLogin(login: string | null): void {
     assertNotLive(this.path);
     this.assertNoForeignWrites();
-    const current = chatClaudeLogin(this.harness.branch())?.id;
+    const current = chatClaudeLogin(this.harness.branch(), undefined, { cwd: this.harness.cwd || undefined })?.id;
     if (login !== null && login !== current) {
       if (!/^(default|l-[0-9a-f]{8})$/.test(login)) throw new Error("There's no such Claude login.");
       if (!(this.harness.model()?.ref ?? "").startsWith("claude-code-cli/")) throw new Error("This chat isn't on a Claude Code model.");

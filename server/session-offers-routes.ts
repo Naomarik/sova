@@ -84,8 +84,9 @@ export function registerSessionOfferRoutes(app: Hono<any>): void {
         if (b.button !== undefined || b.row !== undefined) throw new OfferRefusal("all goes without button and row", 400);
         return c.json({ card: await chooseAllAt(path, b.card, b.all as string[]) }, 200, NO_STORE);
       }
-      if (typeof b.button !== "number" || !Number.isInteger(b.button) || b.button < 0) throw new OfferRefusal("button is the button's number, from 0", 400);
       if (b.row !== undefined && (typeof b.row !== "string" || !/^r_[1-9][0-9]*$/.test(b.row))) throw new OfferRefusal("row names a row of the card (r_N)", 400);
+      if (b.button === undefined) throw new OfferRefusal("Name the button pressed (button, from 0), or all on a rows card", 400);
+      if (typeof b.button !== "number" || !Number.isInteger(b.button) || b.button < 0) throw new OfferRefusal("button is the button's number, from 0", 400);
       return c.json({ card: await chooseOfferAt(path, b.card, b.button, b.row as string | undefined) }, 200, NO_STORE);
     }),
   );

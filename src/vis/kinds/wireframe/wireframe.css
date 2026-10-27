@@ -220,7 +220,8 @@
 .vis-wf-item > .vis-wf-item-trail > *, .vis-wf-item > .vis-wf-item-trail > .vis-wf-row > :not(.vis-wf-row-go, .vis-em-badge) { flex: 0 1 auto; min-width: 0; max-width: 100%; align-self: center; }
 .vis-wf-item-trail .vis-wf-button > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vis-wf-table { position: relative; min-width: 0; border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); overflow: hidden; font-size: var(--fs-micro); line-height: 16px; }
-/* Equal columns (layout.ts's table estimate), so a cell's long word is cut short instead of widening its column. */
+/* Columns by content: layout.ts's tableColumns, set by the View as <col> widths (equal until then). Fixed, so a column
+   never widens the table: a word too wide for its cell is cut short instead. */
 .vis-wf-table table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 0; }
 .vis-wf-table th { height: 26px; box-sizing: border-box; padding: 5px 8px; text-align: left; font-weight: var(--fw-semibold); color: var(--color-ink-muted); background: var(--color-sunken); border: 0; }
 .vis-wf-table td { height: 26px; box-sizing: border-box; padding: 5px 8px; border: 0; border-top: var(--stroke-thin) solid var(--color-border); }

@@ -71,19 +71,21 @@ export default function WireframeView(props: ViewProps<WireframeSpec>) {
   const [width, setWidth] = createSignal(0);
   const fit = createMemo(() => (width() > 0 ? fitStrip(spec, width()) : undefined));
   /** What layout.ts sizes from the content, each screen at its frame's width (§chat.markdown/vis-wireframe-room): a
-      desktop dialog's width and each grid's columns, by block key (keys are unique across screens). The estimate
+      desktop dialog's width, each grid's columns and each table's column widths, by block key (keys are unique across screens). The estimate
       reserved the height from the same layout; before the first measure, wireframe.css's fallbacks draw. */
   const sized = createMemo(() => {
     const f = fit();
     const modals = new Map<string, number>();
     const grids = new Map<string, number>();
+    const tables = new Map<string, number[]>();
     if (f)
       spec.screens.forEach((s, i) => {
         const l = screenLayout(s, f.widths[i]!, undefined, spec.screens.map((_, k) => nameOf(k)));
         for (const [k, v] of l.modals) modals.set(k, v);
         for (const [k, v] of l.grids) grids.set(k, v);
+        for (const [k, v] of l.tables) tables.set(k, v);
       });
-    return { modals, grids };
+    return { modals, grids, tables };
   });
 
   /** Where the strip scrolls to show screen `i` from its start. */
@@ -446,6 +448,14 @@ export default function WireframeView(props: ViewProps<WireframeSpec>) {
         return (
           <div class={c("vis-wf-table")}>
             <table>
+              {/* Columns by content (layout.ts's tableColumns); before the first measure, equal. */}
+              <Show when={sized().tables.get(b.key)}>
+                {(ws) => (
+                  <colgroup>
+                    <For each={ws()}>{(x) => <col style={{ width: `${(100 * x).toFixed(3)}%` }} />}</For>
+                  </colgroup>
+                )}
+              </Show>
               <Show when={cols.some(Boolean)}>
                 <thead>
                   <tr>

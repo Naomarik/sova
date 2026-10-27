@@ -80,21 +80,23 @@ export interface Cramp {
   reason: "narrow" | "word";
 }
 
-/** What one screen's layout decides from its content, at one frame width: the View applies the first two. */
+/** What one screen's layout decides from its content, at one frame width: the View applies the first three. */
 export interface ScreenLayout {
   height: number;
   /** A desktop modal's width in px, by its key. */
   modals: Map<string, number>;
   /** A grid's column count, by its key. */
   grids: Map<string, number>;
+  /** A table's column widths, each a fraction of the table's width, by its key (tableColumns). */
+  tables: Map<string, number[]>;
   cramped: Cramp[];
 }
 
 /** One screen laid out in a frame `frame` px wide (before any scale), as estimateHeight lays it out. */
 export function screenLayout(s: WScreen, frame: number, measure: WeightedMeasure = htmlMeasure, names: string[] = []): ScreenLayout {
-  const plan: Plan = { modals: new Map(), grids: new Map(), cramped: new Map() };
+  const plan: Plan = { modals: new Map(), grids: new Map(), tables: new Map(), cramped: new Map() };
   const height = frameHeight(s, { r: measure(400), b: measure(600) }, frame, names, plan);
-  return { height, modals: plan.modals, grids: plan.grids, cramped: [...plan.cramped.values()] };
+  return { height, modals: plan.modals, grids: plan.grids, tables: plan.tables, cramped: [...plan.cramped.values()] };
 }
 
 /**
@@ -121,7 +123,7 @@ export function estimateHeight(spec: WireframeSpec, width: number, measure: Weig
 type M = { r: Measure; b: Measure };
 
 /** What a walk records (screenLayout): last write wins, the cramped blocks once each. */
-type Plan = { modals: Map<string, number>; grids: Map<string, number>; cramped: Map<string, Cramp> };
+type Plan = { modals: Map<string, number>; grids: Map<string, number>; tables: Map<string, number[]>; cramped: Map<string, Cramp> };
 
 /** Every block's text wraps as wireframe.css draws it: between words, an overlong word on its own line, cut short (wordLines). */
 const lines = (s: string, w: number, px: number, measure: Measure) => wordLines(s, w, px, measure);
@@ -449,6 +451,57 @@ function rowOwn(b: WBlock, w: number, ctx: Ctx): number {
   return h;
 }
 
+/** A table cell's padding, both sides (wireframe.css: 8px). */
+const CELL_PAD = 16;
+/** A block under a table row's last cell, on one line (wireframe.css's .vis-wf-cell-blocks): a button or a badge its label's,
+    its padding and its border (2px a side: in a scaled-down frame a 1px border stays a device pixel, about 2px). */
+const cellBlock = (c: WBlock, ctx: Ctx) =>
+  c.type === "button" ? 20 + ctx.m.b(c.texts.join(" · ") || "Button", SMALL_PX) : c.type === "badge" ? 18 + ctx.m.r(c.texts.join(" · "), SMALL_PX) : 40;
+/** The widest unbreakable piece of a text: a word, or its part after / . - _ (where wordLines breaks it). */
+const widestWord = (s: string, px: number, measure: Measure) =>
+  Math.max(0, ...s.split(/\s+/).flatMap((t) => t.split(/(?<=[/._-])/)).filter(Boolean).map((p) => measure(p, px)));
+
+/**
+ * A table's column widths in px, `w` in all (§chat.markdown/vis-wireframe-room, "Table columns by content"): each
+ * column its content's width on one line (its header in semibold, its cells' text, in the last column the row's
+ * blocks side by side; a chip never sizes a column) and its padding, the room left shared in proportion. Short of
+ * room, each column gives up its extra width in proportion, down to its longest word (a block whole); short of even
+ * that, every column its share of those, and the words cut short, the last column's blocks kept whole while they fit. An empty column (placeholders) 24px.
+ */
+/** An empty column's content (its placeholder bars). A column's one-line width gets 1px more, so a subpixel never
+    wraps a cell sized to its text; its least width is its longest word's exactly, as a browser's table sizes it. */
+const EMPTY_CELL = 24;
+function tableColumns(b: WBlock, w: number, ctx: Ctx): number[] {
+  const { m } = ctx;
+  const cols = Math.max(1, b.items?.length ?? 3);
+  const nat: number[] = [];
+  const least: number[] = [];
+  /** The last column's widest block: kept whole while the text columns can still give way. */
+  let keep = 0;
+  for (let i = 0; i < cols; i++) {
+    const head = b.items?.[i] ?? "";
+    const cells = b.children.map((r) => r.texts[i] ?? "");
+    const blocks = i === cols - 1 ? b.children.map((r) => r.children.map((c) => cellBlock(c, ctx))) : [];
+    const one = Math.max(m.b(head, SMALL_PX), ...cells.map((s) => m.r(s, SMALL_PX)), ...blocks.map((bs) => bs.reduce((a, x) => a + x, 0) + 4 * Math.max(0, bs.length - 1)));
+    const word = Math.max(widestWord(head, SMALL_PX, m.b), ...cells.map((s) => widestWord(s, SMALL_PX, m.r)), ...blocks.flat());
+    if (i === cols - 1) keep = CELL_PAD + Math.max(0, ...blocks.flat());
+    nat.push(CELL_PAD + (one > 0 ? one + 1 : EMPTY_CELL));
+    least.push(CELL_PAD + (word > 0 ? word : EMPTY_CELL));
+  }
+  const sum = (xs: number[]) => xs.reduce((a, x) => a + x, 0);
+  const n = sum(nat);
+  const l = sum(least);
+  if (n <= w) return nat.map((x) => (x * w) / n);
+  if (l <= w) return nat.map((x, i) => least[i]! + ((x - least[i]!) * (w - l)) / (n - l || 1));
+  // Short of even the words: the last column keeps its blocks whole while the others' words can be cut instead.
+  const rest = l - least[cols - 1]!;
+  if (keep > CELL_PAD && cols > 1 && keep < w && rest > 0) {
+    const last = Math.max(keep, (least[cols - 1]! * w) / l);
+    return least.map((x, i) => (i === cols - 1 ? last : (x * (w - last)) / rest));
+  }
+  return least.map((x) => (x * Math.max(0, w)) / l);
+}
+
 function block(b: WBlock, w: number, ctx: Ctx): number {
   const h = blockOwn(b, w, ctx);
   const under = CHIP_UNDER[b.type];
@@ -531,41 +584,53 @@ function blockOwn(b: WBlock, w: number, ctx: Ctx): number {
     case "item": {
       // One line: the lead blocks (40px each with the gap), the text (12ch at least), the right text, then the
       // other blocks, at their own widths. When they don't fit beside the text they take a line of their own under it.
+      // In an item too narrow for the text's 12ch beside its lead blocks, the text wraps onto a line of its own under
+      // them (wireframe.css: the item wraps, its text's basis 12ch), the item's whole width.
       const lead = b.children.filter((c) => ["avatar", "icon", "image", "checkbox", "radio"].includes(c.type));
       const trail = b.children.filter((c) => !lead.includes(c));
       const inner = w - 20;
+      const twelveR = m.r("0".repeat(12), BODY_PX);
       const endW = t[2] ? Math.min(0.4 * w, m.r(t.slice(2).join(" · "), SMALL_PX) + 8) : 0;
-      const leadW = lead.length * 40;
+      const ownLead = lead.reduce((a, c) => a + GAP + (c.type === "image" ? 96 : ownWidth(c, ctx)), 0);
+      const wrapped = lead.length > 0 && ownLead + twelveR > inner;
+      const leadW = wrapped ? 0 : lead.length * 40;
       const trailW = trail.length ? GAP + widthOf(trail, TRAIL_GAP, ctx) : 0;
-      const beside = leadW + m.r("0".repeat(12), BODY_PX) + endW + trailW <= inner;
+      const beside = leadW + twelveR + endW + trailW <= inner;
       const mw = Math.max(40, inner - leadW - endW - (beside ? trailW : 0));
       room(b, t[0], mw, BODY_PX, m.r, ctx);
       // The chip sits under the title and detail.
-      const text = Math.max(LINE * wordLines(t[0] ?? "", mw, BODY_PX, m.r) + (t[1] ? small(t[1], mw) : 0) + (goWidth(b, ctx) ? 2 + 18 : 0), ...lead.map((c) => block(c, 40, ctx)));
+      const own = LINE * wordLines(t[0] ?? "", mw, BODY_PX, m.r) + (t[1] ? small(t[1], mw) : 0) + (goWidth(b, ctx) ? 2 + 18 : 0);
+      const leadH = Math.max(0, ...lead.map((c) => block(c, 40, ctx)));
+      const text = wrapped ? leadH + GAP + own : Math.max(own, leadH);
       if (!trail.length) return Math.max(40, 12 + text);
       return Math.max(40, 12 + (beside ? Math.max(text, packed(trail, trailW - GAP, ctx)) : text + GAP + packed(trail, inner, ctx)));
     }
     case "table": {
-      // Equal columns (table-layout: fixed); a row's own blocks and its chip wrap under its last cell's text.
+      // Columns by content (tableColumns; the View sets them, table-layout: fixed); a row's own blocks and its chip
+      // wrap under its last cell's text.
       const cols = Math.max(1, b.items?.length ?? 3);
-      const cw = w / cols - 16;
+      // The table inside the block's 1px border.
+      const widths = tableColumns(b, w - 2, ctx);
+      ctx.plan?.tables.set(b.key, widths.map((x) => x / (w - 2)));
+      const cws = widths.map((x) => x - CELL_PAD);
+      const last = cws[cols - 1]!;
       const under = (r: WBlock) => {
         if (!r.children.length && r.to === undefined && !r.toName) return 0;
         let rows = 1;
         let x = 0;
-        for (const iw of [...r.children.map((c) => (c.type === "button" ? 18 + m.b(c.texts.join(" · ") || "Button", SMALL_PX) : c.type === "badge" ? 16 + m.r(c.texts.join(" · "), SMALL_PX) : 40)), goWidth(r, ctx) - 6].filter((v) => v > 0)) {
-          const bw = Math.min(iw, cw);
-          if (x && x + 4 + bw > cw) {
+        for (const iw of [...r.children.map((c) => cellBlock(c, ctx)), goWidth(r, ctx) - 6].filter((v) => v > 0)) {
+          const bw = Math.min(iw, last);
+          if (x && x + 4 + bw > last) {
             rows++;
             x = bw;
           } else x += (x ? 4 : 0) + bw;
         }
         return 4 + rows * 22 + (rows - 1) * 4;
       };
-      const rowH = (r: WBlock) => Math.max(26, 11 + Math.max(...(b.items ?? [""]).map((_, i) => small(r.texts[i] ?? "", cw) + (i === cols - 1 ? under(r) : 0))));
-      for (const c of b.items ?? []) room(b, c, cw, SMALL_PX, m.b, ctx);
-      for (const r of b.children) for (const c of r.texts.slice(0, cols)) room(r, c, cw, SMALL_PX, m.r, ctx);
-      const head = b.items?.length ? Math.max(26, 10 + Math.max(...b.items.map((c) => SMALL * lines(c, cw, SMALL_PX, m.b)))) : 0;
+      const rowH = (r: WBlock) => Math.max(26, 11 + Math.max(...(b.items ?? [""]).map((_, i) => small(r.texts[i] ?? "", cws[i]!) + (i === cols - 1 ? under(r) : 0))));
+      (b.items ?? []).forEach((c, i) => room(b, c, cws[i]!, SMALL_PX, m.b, ctx));
+      for (const r of b.children) r.texts.slice(0, cols).forEach((c, i) => room(r, c, cws[i]!, SMALL_PX, m.r, ctx));
+      const head = b.items?.length ? Math.max(26, 10 + Math.max(...b.items.map((c, i) => SMALL * lines(c, cws[i]!, SMALL_PX, m.b)))) : 0;
       return 2 + head + (b.children.length ? b.children.reduce((h, r) => h + rowH(r), 0) : 3 * 26);
     }
     case "heading": {

@@ -10,6 +10,7 @@ import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import { launchTourBrowser } from "../../../../server/tours/browser";
 import { parseVis } from "../../parse";
+import { frameWidth, screenLayout } from "./layout";
 import type { WireframeSpec } from "./parse";
 // @ts-expect-error the shared SSR test compiler is an untyped .mjs helper
 const { importSsr } = await import("../../../lib/align-card-ssr.mjs");
@@ -39,8 +40,8 @@ after(async () => {
   await browser?.close();
 });
 
-async function page(): Promise<Page> {
-  const r = parseVis("wireframe", BODY);
+async function page(body = BODY): Promise<Page> {
+  const r = parseVis("wireframe", body);
   if (!r.ok) assert.fail(r.message);
   const html = renderToString(() => solid.createComponent(WireframeView, { spec: r.spec as WireframeSpec, label: "Stats" }));
   const p = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -82,6 +83,51 @@ test("a stat's label and value in a box narrower than their word: one line each,
     await p.addStyleTag({ content: ".vis-wf-stat-label { overflow-wrap: break-word; }" });
     const old = await lineBoxes(p, ".vis-wf-stat-label");
     assert.ok(old.every((g) => g.lines.length > 3 && g.lines.every((w) => w < g.word / 2)), JSON.stringify(old[0]));
+  } finally {
+    await p.close();
+  }
+});
+
+/** A simple orders page (an agent's, from the A/B test that found equal columns cutting its badges): a sidebar, and a
+    6-column table whose last column holds a status badge per row. */
+const ORDERS = `device: desktop
+sidebar
+  link "Dashboard"
+  link "Orders" on
+header "Orders"
+table "Order no., Customer, Date, Items, Total, Status"
+  item "Order no." "Customer name" "Date"
+    badge "Pending" warn
+  item "Order no." "Customer name" "Date"
+    badge "Shipped" info
+  item "Order no." "Customer name" "Date"
+    badge "Delivered" ok
+  item "Order no." "Customer name" "Date"
+    badge "Cancelled" muted`;
+
+test("a table's columns follow their content: badges whole, cells one line, no letter stacking (§chat.markdown/vis-wireframe-room)", async () => {
+  const p = await page(ORDERS);
+  try {
+    // Server-rendered, the View hasn't measured its pane: set the columns it sets once it has (layout.ts's tableColumns
+    // at this figure's frame width), so the CSS is checked with the model's own numbers.
+    const r = parseVis("wireframe", ORDERS);
+    if (!r.ok) assert.fail(r.message);
+    const s = (r.spec as WireframeSpec).screens[0]!;
+    const fr = [...screenLayout(s, frameWidth("desktop", 702)).tables.values()][0]!;
+    const cut = () =>
+      p.$$eval(".vis-wf-badge-label, .vis-wf-table td > .vis-wf-txt", (els) => els.filter((e) => e.scrollWidth > e.clientWidth + 0.5).map((e) => e.textContent));
+    const tall = () => p.$$eval(".vis-wf-table td > .vis-wf-txt", (els) => els.filter((e) => e.getBoundingClientRect().height > 17).map((e) => e.textContent));
+    // Equal columns (the first paint, and the regression): the badges are cut short, the check can tell.
+    assert.ok((await cut()).length > 0, "equal columns cut nothing: this check proves nothing");
+    await p.$eval(".vis-wf-table table", (t, ws) => {
+      const g = document.createElement("colgroup");
+      for (const x of ws) g.appendChild(Object.assign(document.createElement("col"), { style: `width: ${100 * x}%` }));
+      t.prepend(g);
+    }, fr);
+    assert.deepEqual(await cut(), [], "a badge or a cell cut short");
+    assert.deepEqual(await tall(), [], "a cell's text on more than one line");
+    const got = await lineBoxes(p, ".vis-wf-table td > .vis-wf-txt, .vis-wf-badge-label");
+    for (const g of got) assert.ok(g.lines.length === 1 && g.box + 0.5 >= g.word, `"${g.text}": ${g.box}px for ${g.word}px, ${g.lines.length} lines`);
   } finally {
     await p.close();
   }

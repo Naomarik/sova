@@ -652,3 +652,113 @@ row 1:4
   assert.ok(wireframeCramped(spec('device: desktop\nrow 1:4\n  col\n    row\n      card "Background colour"\n      card "Main color"\n  text "Preview"')).length > 0);
   assert.deepEqual(wireframeCramped(spec('device: desktop\nrow\n  card "Background" "#FBF4EA"\n  card "Text" "#3A2A1E"\n  card "Main color" "#C8553D"\n  card "Surface" "#FFFDF8"')), []);
 });
+
+// An agent's orders page (A/B test, 2026-10-27): a 6-column table with a status badge per row, beside a sidebar.
+const ORDERS = spec(`title: Orders list (desktop)
+caption: Search and filters on top, then a table of orders you can page through.
+device: desktop
+screen "Orders"
+sidebar
+  link "Dashboard"
+  link "Orders" on
+  link "Customers"
+  link "Products"
+header "Orders"
+  button "New order" accent right
+row
+  search "Search by order no., customer or email" grow
+  select "Status" "All"
+  select "Date range" "Any time"
+  button "Export"
+tabs "*All, Pending, Shipped, Delivered, Cancelled"
+table "Order no., Customer, Date, Items, Total, Status"
+  item "Order no." "Customer name" "Date"
+    badge "Pending" warn
+  item "Order no." "Customer name" "Date"
+    badge "Shipped" info
+  item "Order no." "Customer name" "Date"
+    badge "Delivered" ok
+  item "Order no." "Customer name" "Date"
+    badge "Cancelled" muted
+  item "Order no." "Customer name" "Date"
+    badge "Delivered" ok
+row
+  text "Showing 1–5 of — orders"
+  row right
+    button "Previous"
+    button "Next"
+mark "Search by order no., customer or email" "searches as you type, across order no., name and email"
+mark "Status" "matches the tabs, so you can filter from either one"`);
+
+test("wireframe room: a table's columns follow their content, so a simple table has room and its badges stay whole", () => {
+  // The orders page is not cramped (equal columns flagged 5 of its cells and cut its badges).
+  assert.deepEqual(wireframeCramped(ORDERS), []);
+  const table = ORDERS.screens[0]!.blocks.find((b) => b.type === "table")!;
+  const fr = screenLayout(ORDERS.screens[0]!, 760, flat).tables.get(table.key)!;
+  assert.equal(fr.length, 6);
+  assert.ok(Math.abs(fr.reduce((a, x) => a + x, 0) - 1) < 1e-9, "the columns fill the table, never wider");
+  // Wider where the content is: "Customer name" over "Date"; the Status column holds "Delivered" whole (9 × 7 + 18 for its badge + 16 padding), inside the 1px border.
+  assert.ok(fr[1]! > fr[2]! && fr[1]! > fr[3]!, JSON.stringify(fr));
+  const inner = 760 - 3 - 200 - 24 - 2;
+  assert.ok(fr[5]! * inner >= 9 * 7 + 18 + 16, `${fr[5]! * inner}px`);
+  // Short of room, a column wraps between words and keeps its longest word: no cut, no flag…
+  const words = spec('device: desktop\nrow 1:2\n  table "Name, Notes"\n    item "Ada" "a long note that wraps between its words here"\n  text "x"');
+  assert.deepEqual(wireframeCramped(words, flat), []);
+  // …and only when even the words don't fit is a cell cut short, and flagged: six columns on a phone.
+  assert.ok(wireframeCramped(spec('table "Name, Email, Role, Team, Status, Joined"\n  item "Ada Lovelace" "ada@example.org" "Owner" "Core" "Active" "2024"'), flat).some((c) => c.reason === "word"));
+  // Even then a row's badge stays whole (its last column keeps it; the words beside it are cut instead).
+  const phone = spec('table "Name, Email, Role, Team, Joined, Status"\n  item "Ada Lovelace" "ada@example.org" "Owner" "Core" "2024"\n    badge "Suspended" warn');
+  const pf = [...screenLayout(phone.screens[0]!, 300, flat).tables.values()][0]!;
+  assert.ok(pf[5]! * (300 - 3 - 20 - 2) >= 9 * 7 + 18 + 16, `${pf[5]! * 275}px`);
+});
+
+// An agent's dashboard (A/B test, 2026-10-27): list items with icons in a row 1:5 sidebar about 120px wide.
+const DASHBOARD = spec(`title: Analytics dashboard
+caption: Navigation on the left; totals, then trends, then recent events.
+device: desktop
+row 1:5
+  sidebar
+    heading "Analytics"
+    list
+      item "Overview"
+        icon "home"
+      item "Reports"
+        icon "chart"
+      item "Users"
+        icon "user"
+      item "Settings"
+        icon "settings"
+  col
+    row
+      heading "Overview"
+      search "Search" grow
+      select "Last 30 days" right
+      button "Export" accent
+    row
+      stat "Visitors" "—"
+      stat "Sign-ups" "—"
+      stat "Revenue" "AED —"
+      stat "Churn" "—" warn
+    row 2:1
+      card "Traffic over time"
+        chart "Visitors per day" line
+      card "Traffic by source"
+        chart "Sources" pie
+    card "Recent activity"
+      table "User, Event, Date, Status"
+        item "Name" "Event" "Date"
+          badge "Status"
+        item "Name" "Event" "Date"
+          badge "Status"
+        item "Name" "Event" "Date"
+          badge "Status"
+      link "View all"
+mark "Last 30 days" "one date range drives every card, chart and the table"
+mark "Traffic over time" "the wide chart is for the trend; the narrow one is for the breakdown"`);
+
+test("wireframe room: an item's text too narrow beside its icon takes a line under it, and is not cramped", () => {
+  // "Overview", "Reports", "Settings" wrap under their icons (wireframe.css) with the item's whole width: readable.
+  assert.deepEqual(wireframeCramped(DASHBOARD), []);
+  // The same item in a column about 38px wide (a phone's row 1:6) is still cramped.
+  assert.ok(wireframeCramped(spec('row 1:6\n  list\n    item "Overview"\n      icon "home"\n  text "x"'), flat).some((c) => c.text === "Overview"));
+});

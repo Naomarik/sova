@@ -355,7 +355,9 @@ export const OTHER_ENTRIES: CommandEntry[] = [
     label: "Agents Board",
     summary: "The Agents page's workers and teams.",
     effect: "looks",
-    params: {},
+    params: {
+      tokens: { type: "string", description: "1 adds each session's output tokens (the board's Tokens/min)", in: "query" },
+    },
     route: { method: "GET", path: "/api/insights/agents" },
     sessionKey: null,
     sessionFile: "never",

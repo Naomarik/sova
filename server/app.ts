@@ -1446,7 +1446,7 @@ export function buildApp(deps: AppDeps) {
     }
   });
 
-  app.get("/api/insights/agents", async (c) => c.json(await getAgentsInsight()));
+  app.get("/api/insights/agents", async (c) => c.json(await getAgentsInsight({ tokens: c.req.query("tokens") === "1" })));
 
   app.get("/api/insights/session", async (c) => {
     const path = resolveSessionPath(c.req.query("path"));

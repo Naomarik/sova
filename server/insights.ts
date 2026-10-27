@@ -62,6 +62,7 @@ import { defaultAdapters } from "./worker-adapters";
 import { WorkerRestorer, workersFromRecords } from "./worker-restore";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
 import { handoverSuccessor, retireReason, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
+import { sessionTokens } from "./session-tokens";
 import { readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE, type WorkerTranscriptAdapters } from "../pi-config/extensions/subagents/worker-transcript.ts";
 
 // Read-only views over what the user's pi extensions leave on disk (sources and shapes:
@@ -1138,8 +1139,12 @@ async function liveSession({ sessionFile, pid, rec }: RawLiveRecord): Promise<Li
   };
 }
 
-/** Every running pi process (including this server's embedded runtimes), with workers and teams. */
-export async function getAgentsInsight(): Promise<AgentsInsight> {
+/**
+ * Every running pi process (including this server's embedded runtimes), with workers and teams.
+ * `tokens`: add each Sova-hosted row's output tokens (the Agents board asks, `?tokens=1`, only while
+ * it is shown); otherwise no token work is done and the field is left out.
+ */
+export async function getAgentsInsight(opts: { tokens?: boolean } = {}): Promise<AgentsInsight> {
   const at = Date.now();
   const lastActivity = new Map<LiveAgentSession, number>();
   const sessions: LiveAgentSession[] = [];
@@ -1170,7 +1175,10 @@ export async function getAgentsInsight(): Promise<AgentsInsight> {
     for (const t of s.teams) totals.teamWorking += t.working;
   }
   totals.soloWorking = Math.max(0, totals.working - totals.teamWorking);
-  return { at, totals, sessions };
+  // Each Sova-hosted row's output tokens, from memory, built once per change and 30 s slot, only
+  // when asked (§app.insights/session-token-rate). Then always sent (`{}` when none), so the board
+  // tells a server that measures from an older one that doesn't.
+  return opts.tokens ? { at, totals, sessions, tokens: sessionTokens().wire() } : { at, totals, sessions };
 }
 
 // ---------------------------------------------------------------------------

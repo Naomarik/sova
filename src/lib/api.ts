@@ -941,7 +941,16 @@ export const fetchUsageHistory = (series: string, window: string, at: number | n
 export const fetchUsageStrip = (series: string, window: string) =>
   request<UsageHistoryStrip>(`/api/insights/usage/history?series=${encodeURIComponent(series)}&window=${encodeURIComponent(window)}&strip=1`);
 
-export const fetchAgents = () => request<AgentsInsight>("/api/insights/agents");
+/** GET /api/insights/agents as the browser keeps it: `tokensAsked` (browser-side only) says the request
+    asked for `tokens`, so a missing field means an older server only then (§app.insights/session-token-rate). */
+export type AgentsAnswer = AgentsInsight & { tokensAsked?: true };
+
+/** `tokens`: ask for each row's output tokens too (only while the Agents board is shown). */
+export const fetchAgents = async (opts: { tokens?: boolean } = {}): Promise<AgentsAnswer> => {
+  if (!opts.tokens) return request<AgentsInsight>("/api/insights/agents");
+  const a = await request<AgentsInsight>("/api/insights/agents?tokens=1");
+  return { ...a, tokensAsked: true };
+};
 
 /** The git worktrees of the named sessions (the Agents board's visible rows). */
 export const fetchWorktrees = (paths: readonly string[]) =>

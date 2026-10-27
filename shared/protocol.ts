@@ -2698,7 +2698,7 @@ export type WatchServerMessage =
 // missing/corrupt sources: they return an honest empty/unavailable payload.
 // ---------------------------------------------------------------------------
 // GET /api/insights/usage          -> UsageInsight
-// GET /api/insights/agents         -> AgentsInsight     (all live pi processes; poll ~5s)
+// GET /api/insights/agents         -> AgentsInsight     (all live pi processes; poll ~5s; ?tokens=1 adds `tokens`)
 // POST /api/upload                -> UploadResult 201  (raw image bytes; Content-Type: image/*; saved in /tmp)
 // POST /api/upload?draft=<session path> -> UploadResult 201  (same, saved durably in that session's folder
 //                                  <agent dir>/sova/attachments/<session id>/; 400 invalid session path, 404 no such session)
@@ -3145,6 +3145,30 @@ export interface AgentsInsight {
   at: number;
   totals: { sessions: number; working: number; total: number; teams: number; teamWorking: number; soloWorking: number };
   sessions: LiveAgentSession[]; // working first, then by lastActivity
+  /** Output tokens of each Sova-hosted main thread, its workers at any depth rolled up, keyed by
+      its session id: only sessions with tokens in the last 5 minutes (§app.insights/session-token-rate),
+      each one `SessionTokens` as one string (shared/session-tokens-wire.ts). Only on `?tokens=1`
+      (the board asks while it is shown): then `{}` when none, and absent only from older servers
+      (every row then reads as unmeasured). */
+  tokens?: Record<string, string>;
+}
+
+/** One board row's output tokens: its last 5 minutes as 30 s epoch slots (`end` = the server's
+    current slot), oldest first, each list starting at its oldest non-zero slot and ending at `end`,
+    and each part's 30-minute total. A list absent = no tokens in the last 5 minutes; a total absent =
+    none in the last 30 (a part idle over 5 minutes still sends its total). Sent encoded
+    (shared/session-tokens-wire.ts). */
+export interface SessionTokens {
+  end: number;
+  /** The session's own chat processes'. */
+  own?: number[];
+  /** Its 30-minute total, present even without `own` when it wrote only earlier in the 30. */
+  own30?: number;
+  /** Its workers', at any depth. */
+  workers?: number[];
+  workers30?: number;
+  /** Some of these calls' tokens are known missing (a Claude Code turn running, a ring not reported). */
+  partial?: true;
 }
 
 export interface OutlineTopic {

@@ -364,9 +364,10 @@ in the same spot. After Sova's items come the groups that extensions add.
 - **The rows.** Each extension with an entry to show gets one group after Copy Path, in manifest
   order. The group is headed by the extension's title and named by it. It holds that extension's
   entries in declared order. The menu shows at most 8 extension rows in all. An entry whose
-  label is the name of one of Sova's own items in this menu (Open Session, Session Details, Close
-  Session Details, Open Subagents, Rename…, Use Gist as Title, Reset to Original Title, Move to
-  Group…, Archive, Unarchive, Copy Path) is left out of the menu, with case, spacing and a trailing
+  label is a reserved name is left out of the menu: the name of one of Sova's own items in this
+  menu (Session Details, Close Session Details, Open Subagents, Rename…, Use Gist as Title, Reset
+  to Original Title, Move to Group…, Archive, Unarchive, Copy Path), or Open Session, which stays
+  reserved though the menu no longer has it (the row's title link opens the session). It is left out with case, spacing and a trailing
   "…" ignored; the command itself stays. A row shows the
   command's `label`, with its `summary` as the line under it when it has one. Its tooltip is the
   label followed by "· From {extension title}", and its accessible name says the same and names

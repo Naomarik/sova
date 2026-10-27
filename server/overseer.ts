@@ -99,6 +99,7 @@ import { meshLinks } from "./mesh/links";
 import type { PeerLinkRead } from "../shared/mesh-links";
 import { rowsOf } from "./transcript";
 import { branchOf, joinedText, lineEntry, parsePi, readBranch } from "./harness/pi/reader";
+import { confirmedClicks } from "./overseer-copies";
 import type { HEntry, ToolSpec } from "../shared/harness";
 import type { ServerToolDecl } from "../shared/chat-runtime";
 import { archiveWorktrees } from "./archive-worktrees";
@@ -690,6 +691,11 @@ const host: OverseerToolHost = {
     return (r?.trees ?? []).flatMap((t) => (t.landing?.state === "ready" ? [{ branch: t.branch, head: t.landing.commit }] : []));
   },
   landAtCommit: async (input) => (await import("./overseer-land")).recordCardGoAhead(input),
+  // The same click, per row with its chosen label: copies and leftover processes (§app.overseer/copies).
+  confirmedClicks: () => {
+    const run = overseerRun();
+    return confirmedClicks(run ? run.call.card : null, run ? run.chat.branch() : [], (h) => joinedText(h, { images: false }));
+  },
   // Approvals and rules (§app.overseer/approvals): read from the current runtime's file each call,
   // so a revoke applies from the next act on.
   permit(tool, sessions) {

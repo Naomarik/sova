@@ -82,7 +82,7 @@ function linkSchema(orgs: boolean) {
   );
 }
 
-function opSchemas(orgs: boolean, grants: boolean): Record<CardOpName, { description: string; fields: Record<string, unknown> }> {
+function opSchemas(orgs: boolean, grants: boolean, copies = false): Record<CardOpName, { description: string; fields: Record<string, unknown> }> {
   const option = obj(
     {
       label: S("Button text, Title Case, short."),
@@ -119,7 +119,7 @@ function opSchemas(orgs: boolean, grants: boolean): Record<CardOpName, { descrip
           description: `The buttons: up to ${CARD_ANSWERS_MAX} answer options (lettered a, b, c…) and up to ${CARD_LINKS_MAX} link options (with link: they open a page and answer nothing). Leave answer options out of a per-item card (every item has choices): its Apply button is the answer, and an "Apply" option would send no item's pick.`,
           items: option,
         },
-        items: itemsSchema(orgs),
+        items: itemsSchema(orgs, copies),
         choices: {
           type: "array",
           minItems: CARD_CHOICES_MIN,
@@ -150,8 +150,8 @@ function opSchemas(orgs: boolean, grants: boolean): Record<CardOpName, { descrip
   };
 }
 
-export function cardParameters(orgs: boolean, grants = false) {
-  const schemas = opSchemas(orgs, grants);
+export function cardParameters(orgs: boolean, grants = false, copies = false) {
+  const schemas = opSchemas(orgs, grants, copies);
   const branch = (name: CardOpName) => {
     const { description, fields } = schemas[name];
     return obj({ op: { type: "string", const: name }, ...fields }, ["op", ...CARD_OP_FIELDS[name].required], { description });
@@ -165,7 +165,7 @@ export function cardParameters(orgs: boolean, grants = false) {
   );
 }
 
-export function cardDescription(who: "user" | "operator"): string {
+export function cardDescription(who: "user" | "operator", copies = false): string {
   return (
     `Ask the ${who} with a card under your reply, and record their answer. Each card gets an id c_N; its items are numbered 1..N and its answer options lettered a, b, c…, so "c_4 b" is option b and "c_4 2a" is item 2 taking choice a. ` +
     `A call applies its ops to ONE card atomically (pass card to change an existing one); it never ends your turn. ` +
@@ -178,7 +178,10 @@ export function cardDescription(who: "user" | "operator"): string {
       ? `A session row with land (true, or the branch when it has more than one Ready to land) is a Ready to land row: the card shows its branch and commit, and Go (its first choice) lands that commit through sova_land in the turn the Apply opens, never by sending the session words. `
       : "") +
     `A card stays open until you record it: when the ${who} answers (a click arrives as "c_4 b: …" or "c_4: 1a Archive, 2b Keep", each letter its own row's; typed text may name the card, an item number or an option letter), do the act it approves first, then call answer with their words (option, or items) or accept for "your recommendation" in the same run, only once the act succeeded: a refused act leaves the card open so the ${who} can click again. If an Apply's acts stop partway (a limit, a refusal), record only the rows you acted on and say that Apply on the card sends the rest. Replace a card that changed (create with replaces), drop one that no longer applies. ` +
-    `Link options (link) open a session, a page${who === "user" ? ", an org, project or person page" : ""} or an https URL without a turn; use them instead of asking to navigate.`
+    `Link options (link) open a session, a page${who === "user" ? ", an org, project or person page" : ""} or an https URL without a turn; use them instead of asking to navigate.` +
+    (copies
+      ? ` To tear down, reset or stop a running copy you did not start (or one with share links), or to stop a leftover process holding a copy port, list each under items.copies or items.leftovers, each its own row with choices such as Tear Down / Reset / Stop / Keep and its default on your recommendation: such a card is click-only, and in the turn the ${who}'s click opens Sova lets each row's act run only when its chosen label names it (Keep or Not Now approves nothing; a typed yes never counts).`
+      : "")
   );
 }
 
@@ -187,6 +190,7 @@ const PENDING_MS = 10 * 60_000;
 
 export function cardTool(d: CardToolDeps): Tool {
   const orgs = !!(d.lookup.person && d.lookup.project);
+  const copies = !!(d.lookup.copy && d.lookup.leftover);
   const pending = new Map<string, { session: string; details: CardDetails; at: number }>();
   /** The branch's cards, plus this tool's own results the branch doesn't hold yet. */
   const cardsNow = (ctx: Ctx): OverseerCard[] => {
@@ -240,9 +244,9 @@ export function cardTool(d: CardToolDeps): Tool {
     label: "Card",
     // Its card reads the recorded result (EAGER_TOOLS): never a codemode script's call.
     exposure: "model-only",
-    description: cardDescription(d.audience),
+    description: cardDescription(d.audience, copies),
     promptSnippet: `ask the ${d.audience} with a card (c_N; items 1..N, options a, b…), and record their answer on it`,
-    parameters: cardParameters(orgs, d.grants === true),
+    parameters: cardParameters(orgs, d.grants === true, copies),
     // The cards are shared state: calls in one message apply one after another.
     executionMode: "sequential",
     execute: (toolCallId: string, params: unknown, signal?: AbortSignal, onUpdate?: unknown, ctx?: unknown) =>

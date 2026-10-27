@@ -12,7 +12,7 @@
  * as `CardPrepared`.
  */
 import type { HEntry } from "./harness";
-import { CONFIRM_SECTION_MAX, CONFIRM_SENDS_MAX, type SovaConfirmItem } from "./protocol";
+import { CONFIRM_SECTION_MAX, CONFIRM_SENDS_MAX, type CopyStarter, type LeftoverReason, type SovaConfirmItem } from "./protocol";
 import { type CardOptionLater, type CardOptionRule, GRANT_DEFAULT_MS, GRANT_MAX_AHEAD_MS, GRANTABLE_ACTS, type GrantableAct } from "./overseer-grants";
 
 /** The tool's name, in the loadout and on every tool result. */
@@ -311,12 +311,13 @@ export interface CardOutcome {
 }
 
 /**
- * The display order: ideas, todos, orgs, folders, projects, people, then sessions (the card's row
- * order). On a card where any item names a section (§app.overseer/card-sections): rows with no
- * section first, then each section in the order it first appears in `items`, that kind order
- * within each. The card numbers its rows 1..N in this order, so the numbers run top to bottom.
+ * The display order: ideas, todos, orgs, folders, projects, people, copies, leftover processes, then
+ * sessions (the card's row order). On a card where any item names a section
+ * (§app.overseer/card-sections): rows with no section first, then each section in the order it first
+ * appears in `items`, that kind order within each. The card numbers its rows 1..N in this order, so
+ * the numbers run top to bottom.
  */
-const KIND_ORDER: Record<SovaConfirmItem["kind"], number> = { idea: 0, todo: 1, org: 2, folder: 3, project: 4, person: 5, session: 6 };
+const KIND_ORDER: Record<SovaConfirmItem["kind"], number> = { idea: 0, todo: 1, org: 2, folder: 3, project: 4, person: 5, copy: 6, leftover: 7, session: 8 };
 export function displayOrder<T extends SovaConfirmItem>(items: readonly T[]): T[] {
   const sections: (string | undefined)[] = [undefined];
   for (const it of items) if (it.section !== undefined && !sections.includes(it.section)) sections.push(it.section);
@@ -823,6 +824,49 @@ export function normalizeCardItem(v: unknown): CardItem | undefined {
       if (v.status !== "active" && v.status !== "proposed" && v.status !== "left") return undefined;
       base = { kind: "person", id: v.id, orgId: v.orgId, name: v.name, orgName: v.orgName, status: v.status, ...note };
       break;
+    case "copy": {
+      const startedBy = starterOf(v.startedBy);
+      if (!nonEmpty(v.project) || !nonEmpty(v.projectName) || !nonEmpty(v.checkout) || !count(v.slot) || !startedBy || !count(v.links)) return undefined;
+      if (v.branch !== null && !nonEmpty(v.branch)) return undefined;
+      if (v.state !== "running" && v.state !== "stopped" && v.state !== "broken") return undefined;
+      if (v.edits !== "clean" && v.edits !== "uncommitted" && v.edits !== "folder-gone") return undefined;
+      base = {
+        kind: "copy",
+        id: v.id,
+        project: v.project,
+        projectName: v.projectName,
+        slot: v.slot,
+        branch: v.branch as string | null,
+        checkout: v.checkout,
+        state: v.state,
+        startedBy,
+        edits: v.edits,
+        links: v.links,
+        ...(v.working === true ? { working: true } : {}),
+        ...note,
+      };
+      break;
+    }
+    case "leftover":
+      if (!nonEmpty(v.project) || !nonEmpty(v.projectName) || !count(v.slot) || !count(v.port) || !count(v.pid) || !nonEmpty(v.start) || !str(v.command) || !nonEmpty(v.folder)) return undefined;
+      if (v.reason !== "folder-gone" && v.reason !== "branch-on-main") return undefined;
+      if (v.unit !== undefined && !nonEmpty(v.unit)) return undefined;
+      base = {
+        kind: "leftover",
+        id: v.id,
+        project: v.project,
+        projectName: v.projectName,
+        slot: v.slot,
+        port: v.port,
+        pid: v.pid,
+        start: v.start,
+        command: v.command,
+        folder: v.folder,
+        reason: v.reason,
+        ...(v.unit !== undefined ? { unit: v.unit as string } : {}),
+        ...note,
+      };
+      break;
     default:
       return undefined;
   }
@@ -1024,7 +1068,36 @@ export function itemText(it: SovaConfirmItem): string {
       return `folder ${it.id}${it.asked ? ` (the checkout root of ${it.asked})` : ""}${it.name ? `, named ${it.name}` : ""}, ${it.orgId ? `into ${it.orgName} (${it.orgId})` : "standalone"}`;
     case "person":
       return `${it.name} (${it.id}, ${it.status}) in ${it.orgName} (${it.orgId})`;
+    case "copy":
+      return `copy ${it.id} of ${it.projectName} (${it.project}), slot ${it.slot}, ${it.branch ? `branch ${it.branch}` : `folder ${it.checkout}`}, ${it.state}, started by ${starterText(it.startedBy)}${copyFacts(it)}`;
+    case "leftover":
+      return `leftover process on port ${it.port} (slot ${it.slot}) of ${it.projectName} (${it.project}): pid ${it.pid}, ${it.command ? `"${it.command}"` : "command unreadable"}, in ${it.folder}, ${LEFTOVER_REASON_TEXT[it.reason]}${it.unit ? `, unit ${it.unit}` : ""}`;
   }
+}
+
+const starterText = (s: CopyStarter): string => (s.kind === "session" ? `${sessionLink(s.id, cut(s.title, 60))} (${s.id})` : s.label);
+const copyFacts = (it: Extract<SovaConfirmItem, { kind: "copy" }>): string =>
+  [
+    it.edits === "uncommitted" ? "uncommitted edits (a teardown keeps them in its folder)" : it.edits === "folder-gone" ? "its folder is gone" : "",
+    it.links ? `${it.links} active share link${it.links === 1 ? "" : "s"}` : "",
+    it.working ? "its session is working now" : "",
+  ]
+    .filter(Boolean)
+    .map((s) => `, ${s}`)
+    .join("");
+
+/** Why a leftover process may be stopped, in words (the card row and the model's echo). */
+export const LEFTOVER_REASON_TEXT: Record<LeftoverReason, string> = {
+  "folder-gone": "its folder was deleted",
+  "branch-on-main": "its branch is already merged into the main checkout's",
+};
+
+/** A stored copy row's starter, or undefined when malformed. */
+function starterOf(v: unknown): CopyStarter | undefined {
+  if (!isRecord(v)) return undefined;
+  if (v.kind === "session") return nonEmpty(v.id) && str(v.title) ? { kind: "session", id: v.id, title: v.title } : undefined;
+  if (v.kind === "operator" || v.kind === "overseer" || v.kind === "conform" || v.kind === "other") return nonEmpty(v.label) ? { kind: v.kind, label: v.label } : undefined;
+  return undefined;
 }
 
 /** "a. Archive all · b. Keep"; "" without answer options. */
@@ -1085,7 +1158,12 @@ export function cardLines(card: OverseerCard, line: string): string[] {
     const opt = card.recommendation.option ? `${card.recommendation.option} — ${optionByLetter(card, card.recommendation.option)?.label ?? ""}: ` : "";
     out.push(`  rec: ${opt}${card.recommendation.why}`);
   }
-  if (card.clickOnly) out.push("  click-only: an act that reaches people runs only in the turn its click opens, never on typed text");
+  if (card.clickOnly)
+    out.push(
+      card.items.some((it) => it.kind === "copy" || it.kind === "leftover")
+        ? "  click-only: what it lists is acted on only in the turn its click opens, never on typed text; a copy or leftover row approves only the act its chosen label names (Tear Down, Reset, Stop)"
+        : "  click-only: an act that reaches people runs only in the turn its click opens, never on typed text",
+    );
   return out;
 }
 
@@ -1229,3 +1307,32 @@ export function clickItems(card: OverseerCard, click: CardClick): CardItem[] {
   if ("option" in click) return card.items;
   return card.items.filter((it) => click.items[it.n] !== undefined);
 }
+
+/** One item a click touched and the label it chose for it: its row's chosen choice for a per-item Apply, the
+    option's label for a card-level option (which touches every item). */
+export type ClickChoice = { item: CardItem; choice: string };
+
+/** Each item a click touched, with the label it chose (§app.overseer/copies: Sova checks the choice, not just the click). */
+export function clickChoices(card: OverseerCard, click: CardClick): ClickChoice[] {
+  if ("option" in click) {
+    const label = optionByLetter(card, click.option)?.label;
+    return label ? card.items.map((item) => ({ item, choice: label })) : [];
+  }
+  const out: ClickChoice[] = [];
+  for (const item of card.items) {
+    const letter = click.items[item.n];
+    if (letter === undefined) continue;
+    const c = choiceByLetter(card, item, letter);
+    if (c) out.push({ item, choice: c.label });
+  }
+  return out;
+}
+
+/** The acts a copy or leftover row's choice may approve (§app.overseer/copies). */
+export type CopyAct = "teardown" | "reset" | "down" | "stop-leftover";
+
+const ACT_WORD: Record<CopyAct, RegExp> = { teardown: /^tear ?down\b/i, reset: /^reset\b/i, down: /^stop\b/i, "stop-leftover": /^stop\b/i };
+
+/** Whether a chosen label names `act`: only "Tear Down…", "Reset…" or "Stop…" (a card-wide "Tear Down All" too);
+    Keep, Not Now, Cancel and anything else approve nothing. */
+export const choiceNames = (label: string, act: CopyAct): boolean => ACT_WORD[act].test(label.trim());

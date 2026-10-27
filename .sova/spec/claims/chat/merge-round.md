@@ -4,7 +4,7 @@
 Sova's own repository ships one scheduled playbook, **Merge round** (`.sova/playbooks/merge-round/`),
 run by the project profile **Merge captain** (`.sova/profiles/merge-captain.json`, One at a time)
 when a branch in its repository turns Ready to land or gets the user's go-ahead typed in its own
-chat or given with Go on an Overseer card (§chat.schedules/merge-ready), every 6 hours,
+chat (§chat.schedules/merge-ready), every 6 hours,
 and after a Claude limit resets (§chat/schedules). A round finds finished branches,
 checks each one, lands it on master, removes its worktree when git allows it, pushes it and
 restarts the live server when that is safe. The
@@ -39,9 +39,8 @@ after each landing, since every other branch is then checked against the new mas
   merge chip's own rule set (§chat.worktrees/readiness), through the driver's `status`, whole and
   never filtered through `grep`, `head` or `tail`. A wake whose Reason reads `Ready to land: …`
   names the branches that just turned Ready to land (§chat.schedules/merge-ready), and one that also
-  reads `Go-ahead typed in its own chat: …` names branches the user told, in their own chat, to land,
-  and `Go-ahead on the Overseer's card: …` branches the user applied Go on in an Overseer card
-  (both checked at once, below). A branch to queue is one the board reads Ready to land;
+  reads `Go-ahead typed in its own chat: …` names branches the user told, in their own chat, to land
+  (checked at once, below). A branch to queue is one the board reads Ready to land;
   Ready to merge and Waiting for your OK alone are not finished work. The owner of a branch is the session the board names, never a guess from
   session files or titles. An owner the board can't name yet (Sova hasn't read every session) is
   unknown, left for a later round and never "no owner"; when the board is missing or old, owners
@@ -62,12 +61,12 @@ after each landing, since every other branch is then checked against the new mas
   and sends it to the captain, which is the OK: the branch, checked green, lands, pushes and
   restarts without the user being asked again, and the check's own clean merge of master never
   cancels it. **Not Yet** leaves the branch until its head changes. The captain doesn't poll: Land It's message wakes it, a go-ahead
-  typed in the owner's chat or applied on an Overseer card wakes it through the merge-ready trigger (§chat.schedules/merge-ready), and `status`
+  typed in the owner's chat wakes it through the merge-ready trigger (§chat.schedules/merge-ready), and `status`
   reads the recorded go-aheads and Not Yets. No owner is asked in words whether its branch is ready:
   a branch whose card Sova refused to show (it says why) lands only on the user's word, which the
   captain asks for once. A hand-back goes to the owner, and once the owner commits the fix the branch
-  shows Ready to land again and is queued at its new head. Only the user's go-ahead (Land It, Go on an Overseer card's
-  Ready to land row, or their word below) lets a branch be checked and landed. The captain mentions Land It only for a branch whose card Sova showed (`status` says
+  shows Ready to land again and is queued at its new head. Only the user's go-ahead (Land It, or
+  their word below) lets a branch be checked and landed. The captain mentions Land It only for a branch whose card Sova showed (`status` says
   so), naming the owner's chat by its title with a link to it (`#/sid/<id>`), and says the user may
   as well type "land it" there; for any other branch it never tells the user to press a card or wait
   for one, but asks for their word: "land it" typed in the owner's chat, or "land <branch>" in the
@@ -89,9 +88,7 @@ after each landing, since every other branch is then checked against the new mas
   typed in the branch's own chat ("land it", "merge it") is the same go-ahead: that chat's agent
   records it (`worktree land`, §chat.worktrees/tool, kept with the Land Its,
   §chat.worktrees/landing-answers), it wakes the captain, and the captain checks and lands the
-  branch exactly as on Land It, card or not. So is Go on a Ready to land row of an Overseer card the
-  user applied (§app.overseer/card-land): Sova records it for the commit the row showed, it wakes
-  the captain, and the captain checks and lands the branch exactly as on Land It.
+  branch exactly as on Land It, card or not.
 - **Each branch** is merged with master in its worktree, checked (typecheck, the unit tests and
   then all the integration tests (§app.server-runtime/test-tiers), each with timeouts near their
   baseline, each touched pi-config extension's suite, build; a test file failing in the full run
@@ -148,7 +145,7 @@ after each landing, since every other branch is then checked against the new mas
   time it recurs; names origin already has in public; any deploy
   to a peer; landing a branch with no live owner (owner archived, or no session tracks its
   worktree) or one without the user's go-ahead. Everything else, a branch the user pressed Land It
-  on, applied Go on in an Overseer card, or told the captain, or the branch's own chat, to land, checked green, lands and pushes
+  on or told the captain, or the branch's own chat, to land, checked green, lands and pushes
   without asking.
 - **Never:** force-push or rewrite pushed history; `filter-branch` or `read-tree` on master, or
   `update-ref` on it outside a scrub the user approved for that case; a private name written inline
@@ -214,8 +211,8 @@ shell and under a timeout.
   `<state root>/landing-queue.json`, for Sova to show the owner the Landing card
   (§chat.offers/sova-landing), and its `next:` line says not to poll: Land It's message arrives by
   itself. `status` then shows, per branch, whether Sova showed the card or why it didn't.
-  **A recorded go-ahead** (Land It, the user's word typed in the branch's own chat, or Go on an
-  Overseer card's Ready to land row, in `<state root>/landing.json`, §chat.worktrees/landing-answers)
+  **A recorded go-ahead** (Land It, or the user's word typed in the branch's own chat, in
+  `<state root>/landing.json`, §chat.worktrees/landing-answers)
   for the branch at its current head, or at an earlier head when every commit since is a clean merge
   of master, counts. A clean merge has exactly two parents, the earlier head first and a commit already on
   master second, and its tree is exactly the one `git merge-tree --write-tree` makes of those two
@@ -280,8 +277,8 @@ shell and under a timeout.
   <sha>` or `needs: …`, is recorded against the branch's head and master's sha.
 - **`land <branch>`** never merges. With a landable check at the current head and the current
   master, it runs the same leak scan again and, only when it finds no hit, prints the `worktree`
-  tool's merge call, naming the user's Land It, their word in the captain's chat or typed in the
-  branch's own, or "Apply on the Overseer's card" (and the commit it was given at), or else
+  tool's merge call, naming the user's Land It or word, in the captain's chat or typed in the
+  branch's own (and the commit it was given at), or else
   that none is recorded, so it lands only on the user's word; a moved head or master means check again, and a Not Yet that decides the walk
   above refuses it.
   **`landed <branch>`** verifies with git that the branch's head is in master, however it got there

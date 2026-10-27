@@ -3720,6 +3720,41 @@ export type SovaConfirmItem = SovaConfirmRow &
   /** A folder to add as a project (§app.overseer/org-project-add): `id` is its checkout root, `asked` the folder as
       given when that differs, the org it goes into (none: standalone) and the name it gets when the card named one. */
   | { kind: "folder"; id: string; asked?: string; orgId?: string; orgName?: string; name?: string; note?: string }
+  /** A running copy of a project (§app.overseer/copies): `id` is its instance id. Its own row, never a session's; who
+      started it; whether its folder has uncommitted edits or is gone; how many active share links it has (never a URL);
+      `working`: the session that started it is working now. */
+  | {
+      kind: "copy";
+      id: string;
+      project: string;
+      projectName: string;
+      slot: number;
+      branch: string | null;
+      checkout: string;
+      state: "running" | "stopped" | "broken";
+      startedBy: CopyStarter;
+      edits: "clean" | "uncommitted" | "folder-gone";
+      links: number;
+      working?: boolean;
+      note?: string;
+    }
+  /** A process holding one of a project's copy ports that Sova calls safe to stop (§app.overseer/copies): `id` is
+      `<port>:<pid>:<start>`, which the stop checks again; `command` redacted, at most 120 characters. */
+  | {
+      kind: "leftover";
+      id: string;
+      project: string;
+      projectName: string;
+      slot: number;
+      port: number;
+      pid: number;
+      start: string;
+      command: string;
+      folder: string;
+      reason: LeftoverReason;
+      unit?: string;
+      note?: string;
+    }
   );
 
 /**
@@ -3736,6 +3771,13 @@ export interface SovaConfirmRow {
 /** The longest section heading and Go-sends text one confirm item may carry. */
 export const CONFIRM_SECTION_MAX = 40;
 export const CONFIRM_SENDS_MAX = 600;
+
+/** Who started a copy, as its card row shows it. */
+export type CopyStarter = { kind: "session"; id: string; title: string } | { kind: "operator" | "overseer" | "conform" | "other"; label: string };
+
+/** Why a process holding a copy port is a leftover: its folder is deleted or missing, or its branch's own commits are
+    already merged into the main checkout's. */
+export type LeftoverReason = "folder-gone" | "branch-on-main";
 
 /** The longest note one confirm item may carry. */
 export const CONFIRM_NOTE_MAX = 220;
@@ -4645,6 +4687,11 @@ export type SessionFeedMessage =
       to live, busy/activity or lastActiveAt). No payload: the client refetches the list
       (coalesced). */
   | { type: "list_changed" }
+  /** The session groups changed (a group made, renamed, reordered or deleted, or a session put into
+      or taken out of one, by any client or the Overseer: server/session-groups.ts writes it). No
+      payload: the client re-reads GET /api/session-groups and the list. Never on connect. Additive:
+      a client that predates it ignores it. */
+  | { type: "groups_changed" }
   /** The logical LLM calls in flight on this host and every connected host: sent once on every
       connect, then on each change of the total or its coverage. Never a reason to re-read the
       list. */

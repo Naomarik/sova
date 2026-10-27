@@ -131,16 +131,14 @@ new session, and needs no model to re-arm it.
 - **A go-ahead typed in the branch's own chat.** It also fires when the user's go-ahead typed in a
   branch's own chat is recorded (`worktree land`, §chat.worktrees/landing-answers) for a branch the
   board lists in the project, whatever its row reads and whoever owns it: once per branch and
-  commit the go-ahead names, as for Ready to land. Go on a Ready to land row of an Overseer card
-  (§app.overseer/card-land) fires it the same way, once per branch and commit. A go-ahead from a
-  Landing card wakes nothing here (its message already went to the captain).
+  commit the go-ahead names, as for Ready to land. A go-ahead from a Landing card wakes nothing here
+  (its message already went to the captain).
 - **Collected, then named together.** A transition waits, unlogged, only while the run this
   schedule last fired into is still running or holds a queued message. The branches that turned
   Ready to land (or got a typed go-ahead) meanwhile go out together in the next fire, sorted by name, as its Reason line:
   `Reason: Ready to land: feat/a, feat/b.`, naming at most 5 and then `, and N more`; branches
-  with a typed go-ahead follow in the same form as `Go-ahead typed in its own chat: feat/c.`, then
-  branches with a go-ahead from an Overseer card as `Go-ahead on the Overseer's card: feat/d.` (each
-  alone when nothing before it applies). Any attempt
+  with a typed go-ahead follow in the same form as `Go-ahead typed in its own chat: feat/c.` (alone
+  when no branch turned Ready to land). Any attempt
   to fire (fired, or skipped by a cap) spends the transitions it named.
 - **The timed triggers keep their share of the day.** A merge-ready fire is skipped, and logged
   ("merge-ready leaves today's last N of 48 fires to the timed triggers"), once today's fires reach

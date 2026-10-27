@@ -19,7 +19,7 @@ commands.
 
 | Mode | Kind | What it does |
 |---|---|---|
-| normal | Major | Pi as usual. The agent does the work itself, and can still start workers and teams. |
+| [normal](/docs/modes/normal/) | Major | Pi as usual. The agent does the work itself, and can still start workers and teams. |
 | [delegate](/docs/modes/delegate/) | Major | The agent plans and routes 4 kinds of work to workers, each on the model your subagent profile names. |
 | [align](/docs/modes/align/) | Minor | The agent agrees with you on what to build first, and records each agreement as an alignment you answer in chat. |
 | [spec](/docs/modes/spec/) | Minor | The agent reads the project's spec before coding, and proposes changes to it in drafts before promoting them. |

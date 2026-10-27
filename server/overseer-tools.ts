@@ -58,6 +58,9 @@ import { MEMORY_CODING_REFUSAL } from "../shared/memory";
 import { alignDropRefusal, codingSpecRefusal, SPEC_ALWAYS_ON } from "./project-coding-mode";
 import { projectCodingIds } from "./project-sessions";
 import { listProjects } from "./projects/spaces";
+import { copyApproval, copyItem, leftoverItem, liveLeftoverHost, nameOr, realCopyRowHost } from "./overseer-copies";
+import type { ClickChoice } from "../shared/overseer-card";
+import { projectRootOf } from "./project-root";
 import { LookupRefusal, SPEC_LOOKUP_TOOL, specLookup } from "./spec-lookup";
 import { draftActTools, draftSpecsTool } from "./conversation-draft-routes";
 import type { TailEnding } from "./sessions-index";
@@ -161,6 +164,9 @@ export interface OverseerToolHost extends IdeaToolHost {
   /** Record the user's go-ahead from Go on a land row, only while that branch is still at that head and Ready to land
       (server/overseer-land.ts recordCardGoAhead), waking the captain; the refusal sentence otherwise. */
   landAtCommit?(input: CardLandInput): Promise<CardLandResult>;
+  /** The same click, per row with the label it chose (§app.overseer/copies). Absent: cards take no copies or leftover
+      processes, and sova_project_verbs has no copy verbs. */
+  confirmedClicks?(): ClickChoice[] | null;
   /** The live approval for later or standing rule that covers `tool` on every one of `sessions`
       (ids), or null (§app.overseer/approvals). Absent: none ever does. */
   permit?(tool: string, sessions: string[]): { id: string; label: string } | null;
@@ -575,6 +581,9 @@ const PROJECT_MODES_PARAM =
  * Build the Overseer's tool set. `limits` is shared with the extension that resets it per turn.
  * Every tool's `promptSnippet` is its one line in the prompt's catalogue ({{TOOLS}}).
  */
+/** A project's name on a copy's card row: its registered name, else its folder's. */
+const copyProjectName = nameOr(() => listProjects());
+
 export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redactor: () => Redactor = serverRedactor): Tool[] {
   aliasesNow = () => host.aliases?.() ?? {};
   // Every refusal of a limit in a turn a card's click opened also says to record the rows done.
@@ -1840,6 +1849,13 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         org: orgConfirmLookup.org,
         folder: orgConfirmLookup.folder,
         ...(host.readyToLand ? { readyToLand: (s: SessionSummary) => host.readyToLand!(s) } : {}),
+        // Running copies and leftover processes of any project (§app.overseer/copies).
+        ...(host.confirmedClicks
+          ? {
+              copy: (ref: string) => copyItem(ref, realCopyRowHost({ session: (id) => host.session(id), projectName: copyProjectName })),
+              leftover: async (project: string, port: number) => leftoverItem((await projectRootOf(project)) ?? project, port, liveLeftoverHost(projectEngine()), copyProjectName),
+            }
+          : {}),
       },
       link: async (target) => (await navTarget(target)).href,
       wrap: (run) => act("sova_card", run, { unattended: true }),
@@ -1869,6 +1885,10 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         const pid = await projectByPath(typeof params.project === "string" ? params.project : "");
         return onboardAnswer(await startOnboard(pid, why ? { why } : {}, operatorEnvelopeOf(pid, { kind: "operator", via: "overseer", overseerId: host.overseerId() })));
       },
+      // Any project's copies and leftover processes, after the user's click on a card listing them (§app.overseer/copies).
+      host.confirmedClicks
+        ? { clicks: () => host.confirmedClicks!(), approved: copyApproval(() => host.confirmedClicks!()), host: () => liveLeftoverHost(projectEngine()) }
+        : undefined,
     ),
     ...orgTools({
       act,

@@ -1,4 +1,5 @@
-import { archivedDropToast, archivedProjectOf } from "../lib/drag-archive";
+import { archivedDropToast, archivedProjectOf, unarchivedProjectOf } from "../lib/drag-archive";
+import { archiveSession } from "../lib/session-actions";
 import { batch, createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, untrack, type JSX } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
@@ -89,7 +90,7 @@ import {
 import { remotePlaceOf } from "../lib/remote-session";
 import { createReconnectingSocket } from "../lib/socket";
 import { backWords, EMPTY_FEED, feedOnFailure, feedOnHello, feedOnNote, feedOnOpen, feedOnRefused, feedOnReset, feedOnTurnStart, feedBanner, type ErrorFeed, type FeedSay } from "../lib/error-feed";
-import { errorHandsBack, FILE_READ_WAIT_MS, heldWhileAsleep, WAIT_START, WakeQueue, waitOnHello, waitOnOpen, waitOnSleep, waitOnStatus, waitOnWake, waitReason, type ChatWait } from "../lib/chat-wait";
+import { errorHandsBack, FILE_READ_WAIT_MS, heldWhileAsleep, mayWake, WAIT_START, WakeQueue, waitAtOpen, waitOnHello, waitOnOpen, waitOnSleep, waitOnStatus, waitOnWake, waitReason, type ChatWait } from "../lib/chat-wait";
 import { workingSplit } from "../lib/workers";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
@@ -454,6 +455,14 @@ export function ChatView(props: {
   const [cwdFallback, setCwdFallback] = createSignal<CwdFallbackInfo | null>(null);
   /** The open-failure banner's action state: an Archive in flight. */
   const [archiving, setArchiving] = createSignal(false);
+  /** This pane's own Unarchive landed and the list hasn't said so yet: what it set, until the list changes. */
+  const [archivedHere, setArchivedHere] = createSignal<boolean | undefined>(undefined);
+  createEffect(on(() => !!props.summary?.()?.archived, () => setArchivedHere(undefined), { defer: true }));
+  /** The session is archived: it reads only until Unarchive, and nothing this view does starts it
+      (§chat.transcript/instant-open, "An archived chat"). */
+  const archived = () => archivedHere() ?? !!props.summary?.()?.archived;
+  /** An Unarchive in flight from the composer. */
+  const [unarchiving, setUnarchiving] = createSignal(false);
   const [dialogs, setDialogs] = createSignal<{ id: string; request: unknown }[]>([]);
   const [resume, setResume] = createSignal(0);
   /** Queued steers/follow-ups a Stop drained, handed back to the composer. */
@@ -784,8 +793,11 @@ export function ChatView(props: {
         },
         () => {},
       );
+  /** Archived when this view opened: it shows the file's rows and holds no socket (asleep) until it is unarchived and needed. */
+  const archivedAtOpen = untrack(archived);
   const socket = createReconnectingSocket<ChatServerMessage>(() => withHave(newestOnly(wsUrl("/ws/chat", props.path, props.force)), untrack(items)?.at(-1)?.id), {
-    after: fromFile,
+    // Archived: the first connect waits for a promise, so the close below lands before it (no upgrade at all).
+    after: archivedAtOpen ? (fromFile ?? Promise.resolve()) : fromFile,
     afterMs: FILE_READ_WAIT_MS,
     onOpen(isReconnect) {
       setEverOpened(true);
@@ -1223,6 +1235,14 @@ export function ChatView(props: {
     },
   });
 
+  // An archived chat opens on its file's rows and holds no socket: asleep, and nothing wakes it until
+  // it is unarchived (§chat.transcript/instant-open, "An archived chat"). One archived while open is
+  // told `closed` by the server, which puts it to sleep the same way.
+  if (archivedAtOpen) {
+    setWait(waitAtOpen(true));
+    socket.close();
+  }
+
   // ---- A chat closed while its tab is open (§chat.transcript/instant-open) ------------------
   /** What this tab asked of its chat while no connection was open: written, in order, the moment
       one opens (§chat.transcript/send-while-starting). A WebSocket still connecting takes no frame. */
@@ -1233,9 +1253,9 @@ export function ChatView(props: {
   const readers = new WakeQueue();
   /** The list said the server no longer holds the chat since it closed (lib/chat-wait heldWhileAsleep). */
   let sawGone = false;
-  /** Something needs the chat: connect, which starts it again. */
+  /** Something needs the chat: connect, which starts it again. Never an archived chat. */
   const wake = () => {
-    if (!untrack(wait).asleep) return;
+    if (!mayWake(untrack(wait), untrack(archived))) return;
     setWait(waitOnWake(untrack(wait)));
     socket.retry();
   };
@@ -1618,14 +1638,12 @@ export function ChatView(props: {
   };
 
   /**
-   * Archiving IS the close gesture: the server disposes the held runtime, so this socket closes
-   * from the server side moments after Eliminate. Inside a workspace that close is EXPECTED, and
-   * the pane says the one true thing about it — the session is archived — instead of the
-   * disconnected banner and "Not connected." the single-session view would show for the same
-   * event. An eliminated member stays readable, which is
-   * what makes elimination reversible.
+   * An archived session's pane, in a workspace or on its own (§chat.transcript/instant-open, "An
+   * archived chat"): archiving closes the chat quietly and nothing reopens it, so the pane says that
+   * one true thing (Archived, with Unarchive in place of Send) instead of a disconnected banner. Its
+   * rows stay readable, which is what makes elimination reversible.
    */
-  const archivedPane = () => !!scope.id && !!props.summary?.()?.archived;
+  const archivedPane = archived;
 
   /** Whether the operator holds this baton session's baton, from its strip; undefined until it has read. */
   const [batonMine, setBatonMine] = createSignal<boolean | undefined>(undefined);
@@ -2098,6 +2116,22 @@ export function ChatView(props: {
     }
   };
 
+  /** The composer's Unarchive (§chat.transcript/instant-open, "An archived chat"): the same request and toast
+      as Unarchive Session; Send comes back, and the chat starts at the first send. */
+  const unarchive = async () => {
+    if (unarchiving()) return;
+    setUnarchiving(true);
+    try {
+      const s = props.summary?.() ?? {};
+      if (await archiveSession(props.path, false, unarchivedProjectOf(s, hostOf(props.path) === null))) {
+        setArchivedHere(false);
+        props.onArchiveChanged?.(props.path, false);
+      }
+    } finally {
+      setUnarchiving(false);
+    }
+  };
+
   /** The new-session empty state is showing: the thread has no rendered row (see where it draws). */
   const emptyScreen = () => {
     const list = items();
@@ -2424,6 +2458,7 @@ export function ChatView(props: {
         cwd={props.summary?.()?.cwd ?? null}
         blocked={blocked()}
         readOnly={batonGate()}
+        unarchive={archivedPane() && !batonGate() ? { run: () => void unarchive(), busy: unarchiving() } : null}
         commands={props.overseer ? commands().filter((c) => c.name !== "mode") : commands()}
         running={live.running}
         compacting={compacting()}

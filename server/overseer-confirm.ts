@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import { CONFIRM_NOTE_MAX, type SessionSummary, type SovaConfirmItem } from "../shared/protocol";
+import { CONFIRM_NOTE_MAX, CONFIRM_SECTION_MAX, CONFIRM_SENDS_MAX, type SessionSummary, type SovaConfirmItem } from "../shared/protocol";
 
 /**
  * What a card is about, shared by the Overseer's and the project overseer's `sova_card`
@@ -43,13 +43,19 @@ const ORG_EXAMPLE = '"people": [{"org": "<org id or name>", "id": "<person id or
 /** One requested item: its id as the model wrote it, its note (whitespace collapsed), the per-item
     choice it starts on and its own choices (a sova_card entry's `default` and `choices`, both
     checked by the card model). */
-type Wanted = { ref: string; note?: string; default?: string; choices?: unknown };
-/** A resolved item, with the `default` and `choices` its entry gave. */
+type Wanted = { ref: string; note?: string; default?: string; choices?: unknown; section?: unknown; sends?: unknown };
+/** A resolved item, with the `default`, `choices`, `section` and `sends` its entry gave (the last
+    two as written: the card model checks them, shared/overseer-card.ts). */
 export type ResolvedItem = SovaConfirmItem & { default?: string; choices?: unknown };
-const defaultOf = (x: unknown): { default?: string; choices?: unknown } => {
-  const o = x && typeof x === "object" ? (x as { default?: unknown; choices?: unknown }) : {};
+const defaultOf = (x: unknown): { default?: string; choices?: unknown; section?: unknown; sends?: unknown } => {
+  const o = x && typeof x === "object" ? (x as { default?: unknown; choices?: unknown; section?: unknown; sends?: unknown }) : {};
   const d = o.default;
-  return { ...(typeof d === "string" && d.trim() ? { default: d.trim().toLowerCase() } : {}), ...(o.choices !== undefined ? { choices: o.choices } : {}) };
+  return {
+    ...(typeof d === "string" && d.trim() ? { default: d.trim().toLowerCase() } : {}),
+    ...(o.choices !== undefined ? { choices: o.choices } : {}),
+    ...(o.section !== undefined ? { section: o.section } : {}),
+    ...(o.sends !== undefined ? { sends: o.sends } : {}),
+  };
 };
 /** A list of ids, each a bare string or `{id, note}`; the first mention of an id wins. */
 function wanted(v: unknown): Wanted[] {
@@ -149,7 +155,15 @@ export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, r
       long.push(`${w.ref} (${note.length})`);
       note = cut(note, CONFIRM_NOTE_MAX);
     }
-    return { ...item, ...(note ? { note } : {}), ...(w.default ? { default: w.default } : {}), ...(w.choices !== undefined ? { choices: w.choices } : {}) };
+    return {
+      ...item,
+      ...(note ? { note } : {}),
+      ...(w.default ? { default: w.default } : {}),
+      ...(w.choices !== undefined ? { choices: w.choices } : {}),
+      // Checked by the card model (CardError names the item); carried as written until then.
+      ...(w.section !== undefined ? { section: w.section as string } : {}),
+      ...(w.sends !== undefined ? { sends: w.sends as string } : {}),
+    };
   };
   for (const w of want.sessions) {
     const s = await lookup.session(w.ref);
@@ -242,6 +256,9 @@ const NOTE_DESC =
 const DEFAULT_DESC = "With choices (this item's own, else the card's): the choice letter this item starts on (\"a\"), your recommendation for it.";
 const CHOICES_DESC =
   'This item\'s own choices, when its actions differ from the card\'s choices (2 to 4 short labels, lettered a, b… for this row only), e.g. ["Archive", "Keep"] on a session with no worktree beside ["Clean Up & Archive", "Archive Only", "Keep"] on the card.';
+const SECTION_DESC = `The heading this row sits under, at most ${CONFIRM_SECTION_MAX} characters ("Ready to land", "Done").`;
+const SENDS_DESC = `The exact message its Go (first choice) sends this session, at most ${CONFIRM_SENDS_MAX} characters; shown on the row.`;
+const rowProps = { section: { type: "string", description: SECTION_DESC }, sends: { type: "string", description: SENDS_DESC } };
 const choicesProp = { type: "array", minItems: 2, maxItems: 4, items: { type: "string", minLength: 1 }, description: CHOICES_DESC };
 const idList = (description: string) => ({
   type: "array",
@@ -250,19 +267,19 @@ const idList = (description: string) => ({
       { type: "string" },
       {
         type: "object",
-        properties: { id: { type: "string" }, note: { type: "string", description: NOTE_DESC }, default: { type: "string", description: DEFAULT_DESC }, choices: choicesProp },
+        properties: { id: { type: "string" }, note: { type: "string", description: NOTE_DESC }, default: { type: "string", description: DEFAULT_DESC }, choices: choicesProp, ...rowProps },
         required: ["id"],
         additionalProperties: false,
       },
     ],
   },
-  description: `${description} Each entry is { id, note, default?, choices? } (a bare id still works).`,
+  description: `${description} Each entry is { id, note, default?, choices?, section?, sends? } (a bare id still works).`,
 });
 const orgList = (description: string) => ({
   type: "array",
   items: {
     type: "object",
-    properties: { org: { type: "string" }, id: { type: "string" }, note: { type: "string", description: NOTE_DESC }, default: { type: "string", description: DEFAULT_DESC }, choices: choicesProp },
+    properties: { org: { type: "string" }, id: { type: "string" }, note: { type: "string", description: NOTE_DESC }, default: { type: "string", description: DEFAULT_DESC }, choices: choicesProp, ...rowProps },
     required: ["org", "id"],
     additionalProperties: false,
   },
@@ -280,6 +297,7 @@ const folderList = {
       note: { type: "string", description: NOTE_DESC },
       default: { type: "string", description: DEFAULT_DESC },
       choices: choicesProp,
+      ...rowProps,
     },
     required: ["root"],
     additionalProperties: false,

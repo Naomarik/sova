@@ -1,7 +1,7 @@
 {
   "families": {
     "overseer": {
-      "bytes": 83054,
+      "bytes": 85689,
       "tools": [
         {
           "name": "sova_attention",
@@ -727,7 +727,7 @@
         {
           "name": "sova_card",
           "label": "Card",
-          "description": "Ask the user with a card under your reply, and record their answer. Each card gets an id c_N; its items are numbered 1..N and its answer options lettered a, b, c…, so \"c_4 b\" is option b and \"c_4 2a\" is item 2 taking choice a. A call applies its ops to ONE card atomically (pass card to change an existing one); it never ends your turn. Write your reply first (what you found, and why you ask), then create the card, and name it by its id as a link (\"see [c_4](#c_4)\": it jumps to the card), never \"the card above\"; never add a typed fallback (\"You can also type…\") to a card. A card about specific things (archive, tick, send, …) lists every one of them in items, each with a note: what it is, then why the action fits it, in at most 2 short sentences; an idea or todo a button also acts on says the effect (\"… Ticking marks it done.\"). Every option's reply says exactly what it does to which items. When each item wants its own answer, give choices (and each item a default): an item whose actions differ gives its own choices, lettered for its row only, and the card needs no answer option, since its Apply sends every row's pick at once. A card stays open until you record it: when the user answers (a click arrives as \"c_4 b: …\" or \"c_4: 1a Archive, 2b Keep\", each letter its own row's; typed text may name the card, an item number or an option letter), do the act it approves first, then call answer with their words (option, or items) or accept for \"your recommendation\" in the same run, only once the act succeeded: a refused act leaves the card open so the user can click again. Replace a card that changed (create with replaces), drop one that no longer applies. Link options (link) open a session, a page, an org, project or person page or an https URL without a turn; use them instead of asking to navigate.",
+          "description": "Ask the user with a card under your reply, and record their answer. Each card gets an id c_N; its items are numbered 1..N and its answer options lettered a, b, c…, so \"c_4 b\" is option b and \"c_4 2a\" is item 2 taking choice a. A call applies its ops to ONE card atomically (pass card to change an existing one); it never ends your turn. Write your reply first (what you found, and why you ask), then create the card, and name it by its id as a link (\"see [c_4](#c_4)\": it jumps to the card), never \"the card above\"; never add a typed fallback (\"You can also type…\") to a card. A card about specific things (archive, tick, send, …) lists every one of them in items, each with a note: what it is, then why the action fits it, in at most 2 short sentences; an idea or todo a button also acts on says the effect (\"… Ticking marks it done.\"). Every option's reply says exactly what it does to which items. When each item wants its own answer, give choices (and each item a default): an item whose actions differ gives its own choices, lettered for its row only, and the card needs no answer option, since its Apply sends every row's pick at once. A card that sorts its rows gives each item a section (a short heading, e.g. \"Ready to land\", \"Done\", \"Worth Keeping\"): rows show under their headings, numbered top to bottom. A row whose Go (its first choice) sends a session a message gives sends, the exact words, shown as \"Go sends: …\" before the user applies; send exactly those words. A card raised by a request to look and sort (a quick action) is the whole of that turn: act on none of its rows until the user's Apply opens the turn that does. A card stays open until you record it: when the user answers (a click arrives as \"c_4 b: …\" or \"c_4: 1a Archive, 2b Keep\", each letter its own row's; typed text may name the card, an item number or an option letter), do the act it approves first, then call answer with their words (option, or items) or accept for \"your recommendation\" in the same run, only once the act succeeded: a refused act leaves the card open so the user can click again. If an Apply's acts stop partway (a limit, a refusal), record only the rows you acted on and say that Apply on the card sends the rest. Replace a card that changed (create with replaces), drop one that no longer applies. Link options (link) open a session, a page, an org, project or person page or an https URL without a turn; use them instead of asking to navigate.",
           "promptSnippet": "ask the user with a card (c_N; items 1..N, options a, b…), and record their answer on it",
           "parameters": {
             "type": "object",
@@ -930,6 +930,14 @@
                                           "minLength": 1
                                         },
                                         "description": "This item's own choices, when its actions differ from the card's choices (2 to 4 short labels, lettered a, b… for this row only), e.g. [\"Archive\", \"Keep\"] on a session with no worktree beside [\"Clean Up & Archive\", \"Archive Only\", \"Keep\"] on the card."
+                                      },
+                                      "section": {
+                                        "type": "string",
+                                        "description": "The heading this row sits under, at most 40 characters (\"Ready to land\", \"Done\")."
+                                      },
+                                      "sends": {
+                                        "type": "string",
+                                        "description": "The exact message its Go (first choice) sends this session, at most 600 characters; shown on the row."
                                       }
                                     },
                                     "required": [
@@ -939,7 +947,7 @@
                                   }
                                 ]
                               },
-                              "description": "Session ids (or sova://s/<id> links). Each entry is { id, note, default?, choices? } (a bare id still works)."
+                              "description": "Session ids (or sova://s/<id> links). Each entry is { id, note, default?, choices?, section?, sends? } (a bare id still works)."
                             },
                             "ideas": {
                               "type": "array",
@@ -971,6 +979,14 @@
                                           "minLength": 1
                                         },
                                         "description": "This item's own choices, when its actions differ from the card's choices (2 to 4 short labels, lettered a, b… for this row only), e.g. [\"Archive\", \"Keep\"] on a session with no worktree beside [\"Clean Up & Archive\", \"Archive Only\", \"Keep\"] on the card."
+                                      },
+                                      "section": {
+                                        "type": "string",
+                                        "description": "The heading this row sits under, at most 40 characters (\"Ready to land\", \"Done\")."
+                                      },
+                                      "sends": {
+                                        "type": "string",
+                                        "description": "The exact message its Go (first choice) sends this session, at most 600 characters; shown on the row."
                                       }
                                     },
                                     "required": [
@@ -980,7 +996,7 @@
                                   }
                                 ]
                               },
-                              "description": "Idea ids (§ns/name). Each entry is { id, note, default?, choices? } (a bare id still works)."
+                              "description": "Idea ids (§ns/name). Each entry is { id, note, default?, choices?, section?, sends? } (a bare id still works)."
                             },
                             "todos": {
                               "type": "array",
@@ -1012,6 +1028,14 @@
                                           "minLength": 1
                                         },
                                         "description": "This item's own choices, when its actions differ from the card's choices (2 to 4 short labels, lettered a, b… for this row only), e.g. [\"Archive\", \"Keep\"] on a session with no worktree beside [\"Clean Up & Archive\", \"Archive Only\", \"Keep\"] on the card."
+                                      },
+                                      "section": {
+                                        "type": "string",
+                                        "description": "The heading this row sits under, at most 40 characters (\"Ready to land\", \"Done\")."
+                                      },
+                                      "sends": {
+                                        "type": "string",
+                                        "description": "The exact message its Go (first choice) sends this session, at most 600 characters; shown on the row."
                                       }
                                     },
                                     "required": [
@@ -1021,7 +1045,7 @@
                                   }
                                 ]
                               },
-                              "description": "Todo ids (td_…). Each entry is { id, note, default?, choices? } (a bare id still works)."
+                              "description": "Todo ids (td_…). Each entry is { id, note, default?, choices?, section?, sends? } (a bare id still works)."
                             },
                             "people": {
                               "type": "array",
@@ -1051,6 +1075,14 @@
                                       "minLength": 1
                                     },
                                     "description": "This item's own choices, when its actions differ from the card's choices (2 to 4 short labels, lettered a, b… for this row only), e.g. [\"Archive\", \"Keep\"] on a session with no worktree beside [\"Clean Up & Archive\", \"Archive Only\", \"Keep\"] on the card."
+                                  },
+                                  "section": {
+                                    "type": "string",
+                                    "description": "The heading this row sits under, at most 40 characters (\"Ready to land\", \"Done\")."
+                                  },
+                                  "sends": {
+                                    "type": "string",
+                                    "description": "The exact message its Go (first choice) sends this session, at most 600 characters; shown on the row."
                                   }
                                 },
                                 "required": [
@@ -1089,6 +1121,14 @@
                                       "minLength": 1
                                     },
                                     "description": "This item's own choices, when its actions differ from the card's choices (2 to 4 short labels, lettered a, b… for this row only), e.g. [\"Archive\", \"Keep\"] on a session with no worktree beside [\"Clean Up & Archive\", \"Archive Only\", \"Keep\"] on the card."
+                                  },
+                                  "section": {
+                                    "type": "string",
+                                    "description": "The heading this row sits under, at most 40 characters (\"Ready to land\", \"Done\")."
+                                  },
+                                  "sends": {
+                                    "type": "string",
+                                    "description": "The exact message its Go (first choice) sends this session, at most 600 characters; shown on the row."
                                   }
                                 },
                                 "required": [
@@ -1129,6 +1169,14 @@
                                           "minLength": 1
                                         },
                                         "description": "This item's own choices, when its actions differ from the card's choices (2 to 4 short labels, lettered a, b… for this row only), e.g. [\"Archive\", \"Keep\"] on a session with no worktree beside [\"Clean Up & Archive\", \"Archive Only\", \"Keep\"] on the card."
+                                      },
+                                      "section": {
+                                        "type": "string",
+                                        "description": "The heading this row sits under, at most 40 characters (\"Ready to land\", \"Done\")."
+                                      },
+                                      "sends": {
+                                        "type": "string",
+                                        "description": "The exact message its Go (first choice) sends this session, at most 600 characters; shown on the row."
                                       }
                                     },
                                     "required": [
@@ -1138,7 +1186,7 @@
                                   }
                                 ]
                               },
-                              "description": "Organizations attached here, by id or exact name (sova_org detach). Each entry is { id, note, default?, choices? } (a bare id still works)."
+                              "description": "Organizations attached here, by id or exact name (sova_org detach). Each entry is { id, note, default?, choices?, section?, sends? } (a bare id still works)."
                             },
                             "folders": {
                               "type": "array",
@@ -1174,6 +1222,14 @@
                                       "minLength": 1
                                     },
                                     "description": "This item's own choices, when its actions differ from the card's choices (2 to 4 short labels, lettered a, b… for this row only), e.g. [\"Archive\", \"Keep\"] on a session with no worktree beside [\"Clean Up & Archive\", \"Archive Only\", \"Keep\"] on the card."
+                                  },
+                                  "section": {
+                                    "type": "string",
+                                    "description": "The heading this row sits under, at most 40 characters (\"Ready to land\", \"Done\")."
+                                  },
+                                  "sends": {
+                                    "type": "string",
+                                    "description": "The exact message its Go (first choice) sends this session, at most 600 characters; shown on the row."
                                   }
                                 },
                                 "required": [
@@ -2872,7 +2928,7 @@
       ]
     },
     "project-overseer": {
-      "bytes": 36138,
+      "bytes": 37667,
       "tools": [
         {
           "name": "sova_project",
@@ -2978,7 +3034,7 @@
         {
           "name": "sova_card",
           "label": "Card",
-          "description": "Ask the operator with a card under your reply, and record their answer. Each card gets an id c_N; its items are numbered 1..N and its answer options lettered a, b, c…, so \"c_4 b\" is option b and \"c_4 2a\" is item 2 taking choice a. A call applies its ops to ONE card atomically (pass card to change an existing one); it never ends your turn. Write your reply first (what you found, and why you ask), then create the card, and name it by its id as a link (\"see [c_4](#c_4)\": it jumps to the card), never \"the card above\"; never add a typed fallback (\"You can also type…\") to a card. A card about specific things (archive, tick, send, …) lists every one of them in items, each with a note: what it is, then why the action fits it, in at most 2 short sentences; an idea or todo a button also acts on says the effect (\"… Ticking marks it done.\"). Every option's reply says exactly what it does to which items. When each item wants its own answer, give choices (and each item a default): an item whose actions differ gives its own choices, lettered for its row only, and the card needs no answer option, since its Apply sends every row's pick at once. A card stays open until you record it: when the operator answers (a click arrives as \"c_4 b: …\" or \"c_4: 1a Archive, 2b Keep\", each letter its own row's; typed text may name the card, an item number or an option letter), do the act it approves first, then call answer with their words (option, or items) or accept for \"your recommendation\" in the same run, only once the act succeeded: a refused act leaves the card open so the operator can click again. Replace a card that changed (create with replaces), drop one that no longer applies. Link options (link) open a session, a page or an https URL without a turn; use them instead of asking to navigate.",
+          "description": "Ask the operator with a card under your reply, and record their answer. Each card gets an id c_N; its items are numbered 1..N and its answer options lettered a, b, c…, so \"c_4 b\" is option b and \"c_4 2a\" is item 2 taking choice a. A call applies its ops to ONE card atomically (pass card to change an existing one); it never ends your turn. Write your reply first (what you found, and why you ask), then create the card, and name it by its id as a link (\"see [c_4](#c_4)\": it jumps to the card), never \"the card above\"; never add a typed fallback (\"You can also type…\") to a card. A card about specific things (archive, tick, send, …) lists every one of them in items, each with a note: what it is, then why the action fits it, in at most 2 short sentences; an idea or todo a button also acts on says the effect (\"… Ticking marks it done.\"). Every option's reply says exactly what it does to which items. When each item wants its own answer, give choices (and each item a default): an item whose actions differ gives its own choices, lettered for its row only, and the card needs no answer option, since its Apply sends every row's pick at once. A card that sorts its rows gives each item a section (a short heading, e.g. \"Ready to land\", \"Done\", \"Worth Keeping\"): rows show under their headings, numbered top to bottom. A row whose Go (its first choice) sends a session a message gives sends, the exact words, shown as \"Go sends: …\" before the operator applies; send exactly those words. A card raised by a request to look and sort (a quick action) is the whole of that turn: act on none of its rows until the operator's Apply opens the turn that does. A card stays open until you record it: when the operator answers (a click arrives as \"c_4 b: …\" or \"c_4: 1a Archive, 2b Keep\", each letter its own row's; typed text may name the card, an item number or an option letter), do the act it approves first, then call answer with their words (option, or items) or accept for \"your recommendation\" in the same run, only once the act succeeded: a refused act leaves the card open so the operator can click again. If an Apply's acts stop partway (a limit, a refusal), record only the rows you acted on and say that Apply on the card sends the rest. Replace a card that changed (create with replaces), drop one that no longer applies. Link options (link) open a session, a page or an https URL without a turn; use them instead of asking to navigate.",
           "promptSnippet": "ask the operator with a card (c_N; items 1..N, options a, b…), and record their answer on it",
           "parameters": {
             "type": "object",
@@ -3121,6 +3177,14 @@
                                           "minLength": 1
                                         },
                                         "description": "This item's own choices, when its actions differ from the card's choices (2 to 4 short labels, lettered a, b… for this row only), e.g. [\"Archive\", \"Keep\"] on a session with no worktree beside [\"Clean Up & Archive\", \"Archive Only\", \"Keep\"] on the card."
+                                      },
+                                      "section": {
+                                        "type": "string",
+                                        "description": "The heading this row sits under, at most 40 characters (\"Ready to land\", \"Done\")."
+                                      },
+                                      "sends": {
+                                        "type": "string",
+                                        "description": "The exact message its Go (first choice) sends this session, at most 600 characters; shown on the row."
                                       }
                                     },
                                     "required": [
@@ -3130,7 +3194,7 @@
                                   }
                                 ]
                               },
-                              "description": "Session ids (or sova://s/<id> links). Each entry is { id, note, default?, choices? } (a bare id still works)."
+                              "description": "Session ids (or sova://s/<id> links). Each entry is { id, note, default?, choices?, section?, sends? } (a bare id still works)."
                             },
                             "ideas": {
                               "type": "array",
@@ -3162,6 +3226,14 @@
                                           "minLength": 1
                                         },
                                         "description": "This item's own choices, when its actions differ from the card's choices (2 to 4 short labels, lettered a, b… for this row only), e.g. [\"Archive\", \"Keep\"] on a session with no worktree beside [\"Clean Up & Archive\", \"Archive Only\", \"Keep\"] on the card."
+                                      },
+                                      "section": {
+                                        "type": "string",
+                                        "description": "The heading this row sits under, at most 40 characters (\"Ready to land\", \"Done\")."
+                                      },
+                                      "sends": {
+                                        "type": "string",
+                                        "description": "The exact message its Go (first choice) sends this session, at most 600 characters; shown on the row."
                                       }
                                     },
                                     "required": [
@@ -3171,7 +3243,7 @@
                                   }
                                 ]
                               },
-                              "description": "Idea ids (§ns/name). Each entry is { id, note, default?, choices? } (a bare id still works)."
+                              "description": "Idea ids (§ns/name). Each entry is { id, note, default?, choices?, section?, sends? } (a bare id still works)."
                             },
                             "todos": {
                               "type": "array",
@@ -3203,6 +3275,14 @@
                                           "minLength": 1
                                         },
                                         "description": "This item's own choices, when its actions differ from the card's choices (2 to 4 short labels, lettered a, b… for this row only), e.g. [\"Archive\", \"Keep\"] on a session with no worktree beside [\"Clean Up & Archive\", \"Archive Only\", \"Keep\"] on the card."
+                                      },
+                                      "section": {
+                                        "type": "string",
+                                        "description": "The heading this row sits under, at most 40 characters (\"Ready to land\", \"Done\")."
+                                      },
+                                      "sends": {
+                                        "type": "string",
+                                        "description": "The exact message its Go (first choice) sends this session, at most 600 characters; shown on the row."
                                       }
                                     },
                                     "required": [
@@ -3212,7 +3292,7 @@
                                   }
                                 ]
                               },
-                              "description": "Todo ids (td_…). Each entry is { id, note, default?, choices? } (a bare id still works)."
+                              "description": "Todo ids (td_…). Each entry is { id, note, default?, choices?, section?, sends? } (a bare id still works)."
                             }
                           },
                           "description": "Every session, idea or todo the question is about, at most 50. Required when the card acts on specific things (archive, tick, send, …); then give every item a note. The card numbers them 1..N. Shape: {\"sessions\": [{\"id\": \"<session id>\", \"note\": \"What it is. Why it fits.\"}], \"todos\": [{\"id\": \"td_…\", \"note\": \"…\"}]}."
@@ -4006,7 +4086,7 @@
       ]
     },
     "project-overseer+onboard": {
-      "bytes": 36450,
+      "bytes": 37979,
       "tools": [
         {
           "name": "sova_project",
@@ -4112,7 +4192,7 @@
         {
           "name": "sova_card",
           "label": "Card",
-          "description": "Ask the operator with a card under your reply, and record their answer. Each card gets an id c_N; its items are numbered 1..N and its answer options lettered a, b, c…, so \"c_4 b\" is option b and \"c_4 2a\" is item 2 taking choice a. A call applies its ops to ONE card atomically (pass card to change an existing one); it never ends your turn. Write your reply first (what you found, and why you ask), then create the card, and name it by its id as a link (\"see [c_4](#c_4)\": it jumps to the card), never \"the card above\"; never add a typed fallback (\"You can also type…\") to a card. A card about specific things (archive, tick, send, …) lists every one of them in items, each with a note: what it is, then why the action fits it, in at most 2 short sentences; an idea or todo a button also acts on says the effect (\"… Ticking marks it done.\"). Every option's reply says exactly what it does to which items. When each item wants its own answer, give choices (and each item a default): an item whose actions differ gives its own choices, lettered for its row only, and the card needs no answer option, since its Apply sends every row's pick at once. A card stays open until you record it: when the operator answers (a click arrives as \"c_4 b: …\" or \"c_4: 1a Archive, 2b Keep\", each letter its own row's; typed text may name the card, an item number or an option letter), do the act it approves first, then call answer with their words (option, or items) or accept for \"your recommendation\" in the same run, only once the act succeeded: a refused act leaves the card open so the operator can click again. Replace a card that changed (create with replaces), drop one that no longer applies. Link options (link) open a session, a page or an https URL without a turn; use them instead of asking to navigate.",
+          "description": "Ask the operator with a card under your reply, and record their answer. Each card gets an id c_N; its items are numbered 1..N and its answer options lettered a, b, c…, so \"c_4 b\" is option b and \"c_4 2a\" is item 2 taking choice a. A call applies its ops to ONE card atomically (pass card to change an existing one); it never ends your turn. Write your reply first (what you found, and why you ask), then create the card, and name it by its id as a link (\"see [c_4](#c_4)\": it jumps to the card), never \"the card above\"; never add a typed fallback (\"You can also type…\") to a card. A card about specific things (archive, tick, send, …) lists every one of them in items, each with a note: what it is, then why the action fits it, in at most 2 short sentences; an idea or todo a button also acts on says the effect (\"… Ticking marks it done.\"). Every option's reply says exactly what it does to which items. When each item wants its own answer, give choices (and each item a default): an item whose actions differ gives its own choices, lettered for its row only, and the card needs no answer option, since its Apply sends every row's pick at once. A card that sorts its rows gives each item a section (a short heading, e.g. \"Ready to land\", \"Done\", \"Worth Keeping\"): rows show under their headings, numbered top to bottom. A row whose Go (its first choice) sends a session a message gives sends, the exact words, shown as \"Go sends: …\" before the operator applies; send exactly those words. A card raised by a request to look and sort (a quick action) is the whole of that turn: act on none of its rows until the operator's Apply opens the turn that does. A card stays open until you record it: when the operator answers (a click arrives as \"c_4 b: …\" or \"c_4: 1a Archive, 2b Keep\", each letter its own row's; typed text may name the card, an item number or an option letter), do the act it approves first, then call answer with their words (option, or items) or accept for \"your recommendation\" in the same run, only once the act succeeded: a refused act leaves the card open so the operator can click again. If an Apply's acts stop partway (a limit, a refusal), record only the rows you acted on and say that Apply on the card sends the rest. Replace a card that changed (create with replaces), drop one that no longer applies. Link options (link) open a session, a page or an https URL without a turn; use them instead of asking to navigate.",
           "promptSnippet": "ask the operator with a card (c_N; items 1..N, options a, b…), and record their answer on it",
           "parameters": {
             "type": "object",
@@ -4255,6 +4335,14 @@
                                           "minLength": 1
                                         },
                                         "description": "This item's own choices, when its actions differ from the card's choices (2 to 4 short labels, lettered a, b… for this row only), e.g. [\"Archive\", \"Keep\"] on a session with no worktree beside [\"Clean Up & Archive\", \"Archive Only\", \"Keep\"] on the card."
+                                      },
+                                      "section": {
+                                        "type": "string",
+                                        "description": "The heading this row sits under, at most 40 characters (\"Ready to land\", \"Done\")."
+                                      },
+                                      "sends": {
+                                        "type": "string",
+                                        "description": "The exact message its Go (first choice) sends this session, at most 600 characters; shown on the row."
                                       }
                                     },
                                     "required": [
@@ -4264,7 +4352,7 @@
                                   }
                                 ]
                               },
-                              "description": "Session ids (or sova://s/<id> links). Each entry is { id, note, default?, choices? } (a bare id still works)."
+                              "description": "Session ids (or sova://s/<id> links). Each entry is { id, note, default?, choices?, section?, sends? } (a bare id still works)."
                             },
                             "ideas": {
                               "type": "array",
@@ -4296,6 +4384,14 @@
                                           "minLength": 1
                                         },
                                         "description": "This item's own choices, when its actions differ from the card's choices (2 to 4 short labels, lettered a, b… for this row only), e.g. [\"Archive\", \"Keep\"] on a session with no worktree beside [\"Clean Up & Archive\", \"Archive Only\", \"Keep\"] on the card."
+                                      },
+                                      "section": {
+                                        "type": "string",
+                                        "description": "The heading this row sits under, at most 40 characters (\"Ready to land\", \"Done\")."
+                                      },
+                                      "sends": {
+                                        "type": "string",
+                                        "description": "The exact message its Go (first choice) sends this session, at most 600 characters; shown on the row."
                                       }
                                     },
                                     "required": [
@@ -4305,7 +4401,7 @@
                                   }
                                 ]
                               },
-                              "description": "Idea ids (§ns/name). Each entry is { id, note, default?, choices? } (a bare id still works)."
+                              "description": "Idea ids (§ns/name). Each entry is { id, note, default?, choices?, section?, sends? } (a bare id still works)."
                             },
                             "todos": {
                               "type": "array",
@@ -4337,6 +4433,14 @@
                                           "minLength": 1
                                         },
                                         "description": "This item's own choices, when its actions differ from the card's choices (2 to 4 short labels, lettered a, b… for this row only), e.g. [\"Archive\", \"Keep\"] on a session with no worktree beside [\"Clean Up & Archive\", \"Archive Only\", \"Keep\"] on the card."
+                                      },
+                                      "section": {
+                                        "type": "string",
+                                        "description": "The heading this row sits under, at most 40 characters (\"Ready to land\", \"Done\")."
+                                      },
+                                      "sends": {
+                                        "type": "string",
+                                        "description": "The exact message its Go (first choice) sends this session, at most 600 characters; shown on the row."
                                       }
                                     },
                                     "required": [
@@ -4346,7 +4450,7 @@
                                   }
                                 ]
                               },
-                              "description": "Todo ids (td_…). Each entry is { id, note, default?, choices? } (a bare id still works)."
+                              "description": "Todo ids (td_…). Each entry is { id, note, default?, choices?, section?, sends? } (a bare id still works)."
                             }
                           },
                           "description": "Every session, idea or todo the question is about, at most 50. Required when the card acts on specific things (archive, tick, send, …); then give every item a note. The card numbers them 1..N. Shape: {\"sessions\": [{\"id\": \"<session id>\", \"note\": \"What it is. Why it fits.\"}], \"todos\": [{\"id\": \"td_…\", \"note\": \"…\"}]}."
@@ -5141,7 +5245,7 @@
       ]
     },
     "project-overseer+gaps": {
-      "bytes": 36579,
+      "bytes": 38108,
       "tools": [
         {
           "name": "sova_project",
@@ -5247,7 +5351,7 @@
         {
           "name": "sova_card",
           "label": "Card",
-          "description": "Ask the operator with a card under your reply, and record their answer. Each card gets an id c_N; its items are numbered 1..N and its answer options lettered a, b, c…, so \"c_4 b\" is option b and \"c_4 2a\" is item 2 taking choice a. A call applies its ops to ONE card atomically (pass card to change an existing one); it never ends your turn. Write your reply first (what you found, and why you ask), then create the card, and name it by its id as a link (\"see [c_4](#c_4)\": it jumps to the card), never \"the card above\"; never add a typed fallback (\"You can also type…\") to a card. A card about specific things (archive, tick, send, …) lists every one of them in items, each with a note: what it is, then why the action fits it, in at most 2 short sentences; an idea or todo a button also acts on says the effect (\"… Ticking marks it done.\"). Every option's reply says exactly what it does to which items. When each item wants its own answer, give choices (and each item a default): an item whose actions differ gives its own choices, lettered for its row only, and the card needs no answer option, since its Apply sends every row's pick at once. A card stays open until you record it: when the operator answers (a click arrives as \"c_4 b: …\" or \"c_4: 1a Archive, 2b Keep\", each letter its own row's; typed text may name the card, an item number or an option letter), do the act it approves first, then call answer with their words (option, or items) or accept for \"your recommendation\" in the same run, only once the act succeeded: a refused act leaves the card open so the operator can click again. Replace a card that changed (create with replaces), drop one that no longer applies. Link options (link) open a session, a page or an https URL without a turn; use them instead of asking to navigate.",
+          "description": "Ask the operator with a card under your reply, and record their answer. Each card gets an id c_N; its items are numbered 1..N and its answer options lettered a, b, c…, so \"c_4 b\" is option b and \"c_4 2a\" is item 2 taking choice a. A call applies its ops to ONE card atomically (pass card to change an existing one); it never ends your turn. Write your reply first (what you found, and why you ask), then create the card, and name it by its id as a link (\"see [c_4](#c_4)\": it jumps to the card), never \"the card above\"; never add a typed fallback (\"You can also type…\") to a card. A card about specific things (archive, tick, send, …) lists every one of them in items, each with a note: what it is, then why the action fits it, in at most 2 short sentences; an idea or todo a button also acts on says the effect (\"… Ticking marks it done.\"). Every option's reply says exactly what it does to which items. When each item wants its own answer, give choices (and each item a default): an item whose actions differ gives its own choices, lettered for its row only, and the card needs no answer option, since its Apply sends every row's pick at once. A card that sorts its rows gives each item a section (a short heading, e.g. \"Ready to land\", \"Done\", \"Worth Keeping\"): rows show under their headings, numbered top to bottom. A row whose Go (its first choice) sends a session a message gives sends, the exact words, shown as \"Go sends: …\" before the operator applies; send exactly those words. A card raised by a request to look and sort (a quick action) is the whole of that turn: act on none of its rows until the operator's Apply opens the turn that does. A card stays open until you record it: when the operator answers (a click arrives as \"c_4 b: …\" or \"c_4: 1a Archive, 2b Keep\", each letter its own row's; typed text may name the card, an item number or an option letter), do the act it approves first, then call answer with their words (option, or items) or accept for \"your recommendation\" in the same run, only once the act succeeded: a refused act leaves the card open so the operator can click again. If an Apply's acts stop partway (a limit, a refusal), record only the rows you acted on and say that Apply on the card sends the rest. Replace a card that changed (create with replaces), drop one that no longer applies. Link options (link) open a session, a page or an https URL without a turn; use them instead of asking to navigate.",
           "promptSnippet": "ask the operator with a card (c_N; items 1..N, options a, b…), and record their answer on it",
           "parameters": {
             "type": "object",
@@ -5390,6 +5494,14 @@
                                           "minLength": 1
                                         },
                                         "description": "This item's own choices, when its actions differ from the card's choices (2 to 4 short labels, lettered a, b… for this row only), e.g. [\"Archive\", \"Keep\"] on a session with no worktree beside [\"Clean Up & Archive\", \"Archive Only\", \"Keep\"] on the card."
+                                      },
+                                      "section": {
+                                        "type": "string",
+                                        "description": "The heading this row sits under, at most 40 characters (\"Ready to land\", \"Done\")."
+                                      },
+                                      "sends": {
+                                        "type": "string",
+                                        "description": "The exact message its Go (first choice) sends this session, at most 600 characters; shown on the row."
                                       }
                                     },
                                     "required": [
@@ -5399,7 +5511,7 @@
                                   }
                                 ]
                               },
-                              "description": "Session ids (or sova://s/<id> links). Each entry is { id, note, default?, choices? } (a bare id still works)."
+                              "description": "Session ids (or sova://s/<id> links). Each entry is { id, note, default?, choices?, section?, sends? } (a bare id still works)."
                             },
                             "ideas": {
                               "type": "array",
@@ -5431,6 +5543,14 @@
                                           "minLength": 1
                                         },
                                         "description": "This item's own choices, when its actions differ from the card's choices (2 to 4 short labels, lettered a, b… for this row only), e.g. [\"Archive\", \"Keep\"] on a session with no worktree beside [\"Clean Up & Archive\", \"Archive Only\", \"Keep\"] on the card."
+                                      },
+                                      "section": {
+                                        "type": "string",
+                                        "description": "The heading this row sits under, at most 40 characters (\"Ready to land\", \"Done\")."
+                                      },
+                                      "sends": {
+                                        "type": "string",
+                                        "description": "The exact message its Go (first choice) sends this session, at most 600 characters; shown on the row."
                                       }
                                     },
                                     "required": [
@@ -5440,7 +5560,7 @@
                                   }
                                 ]
                               },
-                              "description": "Idea ids (§ns/name). Each entry is { id, note, default?, choices? } (a bare id still works)."
+                              "description": "Idea ids (§ns/name). Each entry is { id, note, default?, choices?, section?, sends? } (a bare id still works)."
                             },
                             "todos": {
                               "type": "array",
@@ -5472,6 +5592,14 @@
                                           "minLength": 1
                                         },
                                         "description": "This item's own choices, when its actions differ from the card's choices (2 to 4 short labels, lettered a, b… for this row only), e.g. [\"Archive\", \"Keep\"] on a session with no worktree beside [\"Clean Up & Archive\", \"Archive Only\", \"Keep\"] on the card."
+                                      },
+                                      "section": {
+                                        "type": "string",
+                                        "description": "The heading this row sits under, at most 40 characters (\"Ready to land\", \"Done\")."
+                                      },
+                                      "sends": {
+                                        "type": "string",
+                                        "description": "The exact message its Go (first choice) sends this session, at most 600 characters; shown on the row."
                                       }
                                     },
                                     "required": [
@@ -5481,7 +5609,7 @@
                                   }
                                 ]
                               },
-                              "description": "Todo ids (td_…). Each entry is { id, note, default?, choices? } (a bare id still works)."
+                              "description": "Todo ids (td_…). Each entry is { id, note, default?, choices?, section?, sends? } (a bare id still works)."
                             }
                           },
                           "description": "Every session, idea or todo the question is about, at most 50. Required when the card acts on specific things (archive, tick, send, …); then give every item a note. The card numbers them 1..N. Shape: {\"sessions\": [{\"id\": \"<session id>\", \"note\": \"What it is. Why it fits.\"}], \"todos\": [{\"id\": \"td_…\", \"note\": \"…\"}]}."

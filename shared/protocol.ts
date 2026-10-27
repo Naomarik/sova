@@ -3394,7 +3394,7 @@ export type OverseerProactivity = "off" | "badge" | "brief";
 
 export interface OverseerQuickAction {
   id: string;
-  /** Title Case, short: "What Needs Me". */
+  /** Title Case, short: "Get Things Moving". */
   label: string;
   /** One line shown under the label in the flyout. */
   description: string;
@@ -3417,7 +3417,8 @@ export interface OverseerCaps {
 
 /** `<stateRoot>/overseer.json`. Tolerant on read, strict on PUT. */
 export interface OverseerSettings {
-  version: 1;
+  /** 2 since the one-time move off the old five quick actions (§app.overseer/quick-actions-move). */
+  version: 2;
   /** "provider/model"; null = pi's default. Never becomes the default for new sessions. */
   model: string | null;
   /** off…max, clamped to the model; null = the model's default. */
@@ -3672,8 +3673,10 @@ export interface SovaConfirmDetails {
 /** One thing a confirm card is about. A session row: its folder's short name (`project`), last
     activity (ISO), a one-line summary when it has one, and how many subagents were working.
     `note`: the Overseer's own words on what the item is and why the card acts on it (≤ 2 short
-    sentences, `CONFIRM_NOTE_MAX` characters). */
-export type SovaConfirmItem =
+    sentences, `CONFIRM_NOTE_MAX` characters). Every kind may also carry the row fields of
+    `SovaConfirmRow` (a section heading, what Go sends). */
+export type SovaConfirmItem = SovaConfirmRow &
+  (
   | { kind: "session"; id: string; title: string; project?: string; lastActiveAt?: string; summary?: string; workers?: number; note?: string }
   | { kind: "idea"; id: string; title: string; note?: string }
   | { kind: "todo"; id: string; text: string; note?: string }
@@ -3685,7 +3688,23 @@ export type SovaConfirmItem =
   | { kind: "org"; id: string; name: string; note?: string }
   /** A folder to add as a project (§app.overseer/org-project-add): `id` is its checkout root, `asked` the folder as
       given when that differs, the org it goes into (none: standalone) and the name it gets when the card named one. */
-  | { kind: "folder"; id: string; asked?: string; orgId?: string; orgName?: string; name?: string; note?: string };
+  | { kind: "folder"; id: string; asked?: string; orgId?: string; orgName?: string; name?: string; note?: string }
+  );
+
+/**
+ * What a card row carries whatever its kind (§app.overseer/card-sections), snapshotted when the
+ * card was raised: `section`, the heading it sits under; `sends`, the exact message the Overseer
+ * sends that session when the row's Go (its first choice) is applied. New per-row facts go here
+ * (any kind) or on one kind's variant above (a session's alone).
+ */
+export interface SovaConfirmRow {
+  section?: string;
+  sends?: string;
+}
+
+/** The longest section heading and Go-sends text one confirm item may carry. */
+export const CONFIRM_SECTION_MAX = 40;
+export const CONFIRM_SENDS_MAX = 600;
 
 /** The longest note one confirm item may carry. */
 export const CONFIRM_NOTE_MAX = 220;

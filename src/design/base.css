@@ -6722,6 +6722,14 @@ a.subagent-row { text-decoration: none; }
 .permit-uses { margin: 0; padding-left: var(--space-4); font-size: var(--fs-caption); line-height: var(--lh-caption); }
 .permit-actions { display: flex; justify-content: flex-end; padding-top: var(--space-1); }
 .permits-error { margin: 0; padding: var(--space-2) var(--space-3); font-size: var(--fs-caption); color: var(--status-error); }
+/* A sectioned card (§app.overseer/card-sections): each heading an eyebrow over its rows, the
+   first row's rule dropped under it; a row's "Go sends" line in full, under its note. */
+.overseer-card-sections { gap: var(--space-3); }
+.overseer-card-section { align-self: stretch; min-width: 0; }
+.overseer-card-section-head { margin: 0; padding-bottom: var(--space-1); }
+.overseer-card-section-head + .overseer-confirm-list .overseer-confirm-item:first-child { border-top: none; }
+.overseer-card-sends { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.overseer-card-sends-label { font-weight: var(--fw-semibold); color: var(--color-ink-2); }
 .overseer-card-decided { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--color-ink-2); font-size: var(--fs-caption); }
 .overseer-card-decided .icon { color: var(--status-success); }
 .overseer-card-jump {

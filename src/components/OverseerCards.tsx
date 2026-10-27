@@ -3,10 +3,12 @@ import type { OverseerQuickAction, SovaConfirmDetails, SovaConfirmItem } from ".
 import {
   answerOptions,
   cardLetter,
+  cardSections,
   choiceByLetter,
   choicesOf,
   hasChoices,
   itemsClick,
+  keptPicks,
   linkOptions,
   optionByLetter,
   optionClick,
@@ -43,6 +45,9 @@ export interface OverseerThread {
   /** The fold's newest snapshot of a card (settled rows and this run's results), so a live call
       that a later call in the same run changed draws as a revision, never as live buttons. */
   card?(id: string): OverseerCard | undefined;
+  /** The choices the user last applied each of a card's rows with, from the conversation's own
+      click messages (§app.overseer/card-partial-apply); an undecided row starts on them. */
+  applied?(id: string): Readonly<Record<number, string>> | undefined;
 }
 export const OverseerThreadContext = createContext<OverseerThread | null>(null);
 export const useOverseerThread = () => useContext(OverseerThreadContext);
@@ -101,15 +106,20 @@ export function DeckCard(props: { card: OverseerCard; line?: string }) {
   const sent = () => (thread ? thread.sent(props.card.id) : undefined);
   const canAnswer = () => !!thread && open() && !sent();
   const why = () => (!thread ? "Read only." : sent() ? "Wait for the turn to end." : undefined);
-  /** The per-item picks, from each item's decided choice, else its default. */
-  const initial = () => Object.fromEntries(props.card.items.flatMap((it) => { const l = it.decided?.choice ?? it.default; return l ? [[it.n, l]] : []; })) as Record<number, string>;
+  /** The per-item picks of the undecided rows: the choice the user last applied it with, else its
+      default (§app.overseer/card-partial-apply). A decided row is done and takes no pick. */
+  const initial = () => {
+    const applied = thread?.applied?.(props.card.id) ?? {};
+    return Object.fromEntries(props.card.items.flatMap((it) => { const l = it.decided ? undefined : applied[it.n] ?? it.default; return l ? [[it.n, l]] : []; })) as Record<number, string>;
+  };
   const [picks, setPicks] = createSignal<Record<number, string>>(initial());
-  // A newer snapshot (a partial answer recorded, a reopen) starts the picks again from it; a memo,
-  // so a fresh card object with the same rev never resets the user's picks.
+  // A newer snapshot (a partial answer recorded, a reopen) starts the picks again from it, each row
+  // still undecided keeping the pick it was applied with; a memo, so a fresh card object with the
+  // same rev never resets the user's picks.
   const rev = createMemo(() => props.card.rev);
-  createEffect(on(rev, () => setPicks(initial()), { defer: true }));
-  /** What Apply sends: the items picked whose pick isn't already their recorded choice. */
-  const applyPicks = () => Object.fromEntries(Object.entries(picks()).filter(([n, l]) => props.card.items.find((it) => it.n === Number(n))?.decided?.choice !== l)) as Record<number, string>;
+  createEffect(on(rev, () => setPicks((prev) => keptPicks(props.card, prev, initial())), { defer: true }));
+  /** What Apply sends: the picks of the rows not yet decided, never a row already done. */
+  const applyPicks = () => Object.fromEntries(Object.entries(picks()).filter(([n]) => { const it = props.card.items.find((x) => x.n === Number(n)); return !!it && !it.decided; })) as Record<number, string>;
   const applyText = () => itemsClick(props.card, applyPicks());
   const click = (letter: string) => {
     const text = optionClick(props.card, letter);
@@ -322,7 +332,7 @@ function CardItemAnswer(props: { card: OverseerCard; item: CardItem; pick?: stri
           </span>
         )}
       </Show>
-      <Show when={row() && props.card.phase === "open"}>
+      <Show when={row() && props.card.phase === "open" && !decided()}>
         <div class="overseer-card-seg" role="radiogroup" aria-label={`Item ${props.item.n}`}>
           <For each={row()}>
             {(c, i) => (
@@ -357,7 +367,8 @@ export function CardRevision(props: { card: OverseerCard; line: string }) {
 /**
  * What a confirm card is about: the sessions, ideas, todos, orgs, folders, projects and people the server resolved
  * when the card was raised, as a snapshot. Ideas, todos, orgs, folders, projects and people come first and always
- * show; only the sessions after them collapse (confirmRows). A session links to its route, named by
+ * show; only the sessions after them collapse (confirmRows). A card whose rows name sections shows
+ * them under their headings, in the card's order, and never collapses (§app.overseer/card-sections). A session links to its route, named by
  * its summary (else its title); an idea is its id and title as text, never a link; a todo is its
  * text; a project and a person link to their page, with the org after the name (and a person's
  * status chip unless active). Each may carry the Overseer's note under it.
@@ -365,7 +376,9 @@ export function CardRevision(props: { card: OverseerCard; line: string }) {
 function ConfirmItems(props: { items: SovaConfirmItem[]; since?: string; below?: (item: SovaConfirmItem) => JSX.Element }) {
   const [all, setAll] = createSignal(false);
   const view = () => confirmRows(props.items, all());
+  const sectioned = () => props.items.some((it) => it.section !== undefined);
   return (
+    <Show when={!sectioned()} fallback={<SectionedItems items={props.items} since={props.since} below={props.below} />}>
     <div class="card-body overseer-confirm-items">
       <ul class="overseer-confirm-list" aria-label={`${props.items.length} ${props.items.length === 1 ? "item" : "items"}`}>
         <For each={view().rows}>
@@ -383,17 +396,55 @@ function ConfirmItems(props: { items: SovaConfirmItem[]; since?: string; below?:
         </button>
       </Show>
     </div>
+    </Show>
   );
 }
 
-/** The Overseer's note on an item: what it is and why the card acts on it, up to 2 lines. */
-function ItemNote(props: { note?: string }) {
+/** A sectioned card's rows: the unsectioned ones first under no heading, then each section's
+    heading and its rows, in the card's own order (its numbers run top to bottom). No toggle. */
+function SectionedItems(props: { items: SovaConfirmItem[]; since?: string; below?: (item: SovaConfirmItem) => JSX.Element }) {
   return (
-    <Show when={props.note}>
-      <span class="overseer-confirm-item-note" title={props.note}>
-        {props.note}
-      </span>
-    </Show>
+    <div class="card-body overseer-confirm-items overseer-card-sections">
+      <For each={cardSections(props.items)}>
+        {(group) => (
+          <div class="overseer-card-section" role={group.section ? "group" : undefined} aria-label={group.section}>
+            <Show when={group.section}>
+              {(h) => <h4 class="text-eyebrow overseer-card-section-head">{h()}</h4>}
+            </Show>
+            <ul class="overseer-confirm-list" aria-label={`${group.items.length} ${group.items.length === 1 ? "item" : "items"}`}>
+              <For each={group.items}>
+                {(it) => (
+                  <ConfirmItemRow item={it} since={props.since}>
+                    {props.below?.(it)}
+                  </ConfirmItemRow>
+                )}
+              </For>
+            </ul>
+          </div>
+        )}
+      </For>
+    </div>
+  );
+}
+
+/** The Overseer's note on an item: what it is and why the card acts on it, up to 2 lines; then,
+    in full, the exact message its Go sends, when it sends one (§app.overseer/card-sections). */
+function ItemNote(props: { note?: string; sends?: string }) {
+  return (
+    <>
+      <Show when={props.note}>
+        <span class="overseer-confirm-item-note" title={props.note}>
+          {props.note}
+        </span>
+      </Show>
+      <Show when={props.sends}>
+        {(words) => (
+          <span class="overseer-card-sends">
+            <span class="overseer-card-sends-label">Go sends:</span> “{words()}”
+          </span>
+        )}
+      </Show>
+    </>
   );
 }
 
@@ -421,7 +472,7 @@ function ConfirmItemRow(props: { item: SovaConfirmItem; since?: string; children
             <span class="overseer-confirm-item-name"> — {it.title}</span>
           </Show>
         </span>
-        <ItemNote note={it.note} />
+        <ItemNote note={it.note} sends={it.sends} />
         {props.children}
       </li>
     );
@@ -432,7 +483,7 @@ function ConfirmItemRow(props: { item: SovaConfirmItem; since?: string; children
           <ItemNumber item={it} />
           <span class="overseer-confirm-item-name">{it.text}</span>
         </span>
-        <ItemNote note={it.note} />
+        <ItemNote note={it.note} sends={it.sends} />
         {props.children}
       </li>
     );
@@ -446,7 +497,7 @@ function ConfirmItemRow(props: { item: SovaConfirmItem; since?: string; children
             {it.name}
           </a>
         </span>
-        <ItemNote note={it.note} />
+        <ItemNote note={it.note} sends={it.sends} />
         {props.children}
       </li>
     );
@@ -465,7 +516,7 @@ function ConfirmItemRow(props: { item: SovaConfirmItem; since?: string; children
             <span class="overseer-confirm-item-meta">from {it.asked}</span>
           </Show>
         </span>
-        <ItemNote note={it.note} />
+        <ItemNote note={it.note} sends={it.sends} />
         {props.children}
       </li>
     );
@@ -491,7 +542,7 @@ function ConfirmItemRow(props: { item: SovaConfirmItem; since?: string; children
             )}
           </Show>
         </span>
-        <ItemNote note={it.note} />
+        <ItemNote note={it.note} sends={it.sends} />
         {props.children}
       </li>
     );
@@ -542,7 +593,7 @@ function ConfirmItemRow(props: { item: SovaConfirmItem; since?: string; children
           )}
         </Show>
       </span>
-      <ItemNote note={it.note} />
+      <ItemNote note={it.note} sends={it.sends} />
       {props.children}
     </li>
   );

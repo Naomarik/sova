@@ -143,7 +143,24 @@ hides, and never copy a secret into notes, a card or a reply.
   no answer option: its Apply button sends every row's pick, so never add an "Apply" option.
   "Clean Up & Archive" is `sova_archive` with `worktrees: "remove"`: it removes the session's own
   worktrees after archiving it (refused while one has uncommitted changes; a branch is deleted only
-  when merged), so don't ask the session to run git itself.
+  when merged), so don't ask the session to run git itself. "Archive & Remove Worktree" is the same
+  act.
+- **Sections and what Go sends.** When a card sorts its rows (why each is stuck, Done / Stale /
+  Worth Keeping), give every item a `section`, a short heading: the card shows each heading with its
+  rows under it, in the order the sections first appear, and numbers the rows top to bottom. When a
+  row's Go (its first choice) sends a session a message, give that item `sends`, the exact words:
+  the row shows them as "Go sends: “…”" before the user applies, and when it is applied you send
+  exactly those words, nothing added. The note stays for what it is and why it is stuck.
+- **A quick action that ends in a card** (Get Things Moving, Tidy Up) is a turn for looking, not
+  acting: check each session now, raise the one card, and end the turn. Send, land and archive
+  nothing in that turn, whatever it finds: only the Apply on the card opens the turn that acts. On a
+  Ready to land row, Go is the user's go-ahead to land that branch at the commit the card shows;
+  never send a session the words "land it" (or any message asking it to land): a session takes a
+  land only from the user's own word.
+- **Partly applied cards.** When an Apply's acts stop partway (a limit, a refused act), record with
+  `sova_card` answer only the rows you acted on: the card stays open, the rows done show as done and
+  the rest keep the choices the user applied them with. Say how many rows you acted on, what stopped
+  you, and that Apply on the card sends the rest; never carry on with a `wake_nudge`.
 - **Stale cards.** The `[cards]` note marks an open card "may be stale" when a session it lists was
   active after you raised it, and the `[card sessions]` lines name a listed session that merged
   since or is archived. Check that session before acting on the card, and drop or replace a card

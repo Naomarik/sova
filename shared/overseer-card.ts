@@ -12,7 +12,7 @@
  * as `CardPrepared`.
  */
 import type { HEntry } from "./harness";
-import type { SovaConfirmItem } from "./protocol";
+import { CONFIRM_SECTION_MAX, CONFIRM_SENDS_MAX, type SovaConfirmItem } from "./protocol";
 import { type CardOptionLater, type CardOptionRule, GRANT_DEFAULT_MS, GRANT_MAX_AHEAD_MS, GRANTABLE_ACTS, type GrantableAct } from "./overseer-grants";
 
 /** The tool's name, in the loadout and on every tool result. */
@@ -310,10 +310,39 @@ export interface CardOutcome {
   text: string;
 }
 
-/** The display order: ideas, todos, orgs, folders, projects, people, then sessions (the card's row order). */
+/**
+ * The display order: ideas, todos, orgs, folders, projects, people, then sessions (the card's row
+ * order). On a card where any item names a section (§app.overseer/card-sections): rows with no
+ * section first, then each section in the order it first appears in `items`, that kind order
+ * within each. The card numbers its rows 1..N in this order, so the numbers run top to bottom.
+ */
 const KIND_ORDER: Record<SovaConfirmItem["kind"], number> = { idea: 0, todo: 1, org: 2, folder: 3, project: 4, person: 5, session: 6 };
 export function displayOrder<T extends SovaConfirmItem>(items: readonly T[]): T[] {
-  return items.map((it, i) => ({ it, i })).sort((a, b) => KIND_ORDER[a.it.kind] - KIND_ORDER[b.it.kind] || a.i - b.i).map((x) => x.it);
+  const sections: (string | undefined)[] = [undefined];
+  for (const it of items) if (it.section !== undefined && !sections.includes(it.section)) sections.push(it.section);
+  const rank = (it: T) => sections.indexOf(it.section);
+  return items
+    .map((it, i) => ({ it, i }))
+    .sort((a, b) => rank(a.it) - rank(b.it) || KIND_ORDER[a.it.kind] - KIND_ORDER[b.it.kind] || a.i - b.i)
+    .map((x) => x.it);
+}
+
+/** Whether any row of a card sits under a heading (then it never collapses). */
+export const hasSections = (card: Pick<OverseerCard, "items">): boolean => card.items.some((it) => it.section !== undefined);
+
+/**
+ * A card's rows under their headings, in display order: one group per section in the order the
+ * rows show (the unsectioned rows, with no heading, first). A card with no sections is one group
+ * with no heading.
+ */
+export function cardSections<T extends Pick<SovaConfirmItem, "section">>(items: readonly T[]): { section?: string; items: T[] }[] {
+  const out: { section?: string; items: T[] }[] = [];
+  for (const it of items) {
+    const last = out.at(-1);
+    if (last && last.section === it.section) last.items.push(it);
+    else out.push({ ...(it.section !== undefined ? { section: it.section } : {}), items: [it] });
+  }
+  return out;
 }
 
 /** An https URL a link option may open: no credentials, a host. */
@@ -416,7 +445,25 @@ function createCard(id: string, o: Record<string, unknown>, env: CardEnv): Overs
     need(prepared.items.length > 0, `${where}: choices are per item, so the card needs items`);
   }
 
-  const items: CardItem[] = displayOrder(prepared.items).map((it, i) => {
+  // A row's heading and its Go-sends text (§app.overseer/card-sections), checked before the order uses them.
+  const rows = prepared.items.map((it) => {
+    const { section, sends, ...rest } = it as typeof it & { section?: unknown; sends?: unknown };
+    const out = rest as typeof it;
+    if (section !== undefined) {
+      need(typeof section === "string" && section.trim() !== "", `${where}: ${it.id}'s section must be a short heading, e.g. "Ready to land"`);
+      const heading = oneLine(section as string);
+      need(heading.length <= CONFIRM_SECTION_MAX, `${where}: ${it.id}'s section is ${heading.length} characters; a heading takes at most ${CONFIRM_SECTION_MAX}`);
+      out.section = heading;
+    }
+    if (sends !== undefined) {
+      need(typeof sends === "string" && sends.trim() !== "", `${where}: ${it.id}'s sends must be the exact message its Go sends`);
+      const words = (sends as string).trim();
+      need(words.length <= CONFIRM_SENDS_MAX, `${where}: ${it.id}'s sends is ${words.length} characters; at most ${CONFIRM_SENDS_MAX}, shown in full on the row`);
+      out.sends = words;
+    }
+    return out;
+  });
+  const items: CardItem[] = displayOrder(rows).map((it, i) => {
     const { default: def, choices: own, ...rest } = it;
     const item: CardItem = { ...(rest as SovaConfirmItem), n: i + 1 };
     if (own !== undefined) item.choices = choiceList(own, `${where}: ${it.id}'s choices`);
@@ -637,7 +684,9 @@ export function applyCardCall(cards: readonly OverseerCard[], input: unknown, en
   if (creates) {
     const clicks = [answerOptions(card!).length ? `"${card!.id} b: …"` : "", hasChoices(card!) ? `"${card!.id}: 1a …, 2b …" (each letter its own row's)` : ""].filter(Boolean).join(" or ");
     lines.push(
-      `Shown to the ${who} under your reply. It stays open until you record it: when the ${who} answers (a click reads ${clicks}; typed text may name the card, an item number or an option letter), do the act it approves first, then call sova_card answer with their words, or accept for "your recommendation", in the same run once the act succeeded; a refused act leaves the card open.`,
+      `Shown to the ${who} under your reply. It stays open until you record it: when the ${who} answers (a click reads ${clicks}; typed text may name the card, an item number or an option letter), do the act it approves first, then call sova_card answer with their words, or accept for "your recommendation", in the same run once the act succeeded; a refused act leaves the card open.` +
+        (hasChoices(card!) ? ` If you stop partway (a limit, a refusal), record only the rows you acted on: the card stays open with the rest, and Apply on it sends them.` : "") +
+        (card!.items.some((it) => it.sends !== undefined) ? ` A row's Go sends exactly its Go-sends text, the words the ${who} saw.` : ""),
     );
   }
   return { details, text: lines.join("\n") };
@@ -771,6 +820,14 @@ export function normalizeCardItem(v: unknown): CardItem | undefined {
       return undefined;
   }
   const item: CardItem = { ...base, n: v.n };
+  if (v.section !== undefined) {
+    if (!nonEmpty(v.section)) return undefined;
+    item.section = v.section;
+  }
+  if (v.sends !== undefined) {
+    if (!nonEmpty(v.sends)) return undefined;
+    item.sends = v.sends;
+  }
   if (v.choices !== undefined) {
     const choices = normChoices(v.choices);
     if (!choices) return undefined;
@@ -1012,7 +1069,9 @@ export function cardLines(card: OverseerCard, line: string): string[] {
     const own = it.choices ? ` [choices ${choicesText(it.choices)}]` : "";
     const def = it.default ? ` [default ${it.default}]` : "";
     const done = it.decided ? ` — decided: ${decisionText(card, it, it.decided)}` : "";
-    out.push(`  ${it.n}. ${itemText(it)}${it.note ? ` — ${it.note}` : ""}${own}${def}${done}`);
+    const section = it.section !== undefined ? ` [section ${it.section}]` : "";
+    const sends = it.sends !== undefined ? ` [Go sends: ${JSON.stringify(it.sends)}]` : "";
+    out.push(`  ${it.n}. ${itemText(it)}${it.note ? ` — ${it.note}` : ""}${section}${sends}${own}${def}${done}`);
   }
   if (card.recommendation) {
     const opt = card.recommendation.option ? `${card.recommendation.option} — ${optionByLetter(card, card.recommendation.option)?.label ?? ""}: ` : "";
@@ -1033,7 +1092,7 @@ export function cardsNote(cards: readonly OverseerCard[], afterCompaction = fals
   if (open.length === 0) return undefined;
   const head = afterCompaction
     ? "[cards] The context was just compacted. The open cards in this conversation, exactly as recorded (the summary above may describe them loosely); ids are stable."
-    : "[cards] Open cards in this conversation. If the user's message answers any of them (a click reads \"c_4 b: …\" or \"c_4: 1a …, 2b …\", each item's letter one of its own choices; typed text may name a card, an item number or an option letter), do the act it approves first, then record it with sova_card (answer with their words, accept for \"your recommendation\") in the same run once the act succeeded, one call per card; a refused act leaves the card open for another click. Drop a card that no longer applies, or replace it (create with replaces). Name a card by its id, never \"the card above\"; ids are stable.";
+    : "[cards] Open cards in this conversation. If the user's message answers any of them (a click reads \"c_4 b: …\" or \"c_4: 1a …, 2b …\", each item's letter one of its own choices; typed text may name a card, an item number or an option letter), do the act it approves first, then record it with sova_card (answer with their words, accept for \"your recommendation\") in the same run once the act succeeded, one call per card; a refused act leaves the card open for another click. If you stop partway (a limit, a refusal), record only the rows you acted on, and say that Apply on the card sends the rest. A row's Go sends exactly its Go-sends text. Drop a card that no longer applies, or replace it (create with replaces). Name a card by its id, never \"the card above\"; ids are stable.";
   const lines = open.flatMap((c) => {
     const stale = activeAt ? staleSessions(c, activeAt) : [];
     return [...cardLines(c, ""), ...stale.map((s) => `  may be stale: ${s.id} active since ${s.at}`)];
@@ -1127,6 +1186,34 @@ export function matchCardClick(card: OverseerCard, text: string): CardClick | nu
     picks[n] = m[2]!;
   }
   return itemsClick(card, picks) === text ? { card: card.id, items: picks } : null;
+}
+
+/**
+ * The choices the user last applied each row with (§app.overseer/card-partial-apply): the per-item
+ * Apply messages among `texts` (the conversation's user messages, oldest first) that are exactly a
+ * click on `card`, merged in order, so a later Apply's pick of a row wins. Undecided rows of a
+ * partly applied card start on these, not their defaults.
+ */
+export function appliedPicks(card: OverseerCard, texts: Iterable<string>): Record<number, string> {
+  const out: Record<number, string> = {};
+  for (const t of texts) {
+    if (!t.startsWith(`${card.id}: `)) continue;
+    const click = matchCardClick(card, t.trim());
+    if (click && "items" in click) Object.assign(out, click.items);
+  }
+  return out;
+}
+
+/** The picks after a newer snapshot: a row now decided takes none; one still undecided keeps the
+    pick it had (the one it was applied with), else starts from `fresh`. */
+export function keptPicks(card: OverseerCard, prev: Readonly<Record<number, string>>, fresh: Readonly<Record<number, string>>): Record<number, string> {
+  const out: Record<number, string> = {};
+  for (const it of card.items) {
+    if (it.decided) continue;
+    const l = prev[it.n] !== undefined && choiceByLetter(card, it, prev[it.n]!) ? prev[it.n] : fresh[it.n];
+    if (l !== undefined) out[it.n] = l;
+  }
+  return out;
 }
 
 /** The items a click approves: every item for a card-level option, else only those it gave a choice. */

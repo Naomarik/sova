@@ -368,6 +368,16 @@ function readUsed(file: string): Record<LimitKind, number> {
   return used;
 }
 
+/**
+ * What a limit's refusal adds in a turn a click on a card opened (§app.overseer/caps,
+ * §app.overseer/card-partial-apply): record only the rows already acted on, so the card stays
+ * partly applied, and tell the user that Apply on it sends the rest.
+ */
+export const CARD_REST_REFUSAL =
+  "This turn was opened by a click on a card: record with sova_card answer only the rows you already acted on, so the card stays open with the rest, " +
+  "and tell the user how many rows you acted on, which limit stopped you, and that Apply on the card sends the rest (their next message renews the limit).";
+export const withCardRest = (refusal: string | null, cardTurn: () => boolean): string | null => (refusal && cardTurn() ? `${refusal} ${CARD_REST_REFUSAL}` : refusal);
+
 /** The concurrency cap: refusal sentence, or null when another Overseer-started session may run. */
 export function concurrencyRefusal(running: number, caps: OverseerCaps): string | null {
   if (running < caps.concurrentSessions) return null;
@@ -549,8 +559,22 @@ const PROJECT_MODES_PARAM =
  * Build the Overseer's tool set. `limits` is shared with the extension that resets it per turn.
  * Every tool's `promptSnippet` is its one line in the prompt's catalogue ({{TOOLS}}).
  */
-export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redactor: () => Redactor = serverRedactor): Tool[] {
+export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redactor: () => Redactor = serverRedactor): Tool[] {
   aliasesNow = () => host.aliases?.() ?? {};
+  // Every refusal of a limit in a turn a card's click opened also says to record the rows done.
+  const cardTurn = () => {
+    try {
+      return !!host.confirmed?.();
+    } catch {
+      return false;
+    }
+  };
+  const limits = {
+    take: (kind: LimitKind, caps: OverseerCaps, n = 1) => withCardRest(shared.take(kind, caps, n), cardTurn),
+    give: (kind: LimitKind, n = 1) => shared.give(kind, n),
+    reserveRun: (running: number, caps: OverseerCaps) => withCardRest(shared.reserveRun(running, caps), cardTurn),
+    releaseRun: () => shared.releaseRun(),
+  };
   async function call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<{ status: number; json: any }> {
     const card = host.confirmed();
     const res = await host.request(path, {

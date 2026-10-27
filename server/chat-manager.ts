@@ -1821,12 +1821,12 @@ class ChatSession {
     return visToolsWanted(this.modeState.minorModes, this.alignLaunch?.data?.visuals ?? false);
   }
 
-  /** What the vis feedback extension asks this chat (server/vis-check.ts): its vis mode is this
-      chat's own mode, a message queued behind the run goes before any retry, and a runtime that may
-      no longer write the file adds nothing to it. */
+  /** What the vis feedback extension asks this chat (server/vis-check.ts): drawings are on when the vis
+      tools are wanted (this chat's own mode and launch Visuals), a message queued behind the run goes
+      before any retry, and a runtime that may no longer write the file adds nothing to it. */
   visCheckHost(): VisCheckHost {
     return {
-      visOn: () => this.modeState.minorModes.includes("vis"),
+      drawingsOn: () => this.visToolsOn(),
       visToolsOn: () => this.visToolsOn(),
       queued: () => this.queue.size > 0 || this.harness.queue.hasQueued(),
       writable: () => {
@@ -4398,7 +4398,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
           visRetry: () =>
             visCheckExtension(() => {
               const h = visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null;
-              return h ? { ...h, visOn: () => true, visToolsOn: () => false } : null;
+              return h ? { ...h, drawingsOn: () => true, visToolsOn: () => false } : null;
             }),
           log: (line) => console.warn(`[chat] ${kind}: ${line}`),
         })

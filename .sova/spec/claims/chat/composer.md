@@ -509,9 +509,11 @@ in the 44px box instead of riding up with a smaller line box. Send is
 a `--tap-min` target stretched over a `--control-sm` row by a `::after`. Its effort ring is about
 17px square: the track in `--color-border-strong`, the filled arc and the middle mark in
 `--color-ink-2`, never `--color-accent`; the same ring sits beside each level of the flyout's
-Thinking ladder and on the profile cards (§chat.profiles/picker). The login's avatar is a 20px
-circle (wider for two or three letters): a `--stroke-icon` border in `--color-border-strong`,
-`--r-full`, its text `--fs-micro` semibold in `--color-ink-2`. The model panel's summary line is
+Thinking ladder and on the profile cards (§chat.profiles/picker). The login's avatar is a soft
+chip about 17px tall, with no outline: a pale `--color-sunken` fill, `--r-full` (a circle for
+one letter, a pill for two or three letters or a number), its text `--fs-micro` semibold in
+`--color-ink-2`. While the login button is hovered or open, when the button itself takes the
+`--color-sunken` fill, the chip takes the `--color-border` fill so it stays visible. The model panel's summary line is
 `--fs-caption` in `--color-ink-2`, one line, ellipsized. The foot's gap is `--space-3`, `--space-2`
 under 480px.
 `.composer-inner` is centred at `--measure` plus `--space-9`, the transcript column's width, so it

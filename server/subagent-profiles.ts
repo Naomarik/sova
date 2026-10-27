@@ -4,6 +4,7 @@ import { LIBRARY_KEY, listKept, markRestored } from "./sync/kept";
 import {
   loadSubagentProfiles, legacyProfile, parseSubagentProfiles, readProfilesDefault, resolveSubagents, profilesDefaultOf,
   footprint, profileProviders, profileSlots, writeSubagentProfiles, writeProfilesDefault, OFF_FOOTPRINT,
+  profileWorkers, shortModel as workerModelName,
 } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import type { SubagentProfilesInfo, SubagentProfilesReplaced } from "../shared/subagent-profiles";
 import { delegateOptions, verifySlots, type DelegateSources } from "./delegate";
@@ -28,6 +29,16 @@ export function subagentProfilesInfo(pick?: string, dir = agentRoot()): Subagent
     ...(warnings.length ? { warnings } : {}),
     ...withReplaced(dir),
   };
+}
+
+/**
+ * How many distinct primary models a library profile names: the count its footprint shows, never
+ * cut at three (the profile cards' subagents count, §chat.profiles/picker). 0 for Off or an id the
+ * library lacks.
+ */
+export function profileModelCount(info: Pick<SubagentProfilesInfo, "settings">, id: string): number {
+  const p = info.settings.profiles.find((x) => x.id === id);
+  return p ? new Set(profileWorkers(p, false).map((w) => workerModelName(w.model))).size : 0;
 }
 
 /** How long Settings → Subagents offers a kept library back (§chat.subagent-profiles/replaced). */

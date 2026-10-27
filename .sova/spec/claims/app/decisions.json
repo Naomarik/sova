@@ -1,0 +1,328 @@
+{
+  "§app.decisions/align-triage": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/align-triage.ts",
+      "server/align-triage.test.ts",
+      "src/components/AlignDocCard.tsx",
+      "src/lib/align-triage.ts",
+      "src/lib/align-triage.test.ts"
+    ],
+    "requires": [
+      "§app.decisions/interface",
+      "§app.decisions/privacy",
+      "§app.decisions/attention-signals"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T14:32Z",
+      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+    }
+  },
+  "§app.decisions/asks-user": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/attention-signals.ts",
+      "server/signals-store.ts",
+      "server/attention.ts",
+      "src/lib/signals.ts",
+      "src/lib/agents-board.ts",
+      "shared/protocol.ts",
+      "src/design/base.css",
+      "server/attention-signals.test.ts",
+      "server/signals-store.test.ts",
+      "server/attention.test.ts",
+      "src/lib/signals.test.ts",
+      "src/lib/agents-board.test.ts",
+      "server/sessions-index.ts",
+      "server/session-offers.ts",
+      "server/overseer.ts"
+    ],
+    "requires": [
+      "§app.decisions/attention-signals",
+      "§chat.alignment/session-mark",
+      "§chat.offers/card"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-24T09:23Z",
+      "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+    }
+  },
+  "§app.decisions/attention-signals": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/attention-signals.ts",
+      "server/turn-outcomes.ts",
+      "server/signals-store.ts",
+      "server/chat-manager.ts",
+      "server/sessions-index.ts",
+      "server/index.ts",
+      "server/attention-signals.test.ts",
+      "server/signals-store.test.ts",
+      "shared/protocol.ts",
+      "server/link-delivery.test.ts",
+      "server/test-wait.ts",
+      "server/app.ts"
+    ],
+    "requires": [
+      "§app.decisions/interface",
+      "§app.decisions/privacy",
+      "§app.overseer/seen"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T14:32Z",
+      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+    }
+  },
+  "§app.decisions/backfill": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/tags-backfill.ts",
+      "server/session-tags.ts",
+      "server/tags-backfill.test.ts",
+      "server/test-wait.ts"
+    ],
+    "requires": [
+      "§app.decisions/session-tags"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T14:32Z",
+      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+    }
+  },
+  "§app.decisions/call-ledger": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/decide-runtime.ts",
+      "server/decide-runtime.test.ts"
+    ],
+    "requires": [
+      "§app.decisions/providers"
+    ]
+  },
+  "§app.decisions/interface": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/decide.ts",
+      "server/decide.test.ts",
+      "server/decide-fake.ts"
+    ],
+    "requires": []
+  },
+  "§app.decisions/key": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/decide-secret.ts",
+      "server/decide-routes.ts",
+      "server/overseer-redact.ts"
+    ],
+    "requires": []
+  },
+  "§app.decisions/merge-followup": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/merge-followup.ts",
+      "server/merge-readiness.test.ts",
+      "server/merge-readiness.integration.test.ts",
+      "server/decide.ts",
+      "server/index.ts",
+      "server/app.ts"
+    ],
+    "requires": [
+      "§app.decisions/interface",
+      "§app.decisions/privacy",
+      "§chat.worktrees/merge-card"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T14:32Z",
+      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+    }
+  },
+  "§app.decisions/privacy": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/decide-settings.ts",
+      "server/decide-runtime.ts",
+      "server/attention-signals.ts",
+      "server/session-tags.ts",
+      "server/overseer-redact.ts",
+      "server/decide-settings.test.ts",
+      "server/overseer-redact.test.ts",
+      "server/search-tools-fake.ts",
+      "server/reconcile.ts",
+      "shared/decisions.ts"
+    ],
+    "requires": [
+      "§app.decisions/providers"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T14:32Z",
+      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+    }
+  },
+  "§app.decisions/providers": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/decide-jev.ts",
+      "server/decide-llm.ts",
+      "server/decide-chain.ts",
+      "server/decide-runtime.ts",
+      "server/decide-chain.test.ts",
+      "server/decide-jev.test.ts",
+      "server/decide-llm.test.ts",
+      "server/memory/settings.test.ts"
+    ],
+    "requires": [
+      "§app.decisions/interface",
+      "§app.settings-dialog/models"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T14:32Z",
+      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+    }
+  },
+  "§app.decisions/push": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/ws.ts",
+      "server/session-feed.ts",
+      "src/lib/session-feed.ts",
+      "src/components/Sidebar.tsx",
+      "server/session-feed.test.ts",
+      "src/lib/summary-diff.ts",
+      "src/lib/summary-diff.test.ts",
+      "shared/protocol.ts",
+      "src/lib/signals.ts",
+      "src/lib/signals.test.ts",
+      "server/events.ts",
+      "server/index.ts",
+      "server/session-feed-watch.ts",
+      "server/session-feed-watch.test.ts",
+      "server/session-feed.integration.test.ts",
+      "server/list-generation.ts",
+      "server/merge-readiness.ts",
+      "server/overseer.ts",
+      "server/events.test.ts",
+      "src/App.tsx",
+      "src/lib/poll.ts",
+      "src/lib/session-feed.browser.test.ts",
+      "server/chat-handle-remote.ts",
+      "server/worktrees.ts",
+      "server/merge-readiness.test.ts"
+    ],
+    "requires": [
+      "§app.decisions/attention-signals",
+      "§app.decisions/session-tags"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T20:31Z",
+      "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#76a2e465"
+    }
+  },
+  "§app.decisions/session-tags": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/session-tags.ts",
+      "server/sessions-index.ts",
+      "server/session-tags.test.ts"
+    ],
+    "requires": [
+      "§app.decisions/interface",
+      "§app.decisions/privacy"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T14:32Z",
+      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+    }
+  },
+  "§app.decisions/team-stall": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/attention-signals.ts",
+      "server/signals-store.ts",
+      "server/attention.ts",
+      "server/overseer.ts",
+      "server/attention-signals.test.ts",
+      "server/attention.test.ts"
+    ],
+    "requires": [
+      "§app.decisions/attention-signals",
+      "§app.overseer/attention-digest"
+    ]
+  },
+  "§app.decisions/worker-report": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/worker-checks.ts",
+      "server/worker-checks.test.ts",
+      "src/lib/worker-checks.ts",
+      "src/lib/worker-checks.test.ts"
+    ],
+    "requires": [
+      "§app.decisions/interface",
+      "§app.decisions/privacy",
+      "§app.decisions/attention-signals",
+      "§app.subagents-pane/worker-rows"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T14:32Z",
+      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+    }
+  },
+  "§app/decisions": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/protocol.ts",
+      "server/decide.ts"
+    ],
+    "notOwned": [
+      "§app.overseer/attention-digest",
+      "§app.overseer/seen",
+      "§chat.alignment/session-mark"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T14:32Z",
+      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+    }
+  }
+}

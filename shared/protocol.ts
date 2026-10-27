@@ -3671,13 +3671,14 @@ export interface SovaConfirmDetails {
 }
 
 /** One thing a confirm card is about. A session row: its folder's short name (`project`), last
-    activity (ISO), a one-line summary when it has one, and how many subagents were working.
-    `note`: the Overseer's own words on what the item is and why the card acts on it (≤ 2 short
+    activity (ISO), a one-line summary when it has one, and how many subagents were working; a land
+    row (the global Overseer's only, §app.overseer/card-land) also the branch Ready to land and its
+    full head sha when the card was raised, which its Go lands at. `note`: the Overseer's own words on what the item is and why the card acts on it (≤ 2 short
     sentences, `CONFIRM_NOTE_MAX` characters). Every kind may also carry the row fields of
     `SovaConfirmRow` (a section heading, what Go sends). */
 export type SovaConfirmItem = SovaConfirmRow &
   (
-  | { kind: "session"; id: string; title: string; project?: string; lastActiveAt?: string; summary?: string; workers?: number; note?: string }
+  | { kind: "session"; id: string; title: string; project?: string; lastActiveAt?: string; summary?: string; workers?: number; land?: { branch: string; head: string }; note?: string }
   | { kind: "idea"; id: string; title: string; note?: string }
   | { kind: "todo"; id: string; text: string; note?: string }
   /** A project registered on this host: its name, and the org's when one places it (§app.overseer/org-tools). */

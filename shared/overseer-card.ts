@@ -468,6 +468,8 @@ function createCard(id: string, o: Record<string, unknown>, env: CardEnv): Overs
     const item: CardItem = { ...(rest as SovaConfirmItem), n: i + 1 };
     if (own !== undefined) item.choices = choiceList(own, `${where}: ${it.id}'s choices`);
     const row = choicesOf({ choices }, item);
+    // Go on a land row is its first choice (§app.overseer/card-land): one it must have.
+    if (item.kind === "session" && item.land) need(row !== undefined, `${where}: ${it.id} is a land row, so it needs choices (its own or the card's), its first one Go`);
     if (def !== undefined) {
       need(row !== undefined, `${where}: ${it.id} has a default, but neither it nor the card has choices`);
       need(row!.some((_, k) => cardLetter(k) === def), `${where}: ${it.id}'s default "${def}" is not one of its choice letters (${row!.map((_, k) => `${cardLetter(k)}. ${row![k]!.label}`).join(", ")})`);
@@ -778,6 +780,11 @@ export function normalizeCardItem(v: unknown): CardItem | undefined {
         ...(count(v.workers) && v.workers > 0 ? { workers: v.workers } : {}),
         ...note,
       };
+      if (v.land !== undefined) {
+        const l = v.land;
+        if (!isRecord(l) || !nonEmpty(l.branch) || !str(l.head) || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(l.head)) return undefined;
+        base.land = { branch: l.branch, head: l.head };
+      }
       break;
     }
     case "idea":
@@ -1071,7 +1078,8 @@ export function cardLines(card: OverseerCard, line: string): string[] {
     const done = it.decided ? ` — decided: ${decisionText(card, it, it.decided)}` : "";
     const section = it.section !== undefined ? ` [section ${it.section}]` : "";
     const sends = it.sends !== undefined ? ` [Go sends: ${JSON.stringify(it.sends)}]` : "";
-    out.push(`  ${it.n}. ${itemText(it)}${it.note ? ` — ${it.note}` : ""}${section}${sends}${own}${def}${done}`);
+    const land = it.kind === "session" && it.land ? ` [land ${it.land.branch} at ${it.land.head.slice(0, 7)}: Go lands it with sova_land]` : "";
+    out.push(`  ${it.n}. ${itemText(it)}${it.note ? ` — ${it.note}` : ""}${section}${land}${sends}${own}${def}${done}`);
   }
   if (card.recommendation) {
     const opt = card.recommendation.option ? `${card.recommendation.option} — ${optionByLetter(card, card.recommendation.option)?.label ?? ""}: ` : "";

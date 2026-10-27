@@ -153,6 +153,14 @@ export interface OverseerToolHost extends IdeaToolHost {
   /** The items of the confirm card whose click opened this turn (the user's own run, not typed);
       null when no card click opened it (§app.overseer/org-people-facing). */
   confirmed(): SovaConfirmItem[] | null;
+  /** The same rows, each with the letter the click picked for it (`pick`, absent for a card-level option click):
+      what tells Go (a row's first choice, "a") from Not Yet on a land row (§app.overseer/card-land). */
+  confirmedRows?(): (SovaConfirmItem & { pick?: string })[] | null;
+  /** The branches of worktrees a session owns that are Ready to land now, each with its head sha (a land row's snapshot). */
+  readyToLand?(s: SessionSummary): Promise<{ branch: string; head: string }[]>;
+  /** Record the user's go-ahead from Go on a land row, only while that branch is still at that head and Ready to land
+      (server/overseer-land.ts recordCardGoAhead), waking the captain; the refusal sentence otherwise. */
+  landAtCommit?(input: CardLandInput): Promise<CardLandResult>;
   /** The live approval for later or standing rule that covers `tool` on every one of `sessions`
       (ids), or null (§app.overseer/approvals). Absent: none ever does. */
   permit?(tool: string, sessions: string[]): { id: string; label: string } | null;
@@ -378,6 +386,13 @@ export const CARD_REST_REFUSAL =
   "and tell the user how many rows you acted on, which limit stopped you, and that Apply on the card sends the rest (their next message renews the limit).";
 export const withCardRest = (refusal: string | null, cardTurn: () => boolean): string | null => (refusal && cardTurn() ? `${refusal} ${CARD_REST_REFUSAL}` : refusal);
 
+/** A land row Sova refused at Apply (§app.overseer/card-land): it stays undecided, and the reply says why. */
+export const LAND_REST_REFUSAL =
+  "Nothing was recorded for this row: leave it undecided (record with sova_card answer only the rows you acted on), and tell the user, naming the row, why it didn't land.";
+/** sova_land outside a turn a click on a card with that land row opened. */
+export const LAND_NO_CLICK_REFUSAL =
+  "Go on a Ready to land row lands only in the turn the user's click on that card opens, and only for the row it chose Go on: nothing was recorded. Typed words never land a branch here; ask with sova_card (a land row) and act in the turn its Apply opens.";
+
 /** The concurrency cap: refusal sentence, or null when another Overseer-started session may run. */
 export function concurrencyRefusal(running: number, caps: OverseerCaps): string | null {
   if (running < caps.concurrentSessions) return null;
@@ -542,6 +557,7 @@ const bool = (description: string) => ({ type: "boolean", description });
     check that a people-facing act's targets are on it (§app.overseer/org-people-facing). Read by a
     route only next to the sender mark (org-routes operatorBy). */
 import { OVERSEER_CARD_HEADER } from "./overseer-sender";
+import type { CardLandInput, CardLandResult } from "./overseer-land";
 export { OVERSEER_CARD_HEADER };
 export function cardHeader(items: readonly SovaConfirmItem[]): string {
   const ids = (kind: SovaConfirmItem["kind"]) => items.filter((i) => i.kind === kind).map((i) => i.id);
@@ -1650,6 +1666,28 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
       }),
     },
     {
+      name: "sova_land",
+      label: "Land",
+      description:
+        "Go on a Ready to land row of a card (an item with land): records the user's go-ahead to land that session's branch at exactly the commit the row shows, and wakes the merge captain, which checks and lands it. Only in the turn the user's click on that card opens, and only for a row the click chose Go on (its first choice); Not Yet records nothing, so never call it then. Refused, recording nothing, when the branch has a newer commit than the row shows or is no longer Ready to land: leave that row undecided and tell the user why. Never send a session \"land it\".",
+      promptSnippet: "land a branch at the commit a card's Ready to land row showed, on the user's Go",
+      parameters: obj({ session: str("The session id of the card's land row the user chose Go on.") }, ["session"]),
+      execute: act("sova_land", async (p) => {
+        const rows = host.confirmedRows?.() ?? null;
+        if (!rows || !host.landAtCommit) throw new Refusal(LAND_NO_CLICK_REFUSAL);
+        const id = sessionRef(p.session);
+        const row = rows.find((r): r is Extract<SovaConfirmItem, { kind: "session" }> & { pick?: string } => r.kind === "session" && r.id === id);
+        if (!row?.land) throw new Refusal(`${p.session} isn't a Ready to land row of the card whose click opened this turn: nothing was recorded. ${LAND_NO_CLICK_REFUSAL}`);
+        if (row.pick !== "a") throw new Refusal(`The user didn't choose Go on the ${row.land.branch} row (${row.pick ? `they chose ${row.pick}` : "the click chose no row"}): nothing was recorded, and nothing should be. Record their choice with sova_card.`);
+        const r = await host.landAtCommit({ session: row.id, branch: row.land.branch, head: row.land.head });
+        if (!r.ok) throw new Refusal(`${r.reason} ${LAND_REST_REFUSAL}`);
+        return {
+          content: text(`Recorded the user's go-ahead to land ${r.branch} at ${r.commit.slice(0, 7)} (Apply on the Overseer's card). The merge captain is woken: it checks the branch and lands it once its checks pass. Record the row with sova_card.`),
+          details: { landed: { branch: r.branch, commit: r.commit, session: r.session } },
+        };
+      }),
+    },
+    {
       name: "sova_group",
       label: "Groups",
       description:
@@ -1801,6 +1839,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         project: orgConfirmLookup.project,
         org: orgConfirmLookup.org,
         folder: orgConfirmLookup.folder,
+        ...(host.readyToLand ? { readyToLand: (s: SessionSummary) => host.readyToLand!(s) } : {}),
       },
       link: async (target) => (await navTarget(target)).href,
       wrap: (run) => act("sova_card", run, { unattended: true }),

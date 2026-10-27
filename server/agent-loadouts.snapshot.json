@@ -1,7 +1,7 @@
 {
   "families": {
     "overseer": {
-      "bytes": 85689,
+      "bytes": 87370,
       "tools": [
         {
           "name": "sova_attention",
@@ -566,6 +566,25 @@
           }
         },
         {
+          "name": "sova_land",
+          "label": "Land",
+          "description": "Go on a Ready to land row of a card (an item with land): records the user's go-ahead to land that session's branch at exactly the commit the row shows, and wakes the merge captain, which checks and lands it. Only in the turn the user's click on that card opens, and only for a row the click chose Go on (its first choice); Not Yet records nothing, so never call it then. Refused, recording nothing, when the branch has a newer commit than the row shows or is no longer Ready to land: leave that row undecided and tell the user why. Never send a session \"land it\".",
+          "promptSnippet": "land a branch at the commit a card's Ready to land row showed, on the user's Go",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "session": {
+                "type": "string",
+                "description": "The session id of the card's land row the user chose Go on."
+              }
+            },
+            "required": [
+              "session"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
           "name": "sova_group",
           "label": "Groups",
           "description": "Session groups (workspaces): create (name), rename (group, name), delete (group; sessions stay), add (group, sessions — moves them from any other group), remove (sessions — out of their group).",
@@ -727,7 +746,7 @@
         {
           "name": "sova_card",
           "label": "Card",
-          "description": "Ask the user with a card under your reply, and record their answer. Each card gets an id c_N; its items are numbered 1..N and its answer options lettered a, b, c…, so \"c_4 b\" is option b and \"c_4 2a\" is item 2 taking choice a. A call applies its ops to ONE card atomically (pass card to change an existing one); it never ends your turn. Write your reply first (what you found, and why you ask), then create the card, and name it by its id as a link (\"see [c_4](#c_4)\": it jumps to the card), never \"the card above\"; never add a typed fallback (\"You can also type…\") to a card. A card about specific things (archive, tick, send, …) lists every one of them in items, each with a note: what it is, then why the action fits it, in at most 2 short sentences; an idea or todo a button also acts on says the effect (\"… Ticking marks it done.\"). Every option's reply says exactly what it does to which items. When each item wants its own answer, give choices (and each item a default): an item whose actions differ gives its own choices, lettered for its row only, and the card needs no answer option, since its Apply sends every row's pick at once. A card that sorts its rows gives each item a section (a short heading, e.g. \"Ready to land\", \"Done\", \"Worth Keeping\"): rows show under their headings, numbered top to bottom. A row whose Go (its first choice) sends a session a message gives sends, the exact words, shown as \"Go sends: …\" before the user applies; send exactly those words. A card raised by a request to look and sort (a quick action) is the whole of that turn: act on none of its rows until the user's Apply opens the turn that does. A card stays open until you record it: when the user answers (a click arrives as \"c_4 b: …\" or \"c_4: 1a Archive, 2b Keep\", each letter its own row's; typed text may name the card, an item number or an option letter), do the act it approves first, then call answer with their words (option, or items) or accept for \"your recommendation\" in the same run, only once the act succeeded: a refused act leaves the card open so the user can click again. If an Apply's acts stop partway (a limit, a refusal), record only the rows you acted on and say that Apply on the card sends the rest. Replace a card that changed (create with replaces), drop one that no longer applies. Link options (link) open a session, a page, an org, project or person page or an https URL without a turn; use them instead of asking to navigate.",
+          "description": "Ask the user with a card under your reply, and record their answer. Each card gets an id c_N; its items are numbered 1..N and its answer options lettered a, b, c…, so \"c_4 b\" is option b and \"c_4 2a\" is item 2 taking choice a. A call applies its ops to ONE card atomically (pass card to change an existing one); it never ends your turn. Write your reply first (what you found, and why you ask), then create the card, and name it by its id as a link (\"see [c_4](#c_4)\": it jumps to the card), never \"the card above\"; never add a typed fallback (\"You can also type…\") to a card. A card about specific things (archive, tick, send, …) lists every one of them in items, each with a note: what it is, then why the action fits it, in at most 2 short sentences; an idea or todo a button also acts on says the effect (\"… Ticking marks it done.\"). Every option's reply says exactly what it does to which items. When each item wants its own answer, give choices (and each item a default): an item whose actions differ gives its own choices, lettered for its row only, and the card needs no answer option, since its Apply sends every row's pick at once. A card that sorts its rows gives each item a section (a short heading, e.g. \"Ready to land\", \"Done\", \"Worth Keeping\"): rows show under their headings, numbered top to bottom. A row whose Go (its first choice) sends a session a message gives sends, the exact words, shown as \"Go sends: …\" before the user applies; send exactly those words. A card raised by a request to look and sort (a quick action) is the whole of that turn: act on none of its rows until the user's Apply opens the turn that does. A session row with land (true, or the branch when it has more than one Ready to land) is a Ready to land row: the card shows its branch and commit, and Go (its first choice) lands that commit through sova_land in the turn the Apply opens, never by sending the session words. A card stays open until you record it: when the user answers (a click arrives as \"c_4 b: …\" or \"c_4: 1a Archive, 2b Keep\", each letter its own row's; typed text may name the card, an item number or an option letter), do the act it approves first, then call answer with their words (option, or items) or accept for \"your recommendation\" in the same run, only once the act succeeded: a refused act leaves the card open so the user can click again. If an Apply's acts stop partway (a limit, a refusal), record only the rows you acted on and say that Apply on the card sends the rest. Replace a card that changed (create with replaces), drop one that no longer applies. Link options (link) open a session, a page, an org, project or person page or an https URL without a turn; use them instead of asking to navigate.",
           "promptSnippet": "ask the user with a card (c_N; items 1..N, options a, b…), and record their answer on it",
           "parameters": {
             "type": "object",
@@ -938,6 +957,17 @@
                                       "sends": {
                                         "type": "string",
                                         "description": "The exact message its Go (first choice) sends this session, at most 600 characters; shown on the row."
+                                      },
+                                      "land": {
+                                        "anyOf": [
+                                          {
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "type": "string"
+                                          }
+                                        ],
+                                        "description": "A Ready to land row: true takes the branch of the worktree this session owns that is Ready to land, or name it (\"feat/x\") when it has more than one. The card snapshots that branch and its head commit and shows them; the row needs choices, its first one Go. In the turn the Apply opens, call sova_land on it when Go was picked: it lands at that commit, never a newer one. Never send the session \"land it\"."
                                       }
                                     },
                                     "required": [
@@ -947,7 +977,7 @@
                                   }
                                 ]
                               },
-                              "description": "Session ids (or sova://s/<id> links). Each entry is { id, note, default?, choices?, section?, sends? } (a bare id still works)."
+                              "description": "Session ids (or sova://s/<id> links). Each entry is { id, note, default?, choices?, section?, sends?, land? } (a bare id still works)."
                             },
                             "ideas": {
                               "type": "array",

@@ -576,6 +576,14 @@ function ConfirmItemRow(props: { item: SovaConfirmItem; since?: string; children
         <Show when={meta()}>
           <span class="overseer-confirm-item-meta">{meta()}</span>
         </Show>
+        {/* A land row (§app.overseer/card-land): the branch and commit its Go lands, as they were when the card was raised. */}
+        <Show when={it.land}>
+          {(l) => (
+            <span class="overseer-confirm-item-meta" title={`Go lands ${l().branch} at ${l().head}`}>
+              <span class="text-mono">{l().branch}</span> at <span class="text-mono">{l().head.slice(0, 7)}</span>
+            </span>
+          )}
+        </Show>
         <Show when={it.workers}>
           {(n) => (
             <span class="chip chip-warn">

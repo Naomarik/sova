@@ -10540,6 +10540,7 @@
       "code": [
         "server/merge-readiness.ts",
         "server/ready-to-land.ts",
+        "server/ready-to-land.test.ts",
         "server/merge-readiness.test.ts",
         "server/spec-drafts-state.ts",
         "shared/protocol.ts",
@@ -10551,9 +10552,9 @@
         "§app.decisions/attention-signals"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-26T06:39Z",
-        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#ded2d92c"
+        "by": "naomarik",
+        "at": "2026-10-26T22:25Z",
+        "source": "pi-session:01a17a2d-9525-7412-baca-957c5a5a99a8#4f2bfb37"
       }
     },
     "§chat.worktrees/sandbox": {

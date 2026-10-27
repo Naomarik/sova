@@ -42,7 +42,7 @@ switching.
 
 ## §chat.mode-menu/trigger — Trigger
 
-The trigger is a ghost button that names this chat's modes and opens the menu.
+The trigger is a ghost button that shows this chat's modes as icons and opens the menu.
 
 In chat sessions it sits in the composer foot (§chat/composer), at the right end: the foot reads the model
 indicator, the disabled reason, then this. It's in reach of the message it affects, next to the
@@ -58,18 +58,25 @@ this slot (§app.overseer/quick-actions).
 ```html
 <button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu"
         aria-expanded="false" aria-controls="mode-menu"
-        aria-label="Mode: delegate · align" title="Mode: delegate · align">
-  <span class="icon icon-sm" style="--icon: url(/icons/sliders.svg)" aria-hidden="true"></span>
-  <span class="mode-trigger-label">delegate</span>
-  <span class="mode-trigger-label mode-trigger-minor">· align</span>   <!-- only with a minor on -->
-  <span class="icon icon-sm" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span>
+        aria-label="Mode: delegate · align · deploy-notes" title="Mode: delegate · align · deploy-notes">
+  <span class="icon icon-sm" style="--icon: url(/icons/mode-delegate.svg)" aria-hidden="true"></span>  <!-- the major mode; normal: sliders -->
+  <span class="icon icon-sm" style="--icon: url(/icons/mode-align.svg)" aria-hidden="true"></span>     <!-- one per minor mode on -->
+  <span class="mode-letter" aria-hidden="true">D</span>                                                 <!-- one per project mode on -->
+  <span class="mode-trigger-label" aria-hidden="true">delegate · align · deploy-notes</span>         <!-- in the foot: only at a composer 620px or wider -->
+  <span class="icon icon-sm" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span> <!-- kept: it opens a menu -->
 </button>
 ```
 
-- **Label.** This chat's major mode, then each minor mode on, joined with " · ", in mono. It has
-  no fixed cap: whatever fits reads in full, with the full text in `title` either way. Only real
-  pressure in the foot shrinks it, and it shares that squeeze with the model indicator's 24ch cap
-  beside it. The minors are their own span, so they ellipsize first and the major mode last.
+- **Icons.** One icon for the major mode (normal adds none of its own: the sliders icon stands for
+  it), then one icon for each built-in minor mode on (align, spec, vis, codemode, memory), then, for
+  each project mode on (§chat.mode-menu/project-modes), its id's first letter or digit, upper
+  case, in a rounded square drawn like an icon. The chevron-down stays last, at every width: the
+  button opens a menu. Until this chat's mode is known it shows the sliders icon alone. The menu's
+  rows carry the same icons beside their names, so the menu is the legend (§chat.mode-menu/menu).
+- **Label.** This chat's major mode, then each minor mode on, then each project mode on, joined
+  with " · ", in mono. In the composer foot it shows beside the icons only where the composer is
+  at least 620px wide; the full text is in `title` and the accessible name either way. The minors ellipsize first and the major mode last, and the
+  words go before any icon does.
   Until this chat's mode is known it reads just "Mode" and no row is checked: the default is not
   this chat's state. It is known once the chat's `mode` message arrives, and before that from the
   session list's row for a chat the server holds, or from what this tab last saw of the chat
@@ -77,10 +84,10 @@ this slot (§app.overseer/quick-actions).
   does; a mode known only from what this tab last saw makes no promise about when a switch applies.
 - **Name.** `aria-label` repeats the label with "Mode: " in front, so it survives when the label
   hides. A pending switch adds ", applies after this turn".
-- **Every width.** It never hides and never goes icon-only: the label is the fact. It narrows the
-  way the model id beside it does — at 320px the minor modes shrink to an ellipsis first, then the
-  major mode, and the row never grows wider than the composer. The icons, the padding and the
-  `title` stay. In the foot it takes the model indicator's scale: a `--control-sm` row with a
+- **Every width.** It never hides, and it is icon-first: the icons are the fact, and the words
+  are extra where there's room. Under a 620px composer, at 320px too, it is the icons and the
+  chevron alone and the row never grows wider than the composer. The icons, the padding, the accessible name and the desktop `title` stay. In the
+  foot it takes the model indicator's scale: a `--control-sm` row with a
   `--tap-min` target stretched over it by a `::after`, mirrored to the right edge.
 
 ## §chat.mode-menu/menu — Menu
@@ -125,7 +132,7 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
     </div>
     <div class="model-menu-group" role="group" aria-labelledby="mode-group-subagents">
       <div class="list-group-label" id="mode-group-subagents">Subagents</div>
-      <div class="popover-item" role="menuitem" aria-haspopup="true" tabindex="-1">…worker… Subagents · My setup …chevron-right…</div>
+      <div class="popover-item" role="menuitem" aria-haspopup="true" tabindex="-1">…subagents… Subagents · My setup …chevron-right…</div>
     </div>
   </div>
   <div class="mode-menu-foot">
@@ -136,6 +143,10 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
 </div>
 ```
 
+- **Row icons.** Each mode row shows, beside its name, the icon the trigger uses for it: the
+  major modes theirs (normal the sliders icon), each built-in minor mode its own, and each project
+  mode its letter in a rounded square. The menu doubles as the trigger's legend. The Subagents row
+  leads with the subagents icon, branching nodes.
 - **This project's modes.** A chat whose checkout has project modes (§chat.mode-menu/project-modes)
   shows them after the minor modes and before Subagents, in their own group labelled "This
   project · {name}" (the checkout's name; "This project" when there is none), one
@@ -774,8 +785,8 @@ What the trigger and the menu show in each state, from a mode not known yet to a
 
 | State | Shows |
 |---|---|
-| Idle | Trigger label, and this chat's rows checked |
-| Mode not known yet (no `mode` message, nothing in the list's row, nothing this tab saw) | Trigger reads "Mode", nothing checked (the default isn't this chat's state) |
+| Idle | Trigger icons and label, and this chat's rows checked |
+| Mode not known yet (no `mode` message, nothing in the list's row, nothing this tab saw) | Trigger shows the sliders icon alone and its label reads "Mode", nothing checked (the default isn't this chat's state) |
 | Known before the `mode` message (§chat.composer/known-on-switch) | Trigger label and rows checked as Idle; from the list's row, the name and banners follow how it says a switch applies; from what this tab last saw, no "applies after this turn" in the name and neither switch banner until the message says |
 | Saving | Rows `aria-disabled` (the cursor is `progress`) |
 | Mid-turn switch | Info banner "Applies after this turn." (trigger name adds it too) |
@@ -801,7 +812,8 @@ What the trigger and the menu show in each state, from a mode not known yet to a
 The tokens the trigger, the menu's rows and its foot are drawn with.
 
 Trigger: `--font-mono`, `--fs-mono`, `--color-ink-2`, sunken fill while open, icons
-`--color-ink-muted`. Rows (`.popover-item`, §design/menu-rows): `--control-md` min height, `--space-3` at the
+`--color-ink-muted`. A project mode's letter square is drawn like an icon: 16px, a `--stroke-icon`
+border in its ink, `--r-xs` corners, the letter 10px semibold in the body face, `--color-ink-muted`. Rows (`.popover-item`, §design/menu-rows): `--control-md` min height, `--space-3` at the
 sides and `--space-2` above and below a mode row, id in `--font-mono` `--color-ink`, description `--fs-caption` `--color-ink-muted`,
 checked `--color-accent-tint`, focus `--focus-ring` inset. A mode row's check sits on its id's line, the
 first of its two; the one-line Subagents row's icon, label and chevron sit on the row's centre line. Foot: `--fs-caption`
@@ -815,6 +827,10 @@ why.
 - **A segmented control in the composer.** It reads as a per-message option, not a per-chat
   one, and every mode as a segment costs composer width at 320px. The menu trigger that sits in
   the foot now is one control whose label shrinks, so it fits.
+- **A trigger that never goes icon-only.** It used to name the modes in words at every width,
+  because the label was the fact. Reversed on purpose (al_1): the foot now shows icons for the
+  modes, with the menu's rows as their legend and the full wording kept as the accessible name and
+  desktop hover text, and words come back beside the icons at a composer 620px or wider.
 - **The session head.** Where the trigger used to sit, after the context gauge. It was the head's
   one menu trigger, went icon-only under 520px and vanished under 360px, and it was a screen away
   from the composer whose next message it changes.

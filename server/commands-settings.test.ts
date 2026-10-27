@@ -64,7 +64,16 @@ describe("the area", () => {
     const writes = OTHER_ENTRIES.filter((c) => c.id.startsWith("settings.") && c.effect === "changes").map((c) => c.id).sort();
     assert.deepEqual(writes, ["settings.align.set", "settings.assistant-default.set"]);
     const forbidden = /\/api\/(profiles|schedules|claude|auth|settings\/decisions|settings\/claude-status)(\/|$)|approve|login/;
-    for (const c of COMMANDS) assert.doesNotMatch(c.route.path, forbidden, c.id);
+    // Which login a project or an org's projects start on (§app.claude-logins/project-login): they name a login
+    // id and never touch a credential or an account; each is named here, so no other path slips through.
+    const ASSIGNS_A_LOGIN = new Set(["project.claude-login.get", "project.claude-login.set", "org.claude-login.get", "org.claude-login.set"]);
+    for (const c of COMMANDS) {
+      if (ASSIGNS_A_LOGIN.has(c.id)) {
+        assert.match(c.route.path, /^\/api\/(projects\/:pid|orgs\/:id)\/claude-login$/, c.id);
+        continue;
+      }
+      assert.doesNotMatch(c.route.path, forbidden, c.id);
+    }
   });
 });
 

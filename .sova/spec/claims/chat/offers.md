@@ -282,10 +282,13 @@ agent never writes one, and no chat may supply rows for an offer with landing bu
   queue that isn't a captain's or older than a day) adds no row. A branch with no owner chat has
   no row and lands on the user's typed OK, as before.
 - **One card, updated in place.** While the captain's card has an open row, a newly queued branch
-  is added to it; the card counts as the captain chat's one open card. It holds at most 10 rows;
-  further queued branches wait, and the card says in one line how many more wait ("2 more
-  branches wait for this card to be answered."). Once every row is answered the card closes, and
-  the next queued branch (the waiting ones first) opens a new card.
+  is added to it; the card counts as the captain chat's one open card. It holds at most 10 open
+  rows (answered rows leave room); further queued branches wait, behind any already waiting, and
+  the card says in one line how many more wait ("2 more branches wait for this card to be
+  answered."). Once every row is answered the card closes, and the next queued branch (the
+  waiting ones first) opens a new card. A branch queued while another card is open in the
+  captain's chat waits too, and its card opens as soon as that card is answered, withdrawn,
+  replaced or set to Not Now.
 - **A row.** Its branch, its commit shortened to 7 characters, the owner chat's title as its own
   link to that chat (`#/sid/<id>`), and, when spec drafts are left, a line naming them. Its
   buttons are those the owner's card shows for that branch (Land It, or Merge Without Specs… with

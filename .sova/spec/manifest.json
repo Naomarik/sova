@@ -2070,7 +2070,12 @@
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css"
-      ]
+      ],
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
+      }
     },
     "§app.session-list/anatomy": {
       "kind": "behavior",
@@ -2154,15 +2159,15 @@
         "server/sidebar-scroll.integration.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-25T22:30Z",
-        "source": "pi-session:777149c4-3887-4782-8c20-99e67344e685#fcb0ec8f"
+        "by": "omar",
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
       }
     },
     "§app.session-list/groups": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/design/base.css",
         "src/components/Groups.tsx",
@@ -2173,12 +2178,25 @@
         "src/lib/group-open.ts",
         "src/lib/group-open.test.ts",
         "src/lib/session-groups.ts",
-        "src/lib/session-groups.test.ts"
+        "src/lib/session-groups.test.ts",
+        "src/lib/regions.ts",
+        "src/lib/regions.test.ts",
+        "src/lib/session-order.ts",
+        "server/project-sessions.ts",
+        "server/project-sessions.test.ts",
+        "server/session-groups.ts",
+        "server/session-feed.ts",
+        "src/lib/session-feed.ts",
+        "shared/protocol.ts",
+        "src/app.css",
+        "server/session-feed.integration.test.ts",
+        "server/sidebar-guide-lines.integration.test.ts",
+        "src/App.tsx"
       ],
       "agreed": {
         "by": "omar",
-        "at": "2026-10-23T23:10Z",
-        "source": "pi-session:3f2248f5-f2ff-4447-a7d5-c7b38e115af6#b8fd14ae"
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
       }
     },
     "§app.session-list/guide-lines": {
@@ -2204,8 +2222,8 @@
       ],
       "agreed": {
         "by": "omar",
-        "at": "2026-10-23T23:10Z",
-        "source": "pi-session:3f2248f5-f2ff-4447-a7d5-c7b38e115af6#b8fd14ae"
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
       }
     },
     "§app.session-list/recent": {
@@ -2221,8 +2239,9 @@
         "src/lib/home-sessions.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-12T12:35Z"
+        "by": "omar",
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
       }
     },
     "§app.session-list/regions-top-and-archive": {
@@ -2262,8 +2281,8 @@
       ],
       "agreed": {
         "by": "omar",
-        "at": "2026-10-26T22:15Z",
-        "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
       }
     },
     "§app.session-list/search": {
@@ -5464,7 +5483,8 @@
         "src/lib/readiness.ts",
         "src/lib/needs-you.ts",
         "src/lib/signals.ts",
-        "src/lib/overseer-menu.ts"
+        "src/lib/overseer-menu.ts",
+        "src/lib/regions.ts"
       ]
     },
     "§design.copy-deck/slash-commands": {
@@ -5648,7 +5668,17 @@
     "§workspace.groups/data": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/App.tsx",
+        "src/lib/regions.ts",
+        "src/lib/regions.test.ts"
+      ],
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
+      }
     },
     "§workspace.groups/decisions": {
       "kind": "note",
@@ -8131,16 +8161,17 @@
         "src/lib/session-feed.browser.test.ts",
         "server/chat-handle-remote.ts",
         "server/worktrees.ts",
-        "server/merge-readiness.test.ts"
+        "server/merge-readiness.test.ts",
+        "server/session-groups.ts"
       ],
       "requires": [
         "§app.decisions/attention-signals",
         "§app.decisions/session-tags"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T20:31Z",
-        "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#76a2e465"
+        "by": "omar",
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
       }
     },
     "§app.decisions/session-tags": {
@@ -10908,8 +10939,9 @@
         "server/worker-sessions.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-12T12:35Z"
+        "by": "omar",
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
       }
     },
     "§app.session-list/organizations": {
@@ -16670,7 +16702,12 @@
         "src/lib/optimistic-archive.test.ts",
         "src/lib/archive-block.ts",
         "src/lib/archive-block.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
+      }
     },
     "§chat.markdown/vis-wireframe-items": {
       "kind": "behavior",
@@ -24232,8 +24269,9 @@
         "§app.projects/seam"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-17T18:00Z"
+        "by": "omar",
+        "at": "2026-10-27T08:49Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
       }
     },
     "§app.server-runtime/pi-workers": {

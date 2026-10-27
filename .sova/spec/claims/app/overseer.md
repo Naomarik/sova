@@ -677,6 +677,8 @@ jumps to it (§app.overseer/links).
   the branch; a new conversation starts at `c_1`), and never another. Its items are numbered 1..N in
   display order when it is created and never renumbered; its answer options are lettered a, b, c…
   in order, and so are each row's choices, per row: "a" is the first choice of that row's own list.
+  On a card with sections the display order is the sections' (§app.overseer/card-sections), so
+  the numbers run once through the card, top to bottom, across its headings.
   "c_4 b" is card c_4's option b; "c_4 2a" is its item 2 taking its choice a. Link options carry no
   letter.
 - **The tool never ends the turn.** A call applies its ops to one card, atomically: if any op is
@@ -694,14 +696,15 @@ jumps to it (§app.overseer/links).
   waiting for the user.
 - **States: open, answered, superseded, dropped; only the model's ops move them.** A card-level
   answer, or every item decided, makes it answered; a partial per-item answer keeps it open with
-  those items decided. `create` with `replaces: "c_3"` marks c_3 superseded by the new card in the
+  those items decided, and the card reads partly applied (§app.overseer/card-partial-apply). `create` with `replaces: "c_3"` marks c_3 superseded by the new card in the
   same result. `drop` closes a card that no longer applies, with its reason; `reopen` makes an
   answered or dropped card open again. A later message, typed or clicked, never changes a card by
   itself: a card stays open until the model records it.
 - **A hidden note every turn.** Every run a user message starts carries a hidden note (never in the
   thread, never the system prompt) listing each open card: id, title, lettered options, numbered
-  items with their ids and names, each row's choices (its own list on the row, the card's shared
-  list once), recommendation and any item already decided, and a line
+  items with their ids and names, each row's section and what its Go sends when it has them, each
+  row's choices (its own list on the row, the card's shared list once), a Ready to land row's
+  branch and commit, recommendation and any item already decided, and a line
   telling the model to record answers with `answer` or `accept` and to drop or replace a card that
   no longer applies. An open card listing a session whose file changed after the card was raised
   carries a line "may be stale: <session id> active since <time>" for each such session, so the
@@ -713,7 +716,9 @@ jumps to it (§app.overseer/links).
   to (§app.overseer/tools). Typed replies ("2", "archive a and c, keep b") are mapped by the model,
   using the note; the server parses none.
 - **Items.** `items` is `{sessions?, ideas?, todos?, people?, projects?, orgs?, folders?}`, each a
-  list whose entries are an id or `{id, note?, default?, choices?}`; a person or a project also names
+  list whose entries are an id or `{id, note?, default?, choices?, section?, sends?}` (`section`
+  and `sends`, §app.overseer/card-sections), a session's in the global Overseer also `land?`
+  (§app.overseer/card-land); a person or a project also names
   its org, `{org, id, note?, default?, choices?}`, by id or exact name, as the org tools take them
   (§app.overseer/org-tools). The global Overseer's cards also take orgs attached here (`{id, note?}`,
   by id or exact name) and folders to add as projects (`{root, org?, name?, note?}`: an absolute
@@ -737,16 +742,20 @@ jumps to it (§app.overseer/links).
   in it; a person row their name, status and org; a project row its name and org (none for a
   standalone project); an org row its name; a folder row its checkout root, the folder as given when
   that differs, its org (or none: standalone) and the name it would get when one was given; every row
-  carries its note when it was given one. Never a contact or a link (§app.overseer/org-projection).
+  carries its note when it was given one, and its section and Go-sends line when it was given them.
+  In the global Overseer, a session row the Overseer marks as a land row (`land`) also carries the
+  branch of its worktree that is Ready to land (§chat.worktrees/ready-to-land) and its head commit as
+  they were when the card was raised (§app.overseer/card-land). Never a contact or a link (§app.overseer/org-projection).
 - **Per-item choices.** The card's `choices` (2 to 4 labels, lettered) apply to every item of any
   kind that has none of its own; an item's own `choices` (2 to 4 labels, each distinct) replace them
   for that row only, so one card can offer "Clean Up & Archive / Archive Only / Keep" on one row and
   "Archive / Keep" on the next. An item's `default` is a letter of its own row's list: the choice it
   starts on and the recommendation for it; a default with no list for its row, or a letter past
-  that list, refuses the card. Each item row with choices shows a segmented control of its own
-  row's labels, set to its default, or to its decided choice once one is recorded; **Apply**, the
-  card's primary button, sends one message for the items that have a choice, each with its row's
-  letter and label, "c_4: 1a Clean Up & Archive, 5b Keep". A stored card from before per-row choices
+  that list, refuses the card. Each undecided item row with choices shows a segmented control of
+  its own row's labels, set to its default, or to the choice the user last applied it with; a
+  decided row shows its choice as done (§app.overseer/card-partial-apply). **Apply**, the card's
+  primary button, sends one message for the undecided items that have a choice, each with its
+  row's letter and label, "c_4: 1a Clean Up & Archive, 5b Keep". A stored card from before per-row choices
   (card-level `choices` only) reads and renders unchanged, and an answer option it carries stays a
   live button.
 - **Link options.** An option with `link` (a session, a group, a page, a Settings tab, an org, a
@@ -763,7 +772,8 @@ jumps to it (§app.overseer/links).
   call, that one line, never live buttons, so only its newest snapshot takes a click.
   - The items sit between the detail and the buttons, one compact row each, numbered: ideas, then
     todos, then orgs, then folders, then projects, then people, then copies, then leftover processes
-    (§app.overseer/copies), then sessions. An org row is an in-app
+    (§app.overseer/copies), then sessions; on a card with sections, under their headings in that
+    order within each (§app.overseer/card-sections). An org row is an in-app
     link to its page, reading its name. A folder row reads its checkout root (monospace), then its name
     when one was given, then "into {org}" or "standalone", and "from {folder}" when it was normalized.
     A project row is an in-app link to its project page,
@@ -776,12 +786,15 @@ jumps to it (§app.overseer/links).
     subagents. On an open card, a session row whose session the session list shows active after
     the card was raised also carries a "Changed since asked" chip (its time on hover). An idea row is its § id and title as plain text, never a link (§app.overseer/ideas).
     A todo row is its text.
-  - Under each row, its note in body text (not muted), up to 2 lines and then clamped; a row
-    without a note has nothing under it.
+  - Under each row, its note in body text (not muted), up to 2 lines and then clamped; then its
+    Go-sends line when it has one (§app.overseer/card-sections); a row with neither has nothing
+    under it. A Ready to land row shows its branch and the commit shortened to 7 characters
+    (§app.overseer/card-land).
   - Ideas, todos, orgs, folders, projects, people, copies and leftover processes always show: a card's effect on them (ticking a todo,
     closing an idea, a person's links stopping) is never behind a toggle. Only sessions collapse: past 8 sessions the card shows the first 8 and a **Show
     all N sessions** toggle (Show fewer, open), so the rows it reveals are only ever sessions; a card
-    with 9 sessions shows all 9, since hiding one row saves nothing.
+    with 9 sessions shows all 9, since hiding one row saves nothing. A card with sections never
+    collapses: every row shows under its heading.
   - The card's state comes from the fold, never from later messages: open (live buttons);
     answered ("You chose b — Archive all", or "Answered: <the user's words>"); "Replaced by c_7",
     a link to that card; dropped, with its reason. An item decided shows its choice or words.
@@ -790,9 +803,9 @@ jumps to it (§app.overseer/links).
   it started runs, the card shows "Sent: b" and its buttons wait; if the turn ends without an answer
   op, the buttons come back and the note keeps the card in front of the model. While the card is
   open, "Or type your answer." follows the buttons. A card that may gate an act that reaches people
-  or ends something, the global Overseer's card listing a person, a project, an org, a folder or a
-  gathering session, and either overseer's card listing a copy or a leftover process (`clickOnly`),
-  has no such hint: only its click approves that act. A click that
+  or ends something, the global Overseer's card listing a person, a project, an org, a folder, a
+  gathering session or a Ready to land row, and either overseer's card listing a copy or a leftover
+  process (`clickOnly`), has no such hint: only its click approves that act. A click that
   doesn't reach the Overseer (the chat refuses it, is restarting, reloads or closes before taking
   it, its connection ends before the chat opens, or the queued click leaves undelivered) never goes
   into the composer, where sending it again would be typed text that approves nothing: its card's
@@ -823,6 +836,70 @@ jumps to it (§app.overseer/links).
   this one says "the user", and it resolves only the sessions it may read (the project's coding and
   gathering sessions, §app/project-overseer), its own ideas and its own todos, and its own project's
   copies and leftover processes (§app.overseer/copies); it takes no people, projects or org links.
+  Its cards take sections and Go-sends lines the same way; its session rows carry no branch or
+  commit, and no Go on them lands anything.
+
+## §app.overseer/card-sections — Card sections and what Go sends
+
+- **Section headings.** An item of a card (§app.overseer/confirm) may name a `section`, a short
+  heading of at most 40 characters ("Ready to land", "Merge conflict", "Failed check"; "Done",
+  "Stale", "Worth Keeping"); a longer one refuses the card.
+  When any item has one, the card shows its rows under headings, the sections in the order they
+  first appear in the call, each heading followed by its rows (in the kinds' usual order within it);
+  rows given no section come first, under no heading. A card where no item names a section looks as
+  it always did.
+- **One numbering.** Items are numbered 1..N once, in the order the card shows them, top to bottom
+  through every section, so "c_4 7b" names the seventh row the user sees.
+- **What Go sends.** An item may carry `sends`, the exact message the Overseer will send that
+  session when the row's Go (its first choice) is applied. The row shows it under its note as
+  "Go sends: “…”", in full, so the user reads the words before applying; the note stays for what it
+  is and why. A row without `sends` has no such line. `sends` takes at most 600 characters, so the
+  row can show it all; a longer one refuses the card.
+- The tool's result and the hidden note list each item's section and its Go-sends text, so the
+  model sends exactly what the card showed.
+
+## §app.overseer/card-partial-apply — Partly applied cards
+
+- **Rows sent show as done.** When an Apply's acts stop partway (a limit is reached,
+  §app.overseer/caps, or an act is refused), the Overseer records an answer for the rows it acted
+  on only, so the card stays open, partly applied. Each decided row shows its choice as done, with no
+  control; the rows not yet acted on keep the choices the user applied them with, not their
+  defaults, with live controls. When the Apply's message is older than the part of the chat
+  loaded, those rows show their defaults instead.
+- **A second Apply sends exactly the rest.** Apply on a partly applied card sends one message
+  naming only its undecided rows, never a row already done, and the turn it starts acts on those.
+  The card reads answered once every row is decided.
+- **The Overseer says so.** Its reply names how many rows it acted on, which limit or refusal
+  stopped it, and that Apply on the card sends the rest.
+
+## §app.overseer/card-land — Go on a Ready to land row lands it at the commit shown
+
+- **The row remembers the commit.** In the global Overseer, a card's session row the Overseer marks
+  as a land row (`land`) keeps the branch of the worktree that session owns which is Ready to land
+  (§chat.worktrees/ready-to-land) and its head commit as they were when the card was raised, and
+  shows them ("feat/x at abc1234"). `land: true` takes the session's one ready branch; a session with
+  more than one names it (`land: "feat/x"`). A land row whose session has no ready branch, more than
+  one unnamed, or a named branch that isn't ready refuses the card, naming the row and why. A land
+  row has choices (its own or the card's), its first one Go; a row not marked `land` never lands
+  anything, whatever its Go does.
+- **Go records the user's go-ahead for that commit.** In the turn an Apply on that card opens, the
+  Overseer's `sova_land` on a row the Apply chose Go on records the user's go-ahead to land that
+  branch at that commit (§chat.worktrees/landing-answers), as Land It would, and wakes the merge
+  captain at once (§chat.schedules/merge-ready), which checks and lands it as usual. Not Yet on the row
+  records nothing, and `sova_land` refuses a row whose pick wasn't Go.
+- **Nothing lands that the user didn't see.** If the branch's head is no longer the commit the row
+  shows, the branch is no longer Ready to land, or its session is archived or working right now,
+  nothing is recorded and the captain isn't woken;
+  the Overseer's reply names the row and why ("feat/x has a newer commit than the one you saw",
+  "feat/x is no longer ready to land: 1 uncommitted file") and leaves that row undecided.
+- **Only the click counts.** The server records it only when the turn was opened by a click on that
+  card, the card was open when the click arrived, and the click was a per-row Apply that chose
+  that row's first choice, its Go (§app.overseer/org-people-facing); a card-level option never
+  lands a row. A typed "yes", the click's text typed or pasted, a later turn,
+  a Retry of the click, or a card already answered, superseded or dropped records nothing. A card
+  with such a row is `clickOnly` (§app.overseer/confirm).
+- Every attempt, recorded or refused, is a line in `overseer-actions.jsonl` (§app.overseer/caps).
+- The merge captain names this go-ahead "Apply on the Overseer's card" (§chat.merge-round/driver).
 
 ## §app.overseer/run-note — The run note: the time, and what cleared
 
@@ -1028,7 +1105,10 @@ fetched down to, then lands.
   in one message cannot all pass the check. A session the Overseer created on a peer with a first
   prompt counts while that peer reports it busy, and for 15 s after the prompt, as a local one does.
 - Over a cap, the tool refuses with a message telling the model to stop and ask with `sova_card`
-  or explain, and not to schedule a wake-up to carry on. Nothing partial happens past the cap.
+  or explain, and not to schedule a wake-up to carry on. Nothing partial happens past the cap. In a
+  turn any click on an open card opened, the refusal also tells it to record the rows it already acted on
+  and tell the user that Apply on the card sends the rest (§app.overseer/card-partial-apply), which
+  a new message's fresh counts allow.
 - Every act tool call appends one line to `overseer-actions.jsonl`: time, Overseer id, tool call id,
   tool, arguments, outcome and error. The arguments and the error are redacted before the line is
   written (§app.overseer/tools), so the log never holds a secret value.
@@ -1237,6 +1317,9 @@ Three tools let the Overseer make and end links between sessions on different ho
 - **Never the user's answer.** A user message this marker names is never the user's prompt that
   ends a session's wait on its alignment answers (§chat.alignment/session-mark): alignment
   questions are the user's (§app.project-overseer/coding-mode).
+- **Never the user's go-ahead to land.** A user message this marker, a baton's or a session's names
+  is never the user's word to land a branch: `worktree land` refuses it
+  (§chat.worktrees/land-own-word).
 - **Only the Overseer can tag.** `POST /api/sessions/prompt` and that route mark a prompt as the
   Overseer's only when the request carries the server's sender secret: random, made at server start, held in memory
   only, never written to disk or sent to a client, and carried only by the Overseer's own in-process
@@ -1494,9 +1577,63 @@ host's session files. The reply is never changed, and the client still links eve
   switch sits just before it (§app.overseer/memory-switch).
 - While the composer is disabled the button still opens, and each quick action carries the
   disabled reason instead of running.
-- Defaults: **What Needs Me**, **What Finished**, **What's Running**, **Tidy Up**, **Where Was I**.
+- Defaults: two, in this order, **Get Things Moving** and **Tidy Up**
+  (§app.overseer/default-quick-actions). Each ends in one card the user applies, and the Overseer
+  sends, lands or archives nothing in the quick action's own turn.
 - They are editable in Settings → Overseer (label, description, prompt; add, remove, reorder,
-  reset to defaults).
+  reset to defaults). A saved list left exactly as the old five shipped is moved to the two once
+  (§app.overseer/quick-actions-move).
+
+## §app.overseer/default-quick-actions — The two default quick actions
+
+Sova ships two quick actions, in this order. Each one's label, description and prompt are the
+defaults in `server/overseer-store.ts`, and Reset to Defaults puts back exactly these two.
+
+- **Get Things Moving** (id `get-moving`), described as "Every session stuck on a next step,
+  checked now, on one card. Nothing is sent until you apply." Its prompt asks the Overseer to find
+  every session from the last few days that is stuck on a next step: waiting on the user's
+  go-ahead, Ready to land, a failed check, a finished plan not yet built, a merge conflict, or an
+  error that stopped its turn. It checks each one now (its last reply, its branch and merge state,
+  its last check against its newest commit, its open questions and their recommendations), drops
+  anything merged or moved on, and rebuilds the card when a session changes while it works. Then it
+  raises one card, one row per session under a section for why it is stuck
+  (§app.overseer/card-sections), each row saying what it is, why it is stuck and the exact message
+  Go sends. Each row defaults to the Overseer's recommendation, and a risky one (a conflict,
+  publishing, a failure unrelated to the work) to Not Yet; a row with a real choice gets its own
+  choices. Sessions that wait only on their own questions are listed under the card with the
+  Overseer's recommendations, not on it. Go on a Ready to land row lands the branch at the commit
+  the card shows (§app.overseer/card-land); the Overseer never sends a session the words "land it".
+- **Tidy Up** (id `tidy`), described as "Finished and stale sessions sorted onto one card to
+  archive or keep. Nothing is archived until you apply." Its prompt asks the Overseer to check every
+  session started in Sova that isn't archived (its last reply, branch and merge state, uncommitted
+  changes, open questions, and whether anything runs in it) and sort them onto one card under three
+  sections: **Done** (the work merged, or the research or answer was delivered), **Stale** (it went
+  nowhere) and **Worth Keeping** (unmerged work, uncommitted changes, open questions, or anything
+  still running). Each row's note says what it was, its state and why archiving fits, or under
+  Worth Keeping what archiving would put at risk. Rows under Done and Stale default to Archive, rows
+  under Worth Keeping to Keep; a Done row whose work merged offers **Archive & Remove Worktree** and
+  defaults to it, beside Archive and Keep. Sessions open in a terminal or working right now are
+  left out, and the reply says how many and why.
+- Both prompts end by telling the Overseer to send, land or archive nothing until the user applies
+  the card. That is the prompt's: the quick action is the user's own turn, and the server doesn't
+  hold the Overseer to it.
+- The Overseer's own instructions (its prompt and the card tool's description) tell it to raise
+  these cards with section headings and a Go-sends line on each row that sends something, and never
+  to act in the quick action's own turn.
+
+## §app.overseer/quick-actions-move — The one-time move to the new defaults
+
+- **Once, on the next read.** The Overseer's settings file gains version 2. The first time Sova
+  reads a version 1 file (or one with no version), whether or not the user ever saves, it checks the
+  quick actions once: a list that is exactly the old five as they shipped (What Needs Me, What
+  Finished, What's Running, Tidy Up, Where Was I, with the same ids, labels, descriptions and
+  prompts, in the same order, nothing added or removed) is replaced by the two defaults
+  (§app.overseer/default-quick-actions). Any other list, however small the change, is kept exactly
+  as it is.
+- Either way the file is then written once as version 2, every other setting unchanged. A missing
+  file is not created by this.
+- **Never again.** A version 2 file is never compared with the old five: a user who later adds one
+  of the old actions back, or the whole five, keeps them.
 
 ## §app.overseer/memory-switch — The Overseer's memory switch
 

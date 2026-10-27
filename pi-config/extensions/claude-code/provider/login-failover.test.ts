@@ -14,7 +14,7 @@ import { SessionBridge } from "./session-bridge.ts";
 import { pickChatLogin } from "./login-command.ts";
 import type { ClaudeFrame, ClaudeTurnRequest } from "./types.ts";
 import { parseUsageLine } from "../../llm-inflight/usage-record.ts";
-import { ACCOUNTS_DEV_ENV, ClaudeLogins, loginDir, loginUsers, markLeaving, readLeaving, readLoginPicks, updateAccounts, writeAccounts, type ClaudeLoginEntry } from "../accounts.ts";
+import { ACCOUNTS_DEV_ENV, ClaudeLogins, loginDir, loginUsers, markLeaving, readLeaving, readLoginPicks, updateAccounts, writeAccounts, type ClaudeLoginContext, type ClaudeLoginEntry } from "../accounts.ts";
 
 /** A CLI child that answers initialize, and answers each user message with `reply(frame)`'s events. */
 class FakeCli extends EventEmitter {
@@ -79,7 +79,7 @@ const user = (text: string): Message => ({ role: "user", content: text, timestam
 const request = (messages: Message[]): ClaudeTurnRequest => ({ model: "sonnet", sessionId: "pi-session-1", tools, messages });
 const A = "l-0000000a", B = "l-0000000b";
 
-function setup(t: { after: (fn: () => void) => void }, replyFor: (login: string, n: number) => Record<string, any>[], env: Record<string, string> = {}, pool = false) {
+function setup(t: { after: (fn: () => void) => void }, replyFor: (login: string, n: number) => Record<string, any>[], env: Record<string, string> = {}, pool = false, loginContext?: () => ClaudeLoginContext | undefined) {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "claude-login-failover-"));
 	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 	const agentDir = path.join(root, "agent");
@@ -103,7 +103,7 @@ function setup(t: { after: (fn: () => void) => void }, replyFor: (login: string,
 	const children: FakeCli[] = [];
 	const loginOf = (child: FakeCli) => child.env.CLAUDE_CONFIG_DIR === loginDir(agentDir, A) ? A : child.env.CLAUDE_CONFIG_DIR === loginDir(agentDir, B) ? B : "default";
 	const bridge = new SessionBridge({
-		cwd: root, projectsRoot: path.join(claudeDir, "projects"), logins, executable: "claude",
+		cwd: root, projectsRoot: path.join(claudeDir, "projects"), logins, executable: "claude", ...(loginContext ? { loginContext } : {}),
 		spawnImpl: ((_c: string, _argv: string[], options: any) => {
 			const n = children.length;
 			let child!: FakeCli;
@@ -380,4 +380,50 @@ test("a chat's saved Claude session never moves to another login: picked up on B
 	const launches = fs.readdirSync(day).flatMap((d) => fs.readdirSync(path.join(day, d)).flatMap((f) => fs.readFileSync(path.join(day, d, f), "utf8").split("\n")))
 		.map((line) => (line ? parseUsageLine(line) : null)).filter((r) => r?.launch).sort((a, b) => a!.ts - b!.ts).map((r) => r!.launch);
 	assert.deepEqual(launches, [{ how: "fresh", why: "new" }, { how: "folded", why: "login-picked", fallback: "login-moved" }]);
+});
+
+// A project's own login (§app.claude-logins/project-login): what the host handed the process over.
+const ACME: ClaudeLoginContext = { prefer: { login: B, source: "project", name: "Acme" } };
+
+test("project login: a new chat in the project starts on its login, recorded with no note", { timeout: 8000 }, async (t) => {
+	const s = setup(t, () => ANSWER("ok"), {}, false, () => ACME);
+	await collect(s.bridge.runTurn(request([user("hi")])));
+	assert.equal(s.loginOf(s.children[0]!), B, "B, not the order's first A");
+	assert.deepEqual(s.entries.map((e) => [e.login, e.from]), [[B, undefined]]);
+});
+
+test("project login: limited and nothing recorded, the first start moves on and the note names the project's login and why", { timeout: 8000 }, async (t) => {
+	const s = setup(t, () => ANSWER("ok"), {}, false, () => ACME);
+	s.logins.recordFailure({ id: B, label: "b@example.com", env: {}, accountUuid: "acct-b" }, { kind: "limit", resetsAt: Date.now() + 3_600_000 });
+	await collect(s.bridge.runTurn(request([user("hi")])));
+	assert.equal(s.loginOf(s.children[0]!), A, "the next login with room");
+	assert.equal(s.entries.length, 1);
+	assert.equal(s.entries[0]!.login, A);
+	assert.equal(s.entries[0]!.from, B, "a note row: it names the login it skipped");
+	assert.equal(s.entries[0]!.reason, "moved");
+	assert.match(s.entries[0]!.text!, /^Claude: using a@example\.com \(project Acme's login b@example\.com is limited until /);
+	// The next turn stays on A (it is the chat's own now): no second note.
+	await collect(s.bridge.runTurn(request([user("hi"), said("ok"), user("again")])));
+	assert.equal(s.entries.length, 1, "never repeated");
+});
+
+test("project login: an open chat keeps its recorded login; a failure on the project's login names it", { timeout: 8000 }, async (t) => {
+	const r = setup(t, () => ANSWER("ok"), {}, false, () => ACME);
+	r.bridge.setSessionLogin("pi-session-1", A, (entry) => r.entries.push(entry));
+	await collect(r.bridge.runTurn(request([user("hi")])));
+	assert.equal(r.loginOf(r.children[0]!), A, "a setting change moves no open chat");
+	assert.deepEqual(r.entries, []);
+
+	const resetsAt = Math.floor(Date.now() / 1000) + 3600;
+	const s = setup(t, (login) => login === B ? LIMIT(resetsAt) : ANSWER("hello from A"), {}, false, () => ACME);
+	const frames = await collect(s.bridge.runTurn(request([user("hi")])));
+	assert.equal((frames.at(-1) as any).outcome, "success");
+	assert.deepEqual(s.entries.map((e) => [e.login, e.from]), [[B, undefined], [A, B]]);
+	assert.match(s.entries[1]!.text!, /^Claude: switched b@example\.com → a@example\.com \(5h limit, resets /);
+});
+
+test("project login: no context (a terminal session) keeps this device's order", { timeout: 8000 }, async (t) => {
+	const s = setup(t, () => ANSWER("ok"), {}, false, () => undefined);
+	await collect(s.bridge.runTurn(request([user("hi")])));
+	assert.equal(s.loginOf(s.children[0]!), A);
 });

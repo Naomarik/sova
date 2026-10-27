@@ -62,6 +62,7 @@ this slot (§app.overseer/quick-actions).
   <span class="icon icon-sm" style="--icon: url(/icons/mode-delegate.svg)" aria-hidden="true"></span>  <!-- the major mode; normal: sliders -->
   <span class="icon icon-sm" style="--icon: url(/icons/mode-align.svg)" aria-hidden="true"></span>     <!-- one per minor mode on -->
   <span class="mode-letter" aria-hidden="true">D</span>                                                 <!-- one per project mode on -->
+  <span class="mode-more" aria-hidden="true">+2</span>                                                <!-- the others' count: drawn only while folded -->
   <span class="mode-trigger-label" aria-hidden="true">delegate · align · deploy-notes</span>         <!-- in the foot: only at a composer 620px or wider -->
   <span class="icon icon-sm" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span> <!-- kept: it opens a menu -->
 </button>
@@ -89,6 +90,17 @@ this slot (§app.overseer/quick-actions).
   chevron alone and the row never grows wider than the composer. The icons, the padding, the accessible name and the desktop `title` stay. In the
   foot it takes the model indicator's scale: a `--control-sm` row with a
   `--tap-min` target stretched over it by a `::after`, mirrored to the right edge.
+- **Fold.** Where the foot is still too tight once its gaps narrow (§chat.composer/behavior), and
+  the trigger draws at least two mode icons, the mode icons fold, before the model's short name
+  loses a letter: the first icon (the major mode's) stays, followed by "+{n}", the count of the
+  other mode icons (minor and project modes alike, e.g. "+3"), then the chevron. With one icon
+  (or before the mode is known) there is nothing to fold, and the name is what gives. Under a
+  620px composer the trigger never clips its own icons: it gives way only by folding. Whether it
+  folds is decided from the unfolded foot, measured with every icon out before the frame is
+  drawn, so it never flickers and the same width always gives the same foot; it unfolds when the
+  room comes back (a wider composer, a shorter name, a mode turned off). A fold hides nothing from
+  the words: the accessible name and the desktop `title` keep the full wording, and the menu still
+  lists every mode.
 
 ## §chat.mode-menu/menu — Menu
 
@@ -813,7 +825,8 @@ The tokens the trigger, the menu's rows and its foot are drawn with.
 
 Trigger: `--font-mono`, `--fs-mono`, `--color-ink-2`, sunken fill while open, icons
 `--color-ink-muted`. A project mode's letter square is drawn like an icon: 16px, a `--stroke-icon`
-border in its ink, `--r-xs` corners, the letter 10px semibold in the body face, `--color-ink-muted`. Rows (`.popover-item`, §design/menu-rows): `--control-md` min height, `--space-3` at the
+border in its ink, `--r-xs` corners, the letter 10px semibold in the body face, `--color-ink-muted`. The folded count "+N" (and a profile card caption's, §chat.profiles/picker)
+is quiet: `--fs-caption` in the body face, tabular figures, `--color-ink-muted`. Rows (`.popover-item`, §design/menu-rows): `--control-md` min height, `--space-3` at the
 sides and `--space-2` above and below a mode row, id in `--font-mono` `--color-ink`, description `--fs-caption` `--color-ink-muted`,
 checked `--color-accent-tint`, focus `--focus-ring` inset. A mode row's check sits on its id's line, the
 first of its two; the one-line Subagents row's icon, label and chevron sit on the row's centre line. Foot: `--fs-caption`

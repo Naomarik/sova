@@ -68,8 +68,8 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   it there like any link, and the arrow keys skip it. Cards fill the session column (at most `--measure`, the message cap of
   §chat.transcript/transcript-items) in as many columns as fit at 220px or wider. Where the picker is narrower than 480px (a phone), the cards are one column of single-line
   cards: icon, label, caption and chips on one 44px line (chips that don't fit take a second), the
-  caption cut short with an ellipsis first, the label keeping up to about two thirds of the card
-  before it is cut. A card that can't be used keeps its whole reason, on its own line below. **My settings** comes
+  caption giving way first (its mode icons folding, then its model name cut, as **A card** says),
+  the label keeping up to about two thirds of the card before it is cut. A card that can't be used keeps its whole reason, on its own line below. **My settings** comes
   first, a card under no label; then **Yours**, then **This project ({name})**, each under its own
   label (a profile file Sova itself ships, of which there are none today, would follow under **Built
   in**); hidden profiles are left out, and My settings can't be hidden. A last card, **Custom…**, opens the capability
@@ -91,7 +91,17 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   {effort} · subagents: {footprint} · {mode} · {minor modes}", the minor modes as "align, spec,
   vis", or "no minor modes" for `[]`) is the caption's accessible text and the card's `title`;
   each icon item's own hover text is its part in words ("{model} · effort {level}", "subagents:
-  {footprint}", "mode: {mode}", "minor mode: {id}"). Where the caption is at least 340px wide,
+  {footprint}", "mode: {mode}", "minor mode: {id}"). **The model name is the last thing to
+  shrink.** When the caption runs out of room and draws at least two mode icons, its mode icons
+  fold first: the first mode icon stays, followed by a quiet count of the rest ("+3", minor and
+  project modes alike, after where the last mode icon was), and the caption's gaps narrow to
+  `--space-1`, the icons' own spacing; only if the caption still doesn't fit does the model's
+  short name end in an ellipsis (with one mode icon or none there is nothing to fold, so the name
+  is what gives). Whether it folds is decided from the unfolded caption, measured with every icon
+  out before the frame is drawn, so it never flickers and the same width always gives the same
+  caption; it unfolds when the room comes back (a wider window, a shorter name). A fold hides nothing
+  from the words: the caption's accessible text and the card's `title` keep the full wording, and
+  the picked profile's details line (below) still names every mode. Where the caption is at least 340px wide,
   words come back beside the icons: the level, "subagents" and each mode's id. Captions that aren't settings stay words: the
   description of a profile that sets none of them, a disabled reason (below), and "Opens the
   running session: {title}" (§chat.profiles/singleton). Chips say **Live**, with Sova's usual live
@@ -108,7 +118,8 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   `default`): what you set by hand on this new session. Its card's caption draws that with the
   same icons in its own order: the mode icons first (the major mode's, then one per minor mode on,
   none when none), then the model and effort (the effort ring, the empty ring for "off", and the
-  model's short name), the name cut short with an ellipsis where it doesn't fit. Its accessible name and desktop hover text
+  model's short name), fitting as every card's caption does: the mode icons fold to the first and
+  a "+N" before the name is cut short with an ellipsis. Its accessible name and desktop hover text
   stay the words "{mode} · {minor modes} · {model} · {effort}" (e.g. "Delegate · Align · Opus
   5.5 · high": the mode's name, the minor modes that are on, capitalised and left out when none,
   the model's short name and the effort). While no profile is

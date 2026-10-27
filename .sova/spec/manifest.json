@@ -3379,7 +3379,8 @@
         "server/harness/pi/chat-wiring.test.ts",
         "src/lib/effort.ts",
         "src/components/EffortRing.tsx",
-        "src/lib/effort.test.ts"
+        "src/lib/effort.test.ts",
+        "src/components/fold-fit.ts"
       ],
       "requires": [
         "§chat.images/composer-attachments",
@@ -3389,8 +3390,8 @@
       "evidence": "verified",
       "agreed": {
         "by": "omar (user)",
-        "at": "2026-10-27T08:43Z",
-        "source": "pi-session:1ae40f4c-6da9-448a-b26b-9a1e99076f16#db36b4af"
+        "at": "2026-10-27T20:04Z",
+        "source": "pi-session:1ae40f4c-6da9-448a-b26b-9a1e99076f16#4df15dba"
       }
     },
     "§chat.composer/composer-flyout": {
@@ -4207,12 +4208,15 @@
         "src/components/ModeMenu.tsx",
         "src/lib/mode-glyphs.ts",
         "src/components/ModeGlyph.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/lib/name-fit.ts",
+        "src/lib/name-fit.test.ts",
+        "src/components/fold-fit.ts"
       ],
       "agreed": {
         "by": "omar (user)",
-        "at": "2026-10-27T08:43Z",
-        "source": "pi-session:1ae40f4c-6da9-448a-b26b-9a1e99076f16#db36b4af"
+        "at": "2026-10-27T20:04Z",
+        "source": "pi-session:1ae40f4c-6da9-448a-b26b-9a1e99076f16#4df15dba"
       }
     },
     "§chat.model-menu/content-and-order": {
@@ -16664,7 +16668,10 @@
         "src/components/ModeGlyph.tsx",
         "src/lib/mode-glyphs.ts",
         "shared/profiles.ts",
-        "server/subagent-profiles.ts"
+        "server/subagent-profiles.ts",
+        "src/lib/name-fit.ts",
+        "src/lib/name-fit.test.ts",
+        "src/components/fold-fit.ts"
       ],
       "requires": [
         "§chat.profiles/model",
@@ -16672,8 +16679,8 @@
       ],
       "agreed": {
         "by": "omar (user)",
-        "at": "2026-10-27T08:43Z",
-        "source": "pi-session:1ae40f4c-6da9-448a-b26b-9a1e99076f16#db36b4af"
+        "at": "2026-10-27T20:04Z",
+        "source": "pi-session:1ae40f4c-6da9-448a-b26b-9a1e99076f16#4df15dba"
       }
     },
     "§chat.profiles/session-tools": {

@@ -219,10 +219,13 @@ are kept, and what the foot and its model indicator show.
   the login's avatar (§app.claude-logins/active-login), the sandbox shield and the mode icons
   (§chat.mode-menu/trigger). Where the composer is at least 620px wide, words come back beside the
   icons (the login's email, the modes' names); the icons never go. Under 480px the gaps between
-  the foot's items narrow (from `--space-3` to `--space-2`), and an empty disabled reason takes no place, so a short name such as
-  `Opus 5.5` reads whole at 320px. Both triggers stay at every width and shrink instead of widening the
-  row: the model's short name is the part that ellipsizes, and the mode switch drops its words
-  before any icon. Every icon item keeps its complete wording as its accessible name and, on
+  the foot's items narrow (from `--space-3` to `--space-2`), and an empty disabled reason takes no
+  place. **The model's short name is the last thing to shrink**: where the row is still too tight
+  once the gaps have narrowed, the mode switch's icons fold (§chat.mode-menu/trigger: the first
+  mode icon, then "+N" for the rest), and only if that still doesn't fit does the name ellipsize,
+  so a short name such as `Opus 5.5` reads whole at 320px. Both triggers stay at every width and
+  shrink instead of widening the row: the mode switch drops its words before any icon and folds
+  its icons before the name loses a letter. Every icon item keeps its complete wording as its accessible name and, on
   desktop, as its hover text.
 - **Model indicator.** Chat sessions only. One item says what this turn will run, model and effort
   together: a small **effort ring**, then the model's short name, and no caret. Clicking it opens the flyout
@@ -236,8 +239,9 @@ are kept, and what the foot and its model indicator show.
     the flyout's group is (a model with no effort choice shows no ring); until the model catalog
     brings that ladder, a known level other than "off" shows its ring.
   - **The name** is the model's existing short name: its Claude catalog name (`Opus 5.5`), else
-    its id without provider, date or `claude-` prefix (`gpt-6.1-sol`), cut with an ellipsis when
-    tight. The backend
+    its id without provider, date or `claude-` prefix (`gpt-6.1-sol`), cut with an ellipsis only
+    when the foot is still too tight after its gaps narrow and the mode icons fold (**The foot**,
+    above). The backend
     or provider name is not shown, and no provider icon is drawn, here or anywhere.
   - While a switch is pending it shows the **target** with a `.live-dot`, the model's and the
     level's each before their own value (the level's before the ring, the model's before the name); with no model yet it reads "Choose model". Its
@@ -245,8 +249,8 @@ are kept, and what the foot and its model indicator show.
     thinking level and what a click does. It carries `aria-haspopup="menu"`,
   `aria-controls="composer-flyout"` and an `aria-expanded` that is true only while the flyout is
   open **and anchored to it** — clicking it again closes it; the "+" button opens the palette instead. The
-  name is the one part that shrinks, so a long one ellipsizes rather than pushing the mode switch out;
-  the ring never shrinks.
+  name is the indicator's one part that shrinks, and the foot's last: a long one ellipsizes rather
+  than pushing the mode switch out, once the mode icons have folded; the ring never shrinks.
   While the composer is disabled it still shows the model and is `aria-disabled` with a dead
   click, like the flyout's own rows. It stays at every width, because it's the only place the
   model is on screen.

@@ -33,6 +33,9 @@ import { usePaneId } from "../lib/pane-scope";
 import { openSettings, setSubagentSettingsPath } from "../lib/settings-nav";
 import { announce } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
+import { foldLabel, foldedRest } from "../lib/name-fit";
+import { ModeGlyph, ModeGlyphs } from "./ModeGlyph";
+import { majorGlyph, minorGlyph, modeGlyphs, modeLetter, type ModeGlyph as ModeGlyphData } from "../lib/mode-glyphs";
 
 /** This chat's last WS "mode" message: the mode of THIS chat and how a switch applies here. Before
     that message, the mode known from the list or this tab's last visit (lib/composer-known), whose
@@ -225,6 +228,14 @@ export function ModeMenu(props: { control: ModeControl }) {
     const c = current();
     return c ? [c.mode, ...minorLabel()].join(" · ") : "Mode";
   };
+  /** The trigger's glyphs; before this chat's state arrives, the sliders alone (with "Mode"). */
+  const triggerGlyphs = () => {
+    const c = current();
+    return c ? modeGlyphs(c.mode, c.minorModes, c.projectModes ?? []) : [majorGlyph("normal")];
+  };
+  /** A mode row's glyph, the trigger's for the same mode: the menu is its legend. */
+  const rowGlyph = (it: Item): ModeGlyphData | null =>
+    it.kind === "radio" ? majorGlyph(it.id) : it.kind === "check" ? minorGlyph(it.id) : it.kind === "project" ? { kind: "letter", id: it.id, letter: modeLetter(it.id) } : null;
   const name = () => `Mode: ${label()}${current()?.applies === "after-turn" ? ", applies after this turn" : ""}`;
 
   /** This chat's mode as the footer reads it, or null before its "mode" message arrives. */
@@ -653,6 +664,13 @@ export function ModeMenu(props: { control: ModeControl }) {
       onFocus={() => setActive(p.index)}
     >
       <Icon name="check" small class="popover-item-check" />
+      <Show when={rowGlyph(p.it)}>
+        {(g) => (
+          <span class="popover-item-icon">
+            <ModeGlyph glyph={g()} />
+          </span>
+        )}
+      </Show>
       <span class="popover-item-text">
         <span class="popover-item-label">{p.it.label ?? p.it.id}</span>
         <Show
@@ -723,11 +741,24 @@ export function ModeMenu(props: { control: ModeControl }) {
           else if (!props.control.blocked?.()) void openMenu();
         }}
       >
-        <Icon name="sliders" small />
+        {/* Icon-first (§chat.mode-menu/trigger): the major mode's, one per minor mode on, a letter
+            per project mode on. The words come back beside them only where the foot has room. */}
+        <ModeGlyphs glyphs={triggerGlyphs()} />
+        {/* Where the composer foot is too tight, the icons fold to the first and this count of the
+            rest (the foot's foldFit sets data-folded); the name and the menu keep every mode. */}
+        <Show when={foldedRest(triggerGlyphs().length) > 0}>
+          <span class="mode-more" aria-hidden="true">
+            {foldLabel(triggerGlyphs().length)}
+          </span>
+        </Show>
         {/* Two parts, so a narrow foot ellipsizes the minor modes before the major one. */}
-        <span class="mode-trigger-label">{current()?.mode ?? "Mode"}</span>
+        <span class="mode-trigger-label" aria-hidden="true">
+          {current()?.mode ?? "Mode"}
+        </span>
         <Show when={minorLabel().length}>
-          <span class="mode-trigger-label mode-trigger-minor">· {minorLabel().join(" · ")}</span>
+          <span class="mode-trigger-label mode-trigger-minor" aria-hidden="true">
+            · {minorLabel().join(" · ")}
+          </span>
         </Show>
         <Icon name="chevron-down" small />
       </button>
@@ -1042,7 +1073,7 @@ export function ModeMenu(props: { control: ModeControl }) {
                 }}
                 onFocus={() => setActive(items().findIndex((it) => it.id === SUBAGENTS.id))}
               >
-                <Icon name="worker" small />
+                <Icon name="subagents" small />
                 <span class="popover-item-text">
                   <span class="popover-item-label">Subagents · {profileName()}</span>
                 </span>

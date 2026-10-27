@@ -89,20 +89,18 @@ pending attachments, then the input row (mic, `plus` trigger, textarea, Send, St
     <div class="composer-foot">
       <!-- chat sessions only: the model indicator, the flyout's second trigger -->
       <button class="composer-model" type="button" aria-haspopup="menu" aria-controls="composer-flyout"
-              aria-expanded="false" title="zai/glm-5.3 · Change model & thinking"
+              aria-expanded="false" title="zai/glm-5.3 · thinking high · Change model & thinking"
               aria-label="zai/glm-5.3, thinking high — Change Model &amp; Thinking">
+        <!-- the effort ring: a small 270° open ring, its arc filled to the level, a mark inside -->
+        <svg class="effort-ring" data-level="high" aria-hidden="true">…track, arc, mark "H"…</svg>
         <span class="composer-model-id">glm-5.3</span>
-        <span class="composer-model-meta">zai</span>
-        <span class="composer-model-sep" aria-hidden="true">·</span>
-        <span class="composer-model-level">high</span>
-        <span class="icon icon-sm composer-model-caret" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span>
       </button>
       <!-- a Claude Code model on a device with several Claude logins: the chat's login, the
            flyout's login trigger; see §app.claude-logins/active-login, /switch-login -->
       <button class="composer-login" type="button" aria-haspopup="menu" aria-controls="composer-flyout"
               aria-expanded="false" title="This chat runs on this Claude login: …" aria-label="Claude login: own@example.com">
-        <span class="composer-login-full">own@example.com</span>
-        <span class="composer-login-short">own</span>
+        <span class="composer-login-avatar" aria-hidden="true">o</span>   <!-- round letter avatar -->
+        <span class="composer-login-full" aria-hidden="true">own@example.com</span>  <!-- only at a composer 620px or wider -->
       </button>
       <span class="composer-reason" id="composer-reason"><!-- reason when disabled; else empty --></span>
       <!-- chat sessions only: the mode switch, pushed to the right edge; see §chat/mode-menu -->
@@ -217,19 +215,42 @@ are kept, and what the foot and its model indicator show.
   images. A draft is deleted only when it has neither text nor attachments. A send clears the
   draft in both places. A draft on a session nothing was ever sent in — images alone included — also keeps that session in the list (§app/session-list).
 - **The foot** reads left to right: the model indicator, the disabled reason, then the mode switch
-  (§chat/mode-menu) pushed to the right edge. Both triggers stay at every width and shrink instead of
-  widening the row: the model id and the minor modes are the parts that ellipsize.
-- **Model indicator.** Chat sessions only. It says what this turn will run — the id in mono, the
-  provider beside it, then `· {level}` for the thinking level — and clicking it opens the flyout
+  (§chat/mode-menu) pushed to the right edge. It is a row of icons at every width: the effort ring,
+  the login's avatar (§app.claude-logins/active-login), the sandbox shield and the mode icons
+  (§chat.mode-menu/trigger). Where the composer is at least 620px wide, words come back beside the
+  icons (the login's email, the modes' names); the icons never go. Under 480px the gaps between
+  the foot's items narrow (from `--space-3` to `--space-2`), and an empty disabled reason takes no
+  place. **The model's short name is the last thing to shrink**: where the row is still too tight
+  once the gaps have narrowed, the mode switch's icons fold (§chat.mode-menu/trigger: the first
+  mode icon, then "+N" for the rest), and only if that still doesn't fit does the name ellipsize,
+  so a short name such as `Opus 5.5` reads whole at 320px. Both triggers stay at every width and
+  shrink instead of widening the row: the mode switch drops its words before any icon and folds
+  its icons before the name loses a letter. Every icon item keeps its complete wording as its accessible name and, on
+  desktop, as its hover text.
+- **Model indicator.** Chat sessions only. One item says what this turn will run, model and effort
+  together: a small **effort ring**, then the model's short name, and no caret. Clicking it opens the flyout
   on its **model panel**, anchored above itself, which holds exactly those two controls (§chat/images).
-  The thinking
-  segment is omitted when the model's ladder has one level or none, exactly as the flyout's group
-  is; until the model catalog brings that ladder, a known level other than "off" shows. While a switch is pending it shows the **target** with a `.live-dot`, the model's and the
-  level's each before their own value; with no model yet it reads "Choose model". The full
-  `provider/id` is in `title`. It carries `aria-haspopup="menu"`,
+  - **The effort ring** is the waiting badge's 270° open ring (§chat.composer/waiting-badge), much
+    smaller (about 17px). Its arc fills on one seven-step scale for every model, whatever its
+    ladder: off, minimal, low, medium, high, xhigh, max, off an empty ring and max the full arc.
+    It is drawn in quiet ink, never the accent, with a mark in the middle: off none (the empty
+    ring), minimal a dot, low `L`, medium `M`, high `H`, xhigh `X`, max a bolt (Sova's own SVG,
+    not a star). The ring is omitted when the model's ladder has one level or none, exactly as
+    the flyout's group is (a model with no effort choice shows no ring); until the model catalog
+    brings that ladder, a known level other than "off" shows its ring.
+  - **The name** is the model's existing short name: its Claude catalog name (`Opus 5.5`), else
+    its id without provider, date or `claude-` prefix (`gpt-6.1-sol`), cut with an ellipsis only
+    when the foot is still too tight after its gaps narrow and the mode icons fold (**The foot**,
+    above). The backend
+    or provider name is not shown, and no provider icon is drawn, here or anywhere.
+  - While a switch is pending it shows the **target** with a `.live-dot`, the model's and the
+    level's each before their own value (the level's before the ring, the model's before the name); with no model yet it reads "Choose model". Its
+    accessible name and desktop hover text are the complete wording: the full `provider/id`, the
+    thinking level and what a click does. It carries `aria-haspopup="menu"`,
   `aria-controls="composer-flyout"` and an `aria-expanded` that is true only while the flyout is
   open **and anchored to it** — clicking it again closes it; the "+" button opens the palette instead. The
-  id is the one part that shrinks, so a long ref ellipsizes rather than pushing the mode switch out.
+  name is the indicator's one part that shrinks, and the foot's last: a long one ellipsizes rather
+  than pushing the mode switch out, once the mode icons have folded; the ring never shrinks.
   While the composer is disabled it still shows the model and is `aria-disabled` with a dead
   click, like the flyout's own rows. It stays at every width, because it's the only place the
   model is on screen.
@@ -290,7 +311,10 @@ palette it opened is open. Its `aria-label` and `title` stay "More Actions".
 **One popover, up to three triggers and four panels.** The sandbox shield (§chat.composer/sandbox-shield)
 opens the **sandbox** panel: the Sandbox group alone, its one place. The model indicator in `.composer-foot` (§chat/composer) opens the **model**
 panel — the Model row and this model's Thinking ladder, the two things the indicator is the label
-for. The Model row opens the §chat/model-menu **picker** as a third panel, which comes back to the model
+for, under a one-line summary at its top that spells the choice out in full: "{model} · {backend} ·
+{effort}" (the model's Claude catalog name, else its id without the provider; its provider; the level; the effort part left out when the model
+has no effort choice; the target while a switch is pending). The summary describes the panel's
+menu (`aria-describedby`). The Model row opens the §chat/model-menu **picker** as a third panel, which comes back to the model
 panel it was opened from. Where the Claude login label is shown (§app.claude-logins/active-login),
 it is a third trigger and opens the fourth panel, **login** (§app.claude-logins/switch-login). Each trigger anchors the popover above **itself**: the math is the same,
 measured on whichever element opened it, and closing returns focus there. The composer holds the
@@ -307,7 +331,8 @@ it.
      style="--menu-bottom: 72px; --menu-left: 388px">…</div>
 
 <!-- the "model" panel: what the model indicator opens, in the same popover -->
-<div class="composer-flyout-list" role="menu" aria-label="Model and thinking">
+<p class="composer-flyout-summary" id="composer-flyout-summary">glm-5.3 · zai · high</p>
+<div class="composer-flyout-list" role="menu" aria-label="Model and thinking" aria-describedby="composer-flyout-summary">
   <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-model" tabindex="0"
        aria-haspopup="true" title="zai/glm-5.3">
     <span class="icon icon-sm composer-flyout-icon" style="--icon: url(/icons/worker.svg)" aria-hidden="true"></span>
@@ -323,6 +348,7 @@ it.
     <div class="mode-option composer-flyout-item" role="menuitemradio" id="composer-flyout-thinking-high"
          tabindex="-1" aria-checked="true">
       <span class="icon icon-sm mode-option-check" style="--icon: url(/icons/check.svg)" aria-hidden="true"></span>
+      <svg class="effort-ring" data-level="high" aria-hidden="true">…</svg>
       <span class="composer-flyout-label">high</span>
     </div>
     …one row per level…
@@ -359,7 +385,8 @@ it.
     `.live-dot` before the target id, and `aria-disabled` (§chat/model-menu "Pending"). Choosing applies
     immediately, closes the flyout, and focus returns to the textarea.
   - **Thinking** follows the Model row on the same panel: one `menuitemradio` per level of the **current model's** `thinkingLevels`,
-    in ladder order, checked on the active one. **The whole group is hidden when the model has
+    in ladder order, checked on the active one, each with that level's effort ring beside its name
+    (the same ring and mark as the model indicator's). **The whole group is hidden when the model has
     one level or isn't in the model list yet** — a ladder with one rung is not a choice. Picking
     sends `{type:"set_thinking"}`; the checked state follows the server's `{type:"thinking"}`
     echo, never the click, because the server clamps to what the model supports. The flyout stays
@@ -481,9 +508,18 @@ composer taller. A placeholder at the caption size keeps the body line height, s
 in the 44px box instead of riding up with a smaller line box. Send is
 `.button-primary` (`--color-accent` / `--color-on-accent`). Stop is `.button-destructive`
 (`--status-error` border and label, `--status-error-bg` on hover). The reason is `--fs-caption` in
-`--color-ink-2`. The model indicator borrows the pair the foot uses — the id `--fs-mono` in `--color-ink-2`, everything else
+`--color-ink-2`. The model indicator borrows the pair the foot uses — the name `--fs-mono` in `--color-ink-2`, everything else
 `--fs-caption` in `--color-ink-muted` — with a `--color-sunken` fill on hover and while open, and
-a `--tap-min` target stretched over a `--control-sm` row by a `::after`.
+a `--tap-min` target stretched over a `--control-sm` row by a `::after`. Its effort ring is about
+17px square: the track in `--color-border-strong`, the filled arc and the middle mark in
+`--color-ink-2`, never `--color-accent`; the same ring sits beside each level of the flyout's
+Thinking ladder and on the profile cards (§chat.profiles/picker). The login's avatar is a soft
+chip about 17px tall, with no outline: a pale `--color-sunken` fill, `--r-full` (a circle for
+one letter, a pill for two or three letters or a number), its text `--fs-micro` semibold in
+`--color-ink-2`. While the login button is hovered or open, when the button itself takes the
+`--color-sunken` fill, the chip takes the `--color-border` fill so it stays visible. The model panel's summary line is
+`--fs-caption` in `--color-ink-2`, one line, ellipsized. The foot's gap is `--space-3`, `--space-2`
+under 480px.
 `.composer-inner` is centred at `--measure` plus `--space-9`, the transcript column's width, so it
 widens with the column on desktop (§chat/transcript "Column width"). The slash menu spans it, and the model
 menu keeps its own 360px cap.
@@ -557,7 +593,7 @@ first of these that knows it:
 The placeholders ("Choose model", "Mode") show only when none of them knows. A known thinking level
 shows before the model catalog has brought the model's ladder, unless it is "off" (a one-level
 ladder's only level), so it doesn't pop in with the catalog; once the ladder is known the model
-indicator's rule for omitting the segment applies. A remembered mode
+indicator's rule for omitting the effort ring applies. A remembered mode
 says nothing about when a switch applies: until the socket's `mode` message the trigger makes no
 "applies after this turn" promise and the menu shows neither the mid-turn nor the can't-switch
 banner. A remembered running turn shows as one (Steer, Stop, the run status, and the sidebar's

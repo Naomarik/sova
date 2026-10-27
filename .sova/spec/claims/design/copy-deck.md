@@ -165,6 +165,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Waiting badge (§chat.composer/waiting-badge) | numeral: `I` `II` `III` `IV` `V+` · `aria-label` "{q} questions open in {n} alignments, {c} cards waiting — show what's waiting" (1: question, alignment, card; empty parts left out: "1 card waiting — show what's waiting"; nothing undecided: "All questions decided in {n} alignments — show what's waiting") |
 | Waiting on you dialog (§chat.composer/waiting-dialog) | title `Waiting on you · {n}` · close `aria-label` "Close" · groups `Option cards`, `Alignments` · alignment: `{decided}/{total}` meter, `Next: {topic}` (none open: `All decided`) · `Show in Chat` · empty: "Nothing is waiting on you in this chat." · off-screen toasts: "That alignment isn't in the transcript on screen." / "That card isn't in the transcript on screen." |
 | Staged answers (§chat.alignment/card) | `Answering: {al_N} q1 b, q3 rec` (alignments joined by "; ") · group label "Staged answers" · `Clear Picks` |
+| Model indicator (§chat.composer/behavior) | visible: the effort ring (mark: none · dot · `L` · `M` · `H` · `X` · bolt) and the model's short name (`Opus 5.5`, `gpt-6.1-sol`), no provider · no model: Choose model · `aria-label` "{provider/id}, thinking {level} — Change Model & Thinking" · desktop `title` "{provider/id} · thinking {level} · Change model & thinking" (no effort choice: the thinking part left out) |
+| Login indicator (§app.claude-logins/active-login) | visible: the avatar's letters (`o`, `ow`) or number (`2`); at a composer 620px or wider, the email beside it · `aria-label` "Claude login: {email}" · `title` as that claim says |
 | Reason: TUI-live | Read only while this session is open in the TUI. |
 | Reason: archived | This session is archived. Unarchive it to send. |
 | Reason: busy (server `code:"busy"`) | the session reopens read only: Read only while this session is open in the TUI. |
@@ -190,6 +192,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | This chat rows, off | the composer's own reason · Playbooks with no Sova chat: Only a chat open in Sova can send a playbook. |
 | Palette's slash commands group label | Slash commands |
 | Model panel `aria-label` | Model and thinking |
+| Model panel summary (its first line) | {model} · {backend} · {effort}, e.g. Opus 5.5 · claude-code-cli · high (no effort choice: {model} · {backend}) |
 | Model panel rows | Model · the Thinking group |
 | Model row | {id} · {provider} (`title`: {provider/id}) · no model: Choose model |
 | Thinking group label | Thinking |
@@ -318,7 +321,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Trigger (composer foot, right end) | {mode} · {minor} …, or "Mode" before this chat's state arrives (`aria-label`/`title`: "Mode: {label}", plus ", applies after this turn" when pending) |
+| Trigger (composer foot, right end) | icons: the major mode's (normal: sliders), one per minor mode on, a letter in a rounded square per project mode on; folded where the foot is too tight for them (§chat.mode-menu/trigger): the first icon, then +{n}, the other modes' count (+3); then the chevron; words beside them only at a composer 620px or wider: {mode} · {minor} · {project mode} …, or "Mode" before this chat's state arrives (`aria-label`/`title`, always: "Mode: {label}", plus ", applies after this turn" when pending) |
 | Menu `aria-label` | Mode |
 | Group labels | Major mode · Minor modes · This project · {name} ("This project" with no name; only with project modes) · Subagents |
 | Project mode row (§chat.mode-menu/project-modes) | {id} (mono) / its `MODE.md` `description`; the state line under it: broken: Can't turn on: {problem} · removed: Removed from the project. This chat keeps it until you turn it off. · changed: Changed since you turned it on. Turn it off and on to load the changes. · on, files broken now: Its files have a problem now: {problem}. This chat keeps the version it turned on. · needs approval: Asks before turning on: it runs {n} tool(s). (with commands or hooks, what it runs: it runs 1 tool, 1 command and 1 hook.) · on, tools changed since approval: Its tools changed since you approved them, so they won't run. Turn it off and on to approve them again. · on, hooks waiting for you (§chat.mode-menu/project-mode-hooks): Hooks need your approval. Its tools and commands run; its hooks wait for you. · on, hooks over their budget: Hooks paused: a hook ran 10 times in 10 minutes. |
@@ -335,7 +338,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Terminal: palette row | This project · {name} — {description} — {state} |
 | Terminal: `/mode status` line | project modes ({name}): {id} (on \| removed \| changed since turned on \| needs approval \| broken: {path}: {error}) |
 | Worker turning a project mode on | a worker gets its project modes from the session that started it |
-| Subagents row / Delegate detail | Subagents · {name} / Profile: {name} |
+| Mode rows | each row's name follows its icon, the same icon the trigger uses (the menu is the trigger's legend) |
+| Subagents row / Delegate detail | subagents icon (branching nodes) · Subagents · {name} / Profile: {name} |
 | Subagent picker | Back · Subagent profiles · Search subagent profiles · Manage Profiles… · Save Current as Profile |
 | Descriptions | from pi-config `MODE_DESCRIPTIONS` (state.ts): normal: Pi as usual · delegate: Orchestrate: route planning, investigation and implementation to workers by profile · minors, from pi-config `MINOR_DESCRIPTIONS` (minor.ts): align: Align with the user on what to build (architecture, UX, scope) before building · spec: Scope work from the project's .sova/spec documentation, propose changes in drafts, and promote them once implemented · vis: Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose · codemode: Let the model run JavaScript that calls tools in parallel and filters their output (pi's codemode tool) · memory (§chat.mode-menu/memory-panel): the chosen type's row description, from `MEMORY_TYPE_INFO` (shared/memory.ts), not `MINOR_DESCRIPTIONS`: UniiChat: Endless chat: the model works from a summary of the whole chat and opens any part of it word for word · Zoomable compaction: Compaction the model can undo: when the chat compacts, older turns become summary lines it can open word for word; while memory is on, the detail line under it: UniiChat — by Victor Taelin · Zoomable compaction — Sova |
 | Delegate gear | icon only; `aria-label`/`title`: Configure Delegate (opens Settings → Subagents; switches nothing) |

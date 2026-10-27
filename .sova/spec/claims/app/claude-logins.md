@@ -217,8 +217,15 @@ login in the device's order.
 - **Composer foot.** On a chat whose model is a Claude Code model (`claude-code-cli/…`), on a
   device with more than one login to choose from (more than one in its order or, with the mesh
   on, any other login in the pool), a quiet `.composer-login` sits right after the
-  model indicator: the login's email (else its label or id), in caption size and muted ink,
-  ellipsized at 26 characters; on a phone width only the part before the `@`, at most 12. It is a
+  model indicator: a round letter avatar holding the shortest start of the login's name (its
+  email's part before the `@`, else its label or id), compared in lower case, that no other login
+  of this device shares: usually one letter, at most three. A whole short name is its own start
+  (`a` beside `ab`). When no start of up to three letters tells them apart (identical names, or
+  names that part only later), it is the login's number in this device's order, from 1. Until
+  the device's logins are read it is the name's first letter; the composer reads them once when
+  the indicator first shows. Where the composer is at least 620px wide, the name (its email, else
+  its label or id) comes back beside the avatar, in caption size and muted ink, the whole
+  indicator ellipsized at 26 characters. It is a
   button (`aria-haspopup="menu"`, `aria-expanded`) that opens the flyout's login panel
   (§app.claude-logins/switch-login); in a chat that can't be written it is `aria-disabled`, like
   the model indicator. Its `title` says

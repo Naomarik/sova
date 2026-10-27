@@ -1,5 +1,5 @@
 /* The Agents board (#/agents): one row per session; what it's about, where it stands and its
-   worktrees folded inside. A click on the row's non-control surface opens the session. Token values only. It measures the `insights` pane it lives in, never the window:
+   worktrees folded inside, its tokens a minute in a column. A click on the row's non-control surface opens the session. Token values only. It measures the `insights` pane it lives in, never the window:
    stacked rows below 768 (folded), a condensed 4-column row to 1000, the full 5 columns from
    there, and at 1600 a wide page: the session takes the extra width. Unfolded, every row is at
    most 2 lines tall and every cell fits in them. */
@@ -84,11 +84,11 @@
 .board-row[data-state="needs-you"] .board-rail { background: var(--status-warn); }
 .board-row[data-state="idle"] .board-rail { background: var(--color-border-strong); }
 
-/* Folded: the session and its ⋯ on one line, the worktree chips under them. */
+/* Folded: the session and its ⋯ on one line; the tokens figure rides the micro line. */
 .board-line {
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--control-md);
-  grid-template-areas: "session actions" "trees trees";
+  grid-template-areas: "session actions";
   gap: var(--space-1) var(--space-2);
   align-items: center;
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-2);
@@ -96,10 +96,9 @@
 .board-session { grid-area: session; }
 .board-activity { grid-area: activity; }
 .board-workers { grid-area: workers; }
-.board-cell.board-activity, .board-cell.board-workers { display: none; }
-.board-trees { grid-area: trees; padding-left: calc(var(--control-md) + var(--space-1)); }
+.board-tokens { grid-area: tokens; }
+.board-cell.board-activity, .board-cell.board-workers, .board-cell.board-tokens { display: none; }
 .board-actions { grid-area: actions; }
-.board-trees:has(> .board-dash) { display: none; }
 
 .board-cell {
   display: flex;
@@ -120,6 +119,7 @@
 .board-session-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-top: var(--space-2); }
 
 .board-title-line { display: flex; align-items: center; gap: var(--space-2); min-width: 0; margin: 0; }
+/* The title is the row's link: Tab reaches it, Enter opens, a new tab from the browser's own gestures. */
 .board-title {
   min-width: 0;
   overflow: hidden;
@@ -129,7 +129,11 @@
   line-height: var(--lh-body);
   font-weight: var(--fw-medium);
   color: var(--color-ink);
+  text-decoration: none;
+  border-radius: var(--r-sm);
 }
+.board-title:hover { text-decoration: underline; text-underline-offset: 2px; }
+.board-title:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .board-rename { display: flex; flex-direction: column; gap: var(--space-1); padding-right: var(--space-2); }
 .board-rename .group-field { flex-wrap: wrap; }
 .board-rename .input { flex: 1; min-width: 12rem; }
@@ -165,19 +169,13 @@ button.board-team:hover { color: var(--color-ink); border-color: var(--color-bor
 button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .board-team.board-team-all { display: none; }
 .board-dash { color: var(--color-ink-muted); }
+/* Tokens a minute: the sidebar's dense figure, one line. */
+.board-rate { white-space: nowrap; color: var(--color-ink-2); }
 
-/* Folded: the first tree and "+N" as chips. Unfolded (below): a grid of 2 lines. */
-.board-tree-set { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: var(--space-1) var(--space-2); min-width: 0; max-width: 100%; }
-.board-tree-more, .board-tree-more-second { flex: none; display: inline-flex; }
-.board-tree.board-tree-second { display: none; }
-.board-tree { display: inline-flex; flex: 0 1 auto; align-items: center; gap: var(--space-2); min-width: 0; max-width: 100%; }
-.board-tree > :empty { display: none; }
-.board-tree-reading, .board-tree-count, .board-tree-end { display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
-.board-tree-gone { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink-muted); }
+/* The open row's worktree lines. */
 .board-tree-branch { min-width: 4ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-mono); color: var(--color-ink); }
-.board-ahead, .board-lines { flex: none; font-size: var(--fs-mono); white-space: nowrap; }
-.board-ahead { color: var(--color-ink-2); }
-.board-tree .chip, .board-tree-line .chip { flex: none; }
+.board-tree-line .chip { flex: none; }
+.board-unmerged { flex: none; color: var(--color-ink-2); }
 .board-dirty { flex: none; display: inline-block; width: 8px; height: 8px; border-radius: var(--r-full); background: var(--status-warn); }
 .board-dirty-word { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--color-ink-2); }
 
@@ -216,34 +214,21 @@ button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: va
 
 .board-head { display: none; }
 
-/* ---- Unfolded, condensed: the Activity line over Workers' first line in one column; Open, details and ⋯ ---- */
+/* ---- Unfolded, condensed: the Activity line over Workers' first line in one column; details and ⋯ ---- */
 @container insights (min-width: 768px) {
   .board-line {
-    grid-template-columns: minmax(0, 1.6fr) minmax(9.5rem, 1fr) minmax(0, 1.5fr) calc(var(--control-md) * 3 + var(--space-1) * 2);
-    grid-template-areas: "session activity trees actions" "session workers trees actions";
+    grid-template-columns: minmax(0, 1.6fr) minmax(9.5rem, 1fr) 6rem calc(var(--control-md) * 2 + var(--space-1));
+    grid-template-areas: "session activity tokens actions" "session workers tokens actions";
     gap: 2px var(--space-3);
     padding: var(--space-1) var(--space-2) var(--space-1) var(--space-2);
   }
   .board-cell.board-activity, .board-cell.board-workers { display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: center; gap: 2px; }
+  .board-cell.board-tokens { display: flex; flex-wrap: nowrap; }
   .board-workers .board-cell-sub { display: none; }
   .board-activity { align-self: end; }
   .board-workers { align-self: start; }
-  .board-trees { padding-left: 0; }
-  .board-trees:has(> .board-dash) { display: flex; }
   .board-micro { display: none; }
   .board-act { display: inline-flex; }
-  /* The trees: 2 lines on one grid, so both lines' readings and counts share columns. */
-  .board-tree-set {
-    display: grid;
-    grid-template-columns: minmax(4ch, 1fr) auto auto auto;
-    align-items: center;
-    gap: 2px var(--space-2);
-    width: 100%;
-  }
-  .board-tree, .board-tree.board-tree-second { display: contents; }
-  .board-tree > :empty { display: inline-flex; }
-  .board-tree-count { justify-self: end; }
-  .board-tree-more { display: none; }
   .board-caption { flex-direction: row; align-items: baseline; justify-content: space-between; }
 }
 
@@ -251,8 +236,8 @@ button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: va
 @container insights (min-width: 1000px) {
   .board-line,
   .board-head {
-    grid-template-columns: minmax(0, 2fr) 10rem minmax(9rem, 0.8fr) minmax(0, 2.2fr) calc(var(--control-md) * 3 + var(--space-1) * 2);
-    grid-template-areas: "session activity workers trees actions";
+    grid-template-columns: minmax(0, 1fr) 10rem minmax(9rem, 14rem) 7rem calc(var(--control-md) * 2 + var(--space-1));
+    grid-template-areas: "session activity workers tokens actions";
     column-gap: var(--space-3);
   }
   .board-cell.board-activity, .board-cell.board-workers { align-self: center; }
@@ -269,13 +254,13 @@ button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: va
     color: var(--color-ink-muted);
   }
 }
-/* ---- Desktop band (1000–1599): the title and the branches get the room. Activity is the ring and
-   the age (the model stays for AT and in the age's title), the team chips one "{n} teams" chip,
-   the readings and counts their content's width, and Session and Worktrees share the rest. ---- */
+/* ---- Desktop band (1000–1599): the title gets the room. Activity is the ring and the age (the
+   model stays for AT and in the age's title), the team chips one "{n} teams" chip, and Session
+   takes what the fixed tracks leave. ---- */
 @container insights (1000px <= width < 1600px) {
   .board-line,
   .board-head {
-    grid-template-columns: minmax(0, 1fr) 5.5rem minmax(8rem, 9.5rem) minmax(0, 1fr) calc(var(--control-md) * 3 + var(--space-1) * 2);
+    grid-template-columns: minmax(0, 1fr) 5.5rem minmax(8rem, 9.5rem) 6rem calc(var(--control-md) * 2 + var(--space-1));
     column-gap: var(--space-2);
   }
   .board-activity-line .board-model {
@@ -289,18 +274,15 @@ button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: va
   .board-activity-line .context-ring + .board-when::before { content: "·"; }
   .board-team:not(.board-team-all) { display: none; }
   .board-team.board-team-all { display: inline-block; }
-  .board-tree-set { column-gap: var(--space-1); }
-  .board-tree-branch { margin-right: var(--space-1); }
-  .board-tree-reading, .board-tree-count, .board-tree-end { gap: var(--space-1); }
 }
 
 /* The head's Session label starts where the titles do, past the twist. */
 .board-head > :first-child { padding-left: calc(var(--control-md) + var(--space-1)); }
 
-/* ---- Wide: the session gives up its spare room, so Workers and Worktrees keep to 2 lines ---- */
+/* ---- Wide: the session takes the spare room; Workers keeps to its 2 lines ---- */
 @container insights (min-width: 1600px) {
   .board-line,
   .board-head {
-    grid-template-columns: minmax(20rem, 1fr) 10rem 17rem 28rem calc(var(--control-md) * 3 + var(--space-1) * 2);
+    grid-template-columns: minmax(20rem, 1fr) 10rem 17rem 8rem calc(var(--control-md) * 2 + var(--space-1));
   }
 }

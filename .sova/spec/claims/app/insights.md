@@ -405,6 +405,9 @@ host and every connected host.**
   (§app.insights/sidebar-foot-phone); on the spine, no item of its own: the agents tally's name and
   toast, and the Agents doorway's, end with its sentence (§app.session-list/spine). Every one of
   those names carries the sentence; the figure and chart alone are never the only place it is said.
+  Per session, each Agents board row has its own 5-minute figure from the same slots
+  (§app.insights/session-token-rate), delivered with the Agents page's poll and never on this
+  frame; the rows are not shares of this figure and never add up to it.
 - **The newest minute is hollow.** Tokens land when a reply ends, so the newest minute reads low
   while replies stream. Its column (the phone's newest two-minute column) is drawn as a 1px
   `--color-ink-2` outline with no fill, a shape and not only a tone, so the dip reads as "not in
@@ -884,8 +887,8 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
 ```
 
 - **Split.** Usage and agents never share a page. The Agents page is the board
-  (§app.insights/team-cards): one row per session, its workers counted in a column, and what
-  it's about, where it stands and its worktrees folded inside the row. When nothing is in view, its whole body under the bar is one `.empty`
+  (§app.insights/team-cards): one row per session, its workers counted in a column, its tokens a
+  minute in another, and what it's about, where it stands and its worktrees folded inside the row. When nothing is in view, its whole body under the bar is one `.empty`
   (§design/copy-deck): the live fact first ("{n} sessions live." or "No session is live right
   now."), then the absence for the chip or search in force.
 - **Tabs (Agents).** Under the head the Agents page has three tabs, Board (everything this section
@@ -1517,23 +1520,23 @@ Sova that aren't archived. An archived session is in it only while it is open in
   </div>
 </div>
 <div class="card board">
-  <div class="board-head" aria-hidden="true">Session · Activity · Workers · Worktrees</div>   <!-- desktop only -->
+  <div class="board-head" aria-hidden="true">Session · Activity · Workers · Tokens/min</div>   <!-- desktop only -->
   <h2 class="board-group-head" data-state="needs-you" id="board-group-needs-you">Needs you · 2</h2>   <!-- only when 2+ groups show -->
   <ul class="board-list" aria-labelledby="board-group-needs-you">   <!-- one group: aria-label="Sessions" -->
     <li class="board-row" data-state="needs-you">          <!-- working | needs-you | idle | archived; a click on it opens the session -->
       <div class="board-line">
-        <div class="board-cell board-session">rail · twist (aria-expanded; only when the open row has something to say) · title (+ visually hidden ", Needs you") / gist</div>
+        <div class="board-cell board-session">rail · twist (aria-expanded; only when the open row has something to say) · <a class="board-title" href="#/s/…">title</a> (+ visually hidden ", Needs you") / gist</div>
         <div class="board-cell board-activity">model · context ring · 5m ago</div>   <!-- one muted line -->
         <div class="board-cell board-workers">2/5 working · $1.20 / team chip · team chip · +3 → its Session details pane, on Agents</div>
-        <div class="board-cell board-trees">feat/x · ↑3 ↓1 · +120 −4 · dirty dot / feat/y · merged · +1</div>
-        <div class="board-cell board-actions">Open · Session details (aria-expanded) · ⋯</div>
+        <div class="board-cell board-tokens">48k tok/min</div>   <!-- §app.insights/session-token-rate; idle or unmeasurable: a muted dash -->
+        <div class="board-cell board-actions">Session details (aria-expanded) · ⋯</div>
       </div>
       <div class="board-detail">   <!-- open rows only: in the title column, behind a guide rule under the twist -->
         <p class="board-reason">…why it needs you…</p>
         <p class="board-note">…1 open question in al_2 …, or the last turn's error…</p>
         <p class="board-now">…the full now line…</p>
         <ul class="board-topic-list" aria-label="Recent topics">…up to 5 headings, newest first…</ul>
-        <ul class="board-tree-list" aria-label="Worktrees">…one line per worktree, when there are 2 or more or one is dirty…</ul>
+        <ul class="board-tree-list" aria-label="Worktrees">…one line per worktree: branch · merged or unmerged · uncommitted…</ul>
       </div>
     </li>
   </ul>
@@ -1583,15 +1586,20 @@ Sova that aren't archived. An archived session is in it only while it is open in
   still narrows it.
 - **Paging.** 50 rows render; "Show {n} More" adds 50. Paging counts the one sorted list, and
   the groups split only the rows it renders.
-- **Row click.** A click or tap anywhere on a row that isn't a control (the title, the gist, the
-  open row, its bare surface), at every width, opens the session, as Open does. Every control
+- **Title link.** The title is a real link to the session (`href` its session address, the
+  sidebar's): Tab reaches it, Enter opens the session, and Ctrl/Cmd-click, a middle click and the
+  browser's own link menu open it in a new tab. A plain click on it opens the session in this tab.
+  A click on it that ends a text selection inside the row doesn't follow it. No row has an Open
+  button; while the rename field shows, it replaces the title, link included.
+- **Row click.** A click or tap anywhere else on a row that isn't a control (the gist, the open
+  row, its bare surface), at every width, opens the session, as the title link does. Every control
   keeps its own action and never opens it: the twist, the team chips and their `+{n}`, the action buttons, ⋯ and
   its menu, and the rename field with its hint. A click that ends a text selection inside the row
-  doesn't open it, nor does one with a modifier key. The row itself takes no focus: Open is its
-  keyboard target.
+  doesn't open it, nor does one with a modifier key. The row itself takes no focus: the title
+  link is its keyboard target.
 - **Columns** (the `insights` container ≥1000px). Every row is at most 2 lines tall (an open
-  row adds its detail below), and every cell fits in those 2 lines. Session: the title as plain
-  text, then the gist (`outlineGist`, else the now line, else the cwd in mono), each one line.
+  row adds its detail below), and every cell fits in those 2 lines. Session: the title (the
+  link above), then the gist (`outlineGist`, else the now line, else the cwd in mono), each one line.
   Activity: one muted line, the compact model, the context ring (the sidebar row's rule: the open
   view's live fill wins, never without a window) and last active in relative time ("Opus 5.5 ·
   ◔ · 5m ago"). Workers: `{working}/{total} working`, or `{total} workers` while none
@@ -1599,8 +1607,10 @@ Sova that aren't archived. An archived session is in it only while it is open in
   (§app.insights/usage-ledger) ("9/21 working · $610.10"); under it at most 2 team chips, working
   teams first, then a `+{n}` count chip for the rest. A team chip is a link to
   `#/agents/{teamKey}`; a click on it, or on `+{n}`, opens that session's Session details pane in
-  place on its Agents tab. Worktrees: see §app.insights/subagent-cards. Actions: Open, Session
-  details and ⋯; Archive and Move to group are in ⋯ only.
+  place on its Agents tab. Tokens/min: one line, §app.insights/session-token-rate. No cell shows
+  a worktree, an ahead/behind count or a line count (the open row lists the worktrees,
+  §app.insights/subagent-cards). Actions: Session details and ⋯ (a 2-button track); Archive and
+  Move to group are in ⋯ only.
 - **Totals.** The totals line (working · live · spend today · unmerged, with its `title`,
   §app.insights/usage-page-and-agents-page) shows once on the Board tab at every width: on the
   count line directly above the board (`.board-caption`), never in the page head. From 768px it
@@ -1609,20 +1619,19 @@ Sova that aren't archived. An archived session is in it only while it is open in
   open). The title and the branches get the room: Activity shows the context ring and the age
   only ("◔ · 5m ago"), its model kept for screen readers and in the age's hover title; the team
   chips collapse into one `{n} teams` count chip (`1 team`) that opens the same pane as `+{n}`;
-  the readings and line counts take only their content's width, the branch the rest; and the
-  Session and Worktrees tracks share equally what Activity (5.5rem) and Workers (8–9.5rem)
-  leave, with `--space-2` between columns, so a
-  typical title shows whole and a branch shows at least 16 characters.
+  and the Session track takes what Activity (5.5rem), Workers (8–9.5rem), Tokens/min (6rem) and
+  the 2-button actions leave, with `--space-2` between columns, so a typical title shows whole.
 - **Wide** (the `insights` container ≥1600px). Session takes the width the other columns leave
-  (never under 20rem), Activity a 10rem track, Workers 17rem, Worktrees 28rem, the actions their
-  fixed width, so Workers and Worktrees never wrap past their 2 lines.
+  (never under 20rem), Activity a 10rem track, Workers 17rem, Tokens/min 8rem, the actions their
+  fixed width (2 buttons), so Workers never wraps past its 2 lines.
 - **Page.** Only this page drops the 1280px page cap: side margins `--space-4` below 1600px and
   `--space-6` from there, the content capped at 2400px and centered; the head, the bar and the
   board share the same left and right edges. Other insights pages keep 1280px.
 - **Condensed** (768–999px): one column holds the Activity line over the Workers cell's first
-  line (the team chips are left out); the actions are Open, Session
+  line (the team chips are left out), then the Tokens/min column; the actions are Session
   details and ⋯. **Folded** (<768px): stacked rows — the title across the full width, the gist, a micro line
-  (model · `{working}/{total} working` or `{total} workers` · last active), the worktree chips — and
+  (model · `{working}/{total} working` or `{total} workers` · last active · the row's
+  `{n} tok/min` when it has a figure, §app.insights/session-token-rate) — no worktree chips, and
   ⋯ is the door to every action. The group headings show at every width. Every target is 44px.
 - **Session details.** The info button (`aria-controls="session-pane"`, named "Session details of
   “{title}”") opens that session's Session detail pane (§app/subagents-pane) on its Session tab in
@@ -1636,7 +1645,7 @@ Sova that aren't archived. An archived session is in it only while it is open in
   insight, the Timeline can't rewind ("Only a chat open in Sova can rewind."), and a row's jump
   says the message isn't in the transcript on screen.
 - **⋯ menu.** Session Details (Close Session Details while that row's pane is open), Open
-  Session, Open Subagents (opens the session with its pane on the Agents tab), Rename…, Use Gist as Title (the gist on one line,
+  Subagents (opens the session with its pane on the Agents tab), Rename…, Use Gist as Title (the gist on one line,
   cut to the title limit; off, with the reason, when there's none or it already is the title),
   Reset to Original Title (off when not renamed), Move to Group… (a screen of the groups, with
   "No group"), Archive or Unarchive, Copy Path. After them, for a session on this host, comes
@@ -1657,7 +1666,7 @@ Sova that aren't archived. An archived session is in it only while it is open in
   …", the session mark's words) and the last turn's error, each unless the reason line already
   says it; the full now line (`outlineNow`, which the gist cuts to one line); the last 5 topic
   headings, newest first (the Timeline's order), each with its relative time; then one line per
-  worktree (§app.insights/subagent-cards). The headings come from one read-only `GET
+  worktree, whenever it has one (§app.insights/subagent-cards). The headings come from one read-only `GET
   /api/insights/session` when the row opens, kept while it stays open, never polled; while it
   runs the list says "Reading topics…", and a failed read says "Couldn't read the topics." with
   nothing else. Workers and teams aren't in it: the Workers column counts them, and a team chip
@@ -1672,30 +1681,77 @@ Sova that aren't archived. An archived session is in it only while it is open in
 
 ## §app.insights/subagent-cards — Board worktrees
 
-The Worktrees column reads `GET /api/insights/worktrees?paths=…` for the rendered rows only
-(under Unmerged, for the default scope, which that chip needs a reading to decide), every 15s
-and whenever that set of rows changes. Readings are kept per session across requests. A failed
-or missing route (an older server) shows "—" in every row it hasn't read, and nothing else: no
-banner, no toast.
+The board reads `GET /api/insights/worktrees?paths=…` for the rendered rows only (under
+Unmerged, for the default scope, which that chip needs a reading to decide), every 15s and
+whenever that set of rows changes. Readings are kept per session across requests. They feed the
+Unmerged chip and its count, the totals line's unmerged figure, the search's branch and path
+words, and the open row's worktree lines; no column and no folded chip shows them. A failed or
+missing route (an older server) leaves those as unread, and says nothing else: no banner, no
+toast.
 
-- **Cell.** At most 2 lines, one tree each, the most useful first: unmerged, then those with
-  uncommitted changes, then merged, then the rest, then gone (each kind in the session's own
-  order). A line: the branch in mono (`detached` on a detached HEAD, the folder name when it's
-  gone), then **merged** (a success chip) when the tip is in the base, **content merged** when
-  merging would change nothing, else `↑{ahead} ↓{behind}` in mono; `+{added} −{removed}` when the
-  branch changes any line; a dot for uncommitted changes (its word for AT and in the `title`).
-  The readings and line counts of the 2 lines line up in columns on the right, and the branch
-  takes what's left. When either count is over 9,999, both shorten (`+326k −8.8k`), the exact
-  numbers in the counts' `title`. More trees: a `+{n}` count chip ends the second line. When the
-  session has 2 or more trees and every one is gone, the cell is one muted line, "{n} worktrees,
-  all gone". The cell's `title` states every tree.
-  No tree: "—". A tree that's gone reads "gone"; a git failure "unreadable"; no base "no base".
-- **Open row.** Worktree lines only when the session has 2 or more trees, or one with
-  uncommitted changes (a single clean tree is the cell already): one line per tree, with branch,
-  the same reading, lines, "uncommitted" in words, "a worker's" when a worker's cwd is the source,
-  and the path in mono.
-- **Folded.** The cell sits under the session as chips: the first tree in that order, then
-  `+{n}` for the rest; a row with no tree drops it.
+- **Open row.** One line per worktree whenever the session has any, most useful first:
+  unmerged, then those with uncommitted changes, then merged, then the rest, then gone (each kind
+  in the session's own order). A line: the branch in mono (`detached` on a detached HEAD, the
+  folder name when it's gone), then **merged** (a success chip) when the tip is in the base or
+  merging would change nothing, else **unmerged** in words; "uncommitted" in words when it has
+  uncommitted changes; "a worker's" when a worker's cwd is the source; and the path in mono. A
+  tree that's gone reads "gone"; a git failure "unreadable"; no base "no base". The line's
+  `title` says the same in a sentence (the base it is or isn't merged into).
+- **No counts.** Nothing on the board shows ahead/behind arrows or counts, or lines added and
+  removed, in a line, a chip or a `title`.
+
+## §app.insights/session-token-rate — Each board row's tokens a minute
+
+**Each Agents board row shows how fast that session is writing: the output tokens a minute over
+the last 5 minutes, for the session and its workers at any depth together, in the sidebar's
+format (`48k tok/min`), under the Tokens/min column (on a phone, on the row's micro line).**
+
+- **What is counted.** The tokens the sidebar's figure counts (§app.insights/token-velocity):
+  each model call's output tokens, landed when the call ends and spread back over its reply, in 30 s
+  epoch slots. For a row: the calls of its own chat process and of every worker chat it started,
+  and theirs, at any depth (explain, handoff and btw chats count as its workers), each counted once:
+  a process whose report already folds in another's is never added a second time.
+- **Who has one.** Only sessions whose chats Sova's server runs on this host. A session on another
+  host shows a muted dash whose `title` says "On another host: its tokens aren't counted here." A
+  session open in a terminal pi shows one saying "Open in a terminal pi: Sova can't see its
+  tokens.", unless a worker Sova runs for it wrote in the window: then the row shows that figure,
+  as partial.
+- **Not the sidebar's sum.** The rows never add up to the sidebar's figure, and nothing says they
+  do: the sidebar also counts connected hosts, hidden chats and Sova's own one-shots.
+- **Idle.** Nothing written in the last 5 minutes: a muted dash, its `title` "No output in the last
+  5 minutes.".
+- **Hover.** The figure's `title` (and its accessible name) is one sentence: "Output tokens a
+  minute: 48k over the last 5 minutes, 12k over 30 (this session 8k, its workers 40k). Replies
+  still being written aren't counted yet." Partial (a Claude Code turn running, whose tokens land
+  when it ends; a process that reports no ring or a partial one; a terminal pi row's own
+  calls): "at least" before the 5-minute figure and "Some calls' tokens can't be seen." before the
+  last sentence; the figure itself stays bare, as the sidebar's does.
+- **Kept after a process goes.** A session's tokens stay on its row, attributed to it (a worker's to
+  its parent's row), when its chat or worker process exits, idles out, is stopped, or reloads onto
+  new code, until they age out of the window; a reload's new process adds to them, never replaces
+  them. Once aged out they leave the server's memory too, whether or not a board is open (checked
+  at most once per 30 s slot on the store's own calls, never on a timer). Tokens from processes
+  that ended before this server started are not there.
+- **Delivered with the poll.** The server keeps each session's slots in memory from what its chat
+  processes already report with their state (no disk, no git, no new route, no timer, nothing per
+  token; a report that repeats the last one is compared in place and costs nothing more) and
+  puts them on `GET /api/insights/agents` only when the request asks (`?tokens=1`; then `tokens`,
+  `{}` when none; without it the answer has no `tokens` and the server does no token work), keyed by
+  the row's session id:
+  only sessions with tokens in the last 5 minutes, each one compact string holding its last 5
+  minutes' slots (from the oldest non-zero one) and its 30-minute total, its own and its workers'
+  apart. The server builds that answer once per change and per 30 s slot; every poll in between
+  reads the same copy. Never on the `llm_inflight` frame, whose host part goes to peers. The app's
+  one agents poll (the sidebar's feed reads it on every page) asks only while the Agents board's
+  Board tab is shown, and entering the tab asks at once; the poll pauses while the browser tab is
+  hidden, and no second poll is added. Every other page's poll costs what it did without the
+  column. An older server that sends no `tokens` on a request that asked: every row's dash says
+  "This server doesn't report tokens per session."
+- **Moves by itself.** The browser reads the 5-minute means with the sidebar's
+  `tokenVelocityView()` once per answer whose `tokens` read differently from the last and on one
+  shared 30 s tick for the whole board (an answer with the same `tokens` reuses the last reading
+  whole), which runs only while a shown row has tokens and the tab is visible; nothing is computed
+  per row per redraw. The 30-minute figure in the sentence is the latest answer's.
 
 ## §app.insights/worktrees-endpoint — Which worktrees a session touched
 

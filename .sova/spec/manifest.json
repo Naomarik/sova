@@ -815,8 +815,8 @@
       "authority": "accepted",
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "at": "2026-10-24T06:48Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#7e28f246"
       },
       "evidence": "verified"
     },
@@ -1260,6 +1260,41 @@
         "at": "2026-10-13T19:52Z"
       }
     },
+    "§app.insights/session-token-rate": {
+      "kind": "behavior",
+      "requires": [
+        "§app.insights/token-velocity",
+        "§app.insights/team-cards"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-tokens.ts",
+        "server/session-tokens.test.ts",
+        "server/chat-host.ts",
+        "server/chat-host.test.ts",
+        "server/insights.ts",
+        "shared/protocol.ts",
+        "src/lib/agents-board.ts",
+        "src/lib/agents-board.test.ts",
+        "src/components/AgentsView.tsx",
+        "src/agents-board.css",
+        "shared/session-tokens-wire.ts",
+        "shared/session-tokens-wire.test.ts",
+        "server/app.ts",
+        "server/insights-agents-tokens.integration.test.ts",
+        "shared/commands/other.ts",
+        "src/App.tsx",
+        "src/lib/api.ts",
+        "src/lib/agents-feed.ts",
+        "src/lib/agents-feed.test.ts"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T20:41Z",
+        "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
+      }
+    },
     "§app.insights/sidebar-foot": {
       "kind": "behavior",
       "authority": "accepted",
@@ -1288,7 +1323,12 @@
         "src/lib/agents-board.ts",
         "src/lib/agents-board.test.ts",
         "src/lib/api.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T20:41Z",
+        "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
+      }
     },
     "§app.insights/team-cards": {
       "kind": "behavior",
@@ -1313,8 +1353,8 @@
       ],
       "agreed": {
         "by": "omar",
-        "at": "2026-10-26T22:15Z",
-        "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
+        "at": "2026-10-27T08:51Z",
+        "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#bbe646fd"
       }
     },
     "§app.insights/tokens-motion-and-accessibility": {
@@ -1360,8 +1400,9 @@
         "src/design/base.css"
       ],
       "agreed": {
-        "by": "Omar (al_1 go-ahead)",
-        "at": "2026-10-13T16:19Z"
+        "by": "user",
+        "at": "2026-10-25T20:41Z",
+        "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
       }
     },
     "§app.new-session-dialog/slow-targets": {
@@ -3017,8 +3058,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T16:16Z",
-        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
+        "at": "2026-10-24T05:59Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
       }
     },
     "§app/settings-dialog": {
@@ -7220,7 +7261,12 @@
         "src/lib/session-row-menu.test.ts",
         "src/lib/session-row-menu.snapshot.json",
         "scenarios/session-menu.json"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T20:41Z",
+        "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
+      }
     },
     "§app.extensions/trust": {
       "kind": "behavior",
@@ -9527,7 +9573,12 @@
       "requires": [
         "§app.organizations/org-cards",
         "§app/baton"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
     },
     "§app.organizations/portability": {
       "kind": "behavior",
@@ -13639,7 +13690,12 @@
       "requires": [
         "§app.claude-logins/add-remove",
         "§app.claude-logins/device-order"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
     },
     "§app.claude-logins/active-login": {
       "kind": "behavior",
@@ -13662,7 +13718,12 @@
         "src/lib/claude-login.test.ts",
         "pi-config/extensions/usage-status/fetch.ts",
         "pi-config/extensions/usage-status/fetch.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
     },
     "§app.claude-logins/add-remove": {
       "kind": "behavior",
@@ -13703,7 +13764,12 @@
         "src/lib/claude-login-groups.ts",
         "src/lib/claude-login-groups.test.ts",
         "src/design/base.css"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
     },
     "§app.claude-logins/failover": {
       "kind": "behavior",
@@ -13726,7 +13792,64 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-12T13:59Z"
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
+    },
+    "§app.claude-logins/project-login": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/spawn-selection",
+        "§app.claude-logins/failover",
+        "§app.claude-logins/switch-login",
+        "§app.claude-logins/borrow-return",
+        "§app.claude-logins/accounts-tab",
+        "§app/projects",
+        "§app.projects/seam",
+        "§app.organizations/project-page",
+        "§app.organizations/org-page"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/claude-login-store.ts",
+        "server/claude-login-known.ts",
+        "server/claude-login-context.ts",
+        "server/org-claude-login.ts",
+        "server/projects/claude-login.ts",
+        "server/projects/claude-login.test.ts",
+        "server/project-claude-login.integration.test.ts",
+        "src/components/ClaudeLoginCard.tsx",
+        "src/lib/claude-login-card.ts",
+        "src/lib/claude-login-card.test.ts",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/index.ts",
+        "pi-config/extensions/claude-code/provider/login-failover.test.ts",
+        "server/projects/contributions.ts",
+        "server/projects/routes.ts",
+        "server/org-routes.ts",
+        "server/chat-host.ts",
+        "server/chat-host-login-context.test.ts",
+        "server/chat-runtime/supervisor.ts",
+        "server/claude-login-state.ts",
+        "server/claude-accounts.ts",
+        "shared/projects.ts",
+        "shared/protocol.ts",
+        "src/lib/api.ts",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/components/OrgsView.tsx",
+        "src/components/AccountsSettings.tsx",
+        "src/lib/claude-login.ts",
+        "src/lib/claude-login.test.ts",
+        "shared/commands/projects.ts",
+        "shared/commands/other.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
       }
     },
     "§app.claude-logins/registry": {
@@ -13772,7 +13895,12 @@
         "pi-config/extensions/claude-code/accounts.test.ts",
         "server/claude-models.test.ts",
         "server/claude-models.integration.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
     },
     "§app/claude-logins": {
       "kind": "surface",
@@ -13862,7 +13990,12 @@
         "server/claude-pool/agent.integration.test.ts",
         "scripts/claude-pool-e2e/run.mjs",
         "scripts/fake-claude.mjs"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
     },
     "§app.claude-logins/drain": {
       "kind": "behavior",
@@ -13884,8 +14017,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T22:00Z",
-        "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#24177c8f"
+        "at": "2026-10-24T06:48Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#7e28f246"
       }
     },
     "§app.claude-logins/idle-pin": {
@@ -16303,7 +16436,12 @@
         "server/claude-pool/pool-test-fixtures.ts",
         "server/claude-pool/agent.integration.test.ts",
         "src/lib/claude-login.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
     },
     "§app.claude-logins/switch-queue": {
       "kind": "behavior",
@@ -17470,8 +17608,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "at": "2026-10-24T06:48Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#7e28f246"
       }
     },
     "§chat.playbooks/bundles": {
@@ -19249,7 +19387,12 @@
         "server/overseer-sender.ts",
         "statecharts/test/sova/statecharts/refit/seam_test.cljs"
       ],
-      "requires": []
+      "requires": [],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
     },
     "§app.projects/standalone": {
       "kind": "behavior",
@@ -20938,7 +21081,12 @@
         "pi-config/extensions/claude-code/accounts.ts",
         "pi-config/extensions/claude-code/provider/login-failover.test.ts",
         "pi-config/extensions/claude-code/accounts.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
     },
     "§app.insights/token-velocity": {
       "kind": "behavior",
@@ -20973,8 +21121,9 @@
         "§app.insights/llm-inflight"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-13T02:51Z"
+        "by": "user",
+        "at": "2026-10-25T20:41Z",
+        "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
       }
     },
     "§app.session-list/working-now": {

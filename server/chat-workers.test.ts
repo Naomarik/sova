@@ -387,6 +387,52 @@ describe("WorkerRegistry", () => {
     assert.deepEqual(opened, ["/p/parent.jsonl"]);
   });
 
+  test("a run that settled with nobody watching just before its parent is archived never opens the parent (§app.chat-processes/workers)", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const settle = (r: WorkerRegistry, h: FakeHandle, key: string) => {
+      h.mirror = { ...h.mirror, worker: { proc: h.mirror.worker.proc, lastSettled: { key, outcome: "success" } } };
+      r.onState(h as unknown as RemoteChatHandle);
+    };
+    const flush = async () => {
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    };
+    // Archived as markArchived does it: the mark, then its workers stopped (stopAllOf).
+    {
+      const { procs, handles } = fakeProcs();
+      const opened: string[] = [];
+      let archived = false;
+      const r = new WorkerRegistry(procs, { dir: () => join(dir, "workers"), autoResume: () => true, openParent: async (p) => void opened.push(p), archived: () => archived });
+      await r.start(start("k", null));
+      settle(r, handles[0]!, "k:task#1");
+      t.mock.timers.tick(5_000);
+      archived = true;
+      await r.stopAllOf("sid", "its parent was archived");
+      t.mock.timers.tick(300_000);
+      await flush();
+      assert.deepEqual(opened, [], "the pending report's open was cancelled");
+      rmSync(join(dir, "workers"), { recursive: true, force: true });
+    }
+    // Only the mark (its workers not stopped yet when the timer fires): still never opened.
+    {
+      const { procs, handles } = fakeProcs();
+      const opened: string[] = [];
+      let archived = false;
+      const r = new WorkerRegistry(procs, { dir: () => join(dir, "workers"), autoResume: () => true, openParent: async (p) => void opened.push(p), archived: () => archived });
+      await r.start(start("k", null));
+      settle(r, handles[0]!, "k:task#1");
+      archived = true;
+      t.mock.timers.tick(300_000);
+      await flush();
+      assert.deepEqual(opened, []);
+      // A later settle of a worker whose parent is archived schedules nothing either.
+      settle(r, handles[0]!, "k:task#2");
+      t.mock.timers.tick(300_000);
+      await flush();
+      assert.deepEqual(opened, []);
+      rmSync(join(dir, "workers"), { recursive: true, force: true });
+    }
+  });
+
   test("a parent that doesn't open for a settle is tried again; the report counts as taken only once it opened, across a restart too", async (t) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     const settle = (r: WorkerRegistry, h: FakeHandle) => {

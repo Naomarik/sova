@@ -31,9 +31,11 @@ and each merge becomes a card.
   maps, draft records left behind, hand-resolved §, orphaned evidence), in any project with a spec, mode on or off.
 
 - `landing.ts` (builtins only): the user's answers on a branch's Landing card, and their go-ahead typed in
-  the branch's own chat, `<state root>/landing.json` (Land It, a typed go-ahead `by: "owner-chat"`, or Not
-  Yet per branch and commit, §chat.worktrees/landing-answers). Sova writes it (a click on the card,
-  `server/session-offers.ts`), so does `worktree land` (only on the user's newest message, read by
+  the branch's own chat, `<state root>/landing.json` (Land It, a typed go-ahead `by: "owner-chat"`, the
+  captain's `go` `by: "captain-chat"`, or Not Yet per branch and commit, each with an optional `in`, the
+  session it was given in: additive, §chat.worktrees/landing-answers). Sova writes it (a click on the owner's
+  card or the captain's row, `server/session-offers.ts`), so does the driver's `go` (`recordCaptainGoAhead`),
+  so does `worktree land` (only on the user's newest message, read by
   `typedGoAhead`), and the merge round's driver reads it (a typed one also wakes the captain's merge-ready
   schedule, `server/schedules.ts`), carrying an answer over
   clean master merges itself (`round.mjs` `cleanMergeParent`, `landingAnswerAt`). Nothing enforces it:

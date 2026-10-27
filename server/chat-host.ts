@@ -68,10 +68,12 @@ import { addOwnPid } from "./live";
 import { meshLinks } from "./mesh/links";
 import { resumeCrashedChat } from "./overseer";
 import { setRemoteHosted } from "./resource-monitor";
+import { sessionTokens } from "./session-tokens";
 import { subagentSessionRefusal } from "./session-guards";
 import { getSessionSummary, idOf } from "./sessions-index";
 import { isArchived } from "./archived-sessions";
 import { agentRoot, stateRoot } from "./state-root";
+import { loginContextEnv, withoutLoginContext } from "./claude-login-context";
 import { markOwned, recentForeignWriteAgeSec } from "./write-guard";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -221,7 +223,7 @@ export class ChatHostRouter {
           home: homedir(),
           agentDir: w?.spec.agentDir ?? agentRoot(),
           extra: {
-            ...w?.spec.env,
+            ...withoutLoginContext(w?.spec.env),
             ...(w?.spec.agentDir ? { SOVA_CHAT_STATE_ROOT: stateRoot() } : {}),
             SOVA_CHAT_SOCK: c.sock,
             SOVA_CHAT_PATH: c.sessionPath,
@@ -230,6 +232,9 @@ export class ChatHostRouter {
             SOVA_CHAT_BUILD: id,
             SOVA_CHAT_LIVE_ROOT: REPO,
             SOVA_CHAT_COPIES_ROOT: codeRoot(),
+            // The project's Claude login for a chat in its folder, and the logins saved for other work
+            // (§app.claude-logins/project-login); none on a host with no assignment.
+            ...loginContextEnv(c.cwd),
             // After the worker spec's env: a loadout never chooses its key.
             SOVA_CALLER_KEY: this.callerKeys.issue(c.chatId, c.unit),
           },
@@ -328,8 +333,10 @@ export class ChatHostRouter {
     if (h) {
       this.paths.delete(h.mirror.sessionId);
       this.workers.parentUnlinked(h);
-      // Its model calls are no longer counted here; its tokens stay in this server's ring until they age out.
+      // Its model calls are no longer counted here; its tokens stay in this server's ring until they age out,
+      // and on its board row too (§app.insights/session-token-rate).
       setChildCounts(llmKey(h.mirror.sessionId), undefined);
+      sessionTokens().release(h.mirror.sessionId);
     }
     this.remotes.delete(path);
     setRemoteHosted(path, null);
@@ -358,7 +365,14 @@ export class ChatHostRouter {
       // Every chat process's model calls, counted once here (§6 of the stage-4 design): its producer is
       // then folded, so its live record (an ordinary chat's) is never summed again. Never this
       // process's own counts (a chat host in this process, as in tests): they would count themselves.
-      if (m.llm && m.llm.producer !== producerId()) setChildCounts(llmKey(m.sessionId), m.llm);
+      if (m.llm && m.llm.producer !== producerId()) {
+        setChildCounts(llmKey(m.sessionId), m.llm);
+        // The same report, kept per session for its board row; a reload's new producer adds to it.
+        // A worker whose record isn't known (yet) lands on no row rather than on the wrong one.
+        const special = kindOfMirror(m);
+        const hidden = (!!special && special !== "powers") || (!w && !!m.worker);
+        sessionTokens().note(w ? { sessionId: m.sessionId, parent: w.parent.sessionId, hidden } : { sessionId: m.sessionId, hidden }, m.llm);
+      }
     },
     exit: (h, cause) => {
       const id = h.mirror.sessionId;

@@ -72,6 +72,21 @@ Claude Code worker's included, and model discovery) runs on one Claude login, ch
   left, the failure ends the turn or task as before.
 - `default` always comes last in a device's order: Claude Code's own login is
   the last resort.
+- **A preferred login, handed over by the host.** A process started with
+  `SOVA_CLAUDE_LOGIN_CONTEXT` set (JSON `{prefer?: {login, source: "project" |
+  "org", name}, saved?: [ids]}`, read by `loginContextFromEnv`) passes it to the
+  chat provider's choices (`select`, `acquire`, `failover`, `failoverAsync`),
+  as their own input beside the session's current login. `prefer` comes first in
+  the walk, `saved` (logins kept for other work) after every other added login
+  and before `default` (`orderWithContext`). The session's current (recorded or
+  picked) login still wins while usable. A first start that can't use `prefer`
+  records a `claude-login` entry with `reason: "moved"`, `from` the preferred
+  login and the text `Claude: using B (project Acme's login A is limited until
+  15:00)`; with the pool on, a preferred login free at the keeper is borrowed by
+  name first (`take`). Without the variable (a terminal session) nothing
+  changes, and model discovery and the topic summarizer never read it. Sova sets
+  it per chat process from the chat's folder; a plain copy of this directory
+  never sees it.
 
 **The pool (mesh on).** When `<agent dir>/sova/peers.json` lists a peer, Sova's
 server pools the added logins of every device (`server/claude-pool/`): a login

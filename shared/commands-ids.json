@@ -148,7 +148,11 @@
     "org.project.version.rewrite",
     "org.project.version.automatic",
     "org.project.version.hide",
-    "org.project.version.show"
+    "org.project.version.show",
+    "project.claude-login.get",
+    "project.claude-login.set",
+    "org.claude-login.get",
+    "org.claude-login.set"
   ],
   "retired": [
     "settings.agents.get"

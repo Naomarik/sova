@@ -13,6 +13,11 @@ test("the indicator shows the chat's login on a Claude Code model when the host 
   assert.match(shown!.title, /^This chat runs on this Claude login: a@example.com · Max 20x\./);
   assert.equal(shown?.label, "Claude login: a@example.com");
   assert.match(composerLogin(login({ recorded: false }), "claude-code-cli/opus")!.title, /^This chat starts on this Claude login/);
+  // §app.claude-logins/project-login: before the first record, where the login comes from.
+  assert.match(composerLogin(login({ recorded: false }), "claude-code-cli/opus")!.title, /^This chat starts on this Claude login \(first ready on this device\): /);
+  assert.match(composerLogin(login({ recorded: false, source: "project" }), "claude-code-cli/opus")!.title, /^This chat starts on this Claude login \(set for this project\): /);
+  assert.match(composerLogin(login({ recorded: false, source: "org" }), "claude-code-cli/opus")!.title, /^This chat starts on this Claude login \(set for this project's organization\): /);
+  assert.match(composerLogin(login({ recorded: true, source: "project" }), "claude-code-cli/opus")!.title, /^This chat runs on this Claude login: /, "a recorded login says it runs there");
   assert.match(composerLogin(login({ name: "Work" }), "claude-code-cli/opus")!.title, /: Work · a@example.com · Max 20x\./, "a label names it besides the email");
   assert.equal(composerLogin(login({ email: undefined, name: "default" }), "claude-code-cli/opus")?.text, "default");
 });

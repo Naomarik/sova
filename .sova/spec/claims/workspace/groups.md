@@ -75,7 +75,10 @@ interface SessionGroup {
   so a group's record survives any build touching it with nothing quietly erased.
 - **Membership is still the assignments map.** `members` is reconciled against it on read: an id
   that left the group drops out, an id the array never learned about is appended. A workspace
-  therefore cannot show a member that isn't assigned, whatever the store says.
+  therefore cannot show a member that isn't assigned, whatever the store says. Nor one its
+  sidebar group doesn't draw: the workspace lists exactly the sidebar group's members, the
+  assigned sessions that can be in a group (§app.session-list/groups), so an organization session
+  assigned before that rule is in neither.
 - **`SessionSummary.parent` and `parentId`** are the session header's `parentSession`, as a
   canonical path and as the session id, set together or not at all. Read-only lineage: they
   survive a promote, a dissolve and a rename, because Sova never writes the header. Use

@@ -257,18 +257,25 @@ broken block's source (§app.baton/outsider-view).
   for a hard error. Only a hard error is a block that failed.
 - **Feedback to the model** (`server/vis-check.ts`). The model learns of a block that didn't draw
   through a hidden retry note, not through the reader's error line. In a chat Sova hosts (not the
-  Overseer's, a baton session's or a project overseer's) with the vis minor mode on, and in the
-  Project Assistant's chat always (§app.project-assistant/drawings), when a run is
-  about to settle, Sova parses every `vis` fence in that run's assistant text with the same
-  `parseVis`, finding fences as the reader's view does (per text block). If any block has a hard
-  error, Sova adds one hidden note (a `sova-vis-retry` custom message, `display: false`: never in
-  the transcript or the live view; the model sees it) naming each such block (its number in the
-  reply, its kind, its first line), the line and the error, and the model gets one more request in
-  the same run, asked to re-send only the fixed blocks. At most one retry per run: the retry's own
-  reply is never checked again, even if a block is still broken, and the broken block stays visible
-  above the fix. No retry when the run was stopped or failed, when a message is queued behind it
-  (that message goes first), when the session's file is held by another writer, or when vis is
-  off. A block that draws with warnings never triggers one.
+  Overseer's, a baton session's or a project overseer's) where drawings are on — the vis minor mode
+  on, or align on in a chat started with Visuals (§chat.alignment/visuals), the same rule that
+  gives the vis tools — and in the Project Assistant's chat always (§app.project-assistant/drawings),
+  when a run is about to settle, Sova parses every `vis` fence in that run's assistant text with the
+  same `parseVis`, finding fences as the reader's view does (per text block), and every visual the
+  run's `align` calls write inline on the alignment card (a `create`'s, an `edit_question`'s or an
+  `edit_doc`'s; not an `import`'s file, and not a call that failed). A block fails when it has a hard error, or when it is a `vis wireframe` the
+  layout finds cramped (§chat.markdown/vis-wireframe-room). If any block fails, Sova adds one hidden
+  note (a `sova-vis-retry` custom message, `display: false`: never in the transcript or the live
+  view; the model sees it) naming each such block (its number in the reply, or where it sits on the
+  card, its kind, its first line), the line and the error, or each cramped block and the width it
+  got, and the model gets one more request in the same run, asked to re-send only the fixed blocks
+  (a card's visual fixed with `edit_question` or `edit_doc`; a cramped screen given room, or drawn
+  as a `vis html` prototype when it is dense). At most one retry per run: the retry's own reply is
+  never checked again, even if a block is still broken or cramped, and the first drawing stays
+  visible above the fix. No retry when the run was stopped or failed, when a message is queued
+  behind it (that message goes first), when the session's file is held by another writer, or when
+  drawings are off. A block that draws with warnings never triggers one, except a cramped
+  wireframe.
 - **Tool-backed Tours.** The vis catalogue also lists `tour` (§app/tours), a recorded explanation of a real interface. It is not a fence kind and is not added to the pure renderer registry. `vis_guide {kind: "tour"}` returns the core of the tour authoring and recording workflow and points to `record_tour` and `show_tour`, not the shared drawing-fence grammar; `vis_guide` also takes the four parts that core names (`tour-signin`, `tour-sites`, `tour-sova`, `tour-sharing`) and returns each alone (§app.tours/authoring). The parts are no catalogue kind: the prompt's kind list is unchanged, and only the `tour` line names them. In ordinary chats, recording and showing require vis on; align's Visuals alone grants neither tour tool, even though the existing guide/check tools retain that availability. Scoped hand-off tour presentation is baseline conversation context. Opening a message never records a tour.
 - **`vis_guide`.** While vis is on, the model has a `vis_guide {kind}` tool. It returns the guide's
   shared rules (one statement per line, ids and quoting, tones, the strict parser, the "Not vis"
@@ -280,12 +287,13 @@ broken block's source (§app.baton/outsider-view).
   a run, when a run settles), so turning vis on or off changes the tool set once, and it adds no line
   to the system prompt. With vis off the tool is not in the model's loadout, unless align is on in a
   chat that started with Visuals (§chat.alignment/visuals), which wants the vis tools too.
-- **`vis_check`.** While vis is on, the model has a `vis_check` tool for draft `vis html` / `vis
-  svg` bodies (title/caption lines included). It answers whether the block would draw (or its error
-  and line), any warnings, and the document's size in characters against the budget (aim under
-  8K; over 16K doesn't draw). With vis off the tool is not in the model's loadout, with the same
-  exception as `vis_guide` (align on with Visuals); the retry after a reply stays with vis alone. The guide's
-  html/svg file names it in one line.
+- **`vis_check`.** While vis is on, the model has a `vis_check` tool for draft `vis html`, `vis
+  svg` and `vis wireframe` bodies (title/caption lines included). It answers whether the block would
+  draw (or its error and line) and any warnings; for html and svg also the document's size in
+  characters against the budget (aim under 8K; over 16K doesn't draw); for a wireframe also each
+  cramped block (§chat.markdown/vis-wireframe-room), or that none is. With vis off the tool is not
+  in the model's loadout, with the same exception as `vis_guide` (align on with Visuals), which the
+  retry after a reply shares. The guide's html/svg and wireframe files name it in one line each.
 - **Streaming.** An open `vis` fence is never drawn half-way: it holds a 200px dashed box reading
   "Drawing <kind>… N lines", with a pulsing dot (static under reduced motion). The drawing replaces
   it when the fence closes. A re-render keeps an unchanged drawing's DOM (and a frame's state); a
@@ -304,7 +312,11 @@ broken block's source (§app.baton/outsider-view).
 - **Tokens and theme.** Tokens only (`src/design/tokens.css`), through three tone variables
   (`--vis-fill`, `--vis-stroke`, `--vis-ink`) for `accent ok warn error info muted`. SVG is styled
   by classes, so a theme switch needs no re-render.
-- **Free-form (`vis html`, `vis svg`).** The fallback when no kind fits:
+- **Free-form (`vis html`, `vis svg`).** `vis html` is the guide's default for a screen beyond a
+  simple one (a clickable prototype: look and feel, colour and type, panes side by side, an editor
+  in a dialog, a dense desktop layout), with no need for the user to ask for HTML; a wireframe stays
+  for simple layouts (a plain page, a list, a form, a short dialog) and for flows across screens.
+  Either also draws what no kind covers, or something to play with:
   - a budget in **characters** (code points, not bytes) of the document after the `title:` /
     `caption:` lines: up to 8K (8,192) draws as is; up to 16K (16,384) draws with the warning
     "large: <n>K characters of <kind> (aim under 8K)"; over 16K is an error. The guide says to aim
@@ -331,7 +343,7 @@ broken block's source (§app.baton/outsider-view).
   draw (at most 1–2 per reply, small, captioned, next to prose that says what to notice), that
   every kind has its own syntax, never guessed from another, so the first fence of each kind in the
   conversation follows a `vis_guide` call for it, never to nest a `vis` fence in another fence, and
-  one line per kind saying what it draws (`vis/overview.md`, about 1.9K characters). The shared rules (with
+  one line per kind saying what it draws (`vis/overview.md`, about 2.1K characters). The shared rules (with
   the 200-character text limit and the one-line caption) and each kind's syntax reach the model
   only through `vis_guide`, so a reply that draws nothing carries no grammar. A kind flagged `stub`
   in the registry is never taught: its line is dropped from the list and `vis_guide` refuses it.
@@ -1031,6 +1043,41 @@ each of up to 4 of them keeps about 12 characters' width with the chip at its wi
 goes on a line of its own under them; in a row that lays out by content (§chat.markdown/vis-wireframe,
 Rows) the chip is one more block after its last, on the same line while it fits, else wrapping onto
 the next. The reserved height counts the chip's own line.
+
+## §chat.markdown/vis-wireframe-room — `vis wireframe` gives its text room
+
+A wireframe sizes its blocks by the room they have, so no label is crushed into a narrow column:
+
+- **Dialogs by what they hold.** On a desktop screen a `modal` that holds only short content (a
+  confirm: text, a field, buttons, a `row` of buttons alone) is about 360px wide, as before. One
+  that holds any other `row`, a `grid`, `col`, `table` or `sidebar`, or two or more fields (a form),
+  is about 85% of the frame wide.
+  Nothing marks it: the content decides. A phone `modal` keeps the frame's width less its margins.
+- **Grid columns by room.** A `grid` has as many columns as the width it gets holds tiles no
+  narrower than the tiles' least width (a titled tile about 12 characters plus its padding; a
+  control its label, at most about 12 characters; an image its 96px thumbnail): up to 4 on a desktop
+  screen, 2 on a phone, never fewer than 1. A grid in a narrow column or a dialog thus has fewer
+  columns than one across the page. A `wide` tile spans 2 columns, or 1 in a one-column grid.
+- **Words, never letters.** Text wraps between words, whatever the page around the figure sets. A
+  word wider than its box, in any block (a title, a subtitle, text, a stat's label or value, a
+  check's label, an item's right text, an alert, a toast, a table cell), is cut short with an
+  ellipsis on its own line, never broken between letters. The height estimate counts lines the same
+  way. Its box never shrinks to a few letters because of how the text could break.
+- **Table columns by content.** A `table`'s columns are as wide as their content on one line (the
+  header, the cells' text, and in the last column the row's badges and buttons side by side), the
+  room left shared in proportion, so a short column stays narrow and a badge stays whole. Short of
+  room, columns first wrap their text between words, never narrower than their longest word or
+  widest badge; only when even those don't fit do the columns shrink in proportion (the last
+  column keeping its badges and buttons whole while the others can give way), and a word too wide
+  for its cell is cut with an ellipsis. A column never widens the table past its box.
+- **One source.** These widths and column counts come from the wireframe's own layout model
+  (`layout.ts`), which the View applies to the drawing, the height estimate counts and the server's
+  check reads, so the three agree.
+- **Cramped.** The same model, at each frame's full width (300px phone, 760px desktop), finds a
+  block whose text is cramped: a box narrower than about 12 characters that its text doesn't fit on
+  one line in, or a word wider than the box it is in. A cramped wireframe still draws as it is and
+  shows the reader no warning line for it; it is what the model hears about (§chat.markdown/visuals,
+  "Feedback to the model", and `vis_check`).
 
 ## §chat.markdown/accessibility — Accessibility
 

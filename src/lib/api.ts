@@ -1595,8 +1595,12 @@ export async function runCommandRequest(method: string, url: string, body?: Reco
 // ---- session offers: a session's offer cards and the project page's list (§chat/offers) --------
 
 export const getSessionOffers = (path: string) => request<SessionOffersAnswer>(`/api/session-offers?path=${encodeURIComponent(path)}`, { cache: "no-store" });
-export const chooseOfferButton = (path: string, card: string, button: number) =>
-  request<{ card: OfferCard }>("/api/session-offers/choose", { method: "POST", body: JSON.stringify({ path, card, button }) });
+/** A button's click; on a rows card, `row` names the row it answers. */
+export const chooseOfferButton = (path: string, card: string, button: number, row?: string) =>
+  request<{ card: OfferCard }>("/api/session-offers/choose", { method: "POST", body: JSON.stringify({ path, card, button, ...(row ? { row } : {}) }) });
+/** A rows card's all button, over the rows its confirm named. */
+export const chooseOfferAll = (path: string, card: string, rows: string[]) =>
+  request<{ card: OfferCard }>("/api/session-offers/choose", { method: "POST", body: JSON.stringify({ path, card, all: rows }) });
 export const setOfferNotNow = (path: string, offer: string) => request<{ notNow: string[] }>("/api/session-offers/snooze", { method: "POST", body: JSON.stringify({ path, offer }) });
 // A project's settings (§app.project-overseer/settings, shared/project-settings.ts).
 export const getProjectSettings = (projectId: string) => request<ProjectSettingsInfo>(`${projectPath(projectId)}/settings`, { cache: "no-store" });

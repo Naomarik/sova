@@ -5,7 +5,10 @@
  * (`by: "overseer-card"`, §app.overseer/card-land), kept per user outside every repository:
  *
  *   <state root>/landing.json
- *   { "v": 1, "goAheads": [ { branch, commit, session?, at, by, withoutSpecs? } ], "notYet": [ { branch, commit, session?, at } ] }
+ *   { "v": 1, "goAheads": [ { branch, commit, session?, at, by, withoutSpecs?, in? } ], "notYet": [ { branch, commit, session?, at, in? } ] }
+ *
+ * `in` (optional, additive) is the session the answer was given in, when that isn't the branch's own: the Merge
+ * Captain's chat, for a row of its landing card or its driver's `go` (`by: "captain-chat"`).
  *
  * Sova's server writes it (a click on a Landing card, or Go on an Overseer card's land row), and so does the
  * `worktree` tool's `land` (the user's typed word, read by `typedGoAhead`, never a message another sender sent:
@@ -22,11 +25,11 @@ import { dirname, join, resolve } from "node:path";
 export const LANDING_FILE_NAME = "landing.json";
 /** Records kept per list, newest last. */
 export const LANDING_KEPT = 200;
-/** Who recorded a go-ahead: a Land It click, the user's word typed in the branch's own chat (`worktree land`), Go on
- *  an Overseer card's Ready to land row the user applied, or (records from before the merge guard was removed) a
- *  Merge Branch press. */
-export type GoAheadBy = "land-it" | "owner-chat" | "overseer-card" | "page";
-const GO_AHEAD_BY: readonly GoAheadBy[] = ["land-it", "owner-chat", "overseer-card", "page"];
+/** Who recorded a go-ahead: a Land It click, the user's word typed in the branch's own chat (`worktree land`), the
+ *  user's word in the Merge Captain's chat (the round driver's `go`), Go on an Overseer card's Ready to land row the
+ *  user applied, or (records from before the merge guard was removed) a Merge Branch press. */
+export type GoAheadBy = "land-it" | "owner-chat" | "captain-chat" | "overseer-card" | "page";
+export const GO_AHEAD_BY: readonly GoAheadBy[] = ["land-it", "owner-chat", "captain-chat", "overseer-card", "page"];
 
 export interface GoAhead {
 	branch: string;
@@ -39,6 +42,8 @@ export interface GoAhead {
 	by: GoAheadBy;
 	/** Merge Without Specs…: the user agreed its spec drafts stay behind. */
 	withoutSpecs?: true;
+	/** The session it was given in, when not the branch's own. */
+	in?: string;
 }
 
 export interface NotYet {
@@ -46,6 +51,8 @@ export interface NotYet {
 	commit: string;
 	session?: string;
 	at: string;
+	/** The session it was given in, when not the branch's own. */
+	in?: string;
 }
 
 export interface LandingData {
@@ -74,13 +81,13 @@ const str = (v: unknown): v is string => typeof v === "string" && v.length > 0 &
 
 function cleanGoAhead(v: unknown): GoAhead | null {
 	if (!isRec(v) || !str(v.branch) || typeof v.commit !== "string" || !SHA.test(v.commit) || !str(v.at)) return null;
-	if (!GO_AHEAD_BY.includes(v.by as GoAheadBy)) return null;
-	return { branch: v.branch, commit: v.commit, ...(str(v.session) ? { session: v.session } : {}), at: v.at, by: v.by as GoAheadBy, ...(v.withoutSpecs === true ? { withoutSpecs: true as const } : {}) };
+	if (typeof v.by !== "string" || !(GO_AHEAD_BY as readonly string[]).includes(v.by)) return null;
+	return { branch: v.branch, commit: v.commit, ...(str(v.session) ? { session: v.session } : {}), at: v.at, by: v.by as GoAheadBy, ...(v.withoutSpecs === true ? { withoutSpecs: true as const } : {}), ...(str(v.in) ? { in: v.in } : {}) };
 }
 
 function cleanNotYet(v: unknown): NotYet | null {
 	if (!isRec(v) || !str(v.branch) || typeof v.commit !== "string" || !SHA.test(v.commit) || !str(v.at)) return null;
-	return { branch: v.branch, commit: v.commit, ...(str(v.session) ? { session: v.session } : {}), at: v.at };
+	return { branch: v.branch, commit: v.commit, ...(str(v.session) ? { session: v.session } : {}), at: v.at, ...(str(v.in) ? { in: v.in } : {}) };
 }
 
 export function readLanding(file: string = landingFile()): LandingData {
@@ -128,11 +135,11 @@ export function recordNotYet(rec: NotYet, file: string = landingFile()): void {
  * at one commit (Not Yet doesn't clear a go-ahead); the later `at` wins, and Not Yet wins a tie or a time that
  * can't be read. The merge round's driver keeps a copy (round.mjs landingAnswer), held equal by a test.
  */
-export function answerAt(data: LandingData, branch: string, commit: string): { kind: "go-ahead"; goAhead: GoAhead } | { kind: "not-yet" } | undefined {
+export function answerAt(data: LandingData, branch: string, commit: string): { kind: "go-ahead"; goAhead: GoAhead } | { kind: "not-yet"; notYet: NotYet } | undefined {
 	const go = data.goAheads.filter((g) => g.branch === branch && g.commit === commit).at(-1);
 	const no = data.notYet.filter((n) => n.branch === branch && n.commit === commit).at(-1);
 	if (go && (!no || Date.parse(go.at) > Date.parse(no.at))) return { kind: "go-ahead", goAhead: go };
-	return no ? { kind: "not-yet" } : undefined;
+	return no ? { kind: "not-yet", notYet: no } : undefined;
 }
 
 /** The go-ahead for this branch at exactly this commit, if it is the newest answer there (answerAt). */

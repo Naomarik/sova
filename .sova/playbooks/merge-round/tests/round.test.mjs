@@ -938,6 +938,7 @@ test("groupOf: the user's go-ahead checks, a green check lands, Not Yet holds; n
   assert.equal(g({ board: { ...board, status: "archived" } }, null, word), "check");
   assert.equal(g({}, null, word), "check");
   assert.equal(goAheadWord("chat"), "word in this chat");
+  assert.equal(goAheadWord("captain-chat"), "word in this chat");
   // Go on an Overseer card's Ready to land row (§app.overseer/card-land): a go-ahead like Land It, under its own name.
   assert.equal(g({ board }, row, { answer: { kind: "go-ahead", by: "overseer-card" } }), "check");
   assert.equal(goAheadWord("overseer-card"), "Apply on the Overseer's card");
@@ -1265,7 +1266,7 @@ test("Ready to land: ask queues the branch for Sova's Landing card; status reads
     writeBoard([["feat/landq", "waiting-approval", OWNER, "idle", undefined, landed("feat/landq")]]);
     const q = await run(["ask", "feat/landq"]);
     assert.equal(q.code, 0, q.out);
-    assert.match(q.out, new RegExp(`^Queued feat/landq at ${head.slice(0, 7)}: Sova shows the Landing card in "Chat of ${OWNER}" \\(#/sid/${OWNER}\\)\\.$`, "m"));
+    assert.match(q.out, new RegExp(`^Queued feat/landq at ${head.slice(0, 7)}: Sova shows the Landing card in "Chat of ${OWNER}" \\(#/sid/${OWNER}\\), and the branch as a row on the landing card in this chat\\.$`, "m"));
     assert.match(q.out, /don't poll/);
     const entries = JSON.parse(readFileSync(queueFile, "utf8")).entries;
     assert.deepEqual(entries.map((e) => [e.branch, e.head, e.owner, e.captain, e.path === wt("feat/landq")]), [["feat/landq", head, OWNER, ME, true]]);
@@ -1310,6 +1311,22 @@ test("Ready to land: ask queues the branch for Sova's Landing card; status reads
     assert.equal(old.code, 1, old.out);
     assert.match(old.out, /Sova didn't show feat\/landq's Landing card at [0-9a-f]{7}: an open offer\./);
     assert.match(old.out, /round\.mjs go/);
+    // q1: refused for a reason of the owner's chat alone, but Sova gave it a row on the captain's card: it waits
+    // there, never stopped on the refusal, and the captain says it is "on the card below".
+    writeBoard([["feat/landq", "waiting-approval", OWNER, "idle", undefined, landed("feat/landq")]]);
+    writeFileSync(shownFile, JSON.stringify({ v: 1, results: { [entries[0].id]: { at: Date.now(), refused: "an open offer", row: { card: "of_2", row: "r_1" } } } }));
+    assert.equal(JSON.parse((await run(["status", "--json"])).out).branches.find((b) => b.branch === "feat/landq").group, "waiting");
+    assert.match(await line(), new RegExp(`on the card below; the owner's card in "Chat of ${OWNER}" \\(#/sid/${OWNER}\\) wasn't shown: an open offer`));
+    const again = await run(["ask", "feat/landq"]);
+    assert.equal(again.code, 1, again.out);
+    assert.doesNotMatch(again.out, /Sova didn't show/);
+    assert.match(again.out, /already queued at [0-9a-f]{7}: on the card below/);
+    const rows = await run(["report"]);
+    assert.match(rows.out, new RegExp(`^- Waiting for your answer on the card below: feat/landq at ${head.slice(0, 7)} \\(owner "Chat of ${OWNER}" \\(#/sid/${OWNER}\\)\\)$`, "m"));
+    assert.doesNotMatch(rows.out, /Waiting for your Land It/);
+    // Shown in both places: the row and the owner's card.
+    writeFileSync(shownFile, JSON.stringify({ v: 1, results: { [entries[0].id]: { at: Date.now(), card: "of_1", row: { card: "of_2", row: "r_1" } } } }));
+    assert.match(await line(), new RegExp(`on the card below, and its Landing card in "Chat of ${OWNER}"`));
   } finally {
     writeFileSync(stateFile, saved);
     for (const f of [queueFile, shownFile, landingFile, boardFile]) rmSync(f, { force: true });
@@ -1331,6 +1348,11 @@ test("go: the user's word in this chat is a go-ahead at the head, straight to ch
     const go = await run(["go", "feat/word"]);
     assert.equal(go.code, 0, go.out);
     assert.match(go.out, /^next: round\.mjs check feat\/word$/m);
+    // b1: the word is in Sova's landing.json too, marked as given in the captain's chat, so the owner's Landing
+    // card and the captain's row settle and say where (§chat.worktrees/landing-answers).
+    const kept = JSON.parse(readFileSync(landingFile, "utf8"));
+    assert.deepEqual(kept.goAheads.map((g) => [g.branch, g.commit, g.by, g.in]), [["feat/word", head, "captain-chat", ME]]);
+    assert.equal(goAheadWord("captain-chat"), "word in this chat");
     assert.equal(await group(), "check", "in progress, its owner busy: the user's word checks it anyway");
     assert.match((await run(["status"])).out, new RegExp(`the user's go-ahead \\(word in this chat\\) at ${head.slice(0, 7)}`));
     writeFileSync(landingFile, JSON.stringify({ v: 1, goAheads: [], notYet: [{ branch: "feat/word", commit: head, at: new Date(Date.now() + 60_000).toISOString() }] }));

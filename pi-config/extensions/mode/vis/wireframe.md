@@ -1,6 +1,7 @@
 <!-- owner: structure member. kinds/wireframe: DOM blocks, SVG arrow overlay. Emphasis target: a block's first text (the screen it is written under first), a screen name. -->
 # vis wireframe
 Low-fi screens: what sits where on a phone or desktop page; several screens show a flow, before/after or states. One block per line: a word, its "text"s, then optional words; indent a block to put it inside the one above.
+- Shows well: a simple page, list, form or short dialog, what sits where, and the taps between screens. Can't show: colour, type, real proportions, interaction, or a dense multi-pane desktop editor (blocks share the width they get, so many side by side crush their labels).
 ```vis wireframe
 title: Invoices on a phone
 caption: Totals first; tapping an invoice opens it.
@@ -45,5 +46,7 @@ modal "Discard changes?"
     button "Cancel"
     button "Discard" error
 ```
+- A desktop `modal` holding only text, a field and buttons (a `row` of buttons included) is a 360px confirm; one holding any other row, a grid, col, table, sidebar or two fields widens to most of the frame. A `grid` has as many columns as its room holds (2 on a phone, 4 across a desktop page, fewer in a narrow column).
+- Beyond a wireframe: for a screen beyond a simple one (look and feel, panes side by side, an editor in a dialog) draw a clickable `vis html` prototype instead. Check a dense draft with `vis_check`: it lists any block whose text would be cramped.
 - `screen "Name" [phone|desktop]` starts a screen (up to 6; `device: desktop` sets the default). `-> "Name"` after a block: the screen a tap opens. `mark` a block by its first text or a screen by its name.
 - Only the words and numbers you were given; else a placeholder ("Name", "Order no.", "AED —"). Never make up prices, IDs, dates or times.

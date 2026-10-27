@@ -431,7 +431,11 @@ for the branch at its head commit and marked as typed in the owner's chat; it co
 Land It, with or without specs as the user said. So does Go on a Ready to land row of an Overseer
 card the user applied (§app.overseer/card-land), recorded for the branch at the commit the row
 showed and marked as given on the Overseer's card; it counts exactly as a Land It, with specs.
-Both may be recorded at one commit: the later
+The user's word in the Merge Captain's chat, recorded by the round's driver (`go`,
+§chat.merge-round/driver), is kept there too, marked as given in the captain's chat. A Land It or
+Not Yet also names the chat it was given in, so the other place can say where
+(§chat.offers/landing-rows). Any of them, at the commit an open Landing card or captain row is for,
+settles that card and row: they read the answer and where it was given. Both may be recorded at one commit: the later
 recorded time wins, and Not Yet wins a tie or a time that can't be read. The merge round's driver
 reads them as the user's word (§chat.merge-round/driver), and a typed go-ahead or one from an
 Overseer card also wakes the captain (§chat.schedules/merge-ready); nothing else acts on them.

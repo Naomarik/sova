@@ -379,6 +379,10 @@
         "server/baton-view.ts",
         "server/chat-runtime/trial-s3-acts.integration.test.ts",
         "server/chat-runtime/trial-s3-baton.integration.test.ts",
+        "server/chat-runtime/trial-s3-baton-restart.integration.test.ts",
+        "server/chat-runtime/trial-s3-baton-take.integration.test.ts",
+        "server/chat-runtime/trial-s3-baton-hand.integration.test.ts",
+        "server/chat-runtime/trial-s3-baton-kill.integration.test.ts",
         "server/chat-runtime/trial-s3-looks-powers.integration.test.ts",
         "server/chat-runtime/trial-s3-overseer.integration.test.ts",
         "server/chat-runtime/host.test.ts"
@@ -562,7 +566,9 @@
         "server/resource-monitor.ts",
         "server/chat-runtime/trial-s4-workers.integration.test.ts",
         "server/chat-runtime/trial-s4-reload.integration.test.ts",
+        "server/chat-runtime/trial-s4-reload-crash.integration.test.ts",
         "server/chat-runtime/trial-s4-teams.integration.test.ts",
+        "server/chat-runtime/trial-s4-team-nudge.integration.test.ts",
         "server/chat-runtime/trial-s4-crash.integration.test.ts",
         "server/chat-runtime/trial-s4-hidden.integration.test.ts",
         "server/chat-runtime/trial-s4-off.integration.test.ts",
@@ -968,7 +974,6 @@
         "server/index.ts",
         "server/attention-memo.ts",
         "server/events.test.ts",
-        "server/events-hermetic.integration.test.ts",
         "server/events.integration.test.ts"
       ],
       "requires": [
@@ -18446,6 +18451,26 @@
         "§mesh.public/preview-serve"
       ]
     },
+    "§chat.merge-round/check-time": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        ".sova/playbooks/merge-round/scripts/round.mjs",
+        ".sova/playbooks/merge-round/tests/round.test.mjs",
+        ".sova/playbooks/merge-round/references/check.md",
+        ".sova/playbooks/merge-round/PLAYBOOK.md"
+      ],
+      "requires": [
+        "§chat.merge-round/driver",
+        "§app.server-runtime/test-tiers"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-26T22:26Z",
+        "source": "pi-session:ed430338-abe1-4918-8a4e-6842c2f9782d#16a537e8"
+      }
+    },
     "§chat.merge-round/private-names": {
       "kind": "behavior",
       "authority": "accepted",
@@ -18478,9 +18503,9 @@
         "§chat.worktrees/merge-board"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-27T12:36Z",
-        "source": "pi-session:01a17a2d-9525-7412-baca-957c5a5a99a8#7f582fd6"
+        "by": "user",
+        "at": "2026-10-27T23:49Z",
+        "source": "pi-session:ed430338-abe1-4918-8a4e-6842c2f9782d#651d1bdc"
       }
     },
     "§chat/merge-round": {
@@ -18516,9 +18541,9 @@
         "§chat.worktrees/merge-board"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-27T12:36Z",
-        "source": "pi-session:01a17a2d-9525-7412-baca-957c5a5a99a8#7f582fd6"
+        "by": "user",
+        "at": "2026-10-27T23:49Z",
+        "source": "pi-session:ed430338-abe1-4918-8a4e-6842c2f9782d#651d1bdc"
       }
     },
     "§app.access/callers": {
@@ -22806,12 +22831,21 @@
         "AGENTS.md",
         "agents/testing/overview.md",
         "server/testing/agent-dir.ts",
-        "server/outline-no-claude.test.ts"
+        "server/outline-no-claude.test.ts",
+        "scripts/test-groups.mjs",
+        "scripts/test-groups.d.mts",
+        "server/test-groups.test.ts",
+        ".sova/playbooks/release/references/checks.md"
       ],
       "requires": [
         "§app.server-runtime/choice",
         "§app.claude-code-provider/one-program"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-26T22:26Z",
+        "source": "pi-session:ed430338-abe1-4918-8a4e-6842c2f9782d#16a537e8"
+      }
     },
     "§app.session-share/reading": {
       "kind": "behavior",
@@ -25048,6 +25082,8 @@
         "server/tours/runner-signin-settle.integration.test.ts",
         "server/tours/runner-signin-landed.integration.test.ts",
         "server/tours/runner-signin-inplace.integration.test.ts",
+        "server/tours/runner-signin-midtour.integration.test.ts",
+        "server/tours/runner-signin-inplace.integration.fixture.ts",
         "server/tours/runner-signin.integration.fixture.ts"
       ],
       "requires": [
@@ -25264,6 +25300,8 @@
         "server/tours/resumed-notice.test.ts",
         "server/app.ts",
         "server/tours/runner-signin-inplace.integration.test.ts",
+        "server/tours/runner-signin-midtour.integration.test.ts",
+        "server/tours/runner-signin-inplace.integration.fixture.ts",
         "server/tours/runner-signin.integration.fixture.ts"
       ],
       "requires": [

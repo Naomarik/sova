@@ -1,6 +1,8 @@
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import type { ListedProfile } from "../../shared/profiles";
-import { CARD_FILTER_AFTER, cardCount, cardMatches, pickerSections, profileCaption, profileIconName, type pickerProfiles } from "../lib/profiles";
+import { CARD_FILTER_AFTER, cardCount, cardMatches, pickerSections, profileCaptionParts, profileIconName, type CaptionPart, type CardCaption, type pickerProfiles } from "../lib/profiles";
+import { EffortRing } from "./EffortRing";
+import { ModeGlyph } from "./ModeGlyph";
 import { Icon } from "./ui";
 
 /** Where focus goes when the grid mounts again after a pick (the runtime reopens and remounts the
@@ -21,9 +23,9 @@ export function ProfileGrid(props: {
   groups: ReturnType<typeof pickerProfiles>;
   /** The checked card's key: a profile's, CUSTOM for a board pick. */
   checked: string | null;
-  subagents: readonly { id: string; footprint: string }[];
-  /** My settings' caption (mySettingsCaption). */
-  mineCaption: string;
+  subagents: readonly { id: string; footprint: string; models?: number }[];
+  /** My settings' caption (mySettingsCaptionParts). */
+  mineCaption: CardCaption;
   /** The live session holding a One at a time profile elsewhere, or null. */
   holder: (p: ListedProfile) => { id: string; title: string } | null;
   unusable: (p: ListedProfile) => string | null;
@@ -115,10 +117,10 @@ export function ProfileGrid(props: {
                           key={p.key}
                           icon={profileIconName(p.icon)}
                           label={p.label}
-                          caption={s.id === "mine" ? props.mineCaption : profileCaption(p, props.subagents)}
+                          caption={s.id === "mine" && !props.unusable(p) ? props.mineCaption : profileCaptionParts(p, props.subagents, props.unusable(p))}
                           checked={props.checked === p.key}
                           tabbable={tabbable() === p.key}
-                          why={props.unusable(p)}
+                          off={!!props.unusable(p)}
                           chips={[
                             ...(p.approval === "needed" ? [{ text: "Needs approval", tone: "warn" as const }] : []),
                             ...(p.singleton ? [{ text: "One at a time" }] : []),
@@ -140,10 +142,10 @@ export function ProfileGrid(props: {
             key={CUSTOM_KEY}
             icon="wrench"
             label="Custom…"
-            caption="Adjust this one"
+            caption={{ kind: "words", text: "Adjust this one" }}
             checked={props.checked === CUSTOM_KEY}
             tabbable={tabbable() === CUSTOM_KEY}
-            why={null}
+            off={false}
             chips={[]}
             onPick={() => props.onCustom()}
           />
@@ -157,11 +159,12 @@ function ProfileTile(props: {
   key: string;
   icon: ReturnType<typeof profileIconName>;
   label: string;
-  caption: string;
+  /** Its caption: words, or the glyphs of what it sets (a reason it can't be picked here is words, warn). */
+  caption: CardCaption;
   checked: boolean;
   tabbable: boolean;
-  /** Why it can't be picked here: shown as its caption and title. */
-  why: string | null;
+  /** It can't be picked here: its caption says why. */
+  off: boolean;
   chips: { text: string; tone?: "warn" }[];
   onPick: () => void;
 }) {
@@ -170,11 +173,11 @@ function ProfileTile(props: {
       type="button"
       role="radio"
       class="profile-tile"
-      classList={{ "profile-tile-off": !!props.why }}
+      classList={{ "profile-tile-off": props.off }}
       aria-checked={props.checked}
-      aria-disabled={props.why ? "true" : undefined}
+      aria-disabled={props.off ? "true" : undefined}
       tabIndex={props.tabbable ? 0 : -1}
-      title={props.why ?? (props.caption || props.label)}
+      title={captionWords(props.caption) || props.label}
       data-key={props.key}
       onClick={() => props.onPick()}
     >
@@ -185,7 +188,7 @@ function ProfileTile(props: {
           <Icon name="check" small class="profile-tile-check" />
         </Show>
       </span>
-      <Show when={props.why ?? props.caption}>{(c) => <span class="profile-tile-caption">{c()}</span>}</Show>
+      <Caption caption={props.caption} />
       <Show when={props.chips.length}>
         <span class="profile-tile-chips">
           <For each={props.chips}>{(c) => <span class={`chip${c.tone === "warn" ? " chip-warn" : ""}`}>{c.text}</span>}</For>
@@ -208,12 +211,81 @@ function ActiveTile(props: { key: string; icon: ReturnType<typeof profileIconNam
       </span>
       <span class="profile-tile-caption">{caption()}</span>
       <span class="profile-tile-chips">
-        <span class="chip chip-accent">
-          <i class="chip-dot" />
-          Active
+        <span class="chip">
+          <span class="live-dot" />
+          Live
         </span>
       </span>
     </a>
+  );
+}
+
+/** A caption's complete words: its accessible name and hover text. */
+const captionWords = (c: CardCaption): string => (c.kind === "words" ? c.text : c.label);
+
+/**
+ * A card's caption line (§chat.profiles/picker): words, or one glyph item per setting the profile
+ * sets, each with its words as its hover text; the whole caption in words for screen readers. On
+ * a card wide enough, words come back beside the glyphs.
+ */
+function Caption(props: { caption: CardCaption }) {
+  return (
+    <Switch>
+      <Match when={props.caption.kind === "words" && props.caption}>
+        {(c) => (
+          <Show when={c().text}>
+            <span class="profile-tile-caption">{c().text}</span>
+          </Show>
+        )}
+      </Match>
+      <Match when={props.caption.kind === "glyphs" && props.caption}>
+        {(c) => (
+          <span class="profile-tile-caption profile-tile-glyphs">
+            <span class="visually-hidden">{c().label}</span>
+            <span class="caption-parts" aria-hidden="true">
+              <For each={c().parts}>{(part) => <CaptionItem part={part} />}</For>
+            </span>
+          </span>
+        )}
+      </Match>
+    </Switch>
+  );
+}
+
+function CaptionItem(props: { part: CaptionPart }) {
+  const p = props.part;
+  return (
+    <span class={`caption-part caption-part-${p.kind}`} title={p.title}>
+      <Switch>
+        <Match when={p.kind === "model" && p}>
+          {(m) => (
+            <>
+              <Show when={m().level}>{(l) => <EffortRing level={l()} />}</Show>
+              <Show when={m().name}>{(n) => <span class="caption-part-name">{n()}</span>}</Show>
+              <Show when={m().level}>{(l) => <span class="caption-word">{l()}</span>}</Show>
+            </>
+          )}
+        </Match>
+        <Match when={p.kind === "subagents" && p}>
+          {(a) => (
+            <>
+              <Icon name="subagents" small />
+              <span class="caption-word">subagents</span>
+              <span>{a().text}</span>
+            </>
+          )}
+        </Match>
+        <Match when={p.kind === "mode" && p}>
+          {(m) => (
+            <>
+              <ModeGlyph glyph={m().glyph} />
+              <span class="caption-word">{m().glyph.id}</span>
+            </>
+          )}
+        </Match>
+        <Match when={p.kind === "words" && p}>{(w) => <span>{w().text}</span>}</Match>
+      </Switch>
+    </span>
   );
 }
 

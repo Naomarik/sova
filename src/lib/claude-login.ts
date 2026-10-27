@@ -6,39 +6,75 @@ import { modelProvider, stampTime } from "./format";
 /** The Claude Code provider's model prefix (pi-config claude-code provider CLAUDE_PROVIDER_ID). */
 const CLAUDE_PROVIDER = "claude-code-cli";
 
-/** The part of an email before its @ (a phone's foot has room for that only), else the whole text. */
+/** The part of an email before its @, else the whole text. */
 const beforeAt = (text: string) => (text.includes("@") ? text.slice(0, text.indexOf("@")) || text : text);
+
+/** One of this device's logins, as the avatar compares them: its id and its name (email, else label or id). */
+export interface AvatarLogin {
+  id: string;
+  name: string;
+}
+
+/** This device's logins in its order, each named as the avatar reads it: its email, else its label or id. */
+export const avatarLogins = (info: Pick<ClaudeAccountsInfo, "logins"> | null | undefined): AvatarLogin[] =>
+  (info?.logins ?? []).map((l) => ({ id: l.id, name: l.identity?.email ?? l.label ?? l.id }));
+
+/** The most letters an avatar holds; past that, prefixes can't separate the logins and it shows a number. */
+export const AVATAR_MAX_LETTERS = 3;
+
+/**
+ * The login avatar's text (§app.claude-logins/active-login): the shortest start of the login's name
+ * (an email's part before the @, in lower case) that no other login of this device shares, usually
+ * one letter, at most AVATAR_MAX_LETTERS. A whole short name is its own start ("a" beside "ab").
+ * When no start that short separates them (identical names, or names that part only later) it is
+ * the login's number in this device's order, from 1. With the device's logins not read yet, its
+ * name's first letter.
+ */
+export function loginAvatar(id: string, name: string, logins: readonly AvatarLogin[]): string {
+  const key = (s: string) => beforeAt(s.trim().toLowerCase());
+  const own = key(logins.find((l) => l.id === id)?.name ?? name);
+  const others = logins.filter((l) => l.id !== id).map((l) => key(l.name));
+  for (let k = 1; k <= Math.min(AVATAR_MAX_LETTERS, own.length); k++) {
+    const start = own.slice(0, k);
+    const whole = k === own.length;
+    if (others.every((o) => o.slice(0, k) !== start || (whole && o.length > k))) return start;
+  }
+  if (!others.length) return own.slice(0, 1) || "?";
+  const at = logins.findIndex((l) => l.id === id);
+  return String(at >= 0 ? at + 1 : logins.length + 1);
+}
 
 /**
  * The composer foot's login indicator (§app.claude-logins/active-login): shown only on a Claude
- * Code model, and only when this host has more than one login to choose from. `text` is the
- * compact part (the email, else the login's name; `short`, the part before its @, on a phone); `title` says whether the chat already runs on
- * it or will start on it. While a pick waits (§app.claude-logins/switch-queue) it shows the pick:
- * after the reply when one is `running`, else while it lands (a borrow).
+ * Code model, and only when this host has more than one login to choose from. `avatar` is the round
+ * letter avatar's text (loginAvatar, against `logins`, this device's); `text` the name shown beside it
+ * where the foot has room (the email, else the login's name); `title` says whether the chat already
+ * runs on it or will start on it. While a pick waits (§app.claude-logins/switch-queue) it shows the
+ * pick: after the reply when one is `running`, else while it lands (a borrow).
  */
 export function composerLogin(
   login: ChatClaudeLogin | null,
   modelRef: string | null,
   running = false,
-): { text: string; short: string; title: string; label: string; pending: boolean } | null {
+  logins: readonly AvatarLogin[] = [],
+): { text: string; avatar: string; title: string; label: string; pending: boolean } | null {
   if (!login || !login.several || modelProvider(modelRef) !== CLAUDE_PROVIDER) return null;
   const pick = login.pending;
   if (pick) {
     const when = running ? " after this reply" : "";
     return {
       text: pick.name,
-      short: beforeAt(pick.name),
+      avatar: loginAvatar(pick.id, pick.name, logins),
       title: `Switching to ${pick.name}${when}.${running ? " Open to cancel." : ""}`,
       label: `Claude login: switching to ${pick.name}${when}`,
       pending: true,
     };
   }
   const text = login.email ?? login.name;
-  // A phone's foot has room for the part before the @ only.
-  const short = login.email ? beforeAt(login.email) : text;
+  const avatar = loginAvatar(login.id, text, logins);
   const who = [login.name !== text ? login.name : null, text, login.planLabel].filter(Boolean).join(" · ");
   const how = login.recorded ? "This chat runs on this Claude login" : "This chat starts on this Claude login (first ready on this device)";
-  return { text, short, title: `${how}: ${who}. Order and standing: Settings → Accounts.`, label: `Claude login: ${text}`, pending: false };
+  return { text, avatar, title: `${how}: ${who}. Order and standing: Settings → Accounts.`, label: `Claude login: ${text}`, pending: false };
 }
 
 // ---- The login panel (§app.claude-logins/switch-login) ------------------------------------------

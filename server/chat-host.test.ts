@@ -528,6 +528,42 @@ test("B6: a worker's and a hidden chat's model calls, reported with their state 
   assert.equal(hostCount(snapshot(), Date.now()).count, before);
 });
 
+test("each chat's output tokens land on its board row: workers' on their parent's, kept after their processes exit, a reload's added (§app.insights/session-token-rate)", async () => {
+  const { snapshot } = await import("../pi-config/extensions/llm-inflight/tracker.ts");
+  const { sessionTokens } = await import("./session-tokens");
+  const t = setup();
+  const parent = session();
+  const r = t.router as unknown as { hooks: { state(h: unknown): void; exit(h: unknown, cause: string): void }; remotes: Map<string, unknown> };
+  const slot = Math.floor(Date.now() / 30_000);
+  const ring = (n: number) => ({ bucketMs: 30_000, end: slot, out: [...new Array<number>(59).fill(0), n] });
+  const report = (h: unknown, producer: string, n: number) => {
+    const llm = { ...snapshot(), producer, pid: 6000, folded: [], active: 0, approximate: 0, claudeTurns: 0, degraded: false, tokens: ring(n) };
+    (h as { mirror: object }).mirror = { ...(h as { mirror: object }).mirror, llm };
+    r.hooks.state(h);
+  };
+  const main = await t.router.acquire(parent.path, false);
+  assert.ok(main);
+  const mainId = (main as { mirror: { sessionId: string } }).mirror.sessionId;
+  report(main, "tok-main", 100);
+  const workers: unknown[] = [];
+  for (const [i, kind] of (["pi", "btw"] as const).entries()) {
+    const spec = { kind, parent: { sessionId: mainId, path: parent.path, workerId: `ag_0${i + 1}` }, cwd, model: null, thinking: null, builtins: null, extensions: [], flags: {}, appendSystemPrompt: null, env: {}, agentDir: null, lowered: true as const };
+    const ref = await t.router.workers.start({ key: `tok:${kind}`, spec: spec as never, session: { new: { dir: join(agentDir, "sessions", "--tok--") } }, task: null });
+    const h = r.remotes.get(ref.sessionFile)!;
+    report(h, `tok-${kind}`, 10 * (i + 1));
+    report(h, `tok-${kind}`, 10 * (i + 1)); // a repeated state replaces, never adds
+    workers.push(h);
+  }
+  const row = () => sessionTokens().view()[mainId];
+  assert.deepEqual(row()?.own, [100]);
+  assert.deepEqual(row()?.workers, [30], "both kinds of worker chat, each once");
+  t.router.detach();
+  for (const h of workers) r.hooks.exit(h, "idle");
+  assert.deepEqual(row()?.workers, [30], "kept after the workers' processes exit");
+  report(main, "tok-main-reloaded", 5);
+  assert.deepEqual(row()?.own, [105], "a reload's new process adds to the old one's tokens");
+});
+
 test("after a restart, a taken-back chat's server-hosted tools run here: a call queued while no server was there, and a new one", async () => {
   process.env.SOVA_CHAT_TEST_SERVED = "1";
   after(() => void delete process.env.SOVA_CHAT_TEST_SERVED);

@@ -2331,6 +2331,7 @@ export function ChatView(props: {
                       // Approvals are the global Overseer's alone; a project overseer's card carries none.
                       permits: () => (props.overseer ? autonomy()?.permits ?? [] : []),
                       card: (id) => cards().cards.get(id),
+                      applied: (id) => cards().applied.get(id),
                     }
                   : null
               }

@@ -6737,6 +6737,10 @@ a.subagent-row { text-decoration: none; }
 .overseer-confirm-item-name { min-width: 0; overflow-wrap: anywhere; }
 .overseer-confirm-item-meta { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); white-space: nowrap; }
 .overseer-confirm-idea-id { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }
+/* A copy or leftover process row's second line (§app.overseer/copies): who started it, its command and folder. */
+.overseer-confirm-item-detail { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: var(--space-2); row-gap: var(--space-1); min-width: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.overseer-confirm-item-command, .overseer-confirm-item-path { font-size: var(--fs-mono); color: var(--color-ink-2); min-width: 0; overflow-wrap: anywhere; }
+.overseer-confirm-item-starter { min-width: 0; overflow-wrap: anywhere; color: var(--color-ink-muted); }
 /* The Overseer's note: what the item is and why the card acts on it. Body ink,
    not muted — it is the reason to read the row; two lines, then clamped. */
 .overseer-confirm-item-note {
@@ -6797,6 +6801,14 @@ a.subagent-row { text-decoration: none; }
 .permit-uses { margin: 0; padding-left: var(--space-4); font-size: var(--fs-caption); line-height: var(--lh-caption); }
 .permit-actions { display: flex; justify-content: flex-end; padding-top: var(--space-1); }
 .permits-error { margin: 0; padding: var(--space-2) var(--space-3); font-size: var(--fs-caption); color: var(--status-error); }
+/* A sectioned card (§app.overseer/card-sections): each heading an eyebrow over its rows, the
+   first row's rule dropped under it; a row's "Go sends" line in full, under its note. */
+.overseer-card-sections { gap: var(--space-3); }
+.overseer-card-section { align-self: stretch; min-width: 0; }
+.overseer-card-section-head { margin: 0; padding-bottom: var(--space-1); }
+.overseer-card-section-head + .overseer-confirm-list .overseer-confirm-item:first-child { border-top: none; }
+.overseer-card-sends { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.overseer-card-sends-label { font-weight: var(--fw-semibold); color: var(--color-ink-2); }
 .overseer-card-decided { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--color-ink-2); font-size: var(--fs-caption); }
 .overseer-card-decided .icon { color: var(--status-success); }
 .overseer-card-jump {

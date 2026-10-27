@@ -326,8 +326,8 @@ const OWNER_STATUSES = ["idle", "busy", "archived"];
 
 // ---------------------------------------------------------------------------------------------
 // Landing (§chat.worktrees/ready-to-land, §chat.offers/sova-landing): the board's `landing` per row,
-// and the user's answers on the Landing card, or typed in the branch's own chat, which Sova keeps in
-// `<state root>/landing.json`.
+// and the user's answers on the Landing card, typed in the branch's own chat, or given with Go on an Overseer card's
+// Ready to land row, which Sova keeps in `<state root>/landing.json`.
 
 /** A row the captain may queue: Ready to land, or Landing specs whose owner said why they can't land (the card then
  *  offers Merge Without Specs…). */
@@ -352,8 +352,9 @@ export const landingAnswer = (landing, branch, head) => {
 };
 
 /** A go-ahead's words by where it was given: the Project Overseer's Merge Branch, the user's word in this chat, their
- *  word typed in the branch's own chat (`worktree land`), Land It. */
-export const goAheadWord = (by) => (by === "page" ? "Merge Branch" : by === "chat" ? "word in this chat" : by === "owner-chat" ? "word typed in its own chat" : "Land It");
+ *  word typed in the branch's own chat (`worktree land`), Go on an Overseer card's Ready to land row they applied
+ *  (§app.overseer/card-land), Land It. */
+export const goAheadWord = (by) => (by === "page" ? "Merge Branch" : by === "chat" ? "word in this chat" : by === "owner-chat" ? "word typed in its own chat" : by === "overseer-card" ? "Apply on the Overseer's card" : "Land It");
 
 /** How many clean master merges a go-ahead carries through (§chat.merge-round/driver). */
 export const CARRY_MAX = 20;
@@ -435,7 +436,7 @@ export function chatOf(rec, id) {
 
 /** What to do next with a branch, in the order `status` lists them. */
 export const GROUPS = [
-  ["check", "to check", "The user's go-ahead at this head (Land It, their word in this chat, or typed in the branch's own chat): check it"],
+  ["check", "to check", "The user's go-ahead at this head (Land It, their word in this chat, typed in the branch's own chat, or Go on an Overseer card): check it"],
   ["land", "to land", "Checked green at this head and master: land it"],
   ["ask", "to queue now", "Ready to land, owner idle: queue it (Sova shows the Landing card)"],
   ["waiting", "card shown", "Landing card shown: waits for the user's Land It, or \"land it\" typed in that chat"],
@@ -698,8 +699,8 @@ class Round {
     return parseBoard(text, this.now);
   }
 
-  /** The user's answers: on Landing cards and typed in a branch's own chat (Sova's `landing.json`), and their word in
-   *  this chat (`go`), a go-ahead alike. */
+  /** The user's answers: on Landing cards, typed in a branch's own chat and applied on an Overseer card (Sova's
+   *  `landing.json`), and their word in this chat (`go`), a go-ahead alike. */
   readLanding() {
     let l;
     try { l = parseLanding(readFileSync(this.landingFile, "utf8")); } catch { l = { goAheads: [], notYet: [] }; }
@@ -1364,7 +1365,7 @@ class Round {
     const path = homeShown(tree);
     const call = `worktree ${JSON.stringify({ action: "merge", path })}`;
     const go = await this.answerAt(this.readLanding(), branch, head);
-    const owner = go?.kind === "go-ahead" ? `The user's ${goAheadWord(go.by)} at ${(go.at ?? head).slice(0, 7)}.` : "No go-ahead recorded at this head: land it only on the user's word (Land It, \"land it\" typed in its own chat, or round.mjs go).";
+    const owner = go?.kind === "go-ahead" ? `The user's ${goAheadWord(go.by)} at ${(go.at ?? head).slice(0, 7)}.` : "No go-ahead recorded at this head: land it only on the user's word (Land It, \"land it\" typed in its own chat, Go on an Overseer card, or round.mjs go).";
     if (go?.kind === "not-yet") stop(1, `The user said Not Yet to ${branch} at ${(go.at ?? head).slice(0, 7)}: it waits for a new commit.`, "round.mjs status");
     const scanned = scan.code === 0 ? [] : [...scan.lines, "The leak scan couldn't run here: push scans again."];
     return { exit: 0, lines: [`landable at ${head.slice(0, 7)} on master ${master.slice(0, 7)} (checked ${ago(this.now - c.at)} ago).`, ...scanned, owner, `call: ${call}`], data: { call: { action: "merge", path } }, next: `after the merge card, round.mjs landed ${branch}` };

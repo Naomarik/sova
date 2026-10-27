@@ -222,3 +222,33 @@ test("a go-ahead worktree land records reads in round.mjs as the user's word typ
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// Go on an Overseer card's Ready to land row (§app.overseer/card-land): what landing.ts records is a go-ahead the
+// driver reads as the user's word, named "Apply on the Overseer's card", carried over a clean master merge like Land It.
+test("a go-ahead from an Overseer card reads in round.mjs as the user's Apply on the Overseer's card, carried like Land It", async () => {
+  const round = (await import(ROUND)) as RoundAnswer & RoundCarry & { parseLanding: (text: string) => { goAheads: unknown[]; notYet: unknown[] }; goAheadWord: (by: string) => string };
+  const landing = await import("../pi-config/extensions/worktrees/landing.ts");
+  const { readFileSync, rmSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { scratchRoot } = await import("./test-scratch");
+  const dir = scratchRoot("sova-card-go-");
+  try {
+    const file = join(dir, "landing.json");
+    const A = "a".repeat(40);
+    const M = "d".repeat(40);
+    landing.recordGoAhead({ branch: "feat/card", commit: A, session: "s1", at: "2026-10-27T10:00:00Z", by: "overseer-card" }, file);
+    // A later write of another kind keeps it.
+    landing.recordGoAhead({ branch: "feat/other", commit: M, at: "2026-10-27T10:01:00Z", by: "land-it" }, file);
+    const parsed = round.parseLanding(readFileSync(file, "utf8"));
+    const answer = round.landingAnswer(parsed, "feat/card", A) as { kind: string; by: string; withoutSpecs: boolean } | null;
+    assert.deepEqual(answer, { kind: "go-ahead", by: "overseer-card", withoutSpecs: false });
+    assert.equal(round.goAheadWord(answer!.by), "Apply on the Overseer's card");
+    // M is a clean merge of master onto A: the go-ahead carries to it, naming A.
+    const carried = (await round.landingAnswerAt(parsed, "feat/card", M, async (s) => (s === M ? A : undefined))) as { kind: string; at?: string; by?: string } | null;
+    assert.equal(carried?.kind, "go-ahead");
+    assert.equal(carried?.at, A);
+    assert.equal(carried?.by, "overseer-card");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

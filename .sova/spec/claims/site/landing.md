@@ -4,7 +4,8 @@ The site's front page (`/`) introduces Sova to someone who has not installed it.
 product through real captures of the app (the screens manifest) rather than drawings, and it
 works at every width from a small phone to a wide desktop without sideways scrolling. The landing
 page, its mock-ups, screenshots and brand artwork are excluded from the spec's code boundary on
-purpose: the spec covers the site's docs only (§site/docs).
+purpose, except the claims below that name their files: the spec otherwise covers the site's docs
+only (§site/docs).
 
 ## §site.landing/fold-device — The foldable in "Off the desk"
 
@@ -17,6 +18,9 @@ cover screen facing away. No crease, hinge line or centre line shows on the devi
 the halves meet without a visible seam. The device stays centred while it opens and closes, and closing plays
 the opening in reverse. One toggle, labelled "Unfold" when closed and "Fold" when open, switches
 it by click, tap or keyboard, with a visible focus ring; clicking the device itself does the same.
+Pressing the toggle or the device never scrolls the page, wherever it is scrolled; when the
+keyboard reaches the toggle, the page brings the whole device and its toggle into view. Without
+scripts it still switches, as a plain toggle.
 With reduced motion the state swaps at once, without the 3D turn. The open device scales down to
 fit narrow phones, and neither state ever makes the page scroll sideways. Each capture keeps its
 alt text from the screens manifest.

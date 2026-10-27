@@ -238,9 +238,11 @@ html, body { overflow: clip; overscroll-behavior: none; }
 
 /* The contents, one step in beside a line beside the contents. */
 .org-done > .list { margin-left: var(--guide-step); }
-.group-section:not(.org-section) > .session-group,
 .group-section:not(.org-section) > .sidebar-region-note,
 .archive-date:not(.org-done) > .session-group { margin-left: var(--guide-nest); }
+/* A user group's rows, flat (no folder level): where its folders' rows sat, one step in plus a folder's own inset, so
+   no title moved and the group's line keeps its lane beside them. */
+.group-section:not(.org-section) > .list { margin-left: calc(var(--guide-nest) + var(--folder-inset)); }
 /* What will close lights up while its line is hovered: the head takes the hover fill and full ink. */
 .org-section:has(> .guide-line:hover) > summary,
 .group-section:has(> .guide-line:hover) > summary,

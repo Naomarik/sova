@@ -938,6 +938,9 @@ test("groupOf: the user's go-ahead checks, a green check lands, Not Yet holds; n
   assert.equal(g({ board: { ...board, status: "archived" } }, null, word), "check");
   assert.equal(g({}, null, word), "check");
   assert.equal(goAheadWord("chat"), "word in this chat");
+  // Go on an Overseer card's Ready to land row (§app.overseer/card-land): a go-ahead like Land It, under its own name.
+  assert.equal(g({ board }, row, { answer: { kind: "go-ahead", by: "overseer-card" } }), "check");
+  assert.equal(goAheadWord("overseer-card"), "Apply on the Overseer's card");
 });
 
 test("also-update rules: globs, the guides' front-matter and which touched areas missed their files", () => {

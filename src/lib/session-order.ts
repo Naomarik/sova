@@ -21,7 +21,10 @@ export interface CwdGroup {
 }
 
 /** Newest FILE WRITE first — `lastActiveAt` is the session file's mtime. */
-const byActivityDesc = (a: SessionSummary, b: SessionSummary) => b.lastActiveAt.localeCompare(a.lastActiveAt);
+export const byActivityDesc = (a: SessionSummary, b: SessionSummary) => b.lastActiveAt.localeCompare(a.lastActiveAt);
+
+/** One flat list, newest file write first (a user group's members, §app.session-list/groups). A copy: the input is left alone. */
+export const byActivity = (sessions: readonly SessionSummary[]): SessionSummary[] => [...sessions].sort(byActivityDesc);
 
 /**
  * Newest SESSION first, by `createdAt` — the header's own timestamp, written once when the session

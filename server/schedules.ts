@@ -107,6 +107,9 @@ export interface StoredSchedule {
   /** merge-ready: each worktree path woken for the user's go-ahead typed in its own chat, with the commit the
       go-ahead names (§chat.schedules/merge-ready). */
   typed?: Record<string, { branch: string; commit: string; at: number }>;
+  /** merge-ready: each worktree path woken for Go on an Overseer card's Ready to land row, with the commit it
+      names (§app.overseer/card-land). */
+  card?: Record<string, { branch: string; commit: string; at: number }>;
   /** A long-running schedule's own session (§chat.schedules/store). */
   session?: { id: string; path: string };
   /** The device that runs it (its host id). */
@@ -259,6 +262,8 @@ export interface KeeperDeps {
   board?(): Promise<{ pending: number; rowsIn(root: string): BoardRow[] } | null>;
   /** The user's go-aheads typed in a branch's own chat (`landing.json`, `by: "owner-chat"`), oldest first. */
   typedGoAheads?(): { branch: string; commit: string }[];
+  /** Go on an Overseer card's Ready to land row (`landing.json`, `by: "overseer-card"`), oldest first. */
+  cardGoAheads?(): { branch: string; commit: string }[];
   /** Tell the Overseer (under Brief Me only). */
   brief?(text: string): void;
   zone?(): string;
@@ -903,27 +908,35 @@ export class ScheduleKeeper {
       if (row?.landing?.state === "ready" || (!row && board.pending > 0)) continue; // ready, or not read yet
       if (now - prev.at >= MERGE_READY_FORGET_MS) delete seen[path];
     }
-    // The user's go-ahead typed in a branch's own chat wakes the round too, whatever its row reads: once per commit.
+    // The user's go-ahead typed in a branch's own chat, or given with Go on an Overseer card, wakes the round too,
+    // whatever its row reads: once per commit.
+    const goAheadsIn = (seenMap: NonNullable<StoredSchedule["typed"]>, goAheads: readonly { branch: string; commit: string }[]) => {
+      const out: { path: string; branch: string; commit: string }[] = [];
+      for (const r of rows) {
+        const g = goAheads.filter((x) => x.branch === r.branch).at(-1);
+        const prev = seenMap[r.path];
+        if (g && (prev?.branch !== r.branch || prev.commit !== g.commit)) out.push({ path: r.path, branch: r.branch, commit: g.commit });
+      }
+      for (const [path, prev] of Object.entries(seenMap)) {
+        if (rows.some((r) => r.path === path) || board.pending > 0) continue;
+        if (now - prev.at >= MERGE_READY_FORGET_MS) delete seenMap[path];
+      }
+      return out;
+    };
     const typedSeen = (s.typed ??= {});
-    const goAheads = this.deps.typedGoAheads?.() ?? [];
-    const typed: { path: string; branch: string; commit: string }[] = [];
-    for (const r of rows) {
-      const g = goAheads.filter((x) => x.branch === r.branch).at(-1);
-      const prev = typedSeen[r.path];
-      if (g && (prev?.branch !== r.branch || prev.commit !== g.commit)) typed.push({ path: r.path, branch: r.branch, commit: g.commit });
-    }
-    for (const [path, prev] of Object.entries(typedSeen)) {
-      if (rows.some((r) => r.path === path) || board.pending > 0) continue;
-      if (now - prev.at >= MERGE_READY_FORGET_MS) delete typedSeen[path];
-    }
-    if (!fresh.length && !typed.length) return;
+    const typed = goAheadsIn(typedSeen, this.deps.typedGoAheads?.() ?? []);
+    const cardSeen = (s.card ??= {});
+    const card = goAheadsIn(cardSeen, this.deps.cardGoAheads?.() ?? []);
+    if (!fresh.length && !typed.length && !card.length) return;
     // Held, unlogged and unseen, so they go out together later, while the run it last fired into is in flight.
     const last = [...s.fires].reverse().find((f) => f.path);
     if (last?.path && this.deps.busy(last.path)) return;
     fresh.sort((a, b) => a.branch.localeCompare(b.branch));
     typed.sort((a, b) => a.branch.localeCompare(b.branch));
+    card.sort((a, b) => a.branch.localeCompare(b.branch));
     for (const f of fresh) seen[f.path] = { branch: f.branch, commit: f.commit, at: now };
     for (const f of typed) typedSeen[f.path] = { branch: f.branch, commit: f.commit, at: now };
+    for (const f of card) cardSeen[f.path] = { branch: f.branch, commit: f.commit, at: now };
     // The day's timed fires keep their room under the cap: merge-ready never takes it.
     const tz = this.zone(ev);
     const reserved = maxFiresPerDay(ev.triggers!).n;
@@ -931,7 +944,7 @@ export class ScheduleKeeper {
       this.log(s, MERGE_READY, "skipped", { why: `merge-ready leaves today's last ${reserved} of ${MAX_FIRES_PER_DAY} fires to the timed triggers` });
       return;
     }
-    await this.fire(s, ev, MERGE_READY, undefined, mergeReadyReason(fresh.map((f) => f.branch), typed.map((f) => f.branch)));
+    await this.fire(s, ev, MERGE_READY, undefined, mergeReadyReason(fresh.map((f) => f.branch), typed.map((f) => f.branch), card.map((f) => f.branch)));
   }
 
   /** One tick: limit resets first, then merge-ready transitions, then every approved schedule that is due. */

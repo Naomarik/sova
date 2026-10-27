@@ -49,7 +49,32 @@ const isOpus5 = (model: string): boolean => resolveClaude(model)?.id === "claude
 /** The exploratory agent sova_idea `explore` launches: the Claude catalog's current Opus through Claude Code. */
 export const DEFAULT_EXPLORER: WorkerChoice = { backend: "claude-code", model: latestClaude("opus").id, effort: "medium" };
 
+/** The settings file's version. 2: the quick actions moved off the old five (OLD_QUICK_ACTIONS). */
+export const SETTINGS_VERSION = 2;
+
 export const DEFAULT_QUICK_ACTIONS: OverseerQuickAction[] = [
+  {
+    id: "get-moving",
+    label: "Get Things Moving",
+    description: "Every session stuck on a next step, checked now, on one card. Nothing is sent until you apply.",
+    prompt:
+      "Get things moving. Find every session from the last few days that is stuck on a next step: waiting on my go-ahead, ready to land, a failed check, a finished plan not yet built, a merge conflict, or an error that stopped its turn. Check each one now: its last reply, its branch and merge state, its last check (passed or failed, before or after the newest commit), and its open questions with their recommendations. Drop anything that has merged or moved on, and rebuild the card if a session changes while you work. Then give me one card, one row per session, under a section for why it is stuck: what it is, why it's stuck, and the exact message your Go sends. Default each row to your recommendation, and default risky ones (conflicts, publishing, failures unrelated to the work) to Not Yet. A row with a real choice gets its own options. Sessions that only wait on their own questions go in a list under the card with your recommendations, not on the card. Send nothing until I apply.",
+  },
+  {
+    id: "tidy",
+    label: "Tidy Up",
+    description: "Finished and stale sessions sorted onto one card to archive or keep. Nothing is archived until you apply.",
+    prompt:
+      "Tidy up. Look at every session started in Sova that isn't archived, and check each one now: its last reply, its branch and merge state, uncommitted changes, open questions, and whether anything is running in it. Sort them into sections. Done: the work merged, or the research or answer was delivered. Stale: it went nowhere (paused, no work done, idle with nothing built). Worth Keeping: unmerged work, uncommitted changes, open questions, or anything still running. Then give me one card, one row per session, under its section. Each row's note says what it was, what state it's in and why archiving fits, or, under Worth Keeping, what archiving would put at risk. Rows under Done and Stale default to Archive, rows under Worth Keeping to Keep. On a Done row whose work merged, offer Archive & Remove Worktree and default to it. Leave out sessions open in a terminal or working right now, and say how many you left out and why. Archive nothing until I apply.",
+  },
+];
+
+/**
+ * The five quick actions Sova shipped before version 2, exactly as they shipped. A version 1 file
+ * whose list is exactly these, in this order, moves to DEFAULT_QUICK_ACTIONS once
+ * (moveOldQuickActions); nothing compares with them after that.
+ */
+export const OLD_QUICK_ACTIONS: readonly OverseerQuickAction[] = [
   { id: "needs-me", label: "What Needs Me", description: "Sessions waiting on you, with links.", prompt: "What needs my attention? Link each session." },
   { id: "finished", label: "What Finished", description: "Work that finished since you last looked.", prompt: "What finished since I last looked, and what's the result?" },
   { id: "running", label: "What's Running", description: "Sessions, workers and teams running now.", prompt: "Summarise what's running now, including workers and teams." },
@@ -59,7 +84,7 @@ export const DEFAULT_QUICK_ACTIONS: OverseerQuickAction[] = [
 
 export function defaultSettings(): OverseerSettings {
   return {
-    version: 1,
+    version: SETTINGS_VERSION,
     model: null,
     thinking: null,
     extraSystemPrompt: "",
@@ -204,8 +229,44 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
   return out;
 }
 
+/** Whether a stored list is exactly the old five as shipped: same keys and values, same order. */
+function isOldFive(list: unknown): boolean {
+  if (!Array.isArray(list) || list.length !== OLD_QUICK_ACTIONS.length) return false;
+  return list.every((raw, i) => {
+    const old = OLD_QUICK_ACTIONS[i]!;
+    if (!isObj(raw)) return false;
+    const keys = Object.keys(raw).sort();
+    return keys.join(",") === "description,id,label,prompt" && raw.id === old.id && raw.label === old.label && raw.description === old.description && raw.prompt === old.prompt;
+  });
+}
+
+/**
+ * The one-time move to version 2 (§app.overseer/quick-actions-move): a stored object older than
+ * version 2 gets the new defaults in place of a list that is exactly the old five, any other list
+ * kept as it is, and every other field as stored. Null when the file needs no move.
+ */
+export function moveOldQuickActions(raw: unknown): Record<string, unknown> | null {
+  if (!isObj(raw)) return null;
+  const v = raw.version;
+  if (typeof v === "number" && v >= SETTINGS_VERSION) return null;
+  const next: Record<string, unknown> = { ...raw, version: SETTINGS_VERSION };
+  if (isOldFive(raw.quickActions)) next.quickActions = DEFAULT_QUICK_ACTIONS.map((a) => ({ ...a }));
+  return next;
+}
+
 export function readOverseerSettings(file = overseerSettingsFile()): OverseerSettings {
-  const parsed = parseSettings(readJson(file), false);
+  let raw = readJson(file);
+  const moved = moveOldQuickActions(raw);
+  if (moved) {
+    raw = moved;
+    try {
+      writeAtomic(file, `${JSON.stringify(moved, null, 2)}\n`);
+    } catch (err) {
+      // The move is read again next time; the settings it read still stand for this one.
+      console.warn("[overseer] settings move to version 2 not written:", err instanceof Error ? err.message : String(err));
+    }
+  }
+  const parsed = parseSettings(raw, false);
   return "error" in parsed ? defaultSettings() : parsed;
 }
 

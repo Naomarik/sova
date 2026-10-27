@@ -300,13 +300,20 @@ export const wakeInstruction = (title: string, dir: string, entry: string): stri
 /** How many branches a merge-ready reason names before "and N more". */
 export const MERGE_READY_NAMED = 5;
 
-/** A merge-ready fire's reason (§chat.schedules/merge-ready): "Ready to land: feat/x, feat/y." */
-export function mergeReadyReason(branches: readonly string[], typed: readonly string[] = []): string {
+/** A merge-ready fire's reason (§chat.schedules/merge-ready): "Ready to land: feat/x, feat/y.", then the branches with a
+    go-ahead typed in their own chat, then those with Go on an Overseer card (§app.overseer/card-land). */
+export function mergeReadyReason(branches: readonly string[], typed: readonly string[] = [], card: readonly string[] = []): string {
   const named = (bs: readonly string[]) => {
     const more = bs.length - MERGE_READY_NAMED;
     return `${bs.slice(0, MERGE_READY_NAMED).join(", ")}${more > 0 ? `, and ${more} more` : ""}.`;
   };
-  return [branches.length ? `Ready to land: ${named(branches)}` : "", typed.length ? `Go-ahead typed in its own chat: ${named(typed)}` : ""].filter(Boolean).join(" ");
+  return [
+    branches.length ? `Ready to land: ${named(branches)}` : "",
+    typed.length ? `Go-ahead typed in its own chat: ${named(typed)}` : "",
+    card.length ? `Go-ahead on the Overseer's card: ${named(card)}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 export const LIMIT_RESET_INSTRUCTION = "Your last turn stopped at that Claude login's usage limit, which has now reset. Continue where you left off.";

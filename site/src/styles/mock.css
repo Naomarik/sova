@@ -164,9 +164,11 @@
 @media (max-width: 599px) { .vcap-fixed { min-height: 2.9em; } }
 .dev-desk { width: min(920px, 100%); }
 
-/* ---- FOLDDEV. One foldable the visitor opens like a book, FoldDevice.astro, no script. --------
-   A visually-hidden checkbox holds the state; the device and the Unfold/Fold pill are both labels
-   for it. One registered number, --fd-t, runs 0 (closed) to 1 (open) and everything follows it:
+/* ---- FOLDDEV. One foldable the visitor opens like a book, FoldDevice.astro. -----------------
+   A transparent checkbox laid over the whole stage holds the state (so focusing it frames device
+   and pill); the device and the Unfold/Fold pill are both labels for it, and a small script
+   stops a press on them from scrolling the page. One registered number, --fd-t, runs 0 (closed)
+   to 1 (open) and everything follows it:
    the leaf turns rotateY(0 to -180deg) about its left edge, the book slides half a panel right so
    the device grows symmetrically about its centre, each face darkens as it turns from you (most
    edge-on, mid-swing), the leaf shades the base near the hinge, and the shadow under the device
@@ -179,7 +181,7 @@
 @property --fd-t { syntax: "<number>"; inherits: true; initial-value: 0; }
 
 .folddev {
-  width: 100%; align-self: center;
+  width: 100%; align-self: center; position: relative;
   /* The container, so --fd-d can cap the open device's width by the column as a length (cqi). */
   container: folddev / inline-size;
 }
@@ -195,6 +197,11 @@
   transition: --fd-t .82s cubic-bezier(.45, .05, .55, .95);
 }
 .folddev-check:checked ~ .folddev-stage { --fd-t: 1; }
+/* The state, over the stage's box: invisible, never hit, focus frames the device and its pill. */
+.folddev-check {
+  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0;
+  opacity: 0; pointer-events: none; appearance: none;
+}
 /* The open device's footprint, reserved in both states so nothing around it moves. */
 .folddev-device {
   display: block; position: relative;

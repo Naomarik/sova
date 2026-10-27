@@ -23046,7 +23046,7 @@
         "§site/docs"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "unreviewed",
       "code": [
         "site/src/pages/docs/[...slug].astro",
         "site/src/layouts/Docs.astro",
@@ -23055,7 +23055,12 @@
         "site/src/styles/docs.css",
         "site/src/content.config.ts",
         "site/astro.config.mjs"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-27T08:45Z",
+        "source": "pi-session:edb3d4e1-f79f-4177-8482-4377cb9bf1de#a0c6ea0d"
+      }
     },
     "§site.docs/index": {
       "kind": "behavior",
@@ -23215,6 +23220,26 @@
       "agreed": {
         "by": "user",
         "at": "2026-10-10T10:39Z"
+      }
+    },
+    "§site.docs/normal": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/mode-menu",
+        "§chat.mode-menu/menu",
+        "§chat.mode-menu/terminal",
+        "§chat.subagent-profiles/resolution",
+        "§app.overseer/hosting"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "site/src/content/docs/modes/normal.md"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-27T08:45Z",
+        "source": "pi-session:edb3d4e1-f79f-4177-8482-4377cb9bf1de#a0c6ea0d"
       }
     },
     "§site.docs/overseer": {
@@ -23378,13 +23403,14 @@
         "§app.project-overseer/coding-mode"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "unreviewed",
       "code": [
         "site/src/content/docs/subagent-profiles.md"
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-14T12:38Z"
+        "at": "2026-10-27T08:45Z",
+        "source": "pi-session:edb3d4e1-f79f-4177-8482-4377cb9bf1de#a0c6ea0d"
       }
     },
     "§site.docs/updates": {

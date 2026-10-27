@@ -538,7 +538,8 @@ the draft. Switch labels are in sentence case, like every other Settings switch.
   these. Picking one sends its prompt." One line per action: its label, its description, and
   **Edit**, which opens that row alone (Label, Description, Prompt; Move Up, Move Down, Remove) and
   becomes **Done**. **Add Quick Action**, under the list, adds a row already open, its label
-  focused; **Reset to Defaults** puts back the shipped five.
+  focused; **Reset to Defaults** puts back the two defaults, Get Things Moving and Tidy Up
+  (§app.overseer/default-quick-actions).
 - **Standing notes**: a textarea over `overseer-notes.md`. Its hint: "The Overseer reads these every
   turn and can add to them. They survive /clear."
 - **Advanced**, folded, its head "Idea explorer, extra instructions, resume after a restart":

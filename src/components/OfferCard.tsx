@@ -1,7 +1,8 @@
 import { createContext, createSignal, For, Match, onCleanup, Show, Switch, useContext } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import type { OfferCard } from "../../shared/session-offers";
-import { chooseOfferButton, getSessionOffers, setOfferNotNow } from "../lib/api";
+import type { JSX } from "solid-js";
+import type { OfferCard, OfferCardButton, OfferCardRow, OfferChoice } from "../../shared/session-offers";
+import { chooseOfferAll, chooseOfferButton, getSessionOffers, setOfferNotNow } from "../lib/api";
 import { toast } from "../lib/ui-state";
 import { Icon } from "./ui";
 import "../waiting.css";
@@ -21,7 +22,10 @@ export interface OfferControls {
   /** Every open card of the session, wherever it stands (the composer's waiting badge counts them). */
   open(): OfferCard[];
   busy(id: string): boolean;
-  choose(card: OfferCard, index: number): void;
+  /** A button's click; on a rows card, `row` names the row (§chat.offers/card, Rows). */
+  choose(card: OfferCard, index: number, row?: string): void;
+  /** A rows card's all button, over the rows its confirm named. */
+  chooseAll(card: OfferCard): void;
   notNow(card: OfferCard): void;
   /** Read again (after a turn ends). */
   refresh(): void;
@@ -75,10 +79,21 @@ export function createOfferControls(path: () => string, inThread: (card: OfferCa
     tray: () => state.cards.filter((c) => !inThread(c) && (c.state === "open" || shownHere().has(c.id))),
     open: () => state.cards.filter((c) => c.state === "open"),
     busy: (id) => busy() === id,
-    choose(card, index) {
+    choose(card, index, row) {
       if (!canAct() || busy()) return;
       setBusy(card.id);
-      chooseOfferButton(path(), card.id, index)
+      chooseOfferButton(path(), card.id, index, row)
+        .then((r) => adopt(r.card))
+        .catch((err) => {
+          toast(err instanceof Error ? err.message : String(err));
+          void load();
+        })
+        .finally(() => setBusy(null));
+    },
+    chooseAll(card) {
+      if (!canAct() || busy() || !card.all) return;
+      setBusy(card.id);
+      chooseOfferAll(path(), card.id, card.all.rows)
         .then((r) => adopt(r.card))
         .catch((err) => {
           toast(err instanceof Error ? err.message : String(err));
@@ -113,9 +128,21 @@ export function OfferCardView(props: { card: OfferCard }) {
       </div>
       <Show when={card().from}>{(f) => <div class="card-body overseer-confirm-detail offer-card-from">From {f().title}</div>}</Show>
       <Show when={card().note}>{(n) => <div class="card-body overseer-confirm-detail">{n()}</div>}</Show>
+      <Show when={card().rows}>
+        <div class="card-body overseer-confirm-items">
+          <OfferRows card={props.card} />
+        </div>
+      </Show>
       <div class="card-foot overseer-card-foot">
         <Show when={open()} fallback={<OfferOutcome card={card()} />}>
-          <Show when={ctx} fallback={<span class="overseer-confirm-hint">Waiting for an answer: {card().buttons.map((b) => b.label).join(" · ")}.</span>}>
+          <Show
+            when={ctx}
+            fallback={
+              <Show when={!card().rows}>
+                <span class="overseer-confirm-hint">Waiting for an answer: {card().buttons.map((b) => b.label).join(" · ")}.</span>
+              </Show>
+            }
+          >
             <OfferActions card={props.card} />
           </Show>
         </Show>
@@ -125,33 +152,26 @@ export function OfferCardView(props: { card: OfferCard }) {
 }
 
 /**
- * An open card's buttons and Not Now, with a button's confirm step: the card's own controls, also
- * drawn by the composer's Waiting on you dialog (§chat.composer/waiting-dialog), so a press there
- * answers the same card the same way. Needs OfferContext.
+ * A row of buttons with each button's confirm step (§chat.offers/buttons): its question, then Cancel or the label
+ * again. Focus stays in the group through the confirm step: Cancel takes it when the question opens, and the button
+ * that asked gets it back on Cancel. `extra` follows the buttons (Not Now).
  */
-export function OfferActions(props: { card: OfferCard }) {
-  const ctx = useContext(OfferContext);
-  const card = () => ctx?.card(props.card.id) ?? props.card;
-  const open = () => card().state === "open";
-  const canAct = () => !!ctx && open() && !ctx.busy(card().id);
-  // A button with a confirm asks first (§chat.offers/buttons): its question, then Cancel or the label again.
+function ButtonSet(props: { buttons: OfferCardButton[]; canAct: () => boolean; press: (i: number) => void; extra?: JSX.Element; label?: string }) {
   const [asking, setAsking] = createSignal<number | null>(null);
   const asked = () => {
     const i = asking();
-    return i === null ? undefined : card().buttons[i];
+    return i === null ? undefined : props.buttons[i];
   };
-  // Focus stays on the card through the confirm step: Cancel takes it when the question opens,
-  // and the button that asked gets it back on Cancel (a press on a removed button drops it).
   let group: HTMLDivElement | undefined;
   const focusIn = (sel: string) => queueMicrotask(() => group?.querySelector<HTMLElement>(sel)?.focus());
   const press = (i: number) => {
-    if (!canAct()) return;
-    if (card().buttons[i]?.confirm && asking() !== i) {
+    if (!props.canAct()) return;
+    if (props.buttons[i]?.confirm && asking() !== i) {
       setAsking(i);
       return focusIn(".offer-card-cancel");
     }
     setAsking(null);
-    ctx!.choose(card(), i);
+    props.press(i);
   };
   const cancel = () => {
     const i = asking();
@@ -159,7 +179,7 @@ export function OfferActions(props: { card: OfferCard }) {
     if (i !== null) focusIn(`[data-offer-button="${i}"]`);
   };
   return (
-    <div class="offer-card-actions" ref={group}>
+    <div class="offer-card-actions" ref={group} aria-label={props.label}>
       <Show when={asked()}>
         {(b) => (
           <div class="offer-card-confirm" role="group" aria-label={`Confirm ${b().label}`}>
@@ -168,7 +188,7 @@ export function OfferActions(props: { card: OfferCard }) {
               <button type="button" class="button button-sm button-ghost offer-card-cancel" onClick={cancel}>
                 Cancel
               </button>
-              <button type="button" class="button button-sm button-destructive" aria-disabled={canAct() ? undefined : "true"} onClick={() => press(asking()!)}>
+              <button type="button" class="button button-sm button-destructive" aria-disabled={props.canAct() ? undefined : "true"} onClick={() => press(asking()!)}>
                 {b().label.replace(/…$/, "")}
               </button>
             </div>
@@ -177,26 +197,134 @@ export function OfferActions(props: { card: OfferCard }) {
       </Show>
       <Show when={asking() === null}>
         <div class="overseer-card-buttons">
-          <For each={card().buttons}>
+          <For each={props.buttons}>
             {(b, i) => (
-              <button
-                type="button"
-                class="button button-sm"
-                data-offer-button={i()}
-                aria-disabled={canAct() ? undefined : "true"}
-                title={b.about}
-                onClick={() => press(i())}
-              >
+              <button type="button" class="button button-sm" data-offer-button={i()} aria-disabled={props.canAct() ? undefined : "true"} title={b.about} onClick={() => press(i())}>
                 {b.label}
               </button>
             )}
           </For>
-          <button type="button" class="button button-sm button-ghost offer-card-not-now" aria-disabled={canAct() ? undefined : "true"} title="Hide this offer for the rest of this session." onClick={() => canAct() && ctx!.notNow(card())}>
-            Not Now
-          </button>
+          {props.extra}
         </div>
       </Show>
     </div>
+  );
+}
+
+/**
+ * An open card's buttons and Not Now, with a button's confirm step: the card's own controls, also
+ * drawn by the composer's Waiting on you dialog (§chat.composer/waiting-dialog), so a press there
+ * answers the same card the same way. A rows card's buttons are its rows'; here it has its all button
+ * (where the file declares one) and Not Now. Needs OfferContext.
+ */
+export function OfferActions(props: { card: OfferCard }) {
+  const ctx = useContext(OfferContext);
+  const card = () => ctx?.card(props.card.id) ?? props.card;
+  const open = () => card().state === "open";
+  const canAct = () => !!ctx && open() && !ctx.busy(card().id);
+  const notNow = (
+    <button type="button" class="button button-sm button-ghost offer-card-not-now" aria-disabled={canAct() ? undefined : "true"} title="Hide this offer for the rest of this session." onClick={() => canAct() && ctx!.notNow(card())}>
+      Not Now
+    </button>
+  );
+  // The all button is one button with its own confirm, naming the rows it answers.
+  const allButtons = (): OfferCardButton[] => {
+    const a = card().all;
+    return a ? [{ label: a.label, about: a.about, kind: "send", confirm: a.confirm }] : [];
+  };
+  return (
+    <Show when={card().rows} fallback={<ButtonSet buttons={card().buttons} canAct={canAct} press={(i) => ctx!.choose(card(), i)} extra={notNow} />}>
+      <ButtonSet buttons={allButtons()} canAct={canAct} press={() => ctx!.chooseAll(card())} extra={notNow} />
+    </Show>
+  );
+}
+
+/** "You chose {label}", and where, when the answer came from the other place (§chat.offers/landing-rows). */
+function ChoiceWords(props: { choice: OfferChoice }) {
+  return (
+    <>
+      You chose <strong>{props.choice.label}</strong>
+      <Show when={props.choice.where}>{(w) => <> in {w()}</>}</Show>
+    </>
+  );
+}
+
+/**
+ * A rows card's rows (§chat.offers/card, Rows): each its label (a landing row's branch and short commit), its owner
+ * chat as its own link, the drafts it leaves, then its buttons while open, else its state. The row is never a link.
+ */
+export function OfferRows(props: { card: OfferCard }) {
+  const ctx = useContext(OfferContext);
+  const card = () => ctx?.card(props.card.id) ?? props.card;
+  const canAct = () => !!ctx && card().state === "open" && !ctx.busy(card().id);
+  return (
+    <>
+      <ul class="overseer-confirm-list offer-card-rows">
+        <For each={card().rows ?? []}>
+          {(row) => (
+            <li class="overseer-confirm-item offer-card-row" data-offer-row={row.id} data-phase={row.state} data-progress={row.progress}>
+              <div class="overseer-confirm-item-line">
+                <span class="overseer-confirm-item-name">{row.branch ?? row.label}</span>
+                <Show when={row.commit}>{(c) => <span class="overseer-confirm-idea-id">{c()}</span>}</Show>
+                <Show when={row.owner}>
+                  {(o) => (
+                    <a class="overseer-confirm-item-meta offer-card-row-owner" href={`#/sid/${encodeURIComponent(o().id)}`} title={`Open ${o().title}`}>
+                      {o().title}
+                    </a>
+                  )}
+                </Show>
+              </div>
+              <Show when={row.drafts}>{(d) => <span class="overseer-confirm-item-meta">Spec drafts left: {d()}</span>}</Show>
+              <Show when={row.state === "open" && card().state === "open"} fallback={<RowOutcome row={row} />}>
+                <Show when={ctx} fallback={<span class="overseer-confirm-hint">Waiting for an answer: {row.buttons.map((b) => b.label).join(" · ")}.</span>}>
+                  <ButtonSet buttons={row.buttons} canAct={canAct} press={(i) => ctx!.choose(card(), i, row.id)} label={`${row.branch ?? row.label}`} />
+                </Show>
+              </Show>
+            </li>
+          )}
+        </For>
+      </ul>
+      <Show when={card().more}>
+        {(n) => (
+          <span class="overseer-confirm-hint">
+            {n()} more {n() === 1 ? "branch waits" : "branches wait"} for this card to be answered.
+          </span>
+        )}
+      </Show>
+    </>
+  );
+}
+
+function RowOutcome(props: { row: OfferCardRow }) {
+  const r = () => props.row;
+  return (
+    <p class="overseer-confirm-answer">
+      <Switch>
+        <Match when={r().state === "chosen" && r().progress === "landed"}>
+          <Icon name="check" small />
+          <span>Landed</span>
+        </Match>
+        <Match when={r().state === "chosen" && r().progress === "landing"}>
+          <span>Landing</span>
+        </Match>
+        <Match when={r().state === "chosen" && r().choice}>
+          {(choice) => (
+            <>
+              <Icon name="check" small />
+              <span>
+                <ChoiceWords choice={choice()} />
+              </span>
+            </>
+          )}
+        </Match>
+        <Match when={r().state === "superseded"}>
+          <span>Replaced by a newer commit</span>
+        </Match>
+        <Match when={r().state === "withdrawn"}>
+          <span>No longer offered</span>
+        </Match>
+      </Switch>
+    </p>
   );
 }
 
@@ -210,7 +338,7 @@ function OfferOutcome(props: { card: OfferCard }) {
             <>
               <Icon name="check" small />
               <span>
-                You chose <strong>{choice().label}</strong>
+                <ChoiceWords choice={choice()} />
                 <Switch>
                   <Match when={c().outcome?.state === "running"}> · Running…</Match>
                   <Match when={c().outcome?.state === "done"}> · Done: {c().outcome?.text}</Match>
@@ -219,6 +347,9 @@ function OfferOutcome(props: { card: OfferCard }) {
               </span>
             </>
           )}
+        </Match>
+        <Match when={c().state === "chosen" && c().rows}>
+          <span>Every row is answered.</span>
         </Match>
         <Match when={c().state === "not-now"}>
           <span>Not now</span>

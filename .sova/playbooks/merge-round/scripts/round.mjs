@@ -353,7 +353,42 @@ export const landingAnswer = (landing, branch, head) => {
 
 /** A go-ahead's words by where it was given: the Project Overseer's Merge Branch, the user's word in this chat, their
  *  word typed in the branch's own chat (`worktree land`), Land It. */
-export const goAheadWord = (by) => (by === "page" ? "Merge Branch" : by === "chat" ? "word in this chat" : by === "owner-chat" ? "word typed in its own chat" : "Land It");
+export const goAheadWord = (by) => (by === "page" ? "Merge Branch" : by === "chat" || by === "captain-chat" ? "word in this chat" : by === "owner-chat" ? "word typed in its own chat" : "Land It");
+
+/**
+ * Record the user's word in this chat in Sova's `landing.json` too (§chat.worktrees/landing-answers), as landing.ts
+ * recordGoAhead does: `by: "captain-chat"`, `in` the captain's session, a newer record for the same branch and commit
+ * replacing an older one and clearing a Not Yet there, the newest 200 of each list kept, written by atomic rename.
+ * So the owner's Landing card and the captain's row settle and say where it was given (§chat.offers/landing-rows).
+ */
+export function recordCaptainGoAhead(file, { branch, commit, at, captain, withoutSpecs }) {
+  let d;
+  try { d = JSON.parse(readFileSync(file, "utf8")); } catch { d = null; }
+  const goAheads = Array.isArray(d?.goAheads) && d?.v === 1 ? d.goAheads : [];
+  const notYet = Array.isArray(d?.notYet) && d?.v === 1 ? d.notYet : [];
+  const rec = { branch, commit, at, by: "captain-chat", ...(withoutSpecs ? { withoutSpecs: true } : {}), ...(captain ? { in: captain } : {}) };
+  const out = {
+    v: 1,
+    goAheads: [...goAheads.filter((g) => !(g?.branch === branch && g?.commit === commit)), rec].slice(-200),
+    notYet: notYet.filter((n) => !(n?.branch === branch && n?.commit === commit)).slice(-200),
+  };
+  mkdirSync(dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(out, null, 2)}\n`, { mode: 0o600 });
+  renameSync(tmp, file);
+}
+
+/** Whether Sova gave a queued branch a row on the captain's landing card (§chat.offers/landing-rows). */
+export const hasRow = (queued) => !!queued?.row && (typeof queued.row.card === "string" || queued.row.waiting === true);
+
+/** What Sova did with a queued branch, as `status` and `ask` say it: the row on the card below, and the owner's card. */
+export function shownWords(queued, chat) {
+  if (hasRow(queued)) {
+    const where = queued.row.waiting ? "a row waiting behind the card below (it opens once that card is answered)" : "on the card below";
+    return queued.refused ? `${where}; the owner's card in ${chat} wasn't shown: ${queued.refused}` : `${where}, and its Landing card in ${chat}`;
+  }
+  return queued.refused ? `Sova didn't show the card: ${queued.refused}` : `Landing card shown in ${chat}`;
+}
 
 /** How many clean master merges a go-ahead carries through (§chat.merge-round/driver). */
 export const CARRY_MAX = 20;
@@ -438,7 +473,7 @@ export const GROUPS = [
   ["check", "to check", "The user's go-ahead at this head (Land It, their word in this chat, or typed in the branch's own chat): check it"],
   ["land", "to land", "Checked green at this head and master: land it"],
   ["ask", "to queue now", "Ready to land, owner idle: queue it (Sova shows the Landing card)"],
-  ["waiting", "card shown", "Landing card shown: waits for the user's Land It, or \"land it\" typed in that chat"],
+  ["waiting", "card shown", "Landing card or row shown: waits for the user's Land It (on the card below, or in the owner's chat), or \"land it\" typed there"],
   ["busy", "owner busy", "Ready to land, owner busy: queue it on a later round"],
   ["archived", "owner archived", "Owner archived: the user's call (tell the user once)"],
   ["untracked", "no session tracks", "No session tracks this worktree: the user's call (tell the user once)"],
@@ -463,7 +498,7 @@ export function groupOf({ rec, row, head, master, pending, answer = null, queued
   if (!own) return pending > 0 ? "unknown" : "untracked";
   if (own.status === "archived") return "archived";
   if (answer?.kind === "not-yet" || !landingEligible(row, head)) return "not-ready";
-  if (rec?.ask?.queued && rec.ask.head === head && queued && !queued.refused) return "waiting";
+  if (rec?.ask?.queued && rec.ask.head === head && queued && (!queued.refused || hasRow(queued))) return "waiting";
   return own.status === "idle" ? "ask" : "busy";
 }
 
@@ -714,7 +749,7 @@ class Round {
     try {
       const d = JSON.parse(readFileSync(this.shownFile, "utf8"));
       const r = d?.v === 1 ? d.results?.[id] : null;
-      return r && (typeof r.card === "string" || typeof r.refused === "string") ? r : null;
+      return r && (typeof r.card === "string" || typeof r.refused === "string") ? { ...r, ...(hasRow(r) ? {} : { row: undefined }) } : null;
     } catch { return null; }
   }
 
@@ -912,7 +947,7 @@ class Round {
       parts.push(`last commit ${ago(this.now - f.lastCommitAt)} ago`);
       if (answer?.kind === "go-ahead") parts.push(`the user's go-ahead (${goAheadWord(answer.by)}) at ${(answer.at ?? head).slice(0, 7)}${answer.at ? `, carried to ${head.slice(0, 7)} over clean master merges` : ""}${answer.withoutSpecs ? ", without its specs" : ""}`);
       else if (answer?.kind === "not-yet") parts.push(`the user said Not Yet at ${(answer.at ?? head).slice(0, 7)}: it waits for a new commit`);
-      if (rec.ask?.queued) parts.push(`queued ${ago(this.now - rec.ask.at)} ago at ${rec.ask.head.slice(0, 7)}${rec.ask.head !== head ? " (the head moved since)" : queued ? (queued.refused ? `; Sova didn't show the card: ${queued.refused}` : `; Landing card shown in ${chatOf(rec, rec.ask.owner)}`) : "; Sova hasn't read the queue yet"}`);
+      if (rec.ask?.queued) parts.push(`queued ${ago(this.now - rec.ask.at)} ago at ${rec.ask.head.slice(0, 7)}${rec.ask.head !== head ? " (the head moved since)" : queued ? `; ${shownWords(queued, chatOf(rec, rec.ask.owner))}` : "; Sova hasn't read the queue yet"}`);
       if (rec.check) parts.push(`last check: ${rec.check.ok ? "landable" : "needs work"} at ${rec.check.head.slice(0, 7)}`);
       const restartNeeded = f.changed.some(needsRestart);
       if (restartNeeded) parts.push("landing needs a restart");
@@ -921,7 +956,7 @@ class Round {
         state: row?.state ?? null, reason: row?.reason ?? null,
         owner: own?.owner ?? null, ownerStatus: own?.status ?? null, ownerFrom: own?.from ?? null,
         ahead: f.ahead, behind: f.behind, dirty: f.dirty.length, temp: !!f.temp, conflicts, lastCommitAgoMs: this.now - f.lastCommitAt,
-        ask: rec.ask ? { agoMs: this.now - rec.ask.at, ...(rec.ask.queued ? { queued: queued ? (queued.refused ? { refused: queued.refused } : { card: queued.card }) : null } : {}) } : null, restartNeeded,
+        ask: rec.ask ? { agoMs: this.now - rec.ask.at, ...(rec.ask.queued ? { queued: queued ? { ...(queued.refused ? { refused: queued.refused } : { card: queued.card }), ...(hasRow(queued) ? { row: queued.row } : {}) } : null } : {}) } : null, restartNeeded,
         landing: row?.landing ?? null, userAnswer: answer,
       });
     }
@@ -947,7 +982,7 @@ class Round {
       at: this.now, board: !!board,
       forUser: branches.filter((b) => b.group === "archived" || b.group === "untracked").map((b) => ({ branch: b.branch, head: b.head, group: b.group })),
       // Cards Sova showed at the current head, still waiting for the user: the report names each owner's chat.
-      waiting: branches.filter((b) => b.group === "waiting").map((b) => ({ branch: b.branch, head: b.head, chat: chatOf(st.branches[b.branch], st.branches[b.branch]?.ask?.owner ?? b.owner) })),
+      waiting: branches.filter((b) => b.group === "waiting").map((b) => ({ branch: b.branch, head: b.head, chat: chatOf(st.branches[b.branch], st.branches[b.branch]?.ask?.owner ?? b.owner), row: !!b.ask?.queued?.row })),
     };
     this.saveState();
     const first = (k) => branches.find((b) => b.group === k)?.branch;
@@ -983,7 +1018,12 @@ class Round {
     (st.branches[branch] ??= {}).go = { head, at: this.now, ...(extra.length ? { withoutSpecs: true } : {}) };
     this.event("go", { branch, head });
     this.saveState();
-    return { exit: 0, lines: [`The user's word: land ${branch} at ${head.slice(0, 7)}${extra.length ? ", without its specs" : ""}. It is their go-ahead, as Land It is.`], next: `round.mjs check ${branch}` };
+    // Also in Sova's landing.json, so the owner's card and the captain's row settle (§chat.worktrees/landing-answers).
+    let recorded = true;
+    try {
+      recordCaptainGoAhead(this.landingFile, { branch, commit: head, at: new Date(this.now).toISOString(), captain: this.sessionId(false) || undefined, withoutSpecs: extra.length > 0 });
+    } catch { recorded = false; }
+    return { exit: 0, lines: [`The user's word: land ${branch} at ${head.slice(0, 7)}${extra.length ? ", without its specs" : ""}. It is their go-ahead, as Land It is.${recorded ? "" : " (Sova's landing.json couldn't be written, so its Landing card stays open.)"}`], next: `round.mjs check ${branch}` };
   }
 
   async ask() {
@@ -1002,9 +1042,9 @@ class Round {
     if (this.now - own.at > NOTE_FRESH_MS) stop(1, `The newest reading of ${own.owner} on ${branch} is ${ago(this.now - own.at)} old: run round.mjs status again (Sova rewrites its board every minute), or note it by hand.`, "round.mjs status");
     // Ready to land at this head: queued, and Sova shows the owner the Landing card itself (§chat.offers/sova-landing).
     const prior = rec.ask?.queued && rec.ask.head === head ? this.queueResult(rec.ask.queued) : null;
-    if (prior?.refused) stop(1, `Sova didn't show ${branch}'s Landing card at ${head.slice(0, 7)}: ${prior.refused}.`, "tell the user once that it lands on their word, \"land it\" typed in its own chat or \"land <branch>\" here (round.mjs go); never to press a card");
+    if (prior?.refused && !hasRow(prior)) stop(1, `Sova didn't show ${branch}'s Landing card at ${head.slice(0, 7)}: ${prior.refused}.`, "tell the user once that it lands on their word, \"land it\" typed in its own chat or \"land <branch>\" here (round.mjs go); never to press a card");
     if (!landingEligible(row, head)) stop(1, `${branch} isn't Ready to land at ${head.slice(0, 7)}: nothing to queue.`, "the next branch");
-    if (rec.ask?.queued && rec.ask.head === head) stop(1, `${branch} is already queued at ${head.slice(0, 7)}${prior ? `: its Landing card is shown in ${chatOf(rec, rec.ask.owner)}` : ""}. The user's Land It, or their \"land it\" typed there, reaches you by itself.`, "the next branch");
+    if (rec.ask?.queued && rec.ask.head === head) stop(1, `${branch} is already queued at ${head.slice(0, 7)}${prior ? `: ${shownWords(prior, chatOf(rec, rec.ask.owner))}` : ""}. The user's Land It, or their \"land it\" typed there, reaches you by itself.`, "the next branch");
     const captain = this.sessionId();
     const id = `lq_${head.slice(0, 12)}_${this.now.toString(36)}`;
     this.enqueue({ id, branch, path: tree, head, owner: own.owner, captain, at: this.now });
@@ -1013,7 +1053,7 @@ class Round {
     this.event("queued", { branch, owner: own.owner });
     this.saveState();
     const specs = row.landing.state === "specs" ? ` Its spec drafts can't land (${row.landing.specsWhy}): the card offers Merge Without Specs….` : "";
-    return { exit: 0, lines: [`Queued ${branch} at ${head.slice(0, 7)}: Sova shows the Landing card in ${chatOf(rec, own.owner)}.${specs}`], data: { owner: own.owner, queued: id }, next: "don't poll: the user's Land It reaches you as a message, and their \"land it\" typed in that chat as a merge-ready wake; round.mjs status says whether the card was shown" };
+    return { exit: 0, lines: [`Queued ${branch} at ${head.slice(0, 7)}: Sova shows the Landing card in ${chatOf(rec, own.owner)}, and the branch as a row on the landing card in this chat.${specs}`], data: { owner: own.owner, queued: id }, next: "don't poll: the user's Land It reaches you as a message, and their \"land it\" typed in that chat as a merge-ready wake; round.mjs status says whether the card was shown" };
   }
 
   // Master's record layout (1 or 2), from its committed manifest.json settings.
@@ -1557,7 +1597,10 @@ class Round {
     lines.push(`- For you, once (no live owner, so no Landing card): ${forUser.map((b) => `${b.branch} (${b.group === "archived" ? "owner archived" : "no session tracks this worktree"}: say "land ${b.branch}" here to land it)`).join(", ") || "nothing new"}`);
     // A card Sova showed is named by its chat, with a link, never as "its card is shown" alone.
     const waiting = st.lastStatus?.waiting ?? [];
-    if (waiting.length) lines.push(`- Waiting for your Land It (or "land it" typed there): ${waiting.map((b) => `${b.branch} at ${b.head.slice(0, 7)} in ${b.chat}`).join(", ")}`);
+    const onCard = waiting.filter((b) => b.row);
+    const inChat = waiting.filter((b) => !b.row);
+    if (onCard.length) lines.push(`- Waiting for your answer on the card below: ${onCard.map((b) => `${b.branch} at ${b.head.slice(0, 7)} (owner ${b.chat})`).join(", ")}`);
+    if (inChat.length) lines.push(`- Waiting for your Land It (or "land it" typed there): ${inChat.map((b) => `${b.branch} at ${b.head.slice(0, 7)} in ${b.chat}`).join(", ")}`);
     lines.push(`- Queued for a Landing card: ${of("queued").map((e) => `${e.branch} (${e.owner})`).join(" · ") || "none"}`);
     lines.push("- Handed back: (fill in: branch, owner, why)");
     if (sess.firstRound) lines.push("- Settings: (fill in the kinds and counts discover-names.mjs printed, and any names it says origin already has, masked as printed)");

@@ -97,7 +97,46 @@ test("state: a question outranks work, work outranks what the last turn left, th
     "open questions need you until answered",
   );
   assert.equal(boardState(sess("a", { archived: true }), null, false).state, "archived");
-  assert.equal(boardState(sess("a", { archived: true }), agent("/s/a.jsonl"), false).state, "idle", "an archived session something runs in is not shown as archived");
+  assert.equal(boardState(sess("a", { archived: true }), agent("/s/a.jsonl"), false).state, "archived", "an archived session with an idle process is Archived, not Idle");
+});
+
+test("archived: only Working (while its turn or workers run) or Archived, never Needs you (§app.insights/team-cards)", () => {
+  const arch = (extra: Partial<SessionSummary> = {}) => sess("a", { origin: "web", archived: true, ...extra });
+  // Idle.
+  assert.deepEqual(boardState(arch(), null, false), { state: "archived", reason: null, word: "Archived" });
+  // Working: its turn (the tab's busy, the list's activity) or its workers.
+  assert.deepEqual(boardState(arch(), null, true), { state: "working", reason: null, word: "Working" });
+  assert.equal(boardState(arch({ activity: { state: "working" } }), null, false).state, "working");
+  assert.deepEqual(boardState(arch({ workers: { working: 2, total: 2 } }), null, false), { state: "working", reason: null, word: "Working (team)" });
+  assert.equal(boardState(arch(), agent("/s/a.jsonl", { workerCounts: { total: 1, working: 1, waiting: 0, done: 0, error: 0, killed: 0 } }), false).state, "working");
+  // Waiting on you, in every way a live one would: still Archived.
+  for (const extra of [
+    { activity: { state: "needs-input" as const } },
+    { pendingDialogs: 1 },
+    { turnError: { message: "429" } },
+    { activity: { state: "error" as const, error: "boom" } },
+    { signals: { kinds: ["asks-you"], at: 5, provider: "jev" } },
+    { align: { openDocs: 1, openQuestions: 2, questionDocs: 1, lead: { id: "al_1", title: "Export" } } },
+  ] as Partial<SessionSummary>[])
+    assert.deepEqual(boardState(arch(extra), null, false), { state: "archived", reason: null, word: "Archived" }, JSON.stringify(extra));
+});
+
+test("archived rows: in the default view only while working or open in a TUI; under Archived always; never under Needs you", () => {
+  const rows = boardRows(
+    [
+      sess("idle", { origin: "web", archived: true }),
+      sess("asks", { origin: "web", archived: true, pendingDialogs: 1 }),
+      sess("works", { origin: "web", archived: true, workers: { working: 1, total: 1 } }),
+      sess("turn", { origin: "web", archived: true }),
+      sess("ran", { origin: "web", archived: true, activity: { state: "idle" } }),
+      sess("tui", { origin: "web", archived: true, live: { pid: 1, status: "idle" } }),
+    ],
+    undefined,
+    (s) => s.id === "turn",
+  );
+  assert.deepEqual(rows.filter(inDefaultScope).map((r) => r.session.id), ["works", "turn", "tui"], "an idle or waiting archived session, its process still up or not, stays out");
+  assert.deepEqual(rows.filter((r) => passesFilter(r, "archived", undefined)).map((r) => r.session.id), ["idle", "asks", "works", "turn", "ran", "tui"]);
+  assert.deepEqual(rows.filter((r) => passesFilter(r, "needs-you", undefined)).map((r) => r.session.id), []);
 });
 
 test("the state's one word: code-derived Broken / Working (team), the card's waiting kind and done words", () => {
@@ -157,7 +196,7 @@ test("filters: each chip says what it means; Unmerged needs a reading; Archived 
   assert.deepEqual(counts, { live: 1, "needs-you": 2, "has-workers": 1, unmerged: 1, archived: 1 });
 });
 
-test("Needs you: archive eligibility wins over attention facts, search and a linked-team pin", () => {
+test("Needs you: an archived session is never in it, whatever it waits on, a search or a linked-team pin; it reads Archived", () => {
   const cases: { name: string; extra: Partial<SessionSummary>; host?: Partial<LiveAgentSession> }[] = [
     { name: "turn-error", extra: { turnError: { message: "429" } } },
     { name: "activity-error", extra: { activity: { state: "error", error: "failed" } } },
@@ -177,8 +216,8 @@ test("Needs you: archive eligibility wins over attention facts, search and a lin
     const sessions = [active, archived, legacy];
     const data = host ? insight(sessions.map((s) => agent(s.path, { ...host, teams: [team("linked", s.path)] }))) : undefined;
     const rows = boardRows(sessions, data, noBusy);
-    assert.ok(rows.every((r) => r.state === "needs-you"), `${name}: attention state stays intact`);
-    assert.equal(rows[1]!.reason, rows[0]!.reason, `${name}: archive does not erase the reason`);
+    assert.ok(rows[0]!.state === "needs-you" && rows[2]!.state === "needs-you", `${name}: an unarchived session's attention state stays intact`);
+    assert.deepEqual([rows[1]!.state, rows[1]!.word, rows[1]!.reason], ["archived", "Archived", null], `${name}: archived, never Needs you (§app.insights/team-cards)`);
     const expected = [active.id, legacy.id];
     assert.deepEqual(rows.filter((r) => passesFilter(r, "needs-you", undefined)).map((r) => r.session.id), expected, name);
     for (const query of ["", "TITLE", "no-match"]) {
@@ -195,7 +234,7 @@ test("Needs you: archive eligibility wins over attention facts, search and a lin
   }
 });
 
-test("archive exclusion is only Needs you: other scopes, pins and state precedence stay intact", () => {
+test("an archived session that works stays Working in every scope and pin; idle or waiting, it is Archived", () => {
   const s = sess("archived-live", { archived: true, origin: "web", activity: { state: "working" }, turnError: {}, workers: { total: 1, working: 1 } });
   const rows = boardRows([s], undefined, noBusy);
   const r = rows[0]!;
@@ -207,9 +246,9 @@ test("archive exclusion is only Needs you: other scopes, pins and state preceden
     assert.deepEqual(visibleRows(rows, { filter, query: "no-match", treesOf: none, pinned: s.path }), rows, `unchanged ${filter} pin bypass`);
   }
   const idle = boardRows([sess("idle", { archived: true })], insight([agent("/s/idle.jsonl")]), noBusy)[0]!;
-  assert.equal(idle.state, "idle", "an archived host record still derives idle");
+  assert.equal(idle.state, "archived", "an archived session with an idle host record is Archived");
   const blocked = boardRows([{ ...s, pendingDialogs: 1 }], undefined, () => true)[0]!;
-  assert.equal(blocked.state, "needs-you", "a dialog still outranks running work");
+  assert.equal(blocked.state, "working", "archived: running work shows, a dialog never makes it Needs you");
   assert.equal(passesFilter(blocked, "needs-you", undefined), false);
 });
 

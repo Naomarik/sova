@@ -79,6 +79,14 @@ export function boardState(
   busy: boolean,
 ): { state: BoardState; reason: string | null; word: string } {
   const activity = s.activity?.state ?? agent?.state;
+  // An archived session is Working while something runs in it, else Archived: never Needs you,
+  // whatever it waits on or last left (§app.insights/team-cards).
+  if (s.archived) {
+    const team = agent ? agent.workerCounts.working : sessionWorking(s);
+    if (busy || activity === "working") return { state: "working", reason: null, word: "Working" };
+    if (team > 0) return { state: "working", reason: null, word: "Working (team)" };
+    return { state: "archived", reason: null, word: "Archived" };
+  }
   if (activity === "needs-input") return { state: "needs-you", reason: "Waiting on your input.", word: "Waiting on you" };
   if ((s.pendingDialogs ?? 0) > 0)
     return { state: "needs-you", reason: s.pendingDialogs === 1 ? "A dialog is waiting on you." : `${s.pendingDialogs} dialogs are waiting on you.`, word: "Waiting on you" };
@@ -89,8 +97,6 @@ export function boardState(
   if (s.turnError) return { state: "needs-you", reason: s.turnError.message ? `Last turn failed: ${s.turnError.message}` : "Last turn failed.", word: "Broken" };
   const mark = rowNeedsYou(s, { selected: null, busy: false });
   if (mark && mark.kind !== "looping") return { state: "needs-you", reason: signalTooltip(mark), word: markWord(mark) };
-  const live = s.live !== null || s.activity !== undefined || agent !== null;
-  if (s.archived && !live) return { state: "archived", reason: null, word: "Archived" };
   return { state: "idle", reason: null, word: s.signals?.card?.outcome === "did-what-was-asked" ? "Done" : "Idle" };
 }
 
@@ -131,8 +137,10 @@ export function boardRows(sessions: readonly SessionSummary[], agents: Pick<Agen
   });
 }
 
-/** The default scope, with no chip: what runs, and what you started in Sova and haven't archived. */
-export const inDefaultScope = (r: Pick<BoardRow, "live" | "session">): boolean => r.live || isTopSession(r.session);
+/** The default scope, with no chip: what runs, and what you started in Sova and haven't archived. An
+    archived session only while a TUI has it open or it works (§app.insights/team-cards). */
+export const inDefaultScope = (r: Pick<BoardRow, "live" | "session" | "state">): boolean =>
+  r.session.archived ? r.session.live != null || r.state === "working" : r.live || isTopSession(r.session);
 
 /** A row has a tree whose branch isn't in its base. Unknown (not read yet) is not unmerged. */
 export const hasUnmerged = (trees: readonly WorktreeStatus[] | undefined): boolean => !!trees?.some((t) => t.exists && t.merged === "no");

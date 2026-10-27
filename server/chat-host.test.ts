@@ -35,6 +35,8 @@ const { LINK_MEMBER_ENTRY } = await import("../shared/mesh-links");
 const { CHAT_CLOSED_CLOSE_CODE } = await import("../shared/protocol");
 const { isPermanentClose } = await import("../src/lib/socket");
 const { UNREACHABLE } = await import("./chat-handle-remote");
+const { ArchivedError } = await import("./chat-handle");
+const { setArchived } = await import("./archived-sessions");
 
 after(async () => {
   await disposeAllChats();
@@ -269,7 +271,56 @@ test("archive: a tab on the chat is told it closed, never to reconnect (which wo
   assert.ok(isPermanentClose(CHAT_CLOSED_CLOSE_CODE));
   assert.equal(t.router.get(s.path), undefined);
   assert.equal(t.driver.started.length, 1);
+  // The tab reconnects anyway (an older build, a reload): archived, so it is refused and nothing starts.
+  setArchived(s.id, true);
+  await assert.rejects(t.router.acquire(s.path, false), ArchivedError);
+  assert.equal(t.driver.started.length, 1, "no second process after the archive");
   t.router.detach();
+});
+
+test("archive: a chat archived while it is still starting ends closed the moment its start is done; no handle is left", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const t = setup({ later: true, wrap: (c) => (async (sock: string, opts: never) => (await gate, (c as (s: string, o: never) => Promise<unknown>)(sock, opts))) as never });
+  const s = session();
+  const opening = t.router.acquire(s.path, false).then(
+    () => "opened",
+    (err: unknown) => err,
+  );
+  for (let i = 0; i < 50 && t.driver.started.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(t.driver.started.length, 1, "its start is in flight");
+  // As markArchived does: the mark, then the close, which finds nothing to close yet.
+  setArchived(s.id, true);
+  assert.equal(await t.router.close(s.path, "Session archived; its runtime was closed.", { quiet: "archived" }), false);
+  release();
+  const out = await opening;
+  assert.ok(out instanceof ArchivedError, `the open is refused as archived: ${String(out)}`);
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(t.router.get(s.path), undefined, "no handle remains");
+  assert.deepEqual(t.exits, ["archived"], "its process was closed, as an archive");
+  assert.equal((t.router as unknown as { remotes: Map<string, unknown> }).remotes.has(s.path), false);
+  t.router.detach();
+});
+
+test("archive: a chat left running while archived is closed quietly when the next server takes it back, and never started again", { timeout: 30_000 }, async () => {
+  const t = setup({ later: true });
+  const s = session();
+  await t.router.acquire(s.path, false);
+  t.router.detach();
+  // Archived while no server held it (a mark from before this rule, or another server's).
+  setArchived(s.id, true);
+  const next = t.again();
+  try {
+    next.start();
+    await next.ready();
+    assert.equal(next.get(s.path), undefined, "not held: closed at its take-back");
+    for (let i = 0; i < 50 && t.exits.length === 0; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual(t.exits, ["archived"]);
+    await assert.rejects(next.acquire(s.path, false), ArchivedError);
+    assert.equal(t.driver.started.length, 1, "no second unit");
+  } finally {
+    next.detach();
+  }
 });
 
 test("archive: what the chat took before it closed reaches its tab first (a send's answer) or its caller (a call's), never handed back as unreachable", async () => {

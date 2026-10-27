@@ -1,0 +1,221 @@
+{
+  "§workspace.groups/a-pane": {
+    "kind": "behavior",
+    "requires": [
+      "§chat/composer",
+      "§chat/mode-menu",
+      "§chat/model-menu",
+      "§chat/transcript"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/SessionView.tsx"
+    ]
+  },
+  "§workspace.groups/accessibility": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/App.tsx"
+    ]
+  },
+  "§workspace.groups/announcements": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/lib/session-groups.ts",
+      "src/lib/session-groups.test.ts"
+    ]
+  },
+  "§workspace.groups/classes": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed"
+  },
+  "§workspace.groups/data": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified"
+  },
+  "§workspace.groups/decisions": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed"
+  },
+  "§workspace.groups/group-lifecycle": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/GroupView.tsx"
+    ]
+  },
+  "§workspace.groups/keyboard": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed"
+  },
+  "§workspace.groups/layout-split": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified"
+  },
+  "§workspace.groups/layout-tabs": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/group-layout.ts",
+      "src/components/GroupView.tsx",
+      "src/components/SessionView.tsx",
+      "src/components/ChatView.tsx"
+    ],
+    "agreed": {
+      "by": "naomarik (al_2 go-ahead)",
+      "at": "2026-10-21T22:49Z",
+      "source": "pi-session:62ba6e1a-1faf-49d5-8231-81171c89541b#e5270c27"
+    }
+  },
+  "§workspace.groups/legacy-groups": {
+    "kind": "behavior",
+    "requires": [
+      "§app.session-list/auto-titles"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/session-groups.ts",
+      "server/session-groups.test.ts",
+      "server/group-prompt-wiring.test.ts",
+      "server/chat-manager.ts",
+      "server/session-autotitle.ts",
+      "server/session-autotitle.test.ts",
+      "server/index.ts",
+      "server/app.ts",
+      "shared/protocol.ts",
+      "src/lib/session-groups.ts",
+      "src/lib/session-groups.test.ts",
+      "src/components/GroupView.tsx"
+    ]
+  },
+  "§workspace.groups/making-a-comparison": {
+    "kind": "behavior",
+    "requires": [
+      "§app.overseer/tools",
+      "§app.session-list/groups"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "server/overseer-prompt.md",
+      "server/index.ts",
+      "server/app.ts",
+      "server/merge-routes.test.ts",
+      "server/chat-model.test.ts",
+      "src/components/GroupView.tsx",
+      "src/components/NewSessionDialog.tsx",
+      "src/components/OverviewActions.tsx",
+      "src/App.tsx"
+    ]
+  },
+  "§workspace.groups/member-states": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "agreed": {
+      "by": "omar",
+      "at": "2026-10-26T22:35Z",
+      "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
+    },
+    "code": [
+      "src/components/ChatView.tsx",
+      "src/components/Composer.tsx"
+    ]
+  },
+  "§workspace.groups/rejected": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed"
+  },
+  "§workspace.groups/routes": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed"
+  },
+  "§workspace.groups/send-all-mode": {
+    "kind": "behavior",
+    "requires": [
+      "§workspace.groups/the-group-composer",
+      "§workspace.groups/layout-tabs",
+      "§workspace.groups/shell",
+      "§workspace.groups/announcements",
+      "§design.copy-deck/workspace"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/GroupView.tsx",
+      "src/components/GroupComposer.tsx",
+      "src/lib/group-layout.ts",
+      "src/lib/group-layout.test.ts",
+      "src/lib/ui-state.ts",
+      "src/App.tsx",
+      "src/app.css",
+      "src/components/Composer.tsx"
+    ]
+  },
+  "§workspace.groups/shell": {
+    "kind": "behavior",
+    "requires": [
+      "§app/shell"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/App.tsx",
+      "src/components/GroupView.tsx"
+    ]
+  },
+  "§workspace.groups/the-group-composer": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.composer/anatomy",
+      "§chat.composer/behavior",
+      "§design.copy-deck/workspace",
+      "§design.ground-rules/color-budget",
+      "§design.ground-rules/voice",
+      "§workspace.groups/member-states"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/GroupComposer.tsx",
+      "src/lib/group-prompt.ts",
+      "src/lib/group-prompt.test.ts",
+      "src/lib/input-mode.ts",
+      "src/components/VoiceInput.tsx",
+      "server/group-prompt.ts"
+    ]
+  },
+  "§workspace.groups/tokens": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "verified"
+  },
+  "§workspace/groups": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/GroupView.tsx"
+    ],
+    "notOwned": [
+      "§app.session-list/groups",
+      "§chat/composer",
+      "§app.session-list/auto-titles"
+    ]
+  }
+}

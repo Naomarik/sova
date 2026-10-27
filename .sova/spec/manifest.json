@@ -23981,12 +23981,17 @@
       "kind": "behavior",
       "requires": [],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "code": [
         "site/src/components/screens/FoldDevice.astro",
         "site/src/styles/mock.css",
         "site/src/pages/index.astro"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-27T09:27Z",
+        "source": "pi-session:edb3d4e1-f79f-4177-8482-4377cb9bf1de#d95df395"
+      }
     },
     "§site/landing": {
       "kind": "note",

@@ -1099,6 +1099,10 @@ class ChatSession {
   get overseer(): boolean {
     return this.special === "overseer";
   }
+  /** A card's click here carries its mark to the turn it opens: the Overseer's and a project overseer's. */
+  private get takesClicks(): boolean {
+    return this.special === "overseer" || this.special === "project-overseer";
+  }
   /** A client gesture this special kind refuses (a message for the client), or null. */
   specialRefuses(gesture: "rewind" | "regenerate" | "mode"): string | null {
     return this.specialSpec?.refuses[gesture] ?? null;
@@ -1427,10 +1431,10 @@ class ChatSession {
 
   /** Hand a message to the SDK. Where the loadout tells the person's turns apart (the Overseer, a
       project overseer), one the user sent from the UI (`origin` "client") is marked as it goes, so
-      the turn it opens is known as theirs by identity, not text; a confirm card's click only in the
-      Overseer. */
+      the turn it opens is known as theirs by identity, not text; a confirm card's click in the Overseer
+      and in a project overseer (whose copy cards it approves, §app.overseer/copies). */
   private toSdk<T>(origin: QueueItem["origin"], send: () => T, confirm?: string): T {
-    if (origin === "client" && this.userTurns) return this.userTurns.send(send, this.overseer ? confirm : undefined);
+    if (origin === "client" && this.userTurns) return this.userTurns.send(send, this.takesClicks ? confirm : undefined);
     // A profile session with powers tells the user's own messages by identity too (its limits).
     if (origin === "client" && this.profileState?.run) return this.profileState.run.turns.send(send);
     return send();
@@ -3419,8 +3423,9 @@ class ChatSession {
           this.assertModelAllowed();
           const images = parseImages(msg.images);
           const text = String(msg.text ?? "");
-          // A confirm card's click in the Overseer (never a typed answer): the turn it opens may act on the card's items.
-          const confirm = this.overseer && msg.type === "prompt" && typeof msg.confirm === "string" && msg.confirm ? msg.confirm : undefined;
+          // A confirm card's click in the Overseer or a project overseer (never a typed answer): the turn it opens may act on
+          // the card's items.
+          const confirm = this.takesClicks && msg.type === "prompt" && typeof msg.confirm === "string" && msg.confirm ? msg.confirm : undefined;
           const { queued, turn } = this.acceptPrompt(text, images, "client", clientId, confirm ? { confirm } : undefined);
           // The ack goes out NOW, not after the turn: it says whether a queue row exists, and a
           // client that learned that only at turn end would offer Remove for a sent message.

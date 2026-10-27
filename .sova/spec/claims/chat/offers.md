@@ -222,7 +222,8 @@ buttons only:
 
 - **Land It** (only when no spec draft is left): records the go-ahead for this commit and sends it
   to the captain ("Go ahead: land {branch} at {commit}."), who lands, pushes and restarts as
-  usual without asking again. It is a shortcut for telling the captain, or for typing "land it" in
+  usual without asking again. It is a shortcut for telling the captain, for Go on the branch's Ready to land row of an
+  Overseer card (§app.overseer/card-land), or for typing "land it" in
   the session's chat, which records the same go-ahead (§chat.worktrees/tool): no merge waits for it.
 - **Merge Without Specs…** (only when drafts are left and the session said why it can't land
   them): asks first, naming the drafts that stay behind to promote later on a fresh branch from

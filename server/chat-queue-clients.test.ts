@@ -382,6 +382,25 @@ describe("regenerate, seen by two tabs on one chat", () => {
     }
   });
 
+  test("a card's click carries its mark in the Overseer and a project overseer, never in another chat (§app.overseer/copies)", async () => {
+    const { chat } = await twoClients();
+    const c = chat as any;
+    const marks: (string | null)[] = [];
+    const { userTurns, special } = c;
+    c.userTurns = { send: (send: () => unknown, confirm?: string) => (marks.push(confirm ?? null), send()) };
+    try {
+      for (const kind of [null, "baton", "project-assistant", "project-overseer", "overseer"]) {
+        c.special = kind;
+        c.toSdk("client", () => undefined, "c_1");
+        c.toSdk("client", () => undefined);
+      }
+      assert.deepEqual(marks, [null, null, null, null, null, null, "c_1", null, "c_1", null], "only the two overseers' clicks are marked; typed text never is");
+    } finally {
+      c.userTurns = userTurns;
+      c.special = special;
+    }
+  });
+
   test("a refusal goes to the requester alone and moves nothing", async () => {
     const { chat, me, mine, theirs } = await twoClients();
     mine.length = 0;

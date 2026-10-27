@@ -111,6 +111,19 @@ test("Go on an Overseer card's land row is kept like Land It, and every later wr
 	}
 });
 
+test("every go-ahead kind (captain-chat with its `in`, overseer-card) survives the other's write", () => {
+	const dir = mkdtempSync(join(tmpdir(), "landing-"));
+	const file = join(dir, "landing.json");
+	try {
+		recordGoAhead({ branch: "feat/c", commit: A, at: "2026-10-23T00:01:00Z", by: "captain-chat", in: "cap" }, file);
+		recordGoAhead({ branch: "feat/o", commit: B, at: "2026-10-23T00:02:00Z", by: "overseer-card", session: "s1" }, file);
+		assert.deepEqual(goAheadFor("feat/c", A, file), { branch: "feat/c", commit: A, at: "2026-10-23T00:01:00Z", by: "captain-chat", in: "cap" });
+		assert.equal(goAheadFor("feat/o", B, file)?.by, "overseer-card");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("newestUserMessage: the newest user message's text, and who sent it when a sent marker names it", () => {
 	const user = (id: string, text: string) => ({ type: "message", id, message: { role: "user", content: [{ type: "text", text }] } });
 	const mark = (customType: string, targetId: string) => ({ type: "custom", id: `m-${targetId}`, customType, data: { v: 1, targetId } });

@@ -1050,7 +1050,8 @@ end, whether or not its process is running. Opening it starts it, as a send woul
 list, a reload, a tab the browser discarded coming back, a restored session and every pane of a
 workspace, hidden tabs included (§workspace.groups/layout-tabs), each connect, and the process starts
 behind the rows (§app.chat-processes/idle-stop); the chat's `hello` then brings its state (its
-modes, model and controls). Nothing opens a chat asleep. The Overseer, a project overseer, a baton
+modes, model and controls). Nothing opens a chat asleep, except an archived chat, which opening never
+starts ("An archived chat", below). The Overseer, a project overseer, a baton
 session, a chat whose profile grants powers and a peer's chat open this way too, a peer's through
 that peer. Views that
 only watch (a TUI's session, a worker's or a hidden chat's file, an earlier conversation) are
@@ -1126,10 +1127,31 @@ unchanged.
   first, so nothing it took comes back to the composer, and a server call it took is answered by it,
   never failed as unreachable. The socket closes with a code the web app never retries (4422), so
   a tab still on an older build, which doesn't know `closed`, stays down too. A person's own
-  action on a closed chat from anywhere else opens it the same way, never answering "open the chat
-  first": a mode switch or a save of its mode as the default, a sandbox switch, a subagent profile
+  action on a closed chat from anywhere else opens it the same way (an archived chat excepted, below),
+  never answering "open the chat first": a mode switch or a save of its mode as the default, a sandbox switch, a subagent profile
   pick, a restored worker's resume. What only reads it never opens it: its subagent profile
   (`GET /api/settings/subagents?path=`) and its memory outline come from its file.
+- **An archived chat.** An archived chat (§app.session-list/regions-top-and-archive) reads only
+  until someone unarchives it. Opening it in any way (the Archive press itself, a click in the list,
+  a reload, a reconnect, its workspace tab coming to the front, another tab or device) shows its
+  saved rows from the file and starts nothing: the tab holds no socket, and a socket that connects
+  anyway (a tab that didn't know yet, an older build) is answered `closed` (`archived`) and closed
+  with the code no tab retries, before any process starts. No note floats, no banner shows, and
+  nothing retries. The composer keeps what you type and your draft, says "This session is archived.
+  Unarchive it to send." as its reason, and shows an Unarchive button in place of Send; the mode, model and other
+  controls wait. Unarchive brings Send back, and the chat starts at the first send, as a chat
+  closed while its tab is open does. Every other way to start it is refused with "That session is
+  archived; unarchive it first." and changes nothing: a mode, sandbox or subagent profile switch, a
+  restored worker's resume, a message from a script, a tour, a schedule or another chat
+  (`POST /api/sessions/prompt`), each a 409 where it is a request, and a message a closed tab
+  handed the server for it comes back as the session's draft. A worker's report never opens an
+  archived parent. Every way of archiving (the Archive button, a drop on the Archive tile, the
+  board's ⋯ menu, a project overseer's conversation pushed past its history) marks it archived,
+  closes its chat quietly and cancels any report still waiting to open it. A chat still starting
+  when it is archived closes as soon as its start finishes; a chat found running while archived
+  (left from before this rule, or taken back by a restarted server) is closed quietly too, and its
+  open tabs keep what they show. The special chats (the Overseer, a project overseer, a baton
+  session) are never archived this way and keep their own rules.
 - **Refusals after the paint.** A chat that turns out to be open in a TUI, or written by an unknown
   process, reopens read only over the rows already shown (§chat.transcript/live-watch). A chat that
   can't open (its remote placeholder folder is gone, its folder can't be reached; a local folder

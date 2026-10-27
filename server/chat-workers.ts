@@ -12,6 +12,7 @@ import type { FrameOf } from "../shared/chat-runtime-wire";
 import type { HEntry } from "../shared/harness";
 import { CRASH_RESUME_TEXT } from "./auto-resume";
 import { acquireChatHandle } from "./chat-handle";
+import { isArchived } from "./archived-sessions";
 import type { RemoteChatHandle } from "./chat-handle-remote";
 import type { ChatDeath } from "./chat-runtime/supervisor";
 import { crashResumeOn, crashSkip } from "./chat-runtime/crash";
@@ -146,6 +147,8 @@ export class WorkerRegistry {
       now?: () => number;
       autoResume?: () => boolean;
       openParent?: (path: string) => Promise<unknown>;
+      /** Whether a parent session is archived: a report never opens it (§app.chat-processes/workers). */
+      archived?: (sessionId: string) => boolean;
       logResume?: (args: { path: string; parent: string; workerId: string }, why?: string) => void;
     } = {},
   ) {
@@ -153,11 +156,13 @@ export class WorkerRegistry {
     this.now = o.now ?? Date.now;
     this.autoResume = o.autoResume ?? crashResumeOn;
     this.openParent = o.openParent ?? ((path) => acquireChatHandle(path));
+    this.archived = o.archived ?? isArchived;
     this.logResume = o.logResume ?? logAutoResume;
     for (const rec of this.readAll()) this.track(rec);
   }
   private readonly autoResume: () => boolean;
   private readonly openParent: (path: string) => Promise<unknown>;
+  private readonly archived: (sessionId: string) => boolean;
   private readonly logResume: (args: { path: string; parent: string; workerId: string }, why?: string) => void;
 
   // ---- records ------------------------------------------------------------------------------------
@@ -344,6 +349,8 @@ export class WorkerRegistry {
     const l = this.live.get(chatId);
     if (!l || l.rec.state === "ended") return;
     log(`${chatId} (${l.rec.parent.workerId}): stopping (${reason})`);
+    // A report still waiting to open its parent goes with it (an archived parent opens for none).
+    this.cancelSettle(l);
     this.set(l, { state: "ended", ended: { cause: "killed", at: new Date(this.now()).toISOString() } });
     await this.procs.stop(l.rec).catch((err) => log(`${chatId}: stop failed: ${err instanceof Error ? err.message : String(err)}`));
     l.handle = null;
@@ -357,6 +364,8 @@ export class WorkerRegistry {
 
   /** Stop every worker of parent session `parentSessionId` (it was archived or deleted). */
   async stopAllOf(parentSessionId: string, reason: string): Promise<void> {
+    // Every report still waiting to open the parent, an ended worker's included.
+    for (const l of this.live.values()) if (l.rec.parent.sessionId === parentSessionId) this.cancelSettle(l);
     await Promise.all([...this.live.values()].filter((l) => l.rec.parent.sessionId === parentSessionId && l.rec.state !== "ended").map((l) => this.stop(l.rec.chatId, reason)));
   }
 
@@ -460,6 +469,11 @@ export class WorkerRegistry {
     }
   }
 
+  private cancelSettle(l: Live): void {
+    if (l.settleTimer) clearTimeout(l.settleTimer);
+    l.settleTimer = null;
+  }
+
   private seen(l: Live, key: string): void {
     if (l.rec.seenSettleKey !== key) this.set(l, { seenSettleKey: key });
   }
@@ -468,11 +482,14 @@ export class WorkerRegistry {
       so its manager reattaches and takes the report. */
   private unwatchedSettle(l: Live, key: string, retry = 0): void {
     if (l.watchers.size || l.opened.has(key)) return;
+    if (this.archived(l.rec.parent.sessionId)) return;
     if (l.settleTimer) clearTimeout(l.settleTimer);
     l.settleTimer = setTimeout(
       () => {
         l.settleTimer = null;
         if (l.watchers.size || l.opened.has(key) || l.lastSettledKey !== key) return;
+        // Archived meanwhile: an archived parent is never opened for a report.
+        if (this.archived(l.rec.parent.sessionId)) return;
         // Seen only once the parent opened: a failed open is tried again, and after the last try left to the next server.
         l.opened.add(key);
         log(`${l.rec.chatId} (${l.rec.parent.workerId}) settled with nobody watching: opening its parent`);

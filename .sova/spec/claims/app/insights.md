@@ -1501,7 +1501,8 @@ over time on this device. Activity-only Ollama readings are not quota windows: t
 (main threads only: never a worker's own session or an Overseer file), joined by path with
 `GET /api/insights/agents` (host sessions only: a headless worker pi owns no row). The default
 scope, with no chip on, is what the sidebar keeps on top: live sessions, and sessions started in
-Sova that aren't archived.
+Sova that aren't archived. An archived session is in it only while it is open in a TUI or Working
+(below); otherwise it shows only under Archived and in a search.
 
 ```html
 <div class="board-bar">
@@ -1545,7 +1546,9 @@ Sova that aren't archived.
   any of its workers works; else **Needs you** when its last turn failed or stopped on an error,
   or it has open alignment questions, or its decision marks (a reply that waits on you, a reply
   that says it is done without checking, §app.decisions/attention-signals) say so; else
-  **Idle**, or **Archived** for an archived session nothing runs in.
+  **Idle**. An archived session has only two states: **Working** while its turn runs or any of its
+  workers works (until it stops), else **Archived**, whatever it waits on or last left: never
+  Needs you.
 - **The state's word.** Each row's state has one word, said to screen readers as visually hidden
   text after its title (", Waiting on you: approval"), so it is never carried by the rail's color
   or the heading alone: **Waiting on you** (an input request or a dialog), **Working**,

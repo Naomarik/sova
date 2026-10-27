@@ -8,6 +8,7 @@ import { parseModePatch, type ModePatch } from "./mode-state";
 import { modelDenial, readModelPolicy } from "./model-policy";
 import { resolveSessionPath } from "./paths";
 import { getSessionSummary } from "./sessions-index";
+import { ARCHIVED_REFUSAL } from "./archived-sessions";
 import { requireSubagentProfile } from "./subagent-profiles";
 
 // POST /api/sessions/configure (§mesh.links/configure): a session's model, thinking, mode and minor
@@ -59,7 +60,7 @@ export function configureRefusal(s: SessionSummary, busy: boolean, subagents: nu
   if (s.baton) return "That is a baton session: only its participants write in it.";
   if (s.workerSession) return "That is a subagent's own session; configure the session that runs it.";
   if (s.live) return `It is open in a terminal (pid ${s.live.pid}), so this server must not write to it.`;
-  if (s.archived) return "That session is archived; unarchive it first.";
+  if (s.archived) return ARCHIVED_REFUSAL;
   // A profile-only switch touches nothing running: it applies to later turns and team actions.
   if (!profileOnly && busy) return "It is running a turn; wait for it to finish.";
   if (!profileOnly && subagents > 0) return `Its subagents are working (${subagents}); wait for them to finish.`;

@@ -1152,6 +1152,51 @@ test("b1: idle, check ok, asks nothing and a finished turn outcome is Ready to l
   }
 });
 
+/** b1's fixture with the last reply waiting on a go-ahead: the card's recorded outcome and ask kind decide.
+    Dated after b1's turns, so this reply's outcome is the session's newest. */
+async function landingWhenWaiting(name: string, outcome: string, askKind: string) {
+  const { writeDecisionSettings, decisionDefaults } = await import("./decide-settings");
+  const { recordTurnOutcome } = await import("./turn-outcomes");
+  const { fileLandingStore } = await import("./ready-to-land");
+  const d = decisionDefaults();
+  writeDecisionSettings({ ...d, features: { ...d.features, attention: true } });
+  const store = join(agentDir, `rtl-${name}.json`);
+  const lines = chain([worktrees([tracked()], "2026-10-24T10:00:00.000Z"), assistant([{ type: "text", text: 'Work finished and committed on feat/agents-row-dropdown. You can type "land it" here.' }], "stop", "2026-10-24T10:05:00.000Z")]);
+  const path = sessionFile(lines);
+  const fs = await import("node:fs");
+  const HEAD = "e".repeat(40);
+  const status: WorktreeStatus & { head?: string } = { path: "/wt/agents-row-dropdown", source: "session", exists: true, branch: "feat/agents-row-dropdown", base: "master", merged: "no", ahead: 1, behind: 0, dirty: false, head: HEAD };
+  const reply = (lines.at(-1) as { id: string }).id;
+  r.configureReadiness({ insights: { treeStatus: async () => status }, git: fakeGit({}), asksUser: (sid) => (sid === SID ? { turnId: reply, asks: true } : undefined), now: () => 0, processStart: 0, landing: fileLandingStore(() => store), drafts: () => undefined, nudge: undefined });
+  try {
+    recordTurnOutcome(SID, { turnId: reply, replyAt: Date.parse("2026-10-24T10:05:00.000Z"), at: 1, provider: "pi", model: "m", answers: { outcome: { type: "choice", choice: outcome }, ask_kind: { type: "choice", choice: askKind } } as never });
+    const facts = { ...(await r.readReadinessScan(path, fs.statSync(path).size, null)).facts!, lastCheck: { at: 1, ok: true } };
+    const out = await r.computeReadiness(summary(path), facts);
+    return { tree: out?.trees[0], HEAD };
+  } finally {
+    writeDecisionSettings(decisionDefaults());
+    r.resetReadiness();
+  }
+}
+
+test("b1b: a finished reply that waits on the user's go-ahead to land (You can type \"land it\" here) is Ready to land", async () => {
+  const { tree, HEAD } = await landingWhenWaiting("b1b", "waiting-on-user", "restart-or-merge-go");
+  assert.deepEqual(tree?.landing, { state: "ready", commit: HEAD });
+  assert.match(tree?.reason ?? "", /^Ready to land/);
+});
+
+test("b1c: a finished reply that waits on the merge captain's go-ahead is Ready to land", async () => {
+  const { tree, HEAD } = await landingWhenWaiting("b1c", "waiting-on-team", "restart-or-merge-go");
+  assert.deepEqual(tree?.landing, { state: "ready", commit: HEAD });
+  assert.match(tree?.reason ?? "", /^Ready to land/);
+});
+
+test("b1d: a reply waiting on the user for information is not Ready to land", async () => {
+  const { tree } = await landingWhenWaiting("b1d", "waiting-on-user", "needs-info");
+  assert.equal(tree?.landing, undefined);
+  assert.doesNotMatch(tree?.reason ?? "", /^Ready to land/);
+});
+
 test("b2: one uncommitted file, a commit ahead, idle, check ok: ready to merge with a caveat, never Ready to land", async () => {
   const { fileLandingStore } = await import("./ready-to-land");
   const lines = chain([worktrees([tracked()], "2026-10-23T10:00:00.000Z"), assistant([{ type: "text", text: "Work finished and committed." }], "stop", "2026-10-23T10:05:00.000Z")]);

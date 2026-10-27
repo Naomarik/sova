@@ -15,6 +15,7 @@ import { sovaToken } from "./auth";
 import { callerKeys as serverCallerKeys, type CallerKeys } from "./caller-keys";
 import {
   acquireChatHandle,
+  ArchivedError,
   assertOpenConfig,
   assertNotLive,
   BusyError,
@@ -68,11 +69,14 @@ import { meshLinks } from "./mesh/links";
 import { resumeCrashedChat } from "./overseer";
 import { setRemoteHosted } from "./resource-monitor";
 import { subagentSessionRefusal } from "./session-guards";
-import { getSessionSummary } from "./sessions-index";
+import { getSessionSummary, idOf } from "./sessions-index";
+import { isArchived } from "./archived-sessions";
 import { agentRoot, stateRoot } from "./state-root";
 import { markOwned, recentForeignWriteAgeSec } from "./write-guard";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
+/** What an archived chat's close says (its tabs are told `closed`, never this). */
+const ARCHIVED_CLOSE = "Session archived; its runtime was closed.";
 /** How long a browser's connect waits for the chats a previous server left running to be taken back. */
 const READY_WAIT_MS = 10_000;
 /** How long opening a chat waits for that take-back: past its own one-minute retries, so a chat whose
@@ -541,6 +545,12 @@ export class ChatHostRouter {
         if (kind && kind !== "powers") await adoptSpecial(kind, rec.sessionPath);
         const h = this.adoptHandle(rec, link, state.mirror, held);
         this.pushSpecial(h);
+        // An archived chat a previous server left running (§chat.transcript/instant-open, "An archived
+        // chat"): closed quietly, so nothing reopens it and its tabs keep what they show.
+        if ((!kind || kind === "powers") && isArchived(state.mirror.sessionId)) {
+          log(`${rec.chatId}: archived, taken back running; closing it`);
+          await this.close(rec.sessionPath, ARCHIVED_CLOSE, { quiet: "archived" });
+        }
         return;
       } catch {
         // its unit is up but it did not answer yet: again in 5 s, for a minute. A link left open would
@@ -580,6 +590,12 @@ export class ChatHostRouter {
     // permanently: a browser never retries it.
     const s = await getSessionSummary(path).catch(() => null);
     if (this.workerPaths.has(path) || s?.workerSession) throw new ConfigError(subagentSessionRefusal(s?.title ?? "This session"), s?.cwd ?? "");
+    // An archived chat reads only until it is unarchived (§chat.transcript/instant-open, "An archived
+    // chat"): nothing opens it, and one still running is closed quietly. A take-back of it closes it itself.
+    if (await this.archivedOrdinary(path)) {
+      await this.closeArchived(path);
+      throw new ArchivedError();
+    }
     // A chat a previous server left running is this one's once it is taken back: never started anew
     // meanwhile, however long its take-back takes. A chat with no process left opens at once.
     await this.takenBack(path);
@@ -606,7 +622,28 @@ export class ChatHostRouter {
       }
     }
     if (!this.bun()) throw new Error(NO_BUN_CHATS);
-    return this.startOnce(path, force);
+    const h = await this.startOnce(path, force);
+    // Archived while it started (a close finds no handle then): closed the moment its start is done.
+    if (await this.archivedOrdinary(path)) {
+      await this.closeArchived(path);
+      throw new ArchivedError();
+    }
+    return h;
+  }
+
+  /** Whether `path` is an archived ordinary chat (a powers profile's included): a special kind (the
+      Overseer, a project overseer, a baton session) keeps its own rules. */
+  private async archivedOrdinary(path: string): Promise<boolean> {
+    if (!isArchived(idOf(path))) return false;
+    const kind = await openKindOf(path).catch(() => null);
+    return !kind || kind === "powers";
+  }
+
+  /** Close an archived chat's process quietly, if one runs and no archive is closing it already. */
+  private async closeArchived(path: string): Promise<void> {
+    const h = this.remotes.get(path);
+    if (!h || h.closed || h.closingQuietly) return;
+    await this.close(path, ARCHIVED_CLOSE, { quiet: "archived" });
   }
 
   /** One start at a time per chat: a second open waits for the first. */

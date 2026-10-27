@@ -5,7 +5,7 @@
 // A release sets it in its release commit (and re-verifies every claim on the page against it):
 // .sova/playbooks/release/PLAYBOOK.md.
 
-export const release = "v0.8.0";
+export const release = "v0.9.0";
 export const installRef = "stable";
 export const repo = "https://github.com/Naomarik/sova";
 export const installUrl = `https://raw.githubusercontent.com/Naomarik/sova/${installRef}/scripts/install.sh`;

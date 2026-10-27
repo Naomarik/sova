@@ -1121,6 +1121,9 @@ export interface ClaudeAccountsInfo {
   pool?: ClaudePoolInfo;
   /** macOS only: Claude Code's own login can't be read here (§app.claude-logins/macos-keychain). Absent otherwise. */
   claudeOwnLoginUnreadable?: true;
+  /** Login id → the projects and organizations here that use it ("Project Acme", "Organization Fold")
+      (§app.claude-logins/project-login). Absent when none does. */
+  usedBy?: Record<string, string[]>;
 }
 /** A device of the mesh, as the pool shows it. */
 export interface ClaudePoolDevice {
@@ -1188,6 +1191,9 @@ export interface ChatClaudeLogin {
   /** A pick waiting for the running reply to end, or being applied (a borrow in flight)
       (§app.claude-logins/switch-queue). */
   pending?: { id: string; name: string };
+  /** Not recorded yet, and the login shown is the chat's project's (`project`) or its organization's
+      for its projects (`org`) (§app.claude-logins/project-login). Absent otherwise. */
+  source?: "project" | "org";
 }
 /** How every refusal of `set_claude_login` begins, so the chat shows it as that switch's banner. */
 export const LOGIN_UNCHANGED = "Claude login unchanged:";
@@ -2692,7 +2698,7 @@ export type WatchServerMessage =
 // missing/corrupt sources: they return an honest empty/unavailable payload.
 // ---------------------------------------------------------------------------
 // GET /api/insights/usage          -> UsageInsight
-// GET /api/insights/agents         -> AgentsInsight     (all live pi processes; poll ~5s)
+// GET /api/insights/agents         -> AgentsInsight     (all live pi processes; poll ~5s; ?tokens=1 adds `tokens`)
 // POST /api/upload                -> UploadResult 201  (raw image bytes; Content-Type: image/*; saved in /tmp)
 // POST /api/upload?draft=<session path> -> UploadResult 201  (same, saved durably in that session's folder
 //                                  <agent dir>/sova/attachments/<session id>/; 400 invalid session path, 404 no such session)
@@ -3139,6 +3145,30 @@ export interface AgentsInsight {
   at: number;
   totals: { sessions: number; working: number; total: number; teams: number; teamWorking: number; soloWorking: number };
   sessions: LiveAgentSession[]; // working first, then by lastActivity
+  /** Output tokens of each Sova-hosted main thread, its workers at any depth rolled up, keyed by
+      its session id: only sessions with tokens in the last 5 minutes (§app.insights/session-token-rate),
+      each one `SessionTokens` as one string (shared/session-tokens-wire.ts). Only on `?tokens=1`
+      (the board asks while it is shown): then `{}` when none, and absent only from older servers
+      (every row then reads as unmeasured). */
+  tokens?: Record<string, string>;
+}
+
+/** One board row's output tokens: its last 5 minutes as 30 s epoch slots (`end` = the server's
+    current slot), oldest first, each list starting at its oldest non-zero slot and ending at `end`,
+    and each part's 30-minute total. A list absent = no tokens in the last 5 minutes; a total absent =
+    none in the last 30 (a part idle over 5 minutes still sends its total). Sent encoded
+    (shared/session-tokens-wire.ts). */
+export interface SessionTokens {
+  end: number;
+  /** The session's own chat processes'. */
+  own?: number[];
+  /** Its 30-minute total, present even without `own` when it wrote only earlier in the 30. */
+  own30?: number;
+  /** Its workers', at any depth. */
+  workers?: number[];
+  workers30?: number;
+  /** Some of these calls' tokens are known missing (a Claude Code turn running, a ring not reported). */
+  partial?: true;
 }
 
 export interface OutlineTopic {
@@ -4637,6 +4667,11 @@ export type SessionFeedMessage =
       to live, busy/activity or lastActiveAt). No payload: the client refetches the list
       (coalesced). */
   | { type: "list_changed" }
+  /** The session groups changed (a group made, renamed, reordered or deleted, or a session put into
+      or taken out of one, by any client or the Overseer: server/session-groups.ts writes it). No
+      payload: the client re-reads GET /api/session-groups and the list. Never on connect. Additive:
+      a client that predates it ignores it. */
+  | { type: "groups_changed" }
   /** The logical LLM calls in flight on this host and every connected host: sent once on every
       connect, then on each change of the total or its coverage. Never a reason to re-read the
       list. */

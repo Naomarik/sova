@@ -10,6 +10,7 @@ import { whereOf } from "./attention";
 import { redactingTool, serverRedactor } from "./overseer-redact";
 import { auditedAct, cut, hiddenFromProfiles, Refusal, readBounds, renderTranscript, sessionRef, text, writableRefusal, type AuditRecord } from "./session-guards";
 import { stateRoot } from "./state-root";
+import { ARCHIVED_REFUSAL } from "./archived-sessions";
 import { UserTurns, type TurnEvent, userMessageText } from "./user-turns";
 import { lockOwned } from "./write-guard";
 import { inviteFromSend, queueOpenTool } from "./topics";
@@ -457,7 +458,7 @@ export function sessionPowersTools(ctx: PowersContext, actionsFile?: () => strin
           if (params.delivery !== undefined && params.delivery !== "followUp" && params.delivery !== "steer") throw new Refusal('delivery is "followUp" or "steer".');
           const refused = writableRefusal(s, "a session never messages itself");
           if (refused) throw new Refusal(refused);
-          if (s.archived) throw new Refusal(`"${s.title}" is archived, and an archived session takes no messages.`);
+          if (s.archived) throw new Refusal(ARCHIVED_REFUSAL);
           const attended = ctx.run.attended();
           const over = ctx.limits.check(s.id, hop, attended);
           if (over) throw new Refusal(over);

@@ -15,6 +15,7 @@ import { sovaToken } from "./auth";
 import { callerKeys as serverCallerKeys, type CallerKeys } from "./caller-keys";
 import {
   acquireChatHandle,
+  ArchivedError,
   assertOpenConfig,
   assertNotLive,
   BusyError,
@@ -67,12 +68,17 @@ import { addOwnPid } from "./live";
 import { meshLinks } from "./mesh/links";
 import { resumeCrashedChat } from "./overseer";
 import { setRemoteHosted } from "./resource-monitor";
+import { sessionTokens } from "./session-tokens";
 import { subagentSessionRefusal } from "./session-guards";
-import { getSessionSummary } from "./sessions-index";
+import { getSessionSummary, idOf } from "./sessions-index";
+import { isArchived } from "./archived-sessions";
 import { agentRoot, stateRoot } from "./state-root";
+import { loginContextEnv, withoutLoginContext } from "./claude-login-context";
 import { markOwned, recentForeignWriteAgeSec } from "./write-guard";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
+/** What an archived chat's close says (its tabs are told `closed`, never this). */
+const ARCHIVED_CLOSE = "Session archived; its runtime was closed.";
 /** How long a browser's connect waits for the chats a previous server left running to be taken back. */
 const READY_WAIT_MS = 10_000;
 /** How long opening a chat waits for that take-back: past its own one-minute retries, so a chat whose
@@ -217,7 +223,7 @@ export class ChatHostRouter {
           home: homedir(),
           agentDir: w?.spec.agentDir ?? agentRoot(),
           extra: {
-            ...w?.spec.env,
+            ...withoutLoginContext(w?.spec.env),
             ...(w?.spec.agentDir ? { SOVA_CHAT_STATE_ROOT: stateRoot() } : {}),
             SOVA_CHAT_SOCK: c.sock,
             SOVA_CHAT_PATH: c.sessionPath,
@@ -226,6 +232,9 @@ export class ChatHostRouter {
             SOVA_CHAT_BUILD: id,
             SOVA_CHAT_LIVE_ROOT: REPO,
             SOVA_CHAT_COPIES_ROOT: codeRoot(),
+            // The project's Claude login for a chat in its folder, and the logins saved for other work
+            // (§app.claude-logins/project-login); none on a host with no assignment.
+            ...loginContextEnv(c.cwd),
             // After the worker spec's env: a loadout never chooses its key.
             SOVA_CALLER_KEY: this.callerKeys.issue(c.chatId, c.unit),
           },
@@ -324,8 +333,10 @@ export class ChatHostRouter {
     if (h) {
       this.paths.delete(h.mirror.sessionId);
       this.workers.parentUnlinked(h);
-      // Its model calls are no longer counted here; its tokens stay in this server's ring until they age out.
+      // Its model calls are no longer counted here; its tokens stay in this server's ring until they age out,
+      // and on its board row too (§app.insights/session-token-rate).
       setChildCounts(llmKey(h.mirror.sessionId), undefined);
+      sessionTokens().release(h.mirror.sessionId);
     }
     this.remotes.delete(path);
     setRemoteHosted(path, null);
@@ -354,7 +365,14 @@ export class ChatHostRouter {
       // Every chat process's model calls, counted once here (§6 of the stage-4 design): its producer is
       // then folded, so its live record (an ordinary chat's) is never summed again. Never this
       // process's own counts (a chat host in this process, as in tests): they would count themselves.
-      if (m.llm && m.llm.producer !== producerId()) setChildCounts(llmKey(m.sessionId), m.llm);
+      if (m.llm && m.llm.producer !== producerId()) {
+        setChildCounts(llmKey(m.sessionId), m.llm);
+        // The same report, kept per session for its board row; a reload's new producer adds to it.
+        // A worker whose record isn't known (yet) lands on no row rather than on the wrong one.
+        const special = kindOfMirror(m);
+        const hidden = (!!special && special !== "powers") || (!w && !!m.worker);
+        sessionTokens().note(w ? { sessionId: m.sessionId, parent: w.parent.sessionId, hidden } : { sessionId: m.sessionId, hidden }, m.llm);
+      }
     },
     exit: (h, cause) => {
       const id = h.mirror.sessionId;
@@ -541,6 +559,12 @@ export class ChatHostRouter {
         if (kind && kind !== "powers") await adoptSpecial(kind, rec.sessionPath);
         const h = this.adoptHandle(rec, link, state.mirror, held);
         this.pushSpecial(h);
+        // An archived chat a previous server left running (§chat.transcript/instant-open, "An archived
+        // chat"): closed quietly, so nothing reopens it and its tabs keep what they show.
+        if ((!kind || kind === "powers") && isArchived(state.mirror.sessionId)) {
+          log(`${rec.chatId}: archived, taken back running; closing it`);
+          await this.close(rec.sessionPath, ARCHIVED_CLOSE, { quiet: "archived" });
+        }
         return;
       } catch {
         // its unit is up but it did not answer yet: again in 5 s, for a minute. A link left open would
@@ -580,6 +604,12 @@ export class ChatHostRouter {
     // permanently: a browser never retries it.
     const s = await getSessionSummary(path).catch(() => null);
     if (this.workerPaths.has(path) || s?.workerSession) throw new ConfigError(subagentSessionRefusal(s?.title ?? "This session"), s?.cwd ?? "");
+    // An archived chat reads only until it is unarchived (§chat.transcript/instant-open, "An archived
+    // chat"): nothing opens it, and one still running is closed quietly. A take-back of it closes it itself.
+    if (await this.archivedOrdinary(path)) {
+      await this.closeArchived(path);
+      throw new ArchivedError();
+    }
     // A chat a previous server left running is this one's once it is taken back: never started anew
     // meanwhile, however long its take-back takes. A chat with no process left opens at once.
     await this.takenBack(path);
@@ -606,7 +636,28 @@ export class ChatHostRouter {
       }
     }
     if (!this.bun()) throw new Error(NO_BUN_CHATS);
-    return this.startOnce(path, force);
+    const h = await this.startOnce(path, force);
+    // Archived while it started (a close finds no handle then): closed the moment its start is done.
+    if (await this.archivedOrdinary(path)) {
+      await this.closeArchived(path);
+      throw new ArchivedError();
+    }
+    return h;
+  }
+
+  /** Whether `path` is an archived ordinary chat (a powers profile's included): a special kind (the
+      Overseer, a project overseer, a baton session) keeps its own rules. */
+  private async archivedOrdinary(path: string): Promise<boolean> {
+    if (!isArchived(idOf(path))) return false;
+    const kind = await openKindOf(path).catch(() => null);
+    return !kind || kind === "powers";
+  }
+
+  /** Close an archived chat's process quietly, if one runs and no archive is closing it already. */
+  private async closeArchived(path: string): Promise<void> {
+    const h = this.remotes.get(path);
+    if (!h || h.closed || h.closingQuietly) return;
+    await this.close(path, ARCHIVED_CLOSE, { quiet: "archived" });
   }
 
   /** One start at a time per chat: a second open waits for the first. */

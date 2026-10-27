@@ -251,6 +251,7 @@ the controls work and wake it, and they wait as "Chat connecting or starting" on
 | Chat connecting or starting (first connect, until this connection's `hello`) | enabled (typing is fine) | Send `aria-disabled` until the `hello`, Stop until the socket is open; the model, mode, sandbox and login controls too | `clock` — "Connecting to chat…" (hidden; shown as the floating note) |
 | Chat socket dropped, or its chat failed to start for now (until the next `hello`) | enabled | Send `aria-disabled` until the `hello`, Stop until the socket is open | `clock` — "Reconnecting. Your draft is kept." (hidden; shown as the floating note) |
 | Model switch pending (§chat/model-menu) | enabled | Send `aria-disabled` until `{type:"model"}` or an error | `clock` — "Switching model…" |
+| Session is archived (§chat.transcript/instant-open, "An archived chat"; no socket is held) | enabled (typing and the draft kept) | `Unarchive` in place of Send; the model, mode, sandbox and login controls wait | `archive` — "This session is archived. Unarchive it to send." |
 | Server `error` with `code:"busy"` (the session reopens read only) | `disabled` | Send hidden | `attention` — "Read only while this session is open in the TUI." |
 
 The mic (§chat.voice/button) follows the textarea, not Send: it is hidden when the session is live

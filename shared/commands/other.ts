@@ -120,6 +120,32 @@ const ORG_OWNER_REQUEST_ENTRIES: CommandEntry[] = [
   },
 ];
 
+/** An organization's Claude login for its projects (§app.claude-logins/project-login). */
+const ORG_CLAUDE_LOGIN_ENTRIES: CommandEntry[] = [
+  {
+    id: "org.claude-login.get",
+    label: "Show Organization Claude Login",
+    summary: "The Claude login every project of an organization follows unless it picks its own.",
+    effect: "looks",
+    params: { "org-id": { ...orgId, key: "id" } },
+    route: { method: "GET", path: "/api/orgs/:id/claude-login" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
+    id: "org.claude-login.set",
+    label: "Set Organization Claude Login",
+    summary: "Choose the Claude login an organization's projects follow: a login id (default: this computer's own) or none. Kept on this computer.",
+    effect: "changes",
+    params: { "org-id": { ...orgId, key: "id" }, login: { type: "string", description: "A login id, or none", in: "body", required: true } },
+    route: { method: "PUT", path: "/api/orgs/:id/claude-login" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+];
+
 export const OTHER_ENTRIES: CommandEntry[] = [
   {
     id: "models.list",
@@ -329,7 +355,9 @@ export const OTHER_ENTRIES: CommandEntry[] = [
     label: "Agents Board",
     summary: "The Agents page's workers and teams.",
     effect: "looks",
-    params: {},
+    params: {
+      tokens: { type: "string", description: "1 adds each session's output tokens (the board's Tokens/min)", in: "query" },
+    },
     route: { method: "GET", path: "/api/insights/agents" },
     sessionKey: null,
     sessionFile: "never",
@@ -564,5 +592,6 @@ export const OTHER_ENTRIES: CommandEntry[] = [
   },
   ...ORG_OWNER_REQUEST_ENTRIES,
   ...ORG_VERSION_SUMMARY_ENTRIES,
+  ...ORG_CLAUDE_LOGIN_ENTRIES,
   ...CHAT_ENTRIES,
 ];

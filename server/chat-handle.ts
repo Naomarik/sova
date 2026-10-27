@@ -35,6 +35,7 @@ import type { ChatAskMethod, ServerToolCtxWire } from "../shared/chat-runtime-wi
 import type { HEntry, HookCtx, ImageInput, StateKind, ToolCtx, ToolResult, ToolSpec } from "../shared/harness";
 import type { ChatClientMessage, ChatModeResult, HeldChatState, ProjectModeApproval } from "../shared/protocol";
 import {
+  ArchivedError,
   BusyError,
   type ChatClient,
   type ChatSession,
@@ -75,7 +76,7 @@ import { offerNoteFor } from "./session-offers";
 /** The powers host, loaded when first needed (session-profile-routes binds chat-manager at its import). */
 const powersHost = () => import("./session-profile-routes").then((m) => m.powersHost);
 
-export { BusyError, ConfigError, ModeRefusedError, RefusedError, onChatEvent, chatEventsSince };
+export { ArchivedError, BusyError, ConfigError, ModeRefusedError, RefusedError, onChatEvent, chatEventsSince };
 export type { ChatClient };
 export {
   activeConfigFailure,

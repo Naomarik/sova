@@ -60,8 +60,7 @@ import { canonicalPath } from "./paths";
 import { startableIn } from "./project-folder";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
-import { displayTitleOf, getSessionSummary, idOf, indexedSessionPaths, listSessions } from "./sessions-index";
-import { setArchived } from "./archived-sessions";
+import { displayTitleOf, getSessionSummary, idOf, indexedSessionPaths, listSessions, markArchived } from "./sessions-index";
 import { actOrThrow, heldAt, holdByRef, holdRef, refusalError } from "./org-engine";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { listPreviews, PreviewRefused } from "./preview-links";
@@ -244,7 +243,10 @@ const droppedSince = (before: OverseerState | null, after: OverseerState | null)
 /** Archive conversations past the history's 20; they stay in the workspace repo, like every
     workspace file (Clean Up never deletes one, §app.session-list/cleanup-org-guard). */
 async function dropHistory(ids: string[]): Promise<void> {
-  for (const id of ids) if (await pathOfId(id)) setArchived(id, true);
+  for (const id of ids) {
+    const path = await pathOfId(id);
+    if (path) await markArchived(id, path);
+  }
 }
 
 /** The project statechart's overseer region (its watch reads has-overseer from it): `overseer/start` when it has

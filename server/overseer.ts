@@ -22,7 +22,6 @@ import {
   type SessionSummary,
   type SovaConfirmItem,
 } from "../shared/protocol";
-import { setArchived } from "./archived-sessions";
 import { type AttentionRow, blockerCount, blockerKey, buildDigest, mergedBranch, NEVER_BRIEFED, workerErrorTime } from "./attention";
 import { readIndex, stakeholderAttention } from "./orgs";
 import { heldAttention } from "./project-holds";
@@ -89,7 +88,7 @@ import { type Redactor, redactExtensionMessages, serverRedactor } from "./overse
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { UnreadReplies } from "./unread-replies";
-import { cleanupSessions, endingOf, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions, summaryReads, type SummaryReads } from "./sessions-index";
+import { cleanupSessions, markArchived, endingOf, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions, summaryReads, type SummaryReads } from "./sessions-index";
 import { getSessionInsight } from "./insights";
 import { branchLabels, cardsOnBranch, runNote, runNoteSessionIds, type SessionNow, sessionsInPlay, sessionsInPlayText, type Touched } from "./overseer-run-note";
 import { changedText, openingOn, toldOn, type LivePart, type OpeningDetails } from "./overseer-opening";
@@ -192,7 +191,7 @@ async function dropHistory(ids: string[]): Promise<void> {
   for (const id of ids) {
     const p = await pathOfId(id);
     if (!p) continue;
-    setArchived(id, true);
+    await markArchived(id, p);
     paths.push(p);
   }
   if (paths.length) await cleanupSessions({ mode: "paths", paths, dryRun: false }).catch(() => {});

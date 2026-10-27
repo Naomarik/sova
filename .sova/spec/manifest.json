@@ -70,13 +70,19 @@
         "server/chat-actions.integration.test.ts",
         "server/ws.ts",
         "server/app.ts",
-        "scenarios/chat-actions.json"
+        "scenarios/chat-actions.json",
+        "server/archive-reopen.test.ts"
       ],
       "requires": [
         "§app/chat-actions",
         "§chat.transcript/send-while-starting"
       ],
-      "evidence": "verified"
+      "evidence": "verified",
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-26T22:35Z",
+        "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
+      }
     },
     "§app.chat-actions/terminal-open": {
       "kind": "behavior",
@@ -250,9 +256,9 @@
         "§app.chat-processes/supervision"
       ],
       "agreed": {
-        "by": "naomarik (al_2 go-ahead)",
-        "at": "2026-10-21T22:49Z",
-        "source": "pi-session:62ba6e1a-1faf-49d5-8231-81171c89541b#e5270c27"
+        "by": "omar",
+        "at": "2026-10-26T22:15Z",
+        "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
       },
       "evidence": "verified"
     },
@@ -570,9 +576,9 @@
         "§app/worker-restore"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T20:29Z",
-        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#ddd8cd7b"
+        "by": "omar",
+        "at": "2026-10-26T22:15Z",
+        "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
       },
       "evidence": "verified"
     },
@@ -809,8 +815,8 @@
       "authority": "accepted",
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "at": "2026-10-24T06:48Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#7e28f246"
       },
       "evidence": "verified"
     },
@@ -1254,6 +1260,41 @@
         "at": "2026-10-13T19:52Z"
       }
     },
+    "§app.insights/session-token-rate": {
+      "kind": "behavior",
+      "requires": [
+        "§app.insights/token-velocity",
+        "§app.insights/team-cards"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-tokens.ts",
+        "server/session-tokens.test.ts",
+        "server/chat-host.ts",
+        "server/chat-host.test.ts",
+        "server/insights.ts",
+        "shared/protocol.ts",
+        "src/lib/agents-board.ts",
+        "src/lib/agents-board.test.ts",
+        "src/components/AgentsView.tsx",
+        "src/agents-board.css",
+        "shared/session-tokens-wire.ts",
+        "shared/session-tokens-wire.test.ts",
+        "server/app.ts",
+        "server/insights-agents-tokens.integration.test.ts",
+        "shared/commands/other.ts",
+        "src/App.tsx",
+        "src/lib/api.ts",
+        "src/lib/agents-feed.ts",
+        "src/lib/agents-feed.test.ts"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T20:41Z",
+        "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
+      }
+    },
     "§app.insights/sidebar-foot": {
       "kind": "behavior",
       "authority": "accepted",
@@ -1282,7 +1323,12 @@
         "src/lib/agents-board.ts",
         "src/lib/agents-board.test.ts",
         "src/lib/api.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T20:41Z",
+        "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
+      }
     },
     "§app.insights/team-cards": {
       "kind": "behavior",
@@ -1306,9 +1352,9 @@
         "src/lib/session-row-menu.snapshot.json"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "omar",
+        "at": "2026-10-27T08:51Z",
+        "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#bbe646fd"
       }
     },
     "§app.insights/tokens-motion-and-accessibility": {
@@ -1354,8 +1400,9 @@
         "src/design/base.css"
       ],
       "agreed": {
-        "by": "Omar (al_1 go-ahead)",
-        "at": "2026-10-13T16:19Z"
+        "by": "user",
+        "at": "2026-10-25T20:41Z",
+        "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
       }
     },
     "§app.new-session-dialog/slow-targets": {
@@ -2064,7 +2111,12 @@
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css"
-      ]
+      ],
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
+      }
     },
     "§app.session-list/anatomy": {
       "kind": "behavior",
@@ -2148,15 +2200,15 @@
         "server/sidebar-scroll.integration.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-25T22:30Z",
-        "source": "pi-session:777149c4-3887-4782-8c20-99e67344e685#fcb0ec8f"
+        "by": "omar",
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
       }
     },
     "§app.session-list/groups": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/design/base.css",
         "src/components/Groups.tsx",
@@ -2167,12 +2219,25 @@
         "src/lib/group-open.ts",
         "src/lib/group-open.test.ts",
         "src/lib/session-groups.ts",
-        "src/lib/session-groups.test.ts"
+        "src/lib/session-groups.test.ts",
+        "src/lib/regions.ts",
+        "src/lib/regions.test.ts",
+        "src/lib/session-order.ts",
+        "server/project-sessions.ts",
+        "server/project-sessions.test.ts",
+        "server/session-groups.ts",
+        "server/session-feed.ts",
+        "src/lib/session-feed.ts",
+        "shared/protocol.ts",
+        "src/app.css",
+        "server/session-feed.integration.test.ts",
+        "server/sidebar-guide-lines.integration.test.ts",
+        "src/App.tsx"
       ],
       "agreed": {
         "by": "omar",
-        "at": "2026-10-23T23:10Z",
-        "source": "pi-session:3f2248f5-f2ff-4447-a7d5-c7b38e115af6#b8fd14ae"
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
       }
     },
     "§app.session-list/guide-lines": {
@@ -2198,8 +2263,8 @@
       ],
       "agreed": {
         "by": "omar",
-        "at": "2026-10-23T23:10Z",
-        "source": "pi-session:3f2248f5-f2ff-4447-a7d5-c7b38e115af6#b8fd14ae"
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
       }
     },
     "§app.session-list/recent": {
@@ -2215,8 +2280,9 @@
         "src/lib/home-sessions.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-12T12:35Z"
+        "by": "omar",
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
       }
     },
     "§app.session-list/regions-top-and-archive": {
@@ -2225,7 +2291,7 @@
         "§app.session-list/recent"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
         "src/lib/storage-keys.ts",
@@ -2251,12 +2317,13 @@
         "src/lib/project-region.test.ts",
         "src/lib/section-reveal.ts",
         "src/lib/section-reveal.test.ts",
-        "src/lib/section-reveal.browser.test.ts"
+        "src/lib/section-reveal.browser.test.ts",
+        "src/components/Composer.tsx"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-21T14:42Z",
-        "source": "pi-session:d5060398-05c1-4e9b-a6a5-186d2888b9b8#483165cc"
+        "by": "omar",
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
       }
     },
     "§app.session-list/search": {
@@ -3010,8 +3077,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T16:16Z",
-        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
+        "at": "2026-10-24T05:59Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
       }
     },
     "§app/settings-dialog": {
@@ -3349,17 +3416,19 @@
     "§chat.composer/disabled-states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/components/ChatView.tsx",
         "src/components/Composer.tsx",
         "src/components/SessionView.tsx",
         "src/components/VoiceInput.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/lib/chat-wait.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-14T13:32Z"
+        "by": "omar",
+        "at": "2026-10-26T22:35Z",
+        "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
       }
     },
     "§chat.composer/memory-status": {
@@ -4836,14 +4905,26 @@
         "src/lib/error-feed.test.ts",
         "server/ws-open-retry.test.ts",
         "src/components/GroupView.tsx",
-        "src/components/SessionView.tsx"
+        "src/components/SessionView.tsx",
+        "server/archive-reopen.test.ts",
+        "src/lib/archived-open.browser.test.ts",
+        "server/session-prompt.ts",
+        "server/archived-sessions.ts",
+        "server/project-overseer.ts",
+        "server/overseer.ts",
+        "server/sessions-configure.ts",
+        "server/link-delivery.ts",
+        "server/session-powers.ts",
+        "server/group-prompt.ts",
+        "server/chat-workers.ts",
+        "server/chat-actions.ts"
       ],
       "agreed": {
-        "by": "naomarik (al_2 go-ahead)",
-        "at": "2026-10-21T22:49Z",
-        "source": "pi-session:62ba6e1a-1faf-49d5-8231-81171c89541b#e5270c27"
+        "by": "omar",
+        "at": "2026-10-26T22:15Z",
+        "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
       },
-      "evidence": "reviewed"
+      "evidence": "verified"
     },
     "§chat.transcript/landing-page": {
       "kind": "behavior",
@@ -5443,7 +5524,8 @@
         "src/lib/readiness.ts",
         "src/lib/needs-you.ts",
         "src/lib/signals.ts",
-        "src/lib/overseer-menu.ts"
+        "src/lib/overseer-menu.ts",
+        "src/lib/regions.ts"
       ]
     },
     "§design.copy-deck/slash-commands": {
@@ -5627,7 +5709,17 @@
     "§workspace.groups/data": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/App.tsx",
+        "src/lib/regions.ts",
+        "src/lib/regions.test.ts"
+      ],
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
+      }
     },
     "§workspace.groups/decisions": {
       "kind": "note",
@@ -5671,7 +5763,16 @@
     "§workspace.groups/member-states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-26T22:35Z",
+        "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
+      },
+      "code": [
+        "src/components/ChatView.tsx",
+        "src/components/Composer.tsx"
+      ]
     },
     "§workspace.groups/rejected": {
       "kind": "note",
@@ -6260,7 +6361,7 @@
         "§chat.sandbox/workers"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "pi-config/extensions/subagents/index.ts",
         "pi-config/extensions/subagents/registry.ts",
@@ -6280,11 +6381,13 @@
         "shared/protocol.ts",
         "pi-config/extensions/subagents/claude-workers.ts",
         "pi-config/extensions/subagents/claude-workers.test.ts",
-        "server/quiet-close-actions.test.ts"
+        "server/quiet-close-actions.test.ts",
+        "server/chat-host.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-14T13:46Z"
+        "by": "omar",
+        "at": "2026-10-26T22:15Z",
+        "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
       }
     },
     "§app.worker-restore/transcript-protocol": {
@@ -7188,7 +7291,12 @@
         "src/lib/session-row-menu.test.ts",
         "src/lib/session-row-menu.snapshot.json",
         "scenarios/session-menu.json"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-25T20:41Z",
+        "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
+      }
     },
     "§app.extensions/trust": {
       "kind": "behavior",
@@ -8142,16 +8250,17 @@
         "src/lib/session-feed.browser.test.ts",
         "server/chat-handle-remote.ts",
         "server/worktrees.ts",
-        "server/merge-readiness.test.ts"
+        "server/merge-readiness.test.ts",
+        "server/session-groups.ts"
       ],
       "requires": [
         "§app.decisions/attention-signals",
         "§app.decisions/session-tags"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T20:31Z",
-        "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#76a2e465"
+        "by": "omar",
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
       }
     },
     "§app.decisions/session-tags": {
@@ -9538,7 +9647,12 @@
       "requires": [
         "§app.organizations/org-cards",
         "§app/baton"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
     },
     "§app.organizations/portability": {
       "kind": "behavior",
@@ -10557,6 +10671,7 @@
       "code": [
         "server/merge-readiness.ts",
         "server/ready-to-land.ts",
+        "server/ready-to-land.test.ts",
         "server/merge-readiness.test.ts",
         "server/spec-drafts-state.ts",
         "shared/protocol.ts",
@@ -10568,9 +10683,9 @@
         "§app.decisions/attention-signals"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-26T06:39Z",
-        "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#ded2d92c"
+        "by": "naomarik",
+        "at": "2026-10-26T22:25Z",
+        "source": "pi-session:01a17a2d-9525-7412-baca-957c5a5a99a8#4f2bfb37"
       }
     },
     "§chat.worktrees/sandbox": {
@@ -10924,8 +11039,9 @@
         "server/worker-sessions.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-12T12:35Z"
+        "by": "omar",
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
       }
     },
     "§app.session-list/organizations": {
@@ -13657,7 +13773,12 @@
       "requires": [
         "§app.claude-logins/add-remove",
         "§app.claude-logins/device-order"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
     },
     "§app.claude-logins/active-login": {
       "kind": "behavior",
@@ -13680,7 +13801,12 @@
         "src/lib/claude-login.test.ts",
         "pi-config/extensions/usage-status/fetch.ts",
         "pi-config/extensions/usage-status/fetch.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
     },
     "§app.claude-logins/add-remove": {
       "kind": "behavior",
@@ -13721,7 +13847,12 @@
         "src/lib/claude-login-groups.ts",
         "src/lib/claude-login-groups.test.ts",
         "src/design/base.css"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
     },
     "§app.claude-logins/failover": {
       "kind": "behavior",
@@ -13744,7 +13875,64 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-12T13:59Z"
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
+    },
+    "§app.claude-logins/project-login": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/spawn-selection",
+        "§app.claude-logins/failover",
+        "§app.claude-logins/switch-login",
+        "§app.claude-logins/borrow-return",
+        "§app.claude-logins/accounts-tab",
+        "§app/projects",
+        "§app.projects/seam",
+        "§app.organizations/project-page",
+        "§app.organizations/org-page"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/claude-login-store.ts",
+        "server/claude-login-known.ts",
+        "server/claude-login-context.ts",
+        "server/org-claude-login.ts",
+        "server/projects/claude-login.ts",
+        "server/projects/claude-login.test.ts",
+        "server/project-claude-login.integration.test.ts",
+        "src/components/ClaudeLoginCard.tsx",
+        "src/lib/claude-login-card.ts",
+        "src/lib/claude-login-card.test.ts",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/index.ts",
+        "pi-config/extensions/claude-code/provider/login-failover.test.ts",
+        "server/projects/contributions.ts",
+        "server/projects/routes.ts",
+        "server/org-routes.ts",
+        "server/chat-host.ts",
+        "server/chat-host-login-context.test.ts",
+        "server/chat-runtime/supervisor.ts",
+        "server/claude-login-state.ts",
+        "server/claude-accounts.ts",
+        "shared/projects.ts",
+        "shared/protocol.ts",
+        "src/lib/api.ts",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/components/OrgsView.tsx",
+        "src/components/AccountsSettings.tsx",
+        "src/lib/claude-login.ts",
+        "src/lib/claude-login.test.ts",
+        "shared/commands/projects.ts",
+        "shared/commands/other.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
       }
     },
     "§app.claude-logins/registry": {
@@ -13790,7 +13978,12 @@
         "pi-config/extensions/claude-code/accounts.test.ts",
         "server/claude-models.test.ts",
         "server/claude-models.integration.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
     },
     "§app/claude-logins": {
       "kind": "surface",
@@ -13880,7 +14073,12 @@
         "server/claude-pool/agent.integration.test.ts",
         "scripts/claude-pool-e2e/run.mjs",
         "scripts/fake-claude.mjs"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
     },
     "§app.claude-logins/drain": {
       "kind": "behavior",
@@ -13902,8 +14100,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T22:00Z",
-        "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#24177c8f"
+        "at": "2026-10-24T06:48Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#7e28f246"
       }
     },
     "§app.claude-logins/idle-pin": {
@@ -16321,7 +16519,12 @@
         "server/claude-pool/pool-test-fixtures.ts",
         "server/claude-pool/agent.integration.test.ts",
         "src/lib/claude-login.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
     },
     "§app.claude-logins/switch-queue": {
       "kind": "behavior",
@@ -16688,7 +16891,12 @@
         "src/lib/optimistic-archive.test.ts",
         "src/lib/archive-block.ts",
         "src/lib/archive-block.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-27T08:48Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
+      }
     },
     "§chat.markdown/vis-wireframe-items": {
       "kind": "behavior",
@@ -17497,8 +17705,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "at": "2026-10-24T06:48Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#7e28f246"
       }
     },
     "§chat.playbooks/bundles": {
@@ -19284,7 +19492,12 @@
         "server/overseer-sender.ts",
         "statecharts/test/sova/statecharts/refit/seam_test.cljs"
       ],
-      "requires": []
+      "requires": [],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
     },
     "§app.projects/standalone": {
       "kind": "behavior",
@@ -20979,7 +21192,12 @@
         "pi-config/extensions/claude-code/accounts.ts",
         "pi-config/extensions/claude-code/provider/login-failover.test.ts",
         "pi-config/extensions/claude-code/accounts.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-24T04:43Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      }
     },
     "§app.insights/token-velocity": {
       "kind": "behavior",
@@ -21014,8 +21232,9 @@
         "§app.insights/llm-inflight"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-13T02:51Z"
+        "by": "user",
+        "at": "2026-10-25T20:41Z",
+        "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
       }
     },
     "§app.session-list/working-now": {
@@ -23087,7 +23306,7 @@
         "§site/docs"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "unreviewed",
       "code": [
         "site/src/pages/docs/[...slug].astro",
         "site/src/layouts/Docs.astro",
@@ -23096,7 +23315,12 @@
         "site/src/styles/docs.css",
         "site/src/content.config.ts",
         "site/astro.config.mjs"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-27T08:45Z",
+        "source": "pi-session:edb3d4e1-f79f-4177-8482-4377cb9bf1de#a0c6ea0d"
+      }
     },
     "§site.docs/index": {
       "kind": "behavior",
@@ -23256,6 +23480,26 @@
       "agreed": {
         "by": "user",
         "at": "2026-10-10T10:39Z"
+      }
+    },
+    "§site.docs/normal": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/mode-menu",
+        "§chat.mode-menu/menu",
+        "§chat.mode-menu/terminal",
+        "§chat.subagent-profiles/resolution",
+        "§app.overseer/hosting"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "site/src/content/docs/modes/normal.md"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-27T08:45Z",
+        "source": "pi-session:edb3d4e1-f79f-4177-8482-4377cb9bf1de#a0c6ea0d"
       }
     },
     "§site.docs/overseer": {
@@ -23419,13 +23663,14 @@
         "§app.project-overseer/coding-mode"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "unreviewed",
       "code": [
         "site/src/content/docs/subagent-profiles.md"
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-14T12:38Z"
+        "at": "2026-10-27T08:45Z",
+        "source": "pi-session:edb3d4e1-f79f-4177-8482-4377cb9bf1de#a0c6ea0d"
       }
     },
     "§site.docs/updates": {
@@ -23894,12 +24139,17 @@
       "kind": "behavior",
       "requires": [],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "code": [
         "site/src/components/screens/FoldDevice.astro",
         "site/src/styles/mock.css",
         "site/src/pages/index.astro"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-27T09:27Z",
+        "source": "pi-session:edb3d4e1-f79f-4177-8482-4377cb9bf1de#d95df395"
+      }
     },
     "§site/landing": {
       "kind": "note",
@@ -24273,8 +24523,9 @@
         "§app.projects/seam"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-17T18:00Z"
+        "by": "omar",
+        "at": "2026-10-27T08:49Z",
+        "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
       }
     },
     "§app.server-runtime/pi-workers": {
@@ -24831,7 +25082,7 @@
     "§app.tours/viewer": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/TourViewer.tsx",
         "src/components/TourViewer.css",
@@ -24856,15 +25107,20 @@
         "src/lib/tour-progress-save.ts",
         "src/lib/tour-progress-save.test.ts",
         "src/design/tokens.css",
-        "src/lib/tour-ui.test.ts"
+        "src/lib/tour-ui.test.ts",
+        "src/lib/tour-player.ts",
+        "src/lib/tour-player.browser.test.ts",
+        "src/lib/tour-nav.test.ts",
+        "src/lib/tour-nav-fixture.ts"
       ],
       "requires": [
         "§app.tours/editions",
         "§app.tours/requests"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-16T05:54Z"
+        "by": "naomarik",
+        "at": "2026-10-26T18:33Z",
+        "source": "pi-session:e1b3946e-ff64-40da-b9bf-fbab6d752eee#7d8e9311"
       }
     },
     "§app/tours": {

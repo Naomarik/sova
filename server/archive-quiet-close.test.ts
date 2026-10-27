@@ -47,3 +47,43 @@ test("archiving closes the held chat quietly: its tabs keep what they show and d
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.deepEqual(closes, [{ path: canonicalPath(path), opts: { quiet: "archived" } }]);
 });
+
+test("every archive marks the session first, then closes its chat quietly: a tab reconnecting during the close is refused as archived", async () => {
+  const { markArchived } = await import("./sessions-index");
+  const { isArchived } = await import("./archived-sessions");
+  const id = "archive-quiet-2";
+  const path = canonicalPath(join(sessionsDir, `2026-09-24T00-00-01-000Z_${id}.jsonl`));
+  const marked: boolean[] = [];
+  setChatRouter({
+    ready: async () => {},
+    get: () => undefined,
+    all: () => [],
+    acquire: async () => assert.fail("archiving never opens the chat"),
+    close: async (_p, _message, opts) => (marked.push(isArchived(id)), assert.deepEqual(opts, { quiet: "archived" }), true),
+  });
+  await markArchived(id, path);
+  assert.deepEqual(marked, [true], "already archived when its chat is closed");
+});
+
+test("every way of archiving goes through markArchived (a project overseer's dropped conversation, the Overseer's history, the Archive button)", async () => {
+  const { readdirSync, readFileSync } = await import("node:fs");
+  const dir = new URL(".", import.meta.url).pathname;
+  const hits: string[] = [];
+  const walk = (d: string) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const p = join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name.endsWith(".ts") && !e.name.includes(".test.")) {
+        readFileSync(p, "utf8").split("\n").forEach((line, i) => {
+          if (/setArchived\([^)]*true/.test(line)) hits.push(`${p.slice(dir.length)}:${i + 1}`);
+        });
+      }
+    }
+  };
+  walk(dir);
+  assert.equal(hits.length, 1, `only markArchived sets the mark: ${hits.join(", ")}`);
+  assert.match(hits[0]!, /^sessions-index\.ts:/);
+  const src = readFileSync(join(dir, "sessions-index.ts"), "utf8");
+  const body = src.slice(src.indexOf("export async function markArchived"));
+  assert.ok(body.indexOf("setArchived(id, true)") < body.indexOf("closeChat(") && body.indexOf("closeChat(") < body.indexOf("sessionArchived(id)"), "the mark, then the quiet close, then its workers and links");
+});

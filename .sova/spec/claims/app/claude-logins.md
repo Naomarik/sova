@@ -21,6 +21,9 @@ process started under one (a pi, a Sova) takes `~/.claude` for `default`. It is 
 `default`; a Claude Code chat's first turn records that it runs on `default` in a hidden entry,
 which nothing shows.
 
+A project, or an organization for the projects it places, can be given one of this host's logins
+for the chats Sova starts in it (§app.claude-logins/project-login).
+
 The login registry, per-spawn selection and failover live in the claude-code extension
 (`pi-config/extensions/claude-code/accounts.ts`, node built-ins only); the server reads and
 writes the registry through that file, like Settings → Subagents does `subagent-profiles.json`.
@@ -98,7 +101,8 @@ shares that account's usage limits, so it only helps when the other login's sign
 
 **Remove** asks first, then runs `claude auth logout` in the login's directory (bounded; its
 failure does not stop the removal), deletes the directory, and drops the login from the registry
-and from every device's order. While the mesh is on it also removes the login from the pool; when
+and from every device's order; every project and organization here that used it goes back to "No
+preference" (§app.claude-logins/project-login). While the mesh is on it also removes the login from the pool; when
 another device holds it, that device stops every process on it and deletes its copy as plain files,
 without signing out. `default` cannot be removed.
 
@@ -115,7 +119,9 @@ field with **Save Name** and **Cancel**; Enter or **Save Name** saves it as the 
 (`PATCH /api/claude/accounts/:id` `{label}`), Escape or **Cancel** leaves it (and Settings stays
 open), and an empty name goes back to "Login N". A login's controls are named with its account
 ("Rename Login 1 of a@example.com"), so two accounts' "Login 1" never share a name. A login can be
-switched off or on (**Use**, `enabled`; off = never chosen automatically) and removed. Its standing on this host is a chip: **Ready**, **Off**, **Limited until** a time
+switched off or on (**Use**, `enabled`; off = never chosen automatically) and removed. A login
+that a project or organization here uses (§app.claude-logins/project-login) says so on its row:
+"Used by: {names}"; so does `default`'s row. Its standing on this host is a chip: **Ready**, **Off**, **Limited until** a time
 (`resetsAt`), **Sign in again**, or **Not signed in** (its directory holds no credentials; on
 macOS, neither a `.credentials.json` nor a keychain item, so a login whose sign-in Claude Code
 keeps in the keychain reads as signed in, and a **Sign in again** clears once Claude Code rewrites
@@ -135,7 +141,11 @@ extension's and the server's), the server's `claude --version` check, and the to
 summarizer.
 
 The login is **this host's first usable login in its order**: enabled, assigned here, neither
-limited nor needing sign-in, and not leaving this device (§app.claude-logins/drain). While the mesh
+limited nor needing sign-in, and not leaving this device (§app.claude-logins/drain). A chat Sova
+starts in a project that has a Claude login of its own (or its organization's) starts on that login
+while it is usable, and a chat Sova starts takes a login saved for other projects only when no other
+added login has room (§app.claude-logins/project-login); background jobs and terminal sessions keep
+the order. While the mesh
 is on, a chat's child or a worker that would otherwise start on `default` (nothing else usable here)
 first asks this host's Sova to borrow a login (§app.claude-logins/borrow-return) and waits for it, up
 to 30 seconds and only while that Sova's pool agent runs. A chat session records the login its child runs on in a hidden
@@ -169,7 +179,8 @@ Code re-signed it in or refreshed it) or the user clears it. Sova never runs a l
 to see whether it has recovered.
 
 On a failure, a chat turn (a Claude Code worker's turn included) moves to the next usable login in this host's
-order, skipping, for a limit, every login of the same account (an auth failure may move to another
+order (for a chat in a project with its own login, that login first and logins saved for other work
+last, §app.claude-logins/project-login), skipping, for a limit, every login of the same account (an auth failure may move to another
 login of the same account). While the mesh is on, the failed login also goes back to the keeper
 with its standing (§app.claude-logins/borrow-return), and when no other added login is usable here
 the next one is borrowed first (not of the same account on a limit); `default` comes only after
@@ -200,7 +211,8 @@ the variable the file is never read.
 A chat's Claude login is its newest `claude-login` entry (§app.claude-logins/spawn-selection),
 which the provider writes when the chat's child first starts and at every switch; a chat that has
 none yet (it never ran a Claude turn here) is shown the login this device would start it on now:
-its first usable login in the device's order.
+its project's login while that is usable (§app.claude-logins/project-login), else its first usable
+login in the device's order.
 
 - **Composer foot.** On a chat whose model is a Claude Code model (`claude-code-cli/…`), on a
   device with more than one login to choose from (more than one in its order or, with the mesh
@@ -212,12 +224,15 @@ its first usable login in the device's order.
   the model indicator. Its `title` says
   "This chat runs on this Claude login: {label ·} {email} · {plan}. Order and standing: Settings →
   Accounts." — or, before the chat recorded one, "This chat starts on this Claude login (first
-  ready on this device): …"; its `aria-label` is "Claude login: {email}". While a pick waits it
+  ready on this device): …", or, when the login comes from its project, "This chat starts on this
+  Claude login (set for this project): …" ("(set for this project's organization)" when the
+  organization's); its `aria-label` is "Claude login: {email}". While a pick waits it
   shows that pick instead (§app.claude-logins/switch-queue). With a single login, or
   on another provider's model, nothing is shown.
 - **Wire.** `/ws/chat` sends `{type: "claude_login", login}` (`ChatClaudeLogin`: `id`, `name`,
-  `email?`, `planLabel?`, `recorded`, `several`, `pending?` — the waiting pick's `id` and `name` —
-  or `null` when the registry can't name one) after
+  `email?`, `planLabel?`, `recorded`, `several`, `pending?` — the waiting pick's `id` and `name` —,
+  `source?` — `"project"` or `"org"` when the login shown before the first record is the chat's
+  project's, §app.claude-logins/project-login — or `null` when the registry can't name one) after
   every hello, whatever the chat's model: the login on a device with several logins, else `null`;
   and whenever a `claude-login` entry is appended or the waiting pick changes, so a failover moves
   the indicator in the same turn. A hello doesn't clear the indicator: it shows the known login
@@ -245,7 +260,8 @@ the session gets a `claude-login` entry with `reason: "moved"`, `from`, `fromLab
 `Claude: switched {from} → {to} ({from} {left this device | returned to the keeper | was removed |
 is off in Settings → Accounts | is limited until {time} | needs sign-in})`; the chat shows it as a note row and a TUI as a
 notification, like a failover's. A limit or failed sign-in met in a turn keeps its own note
-(§app.claude-logins/failover); a pick keeps `reason: "manual"` (§app.claude-logins/switch-login).
+(§app.claude-logins/failover); a pick keeps `reason: "manual"` (§app.claude-logins/switch-login);
+a chat that starts off its project's login gets a note of its own (§app.claude-logins/project-login).
 The chat does not go back by itself when its old login is free again.
 
 ## §app.claude-logins/switch-login — Switching a chat's login from the composer
@@ -288,7 +304,8 @@ chat to another Claude login at any time.
   banner says why. The login the chat left loses that chat's pick and stays on this device until
   it is returned (§app.claude-logins/idle-pin).
 - **Workers.** A switch moves the chat only: its running workers keep their logins, and new ones
-  start on the device's order as before.
+  start as any new chat in their folder does (the device's order, or their project's login,
+  §app.claude-logins/project-login). A pick wins over the project's login for that chat.
 - **Where.** The web only; a terminal session has no picker. `/ws/chat` takes `{type:
   "set_claude_login", login}` (`login`: a login id, or `null` to cancel a waiting pick), and the
   server calls the claude-code extension's `/claude-login` command handler directly, the way the web
@@ -319,12 +336,72 @@ restart folds the history into one message, which the new login reads uncached."
 compaction, until the next reply, the note reads "Switching resends this chat without cache", with
 no number. A chat with no reply shows no note.
 
+## §app.claude-logins/project-login — A project's, or an organization's, own Claude login
+
+A registered project (§app/projects), or an organization for the projects it places, can be given
+one Claude login of this host that its new chats start on.
+
+- **Where it is set.** The project page's Settings tab has a **Claude login** card right after
+  **Sessions it starts** (§app.organizations/project-page): one select offering "Same as
+  organization" (only while an organization places the project, and then its default), "No
+  preference (this computer's order)" (a standalone project's default), "This computer's own
+  login" (`default`), and each added login on this device (with the mesh on, the pool's too) by its
+  email (else its name, §app.claude-logins/registry, **Names**). A pick saves at once. Its hint reads "Open chats keep
+  their login. A pick in a chat's composer wins for that chat." The org page's Settings tab has a
+  **Claude login for its projects** card (§app.organizations/org-page): the same select without
+  "Same as organization", setting the login every project the org places follows unless that
+  project picks its own. A project page opened for a peer's project (`?host=`) saves on the peer
+  that holds it.
+- **Where it is kept.** On the host that runs the project, in
+  `<state root>/claude-login-assignments.json` (`{version: 1, projects: {<project id>: <login id> |
+  "none"}, orgs: {<org id>: <login id>}}`, written atomically); never in an organization's workspace
+  repo or `overseer.json`, so a clone or attach on another host starts with none.
+  `GET`/`PUT /api/projects/:pid/claude-login` (`{login: <login id> | "org" | "none"}`) and
+  `GET`/`PUT /api/orgs/:id/claude-login` (`{login: <login id> | "none"}`) read and write it; each
+  answers the setting and what it resolves to (the login, and whether it is the project's or the
+  organization's).
+- **Which chats.** Every chat Sova starts in the project's folder (its root or inside it, or inside
+  one of its linked worktrees, as §app/projects matches folders; an archived project matches
+  nothing): a chat or coding session, its Claude Code workers and team members, the project's
+  overseer and hidden chats, also when one starts again after a reap or a server restart. The
+  server hands the resolved login to the chat's process when it starts it
+  (`SOVA_CLAUDE_LOGIN_CONTEXT`); a chat opened in the server's own process (a failed start's
+  fallback) gets none and keeps this computer's order. The Project Assistant's and the gathering sessions' chats
+  run in the organization's workspace repo, in no project, and so are not covered. Work started from
+  a terminal outside Sova, and background jobs (titles, memory summaries, topic outlines, Decisions,
+  model discovery), keep this computer's order (§app.claude-logins/spawn-selection).
+- **How a chat starts.** A new chat in the project starts on the project's login while that login
+  is usable here; with the mesh on and the login free at the keeper, the device first borrows it by
+  name, as a composer pick does (§app.claude-logins/borrow-return). The chat's own login (recorded,
+  or picked in its composer, §app.claude-logins/switch-login) still wins while it is usable: a
+  change of the setting moves no open chat, and only chats that start later follow it.
+- **Never silent.** When the project's login is limited or otherwise unusable, the chat starts on
+  the next login with room in this device's order (a failure mid-turn moves on as
+  §app.claude-logins/failover says) and the session gets a `claude-login` entry with `reason:
+  "moved"`, whose note names the project's login, why it was skipped and the login used: `Claude:
+  using {to} ({project | organization} {name}'s login {login} {is limited until {time} | needs
+  sign-in | is off in Settings → Accounts | left this device | returned to the keeper | was
+  removed})`. A brand-new chat with nothing recorded and a worker show it too. A project overseer
+  starts on the project's login as well, but keeps no `claude-login` entry of its own (its loadout
+  loads no extension, as for its failovers), so no note shows there.
+- **Saved for its work.** A login assigned to a project or organization here (as resolved;
+  archived projects left out) is saved for that work: every other chat Sova starts (in no project,
+  or in a project with another login) takes it only when no other added login has room, before
+  `default`.
+- **Removing a login.** Settings → Accounts names, on each login's row, the projects and
+  organizations using it ("Used by: {names}"); **Remove** on such a login says so before it asks,
+  and the removal sets those assignments back to "No preference".
+
+Apart from the last-resort rule above, a chat in no registered project, or in an archived one,
+behaves exactly as before.
+
 ## §app.claude-logins/accounts-tab — Settings → Accounts
 
 A tab in Settings, **Accounts**, between Models and Modes. Its **Claude Logins** section says that
 every Claude process on this device (its mesh name, or "This device") runs on the first ready
 login in the order, then lists the logins by account (§app.claude-logins/device-order); Remove asks inline
-what goes away and what stays. Under the list, **Add a login** (§app.claude-logins/add-remove) is
+what goes away and what stays, and on a login a project or organization uses, first says "Used by
+{names}: they go back to No preference." (§app.claude-logins/project-login). Under the list, **Add a login** (§app.claude-logins/add-remove) is
 a panel with four states: starting ("Starting Claude Code's sign-in…"); waiting for the code (the
 URL as a link with **Copy Link**, a **Code** field, **Finish Sign-In** and **Cancel**, and the
 reason when Claude Code refused a code); done (**Added**, the new login's email, organization and
@@ -409,7 +486,7 @@ A device that needs Claude and holds no usable login **borrows** a free one from
 per-device setup: the keeper offers the first free login in the pool's order that is enabled, not
 pinned to another device, not limited (its account's limit not yet reset) and not needing sign-in —
 a login pinned to the asking device first; a borrow that names one login (a pick in the composer,
-§app.claude-logins/switch-login) is offered that login or none — and the credentials travel host to host over the peer
+§app.claude-logins/switch-login, or a new chat's project login, §app.claude-logins/project-login) is offered that login or none — and the credentials travel host to host over the peer
 listener only, never through a browser. The move is two-phase: the borrower stores the offered
 credentials aside, unused, and only after the keeper confirms, having dropped and deleted its own
 copy, does the borrower start using them. A device **returns** its login with its current
@@ -440,7 +517,8 @@ before this version, or by hand with `CLAUDE_CONFIG_DIR` set to the login's dire
 that variable (the process list is read again at least once a minute, and at once before a login is
 lent, returned or cut; only `claude` processes have their environment read) and counts as busy: its login is not lent, not returned for idleness, and at a cut it
 is stopped too. When a login starts leaving a device, a chat's idle child on it is
-stopped (its next turn starts on the device's next login, as after a model change, and shows
+stopped (its next turn starts on the device's next login, for a chat in a project with a login of
+its own in the order §app.claude-logins/project-login gives, as after a model change, and shows
 the move as a note, §app.claude-logins/login-moved); a Claude Code worker's
 child is a chat's child and is treated the same. A login leaves once none of them runs on it. If some still do after a
 bound (2 minutes after a limit, a failed sign-in or idleness; 15 minutes when the user asked or a

@@ -41,6 +41,8 @@ interface Harness {
   board: { value: { pending: number; rows: BoardRow[] } | null };
   /** The user's go-aheads typed in a branch's own chat (landing.json, by owner-chat). */
   typed: { branch: string; commit: string }[];
+  /** Go on an Overseer card's Ready to land row (landing.json, by overseer-card). */
+  card: { branch: string; commit: string }[];
   log(): { outcome: string; why?: string; trigger: string }[];
   /** A new keeper on the same store: a server restart. */
   restart(): Keeper;
@@ -80,6 +82,7 @@ function harness(opts: { when?: string; singleton?: boolean; start?: string } = 
   const slots = { free: 5 };
   const board: Harness["board"] = { value: { pending: 0, rows: [] } };
   const typed: Harness["typed"] = [];
+  const card: Harness["card"] = [];
   const file = join(dir, "schedules.json");
   const logFile = join(dir, "schedule-runs.jsonl");
   let made = 0;
@@ -122,6 +125,7 @@ function harness(opts: { when?: string; singleton?: boolean; start?: string } = 
       logins: () => logins,
       lastTurn: async (path) => turns.get(path) ?? null,
       typedGoAheads: () => typed,
+      cardGoAheads: () => card,
       async board() {
         const b = board.value;
         return b && { pending: b.pending, rowsIn: (root: string) => b.rows.filter((r) => r.repo === `${root}/.git`) };
@@ -142,6 +146,7 @@ function harness(opts: { when?: string; singleton?: boolean; start?: string } = 
     slots,
     board,
     typed,
+    card,
     file,
     log: () =>
       readFileSync(logFile, "utf8")
@@ -546,6 +551,28 @@ test("merge-ready: the user's go-ahead typed in a branch's own chat wakes the ro
   await tickAt(h, "2026-10-05T10:00:00Z");
   assert.equal(h.woken.length, 1);
   assert.match(h.woken[0]!.text, /\nReason: Ready to land: feat\/ready\. Go-ahead typed in its own chat: feat\/typed\.\n/);
+});
+
+test("merge-ready: Go on an Overseer card's land row wakes the round at once, whatever its row reads, once per branch and commit, named after the typed ones", async () => {
+  const h = harness({ when: "merge-ready", singleton: true });
+  await approve(h);
+  h.board.value!.rows.push(row("feat/card", "in-progress", "busy"), row("feat/typed", "in-progress", "busy"));
+  await tickAt(h, "2026-10-05T09:00:00Z");
+  assert.equal(h.created.length, 0);
+  h.card.push({ branch: "feat/card", commit: C1 }, { branch: "feat/gone", commit: C1 });
+  await tickAt(h, "2026-10-05T09:01:00Z");
+  assert.equal(h.created.length, 1, "the card's go-ahead wakes it; a branch the board doesn't list doesn't");
+  assert.match(h.created[0]!.text, /\nReason: Go-ahead on the Overseer's card: feat\/card\.\n\n/);
+  await tickAt(h, "2026-10-05T09:30:00Z");
+  assert.equal(h.created.length + h.woken.length, 1, "the same go-ahead: no second wake");
+  // A typed go-ahead at the same commit is its own kind: it still wakes, once.
+  h.typed.push({ branch: "feat/card", commit: C1 });
+  // A new commit with Go again, together with another branch's typed go-ahead: one fire names both, typed first.
+  h.card.push({ branch: "feat/card", commit: C2 });
+  h.typed.push({ branch: "feat/typed", commit: C1 });
+  await tickAt(h, "2026-10-05T10:00:00Z");
+  assert.equal(h.woken.length, 1);
+  assert.match(h.woken[0]!.text, /\nReason: Go-ahead typed in its own chat: feat\/card, feat\/typed\. Go-ahead on the Overseer's card: feat\/card\.\n/);
 });
 
 test("merge-ready: leaving and coming back at the same commit never fires again; a new landing commit fires at once", async () => {

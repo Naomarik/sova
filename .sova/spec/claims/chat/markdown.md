@@ -1061,9 +1061,15 @@ A wireframe sizes its blocks by the room they have, so no label is crushed into 
 - **Words, never letters.** Text wraps between words, whatever the page around the figure sets. A
   word wider than its box, in any block (a title, a subtitle, text, a stat's label or value, a
   check's label, an item's right text, an alert, a toast, a table cell), is cut short with an
-  ellipsis on its own line, never broken between letters; a table's columns stay equal, so a long
-  word in a cell is cut rather than widening its column. The height estimate counts lines the same
+  ellipsis on its own line, never broken between letters. The height estimate counts lines the same
   way. Its box never shrinks to a few letters because of how the text could break.
+- **Table columns by content.** A `table`'s columns are as wide as their content on one line (the
+  header, the cells' text, and in the last column the row's badges and buttons side by side), the
+  room left shared in proportion, so a short column stays narrow and a badge stays whole. Short of
+  room, columns first wrap their text between words, never narrower than their longest word or
+  widest badge; only when even those don't fit do the columns shrink in proportion (the last
+  column keeping its badges and buttons whole while the others can give way), and a word too wide
+  for its cell is cut with an ellipsis. A column never widens the table past its box.
 - **One source.** These widths and column counts come from the wireframe's own layout model
   (`layout.ts`), which the View applies to the drawing, the height estimate counts and the server's
   check reads, so the three agree.

@@ -1229,7 +1229,9 @@ feed's last list while nothing has changed since it was built, and builds a list
   interrupts it. Never a phone notification.
 - **Needs you, an option card** (§chat.offers/card): `offer-waiting` on a session, not archived, that
   shows an open offer card (Land It is the only one Sova declares today), idle or working, "Waiting
-  on your answer: {the card's title}", dated by when the card was shown. It goes when the card is
+  on your answer: {the card's title}", dated by when the card was shown. The Merge Captain's
+  landing card is listed once while any of its rows is open, "Waiting on your answer: {n} branches
+  ready to land" (§chat.offers/landing-rows), its open rows counted. It goes when the card is
   answered, set to Not Now, no longer offered or replaced by a newer commit. Never a phone
   notification and never a brief: it lists in Needs you and counts in "need you" only.
 - **Only real blockers are act.** The act tier — Needs you, the Overseer's "need you" count, its

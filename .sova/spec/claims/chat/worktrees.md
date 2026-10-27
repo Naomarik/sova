@@ -416,7 +416,11 @@ Specs… with the branch's spec drafts left behind) or a Not Yet, each for the b
 the card was shown for, the newest 200 of each kept. The user's go-ahead typed in the branch's own
 chat is kept there the same way, recorded by that chat's `worktree land` (§chat.worktrees/tool)
 for the branch at its head commit and marked as typed in the owner's chat; it counts exactly as a
-Land It, with or without specs as the user said. Both may be recorded at one commit: the later
+Land It, with or without specs as the user said. The user's word in the Merge Captain's chat,
+recorded by the round's driver (`go`, §chat.merge-round/driver), is kept there too, marked as given
+in the captain's chat. A Land It or Not Yet also names the chat it was given in, so the other place
+can say where (§chat.offers/landing-rows). Any of them, at the commit an open Landing card or
+captain row is for, settles that card and row: they read the answer and where it was given. Both may be recorded at one commit: the later
 recorded time wins, and Not Yet wins a tie or a time that can't be read. The merge round's driver
 reads them as the user's word (§chat.merge-round/driver), and a typed go-ahead also wakes the
 captain (§chat.schedules/merge-ready); nothing else acts on them.

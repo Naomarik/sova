@@ -1651,7 +1651,12 @@ the top region doesn't keep every one of them forever.
 - **Failure.** Toast: "Couldn't archive this session. {server message}". Nothing moves on a
   failed non-drag archive action. A drag's optimistic move is restored. Failed Undo
   restores the archived row and says "Couldn't unarchive this session. {server message}".
-- An archived session opens, chats, and searches exactly like any other row.
+- An archived session opens and searches like any other row, but reads only until you press
+  Unarchive: opening it (a click, a link, a reload, another device) shows its saved conversation
+  and starts nothing, and its composer keeps what you type but says it is archived, with an
+  Unarchive button in place of Send (§chat.transcript/instant-open, "An archived chat"). Unarchive there
+  does what Unarchive Session does (the same request and toast) and brings Send back; the chat
+  starts at the first send, like one closed for being quiet (§app.chat-processes/idle-stop).
 
 **Accessibility.**
 

@@ -4,6 +4,34 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.9.0 — 2026-10-26
+
+A new owner page, dependable landings, a waiting badge in the composer, and git that cleans up
+after itself. 149 commits since v0.8.0. The highlights:
+
+- **The owner page, redone.** Sova's mark with a light/dark toggle, the org as its title, instant
+  send, paged chats, and Conversations on Home. Owners can close and reopen their own requests, and
+  the Project Assistant does it on their yes, says what's new, and labels each version plainly.
+- **Landing you can rely on.** Land It lands the exact commit it showed; a newer commit replaces
+  the card ("Replaced by a newer commit"), and offer cards appear in Needs you. Typing "land it" in
+  a branch's own chat is your go-ahead too. Merge-ready schedules wake as soon as a branch turns
+  Ready to land.
+- **One waiting badge.** Messages waiting for a busy chat show as one badge in the message box,
+  with a Waiting on you dialog; every typed message is a steer, and messages sent while a chat is
+  busy land together.
+- **Git looks after itself.** Projects get git's scheduled maintenance, a killed cleanup's locks
+  are recovered, and the new session card shows the git folder's size and when cleanup is stuck.
+- **Memory size moves to Settings.** Summary size is set in Settings → Memory, no longer in the
+  mode menus.
+- **Drawings and tours.** Flow drawings draw questions as hexagons, never cut words, and a shape
+  can be tapped to follow it; a tour shows one card per chat, and Next and Back never freeze it.
+- **Sidebar.** A group's guide line collapses it, and the list keeps its scroll position.
+- **Smaller fixes.** Review Changes reads a removed worktree's commit from another folder; the
+  site deploy refuses to run without its hero video.
+
+Going back to `v0.8.0` (`SOVA_REF=v0.8.0`) hasn't been tested on this release: a summary size set
+in Settings → Memory is new stored data that v0.8.0 doesn't read.
+
 ## v0.8.0 — 2026-10-24
 
 Feature request chats, a team inbox, Landing cards for the merge captain, and a quieter Sova when

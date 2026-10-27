@@ -1,0 +1,12 @@
+{
+  "§design/deviations": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "verified",
+    "notOwned": [
+      "§design/ground-rules",
+      "§design/menu-rows",
+      "§app/markdown-viewer"
+    ]
+  }
+}

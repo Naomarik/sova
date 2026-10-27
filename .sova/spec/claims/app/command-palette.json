@@ -1,0 +1,139 @@
+{
+  "§app.command-palette/command-panel": {
+    "kind": "behavior",
+    "code": [
+      "src/lib/palette.ts",
+      "src/components/CommandPalette.tsx",
+      "src/lib/api.ts",
+      "src/lib/palette.test.ts",
+      "src/commands/view.test.ts",
+      "src/commands/view.ts",
+      "src/lib/palette-arm.ts",
+      "src/lib/palette-arm.browser.test.ts",
+      "src/lib/palette-host.test.ts"
+    ],
+    "requires": [
+      "§app/new-session-dialog",
+      "§app/settings-dialog"
+    ],
+    "authority": "accepted",
+    "evidence": "verified"
+  },
+  "§app.command-palette/disabled": {
+    "kind": "behavior",
+    "code": [
+      "src/lib/palette.ts",
+      "src/commands/view.ts",
+      "src/commands/composers.ts",
+      "src/lib/palette.test.ts",
+      "src/commands/view.test.ts",
+      "src/components/Composer.tsx"
+    ],
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-22T15:11Z",
+      "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+    }
+  },
+  "§app.command-palette/opening": {
+    "kind": "behavior",
+    "code": [
+      "src/commands/keys.ts",
+      "src/App.tsx",
+      "src/components/CommandPalette.tsx",
+      "src/command-palette.css",
+      "src/commands/keys.test.ts",
+      "src/commands/palette-lazy.test.ts",
+      "src/commands/palette-key.test.ts",
+      "src/commands/palette-open.ts",
+      "src/commands/palette-open.test.ts",
+      "src/components/ComposerMenu.tsx",
+      "src/components/Composer.tsx"
+    ],
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-22T15:11Z",
+      "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+    }
+  },
+  "§app.command-palette/picking": {
+    "kind": "behavior",
+    "code": [
+      "src/lib/palette.ts",
+      "src/components/CommandPalette.tsx",
+      "src/commands/composers.ts",
+      "src/components/Composer.tsx",
+      "src/lib/palette.test.ts",
+      "src/App.tsx",
+      "src/lib/confirm-step.ts"
+    ],
+    "requires": [
+      "§chat.slash-commands/keyboard-and-mouse"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-22T15:11Z",
+      "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+    }
+  },
+  "§app.command-palette/rows": {
+    "kind": "behavior",
+    "code": [
+      "src/lib/palette.ts",
+      "src/commands/view.ts",
+      "src/components/CommandPalette.tsx",
+      "src/commands/composers.ts",
+      "src/components/Composer.tsx",
+      "src/lib/api.ts",
+      "src/components/SettingsDialog.tsx",
+      "src/lib/palette.test.ts",
+      "src/commands/view.test.ts",
+      "src/App.tsx"
+    ],
+    "requires": [
+      "§chat/slash-commands"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-22T15:11Z",
+      "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+    }
+  },
+  "§app.command-palette/shortcut-sheet": {
+    "kind": "behavior",
+    "code": [
+      "src/commands/keys.ts",
+      "src/components/ShortcutSheet.tsx",
+      "src/App.tsx",
+      "src/commands/keys.test.ts",
+      "src/command-palette.css"
+    ],
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified"
+  },
+  "§app/command-palette": {
+    "kind": "surface",
+    "code": [
+      "src/commands/keys.ts",
+      "src/App.tsx"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-22T15:11Z",
+      "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+    }
+  }
+}

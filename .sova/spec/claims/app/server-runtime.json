@@ -1,0 +1,174 @@
+{
+  "§app.server-runtime/choice": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "scripts/start-server.sh",
+      "server/runtime-choice.ts",
+      "server/runtime-choice.test.ts",
+      "server/runtime-choice.integration.test.ts",
+      "scripts/dev-server.mjs",
+      "package.json",
+      "scripts/run-tests.mjs",
+      ".sova/project.json",
+      "README.md",
+      "AGENTS.md",
+      "agents/server/overview.md",
+      "agents/testing/overview.md",
+      "CONTRIBUTING.md",
+      "scripts/dev-server.integration.test.ts",
+      "server/chat-runtime/bun.ts",
+      "server/chat-host.ts",
+      "docs/running-as-a-service.md"
+    ],
+    "requires": [],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-13T12:56Z"
+    }
+  },
+  "§app.server-runtime/fallback": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "scripts/start-server.sh",
+      "server/runtime-choice.ts",
+      "server/runtime-choice.test.ts",
+      "server/runtime-choice.integration.test.ts",
+      "scripts/dev-server.mjs",
+      "scripts/run-tests.mjs"
+    ],
+    "requires": [
+      "§app.server-runtime/choice"
+    ]
+  },
+  "§app.server-runtime/health": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/index.ts",
+      "server/runtime-choice.ts",
+      "server/runtime-choice.test.ts",
+      "server/runtime-choice.integration.test.ts",
+      "server/app.ts",
+      "server/chat-host.ts",
+      "server/chat-runtime/generations.ts"
+    ],
+    "requires": [
+      "§chat.profiles/live-commit",
+      "§app.server-runtime/choice"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-13T12:56Z"
+    }
+  },
+  "§app.server-runtime/pi-workers": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/runner.ts",
+      "pi-config/extensions/subagents/README.md",
+      "server/chat-runtime/bun.ts",
+      "server/chat-runtime/worker-feed.test.ts",
+      "server/chat-host.ts"
+    ],
+    "requires": [
+      "§app.server-runtime/choice"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-13T12:56Z"
+    }
+  },
+  "§app.server-runtime/quirks": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/runtime-quirks.ts",
+      "server/runtime-quirks.test.ts",
+      "server/runtime-quirks.integration.test.ts",
+      "server/bun-quirks-canary.test.ts",
+      "server/bun-quirks-canary.integration.test.ts",
+      "server/sibling-case.test.ts",
+      "docs/bun-quirks.md",
+      "scripts/run-tests.mjs",
+      "server/chat-manager.ts",
+      "server/extensions.ts",
+      "server/resource-monitor.ts",
+      "pi-config/extensions/claude-code/tests/hermetic-env.mjs"
+    ],
+    "requires": [
+      "§app.server-runtime/choice",
+      "§chat.transcript/runaway-stream",
+      "§app.resource-monitor/lightness-budget"
+    ]
+  },
+  "§app.server-runtime/test-repo-fence": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "scripts/run-tests.mjs",
+      "pi-config/extensions/claude-code/tests/hermetic-env.mjs",
+      "server/test-scratch.ts",
+      "server/test-repo-fence.integration.test.ts",
+      "server/reconcile.test.ts",
+      "server/test-wait.ts",
+      "server/reconcile.integration.test.ts",
+      "server/spec-tool-fake.ts",
+      "server/project-coding-runtime.test.ts",
+      "server/overseer-org-tools.test.ts",
+      "server/search-tools-fake.ts",
+      "server/org-about-privacy.test.ts",
+      "server/org-about-privacy.integration.test.ts",
+      "agents/testing/overview.md"
+    ],
+    "requires": [
+      "§app.server-runtime/choice"
+    ]
+  },
+  "§app.server-runtime/test-tiers": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "scripts/run-tests.mjs",
+      "scripts/test-tier-guard.mjs",
+      "scripts/test-changed.mjs",
+      "scripts/test-changed.d.mts",
+      "server/tier-guard.test.ts",
+      "server/run-tests-changed.test.ts",
+      "server/harness-boundary.test.ts",
+      "package.json",
+      "AGENTS.md",
+      "agents/testing/overview.md",
+      "server/testing/agent-dir.ts",
+      "server/outline-no-claude.test.ts"
+    ],
+    "requires": [
+      "§app.server-runtime/choice",
+      "§app.claude-code-provider/one-program"
+    ]
+  },
+  "§app/server-runtime": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "scripts/start-server.sh",
+      "server/runtime-choice.ts",
+      "server/runtime-choice.test.ts",
+      "server/runtime-choice.integration.test.ts"
+    ],
+    "notOwned": [
+      "§app.claude-code-provider/one-program",
+      "§app/chat-processes",
+      "§chat.profiles/live-commit"
+    ]
+  }
+}

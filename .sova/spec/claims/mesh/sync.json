@@ -1,0 +1,100 @@
+{
+  "§mesh.sync/api-keys-only": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/sync/logins-merge.ts",
+      "server/sync/logins.ts",
+      "server/mesh/index.ts",
+      "src/components/MeshSettings.tsx"
+    ]
+  },
+  "§mesh.sync/categories": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/sync/docs.ts",
+      "server/sync/extensions.ts",
+      "server/sync/index.ts",
+      "server/sync/docs.test.ts",
+      "server/sync/extensions.test.ts",
+      "server/sync/index.test.ts",
+      "server/sync/docs-grants.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-11T18:49Z"
+    }
+  },
+  "§mesh.sync/kept-copies": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.sync/categories"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/sync/kept.ts",
+      "server/sync/kept.test.ts",
+      "server/sync/docs.ts",
+      "server/sync/index.ts",
+      "server/sync/docs.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-11T18:49Z"
+    }
+  },
+  "§mesh.sync/logins": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/sync/logins.ts",
+      "server/sync/logins-merge.ts",
+      "server/sync/logins-stores.ts",
+      "server/sync/index.ts",
+      "src/components/MeshView.tsx",
+      "server/sync/logins-merge.test.ts",
+      "server/sync/logins-stores.test.ts",
+      "server/sync/logins-stores.integration.test.ts",
+      "server/sync/logins.test.ts",
+      "server/sync/logins.integration.test.ts",
+      "server/sync/index.test.ts"
+    ]
+  },
+  "§mesh.sync/profile-library": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.sync/categories",
+      "§chat.subagent-profiles/file"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/sync/docs.ts",
+      "server/sync/profile-merge.ts",
+      "server/sync/profile-merge.test.ts",
+      "server/sync/docs.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-11T18:49Z"
+    }
+  },
+  "§mesh/sync": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/sync/index.ts"
+    ],
+    "notOwned": [
+      "§chat.subagent-profiles/file",
+      "§mesh.peers/grants",
+      "§app.claude-logins/pool"
+    ]
+  }
+}

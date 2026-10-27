@@ -1,0 +1,22 @@
+{
+  "§design.overview/class-index": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "verified"
+  },
+  "§design.overview/file-map": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed"
+  },
+  "§design/overview": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "notOwned": [
+      "§design/copy-deck",
+      "§design/ground-rules",
+      "§design/token-index"
+    ]
+  }
+}

@@ -3535,18 +3535,19 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   position: absolute;
   inset: calc((var(--tap-min) - var(--control-sm)) / -2) 0;
 }
-/* The login's round letter avatar: the shortest start of its name that tells this device's logins
-   apart (or a number). Round, because it says who, like a chip; the email comes back beside it only
-   where the foot has room. */
+/* The login's soft chip: the shortest start of its name that tells this device's logins apart (or a
+   number), on a pale fill with no outline. A circle for one letter, a pill for more; it says who.
+   The email comes back beside it only where the foot has room. While the button is hovered or open
+   its fill is --color-sunken, so the chip takes --color-border there to stay visible. */
 .composer-login-avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: none;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 5px;
-  border: var(--stroke-icon) solid var(--color-border-strong);
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  background: var(--color-sunken);
   border-radius: var(--r-full);
   font-size: var(--fs-micro);
   font-weight: var(--fw-semibold);
@@ -3557,6 +3558,8 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
 .composer-login .live-dot { flex: none; }
 .composer-login:hover,
 .composer-login[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); }
+.composer-login:hover .composer-login-avatar,
+.composer-login[aria-expanded="true"] .composer-login-avatar { background: var(--color-border); }
 .composer-login:active { transform: translateY(1px); }
 .composer-login:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
 .composer-login[aria-disabled="true"] { cursor: not-allowed; }

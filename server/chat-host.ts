@@ -72,6 +72,7 @@ import { subagentSessionRefusal } from "./session-guards";
 import { getSessionSummary, idOf } from "./sessions-index";
 import { isArchived } from "./archived-sessions";
 import { agentRoot, stateRoot } from "./state-root";
+import { loginContextEnv, withoutLoginContext } from "./claude-login-context";
 import { markOwned, recentForeignWriteAgeSec } from "./write-guard";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -221,7 +222,7 @@ export class ChatHostRouter {
           home: homedir(),
           agentDir: w?.spec.agentDir ?? agentRoot(),
           extra: {
-            ...w?.spec.env,
+            ...withoutLoginContext(w?.spec.env),
             ...(w?.spec.agentDir ? { SOVA_CHAT_STATE_ROOT: stateRoot() } : {}),
             SOVA_CHAT_SOCK: c.sock,
             SOVA_CHAT_PATH: c.sessionPath,
@@ -230,6 +231,9 @@ export class ChatHostRouter {
             SOVA_CHAT_BUILD: id,
             SOVA_CHAT_LIVE_ROOT: REPO,
             SOVA_CHAT_COPIES_ROOT: codeRoot(),
+            // The project's Claude login for a chat in its folder, and the logins saved for other work
+            // (§app.claude-logins/project-login); none on a host with no assignment.
+            ...loginContextEnv(c.cwd),
             // After the worker spec's env: a loadout never chooses its key.
             SOVA_CALLER_KEY: this.callerKeys.issue(c.chatId, c.unit),
           },

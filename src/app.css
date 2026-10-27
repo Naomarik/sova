@@ -1001,10 +1001,21 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .caption-part-model { flex: 0 1 auto; }
 .caption-part-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }
 .caption-word { display: none; }
-.caption-part-mode + .caption-part-mode { margin-left: calc(var(--space-1) - var(--space-2)); }
+.caption-part-mode + .caption-part-mode,
+.caption-part-mode + .caption-more { margin-left: calc(var(--space-1) - var(--space-2)); }
+/* The model's name is the last thing to shrink: where the caption runs out of room (measured by
+   foldFit, which sets data-folded), the mode icons fold to the first and a quiet "+N", the count of
+   the rest. Only then is the name cut. */
+.caption-more { display: none; font-size: var(--fs-caption); font-variant-numeric: tabular-nums; color: var(--color-ink-muted); }
+.caption-parts[data-folded] .caption-part-mode ~ .caption-part-mode { display: none; }
+.caption-parts[data-folded] .caption-more { display: inline-flex; }
+/* Folded, its parts sit at the icons' own spacing, as a narrow composer foot's do. */
+.caption-parts[data-folded] { column-gap: var(--space-1); }
+.caption-parts[data-folded] .caption-part-mode + .caption-more { margin-left: 0; }
 @container profile-caption (min-width: 340px) {
   .caption-word { display: inline; }
-  .caption-part-mode + .caption-part-mode { margin-left: 0; }
+  .caption-part-mode + .caption-part-mode,
+  .caption-part-mode + .caption-more { margin-left: 0; }
 }
 /* A One at a time profile live in another session: a link that opens it, not a pick. Same shape as
    a card; its arrow (where a picked card has its check) and the Live chip say where it goes. */

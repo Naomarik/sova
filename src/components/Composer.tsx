@@ -37,6 +37,7 @@ import {
 } from "../lib/images";
 import { compactModel } from "../lib/format";
 import { EffortRing } from "./EffortRing";
+import { foldFit } from "./fold-fit";
 import { fitPlaceholderNow, type FittedPlaceholder } from "../lib/placeholder-fit";
 import { ensureModels, modelList, thinkingLevelsFor } from "../lib/models";
 import {
@@ -1302,7 +1303,20 @@ export function Composer(props: {
           </div>
         </div>
 
-        <div class="composer-foot">
+        <div
+          class="composer-foot"
+          ref={(foot) => {
+            // The model's short name is the foot's last part to shrink:
+            // where the row doesn't fit once its gaps narrow, the mode switch's icons fold first.
+            const trigger = () => foot.querySelector<HTMLElement>(".mode-more")?.parentElement ?? null;
+            foldFit(foot, {
+              target: trigger,
+              // Not the foot itself: the mode switch's negative end margin always overhangs it.
+              boxes: () => [foot.querySelector<HTMLElement>(".composer-model-id"), trigger()],
+              modes: () => trigger()?.querySelectorAll(":scope > .mode-glyph, :scope > .mode-letter").length ?? 0,
+            });
+          }}
+        >
           <Show when={props.model}>
             <button
               ref={indicator}

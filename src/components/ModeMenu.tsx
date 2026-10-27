@@ -33,6 +33,7 @@ import { usePaneId } from "../lib/pane-scope";
 import { openSettings, setSubagentSettingsPath } from "../lib/settings-nav";
 import { announce } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
+import { foldLabel, foldedRest } from "../lib/name-fit";
 import { ModeGlyph, ModeGlyphs } from "./ModeGlyph";
 import { majorGlyph, minorGlyph, modeGlyphs, modeLetter, type ModeGlyph as ModeGlyphData } from "../lib/mode-glyphs";
 
@@ -743,6 +744,13 @@ export function ModeMenu(props: { control: ModeControl }) {
         {/* Icon-first (§chat.mode-menu/trigger): the major mode's, one per minor mode on, a letter
             per project mode on. The words come back beside them only where the foot has room. */}
         <ModeGlyphs glyphs={triggerGlyphs()} />
+        {/* Where the composer foot is too tight, the icons fold to the first and this count of the
+            rest (the foot's foldFit sets data-folded); the name and the menu keep every mode. */}
+        <Show when={foldedRest(triggerGlyphs().length) > 0}>
+          <span class="mode-more" aria-hidden="true">
+            {foldLabel(triggerGlyphs().length)}
+          </span>
+        </Show>
         {/* Two parts, so a narrow foot ellipsizes the minor modes before the major one. */}
         <span class="mode-trigger-label" aria-hidden="true">
           {current()?.mode ?? "Mode"}

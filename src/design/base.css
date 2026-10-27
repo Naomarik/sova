@@ -4150,6 +4150,17 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   position: absolute;
   inset: calc((var(--tap-min) - var(--control-sm)) / -2) 0;
 }
+/* The model's short name is the foot's last part to shrink: where the row is still too tight once
+   its gaps narrow, the composer's foldFit sets data-folded and the icons fold to the first, a quiet
+   "+N" (the rest's count) and the chevron. The trigger never clips its own icons: it gives way by
+   folding, so the name is cut only after that. */
+.mode-more { display: none; flex: none; font-family: var(--font-body); font-size: var(--fs-caption); font-variant-numeric: tabular-nums; color: var(--color-ink-muted); }
+.mode-trigger[data-folded] .mode-more { display: inline; }
+.mode-trigger[data-folded] :is(.mode-glyph, .mode-letter) ~ :is(.mode-glyph, .mode-letter) { display: none; }
+/* Icons only (under 620px, no words to ellipsize): its smallest is its icons. */
+@container composer (max-width: 619.98px) {
+  .composer-foot .mode-trigger { min-width: auto; }
+}
 .mode-trigger[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); }
 .mode-menu > .banner { flex: none; margin: var(--space-2) var(--space-2) 0; }
 /* Rows are .popover-item (§design/menu-rows): the modes are two-line .popover-item-detail rows

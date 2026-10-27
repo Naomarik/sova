@@ -1,7 +1,9 @@
 import { createEffect, createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import type { ListedProfile } from "../../shared/profiles";
 import { CARD_FILTER_AFTER, cardCount, cardMatches, pickerSections, profileCaptionParts, profileIconName, type CaptionPart, type CardCaption, type pickerProfiles } from "../lib/profiles";
+import { foldLabel, foldedRest } from "../lib/name-fit";
 import { EffortRing } from "./EffortRing";
+import { foldFit } from "./fold-fit";
 import { ModeGlyph } from "./ModeGlyph";
 import { Icon } from "./ui";
 
@@ -226,7 +228,9 @@ const captionWords = (c: CardCaption): string => (c.kind === "words" ? c.text : 
 /**
  * A card's caption line (§chat.profiles/picker): words, or one glyph item per setting the profile
  * sets, each with its words as its hover text; the whole caption in words for screen readers. On
- * a card wide enough, words come back beside the glyphs.
+ * a card wide enough, words come back beside the glyphs. Where the caption runs out of room, its
+ * mode icons fold to the first and a "+N" before the model's name is cut (foldFit); the words
+ * still name every mode.
  */
 function Caption(props: { caption: CardCaption }) {
   return (
@@ -242,13 +246,41 @@ function Caption(props: { caption: CardCaption }) {
         {(c) => (
           <span class="profile-tile-caption profile-tile-glyphs">
             <span class="visually-hidden">{c().label}</span>
-            <span class="caption-parts" aria-hidden="true">
-              <For each={c().parts}>{(part) => <CaptionItem part={part} />}</For>
-            </span>
+            <GlyphParts parts={c().parts} />
           </span>
         )}
       </Match>
     </Switch>
+  );
+}
+
+/** The caption's glyph row, with its "+N" after the last mode icon, shown only while folded. */
+function GlyphParts(props: { parts: CaptionPart[] }) {
+  const modes = () => props.parts.filter((p) => p.kind === "mode").length;
+  const lastMode = () => props.parts.reduce((at, p, i) => (p.kind === "mode" ? i : at), -1);
+  return (
+    <span
+      class="caption-parts"
+      aria-hidden="true"
+      ref={(row) =>
+        foldFit(row, {
+          target: () => row,
+          boxes: () => [row.querySelector<HTMLElement>(".caption-part-name"), row],
+          modes,
+        })
+      }
+    >
+      <For each={props.parts}>
+        {(part, i) => (
+          <>
+            <CaptionItem part={part} />
+            <Show when={i() === lastMode() && foldedRest(modes()) > 0}>
+              <span class="caption-part caption-more">{foldLabel(modes())}</span>
+            </Show>
+          </>
+        )}
+      </For>
+    </span>
   );
 }
 

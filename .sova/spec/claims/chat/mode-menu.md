@@ -425,13 +425,15 @@ spec's block, from the parent's saved copy of it, with its tools when the worker
 
 - **What a worker gets.** While the parent chat has spec on, every worker it starts — pi or
   Claude Code, plain, remote, sandboxed, hosted, or a team member — gets the spec block
-  (`spec-mode.md`, byte for byte) at the end of its system prompt, after its agent type, its
+  (`spec-mode.md`, byte for byte: the guide's short part) at the end of its system prompt, after its agent type, its
   brief and any remote instructions, followed by a short **worker note**: the brief is its
   go-ahead; it works in the draft its brief names (or says which it started); it promotes, commits
   or records `--commit` evidence only when the brief says so, and then only on the brief's branch,
   never by landing on the default branch — the parent promotes, on its own branch before calling it
   ready; and its final
-  report lists each foreign § it updated. Nothing else of the parent's mode reaches it: no
+  report lists each foreign § it updated. The writing procedure reaches a worker that writes code once,
+  with its first census note, its Workers section first, in the note's own words
+  (§tools.spec/writing-on-demand). Nothing else of the parent's mode reaches it: no
   Delegate block, no align block, no Delegate+align bridge, and never the spec-writer paragraph
   (a worker can't spawn one). With spec off the worker's prompt carries nothing from the mode.
 - **Not everyone.** A team's monitor (it has no tools) gets no spec block. A worker on its
@@ -492,7 +494,8 @@ chat's other tools, several at once, and filters their output before the model r
   call it made with its status (Running, Done, Failed, Cancelled), live while it runs, then its
   output.
 - **With spec on**, a `[spec census]` or spec-guard note about a call the script made is repeated on
-  the script's own result, the one the model reads (§tools.spec/census-note).
+  the script's own result, the one the model reads (§tools.spec/census-note), and so is the writing
+  procedure a script's call hands over, whole (§tools.spec/writing-on-demand).
 
 ## §chat.mode-menu/project-modes — A project's own minor modes
 

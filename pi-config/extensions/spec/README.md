@@ -9,11 +9,15 @@ no source annotations. They are not a pi extension. There is no
 `index.ts`, so pi's loader skips this directory. They need only the Node
 standard library and import nothing from pi, Sova or the rest of pi-config.
 
-The `spec` minor mode (`../mode/`) uses these tools for coding work. Its text,
-[`../mode/spec-mode.md`](../mode/spec-mode.md), is the discipline: when to run
-them and what to do with the output. A project may point its agents at that
-file without the mode, as Sova's `AGENTS.md` does; that instruction alone does
-not activate the mode's automatic checks. With the mode on, its hooks run
+The `spec` minor mode (`../mode/`) uses these tools for coding work. Its text
+is the discipline, in two parts: [`../mode/spec-mode.md`](../mode/spec-mode.md),
+the short finding-your-way part that rides every turn, and
+[`WRITING.md`](WRITING.md), the writing procedure (drafts, agreeing, evidence,
+promoting, a worker's duties) an agent reads before its first edit that
+changes behavior, or is handed once by the mode's census note or an
+alignment's go-ahead. A project may point its agents at both files without
+the mode, as Sova's `AGENTS.md` does; that instruction alone does not activate
+the mode's automatic checks, so it must name `WRITING.md` itself. With the mode on, its hooks run
 census and change checks. Sova's requirements reconciler is another consumer:
 it uses drafts and doc-only evidence to publish accepted decision notes, not
 to assert that those decisions have been implemented.
@@ -31,6 +35,7 @@ to assert that those decisions have been implemented.
 | `core/README.md` | The core's reference: commands, exit codes, the manifest format it reads, evidence states |
 | `core/sova-spec-draft.mjs` | Drafts: full-copy proposals of `.sova/spec`, their evidence, and guarded promotion into the current docs |
 | `DRAFTS.md` | The draft workflow's reference |
+| `WRITING.md` | The writing procedure: the spec mode's second part, read before the first behavior-changing edit (`$core/../WRITING.md`) and handed over once per chat by the census note or an alignment's go-ahead |
 | `PROMOTE.md` | What promotion needs that the draft tool can't check; the spec mode points at it before a commit |
 | `core/sova-spec-review.mjs` | The review companion: `prepare`, `record`, `status`. It keeps the exact bytes a review compared |
 | `tests/*.test.mjs` | Black-box fixture tests that spawn the CLIs against temporary projects |

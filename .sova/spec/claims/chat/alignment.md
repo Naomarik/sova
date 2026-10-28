@@ -130,7 +130,8 @@ when it names an option), and one line naming the other open alignments. In a se
 Visuals on, a create or import whose new document carries no visual adds one line after them
 (§chat.alignment/visuals); the result's details are the same either way. A call that sets a
 document implementing while the spec minor mode is on also ends with the spec's Agree step
-(§tools.spec/align-agree).
+(§tools.spec/align-agree), followed by the spec's writing procedure when the session hasn't been told
+it yet (§tools.spec/writing-on-demand).
 
 ## §chat.alignment/state — The state lives in the tool results
 

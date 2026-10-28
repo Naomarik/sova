@@ -143,13 +143,21 @@ writer**).
   Work that changes no behavior — refactors, tests, tooling — is exempt, and
   the agent says it is claiming the exemption. The documentation changes only
   through drafts; a promotion `conflict` is per declaration, and it is
-  re-applied in a new draft from current. The discipline itself
-  is [`spec-mode.md`](spec-mode.md), and nowhere else. `minor.ts` reads it at
-  load: the injected block is that file byte for byte, minus trailing
-  whitespace, and its one `sh` block is the shell prefix `minor.ts` exports as
-  `SPEC_CORE_SHELL`. A missing, repeated or multi-line block fails the load. A
-  project may point its agents at the same file without the mode; Sova's
-  `AGENTS.md` does. The tools it runs without asking are the three linked into
+  re-applied in a new draft from current. The discipline itself is two
+  files, each one copy: [`spec-mode.md`](spec-mode.md), the short
+  finding-your-way part that rides every turn, and
+  [`../spec/WRITING.md`](../spec/WRITING.md), the writing procedure (drafts,
+  agreeing, evidence, promoting, a worker's duties). `minor.ts` reads
+  `spec-mode.md` at load: the injected block is that file byte for byte, minus
+  trailing whitespace, and its one `sh` block is the shell prefix `minor.ts`
+  exports as `SPEC_CORE_SHELL`. A missing, repeated or multi-line block fails
+  the load. The writing procedure never enters the prompt: the short part
+  tells the agent to read `$core/../WRITING.md` before its first edit that
+  changes behavior, and the session's first `[spec census]` note of any kind,
+  or an `align` go-ahead, hands it over once (`CensusHook.takeProcedure`)
+  unless the agent read it itself; a compaction re-arms it, and a reopened
+  session restores it from its history (`procedureToldIn`). A project may
+  point its agents at both files without the mode; Sova's `AGENTS.md` does. The tools it runs without asking are the three linked into
   the agent directory (`<agent dir>/extensions/spec/core/`, resolved like pi's
   own agent dir: an exact `~` or a leading `~/` is home), always through that
   `sh` recipe, never a guessed path. A copy inside the
@@ -753,7 +761,9 @@ cannot compile without deciding):
   worker-scope minors only: for spec, the `spec-mode.md` block byte for byte,
   then `SPEC_WORKER_NOTE` (the brief is the go-ahead; the parent promotes unless
   the brief says otherwise, and then only on its branch, never on the default
-  branch; the final report lists each foreign § it updated).
+  branch; the final report lists each foreign § it updated; the same words as
+  the writing procedure's Workers section, which its census hands it, that
+  section first, with its first note).
   Never the Delegate block, the align block or bridge, the vis guide, or the
   writer paragraph.
 - **Delivered over the bus** (`events.ts`), like the sandbox's state: the

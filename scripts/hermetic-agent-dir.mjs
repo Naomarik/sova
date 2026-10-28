@@ -210,8 +210,10 @@ for (const entry of readdirSync(extRoot, { withFileTypes: true }).sort((a, b) =>
 }
 
 // Tool directories pi never loads but a prompt runs from the agent dir: spec-mode.md resolves its
-// trusted tools to <agent dir>/extensions/spec/core. Unlinked, a hermetic session falls back to
-// ~/.pi's copy of the tools, which may be another branch's. install.sh links them like any directory.
+// trusted tools to <agent dir>/extensions/spec/core, and the writing procedure the census hands over
+// is the one beside them (<agent dir>/extensions/spec/WRITING.md), so the whole directory is linked.
+// Unlinked, a hermetic session falls back to ~/.pi's copy of the tools and the procedure, which may be
+// another branch's. install.sh links them like any directory.
 for (const name of ["spec"]) {
   const path = join(extRoot, name);
   if (!existsSync(path)) continue;

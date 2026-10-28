@@ -141,27 +141,46 @@ const once = (key, f) => { if (!memo.has(key)) memo.set(key, f()); return memo.g
 
 /**
  * The master (or main) commit the branch last merged before the cutover: the tools and spec every chat had before
- * landing 2, format 1. Before landing that is the merge base of the cutover with master; after landing, master's
- * first-parent history holds the landing merge L (the cutover in L, not in L^1), and it is the merge base with L^1.
+ * landing 2, format 1, as findPreLanding finds it in this repository; SOVA_CONVERT_BASE=<rev> overrides it.
  */
 export function preLandingMaster(cutover) {
-  return once(`pre:${cutover}`, () => {
-    if (process.env.SOVA_CONVERT_BASE) return revParse(process.env.SOVA_CONVERT_BASE);
-    for (const m of ["master", "main", "origin/master", "origin/main"]) {
-      const tip = tryRev(m);
-      if (!tip) continue;
-      let at = tip;
-      if (isAncestor(cutover, tip)) {
-        const landing = rgit("log", "--first-parent", "--merges", "--format=%H %P", tip).split("\n").filter(Boolean)
-          .map((l) => l.split(" ")).find(([x, p1]) => isAncestor(cutover, x) && !isAncestor(cutover, p1));
-        if (!landing) continue;
-        at = landing[1];
-      }
-      const mb = gitRaw(["merge-base", cutover, at]);
-      if (mb.status === 0 && formatAt(mb.stdout.trim()) === 1) return mb.stdout.trim();
+  return once(`pre:${cutover}`, () => (process.env.SOVA_CONVERT_BASE ? revParse(process.env.SOVA_CONVERT_BASE) : findPreLanding(gitRaw, cutover)));
+}
+
+/**
+ * The pre-landing master in a repository reached through run(args) → { status, stdout } (git -C <repo> <args>): the
+ * format 1 master (or main) commit the branch last merged before the cutover, in whichever shape the history has:
+ *   - not landed (the cutover is not in the branch tip): merge-base(cutover, tip);
+ *   - landed by a merge: on master's first-parent history the landing merge L holds the cutover and L^1 doesn't:
+ *     merge-base(cutover, L^1);
+ *   - landed by a fast-forward: the cutover itself is on master's first-parent history, and its parent P is a
+ *     two-parent merge (the branch's merge of master): P^2.
+ * null when no shape fits; requireBases then fails hard (nothing skips). The walk stops at the first commit on the
+ * first-parent history without the cutover, so it costs the commits since the landing, not master's whole history.
+ */
+export function findPreLanding(run, cutover, branches = ["master", "main", "origin/master", "origin/main"]) {
+  const out = (args) => { const r = run(args); return r.status === 0 ? String(r.stdout).trim() : null; };
+  const has = (rev) => run(["merge-base", "--is-ancestor", cutover, rev]).status === 0;
+  const v1 = (rev) => { const t = out(["show", `${rev}:${SPEC}/manifest.json`]); try { return t !== null && JSON.parse(t).formatVersion === 1; } catch { return false; } };
+  const mb1 = (rev) => { const m = out(["merge-base", cutover, rev]); return m && v1(m) ? m : null; };
+  for (const name of branches) {
+    const tip = out(["rev-parse", "--verify", "-q", `${name}^{commit}`]);
+    if (!tip) continue;
+    if (!has(tip)) { const m = mb1(tip); if (m) return m; continue; }
+    const chain = (out(["log", "--first-parent", "--format=%H %P", tip]) ?? "").split("\n").filter(Boolean).map((l) => l.split(" ").filter(Boolean));
+    let i = 0;
+    while (i < chain.length && has(chain[i][0])) i++;
+    if (i === 0 || i >= chain.length) continue;
+    const [x, p1, p2] = chain[i - 1];
+    if (x === cutover) {
+      const [, , q2, q3] = chain[i];
+      if (q2 && !q3 && v1(q2)) return q2;
+    } else if (p2) {
+      const m = mb1(p1);
+      if (m) return m;
     }
-    return null;
-  });
+  }
+  return null;
 }
 /**
  * The master commit the flip's parent merged, derived from the branch (no pinned id, so a re-raced merge + flip needs

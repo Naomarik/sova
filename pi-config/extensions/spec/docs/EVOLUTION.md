@@ -404,9 +404,9 @@ held out, labels frozen by hash before any comparison; a second labelling of 14 
 
 ## Records per area (al_6, 2026-10-26: `feat/spec-store` tools, `feat/spec-convert` data)
 
-One `manifest.json` of about 800 KB (793,538 bytes at 27019745, 807,370 when converted) held every record, so most spec branches met in one file. Landing 1
+One `manifest.json` of about 800 KB (793,538 bytes at 27019745, 823,298 when converted) held every record, so most spec branches met in one file. Landing 1
 shipped tools that read and write both layouts; landing 2 converted Sova's spec (102 record files beside
-their claim files, median 4,967 bytes, largest 33,949) and dropped the manifest merge driver, and new specs
+their claim files, median 5,061 bytes, largest 39,802) and dropped the manifest merge driver, and new specs
 start in format 2. Before, from `tests/bench/merge-collisions.mjs --since 2026-09-23 --until 27019745`
 (688 merges): both sides changed the records file in 45%, Git's line merge conflicted in 17%; replayed one
 file per area, 15% and 4%, and 29 of the 30 per-area conflicts are one record changed two ways; 27

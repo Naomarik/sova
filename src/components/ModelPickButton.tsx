@@ -10,6 +10,7 @@ import { usePaneId } from "../lib/pane-scope";
 import type { ThinkingControl } from "./ComposerMenu";
 import { ModelPicker, type ModelControl } from "./ModelMenu";
 import { Icon, type IconName } from "./ui";
+import { EffortRing } from "./EffortRing";
 import "./ModelPickButton.css";
 
 /** One row of a flyout panel (the composer's, and this picker's model panel). */
@@ -32,6 +33,8 @@ export interface FlyoutRow {
   describe?: boolean;
   /** The login panel's account group the row sits in. */
   group?: string;
+  /** A Thinking ladder row's level: its effort ring beside the name. */
+  ring?: string;
   run(): void;
 }
 
@@ -67,6 +70,7 @@ export function modelPanelRows(o: { model: ModelControl; thinking: ThinkingContr
         id: `thinking-${level}`,
         role: "menuitemradio",
         label: level,
+        ring: level,
         checked: level === (thinking.level() ?? ""),
         busy: level === pendingLevel,
         disabled: !!why || !!pendingLevel,
@@ -210,6 +214,7 @@ export function ModelPickButton(props: {
       <Show when={p.r.role !== "menuitem"} fallback={<Icon name={p.r.icon ?? "more"} small />}>
         <Icon name="check" small class="popover-item-check" />
       </Show>
+      <Show when={p.r.ring}>{(level) => <EffortRing level={level()} />}</Show>
       <span class="composer-flyout-label">{p.r.label}</span>
       <Show when={p.r.busy}>
         <span class="live-dot" />

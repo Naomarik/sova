@@ -179,7 +179,9 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   running instances on this host (`sova_project_verbs`, §app.project-services/callers: status,
   logs and doctor at any time, the other verbs (`share` is the operator's: `needs-confirm`; `revoke`
   is its own), and `onboard`, which starts the Project verbs
-  playbook on a registered project (§app.project-runtime/onboard), in a turn the user started).
+  playbook on a registered project (§app.project-runtime/onboard), in a turn the user started; its
+  `leftovers` read and, in the turn a card click opens, teardown, reset and stop of copies it did not
+  start and `stop-leftover`, §app.overseer/copies).
 - **Sending (`sova_send`) is typing in that session's composer.** Idle, with subagents working or
   not, the message starts a turn. Mid-turn it is **queued as a follow-up** behind the running turn
   by default: a queued row in that session, "Queued", which the user can remove until it is
@@ -675,6 +677,8 @@ jumps to it (§app.overseer/links).
   the branch; a new conversation starts at `c_1`), and never another. Its items are numbered 1..N in
   display order when it is created and never renumbered; its answer options are lettered a, b, c…
   in order, and so are each row's choices, per row: "a" is the first choice of that row's own list.
+  On a card with sections the display order is the sections' (§app.overseer/card-sections), so
+  the numbers run once through the card, top to bottom, across its headings.
   "c_4 b" is card c_4's option b; "c_4 2a" is its item 2 taking its choice a. Link options carry no
   letter.
 - **The tool never ends the turn.** A call applies its ops to one card, atomically: if any op is
@@ -692,14 +696,15 @@ jumps to it (§app.overseer/links).
   waiting for the user.
 - **States: open, answered, superseded, dropped; only the model's ops move them.** A card-level
   answer, or every item decided, makes it answered; a partial per-item answer keeps it open with
-  those items decided. `create` with `replaces: "c_3"` marks c_3 superseded by the new card in the
+  those items decided, and the card reads partly applied (§app.overseer/card-partial-apply). `create` with `replaces: "c_3"` marks c_3 superseded by the new card in the
   same result. `drop` closes a card that no longer applies, with its reason; `reopen` makes an
   answered or dropped card open again. A later message, typed or clicked, never changes a card by
   itself: a card stays open until the model records it.
 - **A hidden note every turn.** Every run a user message starts carries a hidden note (never in the
   thread, never the system prompt) listing each open card: id, title, lettered options, numbered
-  items with their ids and names, each row's choices (its own list on the row, the card's shared
-  list once), recommendation and any item already decided, and a line
+  items with their ids and names, each row's section and what its Go sends when it has them, each
+  row's choices (its own list on the row, the card's shared list once), a Ready to land row's
+  branch and commit, recommendation and any item already decided, and a line
   telling the model to record answers with `answer` or `accept` and to drop or replace a card that
   no longer applies. An open card listing a session whose file changed after the card was raised
   carries a line "may be stale: <session id> active since <time>" for each such session, so the
@@ -711,12 +716,15 @@ jumps to it (§app.overseer/links).
   to (§app.overseer/tools). Typed replies ("2", "archive a and c, keep b") are mapped by the model,
   using the note; the server parses none.
 - **Items.** `items` is `{sessions?, ideas?, todos?, people?, projects?, orgs?, folders?}`, each a
-  list whose entries are an id or `{id, note?, default?, choices?}`; a person or a project also names
+  list whose entries are an id or `{id, note?, default?, choices?, section?, sends?}` (`section`
+  and `sends`, §app.overseer/card-sections), a session's in the global Overseer also `land?`
+  (§app.overseer/card-land); a person or a project also names
   its org, `{org, id, note?, default?, choices?}`, by id or exact name, as the org tools take them
   (§app.overseer/org-tools). The global Overseer's cards also take orgs attached here (`{id, note?}`,
   by id or exact name) and folders to add as projects (`{root, org?, name?, note?}`: an absolute
   folder of this host or `~/…`, resolved to its checkout root; one the Overseer's file guard denies,
-  or that is not a local folder, matches nothing; §app.overseer/org-project-add). Sessions are addressed in
+  or that is not a local folder, matches nothing; §app.overseer/org-project-add). Both overseers' cards
+  also take running copies (`copies`) and leftover processes (`leftovers`), §app.overseer/copies. Sessions are addressed in
   any form the tools print them (§app.overseer/tools), and any session on this host will do (a
   card only points at it: TUI-live or archived is fine); ideas by their § id (a former id resolves
   to the idea it was renamed to); todos by their `td_` id. The server resolves every id when the card
@@ -734,16 +742,20 @@ jumps to it (§app.overseer/links).
   in it; a person row their name, status and org; a project row its name and org (none for a
   standalone project); an org row its name; a folder row its checkout root, the folder as given when
   that differs, its org (or none: standalone) and the name it would get when one was given; every row
-  carries its note when it was given one. Never a contact or a link (§app.overseer/org-projection).
+  carries its note when it was given one, and its section and Go-sends line when it was given them.
+  In the global Overseer, a session row the Overseer marks as a land row (`land`) also carries the
+  branch of its worktree that is Ready to land (§chat.worktrees/ready-to-land) and its head commit as
+  they were when the card was raised (§app.overseer/card-land). Never a contact or a link (§app.overseer/org-projection).
 - **Per-item choices.** The card's `choices` (2 to 4 labels, lettered) apply to every item of any
   kind that has none of its own; an item's own `choices` (2 to 4 labels, each distinct) replace them
   for that row only, so one card can offer "Clean Up & Archive / Archive Only / Keep" on one row and
   "Archive / Keep" on the next. An item's `default` is a letter of its own row's list: the choice it
   starts on and the recommendation for it; a default with no list for its row, or a letter past
-  that list, refuses the card. Each item row with choices shows a segmented control of its own
-  row's labels, set to its default, or to its decided choice once one is recorded; **Apply**, the
-  card's primary button, sends one message for the items that have a choice, each with its row's
-  letter and label, "c_4: 1a Clean Up & Archive, 5b Keep". A stored card from before per-row choices
+  that list, refuses the card. Each undecided item row with choices shows a segmented control of
+  its own row's labels, set to its default, or to the choice the user last applied it with; a
+  decided row shows its choice as done (§app.overseer/card-partial-apply). **Apply**, the card's
+  primary button, sends one message for the undecided items that have a choice, each with its
+  row's letter and label, "c_4: 1a Clean Up & Archive, 5b Keep". A stored card from before per-row choices
   (card-level `choices` only) reads and renders unchanged, and an answer option it carries stays a
   live button.
 - **Link options.** An option with `link` (a session, a group, a page, a Settings tab, an org, a
@@ -759,7 +771,9 @@ jumps to it (§app.overseer/links).
   a run streams too: a card the run raised and then replaced or changed again draws, at its earlier
   call, that one line, never live buttons, so only its newest snapshot takes a click.
   - The items sit between the detail and the buttons, one compact row each, numbered: ideas, then
-    todos, then orgs, then folders, then projects, then people, then sessions. An org row is an in-app
+    todos, then orgs, then folders, then projects, then people, then copies, then leftover processes
+    (§app.overseer/copies), then sessions; on a card with sections, under their headings in that
+    order within each (§app.overseer/card-sections). An org row is an in-app
     link to its page, reading its name. A folder row reads its checkout root (monospace), then its name
     when one was given, then "into {org}" or "standalone", and "from {folder}" when it was normalized.
     A project row is an in-app link to its project page,
@@ -772,12 +786,15 @@ jumps to it (§app.overseer/links).
     subagents. On an open card, a session row whose session the session list shows active after
     the card was raised also carries a "Changed since asked" chip (its time on hover). An idea row is its § id and title as plain text, never a link (§app.overseer/ideas).
     A todo row is its text.
-  - Under each row, its note in body text (not muted), up to 2 lines and then clamped; a row
-    without a note has nothing under it.
-  - Ideas, todos, orgs, folders, projects and people always show: a card's effect on them (ticking a todo,
+  - Under each row, its note in body text (not muted), up to 2 lines and then clamped; then its
+    Go-sends line when it has one (§app.overseer/card-sections); a row with neither has nothing
+    under it. A Ready to land row shows its branch and the commit shortened to 7 characters
+    (§app.overseer/card-land).
+  - Ideas, todos, orgs, folders, projects, people, copies and leftover processes always show: a card's effect on them (ticking a todo,
     closing an idea, a person's links stopping) is never behind a toggle. Only sessions collapse: past 8 sessions the card shows the first 8 and a **Show
     all N sessions** toggle (Show fewer, open), so the rows it reveals are only ever sessions; a card
-    with 9 sessions shows all 9, since hiding one row saves nothing.
+    with 9 sessions shows all 9, since hiding one row saves nothing. A card with sections never
+    collapses: every row shows under its heading.
   - The card's state comes from the fold, never from later messages: open (live buttons);
     answered ("You chose b — Archive all", or "Answered: <the user's words>"); "Replaced by c_7",
     a link to that card; dropped, with its reason. An item decided shows its choice or words.
@@ -786,8 +803,9 @@ jumps to it (§app.overseer/links).
   it started runs, the card shows "Sent: b" and its buttons wait; if the turn ends without an answer
   op, the buttons come back and the note keeps the card in front of the model. While the card is
   open, "Or type your answer." follows the buttons. A card that may gate an act that reaches people
-  or ends something, the global Overseer's card listing a person, a project, an org, a folder or a
-  gathering session (`clickOnly`), has no such hint: only its click approves that act. A click that
+  or ends something, the global Overseer's card listing a person, a project, an org, a folder, a
+  gathering session or a Ready to land row, and either overseer's card listing a copy or a leftover
+  process (`clickOnly`), has no such hint: only its click approves that act. A click that
   doesn't reach the Overseer (the chat refuses it, is restarting, reloads or closes before taking
   it, its connection ends before the chat opens, or the queued click leaves undelivered) never goes
   into the composer, where sending it again would be typed text that approves nothing: its card's
@@ -816,8 +834,72 @@ jumps to it (§app.overseer/links).
   again."
 - **The project overseer** raises the same card with the same tool: it says "the operator" where
   this one says "the user", and it resolves only the sessions it may read (the project's coding and
-  gathering sessions, §app/project-overseer), its own ideas and its own todos; it takes no people,
-  projects or org links.
+  gathering sessions, §app/project-overseer), its own ideas and its own todos, and its own project's
+  copies and leftover processes (§app.overseer/copies); it takes no people, projects or org links.
+  Its cards take sections and Go-sends lines the same way; its session rows carry no branch or
+  commit, and no Go on them lands anything.
+
+## §app.overseer/card-sections — Card sections and what Go sends
+
+- **Section headings.** An item of a card (§app.overseer/confirm) may name a `section`, a short
+  heading of at most 40 characters ("Ready to land", "Merge conflict", "Failed check"; "Done",
+  "Stale", "Worth Keeping"); a longer one refuses the card.
+  When any item has one, the card shows its rows under headings, the sections in the order they
+  first appear in the call, each heading followed by its rows (in the kinds' usual order within it);
+  rows given no section come first, under no heading. A card where no item names a section looks as
+  it always did.
+- **One numbering.** Items are numbered 1..N once, in the order the card shows them, top to bottom
+  through every section, so "c_4 7b" names the seventh row the user sees.
+- **What Go sends.** An item may carry `sends`, the exact message the Overseer will send that
+  session when the row's Go (its first choice) is applied. The row shows it under its note as
+  "Go sends: “…”", in full, so the user reads the words before applying; the note stays for what it
+  is and why. A row without `sends` has no such line. `sends` takes at most 600 characters, so the
+  row can show it all; a longer one refuses the card.
+- The tool's result and the hidden note list each item's section and its Go-sends text, so the
+  model sends exactly what the card showed.
+
+## §app.overseer/card-partial-apply — Partly applied cards
+
+- **Rows sent show as done.** When an Apply's acts stop partway (a limit is reached,
+  §app.overseer/caps, or an act is refused), the Overseer records an answer for the rows it acted
+  on only, so the card stays open, partly applied. Each decided row shows its choice as done, with no
+  control; the rows not yet acted on keep the choices the user applied them with, not their
+  defaults, with live controls. When the Apply's message is older than the part of the chat
+  loaded, those rows show their defaults instead.
+- **A second Apply sends exactly the rest.** Apply on a partly applied card sends one message
+  naming only its undecided rows, never a row already done, and the turn it starts acts on those.
+  The card reads answered once every row is decided.
+- **The Overseer says so.** Its reply names how many rows it acted on, which limit or refusal
+  stopped it, and that Apply on the card sends the rest.
+
+## §app.overseer/card-land — Go on a Ready to land row lands it at the commit shown
+
+- **The row remembers the commit.** In the global Overseer, a card's session row the Overseer marks
+  as a land row (`land`) keeps the branch of the worktree that session owns which is Ready to land
+  (§chat.worktrees/ready-to-land) and its head commit as they were when the card was raised, and
+  shows them ("feat/x at abc1234"). `land: true` takes the session's one ready branch; a session with
+  more than one names it (`land: "feat/x"`). A land row whose session has no ready branch, more than
+  one unnamed, or a named branch that isn't ready refuses the card, naming the row and why. A land
+  row has choices (its own or the card's), its first one Go; a row not marked `land` never lands
+  anything, whatever its Go does.
+- **Go records the user's go-ahead for that commit.** In the turn an Apply on that card opens, the
+  Overseer's `sova_land` on a row the Apply chose Go on records the user's go-ahead to land that
+  branch at that commit (§chat.worktrees/landing-answers), as Land It would, and wakes the merge
+  captain at once (§chat.schedules/merge-ready), which checks and lands it as usual. Not Yet on the row
+  records nothing, and `sova_land` refuses a row whose pick wasn't Go.
+- **Nothing lands that the user didn't see.** If the branch's head is no longer the commit the row
+  shows, the branch is no longer Ready to land, or its session is archived or working right now,
+  nothing is recorded and the captain isn't woken;
+  the Overseer's reply names the row and why ("feat/x has a newer commit than the one you saw",
+  "feat/x is no longer ready to land: 1 uncommitted file") and leaves that row undecided.
+- **Only the click counts.** The server records it only when the turn was opened by a click on that
+  card, the card was open when the click arrived, and the click was a per-row Apply that chose
+  that row's first choice, its Go (§app.overseer/org-people-facing); a card-level option never
+  lands a row. A typed "yes", the click's text typed or pasted, a later turn,
+  a Retry of the click, or a card already answered, superseded or dropped records nothing. A card
+  with such a row is `clickOnly` (§app.overseer/confirm).
+- Every attempt, recorded or refused, is a line in `overseer-actions.jsonl` (§app.overseer/caps).
+- The merge captain names this go-ahead "Apply on the Overseer's card" (§chat.merge-round/driver).
 
 ## §app.overseer/run-note — The run note: the time, and what cleared
 
@@ -888,11 +970,83 @@ session is on which branch survives a compaction and a restart:
 - In a project overseer's current conversation its open cards take clicks as the global
   Overseer's do: an option's click sends "c_4 b: <its reply, else its label>" as the operator's next
   message, the card shows "Sent: b" while that turn runs and its buttons come back when the turn
-  ends, and "Or type your answer." follows the buttons. The click is only that message: it approves
-  nothing and shows no approval state, since the project overseer's cards carry no `at` or `rule`.
+  ends, and "Or type your answer." follows the buttons. The click is only that message and shows no
+  approval state, since the project overseer's cards carry no `at` or `rule`; it approves nothing
+  but the copy and leftover-process acts of a card that lists copies or leftover processes
+  (§app.overseer/copies). Such a card is click-only: it has no "Or type your answer." hint, and the
+  click carries its mark to the project overseer as the global Overseer's does.
   A click that doesn't reach it comes back as the global Overseer's does (§app.overseer/confirm):
   its buttons, never the composer, with the same note.
 - An earlier project overseer conversation stays read only: its cards show no live buttons.
+
+## §app.overseer/copies — Copies and leftover processes, behind a click
+
+The Overseer, and each project overseer within its own project, can tear down, reset or stop any
+running copy of a project (§app/project-services), whoever started it, and stop a leftover process
+that holds one of a project's copy ports, but only in the turn the user's click on a card listing
+that copy or process opens. No helper session is needed.
+
+- **Rows.** `sova_card`'s `items` take `copies: [{instance, note?, default?, choices?}]` (an instance
+  id as `status` prints it) and `leftovers: [{project, port, note?, default?, choices?}]`. Each copy is
+  its own row, never a session's: it shows the copy's branch (or its folder's name when it has none),
+  its project, slot and state (running, stopped or broken), and the session that started it (its
+  title, as a link) or who else did (the operator, an overseer, conformance). Chips say when its folder
+  has uncommitted edits ("Uncommitted edits, kept in its folder") or is gone ("Folder gone"), how many
+  active share links it has ("2 share links"), and when the session that started it is working now.
+  A leftover row shows its port and slot, the command it runs (redacted, at most 120 characters), its
+  folder, and why it is a leftover: its folder was deleted, or its branch's own commits are already
+  merged into the main checkout's. Both always show, never behind the sessions'
+  toggle; they sit after people and before sessions. The rows are a snapshot, never a link URL.
+- **What a card refuses.** An instance id that matches nothing refuses the card as any unknown id
+  does; a project's main copy (slot 0, Sova's own live server's included) refuses it with "A project's
+  main copy is never on a card."; a project overseer's card refuses any copy or port outside its own
+  project; a leftover the finder (below) does not call safe to stop refuses it with the finder's reason.
+- **Click-only.** A card with a copy or leftover row is click-only (no "Or type your answer."), for
+  both overseers. Typed text never approves, whatever it says, nor does a Retry of the click, a later
+  turn, or a card already answered, superseded or dropped: the exact-click test of
+  §app.overseer/org-people-facing.
+- **Only a choice naming the act approves it.** Sova checks each row's choice itself: for a per-item
+  Apply, a row approves only the act its chosen label names ("Tear Down…" a teardown, "Reset…" a
+  reset, "Stop…" a stop of a copy or of a leftover process); for a card-level option, the option's
+  label must start with that word ("Tear Down All"). Keep, Not Now, Cancel and any other label approve
+  nothing, even as a card-wide button. A row the click gave no choice approves nothing.
+- **What the click opens.** In that turn, through `sova_project_verbs`: `teardown` and `reset` of a
+  copy the caller did not start; `down` and `teardown` of a copy with active share links (its row
+  shows the count; teardown ends them as always, §app.project-services/share); and `stop-leftover`.
+  Without such a click those answer `needs-confirm` with a sentence telling it to ask with `sova_card`,
+  listing the copy under `copies` (or the port under `leftovers`). A plain `down` of a copy without
+  share links, and every verb on a copy the caller started, keep their rules
+  (§app.project-services/callers). Stopping a shared service stays the operator's, and slot 0 stays out
+  of reach: no click approves either. A project overseer's act still goes through its statechart, and
+  the click turn is the operator's, so it is taken whatever its powers say.
+- **Uncommitted edits stay.** Teardown of a copy whose folder has uncommitted edits goes ahead and
+  keeps the folder (the worktree is removed only when clean, and the branch never,
+  §app.project-services/teardown); the reply says the edits were kept in their folder, as teardown's
+  skipped worktree step says. A copy whose folder is gone tears down too.
+- **Leftover processes.** `sova_project_verbs leftovers {project}` (a read, any turn) lists, for each
+  usable slot of 1 to 16, each of the project's copy ports a process listens on that no running copy
+  of Sova's owns: its port and slot, pid, command, folder, and either "safe to stop" with why, or "in
+  use" with why. Safe to stop means only: its folder is deleted or missing, or it runs in a clean
+  worktree of the project (never the main checkout, never a registered copy's) whose branch has
+  commits of its own that are now on the main checkout's branch (it moved past the commit it was
+  created from, as its reflog records). Anything else is in use: a process outside any git checkout, a
+  worktree with uncommitted edits, a branch with no commits of its own (a worktree just cut), or one
+  whose history can't be read. Never offered, whatever
+  its folder: Sova's own server and its child processes, the `sova-runtime.service` unit, a chat
+  process and any process a chat started (one with a chat or Sova's server among its ancestors, or
+  inside a chat's unit), any process of a copy's or shared service's unit, slot 0's adopted unit, and a listener
+  this user can't read. `stop-leftover {project, port}` stops one in the click's turn, after checking
+  that the port is still held by the same process (same pid and start time) and that it is still safe;
+  otherwise "It is no longer the process your card listed: nothing was stopped.", or "It is no longer
+  safe to stop: {why}. Nothing was stopped.". A process in a user
+  service unit of its own (not Sova's) is stopped by stopping that unit; any other gets SIGTERM, then
+  SIGKILL if the port is not free within 5 s. The result names the port and slot it freed. Telling who
+  holds a port needs Linux; elsewhere both say "Sova can't tell which process holds a port on this
+  computer."
+- **Told to the model.** The tools' descriptions and both prompts say when to raise such a card (every
+  copy or process under `copies` or `leftovers`, per-row choices such as Tear Down / Reset / Stop / Keep
+  with each row's default on its recommendation), to act in the turn the click opens, to relay kept
+  edits and each refusal as the result gives it, and that a typed yes never counts.
 
 ## §app.overseer/transcript-window — Only the rows shown or jumped to
 
@@ -951,7 +1105,10 @@ fetched down to, then lands.
   in one message cannot all pass the check. A session the Overseer created on a peer with a first
   prompt counts while that peer reports it busy, and for 15 s after the prompt, as a local one does.
 - Over a cap, the tool refuses with a message telling the model to stop and ask with `sova_card`
-  or explain, and not to schedule a wake-up to carry on. Nothing partial happens past the cap.
+  or explain, and not to schedule a wake-up to carry on. Nothing partial happens past the cap. In a
+  turn any click on an open card opened, the refusal also tells it to record the rows it already acted on
+  and tell the user that Apply on the card sends the rest (§app.overseer/card-partial-apply), which
+  a new message's fresh counts allow.
 - Every act tool call appends one line to `overseer-actions.jsonl`: time, Overseer id, tool call id,
   tool, arguments, outcome and error. The arguments and the error are redacted before the line is
   written (§app.overseer/tools), so the log never holds a secret value.
@@ -1160,6 +1317,9 @@ Three tools let the Overseer make and end links between sessions on different ho
 - **Never the user's answer.** A user message this marker names is never the user's prompt that
   ends a session's wait on its alignment answers (§chat.alignment/session-mark): alignment
   questions are the user's (§app.project-overseer/coding-mode).
+- **Never the user's go-ahead to land.** A user message this marker, a baton's or a session's names
+  is never the user's word to land a branch: `worktree land` refuses it
+  (§chat.worktrees/land-own-word).
 - **Only the Overseer can tag.** `POST /api/sessions/prompt` and that route mark a prompt as the
   Overseer's only when the request carries the server's sender secret: random, made at server start, held in memory
   only, never written to disk or sent to a client, and carried only by the Overseer's own in-process
@@ -1229,7 +1389,9 @@ feed's last list while nothing has changed since it was built, and builds a list
   interrupts it. Never a phone notification.
 - **Needs you, an option card** (§chat.offers/card): `offer-waiting` on a session, not archived, that
   shows an open offer card (Land It is the only one Sova declares today), idle or working, "Waiting
-  on your answer: {the card's title}", dated by when the card was shown. It goes when the card is
+  on your answer: {the card's title}", dated by when the card was shown. The Merge Captain's
+  landing card is listed once while any of its rows is open, "Waiting on your answer: {n} branches
+  ready to land" (§chat.offers/landing-rows), its open rows counted. It goes when the card is
   answered, set to Not Now, no longer offered or replaced by a newer commit. Never a phone
   notification and never a brief: it lists in Needs you and counts in "need you" only.
 - **Only real blockers are act.** The act tier — Needs you, the Overseer's "need you" count, its
@@ -1417,9 +1579,63 @@ host's session files. The reply is never changed, and the client still links eve
   switch sits just before it (§app.overseer/memory-switch).
 - While the composer is disabled the button still opens, and each quick action carries the
   disabled reason instead of running.
-- Defaults: **What Needs Me**, **What Finished**, **What's Running**, **Tidy Up**, **Where Was I**.
+- Defaults: two, in this order, **Get Things Moving** and **Tidy Up**
+  (§app.overseer/default-quick-actions). Each ends in one card the user applies, and the Overseer
+  sends, lands or archives nothing in the quick action's own turn.
 - They are editable in Settings → Overseer (label, description, prompt; add, remove, reorder,
-  reset to defaults).
+  reset to defaults). A saved list left exactly as the old five shipped is moved to the two once
+  (§app.overseer/quick-actions-move).
+
+## §app.overseer/default-quick-actions — The two default quick actions
+
+Sova ships two quick actions, in this order. Each one's label, description and prompt are the
+defaults in `server/overseer-store.ts`, and Reset to Defaults puts back exactly these two.
+
+- **Get Things Moving** (id `get-moving`), described as "Every session stuck on a next step,
+  checked now, on one card. Nothing is sent until you apply." Its prompt asks the Overseer to find
+  every session from the last few days that is stuck on a next step: waiting on the user's
+  go-ahead, Ready to land, a failed check, a finished plan not yet built, a merge conflict, or an
+  error that stopped its turn. It checks each one now (its last reply, its branch and merge state,
+  its last check against its newest commit, its open questions and their recommendations), drops
+  anything merged or moved on, and rebuilds the card when a session changes while it works. Then it
+  raises one card, one row per session under a section for why it is stuck
+  (§app.overseer/card-sections), each row saying what it is, why it is stuck and the exact message
+  Go sends. Each row defaults to the Overseer's recommendation, and a risky one (a conflict,
+  publishing, a failure unrelated to the work) to Not Yet; a row with a real choice gets its own
+  choices. Sessions that wait only on their own questions are listed under the card with the
+  Overseer's recommendations, not on it. Go on a Ready to land row lands the branch at the commit
+  the card shows (§app.overseer/card-land); the Overseer never sends a session the words "land it".
+- **Tidy Up** (id `tidy`), described as "Finished and stale sessions sorted onto one card to
+  archive or keep. Nothing is archived until you apply." Its prompt asks the Overseer to check every
+  session started in Sova that isn't archived (its last reply, branch and merge state, uncommitted
+  changes, open questions, and whether anything runs in it) and sort them onto one card under three
+  sections: **Done** (the work merged, or the research or answer was delivered), **Stale** (it went
+  nowhere) and **Worth Keeping** (unmerged work, uncommitted changes, open questions, or anything
+  still running). Each row's note says what it was, its state and why archiving fits, or under
+  Worth Keeping what archiving would put at risk. Rows under Done and Stale default to Archive, rows
+  under Worth Keeping to Keep; a Done row whose work merged offers **Archive & Remove Worktree** and
+  defaults to it, beside Archive and Keep. Sessions open in a terminal or working right now are
+  left out, and the reply says how many and why.
+- Both prompts end by telling the Overseer to send, land or archive nothing until the user applies
+  the card. That is the prompt's: the quick action is the user's own turn, and the server doesn't
+  hold the Overseer to it.
+- The Overseer's own instructions (its prompt and the card tool's description) tell it to raise
+  these cards with section headings and a Go-sends line on each row that sends something, and never
+  to act in the quick action's own turn.
+
+## §app.overseer/quick-actions-move — The one-time move to the new defaults
+
+- **Once, on the next read.** The Overseer's settings file gains version 2. The first time Sova
+  reads a version 1 file (or one with no version), whether or not the user ever saves, it checks the
+  quick actions once: a list that is exactly the old five as they shipped (What Needs Me, What
+  Finished, What's Running, Tidy Up, Where Was I, with the same ids, labels, descriptions and
+  prompts, in the same order, nothing added or removed) is replaced by the two defaults
+  (§app.overseer/default-quick-actions). Any other list, however small the change, is kept exactly
+  as it is.
+- Either way the file is then written once as version 2, every other setting unchanged. A missing
+  file is not created by this.
+- **Never again.** A version 2 file is never compared with the old five: a user who later adds one
+  of the old actions back, or the whole five, keeps them.
 
 ## §app.overseer/memory-switch — The Overseer's memory switch
 
@@ -2133,7 +2349,8 @@ organization write (§app.overseer/caps); a refusal takes nothing.
   act in the turn the user's click starts." `extend`, `decline`, `unarchive` and every other op
   need no card. So the card itself never invites a typed answer: a global Overseer card listing a
   person, a project, a folder, an org or a gathering session drops its "Or type your answer." hint
-  (§app.overseer/confirm).
+  (§app.overseer/confirm). The same click test gates the copy and leftover-process acts of both
+  overseers, where Sova also checks each row's choice (§app.overseer/copies).
 - **Counted.** `start` and `offer` count against the gathering cap; the other `sova_gather` ops
   are org writes (§app.overseer/caps).
 

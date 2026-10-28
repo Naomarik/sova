@@ -6,7 +6,7 @@ import { modelDenial, readModelPolicy } from "./model-policy";
 import { parseModePatch, readMode, type ModePatch } from "./mode-state";
 import { listModels } from "./models";
 import { addProfile } from "./profiles-store";
-import { subagentProfilesInfo } from "./subagent-profiles";
+import { profileModelCount, subagentProfilesInfo } from "./subagent-profiles";
 import { getSessionInsight } from "./insights";
 import { resolveSessionPath } from "./paths";
 import { findProfile, profileSources, readHidden, setHidden } from "./profile-sources";
@@ -241,7 +241,7 @@ export async function profilesListing(cwd?: string | null): Promise<ProfilesList
     hidden: readHidden(),
     running,
     unusable,
-    subagents: info.profiles.map((p) => ({ id: p.id, name: p.name, footprint: p.footprint })),
+    subagents: info.profiles.map((p) => ({ id: p.id, name: p.name, footprint: p.footprint, models: profileModelCount(info, p.id) })),
     ...(src.yoursError ? { error: src.yoursError } : {}),
   };
 }

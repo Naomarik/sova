@@ -4,10 +4,12 @@
 // the cover screen. Opening, that front panel (the leaf) swings about a vertical hinge on its left
 // edge to lie beside the panel beneath (the base): the leaf's inside carries the left half of the
 // unfolded capture, the base the right half, so open, the two halves are the whole inner screen.
-// No script: a visually-hidden checkbox holds the state; the device and the Unfold/Fold pill are
-// both labels for it, so a tap, a click or Space on the focused checkbox all toggle it, and the
-// checkbox takes its name from the pill's visible verb. Both screenshots are the real captures
-// (screens manifest). Styles: mock.css, the FOLDDEV block.
+// A transparent checkbox the size of the whole stage holds the state; the device and the
+// Unfold/Fold pill are both labels for it, so a tap, a click or Space on the focused checkbox all
+// toggle it, and the checkbox takes its name from the pill's visible verb. Being the stage's size,
+// Tab onto it brings the whole device and pill into view. A small script makes a press on a label
+// toggle without the label's focus scrolling the page; without script, the labels work natively.
+// Both screenshots are the real captures (screens manifest). Styles: mock.css, the FOLDDEV block.
 import Screen from "../Screen.astro";
 
 // The inner capture is drawn at the open device's full width (up to 620px, else the column).
@@ -15,7 +17,7 @@ const innerSizes = "(min-width: 900px) 608px, calc(100vw - 40px)";
 const coverSizes = "(min-width: 900px) 290px, 46vw";
 ---
 <div class="folddev">
-  <input type="checkbox" id="folddev-state" class="visually-hidden folddev-check" aria-labelledby="folddev-verb" />
+  <input type="checkbox" id="folddev-state" class="folddev-check" aria-labelledby="folddev-verb" />
   <div class="folddev-stage">
     <label class="folddev-device" for="folddev-state">
       <span class="folddev-shadow"></span>
@@ -34,3 +36,19 @@ const coverSizes = "(min-width: 900px) 290px, 46vw";
     <label class="folddev-action" for="folddev-state"><span id="folddev-verb"><span class="folddev-v-unfold">Unfold</span><span class="folddev-v-fold">Fold</span></span></label>
   </div>
 </div>
+<script>
+  // A label press focuses its checkbox, and that focus may scroll the page: toggle it here instead
+  // and focus without scrolling. Space on the focused checkbox stays native.
+  for (const root of document.querySelectorAll<HTMLElement>(".folddev")) {
+    const check = root.querySelector<HTMLInputElement>(".folddev-check");
+    if (!check) continue;
+    for (const label of root.querySelectorAll<HTMLLabelElement>("label.folddev-device, label.folddev-action")) {
+      label.addEventListener("click", (e) => {
+        e.preventDefault();
+        check.checked = !check.checked;
+        check.dispatchEvent(new Event("change", { bubbles: true }));
+        check.focus({ preventScroll: true });
+      });
+    }
+  }
+</script>

@@ -238,9 +238,11 @@ html, body { overflow: clip; overscroll-behavior: none; }
 
 /* The contents, one step in beside a line beside the contents. */
 .org-done > .list { margin-left: var(--guide-step); }
-.group-section:not(.org-section) > .session-group,
 .group-section:not(.org-section) > .sidebar-region-note,
 .archive-date:not(.org-done) > .session-group { margin-left: var(--guide-nest); }
+/* A user group's rows, flat (no folder level): where its folders' rows sat, one step in plus a folder's own inset, so
+   no title moved and the group's line keeps its lane beside them. */
+.group-section:not(.org-section) > .list { margin-left: calc(var(--guide-nest) + var(--folder-inset)); }
 /* What will close lights up while its line is hovered: the head takes the hover fill and full ink. */
 .org-section:has(> .guide-line:hover) > summary,
 .group-section:has(> .guide-line:hover) > summary,
@@ -989,10 +991,37 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .profile-tile-off .profile-tile-head > .icon { opacity: 0.6; }
 .profile-tile-off .profile-tile-label { color: var(--color-ink-muted); font-weight: var(--fw-regular); }
 .profile-tile-off .profile-tile-caption { color: var(--status-warn); }
+/* A caption that is settings (§chat.profiles/picker): one glyph item per setting, each its words as
+   its hover text. The caption is its own query box, so words come back beside the glyphs on a card
+   wide enough for them. */
+.profile-tile-glyphs { display: block; container: profile-caption / inline-size; -webkit-line-clamp: unset; }
+.caption-parts { display: flex; align-items: center; gap: var(--space-1) var(--space-2); min-width: 0; overflow: hidden; white-space: nowrap; }
+.caption-part { display: inline-flex; align-items: center; gap: var(--space-1); flex: none; min-width: 0; }
+.caption-part > .icon { flex: none; color: var(--color-ink-muted); }
+.caption-part-model { flex: 0 1 auto; }
+.caption-part-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }
+.caption-word { display: none; }
+.caption-part-mode + .caption-part-mode,
+.caption-part-mode + .caption-more { margin-left: calc(var(--space-1) - var(--space-2)); }
+/* The model's name is the last thing to shrink: where the caption runs out of room (measured by
+   foldFit, which sets data-folded), the mode icons fold to the first and a quiet "+N", the count of
+   the rest. Only then is the name cut. */
+.caption-more { display: none; font-size: var(--fs-caption); font-variant-numeric: tabular-nums; color: var(--color-ink-muted); }
+.caption-parts[data-folded] .caption-part-mode ~ .caption-part-mode { display: none; }
+.caption-parts[data-folded] .caption-more { display: inline-flex; }
+/* Folded, its parts sit at the icons' own spacing, as a narrow composer foot's do. */
+.caption-parts[data-folded] { column-gap: var(--space-1); }
+.caption-parts[data-folded] .caption-part-mode + .caption-more { margin-left: 0; }
+@container profile-caption (min-width: 340px) {
+  .caption-word { display: inline; }
+  .caption-part-mode + .caption-part-mode,
+  .caption-part-mode + .caption-more { margin-left: 0; }
+}
 /* A One at a time profile live in another session: a link that opens it, not a pick. Same shape as
-   a card; its arrow (where a picked card has its check) and the Active chip say where it goes. */
+   a card; its arrow (where a picked card has its check) and the Live chip say where it goes. */
 .profile-tile-active { text-decoration: none; }
 .profile-tile-active .profile-tile-check { color: var(--color-ink-muted); }
+.profile-settings-line { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); overflow-wrap: anywhere; }
 /* Phone-narrow (the picker's own box under 480px): one column of single-line cards, so more fit
    above the fold. Icon, label, caption, chips and check share one 44px line (chips that don't fit
    take a second); the caption truncates first, and the label keeps up to 65% of the card before

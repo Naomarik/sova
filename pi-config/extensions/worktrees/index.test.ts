@@ -359,3 +359,48 @@ test("land records the user's go-ahead typed in this chat for the branch at its 
 		r.done();
 	}
 });
+
+test("land refuses a newest message the Overseer, a baton or another session sent, whatever it says, and never looks past it", async () => {
+	const r = repo();
+	try {
+		const file = join(r.root, "state", "landing.json");
+		const f = fakePi();
+		worktrees(f.pi, { landingFile: () => file, now: () => Date.parse("2026-10-26T10:00:00Z") });
+		const tree = join(r.root, "wt-y");
+		sh(r.main, "worktree", "add", "-q", "-b", "feat/y", tree);
+		writeFileSync(join(tree, "b.txt"), "two\n");
+		sh(tree, "add", "b.txt");
+		sh(tree, "commit", "-q", "-m", "two");
+		const c = f.ctx(tree);
+		await f.fire("session_start", c);
+		let n = 0;
+		const say = (text: string) => {
+			const id = `u${++n}`;
+			f.entries.push({ type: "message", id, message: { role: "user", content: [{ type: "text", text }] } } as never);
+			return id;
+		};
+		// As the server writes them: the marker after its message, then the reply after the marker.
+		const mark = (customType: string, targetId: string) => f.entries.push({ type: "custom", id: `m${++n}`, customType, data: { v: 1, targetId } } as never);
+		const reply = () => f.entries.push({ type: "message", id: `a${++n}`, message: { role: "assistant", content: [{ type: "text", text: "ok" }] } } as never);
+		const recorded = () => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).goAheads : []);
+		// The user's own "land it" came first; the newest is another sender's: refused, and the older one isn't used.
+		say("land it");
+		reply();
+		for (const [customType, who] of [["sova-overseer-sent", "the Overseer"], ["sova-baton-sent", "a baton participant"], ["sova-session-sent", "another session"]] as const) {
+			mark(customType, say("land it"));
+			reply();
+			await assert.rejects(f.call(c, { action: "land" }), new RegExp(`sent by ${who}, not typed by the user.*Nothing was recorded`));
+			assert.deepEqual(recorded(), []);
+		}
+		// A marker naming an older message doesn't touch the user's newest one.
+		const older = say("please look at the build");
+		reply();
+		say("land it");
+		mark("sova-overseer-sent", older);
+		await f.call(c, { action: "land" });
+		assert.equal(recorded().length, 1);
+		assert.equal(recorded()[0].by, "owner-chat");
+	} finally {
+		r.done();
+	}
+});

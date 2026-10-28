@@ -5,7 +5,10 @@ import { buildRequest, findCommand } from "../shared/commands-catalog";
 import type { SessionSignals, SessionSummary } from "../shared/protocol";
 import {
   type OfferCard,
+  type OfferCardRow,
+  type OfferChoice,
   type OfferCondition,
+  type OfferRowInput,
   type OfferDef,
   type OfferRepeat,
   type OfferSnapshot,
@@ -13,7 +16,9 @@ import {
   type ParsedOffersFile,
   type ProjectOffersAnswer,
   type SessionOffersAnswer,
+  checkRows,
   FILE_MAX_BYTES,
+  fillRow,
   fillText,
   liveOffer,
   normalizeOfferCard,
@@ -23,6 +28,7 @@ import {
   OFFERS_FILE,
   parseOffersFile,
   rarelyUsed,
+  ROWS_MAX,
   runButtonsOf,
   snapshotOf,
   TITLE_COMMIT_LEN,
@@ -33,7 +39,8 @@ import { runFingerprint, runsApproved } from "./session-offers-trust";
 import { stateRoot } from "./state-root";
 import { unofficialDrafts } from "./spec-drafts-state";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
-import { LANDING_FILE_NAME, recordGoAhead, recordNotYet } from "../pi-config/extensions/worktrees/landing.ts";
+import { answerAt, LANDING_FILE_NAME, readLanding, recordGoAhead, recordNotYet } from "../pi-config/extensions/worktrees/landing.ts";
+import { driverCheckAt, landingAnswerOf, rowProgress, whereOf, type LandingAnswer } from "./session-offers-rows";
 
 /**
  * Session offers (§chat/offers): the server's side. Each session's record (its tool snapshot, its
@@ -48,9 +55,25 @@ export class OfferRefusal extends Error {
   constructor(
     message: string,
     readonly status: 400 | 404 | 409 = 409,
+    /** A refusal about this chat alone (another card open, Not Now, an open alignment question, already shown here),
+        not about the branch: the captain's landing card still gets a row for it (§chat.offers/landing-rows). */
+    readonly chat = false,
   ) {
     super(message);
   }
+}
+
+/** The captain's landing card's title (§chat.offers/landing-rows). */
+export const LANDING_ROWS_TITLE = "Branches ready to land";
+
+/** A row as stored: the wire row plus what its click needs. */
+interface StoredRow extends OfferCardRow {
+  /** Per button shown: its send text (null: it sends nothing), what it records, and its place in the file's list. */
+  sends: (string | null)[];
+  landing: (LandingRecord | null)[];
+  defIdx: number[];
+  /** The full head commit a landing row is for. */
+  head?: string;
 }
 
 /** A card as stored: the wire card plus what a click needs. */
@@ -68,6 +91,12 @@ interface StoredCard extends OfferCard {
   /** The branch and full head commit the card was shown for. */
   branch?: string;
   head?: string;
+  /** A rows card's rows, and the file's all button. */
+  rows?: StoredRow[];
+  allDef?: { label: string; about: string; confirm: string };
+  /** The Merge Captain's landing card (§chat.offers/landing-rows), and its repository's main branch. */
+  landingRows?: true;
+  base?: string;
 }
 
 interface SessionRecord {
@@ -82,6 +111,10 @@ interface SessionRecord {
   n: number;
   cards: StoredCard[];
   notNow: string[];
+  /** Landing rows waiting for the captain's open card to be answered (§chat.offers/landing-rows), and the project
+      root and main branch the card they open is for. */
+  rowsWaiting?: StoredRow[];
+  rowsWaitingAt?: { root: string; base?: string };
 }
 
 export interface OfferDeps {
@@ -198,8 +231,9 @@ function readRecord(sessionId: string): SessionRecord | null {
         const card = normalizeOfferCard(c);
         const s = c as Record<string, unknown>;
         if (!card || typeof s.moment !== "string" || typeof s.root !== "string" || !Array.isArray(s.sends) || !Array.isArray(s.runs) || !Array.isArray(s.to)) continue;
+        const { rows: wireRows, all: _all, more: _more, ...plain } = card;
         cards.push({
-          ...card,
+          ...plain,
           moment: s.moment,
           root: s.root,
           sends: s.sends as (string | null)[],
@@ -209,7 +243,16 @@ function readRecord(sessionId: string): SessionRecord | null {
           ...(Array.isArray(s.landing) ? { landing: s.landing as (LandingRecord | null)[] } : {}),
           ...(typeof s.branch === "string" ? { branch: s.branch } : {}),
           ...(typeof s.head === "string" ? { head: s.head } : {}),
+          ...(wireRows ? { rows: wireRows.map((r, i) => storedRowOf(r, (s.rows as unknown[])[i])) } : {}),
+          ...(isAllDef(s.allDef) ? { allDef: s.allDef } : {}),
+          ...(s.landingRows === true ? { landingRows: true as const } : {}),
+          ...(typeof s.base === "string" ? { base: s.base } : {}),
         });
+      }
+      const waiting: StoredRow[] = [];
+      for (const w of Array.isArray(raw.rowsWaiting) ? raw.rowsWaiting : []) {
+        const wire = normalizeOfferCard({ id: "of_1", name: "x", title: "x", at: "x", by: "agent", state: "open", buttons: [], rows: [w] })?.rows?.[0];
+        if (wire) waiting.push(storedRowOf(wire, w));
       }
       rec = {
         v: 1,
@@ -221,6 +264,8 @@ function readRecord(sessionId: string): SessionRecord | null {
         n: typeof raw.n === "number" ? raw.n : cards.length,
         cards,
         notNow: Array.isArray(raw.notNow) ? (raw.notNow as unknown[]).filter((x): x is string => typeof x === "string") : [],
+        ...(waiting.length ? { rowsWaiting: waiting } : {}),
+        ...(isWaitingAt(raw.rowsWaitingAt) ? { rowsWaitingAt: raw.rowsWaitingAt } : {}),
       };
     }
   } catch {
@@ -230,12 +275,44 @@ function readRecord(sessionId: string): SessionRecord | null {
   return rec;
 }
 
+const isAllDef = (v: unknown): v is { label: string; about: string; confirm: string } =>
+  !!v && typeof v === "object" && typeof (v as Record<string, unknown>).label === "string" && typeof (v as Record<string, unknown>).about === "string" && typeof (v as Record<string, unknown>).confirm === "string";
+
+/** A stored row read back: the wire row plus its click's facts (a bad one sends and records nothing). */
+function storedRowOf(wire: OfferCardRow, raw: unknown): StoredRow {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const n = wire.buttons.length;
+  const list = <T>(v: unknown, ok: (x: unknown) => x is T): T[] => (Array.isArray(v) && v.length === n && v.every(ok) ? (v as T[]) : Array.from({ length: n }, () => null as T));
+  return {
+    ...wire,
+    sends: list(r.sends, (x): x is string | null => x === null || typeof x === "string"),
+    landing: list(r.landing, (x): x is LandingRecord | null => x === null || x === "go-ahead" || x === "go-ahead-without-specs" || x === "not-yet"),
+    defIdx: Array.isArray(r.defIdx) && r.defIdx.length === n && r.defIdx.every((x) => Number.isInteger(x)) ? (r.defIdx as number[]) : wire.buttons.map((_, i) => i),
+    ...(typeof r.head === "string" ? { head: r.head } : {}),
+  };
+}
+
+/** The open item a session's Needs you lists (§app.overseer/attention-digest): the captain's landing card by its open rows. */
+function openEntryOf(rec: SessionRecord): { title: string; at: number; name: string; root: string; landing: boolean } | undefined {
+  const open = lastOf(rec.cards, (c) => c.state === "open");
+  if (!open) return undefined;
+  const landing = !!open.landing?.some((x) => x) || !!open.landingRows;
+  if (open.landingRows) {
+    const n = (open.rows ?? []).filter((r) => r.state === "open").length;
+    return { title: `${n} branch${n === 1 ? "" : "es"} ready to land`, at: Date.parse(open.at), name: open.name, root: open.root, landing };
+  }
+  return { title: open.title, at: Date.parse(open.at), name: open.name, root: open.root, landing };
+}
+
+const isWaitingAt = (x: unknown): x is { root: string; base?: string } =>
+  !!x && typeof x === "object" && typeof (x as { root?: unknown }).root === "string" && ["string", "undefined"].includes(typeof (x as { base?: unknown }).base);
+
 function saveRecord(rec: SessionRecord): void {
   writeAtomic(recordFile(rec.sessionId), rec);
   records.set(rec.sessionId, { dir: offersDir(), rec });
   if (openIndex && openIndex.dir === offersDir()) {
-    const open = lastOf(rec.cards, (c) => c.state === "open");
-    if (open) openIndex.open.set(rec.sessionId, { title: open.title, at: Date.parse(open.at), name: open.name, root: open.root });
+    const open = openEntryOf(rec);
+    if (open) openIndex.open.set(rec.sessionId, open);
     else openIndex.open.delete(rec.sessionId);
   }
   sessionsChanged();
@@ -433,6 +510,8 @@ export interface ShowInput {
   /** The worktree the offer is for (Sova's Landing card on the captain's queue): its branch, commit
       and conditions are read there instead of the session's folder. */
   tree?: string;
+  /** A rows card's rows (§chat.offers/card, Rows), as the shower supplies them: checked against the file. */
+  rows?: unknown;
 }
 
 const projectWords = "Nothing was shown.";
@@ -456,10 +535,15 @@ export async function showOffer(input: ShowInput): Promise<OfferCard> {
   if (input.by === "agent" && def.shownBy !== "agent") throw new OfferRefusal(`Only another chat shows "${input.offer}". ${projectWords}`);
   const note = typeof input.note === "string" && input.note.trim() ? input.note.trim() : undefined;
   if (note && note.length > NOTE_MAX) throw new OfferRefusal(`The note is ${note.length} characters (at most ${NOTE_MAX}). ${projectWords}`, 400);
+  // Rows: only for an offer that declares them, never for one with landing buttons (Sova builds the captain's rows).
+  const landingOffer = def.buttons.some((b) => b.landing);
+  if (landingOffer && input.rows !== undefined) throw new OfferRefusal(`Sova builds "${input.offer}"'s rows itself; no chat supplies them. ${projectWords}`, 400);
+  const checked = landingOffer ? ({ ok: true, rows: [] } as const) : checkRows(def, input.rows);
+  if (!checked.ok) throw new OfferRefusal(`${checked.error} ${projectWords}`, 400);
   const rec = readRecord(sessionId) ?? { v: 1 as const, sessionId, path: input.path, snapshot: null, taken: false, takenAt: "", n: 0, cards: [], notNow: [] };
-  if (rec.notNow.includes(input.offer)) throw new OfferRefusal(`The user chose Not Now on "${input.offer}" in this session. ${projectWords}`);
+  if (rec.notNow.includes(input.offer)) throw new OfferRefusal(`The user chose Not Now on "${input.offer}" in this session. ${projectWords}`, 409, true);
   if (def.buttons.some((b) => b.run) && !runsApproved(root, file)) throw new OfferRefusal(`"${input.offer}" has run buttons the user hasn't approved: they approve them on the project page's Offers list. ${projectWords}`);
-  if ((s.align?.openQuestions ?? 0) > 0) throw new OfferRefusal(`This session has an open alignment question; offers wait until it is answered. ${projectWords}`);
+  if ((s.align?.openQuestions ?? 0) > 0) throw new OfferRefusal(`This session has an open alignment question; offers wait until it is answered. ${projectWords}`, 409, true);
   const fromPath = input.from;
   if (def.buttons.some((b) => b.to === "shower") && !fromPath) throw new OfferRefusal(`"${input.offer}" sends to the chat that shows it: name that chat with from. ${projectWords}`, 400);
   let readiness: Promise<SessionSummary["readiness"]> | undefined;
@@ -468,7 +552,7 @@ export async function showOffer(input: ShowInput): Promise<OfferCard> {
     const all = (await (readiness ??= deps.readiness(s)))?.trees ?? [];
     return input.tree ? all.filter((t) => canonical(t.path) === canonical(input.tree!)) : all;
   };
-  for (const c of def.onlyIf) if (!(await conditionHolds(c, s, root, trees, folder))) throw new OfferRefusal(`"${input.offer}" shows only when ${CONDITION_WORDS[c]}, and it doesn't now. ${projectWords}`);
+  for (const c of def.onlyIf) if (!(await conditionHolds(c, s, root, trees, folder))) throw new OfferRefusal(`"${input.offer}" shows only when ${CONDITION_WORDS[c]}, and it doesn't now. ${projectWords}`, 409, c === "no-open-alignment");
   // A button's own conditions leave it off the card.
   const shown: OfferDef["buttons"] = [];
   for (const b of def.buttons) {
@@ -480,7 +564,7 @@ export async function showOffer(input: ShowInput): Promise<OfferCard> {
   const facts = await factsOf(folder, root);
   facts.drafts = unofficialDrafts(folder)?.join(", ");
   const moment = momentOf(def.repeat, facts.head, input.replyId ?? `at:${s.lastActiveAt ?? ""}`);
-  if (rec.cards.some((c) => c.name === input.offer && c.moment === moment)) throw new OfferRefusal(`"${input.offer}" was already shown ${MOMENT_WORDS[def.repeat]}. ${projectWords}`);
+  if (rec.cards.some((c) => c.name === input.offer && c.moment === moment)) throw new OfferRefusal(`"${input.offer}" was already shown ${MOMENT_WORDS[def.repeat]}. ${projectWords}`, 409, true);
   // One open offer at a time: a new one never replaces it (an open card whose offer left the file is withdrawn, and a
   // once-per-commit card whose branch moved on is superseded: neither is open, so the current one shows at once).
   let open: StoredCard | undefined;
@@ -492,7 +576,7 @@ export async function showOffer(input: ShowInput): Promise<OfferCard> {
     }
     open ??= c;
   }
-  if (open) throw new OfferRefusal(`The offer "${open.name}" (${open.title}) is still open in this session; the user answers it first. ${projectWords}`);
+  if (open) throw new OfferRefusal(`The offer "${open.name}" (${open.title}) is still open in this session; the user answers it first. ${projectWords}`, 409, true);
   let from: OfferCard["from"];
   if (fromPath) {
     const f = await deps.summary(fromPath);
@@ -500,12 +584,35 @@ export async function showOffer(input: ShowInput): Promise<OfferCard> {
     from = { id: f.id, title: f.title || "Untitled" };
   }
   const card = makeCard({ ...def, buttons: shown }, input, ++rec.n, facts, moment, root, note, from, fromPath, deps.now().toISOString());
+  if (checked.rows.length) {
+    const defIdx = shown.map((b) => def.buttons.indexOf(b));
+    card.rows = checked.rows.map((r, i) => rowOfInput(r, i + 1, shown, defIdx, facts));
+    if (def.rows?.all) card.allDef = def.rows.all;
+  }
   for (const c of rec.cards) if (c.state === "superseded" && !c.supersededBy) c.supersededBy = card.id;
   rec.cards.push(card);
   rec.path = input.path;
+  // A typed go-ahead given before the card showed already answers it (§chat.worktrees/landing-answers).
+  applyLandingAnswers(rec);
   saveRecord(rec);
   bump(root, input.offer, "shown");
-  return wireCard(card);
+  return wireCard(card, rec);
+}
+
+const fillsOf = (facts: Facts & { head?: string }) => ({ branch: facts.branch, base: facts.base, commit: facts.commit, project: facts.project, drafts: facts.drafts });
+
+/** One supplied row of a rows card: the file's buttons, its own values filled into their sends and confirms. */
+function rowOfInput(r: OfferRowInput, n: number, shown: OfferDef["buttons"], defIdx: number[], facts: Facts & { head?: string }): StoredRow {
+  const fill = fillsOf(facts);
+  return {
+    id: `r_${n}`,
+    label: r.label,
+    buttons: shown.map((b) => ({ label: b.label, about: b.about, kind: b.run ? ("run" as const) : ("send" as const), ...(b.confirm ? { confirm: fillText(fillRow(b.confirm, r.values), fill) } : {}) })),
+    state: "open",
+    sends: shown.map((b) => (b.send !== undefined ? fillText(fillRow(b.send, r.values), fill) : null)),
+    landing: shown.map(() => null),
+    defIdx,
+  };
 }
 
 function momentOf(repeat: OfferRepeat, head: string | undefined, reply: string): string {
@@ -540,10 +647,21 @@ function makeCard(def: OfferDef, input: ShowInput, n: number, facts: Facts & { h
   };
 }
 
+/** The rows the all button answers now: every open row showing the offer's first button. */
+const allRows = (c: StoredCard): StoredRow[] => (c.allDef && c.state === "open" ? (c.rows ?? []).filter((r) => r.state === "open" && r.defIdx.includes(0)) : []);
+
+/** How a row is named in the all button's confirm: a landing row as branch@commit, any other by its label. */
+const rowName = (r: StoredRow): string => (r.branch && r.commit ? `${r.branch}@${r.commit}` : r.label);
+
 /** The card as the wire carries it (what a click needs stays here). */
-function wireCard(c: StoredCard): OfferCard {
-  const { moment: _m, root: _r, sends: _s, runs: _u, to: _t, fromPath: _f, landing: _l, branch: _b, head: _h, ...card } = c;
-  return card;
+function wireCard(c: StoredCard, rec?: SessionRecord): OfferCard {
+  const { moment: _m, root: _r, sends: _s, runs: _u, to: _t, fromPath: _f, landing: _l, branch: _b, head: _h, rows, allDef, landingRows: _lr, base: _base, ...card } = c;
+  const out: OfferCard = card;
+  if (rows) out.rows = rows.map(({ sends: _rs, landing: _rl, defIdx: _rd, head: _rh, ...row }) => row);
+  const all = allRows(c);
+  if (allDef && all.length) out.all = { label: allDef.label, about: allDef.about, confirm: fillText(allDef.confirm, { project: basename(c.root) || c.root, rows: all.map(rowName).join(", ") }), rows: all.map((r) => r.id) };
+  if (c.landingRows && c.state === "open" && rec?.rowsWaiting?.length) out.more = rec.rowsWaiting.length;
+  return out;
 }
 
 // ---- clicks (§chat.offers/card) -----------------------------------------------------------------
@@ -559,7 +677,12 @@ const commitOf = (card: StoredCard): string | undefined => (card.moment.startsWi
 async function commitMoved(card: StoredCard): Promise<"moved" | "same" | "unknown" | "untied"> {
   const at = commitOf(card);
   if (!at || !card.branch) return "untied";
-  const now = await gitLine(["rev-parse", "--verify", "-q", `refs/heads/${card.branch}^{commit}`], card.root);
+  return commitMovedAt(card.root, card.branch, at);
+}
+
+/** Whether `branch` has moved on from `at`, read in the main checkout `root`. */
+async function commitMovedAt(root: string, branch: string, at: string): Promise<"moved" | "same" | "unknown"> {
+  const now = await gitLine(["rev-parse", "--verify", "-q", `refs/heads/${branch}^{commit}`], root);
   if (!now) return "unknown";
   return now === at ? "same" : "moved";
 }
@@ -585,11 +708,23 @@ function stillOffered(rec: SessionRecord, card: StoredCard): { file: ParsedOffer
  * (session.send); a run button's catalogue action run, its outcome recorded for the card and the
  * agent's next turn.
  */
-export async function chooseOffer(path: string, sessionId: string, cardId: string, index: number): Promise<OfferCard> {
+export async function chooseOffer(path: string, sessionId: string, cardId: string, index: number, rowId?: string): Promise<OfferCard> {
   const rec = readRecord(sessionId);
   const card = rec?.cards.find((c) => c.id === cardId);
   if (!rec || !card) throw new OfferRefusal("No such offer card in this session.", 404);
   if (card.state !== "open") throw new OfferRefusal("This card is no longer open.");
+  if (card.rows) return chooseRow(path, rec, card, index, rowId);
+  if (rowId !== undefined) throw new OfferRefusal("This card has no rows.", 400);
+  try {
+    return await chooseCard(path, sessionId, rec, card, index);
+  } finally {
+    // The card answered, withdrawn or replaced: rows waiting behind it open the captain's landing card.
+    if (openWaiting(rec)) saveRecord(rec);
+  }
+}
+
+/** A click on a card without rows (chooseOffer). */
+async function chooseCard(path: string, sessionId: string, rec: SessionRecord, card: StoredCard, index: number): Promise<OfferCard> {
   const button = card.buttons[index];
   if (!Number.isInteger(index) || !button) throw new OfferRefusal("No such button on this card.", 400);
   const live = stillOffered(rec, card);
@@ -621,8 +756,10 @@ export async function chooseOffer(path: string, sessionId: string, cardId: strin
       throw new OfferRefusal(sent.error);
     }
     bump(card.root, card.name, "used");
-    recordLanding(card, index, sessionId, at);
-    return wireCard(card);
+    recordLanding({ branch: card.branch, head: card.head, owner: sessionId, kind: card.landing?.[index] ?? null, given: sessionId, at });
+    // One decision, two places (§chat.offers/landing-rows): the captain's row for this branch settles too.
+    if (card.landing?.[index] && card.from) settleIn(card.from.id);
+    return wireCard(card, rec);
   }
   Object.assign(card, { state: "chosen", choice: { index, label: button.label, at }, outcome: { state: "running" } });
   saveRecord(rec);
@@ -630,8 +767,293 @@ export async function chooseOffer(path: string, sessionId: string, cardId: strin
   const outcome = await runButton(run, sessionId, card.root).catch((err) => ({ ok: false, text: err instanceof Error ? err.message : String(err) }));
   card.outcome = { state: outcome.ok ? "done" : "failed", text: outcome.text };
   saveRecord(rec);
-  return wireCard(card);
+  return wireCard(card, rec);
 }
+
+/** A row's own commit check (a landing row's branch), else the card's: superseded rows and cards refuse the click. */
+async function guardRows(rec: SessionRecord, card: StoredCard, rows: StoredRow[]): Promise<void> {
+  for (const row of rows) {
+    if (!row.branch || !row.head) continue;
+    const moved = await commitMovedAt(card.root, row.branch, row.head);
+    if (moved === "moved") {
+      row.state = "superseded";
+      closeIfDone(rec, card);
+      saveRecord(rec);
+      throw new OfferRefusal(`${row.branch} has a newer commit than this row was shown for, so the row was replaced. Nothing was sent.`);
+    }
+    if (moved === "unknown") throw new OfferRefusal(`Sova can't read ${row.branch}'s current commit, so it can't tell this row still stands. Nothing was sent.`);
+  }
+  if (rows.some((r) => r.branch && r.head)) return;
+  const moved = await commitMoved(card);
+  if (moved === "moved") {
+    supersede(rec, card);
+    throw new OfferRefusal(`${card.branch} has a newer commit than this card was shown for, so the card was replaced. Nothing was sent.`);
+  }
+  if (moved === "unknown") throw new OfferRefusal(`Sova can't read ${card.branch}'s current commit, so it can't tell this card still stands. Nothing was sent.`);
+}
+
+/** A click on one row (§chat.offers/card, Rows): that row alone answered; the card closes once none is open. */
+async function chooseRow(path: string, rec: SessionRecord, card: StoredCard, index: number, rowId: string | undefined): Promise<OfferCard> {
+  if (typeof rowId !== "string" || !rowId) throw new OfferRefusal("This card has rows: row names the row (r_N).", 400);
+  const row = card.rows!.find((r) => r.id === rowId);
+  if (!row) throw new OfferRefusal("No such row on this card.", 404);
+  if (row.state !== "open") throw new OfferRefusal("This row is no longer open. Nothing was sent.");
+  const button = row.buttons[index];
+  if (!Number.isInteger(index) || !button) throw new OfferRefusal("No such button on this row.", 400);
+  if (!stillOffered(rec, card)) throw new OfferRefusal(`This offer is no longer in the project's ${OFFERS_FILE}. Nothing was sent.`);
+  await guardRows(rec, card, [row]);
+  if (row.state !== "open" || card.state !== "open") throw new OfferRefusal("This row is no longer open. Nothing was sent.");
+  const at = deps.now().toISOString();
+  await pressRows(path, rec, card, [row], () => index, at);
+  return wireCard(card, rec);
+}
+
+/** The all button (§chat.offers/card, Rows): the offer's first button on every open row that shows it, one message. */
+export async function chooseAll(path: string, sessionId: string, cardId: string, rowIds: string[]): Promise<OfferCard> {
+  const rec = readRecord(sessionId);
+  const card = rec?.cards.find((c) => c.id === cardId);
+  if (!rec || !card) throw new OfferRefusal("No such offer card in this session.", 404);
+  if (card.state !== "open" || !card.rows) throw new OfferRefusal("This card is no longer open.");
+  if (!card.allDef) throw new OfferRefusal("This card has no button for every row.", 400);
+  if (!stillOffered(rec, card)) throw new OfferRefusal(`This offer is no longer in the project's ${OFFERS_FILE}. Nothing was sent.`);
+  const rows = allRows(card);
+  const want = [...new Set(rowIds)].sort().join(",");
+  if (!rows.length || rows.map((r) => r.id).sort().join(",") !== want) throw new OfferRefusal("The rows changed since you looked, so nothing was sent: read the card again.");
+  await guardRows(rec, card, rows);
+  if (card.state !== "open" || rows.some((r) => r.state !== "open")) throw new OfferRefusal("The rows changed since you looked, so nothing was sent: read the card again.");
+  await pressRows(path, rec, card, rows, (r) => r.defIdx.indexOf(0), deps.now().toISOString());
+  return wireCard(card, rec);
+}
+
+/** Claim the rows, send their texts as one message (none for a row whose button sends nothing), then record each. */
+async function pressRows(path: string, rec: SessionRecord, card: StoredCard, rows: StoredRow[], pick: (r: StoredRow) => number, at: string): Promise<void> {
+  const picks = rows.map((r) => ({ row: r, i: pick(r) }));
+  for (const { row, i } of picks) Object.assign(row, { state: "chosen", choice: { index: i, label: row.buttons[i]!.label, at } });
+  saveRecord(rec);
+  const texts = picks.map(({ row, i }) => row.sends[i]).filter((t): t is string => typeof t === "string");
+  if (texts.length) {
+    const first = picks.find(({ row, i }) => typeof row.sends[i] === "string")!;
+    const target = card.to[first.row.defIdx[first.i]!] === "shower" ? card.fromPath : path;
+    const sent = target ? await send(target, texts.join("\n")).catch((err) => ({ ok: false as const, error: err instanceof Error ? err.message : String(err) })) : { ok: false as const, error: "The chat this button sends to is not known. Nothing was sent." };
+    if (!sent.ok) {
+      for (const { row } of picks) {
+        row.state = "open";
+        delete row.choice;
+      }
+      saveRecord(rec);
+      throw new OfferRefusal(sent.error);
+    }
+  }
+  bump(card.root, card.name, "used");
+  const owners = new Set<string>();
+  for (const { row, i } of picks) {
+    const kind = row.landing[i] ?? null;
+    if (!kind || !row.branch || !row.head) continue;
+    recordLanding({ branch: row.branch, head: row.head, owner: row.owner?.id, kind, given: rec.sessionId, at });
+    if (row.owner) owners.add(row.owner.id);
+  }
+  closeIfDone(rec, card);
+  saveRecord(rec);
+  // One decision, two places: each branch's owner card settles too (§chat.offers/landing-rows).
+  for (const o of owners) settleIn(o);
+}
+
+// ---- landing answers in two places (§chat.offers/landing-rows, §chat.worktrees/landing-answers) ---------------
+
+/** The labels a landing answer reads as when no button on the card records it (a typed go-ahead without specs). */
+const LANDING_LABELS: Record<LandingRecord, string> = { "go-ahead": "Land It", "go-ahead-without-specs": "Merge Without Specs…", "not-yet": "Not Yet" };
+
+function landingLabel(root: string, name: string, kind: LandingRecord): string {
+  return liveOffer(readOffersFile(root), name)?.buttons.find((b) => b.landing === kind)?.label ?? LANDING_LABELS[kind];
+}
+
+/**
+ * Settle every open Landing card and landing row of a session whose branch has an answer recorded at its commit
+ * (a click in the other place, or the user's word typed in either chat): it reads that answer and where it was
+ * given. Sends nothing. → whether anything changed (the caller saves).
+ */
+function applyLandingAnswers(rec: SessionRecord): boolean {
+  let data: ReturnType<typeof readLanding> | undefined;
+  const answer = (branch: string, head: string): LandingAnswer | undefined => landingAnswerOf(answerAt((data ??= readLanding(landingFileOf())), branch, head));
+  let changed = false;
+  const settle = (target: { buttons: { label: string }[]; state: string; choice?: OfferChoice }, kinds: (LandingRecord | null)[], a: LandingAnswer, root: string, name: string, where: string | undefined) => {
+    const i = kinds.indexOf(a.kind);
+    target.state = "chosen";
+    target.choice = { index: i, label: i >= 0 ? target.buttons[i]!.label : landingLabel(root, name, a.kind), at: a.at, ...(where ? { where } : {}) };
+    changed = true;
+  };
+  for (const card of rec.cards) {
+    if (card.state !== "open") continue;
+    if (card.rows) {
+      for (const row of card.rows) {
+        if (row.state !== "open" || !row.branch || !row.head || !row.landing.some((x) => x)) continue;
+        const a = answer(row.branch, row.head);
+        if (a) settle(row, row.landing, a, card.root, card.name, whereOf(a, rec.sessionId, row.owner ? { [row.owner.id]: row.owner.title } : {}, { id: rec.sessionId, title: "this chat" }));
+      }
+      if (closeIfDone(rec, card)) changed = true;
+    } else if (card.landing?.some((x) => x) && card.branch && card.head) {
+      const a = answer(card.branch, card.head);
+      if (a) settle(card, card.landing, a, card.root, card.name, whereOf(a, rec.sessionId, card.from ? { [card.from.id]: card.from.title } : {}, card.from));
+    }
+  }
+  return changed;
+}
+
+/** Settle the landing answers in another session's record now (the other place of a click). */
+function settleIn(sessionId: string): void {
+  const rec = readRecord(sessionId);
+  if (rec && applyLandingAnswers(rec)) saveRecord(rec);
+}
+
+/**
+ * A rows card with no open row closes; the captain's, once closed, opens the next card from the rows waiting for it
+ * (§chat.offers/landing-rows). → whether it changed.
+ */
+function closeIfDone(rec: SessionRecord, card: StoredCard): boolean {
+  if (!card.rows || card.state !== "open" || card.rows.some((r) => r.state === "open")) return false;
+  card.state = "chosen";
+  if (card.landingRows) rec.rowsWaitingAt ??= { root: card.root, ...(card.base ? { base: card.base } : {}) };
+  openWaiting(rec);
+  return true;
+}
+
+/** The most open rows the captain's landing card holds (§chat.offers/landing-rows), from the file's `rows.max`. */
+const landingMax = (def: OfferDef): number => Math.min(def.rows?.max ?? ROWS_MAX, ROWS_MAX);
+
+/**
+ * Once the captain's chat has no open card (its landing card answered, or any other card answered, withdrawn,
+ * replaced or set to Not Now), the rows waiting open the next landing card (§chat.offers/landing-rows).
+ * → whether it opened one (the caller saves).
+ */
+function openWaiting(rec: SessionRecord): boolean {
+  if (!rec.rowsWaiting?.length || rec.notNow.includes(LANDING_ROWS_OFFER)) return false;
+  if (rec.cards.some((c) => c.state === "open" && liveOffer(readOffersFile(c.root), c.name))) return false;
+  const at = rec.rowsWaitingAt ?? [...rec.cards].reverse().find((c) => c.landingRows);
+  if (!at) return false;
+  const def = liveOffer(readOffersFile(at.root), LANDING_ROWS_OFFER);
+  if (!def) return false;
+  const next = rec.rowsWaiting.splice(0, landingMax(def));
+  if (!rec.rowsWaiting.length) {
+    delete rec.rowsWaiting;
+    delete rec.rowsWaitingAt;
+  }
+  rec.cards.push(landingCard(rec, at.root, LANDING_ROWS_OFFER, at.base, def.rows?.all, next));
+  return true;
+}
+
+/** A new captain's landing card holding `rows` (renumbered r_1…). */
+function landingCard(rec: SessionRecord, root: string, name: string, base: string | undefined, all: StoredCard["allDef"], rows: StoredRow[]): StoredCard {
+  const n = ++rec.n;
+  return {
+    id: `of_${n}`,
+    name,
+    title: LANDING_ROWS_TITLE,
+    buttons: [],
+    at: deps.now().toISOString(),
+    by: "another-chat",
+    state: "open",
+    moment: `rows:${n}`,
+    root,
+    sends: [],
+    runs: [],
+    to: [],
+    rows: rows.map((r, i) => ({ ...r, id: `r_${i + 1}` })),
+    ...(all ? { allDef: all } : {}),
+    landingRows: true,
+    ...(base ? { base } : {}),
+  };
+}
+
+export interface LandingRowInput {
+  /** The captain's session. */
+  captainId: string;
+  captainPath: string;
+  /** The owner's session. */
+  ownerId: string;
+  ownerPath: string;
+  /** The worktree, its branch and the full head it was queued at. */
+  tree: string;
+  branch: string;
+  head: string;
+}
+
+/**
+ * Add a queued branch as a row of the captain's landing card (§chat.offers/landing-rows): built by Sova from the
+ * queue entry, with the buttons the owner's card shows for that branch (no Not Now), and the same branch at the same
+ * commit only once. → where it went ({card} on the open card, {waiting} behind it), or null when no row fits: the
+ * landing offer gone, or the captain chose Not Now on it.
+ */
+export async function addLandingRow(input: LandingRowInput): Promise<{ card: string; row: string } | { waiting: true } | null> {
+  const owner = await deps.summary(input.ownerPath);
+  if (!owner) return null;
+  const root = (await projectRootOf(input.tree).catch(() => null)) ?? (await projectRootOf(owner.cwd).catch(() => null));
+  if (!root) return null;
+  const def = liveOffer(readOffersFile(root), LANDING_ROWS_OFFER);
+  if (!def) return null;
+  const rec = readRecord(input.captainId) ?? { v: 1 as const, sessionId: input.captainId, path: input.captainPath, snapshot: null, taken: false, takenAt: "", n: 0, cards: [], notNow: [] };
+  if (rec.notNow.includes(LANDING_ROWS_OFFER)) return null;
+  // Rows left waiting behind a card that has closed since open their card first.
+  openWaiting(rec);
+  const openLanding = rec.cards.find((c) => c.state === "open" && c.landingRows);
+  const same = (r: StoredRow) => r.branch === input.branch && r.head === input.head;
+  const hit = openLanding?.rows?.find(same);
+  if (hit) return { card: openLanding!.id, row: hit.id };
+  if (rec.rowsWaiting?.some(same)) return { waiting: true };
+  // An older row for this branch is for a commit it moved on from.
+  for (const r of openLanding?.rows ?? []) if (r.branch === input.branch && r.state === "open") r.state = "superseded";
+  if (rec.rowsWaiting) rec.rowsWaiting = rec.rowsWaiting.filter((r) => r.branch !== input.branch);
+  let readiness: Promise<SessionSummary["readiness"]> | undefined;
+  const trees: TreesOf = async () => ((await (readiness ??= deps.readiness(owner)))?.trees ?? []).filter((t) => canonical(t.path) === canonical(input.tree));
+  const shown: OfferDef["buttons"] = [];
+  for (const b of def.buttons) {
+    let ok = true;
+    for (const c of b.onlyIf ?? []) if (!(await conditionHolds(c, owner, root, trees, input.tree))) ok = false;
+    if (ok) shown.push(b);
+  }
+  if (!shown.length) return null;
+  const facts = await factsOf(input.tree, root);
+  facts.drafts = unofficialDrafts(input.tree)?.join(", ");
+  const fill = { ...fillsOf(facts), branch: input.branch, commit: input.head.slice(0, 12) };
+  const row: StoredRow = {
+    id: "r_0",
+    label: input.branch,
+    branch: input.branch,
+    commit: input.head.slice(0, TITLE_COMMIT_LEN),
+    owner: { id: input.ownerId, title: owner.title || "Untitled" },
+    ...(facts.drafts ? { drafts: facts.drafts } : {}),
+    buttons: shown.map((b) => ({ label: b.label, about: b.about, kind: "send" as const, ...(b.confirm ? { confirm: fillText(b.confirm, fill) } : {}) })),
+    state: "open",
+    // Not Yet from the captain's row holds quietly: it records Not Yet and sends nothing to anyone.
+    sends: shown.map((b) => (b.send !== undefined && b.landing !== "not-yet" ? fillText(b.send, fill) : null)),
+    landing: shown.map((b) => b.landing ?? null),
+    defIdx: shown.map((b) => def.buttons.indexOf(b)),
+    head: input.head,
+  };
+  // At most `max` open rows: answered rows leave room; the rows already waiting go first.
+  const max = landingMax(def);
+  let out: { card: string; row: string } | { waiting: true };
+  if (openLanding && stillOffered(rec, openLanding) && !rec.rowsWaiting?.length && openLanding.rows!.filter((r) => r.state === "open").length < max) {
+    row.id = `r_${openLanding.rows!.length + 1}`;
+    openLanding.rows!.push(row);
+    out = { card: openLanding.id, row: row.id };
+  } else if (openLanding?.state === "open" || rec.cards.some((c) => c.state === "open" && !c.landingRows && liveOffer(readOffersFile(c.root), c.name))) {
+    // The captain's one open card is answered first: the row waits for it.
+    (rec.rowsWaiting ??= []).push(row);
+    rec.rowsWaitingAt ??= { root, ...(facts.base ? { base: facts.base } : {}) };
+    out = { waiting: true };
+  } else {
+    const card = landingCard(rec, root, LANDING_ROWS_OFFER, facts.base, def.rows?.all, [row]);
+    rec.cards.push(card);
+    out = { card: card.id, row: "r_1" };
+  }
+  rec.path = input.captainPath;
+  applyLandingAnswers(rec);
+  saveRecord(rec);
+  return out;
+}
+
+/** The offer the captain's landing card is of. */
+export const LANDING_ROWS_OFFER = "landing";
 
 /** Sova's own message to a session, as session.send (the specs nudge, §chat.worktrees/ready-to-land). Throws when it isn't sent. */
 export async function sendToSession(path: string, text: string): Promise<void> {
@@ -641,13 +1063,14 @@ export async function sendToSession(path: string, text: string): Promise<void> {
 
 export const landingFileOf = () => join(stateRoot(), LANDING_FILE_NAME);
 
-/** A landing button's record, once its send went through (§chat.offers/buttons): the go-ahead for the card's exact commit, or Not Yet. */
-function recordLanding(card: StoredCard, index: number, sessionId: string, at: string): void {
-  const what = card.landing?.[index];
-  if (!what || !card.branch || !card.head) return;
+/** A landing button's record, once its send went through (§chat.offers/buttons): the go-ahead for that exact commit,
+    or Not Yet; `owner` the branch's session, `given` the session it was given in. */
+function recordLanding(r: { branch?: string; head?: string; owner?: string; kind: LandingRecord | null; given: string; at: string }): void {
+  if (!r.kind || !r.branch || !r.head) return;
+  const base = { branch: r.branch, commit: r.head, ...(r.owner ? { session: r.owner } : {}), at: r.at, in: r.given };
   try {
-    if (what === "not-yet") recordNotYet({ branch: card.branch, commit: card.head, session: sessionId, at }, landingFileOf());
-    else recordGoAhead({ branch: card.branch, commit: card.head, session: sessionId, at, by: "land-it", ...(what === "go-ahead-without-specs" ? { withoutSpecs: true as const } : {}) }, landingFileOf());
+    if (r.kind === "not-yet") recordNotYet(base, landingFileOf());
+    else recordGoAhead({ ...base, by: "land-it", ...(r.kind === "go-ahead-without-specs" ? { withoutSpecs: true as const } : {}) }, landingFileOf());
   } catch (err) {
     console.warn(`[offers] landing record not written: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -693,6 +1116,7 @@ export function setNotNow(sessionId: string, path: string, offer: string, on: bo
     if (!rec.notNow.includes(offer)) rec.notNow.push(offer);
     for (const c of rec.cards) if (c.state === "open" && c.name === offer) c.state = "not-now";
   } else rec.notNow = rec.notNow.filter((n) => n !== offer);
+  openWaiting(rec);
   saveRecord(rec);
   return [...rec.notNow];
 }
@@ -710,8 +1134,12 @@ export async function sessionOffersAt(path: string): Promise<SessionOffersAnswer
   return sessionOffers(s.id, s.cwd);
 }
 
-export async function chooseOfferAt(path: string, cardId: string, index: number): Promise<OfferCard> {
-  return chooseOffer(path, (await summaryAt(path)).id, cardId, index);
+export async function chooseOfferAt(path: string, cardId: string, index: number, rowId?: string): Promise<OfferCard> {
+  return chooseOffer(path, (await summaryAt(path)).id, cardId, index, rowId);
+}
+
+export async function chooseAllAt(path: string, cardId: string, rowIds: string[]): Promise<OfferCard> {
+  return chooseAll(path, (await summaryAt(path)).id, cardId, rowIds);
 }
 
 export async function notNowAt(path: string, offer: string, on: boolean): Promise<string[]> {
@@ -731,14 +1159,49 @@ export async function sessionOffers(sessionId: string, cwd: string | undefined):
   const root = await projectRootOf(cwd).catch(() => null);
   const hasFile = !!root && readOffersFile(root).state !== "missing";
   if (!rec) return { cards: [], notNow: [], hasFile };
+  // Answers first: one given in the other place, or typed, settles a card before its branch's next commit could
+  // replace it, and an answered row or card is never replaced (§chat.offers/landing-rows).
+  if (applyLandingAnswers(rec)) saveRecord(rec);
   for (const c of rec.cards) {
     if (c.state !== "open") continue;
     if (!liveOffer(readOffersFile(c.root), c.name)) {
       c.state = "withdrawn";
+      if (c.landingRows) {
+        delete rec.rowsWaiting;
+        delete rec.rowsWaitingAt;
+      }
       saveRecord(rec);
+    } else if (c.rows?.some((r) => r.branch && r.head)) {
+      let changed = false;
+      for (const r of c.rows) if (r.state === "open" && r.branch && r.head && (await commitMovedAt(c.root, r.branch, r.head)) === "moved") (r.state = "superseded"), (changed = true);
+      if (changed) {
+        closeIfDone(rec, c);
+        saveRecord(rec);
+      }
     } else if ((await commitMoved(c)) === "moved") supersede(rec, c);
   }
-  return { cards: rec.cards.map(wireCard), notNow: [...rec.notNow], hasFile: hasFile || rec.cards.length > 0 };
+  if (openWaiting(rec)) saveRecord(rec);
+  await landingProgress(rec);
+  return { cards: rec.cards.map((c) => wireCard(c, rec)), notNow: [...rec.notNow], hasFile: hasFile || rec.cards.length > 0 };
+}
+
+/** Each go-ahead row's Landing and Landed (§chat.offers/landing-rows), on the captain's newest landing cards. */
+async function landingProgress(rec: SessionRecord): Promise<void> {
+  let changed = false;
+  for (const c of rec.cards.filter((x) => x.landingRows && x.state !== "withdrawn").slice(-5)) {
+    for (const r of c.rows ?? []) {
+      if (r.state !== "chosen" || r.progress === "landed" || !r.branch || !r.head || !r.choice) continue;
+      const kind = r.landing[r.choice.index] ?? (r.choice.label === LANDING_LABELS["not-yet"] ? "not-yet" : "go-ahead");
+      if (kind === "not-yet") continue;
+      const p = await rowProgress(deps.git, c.root, { branch: r.branch, head: r.head, answeredAt: Date.parse(r.choice.at) || 0 }, c.base, driverCheckAt(r.branch));
+      if (p !== r.progress) {
+        if (p) r.progress = p;
+        else delete r.progress;
+        changed = true;
+      }
+    }
+  }
+  if (changed) saveRecord(rec);
 }
 
 /** The project page's Offers list (§chat.offers/project-list). */
@@ -790,7 +1253,7 @@ export function offerNoteFor(sessionId: string): string | null {
   return `Offer ${card.id} (${card.name}): the user pressed "${card.choice.label}". ${card.outcome.state === "done" ? "It ran" : "It failed"}: ${card.outcome.text ?? ""}`.trim();
 }
 
-let openIndex: { dir: string; open: Map<string, { title: string; at: number; name: string; root: string }> } | null = null;
+let openIndex: { dir: string; open: Map<string, { title: string; at: number; name: string; root: string; landing: boolean }> } | null = null;
 
 /** The session's open offer: its Needs you item (§app.overseer/attention-digest, `offer-waiting`) and, while idle, its
     asks-you mark (§app.decisions/asks-user). Read from one index of every record. */
@@ -807,12 +1270,21 @@ export function openOfferOf(sessionId: string): { title: string; at: number } | 
     for (const n of names) {
       if (!n.endsWith(".json") || n === "counts.json") continue;
       const rec = readRecord(n.slice(0, -5));
-      const open = rec ? lastOf(rec.cards, (c) => c.state === "open") : undefined;
-      if (rec && open) openIndex.open.set(rec.sessionId, { title: open.title, at: Date.parse(open.at), name: open.name, root: open.root });
+      const open = rec ? openEntryOf(rec) : undefined;
+      if (rec && open) openIndex.open.set(rec.sessionId, open);
     }
   }
-  const hit = openIndex.open.get(sessionId);
+  let hit = openIndex.open.get(sessionId);
   if (!hit) return undefined;
+  // A landing answer typed in either chat settles the card at once (§chat.worktrees/landing-answers).
+  if (hit.landing) {
+    const rec = readRecord(sessionId);
+    if (rec && applyLandingAnswers(rec)) {
+      saveRecord(rec);
+      hit = openIndex?.open.get(sessionId);
+      if (!hit) return undefined;
+    }
+  }
   // An offer that left the file stops at once: its open card is withdrawn.
   if (!liveOffer(readOffersFile(hit.root), hit.name)) {
     const rec = readRecord(sessionId);

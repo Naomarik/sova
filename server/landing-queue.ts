@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "no
 import { dirname, join } from "node:path";
 import type { SessionSummary } from "../shared/protocol";
 import { CAPTAIN_PROFILE } from "./merge-board";
-import { OfferRefusal, showOffer, type ShowInput } from "./session-offers";
+import { addLandingRow, OfferRefusal, showOffer, type LandingRowInput, type ShowInput } from "./session-offers";
 import { stateRoot } from "./state-root";
 
 /**
@@ -12,8 +12,10 @@ import { stateRoot } from "./state-root";
  * `<state root>/landing-queue.json` when the captain queues a branch that is Ready to land; Sova reads
  * it and shows the owner's session the project's Landing offer itself, from the captain's chat, for
  * that worktree at that head. No agent gets a tool or a permission for it: the captain only queues.
- * Each entry is answered once, in `<state root>/landing-shown.json` (`{id: {at, card?} | {at, refused}}`),
- * which the driver reads back.
+ * Each accepted entry is also a row of the captain's own landing card (§chat.offers/landing-rows), even when the
+ * owner's card was refused for a reason of that chat alone. Each entry is answered once, in
+ * `<state root>/landing-shown.json` (`{id: {at, card?, row?} | {at, refused, row?}}`), which the driver reads back:
+ * `row` is `{card, row}` on the captain's open card, or `{waiting: true}` behind it.
  */
 
 export const LANDING_OFFER = "landing";
@@ -37,7 +39,8 @@ export interface QueueEntry {
   at: number;
 }
 
-export type QueueResult = { at: number; card: string } | { at: number; refused: string };
+export type QueueRow = { card: string; row: string } | { waiting: true };
+export type QueueResult = ({ at: number; card: string } | { at: number; refused: string }) & { row?: QueueRow };
 
 export const landingQueueFile = () => join(stateRoot(), "landing-queue.json");
 export const landingShownFile = () => join(stateRoot(), "landing-shown.json");
@@ -83,6 +86,8 @@ export interface QueueDeps {
   /** The worktree's current head sha, or undefined. */
   head(path: string): Promise<string | undefined>;
   show(input: ShowInput): Promise<{ id: string }>;
+  /** The branch's row on the captain's landing card (§chat.offers/landing-rows), or null when none fits. */
+  addRow(input: LandingRowInput): Promise<QueueRow | null>;
   now(): number;
   queueFile(): string;
   shownFile(): string;
@@ -100,6 +105,7 @@ const defaults: QueueDeps = {
   },
   head: gitHead,
   show: (input) => showOffer(input),
+  addRow: (input) => addLandingRow(input),
   now: Date.now,
   queueFile: landingQueueFile,
   shownFile: landingShownFile,
@@ -117,13 +123,21 @@ async function answer(e: QueueEntry, d: QueueDeps): Promise<QueueResult> {
   if (!ownerPath) return refused(`No session ${e.owner}.`);
   const head = await d.head(e.path);
   if (head !== e.head) return refused(head ? `${e.branch} moved to ${head.slice(0, 7)} since it was queued at ${e.head.slice(0, 7)}.` : `Git can't read ${e.branch}'s worktree.`);
+  let result: QueueResult;
   try {
     const card = await d.show({ path: ownerPath, sessionId: e.owner, offer: LANDING_OFFER, by: "another-chat", from: captainPath!, tree: e.path });
-    return { at, card: card.id };
+    result = { at, card: card.id };
   } catch (err) {
-    if (err instanceof OfferRefusal) return refused(err.message);
-    return refused(`Sova couldn't show it: ${err instanceof Error ? err.message : String(err)}`);
+    if (!(err instanceof OfferRefusal)) return refused(`Sova couldn't show it: ${err instanceof Error ? err.message : String(err)}`);
+    // A refusal about the branch adds no row; one about the owner's chat alone still does (§chat.offers/landing-rows).
+    if (!err.chat) return refused(err.message);
+    result = refused(err.message);
   }
+  const row = await d.addRow({ captainId: e.captain, captainPath: captainPath!, ownerId: e.owner, ownerPath, tree: e.path, branch: e.branch, head: e.head }).catch((err) => {
+    console.warn(`[landing-queue] no captain row for ${e.branch}: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  });
+  return row ? { ...result, row } : result;
 }
 
 /** Answer every entry not answered yet. Returns how many it answered. */

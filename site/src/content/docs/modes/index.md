@@ -9,7 +9,7 @@ order: 1
 
 The **major mode** is one of two:
 
-- **normal**: Pi as usual. The agent does the work itself.
+- **[normal](/docs/modes/normal/)**: Pi as usual. The agent does the work itself.
 - **delegate**: Orchestrate: route planning, investigation and implementation to workers by
   profile. See [Delegate](/docs/modes/delegate/).
 

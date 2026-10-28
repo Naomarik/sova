@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { acquireLock, alsoUpdateNudges, goAheadWord, areaGuides, dirtyPaths, expandArgs, failingTestFiles, globRe, groupOf, guideFrontMatter, hasScript, homeShown, landingAnswer, landingAnswerAt, needsRestart, ownerOf, parseBoard, parseLanding, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
+import { acquireLock, alsoUpdateNudges, durationShown, expectedTime, goAheadWord, areaGuides, dirtyPaths, expandArgs, failingTestFiles, globRe, groupOf, guideFrontMatter, hasScript, homeShown, intKey, landingAnswer, landingAnswerAt, needsRestart, ownerOf, parseBoard, parseLanding, shellPath, skippedShown, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
 
 const ROUND = fileURLToPath(new URL("../scripts/round.mjs", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -109,6 +109,12 @@ if (args[0] === "test:int" && mode === "int-fail") {
   console.log("FAIL server/new-int.integration.test.ts (exit 1, 0 pass, 1 fail)");
   console.log("  FAIL server/pre-fail.test.ts");
   process.exit(1);
+}
+if (args[0] === "exec" && args.includes("--plan")) {
+  // The tree's runner asked what a landing runs (run-tests.mjs --landing --plan): FAKE_PLAN, else only the everyday set.
+  console.error("run-tests: --landing (1 file changed since the merge base): 3 of 5 test files, the everyday set.");
+  console.log(process.env.FAKE_PLAN || JSON.stringify({ v: 1, files: [], ran: [], skipped: [{ name: "trial", title: "Chat processes", why: "untriggered", files: 19 }, { name: "tours", title: "Tours", why: "never", files: 18 }], jobs: 8, estimateMs: 90000, longestMs: 40000 }));
+  process.exit(0);
 }
 if (args[0] === "test" && mode === "hang") {
   const c = spawn("sleep", ["1000"], { stdio: "ignore" });
@@ -467,6 +473,127 @@ test("check runs pnpm test:int after pnpm test, with the same alone-then-master 
   const intCall = calls.find((c) => c.args[0] === "test:int");
   assert.equal(intCall.claude, false);
   assert.equal(intCall.cwd, wt("feat/int"));
+});
+
+test("check groups and time: pure rules for the expected time, the timings key per group set and the skipped wording", () => {
+  assert.equal(durationShown(45_000), "45s");
+  assert.equal(durationShown(200_000), "3m 20s");
+  assert.equal(durationShown(3_900_000), "1h 5m");
+  assert.equal(intKey({ full: true, ran: [] }), "test-int");
+  assert.equal(intKey({ ran: [] }), "test-int:core");
+  assert.equal(intKey({ ran: ["trial"] }), "test-int:core+trial");
+  assert.deepEqual(skippedShown([{ name: "trial", title: "Chat processes", why: "untriggered" }, { name: "tours", title: "Tours", why: "never" }]), ["Skipped: Chat processes (no change to its areas)", "Not run at landing: Tours"]);
+  assert.deepEqual(skippedShown([]), []);
+  // 8 everyday-only runs and 1 full one: each set is estimated from its own runs, never the other's.
+  const timings = { "test-int:core": Array(8).fill(100_000), "test-int": [400_000] };
+  const step = (key, fallbackMs) => [{ label: "int", key, floorMs: 1000, fallbackMs }];
+  assert.equal(expectedTime(step("test-int"), timings).expectedMs, 400_000);
+  assert.equal(expectedTime(step("test-int:core"), timings).expectedMs, 100_000);
+  // A set never run takes the runner's estimate, and says so; with none it is unknown.
+  const fresh = expectedTime(step("test-int:core+trial", 250_000), timings);
+  assert.equal(fresh.expectedMs, 250_000);
+  assert.deepEqual(fresh.parts, ["int 4m 10s from recorded file times"]);
+  assert.deepEqual(expectedTime(step("test-int:core+trial"), timings).unknown, ["int"]);
+  assert.equal(expectedTime(step("test-int"), timings).limitMs, 800_000, "the limit is the step's timeout");
+});
+
+test("check runs the integration tests a landing runs, names what it skipped, and keeps their timings per group set; full runs everything", async () => {
+  git(main, "worktree", "add", "-q", wt("feat/groups"), "-b", "feat/groups");
+  commit(wt("feat/groups"), "package.json", `${JSON.stringify({ scripts: { test: "x", "test:int": "y" } })}\n`, "groups: the tiers' scripts");
+  commit(wt("feat/groups"), "scripts/test-groups.mjs", "export const GROUPS = [];\n", "groups: a tree with test groups");
+  commit(wt("feat/groups"), ".gitignore", ".cache/\n", "groups: the runner's cache is ignored");
+  // Seeded: 8 everyday-only runs at 100 s and one full run at 400 s.
+  const st = state();
+  st.timings["test-int:core"] = Array(8).fill(100_000);
+  st.timings["test-int"] = [400_000];
+  writeFileSync(stateFile, JSON.stringify(st));
+  writeFileSync(pnpmLog, "");
+  const r = await run(["check", "feat/groups"]);
+  assert.equal(r.code, 0, r.out);
+  const master = git(main, "rev-parse", "master");
+  const calls = readFileSync(pnpmLog, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  assert.deepEqual(calls.find((c) => c.args.includes("--plan"))?.args, ["exec", "node", "scripts/run-tests.mjs", "--integration", "--landing", "--base", master, "--plan"]);
+  assert.deepEqual(calls.find((c) => c.args[0] === "test:int")?.args, ["test:int", "--", "--landing", "--base", master]);
+  // The expected time comes first, from the everyday set's own runs, never the full run's.
+  const expected = r.out.split("\n").findIndex((l) => l.startsWith("Expected: about "));
+  assert.ok(expected >= 0 && expected < r.out.split("\n").findIndex((l) => l.startsWith("typecheck: ")), r.out);
+  assert.match(r.out, /^Expected: about .*pnpm test:int \(everyday set\) 1m 40s.*Time limit: .* \(\d+ s, the steps' timeouts\)/m);
+  assert.match(r.out, /^Skipped: Chat processes \(no change to its areas\)\.$/m);
+  assert.match(r.out, /^Not run at landing: Tours\.$/m);
+  const rec = state().branches["feat/groups"].check;
+  assert.deepEqual(rec.skipped.map((s) => s.name), ["trial", "tours"]);
+  assert.equal(rec.full, false);
+  assert.equal(state().timings["test-int:core"].length, 9, "the run is kept under its group set's key");
+  assert.deepEqual(state().timings["test-int"], [400_000], "the full tier's key is left alone");
+  const report = await run(["report"]);
+  assert.match(report.out, /feat\/groups landable \(Skipped: Chat processes \(no change to its areas\); Not run at landing: Tours\)/);
+
+  // A full run for one check: the whole tier, its own estimate, and it says so.
+  writeFileSync(pnpmLog, "");
+  const f = await run(["check", "feat/groups", "full"]);
+  assert.equal(f.code, 0, f.out);
+  assert.match(f.out, /^Expected: about .*pnpm test:int \(full run\) 6m 40s/m, "a full run is estimated from full runs");
+  assert.match(f.out, /^Integration tests: full run \(every group\)\.$/m);
+  assert.doesNotMatch(f.out, /^Skipped: /m);
+  const fullCalls = readFileSync(pnpmLog, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  assert.deepEqual(fullCalls.find((c) => c.args[0] === "test:int")?.args, ["test:int"]);
+  assert.ok(!fullCalls.some((c) => c.args.includes("--plan")), "a full run plans nothing");
+  assert.equal(state().branches["feat/groups"].check.full, true);
+  assert.match((await run(["report"])).out, /feat\/groups landable \(full run\)/);
+  assert.equal((await run(["check", "feat/groups", "everything"])).code, 2, "an unknown word is refused");
+
+  // Globally until told otherwise.
+  assert.match((await run(["full", "on"])).out, /Full runs on/);
+  assert.match((await run(["check", "feat/groups"])).out, /^Integration tests: full run \(every group\)\.$/m);
+  assert.match((await run(["full", "off"])).out, /Full runs off/);
+  assert.match((await run(["check", "feat/groups"])).out, /^Not run at landing: Tours\.$/m);
+  assert.equal((await run(["full", "maybe"])).code, 2);
+});
+
+test("check: a group set never run takes the runner's estimate; a failing file's rerun says what it adds first; new fixed waits are a note, never a need", async () => {
+  // A ran group listed as skipped too (a confused runner) is never named skipped.
+  const plan = JSON.stringify({ v: 1, files: [], ran: ["trial"], skipped: [{ name: "trial", title: "Chat processes", why: "untriggered", files: 19 }, { name: "tours", title: "Tours", why: "never", files: 18 }], jobs: 8, estimateMs: 250_000, longestMs: 200_000 });
+  mkdirSync(join(wt("feat/groups"), ".cache"), { recursive: true });
+  writeFileSync(join(wt("feat/groups"), ".cache", "test-durations-integration.json"), JSON.stringify({ v: 1, files: { "server/new-int.integration.test.ts": { ms: 200_000 } } }));
+  const r = await run(["check", "feat/groups"], { env: { FAKE_PLAN: plan, FAKE_PNPM_MODE: "int-fail", FAKE_ALONE_FAIL: "server/new-int.integration.test.ts" } });
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /^Expected: about .*pnpm test:int \(everyday set \+ Chat processes\) 4m 10s from recorded file times/m);
+  assert.doesNotMatch(r.out, /^Skipped: /m, "a group that ran isn't named skipped");
+  assert.match(r.out, /^Not run at landing: Tours\.$/m);
+  const out = r.out.split("\n");
+  const said = out.findIndex((l) => l.startsWith("Rerunning server/new-int.integration.test.ts on its own: adds about 3m 20s, at most "));
+  assert.ok(said >= 0, r.out);
+  assert.match(r.out, /^Rerunning server\/pre-fail\.test\.ts on its own: adds an unknown time \(none recorded\)/m);
+  // A file master doesn't have is new without a run there, so no line says it runs on master.
+  assert.doesNotMatch(r.out, /^Running server\/new-int\.integration\.test\.ts on master/m);
+  assert.ok(said < out.findIndex((l) => l.startsWith("  failing files: ")), "said before the digest");
+  assert.ok(state().timings["test-int:core+trial"] === undefined, "a failing run records no timing");
+
+  // The fixed-wait note, from the branch's own scanner.
+  commit(wt("feat/groups"), "scripts/fixed-wait-scan.mjs", `const a = process.argv;\nif (a[a.indexOf("--base") + 1].length < 7 || !a.includes("--json")) process.exit(3);\nconsole.log(JSON.stringify({ waits: [{ file: "server/x.integration.test.ts", line: 12, ms: 6000 }, { file: "server/y.test.ts", line: 3, ms: 1500 }] }));\n`, "groups: a fixed-wait scanner");
+  const n = await run(["check", "feat/groups"]);
+  assert.equal(n.code, 0, n.out);
+  assert.match(n.out, /^fixed waits: 1 new fixed wait over 2 s in changed tests: server\/x\.integration\.test\.ts:12 \(6 s\)\. Ask the owner to wait on a condition instead \(not blocking\)\.$/m);
+  assert.match(n.out, /^landable at [0-9a-f]{7}$/m);
+});
+
+test("check --background: a detached check with a log, its expected time echoed; wait blocks until it ends and prints its digest", async () => {
+  assert.equal((await run(["wait", "feat/groups"])).code, 2, "no background check yet");
+  const b = await run(["check", "feat/groups", "--background"]);
+  assert.equal(b.code, 0, b.out);
+  const m = /^Background check of feat\/groups started: pid (\d+), log (\S+)\.$/m.exec(b.out);
+  assert.ok(m, b.out);
+  assert.match(b.out, /^Expected: about /m);
+  assert.match(b.out, /next: wake at the expected time, then round\.mjs wait feat\/groups/);
+  const w = await run(["wait", "feat/groups", "--timeout", "120"], { env: { SOVA_ROUND_WAIT_POLL_MS: "100" } });
+  assert.equal(w.code, 0, w.out);
+  assert.match(w.out, /^The background check of feat\/groups ended .* \(exit 0\):$/m);
+  assert.match(w.out, /^landable at [0-9a-f]{7}$/m);
+  assert.match(w.out, /^Expected: about /m, "the log holds the whole output");
+  const rec = JSON.parse(readFileSync(join(agent, "sova", "playbooks", "merge-round", "background", "feat_groups.json"), "utf8"));
+  assert.equal(rec.exit, 0);
+  assert.ok(rec.expectedMs >= 0 && rec.limitMs > 0, JSON.stringify(rec));
+  assert.equal((await run(["wait", "feat/groups", "--timeout", "x"])).code, 2);
 });
 
 test("hasScript: a package.json script by name; none, or unreadable, is no", () => {
@@ -938,6 +1065,10 @@ test("groupOf: the user's go-ahead checks, a green check lands, Not Yet holds; n
   assert.equal(g({ board: { ...board, status: "archived" } }, null, word), "check");
   assert.equal(g({}, null, word), "check");
   assert.equal(goAheadWord("chat"), "word in this chat");
+  assert.equal(goAheadWord("captain-chat"), "word in this chat");
+  // Go on an Overseer card's Ready to land row (§app.overseer/card-land): a go-ahead like Land It, under its own name.
+  assert.equal(g({ board }, row, { answer: { kind: "go-ahead", by: "overseer-card" } }), "check");
+  assert.equal(goAheadWord("overseer-card"), "Apply on the Overseer's card");
 });
 
 test("also-update rules: globs, the guides' front-matter and which touched areas missed their files", () => {
@@ -1262,7 +1393,7 @@ test("Ready to land: ask queues the branch for Sova's Landing card; status reads
     writeBoard([["feat/landq", "waiting-approval", OWNER, "idle", undefined, landed("feat/landq")]]);
     const q = await run(["ask", "feat/landq"]);
     assert.equal(q.code, 0, q.out);
-    assert.match(q.out, new RegExp(`^Queued feat/landq at ${head.slice(0, 7)}: Sova shows the Landing card in "Chat of ${OWNER}" \\(#/sid/${OWNER}\\)\\.$`, "m"));
+    assert.match(q.out, new RegExp(`^Queued feat/landq at ${head.slice(0, 7)}: Sova shows the Landing card in "Chat of ${OWNER}" \\(#/sid/${OWNER}\\), and the branch as a row on the landing card in this chat\\.$`, "m"));
     assert.match(q.out, /don't poll/);
     const entries = JSON.parse(readFileSync(queueFile, "utf8")).entries;
     assert.deepEqual(entries.map((e) => [e.branch, e.head, e.owner, e.captain, e.path === wt("feat/landq")]), [["feat/landq", head, OWNER, ME, true]]);
@@ -1307,6 +1438,22 @@ test("Ready to land: ask queues the branch for Sova's Landing card; status reads
     assert.equal(old.code, 1, old.out);
     assert.match(old.out, /Sova didn't show feat\/landq's Landing card at [0-9a-f]{7}: an open offer\./);
     assert.match(old.out, /round\.mjs go/);
+    // q1: refused for a reason of the owner's chat alone, but Sova gave it a row on the captain's card: it waits
+    // there, never stopped on the refusal, and the captain says it is "on the card below".
+    writeBoard([["feat/landq", "waiting-approval", OWNER, "idle", undefined, landed("feat/landq")]]);
+    writeFileSync(shownFile, JSON.stringify({ v: 1, results: { [entries[0].id]: { at: Date.now(), refused: "an open offer", row: { card: "of_2", row: "r_1" } } } }));
+    assert.equal(JSON.parse((await run(["status", "--json"])).out).branches.find((b) => b.branch === "feat/landq").group, "waiting");
+    assert.match(await line(), new RegExp(`on the card below; the owner's card in "Chat of ${OWNER}" \\(#/sid/${OWNER}\\) wasn't shown: an open offer`));
+    const again = await run(["ask", "feat/landq"]);
+    assert.equal(again.code, 1, again.out);
+    assert.doesNotMatch(again.out, /Sova didn't show/);
+    assert.match(again.out, /already queued at [0-9a-f]{7}: on the card below/);
+    const rows = await run(["report"]);
+    assert.match(rows.out, new RegExp(`^- Waiting for your answer on the card below: feat/landq at ${head.slice(0, 7)} \\(owner "Chat of ${OWNER}" \\(#/sid/${OWNER}\\)\\)$`, "m"));
+    assert.doesNotMatch(rows.out, /Waiting for your Land It/);
+    // Shown in both places: the row and the owner's card.
+    writeFileSync(shownFile, JSON.stringify({ v: 1, results: { [entries[0].id]: { at: Date.now(), card: "of_1", row: { card: "of_2", row: "r_1" } } } }));
+    assert.match(await line(), new RegExp(`on the card below, and its Landing card in "Chat of ${OWNER}"`));
   } finally {
     writeFileSync(stateFile, saved);
     for (const f of [queueFile, shownFile, landingFile, boardFile]) rmSync(f, { force: true });
@@ -1328,6 +1475,11 @@ test("go: the user's word in this chat is a go-ahead at the head, straight to ch
     const go = await run(["go", "feat/word"]);
     assert.equal(go.code, 0, go.out);
     assert.match(go.out, /^next: round\.mjs check feat\/word$/m);
+    // b1: the word is in Sova's landing.json too, marked as given in the captain's chat, so the owner's Landing
+    // card and the captain's row settle and say where (§chat.worktrees/landing-answers).
+    const kept = JSON.parse(readFileSync(landingFile, "utf8"));
+    assert.deepEqual(kept.goAheads.map((g) => [g.branch, g.commit, g.by, g.in]), [["feat/word", head, "captain-chat", ME]]);
+    assert.equal(goAheadWord("captain-chat"), "word in this chat");
     assert.equal(await group(), "check", "in progress, its owner busy: the user's word checks it anyway");
     assert.match((await run(["status"])).out, new RegExp(`the user's go-ahead \\(word in this chat\\) at ${head.slice(0, 7)}`));
     writeFileSync(landingFile, JSON.stringify({ v: 1, goAheads: [], notYet: [{ branch: "feat/word", commit: head, at: new Date(Date.now() + 60_000).toISOString() }] }));

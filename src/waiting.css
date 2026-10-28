@@ -127,3 +127,11 @@
 .waiting-item-foot .offer-card-actions > .offer-card-confirm { flex-basis: 100%; display: flex; flex-direction: column; gap: var(--space-2); }
 .waiting-item-foot .offer-card-actions > .offer-card-confirm > p { margin: 0; }
 .waiting-show { margin-left: auto; }
+
+/* A rows card's rows (§chat.offers/card, Rows): the row's line, its owner chat as a link of its own, then
+   its buttons or its state. The row itself is never a link. */
+.offer-card-row { gap: var(--space-1); padding-block: var(--space-2); }
+.offer-card-row .overseer-confirm-answer { margin: 0; }
+.overseer-confirm-item-meta.offer-card-row-owner { color: var(--color-accent); white-space: normal; overflow-wrap: anywhere; }
+.offer-card-row .offer-card-actions > .offer-card-confirm { display: flex; flex-direction: column; gap: var(--space-2); }
+.offer-card-row .offer-card-confirm > p { margin: 0; }

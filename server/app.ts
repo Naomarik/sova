@@ -507,8 +507,9 @@ export function buildApp(deps: AppDeps) {
     const path = resolveSessionPath(typeof body.path === "string" ? body.path : null);
     if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
-    // Organization sessions live under their project, never in a group (a removal still works, for
-    // an assignment made before that rule).
+    // Organization sessions live under their project, never in a group; a registered project's own sessions (its
+    // overseer's conversations, the builds it or the operator started) may join one. A removal always works, for an
+    // assignment made before that rule.
     if (body.groupId !== null && isOrgSession(path, idOf(path))) return c.json({ error: ORG_NOT_GROUPED }, 400);
     const r = assignSession(idOf(path), body.groupId, label.label, body.index as number | undefined);
     return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);

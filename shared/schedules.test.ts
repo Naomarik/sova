@@ -44,6 +44,8 @@ test("merge-ready: an event trigger with no times, its words, and the reason nam
   assert.equal(mergeReadyReason(["feat/x", "feat/y"]), "Ready to land: feat/x, feat/y.");
   const seven = ["a", "b", "c", "d", "e", "f", "g"].map((b) => `feat/${b}`);
   assert.equal(mergeReadyReason(seven), "Ready to land: feat/a, feat/b, feat/c, feat/d, feat/e, and 2 more.");
+  assert.equal(mergeReadyReason([], [], ["feat/d"]), "Go-ahead on the Overseer's card: feat/d.");
+  assert.equal(mergeReadyReason(["feat/a"], ["feat/c"], ["feat/d"]), "Ready to land: feat/a. Go-ahead typed in its own chat: feat/c. Go-ahead on the Overseer's card: feat/d.");
 });
 
 test("one bad trigger makes the whole line invalid, with the exact error", () => {

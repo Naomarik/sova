@@ -14,6 +14,7 @@ import { PathText } from "./PathAttachment";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { TopicCard } from "./TopicCard";
 import { WakeCard } from "./WakeCard";
+import { BUILTIN_VIEWS } from "./BuiltinKinds";
 import { Icon } from "./ui";
 
 /**
@@ -24,7 +25,7 @@ import { Icon } from "./ui";
  * is loaded again); it never reloads the page or the chat. The boundary adds nothing to the page
  * while the view draws.
  */
-export function TranscriptKindRow(props: { hit: KindHit; item: KindViewProps["item"]; limitPath?: string; reserve?: string }) {
+export function TranscriptKindRow(props: { hit: KindHit; item: KindViewProps["item"]; limitPath?: string; index?: () => number; reserve?: string }) {
   const [attempt, setAttempt] = createSignal(0);
   const view = createMemo((): Component<KindViewProps> | undefined => {
     attempt();
@@ -42,10 +43,10 @@ export function TranscriptKindRow(props: { hit: KindHit; item: KindViewProps["it
         />
       )}
     >
-      <Show when={props.hit.kind.view && "load" in props.hit.kind.view} fallback={<Dynamic component={view()} item={props.item} value={props.hit.value} limitPath={props.limitPath} />}>
+      <Show when={props.hit.kind.view && "load" in props.hit.kind.view} fallback={<Dynamic component={view()} item={props.item} value={props.hit.value} limitPath={props.limitPath} index={props.index} />}>
         {/* A module view: the row holds its reserved height until the module arrives. */}
         <Suspense fallback={<div class="kind-pending" style={{ "min-height": props.reserve }} aria-busy="true" />}>
-          <Dynamic component={view()} item={props.item} value={props.hit.value} limitPath={props.limitPath} />
+          <Dynamic component={view()} item={props.item} value={props.hit.value} limitPath={props.limitPath} index={props.index} />
         </Suspense>
       </Show>
     </ErrorBoundary>
@@ -143,4 +144,5 @@ export const PAGE_VIEWS: { [K in PageView]: Component<KindViewProps<never>> } = 
   topic: (props: KindViewProps<TopicBatchInfo>) => <TopicCard batch={props.value} time={props.item.at} />,
   compaction: (props: KindViewProps<NonNullable<RowFacts["compaction"]>>) => <Compaction compaction={props.value} />,
   info: InfoView,
+  ...BUILTIN_VIEWS,
 };

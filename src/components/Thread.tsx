@@ -42,7 +42,7 @@ import { ReplyTimingHead } from "./ReplyTiming";
 import type { ReplyTiming } from "../../shared/usage/perf";
 import { replyHovers } from "../lib/perf";
 import { ToolCard, type ToolStatus } from "./ToolCard";
-import { WorktreeMergeCard } from "./WorktreeMergeCard";
+import { ThreadRowsContext, type ThreadRows } from "./thread-rows";
 import { OwnerRequestNote } from "./OwnerRequestNote";
 import { ShowChangesCard } from "./ChangesViewer";
 import { TourCard } from "./TourCard";
@@ -702,6 +702,8 @@ export function HistoryItems(props: {
     return -1;
   });
   const openFrom = () => props.openFrom ?? lastUserIndex() + 1;
+  /** What the views of Sova's own kinds may ask of this list (components/thread-rows.ts). */
+  const threadRows: ThreadRows = { author: () => props.author, hasUserRow };
   /**
    * Tail-first (lib/tail-render): inside a transcript, the newest rows are built with the list and
    * the older ones prepended above them while the browser is idle, up to MAX_BUILT_ROWS, then as
@@ -831,6 +833,7 @@ export function HistoryItems(props: {
           </Show>
         </div>
       </Show>
+      <ThreadRowsContext.Provider value={threadRows}>
       <For each={built()}>
         {(item, local) => {
           const index = indexOf ? () => indexOf().get(item) ?? local() : local;
@@ -879,7 +882,7 @@ export function HistoryItems(props: {
             <Show when={foldable(chain()) ? chain() : null}>{(run) => <ChainFold run={run()} />}</Show>
             <Switch fallback={<Unknown raw={item.entry} />}>
               {/* Rows the toolkit draws, each in its own error box. */}
-              <Match when={drawn()}>{(h) => <TranscriptKindRow hit={h()} item={item} limitPath={props.limitPath} reserve={rowEst()} />}</Match>
+              <Match when={drawn()}>{(h) => <TranscriptKindRow hit={h()} item={item} limitPath={props.limitPath} index={index} reserve={rowEst()} />}</Match>
               {/* A kind still drawn by its branch here, until it moves onto the toolkit; and the kinds that draw nothing. */}
               <Match when={hit()?.kind.drawsNothing}>{null}</Match>
               <Match when={is("brief")}>
@@ -913,9 +916,6 @@ export function HistoryItems(props: {
               </Match>
               <Match when={is<Extract<NonNullable<TranscriptItem["overseerMark"]>, { kind: "dialog-answer" }>>("overseer-answer")}>
                 {(mark) => <OverseerChoiceRow title={mark().title} answer={mark().answer} />}
-              </Match>
-              <Match when={is<NonNullable<TranscriptItem["worktreeMerge"]>>("worktree-merge")}>
-                {(merge) => <WorktreeMergeCard merge={merge()} time={item.at} />}
               </Match>
               <Match when={is("assistant-text")}>
                 <AssistantText
@@ -1080,6 +1080,7 @@ export function HistoryItems(props: {
           );
         }}
       </For>
+      </ThreadRowsContext.Provider>
       <Show when={split()?.hidden.length ? split() : null}>
         {(s) => (
           <HiddenRows calls={s().calls} failed={s().failed} thinking={s().thinking}>

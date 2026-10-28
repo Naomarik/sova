@@ -66,10 +66,12 @@ export interface KindViewProps<V = unknown> {
   value: V;
   /** The chat's own path when this transcript is a held chat (HistoryItems' `limitPath`). */
   limitPath?: string;
+  /** The row's place in the rows the transcript shows (a later row may ask it of the list). */
+  index?: () => number;
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -111,7 +113,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   kind({ id: "profile-mark", match: (it) => it.profileMark, host: "page", placement: "anchored" }),
   kind({ id: "baton", match: (it) => it.batonMark && it.batonMark.kind !== "sent" && it.batonMark, host: "page", placement: "anchored" }),
   kind({ id: "overseer-answer", match: (it) => it.overseerMark?.kind === "dialog-answer" && it.overseerMark, host: "page", placement: "anchored" }),
-  kind({ id: "worktree-merge", match: (it) => it.kind === "worktree-merge" && it.worktreeMerge, host: "page", placement: "anchored" }),
+  kind({ id: "worktree-merge", match: (it) => it.kind === "worktree-merge" && it.worktreeMerge, host: "page", placement: "anchored", view: { page: "worktree-merge" } }),
   kind({ id: "wake", match: (it) => it.kind === "wake" && it.wake, estimate: () => "46px", host: "page", placement: "anchored", view: { page: "wake" } }),
   kind({ id: "topic", match: (it) => it.kind === "topic" && it.topic, estimate: () => "70px", host: "page", placement: "anchored", view: { page: "topic" } }),
   // Legacy: the retired spec card's row, still sent by older mesh peers.

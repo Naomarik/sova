@@ -44,11 +44,22 @@ test("Thread.tsx matches no row itself: every branch is the toolkit's, the draw-
   assert.doesNotMatch(rowSwitch, /item\.kind ===/, "no kind test in the row Switch");
 });
 
+/** Each kind on the toolkit, in the list's order, with the components its old branch drew: none may be drawn in the row Switch again. */
+const MOVED: Record<string, string[]> = {
+  "worktree-merge": ["WorktreeMergeCard"],
+  wake: ["WakeCard"],
+  topic: ["TopicCard"],
+  compaction: ["Compaction"],
+  info: ["InfoRow", "SubagentLimitRow"],
+  card: [],
+};
+
 test("a kind the toolkit draws has no branch of its own in Thread.tsx", () => {
   const drawn = toolkitKinds();
-  assert.deepEqual(drawn, ["wake", "topic", "compaction", "info", "card"], "the kinds on the toolkit so far: add a moved kind here as it moves");
+  assert.deepEqual(drawn, Object.keys(MOVED), "the kinds on the toolkit so far: add a moved kind to MOVED as it moves");
   for (const id of drawn) assert.ok(!branchIds.includes(id), `${id} is drawn by the toolkit and by a branch in Thread.tsx`);
-  for (const view of ["WakeCard", "TopicCard", "Compaction", "InfoRow", "SubagentLimitRow"]) assert.doesNotMatch(rowSwitch, new RegExp(`<${view}[\\s>]`), `${view} drawn in the row Switch`);
+  for (const view of Object.values(MOVED).flat()) assert.doesNotMatch(rowSwitch, new RegExp(`<${view}[\\s>/]`), `${view} drawn in the row Switch`);
+  for (const id of drawn) assert.doesNotMatch(rowSwitch, new RegExp(`"${id}"`), `the row Switch names ${id}, a kind the toolkit draws`);
 });
 
 test("every kind not on the toolkit has exactly one branch, in the list's order, so no row falls to Unknown", () => {

@@ -554,7 +554,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     card = items(personItem(org.id, maria.id));
     const r = await call("sova_owner", { op: "send_link", org: org.id, person: "Maria Lopez", note: `Call ${PHONE} if stuck.` });
     assert.equal(r.ok, false);
-    assert.equal(r.text, "This note repeats private text (About this organization, notes, a goal or briefing, a profile or a contact). Write it again in your own words.");
+    assert.equal(r.text, "This note repeats private text (a contact). Write it again in your own words.");
     const off = await call("sova_owner", { op: "send_link", org: org.id, person: "Maria Lopez" });
     assert.equal(off.text, "Not sent to Maria Lopez: Outreach is off: set it up in Settings → Outreach. You can send it yourself from the People tab.");
     card = null;

@@ -20,6 +20,7 @@ import { updateIdea } from "./overseer-ideas";
 import { serverRedactor } from "./overseer-redact";
 import { readNotes } from "./overseer-store";
 import { holdsPreviewLink } from "./preview-kept";
+import { holdsContact, PRIVATE_REPEAT, repeatedRun } from "./private-text-match";
 import { listPreviews } from "./preview-links";
 import { adoptOverseerFiles, gatheringChoice, itemOf, linkItem } from "./project-overseer";
 import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
@@ -124,8 +125,8 @@ function gapPart(orgId: string, projectId: string): GapPart {
 
 export const PREVIEW_IN_OWNER_UPDATE = "A preview link goes to people through the operator, never in an owner update.";
 
-/** The shortest repeated run that counts as copying private text into an owner update. */
-export const OWNER_UPDATE_REPEAT = 24;
+/** The shortest repeated run that counts as copying private text into an owner update or a note. */
+export const OWNER_UPDATE_REPEAT = PRIVATE_REPEAT;
 
 /**
  * When a build of the project last finished a turn (not working now: its file's last write), or null. The
@@ -147,50 +148,66 @@ export function lastBuildFinishedAt(projectId: string): number | null {
   return last;
 }
 
+/** Which private text a text repeats (§app.outreach/channels): a source's kind and the words of the text it
+    matched, or a contact (never shown). */
+export type PrivateHit = { kind: "about" | "notes" | "goal" | "instructions" | "profile"; words: string } | { kind: "contact" };
+
 /**
  * An organization's own note (the owner page link's send, §app.owner-page/send): the same check over the
  * org's About text and roster, and every project's private text (its notes, instructions, goals and
  * briefings), since no one project frames it.
  */
-export function orgNoteLeak(orgId: string, text: string): string | null {
+export function orgPrivateTextHit(orgId: string, text: string): PrivateHit | null {
   for (const p of readProjects(orgId)) {
-    const hit = ownerUpdateLeak(orgId, p.id, text);
+    const hit = privateTextHit(orgId, p.id, text);
     if (hit) return hit;
   }
-  return ownerUpdateLeak(orgId, null, text);
+  return privateTextHit(orgId, null, text);
 }
 
 /**
- * The refusal for an owner update that repeats private text, or null (§app.owner-page/updates). An update is
- * written by this project's overseer, whose prompt holds the org's About text, its notes and the
- * operator's instructions: any run of OWNER_UPDATE_REPEAT characters from those, from a
- * conversation's goal or a hand-off briefing, or from a person's profile, and any contact value,
- * refuses the post. The About text is read here to be kept OUT of the update, never to write it.
- * `projectId` null: the org's own text only (its About text and roster), for orgNoteLeak.
+ * The private text a text an overseer wrote repeats, or null (§app.outreach/channels, §app.owner-page/updates).
+ * The overseer's prompt holds the org's About text, its notes and the operator's instructions: any run of
+ * OWNER_UPDATE_REPEAT characters from those, from a conversation's goal or a hand-off briefing, or from a
+ * person's profile, and any contact value, is a hit. The words it names are cut from `text`, never from the
+ * source: the About text is read here to be kept OUT of the text, never to write it. `projectId` null: the
+ * org's own text only (its About text and roster). `except`: the conversation a note's link goes with, whose
+ * goal and briefings are not private to that note.
+ */
+export function privateTextHit(orgId: string, projectId: string | null, text: string, except?: string): PrivateHit | null {
+  const paths = projectId ? projectOverseerPaths(projectId) : null;
+  const roster = readRoster(orgId);
+  const batons = projectId ? projectBatons(orgId, projectId).filter((b) => b.sessionId !== except) : [];
+  const sources: [Exclude<PrivateHit["kind"], "contact">, string[]][] = [
+    ["about", [readOrgAbout(orgId)]],
+    ["notes", [paths ? readNotes(paths.notes) : ""]],
+    ["instructions", [paths ? readPoSettings(paths).extraSystemPrompt : ""]],
+    ["goal", batons.flatMap((b) => [b.goal, ...b.handoffs.map((h) => h.briefing), ...(b.offers ?? []).map((o) => o.briefing)])],
+    ["profile", roster.flatMap((x) => [x.voice, x.role, ...x.skills, x.referral?.why ?? ""])],
+  ];
+  for (const [kind, texts] of sources) {
+    for (const t of texts) {
+      const words = t ? repeatedRun(text, t) : null;
+      if (words) return { kind, words };
+    }
+  }
+  for (const x of roster) for (const v of Object.values(x.contact ?? {})) if (holdsContact(text, v)) return { kind: "contact" };
+  return null;
+}
+
+/**
+ * The refusal for an owner update that repeats private text, or null (§app.owner-page/updates): which kind
+ * of text (About and notes, or the rest) and the words it matched, so the overseer rewrites just them.
  */
 export function ownerUpdateLeak(orgId: string, projectId: string | null, text: string): string | null {
   // A kept preview link is a secret the operator sends on (§app.project-overseer/previews).
   if (holdsPreviewLink(text)) return PREVIEW_IN_OWNER_UPDATE;
-  const norm = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
-  const hay = norm(text);
-  const repeats = (secret: string): boolean => {
-    const s = norm(secret);
-    for (let i = 0; i + OWNER_UPDATE_REPEAT <= s.length; i++) if (hay.includes(s.slice(i, i + OWNER_UPDATE_REPEAT))) return true;
-    return false;
-  };
-  const paths = projectId ? projectOverseerPaths(projectId) : null;
-  const roster = readRoster(orgId);
-  const batons = projectId ? projectBatons(orgId, projectId) : [];
-  const PRIVATE = "This update repeats text from About this organization or your notes. Updates are for the client: write it again in your own words.";
-  const OTHER = "This update repeats private text (a conversation's goal or briefing, the operator's instructions, or a person's profile or contact). Updates are for the client: write it again in your own words.";
-  const sources: [string, string[]][] = [
-    [PRIVATE, [readOrgAbout(orgId), paths ? readNotes(paths.notes) : ""]],
-    [OTHER, [paths ? readPoSettings(paths).extraSystemPrompt : "", ...batons.flatMap((b) => [b.goal, ...b.handoffs.map((h) => h.briefing), ...(b.offers ?? []).map((o) => o.briefing)])]],
-    [OTHER, roster.flatMap((x) => [x.voice, x.role, ...x.skills, x.referral?.why ?? ""])],
-  ];
-  for (const [what, texts] of sources) if (texts.some((t) => t && repeats(t))) return what;
-  for (const x of roster) for (const v of Object.values(x.contact ?? {})) if (typeof v === "string" && v.trim().length >= 5 && hay.includes(norm(v))) return OTHER;
-  return null;
+  const hit = privateTextHit(orgId, projectId, text);
+  if (!hit) return null;
+  const words = hit.kind === "contact" ? "a contact" : hit.words;
+  return hit.kind === "about" || hit.kind === "notes"
+    ? `This update repeats text from About this organization or your notes: "${words}". Updates are for the client: write it again in your own words.`
+    : `This update repeats private text (a conversation's goal or briefing, the operator's instructions, or a person's profile or contact): "${words}". Updates are for the client: write it again in your own words.`;
 }
 
 // ---- WhatsApp sends (§app.outreach/send) -------------------------------------------------------------------

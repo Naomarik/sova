@@ -30,6 +30,7 @@ const { writeNotes } = await import("./overseer-store");
 const { registerOrgRoutes } = await import("./org-routes");
 const { disposeAllChats } = await import("./chat-manager");
 const { TOOL_POWER } = await import("./project-overseer-tools");
+const orgPart = await import("./overseer-org-part");
 const { settled } = await import("./workspace-git");
 const { hostOf, setOrgClockForTest } = await import("./org-engine");
 
@@ -45,7 +46,7 @@ mkdirSync(join(root, "b"));
 const pa = await orgs.addProject(org.id, { name: "Booking site", root: join(root, "a") });
 const pb = await orgs.addProject(org.id, { name: "Payroll", root: join(root, "b") });
 const alp = await orgs.addPerson(org.id, { name: "Alperen Kaya", role: "Director" });
-const kim = await orgs.addPerson(org.id, { name: "Kim Lee", role: "Coach", voice: "Warm and patient, likes examples", contact: { email: "kim.lee@example.test" } });
+const kim = await orgs.addPerson(org.id, { name: "Kim Lee", role: "Coach", voice: "Warm and patient, likes worked examples before any theory and hates being rushed", contact: { email: "kim.lee@example.test" } });
 
 const app = new Hono();
 registerOrgRoutes(app);
@@ -92,21 +93,25 @@ describe("sova_owner_update, as the project overseer's runtime builds it", async
     await assert.rejects(() => run("Hello."), /^Error: This organization has no owner, so there is no page to post to\.$/);
   });
 
-  test("each private source refuses the post, never quoted", async () => {
+  test("each private source refuses the post, naming the words it matched; a contact is never shown", async () => {
     await orgs.setOrgOwner(org.id, alp.id);
-    await orgs.patchOrg(org.id, { about: "They are selling the academy next spring and must not hear of it." });
-    writeNotes("Kim tends to overpromise on delivery dates, check with Bob.\n", store.projectOverseerPaths(pa.id).notes);
-    await baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours", goal: "Find out whether Kim will accept weekend shifts quietly" }, { mintLink: false });
-    const PRIVATE = "This update repeats text from About this organization or your notes. Updates are for the client: write it again in your own words.";
+    await orgs.patchOrg(org.id, { about: "They are selling the academy next spring to a rival group and the staff must not hear of it." });
+    writeNotes("Kim tends to overpromise on delivery dates to parents, so always check with Bob first.\n", store.projectOverseerPaths(pa.id).notes);
+    await baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours", goal: "Find out quietly whether Kim will accept weekend shifts over the summer term" }, { mintLink: false });
+    const PRIVATE = (w: string) => `This update repeats text from About this organization or your notes: "${w}". Updates are for the client: write it again in your own words.`;
+    const OTHER = (w: string) => `This update repeats private text (a conversation's goal or briefing, the operator's instructions, or a person's profile or contact): "${w}". Updates are for the client: write it again in your own words.`;
     for (const [text, why] of [
-      ["Good news: they are selling the academy next spring.", PRIVATE],
-      ["Note that Kim tends to overpromise on delivery dates.", PRIVATE],
-      ["We wanted to find out whether Kim will accept weekend shifts.", /repeats private text/],
-      ["Kim is warm and patient, likes examples.", /repeats private text/],
-      ["Write to kim.lee@example.test for details.", /repeats private text/],
+      ["Good news: THEY ARE  SELLING the academy next spring to a rival group and the staff must hear.", PRIVATE("THEY ARE SELLING the academy next spring to a rival group and the staff must")],
+      ["Heads up: Kim tends to overpromise on delivery dates to parents, so always check.", PRIVATE("Kim tends to overpromise on delivery dates to parents, so always check")],
+      ["We wanted to find out quietly whether Kim will accept weekend shifts over the summer.", OTHER("find out quietly whether Kim will accept weekend shifts over the summer")],
+      ["Kim is warm and patient, likes worked examples before any theory and hates being rushed by us.", OTHER("warm and patient, likes worked examples before any theory and hates being rushed")],
+      ["Write to KIM.LEE@example.test for details.", OTHER("a contact")],
     ] as const) {
-      await assert.rejects(() => run(text), (err: Error) => (typeof why === "string" ? err.message === why : why.test(err.message)) && !err.message.includes(text.slice(0, 30)), text);
+      await assert.rejects(() => run(text), (err: Error) => err.message === why, text);
     }
+    // Under about 60 characters in a row is the overseer's own wording, not a copy.
+    const short = "They are selling the academy next spring, Kim said.";
+    assert.equal(orgPart.ownerUpdateLeak(org.id, pa.id, short), null, "a 41-character run is not a copy");
     await assert.rejects(() => run("x".repeat(2001)), /^Error: An update is at most 2,000 characters\.$/);
     assert.equal(updates.readUpdates(org.id, pa.id).length, 0, "nothing was posted");
   });

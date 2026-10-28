@@ -66,6 +66,7 @@ const MOVED: Record<string, string[]> = {
   report: ["ReportRow"],
   baton: ["BatonCard"],
   user: ["UserTurn"],
+  "assistant-text": ["AssistantText"],
 };
 
 test("a kind the toolkit draws has no branch of its own in Thread.tsx", () => {

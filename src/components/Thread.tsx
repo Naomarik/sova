@@ -421,6 +421,8 @@ export function HistoryItems(props: {
   const threadRows: ThreadRows = {
     author: () => props.author,
     hasUserRow,
+    row: (i) => rows()[i],
+    timing: (id) => timings().get(id),
     senderOf,
     nameOf,
     wrapupShown: showWrapup,
@@ -607,19 +609,6 @@ export function HistoryItems(props: {
               <Match when={drawn()}>{(h) => <TranscriptKindRow hit={h()} item={item} limitPath={props.limitPath} index={index} reserve={rowEst()} />}</Match>
               {/* A kind still drawn by its branch here, until it moves onto the toolkit; and the kinds that draw nothing. */}
               <Match when={hit()?.kind.drawsNothing}>{null}</Match>
-              <Match when={is("assistant-text")}>
-                <AssistantText
-                  text={item.text ?? ""}
-                  author={modelLabel(item.model, item.answered) ?? props.author}
-                  model={[item.model, modelMismatch(item.model, item.answered)].filter(Boolean).join(" · ") || undefined}
-                  time={item.at}
-                  showHead={
-                    rows()[index() - 1]?.kind !== "assistant-text" || rows()[index() - 1]?.model !== item.model
-                  }
-                  attachments={item.attachments}
-                  timing={timings().get(item.id)}
-                />
-              </Match>
               <Match when={is("thinking")}>
                 <Thinking text={item.text ?? ""} />
               </Match>

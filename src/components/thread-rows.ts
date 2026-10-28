@@ -1,5 +1,7 @@
 import { createContext, useContext } from "solid-js";
+import type { TranscriptItem } from "../../shared/protocol";
 import type { Sender } from "../../shared/senders";
+import type { ReplyTiming } from "../../shared/usage/perf";
 
 /**
  * What a transcript's whole list knows that one row's view may ask (§chat.transcript-cards/toolkit):
@@ -12,6 +14,10 @@ export interface ThreadRows {
   author(): string;
   /** Whether a user row is on the branch (the profile row waits for one). */
   hasUserRow(): boolean;
+  /** The shown row at index `i` (a reply's head shows when the row above is another's). */
+  row(i: number): TranscriptItem | undefined;
+  /** A measured reply's figures, by its row id: its first text row's head shows them. */
+  timing(id: string): ReplyTiming | undefined;
   /** Who sent a user row, when its marker says (shared/senders.ts). */
   senderOf(id: string): Sender | undefined;
   /** A baton person's name by ref ("operator" is You). */

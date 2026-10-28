@@ -16,7 +16,8 @@ import { OwnerRequestNote } from "./OwnerRequestNote";
 import { OverseerChoiceRow } from "./OverseerCards";
 import { profileIconName } from "../lib/profiles";
 import { useThreadRows } from "./thread-rows";
-import { UserTurn } from "./MessageRows";
+import { AssistantText, UserTurn } from "./MessageRows";
+import { modelLabel, modelMismatch } from "../lib/format";
 import { BriefRow } from "./OverseerCards";
 import { ExplainCard } from "./ExplainCard";
 import { TeamMessageCard } from "./TeamMessageCard";
@@ -50,6 +51,7 @@ export const BUILTIN_VIEWS = {
     return <BatonCard mark={props.value} name={rows.nameOf} wrapupShown={rows.wrapupShown()} onWrapupToggle={rows.toggleWrapup} />;
   },
   user: UserRow,
+  "assistant-text": ReplyText,
 } satisfies Record<string, Component<KindViewProps<never>>>;
 
 /** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is
@@ -216,6 +218,24 @@ function UserRow(props: KindViewProps) {
       fromSession={((s) => (s?.kind === "session" ? { sessionId: s.sessionId, title: s.title, hop: s.hop } : undefined))(rows.senderOf(item.id))}
       images={item.images}
       attachments={item.attachments}
+    />
+  );
+}
+
+/** A reply's text; its head shows unless the row above is the same model's reply text. */
+function ReplyText(props: KindViewProps) {
+  const rows = useThreadRows();
+  const item = props.item;
+  const above = () => rows.row((props.index?.() ?? 0) - 1);
+  return (
+    <AssistantText
+      text={item.text ?? ""}
+      author={modelLabel(item.model, item.answered) ?? rows.author()}
+      model={[item.model, modelMismatch(item.model, item.answered)].filter(Boolean).join(" · ") || undefined}
+      time={item.at}
+      showHead={above()?.kind !== "assistant-text" || above()?.model !== item.model}
+      attachments={item.attachments}
+      timing={rows.timing(item.id)}
     />
   );
 }

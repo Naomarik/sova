@@ -1,5 +1,5 @@
 ---
-watches: ["scripts/run-tests.mjs", "scripts/test-tier-guard.mjs", "scripts/test-changed.mjs", "scripts/test-sentinel.mjs", "scripts/hermetic-agent-dir.mjs", "pi-config/extensions/claude-code/tests/hermetic-env.mjs", "server/test-scratch.ts", "scripts/sova-scenario.mjs", "server/testing/hermetic-server.ts"]
+watches: ["scripts/run-tests.mjs", "scripts/test-groups.mjs", "scripts/test-tier-guard.mjs", "scripts/test-changed.mjs", "scripts/test-sentinel.mjs", "scripts/hermetic-agent-dir.mjs", "pi-config/extensions/claude-code/tests/hermetic-env.mjs", "server/test-scratch.ts", "scripts/sova-scenario.mjs", "server/testing/hermetic-server.ts"]
 alsoUpdate: ["agents/testing/overview.md"]
 ---
 # Testing
@@ -13,6 +13,7 @@ environment every runner starts in, and the hermetic dev server.
   `test.run`); its header comment documents the runner in full. GLOBS there is the file list.
 - `scripts/test-tier-guard.mjs`: the tier guard, the runner's second preload.
 - `scripts/test-changed.mjs`: the `--changed` selection.
+- `scripts/test-groups.mjs`: the slow groups and their triggers (`--landing`, `--changed`, `--groups`).
 - `pi-config/extensions/claude-code/tests/hermetic-env.mjs`: the throwaway-home preload.
 - `scripts/test-sentinel.mjs`, `server/test-scratch.ts` (`scratchRoot`).
 - `scripts/hermetic-agent-dir.mjs`: builds the hermetic `.agent` for `pnpm run dev:hermetic`.
@@ -35,10 +36,22 @@ environment every runner starts in, and the hermetic dev server.
 - `pnpm test:int`, the **integration tier**: `*.integration.test.ts` (a sibling beside the unit file it
   splits from): real processes, ports, the whole server, time measured. Runs at a quarter of the cores
   (`TEST_INT_JOBS=<n>`), with its own durations (`.cache/test-durations-integration.json`). While
-  working run `pnpm test:int --changed` before asking to land: files whose relative-import closure
-  holds a file changed since the merge base with `--base <rev>` (default master), committed or not,
-  plus files in a changed file's folder. The merge round runs the whole tier at landing, after
-  `pnpm test`. `pnpm test:all` runs both tiers. Named files run whatever their tier.
+  working run `pnpm test:int --changed` before asking to land: everyday files whose relative-import
+  closure holds a file changed since the merge base with `--base <rev>` (default master), committed
+  or not, plus files in a changed file's folder, plus every file of each slow group whose triggers
+  the change touches. `pnpm test:all` runs both tiers. Named files run whatever their tier.
+- **Slow groups** (`scripts/test-groups.mjs`, one list for landing and `--changed`): **Chat
+  processes** (`trial`, `server/chat-runtime/trial-*.integration.test.ts`) and **Tours** (`tours`,
+  the `server/tours/*.integration.test.ts` files that drive Chrome). Each lists its triggers: the
+  areas whose change can break it (chats, workers, teams, the Overseer, batons, Claude Code and their
+  extensions, the harness; tour code), any package or toolchain change, the test setup this guide
+  `watches`, and the module itself. Every other integration file is the everyday set. A new slow
+  file, or a new area such a test drives from outside, goes in that list.
+- **At landing** the merge round runs `pnpm test`, then `pnpm test:int -- --landing --base <master>`:
+  the everyday set, plus Chat processes when the branch triggers it; Tours never. It names what it
+  skipped. `--groups <name,…|all>` runs only those groups, `--plan` prints the selection as JSON
+  and runs nothing, and plain `pnpm test:int` runs every group: a release does that (the only
+  catch-up for what landings skip).
 - The tier guard records what each file starts, binds, connects to, fetches and whether it imports
   `server/index.ts` (`.cache/test-audit.json`); in a unit file it refuses any of it but git and fails
   the file ("rename to .integration.test.ts"), listing those files after the run.
@@ -141,11 +154,28 @@ Each is data a change may regenerate only on purpose, never to hide a regression
   `scripts/sova-scenario.mjs`'s header; `pnpm run scenario [<file>…]` runs them by hand. A new
   scenario file is picked up with no other change.
 
+## Writing tests: wait on conditions
+
+- Wait on the event that ends a window, never on the clock: poll for it with a deadline (`until`,
+  `waitFor`, a loop of short `setTimeout`s with a bound). Make the deadline generous; it costs nothing
+  when the event comes, and a busy machine needs it.
+- A fixed wait over 2 s only proves an absence (nothing doubled, nothing restarted, no second
+  delivery). Start it after the event a repeat would follow, keep it as short as that event's own
+  timing allows, and name that event in a comment: "the feed re-diffs at most once a second, so 2 s
+  holds a re-diff or two".
+- A scripted model reply that must stay open through a step is held, not made long: the
+  chat-runtime trial's stand-in model keeps a `[long N #tag]` reply streaming while the trial holds
+  its tag (`mock.hold(tag)`, then `mock.hold(tag, false)`), however long the step takes under load.
+- `node scripts/fixed-wait-scan.mjs --base <rev> [--json]` lists the setTimeout/sleep/delay
+  literals over 2000 ms a change adds to test files since the merge base. It is a note for a person
+  to check, never a failure.
+
 ## When you change X, also update Y
 
 | You change | Also |
 | --- | --- |
 | add a test file in a new folder | a glob in `scripts/run-tests.mjs` GLOBS (the boundary test fails otherwise) |
+| add a slow end-to-end or Chrome test, or a new area one drives from outside | its group's `files` or `triggers` in `scripts/test-groups.mjs` |
 | a unit test needs a process, port or fetch | split those cases into the `.integration.test.ts` sibling |
 | add a test runner | import `hermetic-env.mjs` first |
 | a unit file's chats need pi-config's extensions | `linkPiConfigExtensions(agentDir)` from `server/testing/agent-dir.ts` |
@@ -154,4 +184,5 @@ Each is data a change may regenerate only on purpose, never to hide a regression
 | the runner, tier guard or preload | the runner's header comment, this guide, and §app.server-runtime/test-tiers or /test-repo-fence through a spec draft |
 
 While working: `pnpm test` constantly, `pnpm test:int --changed` before asking to land. Landing (the
-merge round) runs `pnpm test`, then the whole integration tier.
+merge round) runs `pnpm test`, then `pnpm test:int -- --landing` (the everyday set plus the slow
+groups the branch triggers, never Tours); a release runs the whole integration tier.

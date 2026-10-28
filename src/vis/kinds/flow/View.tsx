@@ -3,13 +3,13 @@ import { isServer } from "solid-js/web";
 import { emphasisMap } from "../../core/emphasis";
 import type { Emphasis } from "../../core/grammar";
 import { canvasMeasure } from "../../core/text";
-import { EmBadge, emClass, SvgEmBadge } from "../../emphasis";
+import { emClass, SvgEmBadge } from "../../emphasis";
 import { Lines, SvgScroll, useMarkerId } from "../../svg";
 import type { ViewProps } from "../../types";
 import { htmlMeasure } from "../tree/measure";
 import { createFlowFocus, kindWord, type FlowFocus, type FocusEdge, type FocusGraph, type FocusShape } from "./focus";
 import { FLOW_FONT, GROUP, HEX_INSET, fitFlow, layoutFlow, placedEdgeEnds, type FlowLayout, type PlacedFlowNode } from "./layout";
-import type { FlowNode, FlowSpec } from "./parse";
+import type { FlowSpec } from "./parse";
 import { layoutSections, naturalSections, sectionSpec } from "./sections";
 import { fontsLoaded, useWidth } from "./width";
 import "./flow.css";
@@ -30,8 +30,8 @@ interface Drawn {
  * the height this draws at, for the shell's reserved box. A flow with `== sections ==` draws one
  * drawing per panel, side by side or stacked (./sections). `group` frames sit under the edges.
  *
- * Tapping a shape picks it (./focus): its neighbours stay lit, the rest fades, and a reading panel
- * opens under the drawing that holds it. The figure is one Tab stop (this View's root); the arrow
+ * Tapping a shape picks it (./focus): its neighbours stay lit, the rest fades; tapping it again
+ * clears it. The figure is one Tab stop (this View's root); the arrow
  * keys move between shapes, Enter or Space picks, Escape clears. A static render (the docs site)
  * draws the same picture with no controls.
  */
@@ -40,7 +40,6 @@ export default function FlowView(props: ViewProps<FlowSpec>) {
   const em = createMemo(() => emphasisMap(props.spec));
   const live = !isServer;
   const figure = ++figureSeq;
-  const nodeOf = createMemo(() => new Map(props.spec.nodes.map((n) => [n.id, n])));
   // A spec never gains or loses sections while mounted (a new fence is a new drawing).
   const sectioned = !!props.spec.sections;
   const natural = createMemo(() => (fontsLoaded(), sectioned ? null : layoutFlow(props.spec, canvasMeasure)));
@@ -55,7 +54,7 @@ export default function FlowView(props: ViewProps<FlowSpec>) {
   });
   const graph = createMemo(
     (): FocusGraph => ({
-      shapes: drawn().flatMap((d, panel) => d.layout.nodes.map((n): FocusShape => ({ id: n.id, panel, x: n.x, y: n.y, shape: n.shape, label: nodeOf().get(n.id)?.label ?? n.id, down: d.down }))),
+      shapes: drawn().flatMap((d, panel) => d.layout.nodes.map((n): FocusShape => ({ id: n.id, panel, x: n.x, y: n.y, shape: n.shape, down: d.down }))),
       edges: drawn().flatMap((d) => d.ends),
     }),
   );
@@ -69,10 +68,7 @@ export default function FlowView(props: ViewProps<FlowSpec>) {
     return dom ? (root?.querySelector<SVGGElement>(`[id="${dom}"]`) ?? null) : null;
   };
   const focus = createFlowFocus(graph, {
-    machine,
     reveal: (id) => shapeEl(id)?.scrollIntoView({ block: "nearest", inline: "nearest" }),
-    // The panel opens below the drawing, perhaps below the fold: bring it into view once drawn.
-    opened: () => requestAnimationFrame(() => root?.querySelector(".vis-flow-read")?.scrollIntoView({ block: "nearest" })),
   });
   // The kind word every shape is named by, from its arrows (Question, Start, Step, Outcome; State in a machine).
   const kinds = createMemo(() => {
@@ -83,25 +79,11 @@ export default function FlowView(props: ViewProps<FlowSpec>) {
   onMount(() => setMachine(!!root?.closest(".vis-kind-state")));
 
   const onKeyDown = (e: KeyboardEvent) => {
-    // Escape clears from anywhere in the figure (a panel button too); the rest only on the Tab stop itself.
+    // Escape clears from anywhere in the figure; the rest only on the Tab stop itself.
     if (e.key !== "Escape" && e.target !== root) return;
     focus.key(e);
   };
-  const move = (id: string) => {
-    focus.moveTo(id);
-    // The pressed button is gone with the old panel: the figure keeps focus, its cursor on the new pick.
-    root?.focus({ preventScroll: true });
-  };
   const ctx = (): Ctx => ({ live, em: em(), focus, kinds: kinds(), domIds: domIds() });
-  const panelFor = (i: number) => (
-    <Show when={live}>
-      <div class="vis-flow-live" aria-live="polite">
-        <Show when={focus.reading() && graph().shapes.find((s) => s.id === focus.reading()!.id)?.panel === i}>
-          <Reading node={nodeOf().get(focus.reading()!.id)!} em={em().get(focus.reading()!.id)} focus={focus} move={move} />
-        </Show>
-      </div>
-    </Show>
-  );
   return (
     <div
       ref={(el) => {
@@ -121,12 +103,7 @@ export default function FlowView(props: ViewProps<FlowSpec>) {
     >
       <Show
         when={sections()}
-        fallback={
-          <>
-            <FlowDrawing d={drawn()[0]!} label={props.label} ctx={ctx()} />
-            {panelFor(0)}
-          </>
-        }
+        fallback={<FlowDrawing d={drawn()[0]!} label={props.label} ctx={ctx()} />}
       >
         {(s) => (
           <For each={s().panels}>
@@ -134,7 +111,6 @@ export default function FlowView(props: ViewProps<FlowSpec>) {
               <section class="vis-flow-section" style={s().row ? { width: `${p.width}px` } : undefined}>
                 <h4 class="vis-flow-section-head">{p.label}</h4>
                 <FlowDrawing d={drawn()[i()]!} label={`${props.label}: ${p.label}`} ctx={ctx()} />
-                {panelFor(i())}
               </section>
             )}
           </For>
@@ -153,45 +129,6 @@ interface Ctx {
 }
 
 const oneLine = (s: string) => s.replace(/\s*\n\s*/g, " ");
-
-/** The reading panel: the picked shape's kind, whole text, mark note, and buttons to its neighbours. */
-function Reading(props: { node: FlowNode; em: Emphasis | undefined; focus: FlowFocus; move: (id: string) => void }) {
-  const r = () => props.focus.reading()!;
-  const Row = (row: { head: string; chips: { id: string; text: string }[] }) => (
-    <Show when={row.chips.length}>
-      <div class="vis-flow-read-row">
-        <span class="vis-flow-read-head">{row.head}</span>
-        <div class="vis-flow-read-chips">
-          <For each={row.chips}>
-            {(c) => (
-              <button class="button button-sm" type="button" onClick={() => props.move(c.id)}>
-                {c.text}
-              </button>
-            )}
-          </For>
-        </div>
-      </div>
-    </Show>
-  );
-  return (
-    <div class="vis-flow-read">
-      <span class="vis-flow-read-kind">{r().kind}</span>
-      {/* A line break written for the drawing's box is no break in a panel's running text. */}
-      <p class="vis-flow-read-text">{oneLine(props.node.label)}</p>
-      <Show when={props.node.note}>
-        <p class="vis-flow-read-sub">{oneLine(props.node.note!)}</p>
-      </Show>
-      <Show when={props.em?.note}>
-        <p class={`vis-flow-read-mark vis-tone-${props.em!.tone}`}>
-          <EmBadge e={props.em} />
-          <span>{props.em!.note}</span>
-        </p>
-      </Show>
-      <Row head="From" chips={r().from} />
-      <Row head="Leads to" chips={r().to} />
-    </div>
-  );
-}
 
 /** One laid-out graph: group frames, edges, their labels, the frames' titles, then the nodes on top. */
 function FlowDrawing(props: { d: Drawn; label: string; ctx: Ctx }) {

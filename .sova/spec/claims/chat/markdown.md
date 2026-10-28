@@ -488,23 +488,16 @@ happens on hover.
   visible underneath. Tapping the picked shape again clears the pick; tapping another moves it.
   One shape is picked per figure: in a figure with panels (§chat.markdown/vis-flow-sections),
   picking in one panel clears the other's.
-- **The reading panel.** While a shape is picked, a panel opens under the drawing (under the panel
-  that holds it, in a figure with panels), above the figure's numbered notes and caption. It shows
-  the shape's kind (Question, Start, Step, Outcome; in a state machine Start, State, End), its whole
-  text, its mark note with the note's number if it has one, a **From** row with one button per
-  shape an arrow comes from, and a **Leads to** row with one per shape an arrow goes to, an arrow's
-  label on its button ("yes → Project's login"). A row with no shapes is left out. Pressing a
-  button moves the pick to that shape. The panel closes when the pick clears. It is never part of
-  the height a drawing reserves (§chat.markdown/visuals, No layout shift): it opens only when the
-  reader asks.
+- **Only a highlight.** Picking a shape opens nothing and moves no scroll: the drawing keeps its
+  height and the pane stays where it was.
 - **Keyboard and screen readers.** Each figure is one Tab stop, a panelled one included. While it
   has focus the arrow keys move a focus ring from shape to shape in that direction (into the next
   or previous panel at a panel's edge) and scroll the shape into view, Home and End go to the first
   and last; Enter or Space picks the shape under the ring (or clears it if it is the picked one);
   Escape clears the pick and, only when there was one, goes no further, so it closes nothing else
-  on the screen. Each shape is a button named by its kind and whole text, pressed while picked;
-  the panel is announced politely when it changes. Start and end dots take a tap area of at least
-  32px.
+  on the screen. Each shape is a button named by its kind (Question, Start, Step, Outcome; in a
+  state machine Start, State, End) and whole text, pressed while picked. Start and end dots take a
+  tap area of at least 32px.
 - **Where.** The same in chat replies, on alignment cards (§chat.alignment/visuals), and on share
   and owner pages (§app.baton/outsider-view). A sideways swipe of a drawing that scrolls is not a
   tap. The docs site's examples are still pictures: their shapes are not buttons and do nothing

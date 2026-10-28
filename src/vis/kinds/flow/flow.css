@@ -48,27 +48,3 @@
 @media (prefers-reduced-motion: reduce) {
   .vis-flow-on :is(.vis-node, .vis-edge, .vis-edge-label) { transition: none; }
 }
-/* The reading panel, under the drawing (under its panel's drawing in a sectioned figure). */
-.vis-flow-read {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-  padding: var(--space-3);
-  border: var(--stroke-thin) solid var(--color-border);
-  border-radius: var(--r-md);
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
-  color: var(--color-ink);
-  overflow-wrap: anywhere;
-}
-.vis .vis-flow-read p { margin: 0; }
-.vis-flow-read-kind { font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
-.vis-flow-read-text { font-weight: var(--fw-medium); }
-.vis-flow-read-sub { color: var(--color-ink-2); font-size: var(--fs-caption); line-height: var(--lh-caption); }
-.vis-flow-read-mark { display: flex; align-items: baseline; gap: var(--space-1); color: var(--color-ink-2); font-size: var(--fs-caption); line-height: var(--lh-caption); }
-.vis-flow-read-row { display: flex; flex-direction: column; gap: var(--space-1); }
-.vis-flow-read-head { font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink-2); }
-.vis-flow-read-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-/* A chip holds its neighbour's whole text: it wraps rather than cuts. */
-.vis-flow-read-chips > .button { height: auto; min-height: var(--control-sm); white-space: normal; text-align: left; padding-block: var(--space-1); max-width: 100%; }

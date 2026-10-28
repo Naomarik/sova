@@ -1,6 +1,6 @@
 // Run: pnpm test -- src/vis/kinds/flow/focus.browser.test.ts (Solid's reactive build).
 // Tap to follow (§chat.markdown/vis-flow-focus), the controller FlowView wires: a tap toggles the
-// pick, neighbours stay lit and the rest fades, a panel button moves the pick, Enter/Space pick the
+// pick, neighbours stay lit and the rest fades (a tap scrolls nothing), Enter/Space pick the
 // shape under the keyboard's cursor, the arrow keys move and reveal it, and Escape clears the pick
 // and stops only then. FlowView puts aria-pressed on a shape exactly when nodeState is "sel". The
 // real page (one Tab stop for a panelled figure, the scroll, no "…") is scripts/e2e/flow-focus.mjs.
@@ -43,10 +43,9 @@ const spec = (kind: string, body: string) => {
 };
 /** The graph FlowView builds: every drawn shape at its center, every placed edge's ends. */
 function graphOf(s: FlowSpec): FocusGraph {
-  const labels = new Map(s.nodes.map((n) => [n.id, n.label]));
   const panels = s.sections ? layoutSections(s, 0, estimateWidth, () => estimateWidth).panels.map((p, i) => ({ layout: p.layout, ends: placedEdgeEnds(sectionSpec(s, i)) })) : [{ layout: layoutFlow(s), ends: placedEdgeEnds(s) }];
   return {
-    shapes: panels.flatMap((p, panel) => p.layout.nodes.map((n) => ({ id: n.id, panel, x: n.x, y: n.y, shape: n.shape, label: labels.get(n.id)!, down: s.dir !== "right" }))),
+    shapes: panels.flatMap((p, panel) => p.layout.nodes.map((n) => ({ id: n.id, panel, x: n.x, y: n.y, shape: n.shape, down: s.dir !== "right" }))),
     edges: panels.flatMap((p) => p.ends),
   };
 }
@@ -54,28 +53,27 @@ const key = (k: string) => {
   const e = { key: k, prevented: false, stopped: false, preventDefault: () => void (e.prevented = true), stopPropagation: () => void (e.stopped = true) };
   return e;
 };
-function mount(s: FlowSpec, machine = false) {
+function mount(s: FlowSpec) {
   const revealed: string[] = [];
-  let opened = 0;
   let dispose!: () => void;
   const f = solid.createRoot((d) => {
     dispose = d;
     const g = solid.createMemo(() => graphOf(s));
-    return createFlowFocus(g, { machine: () => machine, reveal: (id) => revealed.push(id), opened: () => opened++ });
+    return createFlowFocus(g, { reveal: (id) => revealed.push(id) });
   });
-  return { f, revealed, opened: () => opened, dispose };
+  return { f, revealed, dispose };
 }
 const states = (f: ReturnType<typeof mount>["f"], ids: string[]) => Object.fromEntries(ids.map((id) => [id, f.nodeState(id)]));
 const IDS = ["start", "pick", "handpick", "proj", "ready", "assigned", "limit", "order", "stop"];
 
 test("a tap picks a shape: it is selected, its direct neighbours lit, the rest faded; a second tap clears it", () => {
-  const { f, opened, dispose } = mount(spec("flow", LOGIN));
+  const { f, revealed, dispose } = mount(spec("flow", LOGIN));
   try {
     assert.equal(f.picked(), null);
     assert.equal(f.nodeState("ready"), undefined, "nothing fades while nothing is picked");
     f.toggle("ready");
     assert.equal(f.picked(), "ready");
-    assert.equal(opened(), 1, "the panel opened");
+    assert.deepEqual(revealed, [], "a tap scrolls nothing into view");
     assert.deepEqual(states(f, IDS), { start: "dim", pick: "dim", handpick: "dim", proj: "near", ready: "sel", assigned: "near", limit: "near", order: "dim", stop: "dim" });
     // aria-pressed is nodeState === "sel": exactly one shape is pressed.
     assert.deepEqual(IDS.filter((id) => f.nodeState(id) === "sel"), ["ready"]);
@@ -84,48 +82,20 @@ test("a tap picks a shape: it is selected, its direct neighbours lit, the rest f
     assert.equal(f.edgeState({ from: "limit", to: "order" }), "dim", "an arrow between two neighbours isn't the picked shape's");
     f.toggle("ready");
     assert.equal(f.picked(), null, "the same shape again clears it");
-    assert.equal(f.reading(), null, "and closes the panel");
     assert.equal(f.nodeState("start"), undefined);
   } finally {
     dispose();
   }
 });
 
-test("tapping another shape moves the pick; the panel lists From and Leads to, a label leading its button", () => {
-  const { f, opened, dispose } = mount(spec("flow", LOGIN));
-  try {
-    f.toggle("pick");
-    f.toggle("ready");
-    assert.equal(f.picked(), "ready");
-    assert.equal(opened(), 1, "moving a pick doesn't reopen the panel");
-    const r = f.reading()!;
-    assert.equal(r.kind, "Question");
-    assert.deepEqual(r.from, [{ id: "proj", text: "Project has a login? (its own, else its org's)" }]);
-    assert.deepEqual(r.to, [
-      { id: "assigned", text: "yes → The project's login" },
-      { id: "limit", text: "no → Limit choice (question 2)" },
-    ]);
-    f.toggle("start");
-    assert.equal(f.reading()!.kind, "Start");
-    assert.deepEqual(f.reading()!.from, []);
-    f.toggle("stop");
-    assert.equal(f.reading()!.kind, "Outcome");
-    f.toggle("order");
-    assert.equal(f.reading()!.kind, "Outcome");
-    assert.deepEqual(f.reading()!.from.map((c) => c.id), ["proj", "limit"]);
-  } finally {
-    dispose();
-  }
-});
-
-test("a panel button moves the pick and the cursor there, and reveals it", () => {
+test("tapping another shape moves the pick and the cursor there, revealing nothing", () => {
   const { f, revealed, dispose } = mount(spec("flow", LOGIN));
   try {
     f.toggle("ready");
-    f.moveTo(f.reading()!.to[1]!.id);
+    f.toggle("limit");
     assert.equal(f.picked(), "limit");
     assert.equal(f.active(), "limit");
-    assert.deepEqual(revealed, ["limit"]);
+    assert.deepEqual(revealed, []);
     assert.equal(f.nodeState("ready"), "near", "the shape it came from is now a neighbour");
     assert.equal(f.nodeState("stop"), "near");
     assert.equal(f.nodeState("assigned"), "dim");
@@ -213,21 +183,6 @@ test("a figure with panels has one pick: picking in one panel clears the other's
     f.key(key("ArrowDown"));
     f.key(key("ArrowDown"));
     assert.equal(f.active(), "a@2", "past the first panel's last shape, the next panel's first");
-  } finally {
-    dispose();
-  }
-});
-
-test("a state machine names its shapes Start, State and End", () => {
-  const { f, dispose } = mount(spec("state", 'node s0 start\nnode done end\ns0 -> idle\nidle -> busy "prompt"\nbusy -> done'), true);
-  try {
-    f.toggle("s0");
-    assert.equal(f.reading()!.kind, "Start");
-    f.toggle("busy");
-    assert.equal(f.reading()!.kind, "State");
-    assert.deepEqual(f.reading()!.from, [{ id: "idle", text: "idle" }]);
-    f.toggle("done");
-    assert.equal(f.reading()!.kind, "End");
   } finally {
     dispose();
   }

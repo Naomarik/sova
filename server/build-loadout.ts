@@ -26,6 +26,7 @@ import { validateNewSessionCwd } from "./targets";
 import { addWebSession } from "./web-sessions";
 import { worktreesOf } from "./worktrees-state";
 import { markOwned } from "./write-guard";
+import { asksToConfirmBrief } from "./project-coding-mode";
 
 /**
  * A project's coding sessions (builds) on the build statechart (`build/<p>/<sid>`, design §3.8;
@@ -70,6 +71,9 @@ export interface BuildRow {
   gap?: string;
   item?: string;
   decisions?: string[];
+  /** An Overseer started it with no \`already_agreed\`: its first prompt asks the operator to confirm the brief
+      (§app.project-overseer/confirm-brief), so its alignment questions are the operator's alone. */
+  confirmBrief?: true;
   /** The runtime's facts as the statechart last heard them. */
   turn: "idle" | "working" | "failed";
   workers: number;
@@ -136,6 +140,7 @@ function rowOf(configuration: string[], d: Record<string, unknown>): BuildRow {
     ...(typeof d.gap === "string" && d.gap ? { gap: d.gap } : {}),
     ...(typeof d.item === "string" && d.item ? { item: d.item } : {}),
     ...(Array.isArray(d.decisions) && d.decisions.length ? { decisions: d.decisions as string[] } : {}),
+    ...(asksToConfirmBrief(d.prompt) ? { confirmBrief: true as const } : {}),
     turn: d.turn === "working" || d.turn === "failed" ? d.turn : "idle",
     workers: typeof d.workers === "number" ? d.workers : 0,
     ...(typeof d.notStarted === "string" && d.notStarted ? { notStarted: d.notStarted } : {}),

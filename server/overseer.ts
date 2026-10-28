@@ -641,6 +641,7 @@ const host: OverseerToolHost = {
     if (!(await (await acquireChatHandle(path)).pinMode())) throw new Error("its mode entry could not be written");
   },
   sandbox: async (path) => (await acquireChatHandle(path)).sandboxInfo(),
+  operatorAnswersWaiting: async (sessionId) => (await import("./project-overseer")).operatorAnswersWaitingFor(sessionId),
   // The extension's own default (index.ts defaultOn): an unreadable policy file starts sessions off.
   sandboxDefault: () => {
     const f = loadPolicyFile(policyFilePath(agentRoot()));

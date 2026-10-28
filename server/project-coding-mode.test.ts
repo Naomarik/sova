@@ -12,7 +12,7 @@ const agentDir = join(tmp, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(agentDir, { recursive: true });
 after(() => rmSync(tmp, { recursive: true, force: true }));
-const { checkedCodingModeChoice, codingModeChoice, codingModeSwitch, codingSpecRefusal, describeCodingMode, hostDefaultMode, profileName, SPEC_ALWAYS_ON, SPEC_ALWAYS_ON_MENU } = await import("./project-coding-mode");
+const { asksToConfirmBrief, checkedCodingModeChoice, codingModeChoice, codingModeSwitch, codingSpecRefusal, CONFIRM_BRIEF_PARAGRAPH, confirmBriefPrompt, confirmBriefWords, describeCodingMode, hostDefaultMode, profileName, SPEC_ALWAYS_ON, SPEC_ALWAYS_ON_MENU } = await import("./project-coding-mode");
 const store = await import("./project-overseer-store");
 const { promotionMessage } = await import("./reconcile");
 const sp = await import("../pi-config/extensions/subagents/subagent-profiles.ts");
@@ -132,4 +132,21 @@ test("a verb playbook's run gets align beside its base (this computer's default)
   assert.deepEqual(playbookRunMode({ mode: "normal", minorModes: ["align"] }).minorModes, ["align"], "never twice");
   assert.deepEqual([...PLAYBOOK_RUN_KINDS], ["onboard", "deploy-setup"]);
   assert.ok(!PLAYBOOK_RUN_KINDS.includes("coding") && !PLAYBOOK_RUN_KINDS.includes("operator-coding"));
+});
+
+test("§app.project-overseer/confirm-brief: an Overseer's brief gets the confirm paragraph unless agreed, and only with align on", () => {
+  const on = { minorModes: ["align", "spec"] as const };
+  const asked = confirmBriefPrompt("Build the login page", { minorModes: [...on.minorModes] }, false);
+  assert.deepEqual(asked, { prompt: `Build the login page\n\n${CONFIRM_BRIEF_PARAGRAPH}`, confirm: true });
+  // The paragraph asks for exactly the one question the claim names, before any plan.
+  for (const words of ['topic "What to build"', '"Is this what you want built?"', '"Yes, as restated"', "what it won't touch", "Before any plan, investigation or edit", "end your turn"])
+    assert.ok(CONFIRM_BRIEF_PARAGRAPH.includes(words), words);
+  assert.equal(asksToConfirmBrief(asked.prompt), true, "found in the recorded prompt");
+  assert.deepEqual(confirmBriefPrompt("Build the login page", { minorModes: ["align", "spec"] }, true), { prompt: "Build the login page", confirm: false }, "already agreed: the brief as given");
+  assert.deepEqual(confirmBriefPrompt("Build the login page", { minorModes: ["spec"] }, false), { prompt: "Build the login page", confirm: false }, "align off: nothing to ask with");
+  assert.equal(asksToConfirmBrief("Build the login page"), false);
+  assert.equal(asksToConfirmBrief(undefined), false);
+  assert.equal(confirmBriefWords(true, false), " It first asks the operator to confirm the brief.");
+  assert.equal(confirmBriefWords(false, true), " Started as already agreed.");
+  assert.equal(confirmBriefWords(false, false), "");
 });

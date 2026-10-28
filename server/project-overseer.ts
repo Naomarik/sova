@@ -32,14 +32,14 @@ import {
 } from "../shared/project-overseer";
 import type { OverseerState } from "../shared/protocol";
 import { noteBuildMerged } from "./build-merged";
-import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, buildStartedBy, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath, type BuildRow } from "./build-loadout";
+import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, buildOfSession, buildStartedBy, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath, type BuildRow } from "./build-loadout";
 import { acquireChatHandle, BusyError, chatHandle, closeChat, isSessionBusy, onAgentSettled, onAgentStarted, declOfTool, registerSpecialHost, serverToolCall, serveTools, type SessionMarks, specialComposersChanged } from "./chat-handle";
 import type { ChatStreamTrip } from "../shared/chat-runtime";
 import type { HEntry, ToolSpec } from "../shared/harness";
 import { shuttingDown } from "./wrapup-recovery";
 import { listModels } from "./models";
 import { workingSubagents } from "./live";
-import { checkedCodingModeChoice, codingModeSwitch, describeCodingMode, hostDefaultMode, PLAYBOOK_RUN_KINDS, playbookRunMode, profileRefusal, type ModeRequest } from "./project-coding-mode";
+import { alreadyAgreedOf, checkedCodingModeChoice, codingModeSwitch, confirmBriefPrompt, describeCodingMode, hostDefaultMode, PLAYBOOK_RUN_KINDS, playbookRunMode, profileRefusal, type ModeRequest } from "./project-coding-mode";
 import { subagentProfilesInfo } from "./subagent-profiles";
 import { baseAbilities } from "./gathering-abilities";
 import { gitRootOf, readWorktree } from "./project-worktrees";
@@ -716,21 +716,14 @@ function toolHost(rt: Rt): PoToolHost {
       return bad ? { error: bad } : c;
     },
     subagentProfiles: () => subagentProfilesInfo(),
-    async playbookWaiting(sessionId) {
-      // A verb playbook's run waiting on the operator's alignment answers (§app.project-overseer/coding-mode): theirs to answer.
-      const build = readBuild(projectId, sessionId);
-      // Every verb playbook's run is an onboard build (its statechart kind), whichever playbook it runs.
-      if (!build?.onboard) return null;
-      const path = await pathOfId(sessionId);
-      const align = path ? (await getSessionSummary(path).catch(() => null))?.align : undefined;
-      return align?.openQuestions ? { title: readSessionTitles()[sessionId] || build.title || sessionId, questions: align.openQuestions } : null;
-    },
+    playbookWaiting: (sessionId) => operatorAnswersWaiting(projectId, sessionId),
     async createCoding(input) {
       const { gap, ...rest } = input;
       // A gap's build starts on what the contributing layer names (it rests on the gap's promoted decisions).
       const target = gap && gap !== "none" ? gapsOf(engine(), projectId)?.buildTarget(gap) : undefined;
-      const made = await startCodingSession(projectId, { ...rest, kind: "coding", envelope: envelope(), ...(target ? { item: target } : {}) });
-      if (made.held) return { id: "", path: "", cwd: "", held: made.held };
+      const { alreadyAgreed, ...start } = rest;
+      const made = await startCodingSession(projectId, { ...start, kind: "coding", envelope: envelope(), overseerBrief: { alreadyAgreed: !!alreadyAgreed }, ...(target ? { item: target } : {}) });
+      if (made.held) return { id: "", path: "", cwd: "", held: made.held, ...(made.confirmBrief ? { confirmBrief: true } : {}) };
       return {
         id: made.sessionId,
         path: made.path,
@@ -738,6 +731,7 @@ function toolHost(rt: Rt): PoToolHost {
         ...(made.worktree ? { worktree: made.worktree } : {}),
         ...(made.note ? { note: made.note } : {}),
         ...(made.notPrompted ? { notPrompted: made.notPrompted } : {}),
+        ...(made.confirmBrief ? { confirmBrief: true } : {}),
       };
     },
     async send(sessionId, text, mode) {
@@ -982,6 +976,26 @@ async function overseerRunning(projectId: string): Promise<{ model: string | nul
   return { model: chat?.mirror.model?.ref ?? null, thinking: chat?.mirror.thinking ?? null };
 }
 
+/**
+ * A coding session whose alignment questions are the operator's alone, waiting on them (§app.project-overseer/coding-mode,
+ * /confirm-brief): a verb playbook's run (every one is an onboard build, whichever playbook it runs) or a session an
+ * Overseer started asking the operator to confirm the brief. Its title and open questions; null otherwise. Neither
+ * Overseer messages one: the message would read to its model as the operator's answer.
+ */
+export async function operatorAnswersWaiting(projectId: string, sessionId: string): Promise<{ title: string; questions: number } | null> {
+  const build = readBuild(projectId, sessionId);
+  if (!build?.onboard && !build?.confirmBrief) return null;
+  const path = await pathOfId(sessionId);
+  const align = path ? (await getSessionSummary(path).catch(() => null))?.align : undefined;
+  return align?.openQuestions ? { title: readSessionTitles()[sessionId] || build.title || sessionId, questions: align.openQuestions } : null;
+}
+
+/** The same, for a session the Overseer names by id: the build it is in any open engine, if any. */
+export async function operatorAnswersWaitingFor(sessionId: string): Promise<{ title: string; questions: number } | null> {
+  const b = buildOfSession(sessionId);
+  return b ? operatorAnswersWaiting(b.projectId, sessionId) : null;
+}
+
 export interface StartedCoding {
   sessionId: string;
   path: string;
@@ -995,6 +1009,8 @@ export interface StartedCoding {
   notPrompted?: string;
   /** The start waits in a hold (q10: the overseer's unattended act): nothing was made yet. */
   held?: ActResult["held"];
+  /** Its first prompt asks the operator to confirm the brief first (§app.project-overseer/confirm-brief). */
+  confirmBrief?: true;
 }
 
 export const NOT_PROMPTED = "Started, but not prompted: its mode could not be set.";
@@ -1028,9 +1044,12 @@ async function startCodingSession(
     /** The project act that starts it (default build/start) and what that act's payload adds. */
     act?: "verbs/onboard";
     extra?: Record<string, unknown>;
+    /** An Overseer's start (§app.project-overseer/confirm-brief): unless the operator already agreed what to build, its
+        first prompt asks them to confirm the brief first (with align on in its mode). Absent: the brief as given. */
+    overseerBrief?: { alreadyAgreed: boolean };
   },
 ): Promise<StartedCoding> {
-  const prompt = input.prompt?.trim() ?? "";
+  const brief = input.prompt?.trim() ?? "";
   const project = projectOf(projectId);
   const engine = engineOrThrow(projectId);
   const p = projectOverseerPaths(projectId);
@@ -1039,6 +1058,9 @@ async function startCodingSession(
   const base = input.mode ?? hostDefaultMode();
   // A verb playbook's run asks the operator through align (§app.project-runtime/verb-playbooks).
   const mode = PLAYBOOK_RUN_KINDS.includes(input.kind) ? playbookRunMode(base) : base;
+  // An Overseer's start, unless the operator already agreed: the confirm paragraph after the brief, as the commit paragraph.
+  const asked = input.overseerBrief && !PLAYBOOK_RUN_KINDS.includes(input.kind) ? confirmBriefPrompt(brief, mode, input.overseerBrief.alreadyAgreed) : { prompt: brief, confirm: false };
+  const prompt = asked.prompt;
   const sessionId = newBuildSessionId();
   const title = input.title?.trim() ? cleanSessionTitle(input.title) : null;
   const choice = codingChoice(input, settings, await overseerRunning(projectId));
@@ -1077,7 +1099,7 @@ async function startCodingSession(
   }
   if (out.held) {
     if (title) setSessionTitle(sessionId, null);
-    return { sessionId, path: "", cwd: "", mode, held: { ...out.held, ...heldAt(input.item ?? projectSid(projectId), out.held) } };
+    return { sessionId, path: "", cwd: "", mode, held: { ...out.held, ...heldAt(input.item ?? projectSid(projectId), out.held) }, ...(asked.confirm ? { confirmBrief: true as const } : {}) };
   }
   const sid = buildSid(projectId, sessionId);
   await buildSetupEnded(projectId, sid);
@@ -1095,6 +1117,7 @@ async function startCodingSession(
     mode,
     ...(wt ? { worktree: { path: wt.worktree.path, branch: wt.worktree.branch } } : {}),
     ...(row.inRoot ? { note: row.inRoot } : {}),
+    ...(asked.confirm ? { confirmBrief: true as const } : {}),
   };
   if (row.modeNotSet) return { ...made, notPrompted: NOT_PROMPTED };
   if (row.promptError) throw new OrgError(row.promptError, 409);
@@ -1487,7 +1510,7 @@ export async function codeItem(projectId: string, body: ItemCodeInput, via?: "ov
     ...(body.thinking ? { thinking: body.thinking } : {}),
     ...(mode ? { mode } : {}),
     kind: "operator-coding",
-    ...(via ? { via } : {}),
+    ...(via ? { via, overseerBrief: { alreadyAgreed: alreadyAgreedOf(body.already_agreed) } } : {}),
     // a plain session on a gap's idea names the gap's item in its act, so its record names the gap it was started from
     ...(onGap ? { item: onGap } : gapTarget ? { extra: { gapItem: gapTarget } } : {}),
   });
@@ -1498,6 +1521,7 @@ export async function codeItem(projectId: string, body: ItemCodeInput, via?: "ov
     ...(made.worktree ? { worktree: made.worktree } : {}),
     ...(made.note ? { note: made.note } : {}),
     ...(made.notPrompted ? { notPrompted: made.notPrompted } : {}),
+    ...(made.confirmBrief ? { confirmBrief: true } : {}),
   };
 }
 

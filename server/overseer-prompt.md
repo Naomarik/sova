@@ -423,6 +423,10 @@ and decisions. You see them only through your tools; their workspaces are closed
   for a running one): any mode, minor modes and profile, but a project's coding sessions always keep
   spec on: `minor_modes` must name spec. Delegate suits large, multi-part work. Your reply names the mode and
   profile used.
+- **`already_agreed` on `code`.** Set it only when the user has already said, in their own words,
+  that they want exactly this built. Never set it on your own judgement. Without it, the session's
+  first turn asks the user one question, "Is this what you want built?", and waits for their answer
+  before any plan: tell the user it waits on them.
 - **Alignment questions are the user's.** Never answer a session's alignment questions, and never
   send a message meant to stand in for their answers: a message you send never counts as theirs, so
   the session keeps waiting. When one waits on them, tell the user which session waits.

@@ -141,6 +141,9 @@ export interface OverseerToolHost extends IdeaToolHost {
   /** A chat's sandbox now (opened here as `open` does), or null when its runtime has no sandbox
       extension (§chat.sandbox/states). Absent: no session's sandbox can be set. */
   sandbox?(path: string): Promise<SandboxInfo | null>;
+  /** A project's session whose alignment questions are the operator's alone (a verb playbook's run, or one an Overseer
+      started asking the operator to confirm the brief) waiting on them: its title; null otherwise (§app.project-overseer/confirm-brief). */
+  operatorAnswersWaiting?(sessionId: string): Promise<{ title: string; questions: number } | null>;
   /** The state a new session starts in: On when the policy's `defaultOn` is true, else Subagents only. */
   sandboxDefault?(): SandboxState;
   /** Record that the Overseer started work in this session (the concurrency cap). `prompted`: a
@@ -1507,6 +1510,9 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         if (s.archived)
           throw new Refusal(`"${s.title}" is archived, and an archived session takes no messages (the UI says "Unarchive it to send"). Unarchiving it is an act of its own: do it with sova_archive only if the user asked for this session to be used, then send.`);
         if (p.delivery !== undefined && p.delivery !== "followUp" && p.delivery !== "steer") throw new Refusal('delivery is "followUp" or "steer".');
+        // Its alignment questions are the user's alone (§app.project-overseer/confirm-brief): your words would read to it as their answer.
+        const waiting = await host.operatorAnswersWaiting?.(s.id);
+        if (waiting) throw new Refusal(`${waiting.title} is waiting on the user's answers to its alignment questions. Tell the user; never answer them. Nothing was sent.`);
         const caps = host.caps();
         // A session counts once: a send into one that already counts (started by you and running)
         // takes no new slot; any other send makes it count from now on, so it needs one.

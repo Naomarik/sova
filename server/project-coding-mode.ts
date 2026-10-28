@@ -170,6 +170,36 @@ export function alignDropRefusal(waiting: boolean, minorModes: unknown): string 
     questions, so they start with align on, and an Overseer never messages one that waits on them. */
 export const PLAYBOOK_RUN_KINDS: readonly string[] = ["onboard", "deploy-setup"];
 
+/**
+ * What an Overseer's coding session is told when the operator has not yet agreed what to build
+ * (§app.project-overseer/confirm-brief): a paragraph of its first prompt, after the brief, as the commit paragraph
+ * is. Verbatim: `asksToConfirmBrief` finds it in a build's recorded prompt.
+ */
+export const CONFIRM_BRIEF_PARAGRAPH = `An Overseer wrote this brief; the operator has not yet said they want it built. Before any plan, investigation or edit, open one small alignment with the align tool and end your turn: one question only, topic "What to build", asking "Is this what you want built?", its context the brief restated in plain words (what will be built and what it won't touch), its recommendation "Yes, as restated". Then wait for the operator's answer. Their yes is the change request: align on the work as for any request. An answer that changes the brief is the decision: record it and build what it says.`;
+
+/** Whether a coding session's first prompt asks it to confirm the brief first (the paragraph Sova adds, verbatim). */
+export const asksToConfirmBrief = (prompt: unknown): boolean => typeof prompt === "string" && prompt.includes(CONFIRM_BRIEF_PARAGRAPH);
+
+/**
+ * An Overseer's start's first prompt (§app.project-overseer/confirm-brief): with no `already_agreed` and align on in
+ * the mode it starts in, the brief then the confirm paragraph; otherwise the brief as given. Pure.
+ */
+export function confirmBriefPrompt(prompt: string, mode: Pick<ProjectCodingMode, "minorModes">, alreadyAgreed: boolean): { prompt: string; confirm: boolean } {
+  if (alreadyAgreed || !prompt.trim() || !mode.minorModes.includes("align")) return { prompt, confirm: false };
+  return { prompt: `${prompt}\n\n${CONFIRM_BRIEF_PARAGRAPH}`, confirm: true };
+}
+
+/** The start's result, which says whether the session asks first (§app.project-overseer/confirm-brief). */
+export const confirmBriefWords = (confirm: boolean, alreadyAgreed: boolean): string =>
+  confirm ? " It first asks the operator to confirm the brief." : alreadyAgreed ? " Started as already agreed." : "";
+
+/** Both Overseers' `already_agreed` parameter (sova_create_session, sova_project_overseer code). */
+export const ALREADY_AGREED_PARAM =
+  "true only when the operator has already said, in their own words, that they want exactly this built. Omitted: the session first asks the operator to confirm the brief. Never set it on your own judgement.";
+
+/** `already_agreed` as an Overseer's call gives it: only `true` counts. */
+export const alreadyAgreedOf = (v: unknown): boolean => v === true;
+
 /** A verb playbook run's mode: its base, with align on beside it (normalized order, never twice). */
 export function playbookRunMode(base: ProjectCodingMode): ProjectCodingMode {
   const rest = base.subagentProfile !== undefined ? { subagentProfile: base.subagentProfile } : {};

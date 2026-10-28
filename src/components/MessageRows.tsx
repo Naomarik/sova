@@ -9,12 +9,23 @@ import { ImageStrip } from "./ImageStrip";
 import { Markdown } from "./Markdown";
 import { PathAttachment } from "./PathAttachment";
 import { ReplyTimingHead } from "./ReplyTiming";
-import { Icon } from "./ui";
+import { Banner, Icon } from "./ui";
 /**
- * The message rows of a transcript (a user's turn, a reply's text, its thinking), drawn the same by
- * the settled list (as Sova's own kinds on the card toolkit, components/BuiltinKinds.tsx) and by the
- * live streaming entries in Thread.tsx.
+ * The message rows of a transcript (a user's turn, a reply's text, its thinking, a turn's error), drawn
+ * the same by the settled list (as Sova's own kinds on the card toolkit, components/BuiltinKinds.tsx)
+ * and by the running turn (components/LiveKinds.tsx).
  */
+
+/** "The turn stopped with an error." Kept in the thread, in flow, so it stays in the record. */
+export function TurnError(props: { message: string }) {
+  return (
+    <Banner
+      tone="error"
+      title="The turn stopped with an error."
+      body={`${props.message.replace(/\.$/, "")}. Your messages are kept. Send again to retry.`}
+    />
+  );
+}
 
 /** "1:43 PM · 5m ago": the clock in mono, then its age, kept current by the one minute clock
     every head shares. The age drops once it would only repeat the date (past 7 days). */

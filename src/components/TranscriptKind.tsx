@@ -5,7 +5,7 @@ import { thousands, tildePath } from "../lib/format";
 import { home } from "../lib/ui-state";
 import { isErroredTurnStop } from "../lib/turn";
 import { rowProvider } from "../lib/subagent-limit";
-import type { KindHit, KindView, KindViewProps, PageView } from "../lib/transcript-kinds";
+import type { KindHit, KindView, KindViewProps, LiveInput, LiveKindViewProps, PageView } from "../lib/transcript-kinds";
 import type { WakeInfo } from "../../shared/wake";
 import type { TopicBatchInfo } from "../../shared/topic-message";
 import { InfoRow } from "./InfoRow";
@@ -14,6 +14,7 @@ import { SubagentLimitRow } from "./SubagentLimitRow";
 import { TopicCard } from "./TopicCard";
 import { WakeCard } from "./WakeCard";
 import { BUILTIN_VIEWS } from "./BuiltinKinds";
+import { LIVE_VIEWS } from "./LiveKinds";
 import { Icon } from "./ui";
 
 /**
@@ -23,12 +24,26 @@ import { Icon } from "./ui";
  * Reload in its place, and every other row goes on. Reload draws that card again (a module view
  * is loaded again); it never reloads the page or the chat. The boundary adds nothing to the page
  * while the view draws.
+ *
+ * A piece of the running turn (`input`, matched by a kind's live form: `hit.live`) is drawn the same
+ * way, by its kind's live view (components/LiveKinds.tsx). A host draws a live piece or a settled
+ * row for its whole life: the settled row that replaces a live one at the turn's end is a new row.
  */
-export function TranscriptKindRow(props: { hit: KindHit; item: KindViewProps["item"]; limitPath?: string; index?: () => number; reserve?: string }) {
+export function TranscriptKindRow(props: { hit: KindHit; item?: KindViewProps["item"]; input?: LiveInput; limitPath?: string; index?: () => number; reserve?: string }) {
+  const live = untrack(() => props.hit.live);
+  /** What a live view is given: getters too. */
+  const liveProps: LiveKindViewProps = {
+    get input() {
+      return props.input!;
+    },
+    get value() {
+      return props.hit.value;
+    },
+  };
   /** What the view is given: getters, so it reads its row and its value as they change. */
   const viewProps: KindViewProps = {
     get item() {
-      return props.item;
+      return props.item!;
     },
     get value() {
       return props.hit.value;
@@ -45,6 +60,10 @@ export function TranscriptKindRow(props: { hit: KindHit; item: KindViewProps["it
   const draw = () => {
     const kind = createMemo(() => props.hit.kind);
     return createMemo(() => {
+      if (live) {
+        const view = LIVE_VIEWS[kind().live!.view] as Component<LiveKindViewProps>;
+        return untrack(() => view(liveProps));
+      }
       const view = viewComponent(kind().view);
       if (!view) return undefined;
       if (!("load" in kind().view!)) return untrack(() => view(viewProps));

@@ -21,11 +21,12 @@ const count = (src: string, re: RegExp) => src.match(re)?.length ?? 0;
 test("a delivered message's strip is drawn only by the reply place", () => {
   assert.deepEqual(using("ReplyPlaceView"), ["components/Thread.tsx"]);
   assert.deepEqual(using("ReplySlot"), ["components/ReplyPlace.tsx"], "what extensions add is drawn only in the place");
-  // MessageActions: the place's built-ins, and the one Remove under a message still in the queue.
-  assert.deepEqual(using("MessageActions"), ["components/ReplyPlace.tsx", "components/Thread.tsx"]);
-  const thread = files.find((x) => x.f === "components/Thread.tsx")!.src;
-  assert.equal(count(thread, /<MessageActions[\s>]/g), 1);
-  assert.match(thread, /<MessageActions label="Actions for your queued message"/);
+  // MessageActions: the place's built-ins, and the one Remove under a message still in the queue
+  // (drawn by the user kind's live view, the running turn's message row).
+  assert.deepEqual(using("MessageActions"), ["components/LiveKinds.tsx", "components/ReplyPlace.tsx"]);
+  const live = files.find((x) => x.f === "components/LiveKinds.tsx")!.src;
+  assert.equal(count(live, /<MessageActions[\s>]/g), 1);
+  assert.match(live, /<MessageActions label="Actions for your queued message"/);
 });
 
 test("built-ins come first, then extensions", () => {

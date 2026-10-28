@@ -11,6 +11,12 @@
  * alignment card last (§chat.transcript-cards/built-ins). Thread.tsx never matches a row itself
  * and draws no kind of its own (transcript-kinds-rule.test.ts).
  *
+ * A turn still streaming is drawn from the same list: a kind that draws before its row settles has a
+ * `live` form, matched against the run's own pieces (`LiveInput`: a message going in, a streamed
+ * block, a call with its result, the reply's stop or error) by `liveKindOf`, in the same order, and
+ * drawn by the same host (components/LiveKinds.tsx holds the live views). The settled row that
+ * replaces it at the turn's end is the same kind's `view`.
+ *
  * Like src/vis/registry.ts this file stays free of Solid, the DOM and CSS (views are named or
  * imported lazily), so its order and matching are tested in plain unit tests.
  */
@@ -19,11 +25,17 @@ import type { Component } from "solid-js";
 import type { TranscriptItem } from "../../shared/protocol";
 import { rowFacts } from "../../shared/wire-v1";
 import { isBriefText } from "../../shared/senders";
-import { OFFER_TOOL } from "../../shared/session-offers";
-import { CARD_TOOL, type CardInfo } from "../../shared/transcript-cards";
+import { normalizeOfferDetails, OFFER_TOOL } from "../../shared/session-offers";
+import { CARD_TOOL, normalizeCardDetails as normalizeRaisedCard, type CardInfo } from "../../shared/transcript-cards";
 import { checkCardData, dataCardHeight } from "../../shared/view-cards";
-import { SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
-import { alignKey, alignOf } from "./align";
+import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
+import { normalizeTourCardDetails, TOUR_TOOLS } from "../../shared/tour";
+import { isSettingsToolDetails } from "../../shared/project-settings";
+import { parseWakeNudge } from "../../shared/wake";
+import { parseTopicBatch } from "../../shared/topic-message";
+import type { ReplyTiming } from "../../shared/usage/perf";
+import type { LiveBlock, LiveEntry, LiveTool } from "./live";
+import { alignKey, alignOf, alignRowFromDetails } from "./align";
 import { newestByKey } from "./transcript-placement";
 import { explainOf } from "./explain";
 import { isLoginNoteRow } from "./change-rows";
@@ -72,6 +84,61 @@ export interface KindViewProps<V = unknown> {
   index?: () => number;
 }
 
+/** A message going into the running turn: yours, queued or taken, or one the server started (a wake, a topic batch). */
+export type LiveUserEntry = Extract<LiveEntry, { kind: "user" }>;
+export type LiveCallBlock = Extract<LiveBlock, { type: "toolCall" }>;
+
+/** Where a streamed block stands in its reply, worked out by the run around it (the same for every kind). */
+export interface LiveBlockFacts {
+  /** The reply's author: its model's label, or the transcript's author. */
+  author(): string;
+  model(): string | undefined;
+  /** The block is still being written (its live dot). */
+  streaming(): boolean;
+  /** A reply text block shows its head: the block drawn above it is no text. */
+  showHead(): boolean;
+  /** A finished reply's measurement, on its first text block. */
+  timing(): ReplyTiming | undefined;
+  /** The measured head's time. */
+  time(): string | undefined;
+}
+
+/**
+ * A piece of the running turn, as `liveKindOf` matches it: the live counterpart of a settled row. Each
+ * is drawn by the kind whose `live` form matches it first, in the list's order.
+ */
+export type LiveInput =
+  | { kind: "user"; entry: LiveUserEntry }
+  | { kind: "text" | "thinking"; block: Extract<LiveBlock, { type: "text" | "thinking" }>; facts: LiveBlockFacts }
+  | { kind: "call"; block: LiveCallBlock; facts: LiveBlockFacts }
+  /** The reply ended as stopped by you. */
+  | { kind: "stopped"; at: string }
+  /** The reply ended on an error; `model` produced it. */
+  | { kind: "error"; message: string; model?: string };
+
+/** What a live form's match may ask of the run: facts only the whole run knows. */
+export interface LiveKindContext {
+  /** A call's tool state: running, and its result once it ends. */
+  tool(callId: string): LiveTool | undefined;
+  /** The run's newest finished call for a tour: only it draws the tour's card (§app.tours/one-card). */
+  tourCall(tourId: string): string | undefined;
+}
+
+/** The live views (components/LiveKinds.tsx `LIVE_VIEWS`), by name. */
+export type LiveView = "wake" | "topic" | "brief" | "user" | "assistant-text" | "thinking" | "align" | "info" | "tour" | "show-changes" | "offer" | "card" | "settings" | "tool";
+
+/** What a live view gets: the piece of the run it draws, and the value its kind's live match gave. */
+export interface LiveKindViewProps<V = unknown> {
+  input: LiveInput;
+  value: V;
+}
+
+/** A kind's form while its turn streams: what it matches of the run, and the view that draws it then. */
+export interface LiveForm {
+  match(input: LiveInput, ctx: LiveKindContext): unknown;
+  view: LiveView;
+}
+
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
 export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report" | "align";
 
@@ -99,15 +166,51 @@ export interface TranscriptKind<V = unknown> {
   view?: KindView;
   /** A row the transcript keeps for its facts but never draws (a sent marker): no view, no branch. */
   drawsNothing?: true;
+  /** How the kind draws while its turn still streams, before its row settles; absent, it draws only settled. */
+  live?: LiveForm;
 }
 
 const kind = <V>(k: TranscriptKind<V>): TranscriptKind => k as unknown as TranscriptKind;
 const isCall = (item: TranscriptItem) => item.kind === "tool-call";
+/** A live call named `name` that finished: its result's details. */
+const doneCall = (input: LiveInput, ctx: LiveKindContext, name: (n: string) => boolean): unknown => {
+  if (input.kind !== "call" || !name(input.block.name)) return undefined;
+  const t = ctx.tool(input.block.id);
+  return t?.status === "done" ? t.details : undefined;
+};
+const named = (n: string) => (name: string) => name === n;
 
-// In the order Thread.tsx's chain had: the first kind that matches draws the row.
+// In the order Thread.tsx's chains had: the first kind that matches draws the row (settled or live).
+// The settled kinds are told apart by their row kind first, so wake and topic standing before the
+// user row changes no settled row; a live message is a wake, a topic batch, a brief or yours, in that order.
 export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
-  kind({ id: "brief", match: (it) => it.kind === "user" && isBriefText(it.text), host: "page", placement: "anchored", view: { page: "brief" } }),
-  kind({ id: "user", match: (it) => it.kind === "user", host: "page", placement: "anchored", view: { page: "user" } }),
+  kind({
+    id: "wake",
+    match: (it) => it.kind === "wake" && it.wake,
+    estimate: () => "46px",
+    host: "page",
+    placement: "anchored",
+    view: { page: "wake" },
+    live: { match: (input) => input.kind === "user" && parseWakeNudge(input.entry.text), view: "wake" },
+  }),
+  kind({
+    id: "topic",
+    match: (it) => it.kind === "topic" && it.topic,
+    estimate: () => "70px",
+    host: "page",
+    placement: "anchored",
+    view: { page: "topic" },
+    live: { match: (input) => input.kind === "user" && parseTopicBatch(input.entry.text), view: "topic" },
+  }),
+  kind({
+    id: "brief",
+    match: (it) => it.kind === "user" && isBriefText(it.text),
+    host: "page",
+    placement: "anchored",
+    view: { page: "brief" },
+    live: { match: (input) => input.kind === "user" && isBriefText(input.entry.text) && input.entry, view: "brief" },
+  }),
+  kind({ id: "user", match: (it) => it.kind === "user", host: "page", placement: "anchored", view: { page: "user" }, live: { match: (input) => input.kind === "user" && input.entry, view: "user" } }),
   // The sent markers draw nothing themselves: each tags the row it names.
   kind({ id: "overseer-sent", match: (it) => it.overseerMark?.kind === "sent", host: "page", placement: "anchored", drawsNothing: true }),
   kind({ id: "baton-sent", match: (it) => it.batonMark?.kind === "sent", host: "page", placement: "anchored", drawsNothing: true }),
@@ -116,15 +219,29 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   kind({ id: "baton", match: (it) => it.batonMark && it.batonMark.kind !== "sent" && it.batonMark, host: "page", placement: "anchored", view: { page: "baton" } }),
   kind({ id: "overseer-answer", match: (it) => it.overseerMark?.kind === "dialog-answer" && it.overseerMark, host: "page", placement: "anchored", view: { page: "overseer-answer" } }),
   kind({ id: "worktree-merge", match: (it) => it.kind === "worktree-merge" && it.worktreeMerge, host: "page", placement: "anchored", view: { page: "worktree-merge" } }),
-  kind({ id: "wake", match: (it) => it.kind === "wake" && it.wake, estimate: () => "46px", host: "page", placement: "anchored", view: { page: "wake" } }),
-  kind({ id: "topic", match: (it) => it.kind === "topic" && it.topic, estimate: () => "70px", host: "page", placement: "anchored", view: { page: "topic" } }),
   // Legacy: the retired spec card's row, still sent by older mesh peers.
   kind({ id: "spec-turn", match: (it) => it.kind === "spec-turn", host: "page", placement: "anchored", drawsNothing: true }),
-  kind({ id: "assistant-text", match: (it) => it.kind === "assistant-text", host: "page", placement: "anchored", view: { page: "assistant-text" } }),
-  kind({ id: "thinking", match: (it) => it.kind === "thinking", host: "page", placement: "anchored", view: { page: "thinking" } }),
+  kind({
+    id: "assistant-text",
+    match: (it) => it.kind === "assistant-text",
+    host: "page",
+    placement: "anchored",
+    view: { page: "assistant-text" },
+    live: { match: (input) => input.kind === "text" && input.block, view: "assistant-text" },
+  }),
+  kind({ id: "thinking", match: (it) => it.kind === "thinking", host: "page", placement: "anchored", view: { page: "thinking" }, live: { match: (input) => input.kind === "thinking" && input.block, view: "thinking" } }),
   // An open alignment follows the chat by revision: each `align` call is a new row, its newest
-  // revision draws the whole card and earlier ones one line (lib/align.ts `newestAlignRows`).
-  kind({ id: "align", match: (it) => it.kind === "align" && it.align, host: "page", placement: "follow", key: (it) => alignKey(it), view: { page: "align" } }),
+  // revision draws the whole card and earlier ones one line (lib/align.ts `newestAlignRows`). While
+  // the turn streams, a call that changed an alignment draws its card whole, as the newest.
+  kind({
+    id: "align",
+    match: (it) => it.kind === "align" && it.align,
+    host: "page",
+    placement: "follow",
+    key: (it) => alignKey(it),
+    view: { page: "align" },
+    live: { match: (input, ctx) => alignRowFromDetails(doneCall(input, ctx, named("align"))), view: "align" },
+  }),
   kind({ id: "align-report", match: (it) => it.kind === "report" && it.report && alignOf(it.report), host: "page", placement: "anchored", view: { page: "align-report" } }),
   kind({ id: "explain", match: (it) => it.kind === "report" && it.report && explainOf(it.report), host: "page", placement: "anchored", view: { page: "explain" } }),
   kind({ id: "team-report", match: (it) => it.kind === "report" && it.report?.team, host: "page", placement: "anchored", view: { page: "team-report" } }),
@@ -135,12 +252,49 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   kind({ id: "compaction", match: (it) => it.kind === "info" && rowFacts(it)?.compaction, estimate: () => "36px", host: "page", placement: "anchored", view: { page: "compaction" } }),
   // A Claude login note waits for the first message, like the profile row.
   kind({ id: "login-note-waiting", match: (it, ctx) => isLoginNoteRow(it) && !ctx.hasUserRow(), host: "page", placement: "anchored", drawsNothing: true }),
-  kind({ id: "info", match: (it) => it.kind === "info", estimate: (it) => infoEstimate(it.text ?? ""), host: "page", placement: "anchored", view: { page: "info" } }),
-  kind({ id: "tour", match: (it, ctx) => isCall(it) && ctx.tourCard(it), host: "page", placement: "anchored", view: { page: "tour" } }),
+  // An info row; while the turn streams, its reply's stop and error rows (a held chat's error with its limit row).
+  kind({
+    id: "info",
+    match: (it) => it.kind === "info",
+    estimate: (it) => infoEstimate(it.text ?? ""),
+    host: "page",
+    placement: "anchored",
+    view: { page: "info" },
+    live: { match: (input) => (input.kind === "stopped" || input.kind === "error") && input, view: "info" },
+  }),
+  kind({
+    id: "tour",
+    match: (it, ctx) => isCall(it) && ctx.tourCard(it),
+    host: "page",
+    placement: "anchored",
+    view: { page: "tour" },
+    // Only the run's newest call for its tour draws the card; an earlier one is a tool card with its line.
+    live: {
+      match: (input, ctx) => {
+        const d = normalizeTourCardDetails(doneCall(input, ctx, (n) => TOUR_TOOLS.has(n)));
+        return d && input.kind === "call" && ctx.tourCall(d.tourId) === input.block.id && d;
+      },
+      view: "tour",
+    },
+  }),
   // A show_changes result whose details check out reads as a card that opens the changes viewer
   // (§chat.changes/show-changes-card); anything else, a tool card.
-  kind({ id: "show-changes", match: (it, ctx) => isCall(it) && it.text === SHOW_CHANGES_TOOL && ctx.showChanges(it.toolCallId), host: "page", placement: "anchored", view: { page: "show-changes" } }),
-  kind({ id: "offer", match: (it, ctx) => isCall(it) && it.text === OFFER_TOOL && ctx.offer(it.toolCallId), host: "page", placement: "anchored", view: { page: "offer" } }),
+  kind({
+    id: "show-changes",
+    match: (it, ctx) => isCall(it) && it.text === SHOW_CHANGES_TOOL && ctx.showChanges(it.toolCallId),
+    host: "page",
+    placement: "anchored",
+    view: { page: "show-changes" },
+    live: { match: (input, ctx) => normalizeShowChangesDetails(doneCall(input, ctx, named(SHOW_CHANGES_TOOL))), view: "show-changes" },
+  }),
+  kind({
+    id: "offer",
+    match: (it, ctx) => isCall(it) && it.text === OFFER_TOOL && ctx.offer(it.toolCallId),
+    host: "page",
+    placement: "anchored",
+    view: { page: "offer" },
+    live: { match: (input, ctx) => normalizeOfferDetails(doneCall(input, ctx, named(OFFER_TOOL))), view: "offer" },
+  }),
   // A project's transcript card (§chat/transcript-cards), one of Sova's data cards: the agent's at its
   // `card` call, one raised from outside at the row the page placed it as. Its type says where it
   // stands: a follow type's revisions share its key, the newest drawn whole; an anchored card has no key.
@@ -152,9 +306,25 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
     placement: "follow",
     key: (_it, card: CardInfo) => (card.placement === "follow" && card.key ? `${card.type}\u0000${card.key}` : undefined),
     view: { load: () => import("../components/TranscriptCard") as unknown as Promise<{ default: Component<KindViewProps> }> },
+    // The running turn's card is drawn as soon as its call returns (§chat.transcript-cards/card-tool).
+    live: { match: (input, ctx) => normalizeRaisedCard(doneCall(input, ctx, named(CARD_TOOL))), view: "card" },
   }),
-  kind({ id: "settings", match: (it, ctx) => isCall(it) && it.text === SETTINGS_TOOL && ctx.settings(it.toolCallId), host: "page", placement: "anchored", view: { page: "settings" } }),
-  kind({ id: "tool", match: (it) => isCall(it), host: "page", placement: "anchored", view: { page: "tool" } }),
+  kind({
+    id: "settings",
+    match: (it, ctx) => isCall(it) && it.text === SETTINGS_TOOL && ctx.settings(it.toolCallId),
+    host: "page",
+    placement: "anchored",
+    view: { page: "settings" },
+    live: {
+      match: (input, ctx) => {
+        const d = doneCall(input, ctx, named(SETTINGS_TOOL));
+        return isSettingsToolDetails(d) && (d.card || d.appliedNow.length) ? d : undefined;
+      },
+      view: "settings",
+    },
+  }),
+  // Any other call: its tool card, or the card its result reads as (a deck card, a link), streamed arguments and all.
+  kind({ id: "tool", match: (it) => isCall(it), host: "page", placement: "anchored", view: { page: "tool" }, live: { match: (input) => input.kind === "call" && input.block, view: "tool" } }),
   // A paired result draws inside its call's card: its own row draws nothing.
   kind({ id: "tool-result-paired", match: (it, ctx) => it.kind === "tool-result" && !!it.toolCallId && !!ctx.hasCall?.(it.toolCallId), host: "page", placement: "anchored", drawsNothing: true }),
   kind({ id: "tool-result", match: (it) => it.kind === "tool-result", host: "page", placement: "anchored", view: { page: "tool-result" } }),
@@ -172,10 +342,11 @@ if (BY_ID.size !== TRANSCRIPT_KINDS.length) throw new Error("transcript-kinds: t
 
 export const kindById = (id: string): TranscriptKind | undefined => BY_ID.get(id);
 
-/** A row's kind and the value its match gave. */
+/** A row's kind and the value its match gave; `live`: matched by the kind's live form, drawn by its live view. */
 export interface KindHit {
   kind: TranscriptKind;
   value: unknown;
+  live?: true;
 }
 
 /** The first kind that matches `item`, in the list's order, or undefined (the row draws as Unknown). */
@@ -185,6 +356,26 @@ export function kindOf(item: TranscriptItem, ctx: KindContext, kinds: readonly T
     if (value) return { kind: k, value };
   }
   return undefined;
+}
+
+/** The first kind whose live form matches a piece of the running turn, in the list's order, or undefined (it draws nothing). */
+export function liveKindOf(input: LiveInput, ctx: LiveKindContext, kinds: readonly TranscriptKind[] = TRANSCRIPT_KINDS): KindHit | undefined {
+  for (const k of kinds) {
+    const value = k.live?.match(input, ctx);
+    if (value) return { kind: k, value, live: true };
+  }
+  return undefined;
+}
+
+/** A streamed block as the piece of the run its live row draws: a call, or a text or thinking block. */
+export const liveBlockInput = (block: LiveBlock, facts: LiveBlockFacts): LiveInput => (block.type === "toolCall" ? { kind: "call", block, facts } : { kind: block.type, block, facts });
+
+/** A reply's end, as the pieces its live rows draw after its blocks: stopped by you, then its error. */
+export function liveEndsOf(entry: Extract<LiveEntry, { kind: "assistant" }>): LiveInput[] {
+  const out: LiveInput[] = [];
+  if (entry.stoppedAt) out.push({ kind: "stopped", at: entry.stoppedAt });
+  if (entry.error) out.push({ kind: "error", message: entry.error, ...(entry.model ? { model: entry.model } : {}) });
+  return out;
 }
 
 /** Two hits draw the same: the same kind, from the same value. */

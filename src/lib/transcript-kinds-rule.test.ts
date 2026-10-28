@@ -94,6 +94,51 @@ test("no card is left on the old path: every kind is drawn by the toolkit or dra
 });
 
 test("the toolkit's views stay out of the thread's internals", () => {
-  for (const file of ["TranscriptKind.tsx", "DataCards.tsx", "BuiltinKinds.tsx", "MessageRows.tsx", "thread-rows.ts"])
+  for (const file of ["TranscriptKind.tsx", "DataCards.tsx", "BuiltinKinds.tsx", "LiveKinds.tsx", "MessageRows.tsx", "thread-rows.ts"])
     assert.doesNotMatch(read(`../components/${file}`), /from "\.\/(Thread|ChatView)"/, file);
+});
+
+/** A top-level function of Thread.tsx, read from its declaration to the closing brace at column 0. */
+const fn = (name: string): string => {
+  const from = thread.search(new RegExp(`^(export )?function ${name}\\(`, "m"));
+  assert.ok(from >= 0, `${name} is where the rule expects it`);
+  const to = thread.indexOf("\n}\n", from);
+  return thread.slice(from, to + 2);
+};
+/** Every component a piece of source draws: `<Name` and `<Name.Member` tags. */
+const tags = (src: string) => new Set([...src.matchAll(/<([A-Z][A-Za-z0-9]*(?:\.[A-Za-z]+)?)[\s>/]/g)].map((m) => m[1]!));
+/** What tells one kind from another: a kind's own match belongs in lib/transcript-kinds.ts, never in the thread. */
+const KIND_TESTS = /\b(parseWakeNudge|parseTopicBatch|isBriefText|alignRowFromDetails|normalizeCardDetails|normalizeRaisedCard|isSettingsToolDetails|linkDetails|normalizeTourCardDetails)\b|\.name === "|RAISE_CARD_TOOL|SETTINGS_TOOL/;
+
+test("the running turn is drawn through the same list and host: no live branch of its own in Thread.tsx", () => {
+  assert.doesNotMatch(thread, /LiveBlockView/, "the old live chain is gone");
+  const liveRow = fn("LiveRow");
+  const liveEntries = fn("LiveEntries");
+  // LiveRow: the live lookup, then the toolkit's host; nothing else draws.
+  assert.match(liveRow, /liveKindOf\(input, rows\)/);
+  assert.deepEqual([...tags(liveRow)].sort(), ["Show", "TranscriptKindRow"], "LiveRow draws the host and nothing else");
+  // LiveEntries lays the run out (entries, the work chain, the hidden rows) and draws each piece as a LiveRow.
+  const allowed = new Set(["For", "Show", "Switch", "Match", "LiveRow", "ChainFold", "HiddenRows", "LiveRowsContext.Provider"]);
+  for (const t of tags(liveEntries)) assert.ok(allowed.has(t), `LiveEntries draws <${t}> itself: a live card goes on its kind's live view (components/LiveKinds.tsx)`);
+  assert.match(liveEntries, /<LiveRow input=\{\{ kind: "user", entry: e\(\) \}\} \/>/, "a message going in is a LiveRow");
+  assert.match(liveEntries, /liveBlockInput\(block,/, "a streamed block is a LiveRow");
+  assert.match(liveEntries, /liveEndsOf\(e\(\)\)/, "the reply's end is a LiveRow");
+  for (const src of [liveRow, liveEntries]) assert.doesNotMatch(src.replace(/const liveChains = createMemo[\s\S]*?\n  \}\);\n/, ""), KIND_TESTS, "a kind told apart in the thread's live path");
+});
+
+test("Thread.tsx imports no card or message view: every one is drawn by a kind's view or live view", () => {
+  const imports = [...thread.matchAll(/^import [^;]* from "\.\/([A-Za-z]+)";$/gm)].map((m) => m[1]!);
+  const VIEWS = ["AlignDocCard", "AlignCard", "ToolCard", "TourCard", "OfferCard", "ChangesViewer", "SettingsChangeCard", "OverseerCards", "WakeCard", "TopicCard", "SubagentLimitRow", "TranscriptCard", "WorktreeMergeCard", "ExplainCard", "TeamMessageCard", "ReportRow", "ProfileCards", "BuiltinKinds", "LiveKinds"];
+  for (const v of VIEWS) assert.ok(!imports.includes(v), `Thread.tsx imports ./${v}`);
+  assert.doesNotMatch(thread, /import\(\s*["']\.\/TranscriptCard["']\s*\)/, "no card module loaded by the thread itself");
+  // The message rows file is the views' own: the thread takes only the error banner it re-exports.
+  assert.match(thread, /^import \{ TurnError \} from "\.\/MessageRows";$/m);
+});
+
+test("every live view is some kind's, and a kind with a live form names one", () => {
+  const union = /export type LiveView = ([^;]+);/.exec(read("./transcript-kinds.ts"))?.[1] ?? "";
+  const views = [...union.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]!);
+  const used = TRANSCRIPT_KINDS.flatMap((k) => (k.live ? [k.live.view] : []));
+  assert.deepEqual([...new Set(used)].sort(), [...views].sort(), "the live views are exactly the kinds' live forms'");
+  for (const k of TRANSCRIPT_KINDS) if (k.live) assert.ok(k.view, `${k.id} draws live but has no settled view`);
 });

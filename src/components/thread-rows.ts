@@ -4,6 +4,9 @@ import type { CardDetails, OverseerCard } from "../../shared/overseer-card";
 import type { Sender } from "../../shared/senders";
 import type { ReplyTiming } from "../../shared/usage/perf";
 import type { ToolSource } from "../lib/tool-content";
+import type { LiveState, LiveUserState } from "../lib/live";
+import type { LiveKindContext } from "../lib/transcript-kinds";
+import type { MessageActionItem } from "./MessageActions";
 
 /**
  * What a transcript's whole list knows that one row's view may ask (§chat.transcript-cards/toolkit):
@@ -53,5 +56,29 @@ export const ThreadRowsContext = createContext<ThreadRows>();
 export function useThreadRows(): ThreadRows {
   const rows = useContext(ThreadRowsContext);
   if (!rows) throw new Error("a transcript row's view is drawn outside its transcript");
+  return rows;
+}
+
+/**
+ * What the running turn knows that one live row's view may ask (components/LiveKinds.tsx): LiveEntries
+ * gives it, as HistoryItems gives `ThreadRows` to the settled views.
+ */
+export interface LiveRows extends LiveKindContext {
+  /** The run, as its events built it. */
+  live(): LiveState;
+  /** A baton session's person names by ref: a live message's sender. */
+  names(): Record<string, string> | undefined;
+  /** The held chat's own path: an errored reply's limit row then. */
+  limitPath(): string | undefined;
+  /** What a message of ours that hasn't been delivered offers (one Remove). */
+  queueActions: ((row: { id?: string; state: LiveUserState; text: string; handed?: boolean }) => MessageActionItem[]) | undefined;
+}
+
+export const LiveRowsContext = createContext<LiveRows>();
+
+/** The running turn around a live row; live views are drawn only inside one. */
+export function useLiveRows(): LiveRows {
+  const rows = useContext(LiveRowsContext);
+  if (!rows) throw new Error("a live row's view is drawn outside its running turn");
   return rows;
 }

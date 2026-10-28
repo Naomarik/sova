@@ -1,13 +1,12 @@
-import { children, createContext, createEffect, createMemo, createSignal, For, lazy, Match, on, onCleanup, Show, Switch, untrack, useContext, type JSX } from "solid-js";
+import { children, createContext, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, untrack, useContext, type JSX } from "solid-js";
 import type { TranscriptItem } from "../../shared/protocol";
 import { rowFacts } from "../../shared/wire-v1";
 import { wrapupRowIds } from "../lib/wrapup-rows";
 import { readHoldTop } from "../lib/read-hold";
-import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState, shownUserState } from "../lib/live";
-import { modelLabel, prettyJson, stampTime } from "../lib/format";
+import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState } from "../lib/live";
+import { modelLabel, prettyJson } from "../lib/format";
 import { isObj, resultDetails as detailsOf, str, toolResultView } from "../lib/message";
 import { toolContent, type ToolSource } from "../lib/tool-content";
-import { stripPastedPaths } from "../lib/path-attachments";
 import { focusView, setFocusView } from "../lib/ui-state";
 import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, registerRows, registerTranscript, transcriptRoot } from "../lib/jump";
 import type { RowTarget } from "../lib/older-rows";
@@ -21,44 +20,26 @@ import { compressWork } from "../lib/work-compression";
 import { isChangeRow } from "../lib/change-rows";
 import { sendersOf } from "../../shared/senders";
 import { isTurnStart } from "../lib/turn";
-import { parseWakeNudge } from "../../shared/wake";
-import { parseTopicBatch } from "../../shared/topic-message";
-import { AlignRow } from "./AlignDocCard";
-import { alignRowFromDetails, latestAlignId, newestAlignRows } from "../lib/align";
-import type { ReplyTiming } from "../../shared/usage/perf";
+import { latestAlignId, newestAlignRows } from "../lib/align";
 import { replyHovers } from "../lib/perf";
-import { ToolCard, type ToolStatus } from "./ToolCard";
-import { ThreadRowsContext, type ThreadRows } from "./thread-rows";
-import { AssistantText, Thinking, UserTurn } from "./MessageRows";
-import { ShowChangesCard } from "./ChangesViewer";
-import { TourCard } from "./TourCard";
+import { LiveRowsContext, ThreadRowsContext, useLiveRows, type LiveRows, type ThreadRows } from "./thread-rows";
+import { TurnError } from "./MessageRows";
 import { liveTourCalls, newestTourRows, tourFold, tourLine } from "../lib/tour-rows";
-import { normalizeTourCardDetails, TOUR_TOOLS } from "../../shared/tour";
+import { TOUR_TOOLS } from "../../shared/tour";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
 import { normalizeOfferDetails, OFFER_TOOL } from "../../shared/session-offers";
 import { CARD_TOOL as RAISE_CARD_TOOL, normalizeCardDetails as normalizeRaisedCard } from "../../shared/transcript-cards";
-import { OfferCardView } from "./OfferCard";
-import { SettingsToolCard } from "./SettingsChangeCard";
 import { isSettingsToolDetails } from "../../shared/project-settings";
 import { Banner, Chip, Icon } from "./ui";
-import { BriefRow, CardRevision, DeckCard, LinkCard, linkDetails, NavigateGo, useOverseerThread } from "./OverseerCards";
 import { cardFold, confirmAnswer, isBriefText } from "../lib/overseer";
-import { CARD_TOOL, normalizeCardDetails } from "../../shared/overseer-card";
-import { MessageActions, type MessageActionItem } from "./MessageActions";
+import type { MessageActionItem } from "./MessageActions";
 import { type MessageStrip, sameStrip, stripsByRow } from "../lib/message-actions";
 import { backWords } from "../lib/error-feed";
 import type { ReplyPlace } from "../lib/reply-place";
 import { ReplyPlaceView } from "./ReplyPlace";
 import { InfoRow } from "./InfoRow";
-// The live (streaming) rows still draw these directly: only the settled transcript is on the toolkit so far.
-import { WakeCard } from "./WakeCard";
-import { TopicCard } from "./TopicCard";
-import { SubagentLimitRow } from "./SubagentLimitRow";
-import { rowProvider } from "../lib/subagent-limit";
 import { TranscriptKindRow } from "./TranscriptKind";
-/** A card the running turn raised, before its row settles: the toolkit's own card view, loaded when first needed. */
-const LiveTranscriptCard = lazy(() => import("./TranscriptCard"));
-import { kindOf, sameHit, SETTINGS_TOOL, type KindContext, type KindHit } from "../lib/transcript-kinds";
+import { kindOf, liveBlockInput, liveEndsOf, liveKindOf, sameHit, SETTINGS_TOOL, type KindContext, type KindHit, type LiveInput } from "../lib/transcript-kinds";
 import { isErroredTurnStop } from "../lib/turn";
 
 /** Whose transcript the rows inside are (lib/tool-content): a tool card asks it for the content its
@@ -133,16 +114,8 @@ function Unknown(props: { raw: unknown }) {
   );
 }
 
-/** "The turn stopped with an error." Kept in the thread, in flow, so it stays in the record. */
-export function TurnError(props: { message: string }) {
-  return (
-    <Banner
-      tone="error"
-      title="The turn stopped with an error."
-      body={`${props.message.replace(/\.$/, "")}. Your messages are kept. Send again to retry.`}
-    />
-  );
-}
+/** The turn's error banner lives with the message rows (the running turn's error row draws it); kept here for its importers. */
+export { TurnError };
 
 /** "This chat didn't start." The chat's start failed, its server-side retry too (§chat.transcript/states):
     no turn ran, so never "The turn stopped…". `back`: messages that went back to the composer. */
@@ -620,117 +593,29 @@ export function HistoryItems(props: {
   );
 }
 
-function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: string; model?: string; streaming: boolean; showHead: boolean; timing?: ReplyTiming; time?: string }) {
-  const overseerThread = useOverseerThread();
-  return (
-    <Switch>
-      <Match when={props.block.type === "text" && props.block}>
-        {(b) => (
-          <Show when={b().text}>
-            <AssistantText text={b().text} author={props.author} model={props.model} streaming={props.streaming} showHead={props.showHead} timing={props.timing} time={props.timing ? props.time : undefined} />
-          </Show>
-        )}
-      </Match>
-      <Match when={props.block.type === "thinking" && props.block}>
-        {(b) => <Thinking text={b().text} streaming={props.streaming} />}
-      </Match>
-      <Match when={props.block.type === "toolCall" && props.block}>
-        {(b) => {
-          const tool = () => props.live.tools[b().id];
-          const status = (): ToolStatus => {
-            const t = tool();
-            if (t) return t.status;
-            return props.live.running ? "running" : "none";
-          };
-          /** A card this run raised or changed: the card itself, as soon as the result lands. */
-          const card = () => (b().name === CARD_TOOL && status() === "done" ? normalizeCardDetails(tool()?.details) : undefined);
-          /** The card at the fold's newest snapshot; null when a later call (this run's too) changed
-              it since this one, so this call is a revision line and never takes a click. */
-          const deck = () => {
-            const own = card()?.card;
-            if (!own) return undefined;
-            const newest = overseerThread?.card?.(own.id) ?? own;
-            return newest.rev > own.rev ? null : newest;
-          };
-          const linked = () => ((b().name === "sova_link" || b().name === "sova_unlink") && status() === "done" ? linkDetails(tool()?.details) : null);
-          // A finished call keeps what it streamed for the settled row that replaces this one, so a
-          // card open now stays drawn while the fetch asks the session file (lib/tool-content).
-          const toolSource = useContext(ToolSourceContext);
-          createEffect(() => {
-            const t = tool();
-            if (!toolSource || !t || (t.status !== "done" && t.status !== "error")) return;
-            const args = b().args ?? t.args;
-            toolContent.seed(toolSource, b().id, {
-              ...(args !== undefined ? { args } : {}),
-              result: { output: t.output, isError: t.status === "error", ...(t.details !== undefined ? { details: t.details } : {}) },
-            });
-          });
-          /** An align result that changed an alignment: its card, as soon as the result lands. */
-          const aligned = () => (b().name === "align" && status() === "done" ? alignRowFromDetails(tool()?.details) : undefined);
-          /** A show_changes result: its card, as soon as the call finishes (§chat.changes/show-changes-card). */
-          const changes = () => (b().name === SHOW_CHANGES_TOOL && status() === "done" ? normalizeShowChangesDetails(tool()?.details) : undefined);
-          const tourDone = () => (TOUR_TOOLS.has(b().name) && status() === "done" ? normalizeTourCardDetails(tool()?.details) : undefined);
-          /** The card only on this run's newest call for its tour; an earlier one reads as its line (§app.tours/one-card). */
-          const tour = () => {
-            const d = tourDone();
-            return d && liveTourCalls(props.live.tools).get(d.tourId) === b().id ? d : undefined;
-          };
-          const tourEarlier = () => {
-            const d = tourDone();
-            return d && !tour() ? tourLine(d) : undefined;
-          };
-          const offer = () => (b().name === OFFER_TOOL && status() === "done" ? normalizeOfferDetails(tool()?.details) : undefined);
-          /** A transcript card the running turn raised (§chat.transcript-cards/card-tool): drawn as soon as its call returns. */
-          const raised = () => (b().name === RAISE_CARD_TOOL && status() === "done" ? normalizeRaisedCard(tool()?.details) : undefined);
-          const settingsCard = () => {
-            const d = b().name === SETTINGS_TOOL && status() === "done" ? tool()?.details : undefined;
-            return isSettingsToolDetails(d) && (d.card || d.appliedNow.length) ? d : undefined;
-          };
-          return (
-            <Show when={!settingsCard()} fallback={<SettingsToolCard details={settingsCard()!} />}>
-            <Show when={!raised()} fallback={<LiveTranscriptCard item={{ id: b().id, kind: "tool-call", text: RAISE_CARD_TOOL, toolCallId: b().id }} value={raised()!} />}>
-            <Show when={!offer()} fallback={<OfferCardView card={offer()!} />}>
-            <Show when={!tour()} fallback={<TourCard details={tour()!} />}>
-            <Show when={!changes()} fallback={<ShowChangesCard details={changes()!} />}>
-            <Show when={!aligned()} fallback={<div class="entry-live-align" data-align-live={aligned()?.doc?.id}><AlignRow row={aligned()!} newest /></div>}>
-            <Show
-              when={!card()?.card}
-              fallback={
-                <Show when={deck()} fallback={<CardRevision card={card()!.card!} line={card()!.line} />}>
-                  {(c) => <DeckCard card={c()} line={card()!.line} />}
-                </Show>
-              }
-            >
-                <Show
-                  when={linked()}
-                  fallback={
-                    <ToolCard
-                      name={b().name}
-                      summary={tourEarlier()}
-                      args={b().args ?? tool()?.args}
-                      argsText={b().argsText}
-                      details={tool()?.details}
-                      status={status()}
-                      output={tool()?.output}
-                      images={tool()?.images}
-                      action={b().name === "sova_navigate" && status() === "done" ? <NavigateGo details={tool()?.details} /> : undefined}
-                    />
-                  }
-                >
-                  {(d) => <LinkCard details={d()} ended={b().name === "sova_unlink"} />}
-                </Show>
-            </Show>
-            </Show>
-            </Show>
-            </Show>
-            </Show>
-            </Show>
-            </Show>
-          );
-        }}
-      </Match>
-    </Switch>
-  );
+/**
+ * One piece of the running turn (a message going in, a streamed block, a call, the reply's end), drawn
+ * by the first kind whose live form matches it (lib/transcript-kinds.ts `liveKindOf`) in the toolkit's
+ * host, as a settled row is. A finished call also keeps what it streamed for the settled row that
+ * replaces this one, so a card open now stays drawn while the fetch asks the session file
+ * (lib/tool-content).
+ */
+function LiveRow(props: { input: LiveInput }) {
+  const rows = useLiveRows();
+  const input = props.input;
+  const hit = createMemo(() => liveKindOf(input, rows), undefined, { equals: sameHit });
+  const toolSource = useContext(ToolSourceContext);
+  if (input.kind === "call")
+    createEffect(() => {
+      const t = rows.tool(input.block.id);
+      if (!toolSource || !t || (t.status !== "done" && t.status !== "error")) return;
+      const args = input.block.args ?? t.args;
+      toolContent.seed(toolSource, input.block.id, {
+        ...(args !== undefined ? { args } : {}),
+        result: { output: t.output, isError: t.status === "error", ...(t.details !== undefined ? { details: t.details } : {}) },
+      });
+    });
+  return <Show when={hit()}>{(h) => <TranscriptKindRow hit={h()} input={input} />}</Show>;
 }
 
 /** The in-progress run assembled from streaming events. `hideTools` and `hideThinking` drop those
@@ -818,8 +703,19 @@ export function LiveEntries(props: {
     return runs;
   });
   const liveChainOf = (block: LiveBlock) => liveChains().get(block) ?? undefined;
+  /** What the live views may ask of this run (components/thread-rows.ts `LiveRows`). */
+  const liveRows: LiveRows = {
+    live: () => props.live,
+    tool: (callId) => props.live.tools[callId],
+    tourCall: (tourId) => liveTourCalls(props.live.tools).get(tourId),
+    names: () => props.names,
+    limitPath: () => props.limitPath,
+    get queueActions() {
+      return props.queueActions;
+    },
+  };
   return (
-    <>
+    <LiveRowsContext.Provider value={liveRows}>
       <For each={props.live.entries}>
         {(entry: LiveEntry) => (
           /* What the last row read (ThreadScroller `spot`) needs of a live message: the entry it was
@@ -830,43 +726,8 @@ export function LiveEntries(props: {
             data-queued={entry.kind === "user" && !entry.started && !entry.entryId ? "" : undefined}
           >
           <Switch>
-            <Match when={entry.kind === "user" && entry}>
-              {(e) => (
-                <Show
-                  when={parseWakeNudge(e().text)}
-                  fallback={
-                    <Show when={parseTopicBatch(e().text)} fallback={
-                    <Show when={!isBriefText(e().text)} fallback={<BriefRow text={e().text} />}>
-                    {
-                    /* A queued row has no `.entry` around it, so it brings the hover/tap region
-                       its Remove needs to be revealed by (base.css; `display: contents`, so the
-                       wrapper changes nothing about how the row lays out). */
-                    <div class="message-actions-host">
-                      <UserTurn
-                        text={e().attachments ? stripPastedPaths(e().text) : e().text}
-                        state={shownUserState(e())}
-                        origin={e().origin}
-                        overseer={e().overseer}
-                        fromSession={e().fromSession}
-                        sender={e().by ? (props.names?.[e().by!] ?? (e().by === "operator" ? "You" : "Someone")) : undefined}
-                        images={e().images}
-                        attachments={e().attachments}
-                      />
-                      <Show when={props.queueActions && e().state !== "delivered" ? props.queueActions(e()) : null}>
-                        {(items) => <Show when={items().length > 0}><MessageActions label="Actions for your queued message" align="end" items={items()} /></Show>}
-                      </Show>
-                    </div>
-                    }
-                    </Show>
-                    }>
-                      {(batch) => <TopicCard batch={batch()} />}
-                    </Show>
-                  }
-                >
-                  {(wake) => <WakeCard nudge={wake()} text={e().text} />}
-                </Show>
-              )}
-            </Match>
+            {/* A message going in: a wake, a topic batch, a brief or a turn of yours (lib/transcript-kinds.ts). */}
+            <Match when={entry.kind === "user" && entry}>{(e) => <LiveRow input={{ kind: "user", entry: e() }} />}</Match>
             <Match when={entry.kind === "assistant" && entry}>
               {(e) => (
                 <>
@@ -874,18 +735,15 @@ export function LiveEntries(props: {
                   <For each={e().blocks}>
                     {(block, i) => {
                       const chain = () => liveChainOf(block);
-                      const view = () => (
-                        <LiveBlockView
-                          block={block}
-                          live={props.live}
-                          author={modelLabel(e().model) ?? props.author}
-                          model={e().model}
-                          streaming={blockStreams(e(), i())}
-                          showHead={shownBefore(e().blocks, i())?.type !== "text"}
-                          timing={e().done && e().reply && firstText(e().blocks) === i() ? e().reply : undefined}
-                          time={e().endedAt}
-                        />
-                      );
+                      const input = liveBlockInput(block, {
+                        author: () => modelLabel(e().model) ?? props.author,
+                        model: () => e().model,
+                        streaming: () => blockStreams(e(), i()),
+                        showHead: () => shownBefore(e().blocks, i())?.type !== "text",
+                        timing: () => (e().done && e().reply && firstText(e().blocks) === i() ? e().reply : undefined),
+                        time: () => e().endedAt,
+                      });
+                      const view = () => <LiveRow input={input} />;
                       return (
                       <Show when={shows(block) && !foldedStep(chain())}>
                         <Show when={compressWork()} fallback={view()}>
@@ -904,21 +762,8 @@ export function LiveEntries(props: {
                       );
                     }}
                   </For>
-                  <Show when={e().stoppedAt}>
-                    <InfoRow>
-                      Stopped by you at <code>{stampTime(e().stoppedAt!)}</code>.
-                    </InfoRow>
-                  </Show>
-                  <Show when={e().error}>
-                    {(err) => (
-                      <>
-                        <TurnError message={err()} />
-                        {/* The failure's own row carries its own provider (its producing model) —
-                            never a worker's, never the chat model of right now. */}
-                        <Show when={props.limitPath}>{(p) => <SubagentLimitRow path={p()} message={err()} provider={rowProvider(e().model)} />}</Show>
-                      </>
-                    )}
-                  </Show>
+                  {/* The reply's end: stopped by you, or its error. */}
+                  <For each={liveEndsOf(e())}>{(end) => <LiveRow input={end} />}</For>
                 </>
               )}
             </Match>
@@ -931,13 +776,13 @@ export function LiveEntries(props: {
           <HiddenRows calls={h().calls} failed={h().failed} running={h().running} thinking={h().thinking}>
             {() => (
               <For each={hiddenBlocks()}>
-                {(b) => <LiveBlockView block={b} live={props.live} author={props.author} streaming={hiddenStreams(b)} showHead={false} />}
+                {(b) => <LiveRow input={liveBlockInput(b, { author: () => props.author, model: () => undefined, streaming: () => hiddenStreams(b), showHead: () => false, timing: () => undefined, time: () => undefined })} />}
               </For>
             )}
           </HiddenRows>
         )}
       </Show>
-    </>
+    </LiveRowsContext.Provider>
   );
 }
 

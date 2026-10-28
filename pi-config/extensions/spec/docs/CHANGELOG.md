@@ -1032,6 +1032,45 @@ would list master's changes instead.
     The tools read both layouts, so neither needs a tool change.
   - Upgrade: see UPGRADING step 14.
 
+- **A claim over 6 KB is warned about; a conversation's decision goes official with its build's branch; the
+  assessment tool is retired** (al_5, first part: the warning, decision a7 and decision a8; the claim migration
+  waits for al_6's conversion).
+  - Commit: on branch `feat/spec-size`; not on master yet.
+  - Why: claims over 8 KB were 23% of reads and 56% of the bytes read (goal 6). Decisions agreed in a
+    conversation were published on the main line before their build existed, so a reversal took a second spec
+    change (goal 1, constraint 5). The assessment companion had served no goal since 10-03.
+  - Changed:
+    - size cap: one claim's size is its prose bytes in its claim file, as `read`/`toc` count it, never its
+      record's, so both record layouts agree. The cap is 6,144 B, or the spec's top-level `declarationCap`
+      (`declaration-cap-invalid` warns on a bad value). `check` gives `counts.cap`, `counts.overCap` and each
+      declaration's `bytes`, with no finding per declaration, so its exit never moves. `draft check` warns
+      `declaration-over-cap` (in `introduced`, with `bytes`, `cap`, `was`) when a draft takes a claim over the
+      cap or grows one that is over; an unchanged or shrinking one counts under `preexisting`. `promote` gives
+      `sizeWarnings` for the selected claims. Nothing refuses, and `agree`'s clean-plan test ignores it. The
+      warning says how to split (by topic into sibling claims, the old § keeping a summary that requires its
+      parts); the mode text is unchanged (al_3 holds `spec-mode.md`);
+    - Sova's server: Build of a conversation's draft copies that draft into the coding session's new worktree
+      after the cut and before the session starts (only where Git ignores the drafts folder). Its items
+      record the branch (`buildBranch`). Approve and the reconciler's promotion leave such items to that
+      branch until its records are in the main line's spec, so they become official when the branch lands. A
+      build with no branch (a folder outside Git, a worktree named later) changes nothing: Approve still
+      publishes directly;
+    - retired: `core/sova-spec-assess.mjs`, its tests, `mode/spec-assessment.ts` (+ test,
+      `tests/assessment-absence.mjs`), `server/tests/spec-assessment.mjs`, the bench case, the core's and the
+      draft tool's `assessment` read policy, `inputSources` and `sourceHashes()`. `createInspection` and
+      `inspectDraft` keep `default` and `review`, and their tests moved to `tests/inspection-reader.test.mjs`.
+      The review tool's tests pass alone (58/58). The local packets are archived, not deleted (36 in the main
+      checkout, 130 in 4 older worktrees).
+  - §: + §tools.spec/declaration-cap; − §tools.spec/change-assessments, − §tools.spec/assessment-observations;
+    §tools/spec, §tools.spec/review-playbook, §tools.spec/record-layout, §tools.spec/context-packets,
+    §tools.spec/inspection-safety (code), §app.requirements/draft-approval, §app.requirements/promotion,
+    §chat.worktrees/readiness, §app/idle-git-cache (draft `spec-size`).
+  - Numbers: Sova's spec at ca8ab14 has 124 claims over 6,144 B; a draft that changes none introduces 0
+    warnings (`preexisting: declaration-over-cap 124`). `check` keeps its exit (1, as before) and its JSON
+    grows 2.1% (1,155,126 → 1,179,463 B, the `bytes` field). `draft check` text on an unchanged draft:
+    31,798 → 31,824 B. The read-cost measures (median/p90 bytes per read) move only with the migration.
+  - Upgrade: see UPGRADING step 16.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -1072,7 +1111,6 @@ The tools are Node standard library only. Nothing is installed.
    | `official.mjs` | The one rule for whether a draft is official (`drafts`, `prune --official`, a host's own readiness) |
    | `sova-spec-draft.mjs` | Drafts, evidence, promotion, `merge-manifest`, `merge-claims` |
    | `sova-spec-review.mjs` | The review companion |
-   | `sova-spec-assess.mjs` | The assessment companion |
 
 2. **Set up the merge drivers, once per clone.** Add these two lines to `.gitattributes`:
 
@@ -1243,3 +1281,9 @@ The tools are Node standard library only. Nothing is installed.
     Sova's `AGENTS.md` does. Without the mode on, nothing hands it over. With the mode on, the first
     `[spec census]` note carries it once. A hook of your own that parses census notes sees it after the
     digest, from its `Writing procedure (once` head.
+16. **The size cap and the retired assessment tool** (2026-10-26, branch `feat/spec-size`). Copy every
+    `core/*.mjs` again and delete `core/sova-spec-assess.mjs` from any copy. `check --json` declarations
+    gain `bytes` and its `counts` gain `cap`/`overCap`; `draft check` may list `declaration-over-cap`
+    warnings and `promote` gives `sizeWarnings`. No exit code changes. A project that wants another cap sets
+    a top-level `declarationCap` (bytes) in `manifest.json`. A script that ran `sova-spec-assess.mjs` or
+    passed `readPolicy: "assessment"` to `createInspection`/`inspectDraft` loses it: use the review tool.

@@ -192,8 +192,15 @@
       "server/project-services/share.test.ts",
       "server/project-services/share.integration.test.ts",
       "server/app.ts",
-      "server/share-preview-router.integration.test.ts"
-    ]
+      "server/share-preview-router.integration.test.ts",
+      "server/project-overseer-tools.ts",
+      "server/overseer-tools.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+    }
   },
   "§mesh.public/preview-address": {
     "kind": "behavior",

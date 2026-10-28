@@ -92,9 +92,9 @@
       "server/overseer-copies.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-26T18:32Z",
-      "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
     }
   },
   "§app.project-services/conform": {
@@ -334,9 +334,9 @@
       "server/project-services/copy-approvals.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-26T18:32Z",
-      "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
     }
   },
   "§app.project-services/facts": {
@@ -597,12 +597,14 @@
       "server/preview-links.ts",
       "server/share/preview-proxy.ts",
       "scripts/sova-project.mjs",
-      "server/project-services/copy-approvals.test.ts"
+      "server/project-services/copy-approvals.test.ts",
+      "server/overseer-tools.ts",
+      "server/project-overseer-tools.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-26T18:32Z",
-      "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
     }
   },
   "§app.project-services/status-logs": {

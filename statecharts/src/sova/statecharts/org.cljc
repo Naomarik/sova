@@ -52,7 +52,7 @@
   "person/add: the new person as the roster writer would store it, or a refusal."
   [data]
   (let [e (b/evt data)]
-    (rp/apply-change nil (:person e) (or (some-> (:by-kind e) name) "operator") (:names-taken e))))
+    (rp/apply-change nil (:person e) (rp/own-word-writer (or (some-> (:by-kind e) name) "operator") e true) (:names-taken e))))
 
 (defn person-add-check [data] (let [c (person-add-change data)] (when (r/refusal? c) c)))
 
@@ -185,7 +185,8 @@
         (dsl/spawn {:statechart "placement" :link :org :watch? false :if-exists :skip
                     :id (fn [d] (b/placement-sid (:id d) (:project-id (b/evt d)))) :data placement-data}))
 
-      ;; A person, added by the operator (or the global Overseer for them): active from the start.
+      ;; A person, added by the operator (or the global Overseer for them, or the project overseer on the
+      ;; operator's own word: `own-word`, attended): active from the start.
       (dsl/act {:sova/feed :feed :event :person/add :checks [invalid person-add-check]}
         (dsl/spawn {:statechart "person" :link :org :watch? false
                     :id   (fn [d] (b/person-sid (:id d) (:person-id (b/evt d))))

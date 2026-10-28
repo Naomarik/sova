@@ -5,7 +5,7 @@ import { BusyError } from "../chat-handle";
 import { localRequest } from "../mesh/proxy";
 import { OrgError } from "../org-error";
 import { guardedFolderProblem, overseerFolder } from "../overseer-folders";
-import { ADD_LEAD, confirmRefusal, OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerCardScope, overseerSender } from "../overseer-sender";
+import { OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerSender } from "../overseer-sender";
 import { cancelHeld } from "../project-holds";
 import { archiveBlockers } from "../project-overseer";
 import { nudgeMarks } from "../session-feed";
@@ -60,16 +60,11 @@ const pidOf = (c: Context): string => c.req.param("pid") ?? "";
 /** One of the global Overseer's clones at a time (§app.overseer/org-project-add). */
 let overseerCloning = false;
 
-/** The root the global Overseer's add registers (§app.overseer/org-project-add): a folder it may add, on the card
-    its call carried as a standalone folder row (with the name, when the row names one); else the refusal. */
-async function overseerAddRoot(c: Context, rawRoot: unknown, name: unknown): Promise<string> {
-  const folders = overseerCardScope(c.req.header(OVERSEER_CARD_HEADER)).folders.filter((f) => f.org === null);
-  const refusal = (what: string) => new OrgError(confirmRefusal(what, ADD_LEAD), 403);
-  if (!folders.length) throw refusal(`the folder ${typeof rawRoot === "string" ? rawRoot.trim() : "to add"}`);
+/** The root the global Overseer's add registers (§app.overseer/org-project-add): a folder it may add (the file guard's
+    refusal otherwise). It runs on the user's word, which the Overseer's act wrapper checks: no card row. */
+async function overseerAddRoot(rawRoot: unknown): Promise<string> {
   const f = await overseerFolder(rawRoot);
   if ("problem" in f) throw new OrgError(f.problem);
-  const named = typeof name === "string" && name.trim() ? name.trim() : undefined;
-  if (!folders.some((x) => x.root === f.root && (x.name === undefined || x.name === named))) throw refusal(`the folder ${f.root}`);
   return f.asked;
 }
 
@@ -102,7 +97,7 @@ export function registerProjectRoutes(app: Hono<any>): void {
         } else ({ dir } = await cloneRepo(req));
         out = await registerProjectIn("standalone", dir, { name: b.name, origin: "clone", remote: repo }, by);
       } else {
-        const root = by.via === "overseer" ? await overseerAddRoot(c, b.root, b.name) : b.root;
+        const root = by.via === "overseer" ? await overseerAddRoot(b.root) : b.root;
         out = await registerProjectIn("standalone", root, { name: b.name, origin: b.origin === "session" ? "session" : "folder" }, by);
       }
       nudgeMarks();

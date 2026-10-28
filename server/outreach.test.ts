@@ -234,9 +234,16 @@ describe("§app.outreach/send: a note, a preview link, the project overseer thro
     assert.equal(line.note, true);
     assert.equal(line.link, undefined);
     assert.doesNotMatch(readFileSync(join(root, "ws", "outreach.jsonl"), "utf8"), /prototype is ready/, "the note's text is never logged");
-    const leak = await json("POST", "/api/outreach/send", { orgId: org.id, projectId: project.id, personId: ann.id, note: "Call Bob at +1 555 000 0999" });
-    assert.equal(leak.status, 409);
-    assert.match(leak.body.error, /repeats private text/);
+    // The operator's own note is theirs: never checked for private text or contacts.
+    const mine = await json("POST", "/api/outreach/send", { orgId: org.id, projectId: project.id, personId: ann.id, note: "Call Ann at +1 555 000 0100" });
+    assert.equal(mine.body.outcome, "sent", JSON.stringify(mine.body));
+    // The same note from an overseer is refused, the contact never shown.
+    await po.ensureProjectOverseer(project.id);
+    const tool = po.toolsForTest(project.id).find((t) => t.name === "sova_send_to_person")!;
+    await assert.rejects(
+      () => tool.execute("t-leak", { person: "Bob", note: "Call Ann at +1 555 000 0100" } as never, undefined, undefined, undefined as never),
+      (e: Error) => e.message === "This note repeats private text (a contact). Write it again in your own words.",
+    );
   });
 
   test("a preview link: the person gets their own link to the same preview; the one named stays", async () => {
@@ -280,6 +287,30 @@ describe("§app.outreach/send: a note, a preview link, the project overseer thro
     const sent = logOf().filter((l) => l.by === "project-overseer");
     assert.equal(sent[0]?.event, "sent", JSON.stringify(sent));
     assert.equal(sent[0]?.sessionId, sid);
+  });
+
+  test("an overseer's note: its own conversation's goal is not private to it, another's is, named in the refusal", async () => {
+    await po.patchProjectOverseer(project.id, { autonomy: "L1", holdMin: 10 });
+    const tool = po.toolsForTest(project.id).find((t) => t.name === "sova_send_to_person")!;
+    const goal = "Ask Ann whether the new booking calendar works for the Saturday junior classes";
+    const make = async () => {
+      const r = await json("POST", "/api/baton", { orgId: org.id, projectId: project.id, to: ann.id, publicTitle: "Calendar", goal });
+      assert.equal(r.status, 201, JSON.stringify(r.body));
+      return r.body.sessionId as string;
+    };
+    const own = await make();
+    const note = "Hi Ann! Could you tell me whether the new booking calendar works for the Saturday junior classes?";
+    const run = (args: Record<string, unknown>) => tool.execute("t-note", { person: "Ann", note, ...args } as never, undefined, undefined, undefined as never);
+    // With its own link: only this conversation holds that goal, so nothing private is repeated (held, not refused).
+    const out = await run({ session: own });
+    assert.match(JSON.stringify(out.content), /Held: the WhatsApp message to Ann waits until/);
+    const hold = hostOf(org.id).holds().find((h) => h.event === "outreach/send")!;
+    await hostOf(org.id).act(hold.sessionId, "hold/cancel", { id: hold.id, reason: "test: not sent" }, { by: "operator", attended: true });
+    // Alone, or with another conversation's link, that goal is private: refused, the matched words named.
+    const WHY = 'This note repeats private text (a goal or briefing: "whether the new booking calendar works for the Saturday junior classes"). Write it again in your own words.';
+    await assert.rejects(() => run({}), (e: Error) => e.message === WHY);
+    const other = await gathering(ann.id);
+    await assert.rejects(() => run({ session: other }), (e: Error) => e.message === WHY);
   });
 });
 

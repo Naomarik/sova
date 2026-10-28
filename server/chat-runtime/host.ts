@@ -594,6 +594,7 @@ export class ChatRuntimeHost {
       name,
       params: args,
       attended: turns?.attended() ?? false,
+      own: turns?.ownMessage() ?? false,
       card: turns?.confirmedCard() ?? null,
     };
     // The server answers an action's tool.result with the action's own result (chat-handle-remote.ts).

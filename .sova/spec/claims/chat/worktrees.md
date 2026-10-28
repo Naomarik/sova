@@ -341,15 +341,13 @@ reads too; a draft that rule can't read counts as not promoted. The
 line is the first line of the badge's `title` (§app.session-list/anatomy) and travels with the
 row (`SessionSummary.readiness.status`).
 
-Routine session-list and merge-readiness refreshes never query spec assessment status or
-recapture assessment inputs, including for idle merged worktrees, and never run a spec tool.
+Routine session-list and merge-readiness refreshes never run a spec tool, including for idle
+merged worktrees.
 The spec facts readiness carries are which drafts aren't official (an unreadable one included), for the status line's count,
 a merged tree's reason and the landing (§chat.worktrees/ready-to-land), worked out by the draft
 rule's own function in the server's process from the drafts' files and kept until one of them
 changes. Readiness carries no other spec observation, and the row and its title display none. Ordinary git readiness, bash checks,
-attention items, and routine follow-ups keep the rules above. Explicit companion CLI
-assessments remain separate and available; their observations are not passed tests or release
-gates.
+attention items, and routine follow-ups keep the rules above.
 
 **In the attention digest** (§app.overseer/attention-digest), decide tier, never Needs you, a brief
 or a phone notification: "Ready to merge: {branch}" for a ready worktree and "Waiting for your OK:

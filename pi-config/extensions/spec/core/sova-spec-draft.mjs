@@ -211,17 +211,11 @@ async function readOpen(abs) {
     return { state: "present", buf, sha256: sha(buf), bytes: buf.length };
   } finally { await fh.close(); }
 }
-// Capture-local metadata from the exact safe bytes used by read-only assessment triage.
-async function readSource(root, path, inputSources, readPolicy, { recordPair = false } = {}) {
-  const low = path.toLowerCase();
-  const storage = readPolicy === "assessment" && [".sova/spec/assessments", ".sova/spec/reviews", ".sova/spec/.cache"].some(d => low === d || low.startsWith(d + "/"));
+// One file of a spec tree, through the safe reader.
+async function readSource(root, path, { recordPair = false } = {}) {
   // A record file beside its claim file is read whatever its name (an area may be called `secrets`); its directory is still checked.
-  const r = storage ? { state: "refused", why: "receipt/cache storage is not an input" }
-    : recordPair && secretOf(dirname(path) + "/x") ? { state: "refused", why: secretOf(dirname(path) + "/x") }
+  return recordPair && secretOf(dirname(path) + "/x") ? { state: "refused", why: secretOf(dirname(path) + "/x") }
     : await readFileSafe(root, path, { secrets: !recordPair });
-  if (inputSources) inputSources.push({ path, state: r.state,
-    ...(r.state === "present" ? { sha256: r.sha256, bytes: r.bytes } : {}), ...(r.why ? { why: r.why } : {}) });
-  return r;
 }
 // Every component of a project-relative directory must be a plain directory; created only if asked.
 async function ownDir(root, rel, create, made) {
@@ -254,16 +248,15 @@ async function writeNew(dir, name, data) {
 // ---------------------------------------------------------------- spec trees
 // One spec tree at project-relative `rel`: manifest.json plus every file under its claimsRoot.
 // Files are keyed relative to `rel`. A symlink, special file or unreadable file anywhere is exit 2.
-async function readTree(root, rel, optional, inputSources, readPolicy, { raw = false } = {}) {
+async function readTree(root, rel, optional, { raw = false } = {}) {
   const where = (p) => `${rel}/${p}`;
   if ((await ownDir(root, rel, false)) === null) {
     if (optional) {
-      inputSources?.push({ path: where("manifest.json"), state: "absent" });
       return { exists: false, claimsRoot: null, manifest: null, files: new Map(), total: 0 };
     }
     throw new Fail(2, "spec-missing", `${rel} does not exist`);
   }
-  const m = await readSource(root, where("manifest.json"), inputSources, readPolicy);
+  const m = await readSource(root, where("manifest.json"));
   if (m.state === "absent") {
     if (await exists(join(root, rel, "claims")))
       throw new Fail(2, "orphaned-spec", `${rel}/claims exists but ${rel}/manifest.json does not; nothing was changed — restore the manifest (or move the tree aside) before using drafts`);
@@ -288,7 +281,7 @@ async function readTree(root, rel, optional, inputSources, readPolicy, { raw = f
       if (st.isSymbolicLink()) throw new Fail(2, "symlink-refused", `${where(p)} is a symlink; drafts never copy or follow links`);
       if (st.isDirectory()) { await walk(p); continue; }
       const recordPair = n.endsWith(".json") && names.includes(n.replace(/\.json$/, ".md"));
-      const r = st.isFile() ? await readSource(root, where(p), inputSources, readPolicy, { recordPair }) : { state: "refused", why: "not a regular file" };
+      const r = st.isFile() ? await readSource(root, where(p), { recordPair }) : { state: "refused", why: "not a regular file" };
       if (r.state !== "present") throw new Fail(2, "file-refused", `${where(p)}: ${r.why ?? r.state}`);
       files.set(p, r); total += r.bytes;
     }
@@ -330,11 +323,9 @@ function coreContract(j, status) {
     : j.exit !== 2 && !(Array.isArray(j.declarations) && j.declarations.every((d) => obj(d) && ID_RE.test(d.id) && typeof d.file === "string" && HEX.test(d.textSha256 ?? ""))) ? "declarations[] with id/file/textSha256 missing (this tool needs a core with --spec and check declarations)"
     : null;
 }
-function runCore(root, specRel, readPolicy, inputSources) {
+function runCore(root, specRel, readPolicy) {
   if (readPolicy !== undefined) {
-    const reader = createInspection(root, { spec: specRel, readPolicy });
-    if (inputSources) inputSources.push(...reader.sourceHashes().files.map(f => ({ ...f, state: "present" })));
-    const j = reader.check();
+    const j = createInspection(root, { spec: specRel, readPolicy }).check();
     const why = coreContract(j, j.exit);
     if (why || Buffer.byteLength(JSON.stringify(j, null, 2) + "\n") > MAX_CORE_STDOUT) throw new Fail(2, "core-contract", `core check does not match the expected contract: ${why ?? "output exceeds capture limit"}`);
     return Promise.resolve(j);
@@ -355,10 +346,10 @@ function runCore(root, specRel, readPolicy, inputSources) {
   });
 }
 // Declarations keyed by id, with files made relative to the spec directory.
-async function declsOf(root, specRel, readPolicy, inputSources) {
-  const j = await runCore(root, specRel, readPolicy, inputSources);
+async function declsOf(root, specRel, readPolicy) {
+  const j = await runCore(root, specRel, readPolicy);
   const decls = new Map();
-  for (const d of j.declarations ?? []) decls.set(d.id, { file: d.file.startsWith(`${specRel}/`) ? d.file.slice(specRel.length + 1) : d.file, textSha256: d.textSha256, lines: d.lines });
+  for (const d of j.declarations ?? []) decls.set(d.id, { file: d.file.startsWith(`${specRel}/`) ? d.file.slice(specRel.length + 1) : d.file, textSha256: d.textSha256, lines: d.lines, bytes: d.bytes });
   return { exit: j.exit, findings: j.findings, frontier: j.frontier ?? [], decls, counts: j.counts };
 }
 
@@ -430,17 +421,17 @@ function blobAt(root, g, oid, path) {
 
 // ---------------------------------------------------------------- draft storage
 const draftRel = (name) => `${DRAFTS}/${name}`;
-async function loadDraft(root, name, inputSources, readPolicy) {
+async function loadDraft(root, name) {
   const rel = draftRel(name);
   if (!(await ownDir(root, rel, false))) throw new Fail(2, "draft-missing", `no draft ${rel}`);
-  const raw = await readSource(root, `${rel}/draft.json`, inputSources, readPolicy);
+  const raw = await readSource(root, `${rel}/draft.json`);
   if (raw.state !== "present") throw new Fail(2, "draft-corrupt", `${rel}/draft.json: ${raw.why ?? raw.state}`);
   let d;
   try { d = JSON.parse(raw.buf.toString("utf8")); } catch (e) { throw new Fail(2, "draft-corrupt", `draft.json: ${e.message}`); }
   const why = draftSchema(d, name);
   if (why) throw new Fail(2, "draft-corrupt", `draft.json is not a valid ${FORMAT} draft named ${name}: ${why}`);
   // The baseline is immutable: exactly the recorded files with exactly the recorded bytes.
-  const base = await readTree(root, `${rel}/base`, true, inputSources, readPolicy);
+  const base = await readTree(root, `${rel}/base`, true);
   const want = Object.entries(d.base.files).map(([p, h]) => `${p} ${h}`).sort().join("\n");
   const got = [...base.files].map(([p, f]) => `${p} ${f.sha256}`).sort().join("\n");
   if (want !== got || base.exists !== d.base.specExisted) throw new Fail(2, "base-tampered", `${rel}/base no longer matches the baseline recorded in draft.json; a draft's baseline is never edited — start a new draft`);
@@ -695,15 +686,15 @@ function fieldChangeOf(c, b, p) {
     ...keys.filter((k) => !FIELD_KEYS.includes(k) && differs(k)).map((k) => (k === "code" ? "the code list" : ["authority", "evidence"].includes(k) ? `the ${k} label` : k))];
   return { fields, others };
 }
-async function analyze(root, name, readPolicy, inputSources) {
-  const draft = await loadDraft(root, name, inputSources, readPolicy);
+async function analyze(root, name, readPolicy) {
+  const draft = await loadDraft(root, name);
   const { d, rel, base } = draft;
-  const prop = await readTree(root, `${rel}/spec`, false, inputSources, readPolicy);
-  const cur = await readTree(root, SPEC, true, inputSources, readPolicy);
+  const prop = await readTree(root, `${rel}/spec`, false);
+  const cur = await readTree(root, SPEC, true);
   const roots = [base, cur, prop].filter((t) => t.exists).map((t) => t.claimsRoot);
   if (new Set(roots).size > 1) throw new Fail(1, "claims-root-changed", `claimsRoot differs between base, current and draft (${uniqSorted(roots).join(", ")}); drafts do not move the claims tree`);
-  const pc = await declsOf(root, `${rel}/spec`, readPolicy, inputSources);
-  const bc = base.exists ? await declsOf(root, `${rel}/base`, readPolicy, inputSources) : { exit: 0, findings: [], decls: new Map() };
+  const pc = await declsOf(root, `${rel}/spec`, readPolicy);
+  const bc = base.exists ? await declsOf(root, `${rel}/base`, readPolicy) : { exit: 0, findings: [], decls: new Map() };
 
   const fileSha = (t, p) => t.files.get(p)?.sha256 ?? null;
   const files = uniqSorted([...base.files.keys(), ...cur.files.keys(), ...prop.files.keys()]).filter(isProseOf(base, cur, prop)).map((path) => {
@@ -715,7 +706,7 @@ async function analyze(root, name, readPolicy, inputSources) {
   });
   // A file both sides changed merges per declaration when all three graphs load and every side cuts cleanly.
   const both = files.filter((f) => f.merge === "conflict" && f.base && f.current && f.proposed);
-  const cc = both.length && bc.exit !== 2 && pc.exit !== 2 ? await declsOf(root, SPEC, readPolicy, inputSources) : null;
+  const cc = both.length && bc.exit !== 2 && pc.exit !== 2 ? await declsOf(root, SPEC, readPolicy) : null;
   for (const f of both) {
     if (!cc || cc.exit === 2) continue;
     const cuts = [[base, bc], [cur, cc], [prop, pc]].map(([t, x]) => cutFile(t.files.get(f.path).buf, x.decls, f.path));
@@ -1007,14 +998,35 @@ function agreedKeptOnChange(a, id, was, curDecls) {
     message: `${id}'s prose changed (${[...removed.map((x) => `-${x}`), ...added.map((x) => `+${x}`)].join(", ")}) but it keeps agreed ${by}: if the meaning changed, that agreement doesn't cover it; stamp the go-ahead that did with \`agree\`` };
 }
 const removedText = (r) => `the draft removed "${r.phrase}" from ${r.id}, but ${r.alsoIn.join(", ")} still say${r.alsoIn.length === 1 ? "s" : ""} it${r.near ? ` (near ${r.near.join(", ")})` : ""}: read them; if the fact changed, change it there too (each is a foreign §)`;
+// Declarations a draft takes over the size cap, or grows while over it: [{id, file, bytes, cap, was?}]. `base` is the
+// core's check on the draft's base (null: none, so every over-cap declaration counts), `spec` on the draft. Sizes are
+// claim-file prose only (check's `bytes`), so either record layout gives the same answer. `only`: just these ids.
+function overCap(base, spec, only) {
+  const cap = spec?.counts?.cap;
+  if (!Number.isSafeInteger(cap)) return { introduced: [], preexisting: 0 };
+  // base: the core's check JSON (declarations[]) or declsOf's (a decls Map), whichever the caller has.
+  const was = new Map(base?.decls instanceof Map ? [...base.decls].map(([id, x]) => [id, x.bytes]) : (base?.declarations ?? []).map((x) => [x.id, x.bytes]));
+  const introduced = [];
+  let preexisting = 0;
+  for (const x of spec.declarations ?? []) {
+    if (!(x.bytes > cap) || (only && !only.has(x.id))) continue;
+    const before = was.get(x.id);
+    if (base && Number.isSafeInteger(before) && before > cap && x.bytes <= before) { preexisting++; continue; }
+    introduced.push({ id: x.id, file: x.file, bytes: x.bytes, cap, ...(Number.isSafeInteger(before) ? { was: before } : {}) });
+  }
+  return { introduced, preexisting };
+}
+const overCapText = (x) => `${x.id} is ${x.bytes} B of prose${x.was === undefined ? "" : ` (was ${x.was} B)`}, over the ${x.cap} B cap: split it by topic into sibling claims, the old § keeping a short summary that requires its parts`;
+const overCapFinding = (x) => ({ severity: "warn", code: "declaration-over-cap", id: x.id, file: x.file, bytes: x.bytes, cap: x.cap, ...(x.was === undefined ? {} : { was: x.was }), message: overCapText(x) });
+
 const citedText = (r, base) => `the draft edited a line of ${r.citedBy.join(", ")} that cites ${r.id}, and ${r.files.join(", ")} changed since ${base.slice(0, 12)}, but ${r.id}'s prose is as it was: read it; if what it says changed, edit it in this draft (it is a foreign §)`;
 
 async function cmdCheck(root, o) {
-  const { rel, d } = await loadDraft(root, o.name, o.inputSources, o.readPolicy), g = await gitInfo(root);
-  const j = await runCore(root, `${rel}/spec`, o.readPolicy, o.inputSources);
+  const { rel, d } = await loadDraft(root, o.name), g = await gitInfo(root);
+  const j = await runCore(root, `${rel}/spec`, o.readPolicy);
   const findings = [];
   let a = null;
-  try { if (j.exit !== 2) a = await analyze(root, o.name, o.readPolicy, o.inputSources); } catch (e) {
+  try { if (j.exit !== 2) a = await analyze(root, o.name, o.readPolicy); } catch (e) {
     if (!(e instanceof Fail) || e.exit === 2) throw e;
     findings.push({ severity: "note", code: "drift-skipped", message: `drift checks skipped: ${e.message}` });
   }
@@ -1042,17 +1054,21 @@ async function cmdCheck(root, o) {
     findings.push({ severity: "warn", code: "evidence-not-ancestor", message: `evidence commit ${x.commit.slice(0, 12)} (${x.ids.join(", ")}) is ${x.reason === "missing" ? "gone" : "not an ancestor of HEAD"}: a rebase after evidence orphans it; merge instead, and re-record evidence against the commit HEAD has` });
   const exit = Math.max(j.exit, findings.some((f) => f.severity === "warn") ? 1 : 0);
   // What the draft introduced, apart from what its base already had: the base's findings are counted by code, not repeated.
-  const base = a ? (a.bc.exit !== 2 ? a.bc : null) : d.base.specExisted ? await runCore(root, `${rel}/base`, o.readPolicy, o.inputSources).then((x) => (x.exit !== 2 ? x : null), () => null) : null;
+  const base = a ? (a.bc.exit !== 2 ? a.bc : null) : d.base.specExisted ? await runCore(root, `${rel}/base`, o.readPolicy).then((x) => (x.exit !== 2 ? x : null), () => null) : null;
   const local = (x) => String(x ?? "").split(`${rel}/base/`).join("").split(`${rel}/spec/`).join("");
   const fKey = (f) => [f.code, f.id, local(f.message)].map(local).join("\0"), tKey = (f) => [f.id, f.reason, f.of].join("\0");
   const had = new Set((base?.findings ?? []).map(fKey)), hadT = new Set((base?.frontier ?? []).map(tKey));
   const introduced = j.findings.filter((f) => !had.has(fKey(f))), old = j.findings.filter((f) => had.has(fKey(f)));
   const preexisting = {};
   for (const f of old) preexisting[f.code] = (preexisting[f.code] ?? 0) + 1;
+  // The size cap warns, never changes the exit: only what the draft took over the cap or grew there is listed.
+  const size = overCap(base, j);
+  introduced.push(...size.introduced.map(overCapFinding));
+  if (size.preexisting) preexisting["declaration-over-cap"] = size.preexisting;
   const frontier = j.frontier ?? [], newFrontier = frontier.filter((f) => !hadT.has(tKey(f)));
   return { exit, name: o.name, spec: `${rel}/spec`, counts: j.counts, introduced, preexisting,
-    coreFindings: o.all ? j.findings : introduced, frontier: o.all ? frontier : newFrontier,
-    ...(o.all ? {} : { omitted: { coreFindings: old.length, frontier: frontier.length - newFrontier.length, all: `check ${o.name} --all lists them` } }),
+    coreFindings: o.all ? [...j.findings, ...overCap(null, j).introduced.map(overCapFinding)] : introduced, frontier: o.all ? frontier : newFrontier,
+    ...(o.all ? {} : { omitted: { coreFindings: old.length + size.preexisting, frontier: frontier.length - newFrontier.length, all: `check ${o.name} --all lists them` } }),
     drift: dr, evidenceNotAncestor, findings };
 }
 
@@ -1324,7 +1340,7 @@ async function plan(root, o) {
     .filter((t) => t.before !== t.after);
 
   // The whole merged graph must load, and must not dangle where current does not.
-  let candidate = null;
+  let candidate = null, sizeWarnings = [];
   if (!refusals.length && targets.length) {
     const tmp = await mkdtemp(join(tmpdir(), "sova-spec-draft-"));
     try {
@@ -1336,6 +1352,8 @@ async function plan(root, o) {
       const warns = (j) => (j?.findings ?? []).filter((f) => f.severity === "warn" && !/^code-|^provenance-/.test(f.code)), wKey = (f) => `${f.code}\0${f.id ?? ""}\0${f.message}`;
       const hadW = new Set(warns(curJ).map(wKey));
       candidate = { exit: cj.exit, errors, newDangling: dangling, warnings: warns(cj).length, warningsIntroduced: warns(cj).filter((f) => !hadW.has(wKey(f))).length };
+      // The size cap, for the selected declarations only: a warning beside the plan, never a refusal or a drift warning.
+      sizeWarnings = overCap(curJ, cj, ids).introduced.map(overCapText);
       if (errors.length) refuse("candidate-invalid", `the merged graph would not load: ${errors.slice(0, 5).map((f) => `${f.code} ${f.message}`).join("; ")}`);
       if (dangling.length) refuse("candidate-dangling", `the merged graph would gain dangling edges: ${dangling.map((f) => f.message).join("; ")}; select the targets too`);
       // A per-declaration merge must read back as exactly the declarations it was built from, byte for byte.
@@ -1355,7 +1373,7 @@ async function plan(root, o) {
   const dr = a.bc.exit !== 2 && a.pc.exit !== 2 ? await drift(root, a, g, undefined) : null;
   const driftWarnings = dr ? [...dr.removedElsewhere.map(removedText), ...dr.proseUnchanged.filter((r) => r.citedBy).map((r) => citedText(r, dr.base))] : [];
   return { a, g, bases, cand, targets, planSha, refusals, out: {
-    name: o.name, ids: [...ids].sort(), alsoChanges: also.map((x) => x.id), alsoChangesDetail: also, driftWarnings, notes, meta: meta.map((m) => m.key), files: files.map((f) => ({ path: f.path, merge: f.merge, ids: f.ids })),
+    name: o.name, ids: [...ids].sort(), alsoChanges: also.map((x) => x.id), alsoChangesDetail: also, driftWarnings, sizeWarnings, notes, meta: meta.map((m) => m.key), files: files.map((f) => ({ path: f.path, merge: f.merge, ids: f.ids })),
     records: records.map((r) => ({ id: r.id, merge: r.merge })), evidence, candidate, bootstrap,
     targets: targets.map((t) => ({ ...t, action: t.before === null ? "create" : t.after === null ? "delete" : "replace" })), plan: planSha, refusals } };
 }
@@ -2052,7 +2070,7 @@ async function draftPrint(root, name) {
 }
 async function cmdMigrate(root, o) {
   const g = await gitInfo(root);
-  const cur = await readTree(root, SPEC, true, undefined, undefined, { raw: true });
+  const cur = await readTree(root, SPEC, true, { raw: true });
   const names = o.drafts ? await draftNames(root) : o.draft !== undefined ? [o.draft] : [];
   for (const n of names) if (!(await ownDir(root, draftRel(n), false))) throw new Fail(2, "draft-missing", `no draft ${draftRel(n)}`);
   // What converts: the current spec (unless only --draft is named) and the named drafts' base/ and spec/.
@@ -2069,7 +2087,7 @@ async function cmdMigrate(root, o) {
   for (const n of names) {
     const parts = [];
     for (const side of ["base", "spec"]) {
-      const rel = `${draftRel(n)}/${side}`, t = await readTree(root, rel, true, undefined, undefined, { raw: true });
+      const rel = `${draftRel(n)}/${side}`, t = await readTree(root, rel, true, { raw: true });
       if (!t.exists) continue;
       const r = treeRecords(t, rel, root), to = pick(r);
       if (r.layout === to) continue;
@@ -2146,7 +2164,7 @@ async function cmdMigrate(root, o) {
       }
       if (d.parts.some((p) => p.side === "base")) {
         const ld = await (async () => { const raw = await readSource(root, `${draftRel(d.name)}/draft.json`); return JSON.parse(raw.buf.toString("utf8")); })();
-        const base = await readTree(root, `${draftRel(d.name)}/base`, true, undefined, undefined, { raw: true });
+        const base = await readTree(root, `${draftRel(d.name)}/base`, true, { raw: true });
         ld.base.files = Object.fromEntries([...base.files].map(([p, f]) => [p, f.sha256]));
         await saveDraft(root, draftRel(d.name), ld);
       }
@@ -2200,6 +2218,7 @@ function human(out) {
     for (const t of out.targets) L.push(`  ${t.action.padEnd(7)} ${SPEC}/${t.path}`);
     for (const r of out.refusals ?? []) L.push(`  refused ${r.code}: ${r.message}`);
     for (const w of out.driftWarnings ?? []) L.push(`  warn drift: ${w}`);
+    for (const w of out.sizeWarnings ?? []) L.push(`  warn declaration-over-cap: ${w}`);
     for (const n of out.notes ?? []) L.push(`  note ${n.code}: ${n.message}`);
     if (out.alsoChanges) L.push(`Foreign § this promotion changes: ${out.alsoChanges.join(", ") || "none"}`);
     if (out.staleDrafts) L.push(`${out.staleDrafts.count} other draft(s) here had no activity for over ${out.staleDrafts.days} days: \`${out.staleDrafts.command}\` says which are left behind`);
@@ -2225,15 +2244,14 @@ function human(out) {
   return L.join("\n") + "\n";
 }
 
-async function evaluate(argv, readPolicy, inputSources) {
+async function evaluate(argv, readPolicy) {
   let out = { tool: "sova-spec-draft", command: null, findings: [] };
   try {
     const o = parseArgs(argv);
     out.command = o.cmd;
     if (readPolicy !== undefined) {
-      if (o.cmd !== "check" || !["review", "assessment"].includes(readPolicy)) throw new Fail(2, "usage", "read policy applies only to internal draft inspection");
+      if (o.cmd !== "check" || readPolicy !== "review") throw new Fail(2, "usage", "read policy applies only to internal draft inspection");
       o.readPolicy = readPolicy;
-      o.inputSources = inputSources;
     }
     const root = resolve(o.root);
     if (!(await lstat(root).catch(() => null))?.isDirectory()) throw new Fail(2, "root-missing", `${root} is not a directory`);
@@ -2258,9 +2276,8 @@ export async function inspectDraft(root, name, options = {}) {
     return { tool: "sova-spec-draft", command: "check", findings: [{ severity: "error", code: "usage", message: "invalid internal draft inspection arguments" }], exit: 2, notice: NOTICE };
   const { base, readPolicy = "default" } = options;
   const argv = ["check", name, "--root", root, "--json", ...(base === undefined ? [] : ["--base", base])];
-  const inputSources = readPolicy === "assessment" ? [] : undefined;
-  const out = await evaluate(argv, readPolicy === "default" ? undefined : readPolicy, inputSources);
-  return JSON.parse(JSON.stringify({ ...out, ...(inputSources ? { inputSources } : {}) }));
+  const out = await evaluate(argv, readPolicy === "default" ? undefined : readPolicy);
+  return JSON.parse(JSON.stringify(out));
 }
 async function main(argv) {
   const out = await evaluate(argv);

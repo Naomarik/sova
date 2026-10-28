@@ -1,11 +1,11 @@
-# Local-only material. It stays on disk and is never deleted; it just isn't published.
+# Local-only material: it stays on disk and isn't published.
 # Trackable: README.md, USAGE.md, manifest.json, claims/ and tools/.
 
 # Pilot evidence: session metrics, provenance and planning runs with local paths.
 /pilot/
 # Review packets hold verbatim copies of their inputs, source included.
 /reviews/
-# Assessment receipts contain metadata/identity/rationale, never raw source; still local by default.
+# Receipts of the retired assessment tool: none is made any more; any left on disk stay unpublished.
 /assessments/
 # Drafts are working proposals; base/ and evidence/ snapshot source bytes.
 /drafts/

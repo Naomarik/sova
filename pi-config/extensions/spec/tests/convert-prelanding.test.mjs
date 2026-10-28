@@ -17,6 +17,7 @@ function history() {
   const root = tmp("spec-convert-prelanding-");
   put(root, `${SPEC}/manifest.json`, V1);
   gitInit(root);
+  const c0 = git(root, "rev-parse", "HEAD");
   git(root, "checkout", "-qb", "feat");
   commit(root, "feat.txt", "b1\n", "b1");
   git(root, "checkout", "-q", "main");
@@ -26,7 +27,7 @@ function history() {
   const F = commit(root, `${SPEC}/manifest.json`, V2, "flip");
   const h = commit(root, "CHANGELOG.md", "sizes\n", "changelog");
   git(root, "checkout", "-q", "main");
-  return { root, m1, F, h, find: (branches = ["main"]) => findPreLanding(runIn(root), F, branches) };
+  return { root, c0, m1, F, h, find: (branches = ["main"]) => findPreLanding(runIn(root), F, branches) };
 }
 /** Master moves on after the landing: another branch lands by a merge. */
 function moveOn(root) {
@@ -41,7 +42,7 @@ test("not landed yet: the merge base of the flip with master", () => {
   assert.equal(r.find(), r.m1);
 });
 
-test("landed by a merge: through the landing merge's first parent, also after master moves on", () => {
+test("landed by a merge: the second parent of the flip's parent merge, also after master moves on", () => {
   const r = history();
   git(r.root, "merge", "--no-ff", "-q", "-m", "land feat", "feat");
   assert.equal(git(r.root, "rev-parse", "main^2"), r.h, "a landing merge");
@@ -56,6 +57,21 @@ test("landed by a fast-forward: the second parent of the flip's parent merge, al
   assert.equal(git(r.root, "rev-parse", "main"), r.h, "a fast-forward");
   assert.equal(r.find(), r.m1);
   moveOn(r.root);
+  assert.equal(r.find(), r.m1);
+});
+
+test("landed by a fast-forward, then ANOTHER branch that merged master lands by a fast-forward too: still P^2", () => {
+  const r = history();
+  git(r.root, "merge", "--ff-only", "-q", "feat");
+  // a branch cut before the cutover landed (at c0) merges master, then master fast-forwards to it, so master's
+  // first-parent history leaves the cutover's line: <its merge> → o1 → c0 (al_3 landed this way after landing 2)
+  git(r.root, "checkout", "-q", "-b", "other", r.c0);
+  commit(r.root, "other.txt", "o1\n", "o1");
+  git(r.root, "merge", "--no-ff", "-q", "-m", "merge main", "main");
+  git(r.root, "checkout", "-q", "main");
+  git(r.root, "merge", "--ff-only", "-q", "other");
+  assert.equal(git(r.root, "rev-parse", "main^2"), r.h, "master is the other branch's merge of master");
+  assert.notEqual(git(r.root, "merge-base", r.F, "main^1"), r.m1, "a first-parent walk would find another base");
   assert.equal(r.find(), r.m1);
 });
 

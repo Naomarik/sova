@@ -3,7 +3,8 @@ import type { ThinkingLevel } from "../shared/profiles";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
-import { agentRoot } from "./state-root";
+import { agentRoot, stateRoot } from "./state-root";
+import { projectCodeDirs } from "./other-project-dirs";
 import { fromPiToolDefinition } from "./harness/pi/tools";
 import { createSessionFile } from "./harness/pi/state";
 import { PROJECT_OVERSEER } from "./harness/state-kinds";
@@ -49,7 +50,7 @@ import { pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
 import { CARDS_NOTE_MESSAGE, cardsNote } from "../shared/overseer-card";
 import { cardsOnBranch, nowLine } from "./overseer-run-note";
 import { changedText, openingOn, toldOn, type LivePart } from "./overseer-opening";
-import { RootConfinement } from "./overseer-deny";
+import { type Exclusion, OTHER_PROJECT_REFUSAL, RootConfinement } from "./overseer-deny";
 import { sessionAttachmentsDir } from "./attachments";
 import { overseerFileTools } from "./overseer-file-tools";
 import { getIdea, promptToc, readManifest, readProse, updateIdea } from "./overseer-ideas";
@@ -103,6 +104,7 @@ import {
   type ArchiveBlockers,
   engineOf,
   engineOrThrow,
+  listProjects,
   operatorEnvelopeOf,
   overseerPausedSince,
   projectArchived,
@@ -135,6 +137,7 @@ import { settingsIndex } from "../shared/settings-reference";
 import { appendHistory, recordKept, setSettingsDeps } from "./project-settings";
 import type { SettingsBy, SettingsHistoryRow } from "../shared/project-settings";
 import { putOverseerMemorySwitch } from "./memory/routes";
+import { carriedBranch, expectCarry } from "./draft-carry";
 
 /**
  * The project overseer (§app/project-overseer): one special session per project. Like the
@@ -158,6 +161,8 @@ interface Rt {
   chatId?: string;
   /** Whether the run in progress answers a message the operator sent (UserTurns, in the chat). */
   attended(): boolean;
+  /** …and that message is the operator's own (typed or their click), never one the global Overseer sent. */
+  ownMessage(): boolean;
   /** The run id of the look whose turn runs now: an act the overseer makes in it names it (`lookRun`),
       so the history links it to that look. */
   lookRun?: string;
@@ -179,6 +184,12 @@ function attendedOf(rt: Rt): boolean {
   if (run && run.call.chatId === rt.chatId) return run.call.attended;
   return (rt.chatId ? chatHandle(rt.chatId)?.mirror.attended : false) ?? false;
 }
+/** The operator's own message opened this run: only a server-hosted tool's run of this overseer's chat says so
+    (the call's `own`); anything else is not (fail closed). */
+function ownMessageOf(rt: Rt): boolean {
+  const run = serverToolCall();
+  return !!run && run.call.chatId === rt.chatId && run.call.attended && run.call.own === true;
+}
 /** The operator's click that opened this run, per card row with its chosen label (§app.overseer/copies): only a
     server-hosted tool's run of this overseer's chat carries the click's mark; anything else has none. */
 function clicksOf(rt: Rt): ClickChoice[] | null {
@@ -189,7 +200,7 @@ function clicksOf(rt: Rt): ClickChoice[] | null {
 function rtOf(projectId: string): Rt {
   let rt = rts.get(projectId);
   if (!rt) {
-    const made: Rt = { projectId, attended: () => attendedOf(made) };
+    const made: Rt = { projectId, attended: () => attendedOf(made), ownMessage: () => ownMessageOf(made) };
     rts.set(projectId, (rt = made));
   }
   return rt;
@@ -674,6 +685,7 @@ function partCtx(rt: Rt, paths: ProjectOverseerPaths): OverseerPartCtx {
     settings: () => readPoSettings(paths),
     effective: () => effectiveOf(projectId),
     attended: () => rt.attended(),
+    ownMessage: () => rt.ownMessage(),
     overseerId: () => readPoState(paths)?.current ?? "",
     envelope: () => overseerEnvelope(projectId, paths, rt.attended()),
     gatheringChoice: (input) => gatheringChoice(projectId, input),
@@ -995,6 +1007,8 @@ export interface StartedCoding {
   notPrompted?: string;
   /** The start waits in a hold (q10: the overseer's unattended act): nothing was made yet. */
   held?: ActResult["held"];
+  /** A Build from a conversation's draft: the branch its worktree got that draft on (server/draft-carry.ts). */
+  carriedTo?: string;
 }
 
 export const NOT_PROMPTED = "Started, but not prompted: its mode could not be set.";
@@ -1044,6 +1058,9 @@ async function startCodingSession(
   const choice = codingChoice(input, settings, await overseerRunning(projectId));
   // The title store first: the worktree's branch is named after a title given.
   if (title) setSessionTitle(sessionId, title);
+  // A Build from a conversation's draft: its worktree gets the draft when it is cut (server/draft-carry.ts).
+  const carry = typeof input.extra?.conversationDraft === "string" ? input.extra.conversationDraft : null;
+  if (carry) expectCarry(sessionId, project.root, carry);
   const envelope = input.envelope ?? projectEnvelope(projectId, { by: "operator", attended: true, ...(input.via ? { via: input.via } : {}) });
   // F21: the project's builds as their runtimes stand now (a turn running, workers), so the at-once cap counts them.
   await syncProjectBuilds(projectId);
@@ -1073,15 +1090,18 @@ async function startCodingSession(
     );
   } catch (err) {
     if (title) setSessionTitle(sessionId, null);
+    if (carry) carriedBranch(sessionId);
     throw err;
   }
   if (out.held) {
     if (title) setSessionTitle(sessionId, null);
+    if (carry) carriedBranch(sessionId);
     return { sessionId, path: "", cwd: "", mode, held: { ...out.held, ...heldAt(input.item ?? projectSid(projectId), out.held) } };
   }
   const sid = buildSid(projectId, sessionId);
   await buildSetupEnded(projectId, sid);
   const row = readBuild(projectId, sessionId);
+  const carriedTo = carry ? carriedBranch(sessionId) : undefined;
   if (!row || row.notStarted) {
     if (title) setSessionTitle(sessionId, null);
     throw new OrgError(row?.notStarted ?? "No session was started.", 409);
@@ -1095,6 +1115,7 @@ async function startCodingSession(
     mode,
     ...(wt ? { worktree: { path: wt.worktree.path, branch: wt.worktree.branch } } : {}),
     ...(row.inRoot ? { note: row.inRoot } : {}),
+    ...(carriedTo ? { carriedTo } : {}),
   };
   if (row.modeNotSet) return { ...made, notPrompted: NOT_PROMPTED };
   if (row.promptError) throw new OrgError(row.promptError, 409);
@@ -1196,7 +1217,21 @@ export function projectContextFiles<T extends { path: string }>(files: T[], root
 /** What the project overseer's file tools never read, even inside its root: the folders other layers
     reserve (an attached org's workspace: the roster's contacts, every project's transcripts) and pi's
     and Sova's state (the host's link store, every session). */
-const confinedOut = () => [...reservedRoots(), agentRoot(), join(homedir(), ".pi")];
+const confinedOut = () => [...reservedRoots(), agentRoot(), stateRoot(), join(homedir(), ".pi")];
+
+/** What its read/grep/find/ls never read, reading anywhere else on the host:
+    `confinedOut`, and the root, git worktrees and running-copy checkouts of every project placed in
+    an organization other than its own (for a standalone project: every placed project), other
+    clients' work. */
+function readOut(projectId: string): Exclusion[] {
+  const own = spaceOf(engineOrThrow(projectId), projectId);
+  const others = listProjects().filter(
+    (p) => p.id !== projectId && p.root && p.space.kind === "org" && (own.kind !== "org" || p.space.orgId !== own.orgId),
+  );
+  const ownRoot = projectOf(projectId).root;
+  const dirs = others.flatMap((p) => [p.root, ...projectCodeDirs(p.root, ownRoot)]);
+  return [...confinedOut(), ...dirs.map((dir) => ({ dir, why: OTHER_PROJECT_REFUSAL }))];
+}
 
 /** Each conversation's opening values (overseer-opening.ts), once a run has read or set them. */
 const openedValues = new Map<string, Record<string, string>>();
@@ -1216,7 +1251,7 @@ function poFileSpecs(path: string, rt: Rt): ToolSpec[] {
     undefined,
     () => {
       const own = sessionAttachmentsDir(idOf(path));
-      return new RootConfinement(projectOf(rt.projectId).root, confinedOut(), own ? [own] : []);
+      return new RootConfinement(projectOf(rt.projectId).root, readOut(rt.projectId), own ? [own] : [], { readAnywhere: true });
     },
     {
       protectedRoots: confinedOut,
@@ -1360,11 +1395,14 @@ registerSpecialHost({
 });
 
 /** The project's tools as its runtime builds them, for the tests. */
-export const toolsForTest = (projectId: string, opts: { attended?: boolean } = {}) => {
+export const toolsForTest = (projectId: string, opts: { attended?: boolean; own?: boolean } = {}) => {
   const rt = rtOf(projectId);
-  if (opts.attended === undefined) return projectOverseerTools(toolHost(rt));
-  // As in a turn the operator started (or not), whatever the runtime's own turn says.
-  return projectOverseerTools(toolHost({ ...rt, attended: () => opts.attended! }));
+  if (opts.attended === undefined && opts.own === undefined) return projectOverseerTools(toolHost(rt));
+  // As in a turn the operator started (or not), whatever the runtime's own turn says; `own`: by their own
+  // message (default: when attended), or by one the global Overseer sent (false).
+  const attended = opts.attended ?? opts.own ?? false;
+  const own = attended && (opts.own ?? true);
+  return projectOverseerTools(toolHost({ ...rt, attended: () => attended, ownMessage: () => own }));
 };
 
 /** Whether the project's overseer is answering the operator right now (tests). */
@@ -1508,7 +1546,7 @@ export async function codeItem(projectId: string, body: ItemCodeInput, via?: "ov
 export async function startDraftBuild(
   projectId: string,
   input: { title: string; prompt: string; model?: string; thinking?: string; extra?: { conversationDraft: string } },
-): Promise<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; note?: string; notPrompted?: string }> {
+): Promise<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; note?: string; notPrompted?: string; carriedTo?: string }> {
   const prompt = input.prompt.trim();
   const title = input.title.trim().slice(0, 80);
   if (!prompt || !title) throw new OrgError("A build from a draft needs a title and a prompt.");
@@ -1526,6 +1564,7 @@ export async function startDraftBuild(
     ...(made.worktree ? { worktree: made.worktree } : {}),
     ...(made.note ? { note: made.note } : {}),
     ...(made.notPrompted ? { notPrompted: made.notPrompted } : {}),
+    ...(made.carriedTo ? { carriedTo: made.carriedTo } : {}),
   };
 }
 

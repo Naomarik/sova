@@ -40,6 +40,12 @@ export interface CopyRowHost {
 const gitStatus = (folder: string): Promise<string | null> =>
   new Promise((done) => execFile("git", ["status", "--porcelain"], { cwd: folder, timeout: 5_000, encoding: "utf8" }, (err, stdout) => done(err ? null : String(stdout ?? ""))));
 
+/** Whether a copy's starting conversation is working now: busy or mid-turn, and not archived (§app.overseer/copies). */
+export const sessionWorking = (s: Pick<SessionSummary, "busy" | "activity" | "archived"> | null): boolean => !!s && !s.archived && (!!s.busy || s.activity?.state === "working");
+
+/** The engine's starter check over a session lookup: an unknown conversation is not working. */
+export const starterWorking = (session: (id: string) => Promise<SessionSummary | null>) => async (id: string): Promise<boolean> => sessionWorking(await session(id));
+
 /** The host as it is, but for the session lookup and the project's name. */
 export function realCopyRowHost(o: Pick<CopyRowHost, "session" | "projectName">): CopyRowHost {
   return { ...o, registry: () => readRegistry(), status: gitStatus, exists: (p) => existsSync(p), links: (id) => linksOf(id, { activeOnly: true }).length };
@@ -83,7 +89,7 @@ export async function copyItem(ref: string, h: CopyRowHost, root?: string): Prom
     startedBy: starter,
     edits,
     links: h.links(rec.id),
-    ...(session && (session.busy || session.activity?.state === "working") ? { working: true } : {}),
+    ...(session && sessionWorking(session) ? { working: true } : {}),
   };
 }
 

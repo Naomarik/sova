@@ -281,14 +281,33 @@ async function sendStep(input: SendInput, channel: Channel): Promise<SendResult>
 
 // ---- the act -----------------------------------------------------------------------------------------
 
-const NOTE_LEAK = "This note repeats private text (About this organization, notes, a goal or briefing, a profile or a contact). Write it again in your own words.";
+const NOTE_KIND = {
+  about: "About this organization",
+  notes: "the project overseer's notes",
+  goal: "a goal or briefing",
+  instructions: "the operator's instructions",
+  profile: "a profile",
+} as const;
 
-/** A note repeating private text: refused like an owner update (the overseer's prompt holds it). With no
-    project (an organization's own send), the private text of every project of the org. */
-async function noteLeak(orgId: string, projectId: string | null, note: string): Promise<string | null> {
-  if (!note) return null;
-  const { ownerUpdateLeak, orgNoteLeak } = await import("../overseer-org-part");
-  return (projectId ? ownerUpdateLeak(orgId, projectId, note) : orgNoteLeak(orgId, note)) ? NOTE_LEAK : null;
+/** A note that holds a preview link this host keeps: a preview goes as its own link (the send's `preview`). */
+export const PREVIEW_IN_NOTE = "A preview link goes to people as a link of its own (preview), never in a note.";
+
+/**
+ * An overseer's note repeating private text or a contact, refused like an owner update:
+ * the refusal names the kind and the words it matched (a contact only as "a contact"). With no project (an
+ * organization's own send), the private text of every project of the org. `except`: the conversation whose
+ * link the note goes with; its goal and briefings are not private to it. A note the operator writes
+ * themselves (`sentBy` operator) is never checked.
+ */
+async function noteLeak(orgId: string, projectId: string | null, note: string, sentBy: OutreachLogLine["by"], except?: string): Promise<string | null> {
+  if (!note || sentBy === "operator") return null;
+  const { privateTextHit, orgPrivateTextHit } = await import("../overseer-org-part");
+  const { holdsPreviewLink } = await import("../preview-kept");
+  if (holdsPreviewLink(note)) return PREVIEW_IN_NOTE;
+  const hit = projectId ? privateTextHit(orgId, projectId, note, except) : orgPrivateTextHit(orgId, note);
+  if (!hit) return null;
+  const what = hit.kind === "contact" ? "a contact" : `${NOTE_KIND[hit.kind]}: "${hit.words}"`;
+  return `This note repeats private text (${what}). Write it again in your own words.`;
 }
 
 /**
@@ -301,7 +320,7 @@ export async function sendAct(input: { orgId: string; projectId: string; personI
   const p = readRoster(orgId).find((x) => x.id === personId);
   const note = (input.note ?? "").trim();
   const invalid = p && link ? (RESOLVERS[link.kind].check({ orgId, projectId, personId }, link)?.why ?? null) : null;
-  const leak = await noteLeak(orgId, projectId, note);
+  const leak = await noteLeak(orgId, projectId, note, input.sentBy, link?.kind === "handoff" ? link.session : undefined);
   const payload = {
     ...(p ? { target: targetOfPerson({ ...p, orgId }) } : {}),
     ...(link ? { link } : {}),
@@ -335,7 +354,7 @@ export async function sendOwnerLinkAct(input: { orgId: string; personId: string;
   const target = targetOf(orgId, personId);
   const note = (input.note ?? "").trim();
   const invalid = ownerInvalid(orgId);
-  const leak = await noteLeak(orgId, null, note);
+  const leak = await noteLeak(orgId, null, note, input.sentBy);
   const payload = {
     ...(target ? { target: { id: target.id, name: target.name, status: target.status } } : {}),
     ...(note ? { note } : {}),

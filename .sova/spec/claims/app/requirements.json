@@ -64,8 +64,17 @@
       "server/conversation-draft.ts",
       "server/reconcile.ts",
       "shared/conversation-drafts.ts",
-      "server/conversation-draft-tools.test.ts"
-    ]
+      "server/conversation-draft-tools.test.ts",
+      "server/draft-carry.ts",
+      "server/build-loadout.ts",
+      "server/project-overseer.ts",
+      "server/draft-carry.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-28T08:50Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
+    }
   },
   "§app.requirements/draft-specs": {
     "kind": "behavior",
@@ -177,12 +186,18 @@
       "server/test-wait.ts",
       "server/reconcile.integration.test.ts",
       "server/spec-tool-fake.ts",
-      "server/project-worktrees.ts"
+      "server/project-worktrees.ts",
+      "server/conversation-draft-routes.ts"
     ],
     "requires": [
       "§app.requirements/drafts-with-provenance",
       "§app.requirements/decisions"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-28T08:50Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
+    }
   },
   "§app.requirements/promotion-commit": {
     "kind": "behavior",

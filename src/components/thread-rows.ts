@@ -12,6 +12,11 @@ export interface ThreadRows {
   author(): string;
   /** Whether a user row is on the branch (the profile row waits for one). */
   hasUserRow(): boolean;
+  /** A baton person's name by ref ("operator" is You). */
+  nameOf(ref: string): string;
+  /** Whether a baton wrap-up's turn is shown (folded behind its card until asked for). */
+  wrapupShown(): boolean;
+  toggleWrapup(): void;
 }
 
 export const ThreadRowsContext = createContext<ThreadRows>();

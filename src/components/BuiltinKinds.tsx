@@ -1,4 +1,5 @@
-import { Show, type Component } from "solid-js";
+import { For, Match, Show, Switch, type Component } from "solid-js";
+import type { BatonMark } from "../../shared/baton";
 import { Chip, Icon } from "./ui";
 import type { KindViewProps } from "../lib/transcript-kinds";
 import type { HandoffRunInfo, TranscriptItem } from "../../shared/protocol";
@@ -43,6 +44,10 @@ export const BUILTIN_VIEWS = {
     <TeamMessageCard report={props.item.report!} team={props.value} time={props.item.at} attachments={props.item.attachments} />
   ),
   report: (props: KindViewProps<NonNullable<TranscriptItem["report"]>>) => <ReportRow report={props.value} attachments={props.item.attachments} />,
+  baton: (props: KindViewProps<Exclude<BatonMark, { kind: "sent" }>>) => {
+    const rows = useThreadRows();
+    return <BatonCard mark={props.value} name={rows.nameOf} wrapupShown={rows.wrapupShown()} onWrapupToggle={rows.toggleWrapup} />;
+  },
 } satisfies Record<string, Component<KindViewProps<never>>>;
 
 /** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is
@@ -81,5 +86,117 @@ function ProfileMarkRow(props: KindViewProps<NonNullable<TranscriptItem["profile
         </p>
       )}
     </Show>
+  );
+}
+
+/** A baton entry in the operator's transcript (§app.baton/attribution): a hand-off, an offer and its
+    lease, a decision, a proposed person, the wrap-up, done. Typed as the full mark so kinds the
+    protocol field gains later render here once. */
+function BatonCard(props: { mark: Exclude<BatonMark, { kind: "sent" }>; name(ref: string): string; wrapupShown: boolean; onWrapupToggle(): void }) {
+  const m = props.mark;
+  const names = (refs: string[]) => refs.map(props.name).join(", ");
+  return (
+    <Switch>
+      <Match when={m.kind === "handoff" && m}>
+        {(h) => (
+          <aside class="baton-card" aria-label={`Hand-off ${h().n}`}>
+            <span class="baton-card-head">
+              Hand-off {h().n}: {props.name(h().from)} → {props.name(h().to)}
+            </span>
+            <div class="baton-card-body">{h().question}</div>
+            <Show when={h().briefing}>
+              <div class="baton-card-brief">Briefing: {h().briefing}</div>
+            </Show>
+          </aside>
+        )}
+      </Match>
+      <Match when={m.kind === "offer" && m}>
+        {(o) => (
+          <aside class="baton-card" aria-label={`Offer, hand-off ${o().n}`}>
+            <span class="baton-card-head">
+              Hand-off {o().n}: {props.name(o().from)} → offered to {names(o().to)}
+            </span>
+            <div class="baton-card-body">{o().question}</div>
+            <Show when={o().briefing}>
+              <div class="baton-card-brief">Briefing: {o().briefing}</div>
+            </Show>
+          </aside>
+        )}
+      </Match>
+      <Match when={m.kind === "lease" && m}>
+        {(l) => (
+          <p class="baton-card-line">
+            {l().event === "claimed" ? `${props.name(l().by)} took the offer.` : `${props.name(l().by)} went quiet, so the offer is open to every invitee again.`}
+          </p>
+        )}
+      </Match>
+      <Match when={m.kind === "decision" && m}>
+        {(d) => (
+          <aside class="baton-card" aria-label="Decision">
+            <span class="baton-card-head">
+              Decision · {d().area} · {props.name(d().by)}
+            </span>
+            <div class="baton-card-body">{d().statement}</div>
+            <div class="baton-card-quote">“{d().quote}”</div>
+          </aside>
+        )}
+      </Match>
+      <Match when={m.kind === "proposal" && m}>
+        {(r) => (
+          <aside class="baton-card" aria-label={`Proposed: ${r().name}`}>
+            <span class="baton-card-head">
+              Proposed for the roster · {r().name}
+              {r().role ? ` (${r().role})` : ""} · by {props.name(r().by)}
+            </span>
+            <div class="baton-card-body">{r().why}</div>
+          </aside>
+        )}
+      </Match>
+      <Match when={m.kind === "wrapup" && m}>
+        {(w) => {
+          const end = () => (w().phase === "end" ? (w() as Extract<BatonMark, { kind: "wrapup"; phase: "end" }>) : null);
+          return (
+            <Show
+              when={end()}
+              fallback={
+                <p class="baton-card-line">
+                  Wrap-up turn: it reads this session for profile updates and quotes profiles, so it's folded here.{" "}
+                  <button type="button" class="button button-sm button-ghost" aria-expanded={props.wrapupShown} onClick={() => props.onWrapupToggle()}>
+                    {props.wrapupShown ? "Fold Wrap-up Turn" : "Show Wrap-up Turn"}
+                  </button>
+                </p>
+              }
+            >
+              {(e) => (
+                <aside class="baton-card" aria-label="Wrap-up">
+                  <span class="baton-card-head">Wrap-up</span>
+                  <div class="baton-card-body">
+                    {e().error
+                      ? `Stopped: ${e().error} No profile changed after that.`
+                      : `${e().applied.length} profile ${e().applied.length === 1 ? "field" : "fields"} updated${e().refused.length ? `, ${e().refused.length} refused` : ""}.`}
+                  </div>
+                  <For each={e().applied}>{(a) => <div class="baton-card-brief">{props.name(a.personId)} · {a.field}</div>}</For>
+                  <For each={e().refused}>
+                    {(r) => (
+                      <div class="baton-card-brief">
+                        Refused: {props.name(r.personId)} · {r.field} — {r.reason}
+                      </div>
+                    )}
+                  </For>
+                </aside>
+              )}
+            </Show>
+          );
+        }}
+      </Match>
+      <Match when={m.kind === "done" && m}>
+        {(d) => (
+          <aside class="baton-card" aria-label="Done">
+            <span class="baton-card-head">Done</span>
+            <div class="baton-card-body">{d().summary}</div>
+          </aside>
+        )}
+      </Match>
+    </Switch>
   );
 }

@@ -35,14 +35,14 @@ export function cardToolkitTypes(commands: readonly CommandEntry[]): string {
     "// Generated from shared/commands-catalog.ts by scripts/card-toolkit-types.mjs: never edit by hand.",
     "// shared/card-toolkit-types.test.ts fails when this file and the catalogue drift.",
     "",
-    "/** Every Sova command a card view can run, by its catalogue id. */",
+    "/** Every Sova command a card view can run, by its catalogue id: each, reads included, once the card's owner is trusted. */",
     `export type CommandId =\n${commands.map((c) => `  | ${JSON.stringify(c.id)}`).join("\n")};`,
     "",
     "/** Each command's params, as its catalogue entry declares them. */",
     "export interface CommandParams {",
   ];
   for (const c of commands) {
-    lines.push(`  /** ${doc(c.summary)} (${c.effect === "looks" ? "only looks" : "changes something: needs the card's project trusted"}) */`);
+    lines.push(`  /** ${doc(c.summary)} (${c.effect === "looks" ? "only looks" : "changes something"}; needs the card's owner trusted) */`);
     const ps = Object.entries(c.params);
     if (!ps.length) {
       lines.push(`  ${JSON.stringify(c.id)}: Record<string, never>;`);
@@ -56,7 +56,7 @@ export function cardToolkitTypes(commands: readonly CommandEntry[]): string {
     }
     lines.push("  };");
   }
-  lines.push("}", "", "/** Whether each command only looks (runs always) or changes something (runs once trusted). */");
+  lines.push("}", "", "/** Whether each command only looks or changes something; a view runs either only once its owner is trusted. */");
   lines.push(`export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {\n${commands.map((c) => `  ${JSON.stringify(c.id)}: ${JSON.stringify(c.effect)},`).join("\n")}\n};`, "");
   return lines.join("\n");
 }

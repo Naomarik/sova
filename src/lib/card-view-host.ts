@@ -18,7 +18,7 @@ export interface ViewHostDeps {
   answerNow(value: { view: unknown }): Promise<unknown>;
   /** A gathering card's pick, staged for the next message. */
   pick(value: { view: unknown }, text: string): void;
-  /** The command, run as the card; the server refuses one that changes something until trusted. */
+  /** The command, run as the card; the server refuses every one, reads included, until its owner is trusted. */
   run(command: string, params: unknown): Promise<{ ok: boolean; status: number; body: unknown }>;
   resize(height: number | null): void;
 }

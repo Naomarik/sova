@@ -217,8 +217,8 @@ export default function CardView(props: { card: CardInfo; ctx: CardControls }) {
           <div class="banner banner-warn transcript-card-trust" role="group" aria-label={`Trust ${a().name}'s cards`}>
             <Icon name="attention" class="banner-icon" />
             <div class="banner-main">
-              <p class="banner-title">Let {a().name}'s cards act for you?</p>
-              <p class="banner-body">They can then run any Sova command, such as sending messages or merging, without asking again.</p>
+              <p class="banner-title">Let {a().name}'s cards use Sova's commands for you?</p>
+              <p class="banner-body">They can then run any Sova command, such as reading your chats, sending messages or merging, without asking again.</p>
             </div>
             <div class="banner-action">
               <button type="button" class="button button-sm button-primary" onClick={() => a().decide(true)}>

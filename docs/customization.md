@@ -368,8 +368,9 @@ drawing kinds to chat transcripts, with the meanings and rules of a project's ow
 - Each declaration is checked on its own: a bad one (an unknown key, a bad name, a path outside
   `dist` or missing) is left out and logged, never the entry or its other ones. An id of `project`
   declares none: that is the namespace of a project's own.
-- The first time one of your cards wants to act (send, run, any command that changes something)
-  it asks the user to trust your extension's cards, once. Your page shows Stop Trusting Cards
+- The first time one of your cards wants to act (send, run a command) it asks the user to trust
+  your extension's cards, once. A view runs no command at all until then, not even one that only
+  reads: untrusted, it has only its own card's data, state and answer. Your page shows Stop Trusting Cards
   while they are trusted.
 
 To open a session the extension just created, hand it to Sova rather than setting the page's

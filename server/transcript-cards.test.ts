@@ -306,33 +306,60 @@ describe("view cards (§chat.transcript-cards/sealed-box, /view-api)", () => {
     assert.equal((await cards.sessionCardsAt(s.path)).states, undefined, "null forgets it");
   });
 
-  test("a view runs catalogue commands: params checked as the entry declares them; one that changes something only once trusted; recorded as the card", async () => {
+  test("a view runs catalogue commands: params checked as the entry declares them; any command only once trusted; recorded as the card", async () => {
+    const owner = cards.projectOwner(realpathSync(viewProject));
+    cards.setCardsTrusted(owner, false);
     const s = inView();
     const card = await cards.raiseCard({ path: s.path, type: "project.chart", data: { series: [1] }, by: { kind: "agent" }, toolCallId: "c" });
     const rows: unknown[] = [];
     const audit = (r: unknown) => void rows.push(r);
-    // A command that only looks: runs untrusted, the card's own session filled in, the route's answer back.
+    // Params: unknown, wrong type, missing required (checked before trust: nothing runs either way).
+    await assert.rejects(cards.runCardCommand(s.path, card.id, "session.send", { text: 1 }), /"text" must be a string/);
+    await assert.rejects(cards.runCardCommand(s.path, card.id, "session.send", { txt: "hi" }), /takes no param "txt"/);
+    await assert.rejects(cards.runCardCommand(s.path, card.id, "session.send", {}), /needs "text"/);
+    await assert.rejects(cards.runCardCommand(s.path, card.id, "no.such", {}), /no Sova command/);
+    // Untrusted, one that only looks and one that changes something are both refused with needsTrust, nothing requested.
+    requests.length = 0;
+    const refused = (err: unknown) => err instanceof cards.CardRefusal && !!err.needsTrust && /didn't run/.test(err.message);
+    await assert.rejects(cards.runCardCommand(s.path, card.id, "session.card.get", {}, audit), refused);
+    await assert.rejects(cards.runCardCommand(s.path, card.id, "session.send", { text: "hi" }), refused);
+    assert.equal(requests.length, 0);
+    assert.deepEqual(rows, []);
+    // Trusted: a look runs with the card's own session filled in, the route's answer back; a change runs too.
+    cards.setCardsTrusted(owner, true);
     answer = { status: 200, body: { cards: [] } };
     const looked = await cards.runCardCommand(s.path, card.id, "session.card.get", {}, audit);
     assert.deepEqual(looked, { ok: true, status: 200, body: { cards: [] } });
     assert.match(requests[0]!.url, /^\/api\/session-cards\?path=/);
     assert.deepEqual(rows, [{ command: "session.card.get", method: "GET", route: "/api/session-cards", status: 200 }]);
-    // Params: unknown, wrong type, missing required.
-    await assert.rejects(cards.runCardCommand(s.path, card.id, "session.send", { text: 1 }), /"text" must be a string/);
-    await assert.rejects(cards.runCardCommand(s.path, card.id, "session.send", { txt: "hi" }), /takes no param "txt"/);
-    await assert.rejects(cards.runCardCommand(s.path, card.id, "session.send", {}), /needs "text"/);
-    await assert.rejects(cards.runCardCommand(s.path, card.id, "no.such", {}), /no Sova command/);
-    // One that changes something: refused with needsTrust, nothing requested; then trusted, it runs.
     requests.length = 0;
-    await assert.rejects(cards.runCardCommand(s.path, card.id, "session.send", { text: "hi" }), (err: unknown) => err instanceof cards.CardRefusal && !!err.needsTrust && /didn't run/.test(err.message));
-    assert.equal(requests.length, 0);
-    cards.setCardsTrusted(cards.projectOwner(realpathSync(viewProject)), true);
+    answer = { status: 200, body: { ok: true } };
     const sent = await cards.runCardCommand(s.path, card.id, "session.send", { text: "hi" }, audit);
     assert.equal(sent.status, 200);
     assert.equal((requests[0]!.body as { text: string }).text, "hi");
+    cards.setCardsTrusted(owner, false);
     // A card that isn't a view runs nothing this way.
     const other = fresh();
     const q = await cards.raiseCard({ path: other.path, type: "project.pick", data: question, by: { kind: "agent" }, toolCallId: "q" });
     await assert.rejects(cards.runCardCommand(other.path, q.id, "session.card.get", {}), /isn't a view/);
+  });
+
+  test("until its owner is trusted a view reads nothing either: not its own chat, not another one; trusted, the read runs", async () => {
+    const owner = cards.projectOwner(realpathSync(viewProject));
+    cards.setCardsTrusted(owner, false);
+    const s = inView();
+    const card = await cards.raiseCard({ path: s.path, type: "project.chart", data: { series: [1] }, by: { kind: "agent" }, toolCallId: "c" });
+    const other = fresh();
+    requests.length = 0;
+    const refused = (err: unknown) => err instanceof cards.CardRefusal && err.status === 409 && err.needsTrust?.owner === owner;
+    await assert.rejects(cards.runCardCommand(s.path, card.id, "session.read", {}), refused);
+    await assert.rejects(cards.runCardCommand(s.path, card.id, "session.read", { session: other.path }), refused);
+    assert.equal(requests.length, 0, "nothing was requested");
+    cards.setCardsTrusted(owner, true);
+    answer = { status: 200, body: { items: [] } };
+    const read = await cards.runCardCommand(s.path, card.id, "session.read", {});
+    assert.deepEqual(read, { ok: true, status: 200, body: { items: [] } });
+    assert.equal(new URL(requests[0]!.url, "http://x").searchParams.get("path"), s.path, "the card's own session filled in");
+    cards.setCardsTrusted(owner, false);
   });
 });

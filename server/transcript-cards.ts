@@ -723,9 +723,11 @@ export interface CardRun {
 
 /**
  * A view card runs one of Sova's commands (§chat.transcript-cards/view-api): its params checked as
- * the catalogue entry declares them, a command that changes something refused (needsTrust) until
- * its project's cards are trusted, then the entry's own request made in-process as the web app
- * makes it, answered in the route's words, and recorded with the card's type as the caller.
+ * the catalogue entry declares them, then EVERY command, reads included, refused (needsTrust) until
+ * its owner's cards are trusted: untrusted, a view gets only the data its own card was raised with
+ * (a read such as session.read would hand it the whole chat, or any other by its session param).
+ * Trusted, the entry's own request is made in-process as the web app makes it, answered in the
+ * route's words, and recorded with the card's type as the caller.
  */
 export async function runCardCommand(path: string, id: unknown, command: unknown, params: unknown, audit?: (row: { command: string; method: string; route: string; status: number }) => void): Promise<CardRun> {
   const s = await summaryOf(path);
@@ -735,11 +737,9 @@ export async function runCardCommand(path: string, id: unknown, command: unknown
   if (!entry) throw new CardRefusal(`${String(command)} is no Sova command.`, 400);
   const bad = commandParamsError(entry, params);
   if (bad) throw new CardRefusal(bad, 400);
-  if (entry.effect !== "looks") {
-    const who = ownerOfType(rec!, card.type);
-    if (!who || !cardsTrusted(who.owner))
-      throw new CardRefusal(`This card's ${who?.owner.startsWith("ext:") ? "extension" : "project"} isn't trusted to act for you yet: trust its cards first. ${entry.label} didn't run.`, 409, who ?? undefined);
-  }
+  const who = ownerOfType(rec!, card.type);
+  if (!who || !cardsTrusted(who.owner))
+    throw new CardRefusal(`This card's ${who?.owner.startsWith("ext:") ? "extension" : "project"} isn't trusted to use Sova's commands for you yet: trust its cards first. ${entry.label} didn't run.`, 409, who ?? undefined);
   const values: Record<string, unknown> = { ...((params ?? {}) as Record<string, unknown>) };
   if (entry.params.session && values.session === undefined) values.session = entry.sessionKey === "id" ? s.id : path;
   let req: ReturnType<typeof buildRequest>;

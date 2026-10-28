@@ -29,7 +29,7 @@ export interface CardAnswer {
 export interface SessionInfo {
   id: string;
   title: string;
-  /** Whether this view can act on the session (stage text, answer, run commands that change something). */
+  /** Whether this view can act on the session (stage text, answer). Running a command also needs its owner trusted. */
   canAct: boolean;
 }
 export interface ThemeInfo {
@@ -125,8 +125,9 @@ export const card = {
   },
   /**
    * Run one of Sova's commands by its catalogue id, as the web app would: the route's own answer.
-   * A command that changes something runs once this card's project is trusted; the first time,
-   * the card asks the user, and the call is refused with that reason until they agree.
+   * Every command, one that only reads included, runs once this card's project (or extension) is
+   * trusted; the first time, the card asks the user, and the call is refused with that reason
+   * until they agree. Until then a view has only its own card's data, state and answer.
    */
   run<I extends CommandId>(id: I, params: CommandParams[I]): Promise<CommandResult> {
     return call("run", { command: id, params });

@@ -156,8 +156,8 @@ export function registerTranscriptCardRoutes(app: Hono<any>): void {
     }),
   );
   // A view's command (§chat.transcript-cards/view-api, "Run any of Sova's commands"): the page's, for
-  // its card's view, on this machine's own door only; one that changes something once the card's
-  // project is trusted. Recorded as run by `card:<type>`.
+  // its card's view, on this machine's own door only; any command, reads included, only once the
+  // card's owner (project or extension) is trusted. Recorded as run by `card:<type>`.
   app.post(
     "/api/session-cards/run",
     handle(async (c) => {

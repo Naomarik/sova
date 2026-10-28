@@ -21,7 +21,9 @@ import { Icon } from "./ui";
  */
 
 /** The view document's base: Sova's typography and controls on the theme's tokens (sent with each load). */
-const BASE_CSS = `html{-webkit-text-size-adjust:100%;color-scheme:var(--sova-scheme,dark)}
+// The view's color-scheme stays `normal`, as its frames' do: a frame whose document's scheme differs
+// from its element's gets an opaque backdrop, never the card's own background.
+const BASE_CSS = `html{-webkit-text-size-adjust:100%;color-scheme:normal}
 html,body{margin:0;padding:0;background:transparent}
 body{color:var(--color-ink);font-family:var(--font-body),system-ui,sans-serif;font-size:var(--fs-body,14px);line-height:var(--lh-body,1.5);-webkit-font-smoothing:antialiased;overflow-wrap:anywhere}
 h1,h2,h3,h4{font-family:var(--font-display),system-ui,sans-serif;margin:0 0 var(--space-2,8px)}
@@ -80,7 +82,9 @@ export default function CardView(props: { card: CardInfo; ctx: CardControls }) {
   const reserve = () => props.card.view?.height ?? 160;
   const height = () => boxHeight(asked() ?? drawn() ?? reserve());
 
-  const init = () => {
+  /** What the view is told: plain JSON, never the page's store proxies (they can't cross into the box). */
+  const init = () => JSON.parse(JSON.stringify(initOf()));
+  const initOf = () => {
     const c = props.card;
     const a = c.answer;
     const s = props.ctx.session();
@@ -212,7 +216,7 @@ export default function CardView(props: { card: CardInfo; ctx: CardControls }) {
 
   return (
     <div class="card-view">
-      <Show when={error()}>{(why) => <CardErrorBox why={why()} reload={reload} />}</Show>
+      <Show when={error()}>{(why) => <CardErrorBox why={why().trim().replace(/\.$/, "")} reload={reload} />}</Show>
       <iframe
         ref={(el) => {
           // The wall's attributes, before the frame is in the page or has a document.

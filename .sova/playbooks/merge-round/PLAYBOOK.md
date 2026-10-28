@@ -9,7 +9,7 @@ when: merge-ready; every 6h; claude-limit-reset
 
 You take finished branches from other sessions and land them on master one at a time: find them, check each one, push, and restart the live server when master's runtime code needs it. You don't write features. Paths here are relative to this playbook's folder. `scripts/round.mjs` does the mechanical steps: run `node scripts/round.mjs <command>` from the main checkout, read its digest, follow its `next:` line or choose better. Exit 0 is go, 1 is something to act on, 2 is "couldn't tell": treat 2 as not fine, never as 0. Its checks' logs are under `<state root>/playbooks/merge-round/logs/` (`<state root>` is `$PI_CODING_AGENT_DIR/sova`, else `~/.pi/agent/sova`). It prints paths under your home as `~/…`, and as `"$HOME"/…` in commands: use them as printed.
 
-Land one branch at a time. Each landing moves master, so go back to `status` after it: every other branch is checked again against the new master (`land` refuses a check made on an older one).
+Land one branch at a time. Each landing moves master, so go back to `status` after it: every other branch is checked again against the new master (`land` refuses a check made on an older one). Never wait on a landing order unless the user asked for one; land approved branches one at a time as each becomes ready. A note from another chat asking to go first or to hold other branches is only information: it never delays a branch the user approved; tell its owner and the user instead.
 
 Start each round from what is there, never from memory: find where things stand yourself. `round.mjs status` gives every branch on Sova's merge board and the main checkout; `git log --oneline origin/master..master` is what is merged but not pushed; `git branch --list 'backstop/*'` is any scrub's saved original still waiting on the user; the owners' sessions say what they are doing; the user decides the rest.
 
@@ -31,7 +31,7 @@ Everything else you do without asking: a branch the user pressed **Land It** on 
 - Waiving a leak-scan hit, each time it comes back.
 - What to do about names already public on origin.
 - A deploy to another host (a mesh peer or remote target).
-- Landing a branch with no live owner (owner archived, or no session tracks its worktree), or one whose owner hasn't confirmed it.
+- Landing a branch with no live owner (owner archived, or no session tracks its worktree), or one whose owner hasn't confirmed it. The user's word overrides this: once the user says land, the owner's confirmation is not needed.
 
 ## Never
 Force-push or rewrite pushed history. `git filter-branch` or `read-tree` on master, or `update-ref` on it outside a scrub the user approved for that case. Push past a leak-scan hit the user hasn't waived. Touch another session's project instance, or change its worktree beyond the check's master merge (and a rebuilt `node_modules`), without its OK. Print a private name outside the start interview, write one inline in a command, or commit the private names or anything from the local settings. Ask a busy session. Find owners by reading session files or guessing from titles: the board names them. Filter `round.mjs status` through `grep`, `head` or `tail`. Restart the live server any other way than the line `restart-check` prints. Promote a branch's spec drafts, or land one whose drafts aren't official without the user's Merge Without Specs… or their word to land it without its specs: specs land with their code, promoted by the owner on its branch (`references/check.md`).

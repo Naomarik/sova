@@ -1,6 +1,7 @@
 import { createContext, createSignal, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import type { CardAnswerValue, CardDecl, CardInfo, SessionCardsAnswer } from "../../shared/transcript-cards";
+import type { DrawingDecl } from "../../shared/drawing-kinds";
 import { answerSessionCard, ApiError, getSessionCards, setCardTrust, setSessionCardState } from "./api";
 import { cardPicksOf, clearCardPicks, liveCardPicks, pickCard, type CardPick, type CardPicks } from "./card-picks";
 import { toast } from "./ui-state";
@@ -47,6 +48,10 @@ export interface CardControls {
   refresh(): void;
   /** The session's snapshot type of a card (a view's declared shape and height). */
   type(name: string): CardDecl | undefined;
+  /** The drawing kinds the session may draw (§chat.transcript-cards/drawing-kinds). */
+  drawings(): readonly OwnKind[];
+  /** Whether a card's type belongs to an extension that is no longer installed (§app.extensions/views). */
+  gone(type: string): boolean;
   /** The session's file, id and title, for a view's own reads. */
   session(): { path: string; id: string; title: string };
   /** The state Sova keeps for a view's card, and keeping a new one (saved, then kept here). */
@@ -64,12 +69,15 @@ export interface CardChat {
   session?(): { id: string; title: string };
 }
 
+/** A drawing kind as the page holds it: its declaration without its guide (the agent's alone). */
+export type OwnKind = Omit<DrawingDecl, "guide">;
+
 export const CardContext = createContext<CardControls | undefined>(undefined);
 
 const POLL_MS = 20_000;
 
 export function createCardControls(path: () => string, canAct: () => boolean, chat: CardChat = {}): CardControls {
-  const [state, setState] = createStore<{ cards: CardInfo[]; types: CardDecl[]; states: Record<string, unknown> }>({ cards: [], types: [], states: {} });
+  const [state, setState] = createStore<{ cards: CardInfo[]; types: CardDecl[]; states: Record<string, unknown>; drawings: OwnKind[]; gone: string[] }>({ cards: [], types: [], states: {}, drawings: [], gone: [] });
   const [busy, setBusy] = createSignal<string | null>(null);
   const [ask, setAsk] = createSignal<CardTrustAsk | null>(null);
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -86,6 +94,8 @@ export function createCardControls(path: () => string, canAct: () => boolean, ch
     if (mine !== gen || at !== path()) return;
     setState("cards", reconcile(a.cards, { key: "id" }));
     setState("types", reconcile(a.types, { key: "type" }));
+    setState("drawings", reconcile(a.drawings ?? [], { key: "kind" }));
+    setState("gone", reconcile(a.gone ?? []));
     if (a.states) for (const [id, v] of Object.entries(a.states)) if (!(id in state.states)) setState("states", id, () => v);
     const any = a.types.length > 0 || a.cards.length > 0;
     if (any && !timer) timer = setInterval(() => document.visibilityState === "visible" && void load(), POLL_MS);
@@ -156,6 +166,11 @@ export function createCardControls(path: () => string, canAct: () => boolean, ch
     clearPicks: () => clearCardPicks(path()),
     refresh: () => void load(),
     type: (name) => state.types.find((t) => t.type === name),
+    drawings: () => state.drawings,
+    gone(type) {
+      const ext = state.types.find((t) => t.type === type)?.ext;
+      return !!ext && state.gone.includes(ext.id);
+    },
     session: () => ({ path: path(), ...(chat.session?.() ?? { id: "", title: "" }) }),
     viewState: (id) => state.states[id] ?? null,
     async setViewState(id, value) {

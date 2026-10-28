@@ -65,3 +65,12 @@ test("the box's height: 32 to 1200 px", () => {
   assert.equal(boxHeight(400.6), 401);
   assert.equal(boxHeight(5000), 1200);
 });
+
+test("a drawing only draws: resize is its one call, every other call is refused (§chat.transcript-cards/drawing-kinds)", async () => {
+  const { answerDrawingCall, DRAWING_ONLY_DRAWS } = await import("./card-view-host");
+  const sizes: (number | null)[] = [];
+  assert.equal(answerDrawingCall({ id: 1, call: "resize", args: { height: 210.4 } }, (h) => sizes.push(h)), null);
+  assert.deepEqual(sizes, [210]);
+  for (const call of ["answer", "stage", "state", "run", "anything"]) assert.deepEqual(answerDrawingCall({ id: 2, call, args: { command: "session.send", text: "x" } }, () => undefined), { re: 2, ok: false, error: DRAWING_ONLY_DRAWS });
+  assert.equal(answerDrawingCall({ call: "run" }, () => undefined), null);
+});

@@ -10,7 +10,7 @@ const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
 /**
  * The project page's Cards list: the card types its main checkout's `.sova/cards/` folders declare,
- * read now, each broken folder with its path and what is wrong, and whether the project's cards are
+ * read now, and the drawing kinds its `.sova/drawings/` folders declare, each broken folder with its path and what is wrong, and whether the project's cards are
  * trusted to act for you, with Stop Trusting Cards while they are. Trusting happens on a card, the
  * first time one wants to act.
  */
@@ -19,6 +19,8 @@ export function ProjectCardsCard(props: { projectId: string }) {
   const [busy, setBusy] = createSignal(false);
   const types = () => poll.data()?.folders.flatMap((f) => (f.ok ? [f] : [])) ?? [];
   const broken = () => poll.data()?.folders.flatMap((f) => (f.ok ? [] : [f])) ?? [];
+  const kinds = () => poll.data()?.drawings?.flatMap((f) => (f.ok ? [f] : [])) ?? [];
+  const brokenKinds = () => poll.data()?.drawings?.flatMap((f) => (f.ok ? [] : [f])) ?? [];
   const stopTrusting = async (owner: string) => {
     setBusy(true);
     try {
@@ -41,7 +43,7 @@ export function ProjectCardsCard(props: { projectId: string }) {
       <Show when={poll.data()}>
         {(a) => (
           <>
-            <Show when={!a().folders.length}>
+            <Show when={!a().folders.length && !a().drawings?.length}>
               <p class="orgs-line">
                 No card types yet. Add a folder under <code>{CARDS_DIR}/</code> on the main checkout, and this project's chats can raise its cards.
               </p>
@@ -73,6 +75,38 @@ export function ProjectCardsCard(props: { projectId: string }) {
                         </span>
                       </div>
                       <p class="field-error">{f.error} It raises nothing until it's fixed.</p>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+            <Show when={kinds().length}>
+              <p class="orgs-line">
+                {plural(kinds().length, "drawing kind")}:{" "}
+                <For each={kinds()}>
+                  {(k, i) => (
+                    <>
+                      {i() ? ", " : ""}
+                      <code>vis {k.kind}</code>
+                    </>
+                  )}
+                </For>
+                .
+              </p>
+            </Show>
+            <Show when={brokenKinds().length}>
+              <ul class="project-cards-broken" aria-label="Broken drawing folders">
+                <For each={brokenKinds()}>
+                  {(f) => (
+                    <li class="project-card-folder" data-drawing-folder={f.name}>
+                      <div class="project-offer-head">
+                        <code>{f.path}</code>
+                        <span class="chip chip-warn">
+                          <span class="chip-dot" aria-hidden="true" />
+                          Broken
+                        </span>
+                      </div>
+                      <p class="field-error">{f.error} It draws nothing until it's fixed.</p>
                     </li>
                   )}
                 </For>

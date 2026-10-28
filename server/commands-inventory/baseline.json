@@ -165,6 +165,8 @@
     "GET /api/schedules": {"need":"sessions","is":"pending"},
     "GET /api/services": {"need":"sessions","is":"pending"},
     "GET /api/session-cards": {"need":"sessions","is":"command","ids":["session.card.get"]},
+    "GET /api/session-cards/drawing": {"need":"sessions","is":"card-box"},
+    "GET /api/session-cards/trust": {"need":"sessions","is":"trust-grants"},
     "GET /api/session-cards/view": {"need":"sessions","is":"card-box"},
     "GET /api/session-groups": {"need":"sessions","is":"command","ids":["session.group.list"]},
     "GET /api/session-offers": {"need":"sessions","is":"command","ids":["session.offers.get"]},

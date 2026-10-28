@@ -6,10 +6,12 @@ import { callerKeys, CALLER_HEADER } from "./caller-keys";
 import { OrgError } from "./org-error";
 import { resolveSessionPath } from "./paths";
 import { readProject } from "./projects/spaces";
-import { answerCard, CardRefusal, projectCards, raiseCard, runCardCommand, sessionCardsAt, sessionCardType, setCardState, setCardsTrusted } from "./transcript-cards";
-import { viewCode } from "./card-views";
+import { answerCard, CardRefusal, extensionCardsTrust, projectCards, sessionDrawingKind, raiseCard, runCardCommand, sessionCardsAt, sessionCardType, setCardState, setCardsTrusted } from "./transcript-cards";
+import { viewCodeAt, type Source } from "./card-views";
+import { EXTENSION_ID_RE, findExtension, isKeyFile } from "./extensions";
+import { DRAWING_VIEW_FILE, DRAWINGS_DIR, PROJECT_OWNER } from "../shared/drawing-kinds";
 import { commandAudit } from "./command-audit";
-import { CARD_NAME_RE, needsUpdatingText, TOOLKIT_VERSION } from "../shared/transcript-cards";
+import { CARD_NAME_RE, CARDS_DIR, needsUpdatingText, TOOLKIT_VERSION, VIEW_FILE } from "../shared/transcript-cards";
 
 /** How long the page's wait for a view's next build is held open. */
 const VIEW_WAIT_MS = 25_000;
@@ -81,6 +83,25 @@ async function callerOf(c: Context): Promise<{ raiser: CardRaiser; name: string;
   return { raiser: { kind: "script" }, name: "a script", page: false };
 }
 
+/**
+ * Where a view's code is built from: a project's from the chat's checkout (`entry` names the file
+ * under it), an extension's from its dist as the manifest names it now, never a backend's key; or
+ * why it can't be (no checkout, the extension no longer installed).
+ */
+function viewSource(name: string, ext: { id: string; title: string; view?: string } | undefined, checkout: string | null, entry: (name: string) => string): Source | { error: string; hash: string } {
+  const dot = name.lastIndexOf(".");
+  if (ext) {
+    const installed = findExtension(ext.id);
+    if (!installed) return { error: `${ext.title} is no longer installed.`, hash: "uninstalled" };
+    if (!ext.view) throw new CardRefusal(`${name} has no view.`, 400);
+    return { root: installed.dist, entry: ext.view, limits: { refuse: isKeyFile } };
+  }
+  const short = name.slice(dot + 1);
+  if (name.slice(0, dot) !== PROJECT_OWNER || !CARD_NAME_RE.test(short)) throw new CardRefusal(`${name} isn't a project's view.`, 400);
+  if (!checkout) return { error: "This chat has no checkout to build its view from.", hash: "no-checkout" };
+  return { root: checkout, entry: entry(short) };
+}
+
 export function registerTranscriptCardRoutes(app: Hono<any>): void {
   // A view card's built code (§chat.transcript-cards/building), from the chat's own checkout: at
   // once, or with `have` (the build the page has) and `wait`, once a save changes it
@@ -92,13 +113,36 @@ export function registerTranscriptCardRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const path = sessionPath(c.req.query("path"));
       const { decl, checkout } = await sessionCardType(path, c.req.query("type"));
-      const name = decl.type.slice("project.".length);
-      if (decl.draws !== "view" || !decl.type.startsWith("project.") || !CARD_NAME_RE.test(name)) throw new CardRefusal(`${decl.type} isn't a project's view.`, 400);
+      if (decl.draws !== "view") throw new CardRefusal(`${decl.type} isn't a view.`, 400);
       if (decl.toolkit !== TOOLKIT_VERSION) return c.json({ ok: false, hash: `toolkit-${decl.toolkit}`, error: needsUpdatingText(decl.toolkit ?? 0), outdated: true }, 200, NO_STORE);
-      if (!checkout) return c.json({ ok: false, hash: "no-checkout", error: "This chat has no checkout to build its view from." }, 200, NO_STORE);
-      const have = c.req.query("have") || null;
-      const build = await viewCode(checkout, name, have, c.req.query("wait") === "1" ? VIEW_WAIT_MS : 0, c.req.raw.signal);
+      const src = viewSource(decl.type, decl.ext, checkout, (name) => `${CARDS_DIR}/${name}/${VIEW_FILE}`);
+      if ("error" in src) return c.json({ ok: false, hash: src.hash, error: src.error }, 200, NO_STORE);
+      const build = await viewCodeAt(src, c.req.query("have") || null, c.req.query("wait") === "1" ? VIEW_WAIT_MS : 0, c.req.raw.signal);
       return c.json(build, 200, NO_STORE);
+    }),
+  );
+  // A drawing kind's built view (§chat.transcript-cards/drawing-kinds), the way a card's view is
+  // built and redrawn: the kind from the session's snapshot, its code fresh from the chat's own
+  // checkout (a project's) or the extension's dist.
+  app.get(
+    "/api/session-cards/drawing",
+    handle(async (c) => {
+      const path = sessionPath(c.req.query("path"));
+      const { decl, checkout } = await sessionDrawingKind(path, c.req.query("kind"));
+      if (decl.toolkit !== TOOLKIT_VERSION) return c.json({ ok: false, hash: `toolkit-${decl.toolkit}`, error: needsUpdatingText(decl.toolkit), outdated: true }, 200, NO_STORE);
+      const src = viewSource(decl.kind, decl.ext, checkout, (name) => `${DRAWINGS_DIR}/${name}/${DRAWING_VIEW_FILE}`);
+      if ("error" in src) return c.json({ ok: false, hash: src.hash, error: src.error }, 200, NO_STORE);
+      const build = await viewCodeAt(src, c.req.query("have") || null, c.req.query("wait") === "1" ? VIEW_WAIT_MS : 0, c.req.raw.signal);
+      return c.json(build, 200, NO_STORE);
+    }),
+  );
+  // An extension's cards' trust, as its page shows it with Stop Trusting Cards (§chat.transcript-cards/trust).
+  app.get(
+    "/api/session-cards/trust",
+    handle(async (c) => {
+      const id = c.req.query("ext") ?? "";
+      if (!EXTENSION_ID_RE.test(id)) throw new CardRefusal("ext names an installed extension's id.", 400);
+      return c.json(extensionCardsTrust(id), 200, NO_STORE);
     }),
   );
   // The state Sova keeps for a view's card (§chat.transcript-cards/view-api, "Keep state").

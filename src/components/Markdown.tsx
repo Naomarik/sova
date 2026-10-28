@@ -1,4 +1,4 @@
-import { createEffect, createSignal, on, onCleanup } from "solid-js";
+import { createEffect, createSignal, lazy, on, onCleanup, useContext } from "solid-js";
 import type { TmpAttachment } from "../../shared/protocol";
 import { renderMarkdown, type RenderedMarkdown, type RenderedVisual } from "../lib/markdown";
 import { activatePathChip } from "../lib/path-attachments";
@@ -8,6 +8,10 @@ import { scrollToCardId, useCardJump } from "../lib/card-refs";
 import { render } from "solid-js/web";
 import { createMarkdownPatcher } from "../vis/hydrate";
 import { Visual } from "../vis/Visual";
+import { CardContext } from "../lib/card-controls";
+
+/** A chat's own drawing kind's figure (DrawingView.tsx), loaded the first time one draws. */
+const DrawingView = lazy(() => import("./DrawingView"));
 
 /**
  * An assistant-text body rendered as markdown. The HTML comes only from
@@ -19,25 +23,28 @@ import { Visual } from "../vis/Visual";
  */
 export function Markdown(props: { text: string; streaming?: boolean; attachments?: TmpAttachment[] }) {
   const jumpToCard = useCardJump();
-  const [rendered, setRendered] = createSignal<RenderedMarkdown>(renderMarkdown(props.text, !!props.streaming, props.attachments));
+  // The chat's own drawing kinds, from its snapshot (§chat.transcript-cards/drawing-kinds); none outside a chat.
+  const cards = useContext(CardContext);
+  const own = () => cards?.drawings();
+  const [rendered, setRendered] = createSignal<RenderedMarkdown>(renderMarkdown(props.text, !!props.streaming, props.attachments, own()));
   let frame = 0;
   onCleanup(() => cancelAnimationFrame(frame));
   createEffect(
     on(
       // A session link resolves against the session list: re-render when that changes, but only
       // for a message that has one — every other message ignores the list's polls.
-      () => [props.text, !!props.streaming, props.attachments, props.text.includes("sova://") && sessionIndexVersion()] as const,
+      () => [props.text, !!props.streaming, props.attachments, props.text.includes("sova://") && sessionIndexVersion(), props.text.includes("vis ") && own()] as const,
       ([text, streaming, attachments]) => {
         if (!streaming) {
           cancelAnimationFrame(frame);
           frame = 0;
-          setRendered(renderMarkdown(text, false, attachments));
+          setRendered(renderMarkdown(text, false, attachments, own()));
           return;
         }
         if (frame) return; // one parse per frame; the latest text wins
         frame = requestAnimationFrame(() => {
           frame = 0;
-          setRendered(renderMarkdown(props.text, !!props.streaming, props.attachments));
+          setRendered(renderMarkdown(props.text, !!props.streaming, props.attachments, own()));
         });
       },
       { defer: true },
@@ -47,7 +54,12 @@ export function Markdown(props: { text: string; streaming?: boolean; attachments
   let patcher: ReturnType<typeof createMarkdownPatcher<RenderedVisual>> | undefined;
   createEffect(() => {
     const r = rendered();
-    patcher ??= createMarkdownPatcher(el, (ph, v) => render(() => <Visual kind={v.kind} spec={v.spec} fence={v.fence} body={v.body} />, ph));
+    patcher ??= createMarkdownPatcher(el, (ph, v) =>
+      render(() => {
+        const o = v.own;
+        return o && cards ? <DrawingView decl={o.decl} drawing={o.drawing} fence={v.fence} body={v.body} session={() => cards.session()} /> : <Visual kind={v.kind} spec={v.spec} fence={v.fence} body={v.body} />;
+      }, ph),
+    );
     patcher.patch(r);
   });
   onCleanup(() => patcher?.dispose());

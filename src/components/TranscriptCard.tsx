@@ -4,6 +4,7 @@ import { checkCardData, letterIndex, type ChecklistCard, type DataCardKind, type
 import { CardContext, type CardControls } from "../lib/card-controls";
 import type { KindViewProps } from "../lib/transcript-kinds";
 import CardView from "./CardView";
+import { CardErrorBox } from "./TranscriptKind";
 import { DataCard, type DataCardAnswer } from "./DataCards";
 import { Icon } from "./ui";
 
@@ -63,6 +64,7 @@ function CardBody(props: { card: CardInfo; ctx: CardControls | undefined }) {
       <Show when={from()}>
         <p class="transcript-card-from text-muted">{from()}</p>
       </Show>
+      <Show when={!props.ctx?.gone(props.card.type)} fallback={<CardErrorBox why={`${props.ctx?.type(props.card.type)?.ext?.title ?? props.card.title} is no longer installed`} reload={() => props.ctx?.refresh()} />}>
       <Show
         when={props.card.draws === "view"}
         fallback={<DataCard draws={props.card.draws as DataCardKind} data={props.card.data} id={props.card.id} answer={answering()} answered={!!props.card.answer} />}
@@ -71,13 +73,14 @@ function CardBody(props: { card: CardInfo; ctx: CardControls | undefined }) {
           {(ctx) => <CardView card={props.card} ctx={ctx()} />}
         </Show>
       </Show>
+      </Show>
       <Show when={props.card.answer}>{(a) => <AnswerLine card={props.card} answer={a()} />}</Show>
       <Show when={!props.card.answer && props.card.answerMode !== "none" && props.card.state === "open" && !props.ctx?.canAct()}>
         <p class="transcript-card-answer text-muted">Waiting for an answer</p>
       </Show>
       <Show when={ask()}>
         {(a) => (
-          <div class="banner banner-warn transcript-card-trust" role="group" aria-label="Trust this project's cards">
+          <div class="banner banner-warn transcript-card-trust" role="group" aria-label={`Trust ${a().name}'s cards`}>
             <Icon name="attention" class="banner-icon" />
             <div class="banner-main">
               <p class="banner-title">Let {a().name}'s cards act for you?</p>

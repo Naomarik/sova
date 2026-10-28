@@ -37,10 +37,10 @@ input,select,textarea{font:inherit;color:inherit;background:var(--color-sunken);
 .muted{color:var(--color-ink-muted)}`;
 
 let shellDocCache: string | null = null;
-const shellDoc = () => (shellDocCache ??= cardShellDoc(cardViewDoc(BASE_CSS)));
+export const shellDoc = () => (shellDocCache ??= cardShellDoc(cardViewDoc(BASE_CSS)));
 
 /** The theme in use, as the box takes it: every token on the page's root, and whether it is light or dark. */
-function themeNow(): { css: string; theme: { name: string; scheme: "light" | "dark" } } {
+export function themeNow(): { css: string; theme: { name: string; scheme: "light" | "dark" } } {
   const root = document.documentElement;
   const cs = getComputedStyle(root);
   const decls: string[] = [];
@@ -53,7 +53,7 @@ function themeNow(): { css: string; theme: { name: string; scheme: "light" | "da
   return { css: `:root{${decls.join(";")}}`, theme: { name: root.dataset.theme ?? "dark", scheme } };
 }
 
-const post = (shell: HTMLIFrameElement | undefined, m: Record<string, unknown>) => shell?.contentWindow?.postMessage({ [CARD_BOX_MESSAGE]: 1, ...m }, "*");
+export const post = (shell: HTMLIFrameElement | undefined, m: Record<string, unknown>) => shell?.contentWindow?.postMessage({ [CARD_BOX_MESSAGE]: 1, ...m }, "*");
 
 export default function CardView(props: { card: CardInfo; ctx: CardControls }) {
   let shell: HTMLIFrameElement | undefined;
@@ -229,7 +229,7 @@ export default function CardView(props: { card: CardInfo; ctx: CardControls }) {
       />
       <Show when={trustAsk()}>
         {(a) => (
-          <div class="banner banner-warn transcript-card-trust" role="group" aria-label="Trust this project's cards">
+          <div class="banner banner-warn transcript-card-trust" role="group" aria-label={`Trust ${a().name}'s cards`}>
             <Icon name="attention" class="banner-icon" />
             <div class="banner-main">
               <p class="banner-title">Let {a().name}'s cards act for you?</p>

@@ -29,10 +29,15 @@ import {
   VIEW_STATE_MAX_BYTES,
 } from "../shared/transcript-cards";
 import type { HEntry } from "../shared/harness";
+import { VIS_OWN_KINDS_HOOK } from "../pi-config/extensions/mode/minor.ts";
+import { DRAWING_VIEW_FILE, DRAWINGS_DIR, GUIDE_FILE, GUIDE_MAX_BYTES, KIND_FILE, KIND_FILE_MAX_BYTES, ownKindLine, parseKindFile, PROJECT_DRAWINGS_MAX, PROJECT_OWNER, type DrawingDecl } from "../shared/drawing-kinds";
+import { typeOwnerWord } from "../shared/transcript-cards";
 import { checkoutRootOf } from "../pi-config/extensions/mode/project-discovery.ts";
 import { sessionsChanged } from "./list-generation";
 import { projectRootOf } from "./project-root";
 import { stateRoot } from "./state-root";
+import { findExtension, readExtensionsWithOffers } from "./extensions";
+import { extDrawingDecl } from "./extension-views";
 
 /**
  * Transcript cards (§chat/transcript-cards), the server's side: a project's card folders
@@ -169,6 +174,97 @@ export function readCardFolders(checkout: string): CardFolder[] {
 /** The types a checkout's folders declare, as a snapshot takes them: data cards and views alike. */
 export const snapshotTypes = (checkout: string | null): CardDecl[] => (checkout ? readCardFolders(checkout).flatMap((f) => (f.ok ? [f.decl] : [])) : []);
 
+/** A drawing kind's folder as read: its kind (its guide's text with it), or what is wrong. */
+export type DrawingFolder = { name: string; path: string; ok: true; decl: DrawingDecl } | { name: string; path: string; ok: false; error: string };
+
+/** Every folder under `<checkout>/.sova/drawings/` (§chat.transcript-cards/drawing-kinds), listed as card folders are. */
+export function readDrawingFolders(checkout: string): DrawingFolder[] {
+  const dir = join(checkout, DRAWINGS_DIR);
+  let names: string[];
+  try {
+    names = readdirSync(dir).sort();
+  } catch {
+    return [];
+  }
+  const out: DrawingFolder[] = [];
+  let valid = 0;
+  for (const name of names) {
+    const path = join(dir, name);
+    try {
+      if (!statSync(path).isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    const bad = (error: string): DrawingFolder => ({ name, path, ok: false, error });
+    let text: string;
+    try {
+      const buf = readFileSync(join(path, KIND_FILE));
+      if (buf.length > KIND_FILE_MAX_BYTES) {
+        out.push(bad(`${KIND_FILE} is over ${KIND_FILE_MAX_BYTES / 1024} KB.`));
+        continue;
+      }
+      text = buf.toString("utf8");
+    } catch {
+      out.push(bad(`${KIND_FILE} is missing.`));
+      continue;
+    }
+    const parsed = parseKindFile(name, text, existsSync(join(path, DRAWING_VIEW_FILE)), existsSync(join(path, GUIDE_FILE)));
+    if (!parsed.ok) {
+      out.push(bad(parsed.error));
+      continue;
+    }
+    if (++valid > PROJECT_DRAWINGS_MAX) {
+      out.push(bad(`Past the first ${PROJECT_DRAWINGS_MAX} drawing kinds; this one doesn't count.`));
+      continue;
+    }
+    let guide = "";
+    try {
+      guide = readFileSync(join(path, GUIDE_FILE), "utf8").slice(0, GUIDE_MAX_BYTES);
+    } catch {
+      out.push(bad(`${GUIDE_FILE} can't be read.`));
+      continue;
+    }
+    out.push({ name, path, ok: true, decl: { ...parsed.decl, guide } });
+  }
+  return out;
+}
+
+/**
+ * The installed extensions' card types and drawing kinds (§app.extensions/views), as a chat's
+ * snapshot takes them when it starts: each extension's offers, its guides read now. Swappable for tests.
+ */
+let extensionViews: () => { types: CardDecl[]; drawings: DrawingDecl[] } = () => {
+  const types: CardDecl[] = [];
+  const drawings: DrawingDecl[] = [];
+  for (const { entry, offers } of readExtensionsWithOffers()) {
+    for (const t of offers?.cards ?? []) types.push(t);
+    for (const d of offers?.drawings ?? []) {
+      const decl = extDrawingDecl(entry, d);
+      if (decl) drawings.push(decl);
+    }
+  }
+  return { types, drawings };
+};
+export function setExtensionViewsForTest(fn: (() => { types: CardDecl[]; drawings: DrawingDecl[] }) | null): void {
+  extensionViews = fn ?? defaultExtensionViews;
+}
+const defaultExtensionViews = extensionViews;
+
+/**
+ * A chat's types and kinds: its checkout's, then the installed extensions'. Each name once (the
+ * first wins: a project's own, then the manifest's order), so two owners can never share a fence
+ * word or a type, and none of them has a name without a dot, as Sova's kinds do.
+ */
+export function snapshotOf(checkout: string | null): { types: CardDecl[]; drawings: DrawingDecl[] } {
+  const ext = extensionViews();
+  const types: CardDecl[] = [];
+  for (const t of [...snapshotTypes(checkout), ...ext.types]) if (!types.some((x) => x.type === t.type)) types.push(t);
+  const drawings: DrawingDecl[] = [];
+  const own = checkout ? readDrawingFolders(checkout).flatMap((f) => (f.ok ? [f.decl] : [])) : [];
+  for (const d of [...own, ...ext.drawings]) if (d.kind.includes(".") && !drawings.some((x) => x.kind === d.kind)) drawings.push(d);
+  return { types, drawings };
+}
+
 /** A card's data checked against its type: a data card's shape is Sova's, a view's the one it declares. */
 function checkDeclData(decl: CardDecl, data: unknown): { ok: true; data: unknown } | { ok: false; error: CardDataError } {
   return decl.draws === "view" ? checkViewData(decl.data, data) : checkCardData(decl.draws, data);
@@ -293,10 +389,10 @@ async function takeSnapshot(sessionId: string, path: string, cwd?: string): Prom
   // folders now would change its tools at its next reload (a Claude Code chat restarts on that).
   if (!inherited && !head?.started) {
     const at = cwd ?? head?.cwd;
-    const types = snapshotTypes(cardsCheckoutOf(at));
-    if (types.length) {
-      snapshot = { v: 1, types };
-      root = (await projectRootOf(at).catch(() => null)) ?? cardsCheckoutOf(at) ?? undefined;
+    const { types, drawings } = snapshotOf(cardsCheckoutOf(at));
+    if (types.length || drawings.length) {
+      snapshot = { v: 1, types, ...(drawings.length ? { drawings } : {}) };
+      root = at ? ((await projectRootOf(at).catch(() => null)) ?? cardsCheckoutOf(at) ?? undefined) : undefined;
     }
   }
   const again = readRecord(sessionId);
@@ -334,14 +430,33 @@ export const cardsTrusted = (owner: string, file = cardTrustFile()): boolean => 
 
 /** Trust an owner's cards, or stop trusting them: a trust grant the page alone makes, never a catalogue command. */
 export function setCardsTrusted(owner: string, on: boolean, file = cardTrustFile()): void {
-  if (!/^project:\//.test(owner)) throw new CardRefusal("owner names a project's cards (project:<root>).", 400);
+  if (!/^project:\//.test(owner) && !/^ext:[A-Za-z0-9._-]+$/.test(owner)) throw new CardRefusal("owner names a project's cards (project:<root>) or an extension's (ext:<id>).", 400);
   const all = readTrust(file);
   if (on) all[owner] = { at: deps.now().toISOString() };
   else delete all[owner];
   writeAtomic(file, { version: 1, trusted: all });
 }
 
-const ownerName = (owner: string): string => basename(owner.replace(/^project:/, "")) || owner;
+/** The trust key of an extension's cards: its id, whatever its manifest entry says later. */
+export const extensionOwner = (id: string): string => `ext:${id}`;
+
+const ownerName = (owner: string): string => (owner.startsWith("ext:") ? (findExtension(owner.slice(4))?.title ?? owner.slice(4)) : basename(owner.replace(/^project:/, "")) || owner);
+
+/** An extension's cards' trust, as its page shows it with Stop Trusting Cards. */
+export const extensionCardsTrust = (id: string): { owner: string; name: string; trusted: boolean } => {
+  const owner = extensionOwner(id);
+  return { owner, name: ownerName(owner), trusted: cardsTrusted(owner) };
+};
+
+/**
+ * Whose a card type is, as trust is kept (§chat.transcript-cards/trust): a project's (its root, so
+ * every branch and worktree) or an extension's (its id); null when it has none to ask for.
+ */
+function ownerOfType(rec: SessionRecord, type: string): { owner: string; name: string } | null {
+  if (typeOwnerWord(type) === PROJECT_OWNER) return rec.root ? { owner: projectOwner(rec.root), name: ownerName(projectOwner(rec.root)) } : null;
+  const ext = rec.snapshot?.types.find((t) => t.type === type)?.ext;
+  return ext ? { owner: extensionOwner(ext.id), name: ext.title } : null;
+}
 
 /**
  * A project's card folders on its main checkout, read now, each its type or what is wrong with it,
@@ -355,7 +470,11 @@ export async function projectCards(projectRoot: string): Promise<ProjectCardsAns
     const path = `${CARDS_DIR}/${f.name}`;
     return f.ok ? { name: f.name, path, ok: true as const, type: f.decl.type, title: f.decl.title } : { name: f.name, path, ok: false as const, error: f.error };
   });
-  return { folders, trust: { owner, name: ownerName(owner), trusted: cardsTrusted(owner) } };
+  const drawings = readDrawingFolders(checkout).map((f) => {
+    const path = `${DRAWINGS_DIR}/${f.name}`;
+    return f.ok ? { name: f.name, path, ok: true as const, kind: f.decl.kind } : { name: f.name, path, ok: false as const, error: f.error };
+  });
+  return { folders, ...(drawings.length ? { drawings } : {}), trust: { owner, name: ownerName(owner), trusted: cardsTrusted(owner) } };
 }
 
 // ---- raising (§chat.transcript-cards/card-tool, /raise-command) ---------------------------------
@@ -485,9 +604,9 @@ export async function answerCard(input: AnswerInput): Promise<CardInfo> {
   const does = button?.does;
   if (does && does.kind !== "answer") {
     const acts = does.kind === "send" || findCommand(does.command)?.effect !== "looks";
-    const owner = rec.root ? projectOwner(rec.root) : null;
-    if (acts && (!owner || !cardsTrusted(owner)))
-      throw new CardRefusal(`This card's project isn't trusted to act for you yet: trust its cards first. Nothing was ${does.kind === "send" ? "sent" : "run"}.`, 409, owner ? { owner, name: ownerName(owner) } : undefined);
+    const who = ownerOfType(rec, card.type);
+    if (acts && (!who || !cardsTrusted(who.owner)))
+      throw new CardRefusal(`This card's ${who?.owner.startsWith("ext:") ? "extension" : "project"} isn't trusted to act for you yet: trust its cards first. Nothing was ${does.kind === "send" ? "sent" : "run"}.`, 409, who ?? undefined);
   }
   // The first answer claims the card, before anything is awaited.
   const answer: CardAnswer = { value: a.value, text: a.text, by: input.by, at: deps.now().toISOString(), via: input.via };
@@ -611,15 +730,15 @@ export interface CardRun {
 export async function runCardCommand(path: string, id: unknown, command: unknown, params: unknown, audit?: (row: { command: string; method: string; route: string; status: number }) => void): Promise<CardRun> {
   const s = await summaryOf(path);
   const rec = readRecord(s.id);
-  viewCardOf(rec, id);
+  const card = viewCardOf(rec, id);
   const entry = typeof command === "string" ? findCommand(command) : undefined;
   if (!entry) throw new CardRefusal(`${String(command)} is no Sova command.`, 400);
   const bad = commandParamsError(entry, params);
   if (bad) throw new CardRefusal(bad, 400);
   if (entry.effect !== "looks") {
-    const owner = rec!.root ? projectOwner(rec!.root) : null;
-    if (!owner || !cardsTrusted(owner))
-      throw new CardRefusal(`This card's project isn't trusted to act for you yet: trust its cards first. ${entry.label} didn't run.`, 409, owner ? { owner, name: ownerName(owner) } : undefined);
+    const who = ownerOfType(rec!, card.type);
+    if (!who || !cardsTrusted(who.owner))
+      throw new CardRefusal(`This card's ${who?.owner.startsWith("ext:") ? "extension" : "project"} isn't trusted to act for you yet: trust its cards first. ${entry.label} didn't run.`, 409, who ?? undefined);
   }
   const values: Record<string, unknown> = { ...((params ?? {}) as Record<string, unknown>) };
   if (entry.params.session && values.session === undefined) values.session = entry.sessionKey === "id" ? s.id : path;
@@ -641,6 +760,15 @@ export async function runCardCommand(path: string, id: unknown, command: unknown
   return { ok: res.ok, status: res.status, body };
 }
 
+/** A session's snapshot drawing kind for a fence word (the page's drawing build asks by it). */
+export async function sessionDrawingKind(path: string, kind: unknown): Promise<{ decl: DrawingDecl; checkout: string | null }> {
+  const s = await summaryOf(path);
+  const rec = readRecord(s.id);
+  const decl = typeof kind === "string" ? rec?.snapshot?.drawings?.find((d) => d.kind === kind) : undefined;
+  if (!decl) throw new CardRefusal(`${String(kind)} is not a drawing kind of this session.`, 404);
+  return { decl, checkout: cardsCheckoutOf(s.cwd) };
+}
+
 /** A session's snapshot type for a card type name (the page's view build asks by it). */
 export async function sessionCardType(path: string, type: unknown): Promise<{ decl: CardDecl; checkout: string | null }> {
   const s = await summaryOf(path);
@@ -657,8 +785,13 @@ export async function sessionCardsAt(path: string): Promise<SessionCardsAnswer> 
   const s = await summaryOf(path);
   const rec = readRecord(s.id);
   const owner = rec?.root ? projectOwner(rec.root) : null;
+  // An extension no longer installed: its cards show their error box (§app.extensions/views).
+  const installed = new Set(readExtensionsWithOffers().map((e) => e.entry.id));
+  const gone = [...new Set((rec?.snapshot?.types ?? []).flatMap((t) => (t.ext && !installed.has(t.ext.id) ? [t.ext.id] : [])))];
   return {
     cards: rec?.cards ?? [],
+    ...(rec?.snapshot?.drawings?.length ? { drawings: rec.snapshot.drawings.map(({ guide: _g, ...d }) => d) } : {}),
+    ...(gone.length ? { gone } : {}),
     types: rec?.snapshot?.types ?? [],
     ...(rec?.states && Object.keys(rec.states).length ? { states: rec.states } : {}),
     ...(owner ? { trust: { owner, name: ownerName(owner), trusted: cardsTrusted(owner) } } : {}),
@@ -727,4 +860,17 @@ export function openCardsOf(sessionId: string): OpenCard[] {
     }
   }
   return openIndex.open.get(sessionId) ?? [];
+}
+
+// ---- the agent's guides for own drawing kinds (§chat.transcript-cards/drawing-kinds) -----------
+
+/**
+ * The hook the vis_guide tool reads (pi-config/extensions/mode, VIS_OWN_KINDS_HOOK): a session's own
+ * drawing kinds with their guides, from its snapshot alone, so the tool's words are fixed per chat.
+ * Installed once per process, where chat runtimes are built.
+ */
+export function installVisOwnKindsHook(): void {
+  const g = globalThis as Record<symbol, unknown>;
+  if (typeof g[VIS_OWN_KINDS_HOOK] === "function") return;
+  g[VIS_OWN_KINDS_HOOK] = (sessionId: string) => (recordedCardSnapshot(sessionId)?.drawings ?? []).map((d) => ({ kind: d.kind, guide: d.guide, line: ownKindLine(d) }));
 }

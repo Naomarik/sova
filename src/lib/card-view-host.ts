@@ -86,3 +86,21 @@ export async function answerViewCall(raw: unknown, deps: ViewHostDeps): Promise<
 
 /** The px a view's box takes: what it drew (or asked for), from 32 to 1200; past that it scrolls inside. */
 export const boxHeight = (h: number): number => Math.min(1200, Math.max(32, Math.round(h)));
+
+/** What a drawing's view is told when it asks for more than its size (§chat.transcript-cards/drawing-kinds). */
+export const DRAWING_ONLY_DRAWS = "A drawing only draws: it has no answer, stages nothing and runs no commands.";
+
+/**
+ * A drawing's view's call: `resize` is its one call (no answer); anything else is refused, so a
+ * drawing never records an answer, stages text, keeps state or runs a command.
+ */
+export function answerDrawingCall(raw: unknown, resize: (height: number | null) => void): ViewReply | null {
+  const m = raw as { id?: unknown; call?: unknown; args?: unknown } | null;
+  if (!m || typeof m !== "object" || typeof m.id !== "number" || typeof m.call !== "string") return null;
+  if (m.call === "resize") {
+    const h = (m.args as { height?: unknown } | null)?.height;
+    resize(typeof h === "number" && Number.isFinite(h) ? Math.round(h) : null);
+    return null;
+  }
+  return { re: m.id, ok: false, error: DRAWING_ONLY_DRAWS };
+}

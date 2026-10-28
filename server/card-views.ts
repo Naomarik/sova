@@ -138,16 +138,30 @@ async function babelSolid(code: string, filename: string): Promise<string> {
  * Build a card folder's `view.tsx`, read from `checkout`: the script (an IIFE) or the error, the
  * file and line when known, and every checkout file it read.
  */
-export async function buildView(checkout: string, name: string): Promise<{ build: ViewBuild; inputs: string[] }> {
-  const root = real(checkout);
-  const entry = join(root, CARDS_DIR, name, VIEW_FILE);
+export function buildView(checkout: string, name: string): Promise<{ build: ViewBuild; inputs: string[] }> {
+  return buildViewAt(checkout, `${CARDS_DIR}/${name}/${VIEW_FILE}`);
+}
+
+/** What a build may never read (an extension's `dist` that links to a backend's key, server/extensions.ts). */
+export interface BuildLimits {
+  refuse?(file: string): boolean;
+}
+
+/**
+ * Build the view module at `entryRel` inside `rootDir` (a project's checkout: a card's or a drawing
+ * kind's `view.tsx`; an extension's `dist`: its built view module) with the same fixed settings,
+ * everything it imports inside `rootDir`, Sova's toolkit or Solid.
+ */
+export async function buildViewAt(rootDir: string, entryRel: string, limits: BuildLimits = {}): Promise<{ build: ViewBuild; inputs: string[] }> {
+  const root = real(rootDir);
+  const entry = join(root, entryRel);
   const inputs = new Set<string>([entry]);
   const rel = (p: string) => (inside(root, p) ? relative(root, p) : p);
   const fail = (error: string) => {
     const hash = createHash("sha256").update(`error\0${error}`).digest("hex").slice(0, 16);
     return { build: { ok: false as const, hash, error }, inputs: [...inputs] };
   };
-  if (!isFile(entry)) return fail(`${CARDS_DIR}/${name}/${VIEW_FILE} is missing.`);
+  if (!inside(root, entry) || !isFile(entry)) return fail(`${entryRel} is missing.`);
   const eb = await esbuild();
   const sovaRoot = real(SOVA_ROOT);
   try {
@@ -193,6 +207,7 @@ export async function buildView(checkout: string, name: string): Promise<{ build
               });
               build.onLoad({ filter: /.*/, namespace: NS }, async (args) => {
                 const file = args.path;
+                if (limits.refuse?.(file)) throw new Refused(`${rel(file)} can't be read by a view.`);
                 if (inside(root, file) && !file.includes(`${sep}node_modules${sep}`)) inputs.add(file);
                 const text = readFileSync(file, "utf8");
                 const ext = extname(file);
@@ -234,7 +249,7 @@ function buildErrorText(err: unknown, rel: (p: string) => string): string {
     return `${file ? `${file}:${loc!.line}:${loc!.column + 1}: ` : ""}${first.text}`;
   }
   if (err instanceof Refused) return err.message;
-  const msg = (e.message ?? String(err)).replace(/^[^:]*?\/(\.sova\/cards\/)/, "$1");
+  const msg = (e.message ?? String(err)).replace(/^[^:]*?\/(\.sova\/(cards|drawings)\/)/, "$1");
   return msg.split("\n").slice(0, 8).join("\n");
 }
 
@@ -257,7 +272,7 @@ const DEBOUNCE_MS = 40;
 /** A view no page asked for in this long stops being watched. */
 const IDLE_MS = 10 * 60_000;
 
-const keyOf = (checkout: string, name: string) => `${real(checkout)}\0${name}`;
+const keyOf = (root: string, entryRel: string) => `${real(root)}\0${entryRel}`;
 
 function rewatch(e: Entry, onChange: () => void): void {
   for (const w of e.watchers) w.close();
@@ -281,15 +296,21 @@ function rewatch(e: Entry, onChange: () => void): void {
   }
 }
 
-function startBuild(key: string, checkout: string, name: string, e: Entry): Promise<ViewBuild> {
+export interface Source {
+  root: string;
+  entry: string;
+  limits?: BuildLimits;
+}
+
+function startBuild(key: string, src: Source, e: Entry): Promise<ViewBuild> {
   e.dirty = false;
-  const p = buildView(checkout, name).then(({ build, inputs }) => {
+  const p = buildViewAt(src.root, src.entry, src.limits).then(({ build, inputs }) => {
     const changed = e.build?.hash !== build.hash;
     e.build = build;
     e.inputs = inputs;
     e.building = null;
-    rewatch(e, () => scheduleRebuild(key, checkout, name));
-    if (e.dirty) scheduleRebuild(key, checkout, name);
+    rewatch(e, () => scheduleRebuild(key, src));
+    if (e.dirty) scheduleRebuild(key, src);
     if (changed) wake(e);
     return build;
   });
@@ -297,7 +318,7 @@ function startBuild(key: string, checkout: string, name: string, e: Entry): Prom
   return p;
 }
 
-function scheduleRebuild(key: string, checkout: string, name: string): void {
+function scheduleRebuild(key: string, src: Source): void {
   const e = views.get(key);
   if (!e) return;
   if (e.building) {
@@ -308,7 +329,7 @@ function scheduleRebuild(key: string, checkout: string, name: string): void {
   e.timer = setTimeout(() => {
     e.timer = null;
     if (Date.now() - e.usedAt > IDLE_MS) return drop(key);
-    void startBuild(key, checkout, name, e);
+    void startBuild(key, src, e);
   }, DEBOUNCE_MS);
 }
 
@@ -331,15 +352,20 @@ function drop(key: string): void {
  * A card folder's built view, as the page asks for it: at once when the build it has (`have`) is
  * not the current one, else once a save changes it, or after `waitMs` with the same build.
  */
-export async function viewCode(checkout: string, name: string, have?: string | null, waitMs = 0, signal?: AbortSignal): Promise<ViewBuild> {
-  const key = keyOf(checkout, name);
+export function viewCode(checkout: string, name: string, have?: string | null, waitMs = 0, signal?: AbortSignal): Promise<ViewBuild> {
+  return viewCodeAt({ root: checkout, entry: `${CARDS_DIR}/${name}/${VIEW_FILE}` }, have, waitMs, signal);
+}
+
+/** Any view module's build (a drawing kind's, an extension's), watched and waited on as viewCode's. */
+export async function viewCodeAt(src: Source, have?: string | null, waitMs = 0, signal?: AbortSignal): Promise<ViewBuild> {
+  const key = keyOf(src.root, src.entry);
   let e = views.get(key);
   if (!e) {
     e = { build: null, building: null, inputs: [], watchers: [], waiters: new Set(), timer: null, dirty: false, usedAt: Date.now() };
     views.set(key, e);
   }
   e.usedAt = Date.now();
-  const current = e.build ?? (await (e.building ?? startBuild(key, checkout, name, e)));
+  const current = e.build ?? (await (e.building ?? startBuild(key, src, e)));
   if (!have || have !== current.hash || waitMs <= 0) return current;
   const entry = e;
   await new Promise<void>((done) => {

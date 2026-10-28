@@ -4067,7 +4067,15 @@ export interface ExtensionOffers {
   /** The places on Sova's screens it adds to; Sova asks it for each through GET
       /ext/<id>/api/screens/<place> (shared/extension-offers.ts SCREEN_PLACES). */
   screens?: ScreenPlace[];
+  /** Since v1.17: its transcript card types, each its checked declaration, typed `<id>.<name>`
+      (§app.extensions/views, shared/transcript-cards.ts checkExtCard). */
+  cards?: import("./transcript-cards").CardDecl[];
+  /** Since v1.17: its drawing kinds, each its checked declaration by its fence word `<id>.<name>`, with
+      its view and guide paths inside `dist`. */
+  drawings?: ExtensionDrawingOffer[];
 }
+/** An extension's drawing kind as its offers carry it (§app.extensions/views). */
+export type ExtensionDrawingOffer = Omit<import("./drawing-kinds").DrawingDecl, "guide" | "ext"> & { view: string; guide: string };
 export interface ExtensionCommandInfo {
   name: string; // [a-z0-9][a-z0-9-]{0,47}
   label: string;

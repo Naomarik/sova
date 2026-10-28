@@ -1625,6 +1625,14 @@ export const getSessionCards = (path: string) => request<SessionCardsAnswer>(`/a
 export const answerSessionCard = (path: string, card: string, answer: CardAnswerValue, sent = false) =>
   request<{ card: CardInfo }>("/api/session-cards/answer", { method: "POST", body: JSON.stringify({ path, card, answer, ...(sent ? { sent } : {}) }) });
 /** Trust a project's cards to act, or stop: a trust grant, from this page only. */
+/** An extension's cards' trust, for its page (§chat.transcript-cards/trust). */
+export const getExtensionCardsTrust = (id: string) => request<{ owner: string; name: string; trusted: boolean }>(`/api/session-cards/trust?ext=${encodeURIComponent(id)}`, { cache: "no-store" });
+/** A drawing kind's built view (§chat.transcript-cards/drawing-kinds), the way getCardView gets a card's. */
+export const getDrawingView = (path: string, kind: string, have?: string | null, wait = false, signal?: AbortSignal) =>
+  request<{ ok: true; hash: string; code: string } | { ok: false; hash: string; error: string; outdated?: boolean }>(
+    `/api/session-cards/drawing?path=${encodeURIComponent(path)}&kind=${encodeURIComponent(kind)}${have ? `&have=${encodeURIComponent(have)}` : ""}${wait ? "&wait=1" : ""}`,
+    { cache: "no-store", ...(signal ? { signal } : {}) },
+  );
 export const setCardTrust = (owner: string, on: boolean) => request<{ owner: string; trusted: boolean }>("/api/session-cards/trust", { method: "POST", body: JSON.stringify({ owner, on }) });
 /** A view card's built code (§chat.transcript-cards/building): at once, or with `have` and `wait`, once a save changes it. */
 export const getCardView = (path: string, type: string, have?: string | null, wait = false, signal?: AbortSignal) =>

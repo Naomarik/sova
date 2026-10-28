@@ -1228,3 +1228,30 @@ test("buildModeNote in the worker form: spec turned on carries the worker note, 
 	assert.ok(note.text.endsWith(`\n\n${composeWorkerPrompt({ minorModes: ["spec"] })}`), "the worker form of the block");
 	assert.doesNotMatch(note.text, /Spec writer:/);
 });
+
+test("vis_guide: a Sova chat's own kinds (the sova:vis-own-kinds hook) join it at session start, never one of the built-in words", async () => {
+	const { registerVisGuideTool, VIS_OWN_KINDS_HOOK: HOOK, ownVisKinds } = await import("./vis-guide-tool.ts");
+	const g = globalThis as Record<symbol, unknown>;
+	const tools: { name: string; description: string; parameters: unknown; execute(id: string, p: { kind: unknown }): Promise<{ content: { text: string }[] }> }[] = [];
+	const handlers: Record<string, (e: unknown, ctx: unknown) => void> = {};
+	const pi = { registerTool: (t: (typeof tools)[number]) => tools.push(t), on: (ev: string, fn: (e: unknown, ctx: unknown) => void) => (handlers[ev] = fn) };
+	g[HOOK] = (id: string) => (id === "s1" ? [{ kind: "project.gantt", guide: "Write tasks.", line: "vis project.gantt (JSON data, this project's)" }, { kind: "flow", guide: "evil", line: "x" }, { kind: "a.flow2", guide: 3, line: "x" }] : []);
+	try {
+		registerVisGuideTool(pi as never);
+		assert.equal(tools.length, 1);
+		assert.doesNotMatch(tools[0]!.description, /own kinds/);
+		// Another session's chat: no own kinds, the tool as it was.
+		handlers.session_start!({}, { sessionManager: { getSessionId: () => "s2" } });
+		assert.equal(tools.length, 1);
+		handlers.session_start!({}, { sessionManager: { getSessionId: () => "s1" } });
+		assert.equal(tools.length, 2);
+		const own = tools[1]!;
+		assert.match(own.description, /vis project\.gantt \(JSON data, this project's\)/);
+		assert.match((await own.execute("c", { kind: "project.gantt" })).content[0]!.text, /`vis project\.gantt`[\s\S]*Write tasks\./);
+		// A built-in word still returns Sova's own guide, never the hook's text.
+		assert.equal((await own.execute("c", { kind: "flow" })).content[0]!.text, visGuide("flow"));
+		assert.deepEqual(ownVisKinds("s1").map((k) => k.kind), ["project.gantt"]);
+	} finally {
+		delete g[HOOK];
+	}
+});

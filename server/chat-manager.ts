@@ -100,6 +100,10 @@ import { QUEUE_OPEN_TOOL, queuePushExtension, topicStore } from "./topics";
 import { OFFER_NOTE_MESSAGE, OFFER_TOOL } from "../shared/session-offers";
 import { CARD_NOTE_MESSAGE, CARD_TOOL } from "../shared/transcript-cards";
 import { cardNoteRender } from "./transcript-cards-note";
+import { installVisOwnKindsHook, recordedCardSnapshot } from "./transcript-cards";
+
+// A chat's own drawing kinds reach its vis_guide tool (§chat.transcript-cards/drawing-kinds).
+installVisOwnKindsHook();
 
 /** The offer note in this process (a chat the server hosts itself: tests). */
 const offerNoteHere = async (sessionId: string): Promise<string | null> => (await import("./session-offers")).offerNoteFor(sessionId);
@@ -1843,6 +1847,7 @@ class ChatSession {
         }
         return !this.hasForeignWrites();
       },
+      ownKinds: () => recordedCardSnapshot(this.harness.id)?.drawings ?? [],
     };
   }
 

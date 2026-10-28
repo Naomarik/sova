@@ -138,3 +138,34 @@ test("a save rebuilds the view and wakes a page waiting on its code, within abou
   const same = await viewCode(root, "live", good.hash, 200);
   assert.equal(same.hash, good.hash);
 });
+
+test("an extension's built view module and a drawing kind's view build the same way, from their own root (§app.extensions/views)", async () => {
+  const { buildViewAt, viewCodeAt } = await import("./card-views");
+  const dist = checkout({
+    "cards/review.js": `import { card, mount } from "sova:card";\nimport { label } from "./lib.js";\nmount(() => { const p = document.createElement("p"); p.textContent = label(card.data()); return p; });\n`,
+    "cards/lib.js": `export const label = (d) => "note: " + JSON.stringify(d);\n`,
+    "cards/secret.js": `export const s = "KEY";\n`,
+    "cards/leaks.js": `import { s } from "./secret.js";\nexport default s;\n`,
+  });
+  const ok = await buildViewAt(dist, "cards/review.js");
+  assert.ok(ok.build.ok, ok.build.ok ? "" : ok.build.error);
+  assert.ok(ok.build.ok && ok.build.code.includes("note: "));
+  assert.ok(ok.build.ok && !ok.build.code.includes(dist), "no path of this machine in the code");
+  // What the host refuses (an extension's backend key) is never read into a view.
+  const refused = await buildViewAt(dist, "cards/leaks.js", { refuse: (f) => f.endsWith("secret.js") });
+  assert.equal(refused.build.ok, false);
+  assert.match(!refused.build.ok ? refused.build.error : "", /can't be read by a view/);
+  // An entry outside its root is missing, never read.
+  const outside = await buildViewAt(dist, "../x.js");
+  assert.match(!outside.build.ok ? outside.build.error : "", /missing/);
+  // A drawing kind's view in a checkout redraws on save, as a card's does.
+  const proj = checkout({ ".sova/drawings/gantt/view.tsx": `import { mount } from "sova:card";\nmount(() => <svg class="one" />);\n` });
+  const src = { root: proj, entry: ".sova/drawings/gantt/view.tsx" };
+  const first = await viewCodeAt(src);
+  assert.ok(first.ok);
+  const next = viewCodeAt(src, first.hash, 5000);
+  writeFileSync(join(proj, ".sova/drawings/gantt/view.tsx"), `import { mount } from "sova:card";\nmount(() => <svg class="two" />);\n`);
+  const second = await next;
+  assert.notEqual(second.hash, first.hash);
+  assert.ok(second.ok && second.code.includes("two"));
+});

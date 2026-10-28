@@ -588,6 +588,13 @@ alone (`VIS_TOOL_PARTS` in `minor.ts`; never listed as kinds): `tour-signin` (si
 `tour-sites` (sources, site approval, sandbox, network rules), `tour-sova` (recording Sova itself) and
 `tour-sharing` (links, hand-offs, published editions). Each rule lives in one file. It is not a fence grammar;
 there is no executable `vis tour` fence and merely reading a message never records a browser.
+
+A host may add a session's own drawing kinds through the `sova:vis-own-kinds` hook (`VIS_OWN_KINDS_HOOK`
+in `minor.ts`, a `globalThis` function `(sessionId) => [{kind, guide, line}]`; Sova's server installs it
+from the session's card snapshot). At `session_start`, when it gives any, `vis_guide` is registered again
+with those kinds in its `kind` list and one line each in its description, and returns each one's guide
+for it. Only namespaced words (`<owner>.<name>`, with a dot) count, so it never replaces a kind of the
+catalogue; with the hook unset (a terminal, a worker) the tool is exactly the catalogue's.
 Drawing entries still return `vis/shared.md` followed by their own file, unchanged.
 
 Sova supplies `record_tour` and `show_tour` through its hosted tools (also on its Claude Code

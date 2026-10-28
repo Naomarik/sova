@@ -79,13 +79,13 @@ export const ROUTE_CLASSES: readonly RouteClass[] = [
     id: "trust-grants",
     label: "Trust grants",
     why: "Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval; a project's transcript cards, §chat.transcript-cards/trust), applying a settings card with its approvals (§app.project-overseer/settings) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.",
-    matches: (m, p) => (m === "POST" && (p === "/api/projects/:pid/offers/approve" || p === "/api/projects/:pid/settings/apply" || p === "/api/session-cards/trust")) || (m === "PUT" && p === "/api/projects/:pid/services/limit"),
+    matches: (m, p) => (m === "POST" && (p === "/api/projects/:pid/offers/approve" || p === "/api/projects/:pid/settings/apply" || p === "/api/session-cards/trust")) || (m === "PUT" && p === "/api/projects/:pid/services/limit") || (m === "GET" && p === "/api/session-cards/trust"),
   },
   {
     id: "card-box",
     label: "A card view's own calls",
-    why: "What a transcript card's sealed view asks through its box, for its own card only (§chat.transcript-cards/view-api): its built code, the state Sova keeps for it, and a catalogue command run as the card (which records the command itself). The box's plumbing, from the page: never an action of its own.",
-    matches: (m, p) => (m === "GET" && p === "/api/session-cards/view") || (m === "POST" && (p === "/api/session-cards/state" || p === "/api/session-cards/run")),
+    why: "What a transcript card's or a drawing's sealed view asks through its box, for its own card only (§chat.transcript-cards/view-api, /drawing-kinds): its built code, the state Sova keeps for it, and a catalogue command run as the card (which records the command itself). The box's plumbing, from the page: never an action of its own.",
+    matches: (m, p) => (m === "GET" && (p === "/api/session-cards/view" || p === "/api/session-cards/drawing")) || (m === "POST" && (p === "/api/session-cards/state" || p === "/api/session-cards/run")),
   },
   {
     id: "middleware",

@@ -7,6 +7,7 @@
  */
 
 import { schemaError } from "./card-schema.ts";
+import { distPathError, normalizeDrawingDecl, type DrawingDecl } from "./drawing-kinds.ts";
 import { checkCardData, DATA_CARDS, notRaisedText, optionLetter, type ButtonsCard, type ChecklistCard, type DataCardKind, type QuestionCard } from "./view-cards.ts";
 
 export const CARD_TOOL = "card";
@@ -37,7 +38,7 @@ export const PLACEMENTS: readonly CardPlacement[] = ["anchored", "follow"];
 
 /** One card type, as a session's snapshot holds it. */
 export interface CardDecl {
-  /** The namespaced name: `project.<name>` (an extension's `<id>.<name>` in a later phase). */
+  /** The namespaced name: `project.<name>`, or an extension's `<id>.<name>` (§app.extensions/views). */
   type: string;
   title: string;
   /** When the agent may raise it; absent: raised only from outside. */
@@ -51,6 +52,8 @@ export interface CardDecl {
   data?: unknown;
   /** The toolkit version a view was built for (§chat.transcript-cards/versions). */
   toolkit?: number;
+  /** An extension's type: its id and title, and a view's path inside its `dist`. */
+  ext?: { id: string; title: string; view?: string };
 }
 
 /** What a card type draws: one of Sova's data cards, or its author's own view in a sealed box. */
@@ -86,6 +89,14 @@ export function parseCardFile(name: string, text: string, hasView: boolean): { o
   if (!isObject(raw)) return { ok: false, error: `${CARD_FILE} isn't a JSON object.` };
   for (const k of Object.keys(raw)) if (!CARD_KEYS.includes(k)) return { ok: false, error: `"${k}" is not a key ${CARD_FILE} has.` };
   if (raw.version !== 1) return { ok: false, error: "version must be 1." };
+  return cardDeclOf(raw, `project.${name}`, hasView ? null : `draws view, but ${VIEW_FILE} is missing.`);
+}
+
+/**
+ * A declaration's own fields, wherever it was declared (a project's card.json, an extension's
+ * `cards` entry): the type, or the first thing wrong. `noView`: why a view isn't there, or null.
+ */
+function cardDeclOf(raw: Record<string, unknown>, type: string, noView: string | null): { ok: true; decl: CardDecl } | { ok: false; error: string } {
   // Any version is a declaration; a view built for another than this Sova's says so in its card
   // (§chat.transcript-cards/versions), and a data card, which Sova draws itself, never needs one.
   if (typeof raw.toolkit !== "number" || !Number.isInteger(raw.toolkit) || raw.toolkit < 1) return { ok: false, error: `toolkit must be the toolkit version it was built for (this Sova runs ${TOOLKIT_VERSION}).` };
@@ -98,7 +109,7 @@ export function parseCardFile(name: string, text: string, hasView: boolean): { o
   const placement = raw.placement ?? "anchored";
   if (!PLACEMENTS.includes(placement as CardPlacement)) return { ok: false, error: `placement must be one of ${PLACEMENTS.join(", ")}.` };
   if (draws === "view") {
-    if (!hasView) return { ok: false, error: `draws view, but ${VIEW_FILE} is missing.` };
+    if (noView) return { ok: false, error: noView };
     if (!isObject(raw.data)) return { ok: false, error: "A view needs data, the shape its data must have." };
     const bad = schemaError(raw.data);
     if (bad) return { ok: false, error: bad };
@@ -112,7 +123,7 @@ export function parseCardFile(name: string, text: string, hasView: boolean): { o
   return {
     ok: true,
     decl: {
-      type: `project.${name}`,
+      type,
       title: raw.title.trim(),
       ...(typeof raw.when === "string" ? { when: raw.when.trim() } : {}),
       draws: draws as CardDecl["draws"],
@@ -124,11 +135,39 @@ export function parseCardFile(name: string, text: string, hasView: boolean): { o
   };
 }
 
+const EXT_CARD_KEYS = ["name", "title", "when", "draws", "data", "answer", "placement", "height", "view", "toolkit"];
+
+/**
+ * An extension manifest's `cards` entry (§app.extensions/views), checked on its own with the rules
+ * of a project's card.json: its type as `<extension id>.<name>` (lowercase), its view's path inside
+ * `dist` (whether it is there is the server's to check), or what is wrong.
+ */
+export function checkExtCard(ext: { id: string; title: string }, raw: unknown, viewThere: (p: string) => boolean): { ok: true; decl: CardDecl } | { ok: false; error: string } {
+  if (!isObject(raw)) return { ok: false, error: "a card isn't an object" };
+  const label = typeof raw.name === "string" ? `card ${JSON.stringify(raw.name)}` : "a card";
+  for (const k of Object.keys(raw)) if (!EXT_CARD_KEYS.includes(k)) return { ok: false, error: `${label}: "${k}" is not a key a card has` };
+  if (typeof raw.name !== "string" || !CARD_NAME_RE.test(raw.name)) return { ok: false, error: `${label}: name must be lowercase letters, digits and hyphens starting with a letter, at most 32 characters` };
+  let noView: string | null = null;
+  if (raw.draws === "view") {
+    const bad = distPathError(raw.view);
+    noView = bad ? `view ${bad}` : viewThere(raw.view as string) ? null : `view ${String(raw.view)} isn't in dist`;
+  } else if (raw.view !== undefined) return { ok: false, error: `${label}: view is only for a card that draws view` };
+  const { name: _n, view: _v, ...rest } = raw;
+  const c = cardDeclOf(rest, `${ext.id.toLowerCase()}.${raw.name}`, noView);
+  if (!c.ok) return { ok: false, error: `${label}: ${c.error.replace(/\.$/, "")}` };
+  return { ok: true, decl: { ...c.decl, ext: { id: ext.id, title: ext.title, ...(raw.draws === "view" ? { view: raw.view as string } : {}) } } };
+}
+
+/** Whose cards a type is: `project` (the session's project) or an extension's id, lowercase (its namespace). */
+export const typeOwnerWord = (type: string): string => type.slice(0, type.lastIndexOf("."));
+
 // ---- the snapshot (§chat.transcript-cards/files, "Fixed per chat") ------------------------------
 
 export interface CardSnapshot {
   v: 1;
   types: CardDecl[];
+  /** The drawing kinds the chat may draw, with their guides (§chat.transcript-cards/drawing-kinds). */
+  drawings?: DrawingDecl[];
 }
 
 function declOf(v: unknown): CardDecl | null {
@@ -145,6 +184,9 @@ function declOf(v: unknown): CardDecl | null {
     ...(typeof v.height === "number" ? { height: v.height } : {}),
     ...(v.data !== undefined ? { data: v.data } : {}),
     ...(typeof v.toolkit === "number" ? { toolkit: v.toolkit } : {}),
+    ...(isObject(v.ext) && typeof v.ext.id === "string" && typeof v.ext.title === "string"
+      ? { ext: { id: v.ext.id, title: v.ext.title, ...(typeof v.ext.view === "string" ? { view: v.ext.view } : {}) } }
+      : {}),
   };
 }
 
@@ -152,7 +194,8 @@ function declOf(v: unknown): CardDecl | null {
 export function normalizeCardSnapshot(v: unknown): CardSnapshot | null {
   if (!isObject(v) || v.v !== 1 || !Array.isArray(v.types)) return null;
   const types = v.types.map(declOf).filter((d): d is CardDecl => !!d);
-  return { v: 1, types };
+  const drawings = (Array.isArray(v.drawings) ? v.drawings : []).map(normalizeDrawingDecl).filter((d): d is DrawingDecl => !!d);
+  return { v: 1, types, ...(drawings.length ? { drawings } : {}) };
 }
 
 /** The types the agent may raise: those with a `when`. */
@@ -278,6 +321,10 @@ export interface SessionCardsAnswer {
   types: CardDecl[];
   /** The state Sova keeps for each view card, by card id. */
   states?: Record<string, unknown>;
+  /** The drawing kinds the session may draw (§chat.transcript-cards/drawing-kinds), without their guides. */
+  drawings?: Omit<DrawingDecl, "guide">[];
+  /** The ids of extensions whose card types the session holds but that are no longer installed. */
+  gone?: string[];
   /** Whether the session's project's cards are trusted to act (§chat.transcript-cards/trust), and its name. */
   trust?: { owner: string; name: string; trusted: boolean };
 }
@@ -285,9 +332,14 @@ export interface SessionCardsAnswer {
 /** One folder under a project's `.sova/cards/`, as its Settings tab lists it: `path` is the folder's, from the checkout. */
 export type ProjectCardFolder = { name: string; path: string; ok: true; type: string; title: string } | { name: string; path: string; ok: false; error: string };
 
+/** One folder under a project's `.sova/drawings/`: its kind's fence word, or what is wrong with it. */
+export type ProjectDrawingFolder = { name: string; path: string; ok: true; kind: string } | { name: string; path: string; ok: false; error: string };
+
 /** GET /api/projects/:pid/cards: the project's card folders on its main checkout, read now, and whether its cards are trusted. */
 export interface ProjectCardsAnswer {
   folders: ProjectCardFolder[];
+  /** Its drawing kinds' folders under `.sova/drawings/`, listed as card folders are (§chat.transcript-cards/drawing-kinds). */
+  drawings?: ProjectDrawingFolder[];
   trust: { owner: string; name: string; trusted: boolean };
 }
 

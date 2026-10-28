@@ -1,4 +1,6 @@
-import { createEffect, createSignal, For, Index, onCleanup, Show, untrack } from "solid-js";
+import { createEffect, createResource, createSignal, For, Index, onCleanup, Show, untrack } from "solid-js";
+import { getExtensionCardsTrust, setCardTrust } from "../lib/api";
+import { toast } from "../lib/ui-state";
 import type { ExtensionInfo, SessionSummary } from "../../shared/protocol";
 import { extFrameSrc, extHref, extRouteFromHash, MAXIMIZED, parseExtMessage, subFromExtHash } from "../lib/ext-route";
 import { additionsMuted, additionsOff, slotPolicy } from "../lib/reply-place";
@@ -240,6 +242,10 @@ export function ExtensionView(props: {
             {cardLineOff(props.id) ? "Show on Home Card" : "Hide on Home Card"}
           </button>
         </Show>
+        {/* Its transcript cards' trust (§chat.transcript-cards/trust), only for one that declares cards. */}
+        <Show when={props.info?.offers?.cards?.length}>
+          <ExtCardsTrust id={props.id} />
+        </Show>
         <button type="button" class="button button-icon button-ghost" onClick={reload} aria-label="Reload Extension" title="Reload Extension">
           <Icon name="refresh" />
         </button>
@@ -263,6 +269,37 @@ export function ExtensionView(props: {
         allow="fullscreen"
         allowfullscreen
       />
+    </Show>
+  );
+}
+
+/**
+ * Whether an extension's transcript cards are trusted to act for you, with Stop Trusting Cards while
+ * they are, which takes effect on their next command. Trusting happens on a card, the first time one
+ * wants to act; nothing here grants it.
+ */
+function ExtCardsTrust(props: { id: string }) {
+  const [trust, { refetch }] = createResource(() => props.id, getExtensionCardsTrust);
+  const [busy, setBusy] = createSignal(false);
+  const stop = async () => {
+    const t = trust();
+    if (!t || busy()) return;
+    setBusy(true);
+    try {
+      await setCardTrust(t.owner, false);
+    } catch (err) {
+      toast(`Cards still trusted: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusy(false);
+      void refetch();
+    }
+  };
+  return (
+    <Show when={trust()?.trusted}>
+      <span class="ext-cards-trust text-muted">Its cards are trusted to act for you.</span>
+      <button type="button" class="button button-sm" aria-disabled={busy() ? "true" : undefined} onClick={() => void stop()}>
+        Stop Trusting Cards
+      </button>
     </Show>
   );
 }

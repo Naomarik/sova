@@ -248,8 +248,9 @@ installs, and it never calls your backend to answer.
 
 What an entry offers is in `GET /api/extensions` as its `offers` field (since extension contract
 v1.15):
-`commands` as `{name, label, summary?}` and `screens`, each only when something valid is declared.
-An entry that declares neither has no `offers` field, as before.
+`commands` as `{name, label, summary?}` and `screens`, and since v1.17 `cards` and `drawings`
+(each checked declaration by its `<id>.<name>`), each only when something valid is declared.
+An entry that declares none of them has no `offers` field, as before.
 
 **Under replies.** With `"screens": ["reply"]`, Sova shows what your backend says under the replies
 of a chat on this machine, after Sova's own buttons. It asks once when the chat opens, once when a
@@ -334,6 +335,42 @@ never on a later poll, and draws what you answer as data:
 - Answer within 2 seconds, with at most 64 KB. A late, malformed or oversized answer draws nothing;
   after 3 in a row Sova stops asking until the page reloads. The user can hide the line from your
   page (`Hide on Home Card`). While your backend is down, Sova doesn't ask.
+
+**Cards and drawings in chats** (extension contract v1.17). An entry may add card types and
+drawing kinds to chat transcripts, with the meanings and rules of a project's own
+(`.sova/cards/<name>/card.json`, `.sova/drawings/<name>/kind.json`):
+
+```json
+{ "id": "notes", "dist": "/home/you/notes-ext/dist", "api": "http://127.0.0.1:4840",
+  "cards": [{ "name": "review", "title": "Review", "when": "When a note needs the user's review",
+               "draws": "view", "view": "cards/review.js", "toolkit": 1, "answer": "at-once",
+               "data": { "type": "object", "properties": { "note": { "type": "string" } }, "required": ["note"] } }],
+  "drawings": [{ "name": "mindmap", "accepts": "text", "view": "drawings/mindmap.js",
+                  "guide": "drawings/mindmap.md", "toolkit": 1, "height": 240 }] }
+```
+
+- `cards`: up to 16, each `{name, title, when?, draws, data?, answer?, placement?, height?, view?,
+  toolkit}`. `draws` is `question`, `checklist`, `status`, `table`, `buttons` (Sova draws them) or
+  `view`, your own view module. Its type is `<id>.<name>` (`notes.review`); the agent raises it with
+  its `card` tool when it has a `when`, and your backend with `session.card.post` at any time.
+- `drawings`: up to 8, each `{name, accepts, data?, height?, view, guide, toolkit}`. `accepts` is
+  `text` (the fence's body as text) or `data` (JSON checked against `data`, a JSON Schema of types,
+  required fields, enums and lengths). The agent draws one as a ` ```vis notes.mindmap ` fence and
+  reads your `guide` (markdown) through its `vis_guide` tool while the vis mode is on.
+- `view` and `guide` are paths inside `dist`. A view is an ES module that imports `sova:card`
+  (`import { card, mount } from "sova:card"`), `solid-js` and files beside it. Sova bundles it with
+  its own fixed settings and runs it only in a sealed box, walled off from Sova and the network,
+  told only its own card's data (a drawing: its fence's body as `card.data()`). A drawing only
+  draws: it has no answer and runs no commands.
+- Rebuilding a view module redraws every card and drawing using it, within about a second, each
+  keeping its data, answer and state. The declarations themselves are fixed per chat: a chat keeps
+  the ones installed when it started.
+- Each declaration is checked on its own: a bad one (an unknown key, a bad name, a path outside
+  `dist` or missing) is left out and logged, never the entry or its other ones. An id of `project`
+  declares none: that is the namespace of a project's own.
+- The first time one of your cards wants to act (send, run, any command that changes something)
+  it asks the user to trust your extension's cards, once. Your page shows Stop Trusting Cards
+  while they are trusted.
 
 To open a session the extension just created, hand it to Sova rather than setting the page's
 hash. A new session has no messages yet, so it isn't in Sova's list, and `#/s/<path>` would find

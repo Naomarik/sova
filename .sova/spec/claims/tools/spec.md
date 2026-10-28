@@ -21,65 +21,10 @@ or the drafts the tool confirms are already official.
 Records may also declare `embeds` (surfaces drawn inside a claim), `core` and `about` (the target a
 note serves), `notOwned` (on an area, the claims elsewhere that own what a reader might look for in it), and an `agreed` decision (who decided, when, and where the go-ahead was given); the claims flagged `core` form an
 always-on frame that arrives with the first page of a `read`.
-They change context delivery, not release policy. Structured observation-only assessments are separately
-recorded input-bound comparisons, not proof of requirements truth or mandatory release policy.
+A claim over the size cap is warned about when a draft takes it there or grows it, and never refused.
+They change context delivery, not release policy.
 A shipped playbook runs these tools for a review the operator starts, inside limits the operator
 sets, and only then.
-
-## §tools.spec/change-assessments — Input-bound structured comparisons
-
-Observation-only structured assessments retain explicitly routed claim candidates and unmapped
-changed files with changed, preserved, not-applicable or unresolved recorder dispositions, reasons
-and verification bases bound to exact claim and implementation inputs. Absent, unreadable,
-uninvestigated or changed inputs remain explicitly unknown or stale. No disposition, declared
-label or applicable receipt establishes semantic correctness or changes release policy. Batch
-exclusions retain candidate identities without duplicate claim prose.
-
-Durable metadata-only receipts keep declared labels, accepted-intent assertions, recorded
-verification outcomes and current input applicability distinct, with nullable task and worker
-attribution. Preparation starts every candidate unresolved; omission never excludes it. Explicit
-paths and caller-declared snapshot baselines support projects without Git; missing baselines remain
-unknown. In Git projects, resolved commit hashes and initial dirty snapshot hashes are separately
-identified. Assessment-specific inspection refuses its own receipt storage before graph, claim-tree
-or lazy incumbent contents are read, including optional draft triage's current-tree reads; ordinary
-inspection CLI policies keep their existing behavior.
-Refused inputs are not read, raw source and logs are not retained, and concurrent
-cooperating writers cannot overwrite immutable receipts. The tools do not authenticate identity or
-infer exhaustive behavioral candidates. Status enumeration preserves unread, corrupt and capped
-receipt inventories as incomplete and keeps unknown owner attribution visible.
-
-Each capture uses a fresh in-memory inspection graph and batches immutable Git blob inspection
-without dropping routed candidates, closure inputs or refusal findings. Separate captures and
-status checks do not share cached source state, and existing inspection CLI output and refusal
-contracts remain unchanged. The raw manifest and claim bytes actually parsed by that graph must
-match their bound present input hashes within the capture; mixed source versions refuse as a race,
-even when the requested claim's own prose is unchanged. Optional draft triage binds the exact
-proposed, baseline and current manifest/claim sources it reads; changes to those inputs stale prior
-assessments even when candidate identities and reasons stay unchanged.
-
-## §tools.spec/assessment-observations — Assessments run only when asked
-
-No session, pi worker (a Claude Code worker included) or worktree-configured worker runs an assessment
-capture, records a task baseline or writes an assessment receipt by itself: not when a task starts,
-after any tool call, when a turn ends or when a session reopens, with spec on or off. Sessions and
-workers have no assessment tool. An assessment is an explicit companion CLI operation that an
-operator or agent asks for: `prepare` against a declared known base revision, then `record` and
-`status`. Its receipt names that declared base, never a claimed task start. Nothing captures a
-snapshot baseline on the caller's behalf, so a late call cannot subtract the task's own earlier edits
-or commits: with a known base and no declared snapshot, every committed and working-tree change since
-that base is included. Attribution is only what the caller passes; absent attribution stays null.
-
-Receipts and session task and error entries left by earlier automatic observation stay as they are:
-readable, immutable, and never migrated, rewritten or deleted. The state a native
-Claude Code worker hook left from then stays on disk as it was: those hooks no longer run
-(§tools.spec/no-turn-end-check). Session-list and
-merge-readiness refreshes do not consume assessment receipts or query their status. Explicit assessments never change continuations, ordinary
-readiness checks, footer rules or release gates. Successful preparations and records remain normal
-operations even with outstanding claims or failed verification declarations, and stale or unknown
-status remains a valid query. A newer unresolved same-task observation is not hidden by an older
-preserved record. Failed verification remains an explicit outcome distinct from current input
-applicability and the recorder's disposition. Legacy labels without receipts remain declarations
-with unknown assessment provenance.
 
 ## §tools.spec/review-playbook — A spec review runs only when the operator starts it
 
@@ -107,8 +52,8 @@ not a sandbox), with the trusted spec tools at the declared base, and with the a
 reading. Each published command re-establishes the tools' location, root and base itself, never
 relying on an earlier call. It reads a claim as spec mode does (§tools.spec/mode-reading): `toc`
 for the claim's neighbours, then `read` for one exact passage at a time, the first read bringing the frame and every later one
-adding `--no-frame`, keeping whole-chain `packet` and `scope` out of its reading step. A request for a durable assessment receipt is reported as needing a
-separate opt-in method, since the companion has no bounded view of its capture. The report has
+adding `--no-frame`, keeping whole-chain `packet` and `scope` out of its reading step. A request for a durable assessment receipt is reported as having
+no tool, since the assessment companion is retired. The report has
 fixed sections within the report length and keeps observed, inferred and proposed apart; changes to
 the playbook's own method appear there only as proposed diffs, never applied by the run.
 
@@ -430,7 +375,7 @@ and a trailing newline. An area with no record has no record file. A record hold
 either layout, so evidence recorded against one stays valid in the other.
 
 Every spec tool reads and writes records through one shared module, `core/layout.mjs`: the core's
-commands, the draft tool, the review and assessment tools, Sova's own spec readers and the merge
+commands, the draft tool, the review tool, Sova's own spec readers and the merge
 round. Each gives the same answers on the same spec in either layout. A promotion writes in the layout
 of the tree it promotes into, and a draft keeps its own. A script that can't import the module runs
 `sova-spec.mjs records [--at REV] [--id §x]… --json`, which prints `{layout, meta, records}` and never
@@ -628,6 +573,25 @@ alone, with no Git and no other process. The tool's `drafts` and `prune --offici
 round's driver reads the verdict `drafts` reports (§chat.merge-round/driver). A draft the rule can't
 read is never official, for each of them.
 
+## §tools.spec/declaration-cap — A claim over 6 KB is warned about, never refused
+
+A claim's size is the UTF-8 bytes of its prose in its claim file: an H1 from its heading to its first
+H2, an H2 from its heading to the next heading, trailing blank lines left out, as `read` and `toc`
+count it. Its record's bytes in `manifest.json` or an area's record file never count, so a claim has
+the same size in either record layout. The cap is 6,144 B, or the spec's optional top-level
+`declarationCap`, a whole number of bytes of at least 1; any other value is a warning
+(`declaration-cap-invalid`) and 6,144 B holds.
+
+`check` gives the cap and how many declarations are over it in its counts (`cap`, `overCap`) and
+each declaration's `bytes`, with no finding per declaration. `draft check` warns
+(`declaration-over-cap`, with `bytes`, `cap` and `was`, its size on the draft's base, absent for a new
+claim) for each declaration the draft takes from at or below the cap to over it, or makes larger while
+it is over; one over the cap that the draft leaves as it was or shrinks is counted under `preexisting`.
+Each warning says to split the claim by topic into sibling claims, the old § keeping a short summary
+that `requires` its parts. A promotion preview or write gives the same warning for each selected
+declaration it would land that way (`sizeWarnings`). None of them refuses anything or changes an exit
+status, and none makes `agree`'s promotion plan unclean.
+
 ## §tools.spec/draft-hygiene — Drafts left behind are reported, and only an approved list or confirmed-official drafts are pruned
 
 `draft drafts` reads every draft of the project (`--worktrees`: of every Git work tree of its
@@ -711,7 +675,7 @@ sessions, cursors, or source snapshots and runs no project code.
 
 The minor-mode guide lists packets beside `scope` for whole-chain machine inspection; its reading
 path is contents first, then one passage (§tools.spec/mode-reading). Full graph tools remain available for deliberate
-machine inspection and review. No new mandatory assessment or release gate is introduced here.
+machine inspection and review. No new mandatory release gate is introduced here.
 
 ### Reading a packet
 

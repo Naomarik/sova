@@ -12,7 +12,7 @@ guide is for changing the system. To follow the discipline while working on Sova
 
 | Piece | Where | Its docs |
 |---|---|---|
-| The tools (read-only core, drafts, review, assessment) | `pi-config/extensions/spec/core/*.mjs` | [`spec/README.md`](../../../pi-config/extensions/spec/README.md), [`core/README.md`](../../../pi-config/extensions/spec/core/README.md), [`DRAFTS.md`](../../../pi-config/extensions/spec/DRAFTS.md), [`PROMOTE.md`](../../../pi-config/extensions/spec/PROMOTE.md) |
+| The tools (read-only core, drafts, review) | `pi-config/extensions/spec/core/*.mjs` | [`spec/README.md`](../../../pi-config/extensions/spec/README.md), [`core/README.md`](../../../pi-config/extensions/spec/core/README.md), [`DRAFTS.md`](../../../pi-config/extensions/spec/DRAFTS.md), [`PROMOTE.md`](../../../pi-config/extensions/spec/PROMOTE.md) |
 | The mode's text in two parts: the short one injected while spec is on, the writing procedure handed over once | `pi-config/extensions/mode/spec-mode.md`, `pi-config/extensions/spec/WRITING.md` | (they are the text) |
 | The mode's hooks, worker checks and brief | `mode/minor.ts`, `mode/prompt.ts`, `mode/spec-guard.ts`, `mode/spec-worker.ts`, `subagents/spec-brief.ts`, `worktrees/spec.ts` | [`MODE.md`](../../../pi-config/extensions/spec/docs/MODE.md), every piece and how they connect |
 | Goals, history, ledger | `pi-config/extensions/spec/docs/` | [`README.md`](../../../pi-config/extensions/spec/docs/README.md): [`GOALS.md`](../../../pi-config/extensions/spec/docs/GOALS.md), [`EVOLUTION.md`](../../../pi-config/extensions/spec/docs/EVOLUTION.md), [`CHANGELOG.md`](../../../pi-config/extensions/spec/docs/CHANGELOG.md) |
@@ -58,7 +58,7 @@ The requirement is §tools/spec (`.sova/spec/claims/tools/spec.md`); MODE.md des
 - Tool tests (about a minute):
   `cd pi-config/extensions/spec && node --test --test-concurrency=4 tests/*.test.mjs`.
 - Mode tests: the `mode` line in `pi-config/README.md` "Tests" (`spec.test.ts`, `spec-guard.test.ts`,
-  `spec-assessment.test.ts`, `tests/spec-turn.mjs`, `tests/spec-worker.mjs`, …).
+  `tests/spec-turn.mjs`, `tests/spec-worker.mjs`, …).
 - Search changes: the topic bench in `tests/search/` (its README; a held-out set is run once).
 - Measuring a tool change: `tests/replay/run.mjs` against a baseline tree (`make-tree.mjs master …`), as its README
   shows. That is the measurement, not the gate.

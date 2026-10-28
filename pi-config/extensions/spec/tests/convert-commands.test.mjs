@@ -95,6 +95,13 @@ describe("Sova's real spec answers the same before and after the cutover", { ski
           assert.equal(j.census.changed, g(r, "diff", "--name-only", base).split("\n").filter(Boolean).length, `${label}: census.changed counts the changed files`);
         a.census.changed = b.census.changed = "<files>";
       }
+      // The size cap (§tools.spec/declaration-cap) came after the cutover: tools that predate it print no cap, no
+      // over-cap count and no per-declaration bytes. Only those three fields are set aside, only when the old side
+      // lacks them; everything else check prints must still be identical.
+      if (args[0] === "check" && a.counts && a.counts.cap === undefined && b.counts?.cap !== undefined) {
+        delete b.counts.cap; delete b.counts.overCap;
+        for (const d of b.declarations ?? []) delete d.bytes;
+      }
       same(nb(b), na(a), `${label}: ${args.join(" ")}`);
     }
     assert.ok(answered >= matrix(OLD).length - ids.length, `${label}: ${answered} of ${matrix(OLD).length} commands answered (only toc --dir up may refuse)`);

@@ -267,7 +267,10 @@ has built (§app.requirements/conversation-drafts, /lock-in, /draft-specs, /draf
   main stakeholder of an area no one owns or of a decision whose owner area is `none`) is promoted
   only when the operator names it: `promote {ids}` by id. **Select All Ready** (`bulk: true`) and
   a project overseer's promotion refuse it with "outside <name>'s decision area: promote it
-  explicitly by id", and promote the rest. A promotion builds a fresh draft holding exactly the
+  explicitly by id", and promote the rest. A decision whose conversation item a Build carried onto
+  its own branch (§app.requirements/draft-approval) is refused, whoever asks, with "it is being built
+  on {branch}: it becomes official when that branch lands", until its record is in the current spec.
+  A promotion builds a fresh draft holding exactly the
   selection (claim files move whole), plus, for a promoted decision the selection supersedes, its
   record rewritten with `Superseded by <record>.` and `supersededBy`. It writes only what it
   changes: a record already in the spec keeps every field the decisions layer doesn't own
@@ -415,7 +418,9 @@ has built (§app.requirements/conversation-drafts, /lock-in, /draft-specs, /draf
   evidence naming the conversation, the person, the dates and their words, and committed like any
   promotion (§app.requirements/promotion-commit); they become `promoted`. An item whose decision
   is already in the current spec is not promoted again (`alreadyPromoted`). Its **changes** become
-  `approved` and wait, so the spec never describes behaviour the app doesn't have.
+  `approved` and wait, so the spec never describes behaviour the app doesn't have. A new item a
+  Build already carried onto its own branch (it has a `buildBranch`) is not promoted either: it
+  becomes `approved` and waits (`waitingForBuild`), and becomes official when that branch lands.
 - Approve writes into the project root's own spec, so it runs only while the root has its main line
   checked out, the branch the draft was built on (§app.requirements/conversation-drafts). On any other
   branch, or a detached HEAD, it is refused with 409 and writes nothing: "The project folder is on
@@ -431,12 +436,20 @@ has built (§app.requirements/conversation-drafts, /lock-in, /draft-specs, /draf
   new requirement already in the spec gets its code and evidence recorded; one not yet in the spec
   is copied from the conversation's draft and promoted with its code; a change updates the record
   it changes and is promoted with its note. Each item keeps the session's id and becomes
-  `approved` if it was only agreed. A new requirement reads `built` once its record maps code with
+  `approved` if it was only agreed. When the build gets a worktree of its own, the conversation's
+  draft, caught up on the main line just before, is copied whole into that worktree's drafts
+  (`.sova/spec/drafts/<draft>/`) after the worktree is cut and before the session starts, so
+  `sova-spec-draft status <draft>` run there shows its records; each built item records the branch
+  (`buildBranch`, also in the result as `branch`). The session promotes those records on its branch,
+  and they become official when the branch lands. A build that runs in the project root (no Git
+  repository, or a worktree named later) gets no copy and no `buildBranch`. A new requirement reads `built` once its record maps code with
   reviewed or verified evidence; a change once its note is in the current spec. With nothing left
   to build it is refused (409).
 - **The two paths stay linked.** A decision is still reconciled and promotable the old way
   (§app.requirements/promotion, under the promote power); once either path promotes it, the other
-  reads it promoted, and no second record is written.
+  reads it promoted, and no second record is written. A decision whose item a Build carried onto a
+  branch is refused there too, until that branch lands. A decision that never goes to a Build
+  with a branch is published directly, by Approve or by the old way, as before.
 - Approve and build are the operator's acts only: the routes, or an overseer in a turn the operator
   is in, through `sova_draft_approve {project?, session, items?}` and `sova_draft_build {project?,
   session, items?}` (both overseers; the project overseer's confined to its project). In any other

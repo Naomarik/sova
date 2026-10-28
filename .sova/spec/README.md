@@ -44,7 +44,7 @@ holds each of its IDs' kind, relations and labels; `manifest.json` holds the pro
 
 ## Publishing
 
-`.gitignore` keeps local-only material out of commits. It stays on disk, and is never deleted:
+`.gitignore` keeps local-only material out of commits; it stays on disk, unpublished:
 `pilot/` (session metrics and paths), `reviews/` and `drafts/` (verbatim copies of source).
 Everything else here is meant to be committed.
 

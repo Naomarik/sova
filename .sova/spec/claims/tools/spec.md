@@ -18,70 +18,14 @@ and ranks claims by the words of a topic.
 Draft commands say what a draft introduced apart from what the spec already had, and a spec conflict
 a Git merge leaves has one recovery, given in the same words by the docs and the refusals.
 A report names the drafts left behind, and a prune deletes only the drafts on a list the user approved,
-or the drafts the tool confirms are already official. One command makes every draft of a branch
-official at its landing, all or nothing, with each promise's verification note from its chat.
+or the drafts the tool confirms are already official.
 Records may also declare `embeds` (surfaces drawn inside a claim), `core` and `about` (the target a
 note serves), `notOwned` (on an area, the claims elsewhere that own what a reader might look for in it), and an `agreed` decision (who decided, when, and where the go-ahead was given); the claims flagged `core` form an
 always-on frame that arrives with the first page of a `read`.
-They change context delivery, not release policy. Structured observation-only assessments are separately
-recorded input-bound comparisons, not proof of requirements truth or mandatory release policy.
+A claim over the size cap is warned about when a draft takes it there or grows it, and never refused.
+They change context delivery, not release policy.
 A shipped playbook runs these tools for a review the operator starts, inside limits the operator
 sets, and only then.
-
-## §tools.spec/change-assessments — Input-bound structured comparisons
-
-Observation-only structured assessments retain explicitly routed claim candidates and unmapped
-changed files with changed, preserved, not-applicable or unresolved recorder dispositions, reasons
-and verification bases bound to exact claim and implementation inputs. Absent, unreadable,
-uninvestigated or changed inputs remain explicitly unknown or stale. No disposition, declared
-label or applicable receipt establishes semantic correctness or changes release policy. Batch
-exclusions retain candidate identities without duplicate claim prose.
-
-Durable metadata-only receipts keep declared labels, accepted-intent assertions, recorded
-verification outcomes and current input applicability distinct, with nullable task and worker
-attribution. Preparation starts every candidate unresolved; omission never excludes it. Explicit
-paths and caller-declared snapshot baselines support projects without Git; missing baselines remain
-unknown. In Git projects, resolved commit hashes and initial dirty snapshot hashes are separately
-identified. Assessment-specific inspection refuses its own receipt storage before graph, claim-tree
-or lazy incumbent contents are read, including optional draft triage's current-tree reads; ordinary
-inspection CLI policies keep their existing behavior.
-Refused inputs are not read, raw source and logs are not retained, and concurrent
-cooperating writers cannot overwrite immutable receipts. The tools do not authenticate identity or
-infer exhaustive behavioral candidates. Status enumeration preserves unread, corrupt and capped
-receipt inventories as incomplete and keeps unknown owner attribution visible.
-
-Each capture uses a fresh in-memory inspection graph and batches immutable Git blob inspection
-without dropping routed candidates, closure inputs or refusal findings. Separate captures and
-status checks do not share cached source state, and existing inspection CLI output and refusal
-contracts remain unchanged. The raw manifest and claim bytes actually parsed by that graph must
-match their bound present input hashes within the capture; mixed source versions refuse as a race,
-even when the requested claim's own prose is unchanged. Optional draft triage binds the exact
-proposed, baseline and current manifest/claim sources it reads; changes to those inputs stale prior
-assessments even when candidate identities and reasons stay unchanged.
-
-## §tools.spec/assessment-observations — Assessments run only when asked
-
-No session, pi worker (a Claude Code worker included) or worktree-configured worker runs an assessment
-capture, records a task baseline or writes an assessment receipt by itself: not when a task starts,
-after any tool call, when a turn ends or when a session reopens, with spec on or off. Sessions and
-workers have no assessment tool. An assessment is an explicit companion CLI operation that an
-operator or agent asks for: `prepare` against a declared known base revision, then `record` and
-`status`. Its receipt names that declared base, never a claimed task start. Nothing captures a
-snapshot baseline on the caller's behalf, so a late call cannot subtract the task's own earlier edits
-or commits: with a known base and no declared snapshot, every committed and working-tree change since
-that base is included. Attribution is only what the caller passes; absent attribution stays null.
-
-Receipts and session task and error entries left by earlier automatic observation stay as they are:
-readable, immutable, and never migrated, rewritten or deleted. The state a native
-Claude Code worker hook left from then stays on disk as it was: those hooks no longer run
-(§tools.spec/no-turn-end-check). Session-list and
-merge-readiness refreshes do not consume assessment receipts or query their status. Explicit assessments never change continuations, ordinary
-readiness checks, footer rules or release gates. Successful preparations and records remain normal
-operations even with outstanding claims or failed verification declarations, and stale or unknown
-status remains a valid query. A newer unresolved same-task observation is not hidden by an older
-preserved record. Failed verification remains an explicit outcome distinct from current input
-applicability and the recorder's disposition. Legacy labels without receipts remain declarations
-with unknown assessment provenance.
 
 ## §tools.spec/review-playbook — A spec review runs only when the operator starts it
 
@@ -109,8 +53,8 @@ not a sandbox), with the trusted spec tools at the declared base, and with the a
 reading. Each published command re-establishes the tools' location, root and base itself, never
 relying on an earlier call. It reads a claim as spec mode does (§tools.spec/mode-reading): `toc`
 for the claim's neighbours, then `read` for one exact passage at a time, the first read bringing the frame and every later one
-adding `--no-frame`, keeping whole-chain `packet` and `scope` out of its reading step. A request for a durable assessment receipt is reported as needing a
-separate opt-in method, since the companion has no bounded view of its capture. The report has
+adding `--no-frame`, keeping whole-chain `packet` and `scope` out of its reading step. A request for a durable assessment receipt is reported as having
+no tool, since the assessment companion is retired. The report has
 fixed sections within the report length and keeps observed, inferred and proposed apart; changes to
 the playbook's own method appear there only as proposed diffs, never applied by the run.
 
@@ -294,33 +238,32 @@ read with `read`. `packet` and `scope` stay listed, in the writing procedure, fo
 machine inspection, not as a reading step. Every command either part spells is one the shipped tools
 parse, with the flags it pairs with it.
 
-The writing procedure has the chat record one note per changed promise on what it verified
-(`evidence --note`, §tools.spec/land) and names no doc-only case, which the landing picks per record
-(a test fails if it names `--doc-only` again without the draft tool's cases). It says the drafts
-become official when the branch lands, that drafts that don't fit come back to the chat to fix with
-no commit (a clash: `refresh`, §tools.spec/draft-refresh), and that where nothing lands branches the
-chat runs `land` once before its last commit; PROMOTE.md keeps the manual path. For a spec conflict
-in a Git merge it sends the agent to the census note. `agree` (§tools.spec/agree-command) is only for
-a decision the user made in the chat, and Land It is never agreement.
-Its step for behavior no claim covers says that when the user decided it in the chat, the
+The writing procedure's promotion lines agree with the draft tool: doc-only evidence covers notes, sections,
+agreed records without code (§tools.spec/agreed-promotion) and a change to `embeds`, `about`,
+`core` or `notOwned` alone (§tools.spec/field-promotion); a test drives the draft tool's doc-only rule, so the
+guide fails its test when that rule gains a case the guide doesn't name or drops one it does. For a
+`manifest.json` conflict it sends the agent to the census note. For a decision the user agreed to, it points to `agree`
+(§tools.spec/agree-command) in one line, and to PROMOTE.md for when that lands.
+Its step for behavior no claim covers says that when the task's go-ahead already agrees to it, the
 agent runs `agree` on it right then, before the first code edit, not at the end; a worker's spec brief
 carries that step too. The exemption from drafts is decided from passages read, and the
 census note's `No draft yet` line says the same. While coding, the guide relies on the census note
 (§tools.spec/census-note), with no rule of one file per edit and no census run by hand. Before
 finishing it reads each § the census note's unread line (§tools.spec/unread-landed) marks read
 first; the census command that line gives lists the rest. It tells the session that a branch isn't
-done or ready to land until each promise it changed has its note, and to say what it didn't verify,
-without naming any project's merge process. It says too that a draft whose branch already landed
-without it lands with a fresh branch from the default branch, never on the default branch itself.
-Its go-ahead paragraph says that the task's go-ahead covers its drafts and notes, and the user's
-go-ahead to build or merge covers committing the docs with the code on its branch, never asked for
-separately; where the user said not to commit, nothing is, and the chat says what is ready. A worker
-is told that its branch's landing makes the drafts official, to record its notes in its draft, and
-to commit only when its brief says to, and then only on its brief's branch, never by landing on the
-default branch. A worker's spec brief lists `where`, `map`, `toc`,
+done or ready to land until its drafts are promoted on it: the session promotes on its own branch,
+after its checks pass and before it says the branch is ready, since nothing at landing promotes for
+it, and says so without naming any project's merge process. It says too that a draft whose branch
+already landed is promoted on a fresh branch from the default branch, never on the default branch
+itself. Its go-ahead paragraph says that the
+user's go-ahead to build or merge covers committing the docs with the code on its branch, never asked
+for separately; where the user said not to commit, nothing is, and evidence stays pending. A worker
+is told that its parent promotes, on its own branch before calling it ready; a worker promotes,
+commits or records `--commit` evidence only when its brief says to, and then only on its brief's
+branch, never by landing on the default branch. A worker's spec brief lists `where`, `map`, `toc`,
 `read` and `impact --near` among its read-only commands. The short part rides every turn, so a test
 caps its word count a few words above its length (320), and growing it is a deliberate change; the
-writing procedure has a cap of its own (1030).
+writing procedure has a cap of its own (990).
 
 ## §tools.spec/no-turn-end-check — A turn ends when the model stops
 
@@ -335,10 +278,9 @@ worker's census, never a hook of its own. A foreign § (one that existed before 
 started) whose text the task's change contradicts, or where it changes what a user sees beyond
 that text, is updated in the task's draft without asking, the task's go-ahead covering it, and
 listed in the reply or report as "Also updates §X: <what>"; it is never asked about. Spec mode stands alone: its guide, notes and
-tools never rely on the merge round or a merge captain: a branch's drafts become official when it
-lands, by whatever lands it (the draft tool's `land`, §tools.spec/land), and before it calls that
-branch done or ready to land a session has a note on each promise it changed; with spec mode on, in
-any project, that is what ready means, and the user's go-ahead to build or merge covers it.
+tools never rely on the merge round or a merge captain, and a session promotes its own drafts, on its
+own branch, before it calls that branch done or ready to land: with spec mode on, in any project,
+that is what ready means, and the user's go-ahead to build or merge covers it.
 In the web app, an older reply shows any closing lines it was written with, as written, and an
 older session's spec-turn records draw nothing.
 
@@ -408,10 +350,9 @@ theirs) and writes the default branch's layout.
 ## §tools.spec/conflict-recovery — A spec conflict has one recovery, said the same way everywhere
 
 A promotion conflict within one tree (current changed a declaration the draft changed too) is
-refused with what PROMOTE.md says: move the draft onto current with `refresh` and rewrite each
-declaration it marks (§tools.spec/draft-refresh), or revert those declarations in the draft's
-`spec/` to their `base/` text and promote the rest, or start a new draft from current; it never says
-to edit the draft's `base/`. A Git merge that leaves the spec conflicted (a `claims/*.md` file, or a manifest key
+refused with what PROMOTE.md says: revert those declarations in the draft's `spec/` to their
+`base/` text and promote the rest, or start a new draft from current; it never says to fix the
+draft by hand. A Git merge that leaves the spec conflicted (a `claims/*.md` file, or a manifest key
 `merge-manifest` refuses), whether or not the manifest merge driver already merged the manifest,
 has one recovery, given in the same words by PROMOTE.md and by the draft tool's refusals: take the
 default branch's whole spec with `git checkout --no-overlay master -- .sova/spec/manifest.json
@@ -443,7 +384,7 @@ and a trailing newline. An area with no record has no record file. A record hold
 either layout, so evidence recorded against one stays valid in the other.
 
 Every spec tool reads and writes records through one shared module, `core/layout.mjs`: the core's
-commands, the draft tool, the review and assessment tools, Sova's own spec readers and the merge
+commands, the draft tool, the review tool, Sova's own spec readers and the merge
 round. Each gives the same answers on the same spec in either layout. A promotion writes in the layout
 of the tree it promotes into, and a draft keeps its own. A script that can't import the module runs
 `sova-spec.mjs records [--at REV] [--id §x]… --json`, which prints `{layout, meta, records}` and never
@@ -508,7 +449,7 @@ or a backticked token in that prose was added or removed, the promotion carries 
 changed tokens: a change of meaning needs a new agreement (§tools.spec/agree-command), while a
 rewording that changes no number or token gets no note.
 
-## §tools.spec/agree-command — One command agrees; the landing makes it official
+## §tools.spec/agree-command — One command agrees, and lands what isn't built
 
 `agree <draft> --id '<§id>'… --by <who> --verification <text>` writes the decision into the draft:
 on each named behavior or surface it sets `agreed: {by, at, source}`, with `at` the current UTC time
@@ -537,11 +478,13 @@ agreed whose prose the draft leaves unchanged, and an `at` earlier than current'
 draft already gave is kept only when its `by` and `source` both match.
 
 For each record that maps no code and is not labelled built, the same call records doc-only
-evidence with `--by` and `--verification` as given. It promotes nothing and writes nothing to the
-main spec: the record becomes official when its branch lands, with the rest of the branch's drafts
-(§tools.spec/land), where the verification it recorded stands as the chat's note; its output says
-so for each record. A record that maps code is only stamped. Without `--write` it only previews and
-writes nothing.
+evidence with `--by` and `--verification` as given, then runs promotion's own plan for those
+records and applies it only when that plan is clean: no refusal, no drift warning, no note, and no
+foreign § beyond a parent gaining the new claim. Its output then names what it promoted, the plan
+hash and the files written. Otherwise it writes nothing to the main spec, exits 1
+(`agree-not-promoted`) with the plan's findings, and the agent takes the ordinary path. A record
+that maps code is only stamped, never promoted by `agree`: its build records commit or snapshot
+evidence and promotes with a preview. Without `--write` it only previews and writes nothing.
 
 ## §tools.spec/align-agree — With align on too, the go-ahead is the Agree step
 
@@ -550,8 +493,9 @@ With the align minor mode also on, agreeing in align and changing the spec are o
 its `details`) ends with a paragraph telling the agent that this go-ahead is the Agree step: before
 building, it writes each decision that changes behavior as a promise in a spec draft (a new claim,
 or the claim the decision changes) and runs `agree` with `--by` the person who gave the go-ahead and
-the alignment's id in `--verification`, which stamps who decided before any code exists; the
-records become official when the branch lands (§tools.spec/land). A changed claim that already maps code keeps its new
+the alignment's id in `--verification`, which lands the records that map no code in the main spec,
+so it says who decided before any code exists. If `agree` reports the promotion not clean, the
+agent resolves what it lists and promotes. A changed claim that already maps code keeps its new
 `agreed` in the draft and lands with the build, and the build updates those same records. With
 spec off, or align off, nothing is added, and neither mode's prompt block carries this step: it
 rides only that one result. When the session hasn't been told the writing procedure yet, that result
@@ -665,6 +609,25 @@ alone, with no Git and no other process. The tool's `drafts` and `prune --offici
 round's driver reads the verdict `drafts` reports (§chat.merge-round/driver). A draft the rule can't
 read is never official, for each of them.
 
+## §tools.spec/declaration-cap — A claim over 6 KB is warned about, never refused
+
+A claim's size is the UTF-8 bytes of its prose in its claim file: an H1 from its heading to its first
+H2, an H2 from its heading to the next heading, trailing blank lines left out, as `read` and `toc`
+count it. Its record's bytes in `manifest.json` or an area's record file never count, so a claim has
+the same size in either record layout. The cap is 6,144 B, or the spec's optional top-level
+`declarationCap`, a whole number of bytes of at least 1; any other value is a warning
+(`declaration-cap-invalid`) and 6,144 B holds.
+
+`check` gives the cap and how many declarations are over it in its counts (`cap`, `overCap`) and
+each declaration's `bytes`, with no finding per declaration. `draft check` warns
+(`declaration-over-cap`, with `bytes`, `cap` and `was`, its size on the draft's base, absent for a new
+claim) for each declaration the draft takes from at or below the cap to over it, or makes larger while
+it is over; one over the cap that the draft leaves as it was or shrinks is counted under `preexisting`.
+Each warning says to split the claim by topic into sibling claims, the old § keeping a short summary
+that `requires` its parts. A promotion preview or write gives the same warning for each selected
+declaration it would land that way (`sizeWarnings`). None of them refuses anything or changes an exit
+status, and none makes `agree`'s promotion plan unclean.
+
 ## §tools.spec/draft-hygiene — Drafts left behind are reported, and only an approved list or confirmed-official drafts are pruned
 
 `draft drafts` reads every draft of the project (`--worktrees`: of every Git work tree of its
@@ -704,47 +667,6 @@ command deletes a draft, and none suggests deleting one that still has a pending
 
 A promotion preview or write names, once, how many other drafts in its project are older than the
 age limit, with the `drafts` command that says which are left behind.
-
-## §tools.spec/land — Landing makes every draft official in one step
-
-`draft evidence <draft> --id '<§id>'… --by <who> --verification <text> --note --write` records the
-chat's own short note on what it verified for those promises, bound to their record and prose as
-the draft has them, with no commit and no files: allowed in a Git project, and never evidence a
-manual `promote` accepts.
-
-`draft land --commit <rev> --by <who> --verification <text>` takes every draft of the project and
-every record each one changes that the current spec doesn't say yet (pending, in conflict, or
-promoted before and said differently now). A draft whose every such record is labelled
-`candidate` is left as a proposal and named. Each other record needs a verification note from its
-chat (a note, or the verification text of evidence recorded the old way) bound to the record and
-prose it has now. Its evidence is recorded at `<rev>`: doc-only where doc-only evidence applies,
-else the commit with the record's code files as they are there. Every refusal `promote` has holds
-here too. Without `--write` it only answers. With `--write` it makes them all official in one go,
-under the drafts lock: evidence and promotion draft by draft, and when any of it is refused or
-fails, everything it wrote is put back, the current spec and every draft byte for byte, so nothing
-has changed. One interrupted before it finished is put back by `recover --write`, and every other
-write refuses until then. It never commits: it answers what it found (each draft with the promises
-it adds and changes, the drafts left, and each problem with the draft, the §, a code and its fix),
-the spec files it wrote, a commit message (a subject and a body listing what lands, the commit, who
-and the verification), and one hash over the files under every draft's `spec/`. With nothing
-pending in any draft it answers that there is nothing to land and writes nothing, so running it
-again, or after a manual promotion, changes nothing. It exits 0 when everything lands (or there is
-nothing to land), 1 with the problems when anything doesn't, and 2 when it can't read the drafts.
-
-## §tools.spec/draft-refresh — `refresh` moves a draft onto the current spec
-
-`draft refresh <draft> [--write]` makes the current spec the draft's base: its `base/` becomes
-current byte for byte, and its `spec/` is the per-declaration three-way merge promotion computes
-(§tools.spec/span-promotion), so current's changes come in beside the draft's own. A declaration
-both changed is written into the draft's file as one block for the chat to rewrite: a line
-`<<<<<<< current: <§id> changed here since the draft was made`, current's text, a line `=======`,
-the draft's text, and a line `>>>>>>> draft`; a file that can't be merged per declaration gets the
-block around the whole file, and a record or setting both changed keeps the draft's. Promotion and
-`land` refuse a declaration that still holds those marker lines (`conflict-markers`). The draft's
-notes and evidence stay bound to what the chat wrote. Its answer names whether the base moved, the
-§ current's changes brought in and each conflict (§, file and whether prose, a whole file or a
-record), exiting 1 when there is one. Without `--write` it only answers; with it, it writes under
-the drafts lock, and the draft's old folders go only once the new ones are whole.
 
 ## §tools.spec/inspection-safety — Refused inputs are not inspected
 
@@ -789,7 +711,7 @@ sessions, cursors, or source snapshots and runs no project code.
 
 The minor-mode guide's writing procedure lists packets beside `scope` for whole-chain machine
 inspection; its reading path is contents first, then one passage (§tools.spec/mode-reading). Full graph tools remain available for deliberate
-machine inspection and review. No new mandatory assessment or release gate is introduced here.
+machine inspection and review. No new mandatory release gate is introduced here.
 
 ### Reading a packet
 

@@ -415,6 +415,15 @@ whole-spec takes; 7.2 re-apply commits a week. Targets (GOALS.md constraint 3): 
 Git conflicts on record files ≤ 5%, re-apply commits halved, whole-spec recoveries 0. Tool latency: about
 5 to 10 ms more per call (101 files read instead of one); answers identical.
 
+## Retired: the assessment companion (2026-10-26, branch `feat/spec-size`; not on master yet)
+
+`sova-spec-assess.mjs` recorded input-bound dispositions for a change. It ran automatically only from 10-02
+to 10-04 (switched off on 10-03), and nothing ran it after that. Its 215 packets named no claim, and none
+was ever concluded (al_5 plan, decision q5). So it served no goal. The tool, its transport, its read policy
+and its tests are gone, and the packets are archived outside the repository. The review companion and its
+saved reviews stay. A 6 KB per-claim size warning ships on the same branch. 124 of Sova's claims are over
+the cap, waiting for the per-area migration.
+
 ## Open
 
 - **Records per area, after the conversion.** Run `tests/bench/merge-collisions.mjs --since <conversion

@@ -1,7 +1,7 @@
-// The one case that runs the real spec assessment tool; the readiness rules with git faked are merge-readiness.test.ts.
+// Merge readiness against a real merge driver and real files; the readiness rules with git faked are merge-readiness.test.ts.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -87,41 +87,6 @@ function summary(path: string, over: Partial<SessionSummary> = {}): SessionSumma
 }
 
 // --- al_2's accuracy fixes, from the live cases (DECISIONS a5, a6) ---------------------------
-
-test("session-list TTL refreshes of idle merged spec worktrees cannot spawn assessment status", async () => {
-  const root = mkdtempSync(join(tmpdir(), "readiness-no-status-"));
-  const coreDir = join(agentDir, "extensions/spec/core");
-  const marker = join(root, "status-spawned");
-  mkdirSync(coreDir, { recursive: true });
-  mkdirSync(join(root, ".sova/spec"), { recursive: true });
-  writeFileSync(join(root, ".sova/spec/manifest.json"), "{}\n");
-  const trap = join(coreDir, "sova-spec-assess.mjs");
-  writeFileSync(trap, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, JSON.stringify(process.argv)); console.log(JSON.stringify({exit:0,state:'absent',observations:[],reasons:[]}));`);
-  // Prove the trap detects the actual transport, not merely a missing dependency or failed spawn.
-  const { callAssessment } = await import("../pi-config/extensions/mode/spec-assessment.ts");
-  await callAssessment(coreDir, root, ["status", "--owner-session", SID]);
-  assert.ok(existsSync(marker)); rmSync(marker);
-  let now = 0, gitReads = 0;
-  const path = sessionFile(chain([worktrees([tracked({ path: root })], "2026-09-29T15:36:00.000Z")]));
-  const row = summary(path, { cwd: root });
-  try {
-    r.resetReadiness();
-    r.configureReadiness({ now: () => now, insights: { treeStatus: async () => {
-      gitReads++;
-      return { path: root, source: "session", exists: true, branch: "feat/fixture", base: "master", ahead: 1, behind: 0, dirty: false, head: "own-commit", merged: "ancestor" };
-    } } });
-    for (let refresh = 0; refresh < 4; refresh++) {
-      r.readinessOverlay(row); await r.readinessIdle();
-      assert.equal(r.readinessOverlay(row)?.trees[0]?.state, "merged");
-      assert.equal(gitReads, refresh + 1, "ordinary git refresh must actually run after TTL expiry");
-      assert.equal(existsSync(marker), false, "routine listing must never spawn the assessment transport");
-      now += 20_001;
-    }
-  } finally {
-    await r.readinessIdle(); r.resetReadiness();
-    rmSync(root, { recursive: true, force: true }); rmSync(trap, { force: true });
-  }
-});
 
 function barrier() {
   let release!: () => void;

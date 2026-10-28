@@ -15,7 +15,10 @@ bun bench/search-ab/freeze.ts      # manifest, offline listing, project list (pr
 bun bench/search-ab/mine.ts        # query sets and labels, frozen (refuses to overwrite without --force)
 bun bench/search-ab/bench.ts       # instrument check, dev runs, sweeps, results/dev-*.md
 bun bench/search-ab/bench.ts --tune-false # the false-answer sweep alone (dev, bm25f), held-out constants
-bun bench/search-ab/bench.ts --label      # grade the held-out pool (blind, resumable)
+bun bench/search-ab/bench.ts --label      # grade the held-out pool by hand (blind, resumable)
+bun bench/search-ab/bench.ts --draw-pool  # draw pool.json as --label would, without prompting
+bun bench/search-ab/bench.ts --judge-packets <dir>   # blind markdown packets for the model judges (amendment 5)
+bun bench/search-ab/bench.ts --import-grades a.json b.json c.json  # grades.json (median), judge-agreement.json
 bun bench/search-ab/bench.ts --heldout    # held-out scoring, once, after every grade is in
 ```
 

@@ -175,6 +175,17 @@ what prompted it.
    together), and the score floors `floorRel` (a share of the best hit's score) and `floorAbs`. The
    sweep logs every single change from the starting constants, then each on top of minCoverage 1,
    then combinations, which were written only after the single rows were logged. All on dev only.
+5. **Three model judges grade the held-out pool** (2026-10-29, the user's call, made before the pool
+   was drawn with amendment 4's constants; it overrides "a model never grades" under Human grades).
+   Three independent judges, each Claude Opus 5.5 (`claude-opus-5-5`) at medium effort, grade every
+   pooled pair 0/1/2 on the same rubric; the grade used is the per-pair median, and `grades.json`
+   names its grader. The judges see more than amendment 3's view: per pooled session its title,
+   folder, last activity, summary when it had one by then, its first prompt, up to 5 of the user and
+   assistant messages holding the most query words (each cut to about 400 characters), and the path
+   of the copied file cut at the query time, all as of the query time; still blind (no system named,
+   the pool's shuffled order). A mined query keeps the user's request before the call. Pairwise exact
+   agreement, Fleiss' kappa and the pairs the judges spread from 0 to 2 are written beside the
+   grades (`judge-agreement.json`, private) and reported with the held-out results.
 
 ## Risks, stated before the runs
 

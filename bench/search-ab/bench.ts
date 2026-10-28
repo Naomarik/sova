@@ -3,13 +3,17 @@
 //   bun bench/search-ab/bench.ts [--copy <agent dir>] [--private <dir>]      instrument check, dev, sweep
 //   bun bench/search-ab/bench.ts --label [--private <dir>]                  grade the held-out pool
 //   bun bench/search-ab/bench.ts --heldout                                  held-out scoring (needs grades)
+//   bun bench/search-ab/bench.ts --draw-pool [--private <dir>]              draw pool.json as --label would
+//   bun bench/search-ab/bench.ts --judge-packets <dir> [--private <dir>]    blind packets for the model judges
+//   bun bench/search-ab/bench.ts --import-grades <a.json> <b.json> <c.json> grades.json: the per-pair median
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { SEARCH_LIMIT_MS, snippetOf } from "../../server/overseer-roundup";
 import { buildIndex, type Constants, DEFAULTS, type Doc, type Index, search } from "./bm25f";
 import { copyDir, opt, privateDir, readJson, sha256, writeJson } from "./common";
-import { type ListingRow, loadCorpus, type Session } from "./corpus";
+import { asOf, type ListingRow, loadCorpus, type Session, truncatedCopy } from "./corpus";
+import { agreement, GRADER, type Grades, indexOf, medianGrades, type PacketQuery, packets, pairsOf, relevantMessages, validateJudge } from "./judge";
 import { type IncumbentRun, type Project, runIncumbent, scopeAsOf } from "./incumbent";
 import { falseAnswerRate, firstRank, gradedScores, percentile, pickHeldoutRow, pickZeroFalseRow, pool, summarize } from "./metrics";
 import { type LoggedSearch, type Query, rng, shuffle } from "./mine";
@@ -261,6 +265,7 @@ async function tuneFalse(corpus: readonly Session[], queries: readonly Query[], 
 }
 
 async function main(): Promise<void> {
+  if (args.includes("--import-grades")) return importGrades();
   const rows: ListingRow[] = readJson(join(PRIV, "listing.json")).rows;
   const j = readJson(join(PRIV, "judgments.json"));
   const judgmentsSha = sha256(readFileSync(join(PRIV, "judgments.json")));
@@ -271,6 +276,8 @@ async function main(): Promise<void> {
   console.log(`corpus: ${corpus.length} sessions read in ${Math.round(readMs)} ms; dataset ${j.header.datasetHash.slice(0, 12)}; judgments ${judgmentsSha.slice(0, 12)}`);
 
   if (args.includes("--label")) return label(corpus, j.queries, projects, args.includes("--prepare"));
+  if (args.includes("--draw-pool")) return label(corpus, j.queries, projects, true);
+  if (args.includes("--judge-packets")) return judgePackets(corpus, j.queries);
   if (args.includes("--heldout")) return heldout(corpus, j.queries, projects);
   if (args.includes("--tune-false")) return tuneFalse(corpus, j.queries, projects);
 
@@ -518,6 +525,95 @@ async function label(corpus: readonly Session[], queries: readonly Query[], proj
   const r = await gradeLoop(items, join(PRIV, "grades.json"), rl[Symbol.asyncIterator](), (s) => process.stdout.write(s.endsWith("> ") ? s : s + "\n"));
   rl.close();
   console.log(`\n${r.graded} of ${r.total} graded${r.graded === r.total ? ": done. The held-out scoring can run (--heldout)." : ". Run the same command again to continue."}`);
+  process.exit(0);
+}
+
+// ---- model judges (plan.md amendment 5) ---------------------------------------------------------
+
+/** Packets of at most this many characters, a search never split across two. */
+export const PACKET_CHARS = 150_000;
+
+/** `--judge-packets <dir>`: the pool, blind and in its order, with quotes cut at each search time. */
+async function judgePackets(corpus: readonly Session[], queries: readonly Query[]): Promise<void> {
+  const dir = opt(args, "judge-packets");
+  const poolPath = join(PRIV, "pool.json");
+  if (!dir || dir.startsWith("--")) {
+    console.error("--judge-packets needs the folder to write the packets in.");
+    process.exit(2);
+  }
+  if (!existsSync(poolPath)) {
+    console.error("No pool yet: run --draw-pool first.");
+    process.exit(2);
+  }
+  const out = privateDir(["--private", dir]);
+  const { items } = readJson(poolPath) as { items: PoolItem[] };
+  const byId = new Map(corpus.map((s) => [s.row.id, s]));
+  const byQ = new Map(queries.map((q) => [q.qid, q]));
+  const qs: PacketQuery[] = items.map((it) => {
+    const q = byQ.get(it.qid)!;
+    return {
+      qid: it.qid,
+      words: it.words,
+      at: q.at,
+      ...(it.ask ? { ask: it.ask } : {}),
+      sessions: it.sessions.map(({ id }) => {
+        const s = byId.get(id)!;
+        const msgs = s.messages.filter((m) => m.lineAt <= q.at);
+        const first = msgs.find((m) => m.who === "user");
+        const a = asOf(s, q.at);
+        return {
+          id,
+          title: s.row.title ?? "Untitled",
+          folder: s.row.cwd.split("/").filter(Boolean).pop() ?? "",
+          lastActive: Math.min(a.activeAt || s.mtimeMs, q.at),
+          summary: s.row.outlineGist && (s.row.outlineAt ?? 0) <= q.at ? s.row.outlineGist : null,
+          firstPrompt: first?.text ?? "",
+          quotes: relevantMessages(msgs, q.words, q.at, 5, first),
+          path: truncatedCopy(s.path, s.size, a.bytes, ASOF),
+        };
+      }),
+    };
+  });
+  const ps = packets(qs, PACKET_CHARS);
+  for (const p of ps) writeFileSync(join(out, p.file), p.body);
+  writeFileSync(join(out, "index.md"), indexOf(ps, qs));
+  console.log(`packets: ${ps.length} in ${out} (index.md names them); ${qs.length} searches, ${pairsOf(items).length} sessions to grade`);
+  for (const p of ps) console.log(`  ${join(out, p.file)} (${Math.round(p.body.length / 1000)} k chars)`);
+  process.exit(0);
+}
+
+/** `--import-grades a b c`: three complete answer files to grades.json (the per-pair median) and
+    judge-agreement.json, both in the private folder. */
+function importGrades(): void {
+  const i = args.indexOf("--import-grades");
+  const files = args.slice(i + 1, i + 4);
+  if (files.length < 3 || files.some((f) => f.startsWith("--"))) {
+    console.error("--import-grades needs three answer files: judge A, B and C.");
+    process.exit(2);
+  }
+  const poolPath = join(PRIV, "pool.json");
+  const gradesPath = join(PRIV, "grades.json");
+  if (existsSync(gradesPath) && !args.includes("--force")) {
+    console.error(`${gradesPath} already exists: --force replaces it.`);
+    process.exit(2);
+  }
+  const { items } = readJson(poolPath) as { items: PoolItem[] };
+  const pairs = pairsOf(items);
+  const names = ["A", "B", "C"] as const;
+  const judges = files.map((f) => readJson(f)) as [Grades, Grades, Grades];
+  const errs = judges.flatMap((g, k) => validateJudge(`judge ${names[k]} (${files[k]})`, g, pairs));
+  if (errs.length) {
+    console.error(`${errs.length} problem${errs.length === 1 ? "" : "s"}; nothing written:`);
+    for (const e of errs.slice(0, 50)) console.error(`  ${e}`);
+    process.exit(1);
+  }
+  const grades = medianGrades(pairs, judges);
+  const ag = agreement(pairs, names, judges, grades);
+  const judgeFiles = files.map((f, k) => ({ judge: names[k], sha256: sha256(readFileSync(f)) }));
+  writeJson(gradesPath, { grader: GRADER, judges: judgeFiles, importedAt: new Date().toISOString(), grades });
+  writeJson(join(PRIV, "judge-agreement.json"), { grader: GRADER, judges: judgeFiles, ...ag });
+  console.log(`grades: ${pairs.length} pairs, the median of 3 judges (${gradesPath})`);
+  console.log(`agreement: ${Object.entries(ag.pairwise).map(([k, v]) => `${k} ${pct(v)}`).join(", ")}; all three ${pct(ag.allThree)}; Fleiss' kappa ${ag.fleissKappa === null ? "n/a" : f3(ag.fleissKappa)}; spread 0 to 2 on ${ag.spread0to2}`);
   process.exit(0);
 }
 

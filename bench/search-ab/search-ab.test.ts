@@ -10,6 +10,7 @@ import { bestWindow, buildIndex, compoundsOf, DEFAULTS, type Doc, queryTerms, se
 import { privateDir, ROOT, splitOf } from "./common";
 import { asOf, type ListingRow, loadCorpus, readSession, truncatedCopy } from "./corpus";
 import { stem } from "./topic";
+import { agreement, indexOf, median3, medianGrades, packets, pairsOf, relevantMessages, trimAround, validateJudge } from "./judge";
 import { runIncumbent, scopeAsOf } from "./incumbent";
 import { falseAnswerRate, firstRank, gradedScores, percentile, pickHeldoutRow, pickZeroFalseRow, pool, summarize } from "./metrics";
 import { distinctive, mineLog, rng, shuffle } from "./mine";
@@ -304,6 +305,79 @@ describe("grading", () => {
     assert.deepEqual(second, { graded: 3, total: 3, quit: false });
     assert.deepEqual(JSON.parse(readFileSync(path, "utf8")).grades, { q1: { s1: 2, s2: 0 }, q2: { s3: 1 } });
     assert.ok(out.some((l) => l.includes("where is the kiwi crate")));
+  });
+});
+
+describe("model judges (amendment 5)", () => {
+  const items = [
+    { qid: "q1", sessions: [{ id: "s1" }, { id: "s2" }] },
+    { qid: "q2", sessions: [{ id: "s3" }] },
+  ];
+  const pairs = pairsOf(items);
+  const A = { q1: { s1: 2, s2: 0 }, q2: { s3: 1 } };
+  const B = { q1: { s1: 2, s2: 2 }, q2: { s3: 1 } };
+  const C = { q1: { s1: 1, s2: 1 }, q2: { s3: 1 } };
+
+  test("a complete answer passes; a gap, a bad value or a stranger is each named", () => {
+    assert.deepEqual(validateJudge("A", A, pairs), []);
+    const errs = validateJudge("X", { q1: { s1: 3, s9: 0 }, q7: {} }, pairs);
+    assert.equal(errs.length, 5, errs.join("\n"));
+    for (const bit of ["s1 is graded 3", "s2 is not graded", "s9 is not in the pool", "query q2 has no grades", "query q7 is not in the pool"]) assert.ok(errs.some((e) => e.includes(bit)), bit);
+    assert.ok(validateJudge("X", { q1: { s1: "2", s2: 1.5 }, q2: { s3: null } }, pairs).length === 3);
+    assert.equal(validateJudge("X", [], pairs).length, 1);
+  });
+
+  test("the grade is the per-pair median, whatever order the judges come in", () => {
+    assert.equal(median3(2, 0, 1), 1);
+    assert.equal(median3(0, 2, 2), 2);
+    const m = medianGrades(pairs, [A, B, C]);
+    assert.deepEqual(m, { q1: { s1: 2, s2: 1 }, q2: { s3: 1 } });
+    assert.deepEqual(medianGrades(pairs, [C, A, B]), m);
+  });
+
+  test("agreement: pairwise, all three, Fleiss' kappa and the 0-to-2 spreads", () => {
+    const ag = agreement(pairs, ["A", "B", "C"], [A, B, C], medianGrades(pairs, [A, B, C]));
+    assert.deepEqual(ag.pairwise, { "A~B": 2 / 3, "A~C": 1 / 3, "B~C": 1 / 3 });
+    assert.equal(ag.allThree, 1 / 3);
+    assert.equal(ag.spread0to2, 1);
+    assert.deepEqual(ag.distribution.median, [0, 2, 1]);
+    // by hand: P_i = 1/3, 0, 1 → P̄ = 4/9; p = (1/9, 5/9, 3/9) → Pe = 35/81
+    assert.ok(Math.abs(ag.fleissKappa! - (4 / 9 - 35 / 81) / (1 - 35 / 81)) < 1e-12);
+    const same = agreement(pairs, ["A", "B", "C"], [A, A, A], A);
+    assert.equal(same.allThree, 1);
+    assert.equal(same.spread0to2, 0);
+    assert.equal(agreement(pairs, ["A", "B", "C"], [C, C, C], C).fleissKappa, null);
+  });
+
+  test("packets: blind, in the pool's order, quotes cut at the search time, split by whole searches", () => {
+    const msgs = [
+      { who: "user" as const, lineAt: 1, text: "open the durian crate" },
+      { who: "assistant" as const, lineAt: 2, text: "x ".repeat(500) + "durian kiwi here" },
+      { who: "user" as const, lineAt: 3, text: "nothing relevant" },
+      { who: "assistant" as const, lineAt: 9, text: "durian kiwi later" },
+    ];
+    const quotes = relevantMessages(msgs, "Durian kiwi", 5, 5, msgs[0]);
+    assert.deepEqual(quotes, [msgs[1]]);
+    assert.ok(trimAround(msgs[1]!.text, ["durian"], 400).includes("durian kiwi here"));
+    assert.ok(trimAround(msgs[1]!.text, ["durian"], 400).length <= 402);
+    const sess = (id: string) => ({ id, title: `t ${id}`, folder: "proj", lastActive: 0, summary: null, firstPrompt: "open", quotes, path: `/copy/${id}.jsonl` });
+    const qs = [
+      { qid: "q1", words: "durian kiwi", at: 5, sessions: [sess("s2"), sess("s1")] },
+      { qid: "q2", words: "fig", at: 5, ask: "where is the fig", sessions: [sess("s3")] },
+    ];
+    const one = packets(qs, 1e9);
+    assert.equal(one.length, 1);
+    const body = one[0]!.body;
+    assert.ok(body.indexOf("`s2`") < body.indexOf("`s1`"));
+    assert.ok(!/bm25|incumbent|system [ab]\b/i.test(body));
+    assert.ok(body.includes("**2**") && body.includes("where is the fig") && body.includes("/copy/s1.jsonl"));
+    assert.ok(!body.includes("later"));
+    const two = packets(qs, 10);
+    assert.deepEqual(two.map((p) => p.qids), [["q1"], ["q2"]]);
+    assert.deepEqual(two.map((p) => p.file), ["packet-01-of-02.md", "packet-02-of-02.md"]);
+    const ix = indexOf(two, qs);
+    assert.ok(ix.includes("2 packets, 2 searches, 3 sessions"));
+    assert.deepEqual(Object.keys(JSON.parse(ix.split("```json\n")[1]!.split("\n```")[0]!)), ["q1", "q2"]);
   });
 });
 

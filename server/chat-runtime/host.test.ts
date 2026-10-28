@@ -867,7 +867,9 @@ test("wait-asks: queued with no server, written to the next controller, answered
 });
 
 test("run events: facts kept until acked and written again first at the next control; ticks dropped without a server", async () => {
-  const t = await setup({ settings: { serverToolWaitMs: 2_000 } });
+  // The served call and the wait-ask fail serverToolWaitMs after the last controller drops (the end of
+  // the test waits for that); the steps between their making and that drop take a few settles.
+  const t = await setup({ settings: { serverToolWaitMs: 800 } });
   const runs = collect(t.ctl.server, "run");
   t.host.runEvent({ type: "run.start", tag: "look:1" });
   t.host.runEvent({ type: "entry.appended" });

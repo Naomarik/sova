@@ -10,7 +10,13 @@
 //   note <branch> owner=<id> idle=yes|no
 //   go <branch> [without-specs]  the user's word in this chat to land it: a go-ahead like Land It, straight to check
 //   ask <branch>          Ready to land, owner idle: queue it, and Sova shows the owner the Landing card
-//   check <branch>        merge master in (in the branch's worktree), typecheck, tests, suites (niced), spec replay, build, spec, also-update nudges, leak scan
+//   check <branch> [full] [--background]
+//                         merge master in (in the branch's worktree), print the expected time, typecheck, unit tests, the
+//                         integration tests a landing runs (the everyday set + triggered groups; `full`: all), suites
+//                         (niced), spec replay, build, spec, also-update nudges, fixed-wait note, leak scan;
+//                         --background: the same, detached, its output in a log under the state dir
+//   wait <branch> [--timeout <s>]  block until the branch's background check ends, then print its digest
+//   full on|off           every check a full run (every integration test) until told otherwise
 //   land <branch>         a green check at this head and master, and no leak-scan hit: the `worktree` merge call to make
 //   landed <branch>       verify its head is in master, build the main checkout, record the restart need; next: the clean up
 //   push                  leak-scan, then `git push origin master`, refused under the hold or if not a fast-forward
@@ -23,7 +29,7 @@
 // A restart is needed when the live server's head (GET /api/health) lacks master's runtime code.
 // Every child runs by argv with no shell, in its own process group, under a timeout.
 import { spawn } from "node:child_process";
-import { accessSync, chmodSync, constants, cpSync, createWriteStream, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, chmodSync, closeSync, constants, cpSync, createWriteStream, existsSync, linkSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -127,6 +133,49 @@ export function hasScript(tree, name) {
 
 /** A step's timeout: the larger of its floor and twice the median of its earlier passing runs. */
 export const timeoutFor = (floorMs, passedMs = []) => Math.max(floorMs, Math.round(2 * median(passedMs)));
+
+/** A duration as people read it: "45s", "3m 20s", "1h 5m". */
+export const durationShown = (ms) => {
+  const s = Math.round(ms / 1000);
+  if (s < 90) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return s % 60 ? `${m}m ${s % 60}s` : `${m}m`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+};
+
+/** The integration step's timings key (§chat.merge-round/check-time): `test-int` for the whole tier, else the group
+ *  set a landing runs, `test-int:core` or `test-int:core+trial`, so no set is ever estimated from another's runs. */
+export const intKey = (plan) => (plan.full ? "test-int" : `test-int:${["core", ...plan.ran].join("+")}`);
+
+/** The groups a check didn't run, as its result names them (§chat.merge-round/driver). */
+export function skippedShown(skipped = []) {
+  const untriggered = skipped.filter((s) => s.why !== "never").map((s) => `${s.title} (no change to its areas)`);
+  const never = skipped.filter((s) => s.why === "never").map((s) => s.title);
+  return [untriggered.length ? `Skipped: ${untriggered.join(", ")}` : null, never.length ? `Not run at landing: ${never.join(", ")}` : null].filter(Boolean);
+}
+
+/**
+ * What a check should take: for each step `{label, key, floorMs, fallbackMs?, times?}`, the median of its earlier
+ * passing runs in `timings` (else `fallbackMs`, the runner's estimate), times `times` (a suite's commands); the limit is
+ * the sum of the steps' timeouts. A step with neither is unknown. → {expectedMs, limitMs, parts, unknown}
+ */
+export function expectedTime(steps, timings) {
+  let expectedMs = 0;
+  let limitMs = 0;
+  const parts = [];
+  const unknown = [];
+  for (const s of steps) {
+    const times = s.times ?? 1;
+    const m = median(timings[s.key] ?? []);
+    const ms = (m || s.fallbackMs || 0) * times;
+    if (ms > 0) {
+      expectedMs += ms;
+      parts.push(`${s.label} ${durationShown(ms)}${m ? "" : " from recorded file times"}`);
+    } else unknown.push(s.label);
+    limitMs += timeoutFor(s.floorMs, timings[s.key]) * times;
+  }
+  return { expectedMs, limitMs, parts, unknown };
+}
 
 /** Text with the home directory written as `~`, so a local path never shows the home path and `~/…`
  *  still resolves (the worktree tool expands it). Its real path too, when the home is a symlink. */
@@ -592,9 +641,12 @@ async function gitOut(cwd, args, what = args[0]) {
 class Round {
   constructor(argv) {
     this.json = argv.includes("--json");
+    this.background = argv.includes("--background");
     const repoAt = argv.indexOf("--repo");
     this.repoArg = repoAt >= 0 ? argv[repoAt + 1] : process.cwd();
-    this.args = argv.filter((a, i) => a !== "--json" && !(repoAt >= 0 && (i === repoAt || i === repoAt + 1)));
+    this.args = argv.filter((a, i) => a !== "--json" && a !== "--background" && !(repoAt >= 0 && (i === repoAt || i === repoAt + 1)));
+    // Lines printed as they happen (the expected time, a rerun's cost), before the digest at the end.
+    this.progress = [];
     this.agent = agentDir();
     this.stateRoot = join(this.agent, "sova");
     this.settingsFile = join(this.stateRoot, "merge-round.json");
@@ -651,6 +703,12 @@ class Round {
 
   event(kind, fields) {
     this.state.events.push({ at: this.now, kind, ...fields });
+  }
+
+  /** A line printed at once, masked as the digest is (with --json it goes in the result's `progress` instead). */
+  say(line) {
+    this.progress.push(line);
+    if (!this.json) process.stdout.write(`${this.mask(homeShown(line))}\n`);
   }
 
   sessionId(required = true) {
@@ -1092,6 +1150,9 @@ class Round {
 
   async check() {
     const { branch, tree, head: before } = await this.branchArg();
+    const extra = this.args.slice(2);
+    if (extra.some((a) => a !== "full")) stop(2, "usage: round.mjs check <branch> [full] [--background]");
+    if (this.background) return this.checkBackground(branch, extra.includes("full"));
     if (!tree) stop(1, `${branch} has no worktree: the round works only in a branch's own worktree.`);
     const { main } = await this.repo();
     const st = this.loadState();
@@ -1123,7 +1184,7 @@ class Round {
           const ab = await git(tree, ["merge", "--abort"], { timeoutMs: 60_000 });
           if (ab.code !== 0) stop(2, `git merge --abort failed in ${tree}: ${firstLine(ab)}`);
           const rec = (st.branches[branch] ??= {});
-          rec.check = { head: before, masterSha: master, ok: false, needs: ["spec conflict with master: handed back"], flaky: [], preexisting: [], at: this.now };
+          rec.check = { head: before, masterSha: master, ok: false, needs: ["spec conflict with master: handed back"], flaky: [], preexisting: [], skipped: [], full: false, at: this.now };
           this.event("check", { branch, head: before, ok: false });
           this.saveState();
           const who = rec.ask?.owner ?? ownerOf(rec)?.owner;
@@ -1177,6 +1238,28 @@ class Round {
       lines.push(`${label}: ${said}, ${Math.round(r.ms / 1000)}s.`);
       return r;
     };
+    // Which integration tests run (§app.server-runtime/test-tiers): the branch's own runner picks the everyday set
+    // plus each slow group its changes trigger; a full run, or a tree with no test groups, runs the whole tier.
+    const intPlan = hasScript(tree, "test:int") ? await this.integrationPlan(tree, master, env, extra.includes("full") || !!st.full?.on) : null;
+    // The extension suites this check runs (their Tests lines), known before any step runs.
+    const nice = join(tree, "scripts", "nice.mjs");
+    const niced = (cmd, args) => (existsSync(nice) ? [process.execPath, [nice, cmd, ...args]] : [cmd, args]);
+    const exts = [...new Set(changed.map((p) => /^pi-config\/extensions\/([^/]+)\//.exec(p)?.[1]).filter(Boolean))].sort();
+    let readme = "";
+    if (exts.length) try { readme = readFileSync(join(tree, "pi-config", "README.md"), "utf8"); } catch {}
+    const replay = changed.some(touchesSpecReplay) && existsSync(join(tree, "pi-config", "extensions", "spec", "tests", "replay", "replay.test.mjs"));
+    // The expected time, first (§chat.merge-round/check-time): the only check duration the captain quotes.
+    const eta = expectedTime([
+      { label: "typecheck", key: "typecheck", floorMs: this.floor("typecheck") },
+      { label: "pnpm test", key: "test", floorMs: this.floor("test") },
+      ...(intPlan ? [{ label: `pnpm test:int (${intPlan.full ? "full run" : ["everyday set", ...intPlan.titles].join(" + ")})`, key: intPlan.key, floorMs: this.floor("test"), fallbackMs: intPlan.estimateMs }] : []),
+      ...exts.map((ext) => ({ label: `pi-config ${ext}`, key: `ext:${ext}`, floorMs: this.floor("ext"), times: suiteOf(readme, ext)?.commands.length ?? 0 })).filter((s) => s.times),
+      ...(replay ? [{ label: "spec replay", key: "spec-replay", floorMs: this.floor("replay") }] : []),
+      { label: "build", key: "build", floorMs: this.floor("build") },
+    ], st.timings);
+    this.say(`Expected: about ${durationShown(eta.expectedMs)} (${eta.parts.join(", ") || "no step timed yet"}${eta.unknown.length ? `; unknown: ${eta.unknown.join(", ")}, never timed` : ""}). Time limit: ${durationShown(eta.limitMs)} (${Math.ceil(eta.limitMs / 1000)} s, the steps' timeouts): in the foreground, give the call a timeout above it. A rerun of a failing file adds its own time, printed before it runs.`);
+    this.backgroundNote({ expectedMs: eta.expectedMs, limitMs: eta.limitMs, startedAt: this.now });
+    if (intPlan?.note) lines.push(intPlan.note);
     const tc = await step("typecheck", "typecheck", "typecheck", this.pnpm, ["run", "typecheck"], tree);
     if (tc.code !== 0) needs.push(tc.timedOut ? "typecheck timed out" : "typecheck fails");
     // The unit tier, then the integration tier (each its own timings, the same floor and rules).
@@ -1217,16 +1300,13 @@ class Round {
       }
     };
     await suite("test", "pnpm test", ["test"]);
-    if (hasScript(tree, "test:int")) await suite("test-int", "pnpm test:int", ["test:int"]);
-    else lines.push("pnpm test:int: skipped (this tree's package.json has no test:int script).");
+    if (intPlan) {
+      await suite(intPlan.key, "pnpm test:int", intPlan.args);
+      lines.push(...(intPlan.full ? ["Integration tests: full run (every group)."] : skippedShown(intPlan.skipped).map((l) => `${l}.`)));
+    } else lines.push("pnpm test:int: skipped (this tree's package.json has no test:int script).");
     // Extension suites at the branch's own lowered priority (scripts/nice.mjs, as pnpm test runs);
     // a tree without it runs them unchanged.
-    const nice = join(tree, "scripts", "nice.mjs");
-    const niced = (cmd, args) => (existsSync(nice) ? [process.execPath, [nice, cmd, ...args]] : [cmd, args]);
-    const exts = [...new Set(changed.map((p) => /^pi-config\/extensions\/([^/]+)\//.exec(p)?.[1]).filter(Boolean))].sort();
     if (exts.length) {
-      let readme = "";
-      try { readme = readFileSync(join(tree, "pi-config", "README.md"), "utf8"); } catch {}
       for (const ext of exts) {
         const suite = suiteOf(readme, ext);
         if (!suite) { lines.push(`pi-config ${ext}: no line in pi-config/README.md's Tests block.`); continue; }
@@ -1276,6 +1356,9 @@ class Round {
     // The area guides' "also update" files: questions for the owner, never a need.
     const nudges = alsoUpdateNudges(changed, areaGuides(tree));
     for (const n of nudges) lines.push(`also update: touched ${n.area} (${n.touched.length} file${n.touched.length === 1 ? "" : "s"}, ${n.guide}), not ${n.missing.join(" or ")}: ask the owner ("updated" or "not needed because …").`);
+    // New fixed waits in the changed tests: a note for the owner, never a need; a tree without the scanner prints nothing.
+    const fixedWaits = await this.fixedWaits(tree, master, env);
+    if (fixedWaits.line) lines.push(fixedWaits.line);
     // What landing would publish, scanned now: a scrubbed or leaky commit is caught before it lands.
     const scan = await this.leakScanTo(head);
     lines.push(...scan.lines);
@@ -1284,18 +1367,148 @@ class Round {
 
     const ok = needs.length === 0;
     const rec = (st.branches[branch] ??= {});
-    rec.check = { head, masterSha: master, ok, needs, flaky, preexisting, at: this.now, logs: logDir };
+    const skipped = intPlan?.full ? [] : (intPlan?.skipped ?? []).map(({ name, title, why }) => ({ name, title, why }));
+    const full = !!intPlan?.full;
+    rec.check = { head, masterSha: master, ok, needs, flaky, preexisting, skipped, full, at: this.now, logs: logDir };
     if (left.length) {
       const who = rec.ask?.owner ?? ownerOf(rec)?.owner;
       lines.push(who ? `Hand-back, session_send to ${who}:` : "Hand-back, for its owner (none known: the user's call):", handBackText(branch, left));
     }
-    this.event("check", { branch, head, ok });
+    this.event("check", { branch, head, ok, skipped, full });
     this.saveState();
     if (preexisting.length) lines.push(`Pre-existing on master (not blocking): ${preexisting.join(", ")}.`);
     if (flaky.length) lines.push(`Flaky (failed in the full run, passed alone; not blocking): ${flaky.join(", ")}.`);
     lines.push(`Logs: ${logDir}`);
     lines.push(ok ? `landable at ${head.slice(0, 7)}` : `needs: ${needs.join("; ")}`);
-    return { exit: ok ? 0 : 1, lines, data: { head, master, ok, needs, flaky, preexisting, alsoUpdate: nudges, logs: logDir }, next: ok ? `round.mjs land ${branch}` : "hand it back to the owner with what it needs (session_send, only when idle)" };
+    return { exit: ok ? 0 : 1, lines, data: { head, master, ok, needs, flaky, preexisting, skipped, full, alsoUpdate: nudges, fixedWaits: fixedWaits.waits, expectedMs: eta.expectedMs, limitMs: eta.limitMs, progress: this.progress, logs: logDir }, next: ok ? `round.mjs land ${branch}` : "hand it back to the owner with what it needs (session_send, only when idle)" };
+  }
+
+  // --- a check in the background, and waiting for its end (§chat.merge-round/check-time) ---------------
+
+  backgroundFile(branch) {
+    return join(this.dir, "background", `${branch.replace(/[^A-Za-z0-9._-]/g, "_")}.json`);
+  }
+  readBackground(file) {
+    try { const r = JSON.parse(readFileSync(file, "utf8")); return r?.v === 1 ? r : null; } catch { return null; }
+  }
+  writeBackground(file, rec) {
+    mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+    const tmp = `${file}.${process.pid}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify(rec)}\n`, { mode: 0o600 });
+    renameSync(tmp, file);
+  }
+  /** In a background check (SOVA_ROUND_BACKGROUND names its record, SOVA_ROUND_BACKGROUND_LOG its log), adds `fields`
+   *  to that record while it is still this run's. */
+  backgroundNote(fields) {
+    const file = process.env.SOVA_ROUND_BACKGROUND;
+    if (!file) return;
+    const rec = this.readBackground(file);
+    if (rec && rec.log === process.env.SOVA_ROUND_BACKGROUND_LOG) this.writeBackground(file, { ...rec, ...fields });
+  }
+
+  /** `check <branch> --background`: the same check, detached, its output in a log; prints the pid, the log and the
+   *  expected time once the check has printed it. One per branch at a time. */
+  async checkBackground(branch, full) {
+    const file = this.backgroundFile(branch);
+    const prev = this.readBackground(file);
+    if (prev && prev.exit === undefined && alive(prev.pid)) stop(1, `A background check of ${branch} is already running (pid ${prev.pid}, started ${ago(this.now - prev.at)} ago; log ${prev.log}).`, `round.mjs wait ${branch}`);
+    const log = join(this.dir, "background", `${new Date(this.now).toISOString().replace(/[:.]/g, "-")}-${branch.replace(/[^A-Za-z0-9._-]/g, "_")}.log`);
+    mkdirSync(dirname(log), { recursive: true, mode: 0o700 });
+    const fd = openSync(log, "w", 0o600);
+    // The record first, so the check finds it (by its log) whenever it writes.
+    this.writeBackground(file, { v: 1, branch, pid: null, log, at: this.now, ...(full ? { full: true } : {}) });
+    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "check", branch, ...(full ? ["full"] : []), "--repo", this.repoArg], { cwd: process.cwd(), env: { ...process.env, SOVA_ROUND_BACKGROUND: file, SOVA_ROUND_BACKGROUND_LOG: log }, detached: true, stdio: ["ignore", fd, fd] });
+    closeSync(fd);
+    if (!child.pid) stop(2, `The background check couldn't start: see ${log}.`);
+    this.writeBackground(file, { ...(this.readBackground(file) ?? {}), v: 1, branch, pid: child.pid, log, at: this.now });
+    child.unref();
+    // The check prints its expected time once master is merged in and its plan read: echoed here when it does.
+    const until = Date.now() + (Number(process.env.SOVA_ROUND_ETA_WAIT_MS) || 120_000);
+    let eta = null;
+    while (Date.now() < until) {
+      try { eta = readFileSync(log, "utf8").split("\n").find((l) => l.startsWith("Expected: ")) ?? null; } catch {}
+      if (eta || this.readBackground(file)?.exit !== undefined || !alive(child.pid)) break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    return {
+      exit: 0,
+      lines: [`Background check of ${branch} started: pid ${child.pid}, log ${log}.`, eta ?? "It hasn't printed its expected time yet: the log will have it (`Expected: …`)."],
+      data: { pid: child.pid, log },
+      next: `wake at the expected time, then round.mjs wait ${branch} (it blocks until the check ends, then prints its digest); quote no other duration`,
+    };
+  }
+
+  /** `wait <branch> [--timeout <s>]`: blocks until the branch's background check ends, then prints its output and exits
+   *  with its exit; at the timeout, exit 1 saying it still runs. No background check: exit 2. */
+  async wait() {
+    const branch = this.args[1];
+    const at = this.args.indexOf("--timeout");
+    const secs = at >= 0 ? Number(this.args[at + 1]) : 20 * 60;
+    if (!branch || branch.startsWith("-") || !(secs > 0) || this.args.length !== (at >= 0 ? 4 : 2)) stop(2, "usage: round.mjs wait <branch> [--timeout <seconds>]");
+    const file = this.backgroundFile(branch);
+    let rec = this.readBackground(file);
+    if (!rec) stop(2, `No background check of ${branch} on record: start one with round.mjs check ${branch} --background.`);
+    const poll = Number(process.env.SOVA_ROUND_WAIT_POLL_MS) || 5000;
+    const until = Date.now() + secs * 1000;
+    while (rec.exit === undefined && alive(rec.pid) && Date.now() < until) {
+      await new Promise((r) => setTimeout(r, Math.min(poll, Math.max(50, until - Date.now()))));
+      rec = this.readBackground(file) ?? rec;
+    }
+    if (rec.exit === undefined && alive(rec.pid)) {
+      const end = rec.expectedMs ? rec.at + rec.expectedMs : null;
+      return { exit: 1, lines: [`The background check of ${branch} still runs (pid ${rec.pid}, started ${ago(Date.now() - rec.at)} ago${end ? `; expected ${end > Date.now() ? `in about ${durationShown(end - Date.now())}` : `${durationShown(Date.now() - end)} ago`}` : ""}).`], next: `round.mjs wait ${branch} again` };
+    }
+    let text = "";
+    try { text = readFileSync(rec.log, "utf8"); } catch {}
+    const lines = text.split("\n").filter(Boolean);
+    if (rec.exit === undefined) return { exit: 2, lines: [`The background check of ${branch} ended without recording its exit (killed?). Its log, ${rec.log}:`, ...lines], next: `round.mjs check ${branch} again` };
+    return { exit: rec.exit, lines: [`The background check of ${branch} ended ${ago(Date.now() - (rec.endedAt ?? Date.now()))} ago (exit ${rec.exit}):`, ...lines] };
+  }
+
+  /** `full on|off`: every check a full run until told otherwise (§chat.merge-round/driver). */
+  async full() {
+    const v = this.args[1];
+    if (this.args.length !== 2 || !["on", "off"].includes(v)) stop(2, "usage: round.mjs full on|off");
+    const st = this.loadState();
+    st.full = { on: v === "on", at: this.now };
+    this.event("full", { on: v === "on" });
+    this.saveState();
+    return { exit: 0, lines: [v === "on" ? "Full runs on: every check runs every integration test, every group included, until `round.mjs full off`." : "Full runs off: checks run the everyday integration set plus the groups each branch triggers."], next: "round.mjs status" };
+  }
+
+  /** The integration step's plan: `{full, key, args, ran, titles, skipped, estimateMs, note?}`. A full run is the whole
+   *  tier; otherwise the tree's own runner says what `--landing` picks (`--plan`), and a tree with no test groups, or a
+   *  plan that can't be read, runs the whole tier and says why. */
+  async integrationPlan(tree, master, env, full) {
+    const whole = (note) => ({ full: true, key: "test-int", args: ["test:int"], ran: [], titles: [], skipped: [], estimateMs: 0, ...(note ? { note } : {}) });
+    if (full) return whole();
+    if (!existsSync(join(tree, "scripts", "test-groups.mjs"))) return whole("Integration tests: the whole tier (this tree has no scripts/test-groups.mjs).");
+    const p = await run(this.pnpm, ["exec", "node", "scripts/run-tests.mjs", "--integration", "--landing", "--base", master, "--plan"], { cwd: tree, env, timeoutMs: 120_000 });
+    let plan = null;
+    try { plan = JSON.parse(p.stdout.trim().split("\n").filter((l) => l.startsWith("{")).at(-1) ?? ""); } catch {}
+    if (p.code !== 0 || plan?.v !== 1 || !Array.isArray(plan.ran) || !Array.isArray(plan.skipped)) return whole(`Integration tests: the whole tier (the runner's --plan couldn't be read: ${p.timedOut ? "timed out" : `exit ${p.code}`}).`);
+    const ran = plan.ran.filter((n) => typeof n === "string");
+    const titleOf = (n) => [...(Array.isArray(plan.groups) ? plan.groups : []), ...plan.skipped].find((g) => g?.name === n && typeof g.title === "string")?.title ?? n;
+    return {
+      full: false, key: intKey({ ran }), args: ["test:int", "--", "--landing", "--base", master], ran,
+      titles: ran.map(titleOf), estimateMs: Number.isFinite(plan.estimateMs) ? plan.estimateMs : 0,
+      skipped: plan.skipped.filter((s) => typeof s?.name === "string" && !ran.includes(s.name)).map((s) => ({ name: s.name, title: typeof s.title === "string" ? s.title : s.name, why: s.why === "never" ? "never" : "untriggered" })),
+    };
+  }
+
+  /** New fixed waits over 2 s in the changed tests, from the branch tree's `scripts/fixed-wait-scan.mjs` when it has one
+   *  (feature-detected; never a need). → {waits: [...] | null, line?} */
+  async fixedWaits(tree, master, env) {
+    const scanner = join(tree, "scripts", "fixed-wait-scan.mjs");
+    if (!existsSync(scanner)) return { waits: null };
+    const r = await run(process.execPath, [scanner, "--base", master, "--json"], { cwd: tree, env, timeoutMs: 60_000 });
+    let waits = null;
+    try { waits = JSON.parse(r.stdout).waits; } catch {}
+    if (!Array.isArray(waits)) return { waits: null, line: "fixed waits: the scan couldn't run (not blocking)." };
+    const big = waits.filter((w) => typeof w?.file === "string" && Number(w.ms) > 2000);
+    if (!big.length) return { waits: big };
+    const shown = big.slice(0, 5).map((w) => `${w.file}:${w.line} (${Math.round(Number(w.ms) / 100) / 10} s)`).join(", ");
+    return { waits: big, line: `fixed waits: ${big.length} new fixed wait${big.length === 1 ? "" : "s"} over 2 s in changed tests: ${shown}${big.length > 5 ? `, +${big.length - 5} more` : ""}. Ask the owner to wait on a condition instead (not blocking).` };
   }
 
   /** Each file that failed in the branch's full run, run again on its own in the branch's worktree, through the
@@ -1304,11 +1517,25 @@ class Round {
     const out = {};
     const runtime = env.SOVA_RUNTIME?.trim() === "node" ? "node" : "bun";
     for (const file of files) {
-      const r = await run(this.pnpm, ["exec", "node", "scripts/run-tests.mjs", "--runtime", runtime, file], { cwd: tree, env, timeoutMs: timeoutFor(this.floor("master"), st.timings.master) });
+      const timeoutMs = timeoutFor(this.floor("master"), st.timings.master);
+      this.say(`Rerunning ${file} on its own: ${this.addsShown(tree, file, timeoutMs)}; if it fails again it runs on master too, adding as much again.`);
+      const r = await run(this.pnpm, ["exec", "node", "scripts/run-tests.mjs", "--runtime", runtime, file], { cwd: tree, env, timeoutMs });
       // 2 is the runner's own refusal (no bun, bad usage): nothing ran.
       out[file] = r.timedOut ? "timed out alone" : r.code === 2 ? `the test runner couldn't run it alone (${runtime})` : r.code === 0 ? "passes" : "fails";
     }
     return out;
+  }
+
+  /** What one run of a test file adds to the check (§chat.merge-round/check-time): its recorded time in `tree`'s
+   *  durations file for its tier, else unknown; with the run's limit. */
+  addsShown(tree, file, timeoutMs) {
+    let ms = null;
+    try {
+      const d = JSON.parse(readFileSync(join(tree, ".cache", file.endsWith(".integration.test.ts") ? "test-durations-integration.json" : "test-durations.json"), "utf8"));
+      const v = d?.v === 1 ? d.files?.[file]?.ms : null;
+      if (Number.isFinite(v)) ms = v;
+    } catch {}
+    return `${ms === null ? "adds an unknown time (none recorded)" : `adds about ${durationShown(ms)}`}, at most ${durationShown(timeoutMs)}`;
   }
 
   /** Each file that also fails alone run again on master, in the main checkout at master's sha, through the same
@@ -1325,7 +1552,9 @@ class Round {
       if (mainHead !== master) { out[file] = "can't tell: the main checkout isn't at master"; continue; }
       if ((await gitOut(main, ["status", "--porcelain", "--", file], "status")) !== "") { out[file] = "can't tell: it's dirty in the main checkout"; continue; }
       const runtime = env.SOVA_RUNTIME?.trim() === "node" ? "node" : "bun";
-      const r = await run(this.pnpm, ["exec", "node", "scripts/run-tests.mjs", "--runtime", runtime, file], { cwd: main, env, timeoutMs: timeoutFor(this.floor("master"), st.timings.master) });
+      const timeoutMs = timeoutFor(this.floor("master"), st.timings.master);
+      this.say(`Running ${file} on master: ${this.addsShown(main, file, timeoutMs)}.`);
+      const r = await run(this.pnpm, ["exec", "node", "scripts/run-tests.mjs", "--runtime", runtime, file], { cwd: main, env, timeoutMs });
       if (r.timedOut) { out[file] = "can't tell: it timed out on master"; continue; }
       // 2 is the runner's own refusal (no bun, bad usage): nothing ran.
       if (r.code === 2) { out[file] = `can't tell: the test runner couldn't run it on master (${runtime})`; continue; }
@@ -1588,7 +1817,9 @@ class Round {
     const refused = of("push-refused").at(-1);
     lines.push(`- Push: ${sess.hold ? "held (the user hasn't answered the start interview)" : pushed ? `pushed to ${pushed.to.slice(0, 7)}` : refused ? `refused: ${refused.why}` : "nothing pushed"}`);
     const checks = of("check");
-    lines.push(`- Checks: ${checks.map((e) => `${e.branch} ${e.ok ? "landable" : `needs: ${st.branches[e.branch]?.check?.needs?.join("; ") ?? "?"}`}`).join(" · ") || "none run"}`);
+    // What each check didn't run, or that it ran everything (§chat.merge-round/round).
+    const ran = (e) => (e.full ? " (full run)" : e.skipped?.length ? ` (${skippedShown(e.skipped).join("; ")})` : "");
+    lines.push(`- Checks: ${checks.map((e) => `${e.branch} ${e.ok ? "landable" : `needs: ${st.branches[e.branch]?.check?.needs?.join("; ") ?? "?"}`}${ran(e)}`).join(" · ") || "none run"}`);
     const rc = of("restart-check").at(-1);
     lines.push(`- Restart: ${st.restart?.pending ? `pending (${(st.restart.merges ?? []).map((m) => m.branch).join(", ") || `the server runs ${String(st.restart.serverHead ?? "?").slice(0, 7)}`})${rc ? ", checked" : ", not checked"}` : st.restart?.confirmedAt >= since ? "done and confirmed" : "none needed"}`);
     // Branches with no live owner reach the user once per branch and head (§chat.merge-round/round).
@@ -1612,7 +1843,13 @@ class Round {
   }
 }
 
-const COMMANDS = { start: "start", "names-answered": "namesAnswered", status: "status", note: "note", go: "go", ask: "ask", check: "check", land: "land", landed: "landed", push: "push", "restart-check": "restartCheck", report: "report" };
+const COMMANDS = { start: "start", "names-answered": "namesAnswered", status: "status", note: "note", go: "go", ask: "ask", check: "check", wait: "wait", full: "full", land: "land", landed: "landed", push: "push", "restart-check": "restartCheck", report: "report" };
+
+/** Whether a process lives (one we may not signal still does). */
+function alive(pid) {
+  if (!Number.isInteger(pid) || pid <= 1) return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return e?.code === "EPERM"; }
+}
 
 export async function main(argv = process.argv.slice(2)) {
   let round;
@@ -1631,6 +1868,8 @@ export async function main(argv = process.argv.slice(2)) {
     ? JSON.stringify({ command: round.args[0] ?? null, exit: result.exit, lines: result.lines, ...(result.data ?? {}), next: next ?? null })
     : [...result.lines, ...(next ? [`next: ${next}`] : [])].join("\n");
   process.stdout.write(`${mask(homeShown(text))}\n`);
+  // A background check records its exit once its whole digest is in the log (`wait` reads both).
+  if (round?.args[0] === "check" && !round.background) round.backgroundNote({ exit: result.exit, endedAt: Date.now() });
   return result.exit;
 }
 

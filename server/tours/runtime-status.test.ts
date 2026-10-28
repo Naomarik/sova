@@ -55,7 +55,9 @@ test("a job already waiting on the user doesn't make status answer at once again
 });
 
 test("status answers as soon as the job changes, not at the end of its wait", async () => {
-  const f = setup(20_000);
+  // A 2 s wait: the first call below waits it out (queued → dry-run is an internal step, no change),
+  // and the change comes 100 ms into the second, well inside it.
+  const f = setup(2_000);
   try {
     f.runtime.approvals.approve("https://example.test");
     const dry = await f.runtime.dryRun(f.caller, tourScriptFixture(), "tour-demo");
@@ -64,7 +66,7 @@ test("status answers as soon as the job changes, not at the end of its wait", as
     setTimeout(() => f.release(), 100);
     const [done, waited] = await timed(f.runtime.status(f.caller, dry.job.id));
     assert.equal(done.job.phase, "checking", "the answer is the changed job");
-    assert.ok(waited >= 60 && waited < 5000, `answered on the change after ${waited} ms`);
+    assert.ok(waited >= 60 && waited < 1_900, `answered on the change after ${waited} ms`);
     // Resting where only the agent can move it: answers at once.
     const [rest, quick] = await timed(f.runtime.status(f.caller, dry.job.id));
     assert.equal(rest.job.phase, "checking");

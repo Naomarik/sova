@@ -13,7 +13,7 @@ import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact"
 import { logAction, NOTES_MAX, readNotes, writeNotes } from "./overseer-store";
 import { addTodo, readTodos, removeTodo, TodoError, updateTodo } from "./overseer-todos";
 import { renderTranscript, sessionRef } from "./session-guards";
-import { ALREADY_AGREED_PARAM, alignDropRefusal, alreadyAgreedOf, confirmBriefWords, describeCodingMode, profileName, type ModeRequest } from "./project-coding-mode";
+import { ALREADY_AGREED_PARAM, alignDropRefusal, alreadyAgreedOf, confirmBriefWords, describeCodingMode, overseerStartMode, profileName, type ModeRequest } from "./project-coding-mode";
 import { OrgError } from "./org-error";
 import { statechartInfo, statechartVersions } from "./statecharts";
 import type { ProjectOverseerPaths } from "./project-overseer-store";
@@ -743,7 +743,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       // Its card reads the recorded result (EAGER_TOOLS): never a codemode script's call.
       exposure: "model-only",
       description:
-        "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, its first turn (with align on) asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
+        "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, align is turned on in its mode (whatever minor_modes says) and its first turn asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
       promptSnippet: "start a coding session in the project with a first prompt",
       parameters: obj(
         {
@@ -776,17 +776,19 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         const gap = gaps ? gapOf(q) : undefined;
         const decisions = gaps && Array.isArray(q.decisions) ? q.decisions.map(String) : undefined;
         const alreadyAgreed = alreadyAgreedOf(q.already_agreed);
-        const made = await host.createCoding({ cwd, prompt: q.prompt, mode: m.mode, ...(alreadyAgreed ? { alreadyAgreed } : {}), ...(gap ? { gap } : {}), ...(decisions?.length ? { decisions } : {}), ...(q.title ? { title: String(q.title) } : {}), ...(q.model ? { model: String(q.model) } : {}), ...(q.thinking ? { thinking: String(q.thinking) } : {}) });
+        // Not already agreed: align on, so the operator answers the confirm question (§app.project-overseer/confirm-brief).
+        const runs = overseerStartMode(m.mode, alreadyAgreed);
+        const made = await host.createCoding({ cwd, prompt: q.prompt, mode: runs, ...(alreadyAgreed ? { alreadyAgreed } : {}), ...(gap ? { gap } : {}), ...(decisions?.length ? { decisions } : {}), ...(q.title ? { title: String(q.title) } : {}), ...(q.model ? { model: String(q.model) } : {}), ...(q.thinking ? { thinking: String(q.thinking) } : {}) });
         if (made.held) return { content: text(heldText(`starting the coding session "${q.title ? String(q.title) : cut(q.prompt, 60)}"`, made.held)), details: { held: made.held.id } };
         const where = made.worktree ? `its worktree ${made.worktree.path} on ${made.worktree.branch}` : `the project root ${made.cwd} (${made.note ?? "no worktree"})`;
         const note = made.worktree ? `On ${made.worktree.branch}.` : `In the project root: ${made.note ?? "no worktree."}`;
         const said = link({ id: made.id, title: q.title ? String(q.title) : cut(q.prompt, 60) });
         // Created and listed, but its first prompt was never sent: a failure the model must see.
         if (made.notPrompted) throw new Error(`${made.notPrompted} ${said} is in ${where}; send the prompt with sova_send once its mode is set.`);
-        const profile = profileName(host.subagentProfiles(), m.mode.subagentProfile);
+        const profile = profileName(host.subagentProfiles(), runs.subagentProfile);
         return {
-          content: text(`Started ${said} in ${where}, mode ${describeCodingMode(m.mode)}${profile ? `, subagent profile ${profile}` : ""}.${confirmBriefWords(!!made.confirmBrief, alreadyAgreed)}`),
-          details: { ...made, mode: m.mode, note },
+          content: text(`Started ${said} in ${where}, mode ${describeCodingMode(runs)}${profile ? `, subagent profile ${profile}` : ""}.${confirmBriefWords(!!made.confirmBrief, alreadyAgreed)}`),
+          details: { ...made, mode: runs, note },
         };
       }),
     },

@@ -546,12 +546,28 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const agreedRow = readBuilds(project.id).find((r) => r.sessionId === (agreed.details as { session: string }).session)!;
     assert.equal(agreedRow.confirmBrief, undefined);
     assert.equal(await firstPrompt(agreedRow.path!), "Add a JSON export");
-    // Align off in the session: nothing to ask with, so the brief goes as given.
+    /** The minor modes its runtime runs with: the newest mode entry on its branch. */
+    const minorModesOf = async (path: string): Promise<string[] | undefined> =>
+      (piSession(await acquireChat(path)).sessionManager.getBranch() as { type: string; customType?: string; data?: { active?: { minorModes: string[] } } }[])
+        .filter((e) => e.type === "custom" && e.customType === "mode" && e.data?.active)
+        .at(-1)
+        ?.data?.active?.minorModes;
+    assert.deepEqual([...((await minorModesOf(agreedRow.path!)) ?? [])].sort(), ["align", "spec"]);
+    // Align left out, not already agreed: align is turned on anyway, and it asks the operator first (never the Overseer's call).
     const off = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "Add an XML export", title: "XML export", minor_modes: ["spec"] });
     assert.ok(off.ok, off.text);
-    assert.doesNotMatch(off.text, /confirm the brief|already agreed/);
+    assert.match(off.text, /, mode normal · align · spec\b.* It first asks the operator to confirm the brief\.$/);
     const offRow = readBuilds(project.id).find((r) => r.sessionId === (off.details as { session: string }).session)!;
-    assert.equal(await firstPrompt(offRow.path!), "Add an XML export");
+    assert.equal(offRow.confirmBrief, true);
+    assert.equal(await firstPrompt(offRow.path!), `Add an XML export\n\n${CONFIRM_BRIEF_PARAGRAPH}`);
+    assert.deepEqual([...((await minorModesOf(offRow.path!)) ?? [])].sort(), ["align", "spec"], "it runs with align on");
+    // Already agreed with align left out: the mode as given, the brief as given.
+    const agreedOff = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "Add a CSV export", title: "CSV export", minor_modes: ["spec"], already_agreed: true });
+    assert.ok(agreedOff.ok, agreedOff.text);
+    assert.match(agreedOff.text, /, mode normal · spec\b.* Started as already agreed\.$/);
+    const agreedOffRow = readBuilds(project.id).find((r) => r.sessionId === (agreedOff.details as { session: string }).session)!;
+    assert.equal(await firstPrompt(agreedOffRow.path!), "Add a CSV export");
+    assert.deepEqual(await minorModesOf(agreedOffRow.path!), ["spec"]);
 
     // Its first turn opens the one question (as the align tool records it), then waits.
     await disposeHeldChat(row.path!, "test: the confirm question");
@@ -583,6 +599,11 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
       () => runPo("sova_send", { session: id, text: "Yes." }),
       /PDF export is waiting on the operator's answers to its alignment questions\. Tell the operator; never answer them\. Nothing was sent\./,
     );
+    // Nor can either switch align off while it waits: the questions would leave Needs you unanswered.
+    await assert.rejects(() => runPo("sova_send", { session: id, text: "Carry on.", minor_modes: ["spec"] }), /align stays on until they answer\. Nothing was sent\./);
+    const setOff = await call("sova_set_session", { session: id, minor_modes: ["spec"] });
+    assert.equal(setOff.ok, false);
+    assert.match(setOff.text, /align stays on until they answer\. Nothing was changed\./);
     assert.equal((await userTexts(row.path!)).length, sentBefore, "nothing reached it");
     // A session started as already agreed is no such session: the guard lets the Overseer's message through, as before.
     assert.equal(await po.operatorAnswersWaitingFor(agreedRow.sessionId), null);

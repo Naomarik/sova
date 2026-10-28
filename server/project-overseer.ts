@@ -1057,9 +1057,11 @@ async function startCodingSession(
   // Unnamed: this computer's default, read now and pinned at start (§app.project-overseer/coding-mode).
   const base = input.mode ?? hostDefaultMode();
   // A verb playbook's run asks the operator through align (§app.project-runtime/verb-playbooks).
-  const mode = PLAYBOOK_RUN_KINDS.includes(input.kind) ? playbookRunMode(base) : base;
-  // An Overseer's start, unless the operator already agreed: the confirm paragraph after the brief, as the commit paragraph.
-  const asked = input.overseerBrief && !PLAYBOOK_RUN_KINDS.includes(input.kind) ? confirmBriefPrompt(brief, mode, input.overseerBrief.alreadyAgreed) : { prompt: brief, confirm: false };
+  const runMode = PLAYBOOK_RUN_KINDS.includes(input.kind) ? playbookRunMode(base) : base;
+  // An Overseer's start, unless the operator already agreed: align on in its mode, whatever minor modes it named, and
+  // the confirm paragraph after the brief, as the commit paragraph (§app.project-overseer/confirm-brief).
+  const asked = input.overseerBrief && !PLAYBOOK_RUN_KINDS.includes(input.kind) ? confirmBriefPrompt(brief, runMode, input.overseerBrief.alreadyAgreed) : { prompt: brief, mode: runMode, confirm: false };
+  const mode = asked.mode;
   const prompt = asked.prompt;
   const sessionId = newBuildSessionId();
   const title = input.title?.trim() ? cleanSessionTitle(input.title) : null;

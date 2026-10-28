@@ -134,16 +134,22 @@ test("a verb playbook's run gets align beside its base (this computer's default)
   assert.ok(!PLAYBOOK_RUN_KINDS.includes("coding") && !PLAYBOOK_RUN_KINDS.includes("operator-coding"));
 });
 
-test("§app.project-overseer/confirm-brief: an Overseer's brief gets the confirm paragraph unless agreed, and only with align on", () => {
-  const on = { minorModes: ["align", "spec"] as const };
-  const asked = confirmBriefPrompt("Build the login page", { minorModes: [...on.minorModes] }, false);
-  assert.deepEqual(asked, { prompt: `Build the login page\n\n${CONFIRM_BRIEF_PARAGRAPH}`, confirm: true });
+test("§app.project-overseer/confirm-brief: an Overseer's brief gets the confirm paragraph and align on unless agreed", () => {
+  const on = { mode: "normal" as const, minorModes: ["align", "spec"] };
+  const asked = confirmBriefPrompt("Build the login page", on, false);
+  assert.deepEqual(asked, { prompt: `Build the login page\n\n${CONFIRM_BRIEF_PARAGRAPH}`, mode: on, confirm: true });
   // The paragraph asks for exactly the one question the claim names, before any plan.
   for (const words of ['topic "What to build"', '"Is this what you want built?"', '"Yes, as restated"', "what it won't touch", "Before any plan, investigation or edit", "end your turn"])
     assert.ok(CONFIRM_BRIEF_PARAGRAPH.includes(words), words);
   assert.equal(asksToConfirmBrief(asked.prompt), true, "found in the recorded prompt");
-  assert.deepEqual(confirmBriefPrompt("Build the login page", { minorModes: ["align", "spec"] }, true), { prompt: "Build the login page", confirm: false }, "already agreed: the brief as given");
-  assert.deepEqual(confirmBriefPrompt("Build the login page", { minorModes: ["spec"] }, false), { prompt: "Build the login page", confirm: false }, "align off: nothing to ask with");
+  assert.deepEqual(confirmBriefPrompt("Build the login page", on, true), { prompt: "Build the login page", mode: on, confirm: false }, "already agreed: the brief as given");
+  // Align left out by the Overseer: turned on anyway (spec stays, never twice), and the session still asks first.
+  const off = confirmBriefPrompt("Build the login page", { mode: "delegate", minorModes: ["spec"], subagentProfile: "house" }, false);
+  assert.equal(off.confirm, true, "align off asked: still asks the operator");
+  assert.equal(off.prompt, `Build the login page\n\n${CONFIRM_BRIEF_PARAGRAPH}`);
+  assert.deepEqual({ ...off.mode, minorModes: [...off.mode.minorModes].sort() }, { mode: "delegate", minorModes: ["align", "spec"], subagentProfile: "house" });
+  // Already agreed: the mode as given, align off included.
+  assert.deepEqual(confirmBriefPrompt("Build the login page", { mode: "normal", minorModes: ["spec"] }, true), { prompt: "Build the login page", mode: { mode: "normal", minorModes: ["spec"] }, confirm: false });
   assert.equal(asksToConfirmBrief("Build the login page"), false);
   assert.equal(asksToConfirmBrief(undefined), false);
   assert.equal(confirmBriefWords(true, false), " It first asks the operator to confirm the brief.");

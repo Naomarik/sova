@@ -44,3 +44,20 @@
 /* An earlier revision of a follow card: one line, opening to the card as it was. */
 .transcript-card-revision .disclosure-preview { flex: none; }
 .transcript-card-revision .disclosure-body { padding: var(--space-2) 0 0; white-space: normal; color: inherit; }
+
+/* A view card's sealed box (components/CardView.tsx): the frame in the card's place, sized by what it draws. */
+.card-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.card-view-box {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color-scheme: normal;
+}
+.transcript-card-view-elsewhere {
+  font-size: var(--fs-caption);
+}

@@ -13,7 +13,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 491 |
+| Routes registered | 494 |
 | Routes a catalogue entry points at | 125 |
 | Catalogue entries | 156 |
 | Class: Peer protocol | 38 |
@@ -25,6 +25,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Test only | 0 |
 | Class: Pages and assets | 7 |
 | Class: Trust grants | 4 |
+| Class: A card view's own calls | 3 |
 | Class: Middleware and fallbacks | 2 |
 | Pending (not yet a command) | 304 |
 | Chat socket frame types | 12 |
@@ -626,6 +627,16 @@ Approving what a project's files may make Sova do (an offers file's run buttons,
 | `PUT /api/projects/:pid/services/limit` | admin |
 | `POST /api/projects/:pid/settings/apply` | admin |
 | `POST /api/session-cards/trust` | admin |
+
+### A card view's own calls (3)
+
+What a transcript card's sealed view asks through its box, for its own card only (§chat.transcript-cards/view-api): its built code, the state Sova keeps for it, and a catalogue command run as the card (which records the command itself). The box's plumbing, from the page: never an action of its own.
+
+| Route | Mesh need |
+| --- | --- |
+| `POST /api/session-cards/run` | admin |
+| `POST /api/session-cards/state` | admin |
+| `GET /api/session-cards/view` | sessions |
 
 ### Middleware and fallbacks (2)
 

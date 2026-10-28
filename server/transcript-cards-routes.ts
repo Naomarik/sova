@@ -6,7 +6,13 @@ import { callerKeys, CALLER_HEADER } from "./caller-keys";
 import { OrgError } from "./org-error";
 import { resolveSessionPath } from "./paths";
 import { readProject } from "./projects/spaces";
-import { answerCard, CardRefusal, projectCards, raiseCard, sessionCardsAt, setCardsTrusted } from "./transcript-cards";
+import { answerCard, CardRefusal, projectCards, raiseCard, runCardCommand, sessionCardsAt, sessionCardType, setCardState, setCardsTrusted } from "./transcript-cards";
+import { viewCode } from "./card-views";
+import { commandAudit } from "./command-audit";
+import { CARD_NAME_RE, needsUpdatingText, TOOLKIT_VERSION } from "../shared/transcript-cards";
+
+/** How long the page's wait for a view's next build is held open. */
+const VIEW_WAIT_MS = 25_000;
 
 /**
  * Transcript cards' routes (§chat/transcript-cards). A session's cards (session.card.get), raising
@@ -76,6 +82,53 @@ async function callerOf(c: Context): Promise<{ raiser: CardRaiser; name: string;
 }
 
 export function registerTranscriptCardRoutes(app: Hono<any>): void {
+  // A view card's built code (§chat.transcript-cards/building), from the chat's own checkout: at
+  // once, or with `have` (the build the page has) and `wait`, once a save changes it
+  // (§chat.transcript-cards/redraw). A view built for another toolkit never builds
+  // (§chat.transcript-cards/versions). Its type comes from the session's snapshot: only the view
+  // code is fresh, never its declaration.
+  app.get(
+    "/api/session-cards/view",
+    handle(async (c) => {
+      const path = sessionPath(c.req.query("path"));
+      const { decl, checkout } = await sessionCardType(path, c.req.query("type"));
+      const name = decl.type.slice("project.".length);
+      if (decl.draws !== "view" || !decl.type.startsWith("project.") || !CARD_NAME_RE.test(name)) throw new CardRefusal(`${decl.type} isn't a project's view.`, 400);
+      if (decl.toolkit !== TOOLKIT_VERSION) return c.json({ ok: false, hash: `toolkit-${decl.toolkit}`, error: needsUpdatingText(decl.toolkit ?? 0), outdated: true }, 200, NO_STORE);
+      if (!checkout) return c.json({ ok: false, hash: "no-checkout", error: "This chat has no checkout to build its view from." }, 200, NO_STORE);
+      const have = c.req.query("have") || null;
+      const build = await viewCode(checkout, name, have, c.req.query("wait") === "1" ? VIEW_WAIT_MS : 0, c.req.raw.signal);
+      return c.json(build, 200, NO_STORE);
+    }),
+  );
+  // The state Sova keeps for a view's card (§chat.transcript-cards/view-api, "Keep state").
+  app.post(
+    "/api/session-cards/state",
+    handle(async (c) => {
+      const b = await body(c);
+      const path = sessionPath(b.path);
+      await setCardState(path, b.card, b.state === undefined ? null : b.state);
+      return c.json({ ok: true }, 200, NO_STORE);
+    }),
+  );
+  // A view's command (§chat.transcript-cards/view-api, "Run any of Sova's commands"): the page's, for
+  // its card's view, on this machine's own door only; one that changes something once the card's
+  // project is trusted. Recorded as run by `card:<type>`.
+  app.post(
+    "/api/session-cards/run",
+    handle(async (c) => {
+      if ((c.env as { meshPeer?: unknown } | undefined)?.meshPeer) throw new CardRefusal("A card's commands run only from this machine's own page.", 403);
+      if (c.req.header(TOKEN_HEADER) !== undefined) throw new CardRefusal("Only a card's view in the page runs commands as the card.", 403);
+      const b = await body(c);
+      const path = sessionPath(b.path);
+      await notInTerminal(path);
+      const type = (await sessionCardsAt(path)).cards.find((x) => x.id === b.card)?.type ?? "unknown";
+      const run = await runCardCommand(path, b.card, b.command, b.params, (row) =>
+        commandAudit.note({ at: new Date().toISOString(), caller: `card:${type}`, command: row.command, method: row.method, route: row.route, status: row.status }),
+      );
+      return c.json(run, 200, NO_STORE);
+    }),
+  );
   app.get(
     "/api/session-cards",
     handle(async (c) => c.json((await sessionCardsAt(sessionPath(c.req.query("path")))) satisfies SessionCardsAnswer, 200, NO_STORE)),

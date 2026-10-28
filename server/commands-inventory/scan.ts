@@ -82,6 +82,12 @@ export const ROUTE_CLASSES: readonly RouteClass[] = [
     matches: (m, p) => (m === "POST" && (p === "/api/projects/:pid/offers/approve" || p === "/api/projects/:pid/settings/apply" || p === "/api/session-cards/trust")) || (m === "PUT" && p === "/api/projects/:pid/services/limit"),
   },
   {
+    id: "card-box",
+    label: "A card view's own calls",
+    why: "What a transcript card's sealed view asks through its box, for its own card only (§chat.transcript-cards/view-api): its built code, the state Sova keeps for it, and a catalogue command run as the card (which records the command itself). The box's plumbing, from the page: never an action of its own.",
+    matches: (m, p) => (m === "GET" && p === "/api/session-cards/view") || (m === "POST" && (p === "/api/session-cards/state" || p === "/api/session-cards/run")),
+  },
+  {
     id: "middleware",
     label: "Middleware and fallbacks",
     why: "`app.use` gates and the `/api` not-found answer: they run around routes, they are not routes.",

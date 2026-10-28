@@ -199,8 +199,12 @@ export function TableDataCard(props: { card: TableCard }) {
   );
 }
 
-/** The buttons card: a title, an optional note and 1 to 4 buttons, each with its confirm step, as an offer card's. */
-export function ButtonsDataCard(props: { card: ButtonsCard; answer?: DataCardAnswer }) {
+/**
+ * The buttons card: a title, an optional note and 1 to 4 buttons, each with its confirm step, as an
+ * offer card's. Once answered it keeps no buttons, as Sova's own confirm cards: the card's answer
+ * line ("You chose …", components/TranscriptCard.tsx) says what was pressed.
+ */
+export function ButtonsDataCard(props: { card: ButtonsCard; answer?: DataCardAnswer; answered?: boolean }) {
   const titleId = `data-card-${++seq}`;
   return (
     <section class="card overseer-card data-card data-card-buttons" aria-labelledby={titleId}>
@@ -214,14 +218,16 @@ export function ButtonsDataCard(props: { card: ButtonsCard; answer?: DataCardAns
           <Inline text={props.card.note ?? ""} />
         </div>
       </Show>
-      <div class="card-foot overseer-card-foot">
-        <Show
-          when={props.answer?.press}
-          fallback={<span class="overseer-confirm-hint">Waiting for an answer: {props.card.buttons.map((b) => b.label).join(" · ")}.</span>}
-        >
-          {(press) => <ButtonSet buttons={props.card.buttons} canAct={() => props.answer?.canAct?.() ?? true} press={(i) => press()(i)} label={props.card.title} />}
-        </Show>
-      </div>
+      <Show when={!props.answered}>
+        <div class="card-foot overseer-card-foot">
+          <Show
+            when={props.answer?.press}
+            fallback={<span class="overseer-confirm-hint">Waiting for an answer: {props.card.buttons.map((b) => b.label).join(" · ")}.</span>}
+          >
+            {(press) => <ButtonSet buttons={props.card.buttons} canAct={() => props.answer?.canAct?.() ?? true} press={(i) => press()(i)} label={props.card.title} />}
+          </Show>
+        </div>
+      </Show>
     </section>
   );
 }
@@ -231,7 +237,7 @@ export function ButtonsDataCard(props: { card: ButtonsCard; answer?: DataCardAns
  * throws, naming the field, so the card's own error box draws (components/TranscriptKind.tsx)
  * and never half a card.
  */
-export function DataCard(props: { draws: DataCardKind; data: unknown; id?: string; answer?: DataCardAnswer }) {
+export function DataCard(props: { draws: DataCardKind; data: unknown; id?: string; answer?: DataCardAnswer; answered?: boolean }) {
   const checked = createMemo(() => checkCardData(props.draws, props.data));
   const data = <K extends DataCardKind>(kind: K) => {
     const c = checked();
@@ -244,7 +250,7 @@ export function DataCard(props: { draws: DataCardKind; data: unknown; id?: strin
       <Match when={data("checklist")}>{(card) => <ChecklistDataCard card={card()} answer={props.answer} />}</Match>
       <Match when={data("status")}>{(card) => <StatusDataCard card={card()} />}</Match>
       <Match when={data("table")}>{(card) => <TableDataCard card={card()} />}</Match>
-      <Match when={data("buttons")}>{(card) => <ButtonsDataCard card={card()} answer={props.answer} />}</Match>
+      <Match when={data("buttons")}>{(card) => <ButtonsDataCard card={card()} answer={props.answer} answered={props.answered} />}</Match>
     </Switch>
   );
 }

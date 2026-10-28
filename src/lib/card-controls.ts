@@ -1,7 +1,7 @@
 import { createContext, createSignal, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import type { CardAnswerValue, CardInfo, SessionCardsAnswer } from "../../shared/transcript-cards";
-import { answerSessionCard, ApiError, getSessionCards, setCardTrust } from "./api";
+import type { CardAnswerValue, CardDecl, CardInfo, SessionCardsAnswer } from "../../shared/transcript-cards";
+import { answerSessionCard, ApiError, getSessionCards, setCardTrust, setSessionCardState } from "./api";
 import { cardPicksOf, clearCardPicks, liveCardPicks, pickCard, type CardPick, type CardPicks } from "./card-picks";
 import { toast } from "./ui-state";
 
@@ -45,14 +45,31 @@ export interface CardControls {
   sent(picks: CardPicks): void;
   clearPicks(): void;
   refresh(): void;
+  /** The session's snapshot type of a card (a view's declared shape and height). */
+  type(name: string): CardDecl | undefined;
+  /** The session's file, id and title, for a view's own reads. */
+  session(): { path: string; id: string; title: string };
+  /** The state Sova keeps for a view's card, and keeping a new one (saved, then kept here). */
+  viewState(id: string): unknown;
+  setViewState(id: string, value: unknown): Promise<void>;
+  /** Put text at the end of the chat's draft (§chat.transcript-cards/view-api, "Stage text"). */
+  stage(text: string): void;
+  /** An at-once answer a view gives, recorded now: the card as it then stands, or the refusal. */
+  answerNow(card: CardInfo, value: CardAnswerValue): Promise<CardInfo>;
+}
+
+/** What the chat lends its cards: where staged text goes, and the session's id and title. */
+export interface CardChat {
+  stage?(text: string): void;
+  session?(): { id: string; title: string };
 }
 
 export const CardContext = createContext<CardControls | undefined>(undefined);
 
 const POLL_MS = 20_000;
 
-export function createCardControls(path: () => string, canAct: () => boolean): CardControls {
-  const [state, setState] = createStore<{ cards: CardInfo[] }>({ cards: [] });
+export function createCardControls(path: () => string, canAct: () => boolean, chat: CardChat = {}): CardControls {
+  const [state, setState] = createStore<{ cards: CardInfo[]; types: CardDecl[]; states: Record<string, unknown> }>({ cards: [], types: [], states: {} });
   const [busy, setBusy] = createSignal<string | null>(null);
   const [ask, setAsk] = createSignal<CardTrustAsk | null>(null);
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -68,6 +85,8 @@ export function createCardControls(path: () => string, canAct: () => boolean): C
     }
     if (mine !== gen || at !== path()) return;
     setState("cards", reconcile(a.cards, { key: "id" }));
+    setState("types", reconcile(a.types, { key: "type" }));
+    if (a.states) for (const [id, v] of Object.entries(a.states)) if (!(id in state.states)) setState("states", id, () => v);
     const any = a.types.length > 0 || a.cards.length > 0;
     if (any && !timer) timer = setInterval(() => document.visibilityState === "visible" && void load(), POLL_MS);
     if (!any && timer) {
@@ -136,5 +155,22 @@ export function createCardControls(path: () => string, canAct: () => boolean): C
     },
     clearPicks: () => clearCardPicks(path()),
     refresh: () => void load(),
+    type: (name) => state.types.find((t) => t.type === name),
+    session: () => ({ path: path(), ...(chat.session?.() ?? { id: "", title: "" }) }),
+    viewState: (id) => state.states[id] ?? null,
+    async setViewState(id, value) {
+      setState("states", id, () => value);
+      await setSessionCardState(path(), id, value);
+    },
+    stage(text) {
+      if (!canAct()) throw new Error("This chat can't take text now.");
+      chat.stage?.(text);
+    },
+    async answerNow(card, value) {
+      if (!canAct()) throw new Error("This chat can't take an answer now.");
+      const r = await answerSessionCard(path(), card.id, value);
+      adopt(r.card);
+      return r.card;
+    },
   };
 }

@@ -166,6 +166,9 @@ importers:
 
   .:
     dependencies:
+      '@babel/core':
+        specifier: 7.29.7
+        version: 7.29.7
       '@earendil-works/pi-ai':
         specifier: 1.0.3
         version: 1.0.3(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)
@@ -178,6 +181,12 @@ importers:
       '@hono/node-server':
         specifier: ^1.14.0
         version: 1.19.17(hono@4.13.8)
+      babel-preset-solid:
+        specifier: 1.9.15
+        version: 1.9.15(@babel/core@7.29.7)(solid-js@1.9.15)
+      esbuild:
+        specifier: 0.25.12
+        version: 0.25.12
       highlight.js:
         specifier: 11.12.0
         version: 11.12.0

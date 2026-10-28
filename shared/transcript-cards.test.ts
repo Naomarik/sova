@@ -15,7 +15,9 @@ test("card.json is strict: defaults, and the first thing wrong", () => {
     const r = ok("x", card, view);
     assert.ok(!r.ok && re.test(r.error), JSON.stringify(r));
   };
-  err({ ...base, draws: "table", toolkit: 2 }, /toolkit must be 1/);
+  // Another version is a declaration (a view's card says it needs updating, §chat.transcript-cards/versions); no version is broken.
+  err({ ...base, draws: "table", toolkit: 0 }, /toolkit must be the toolkit version it was built for/);
+  assert.equal(ok("t", { ...base, draws: "table", toolkit: 2 }).ok, true);
   err({ ...base, draws: "chart" }, /draws must be one of/);
   err({ ...base, draws: "question" }, /answer must be at-once or gather/);
   err({ ...base, draws: "table", data: {} }, /data is only for a view/);

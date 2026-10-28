@@ -102,6 +102,30 @@ test("buttons: the offer card's row with each button's about, or the waiting lin
   assert.doesNotMatch(watched, /<button/);
 });
 
+test("buttons, answered: no buttons and no waiting line, only the card's answer line, as Sova's own confirm cards (q12)", async () => {
+  const data = { title: "Deploy step", buttons: [{ label: "Deploy Now", does: { kind: "answer" } }, { label: "Later", does: { kind: "answer" } }] };
+  // The card itself, answered: its foot is gone, whether this view could press or not.
+  for (const answer of [{ press() {}, canAct: () => false }, undefined]) {
+    const html = draw({ draws: "buttons", data, answered: true, ...(answer ? { answer } : {}) });
+    assert.doesNotMatch(html, /<button/);
+    assert.doesNotMatch(text(html), /Waiting for an answer/);
+    assert.match(text(html), /Deploy step/);
+  }
+  // As the transcript draws it: the title, then "You chose Deploy Now", and nothing to press.
+  const { default: TranscriptCard } = await importSsr(new URL("../components/TranscriptCard.tsx", import.meta.url), resolve);
+  const card = {
+    id: "cd_2", type: "project.go", title: "Go", draws: "buttons", answerMode: "at-once", placement: "anchored", data, at: "2026-10-28T10:00:00.000Z",
+    by: { kind: "script" }, after: null, state: "answered",
+    answer: { value: { button: 0 }, text: "Deploy Now", by: "you", at: "2026-10-28T10:01:00.000Z", via: "at-once" },
+  };
+  const html = clean(renderToString(() => solid.createComponent(TranscriptCard as never, { item: {}, value: card } as never)));
+  assert.doesNotMatch(html, /<button/);
+  assert.match(text(html), /Deploy step You chose Deploy Now$/);
+  // Before the answer, the same card shows its buttons where it can be pressed.
+  const open = draw({ draws: "buttons", data, answer: { press() {}, canAct: () => true } });
+  assert.match(open, /data-offer-button="0">Deploy Now<\/button>/);
+});
+
 test("data that doesn't fit its card throws, naming the field, so the card's error box draws instead of half a card", () => {
   const bad = { ...question, options: [...question.options, { label: "x".repeat(121) }] };
   assert.equal(drawOrWhy({ draws: "question", data: bad }), "ERROR: options[3].label is longer than 120 characters");

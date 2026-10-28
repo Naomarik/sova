@@ -156,6 +156,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
 
 /** A card's reserved height: its data card's estimate, or a line for data that doesn't fit (its error box). */
 function cardEstimate(card: CardInfo): number {
+  if (card.draws === "view") return (card.view?.height ?? 160) + (card.by.kind === "agent" ? 0 : 24) + (card.answer ? 28 : 0);
   const c = checkCardData(card.draws, card.data);
   return (c.ok ? dataCardHeight(card.draws, c.data) : 56) + (card.by.kind === "agent" ? 0 : 24) + (card.answer ? 28 : 0);
 }

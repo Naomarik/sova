@@ -1626,5 +1626,17 @@ export const answerSessionCard = (path: string, card: string, answer: CardAnswer
   request<{ card: CardInfo }>("/api/session-cards/answer", { method: "POST", body: JSON.stringify({ path, card, answer, ...(sent ? { sent } : {}) }) });
 /** Trust a project's cards to act, or stop: a trust grant, from this page only. */
 export const setCardTrust = (owner: string, on: boolean) => request<{ owner: string; trusted: boolean }>("/api/session-cards/trust", { method: "POST", body: JSON.stringify({ owner, on }) });
+/** A view card's built code (§chat.transcript-cards/building): at once, or with `have` and `wait`, once a save changes it. */
+export const getCardView = (path: string, type: string, have?: string | null, wait = false, signal?: AbortSignal) =>
+  request<{ ok: true; hash: string; code: string } | { ok: false; hash: string; error: string; outdated?: boolean }>(
+    `/api/session-cards/view?path=${encodeURIComponent(path)}&type=${encodeURIComponent(type)}${have ? `&have=${encodeURIComponent(have)}` : ""}${wait ? "&wait=1" : ""}`,
+    { cache: "no-store", ...(signal ? { signal } : {}) },
+  );
+/** The state Sova keeps for a view's card. */
+export const setSessionCardState = (path: string, card: string, state: unknown) =>
+  request<{ ok: true }>("/api/session-cards/state", { method: "POST", body: JSON.stringify({ path, card, state }) });
+/** A view's command, run as its card; a refusal that needs trust carries `needsTrust` in its body. */
+export const runSessionCardCommand = (path: string, card: string, command: string, params: unknown) =>
+  request<{ ok: boolean; status: number; body: unknown }>("/api/session-cards/run", { method: "POST", body: JSON.stringify({ path, card, command, params }) });
 /** A project's card folders on its main checkout, read now, and whether its cards are trusted. */
 export const getProjectCards = (projectId: string) => request<ProjectCardsAnswer>(`${projectPath(projectId)}/cards`, { cache: "no-store" });

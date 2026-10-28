@@ -1,8 +1,9 @@
 import { createSignal, Show, useContext } from "solid-js";
 import { answerOf, raiserText, type CardAnswerValue, type CardInfo } from "../../shared/transcript-cards";
-import { checkCardData, letterIndex, type ChecklistCard, type QuestionCard } from "../../shared/view-cards";
+import { checkCardData, letterIndex, type ChecklistCard, type DataCardKind, type QuestionCard } from "../../shared/view-cards";
 import { CardContext, type CardControls } from "../lib/card-controls";
 import type { KindViewProps } from "../lib/transcript-kinds";
+import CardView from "./CardView";
 import { DataCard, type DataCardAnswer } from "./DataCards";
 import { Icon } from "./ui";
 
@@ -37,7 +38,9 @@ function Revision(props: { card: CardInfo }) {
         <span class="disclosure-preview">· revision {props.card.revision ?? 1}</span>
       </summary>
       <div class="disclosure-body">
-        <DataCard draws={props.card.draws} data={props.card.data} id={props.card.id} />
+        <Show when={props.card.draws !== "view"} fallback={<p class="text-muted">{props.card.title}: an earlier revision of this view.</p>}>
+          <DataCard draws={props.card.draws as DataCardKind} data={props.card.data} id={props.card.id} answered={!!props.card.answer} />
+        </Show>
       </div>
     </details>
   );
@@ -60,7 +63,14 @@ function CardBody(props: { card: CardInfo; ctx: CardControls | undefined }) {
       <Show when={from()}>
         <p class="transcript-card-from text-muted">{from()}</p>
       </Show>
-      <DataCard draws={props.card.draws} data={props.card.data} id={props.card.id} answer={answering()} />
+      <Show
+        when={props.card.draws === "view"}
+        fallback={<DataCard draws={props.card.draws as DataCardKind} data={props.card.data} id={props.card.id} answer={answering()} answered={!!props.card.answer} />}
+      >
+        <Show when={props.ctx} fallback={<p class="transcript-card-view-elsewhere text-muted">{props.card.title}: this card's view draws in its chat.</p>}>
+          {(ctx) => <CardView card={props.card} ctx={ctx()} />}
+        </Show>
+      </Show>
       <Show when={props.card.answer}>{(a) => <AnswerLine card={props.card} answer={a()} />}</Show>
       <Show when={!props.card.answer && props.card.answerMode !== "none" && props.card.state === "open" && !props.ctx?.canAct()}>
         <p class="transcript-card-answer text-muted">Waiting for an answer</p>

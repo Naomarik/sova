@@ -6,6 +6,7 @@
  * the page both read it.
  */
 
+import { schemaError } from "./card-schema.ts";
 import { checkCardData, DATA_CARDS, notRaisedText, optionLetter, type ButtonsCard, type ChecklistCard, type DataCardKind, type QuestionCard } from "./view-cards.ts";
 
 export const CARD_TOOL = "card";
@@ -46,9 +47,23 @@ export interface CardDecl {
   placement: CardPlacement;
   /** A view's reserved height in px. */
   height?: number;
-  /** A view's declared data shape (a JSON Schema subset). */
+  /** A view's declared data shape (a JSON Schema subset, shared/card-schema.ts). */
   data?: unknown;
+  /** The toolkit version a view was built for (§chat.transcript-cards/versions). */
+  toolkit?: number;
 }
+
+/** What a card type draws: one of Sova's data cards, or its author's own view in a sealed box. */
+export type CardDraws = DataCardKind | "view";
+
+/** The words of a toolkit version mismatch (§chat.transcript-cards/versions). */
+export const needsUpdatingText = (built: number): string =>
+  `This card needs updating for this Sova: it was built for toolkit v${built}, and this Sova runs v${TOOLKIT_VERSION}.`;
+
+/** A view's answer text: one line, at most this long. */
+export const VIEW_ANSWER_MAX = 200;
+/** The state Sova keeps for a view's card (§chat.transcript-cards/view-api, "Keep state"), at most. */
+export const VIEW_STATE_MAX_BYTES = 64 * 1024;
 
 /** A card folder as read: its type, or what is wrong with it. */
 export type CardFolder = { name: string; path: string; ok: true; decl: CardDecl } | { name: string; path: string; ok: false; error: string };
@@ -71,7 +86,9 @@ export function parseCardFile(name: string, text: string, hasView: boolean): { o
   if (!isObject(raw)) return { ok: false, error: `${CARD_FILE} isn't a JSON object.` };
   for (const k of Object.keys(raw)) if (!CARD_KEYS.includes(k)) return { ok: false, error: `"${k}" is not a key ${CARD_FILE} has.` };
   if (raw.version !== 1) return { ok: false, error: "version must be 1." };
-  if (raw.toolkit !== TOOLKIT_VERSION) return { ok: false, error: `toolkit must be ${TOOLKIT_VERSION}, the toolkit this Sova runs.` };
+  // Any version is a declaration; a view built for another than this Sova's says so in its card
+  // (§chat.transcript-cards/versions), and a data card, which Sova draws itself, never needs one.
+  if (typeof raw.toolkit !== "number" || !Number.isInteger(raw.toolkit) || raw.toolkit < 1) return { ok: false, error: `toolkit must be the toolkit version it was built for (this Sova runs ${TOOLKIT_VERSION}).` };
   if (typeof raw.title !== "string" || !raw.title.trim() || [...raw.title].length > TITLE_MAX || /[\r\n]/.test(raw.title)) return { ok: false, error: `title must be one line of 1 to ${TITLE_MAX} characters.` };
   if (raw.when !== undefined && (typeof raw.when !== "string" || !raw.when.trim() || [...raw.when].length > WHEN_MAX)) return { ok: false, error: `when must be text of 1 to ${WHEN_MAX} characters.` };
   const draws = raw.draws;
@@ -83,6 +100,8 @@ export function parseCardFile(name: string, text: string, hasView: boolean): { o
   if (draws === "view") {
     if (!hasView) return { ok: false, error: `draws view, but ${VIEW_FILE} is missing.` };
     if (!isObject(raw.data)) return { ok: false, error: "A view needs data, the shape its data must have." };
+    const bad = schemaError(raw.data);
+    if (bad) return { ok: false, error: bad };
     if (raw.height !== undefined && (typeof raw.height !== "number" || !Number.isInteger(raw.height) || raw.height < 32 || raw.height > 1200)) return { ok: false, error: "height must be a whole number of px from 32 to 1200." };
   } else {
     if (raw.data !== undefined) return { ok: false, error: `data is only for a view: a ${draws} card's shape is Sova's.` };
@@ -100,7 +119,7 @@ export function parseCardFile(name: string, text: string, hasView: boolean): { o
       answer: answer as CardAnswerMode,
       placement: placement as CardPlacement,
       ...(typeof raw.height === "number" ? { height: raw.height } : {}),
-      ...(draws === "view" ? { data: raw.data } : {}),
+      ...(draws === "view" ? { data: raw.data, toolkit: raw.toolkit } : {}),
     },
   };
 }
@@ -125,6 +144,7 @@ function declOf(v: unknown): CardDecl | null {
     placement: v.placement as CardPlacement,
     ...(typeof v.height === "number" ? { height: v.height } : {}),
     ...(v.data !== undefined ? { data: v.data } : {}),
+    ...(typeof v.toolkit === "number" ? { toolkit: v.toolkit } : {}),
   };
 }
 
@@ -136,7 +156,7 @@ export function normalizeCardSnapshot(v: unknown): CardSnapshot | null {
 }
 
 /** The types the agent may raise: those with a `when`. */
-export const agentTypes = (s: CardSnapshot | null): CardDecl[] => (s?.types ?? []).filter((t) => t.when && t.draws !== "view");
+export const agentTypes = (s: CardSnapshot | null): CardDecl[] => (s?.types ?? []).filter((t) => t.when);
 
 // ---- the card on the wire -----------------------------------------------------------------------
 
@@ -144,7 +164,7 @@ export const agentTypes = (s: CardSnapshot | null): CardDecl[] => (s?.types ?? [
 export type CardRaiser = { kind: "agent" } | { kind: "script" } | { kind: "chat"; title: string } | { kind: "extension"; title: string };
 
 /** An answer's value: a question's option, a button, or a checklist's ticks. */
-export type CardAnswerValue = { option: number } | { button: number } | { items: boolean[] };
+export type CardAnswerValue = { option: number } | { button: number } | { items: boolean[] } | { view: unknown };
 
 export interface CardAnswer {
   value: CardAnswerValue;
@@ -167,7 +187,9 @@ export interface CardInfo {
   type: string;
   /** The type's title. */
   title: string;
-  draws: DataCardKind;
+  draws: CardDraws;
+  /** A view card's: the toolkit its type was built for, and its reserved height. */
+  view?: { toolkit: number; height?: number };
   answerMode: CardAnswerMode;
   placement: CardPlacement;
   key?: string;
@@ -197,7 +219,7 @@ const STATES: readonly CardState[] = ["open", "answered", "done", "superseded"];
 export function normalizeCardInfo(v: unknown): CardInfo | null {
   if (!isObject(v)) return null;
   if (typeof v.id !== "string" || !CARD_ID_RE.test(v.id) || typeof v.type !== "string" || typeof v.title !== "string") return null;
-  if (!DATA_CARDS.includes(v.draws as DataCardKind) || !ANSWER_MODES.includes(v.answerMode as CardAnswerMode) || !PLACEMENTS.includes(v.placement as CardPlacement)) return null;
+  if (!(v.draws === "view" || DATA_CARDS.includes(v.draws as DataCardKind)) || !ANSWER_MODES.includes(v.answerMode as CardAnswerMode) || !PLACEMENTS.includes(v.placement as CardPlacement)) return null;
   if (typeof v.at !== "string" || !STATES.includes(v.state as CardState)) return null;
   const by = v.by;
   if (!isObject(by) || !RAISER_KINDS.includes(by.kind as string)) return null;
@@ -206,7 +228,7 @@ export function normalizeCardInfo(v: unknown): CardInfo | null {
   if (isObject(v.answer)) {
     const a = v.answer;
     const val = a.value;
-    const okVal = isObject(val) && (Number.isInteger(val.option) || Number.isInteger(val.button) || (Array.isArray(val.items) && val.items.every((x) => typeof x === "boolean")));
+    const okVal = isObject(val) && (Number.isInteger(val.option) || Number.isInteger(val.button) || (Array.isArray(val.items) && val.items.every((x) => typeof x === "boolean")) || "view" in val);
     if (okVal && typeof a.text === "string" && typeof a.by === "string" && typeof a.at === "string" && (a.via === "at-once" || a.via === "send")) {
       const o = a.outcome;
       answer = {
@@ -223,7 +245,10 @@ export function normalizeCardInfo(v: unknown): CardInfo | null {
     id: v.id,
     type: v.type,
     title: v.title,
-    draws: v.draws as DataCardKind,
+    draws: v.draws as CardDraws,
+    ...(v.draws === "view" && isObject(v.view) && typeof v.view.toolkit === "number"
+      ? { view: { toolkit: v.view.toolkit, ...(typeof v.view.height === "number" ? { height: v.view.height } : {}) } }
+      : {}),
     answerMode: v.answerMode as CardAnswerMode,
     placement: v.placement as CardPlacement,
     ...(typeof v.key === "string" ? { key: v.key } : {}),
@@ -251,6 +276,8 @@ export const raiserText = (by: CardRaiser): string | null => (by.kind === "agent
 export interface SessionCardsAnswer {
   cards: CardInfo[];
   types: CardDecl[];
+  /** The state Sova keeps for each view card, by card id. */
+  states?: Record<string, unknown>;
   /** Whether the session's project's cards are trusted to act (§chat.transcript-cards/trust), and its name. */
   trust?: { owner: string; name: string; trusted: boolean };
 }
@@ -271,6 +298,7 @@ export interface ProjectCardsAnswer {
  * takes an option, a buttons card a button, a checklist the ticks of every item.
  */
 export function answerOf(card: Pick<CardInfo, "draws" | "data">, value: unknown): { ok: true; value: CardAnswerValue; text: string } | { ok: false; error: string } {
+  if (card.draws === "view") return viewAnswerOf(value);
   const checked = checkCardData(card.draws, card.data);
   if (!checked.ok) return { ok: false, error: `The card's data doesn't fit its type: ${checked.error.path} ${checked.error.why}.` };
   if (!isObject(value)) return { ok: false, error: "answer must be an object: {option}, {button} or {items}." };
@@ -297,6 +325,30 @@ export function answerOf(card: Pick<CardInfo, "draws" | "data">, value: unknown)
   return { ok: false, error: `A ${card.draws} card takes no answer.` };
 }
 
+/**
+ * A view's own answer (§chat.transcript-cards/view-api, "Record an answer on its own card"):
+ * `{text, value?}`, the answer in words (one line, 1 to 200 characters) and any JSON value it
+ * carries for the view (at most 16 KB).
+ */
+export function viewAnswerOf(value: unknown): { ok: true; value: CardAnswerValue; text: string } | { ok: false; error: string } {
+  if (!isObject(value)) return { ok: false, error: "answer must be an object: {view: {text, value?}}." };
+  const v = isObject(value.view) ? value.view : value;
+  const text = typeof v.text === "string" ? v.text.trim() : "";
+  if (!text || /[\r\n]/.test(text) || [...text].length > VIEW_ANSWER_MAX) return { ok: false, error: `answer.text must be one line of 1 to ${VIEW_ANSWER_MAX} characters.` };
+  let carried: unknown = null;
+  if (v.value !== undefined) {
+    let json: string | undefined;
+    try {
+      json = JSON.stringify(v.value);
+    } catch {
+      json = undefined;
+    }
+    if (json === undefined || json.length > 16 * 1024) return { ok: false, error: "answer.value must be JSON of at most 16 KB." };
+    carried = JSON.parse(json);
+  }
+  return { ok: true, value: { view: { text, value: carried } }, text };
+}
+
 /** A gathered pick's line in the message (§chat.transcript-cards/answering): "cd_4: b: Parquet." */
 export const cardPickLine = (id: string, text: string): string => `${id}: ${text}.`;
 
@@ -318,8 +370,8 @@ export function cardToolDescription(s: CardSnapshot): string {
     "Types:",
   ];
   for (const t of agentTypes(s)) {
-    const draws = t.draws as DataCardKind;
-    lines.push(`- ${t.type} (${t.title}): ${t.when} Data: ${DRAWS_WORDS[draws]}.${t.placement === "follow" ? " Give a key: the same key raises a new revision of that card." : ""}`);
+    const words = t.draws === "view" ? `JSON matching this shape: ${JSON.stringify(t.data)}` : DRAWS_WORDS[t.draws];
+    lines.push(`- ${t.type} (${t.title}): ${t.when} Data: ${words}.${t.placement === "follow" ? " Give a key: the same key raises a new revision of that card." : ""}`);
   }
   return lines.join("\n");
 }

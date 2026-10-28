@@ -215,6 +215,8 @@ export function Composer(props: {
   onAbort(): void;
   /** Queued text a Stop handed back; each new object goes ahead of the draft (TUI Esc order). */
   restored?: { text: string } | null;
+  /** Text a transcript card's view staged (§chat.transcript-cards/view-api): put at the end of the draft, never sent. */
+  staged?: { text: string } | null;
   /** Answers picked on an alignment card (§chat.alignment/card), staged for the next send:
       the row names them, and `compose` puts their line ahead of the typed text in one message. */
   picks?: {
@@ -759,6 +761,13 @@ export function Composer(props: {
     on(
       () => props.restored,
       (r) => r?.text && setDraft([r.text, text()].filter((t) => t.trim()).join("\n\n")),
+      { defer: true },
+    ),
+  );
+  createEffect(
+    on(
+      () => props.staged,
+      (r) => r?.text && setDraft([text(), r.text].filter((t) => t.trim()).join("\n\n")),
       { defer: true },
     ),
   );

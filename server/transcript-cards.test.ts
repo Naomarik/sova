@@ -254,3 +254,85 @@ describe("answering (§chat.transcript-cards/answering)", () => {
     assert.match(String(cards.cardNoteFor(s.id)), /a script chose Deploy/);
   });
 });
+
+describe("view cards (§chat.transcript-cards/sealed-box, /view-api)", () => {
+  const viewProject = join(root, "view-project");
+  const shape = { type: "object", required: ["series"], properties: { series: { type: "array", maxItems: 3, items: { type: "number" } } } };
+  writeCard("chart", { ...base, title: "Chart", when: "To show numbers.", draws: "view", data: shape, answer: "at-once", height: 220 }, viewProject);
+  writeFileSync(join(viewProject, ".sova", "cards", "chart", "view.tsx"), "export {};");
+  writeCard("old", { ...base, toolkit: 2, title: "Old", draws: "view", data: { type: "object" } }, viewProject);
+  writeFileSync(join(viewProject, ".sova", "cards", "old", "view.tsx"), "export {};");
+  const inView = () => {
+    const s = fresh();
+    summaries.set(s.path, { cwd: viewProject });
+    return s;
+  };
+
+  test("the snapshot takes views with their shape, toolkit and height; the agent's tool names a view's shape", async () => {
+    const s = inView();
+    const snap = await cards.cardSnapshotFor(s.id, s.path, viewProject);
+    const chart = snap!.types.find((t) => t.type === "project.chart")!;
+    assert.deepEqual({ draws: chart.draws, toolkit: chart.toolkit, height: chart.height, data: chart.data }, { draws: "view", toolkit: 1, height: 220, data: shape });
+    assert.equal(snap!.types.find((t) => t.type === "project.old")?.toolkit, 2, "another toolkit's view is a type; its card says it needs updating");
+    const tools = await sessionCardTools(s.id, s.path, viewProject);
+    assert.match(String(tools[0]?.description), /project\.chart \(Chart\): To show numbers\. Data: JSON matching this shape: \{"type":"object"/);
+  });
+
+  test("a view's data is checked against its declared shape when raised; the card carries its toolkit and height", async () => {
+    const s = inView();
+    await assert.rejects(cards.raiseCard({ path: s.path, type: "project.chart", data: { series: [1, "2"] }, by: { kind: "agent" }, toolCallId: "c" }), /Nothing was raised: series\[1\] must be number\./);
+    await assert.rejects(cards.raiseCard({ path: s.path, type: "project.chart", data: {}, by: { kind: "agent" }, toolCallId: "c" }), /Nothing was raised: series is missing\./);
+    const card = await cards.raiseCard({ path: s.path, type: "project.chart", data: { series: [1, 2] }, by: { kind: "agent" }, toolCallId: "c" });
+    assert.deepEqual({ draws: card.draws, view: card.view, state: card.state }, { draws: "view", view: { toolkit: 1, height: 220 }, state: "open" });
+    // A new revision is checked against the same shape.
+    await assert.rejects(cards.raiseCard({ path: s.path, type: undefined, card: card.id, data: { series: [1, 2, 3, 4] }, by: { kind: "script" } }), /series has more than 3 items/);
+    // Its own answer, in words, at once; the agent's note names it.
+    const answered = await cards.answerCard({ path: s.path, card: card.id, answer: { view: { text: "Bar 2", value: { bar: 2 } } }, by: "you", via: "at-once" });
+    assert.equal(answered.answer?.text, "Bar 2");
+    assert.match(String(cards.cardNoteFor(s.id)), /The user chose Bar 2\./);
+  });
+
+  test("state: its own card's, at most 64 KB, kept with the session's cards; only a view keeps one", async () => {
+    const s = inView();
+    const card = await cards.raiseCard({ path: s.path, type: "project.chart", data: { series: [1] }, by: { kind: "agent" }, toolCallId: "c" });
+    await cards.setCardState(s.path, card.id, { count: 3 });
+    assert.deepEqual((await cards.sessionCardsAt(s.path)).states, { [card.id]: { count: 3 } });
+    await assert.rejects(cards.setCardState(s.path, card.id, "x".repeat(70 * 1024)), /larger than 64 KB/);
+    await assert.rejects(cards.setCardState(s.path, "cd_9", 1), /no card cd_9/);
+    const other = fresh();
+    const q = await cards.raiseCard({ path: other.path, type: "project.pick", data: question, by: { kind: "agent" }, toolCallId: "q" });
+    await assert.rejects(cards.setCardState(other.path, q.id, 1), /isn't a view/);
+    await cards.setCardState(s.path, card.id, null);
+    assert.equal((await cards.sessionCardsAt(s.path)).states, undefined, "null forgets it");
+  });
+
+  test("a view runs catalogue commands: params checked as the entry declares them; one that changes something only once trusted; recorded as the card", async () => {
+    const s = inView();
+    const card = await cards.raiseCard({ path: s.path, type: "project.chart", data: { series: [1] }, by: { kind: "agent" }, toolCallId: "c" });
+    const rows: unknown[] = [];
+    const audit = (r: unknown) => void rows.push(r);
+    // A command that only looks: runs untrusted, the card's own session filled in, the route's answer back.
+    answer = { status: 200, body: { cards: [] } };
+    const looked = await cards.runCardCommand(s.path, card.id, "session.card.get", {}, audit);
+    assert.deepEqual(looked, { ok: true, status: 200, body: { cards: [] } });
+    assert.match(requests[0]!.url, /^\/api\/session-cards\?path=/);
+    assert.deepEqual(rows, [{ command: "session.card.get", method: "GET", route: "/api/session-cards", status: 200 }]);
+    // Params: unknown, wrong type, missing required.
+    await assert.rejects(cards.runCardCommand(s.path, card.id, "session.send", { text: 1 }), /"text" must be a string/);
+    await assert.rejects(cards.runCardCommand(s.path, card.id, "session.send", { txt: "hi" }), /takes no param "txt"/);
+    await assert.rejects(cards.runCardCommand(s.path, card.id, "session.send", {}), /needs "text"/);
+    await assert.rejects(cards.runCardCommand(s.path, card.id, "no.such", {}), /no Sova command/);
+    // One that changes something: refused with needsTrust, nothing requested; then trusted, it runs.
+    requests.length = 0;
+    await assert.rejects(cards.runCardCommand(s.path, card.id, "session.send", { text: "hi" }), (err: unknown) => err instanceof cards.CardRefusal && !!err.needsTrust && /didn't run/.test(err.message));
+    assert.equal(requests.length, 0);
+    cards.setCardsTrusted(cards.projectOwner(realpathSync(viewProject)), true);
+    const sent = await cards.runCardCommand(s.path, card.id, "session.send", { text: "hi" }, audit);
+    assert.equal(sent.status, 200);
+    assert.equal((requests[0]!.body as { text: string }).text, "hi");
+    // A card that isn't a view runs nothing this way.
+    const other = fresh();
+    const q = await cards.raiseCard({ path: other.path, type: "project.pick", data: question, by: { kind: "agent" }, toolCallId: "q" });
+    await assert.rejects(cards.runCardCommand(other.path, q.id, "session.card.get", {}), /isn't a view/);
+  });
+});

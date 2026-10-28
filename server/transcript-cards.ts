@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync,
 import { basename, dirname, join } from "node:path";
 import { buildRequest, findCommand } from "../shared/commands-catalog";
 import type { SessionSummary } from "../shared/protocol";
-import { checkCardData, type ButtonsCard, type DataCardKind } from "../shared/view-cards";
+import { checkViewData } from "../shared/card-schema";
+import { checkCardData, type ButtonsCard, type CardDataError, type DataCardKind } from "../shared/view-cards";
 import {
   answerOf,
   CARD_FILE,
@@ -25,6 +26,7 @@ import {
   type CardSnapshot,
   type ProjectCardsAnswer,
   type SessionCardsAnswer,
+  VIEW_STATE_MAX_BYTES,
 } from "../shared/transcript-cards";
 import type { HEntry } from "../shared/harness";
 import { checkoutRootOf } from "../pi-config/extensions/mode/project-discovery.ts";
@@ -164,12 +166,13 @@ export function readCardFolders(checkout: string): CardFolder[] {
   return out;
 }
 
-/**
- * The types a checkout's folders declare, as a snapshot takes them. Views draw in a sealed box,
- * which this Sova doesn't build yet: only data cards are taken.
- */
-export const snapshotTypes = (checkout: string | null): CardDecl[] =>
-  checkout ? readCardFolders(checkout).flatMap((f) => (f.ok && f.decl.draws !== "view" ? [f.decl] : [])) : [];
+/** The types a checkout's folders declare, as a snapshot takes them: data cards and views alike. */
+export const snapshotTypes = (checkout: string | null): CardDecl[] => (checkout ? readCardFolders(checkout).flatMap((f) => (f.ok ? [f.decl] : [])) : []);
+
+/** A card's data checked against its type: a data card's shape is Sova's, a view's the one it declares. */
+function checkDeclData(decl: CardDecl, data: unknown): { ok: true; data: unknown } | { ok: false; error: CardDataError } {
+  return decl.draws === "view" ? checkViewData(decl.data, data) : checkCardData(decl.draws, data);
+}
 
 // ---- the store ----------------------------------------------------------------------------------
 
@@ -185,6 +188,8 @@ interface SessionRecord {
   cards: CardInfo[];
   /** The project root the snapshot's project types belong to (trust is by it). */
   root?: string;
+  /** The state Sova keeps for each view card, by card id (§chat.transcript-cards/view-api, "Keep state"). */
+  states?: Record<string, unknown>;
 }
 
 export const cardsDir = () => join(stateRoot(), "session-cards");
@@ -219,6 +224,7 @@ function readRecord(sessionId: string): SessionRecord | null {
         n: typeof raw.n === "number" ? raw.n : cards.length,
         cards,
         ...(typeof raw.root === "string" ? { root: raw.root } : {}),
+        ...(raw.states && typeof raw.states === "object" && !Array.isArray(raw.states) ? { states: raw.states as Record<string, unknown> } : {}),
       };
     }
   } catch {
@@ -395,8 +401,8 @@ export async function raiseCard(input: RaiseInput): Promise<CardInfo> {
     if ([...input.key].length > KEY_MAX) throw new CardRefusal(`${NOTHING} key is longer than ${KEY_MAX} characters.`, 400);
     key = input.key;
   } else if (input.key !== undefined) throw new CardRefusal(`${NOTHING} "${input.type}" takes no key.`, 400);
-  const draws = decl.draws as DataCardKind;
-  const checked = checkCardData(draws, input.data);
+  const draws = decl.draws;
+  const checked = checkDeclData(decl, input.data);
   if (!checked.ok) throw new CardRefusal(notRaisedText(checked.error), 400);
   const after = input.toolCallId ? undefined : await deps.lastEntry(input.path).catch(() => null);
   const rec = readRecord(sessionId) ?? freshRecord(sessionId, input.path);
@@ -413,6 +419,7 @@ export async function raiseCard(input: RaiseInput): Promise<CardInfo> {
     type: decl.type,
     title: decl.title,
     draws,
+    ...(draws === "view" ? { view: { toolkit: decl.toolkit ?? 0, ...(decl.height ? { height: decl.height } : {}) } } : {}),
     answerMode: decl.answer,
     placement: decl.placement,
     ...(key !== undefined ? { key, revision } : {}),
@@ -437,7 +444,9 @@ function reviseCard(input: RaiseInput, sessionId: string): CardInfo {
   if (card.state === "superseded" || card.state === "done") throw new CardRefusal(`${NOTHING} ${card.id} is ${card.state === "done" ? "done" : "replaced by a newer revision"}.`);
   if (input.type !== undefined && input.type !== card.type) throw new CardRefusal(`${NOTHING} ${card.id} is a ${card.type} card.`, 400);
   if (input.data !== undefined) {
-    const checked = checkCardData(card.draws, input.data);
+    const decl = rec.snapshot?.types.find((t) => t.type === card.type);
+    if (!decl && card.draws === "view") throw new CardRefusal(`${NOTHING} ${card.type} is no longer one of the session's card types.`, 409);
+    const checked = decl ? checkDeclData(decl, input.data) : checkCardData(card.draws as DataCardKind, input.data);
     if (!checked.ok) throw new CardRefusal(notRaisedText(checked.error), 400);
     card.data = checked.data;
   }
@@ -523,6 +532,124 @@ async function runCommand(id: string, params: Record<string, unknown>, path: str
   return { state: "failed", text: typeof j?.error === "string" ? j.error : `${entry.label} failed (${res.status}).` };
 }
 
+// ---- a view's own calls (§chat.transcript-cards/view-api) --------------------------------------
+
+/** The view card a call names, in its session: refused unless it is one. */
+function viewCardOf(rec: SessionRecord | null, id: unknown): CardInfo {
+  if (typeof id !== "string" || !CARD_ID_RE.test(id)) throw new CardRefusal("card names a card of the session (cd_N).", 400);
+  const card = rec?.cards.find((c) => c.id === id);
+  if (!rec || !card) throw new CardRefusal(`The session has no card ${id}.`, 404);
+  if (card.draws !== "view") throw new CardRefusal(`${card.id} isn't a view: only a view keeps state or runs commands.`, 400);
+  return card;
+}
+
+/** Keep a view card's state: a JSON value of at most 64 KB, its own card's only; null forgets it. */
+export async function setCardState(path: string, id: unknown, value: unknown): Promise<void> {
+  const s = await summaryOf(path);
+  const rec = readRecord(s.id);
+  const card = viewCardOf(rec, id);
+  let json: string | undefined;
+  try {
+    json = JSON.stringify(value);
+  } catch {
+    json = undefined;
+  }
+  if (json === undefined) throw new CardRefusal("state must be JSON.", 400);
+  if (new TextEncoder().encode(json).length > VIEW_STATE_MAX_BYTES) throw new CardRefusal(`state is larger than ${VIEW_STATE_MAX_BYTES / 1024} KB.`, 400);
+  const states = { ...(rec!.states ?? {}) };
+  if (value === null) delete states[card.id];
+  else states[card.id] = JSON.parse(json);
+  rec!.states = states;
+  saveRecord(rec!);
+}
+
+/** Param types a view may leave out though required: a session param is its card's own session. */
+const FILLED_IN = new Set<string>(["session"]);
+
+const PARAM_TYPES: Record<string, (v: unknown) => boolean> = {
+  string: (v) => typeof v === "string",
+  path: (v) => typeof v === "string",
+  session: (v) => typeof v === "string",
+  number: (v) => typeof v === "number" && Number.isFinite(v),
+  integer: (v) => typeof v === "number" && Number.isInteger(v),
+  boolean: (v) => typeof v === "boolean",
+  list: (v) => Array.isArray(v) && v.every((x) => typeof x === "string"),
+  json: () => true,
+};
+
+/** A view's params for a catalogue entry, checked as the entry declares them: the first that doesn't fit, or null. */
+export function commandParamsError(entry: NonNullable<ReturnType<typeof findCommand>>, params: unknown): string | null {
+  if (params !== undefined && (params === null || typeof params !== "object" || Array.isArray(params))) return "params must be an object.";
+  const given = (params ?? {}) as Record<string, unknown>;
+  for (const k of Object.keys(given)) if (!(k in entry.params)) return `${entry.id} takes no param "${k}".`;
+  for (const [name, p] of Object.entries(entry.params)) {
+    const v = given[name];
+    if (v === undefined) {
+      if (p.required && !FILLED_IN.has(p.type) && p.default === undefined) return `${entry.id} needs "${name}".`;
+      continue;
+    }
+    if (v === null && p.nullable) continue;
+    if (!PARAM_TYPES[p.type]!(v)) return `${entry.id}'s "${name}" must be ${p.type === "list" ? "a list of strings" : `a ${p.type}`}.`;
+    if (p.enum && !p.enum.includes(String(v))) return `${entry.id}'s "${name}" must be one of ${p.enum.join(", ")}.`;
+  }
+  return null;
+}
+
+/** The result of a view's command: the route's own status and body. */
+export interface CardRun {
+  ok: boolean;
+  status: number;
+  body: unknown;
+}
+
+/**
+ * A view card runs one of Sova's commands (§chat.transcript-cards/view-api): its params checked as
+ * the catalogue entry declares them, a command that changes something refused (needsTrust) until
+ * its project's cards are trusted, then the entry's own request made in-process as the web app
+ * makes it, answered in the route's words, and recorded with the card's type as the caller.
+ */
+export async function runCardCommand(path: string, id: unknown, command: unknown, params: unknown, audit?: (row: { command: string; method: string; route: string; status: number }) => void): Promise<CardRun> {
+  const s = await summaryOf(path);
+  const rec = readRecord(s.id);
+  viewCardOf(rec, id);
+  const entry = typeof command === "string" ? findCommand(command) : undefined;
+  if (!entry) throw new CardRefusal(`${String(command)} is no Sova command.`, 400);
+  const bad = commandParamsError(entry, params);
+  if (bad) throw new CardRefusal(bad, 400);
+  if (entry.effect !== "looks") {
+    const owner = rec!.root ? projectOwner(rec!.root) : null;
+    if (!owner || !cardsTrusted(owner))
+      throw new CardRefusal(`This card's project isn't trusted to act for you yet: trust its cards first. ${entry.label} didn't run.`, 409, owner ? { owner, name: ownerName(owner) } : undefined);
+  }
+  const values: Record<string, unknown> = { ...((params ?? {}) as Record<string, unknown>) };
+  if (entry.params.session && values.session === undefined) values.session = entry.sessionKey === "id" ? s.id : path;
+  let req: ReturnType<typeof buildRequest>;
+  try {
+    req = buildRequest(entry, values);
+  } catch (err) {
+    throw new CardRefusal(err instanceof Error ? err.message : String(err), 400);
+  }
+  const res = await deps.request(req.url, { method: req.method, headers: { "content-type": "application/json", "x-sova-command": entry.id }, ...(req.body ? { body: JSON.stringify(req.body) } : {}) });
+  const text = await res.text();
+  let body: unknown = text;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = text.slice(0, 64 * 1024);
+  }
+  audit?.({ command: entry.id, method: req.method, route: entry.route.path, status: res.status });
+  return { ok: res.ok, status: res.status, body };
+}
+
+/** A session's snapshot type for a card type name (the page's view build asks by it). */
+export async function sessionCardType(path: string, type: unknown): Promise<{ decl: CardDecl; checkout: string | null }> {
+  const s = await summaryOf(path);
+  const rec = readRecord(s.id);
+  const decl = typeof type === "string" ? rec?.snapshot?.types.find((t) => t.type === type) : undefined;
+  if (!decl) throw new CardRefusal(`${String(type)} is not a card type of this session.`, 404);
+  return { decl, checkout: cardsCheckoutOf(s.cwd) };
+}
+
 // ---- reads --------------------------------------------------------------------------------------
 
 /** A session's cards and the types its snapshot holds (GET /api/session-cards, session.card.get). */
@@ -533,6 +660,7 @@ export async function sessionCardsAt(path: string): Promise<SessionCardsAnswer> 
   return {
     cards: rec?.cards ?? [],
     types: rec?.snapshot?.types ?? [],
+    ...(rec?.states && Object.keys(rec.states).length ? { states: rec.states } : {}),
     ...(owner ? { trust: { owner, name: ownerName(owner), trusted: cardsTrusted(owner) } } : {}),
   };
 }

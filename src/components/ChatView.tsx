@@ -1664,7 +1664,15 @@ export function ChatView(props: {
   const offers = props.overseer || props.projectOverseer ? undefined : createOfferControls(() => props.path, (c) => !!c.toolCallId, () => !archivedPane() && !batonGate());
   if (offers) createEffect(on(() => live.running, (now, before) => void (before && !now && offers.refresh()), { defer: true }));
   // Transcript cards (§chat/transcript-cards): an ordinary chat's, read from the server, again after each turn.
-  const raisedCards = props.overseer || props.projectOverseer ? undefined : createCardControls(() => props.path, () => !archivedPane() && !batonGate());
+  // A card's view stages text at the end of the draft (§chat.transcript-cards/view-api), as `staged` below.
+  const [stagedText, setStagedText] = createSignal<{ text: string } | null>(null);
+  const raisedCards =
+    props.overseer || props.projectOverseer
+      ? undefined
+      : createCardControls(() => props.path, () => !archivedPane() && !batonGate(), {
+          stage: (text) => setStagedText({ text }),
+          session: () => ({ id: props.summary?.()?.id ?? "", title: props.summary?.()?.title ?? "" }),
+        });
   if (raisedCards) createEffect(on(() => live.running, (now, before) => void (before && !now && raisedCards.refresh()), { defer: true }));
   /** The thread's rows with the cards raised from outside the chat placed where they were raised (lib/transcript-placement). */
   const threadItems = createMemo(() => {
@@ -2559,6 +2567,7 @@ export function ChatView(props: {
         onDraft={setHasDraft}
         onAbort={abort}
         restored={restored()}
+        staged={stagedText()}
       />
       <Show when={showPlaybooks()}>
         <PlaybooksDialog

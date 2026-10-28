@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { agentRoot, stateRoot } from "./state-root";
+import { projectCodeDirs } from "./other-project-dirs";
 import { fromPiToolDefinition } from "./harness/pi/tools";
 import { createSessionFile } from "./harness/pi/state";
 import { PROJECT_OVERSEER } from "./harness/state-kinds";
@@ -1209,14 +1210,17 @@ export function projectContextFiles<T extends { path: string }>(files: T[], root
 const confinedOut = () => [...reservedRoots(), agentRoot(), stateRoot(), join(homedir(), ".pi")];
 
 /** What its read/grep/find/ls never read, reading anywhere else on the host:
-    `confinedOut`, and the root of every project placed in an organization other than its own (for a
-    standalone project: every placed project), other clients' work. */
+    `confinedOut`, and the root, git worktrees and running-copy checkouts of every project placed in
+    an organization other than its own (for a standalone project: every placed project), other
+    clients' work. */
 function readOut(projectId: string): Exclusion[] {
   const own = spaceOf(engineOrThrow(projectId), projectId);
   const others = listProjects().filter(
     (p) => p.id !== projectId && p.root && p.space.kind === "org" && (own.kind !== "org" || p.space.orgId !== own.orgId),
   );
-  return [...confinedOut(), ...others.map((p) => ({ dir: p.root, why: OTHER_PROJECT_REFUSAL }))];
+  const ownRoot = projectOf(projectId).root;
+  const dirs = others.flatMap((p) => [p.root, ...projectCodeDirs(p.root, ownRoot)]);
+  return [...confinedOut(), ...dirs.map((dir) => ({ dir, why: OTHER_PROJECT_REFUSAL }))];
 }
 
 /** Each conversation's opening values (overseer-opening.ts), once a run has read or set them. */

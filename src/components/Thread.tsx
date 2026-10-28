@@ -6,7 +6,7 @@ import type { BatonMark } from "../../shared/baton";
 import { wrapupRowIds } from "../lib/wrapup-rows";
 import { readHoldTop } from "../lib/read-hold";
 import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState, shownUserState } from "../lib/live";
-import { agoTime, modelLabel, modelMismatch, prettyJson, stampTime, thousands, tildePath } from "../lib/format";
+import { agoTime, modelLabel, modelMismatch, prettyJson, stampTime } from "../lib/format";
 import { useMinuteNow } from "../lib/minute-clock";
 import { isObj, resultDetails as detailsOf, str, toolCallArgs, toolResultView } from "../lib/message";
 import { toolContent, type ToolSource } from "../lib/tool-content";
@@ -21,7 +21,7 @@ import { usePaneId, usePaneScope } from "../lib/pane-scope";
 import { isHiddenBlock, isTourResult, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, CARD_TOOLS } from "../lib/hidden-rows";
 import { chainRuns, type ChainRun } from "../lib/chain-rows";
 import { compressWork } from "../lib/work-compression";
-import { isChangeRow, isLoginNoteRow } from "../lib/change-rows";
+import { isChangeRow } from "../lib/change-rows";
 import { stripSessionHeader } from "../../shared/profiles";
 import { sendersOf } from "../../shared/senders";
 import { profileIconName } from "../lib/profiles";
@@ -30,36 +30,29 @@ import { isTurnStart } from "../lib/turn";
 import { parseWakeNudge } from "../../shared/wake";
 import { parseTopicBatch } from "../../shared/topic-message";
 import { ImageStrip } from "./ImageStrip";
-import { PathAttachment, PathText } from "./PathAttachment";
+import { PathAttachment } from "./PathAttachment";
 import { ReportRow } from "./ReportRow";
 import { TeamMessageCard } from "./TeamMessageCard";
 import { AlignCard } from "./AlignCard";
 import { AlignRow } from "./AlignDocCard";
 import { ExplainCard } from "./ExplainCard";
-import { alignOf, alignRowFromDetails, latestAlignId, newestAlignRows } from "../lib/align";
-import { explainOf } from "../lib/explain";
+import { alignRowFromDetails, latestAlignId, newestAlignRows } from "../lib/align";
 import { Markdown } from "./Markdown";
 import { ReplyTimingHead } from "./ReplyTiming";
 import type { ReplyTiming } from "../../shared/usage/perf";
 import { replyHovers } from "../lib/perf";
 import { ToolCard, type ToolStatus } from "./ToolCard";
-import { WakeCard } from "./WakeCard";
-import { TopicCard } from "./TopicCard";
 import { WorktreeMergeCard } from "./WorktreeMergeCard";
 import { OwnerRequestNote } from "./OwnerRequestNote";
 import { ShowChangesCard } from "./ChangesViewer";
 import { TourCard } from "./TourCard";
 import { liveTourCalls, newestTourRows, tourFold, tourLine } from "../lib/tour-rows";
 import { normalizeTourCardDetails, TOUR_TOOLS } from "../../shared/tour";
-import { SubagentLimitRow } from "./SubagentLimitRow";
-import { rowProvider } from "../lib/subagent-limit";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
 import { normalizeOfferDetails, OFFER_TOOL } from "../../shared/session-offers";
 import { OfferCardView } from "./OfferCard";
 import { SettingsToolCard } from "./SettingsChangeCard";
 import { isSettingsToolDetails } from "../../shared/project-settings";
-/** The project overseer's settings tool: a propose draws its Settings change card. */
-const SETTINGS_TOOL = "sova_settings";
 import { Banner, Chip, Icon } from "./ui";
 import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow, useOverseerThread } from "./OverseerCards";
 import { cardFold, confirmAnswer, confirmDetails, isBriefText } from "../lib/overseer";
@@ -69,10 +62,23 @@ import { type MessageStrip, sameStrip, stripsByRow } from "../lib/message-action
 import { backWords } from "../lib/error-feed";
 import type { ReplyPlace } from "../lib/reply-place";
 import { ReplyPlaceView } from "./ReplyPlace";
+import { InfoRow } from "./InfoRow";
+// The live (streaming) rows still draw these directly: only the settled transcript is on the toolkit so far.
+import { WakeCard } from "./WakeCard";
+import { TopicCard } from "./TopicCard";
+import { SubagentLimitRow } from "./SubagentLimitRow";
+import { rowProvider } from "../lib/subagent-limit";
+import { TranscriptKindRow } from "./TranscriptKind";
+import { followingKinds, followsNow, kindOf, sameHit, SETTINGS_TOOL, type KindContext, type KindHit } from "../lib/transcript-kinds";
+import { placeRows } from "../lib/transcript-placement";
+import { isErroredTurnStop } from "../lib/turn";
 
 /** Whose transcript the rows inside are (lib/tool-content): a tool card asks it for the content its
     row doesn't carry. Absent: the rows carry all they draw. */
 export const ToolSourceContext = createContext<ToolSource | null>(null);
+
+/** Whether any kind the toolkit draws follows the chat: only then does the thread place its rows (lib/transcript-placement.ts). */
+const FOLLOWING = followingKinds().length > 0;
 
 /** "1:43 PM · 5m ago": the clock in mono, then its age, kept current by the one minute clock
     every head shares. The age drops once it would only repeat the date (past 7 days). */
@@ -381,16 +387,8 @@ function BatonCard(props: { mark: Exclude<BatonMark, { kind: "sent" }>; name(ref
   );
 }
 
-export function InfoRow(props: { children: JSX.Element }) {
-  return (
-    <div class="info-row" role="note">
-      <span class="info-row-text">
-        <Icon name="info" small />
-        <span>{props.children}</span>
-      </span>
-    </div>
-  );
-}
+/** The info row moved to its own file with the info kind's view (TranscriptKind.tsx); kept here for its importers. */
+export { InfoRow };
 
 /** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is
     the live dot while the fork writes; the result entry (same id) replaces it in place. */
@@ -434,44 +432,6 @@ function Unknown(props: { raw: unknown }) {
   );
 }
 
-const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
-
-/** A compaction entry: where it happened in the thread, with its summary on demand. */
-function Compaction(props: { compaction: NonNullable<RowFacts["compaction"]> }) {
-  const tokens = () => props.compaction.tokensBefore ?? null;
-  const details = () => (isObj(props.compaction.details) ? props.compaction.details : {});
-  const read = () => strings(details().readFiles);
-  const changed = () => strings(details().modifiedFiles);
-  return (
-    <details class="disclosure compaction">
-      <summary class="disclosure-summary">
-        <Icon name="chevron-right" small class="icon-twist" />
-        <span class="disclosure-label">Compacted</span>
-        <span class="disclosure-preview">
-          <Show when={tokens() !== null} fallback="· earlier messages summarized">
-            · <span class="text-mono">{thousands(tokens()!)}</span> tokens summarized
-          </Show>
-        </span>
-      </summary>
-      <div class="disclosure-body">
-        <div class="compaction-summary">{props.compaction.summary ?? ""}</div>
-        <Show when={read().length > 0}>
-          <p class="toolcard-section-label">Files read</p>
-          <ul class="compaction-files">
-            <For each={read()}>{(f) => <li>{tildePath(f, home())}</li>}</For>
-          </ul>
-        </Show>
-        <Show when={changed().length > 0}>
-          <p class="toolcard-section-label">Files changed</p>
-          <ul class="compaction-files">
-            <For each={changed()}>{(f) => <li>{tildePath(f, home())}</li>}</For>
-          </ul>
-        </Show>
-      </div>
-    </details>
-  );
-}
-
 /** "The turn stopped with an error." Kept in the thread, in flow, so it stays in the record. */
 export function TurnError(props: { message: string }) {
   return (
@@ -495,12 +455,7 @@ export function StartError(props: { message: string; back: number }) {
   );
 }
 
-/** A transcript row that ends a turn on an error (the `${entryId}:stop` info row): the error's own
-    words sit in its text, its producer's model on the row. The server words it "Error…" for a
-    stop reason of "error" and "Aborted…" otherwise. */
-export function isErroredTurnStop(it: TranscriptItem): boolean {
-  return it.kind === "info" && it.id.endsWith(":stop") && (it.text ?? "").startsWith("Error");
-}
+export { isErroredTurnStop };
 
 /**
  * Stands in for the rows "Hide tool calls" and "Hide thinking" remove: each count, with any
@@ -589,16 +544,6 @@ export function HistoryItems(props: {
   const wrapupRows = createMemo(() => (showWrapup() ? new Set<string>() : wrapupRowIds(props.items)));
   /** Calls whose result is an alignment row: the row is the card, so the call has no row at all. */
   const alignCalls = createMemo(() => new Set(props.items.flatMap((it) => (it.kind === "align" && it.toolCallId ? [it.toolCallId] : []))));
-  const renderable = createMemo(() =>
-    props.items.filter((it) => !isChangeRow(it) && !wrapupRows().has(it.id) && !(it.kind === "tool-call" && it.toolCallId && alignCalls().has(it.toolCallId))),
-  );
-  const split = createMemo(() =>
-    props.hideTools || props.hideThinking ? splitHidden(renderable(), { tools: !!props.hideTools, thinking: !!props.hideThinking }) : null,
-  );
-  /** The rows rendered: all of them, or everything but tool rows while they're hidden. */
-  const rows = () => split()?.shown ?? renderable();
-  /** Measured replies: their first reply-text row's head shows the figures (its entry's `reply` fact). */
-  const timings = createMemo(() => replyHovers(props.items, entryIdOf, (r) => rowFacts(r)?.reply));
   const results = createMemo(() => {
     const byCall = new Map<string, TranscriptItem>();
     for (const it of props.items) if (it.kind === "tool-result" && it.toolCallId) byCall.set(it.toolCallId, it);
@@ -625,6 +570,23 @@ export function HistoryItems(props: {
   const tourCards = createMemo(() => newestTourRows(props.items, props.liveTourIds));
   /** The full card, for the call that draws it. */
   const tourCardOf = (item: TranscriptItem) => (tourCards().has(item.id) ? tours().rows.get(item.id) : undefined);
+  /** The profile row shows once a message is on the branch (§chat.profiles/after-first-message). */
+  const hasUserRow = createMemo(() => props.items.some((it) => it.kind === "user"));
+  /** What a row's kind may ask of the whole list when it matches (lib/transcript-kinds.ts). */
+  const kinds: KindContext = { hasUserRow, tourCard: tourCardOf, showChanges: showChangesOf, offer: offerOf, settings: settingsOf };
+  const renderable = createMemo(() => {
+    const list = props.items.filter((it) => !isChangeRow(it) && !wrapupRows().has(it.id) && !(it.kind === "tool-call" && it.toolCallId && alignCalls().has(it.toolCallId)));
+    // A following card stands at the end while its condition holds (§chat.transcript-cards/placement):
+    // only a kind the toolkit draws can follow, so with none (today) the list is never walked again.
+    return FOLLOWING ? placeRows(list, (it) => followsNow(kindOf(it, kinds), it)) : list;
+  });
+  const split = createMemo(() =>
+    props.hideTools || props.hideThinking ? splitHidden(renderable(), { tools: !!props.hideTools, thinking: !!props.hideThinking }) : null,
+  );
+  /** The rows rendered: all of them, or everything but tool rows while they're hidden. */
+  const rows = () => split()?.shown ?? renderable();
+  /** Measured replies: their first reply-text row's head shows the figures (its entry's `reply` fact). */
+  const timings = createMemo(() => replyHovers(props.items, entryIdOf, (r) => rowFacts(r)?.reply));
   /** An earlier call's one line: what it reported then, as its row carries it. */
   const tourEarlier = (item: TranscriptItem): string | undefined => {
     const d = tours().rows.get(item.id);
@@ -723,8 +685,6 @@ export function HistoryItems(props: {
   const senders = createMemo(() => sendersOf(props.items));
   const senderOf = (id: string) => senders().get(entryIdOf(id));
   const nameOf = (ref: string) => props.names?.[ref] ?? (ref === "operator" ? "You" : "Someone");
-  /** The profile row shows once a message is on the branch (§chat.profiles/after-first-message). */
-  const hasUserRow = createMemo(() => props.items.some((it) => it.kind === "user"));
   /**
    * Where the action strips go, by rendered-row index. One per ENTRY: a reply rendered as three
    * blocks is one message, and three strips under it would be three Regenerates for one turn.
@@ -876,6 +836,23 @@ export function HistoryItems(props: {
           // arriving above (a tail-first hello's history), an append or a turn-end reload would
           // otherwise rebuild the buttons of every message on the page.
           const strip = createMemo(() => strips().get(index()), undefined, { equals: sameStrip });
+          /** The row's kind, by the toolkit's list in its order (lib/transcript-kinds.ts): the first that matches draws it. */
+          const hit = createMemo(() => kindOf(item, kinds), undefined, { equals: sameHit });
+          /** The value the row's kind matched with, when it is kind `id` (a branch still drawn here, until it moves onto the toolkit). */
+          const is = <V,>(id: string): V | undefined => {
+            const h = hit();
+            return h?.kind.id === id ? (h.value as V) : undefined;
+          };
+          /** The row's hit, when the toolkit draws it. */
+          const drawn = (): KindHit | undefined => {
+            const h = hit();
+            return h?.kind.view ? h : undefined;
+          };
+          /** The row's height until it is first drawn: its kind's own estimate where the toolkit draws it. */
+          const rowEst = () => {
+            const h = drawn();
+            return rowEstimate(item, ...shownImages(item), !!chain(), foldedRun(chain()), !!chain()?.first, h?.kind.estimate?.(item, h.value));
+          };
           return (
           // A link message is a partner's, shown only in the Agents tab (§mesh.links/transcript):
           // no row at all here, not even the wrapper. It still counts as a turn start (above).
@@ -893,14 +870,18 @@ export function HistoryItems(props: {
             data-chain-last={chain()?.last ? "" : undefined}
             data-chain-folded={foldedRun(chain()) ? "" : undefined}
             data-entry={item.id}
-            style={{ "--entry-est": rowEstimate(item, ...shownImages(item), !!chain(), foldedRun(chain()), !!chain()?.first) }}
+            style={{ "--entry-est": rowEst() }}
           >
             <Show when={foldable(chain()) ? chain() : null}>{(run) => <ChainFold run={run()} />}</Show>
             <Switch fallback={<Unknown raw={item.entry} />}>
-              <Match when={item.kind === "user" && isBriefText(item.text)}>
+              {/* Rows the toolkit draws, each in its own error box. */}
+              <Match when={drawn()}>{(h) => <TranscriptKindRow hit={h()} item={item} limitPath={props.limitPath} reserve={rowEst()} />}</Match>
+              {/* A kind still drawn by its branch here, until it moves onto the toolkit; and the kinds that draw nothing. */}
+              <Match when={hit()?.kind.drawsNothing}>{null}</Match>
+              <Match when={is("brief")}>
                 <BriefRow text={item.text ?? ""} time={item.at} />
               </Match>
-              <Match when={item.kind === "user"}>
+              <Match when={is("user")}>
                 <UserTurn
                   text={item.text ?? ""}
                   time={item.at}
@@ -911,11 +892,7 @@ export function HistoryItems(props: {
                   attachments={item.attachments}
                 />
               </Match>
-              {/* The sent marker draws nothing itself: it tags the row it names (above). */}
-              <Match when={item.overseerMark?.kind === "sent"}>{null}</Match>
-              <Match when={item.batonMark?.kind === "sent"}>{null}</Match>
-              <Match when={item.sessionMark?.kind === "sent"}>{null}</Match>
-              <Match when={item.profileMark}>
+              <Match when={is<NonNullable<TranscriptItem["profileMark"]>>("profile-mark")}>
                 {(mark) => (
                   <Show when={hasUserRow() && mark().profile}>
                     {(p) => (
@@ -927,24 +904,16 @@ export function HistoryItems(props: {
                   </Show>
                 )}
               </Match>
-              <Match when={item.batonMark && item.batonMark.kind !== "sent" && item.batonMark}>
+              <Match when={is<BatonMark>("baton")}>
                 {(mark) => <BatonCard mark={mark() as Exclude<BatonMark, { kind: "sent" }>} name={nameOf} wrapupShown={showWrapup()} onWrapupToggle={() => setShowWrapup(!showWrapup())} />}
               </Match>
-              <Match when={item.overseerMark?.kind === "dialog-answer" && item.overseerMark}>
+              <Match when={is<Extract<NonNullable<TranscriptItem["overseerMark"]>, { kind: "dialog-answer" }>>("overseer-answer")}>
                 {(mark) => <OverseerChoiceRow title={mark().title} answer={mark().answer} />}
               </Match>
-              <Match when={item.kind === "worktree-merge" && item.worktreeMerge}>
+              <Match when={is<NonNullable<TranscriptItem["worktreeMerge"]>>("worktree-merge")}>
                 {(merge) => <WorktreeMergeCard merge={merge()} time={item.at} />}
               </Match>
-              <Match when={item.kind === "wake" && item.wake}>
-                {(wake) => <WakeCard nudge={wake()} text={item.text ?? ""} time={item.at} />}
-              </Match>
-              <Match when={item.kind === "topic" && item.topic}>
-                {(batch) => <TopicCard batch={batch()} time={item.at} />}
-              </Match>
-              {/* Legacy: the retired spec card's row, still sent by older mesh peers. */}
-              <Match when={item.kind === "spec-turn"}>{null}</Match>
-              <Match when={item.kind === "assistant-text"}>
+              <Match when={is("assistant-text")}>
                 <AssistantText
                   text={item.text ?? ""}
                   author={modelLabel(item.model, item.answered) ?? props.author}
@@ -957,64 +926,44 @@ export function HistoryItems(props: {
                   timing={timings().get(item.id)}
                 />
               </Match>
-              <Match when={item.kind === "thinking"}>
+              <Match when={is("thinking")}>
                 <Thinking text={item.text ?? ""} />
               </Match>
-              <Match when={item.kind === "align" && item.align}>{(row) => <AlignRow row={row()} newest={alignNewest(item)} />}</Match>
-              <Match when={item.kind === "report" && item.report && alignOf(item.report)}>
+              <Match when={is<NonNullable<TranscriptItem["align"]>>("align")}>{(row) => <AlignRow row={row()} newest={alignNewest(item)} />}</Match>
+              <Match when={is<NonNullable<NonNullable<TranscriptItem["report"]>["align"]>>("align-report")}>
                 {(align) => (
                   <Show when={item.id === latestAlign()} fallback={<span class="align-superseded" hidden />}>
                     <AlignCard report={item.report!} align={align()} attachments={item.attachments} />
                   </Show>
                 )}
               </Match>
-              <Match when={item.kind === "report" && item.report && explainOf(item.report)}>
+              <Match when={is<NonNullable<NonNullable<TranscriptItem["report"]>["explain"]>>("explain")}>
                 {(explain) => <ExplainCard explain={explain()} />}
               </Match>
-              <Match when={item.kind === "report" && item.report?.team}>
+              <Match when={is<NonNullable<NonNullable<TranscriptItem["report"]>["team"]>>("team-report")}>
                 {(team) => <TeamMessageCard report={item.report!} team={team()} time={item.at} attachments={item.attachments} />}
               </Match>
-              <Match when={item.kind === "report" && item.report}>
+              <Match when={is<NonNullable<TranscriptItem["report"]>>("report")}>
                 {(report) => <ReportRow report={report()} attachments={item.attachments} />}
               </Match>
               {/* An owner request a Start Chat put at the top (§app.project-assistant/request-chat). */}
-              <Match when={item.kind === "info" && item.ownerRequest}>{(card) => <OwnerRequestNote card={card()} />}</Match>
-              <Match when={item.kind === "info" && item.handoffRun}>
+              <Match when={is<NonNullable<TranscriptItem["ownerRequest"]>>("owner-request")}>{(card) => <OwnerRequestNote card={card()} />}</Match>
+              <Match when={is<HandoffRunInfo>("handoff-run")}>
                 {(run) => <HandoffRunRow run={run()} text={item.text ?? ""} />}
               </Match>
-              <Match when={item.kind === "info" && rowFacts(item)?.compaction}>
-                {(compaction) => <Compaction compaction={compaction()} />}
-              </Match>
-              {/* A Claude login note waits for the first message, like the profile row. */}
-              <Match when={isLoginNoteRow(item) && !hasUserRow()}>{null}</Match>
-              <Match when={item.kind === "info"}>
-                <>
-                  <InfoRow>
-                    <PathText text={item.text ?? ""} attachments={item.attachments} />
-                  </InfoRow>
-                  {/* A turn that ended on an error keeps its "Error: …" row (the transcript's
-                      `${entryId}:stop`); the limit row rides beside it with that turn's own
-                      provider (the row's `model` — never the session's current one). */}
-                  <Show when={props.limitPath && isErroredTurnStop(item) ? { path: props.limitPath, item } : null}>
-                    {(x) => <SubagentLimitRow path={x().path} message={x().item.text?.replace(/^Error: /, "") ?? ""} provider={rowProvider(x().item.model)} />}
-                  </Show>
-                </>
-              </Match>
-              {/* A show_changes result whose details check out reads as a card that opens the
-                  changes viewer (§chat.changes/show-changes-card); anything else, a tool card. */}
-              <Match when={item.kind === "tool-call" && tourCardOf(item)}>
+              <Match when={is<NonNullable<ReturnType<typeof tourCardOf>>>("tour")}>
                 {(details) => <TourCard details={details()} />}
               </Match>
-              <Match when={item.kind === "tool-call" && item.text === SHOW_CHANGES_TOOL && showChangesOf(item.toolCallId)}>
+              <Match when={is<NonNullable<ReturnType<typeof showChangesOf>>>("show-changes")}>
                 {(details) => <ShowChangesCard details={details()} />}
               </Match>
-              <Match when={item.kind === "tool-call" && item.text === OFFER_TOOL && offerOf(item.toolCallId)}>
+              <Match when={is<NonNullable<ReturnType<typeof offerOf>>>("offer")}>
                 {(card) => <OfferCardView card={card()} />}
               </Match>
-              <Match when={item.kind === "tool-call" && item.text === SETTINGS_TOOL && settingsOf(item.toolCallId)}>
+              <Match when={is<NonNullable<ReturnType<typeof settingsOf>>>("settings")}>
                 {(details) => <SettingsToolCard details={details()} />}
               </Match>
-              <Match when={item.kind === "tool-call"}>
+              <Match when={is("tool")}>
                 {(() => {
                   const view = () => {
                     const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
@@ -1098,7 +1047,7 @@ export function HistoryItems(props: {
                   );
                 })()}
               </Match>
-              <Match when={item.kind === "tool-result"}>
+              <Match when={is("tool-result")}>
                 {/* Paired results render inside their call's card; orphans get their own. */}
                 <Show when={!item.toolCallId || !calls().has(item.toolCallId)}>
                   {(() => {

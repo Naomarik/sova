@@ -11,3 +11,10 @@ export const isTurnStart = (row: Pick<TranscriptItem, "kind">): boolean => row.k
 /** The user's inputs: the turn starts the inputs count, the Timeline and the rewind targets list.
     One rule with the server's count of the rows it didn't send (shared/row-counts.ts). */
 export { isInput } from "../../shared/row-counts";
+
+/** A transcript row that ends a turn on an error (the `${entryId}:stop` info row): the error's own
+    words sit in its text, its producer's model on the row. The server words it "Error…" for a
+    stop reason of "error" and "Aborted…" otherwise. */
+export function isErroredTurnStop(it: TranscriptItem): boolean {
+  return it.kind === "info" && it.id.endsWith(":stop") && (it.text ?? "").startsWith("Error");
+}

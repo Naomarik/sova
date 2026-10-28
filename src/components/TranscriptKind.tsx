@@ -1,5 +1,4 @@
-import { createMemo, createSignal, ErrorBoundary, For, lazy, Show, Suspense, type Component } from "solid-js";
-import { Dynamic } from "solid-js/web";
+import { createMemo, ErrorBoundary, For, lazy, Show, Suspense, untrack, type Component, type JSX } from "solid-js";
 import type { RowFacts } from "../../shared/harness-wire";
 import { isObj } from "../lib/message";
 import { thousands, tildePath } from "../lib/format";
@@ -26,31 +25,36 @@ import { Icon } from "./ui";
  * while the view draws.
  */
 export function TranscriptKindRow(props: { hit: KindHit; item: KindViewProps["item"]; limitPath?: string; index?: () => number; reserve?: string }) {
-  const [attempt, setAttempt] = createSignal(0);
-  const view = createMemo((): Component<KindViewProps> | undefined => {
-    attempt();
-    return viewComponent(props.hit.kind.view);
-  });
-  return (
-    <ErrorBoundary
-      fallback={(err, reset) => (
-        <CardErrorBox
-          why={whyOf(err)}
-          reload={() => {
-            setAttempt((n) => n + 1);
-            reset();
-          }}
-        />
-      )}
-    >
-      <Show when={props.hit.kind.view && "load" in props.hit.kind.view} fallback={<Dynamic component={view()} item={props.item} value={props.hit.value} limitPath={props.limitPath} index={props.index} />}>
-        {/* A module view: the row holds its reserved height until the module arrives. */}
-        <Suspense fallback={<div class="kind-pending" style={{ "min-height": props.reserve }} aria-busy="true" />}>
-          <Dynamic component={view()} item={props.item} value={props.hit.value} limitPath={props.limitPath} index={props.index} />
-        </Suspense>
-      </Show>
-    </ErrorBoundary>
-  );
+  /** What the view is given: getters, so it reads its row and its value as they change. */
+  const viewProps: KindViewProps = {
+    get item() {
+      return props.item;
+    },
+    get value() {
+      return props.hit.value;
+    },
+    get limitPath() {
+      return props.limitPath;
+    },
+    get index() {
+      return props.index;
+    },
+  };
+  /** The row's view, drawn again only when its kind changes. Made inside the error box, so what it
+      throws lands there; Reload makes it again, a module view loaded again with it. */
+  const draw = () => {
+    const kind = createMemo(() => props.hit.kind);
+    return createMemo(() => {
+      const view = viewComponent(kind().view);
+      if (!view) return undefined;
+      if (!("load" in kind().view!)) return untrack(() => view(viewProps));
+      // A module view: the row holds its reserved height until the module arrives.
+      return untrack(() => (
+        <Suspense fallback={<div class="kind-pending" style={{ "min-height": props.reserve }} aria-busy="true" />}>{view(viewProps)}</Suspense>
+      ));
+    });
+  };
+  return <ErrorBoundary fallback={(err, reset) => <CardErrorBox why={whyOf(err)} reload={reset} />}>{/* a memo is drawn as a reactive child */ draw() as unknown as JSX.Element}</ErrorBoundary>;
 }
 
 /** Why a card couldn't be drawn, in a sentence's words (an Error's message, else the thrown value). */
@@ -76,7 +80,7 @@ export function CardErrorBox(props: { why: string; reload: () => void; /** What 
   );
 }
 
-/** A module view, loaded once per attempt: a failed load is tried again on Reload, never cached. */
+/** A kind's view; a module view is loaded again each time it is made (a failed load is tried again on Reload, never cached). */
 function viewComponent(view: KindView | undefined): Component<KindViewProps> | undefined {
   if (!view) return undefined;
   if ("page" in view) return PAGE_VIEWS[view.page] as Component<KindViewProps>;

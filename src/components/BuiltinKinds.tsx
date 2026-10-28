@@ -2,6 +2,8 @@ import type { Component } from "solid-js";
 import type { KindViewProps } from "../lib/transcript-kinds";
 import type { TranscriptItem } from "../../shared/protocol";
 import { WorktreeMergeCard } from "./WorktreeMergeCard";
+import { SettingsToolCard } from "./SettingsChangeCard";
+import type { SettingsToolDetails } from "../../shared/project-settings";
 
 /**
  * The views of Sova's own transcript cards, moved onto the card toolkit one kind at a time
@@ -11,4 +13,5 @@ import { WorktreeMergeCard } from "./WorktreeMergeCard";
  */
 export const BUILTIN_VIEWS = {
   "worktree-merge": (props: KindViewProps<NonNullable<TranscriptItem["worktreeMerge"]>>) => <WorktreeMergeCard merge={props.value} time={props.item.at} />,
+  settings: (props: KindViewProps<SettingsToolDetails>) => <SettingsToolCard details={props.value} />,
 } satisfies Record<string, Component<KindViewProps<never>>>;

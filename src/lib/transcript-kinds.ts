@@ -71,7 +71,7 @@ export interface KindViewProps<V = unknown> {
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -151,7 +151,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
     key: (_it, card: CardInfo) => (card.placement === "follow" && card.key ? `${card.type}\u0000${card.key}` : undefined),
     view: { load: () => import("../components/TranscriptCard") as unknown as Promise<{ default: Component<KindViewProps> }> },
   }),
-  kind({ id: "settings", match: (it, ctx) => isCall(it) && it.text === SETTINGS_TOOL && ctx.settings(it.toolCallId), host: "page", placement: "anchored" }),
+  kind({ id: "settings", match: (it, ctx) => isCall(it) && it.text === SETTINGS_TOOL && ctx.settings(it.toolCallId), host: "page", placement: "anchored", view: { page: "settings" } }),
   kind({ id: "tool", match: (it) => isCall(it), host: "page", placement: "anchored" }),
   kind({ id: "tool-result", match: (it) => it.kind === "tool-result", host: "page", placement: "anchored" }),
 ];

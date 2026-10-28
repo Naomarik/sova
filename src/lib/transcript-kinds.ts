@@ -71,7 +71,7 @@ export interface KindViewProps<V = unknown> {
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -138,7 +138,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   // A show_changes result whose details check out reads as a card that opens the changes viewer
   // (§chat.changes/show-changes-card); anything else, a tool card.
   kind({ id: "show-changes", match: (it, ctx) => isCall(it) && it.text === SHOW_CHANGES_TOOL && ctx.showChanges(it.toolCallId), host: "page", placement: "anchored" }),
-  kind({ id: "offer", match: (it, ctx) => isCall(it) && it.text === OFFER_TOOL && ctx.offer(it.toolCallId), host: "page", placement: "anchored" }),
+  kind({ id: "offer", match: (it, ctx) => isCall(it) && it.text === OFFER_TOOL && ctx.offer(it.toolCallId), host: "page", placement: "anchored", view: { page: "offer" } }),
   // A project's transcript card (§chat/transcript-cards), one of Sova's data cards: the agent's at its
   // `card` call, one raised from outside at the row the page placed it as. Its type says where it
   // stands: a follow type's revisions share its key, the newest drawn whole; an anchored card has no key.

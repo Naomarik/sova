@@ -53,6 +53,7 @@ const MOVED: Record<string, string[]> = {
   info: ["InfoRow", "SubagentLimitRow"],
   card: [],
   settings: ["SettingsToolCard"],
+  offer: ["OfferCardView"],
 };
 
 test("a kind the toolkit draws has no branch of its own in Thread.tsx", () => {

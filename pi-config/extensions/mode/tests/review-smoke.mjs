@@ -87,7 +87,7 @@ for (const [key, text] of Object.entries(fixture.prompt)) {
 	assert.equal(created.details.doc.review, undefined);
 	await assert.rejects(
 		off.tools.get("align").execute("c2", { ops: [{ op: "review", phase: "plan", state: "running", reason: "r" }] }, undefined, undefined, off.ctx),
-		/ops\[0\]\.op must be one of create, import, add, edit, edit_question, edit_rejected, edit_doc, remove, decide, accept, accept_all, reopen, drop_question, drop_alignment, status, exempt, get\. Nothing was changed\./,
+		/ops\[0\]\.op must be one of create, import, add, edit, edit_question, edit_rejected, edit_doc, remove, decide, accept, accept_all, reopen, drop_question, drop_alignment, status, exempt, change_request, get\. Nothing was changed\./,
 	);
 }
 

@@ -111,21 +111,32 @@ Minor modes are extra instructions toggled independently of the major mode:
 zero or more can be active at once, in normal or delegate. Their blocks
 are appended after the delegate block (when in delegate) in registry order
 (`align`, then `spec`). Only `align` adds a bridge paragraph to the delegate
-block (the planning worker hand-off, said only there; with Visuals it also
+block (the planning worker hand-off, said only there and only for change
+requests: questions and research are answered or delegated as the delegate
+block says; with Visuals it also
 quotes the file schema with `visual` and a drawing paragraph to copy into the
 worker's prompt, naming the vis guide's directory, since a worker has no
 `vis_guide`); `spec` composes with either major mode and with `align` unchanged, and
 carries one paragraph of its own when a spec writer is set (see **Spec
 writer**).
 
-- **align** — before building anything non-trivial, the agent investigates
-  (in delegate, through a non-editing **Planning & specs** worker — never the
+- **align** — an alignment opens only after the user has said they want
+  something built, fixed or changed (a change request). Questions, "why"s,
+  explanations, research and brainstorming are answered in chat (options in
+  prose are fine, and a reply may end with a plain offer such as "Want me to
+  plan a fix?"). On a change request — a "go" after a plan sketched in chat
+  included — the agent marks the run (`change_request`), investigates (in
+  delegate, through a non-editing **Planning & specs** worker — never the
   cheaper Investigation profile, since this is design work; itself otherwise),
   records an alignment with the `align` tool (findings, approach, rejected
   alternatives, and questions with recommendations on architecture, UX, scope
-  and trade-offs), then stops and waits for the user's answers. Questions,
-  explicit commands, pointed-at one-liners and confirmations are exempt. Text
-  in `minor.ts`; see **Alignments**.
+  and trade-offs), then stops and waits for the user's answers; nothing is
+  built before it is confirmed. Explicit commands, pointed-at one-liners,
+  confirmations and a user's "skip alignment" are exempt. Every reply opens
+  with a short part the user reads (the answer, what changed, what they must
+  decide, warnings and what went unchecked; about 80 words), and any working
+  detail goes after a line reading exactly `### Working notes`, which Sova
+  shows as a closed fold. Text in `minor.ts`; see **Alignments**.
 - **spec** — every behavior change is spec'd: the agent finds its roots in the
   project's `.sova/spec/` documentation with `map` and `where`, looks at their
   contents with `toc`, runs `impact --near` on what it will change, and `read`s
@@ -303,7 +314,10 @@ step's or technical note's `text`), `edit_question` (with Visuals, `visual`,
 decided, which must be reopened first), `accept_all`, `reopen`,
 `drop_question` and `drop_alignment` (each with a `reason`), `status`
 (`implementing`, `done`, back to `open`), `exempt` (alone, with a `reason`: a
-work request needs no alignment) and `get`. A field or op borrowed from
+work request needs no alignment), `change_request` (the change-request mark:
+touches no document, takes an optional `note`, alone or before the call's other
+ops; answered "Marked as a change request."; only the settle nudge reads it) and
+`get`. A field or op borrowed from
 elsewhere gets a did-you-mean (`newText` → `text`, `why` → `reason`, op
 `delete` → `remove`, `create` with `fromFile` → `import`, a bare op without
 `{ops: [...]}`). The result is a compact echo of what is still open. Sessions
@@ -334,7 +348,10 @@ they are listed, and a recommendation that names an option by its label reads
   summary may state the alignments loosely. Nothing about alignments goes into
   the system prompt: a prompt change restarts a Claude Code session's CLI.
 - **No gate; one nudge** — nothing blocks edits or spawns while a question is
-  open. A run that is about to settle with no align call, whose final reply
+  open. A run that is about to settle, that the agent marked as a change
+  request (a `change_request` op, or any align call naming an op other than
+  `get`, refused or not; never guessed from the prompt's or the reply's words),
+  with no align call, whose final reply without its `### Working notes` part
   reads like a plan asking the user to decide (`planSignal`: an old
   `## Alignment: <title>` block; a closing question that asks for a decision or a
   go-ahead, never a merge, push or restart confirmation, and not options offered
@@ -342,7 +359,7 @@ they are listed, and a recommendation that names an option by its label reads
   "Questions for you:"), gets one hidden
   `align-nudge` and one more request; never twice in a run. Only a successful
   align call that changed a document or recorded an exemption counts as recorded:
-  a refused call or a bare `get` does not.
+  a refused call, a bare `get` or the mark alone does not.
 - **Widget** — one line above the editor while align is on and an alignment is
   open: `◇ align · al_3 2/7 open · al_2 implementing · alt+a view`.
 - **Tool row** — the call as one dim line (`◇ align al_3 · decide q3 · → implementing`),

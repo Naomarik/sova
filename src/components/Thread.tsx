@@ -18,7 +18,7 @@ import type { ScrollSpot } from "../lib/transcript-cache";
 import { anchorCorrection, anchorIndex } from "../lib/scroll-anchor";
 import { carriedStart, chunkStart, fillStops, FIRST_CHUNK, type ImagesAt, initialStart, jumpStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
 import { usePaneId, usePaneScope } from "../lib/pane-scope";
-import { isHiddenBlock, isTourResult, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, CARD_TOOLS } from "../lib/hidden-rows";
+import { isAlignMarkOnly, isHiddenBlock, isTourResult, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, CARD_TOOLS } from "../lib/hidden-rows";
 import { chainRuns, type ChainRun } from "../lib/chain-rows";
 import { compressWork } from "../lib/work-compression";
 import { isChangeRow, isLoginNoteRow } from "../lib/change-rows";
@@ -38,7 +38,7 @@ import { AlignRow } from "./AlignDocCard";
 import { ExplainCard } from "./ExplainCard";
 import { alignOf, alignRowFromDetails, latestAlignId, newestAlignRows } from "../lib/align";
 import { explainOf } from "../lib/explain";
-import { Markdown } from "./Markdown";
+import { ReplyMarkdown } from "./ReplyMarkdown";
 import { ReplyTimingHead } from "./ReplyTiming";
 import type { ReplyTiming } from "../../shared/usage/perf";
 import { replyHovers } from "../lib/perf";
@@ -196,7 +196,7 @@ function AssistantText(props: {
           {(t) => <ReplyTimingHead timing={t()} author={author()} stamp={<Stamp iso={props.time} />} />}
         </Show>
       </Show>
-      <Markdown text={props.text} streaming={props.streaming} attachments={props.attachments} />
+      <ReplyMarkdown text={props.text} streaming={props.streaming} attachments={props.attachments} />
     </article>
   );
 }
@@ -667,7 +667,7 @@ export function HistoryItems(props: {
     // Every tour call breaks the timeline (§chat.transcript/work-chain): its card, an earlier
     // call's one line (§app.tours/one-card) and a failure row alike stay outside compressed groups.
     if (TOUR_TOOLS.has(it.text ?? "")) return true;
-    return cardRow(it) !== undefined || CARD_RENDER_NAMES.has(it.text ?? "");
+    return cardRow(it) !== undefined || (CARD_RENDER_NAMES.has(it.text ?? "") && !isAlignMarkOnly(it.text, toolCallArgs(it)));
   };
 
   /**
@@ -1306,7 +1306,7 @@ export function LiveEntries(props: {
         return !(tool?.status === "done" && normalizeOfferDetails(tool.details));
       }
       if (TOUR_TOOLS.has(b.name)) return false;
-      return !CARD_RENDER_NAMES.has(b.name);
+      return !CARD_RENDER_NAMES.has(b.name) || isAlignMarkOnly(b.name, b.args);
     });
     const skip = blocks.map((b) => b !== null && !shows(b));
     // A streaming run folds under its own key: it has no entry id yet, and its block list only

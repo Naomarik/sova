@@ -60,6 +60,7 @@ import {
 	foldAlignments,
 	legacyLine,
 	looksLikeUncapturedPlan,
+	marksChangeRequest,
 	openDocsOf,
 	reviewRequestMessage,
 	toMarkdown,
@@ -350,6 +351,11 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	let nudged = false;
 	/** This run was started by a user prompt that asked a question (options offered back answer it). */
 	let runUserAsked = false;
+	/**
+	 * The agent marked this run as a change request (§chat.alignment/when): an align call naming any op
+	 * but get, refused or not. Only the agent's own call sets it; the nudge never guesses it from words.
+	 */
+	let runMarked = false;
 	/** The open overlay viewer, refreshed live on each align call; undefined when closed. */
 	let liveViewer: AlignViewer | undefined;
 	/** The latest context seen, for refreshing the widget from the tool (which has no UI of its own). */
@@ -1449,6 +1455,12 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		});
 	}
 
+	// Whether the agent marked this run as a change request, from the call's own arguments: a refused
+	// call counts, a bare get does not.
+	pi.on("tool_execution_start", async (event) => {
+		if (event.toolName === ALIGN_TOOL && marksChangeRequest(event.args)) runMarked = true;
+	});
+
 	// What this run recorded, for the settle nudge: an align call counts only when it succeeded and
 	// changed a document or recorded an exemption. A refused call or a bare get records nothing.
 	pi.on("tool_execution_end", async (event) => {
@@ -1471,11 +1483,12 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	});
 
 	/**
-	 * One nudge per run: a run about to settle with align on, no align call, and a final reply that
-	 * reads like a plan asking the user to decide gets a hidden message and one more request.
+	 * One nudge per run: a run about to settle with align on, marked as a change request, no align
+	 * call, and a final reply (without its working notes) that reads like a plan asking the user to
+	 * decide gets a hidden message and one more request. A run nobody marked is never nudged.
 	 */
 	pi.on("agent_before_settle", async (event) => {
-		if (!hasMinor(active, "align") || nudged || runAlignCalls > 0 || event.outcome !== "completed") return;
+		if (!hasMinor(active, "align") || !runMarked || nudged || runAlignCalls > 0 || event.outcome !== "completed") return;
 		if (!looksLikeUncapturedPlan(lastReplyText, { userAsked: runUserAsked })) return;
 		nudged = true;
 		return {
@@ -1492,6 +1505,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		runAlignCalls = 0;
 		lastReplyText = "";
 		runUserAsked = false;
+		runMarked = false;
 		nudged = false;
 		syncVisGuideTool();
 		syncCodemodeTool();

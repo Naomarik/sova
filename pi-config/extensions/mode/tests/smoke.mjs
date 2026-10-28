@@ -627,9 +627,21 @@ assert.match(card, /implementing · all 2 decided · v3 · q2 accepted · → im
 const full = alignTool.renderResult(going, { expanded: true, isPartial: false }, ctx.ui.theme).render(100).join("\n");
 assert.match(full, /a\. \*\*alt\+a\*\* — free today[\s\S]*Recommended: a — \*\*alt\+a\*\*/, "expanded: the whole document");
 
-// The settle nudge: once per run, only when the run made no align call and the reply plans in prose.
+// The settle nudge: once per run, only in a run the agent marked as a change request, when the run
+// made no align call and the reply plans in prose.
 const plan = "The plan is ready.\n\n**Open questions, with my suggested answers:**\n1. **Cap:** 400\n2. **Group:** by worker\n\nShould I go ahead with those answers?";
 const settle = () => hook("agent_before_settle", { type: "agent_before_settle", entries: [], continue: false, outcome: "completed" });
+let markN = 0;
+/** The agent's change-request mark: an align call naming change_request, which records nothing. */
+const mark = async () => {
+	const id = `m${markN++}`;
+	await hook("tool_execution_start", { type: "tool_execution_start", toolCallId: id, toolName: "align", args: { ops: [{ op: "change_request" }] } });
+	await hook("tool_execution_end", { type: "tool_execution_end", toolCallId: id, toolName: "align", isError: false, result: { details: { v: 1, changes: [], line: "" } } });
+};
+await hook("turn_end", { turnIndex: 0, message: assistant(plan), toolResults: [] });
+assert.equal(await settle(), undefined, "a run nobody marked is never nudged");
+await hook("agent_settled", {});
+await mark();
 await hook("turn_end", { turnIndex: 0, message: assistant(plan), toolResults: [] });
 const nudge = await settle();
 assert.equal(nudge.continue, true);
@@ -639,19 +651,28 @@ assert.equal(nudge.entries[0].display, false);
 await hook("turn_end", { turnIndex: 1, message: assistant(plan), toolResults: [] });
 assert.equal(await settle(), undefined, "never twice in one run");
 await hook("agent_settled", {});
+await mark();
 await hook("turn_end", { turnIndex: 2, message: assistant("Recorded it.", "toolUse", [{ type: "toolCall", id: "t", name: "align", arguments: {} }]), toolResults: [] });
 await hook("tool_execution_end", { type: "tool_execution_end", toolCallId: "t", toolName: "align", isError: false, result: { details: { v: 1, doc: { id: "al_1" }, changes: [], line: "" } } });
 await hook("turn_end", { turnIndex: 3, message: assistant(plan), toolResults: [] });
 assert.equal(await settle(), undefined, "a run that recorded with align is not nudged");
 await hook("agent_settled", {});
-// A refused call, or a bare get, recorded nothing: the prose plan still gets its nudge.
+// A refused call, or a bare get, recorded nothing: the prose plan still gets its nudge. The refused
+// call names an op, so it is the mark; the get alone would not be.
 await hook("turn_end", { turnIndex: 3, message: assistant("", "toolUse", [{ type: "toolCall", id: "t2", name: "align", arguments: {} }, { type: "toolCall", id: "t3", name: "align", arguments: {} }]), toolResults: [] });
+await hook("tool_execution_start", { type: "tool_execution_start", toolCallId: "t2", toolName: "align", args: { ops: [{ op: "create" }] } });
 await hook("tool_execution_end", { type: "tool_execution_end", toolCallId: "t2", toolName: "align", isError: true, result: { content: [] } });
+await hook("tool_execution_start", { type: "tool_execution_start", toolCallId: "t3", toolName: "align", args: { ops: [{ op: "get" }] } });
 await hook("tool_execution_end", { type: "tool_execution_end", toolCallId: "t3", toolName: "align", isError: false, result: { details: undefined } });
 await hook("turn_end", { turnIndex: 3, message: assistant(plan), toolResults: [] });
 assert.equal((await settle())?.continue, true, "a failed align call does not count as recorded");
 await hook("agent_settled", {});
+await hook("tool_execution_start", { type: "tool_execution_start", toolCallId: "t4", toolName: "align", args: { ops: [{ op: "get" }] } });
+await hook("turn_end", { turnIndex: 3, message: assistant(plan), toolResults: [] });
+assert.equal(await settle(), undefined, "a bare get is no mark");
+await hook("agent_settled", {});
 // The final message has no text: the nudge judges it, not the plan an earlier turn wrote.
+await mark();
 await hook("turn_end", { turnIndex: 3, message: assistant(plan), toolResults: [] });
 await hook("turn_end", { turnIndex: 4, message: assistant("", "stop", []), toolResults: [] });
 assert.equal(await settle(), undefined, "no stale reply text");
@@ -659,13 +680,16 @@ await hook("agent_settled", {});
 // Options offered back to a user who asked a question answer it; the same reply to a work request is a decision.
 const options = "The two options are:\n- A: a flag\n- B: a subcommand\n\nWhich do you prefer?";
 await beforeAgentStart({ systemPrompt: "base", prompt: "What are my options for the export?" }, ctx);
+await mark();
 await hook("turn_end", { turnIndex: 5, message: assistant(options), toolResults: [] });
 assert.equal(await settle(), undefined, "a choice answering the user's question");
 await hook("agent_settled", {});
 await beforeAgentStart({ systemPrompt: "base", prompt: "Add an export." }, ctx);
+await mark();
 await hook("turn_end", { turnIndex: 6, message: assistant(options), toolResults: [] });
 assert.equal((await settle())?.continue, true, "the same choice after a work request");
 await hook("agent_settled", {});
+await mark();
 await hook("turn_end", { turnIndex: 4, message: assistant("Lane E is finished; lanes B–D are still running."), toolResults: [] });
 assert.equal(await settle(), undefined, "a report is not nudged");
 await hook("agent_settled", {});

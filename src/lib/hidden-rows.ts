@@ -4,7 +4,7 @@ import { OFFER_TOOL } from "../../shared/session-offers";
 import { rowFacts } from "../../shared/wire-v1";
 import { isChangeRow } from "./change-rows";
 import type { LiveBlock, LiveState } from "./live";
-import { toolResultView } from "./message";
+import { toolCallArgs, toolResultView } from "./message";
 import { isTurnStart } from "./turn";
 
 /** Which kinds a session hides: "Hide tool calls" and "Hide thinking", independent of each other. */
@@ -34,12 +34,26 @@ export interface HiddenSplit {
     message, not its working. */
 export const CARD_TOOLS: ReadonlySet<string> = new Set(["sova_card", "sova_confirm", "sova_link", "sova_unlink", "align", OFFER_TOOL, ...TOUR_TOOLS]);
 
+/**
+ * An `align` call that is only the change-request mark (§chat.alignment/tool, op `change_request`, the
+ * mode extension's name): working, not the message, so it keeps the generic tool card and "Hide tool
+ * calls" folds it like any other (§chat.alignment/card). Read from the call's own arguments.
+ */
+export function isAlignMarkOnly(name: string | undefined, args: unknown): boolean {
+  if (name !== "align" || typeof args !== "object" || args === null) return false;
+  const ops = (args as { ops?: unknown }).ops;
+  return Array.isArray(ops) && ops.length > 0 && ops.every((o) => typeof o === "object" && o !== null && (o as { op?: unknown }).op === "change_request");
+}
+
+/** Whether a call row (by its tool name and arguments) is drawn as a card rather than a tool card. */
+const isCardCall = (it: TranscriptItem) => CARD_TOOLS.has(it.text ?? "") && !isAlignMarkOnly(it.text, toolCallArgs(it));
+
 /** Ids of the calls that render as cards (their paired results go with them). */
 const cardCallIds = (items: TranscriptItem[]) =>
-  new Set(items.filter((it) => it.kind === "tool-call" && it.toolCallId && CARD_TOOLS.has(it.text ?? "")).map((it) => it.toolCallId!));
+  new Set(items.filter((it) => it.kind === "tool-call" && it.toolCallId && isCardCall(it)).map((it) => it.toolCallId!));
 export const isTourResult = (it: TranscriptItem) => it.kind === "tool-result" && TOUR_TOOLS.has(rowFacts(it)?.tool?.name ?? "");
 const isToolRow = (it: TranscriptItem, cards: ReadonlySet<string>) =>
-  (it.kind === "tool-call" || it.kind === "tool-result") && !isTourResult(it) && !(it.toolCallId && cards.has(it.toolCallId)) && !(it.kind === "tool-call" && CARD_TOOLS.has(it.text ?? ""));
+  (it.kind === "tool-call" || it.kind === "tool-result") && !isTourResult(it) && !(it.toolCallId && cards.has(it.toolCallId)) && !(it.kind === "tool-call" && isCardCall(it));
 const isHidden = (it: TranscriptItem, hide: HideKinds, cards: ReadonlySet<string>) => (hide.tools && isToolRow(it, cards)) || (hide.thinking && it.kind === "thinking");
 
 /** Counts the way `HistoryItems` renders: a paired result folds into its call's card, an orphan gets its own. */
@@ -80,7 +94,7 @@ export function splitHidden(items: TranscriptItem[], hide: HideKinds): HiddenSpl
 
 /** Whether a streaming block is one the preferences hide. */
 export const isHiddenBlock = (b: LiveBlock | undefined, hide: HideKinds) =>
-  !!b && ((hide.tools && b.type === "toolCall" && !CARD_TOOLS.has(b.name)) || (hide.thinking && b.type === "thinking"));
+  !!b && ((hide.tools && b.type === "toolCall" && (!CARD_TOOLS.has(b.name) || isAlignMarkOnly(b.name, b.args))) || (hide.thinking && b.type === "thinking"));
 
 /** The streaming turn's hidden blocks, counted from its blocks and, for tool calls, their live status. */
 export function liveHiddenCounts(live: LiveState, hide: HideKinds): { calls: number; failed: number; running: number; thinking: number } {

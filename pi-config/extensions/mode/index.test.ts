@@ -8,7 +8,7 @@ import test from "node:test";
 import { ALIGN_INSTRUCTIONS, buildMinorPrompt, CODEMODE_TOOL, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_PROMPTLESS, MINOR_SURFACES, MINOR_WORKER, type MinorMode, normalizeMinorModes, parseMinorFlag, promptedMinorModes, SCRIPT_ONLY_EXPOSURES, SPEC_CORE_SHELL, SPEC_INSTRUCTIONS, stripVisComments, VIS_FILES, VIS_INSTRUCTIONS, VIS_KIND_FILES, VIS_KINDS, visGuide, visOverview, WEB_MINOR_HOOK, WEB_ONLY_MINOR_MODES, webMinorRefusal, workerMinorModes } from "./minor.ts";
 import { parseModeWorkerEvent } from "./events.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
-import { ALIGN_FILE_SCHEMA, ALIGN_NUDGE_TEXT, ALIGN_OPS } from "./align.ts";
+import { ALIGN_FILE_SCHEMA, ALIGN_NUDGE_MESSAGE, ALIGN_NUDGE_TEXT, ALIGN_OPS } from "./align.ts";
 import { delegateDefaults, type DelegateSettings } from "./delegate.ts";
 import {
 	applyModeSection,
@@ -255,6 +255,22 @@ test("composePrompt joins the delegate block and minor blocks", () => {
 	assert.match(align, /status done when the work is finished/);
 	assert.match(align, /align exempt and a reason/);
 	assert.match(align, /Several alignments can be open at once/);
+	// When an alignment opens (§chat.alignment/when): only on a change request, marked first; questions are
+	// answered in chat; never told to lean toward asking or to confirm a clear reading.
+	assert.match(align, /opens only after the user has said they want something built, fixed or changed/);
+	assert.match(align, /Questions are answered in chat/);
+	assert.match(align, /"Want me to plan a fix\?"/);
+	assert.match(align, /a "go", "do it" or "yes" after a plan you sketched in chat/);
+	assert.match(align, /\{"op": "change_request"\} before anything else in that run/);
+	assert.match(align, /unless the user said to skip alignment or the request is exempt/);
+	assert.doesNotMatch(align, /Bias heavily toward asking|still record a short alignment|fully specified/);
+	// Every reply's two parts (§chat.alignment/reply): the fold's exact heading.
+	assert.match(align, /a line that reads exactly `### Working notes`/);
+	assert.match(align, /about 80 words, five short lines at most \(a target, not a limit\)/);
+	assert.match(align, /warnings, failures, risks and what went unchecked always go here/);
+	// The bridge follows the same trigger.
+	assert.match(DELEGATE_ALIGN_BRIDGE, /for change requests only: a question, an explanation, research or brainstorming is answered \(or delegated\)/);
+	assert.match(DELEGATE_ALIGN_BRIDGE, /align \{op: "change_request"\}/);
 	// No markdown template survives: the parser that read it is gone.
 	assert.doesNotMatch(align, /^#{2,3} (Alignment|Findings|Open questions|Status)/m);
 	assert.doesNotMatch(align, /\[ \]/);
@@ -1227,4 +1243,84 @@ test("buildModeNote in the worker form: spec turned on carries the worker note, 
 	const note = buildModeNote([], ["spec"], { head: [], guides: [] }, writer, true)!;
 	assert.ok(note.text.endsWith(`\n\n${composeWorkerPrompt({ minorModes: ["spec"] })}`), "the worker form of the block");
 	assert.doesNotMatch(note.text, /Spec writer:/);
+});
+
+/**
+ * The real extension on a minimal host with align on (the `minor` flag): the settle nudge's hooks
+ * driven directly, one run at a time (§chat.alignment/when, §chat.alignment/model).
+ */
+async function nudgeHost() {
+	const prevDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = tmp();
+	const { default: modeExtension } = await import("./index.ts");
+	const hooks = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>();
+	const noop = () => {};
+	const base: Record<string, unknown> = {
+		on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => hooks.set(name, [...(hooks.get(name) ?? []), handler]),
+		getFlag: (name: string) => (name === "minor" ? "align" : undefined),
+		getActiveTools: () => [],
+		getAllTools: () => [],
+		events: { on: () => noop, emit: noop },
+	};
+	const pi = new Proxy(base, { get: (t, k) => (typeof k === "string" && k in t ? t[k] : noop) });
+	const ui = new Proxy({ theme: { fg: (_t: string, x: string) => x, bold: (x: string) => x, bg: (_t: string, x: string) => x } } as Record<string, unknown>, { get: (t, k) => (typeof k === "string" && k in t ? t[k] : noop) });
+	const ctx = { ui, cwd: process.env.PI_CODING_AGENT_DIR, hasUI: false, sessionManager: { getBranch: () => [], getEntries: () => [], getSessionFile: () => undefined } };
+	modeExtension(pi as never);
+	const fire = async (name: string, event: unknown) => {
+		let out: unknown;
+		for (const handler of hooks.get(name) ?? []) out = (await handler(event, ctx)) ?? out;
+		return out as { entries: { customType?: string }[]; continue: boolean } | undefined;
+	};
+	await fire("session_start", { type: "session_start", reason: "startup" });
+	/** One run: the user's prompt, the align calls' arguments, the final reply; what the settle hook returned. */
+	const run = async (prompt: string, alignArgs: unknown[], reply: string) => {
+		await fire("before_agent_start", { type: "before_agent_start", prompt, systemPrompt: "base" });
+		for (const [i, args] of alignArgs.entries()) {
+			await fire("tool_execution_start", { type: "tool_execution_start", toolCallId: `c${i}`, toolName: "align", args });
+			// A mark (or a refused call) records nothing: no document, no exemption.
+			await fire("tool_execution_end", { type: "tool_execution_end", toolCallId: `c${i}`, toolName: "align", isError: false, result: { details: { v: 1, changes: [], line: "" } } });
+		}
+		await fire("turn_end", { type: "turn_end", message: { role: "assistant", content: [{ type: "text", text: reply }] } });
+		const settled = await fire("agent_before_settle", { type: "agent_before_settle", entries: [], continue: false, outcome: "completed" });
+		await fire("agent_settled", { type: "agent_settled" });
+		return settled;
+	};
+	const restore = () => {
+		if (prevDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = prevDir;
+	};
+	return { run, restore };
+}
+
+const nudgedBy = (settled: { entries: { customType?: string }[] } | undefined) => settled?.entries.some((e) => e.customType === ALIGN_NUDGE_MESSAGE) === true;
+
+test("settle nudge: a run nobody marked as a change request is never nudged, whatever its reply asks", async () => {
+	const host = await nudgeHost();
+	try {
+		const settled = await host.run("explain playbooks", [], "Playbooks are recipes a project runs, step by step.\n\nShould I go ahead with that?");
+		assert.equal(nudgedBy(settled), false, "no ALIGN_NUDGE_MESSAGE without the mark");
+		assert.equal(settled, undefined, "the run settles as it was");
+		// A bare get is no mark either.
+		assert.equal(nudgedBy(await host.run("explain playbooks", [{ ops: [{ op: "get" }] }], "Plan:\n- a\n- b\n\nShould I go ahead?")), false);
+	} finally {
+		host.restore();
+	}
+});
+
+test("settle nudge: with the change-request mark (or any align op but get) the same reply is nudged once", async () => {
+	const host = await nudgeHost();
+	try {
+		const reply = "Playbooks are recipes a project runs, step by step.\n\nShould I go ahead with that?";
+		const settled = await host.run("explain playbooks", [{ ops: [{ op: "change_request" }] }], reply);
+		assert.equal(nudgedBy(settled), true, "the marked run gets ALIGN_NUDGE_MESSAGE");
+		assert.equal(settled?.continue, true);
+		// The mark holds for its run only: the next run, unmarked, is left alone.
+		assert.equal(nudgedBy(await host.run("explain playbooks", [], reply)), false, "the mark ends with its run");
+		// A refused create still marks the run (refused or not); it recorded nothing, so the plan is nudged.
+		assert.equal(nudgedBy(await host.run("add an export", [{ ops: [{ op: "create" }] }], reply)), true);
+		// The plan just above its working notes is the reply's end.
+		assert.equal(nudgedBy(await host.run("add an export", [{ ops: [{ op: "change_request" }] }], "Plan:\n- a\n- b\n\nShould I go ahead?\n\n### Working notes\nRead the code. Nothing else.")), true);
+	} finally {
+		host.restore();
+	}
 });

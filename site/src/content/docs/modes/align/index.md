@@ -13,6 +13,16 @@ major mode. While it's on, the agent works out what to build with you first, and
 agreement as an **alignment** with its `align` tool. A chat can hold several alignments at once,
 one per concern.
 
+An alignment opens only once you've said you want something built, fixed or changed. Questions,
+explanations, research and brainstorming are answered in chat; the agent may end with an offer
+such as "Want me to plan a fix?" and waits for your word. Once you ask for a change (a "go" after
+a plan it sketched in chat included), it records an alignment first and builds nothing until you
+confirm it, unless you said to skip alignment.
+
+While align is on, every reply opens with a short part for you: the answer, what changed, what you
+must decide, and any warnings or things it didn't check. The agent's working detail, when there
+is any, comes after it under **Working notes**, which the chat shows folded closed.
+
 You never edit an alignment yourself. You answer in chat, and the agent records your answer. It
 works the same in Sova and in pi's terminal UI.
 
@@ -131,8 +141,9 @@ the session's branch is merged, they leave Needs you too.
 - With each message you send while an alignment is open, the agent gets a hidden note listing the
   open questions with their ids, options and recommendations, so "3a" maps onto the right
   question. After a compaction it gets the same, with the decided questions too.
-- If a reply reads like a plan that asks you to decide, but the agent recorded nothing, it gets one
-  reminder to record it, once per run.
+- When you asked for a change and the agent's reply reads like a plan that asks you to decide, but
+  it recorded nothing, it gets one reminder to record it, once per run. A reply to a question is
+  never reminded.
 - **Nothing blocks the agent.** It can still edit, start workers or create worktrees while a
   question is open, so a stuck worker or a parallel concern never leaves the session stuck.
 

@@ -4,6 +4,7 @@ import { needsUpdatingText, TOOLKIT_VERSION, type CardInfo } from "../../shared/
 import { cardDataErrorText } from "../../shared/view-cards";
 import { ApiError, getCardView, runSessionCardCommand, setCardTrust } from "../lib/api";
 import { boxFocusGuard, CARD_BOX_MESSAGE, CARD_BOX_UNSUPPORTED, CARD_SHELL_ATTRS, cardBoxSupported, cardShellDoc, cardViewDoc, fromCardBox } from "../lib/card-box";
+import { CARD_VIEW_BASE_CSS } from "../lib/card-box-css";
 import type { CardControls } from "../lib/card-controls";
 import { answerViewCall, boxHeight } from "../lib/card-view-host";
 import { CardErrorBox } from "./TranscriptKind";
@@ -20,24 +21,8 @@ import { Icon } from "./ui";
  * nothing else in the chat notices.
  */
 
-/** The view document's base: Sova's typography and controls on the theme's tokens (sent with each load). */
-// The view's color-scheme stays `normal`, as its frames' do: a frame whose document's scheme differs
-// from its element's gets an opaque backdrop, never the card's own background.
-const BASE_CSS = `html{-webkit-text-size-adjust:100%;color-scheme:normal}
-html,body{margin:0;padding:0;background:transparent}
-body{color:var(--color-ink);font-family:var(--font-body),system-ui,sans-serif;font-size:var(--fs-body,14px);line-height:var(--lh-body,1.5);-webkit-font-smoothing:antialiased;overflow-wrap:anywhere}
-h1,h2,h3,h4{font-family:var(--font-display),system-ui,sans-serif;margin:0 0 var(--space-2,8px)}
-p{margin:0 0 var(--space-2,8px)}
-code,pre{font-family:var(--font-mono),ui-monospace,monospace;font-size:var(--fs-mono,13px)}
-button{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-2,8px);min-height:var(--control-sm,28px);padding:0 var(--space-3,12px);border:1px solid var(--color-border-strong);border-radius:var(--r-md,6px);background:var(--color-surface);color:var(--color-ink);font:inherit;font-weight:var(--fw-medium,500);cursor:pointer}
-button:hover{border-color:var(--color-accent)}
-button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
-button:disabled{opacity:.5;cursor:default}
-input,select,textarea{font:inherit;color:inherit;background:var(--color-sunken);border:1px solid var(--color-border);border-radius:var(--r-sm,4px);padding:var(--space-1,4px) var(--space-2,8px)}
-.muted{color:var(--color-ink-muted)}`;
-
 let shellDocCache: string | null = null;
-export const shellDoc = () => (shellDocCache ??= cardShellDoc(cardViewDoc(BASE_CSS)));
+export const shellDoc = () => (shellDocCache ??= cardShellDoc(cardViewDoc(CARD_VIEW_BASE_CSS)));
 
 /** The theme in use, as the box takes it: every token on the page's root, and whether it is light or dark. */
 export function themeNow(): { css: string; theme: { name: string; scheme: "light" | "dark" } } {

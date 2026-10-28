@@ -1,4 +1,4 @@
-import { createSignal, Show, useContext } from "solid-js";
+import { createSignal, createUniqueId, Show, useContext, type JSX } from "solid-js";
 import { answerOf, raiserText, type CardAnswerValue, type CardInfo } from "../../shared/transcript-cards";
 import { checkCardData, letterIndex, type ChecklistCard, type DataCardKind, type QuestionCard } from "../../shared/view-cards";
 import { CardContext, type CardControls } from "../lib/card-controls";
@@ -69,9 +69,11 @@ function CardBody(props: { card: CardInfo; ctx: CardControls | undefined }) {
         when={props.card.draws === "view"}
         fallback={<DataCard draws={props.card.draws as DataCardKind} data={props.card.data} id={props.card.id} answer={answering()} answered={!!props.card.answer} />}
       >
-        <Show when={props.ctx} fallback={<p class="transcript-card-view-elsewhere text-muted">{props.card.title}: this card's view draws in its chat.</p>}>
-          {(ctx) => <CardView card={props.card} ctx={ctx()} />}
-        </Show>
+        <ViewFrame card={props.card}>
+          <Show when={props.ctx} fallback={<p class="transcript-card-view-elsewhere text-muted">{props.card.title}: this card's view draws in its chat.</p>}>
+            {(ctx) => <CardView card={props.card} ctx={ctx()} />}
+          </Show>
+        </ViewFrame>
       </Show>
       </Show>
       <Show when={props.card.answer}>{(a) => <AnswerLine card={props.card} answer={a()} />}</Show>
@@ -98,6 +100,21 @@ function CardBody(props: { card: CardInfo; ctx: CardControls | undefined }) {
         )}
       </Show>
     </>
+  );
+}
+
+/** A view card's frame: the same card, header and title as a data card's, with the view's sealed box as its body. */
+function ViewFrame(props: { card: CardInfo; children: JSX.Element }) {
+  const titleId = `view-card-${createUniqueId()}`;
+  return (
+    <section class="card data-card data-card-view" aria-labelledby={titleId}>
+      <div class="card-head">
+        <h3 class="card-title" id={titleId}>
+          {titleOf(props.card)}
+        </h3>
+      </div>
+      <div class="card-body data-card-view-body">{props.children}</div>
+    </section>
   );
 }
 

@@ -1,4 +1,4 @@
-import { createEffect, createSignal, lazy, on, onCleanup, useContext } from "solid-js";
+import { createEffect, createMemo, createSignal, lazy, on, onCleanup, useContext } from "solid-js";
 import type { TmpAttachment } from "../../shared/protocol";
 import { renderMarkdown, type RenderedMarkdown, type RenderedVisual } from "../lib/markdown";
 import { activatePathChip } from "../lib/path-attachments";
@@ -26,6 +26,9 @@ export function Markdown(props: { text: string; streaming?: boolean; attachments
   // The chat's own drawing kinds, from its snapshot (§chat.transcript-cards/drawing-kinds); none outside a chat.
   const cards = useContext(CardContext);
   const own = () => cards?.drawings();
+  // What the kinds are, as a value: the store fills its array in place (reconcile), so the array
+  // itself never changes and a reply drawn before the kinds arrived would keep them unknown.
+  const ownKey = createMemo(() => JSON.stringify(own() ?? []));
   const [rendered, setRendered] = createSignal<RenderedMarkdown>(renderMarkdown(props.text, !!props.streaming, props.attachments, own()));
   let frame = 0;
   onCleanup(() => cancelAnimationFrame(frame));
@@ -33,7 +36,7 @@ export function Markdown(props: { text: string; streaming?: boolean; attachments
     on(
       // A session link resolves against the session list: re-render when that changes, but only
       // for a message that has one — every other message ignores the list's polls.
-      () => [props.text, !!props.streaming, props.attachments, props.text.includes("sova://") && sessionIndexVersion(), props.text.includes("vis ") && own()] as const,
+      () => [props.text, !!props.streaming, props.attachments, props.text.includes("sova://") && sessionIndexVersion(), props.text.includes("vis ") && ownKey()] as const,
       ([text, streaming, attachments]) => {
         if (!streaming) {
           cancelAnimationFrame(frame);

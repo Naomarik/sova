@@ -14,7 +14,8 @@ import {
   type Removable,
 } from "../../shared/profiles";
 import type { ChatProfileInfo } from "../../shared/protocol";
-import { modelLabel } from "./format";
+import { compactModel, modelLabel } from "./format";
+import { majorGlyph, minorGlyph, type ModeGlyph } from "./mode-glyphs";
 
 /** The Icon a profile's icon names (an unknown one reads as the wrench). */
 export function profileIconName(icon: string | undefined): IconName {
@@ -163,6 +164,87 @@ export function profileCaption(p: Pick<Profile, "model" | "thinking" | "subagent
   if (p.subagents) parts.push(`subagents: ${p.subagents === "off" ? "off" : (subagents.find((s) => s.id === p.subagents)?.footprint || p.subagents)}`);
   parts.push(...modeParts(p));
   return parts.length ? parts.join(" · ") : p.description;
+}
+
+/** One drawn part of a card's settings caption, each with its complete words for its `title`. */
+export type CaptionPart =
+  /** The effort ring and the model's short name, each only when the profile sets it. */
+  | { kind: "model"; name: string | null; level: string | null; title: string }
+  /** The subagents icon and the subagent profile's distinct primary models, or "off". */
+  | { kind: "subagents"; text: string; title: string }
+  /** A mode's icon, or a project mode's letter. */
+  | { kind: "mode"; glyph: ModeGlyph; title: string }
+  /** Words where the profile sets something no glyph draws (minor modes set to none). */
+  | { kind: "words"; text: string; title: string };
+
+/**
+ * A card's caption as drawn (§chat.profiles/picker): `words` for a caption that isn't settings (a
+ * description, a disabled reason in the warn tone), or `glyphs`, the parts for what the profile
+ * sets, with `label` the whole caption in words (profileCaption / mySettingsCaption) for its
+ * accessible name and hover text.
+ */
+export type CardCaption = { kind: "words"; text: string; tone?: "warn" } | { kind: "glyphs"; label: string; parts: CaptionPart[] };
+
+const modelPart = (model: string | null | undefined, level: string | null | undefined): CaptionPart[] =>
+  model || level
+    ? [{ kind: "model", name: model ? (compactModel(model) ?? model) : null, level: level ?? null, title: [model ? (modelLabel(model) ?? model) : null, level ? `effort ${level}` : null].filter(Boolean).join(" · ") }]
+    : [];
+
+const modePartsOf = (mode: string | null | undefined, minors: readonly string[] | null | undefined): CaptionPart[] => [
+  ...(mode ? [{ kind: "mode" as const, glyph: majorGlyph(mode), title: `mode: ${mode}` }] : []),
+  ...(minors ?? []).map((m) => ({ kind: "mode" as const, glyph: minorGlyph(m), title: `minor mode: ${m}` })),
+];
+
+/**
+ * A profile card's caption parts: the model and effort, the subagents count, then the mode icons,
+ * each only when the profile sets it; its description when it sets none; `why` (it can't be used
+ * here) in the warn tone over either.
+ */
+export function profileCaptionParts(
+  p: Pick<Profile, "model" | "thinking" | "subagents" | "mode" | "minorModes" | "description">,
+  subagents: readonly { id: string; footprint: string; models?: number }[] = [],
+  why: string | null = null,
+): CardCaption {
+  if (why) return { kind: "words", text: why, tone: "warn" };
+  const parts: CaptionPart[] = [...modelPart(p.model, p.thinking)];
+  if (p.subagents) {
+    const s = subagents.find((x) => x.id === p.subagents);
+    const footprint = p.subagents === "off" ? "off" : (s?.footprint || p.subagents);
+    const text = p.subagents === "off" ? "off" : s?.models !== undefined ? String(s.models) : p.subagents;
+    parts.push({ kind: "subagents", text, title: `subagents: ${footprint}` });
+  }
+  parts.push(...modePartsOf(p.mode, p.minorModes));
+  if (p.minorModes && !p.minorModes.length) parts.push({ kind: "words", text: "no minor modes", title: "no minor modes" });
+  if (!parts.length) return { kind: "words", text: p.description };
+  return { kind: "glyphs", label: profileCaption(p, subagents), parts };
+}
+
+/** My settings' caption parts, in its own order: the mode icons first, then the model and effort. */
+export function mySettingsCaptionParts(s: MySettingsState | null | undefined): CardCaption {
+  const parts = [...modePartsOf(s?.mode, s?.minorModes), ...modelPart(s?.model, s?.thinking)];
+  const label = mySettingsCaption(s);
+  return parts.length ? { kind: "glyphs", label, parts } : { kind: "words", text: label };
+}
+
+/**
+ * The picked profile's settings in full words (§chat.profiles/picker), the first line of its
+ * details: "Model: Opus 5.5 · Effort: high · Subagents: Claude subs (Opus 5.5, glm-5.3) · Main mode:
+ * delegate · Add-on modes: align, spec", what it leaves unset left out; null when it sets none.
+ */
+export function profileSettingsLine(
+  p: Pick<Profile, "model" | "thinking" | "subagents" | "mode" | "minorModes">,
+  subagents: readonly { id: string; name: string; footprint: string }[] = [],
+): string | null {
+  const parts: string[] = [];
+  if (p.model) parts.push(`Model: ${modelLabel(p.model) ?? p.model}`);
+  if (p.thinking) parts.push(`Effort: ${p.thinking}`);
+  if (p.subagents) {
+    const s = subagents.find((x) => x.id === p.subagents);
+    parts.push(`Subagents: ${p.subagents === "off" ? "off" : s ? `${s.name} (${s.footprint.split(" · ").join(", ")})` : p.subagents}`);
+  }
+  if (p.mode) parts.push(`Main mode: ${p.mode}`);
+  if (p.minorModes) parts.push(`Add-on modes: ${p.minorModes.length ? p.minorModes.join(", ") : "none"}`);
+  return parts.length ? parts.join(" · ") : null;
 }
 
 /** Why a card can't be picked on this host now (the listing's sentence), or null. */

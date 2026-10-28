@@ -77,7 +77,7 @@ export function buildDelegatePrompt(routes: readonly ProfileRoute[]): string {
  * The paragraph a planning worker's prompt carries in a Visuals chat (§chat.alignment/visuals), copied word
  * for word: the worker has no vis_guide, so it reads the guide's files.
  */
-export const PLANNER_VISUALS_PARAGRAPH = `Drawings: where a picture explains faster than words (a wireframe for a question about a screen; a flow, state or steps for a change in behaviour), give that question, or the alignment, a "visual", at most 3 in all. In the Project manager writing style never use the code, tree or layers kinds. Before drawing a kind, read shared.md and <kind>.md in ${VIS_GUIDE_DIR} and use only that syntax.`;
+export const PLANNER_VISUALS_PARAGRAPH = `Drawings: where a picture explains faster than words (a wireframe for a simple screen or a flow across screens; an html prototype for a screen beyond a simple one; a flow, state or steps for a change in behaviour), give that question, or the alignment, a "visual", at most 3 in all. In the Project manager writing style never use the code, tree or layers kinds. Before drawing a kind, read shared.md and <kind>.md in ${VIS_GUIDE_DIR} and use only that syntax.`;
 
 /**
  * Appended to the delegate block while align is also on. Without it the delegate block's "delegate all

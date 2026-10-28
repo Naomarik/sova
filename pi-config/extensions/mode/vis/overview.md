@@ -22,8 +22,8 @@ Every kind has its own syntax, and none can be guessed from another kind: before
 - chart: numbers to compare (bars, stacked, a trend, scatter)
 - timeline: events in order
 - steps: scenarios or journeys as chains, each with a status
-- wireframe: a screen's layout on a phone or desktop; several screens for a flow
+- wireframe: a simple screen's layout (a page, a list, a form, a short dialog) on a phone or desktop; several screens for a flow
 - matrix: options against criteria, or capabilities by role
 - code: a snippet with marked lines: settings and `mark`s, a `---` line, then the code (a plain code fence when nothing is marked)
-- html / svg: only when no kind fits; something to play with, or a drawing no kind covers
+- html / svg: html for a clickable prototype, the default for any screen beyond a simple one (look and feel, panes side by side, an editor in a dialog, a dense desktop layout), without being asked; also something to play with; svg a still drawing no kind covers
 - tour: explain a real interface or UI/UX experiment with checked desktop + phone recordings; call `vis_guide` with `tour` for authoring and `record_tour` / `show_tour`, never a `vis tour` fence; parts on demand: `tour-signin` (sign-in), `tour-sites` (sources, approval), `tour-sova` (Sova itself), `tour-sharing` (links, hand-offs)

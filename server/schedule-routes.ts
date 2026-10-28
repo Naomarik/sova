@@ -149,6 +149,7 @@ export function startScheduleKeeper(request: AppRequest): ScheduleKeeper {
       return { pending: b.pending, rowsIn: (root: string) => rowsIn(b, root) };
     },
     typedGoAheads: () => readLanding(join(stateRoot(), LANDING_FILE_NAME)).goAheads.filter((g) => g.by === "owner-chat"),
+    cardGoAheads: () => readLanding(join(stateRoot(), LANDING_FILE_NAME)).goAheads.filter((g) => g.by === "overseer-card"),
   });
   setScheduleKeeper(keeper);
   const tick = () => void keeper.tick().catch((err) => console.warn("[schedules] tick failed:", err instanceof Error ? err.message : String(err)));

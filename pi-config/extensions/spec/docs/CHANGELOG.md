@@ -959,6 +959,73 @@ would list master's changes instead.
     `pending: []`) and passes after. Tool tests 587 pass, 0 fail.
   - Upgrade: see UPGRADING step 13.
 
+- **Sova's spec keeps each area's records beside its claim file; new specs start that way** (al_6, landing 2:
+  the conversion).
+  - Commit: on branch `feat/spec-convert`; not on master yet. The conversion is one commit of its own:
+    first 516ca52b (`.sova/spec/manifest.json`, 101 new `.sova/spec/claims/**/*.json`, `.gitattributes`).
+    Master then moved seven times; each merge of master (2bf59cab, 012d7940, 8d463940, 8d463e94, c4def502, 42fb09cc, then b51a7d22) finished the spec with
+    `merge-manifest --write`, which writes the default branch's layout (format 1, with every record master
+    had changed: 36, 1, 1, 9, 15, 6, then 77), and each was followed by a fresh conversion; the last, e5b1b647,
+    converts the merged spec again: plain `migrate --write` output, `manifest.json` and 102 record files,
+    nothing else. e5b1b647 is the conversion that lands.
+  - Why: landing 1 shipped the tools with Sova's spec still in format 1; this converts it, so two branches
+    meet in one record file only when they change the same area.
+  - Changed:
+    - Sova's spec is format 2 (`migrate --write`): 1,187 records leave `manifest.json` for 102 record files
+      beside their claim files; `manifest.json` keeps the settings and the `claims` string;
+    - `.gitattributes` drops `.sova/spec/manifest.json merge=sova-spec-manifest` (kept:
+      `merge=sova-spec-claims` for `claims/**/*.md`); `manifest.json` and the record files merge with Git's
+      line merge. The protection against an older branch's driver stays: its own `.gitattributes` still
+      routes `manifest.json` to `merge-manifest`, which refuses format 2's string `claims`, so its merge of
+      master stops with a conflict that `merge-manifest --write` finishes, never a quiet merge;
+    - `sova-spec-draft.mjs new` in a project with no spec starts format 2 (`{"formatVersion": 2, "claims":
+      "records live beside each claim file, in claims/**/*.json"}`), and its first promotion writes format 2;
+      an existing spec keeps its format until someone runs `migrate`;
+    - `tests/bench/merge-collisions.mjs`: replays a repository's merges (`--since DATE|REV`) and counts, per
+      layout period, both-sides changes and Git line-merge conflicts on the record files as they were and
+      re-laid one file per area, the same record changed two ways, merges that took one side's whole spec
+      (or one area's pair), and re-apply commits per week; it reads history through `layout.mjs`, so it
+      spans the cutover;
+    - tests that read the real spec's records from `manifest.json` read them through `records` or
+      `layout.mjs` (`toc`, `packet-acceptance`, `layout`); `worktrees/spec.test.ts` gains two landings
+      across the cutover with nothing to report;
+    - docs: `.sova/spec/README.md`, `USAGE.md`, `DRAFTS.md`, `core/README.md`, `spec/README.md`, `MODE.md`,
+      the site page.
+  - §: §tools.spec/record-layout, §tools.spec/git-merge (both agreed again under the al_6 go-ahead),
+    §app.requirements/drafts-with-provenance reworded; §app.requirements/decisions,
+    §app.requirements/conversation-drafts, §tools.spec/record-fields: "manifest record" becomes "record"
+    (draft `spec-convert`, promoted on the branch at 8c5a9359; `foreign --base 24973451 --head 8c5a9359`
+    gives the same list; `foreign` over either conversion alone, 27019745..516ca52b or b51a7d22..e5b1b647,
+    gives none).
+  - Numbers: the identity check at e5b1b647 against its parent, the merge: `records` equal (1,187),
+    settings equal but `formatVersion`; `check`, `graph`, `map`, `census`, `where`, `toc`, `read`, `impact`,
+    `scope` and `packet` JSON byte-identical before and after; `foreign --base b51a7d22 --head e5b1b647`
+    gives `foreign`, `changes` and `created` empty; `git check-ignore` ignores none of the 102 record files
+    and `git ls-files` tracks all 102. Every record the merges took from master reads at
+    e5b1b647 with master's values (`records --at master` against `records`). Size, measured at e5b1b647:
+    one `manifest.json` of 823,298 bytes at the merge (793,538 at 27019745, the plan's "787 KB") becomes a
+    4,305-byte `manifest.json` and 102 record files (768,369 bytes in all): median 5,061 bytes (between
+    `mesh/remote-sessions` 5,025 and `app/project-costs` 5,097), largest 39,802 bytes (`app/overseer`, 56
+    records), then `app/project-overseer` 32,761 and `app/insights` 26,991; an agent editing a draft's
+    records edits one of those instead of the whole list. Latency (median of 15 interleaved runs, Node, 27019745's tools on its
+    format 1 spec against this branch's tools on the converted spec, both as plain copies, on a loaded
+    machine), after `freshOrder` in `layout.mjs` dropped its comparator sort (same order, byte-identical
+    output): records +6 ms (+12–17%), all other commands ≤ +7% (check, map, where, read, toc, impact,
+    packet, scope, census). This misses the plan's ±10% latency target for `records`; the main thread
+    accepted the miss. Merge collisions before the conversion (`merge-collisions.mjs --since 2026-09-23 --until 27019745`,
+    688 merges, all format 1): both sides changed the records file in 309 (45%), Git's line merge
+    conflicted in 118 (17%); re-laid one file per area, both sides changed one area's file in 100 (15%)
+    and Git conflicted in 30 (4%); the same record changed two ways in 29; 27 merges took one side's whole
+    spec, dropping the other side's own change, and 7 took one area's pair; 34 re-apply commits in 32.9
+    days (7.2 a week). After: at 1 and 2 weeks (`--since <conversion commit>`).
+  - Rollback: revert the conversion commit (e5b1b647) to get the format 1 `manifest.json` back byte for
+    byte as the merge b51a7d22 left it, and restore the `.gitattributes` line (516ca52b dropped it) in the
+    same commit. Once anything has been promoted in format 2, `migrate --reverse --write` on a fresh
+    branch rebuilds it instead, with the same records and values and the same identity check, but the ids
+    grouped by area rather than in the old file's order; restore the `.gitattributes` line in that commit.
+    The tools read both layouts, so neither needs a tool change.
+  - Upgrade: see UPGRADING step 14.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -1017,6 +1084,8 @@ The tools are Node standard library only. Nothing is installed.
      'node <tools dir>/sova-spec-draft.mjs merge-claims --root . --base %O --ours %A --theirs %B --path %P --write'
    ```
 
+   A format 2 spec (step 14; every spec started since then) adds only the `claims/**/*.md` line and
+   the `merge-claims` driver: its `manifest.json` and record files take Git's line merge.
    Two branches that change different records, or different declarations of one claim file, then
    merge without a conflict, and the result doesn't depend on which landed first. One record or one
    declaration changed differently on both sides still stops; a claim file keeps Git's conflict
@@ -1156,3 +1225,15 @@ The tools are Node standard library only. Nothing is installed.
     `draftSha256` from `prune --official --from` reads the name instead. A process that holds work until a
     draft is official reads the `drafts` row's `official`, never its state or lists; `prune --official`
     without `--from` now keeps drafts as `pending`, `empty` or `unreadable`, without `draftSha256`.
+14. **New specs start in format 2** (2026-10-26, branch `feat/spec-convert`). Copy
+    `core/sova-spec-draft.mjs` again (step 1). Nothing is required of an existing spec: it keeps its
+    format until you run `migrate`. A project with no spec now gets format 2 from its first `new`: its
+    records go in `claims/<path>.json` beside each claim file, so if `.sova/spec/.gitignore` denies
+    everything under `claims/` but `*.md`, add `!/claims/**/*.json`; give it only the `merge-claims` line
+    of step 2. Converting an existing spec (step 12): in the same commit, drop any
+    `.sova/spec/manifest.json merge=sova-spec-manifest` line from `.gitattributes` and keep the
+    `merge=sova-spec-claims` one; branches from before the conversion still carry the old line, so their
+    next merge of the default branch stops with a conflict that `merge-manifest --write` finishes. With
+    the spec mode on, the census note calls the converted files a direct write to the current spec; they
+    are `migrate`'s, so commit them as its `next` says. Instructions of your own that tell agents to edit
+    records in `manifest.json` now point at the `.json` beside each claim file.

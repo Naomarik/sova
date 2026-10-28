@@ -68,8 +68,8 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   it there like any link, and the arrow keys skip it. Cards fill the session column (at most `--measure`, the message cap of
   §chat.transcript/transcript-items) in as many columns as fit at 220px or wider. Where the picker is narrower than 480px (a phone), the cards are one column of single-line
   cards: icon, label, caption and chips on one 44px line (chips that don't fit take a second), the
-  caption cut short with an ellipsis first, the label keeping up to about two thirds of the card
-  before it is cut. A card that can't be used keeps its whole reason, on its own line below. **My settings** comes
+  caption giving way first (its mode icons folding, then its model name cut, as **A card** says),
+  the label keeping up to about two thirds of the card before it is cut. A card that can't be used keeps its whole reason, on its own line below. **My settings** comes
   first, a card under no label; then **Yours**, then **This project ({name})**, each under its own
   label (a profile file Sova itself ships, of which there are none today, would follow under **Built
   in**); hidden profiles are left out, and My settings can't be hidden. A last card, **Custom…**, opens the capability
@@ -77,13 +77,37 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   While a profile file here can't be read, a muted line under the grid says "{n} profile files have
   mistakes. See Manage Profiles." ("1 profile file has mistakes.") **Manage Profiles** opens
   Settings → Profiles (§app.settings-dialog/profiles).
-- **A card** shows the profile's icon, its label and one caption line: what it sets of
-  "{model} · {effort} · subagents: {footprint} · {mode} · {minor modes}" (the model's short name,
-  the effort level, the subagent profile's footprint, its distinct primary models, or "off", the
-  mode's name, and the minor modes it starts with, e.g. "align, spec, vis", or "no minor modes"
-  for `[]`), or its description when it sets none of them. Chips say **Active** (a One at a time
-  profile live in another session, in place of One at a time), **Needs approval** (an unapproved
-  project profile, §chat.profiles/trust) and **One at a time** (one live nowhere else).
+- **A card** shows the profile's icon, its label and one caption line. When the profile sets any
+  settings, the caption is icons, and only for what that profile sets, in this order: the model
+  and effort as the composer foot draws them (§chat.composer/behavior: the effort ring, then the
+  model's short name; a profile that sets only the effort shows just the ring, only the model just
+  the name; "off" is the empty ring), the subagents icon with the count of the subagent profile's
+  distinct primary models, or "off", then the mode icons (§chat.mode-menu/trigger: its major
+  mode's, then one per minor mode it starts with, a project mode as its letter square); a profile
+  that starts with no minor modes (`[]`) ends with the words "no minor modes". The count comes with
+  the listing: each of its `subagents` entries carries `models`, the distinct primary models the
+  server counts from that library profile's workers (0 for Off); from an older server that omits
+  it, the card shows the subagent profile's id instead. The whole caption in words ("{model} ·
+  {effort} · subagents: {footprint} · {mode} · {minor modes}", the minor modes as "align, spec,
+  vis", or "no minor modes" for `[]`) is the caption's accessible text and the card's `title`;
+  each icon item's own hover text is its part in words ("{model} · effort {level}", "subagents:
+  {footprint}", "mode: {mode}", "minor mode: {id}"). **The model name is the last thing to
+  shrink.** When the caption runs out of room and draws at least two mode icons, its mode icons
+  fold first: the first mode icon stays, followed by a quiet count of the rest ("+3", minor and
+  project modes alike, after where the last mode icon was), and the caption's gaps narrow to
+  `--space-1`, the icons' own spacing; only if the caption still doesn't fit does the model's
+  short name end in an ellipsis (with one mode icon or none there is nothing to fold, so the name
+  is what gives). Whether it folds is decided from the unfolded caption, measured with every icon
+  out before the frame is drawn, so it never flickers and the same width always gives the same
+  caption; it unfolds when the room comes back (a wider window, a shorter name). A fold hides nothing
+  from the words: the caption's accessible text and the card's `title` keep the full wording, and
+  the picked profile's details line (below) still names every mode. Where the caption is at least 340px wide,
+  words come back beside the icons: the level, "subagents" and each mode's id. Captions that aren't settings stay words: the
+  description of a profile that sets none of them, a disabled reason (below), and "Opens the
+  running session: {title}" (§chat.profiles/singleton). Chips say **Live**, with Sova's usual live
+  dot (a One at a time profile live in another session, in place of One at a time), **Needs
+  approval** (an unapproved project profile, §chat.profiles/trust) and **One at a time** (one live
+  nowhere else).
 - **A card that can't be used here** is disabled (`aria-disabled`, still focusable so its reason is
   read), with the reason as its caption, in the warn tone, and as its title, and a click on it does
   nothing. It looks off by shape as well as tone: no fill and a dashed edge, a muted label and
@@ -91,10 +115,14 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   has no credentials on this host ("No credentials here for {model}."), or its subagent profile
   isn't in this device's library ("Its subagent profile "{id}" isn't in this device's library.").
 - **My settings** is the session with no profile (`profile: null`; Default, whose id stays
-  `default`): what you set by hand on this new session. Its card's caption says that in a few
-  words, "{mode} · {minor modes} · {model} · {effort}" (e.g. "Delegate · Align · Opus 5.5 · high":
-  the mode's name, the minor modes that are on, capitalised and left out when none, the model's
-  short name and the effort), cut short with an ellipsis where it doesn't fit. While no profile is
+  `default`): what you set by hand on this new session. Its card's caption draws that with the
+  same icons in its own order: the mode icons first (the major mode's, then one per minor mode on,
+  none when none), then the model and effort (the effort ring, the empty ring for "off", and the
+  model's short name), fitting as every card's caption does: the mode icons fold to the first and
+  a "+N" before the name is cut short with an ellipsis. Its accessible name and desktop hover text
+  stay the words "{mode} · {minor modes} · {model} · {effort}" (e.g. "Delegate · Align · Opus
+  5.5 · high": the mode's name, the minor modes that are on, capitalised and left out when none,
+  the model's short name and the effort). While no profile is
   picked it reads the session as it is now; once one is, it reads what picking My settings would
   put back (§chat.profiles/applying), or "Your own settings" when the session's entry doesn't say.
   Picked, it shows one muted line: "No profile: the settings you chose, {n} tools, no session
@@ -107,6 +135,11 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   "{name}". Pick another name."), and a Yours file that can't be read refuses with its error and is
   never overwritten. A refusal stays under the name field ("Couldn't save {name}. {reason}"), the
   field marked invalid and the form open, until the name changes or the form closes.
+- **The picked profile's details**, under the cards, start with one line that spells its settings
+  out in full words, so nothing the card's icons say is only an icon: "Model: {model} · Effort:
+  {level} · Subagents: {name} ({its footprint's models, joined with commas}) · Main mode: {mode}
+  · Add-on modes: {ids, joined with commas}" ("Subagents: off"; "Add-on modes: none" for `[]`),
+  what it leaves unset left out, and no line when it sets none of them.
 - **Any other profile** shows its one-line description, then **What changes** (vs My settings): a row per
   grant, `+` and tinted, with its limits under Message other sessions ("Up to {hops} hops · {n} sends
   per message you send · {n} a day on its own · {n} to one session per 10 min"), then a row per
@@ -300,7 +333,7 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   be opened or archived.
 - **A running one opens instead.** While a One at a time profile is live in another session (the
   listing's `running`), its picker card is a link that opens that session (`#/sid/{id}`) in one
-  click, with an **Active** chip in place of One at a time and the caption "Opens the running
+  click, with a **Live** chip (Sova's usual live dot and the word "Live") in place of One at a time and the caption "Opens the running
   session: {title}". It never picks, so it is no radio (§chat.profiles/picker). The picker reads the
   listing again whenever the window regains focus, so a profile stopped elsewhere turns back into a
   card that picks, with its One at a time chip.

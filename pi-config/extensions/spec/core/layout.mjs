@@ -77,10 +77,16 @@ export function withNewRecords(claims, added) {
 }
 
 // withNewRecords({}, records) in O(n log n): areas in order, ids in order within each (what it gives a fresh list).
+// Grouped by area, then the default sort (UTF-16 code units, as `<` compares), with no comparator to call.
 export function freshOrder(records) {
-  const keyed = Object.keys(records).map((id) => [areaOf(id), id]);
-  keyed.sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : x[1] < y[1] ? -1 : x[1] > y[1] ? 1 : 0));
-  return Object.fromEntries(keyed.map(([, id]) => [id, records[id]]));
+  const byArea = new Map();
+  for (const id of Object.keys(records)) {
+    const a = areaOf(id), g = byArea.get(a);
+    if (g) g.push(id); else byArea.set(a, [id]);
+  }
+  const out = {};
+  for (const a of [...byArea.keys()].sort()) for (const id of byArea.get(a).sort()) out[id] = records[id];
+  return out;
 }
 
 // ---------------------------------------------------------------- assemble (both readers end here)

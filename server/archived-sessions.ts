@@ -3,6 +3,10 @@ import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
 
+/** The one refusal for anything asked of an archived session (§chat.transcript/instant-open,
+    "An archived chat"): a mode, sandbox or profile switch, a worker's resume, a message. */
+export const ARCHIVED_REFUSAL = "That session is archived; unarchive it first.";
+
 /** Persistent set of session ids the user archived by hand (SessionSummary.archived). */
 const FILE = join(stateRoot(), "archived-sessions.json");
 

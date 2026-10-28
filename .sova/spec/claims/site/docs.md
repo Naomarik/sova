@@ -14,7 +14,9 @@ Every `/docs/` page is one Markdown file in the docs collection (`src/content/do
 its URL under `/docs/`, and an `index.md` is its folder's own page. Each file's front matter gives
 a title, a description, a group (Start, Modes, Features or Setup), an optional subgroup (Major or
 Minor, under Modes) and an order. Pages are listed by group in that order, then a group's own pages
-before each subgroup, then by `order`; the sidebar and Previous/Next follow that sequence. A page
+before each subgroup, then by `order`; the sidebar and Previous/Next follow that sequence. The
+Modes group holds only pages about modes, and only a page about a mode sits in a subgroup (Major or
+Minor); a page about something else goes in another group. A page
 shows the shared header, the page list grouped with subgroups as labelled indented lists (a sticky
 sidebar from 1024px wide, a `<details>` menu above the page below that, no script), an eyebrow with
 the group or subgroup label, the title, the description as a lead, the body, Previous/Next links,
@@ -46,6 +48,13 @@ the default for new sessions (memory's type with it), strict, a short memory sec
 links to its own page (§site.docs/memory), the terminal's commands, what workers get (spec, and each
 project mode that says so), and the sessions that choose their own mode, and a project's own minor modes (§site.docs/project-modes).
 
+## §site.docs/normal — Normal (`/docs/modes/normal/`)
+
+The default major mode: the agent you chat with does the work itself and can still start workers
+and teams; when to choose it over Delegate (one agent that talks with you and does the work,
+keeping the whole conversation, with no hand-off); switching to and from Delegate; the Overseer
+always runs in it.
+
 ## §site.docs/delegate — Delegate (`/docs/modes/delegate/`)
 
 The orchestrating major mode: the four kinds of work and where each is routed, fallbacks and Off,
@@ -54,7 +63,8 @@ teams, watching workers, and workers after a restart.
 ## §site.docs/subagent-profiles — Subagent profiles (`/docs/subagent-profiles/`)
 
 What a subagent profile holds (its alignment override included), how a chat picks one, editing them in Settings, switching a chat's
-profile after a usage limit, and Off. A profile never turns on a project mode.
+profile after a usage limit, and Off. A profile never turns on a project mode. The page sits in
+the Features group, not under Modes: a profile is not a mode.
 
 ## §site.docs/align — Align and alignments (`/docs/modes/align/`)
 

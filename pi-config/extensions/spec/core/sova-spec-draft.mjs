@@ -58,7 +58,8 @@ const AGREED_KINDS = new Set(["behavior", "surface"]), BUILT_LABELS = new Set(["
 // Record fields that only route reading (§ edges, the frame flag, what an area does not own): a change to them alone may land on --doc-only.
 const FIELD_KEYS = ["about", "core", "embeds", "notOwned"];
 const AGREED_AT = /^(\d{4}-\d{2}-\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
-const STARTER = JSON.stringify({ formatVersion: 1, claims: {} }, null, 2) + "\n";
+// A project with no spec starts in format 2: settings here, each area's records beside its claim file.
+const STARTER = JSON.stringify({ formatVersion: 2, claims: CLAIMS_POINTER }, null, 2) + "\n";
 const SECRET_DIRS = new Set([".git", ".hg", ".svn", ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker"]);
 // Credential data by name (secrets.json, .env, id_rsa…), not source or docs named after secrets (secrets.ts, secrets.md).
 const SECRET_NAME = /^(?:\.env(?:\..*)?|\.envrc|auth\.json|credentials(?:\.json)?|\.netrc|\.npmrc|\.pypirc|\.pgpass|\.git-credentials|\.htpasswd|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|secrets?(?:(?:[.-][a-z0-9_-]+)*\.(?:json|ya?ml|toml|ini|conf|cfg|env|txt|properties|xml|enc|age|asc))?)$/i;

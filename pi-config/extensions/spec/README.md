@@ -238,8 +238,9 @@ node core/sova-spec-draft.mjs migrate [--reverse] [--drafts | --draft NAME] --ro
    (format 1) and one list beside each claim file (format 2), and with
    `--drafts` every draft too; it previews unless `--write`, and refuses to
    finish unless the result reads back as the same records, settings and check
-   (DRAFTS.md, "Record layouts and `migrate`"). Nothing converts a project
-   unless someone runs it.
+   (DRAFTS.md, "Record layouts and `migrate`"). Nothing converts an existing
+   project unless someone runs it; a project's first draft (`new` with no
+   spec) starts in format 2.
 
 When to draft, and how to keep a baseline apart from a feature, is in
 [`../mode/spec-mode.md`](../mode/spec-mode.md). Evidence is bytes, revisions and the recorder's statement.

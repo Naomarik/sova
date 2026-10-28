@@ -1,4 +1,5 @@
 import type { AssistantInfo, AssistantOlder, AssistantView, PricedPick, VersionSummaryRow } from "../../shared/project-assistant";
+import type { OrgClaudeLogin, ProjectClaudeLogin } from "../../shared/projects";
 import type { ModelPick, WorkModels } from "../../shared/powers";
 import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
 import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow } from "../../shared/project-settings";
@@ -293,6 +294,14 @@ export const getTeamDefaults = () => request<TeamDefaultsInfo>("/api/settings/te
 
 /** Settings → Accounts: this host's Claude logins in order, their standing, and the add-login flow. */
 export const getClaudeAccounts = () => request<ClaudeAccountsInfo>("/api/claude/accounts");
+/** A project's Claude login (§app.claude-logins/project-login); a peer's project is asked on its peer. */
+export const getProjectClaudeLogin = (pid: string) => request<ProjectClaudeLogin>(`/api/projects/${encodeURIComponent(pid)}/claude-login`);
+export const putProjectClaudeLogin = (pid: string, login: string) =>
+  request<ProjectClaudeLogin>(`/api/projects/${encodeURIComponent(pid)}/claude-login`, { method: "PUT", body: JSON.stringify({ login }) });
+/** An organization's Claude login for its projects. */
+export const getOrgClaudeLogin = (id: string) => request<OrgClaudeLogin>(`/api/orgs/${encodeURIComponent(id)}/claude-login`);
+export const putOrgClaudeLogin = (id: string, login: string) =>
+  request<OrgClaudeLogin>(`/api/orgs/${encodeURIComponent(id)}/claude-login`, { method: "PUT", body: JSON.stringify({ login }) });
 /** The logins of the host that holds chat `path` (the query only routes the request there). */
 export const getChatClaudeAccounts = (path: string) =>
   request<ClaudeAccountsInfo>(`/api/claude/accounts?path=${encodeURIComponent(path)}`);
@@ -932,7 +941,16 @@ export const fetchUsageHistory = (series: string, window: string, at: number | n
 export const fetchUsageStrip = (series: string, window: string) =>
   request<UsageHistoryStrip>(`/api/insights/usage/history?series=${encodeURIComponent(series)}&window=${encodeURIComponent(window)}&strip=1`);
 
-export const fetchAgents = () => request<AgentsInsight>("/api/insights/agents");
+/** GET /api/insights/agents as the browser keeps it: `tokensAsked` (browser-side only) says the request
+    asked for `tokens`, so a missing field means an older server only then (§app.insights/session-token-rate). */
+export type AgentsAnswer = AgentsInsight & { tokensAsked?: true };
+
+/** `tokens`: ask for each row's output tokens too (only while the Agents board is shown). */
+export const fetchAgents = async (opts: { tokens?: boolean } = {}): Promise<AgentsAnswer> => {
+  if (!opts.tokens) return request<AgentsInsight>("/api/insights/agents");
+  const a = await request<AgentsInsight>("/api/insights/agents?tokens=1");
+  return { ...a, tokensAsked: true };
+};
 
 /** The git worktrees of the named sessions (the Agents board's visible rows). */
 export const fetchWorktrees = (paths: readonly string[]) =>
@@ -1577,8 +1595,12 @@ export async function runCommandRequest(method: string, url: string, body?: Reco
 // ---- session offers: a session's offer cards and the project page's list (§chat/offers) --------
 
 export const getSessionOffers = (path: string) => request<SessionOffersAnswer>(`/api/session-offers?path=${encodeURIComponent(path)}`, { cache: "no-store" });
-export const chooseOfferButton = (path: string, card: string, button: number) =>
-  request<{ card: OfferCard }>("/api/session-offers/choose", { method: "POST", body: JSON.stringify({ path, card, button }) });
+/** A button's click; on a rows card, `row` names the row it answers. */
+export const chooseOfferButton = (path: string, card: string, button: number, row?: string) =>
+  request<{ card: OfferCard }>("/api/session-offers/choose", { method: "POST", body: JSON.stringify({ path, card, button, ...(row ? { row } : {}) }) });
+/** A rows card's all button, over the rows its confirm named. */
+export const chooseOfferAll = (path: string, card: string, rows: string[]) =>
+  request<{ card: OfferCard }>("/api/session-offers/choose", { method: "POST", body: JSON.stringify({ path, card, all: rows }) });
 export const setOfferNotNow = (path: string, offer: string) => request<{ notNow: string[] }>("/api/session-offers/snooze", { method: "POST", body: JSON.stringify({ path, offer }) });
 // A project's settings (§app.project-overseer/settings, shared/project-settings.ts).
 export const getProjectSettings = (projectId: string) => request<ProjectSettingsInfo>(`${projectPath(projectId)}/settings`, { cache: "no-store" });

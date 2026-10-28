@@ -8,7 +8,8 @@ agent never writes the buttons, and Sova enforces every limit the file sets.
 
 Owns: the offers file and how Sova reads it, the `offer` tool and which chats get it, conditions
 and the repeat guard, send and run buttons, approving run buttons, the card and its states, an
-offer shown by another chat, the project page's Offers list, and Sova's own offers file. Not here:
+offer shown by another chat, cards with rows, the project page's Offers list, Sova's own offers
+file and the Merge Captain's landing card. Not here:
 the Overseer's decision cards this card looks like (§app.overseer/confirm), alignment cards
 (§chat/alignment), the readiness offers read (§chat.worktrees/readiness), and the asks-you signal
 an open offer feeds (§app.decisions/asks-user).
@@ -42,6 +43,14 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   - `shownBy` (optional): `agent` (the default: the session's own agent shows it with the tool) or
     `another-chat` (only another chat shows it, §chat.offers/from-another-chat).
   - `disabled` (optional): `true` hides it everywhere but the project page's list.
+  - `rows` (optional): the card may hold rows, one per item, each repeating the offer's buttons
+    for that item (§chat.offers/card). `{"max": <1 to 10>, "all"?: {label, about, confirm}}`:
+    `max` caps the rows one card holds; `all` (only where the file declares it) adds one button
+    that answers every open row at once, after a confirm (`confirm` at most 300 characters, where
+    `{rows}` is filled in with the rows it answers). Only an offer with `rows` may use the
+    `{row.<key>}` placeholders (§chat.offers/buttons); a key is lowercase letters, digits and
+    hyphens, starting with a letter, at most 24 characters. An offer with `rows` has send buttons
+    only.
   - `buttons` (required): 1 to 4 buttons, each `{label, about}` with exactly one of `send` or
     `run` (§chat.offers/buttons). `label` is at most 32 characters, `about` at most 160 (one line:
     what the button does).
@@ -62,7 +71,11 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   no instructions: its tools and prompt are exactly what they were before offers existed.
 - **What it takes.** `{offer, note?}`: `offer` is one of this session's offer names (an enum),
   `note` an optional line under the title, at most 300 characters. The agent cannot write a title,
-  a button, a label or a message: those come from the file.
+  a button, a label or a message: those come from the file. Only when the snapshot names an offer
+  that declares `rows` does the tool also take `rows` (`[{label, values}]`, at most that offer's
+  `max`), and its description says which offers take them and their keys; a call with rows for any
+  other offer is refused (§chat.offers/card, Rows). The snapshot records each offer's rows and keys
+  with it, so the declaration never changes in the session.
 - **What the agent is told.** The tool's description is made only from each offer's `when`, `why`
   and its buttons' `about` lines, under its name: what it is for, never how to write offers. It
   says the card shows under the reply and the user answers with a button, so the agent doesn't ask
@@ -132,6 +145,10 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   this commit (§chat.worktrees/landing-answers), `"go-ahead-without-specs"` the same with its
   spec drafts left behind, and `"not-yet"` the user's Not Yet for this commit. Each is recorded
   when the click's send succeeds, never on a refused one.
+- **Row fills.** In an offer with `rows`, a button's `send` and `confirm` may use
+  `{row.<key>}`: each row's own value for that key, filled in when the card is shown, so each row's
+  button sends its own text. Labels, sends and confirms still come only from the file; whoever
+  shows the card supplies only the values (§chat.offers/card, Rows).
 - **To the chat that showed it.** A button of an `another-chat` offer may say `"to": "shower"`
   with `send`: its text goes to the session that showed the offer, not this one
   (§chat.offers/from-another-chat).
@@ -187,15 +204,32 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   While the session is idle its row also carries the asks-you mark (§app.decisions/asks-user).
 - **Never over an alignment.** An offer never shows while the session has an open alignment
   question, and it never replaces an alignment card.
+- **Rows.** A card of an offer that declares `rows` lists its rows under the title, each with its
+  label and the offer's buttons for that item (a button's own conditions apply to the card, so
+  every row shows the same buttons, except on the captain's landing card,
+  §chat.offers/landing-rows). Whoever shows it supplies 1 to `max` rows (never more than 10), each
+  `{label, values}`: `label` at most 80 characters, one line; `values` exactly the `{row.<key>}`
+  keys the file's buttons use, each a one-line string of at most 120 characters. Anything else
+  (an unknown or missing key, an over-long value, too many rows, rows for an offer without
+  `rows`, or none for one with them) is refused: "Nothing was shown." A click answers that row
+  alone: the row reads "You chose **{label}**" and the others stay open; the card stays open, one
+  open card, until every row is answered, then it closes. The `all` button, where the file declares
+  it, asks first with its confirm naming each row it answers (every open row showing the offer's
+  first button), then presses that first button on each of them and sends their texts as one
+  message. A row answered or a card closed takes no second click: a click on a row that isn't open
+  is refused and records nothing. A row is never a link; a link it carries is its own control.
+  The Not Now button hides the whole offer, as on any card.
 
 ## §chat.offers/from-another-chat — An offer shown by another chat
 
-- `session.offers.show` (`POST /api/session-offers/show {path, offer, note?, from?}`) shows an
+- `session.offers.show` (`POST /api/session-offers/show {path, offer, note?, from?, rows?}`) shows an
   offer in a target session on another chat's behalf (the Merge Captain, when it queues a branch):
   every rule of §chat.offers/tool applies, read from the target's project. An `another-chat` offer
   shows only this way, or when Sova shows the Landing card itself on the Merge Captain's queue
   (§chat.offers/sova-landing); an `agent` offer shows either way. `from` names the session that asks (by
-  id or path); a button with `"to": "shower"` needs it.
+  id or path); a button with `"to": "shower"` needs it. `rows` supplies a rows card's rows, as the
+  tool does (§chat.offers/card, Rows); an offer with landing buttons takes none, since Sova builds
+  the captain's rows itself (§chat.offers/landing-rows).
 - It has no tool call in the target's transcript, so its card stands at the end of the target's
   transcript, above the composer, while it is open, and shows its choice there until the page is
   opened again. With `from`, it reads "From {title of the chat that showed it}".
@@ -222,10 +256,67 @@ buttons only:
 
 - **Land It** (only when no spec draft is left): records the go-ahead for this commit and sends it
   to the captain ("Go ahead: land {branch} at {commit}."), who lands, pushes and restarts as
-  usual without asking again. It is a shortcut for telling the captain, or for typing "land it" in
+  usual without asking again. It is a shortcut for telling the captain, for Go on the branch's Ready to land row of an
+  Overseer card (§app.overseer/card-land), or for typing "land it" in
   the session's chat, which records the same go-ahead (§chat.worktrees/tool): no merge waits for it.
 - **Merge Without Specs…** (only when drafts are left and the session said why it can't land
   them): asks first, naming the drafts that stay behind to promote later on a fresh branch from
   master, then records the go-ahead without specs and sends the captain the go-ahead without them.
 - **Not Yet**: records Not Yet for this commit and tells this session's agent to keep working; the
   captain leaves the branch until its head changes.
+
+The offer also declares `rows` (`max` 10, `all` **Land All**) for the captain's own card
+(§chat.offers/landing-rows): every queued branch is also a row there, and one answer, given on
+either card or typed in either chat, settles both.
+
+## §chat.offers/landing-rows — The Merge Captain's landing card
+
+When the Merge Captain queues a branch (§chat.merge-round/round) and Sova accepts the queue entry,
+Sova also adds a row for that branch to one card in the captain's own chat, "Branches ready to
+land", of the project's **landing** offer. Sova builds every row from the queue; the captain's
+agent never writes one, and no chat may supply rows for an offer with landing buttons.
+
+- **Which branches.** Every queued branch with a known owner chat gets a row, even when the
+  owner's own Landing card was refused for a reason of that chat alone: another card open there,
+  Not Now there, an open alignment question there, or the card already shown there for that
+  commit. A refusal that is about the branch (not Ready to land, the offer gone, a moved head, a
+  queue that isn't a captain's or older than a day) adds no row. A branch with no owner chat has
+  no row and lands on the user's typed OK, as before.
+- **One card, updated in place.** While the captain's card has an open row, a newly queued branch
+  is added to it; the card counts as the captain chat's one open card. It holds at most 10 open
+  rows (answered rows leave room); further queued branches wait, behind any already waiting, and
+  the card says in one line how many more wait ("2 more branches wait for this card to be
+  answered."). Once every row is answered the card closes, and the next queued branch (the
+  waiting ones first) opens a new card. A branch queued while another card is open in the
+  captain's chat waits too, and its card opens as soon as that card is answered, withdrawn,
+  replaced or set to Not Now.
+- **A row.** Its branch, its commit shortened to 7 characters, the owner chat's title as its own
+  link to that chat (`#/sid/<id>`), and, when spec drafts are left, a line naming them. Its
+  buttons are those the owner's card shows for that branch (Land It, or Merge Without Specs… with
+  its confirm naming the drafts; and Not Yet), in the file's order, and no Not Now: Not Now there
+  is the card's. The card's foot has **Land All**, from the file's `rows.all`, while a row shows
+  Land It.
+- **Land It** on a row records the go-ahead at that commit, as on the owner's card, and posts the
+  file's go-ahead text in the captain's chat as the user's message. **Merge Without Specs…** does
+  the same without specs, after its confirm. **Not Yet** on a row records Not Yet and sends
+  nothing to anyone: the owner's chat is not told.
+- **Land All** asks first, naming each branch@commit it lands, then records one go-ahead per row
+  that shows Land It (a row that needs Merge Without Specs… is skipped and stays open) and posts
+  one message in the captain's chat, one go-ahead line per branch.
+- **One decision, two places.** A row and the owner's card for the same branch at the same commit
+  are one decision: answering either settles the other, and a go-ahead typed in the owner's chat
+  (`worktree land`) or given in the captain's chat (the driver's `go`) settles both
+  (§chat.worktrees/landing-answers). The place not used says where the answer came from: "You
+  chose **Land It** in {that chat's title}" (also "Not Yet in Merge Captain" on the owner's card).
+  Settling another place sends nothing.
+- **Row states.** Waiting (open); the answer ("You chose Land It", "Not Yet", "Merge Without
+  Specs…"); **Landing**, once a go-ahead row's branch moved on only by clean merges of master (the
+  check's own merge, §chat.merge-round/driver) or the driver recorded a check of it after the
+  answer; **Landed**, once the row's commit is in master (`git merge-base --is-ancestor`);
+  **Replaced by a newer commit**, for a waiting row whose branch got a new commit (a click on it
+  is refused and records nothing); and **No longer offered**, when the landing offer is removed or
+  disabled, which ends the captain's card and the owners' cards alike. An answered row never turns
+  Replaced.
+- **Needs you.** While any row is open the captain's chat is marked as asking you and listed once
+  in Needs you: "Waiting on your answer: {n} branches ready to land" (§app.overseer/attention-digest).
+  Only your click, or your typed word, answers a row.

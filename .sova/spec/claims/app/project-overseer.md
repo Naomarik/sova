@@ -456,8 +456,12 @@ user row.
   power's sentence and nothing runs; when the services engine then refuses or fails the verb, its activity
   row is refused with the engine's code and message, and the tool's result carries the engine's whole
   answer; once taken, the verb's own rules still apply: reset and teardown of an
-  instance it did not create, stopping a copy with an active share link (§app.project-services/share),
-  and stopping a shared service, answer `needs-confirm` (the operator's). `share` is `services/share`
+  instance it did not create and stopping a copy with an active share link (§app.project-services/share)
+  answer `needs-confirm`, except in the turn the operator's click on its card listing that copy opens
+  (§app.overseer/copies), and stopping a shared service always answers `needs-confirm` (the
+  operator's). Its `leftovers {}` (a read) lists the processes holding its project's copy ports, and
+  `stop-leftover {port}` stops one only in the turn such a click opens (§app.overseer/copies); neither
+  reaches another project. `share` is `services/share`
   (power `share`, held, refused while the project is archived, §app.project-overseer/previews); `revoke` is no
   act: it is always allowed, in any run, never held, since it only takes something away. `deploy.request`
   is always allowed; `deploy.plan` and `deploy.run` run only as the project's deploy act (power `deploy`,
@@ -940,7 +944,8 @@ user row.
   the project at will: `sova_project_verbs status` lists every copy (main and each worktree's) with
   its state, and `down` stops one at any time (always allowed), never held; a copy with an active share link
   answers `needs-confirm` to it (§app.project-services/share), so the prompt says to revoke its links
-  first (`revoke {instance}`), then stop it.
+  first (`revoke {instance}`), then stop it, or to ask with a card listing the copy, whose click lets
+  it stop the copy with its links (§app.overseer/copies).
 - **Delete.** `sova_preview {op: "off", id}` deletes one of this project's previews at once and for
   good, at any level and in any run, never held and never waiting for a review: it only takes
   something away. It is the card's Delete (`POST /api/previews/<id>/off`); its result says

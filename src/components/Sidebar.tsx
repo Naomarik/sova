@@ -4,7 +4,7 @@ import { profileIconName } from "../lib/profiles";
 import { builtOnceOpen } from "../lib/built-once";
 import { projectSummaryKey, remember } from "../lib/page-cache";
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
-import { Dynamic, Portal } from "solid-js/web";
+import { Portal } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
@@ -13,7 +13,7 @@ import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../l
 import { type ArchiveGroupId, foldersWord, groupByArchiveDate, sessionsWord, startOfDay } from "../lib/archive";
 import { modelLabel, relativeTime, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, glanceLabel, glanceTitle, usageGlance, usageHref } from "../lib/insights";
-import { archiveDateOpen as archiveDateOpenRule, archiveOpen as archiveOpenRule, foldersOpen as foldersOpenRule, inFolders, isMainThread, isOrdinarySession, isOrgSession, isOwnedSession, isTopSession, listedWithLocalProject, storedFoldersOpen } from "../lib/regions";
+import { archiveDateOpen as archiveDateOpenRule, archiveOpen as archiveOpenRule, foldersOpen as foldersOpenRule, canJoinGroup, groupMembersOf, groupRefusal, inFolders, isMainThread, isOrdinarySession, isOrgSession, isTopSession, listedWithLocalProject, storedFoldersOpen } from "../lib/regions";
 import {
   eyeLabel,
   doneOpen as doneOpenRule,
@@ -45,7 +45,7 @@ import { archiveDragOf, archivedDropToast, archivedProjectOf, blockedDropSentenc
 import { cwdLabel, remotePlaceOf, type TargetInfo } from "../lib/remote-session";
 import { recentCount, recentSessions } from "../lib/recent";
 import { NEEDS_YOU_KEY, needsYouCut, needsYouItems, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "../lib/needs-you";
-import { type CwdGroup, groupByActivity, groupByCreation } from "../lib/session-order";
+import { byActivity, type CwdGroup, groupByActivity, groupByCreation } from "../lib/session-order";
 import {
   createGroup,
   groupNameOf,
@@ -339,8 +339,8 @@ export function SessionRow(props: {
       path: row.path,
       title: row.title,
       groupId: row.groupId ?? null,
-      // A session only in a project's folder is ordinary: it can be grouped.
-      org: isOwnedSession(row),
+      // Any main thread can be grouped, a project's own sessions included; an org's session can't.
+      groupRefusal: groupRefusal(row),
       orgProject: unarchivedProjectOf(row, host === null),
       archivedProject: archivedProjectOf(row),
       peer: host ? hostLabel(host) : null,
@@ -678,10 +678,9 @@ export function SessionRow(props: {
 }
 
 /** Sessions grouped by folder: the markup of the session list "Anatomy". The ORDER is the
-    caller's — `groupByCreation` for Folders, `groupByActivity` for the Archive and for a group
-    (src/lib/session-order.ts) — so this component never decides what "newest" means.
-    `level` is the heading level a folder label takes: h3 directly under a region, h4 inside a
-    group, where the group's own label already sits at h3. Every folder collapses (the session list "Folder
+    caller's — `groupByCreation` for Folders, `groupByActivity` for the Archive
+    (src/lib/session-order.ts) — so this component never decides what "newest" means. A user group draws no
+    folders: its members are one flat list (GroupBlock). Every folder collapses (the session list "Folder
     open/closed state"), so `searching` — which forces every one of them open — comes in too. */
 /**
  * A group's guide line (§app.session-list/guide-lines): a direct child of the group it draws beside, after its head.
@@ -707,7 +706,6 @@ function GroupList(props: {
   idPrefix: string;
   targets: TargetInfo[];
   searching: boolean;
-  level?: 4;
 }) {
   return (
     <ForKey each={props.groups} by={(g) => g.cwd}>
@@ -749,8 +747,7 @@ function GroupList(props: {
             {/* The heading stays a heading, and keeps its level: the <summary> is what toggles, the
                 heading inside it is what the outline and `aria-labelledby` read. */}
             <summary class="session-group-head">
-              <Dynamic
-                component={props.level === 4 ? "h4" : "h3"}
+              <h3
                 class="list-group-label"
                 id={`${props.idPrefix}-${gi()}`}
                 title={(() => {
@@ -783,7 +780,7 @@ function GroupList(props: {
                   </span>
                 </Show>
                 <span class="text-num">{group().sessions.length}</span>
-              </Dynamic>
+              </h3>
             </summary>
             <ul class="list">
               <Show when={rowsBuilt()}>
@@ -801,8 +798,8 @@ function GroupList(props: {
 }
 
 /**
- * One user-made group: a collapsible section above Projects and Folders that holds the same folder groups and
- * rows as every other region. It keeps its own Rename and Delete, and
+ * One user-made group: a collapsible section above Projects and Folders that holds its members as one flat list of
+ * the same rows as every other region, with no folder level. It keeps its own Rename and Delete, and
  * it is a drop target while a row is being dragged. An empty group stays visible — that is what a
  * group is when the user makes it, and dragging a row in is how it fills.
  */
@@ -814,7 +811,7 @@ function GroupBlock(props: {
   selected: string | null;
   now: number;
   targets: TargetInfo[];
-  /** A search is on, so the folder sections inside are forced open with every other region's. */
+  /** A search is on (the region forces its groups open with it). */
   searching: boolean;
   onChanged(): void;
 }) {
@@ -930,15 +927,13 @@ function GroupBlock(props: {
         </ActionMenu>
       </summary>
       <Show when={count() > 0} fallback={<p class="sidebar-region-note">No sessions yet. Drag a session to file it here.</p>}>
-        <GroupList
-          groups={groupByActivity(props.sessions)}
-          selected={props.selected}
-          now={props.now}
-          idPrefix={`g-${group().id}`}
-          targets={props.targets}
-          searching={props.searching}
-          level={4}
-        />
+        {/* Flat: every member right under the group's name, newest first, as Recent draws them; no folder level
+            and no folder name on a row (§app.session-list/groups). */}
+        <ul class="list">
+          <ForKey each={byActivity(props.sessions)} by={(s) => s.path}>
+            {(s) => <SessionRow session={s()} selected={props.selected} now={props.now} targets={props.targets} />}
+          </ForKey>
+        </ul>
       </Show>
       <GuideLine name={group().name} />
     </details>
@@ -1439,9 +1434,13 @@ export function Sidebar(props: {
   /** Every ordinary surface — Needs you, Recent, Groups, Folders, the Archive and its cleanup —
       reads these, never `all()`/`hits()`: an organization's session lives only in its own region. */
   const ordinary = createMemo(() => all().filter(isOrdinarySession));
-  /** Each group's session count, as its section counts them, for its tile in the overlay. */
-  const groupCounts = createMemo(() => new Map(groupSections(ordinary(), sessionGroups(), false).map((x) => [x.group.id, x.sessions.length])));
   const ordinaryHits = createMemo(() => hits().filter(isOrdinarySession));
+  /** What a group holds (§app.session-list/groups): every main thread no organization owns, a project's own sessions
+      included (its overseer's conversations, the builds it or the operator started), which stay out of every other ordinary surface. */
+  const groupableAll = createMemo(() => all().filter(canJoinGroup));
+  const groupableHits = createMemo(() => hits().filter(canJoinGroup));
+  /** Each group's session count, as its section counts them, for its tile in the overlay and the picker. */
+  const groupCounts = createMemo(() => new Map(groupSections(groupableAll(), sessionGroups(), false).map((x) => [x.group.id, x.sessions.length])));
   /** The row is this computer's, not a mesh peer's: only this computer's sessions are listed under its projects. */
   const here = (s: SessionSummary) => hostOf(s.path) === null;
   /** The Organizations region's rows: org sessions, and the sessions in a placed project's folder on this computer, which
@@ -1512,9 +1511,9 @@ export function Sidebar(props: {
       refresh. A section holding the open session opens for it until the user collapses it on this visit. */
   const { dismissed, noteToggle } = createSectionReveal(() => props.selected, dismissals);
   // Org sessions are never grouped, so an assignment made before that rule is kept but not drawn.
-  const sections = createMemo(() => groupSections(ordinaryHits(), sessionGroups(), searching()));
-  /** A group's rows, from the same hit list the sections were built from. */
-  const rowsOf = (id: string) => ordinaryHits().filter((s) => s.groupId === id);
+  const sections = createMemo(() => groupSections(groupableHits(), sessionGroups(), searching()));
+  /** A group's rows, from the same hit list the sections were built from, by the rule the group workspace reads. */
+  const rowsOf = (id: string) => groupMembersOf(groupableHits(), id);
   /** With no query the region always stands: its head carries the `+` that makes a group, the
       feature's front door. While searching it appears only when a group has a match. */
   const groupsShown = () => !searching() || sections().length > 0;

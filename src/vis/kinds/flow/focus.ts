@@ -1,7 +1,6 @@
 /**
  * Tap-to-follow for `vis flow` / `vis state` (FlowView): one picked shape per figure, its direct
- * neighbours lit, the rest faded, a reading panel of where it comes from and leads to, and the
- * keyboard's cursor that the arrow keys move from shape to shape. Signals only, no DOM: FlowView
+ * neighbours lit, the rest faded, and the keyboard's cursor that the arrow keys move from shape to shape. Signals only, no DOM: FlowView
  * wires the events and draws the classes; ./focus.browser.test.ts drives this as the View does.
  */
 
@@ -15,8 +14,6 @@ export interface FocusShape {
   x: number;
   y: number;
   shape: Shape;
-  /** Its label, as the panel and its neighbours' buttons show it. */
-  label: string;
   /** Its panel's ranks advance downwards (else to the right, a `dir: right` drawing that kept its direction). */
   down: boolean;
 }
@@ -31,48 +28,13 @@ export interface FocusGraph {
   edges: FocusEdge[];
 }
 
-/** A button in the reading panel: the shape it moves the pick to, and its words. */
-export interface Chip {
-  id: string;
-  text: string;
-}
-export interface Reading {
-  id: string;
-  kind: string;
-  from: Chip[];
-  to: Chip[];
-}
-
-/** What a shape is called in the panel and its accessible name: Question, Start, Step, Outcome; State and End in a state machine. */
+/** What a shape is called in its accessible name: Question, Start, Step, Outcome; State and End in a state machine. */
 export function kindWord(shape: Shape, ins: number, outs: number, machine: boolean): string {
   if (shape === "decision") return "Question";
   if (machine) return shape === "start" ? "Start" : shape === "end" ? "End" : "State";
   if (shape === "start" || ins === 0) return "Start";
   if (shape === "end" || outs === 0) return "Outcome";
   return "Step";
-}
-
-/** The arrows into and out of `id`, self-loops aside, one chip per neighbour and label. */
-export function neighbours(g: FocusGraph, id: string): { from: Chip[]; to: Chip[] } {
-  const name = new Map(g.shapes.map((s) => [s.id, s.label]));
-  const chips = (pairs: { id: string; label?: string }[], arrowFirst: boolean) => {
-    const seen = new Set<string>();
-    const out: Chip[] = [];
-    for (const p of pairs) {
-      const key = `${p.id}\u0000${p.label ?? ""}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const target = (name.get(p.id) ?? p.id).replace(/\s*\n\s*/g, " ");
-      // An arrow's label leads into the shape it points at: "yes → Project's login".
-      out.push({ id: p.id, text: arrowFirst && p.label ? `${p.label} → ${target}` : target });
-    }
-    return out;
-  };
-  const real = g.edges.filter((e) => e.from !== e.to);
-  return {
-    from: chips(real.filter((e) => e.to === id).map((e) => ({ id: e.from })), false),
-    to: chips(real.filter((e) => e.from === id).map((e) => ({ id: e.to, ...(e.label ? { label: e.label } : {}) })), true),
-  };
 }
 
 /** Reading order: panel by panel, top to bottom, left to right. */
@@ -125,10 +87,9 @@ export interface KeyLike {
 }
 
 /**
- * One figure's pick and cursor. `reveal(id)` scrolls a shape into view (the View's job); `opened`
- * is told when a pick appears where there was none, so the View can bring its panel into view.
+ * One figure's pick and cursor. `reveal(id)` scrolls a shape into view (the View's job).
  */
-export function createFlowFocus(graph: Accessor<FocusGraph>, opts: { machine?: Accessor<boolean>; reveal?: (id: string) => void; opened?: () => void } = {}) {
+export function createFlowFocus(graph: Accessor<FocusGraph>, opts: { reveal?: (id: string) => void } = {}) {
   const [picked, setPicked] = createSignal<string | null>(null);
   const [active, setActive] = createSignal<string | null>(null);
   const byId = createMemo(() => new Map(graph().shapes.map((s) => [s.id, s])));
@@ -152,15 +113,9 @@ export function createFlowFocus(graph: Accessor<FocusGraph>, opts: { machine?: A
     }
     return ids;
   });
-  const set = (id: string | null) => {
-    const had = pick() !== null;
-    setPicked(id);
-    if (id !== null) setActive(id);
-    if (id !== null && !had) opts.opened?.();
-  };
   const first = () => [...graph().shapes].sort(reading)[0]?.id ?? null;
   const toggle = (id: string) => {
-    set(pick() === id ? null : id);
+    setPicked(pick() === id ? null : id);
     setActive(id);
   };
 
@@ -169,11 +124,6 @@ export function createFlowFocus(graph: Accessor<FocusGraph>, opts: { machine?: A
     active: cursor,
     /** A tap, Enter or Space on a shape: pick it, or clear it when it is the picked one. */
     toggle,
-    /** A panel button: the pick (and cursor) move to that shape, scrolled into view. */
-    moveTo(id: string) {
-      set(id);
-      opts.reveal?.(id);
-    },
     clear() {
       setPicked(null);
     },
@@ -190,16 +140,6 @@ export function createFlowFocus(graph: Accessor<FocusGraph>, opts: { machine?: A
       if (p === null) return undefined;
       return e.from === p || e.to === p ? "near" : "dim";
     },
-    /** The panel's content for the picked shape. */
-    reading: createMemo((): Reading | null => {
-      const p = pick();
-      if (p === null) return null;
-      const s = byId().get(p)!;
-      const g = graph();
-      const real = g.edges.filter((e) => e.from !== e.to);
-      const { from, to } = neighbours(g, p);
-      return { id: p, kind: kindWord(s.shape, real.filter((e) => e.to === p).length, real.filter((e) => e.from === p).length, opts.machine?.() ?? false), from, to };
-    }),
     /** The drawing took focus: the cursor stands on the picked shape, else where it was, else the first. */
     focused() {
       if (cursor() === null) setActive(pick() ?? first());

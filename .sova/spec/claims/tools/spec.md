@@ -366,8 +366,11 @@ it was merged from, byte for byte, or the promotion is refused as a conflict and
 
 Two Git branches that each promoted spec changes merge without a conflict unless they changed the
 same promise. `.gitattributes` routes the claim files through the draft tool's `merge-claims`
-driver and `manifest.json` through `merge-manifest`; Git needs each defined once per clone, and the
-setup names no project path but the tools' own. `merge-claims` merges a claim file per declaration
+driver; Git needs it defined once per clone, and the setup names no project path but the tools' own.
+A version 1 project also routes `manifest.json` through `merge-manifest`. A version 2 project,
+Sova's among them, routes neither `manifest.json` nor its record files through a driver: Git's own
+line merge merges them, and an older branch whose `.gitattributes` still names `merge-manifest` gets a
+conflict from it, never a quiet merge (§tools.spec/record-layout). `merge-claims` merges a claim file per declaration
 the same way promotion does (§tools.spec/span-promotion), with the merge base, ours and theirs in
 the roles of base, current and draft, so the merged file has the bytes the two promotions give when
 landed one after the other in one tree, in either order. The driver finds declarations from the
@@ -465,8 +468,10 @@ to finish unless every record, the project settings, and `check`'s declarations,
 are the same before and after. With `--drafts` it converts every draft too, and each draft's
 `status` and `diff` stay as they were; it keeps each draft's old files so `--reverse` can restore
 them. On a mixed spec it finishes the move, and refuses a record that differs between the two places.
-No project is converted unless someone runs it; Sova's own spec stays in version 1 until a later
-change converts it.
+No existing project is converted unless someone runs it. A project that starts its spec with the
+draft tool (`new` where no spec exists) starts in version 2: the draft's `manifest.json` is
+`formatVersion` 2 with the `claims` string, and each record it gains goes beside its claim file.
+Sova's own spec is in version 2.
 
 ## §tools.spec/agreed-promotion — An agreed promise lands in the main spec before it is built
 
@@ -1022,7 +1027,7 @@ or an untrusted graph.
 
 ## §tools.spec/record-fields — Optional `embeds`, `core`, `about` and `notOwned` record fields
 
-A manifest record may carry four optional fields, each project flagging its own records; none is a
+A record may carry four optional fields, each project flagging its own records; none is a
 new kind, label value or top-level key, so a core that predates them reads the same manifest and
 ignores them. `embeds: [§id]` names surfaces drawn inside this claim, which a reader of it needs
 whole. `core: true` marks a claim, typically an H2, as part of the always-on frame (see

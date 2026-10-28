@@ -22,7 +22,6 @@ import {
   type SessionSummary,
   type SovaConfirmItem,
 } from "../shared/protocol";
-import { setArchived } from "./archived-sessions";
 import { type AttentionRow, blockerCount, blockerKey, buildDigest, mergedBranch, NEVER_BRIEFED, workerErrorTime } from "./attention";
 import { readIndex, stakeholderAttention } from "./orgs";
 import { heldAttention } from "./project-holds";
@@ -89,7 +88,7 @@ import { type Redactor, redactExtensionMessages, serverRedactor } from "./overse
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { UnreadReplies } from "./unread-replies";
-import { cleanupSessions, endingOf, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions, summaryReads, type SummaryReads } from "./sessions-index";
+import { cleanupSessions, markArchived, endingOf, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions, summaryReads, type SummaryReads } from "./sessions-index";
 import { getSessionInsight } from "./insights";
 import { branchLabels, cardsOnBranch, runNote, runNoteSessionIds, type SessionNow, sessionsInPlay, sessionsInPlayText, type Touched } from "./overseer-run-note";
 import { changedText, openingOn, toldOn, type LivePart, type OpeningDetails } from "./overseer-opening";
@@ -100,6 +99,7 @@ import { meshLinks } from "./mesh/links";
 import type { PeerLinkRead } from "../shared/mesh-links";
 import { rowsOf } from "./transcript";
 import { branchOf, joinedText, lineEntry, parsePi, readBranch } from "./harness/pi/reader";
+import { confirmedClicks } from "./overseer-copies";
 import type { HEntry, ToolSpec } from "../shared/harness";
 import type { ServerToolDecl } from "../shared/chat-runtime";
 import { archiveWorktrees } from "./archive-worktrees";
@@ -191,7 +191,7 @@ async function dropHistory(ids: string[]): Promise<void> {
   for (const id of ids) {
     const p = await pathOfId(id);
     if (!p) continue;
-    setArchived(id, true);
+    await markArchived(id, p);
     paths.push(p);
   }
   if (paths.length) await cleanupSessions({ mode: "paths", paths, dryRun: false }).catch(() => {});
@@ -681,6 +681,21 @@ const host: OverseerToolHost = {
     const run = overseerRun();
     return confirmedItems(run ? run.call.card : null, run ? run.chat.branch() : []);
   },
+  confirmedRows: () => {
+    const run = overseerRun();
+    return confirmedRows(run ? run.call.card : null, run ? run.chat.branch() : []);
+  },
+  // A land row's snapshot (§app.overseer/card-land): the session's readiness as listed, else read now.
+  async readyToLand(s) {
+    const r = s.readiness ?? (await (await import("./merge-readiness")).idleReadinessOf(s));
+    return (r?.trees ?? []).flatMap((t) => (t.landing?.state === "ready" ? [{ branch: t.branch, head: t.landing.commit }] : []));
+  },
+  landAtCommit: async (input) => (await import("./overseer-land")).recordCardGoAhead(input),
+  // The same click, per row with its chosen label: copies and leftover processes (§app.overseer/copies).
+  confirmedClicks: () => {
+    const run = overseerRun();
+    return confirmedClicks(run ? run.call.card : null, run ? run.chat.branch() : [], (h) => joinedText(h, { images: false }));
+  },
   // Approvals and rules (§app.overseer/approvals): read from the current runtime's file each call,
   // so a revoke applies from the next act on.
   permit(tool, sessions) {
@@ -749,6 +764,23 @@ export function confirmedItems(card: string | null, branch: readonly HEntry[]): 
   const click = matchCardClick(c, joinedText(branch[last]!, { images: false }).trim());
   if (!click) return null;
   return clickItems(c, click).map(({ n: _n, default: _d, decided: _x, ...item }) => item as SovaConfirmItem);
+}
+
+/**
+ * confirmedItems with the letter the click picked for each row (`pick`): a per-item Apply's own letter per row,
+ * none for a card-level option click. What tells Go (the row's first choice, "a") from Not Yet on a land row
+ * (§app.overseer/card-land). Null exactly when confirmedItems is. Pure over the branch.
+ */
+export function confirmedRows(card: string | null, branch: readonly HEntry[]): (SovaConfirmItem & { pick?: string })[] | null {
+  if (!card) return null;
+  let last = branch.length - 1;
+  while (last >= 0 && branch[last]!.kind !== "user") last--;
+  if (last < 0) return null;
+  const c = cardsOnBranch(branch.slice(0, last)).find((x) => x.id === card);
+  if (!c || c.phase !== "open") return null;
+  const click = matchCardClick(c, joinedText(branch[last]!, { images: false }).trim());
+  if (!click) return null;
+  return clickItems(c, click).map(({ n, default: _d, decided: _x, ...item }) => ({ ...(item as SovaConfirmItem), ...("items" in click ? { pick: click.items[n] } : {}) }));
 }
 
 /**

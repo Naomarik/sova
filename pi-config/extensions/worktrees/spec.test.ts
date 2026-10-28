@@ -260,3 +260,42 @@ test("when the core can't compute the landing, the note says so", async () => {
 		r.done();
 	}
 });
+
+// Across the cutover to one record file per area (format version 2): the tools compare records, never files.
+const migrate = (root: string) => {
+	const r = spawnSync(process.execPath, [DRAFT, "migrate", "--root", root, "--write", "--json"], { encoding: "utf8" });
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.equal(JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8")).formatVersion, 2);
+	sh(root, "add", "-A");
+	sh(root, "commit", "-qm", "spec: one record file per area");
+};
+
+test("across the cutover: the branch that converts the spec lands with nothing to report", async () => {
+	const r = repo();
+	try {
+		migrate(r.tree);
+		const rep = await merge(r);
+		assert.deepEqual(rep?.landing, { unmappedChanged: [], unpromotedDrafts: [], handResolved: [] });
+		assert.deepEqual(rep?.warnings, []);
+		const f = JSON.parse(execFileSync(process.execPath, [join(dirname(DRAFT), "sova-spec.mjs"), "foreign", "--base", "HEAD~1", "--head", "HEAD", "--root", r.main, "--json"], { cwd: r.main, encoding: "utf8" }));
+		assert.deepEqual([f.foreign, f.changes, f.created], [[], [], []], "a v1 → v2 range changes no record and no declaration");
+	} finally {
+		r.done();
+	}
+});
+
+test("across the cutover: a branch from before it lands on the converted master with nothing to report", async () => {
+	const r = repo();
+	try {
+		migrate(r.main);
+		put(r.tree, ".sova/spec/claims/app/list.md", LIST.replace("A speech bubble and", "Only"));
+		put(r.tree, "src/list.ts", "v2\n");
+		sh(r.tree, "commit", "-qam", "feat: code and spec, still format 1");
+		const rep = await merge(r);
+		assert.deepEqual(rep?.landing?.handResolved, [], "a merge of a format 1 side into a format 2 one is not a hand resolution");
+		assert.deepEqual(rep?.warnings, []);
+		assert.equal(JSON.parse(readFileSync(join(r.main, ".sova/spec/manifest.json"), "utf8")).formatVersion, 2, "the merged master stays in format 2");
+	} finally {
+		r.done();
+	}
+});

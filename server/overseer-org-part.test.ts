@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { BATON_SENT_ENTRY } from "../shared/baton";
+import { readSpecFs, serialize } from "../pi-config/extensions/spec/core/layout.mjs";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-org-part-")));
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
@@ -301,12 +302,16 @@ describe("what is built reaches the overseer (§app.requirements/decisions)", as
     await run("sova_reconcile", {}, { project: shop.id });
     await run("sova_promote", { ids: [a, b] }, { project: shop.id });
     // The builder records evidence and code on A; B's prose is edited in the spec.
-    const manifestFile = join(root, "shop", ".sova", "spec", "manifest.json");
-    const m = JSON.parse(readFileSync(manifestFile, "utf8"));
+    // In the spec's own layout (a project that started its spec here is in format 2).
+    const specDir = join(root, "shop", ".sova", "spec");
+    const spec = readSpecFs(specDir, ".");
+    if (spec.state !== "present") throw new Error(`${specDir}: no spec`);
     const rows = reconcile.listDecisions(org.id, shop.id).decisions;
     const ra = (rows.find((d) => d.id === a) as any).recordId;
-    Object.assign(m.claims[ra], { evidence: "verified", code: ["src/due.js"] });
-    writeFileSync(manifestFile, `${JSON.stringify(m, null, 2)}\n`);
+    const claims = structuredClone(spec.records) as Record<string, any>;
+    Object.assign(claims[ra], { evidence: "verified", code: ["src/due.js"] });
+    for (const [rel, text] of serialize(spec.layout, { ...spec.manifest, claims }, { prevRecordFiles: spec.recordFiles }))
+      if (text !== null) writeFileSync(join(specDir, rel), text);
     const md = join(root, "shop", ".sova", "spec", "claims", "requirements", "invoicing.md");
     writeFileSync(md, readFileSync(md, "utf8").replace("Invoices show the shop's logo.\n", "Invoices show the shop's logo, top left.\n"));
     await run("sova_reconcile", {}, { project: shop.id });

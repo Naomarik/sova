@@ -23,6 +23,10 @@ for word. The entries are:
   `mode-spec.json`) that seed the subagent profile library and are its fallback, not what
   Settings → Subagents shows; nothing on the catalogue writes them.
 - **Notifications:** `push.test` sends the Send Test notification to every registered device.
+- **An organization's Claude login:** `org.claude-login.get` and `org.claude-login.set` (mesh
+  `admin`), the login its projects' new chats start on (§app.claude-logins/project-login).
 
-Nothing here grants power or reveals a secret: profile and schedule approval, logins, the decision
-key, the model policy's and every other setting's writes stay off the catalogue.
+Nothing here grants power or reveals a secret: profile and schedule approval, signing in and the
+Claude logins themselves (Settings → Accounts), the decision key, the model policy's and every
+other setting's writes stay off the catalogue. Which login an organization or project starts on
+names a login, never its credentials, and its four entries are the only paths naming a login.

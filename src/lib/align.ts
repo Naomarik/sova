@@ -166,7 +166,12 @@ export function foldAlignRows(
 
 /** Row id → true for the newest row of each document: those render the full card, the rest one line. */
 export function newestAlignRows(items: readonly TranscriptItem[]): Set<string> {
-  return newestByKey(items, (it) => (it.kind === "align" ? it.align?.doc?.id : undefined), (it) => it.id);
+  return newestByKey(items, alignKey, (it) => it.id);
+}
+
+/** An alignment row's card: its document, shared by every revision. */
+export function alignKey(it: TranscriptItem): string | undefined {
+  return it.kind === "align" ? it.align?.doc?.id : undefined;
 }
 
 /** The composer chip's counts over the open documents: how many, their decided questions, all their live questions. */

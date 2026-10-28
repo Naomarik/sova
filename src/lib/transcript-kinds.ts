@@ -21,7 +21,8 @@ import { rowFacts } from "../../shared/wire-v1";
 import { isBriefText } from "../../shared/senders";
 import { OFFER_TOOL } from "../../shared/session-offers";
 import { SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
-import { alignOf } from "./align";
+import { alignKey, alignOf } from "./align";
+import { newestByKey } from "./transcript-placement";
 import { explainOf } from "./explain";
 import { isLoginNoteRow } from "./change-rows";
 import { infoEstimate } from "./tail-render";
@@ -29,10 +30,12 @@ import { infoEstimate } from "./tail-render";
 /** Where a kind draws: in the page (Sova's own), as one of Sova's data cards, or in a sealed frame. */
 export type KindHost = "page" | "data" | "frame";
 
-/** What keeps a following card at the end of the transcript (§chat.transcript-cards/placement). */
-export type FollowWhile = "until-answered" | "until-done";
-/** Anchored (the default): it stands where it was raised. Follow: at the end while the condition holds, then back at its place. */
-export type Placement = "anchored" | { follow: FollowWhile };
+/**
+ * Where a kind's rows stand (§chat.transcript-cards/placement). Every row stands where it was raised;
+ * nothing ever moves to the end. Anchored: each row is its own card. Follow: a card raised again is a
+ * new revision at its own point in the chat, by `key`; only the newest revision draws the whole card.
+ */
+export type Placement = "anchored" | "follow";
 
 /** The project overseer's settings tool: a propose draws its Settings change card. */
 export const SETTINGS_TOOL = "sova_settings";
@@ -82,8 +85,8 @@ export interface TranscriptKind<V = unknown> {
   estimate?(item: TranscriptItem, value: V): string;
   host: KindHost;
   placement: Placement;
-  /** While true, a `follow` kind's row stands at the end of the transcript. */
-  holds?(item: TranscriptItem, value: V): boolean;
+  /** A `follow` kind's card, shared by its revisions: the newest row per key draws it whole. */
+  key?(item: TranscriptItem, value: V): string | undefined;
   /** Drawn by the toolkit. Absent: drawn by its own branch in Thread.tsx, until it migrates. */
   view?: KindView;
   /** A row the transcript keeps for its facts but never draws (a sent marker): no view, no branch. */
@@ -111,10 +114,9 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   kind({ id: "spec-turn", match: (it) => it.kind === "spec-turn", host: "page", placement: "anchored", drawsNothing: true }),
   kind({ id: "assistant-text", match: (it) => it.kind === "assistant-text", host: "page", placement: "anchored" }),
   kind({ id: "thinking", match: (it) => it.kind === "thinking", host: "page", placement: "anchored" }),
-  // An open alignment follows the chat by revision (lib/transcript-placement.ts `newestByKey`): each
-  // `align` call is a new row, its newest revision draws the whole card and earlier ones one line.
-  // It is drawn by its own branch until it migrates, last, so its rows never move today.
-  kind({ id: "align", match: (it) => it.kind === "align" && it.align, host: "page", placement: { follow: "until-answered" } }),
+  // An open alignment follows the chat by revision: each `align` call is a new row, its newest
+  // revision draws the whole card and earlier ones one line (lib/align.ts `newestAlignRows`).
+  kind({ id: "align", match: (it) => it.kind === "align" && it.align, host: "page", placement: "follow", key: (it) => alignKey(it) }),
   kind({ id: "align-report", match: (it) => it.kind === "report" && it.report && alignOf(it.report), host: "page", placement: "anchored" }),
   kind({ id: "explain", match: (it) => it.kind === "report" && it.report && explainOf(it.report), host: "page", placement: "anchored" }),
   kind({ id: "team-report", match: (it) => it.kind === "report" && it.report?.team, host: "page", placement: "anchored" }),
@@ -162,11 +164,16 @@ export const sameHit = (a: KindHit | undefined, b: KindHit | undefined): boolean
 /** The kinds the toolkit draws (each has a view), by id: the rule test holds Thread.tsx to having no branch for them. */
 export const toolkitKinds = (kinds: readonly TranscriptKind[] = TRANSCRIPT_KINDS): string[] => kinds.filter((k) => k.view).map((k) => k.id);
 
-/** The kinds the toolkit draws that follow the chat: the only rows placement can move. */
-export const followingKinds = (kinds: readonly TranscriptKind[] = TRANSCRIPT_KINDS): TranscriptKind[] => kinds.filter((k) => k.view && k.placement !== "anchored");
-
-/** Whether a row drawn by the toolkit stands at the end now: its kind follows and its condition holds. */
-export function followsNow(hit: KindHit | undefined, item: TranscriptItem): boolean {
-  if (!hit?.kind.view || hit.kind.placement === "anchored") return false;
-  return hit.kind.holds ? hit.kind.holds(item, hit.value) : false;
+/** The rows that draw a following card whole: the newest revision of each card, by kind and key. Anchored rows are never in it. */
+export function newestRevisions(items: readonly TranscriptItem[], ctx: KindContext, kinds: readonly TranscriptKind[] = TRANSCRIPT_KINDS): Set<string> {
+  return newestByKey(
+    items,
+    (it) => {
+      const hit = kindOf(it, ctx, kinds);
+      if (hit?.kind.placement !== "follow" || !hit.kind.key) return undefined;
+      const key = hit.kind.key(it, hit.value);
+      return key === undefined ? undefined : `${hit.kind.id}\u0000${key}`;
+    },
+    (it) => it.id,
+  );
 }

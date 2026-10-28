@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TranscriptItem } from "../../shared/protocol";
-import { followingKinds, followsNow, kindById, kindOf, sameHit, toolkitKinds, TRANSCRIPT_KINDS, type KindContext, type TranscriptKind } from "./transcript-kinds";
+import { kindById, kindOf, newestRevisions, sameHit, toolkitKinds, TRANSCRIPT_KINDS, type KindContext, type TranscriptKind } from "./transcript-kinds";
 import { rowEstimate } from "./tail-render";
 
 const AT = "2026-02-01T00:00:00.000Z";
@@ -19,12 +19,12 @@ const ctx = (over: Partial<KindContext> = {}): KindContext => ({
 });
 const idOf = (item: TranscriptItem, c = ctx()) => kindOf(item, c)?.kind.id;
 
-test("ids are unique, plain names, and each kind is anchored or follows by a named condition", () => {
+test("ids are unique, plain names, and each kind is anchored or follows by a key", () => {
   const ids = TRANSCRIPT_KINDS.map((k) => k.id);
   assert.equal(new Set(ids).size, ids.length);
   for (const k of TRANSCRIPT_KINDS) {
     assert.match(k.id, /^[a-z][a-z0-9-]*$/, "Sova's own kinds have plain names");
-    assert.ok(k.placement === "anchored" || ["until-answered", "until-done"].includes(k.placement.follow), k.id);
+    assert.ok(k.placement === "anchored" || (k.placement === "follow" && typeof k.key === "function"), k.id);
     assert.equal(k.host, "page", "Sova's own kinds draw in the page");
   }
   assert.equal(kindById("wake")?.id, "wake");
@@ -78,20 +78,11 @@ test("the kinds on the toolkit reserve the height they reserved before", () => {
   }
 });
 
-test("only the toolkit's own kinds may follow, and none does yet; the alignment card follows by revision until it moves", () => {
-  assert.deepEqual(followingKinds(), []);
-  assert.deepEqual(kindById("align")?.placement, { follow: "until-answered" });
-  assert.equal(kindById("align")?.view, undefined, "drawn by its own branch, so its rows never move today");
-  const item = row({ kind: "align", align: { v: 1, line: "" } } as never);
-  assert.equal(followsNow(kindOf(item, ctx()), item), false);
-  // A kind on the toolkit that follows does so while its condition holds, and settles after.
-  const open = { done: false };
-  const card: TranscriptKind = { id: "card", match: () => open, host: "data", placement: { follow: "until-done" }, holds: (_it, v) => !(v as { done: boolean }).done, view: { page: "info" } };
-  assert.deepEqual(followingKinds([card]), [card]);
-  const hit = kindOf(item, ctx(), [card]);
-  assert.equal(followsNow(hit, item), true);
-  open.done = true;
-  assert.equal(followsNow(hit, item), false);
-  assert.equal(followsNow({ kind: { ...card, placement: "anchored" }, value: { done: false } }, item), false, "an anchored kind never moves");
+test("a following kind follows by revision: only the newest row per key draws the card, anchored rows never", () => {
+  assert.equal(kindById("align")?.placement, "follow");
+  const card: TranscriptKind = { id: "card", match: (it) => it.kind === "info" && it.text, host: "data", placement: "follow", key: (it) => it.text, view: { page: "info" } };
+  const items = [row({ id: "1", text: "k" }), row({ id: "2", kind: "user", text: "hi" } as never), row({ id: "3", text: "k" }), row({ id: "4", text: "j" })];
+  assert.deepEqual([...newestRevisions(items, ctx(), [card])].sort(), ["3", "4"]);
+  assert.deepEqual([...newestRevisions(items, ctx(), [{ ...card, placement: "anchored" }])], [], "an anchored kind has no revisions");
   assert.deepEqual(toolkitKinds([card]), ["card"]);
 });

@@ -1,31 +1,16 @@
 // Run: pnpm test -- src/lib/transcript-placement.test.ts
-// Where a card stands (§chat.transcript-cards/placement): anchored rows keep their place, a following
-// row stands at the end while its condition holds and settles back at its own place after, and a
-// card raised again follows by revision (the newest row of each card draws it).
+// Where a card stands (§chat.transcript-cards/placement): every row stands where it was raised and
+// nothing moves to the end; a following card raised again is a new revision at its own point, and
+// only its newest revision (by key) draws the whole card.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TranscriptItem } from "../../shared/protocol";
 import { newestAlignRows } from "./align";
-import { newestByKey, placeRows } from "./transcript-placement";
+import { kindById, newestRevisions, type KindContext } from "./transcript-kinds";
+import { newestByKey } from "./transcript-placement";
 
-test("with nothing following, the rows are the same array, untouched", () => {
-  const rows = ["a", "b", "c"];
-  assert.equal(placeRows(rows, () => false), rows);
-});
-
-test("a following row stands at the end, below the newest row, in its own order with others", () => {
-  const follows = new Set(["b", "d"]);
-  assert.deepEqual(placeRows(["a", "b", "c", "d", "e"], (r) => follows.has(r)), ["a", "c", "e", "b", "d"]);
-});
-
-test("as the chat goes on it stays at the end; once its condition stops it settles where it was raised", () => {
-  const open = new Set(["q"]);
-  const follows = (r: string) => open.has(r);
-  assert.deepEqual(placeRows(["a", "q", "b"], follows), ["a", "b", "q"]);
-  assert.deepEqual(placeRows(["a", "q", "b", "c"], follows), ["a", "b", "c", "q"], "a new row arrives above it");
-  open.delete("q");
-  assert.deepEqual(placeRows(["a", "q", "b", "c"], follows), ["a", "q", "b", "c"], "answered: back at its place");
-});
+const ctx: KindContext = { hasUserRow: () => true, tourCard: () => undefined, showChanges: () => undefined, offer: () => undefined, settings: () => undefined };
+const doc = (id: string) => ({ id }) as never;
 
 test("a card raised again follows by revision: only its newest row draws it", () => {
   const rows = [
@@ -37,8 +22,25 @@ test("a card raised again follows by revision: only its newest row draws it", ()
   assert.deepEqual([...newestByKey(rows, (r) => r.key, (r) => r.id)].sort(), ["3", "4"]);
 });
 
-test("the alignment card's newest revisions are that rule, unchanged", () => {
-  const doc = (id: string) => ({ id }) as never;
+test("a follow card raised twice: the later revision draws full at its own place, the next reply after it, nothing moves to the end", () => {
+  const items = [
+    { id: "a", kind: "user", text: "go" },
+    { id: "r1", kind: "align", align: { doc: doc("al_1") } },
+    { id: "b", kind: "assistant-text", text: "thinking it over" },
+    { id: "r2", kind: "align", align: { doc: doc("al_1") } },
+    { id: "c", kind: "assistant-text", text: "the next reply" },
+  ] as unknown as TranscriptItem[];
+  assert.equal(kindById("align")?.placement, "follow");
+  const full = newestRevisions(items, ctx);
+  assert.deepEqual([...full], ["r2"], "only the later revision draws the whole card; r1 folds");
+  // The kind list never reorders: the rows draw in the order they were raised.
+  const order = items.map((it) => it.id);
+  assert.deepEqual(order, ["a", "r1", "b", "r2", "c"]);
+  assert.ok(order.indexOf("c") > order.indexOf("r2"), "the reply after it draws below it");
+  assert.notEqual(order.at(-1), "r2", "nothing is pinned at the end");
+});
+
+test("the alignment card's newest revisions are the kind's follow rule, unchanged", () => {
   const items = [
     { id: "a", kind: "align", align: { doc: doc("al_1") } },
     { id: "b", kind: "info" },
@@ -47,4 +49,5 @@ test("the alignment card's newest revisions are that rule, unchanged", () => {
     { id: "e", kind: "align", align: { exempt: { why: "x" } } },
   ] as unknown as TranscriptItem[];
   assert.deepEqual([...newestAlignRows(items)].sort(), ["c", "d"]);
+  assert.deepEqual([...newestRevisions(items, ctx)].sort(), ["c", "d"]);
 });

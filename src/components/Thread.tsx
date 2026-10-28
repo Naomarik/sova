@@ -69,16 +69,13 @@ import { TopicCard } from "./TopicCard";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { rowProvider } from "../lib/subagent-limit";
 import { TranscriptKindRow } from "./TranscriptKind";
-import { followingKinds, followsNow, kindOf, sameHit, SETTINGS_TOOL, type KindContext, type KindHit } from "../lib/transcript-kinds";
-import { placeRows } from "../lib/transcript-placement";
+import { kindOf, sameHit, SETTINGS_TOOL, type KindContext, type KindHit } from "../lib/transcript-kinds";
 import { isErroredTurnStop } from "../lib/turn";
 
 /** Whose transcript the rows inside are (lib/tool-content): a tool card asks it for the content its
     row doesn't carry. Absent: the rows carry all they draw. */
 export const ToolSourceContext = createContext<ToolSource | null>(null);
 
-/** Whether any kind the toolkit draws follows the chat: only then does the thread place its rows (lib/transcript-placement.ts). */
-const FOLLOWING = followingKinds().length > 0;
 
 /** "1:43 PM · 5m ago": the clock in mono, then its age, kept current by the one minute clock
     every head shares. The age drops once it would only repeat the date (past 7 days). */
@@ -574,12 +571,10 @@ export function HistoryItems(props: {
   const hasUserRow = createMemo(() => props.items.some((it) => it.kind === "user"));
   /** What a row's kind may ask of the whole list when it matches (lib/transcript-kinds.ts). */
   const kinds: KindContext = { hasUserRow, tourCard: tourCardOf, showChanges: showChangesOf, offer: offerOf, settings: settingsOf };
-  const renderable = createMemo(() => {
-    const list = props.items.filter((it) => !isChangeRow(it) && !wrapupRows().has(it.id) && !(it.kind === "tool-call" && it.toolCallId && alignCalls().has(it.toolCallId)));
-    // A following card stands at the end while its condition holds (§chat.transcript-cards/placement):
-    // only a kind the toolkit draws can follow, so with none (today) the list is never walked again.
-    return FOLLOWING ? placeRows(list, (it) => followsNow(kindOf(it, kinds), it)) : list;
-  });
+  // Every row stands where it was raised (§chat.transcript-cards/placement): nothing moves to the end.
+  const renderable = createMemo(() =>
+    props.items.filter((it) => !isChangeRow(it) && !wrapupRows().has(it.id) && !(it.kind === "tool-call" && it.toolCallId && alignCalls().has(it.toolCallId))),
+  );
   const split = createMemo(() =>
     props.hideTools || props.hideThinking ? splitHidden(renderable(), { tools: !!props.hideTools, thinking: !!props.hideThinking }) : null,
   );

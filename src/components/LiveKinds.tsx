@@ -86,6 +86,10 @@ const callOf = (input: LiveInput): LiveCallBlock => {
 function LiveUserRow(props: LiveKindViewProps<LiveUserEntry>) {
   const rows = useLiveRows();
   const e = props.value;
+  /* A message of yours settles with its action strip under it (Thread `strips`, a chat's only: the
+     run that offers queueActions); until then this row holds the strip's height empty, so nothing
+     below it moves at the handover. */
+  const reserve = () => (rows.queueActions ? <div class="message-actions message-actions-end" aria-hidden="true" /> : null);
   return (
     /* A queued row has no `.entry` around it, so it brings the hover/tap region its Remove needs to
        be revealed by (base.css; `display: contents`, so the wrapper changes nothing about how the row
@@ -101,9 +105,9 @@ function LiveUserRow(props: LiveKindViewProps<LiveUserEntry>) {
         images={e.images}
         attachments={e.attachments}
       />
-      <Show when={rows.queueActions && e.state !== "delivered" ? rows.queueActions(e) : null}>
+      <Show when={rows.queueActions && e.state !== "delivered" ? rows.queueActions(e) : null} fallback={reserve()}>
         {(items) => (
-          <Show when={items().length > 0}>
+          <Show when={items().length > 0} fallback={reserve()}>
             <MessageActions label="Actions for your queued message" align="end" items={items()} />
           </Show>
         )}

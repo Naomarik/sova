@@ -10,7 +10,10 @@
 // live user row's `{/* … */ <div>}`; the browser draws none), and Math.random is seeded. One change
 // was meant: a settings card stands outside the Work run while streaming, as it does settled (the
 // live and settled runs are cut by one rule, lib/transcript-kinds.ts `outsideWork`), so only "a
-// settings card" was regenerated, from the new path. Regenerate only for a change you mean:
+// settings card" was regenerated, from the new path. A second: a delivered message of yours, in a
+// chat's run (queueActions given), holds its settled action strip's box empty so nothing below it
+// moves at the handover (work-run-handover.test.ts), so the user-rows case gained that empty div
+// after each delivered bubble and nothing else. Regenerate only for a change you mean:
 // WRITE_LIVE_SNAPSHOT=1 pnpm test -- src/lib/transcript-live-dom.test.ts
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";

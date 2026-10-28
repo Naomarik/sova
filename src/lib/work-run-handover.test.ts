@@ -101,3 +101,33 @@ test("a settings call still running is a step: no card yet, nothing to stand apa
   assert.doesNotMatch(running, /data-settings-card=/);
   assert.match(running, /Work · 3 steps/);
 });
+
+// Your message settles with its action strip under it, hidden until hovered but holding its height
+// (base.css `.message-actions`: the thread's gap above it, a control's height). The running turn's
+// row holds the same strip's box, empty, so the rows below it don't drop by that height at the
+// handover. Both rows sit in a column with the thread's gap (a live row's wrappers are
+// `display: contents`; a settled `.entry` repeats that gap and cancels its own padding), so the
+// same element after the bubble is the same height.
+const chatActions = {
+  builtIns: [{ id: "sova.message-actions", items: () => (["copy", "share", "rewind"] as const).map((kind) => ({ kind, reason: null, run() {} })) }],
+};
+/** The element right after your message's bubble, by its tag and strip classes; null when the bubble's row ends there. */
+function afterUserBubble(html: string): string | null {
+  const at = html.indexOf("</article>", html.indexOf("message message-user"));
+  assert.ok(at > 0, "the user's bubble is drawn");
+  // Solid's SSR markers (<!--$-->, <!--/-->) draw nothing.
+  const m = /^<(\/?)(\w+)([^>]*)>/.exec(html.slice(at + "</article>".length).replace(/<!--[^>]*-->/g, ""));
+  if (!m || m[1]) return null;
+  const cls = /class="([^"]*)"/.exec(m[3]!)?.[1]?.trim().split(/\s+/) ?? [];
+  return [m[2], ...cls.filter((c) => c === "message-actions" || c === "message-actions-end")].join(".");
+}
+
+test("your message holds its action strip's height while the turn runs, so nothing below it moves when it settles", async () => {
+  setCompressWork(true);
+  const running = await renderToStringAsync(() => solid.createComponent(LiveEntries as never, { live: live("done"), author: "Agent", queueActions: () => [] } as never));
+  const settledHtml = renderToString(() => solid.createComponent(HistoryItems as never, { items: settled, author: "Agent", streaming: false, whole: true, actions: chatActions } as never));
+  const strip = "div.message-actions.message-actions-end";
+  assert.deepEqual(afterUserBubble(settledHtml), strip, "settled: the strip follows the bubble");
+  assert.deepEqual(afterUserBubble(running), strip, "running: the same strip's box follows the bubble");
+  assert.match(running, /<div class="message-actions message-actions-end" aria-hidden="true"><\/div>/, "running: empty, and hidden from assistive tech");
+});

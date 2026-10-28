@@ -71,7 +71,7 @@ export interface KindViewProps<V = unknown> {
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -134,7 +134,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   // A Claude login note waits for the first message, like the profile row.
   kind({ id: "login-note-waiting", match: (it, ctx) => isLoginNoteRow(it) && !ctx.hasUserRow(), host: "page", placement: "anchored", drawsNothing: true }),
   kind({ id: "info", match: (it) => it.kind === "info", estimate: (it) => infoEstimate(it.text ?? ""), host: "page", placement: "anchored", view: { page: "info" } }),
-  kind({ id: "tour", match: (it, ctx) => isCall(it) && ctx.tourCard(it), host: "page", placement: "anchored" }),
+  kind({ id: "tour", match: (it, ctx) => isCall(it) && ctx.tourCard(it), host: "page", placement: "anchored", view: { page: "tour" } }),
   // A show_changes result whose details check out reads as a card that opens the changes viewer
   // (§chat.changes/show-changes-card); anything else, a tool card.
   kind({ id: "show-changes", match: (it, ctx) => isCall(it) && it.text === SHOW_CHANGES_TOOL && ctx.showChanges(it.toolCallId), host: "page", placement: "anchored", view: { page: "show-changes" } }),

@@ -42,6 +42,7 @@ import { overseerVerbsTool, type LooseExec } from "./project-services/tools";
 import { operatorEnvelopeOf } from "./projects/spaces";
 import { orgConfirmLookup, orgTools } from "./overseer-org-tools";
 import { orgHistoryParams, orgHistoryRead } from "./org-history-tools";
+import { codeHistoryTools } from "./overseer-code-history";
 import { resolveAnyProject, resolveOrg, resolvePerson } from "./overseer-org-view";
 import { contactRedactor, loggedArgs } from "./overseer-org-view";
 import { linkState as shareLinkState, listShares, type ShareLinkRecord } from "./session-shares";
@@ -1930,6 +1931,8 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
       int,
       bool,
     }),
+    // A project's code history and Sova's own server log, read-only, any run (§app.overseer/code-history).
+    ...codeHistoryTools({ overseerId: () => host.overseerId(), refusal: (m) => new Refusal(m), obj, str, int }),
     // The organization's history: read when the operator's turn asks for it.
     {
       name: "sova_org_history",

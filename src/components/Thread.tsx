@@ -958,9 +958,6 @@ export function HistoryItems(props: {
               <Match when={is<NonNullable<ReturnType<typeof tourCardOf>>>("tour")}>
                 {(details) => <TourCard details={details()} />}
               </Match>
-              <Match when={is<NonNullable<ReturnType<typeof showChangesOf>>>("show-changes")}>
-                {(details) => <ShowChangesCard details={details()} />}
-              </Match>
               <Match when={is("tool")}>
                 {(() => {
                   const view = () => {

@@ -6,6 +6,8 @@ import { SettingsToolCard } from "./SettingsChangeCard";
 import type { SettingsToolDetails } from "../../shared/project-settings";
 import { OfferCardView } from "./OfferCard";
 import type { OfferCard } from "../../shared/session-offers";
+import { ShowChangesCard } from "./ChangesViewer";
+import type { ShowChangesDetails } from "../../pi-config/extensions/show-changes/details";
 
 /**
  * The views of Sova's own transcript cards, moved onto the card toolkit one kind at a time
@@ -17,4 +19,5 @@ export const BUILTIN_VIEWS = {
   "worktree-merge": (props: KindViewProps<NonNullable<TranscriptItem["worktreeMerge"]>>) => <WorktreeMergeCard merge={props.value} time={props.item.at} />,
   settings: (props: KindViewProps<SettingsToolDetails>) => <SettingsToolCard details={props.value} />,
   offer: (props: KindViewProps<OfferCard>) => <OfferCardView card={props.value} />,
+  "show-changes": (props: KindViewProps<ShowChangesDetails>) => <ShowChangesCard details={props.value} />,
 } satisfies Record<string, Component<KindViewProps<never>>>;

@@ -609,9 +609,6 @@ export function HistoryItems(props: {
               <Match when={drawn()}>{(h) => <TranscriptKindRow hit={h()} item={item} limitPath={props.limitPath} index={index} reserve={rowEst()} />}</Match>
               {/* A kind still drawn by its branch here, until it moves onto the toolkit; and the kinds that draw nothing. */}
               <Match when={hit()?.kind.drawsNothing}>{null}</Match>
-              <Match when={is("thinking")}>
-                <Thinking text={item.text ?? ""} />
-              </Match>
               <Match when={is<NonNullable<TranscriptItem["align"]>>("align")}>{(row) => <AlignRow row={row()} newest={alignNewest(item)} />}</Match>
               <Match when={is<NonNullable<NonNullable<TranscriptItem["report"]>["align"]>>("align-report")}>
                 {(align) => (

@@ -16,7 +16,7 @@ import { OwnerRequestNote } from "./OwnerRequestNote";
 import { OverseerChoiceRow } from "./OverseerCards";
 import { profileIconName } from "../lib/profiles";
 import { useThreadRows } from "./thread-rows";
-import { AssistantText, UserTurn } from "./MessageRows";
+import { AssistantText, Thinking, UserTurn } from "./MessageRows";
 import { modelLabel, modelMismatch } from "../lib/format";
 import { BriefRow } from "./OverseerCards";
 import { ExplainCard } from "./ExplainCard";
@@ -52,6 +52,7 @@ export const BUILTIN_VIEWS = {
   },
   user: UserRow,
   "assistant-text": ReplyText,
+  thinking: (props: KindViewProps) => <Thinking text={props.item.text ?? ""} />,
 } satisfies Record<string, Component<KindViewProps<never>>>;
 
 /** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is

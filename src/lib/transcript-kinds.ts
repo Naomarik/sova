@@ -71,7 +71,7 @@ export interface KindViewProps<V = unknown> {
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -119,7 +119,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   // Legacy: the retired spec card's row, still sent by older mesh peers.
   kind({ id: "spec-turn", match: (it) => it.kind === "spec-turn", host: "page", placement: "anchored", drawsNothing: true }),
   kind({ id: "assistant-text", match: (it) => it.kind === "assistant-text", host: "page", placement: "anchored", view: { page: "assistant-text" } }),
-  kind({ id: "thinking", match: (it) => it.kind === "thinking", host: "page", placement: "anchored" }),
+  kind({ id: "thinking", match: (it) => it.kind === "thinking", host: "page", placement: "anchored", view: { page: "thinking" } }),
   // An open alignment follows the chat by revision: each `align` call is a new row, its newest
   // revision draws the whole card and earlier ones one line (lib/align.ts `newestAlignRows`).
   kind({ id: "align", match: (it) => it.kind === "align" && it.align, host: "page", placement: "follow", key: (it) => alignKey(it) }),

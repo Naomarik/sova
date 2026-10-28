@@ -271,8 +271,9 @@ export interface ProjectOverseerSettings {
   confirmKinds?: ConfirmKind[];
   extraSystemPrompt: string;
   /** Its memory switch, written only by PUT …/overseer/memory.
-      Absent = no choice made: on, UniiChat at 128 KB. */
-  memory?: { on: boolean; type: "uniichat" | "zoomable"; size: number };
+      Absent = no choice made: on, UniiChat. `size`: an older file's, kept but ignored (the size is
+      Settings → Memory's for the type). */
+  memory?: { on: boolean; type: "uniichat" | "zoomable"; size?: number };
 }
 
 export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "model" | "thinking" | "codingModel" | "codingThinking" | "gatheringModel" | "gatheringThinking" | "gatheringAbilities" | "watchGapMin" | "soonLookSec" | "watch" | "holdMin" | "extraSystemPrompt">> &

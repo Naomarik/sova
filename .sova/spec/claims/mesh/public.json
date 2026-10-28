@@ -1,0 +1,542 @@
+{
+  "§mesh.public/forwarded-for": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/share/security.ts",
+      "server/share/router.ts",
+      "server/share/edge.ts",
+      "server/share/front.ts",
+      "shared/public-links.ts",
+      "server/share-security.test.ts",
+      "server/share-security.integration.test.ts"
+    ]
+  },
+  "§mesh.public/front": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.public/setting"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/share/front.ts",
+      "server/public-links-routes.ts",
+      "server/share-front.test.ts",
+      "server/share-front.integration.test.ts"
+    ]
+  },
+  "§mesh.public/front-cdn": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.public/front",
+      "§mesh.public/forwarded-for"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/share/front.ts",
+      "server/share-front.test.ts",
+      "server/share-front.integration.test.ts"
+    ]
+  },
+  "§mesh.public/gateway": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.public/setting",
+      "§mesh.peers/hello",
+      "§app/tours"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/share/registry.ts",
+      "server/share/gateway-routes.ts",
+      "server/mesh/hello.ts",
+      "server/public-links-routes.ts",
+      "server/share-registry.test.ts",
+      "server/share-offline.test.ts",
+      "server/share-offline.integration.test.ts",
+      "shared/public-links.ts",
+      "server/share/registry-push.ts",
+      "server/share/tour-transport.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-20T10:13Z",
+      "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
+    }
+  },
+  "§mesh.public/ingress": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.public/setting",
+      "§mesh.peers/address-identity",
+      "§app.baton/share-listener"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/share/ingress.ts",
+      "server/mesh/gate.ts",
+      "server/share/edge.ts",
+      "server/share/gateway-client.ts",
+      "server/share-ingress.test.ts",
+      "server/share-ingress.integration.test.ts",
+      "server/share-security.test.ts",
+      "server/share-security.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-20T10:13Z",
+      "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
+    }
+  },
+  "§mesh.public/listener-failure": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.public/setting",
+      "§mesh.public/panel",
+      "§design.copy-deck/public-links"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/share/listener.ts",
+      "server/public-links-routes.ts",
+      "shared/public-links.ts",
+      "src/lib/public-links.ts",
+      "src/components/PublicLinksSettings.tsx",
+      "server/public-links.test.ts",
+      "server/public-links.integration.test.ts",
+      "src/lib/public-links.test.ts",
+      "server/share/share-state.ts"
+    ]
+  },
+  "§mesh.public/offline": {
+    "kind": "behavior",
+    "requires": [
+      "§design.copy-deck/public-links",
+      "§app/tours"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/share/offline.ts",
+      "server/share/router.ts",
+      "server/share/ws-hop.ts",
+      "src/share/ShareApp.tsx",
+      "src/share/OwnerApp.tsx",
+      "shared/public-links.ts",
+      "server/share-offline.test.ts",
+      "server/share-offline.integration.test.ts",
+      "server/share-router.test.ts",
+      "server/share-router.integration.test.ts",
+      "server/share/tour-transport.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-20T10:13Z",
+      "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
+    }
+  },
+  "§mesh.public/panel": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.public/setting",
+      "§app.settings-dialog/save-bar",
+      "§design.copy-deck/public-links"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/PublicLinksSettings.tsx",
+      "src/lib/public-links.ts",
+      "src/lib/public-links.test.ts",
+      "src/components/SettingsDialog.tsx",
+      "src/components/MeshView.tsx",
+      "server/public-links-routes.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-20T10:13Z",
+      "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
+    }
+  },
+  "§mesh.public/preview": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.public/registry",
+      "§mesh.public/preview-address",
+      "§mesh.public/preview-proxy"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/preview-links.ts",
+      "server/preview-links.ts",
+      "server/preview-links-routes.ts",
+      "server/share/registry-push.ts",
+      "server/share/registry.ts",
+      "shared/public-links.ts",
+      "server/index.ts",
+      "server/preview-links.test.ts",
+      "server/share-preview-router.test.ts",
+      "server/preview-kept.ts",
+      "server/project-previews.ts",
+      "server/project-previews.integration.test.ts",
+      "server/project-services/sensitive.ts",
+      "server/share/preview-proxy.ts",
+      "server/project-services/share.test.ts",
+      "server/project-services/share.integration.test.ts",
+      "server/app.ts",
+      "server/share-preview-router.integration.test.ts"
+    ]
+  },
+  "§mesh.public/preview-address": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.public/setting",
+      "§mesh.public/front",
+      "§mesh.public/gateway"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/public-links.ts",
+      "server/public-links-routes.ts",
+      "server/share/edge.ts",
+      "server/share/ingress.ts",
+      "server/share/router.ts",
+      "server/share/front.ts",
+      "server/share/gateway-client.ts",
+      "server/share/gateway-routes.ts",
+      "server/share/preview-address.ts",
+      "shared/public-links.ts",
+      "src/lib/public-links.ts",
+      "src/components/PublicLinksSettings.tsx",
+      "server/share-preview-address.test.ts",
+      "server/share-preview-proxy.test.ts",
+      "server/share-preview-proxy.integration.test.ts"
+    ]
+  },
+  "§mesh.public/preview-card": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.public/preview"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/PreviewsCard.tsx",
+      "src/components/ProjectPage.tsx",
+      "src/components/SharesPage.tsx",
+      "src/lib/api.ts",
+      "src/lib/previews.ts",
+      "src/lib/previews.test.ts",
+      "src/shares.css",
+      "src/lib/preview-rows.ts",
+      "src/lib/preview-rows.test.ts",
+      "server/project-previews.ts",
+      "server/project-previews.integration.test.ts",
+      "shared/preview-links.ts",
+      "src/lib/two-step.ts"
+    ]
+  },
+  "§mesh.public/preview-limits": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.public/preview"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/share/preview-proxy.ts",
+      "server/share/preview-hop.ts",
+      "shared/public-links.ts",
+      "server/share-preview-proxy.test.ts",
+      "server/share-preview-proxy.integration.test.ts"
+    ]
+  },
+  "§mesh.public/preview-offline": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.public/preview",
+      "§mesh.public/offline"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/share/preview-pages.ts",
+      "server/share/preview-proxy.ts",
+      "server/share/preview-hop.ts",
+      "server/share/router.ts",
+      "shared/public-links.ts",
+      "server/share-preview-proxy.test.ts",
+      "server/share-preview-proxy.integration.test.ts",
+      "server/share-preview-router.test.ts",
+      "server/share-preview-router.integration.test.ts"
+    ]
+  },
+  "§mesh.public/preview-proxy": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.public/preview"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/share/preview-proxy.ts",
+      "server/share/preview-hop.ts",
+      "server/share-preview-proxy.test.ts",
+      "server/share-preview-proxy.integration.test.ts",
+      "server/share-preview-router.test.ts",
+      "server/share-preview-router.integration.test.ts"
+    ]
+  },
+  "§mesh.public/preview-serve": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§mesh.public/preview",
+      "§mesh.public/preview-offline",
+      "§app.project-overseer/coding-worktrees"
+    ],
+    "code": [
+      "server/preview-serve.ts",
+      "server/preview-serve.integration.test.ts",
+      "server/project-previews.ts",
+      "server/share/preview-proxy.ts",
+      "server/index.ts",
+      "server/preview-links-routes.ts",
+      "src/components/PreviewsCard.tsx",
+      "server/project-previews.integration.test.ts",
+      "server/app.ts"
+    ]
+  },
+  "§mesh.public/registry": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.public/gateway",
+      "§mesh.public/setting",
+      "§app/tours"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/share/registry.ts",
+      "server/share/registry-validation.ts",
+      "server/share/registry-push.ts",
+      "server/share/share-dist.ts",
+      "server/share/gateway-routes.ts",
+      "server/share/gateway-client.ts",
+      "server/share/links-events.ts",
+      "shared/public-links.ts",
+      "server/share-registry.test.ts",
+      "server/share-ingress.test.ts",
+      "server/share-ingress.integration.test.ts",
+      "server/share-security.test.ts",
+      "server/share-security.integration.test.ts",
+      "server/share-edge.test.ts",
+      "server/share-edge.integration.test.ts",
+      "server/share-router.integration.test.ts",
+      "server/share/tour-transport.test.ts",
+      "server/share/tour-transport.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user (guided-tours build brief)",
+      "at": "2026-10-15T04:40:29.961829+00:00"
+    }
+  },
+  "§mesh.public/routing": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.public/registry",
+      "§mesh.public/forwarded-for",
+      "§mesh.public/offline",
+      "§app/tours"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/share/router.ts",
+      "server/share/destination.ts",
+      "server/share/ws-hop.ts",
+      "server/share/edge.ts",
+      "server/share-router.test.ts",
+      "server/share-destination.test.ts",
+      "server/share-ws-hop.test.ts",
+      "server/share-offline.test.ts",
+      "server/runtime-quirks.ts",
+      "server/runtime-quirks.test.ts",
+      "server/runtime-quirks.integration.test.ts",
+      "server/share-router.integration.test.ts",
+      "server/share-ws-hop.integration.test.ts",
+      "server/share-offline.integration.test.ts",
+      "server/share/tour-transport.test.ts",
+      "server/share/tour-transport.integration.test.ts",
+      "server/share-contract.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-20T10:13Z",
+      "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
+    }
+  },
+  "§mesh.public/setting": {
+    "kind": "behavior",
+    "requires": [
+      "§app.baton/share-listener"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/public-links.ts",
+      "server/public-links-routes.ts",
+      "server/share/listener.ts",
+      "server/share/runtime.ts",
+      "server/share/setting-events.ts",
+      "server/share/gateway-client.ts",
+      "shared/public-links.ts",
+      "server/public-links.test.ts",
+      "server/share-edge.test.ts",
+      "server/mesh/proxy-local.test.ts",
+      "server/mesh/peer-wire-test-fixtures.ts",
+      "server/share/share-state.ts",
+      "server/public-links.integration.test.ts",
+      "server/share-edge.integration.test.ts",
+      "server/share/tour-transport.test.ts",
+      "server/share/tour-transport.integration.test.ts"
+    ]
+  },
+  "§mesh.public/share-protocol": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.public/routing",
+      "§mesh.public/registry",
+      "§mesh.public/gateway",
+      "§app.baton/share-listener",
+      "§mesh.public/ingress",
+      "§mesh.public/withdrawn-hop"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/share/edge.ts",
+      "server/share/router.ts",
+      "server/share/ws-hop.ts",
+      "server/share/gateway-client.ts",
+      "server/share/gateway-routes.ts",
+      "shared/public-links.ts",
+      "server/share-contract.test.ts",
+      "docs/public-links.md",
+      "server/share/registry-validation.ts",
+      "server/public-links-routes.ts",
+      "server/share-router.test.ts",
+      "server/share-router.integration.test.ts",
+      "server/share-ingress.test.ts",
+      "server/share-registry.test.ts",
+      "server/share-ingress.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-20T10:13Z",
+      "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
+    }
+  },
+  "§mesh.public/via-answer": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.public/setting"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "server/public-links-routes.ts",
+      "server/public-links.test.ts",
+      "server/public-links.integration.test.ts"
+    ]
+  },
+  "§mesh.public/visitor-log": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.baton/visits",
+      "§mesh.public/preview-proxy",
+      "§mesh.public/forwarded-for",
+      "§app.session-share/shares-page",
+      "§app/tours"
+    ],
+    "code": [
+      "server/visitor-logging.ts",
+      "server/visitor-identity.ts",
+      "server/visitor-identity.test.ts",
+      "server/visitor-identity.integration.test.ts",
+      "server/visits.ts",
+      "server/share/preview-proxy.ts",
+      "server/share/edge.ts",
+      "server/share/routes.ts",
+      "server/share/session-routes.ts",
+      "server/share/router.ts",
+      "server/share/ingress.ts",
+      "server/share-preview-router.test.ts",
+      "server/public-links-routes.ts",
+      "server/shares-overview.ts",
+      "server/index.ts",
+      "shared/public-links.ts",
+      "shared/session-share.ts",
+      "src/lib/public-links.ts",
+      "src/components/PublicLinksSettings.tsx",
+      "src/components/SharesPage.tsx",
+      "src/lib/session-shares.ts",
+      "src/shares.css",
+      "src/app.css",
+      "server/share-preview-router.integration.test.ts",
+      "server/app.ts",
+      "server/share/tour-routes.ts",
+      "server/tour-routes.integration.test.ts"
+    ]
+  },
+  "§mesh.public/withdrawn-hop": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.public/routing",
+      "§mesh.public/registry",
+      "§mesh.public/offline"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/share/router.ts",
+      "server/share/ws-hop.ts",
+      "server/share-ws-hop.test.ts",
+      "server/share-ws-hop.integration.test.ts",
+      "server/share-router.test.ts",
+      "server/share-router.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-20T10:13Z",
+      "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
+    }
+  },
+  "§mesh/public": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/public-links.ts",
+      "server/share/runtime.ts",
+      "server/share/routes.ts"
+    ],
+    "notOwned": [
+      "§app.baton/share-listener",
+      "§app/session-share",
+      "§app.project-services/share"
+    ]
+  }
+}

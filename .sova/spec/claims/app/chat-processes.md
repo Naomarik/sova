@@ -156,7 +156,8 @@ nothing but the server ever starts a chat again.
   directory of the Claude program the server resolved, then the server's `PATH`. It also gets
   `HOME`, `PI_CODING_AGENT_DIR` and the chat's own `SOVA_CHAT_*` (among them the checkout's and the
   copies' places, `SOVA_CHAT_LIVE_ROOT` and `SOVA_CHAT_COPIES_ROOT`), and its own key,
-  `SOVA_CALLER_KEY` (§app.command-audit/keys). A chat process's own
+  `SOVA_CALLER_KEY` (§app.command-audit/keys), and `GIT_CONFIG_SYSTEM` naming Sova's git system
+  config, so nothing it runs starts git's background cleanup (§app.git-cleanup/no-background). A chat process's own
   variables (`SOVA_CHAT_SOCK`, `_PATH`, `_ID`, `_UNIT`, `_BUILD`, `_STATE_ROOT`, `_LIVE_ROOT`,
   `_COPIES_ROOT`, and `SOVA_CALLER_KEY`) are never passed on from the server's environment, and a server deletes them from
   its own at start, so a server started from a chat's tools never acts as that chat or its server. All of it is passed in a file only
@@ -210,7 +211,9 @@ the chat again; only something that needs the chat does, such as sending from th
 someone sends to it or acts on it, opens it (a click, a reload, every pane of a workspace), brings
 its workspace tab to the front (§workspace.groups/layout-tabs), or another chat or the Overseer
 sends it a message, which starts a new process; a jump in its Timeline or scrolling up for older
-rows doesn't, they read the file (§chat.transcript/instant-open). Its `hello`
+rows doesn't, they read the file (§chat.transcript/instant-open). An archived chat is the
+exception: none of these starts it until someone unarchives it; opening it reads its file, and the
+rest is refused (§chat.transcript/instant-open, "An archived chat"). Its `hello`
 comes about 0.5 s after the socket opens for a 240 KB session and about 0.8 s for an 11 MB one
 (median on a hermetic server, detached chats, 2026-10-13), while its saved rows already show
 (§chat.transcript/instant-open). Its workers run on in their own processes; a waiting worker's process stops the same way, idle, and stays listed waiting (§app.chat-processes/workers).
@@ -403,7 +406,9 @@ passes its events back. A worker never runs inside the server's process.
   comes from its file, and a run that finished while the parent was away is announced to the parent
   once (waking it under the worker's `wake`), never twice and never lost. A steer sent after the
   reattach reaches the worker once. When a worker's run finishes and no parent chat picks it up
-  within 10 seconds, the server opens the parent chat once so that it takes the report. A parent that
+  within 10 seconds, the server opens the parent chat once so that it takes the report, unless the
+  parent is archived: archiving cancels a report's pending open, and an archived parent is never
+  opened for one (it takes the report when it is unarchived and next opens). A parent that
   doesn't open is tried again after 10, 30 and 90 seconds; the report counts as taken only once the
   parent opened, so one still not taken then is the next server's to deliver, if the worker is still running;
   otherwise the parent finds it when it next opens.

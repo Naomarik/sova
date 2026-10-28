@@ -3,8 +3,12 @@ import { describe, test } from "node:test";
 import type { HEntry } from "./harness";
 import type { SovaConfirmItem } from "./protocol";
 import {
+  appliedPicks,
   applyCardCall,
   CARD_TOOL,
+  cardSections,
+  hasSections,
+  keptPicks,
   CardError,
   cardsNote,
   changeLine,
@@ -206,6 +210,22 @@ describe("fold and normalize", () => {
     assert.equal(normalizeCard({ ...c, extra: 1 })?.["extra" as never], undefined, "unknown keys are dropped, not kept");
     assert.equal(normalizeCardDetails({ v: 2, changes: [], line: "" }), undefined);
     assert.equal(normalizeCardDetails({ v: 1, changes: [], line: "", closed: c }), undefined, "closed is always superseded");
+  });
+
+  test("a stored card's copy and leftover rows read back as they were; a malformed one makes the card unreadable (§app.overseer/copies)", () => {
+    const copy = { kind: "copy", id: "demo-a", project: "/p/demo", projectName: "Demo", slot: 1, branch: null, checkout: "/p/wt/a", state: "stopped", startedBy: { kind: "session", id: "s-1", title: "Fix" }, edits: "uncommitted", links: 1, working: true } as const;
+    const left = { kind: "leftover", id: "5174:42:9", project: "/p/demo", projectName: "Demo", slot: 1, port: 5174, pid: 42, start: "9", command: "vite", folder: "/x (deleted)", reason: "folder-gone", unit: "dev.service" } as const;
+    const made = applyCardCall([], { ops: [{ op: "create", title: "Clean up?", choices: ["Tear Down", "Stop", "Keep"] }] }, { now: "2026-10-26T10:00:00.000Z", prepared: { items: [{ ...copy, default: "a" }, { ...left, default: "b" }], hrefs: [], clickOnly: true } }).details.card!;
+    assert.deepEqual(normalizeCard(structuredClone(made)), made);
+    assert.equal(made.clickOnly, true);
+    const bad = (row: Record<string, unknown>) => normalizeCard({ ...made, items: [{ ...made.items[0]!, ...row }, made.items[1]!] });
+    assert.equal(bad({ state: "gone" }), undefined);
+    assert.equal(bad({ startedBy: { kind: "session", id: "" } }), undefined);
+    assert.equal(bad({ edits: "some" }), undefined);
+    assert.equal(normalizeCard({ ...made, items: [made.items[0]!, { ...made.items[1]!, reason: "bored" }] }), undefined);
+    // Its click: the Apply composes each row's label, and the row's choice is what the server checks.
+    assert.equal(itemsClick(made, { 1: "a", 2: "c" }), "c_1: 1a Tear Down, 2c Keep");
+    assert.deepEqual(matchCardClick(made, "c_1: 1a Tear Down, 2c Keep"), { card: "c_1", items: { 1: "a", 2: "c" } });
   });
 
   test("https only, no credentials", () => {
@@ -413,5 +433,88 @@ describe("org, folder and standalone project rows (§app.overseer/org-project-ad
   test("a project with an org id but no org name (or the reverse) is malformed", () => {
     const bad = applyCardCall([], { ops: [{ op: "create", title: "t", options: [{ label: "x" }] }] }, { now: "2026-10-04T10:00:00.000Z", prepared: { items: [{ kind: "project", id: "p", name: "P", orgId: "org_a" } as SovaConfirmItem], hrefs: [], clickOnly: true } }).details;
     assert.equal(foldCards([{ id: null, parentId: null, kind: "tool-result", callId: "k1", tool: CARD_TOOL, blocks: [], details: bad }]).length, 0);
+  });
+});
+
+describe("sections and what Go sends (§app.overseer/card-sections)", () => {
+  const create = (items: CardPrepared["items"]) => applyCardCall([], { ops: [{ op: "create", title: "Get things moving", choices: ["Go", "Not Yet"] }] }, { now: NOW, prepared: { items, hrefs: [] } });
+  const sec = (id: string, section?: string, sends?: string) => ({ ...session(id), ...(section !== undefined ? { section } : {}), ...(sends !== undefined ? { sends } : {}), default: "a" });
+
+  test("rows sit under their sections in first-appearance order, unsectioned first, numbered top to bottom", () => {
+    const c = create([sec("s1", "Ready to land"), sec("s2", "Failed check"), { ...todo("td_1"), section: "Failed check" }, sec("s3", "Ready to land"), sec("s4"), idea("§a/b")]).details.card!;
+    assert.deepEqual(
+      c.items.map((it) => [it.n, it.id, it.section ?? null]),
+      [
+        [1, "§a/b", null],
+        [2, "s4", null],
+        [3, "s1", "Ready to land"],
+        [4, "s3", "Ready to land"],
+        [5, "td_1", "Failed check"],
+        [6, "s2", "Failed check"],
+      ],
+    );
+    assert.deepEqual(cardSections(c.items).map((g) => [g.section ?? null, g.items.map((it) => (it as { n: number }).n)]), [
+      [null, [1, 2]],
+      ["Ready to land", [3, 4]],
+      ["Failed check", [5, 6]],
+    ]);
+    assert.equal(hasSections(c), true);
+  });
+
+  test("a card with no sections keeps the kinds' order and is one group with no heading", () => {
+    const c = create([sec("s1"), { ...todo("td_1") }]).details.card!;
+    assert.deepEqual(c.items.map((it) => it.id), ["td_1", "s1"]);
+    assert.equal(hasSections(c), false);
+    assert.deepEqual(cardSections(c.items).map((g) => g.section ?? null), [null]);
+  });
+
+  test("sends is kept in full and echoed with the section in the tool result and the hidden note", () => {
+    const words = "Your plan is approved. Build it, run the tests, and tell me when the branch is ready.";
+    const out = create([sec("s1", "Finished plan", `  ${words}  `)]);
+    const it = out.details.card!.items[0]!;
+    assert.equal(it.sends, words);
+    assert.equal(it.section, "Finished plan");
+    assert.match(out.text, /1\. .* \[section Finished plan\] \[Go sends: "Your plan is approved\. Build it, run the tests, and tell me when the branch is ready\."\]/);
+    assert.match(out.text, /A row's Go sends exactly its Go-sends text/);
+    assert.match(cardsNote([out.details.card!])!, /\[section Finished plan\] \[Go sends: "Your plan/);
+    // The stored snapshot reads back with both.
+    const back = normalizeCard(JSON.parse(JSON.stringify(out.details.card)))!;
+    assert.equal(back.items[0]!.sends, words);
+    assert.equal(back.items[0]!.section, "Finished plan");
+  });
+
+  test("a bad section or sends refuses the card, naming the item", () => {
+    assert.throws(() => create([sec("s1", "x".repeat(41))]), (e: Error) => e instanceof CardError && /s1's section is 41 characters/.test(e.message));
+    assert.throws(() => create([{ ...sec("s1"), section: "  " }]), /s1's section must be a short heading/);
+    assert.throws(() => create([{ ...sec("s1"), section: 3 as unknown as string }]), /s1's section must be a short heading/);
+    assert.throws(() => create([sec("s1", undefined, "y".repeat(601))]), /s1's sends is 601 characters; at most 600/);
+    assert.throws(() => create([{ ...sec("s1"), sends: "" }]), /s1's sends must be the exact message/);
+    assert.ok(create([sec("s1", "x".repeat(40), "y".repeat(600))]).details.card);
+  });
+
+  test("a stored row with an empty section or sends is not a card", () => {
+    const c = create([sec("s1", "Done", "Go")]).details.card!;
+    assert.ok(normalizeCard(c));
+    assert.equal(normalizeCard({ ...c, items: [{ ...c.items[0], section: "" }] }), undefined);
+    assert.equal(normalizeCard({ ...c, items: [{ ...c.items[0], sends: 7 }] }), undefined);
+  });
+});
+
+describe("partly applied cards (§app.overseer/card-partial-apply)", () => {
+  const items = () => ["s1", "s2", "s3"].map((id) => ({ ...session(id), default: "a" }));
+  const raised = () => applyCardCall([], { ops: [{ op: "create", title: "Tidy up", choices: ["Archive", "Keep"] }] }, { now: NOW, prepared: { items: items(), hrefs: [] } }).details.card!;
+
+  test("appliedPicks merges the card's own Apply messages in order; other text and other cards are ignored", () => {
+    const c = raised();
+    const texts = ["c_1: 1b Keep, 2b Keep", "c_2: 1a Archive", "c_1: 2a Archive", "c_1: 3a Keep", "please tidy"];
+    assert.deepEqual(appliedPicks(c, texts), { 1: "b", 2: "a" }, "a later Apply's pick wins; one that doesn't recompose counts for nothing");
+  });
+
+  test("keptPicks: decided rows take none, undecided keep the pick they had, else the fresh one", () => {
+    let c = raised();
+    c = applyCardCall([c], { card: "c_1", ops: [{ op: "answer", text: "c_1: 1a Archive, 2b Keep, 3b Keep", items: { 1: "a" } }] }, { now: LATER }).details.card!;
+    assert.equal(c.phase, "open");
+    assert.deepEqual(keptPicks(c, { 1: "a", 2: "b" }, { 2: "a", 3: "b" }), { 2: "b", 3: "b" });
+    assert.equal(itemsClick(c, keptPicks(c, { 1: "a", 2: "b" }, { 3: "b" })), "c_1: 2b Keep, 3b Keep");
   });
 });

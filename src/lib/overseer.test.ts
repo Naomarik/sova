@@ -250,6 +250,18 @@ test("the row that last touched a card renders it; an answer op moves it there a
   assert.deepEqual(openCards(fold), []);
 });
 
+test("a partly applied card: the fold keeps each row's last applied pick from the card's own Apply messages (§app.overseer/card-partial-apply)", () => {
+  const rows = ["s1", "s2", "s3"].map((id) => ({ kind: "session" as const, id, title: id, default: "a" }));
+  const raised = applyCardCall([], { ops: [{ op: "create", title: "Tidy up", choices: ["Archive", "Keep"] }] }, { now: NOW, prepared: { items: rows, hrefs: [] } }).details;
+  const partial = applyCardCall([raised.card!], { card: "c_1", ops: [{ op: "answer", text: "c_1: 1a Archive, 2b Keep, 3b Keep", items: { 1: "a" } }] }, { now: NOW }).details;
+  const items = [call("k1"), result("k1", raised), row("u1", "user", "c_1: 1a Archive, 2b Keep, 3b Keep"), call("k2"), result("k2", partial), row("u2", "user", "c_1: 3a Archive")];
+  const fold = cardFold(items);
+  assert.equal(fold.cards.get("c_1")?.phase, "open");
+  assert.deepEqual(fold.applied.get("c_1"), { 1: "a", 2: "b", 3: "a" });
+  // A card with no Apply yet, or one closed, has none.
+  assert.equal(cardFold([call("k1"), result("k1", raised)]).applied.has("c_1"), false);
+});
+
 test("an error result, bad details and a legacy sova_confirm row are never state; live results fold last", () => {
   const legacy: TranscriptItem = { id: "L", kind: "tool-call", text: "sova_confirm", toolCallId: "t-L" };
   const items = [call("k1"), result("k1", created), call("k2"), result("k2", answered, true), call("k3"), result("k3", { v: 1, card: { id: "c_1" }, changes: [], line: "" }), legacy, result("L", { title: "Old", options: [{ label: "Yes" }] })];

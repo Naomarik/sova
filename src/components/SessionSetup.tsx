@@ -415,6 +415,25 @@ function GitFacts(props: { answer: Answer<GitSummary> }) {
                 </For>
               </ul>
             </Show>
+            <Show when={v().gitFolder}>
+              {(f) => (
+                <>
+                  <p class="setup-git setup-gitdir" title={f().title}>
+                    <Icon name="folder" small />
+                    <span>{f().label}</span>
+                    <span class="setup-num">{f().size}</span>
+                  </p>
+                  <Show when={f().warning}>
+                    {(w) => (
+                      <p class="setup-git setup-gitdir-warn" title={w().title ?? undefined}>
+                        <Icon name="alert-circle" small />
+                        <span>{w().text}</span>
+                      </p>
+                    )}
+                  </Show>
+                </>
+              )}
+            </Show>
             <Show when={v().note}>{(n) => <p class="setup-note">{n()}</p>}</Show>
           </>
         )}

@@ -174,8 +174,9 @@ export interface ProfilesListing {
   /** Keys of profiles that can't be used on this host now, each with the sentence why (a model the
       policy turns off or with no credentials here, a subagent profile not in this device's library). */
   unusable?: Record<string, string>;
-  /** This device's subagent profiles ("off" first), for the cards' captions. */
-  subagents?: { id: string; name: string; footprint: string }[];
+  /** This device's subagent profiles ("off" first), for the cards' captions. `models`: how many
+      distinct primary models it names (0 for "off"); absent from an older server. */
+  subagents?: { id: string; name: string; footprint: string; models?: number }[];
   error?: string;
 }
 

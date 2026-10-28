@@ -1,4 +1,4 @@
-import { CHARS_PER_TOKEN, type GitCommit, type GitRepoSummary, type GitSummary, type SessionSetup, type SessionSetupFile } from "../../shared/protocol";
+import { CHARS_PER_TOKEN, type GitCommit, type GitFolderReading, type GitRepoSummary, type GitSummary, type SessionSetup, type SessionSetupFile } from "../../shared/protocol";
 import { formatTokens } from "./context";
 import { relativeTime, thousands, tildePath } from "./format";
 import { changesLabel, headLabel, linesNote, placeLabel, upstreamLabel } from "./git-summary";
@@ -217,6 +217,8 @@ export type GitView =
       commits: { oid: string; subject: string; ago: string }[];
       /** Shown in place of the commits when there are none. */
       noCommit: string | null;
+      /** The git folder's row, and its warning; null when the server sent no reading. */
+      gitFolder: GitFolderView | null;
     }
   | { kind: "line"; text: string };
 
@@ -242,5 +244,43 @@ export function gitView(g: GitSummary, home: string | null, now: number): GitVie
     commits: commits.map((c) => ({ oid: c.oid.slice(0, 7), subject: c.subject, ago: agoLabel(c.at, now) })),
     // headLabel already says "no commits yet" for an unborn branch.
     noCommit: commits.length > 0 || g.unborn ? null : "The last commits couldn't be read.",
+    gitFolder: g.gitFolder ? gitFolderView(g.gitFolder, home, now) : null,
   };
+}
+
+/** "812 B", "4.2 MB", "25 GB": binary steps, one decimal under 10. */
+export function folderSizeLabel(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = Math.max(0, bytes);
+  let u = 0;
+  while (v >= 1024 && u < units.length - 1) {
+    v /= 1024;
+    u++;
+  }
+  return `${u === 0 || v >= 9.95 ? thousands(Math.round(v)) : v.toFixed(1)} ${units[u]}`;
+}
+
+/** The git folder's row: its words, its title, and at most one warning. */
+export interface GitFolderView {
+  /** "Git folder" or "Git folder at least". */
+  label: string;
+  size: string;
+  /** The folder, written `~/…`. */
+  title: string;
+  warning: { kind: "stuck" | "overdue"; text: string; title: string | null } | null;
+}
+
+const countOf = (n: number, one: string, many: string) => `${thousands(n)} ${n === 1 ? one : many}`;
+
+export function gitFolderView(f: GitFolderReading, home: string | null, now: number): GitFolderView {
+  let warning: GitFolderView["warning"] = null;
+  if (f.warning?.kind === "stuck") {
+    const ago = agoLabel(f.warning.since, now);
+    const when = /ago$|^yesterday$/.test(ago) ? ago : `on ${ago}`;
+    warning = { kind: "stuck", text: `Git's cleanup looks stuck: ${f.warning.lock} was left ${when}.`, title: `${tildePath(f.warning.path, home)}. If no git command is running, deleting it lets cleanup finish.` };
+  } else if (f.warning?.kind === "overdue") {
+    const parts = [...(f.warning.packs !== undefined ? [countOf(f.warning.packs, "pack file", "pack files")] : []), ...(f.warning.loose !== undefined ? [countOf(f.warning.loose, "loose object", "loose objects")] : [])];
+    if (parts.length) warning = { kind: "overdue", text: `Git hasn't cleaned up here in a while: ${parts.join(" and ")}.`, title: null };
+  }
+  return { label: f.partial ? "Git folder at least" : "Git folder", size: folderSizeLabel(f.bytes), title: tildePath(f.path, home), warning };
 }

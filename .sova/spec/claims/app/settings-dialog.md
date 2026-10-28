@@ -345,8 +345,22 @@ from each chat's next summary.
 - A failed read says "Couldn't load the memory settings." with Try Again; a failed check of the
   offered models says "Couldn't check which models are offered." with Check Again, the saved
   choices marked not verified.
-- The default memory type and size new chats start from are the mode menu's Save as default
-  (§chat.mode-menu/memory-panel); a save here keeps them. The footnote says so under the file's
+- **Summary size**, its own heading after the summarizer with its own **Reset to Defaults**
+  (filling in both types' defaults, saving nothing, disabled while the form already shows them):
+  one select per type, the size every chat of that type and the overseers use
+  (§chat.memory/settings). **UniiChat** offers 8–16 KB, 16–32 KB, 32–64 KB, 64–128 KB and
+  128–256 KB (the range its view keeps, "64–128 KB" for 128; 64–128 KB by default); **Zoomable
+  compaction** offers 16, 32, 64, 128 and 256 KB (32 KB by default); a stored size off the list is
+  its own option, and each type's default option says "(default)". Under UniiChat's: "How much
+  summary the model reads each message. Bigger keeps more of the chat in fine detail but costs more
+  each message ({the selected range} is about {its tokens at about 4 bytes a token, e.g. 16,000–32,000}
+  tokens); smaller merges older lines sooner and leans on the model opening them." Under Zoomable
+  compaction's: "How much a compaction keeps. Bigger keeps more detail, but the next compaction
+  comes sooner." Under both: "Applies from each chat's next message (UniiChat) or next compaction.
+  Nothing is deleted: making it bigger keeps finer detail from now on, and older lines stay
+  merged." The sizes wait for Save with the summarizer, in the same "Memory" draft.
+- The default memory type new chats start from is the mode menu's Save as default
+  (§chat.mode-menu/memory-panel); a save here keeps it. The footnote says so under the file's
   path ("Stored in ~/….json. The memory type new chats start from is saved from a chat's mode
   menu, with Save as default.").
 
@@ -524,7 +538,8 @@ the draft. Switch labels are in sentence case, like every other Settings switch.
   these. Picking one sends its prompt." One line per action: its label, its description, and
   **Edit**, which opens that row alone (Label, Description, Prompt; Move Up, Move Down, Remove) and
   becomes **Done**. **Add Quick Action**, under the list, adds a row already open, its label
-  focused; **Reset to Defaults** puts back the shipped five.
+  focused; **Reset to Defaults** puts back the two defaults, Get Things Moving and Tidy Up
+  (§app.overseer/default-quick-actions).
 - **Standing notes**: a textarea over `overseer-notes.md`. Its hint: "The Overseer reads these every
   turn and can add to them. They survive /clear."
 - **Advanced**, folded, its head "Idea explorer, extra instructions, resume after a restart":

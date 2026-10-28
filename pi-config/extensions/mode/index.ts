@@ -116,7 +116,7 @@ import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT } from "../sandbox/state.ts
 import { backendsOf, describeChoice, routeAll, routeNotice, routeWriter, slotNotice, usable, type Discovery, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import { SPEC_WRITER_LABEL, specBackends, specKey } from "./spec.ts";
 import { OFF_PROFILE_ID, pickEntryFor, profilesReader, resolveSubagents, restorePick, type ResolvedSubagents } from "../subagents/subagent-profiles.ts";
-import { bashCommands, CensusHook, driftNote, LANDED_FILE_ENV, SpecWriteGuard, writeLanded } from "./spec-guard.ts";
+import { bashCommands, CensusHook, driftNote, LANDED_FILE_ENV, procedureToldIn, SpecWriteGuard, writeLanded } from "./spec-guard.ts";
 import { setAgreeSource } from "./spec-agree.ts";
 import {
 	activeOf,
@@ -1138,6 +1138,8 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		review: () => (reviewOn() ? { reviewer: reviewerSlot, startText: reviewStartText } : undefined),
 		style: () => alignNow().style,
 		specOn: () => hasMinor(active, "spec"),
+		// The go-ahead hands the writing procedure over when the session hasn't been told it yet (spec-guard.ts).
+		specProcedure: () => (specOn() && process.env.PI_SPEC_CENSUS_HOOK !== "0" ? specCensus.takeProcedure() : Promise.resolve(undefined)),
 	};
 	registerAlignTool(pi, alignHost);
 	/** The align tool's form now registered: review ops, visual fields (re-registered when either changes). */
@@ -1515,6 +1517,8 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		projectGuides = [];
 		headStyle = undefined;
 		toldStyle = undefined;
+		// The writing procedure went with the history: it is handed over again at the next moment.
+		specCensus.rearmProcedure();
 		syncHostSection();
 	});
 
@@ -1545,7 +1549,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	// spec boundary and each new file get a `[spec census]` digest appended to that tool result, with the
 	// write guard's and promote's drift notes. Silent without a spec, Git or the tools, and in a remote
 	// session; a census that can't run says so once per cause. PI_SPEC_CENSUS_HOOK=0 turns it off.
-	const specCensus = new CensusHook({ core: () => SPEC_CORE });
+	const specCensus = new CensusHook({ core: () => SPEC_CORE, worker: () => workerRole });
 	const specWrites = new SpecWriteGuard();
 	const specOn = () => hasMinor(active, "spec") && remoteTarget === undefined;
 	/**
@@ -1554,6 +1558,8 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	 * model reads (§chat.mode-menu/codemode).
 	 */
 	const hoistedNotes = new Map<string, string[]>();
+	/** The writing procedure handed over on a script's nested call, kept whole (never split into lines) for the script's result. */
+	const hoistedProcedure = new Map<string, string>();
 	pi.on("tool_call", async (event, ctx) => {
 		// Where an `agree` this call runs says the go-ahead was given (spec-agree.ts); a worker keeps what it was given.
 		if (!workerRole) setAgreeSource(ctx.sessionManager, specOn());
@@ -1570,7 +1576,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	pi.on("tool_result", async (event, ctx) => {
 		if (!specOn() || process.env.PI_SPEC_CENSUS_HOOK === "0") return;
 		const { text: forbidden, lost } = await specWrites.after(event.toolCallId, { cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
-		const { text: census, failure } = await specCensus.after({
+		const { text: census, failure, procedure } = await specCensus.after({
 			id: event.toolCallId,
 			cwd: ctx.cwd,
 			orphansSaid: lost,
@@ -1586,10 +1592,13 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		const text = [forbidden, driftNote(event.toolName, event.input, event.content), census, failure].filter(Boolean).join("\n");
 		const parent = (event as { parentToolCallId?: unknown }).parentToolCallId;
 		if (typeof parent === "string" && text) hoistedNotes.set(parent, [...(hoistedNotes.get(parent) ?? []), text]);
+		if (typeof parent === "string" && procedure) hoistedProcedure.set(parent, procedure);
 		const hoisted = hoistedNotes.get(event.toolCallId);
 		hoistedNotes.delete(event.toolCallId);
-		// The script's calls' notes, each line once, then the result's own.
-		const all = [[...new Set((hoisted ?? []).flatMap((t) => t.split("\n")))].join("\n"), text].filter(Boolean).join("\n");
+		const handedOver = hoistedProcedure.get(event.toolCallId) ?? procedure;
+		hoistedProcedure.delete(event.toolCallId);
+		// The script's calls' notes, each line once, then the result's own, then the procedure once, whole.
+		const all = [[...new Set((hoisted ?? []).flatMap((t) => t.split("\n")))].join("\n"), text, handedOver ? `\n${handedOver}` : ""].filter(Boolean).join("\n");
 		if (!all) return;
 		// Replacing the content alone would drop a structured result (bash's, which a script reads): keep it.
 		const structured = (event as { structuredContent?: unknown }).structuredContent;
@@ -1669,6 +1678,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 			recomputeRoutes();
 			running = true;
 			hoistedNotes.clear();
+			hoistedProcedure.clear();
 			if (specOn() && process.env.PI_SPEC_CENSUS_HOOK !== "0") await specCensus.prime(ctx.cwd);
 			fixHead();
 			const modeNote = takeNote();
@@ -1680,7 +1690,8 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	pi.on("session_start", async (event, ctx) => {
 		lastCtx = ctx;
 		running = false;
-		specCensus.reset();
+		// A reopened session was told the writing procedure if its history since the last compaction shows it.
+		specCensus.reset(procedureToldIn(ctx.sessionManager.getBranch()));
 		toldWriter = undefined;
 		reviewFlag = pi.getFlag(REVIEW_FLAG) === true;
 		registerReview();

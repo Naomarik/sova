@@ -1,0 +1,629 @@
+{
+  "§site.docs/align": {
+    "kind": "behavior",
+    "requires": [
+      "§chat/alignment",
+      "§chat.alignment/document",
+      "§chat.alignment/tool",
+      "§chat.alignment/state",
+      "§chat.alignment/model",
+      "§chat.alignment/card",
+      "§chat.alignment/chip",
+      "§chat.alignment/session-mark",
+      "§chat.alignment/tui",
+      "§app.session-list/needs-you",
+      "§app/notifications",
+      "§app.project-overseer/coding-mode",
+      "§chat.mode-menu/workers",
+      "§app.overseer/hosting",
+      "§chat.alignment/style",
+      "§chat.alignment/visuals",
+      "§chat.alignment/settings-file",
+      "§app.settings-dialog/alignment"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/modes/align/index.md"
+    ]
+  },
+  "§site.docs/align-review": {
+    "kind": "behavior",
+    "requires": [
+      "§chat/alignment-review",
+      "§chat.alignment-review/flag",
+      "§chat.alignment-review/record",
+      "§chat.alignment-review/op",
+      "§chat.alignment-review/rules",
+      "§chat.alignment-review/prompt",
+      "§chat.alignment-review/route",
+      "§chat.alignment-review/card",
+      "§chat.alignment-review/tui",
+      "§chat.alignment/tui",
+      "§app.settings-dialog/alignment"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/modes/align/review.md"
+    ]
+  },
+  "§site.docs/change-direction": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.transcript/message-actions",
+      "§chat.transcript/a-queued-message",
+      "§chat.timeline/opening-it",
+      "§chat.timeline/rewind",
+      "§chat.session-fork/from-reply",
+      "§chat/composer",
+      "§chat.composer/composer-flyout",
+      "§chat/model-menu",
+      "§chat.model-menu/trigger",
+      "§chat.model-menu/states",
+      "§chat.model-menu/saved-default",
+      "§chat.changes/tool-card-diff",
+      "§chat.composer/behavior",
+      "§chat.model-menu/favorites",
+      "§chat.model-menu/menu",
+      "§chat.model-menu/errors"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/change-direction.md"
+    ]
+  },
+  "§site.docs/chrome": {
+    "kind": "behavior",
+    "requires": [
+      "§site.docs/frame"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/layouts/Base.astro",
+      "site/src/components/SiteNav.astro",
+      "site/src/data/site.ts",
+      "site/src/styles/site.css",
+      "site/src/styles/tokens.css"
+    ]
+  },
+  "§site.docs/codemode": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.mode-menu/codemode",
+      "§chat.mode-menu/minor-toggle-keeps-prompt",
+      "§chat.mode-menu/workers",
+      "§tools.spec/census-note",
+      "§app.overseer/hosting"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/modes/codemode.md"
+    ]
+  },
+  "§site.docs/delegate": {
+    "kind": "behavior",
+    "requires": [
+      "§app.settings-dialog/modes",
+      "§chat/subagent-profiles",
+      "§chat.subagent-profiles/off",
+      "§chat.subagent-profiles/resolution",
+      "§chat.subagent-profiles/members-default",
+      "§teams/defaults",
+      "§app/teams",
+      "§app/subagents-pane",
+      "§app.subagents-pane/trigger",
+      "§app.subagents-pane/transcript-view",
+      "§app/worker-restore",
+      "§app.worker-restore/restore",
+      "§app.worker-restore/resume",
+      "§chat.worktrees/workers",
+      "§chat.mode-menu/strict",
+      "§design.copy-deck/settings-modes-delegate",
+      "§app.project-overseer/coding-mode",
+      "§app.overseer/hosting",
+      "§app.chat-processes/workers",
+      "§app.chat-processes/survives-restart"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/modes/delegate.md"
+    ]
+  },
+  "§site.docs/frame": {
+    "kind": "behavior",
+    "requires": [
+      "§site/docs"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "site/src/pages/docs/[...slug].astro",
+      "site/src/layouts/Docs.astro",
+      "site/src/components/DocsNav.astro",
+      "site/src/data/docs.ts",
+      "site/src/styles/docs.css",
+      "site/src/content.config.ts",
+      "site/astro.config.mjs"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-27T08:45Z",
+      "source": "pi-session:edb3d4e1-f79f-4177-8482-4377cb9bf1de#a0c6ea0d"
+    }
+  },
+  "§site.docs/index": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.mode-menu/project-modes",
+      "§chat/mode-menu",
+      "§design.copy-deck/mode-menu",
+      "§chat/alignment",
+      "§chat/subagent-profiles",
+      "§chat.mode-menu/codemode",
+      "§chat.markdown/visuals",
+      "§tools/spec",
+      "§chat/memory",
+      "§chat.memory/where"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/index.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-14T12:38Z"
+    }
+  },
+  "§site.docs/install": {
+    "kind": "behavior",
+    "requires": [
+      "§app/installer",
+      "§app.installer/pi-extensions",
+      "§app.installer/claude-code-provider",
+      "§app.installer/service",
+      "§app.installer/idempotent",
+      "§app.installer/portable",
+      "§app.installer/bun",
+      "§app.access/token",
+      "§app.access/callers",
+      "§app.installer/ref",
+      "§app.installer/app-entry",
+      "§app.server-runtime/choice",
+      "§app/updates",
+      "§app.updates/source",
+      "§app.updates/upgrade",
+      "§app.updates/auto-upgrade"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/install.md"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-11T11:27Z"
+    }
+  },
+  "§site.docs/memory": {
+    "kind": "behavior",
+    "requires": [
+      "§chat/memory",
+      "§chat.memory/types",
+      "§chat.memory/where",
+      "§chat.memory/choice",
+      "§chat.memory/log",
+      "§chat.memory/tree",
+      "§chat.memory/summarizer",
+      "§chat.memory/turn",
+      "§chat.memory/recall",
+      "§chat.memory/full-ids",
+      "§chat.memory/preparing",
+      "§chat.memory/zoomable",
+      "§chat.memory/status",
+      "§chat.memory/settings",
+      "§chat.memory/help",
+      "§chat.memory/overseer",
+      "§chat.mode-menu/memory-panel",
+      "§chat.mode-menu/minor-toggle-keeps-prompt",
+      "§app.settings-dialog/memory",
+      "§app.subagents-pane/memory-outline",
+      "§chat.composer/memory-status",
+      "§app.overseer/memory-switch",
+      "§app.project-overseer/memory-switch",
+      "§app.claude-code-provider/no-memory"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/modes/memory.md"
+    ]
+  },
+  "§site.docs/modes": {
+    "kind": "behavior",
+    "requires": [
+      "§chat/mode-menu",
+      "§chat.mode-menu/trigger",
+      "§chat.mode-menu/menu",
+      "§chat.mode-menu/how-a-switch-reaches-the-chat",
+      "§chat.mode-menu/states",
+      "§chat.mode-menu/workers",
+      "§chat.mode-menu/minor-toggle-keeps-prompt",
+      "§chat.mode-menu/codemode",
+      "§chat.mode-menu/strict",
+      "§chat.mode-menu/terminal",
+      "§design.copy-deck/mode-menu",
+      "§chat.subagent-profiles/menu",
+      "§app.overseer/hosting",
+      "§app.overseer/quick-actions",
+      "§app.project-overseer/coding-mode",
+      "§chat/memory",
+      "§chat.mode-menu/memory-panel",
+      "§chat.mode-menu/project-modes",
+      "§chat.memory/types",
+      "§chat.memory/where",
+      "§chat.memory/choice",
+      "§chat.memory/recall",
+      "§chat.memory/preparing",
+      "§chat.memory/status",
+      "§chat.memory/settings",
+      "§chat.memory/overseer",
+      "§app.project-overseer/memory-switch",
+      "§app.overseer/memory-switch"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/modes/index.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-14T12:38Z"
+    }
+  },
+  "§site.docs/needs-you": {
+    "kind": "behavior",
+    "requires": [
+      "§app.session-list/needs-you",
+      "§app.overseer/attention-digest",
+      "§app.overseer/proactivity",
+      "§app/notifications",
+      "§app.notifications/delivery",
+      "§app.notifications/settings",
+      "§app.settings-dialog/overseer",
+      "§chat/merge-round",
+      "§app.chat-processes/workers",
+      "§chat.worktrees/readiness",
+      "§app.project-runtime/review",
+      "§app.project-services/deploy-status",
+      "§app.outreach/sender-health",
+      "§app.baton/needs-you",
+      "§chat.schedules/where-shown",
+      "§app.session-list/regions-top-and-archive"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/needs-you.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-10T10:39Z"
+    }
+  },
+  "§site.docs/normal": {
+    "kind": "behavior",
+    "requires": [
+      "§chat/mode-menu",
+      "§chat.mode-menu/menu",
+      "§chat.mode-menu/terminal",
+      "§chat.subagent-profiles/resolution",
+      "§app.overseer/hosting"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "site/src/content/docs/modes/normal.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-27T08:45Z",
+      "source": "pi-session:edb3d4e1-f79f-4177-8482-4377cb9bf1de#a0c6ea0d"
+    }
+  },
+  "§site.docs/overseer": {
+    "kind": "behavior",
+    "requires": [
+      "§app/overseer",
+      "§app.overseer/identity-and-clear",
+      "§app.overseer/hosting",
+      "§app.overseer/tools",
+      "§app.overseer/confirm",
+      "§app.overseer/caps",
+      "§app.overseer/approvals",
+      "§app.overseer/entry-button",
+      "§app.overseer/quick-actions",
+      "§app.overseer/standing-notes",
+      "§app.overseer/ideas",
+      "§app.overseer/ideas-panel",
+      "§app.overseer/todos",
+      "§app.overseer/todos-panel",
+      "§app.overseer/head-layout",
+      "§app.overseer/attention-digest",
+      "§app.overseer/proactivity",
+      "§app.overseer/dialog-answers",
+      "§app.settings-dialog/overseer",
+      "§chat/merge-round",
+      "§app.overseer/memory-switch",
+      "§chat.mode-menu/project-modes",
+      "§app.overseer/links-tools",
+      "§app.overseer/org-writes",
+      "§app.overseer/file-writes"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/overseer.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-14T12:38Z"
+    }
+  },
+  "§site.docs/phone": {
+    "kind": "behavior",
+    "requires": [
+      "§app/access",
+      "§app.access/token",
+      "§app.access/gate",
+      "§app.access/unlock",
+      "§app.access/devices",
+      "§app.access/callers",
+      "§app/notifications",
+      "§app/shell",
+      "§app.shell/installable",
+      "§chat.transcript/live-watch",
+      "§chat/composer",
+      "§app.session-list/regions-top-and-archive",
+      "§chat.transcript/message-actions",
+      "§app.shell/overview"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/phone.md"
+    ]
+  },
+  "§site.docs/playbooks-and-schedules": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.mode-menu/project-modes",
+      "§chat/playbooks",
+      "§chat/schedules",
+      "§chat.schedules/header",
+      "§chat.schedules/approval",
+      "§chat.schedules/fire",
+      "§chat.schedules/limits",
+      "§chat.schedules/where-shown",
+      "§chat/merge-round",
+      "§chat.merge-round/round",
+      "§chat.worktrees/merge-board",
+      "§chat.playbooks/where-playbooks-come-from",
+      "§chat.playbooks/bundles",
+      "§chat.schedules/merge-ready",
+      "§chat.schedules/limit-reset",
+      "§app.overseer/caps"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/playbooks-and-schedules.md"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-19T18:28Z",
+      "source": "pi-session:01a15538-3d82-74c0-b458-b5235540d614#203f4764"
+    }
+  },
+  "§site.docs/project-modes": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.mode-menu/project-modes",
+      "§chat.mode-menu/menu",
+      "§chat.mode-menu/states",
+      "§chat.mode-menu/workers",
+      "§chat.mode-menu/terminal",
+      "§app.overseer/tools"
+    ],
+    "authority": "accepted",
+    "code": [
+      "site/src/content/docs/modes/project-modes.md"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-19T02:40Z"
+    },
+    "evidence": "reviewed"
+  },
+  "§site.docs/spec-mode": {
+    "kind": "behavior",
+    "requires": [
+      "§tools/spec",
+      "§tools.spec/mode-reading",
+      "§tools.spec/align-agree",
+      "§tools.spec/census-note",
+      "§tools.spec/no-turn-end-check",
+      "§tools.spec/review-playbook",
+      "§tools.spec/spec-map",
+      "§chat.mode-menu/workers",
+      "§chat/subagent-profiles",
+      "§chat.subagent-profiles/settings",
+      "§chat.worktrees/worktree-config",
+      "§app.project-overseer/coding-mode",
+      "§design.copy-deck/settings-modes-delegate",
+      "§tools.spec/unread-landed",
+      "§tools.spec/worker-landed",
+      "§tools.spec/agreed-promotion"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/modes/spec.md"
+    ]
+  },
+  "§site.docs/subagent-profiles": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.mode-menu/project-modes",
+      "§chat/subagent-profiles",
+      "§chat.subagent-profiles/file",
+      "§chat.subagent-profiles/off",
+      "§chat.subagent-profiles/resolution",
+      "§chat.subagent-profiles/members-default",
+      "§chat.subagent-profiles/menu",
+      "§chat.subagent-profiles/settings",
+      "§chat.subagent-profiles/editor-rows",
+      "§chat.subagent-profiles/limit-row",
+      "§chat.subagent-profiles/overseer",
+      "§chat.alignment-review/route",
+      "§design.copy-deck/settings-modes-delegate",
+      "§mesh.sync/profile-library",
+      "§chat.alignment/style",
+      "§app.project-overseer/coding-mode"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "site/src/content/docs/subagent-profiles.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-27T08:45Z",
+      "source": "pi-session:edb3d4e1-f79f-4177-8482-4377cb9bf1de#a0c6ea0d"
+    }
+  },
+  "§site.docs/updates": {
+    "kind": "behavior",
+    "requires": [
+      "§app/updates",
+      "§app.updates/running",
+      "§app.updates/source",
+      "§app.updates/check",
+      "§app.updates/indicator",
+      "§app.updates/upgrade",
+      "§app.updates/auto-upgrade",
+      "§app.updates/operator",
+      "§app.updates/reload-note",
+      "§app.installer/ref",
+      "§app/installer",
+      "§app/chat-processes"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/updates.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-16T05:27Z"
+    }
+  },
+  "§site.docs/vis": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.markdown/visuals",
+      "§chat.mode-menu/workers",
+      "§chat.mode-menu/minor-toggle-keeps-prompt",
+      "§app.overseer/hosting",
+      "§chat.alignment/visuals",
+      "§chat.markdown/vis-wireframe",
+      "§chat.markdown/vis-flow-groups",
+      "§chat.markdown/vis-flow-sections",
+      "§app/tours"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "site/src/content/docs/modes/vis.md"
+    ]
+  },
+  "§site.docs/vis-examples": {
+    "kind": "behavior",
+    "requires": [
+      "§site.docs/vis",
+      "§chat.markdown/visuals"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "site/scripts/vis-examples.mjs",
+      "site/scripts/vis-examples/examples.mjs",
+      "site/scripts/vis-examples/render.tsx",
+      "site/src/generated/vis-examples.html",
+      "site/src/content/docs/modes/vis.md",
+      "site/src/pages/docs/[...slug].astro",
+      "site/README.md",
+      "site/package.json"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-24T21:06Z",
+      "source": "pi-session:db608be6-c8e2-491a-8c10-d6e779b04b00#7992844d"
+    }
+  },
+  "§site.docs/worktrees-and-changes": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.mode-menu/project-modes",
+      "§chat/worktrees",
+      "§chat.worktrees/entry",
+      "§chat.worktrees/tool",
+      "§chat.worktrees/sandbox",
+      "§chat.worktrees/workers",
+      "§chat.worktrees/inherit",
+      "§chat.worktrees/merge-card",
+      "§chat.worktrees/pane",
+      "§chat.worktrees/readiness",
+      "§chat.worktrees/cleanup",
+      "§chat.transcript/empty-worktrees",
+      "§design.copy-deck/worktree-cleanup",
+      "§chat/changes",
+      "§chat.changes/viewer",
+      "§chat.changes/tree",
+      "§chat.changes/steps",
+      "§chat.changes/entry",
+      "§chat.changes/show-changes-card",
+      "§chat.changes/show-changes-tool",
+      "§chat.changes/diff-renderer",
+      "§chat.changes/tool-card-diff",
+      "§chat/sandbox",
+      "§chat.changes/endpoint",
+      "§chat.worktrees/merged-state",
+      "§chat.sandbox/states"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/worktrees-and-changes.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-14T12:38Z"
+    }
+  },
+  "§site/docs": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "notOwned": [
+      "§site/landing",
+      "§chat/mode-menu",
+      "§chat/subagent-profiles"
+    ]
+  }
+}

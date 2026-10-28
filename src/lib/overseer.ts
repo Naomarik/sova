@@ -1,5 +1,5 @@
 import { type SovaConfirmDetails, type SovaConfirmItem, type SovaNavigateDetails, type TranscriptItem } from "../../shared/protocol";
-import { CARD_TOOL, normalizeCard, normalizeCardDetails, openCardsOf, type CardDetails, type OverseerCard } from "../../shared/overseer-card";
+import { appliedPicks, CARD_TOOL, normalizeCard, normalizeCardDetails, openCardsOf, type CardDetails, type OverseerCard } from "../../shared/overseer-card";
 import { isObj, resultDetails, str, toolResultView } from "./message";
 import { openSettings, SETTINGS_TABS, type SettingsSection, type SettingsTab } from "./settings-nav";
 
@@ -144,6 +144,9 @@ export interface CardFold {
   rows: Map<string, CardDetails>;
   cards: Map<string, OverseerCard>;
   newest: Map<string, string>;
+  /** Per open card with choices: the choices the user last applied each row with, from the user
+      messages on screen that are exactly its Apply (§app.overseer/card-partial-apply). */
+  applied: Map<string, Record<number, string>>;
 }
 
 /**
@@ -155,7 +158,7 @@ export interface CardFold {
 export function cardFold(items: readonly TranscriptItem[], live: readonly unknown[] = [], older: readonly { card: unknown; rowId: string }[] = []): CardFold {
   const results = new Map<string, TranscriptItem>();
   for (const it of items) if (it.kind === "tool-result" && it.toolCallId) results.set(it.toolCallId, it);
-  const fold: CardFold = { rows: new Map(), cards: new Map(), newest: new Map() };
+  const fold: CardFold = { rows: new Map(), cards: new Map(), newest: new Map(), applied: new Map() };
   const put = (c: OverseerCard) => {
     fold.cards.delete(c.id);
     fold.cards.set(c.id, c);
@@ -183,6 +186,12 @@ export function cardFold(items: readonly TranscriptItem[], live: readonly unknow
     take(normalizeCardDetails(resultDetails(r)), it.id);
   }
   for (const d of live) take(normalizeCardDetails(d));
+  const said = items.flatMap((it) => (it.kind === "user" && it.text ? [it.text] : []));
+  for (const c of fold.cards.values()) {
+    if (c.phase !== "open") continue;
+    const picks = appliedPicks(c, said);
+    if (Object.keys(picks).length) fold.applied.set(c.id, picks);
+  }
   return fold;
 }
 

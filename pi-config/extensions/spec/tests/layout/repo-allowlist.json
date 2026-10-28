@@ -204,11 +204,6 @@
         "reason": "test fake's `new`: a literal copy of the settings file and claims tree (any layout), or the format 1 starter"
       },
       {
-        "rule": "names-manifest",
-        "text": "else writeJson(join(to, \"manifest.json\"), current);",
-        "reason": "test fake's `new`: a literal copy of the settings file and claims tree (any layout), or the format 1 starter"
-      },
-      {
         "rule": "reads-claims",
         "text": "ids: ids.map((id) => ({ id, kind: dm.claims[id]?.[\"kind\"] ?? null, deleted: !dm.claims[id], recordSha: sha(JSON.stringify(dm.claims[id] ?? null)), textSha256: sha(textOf(join(draftSpec, fileOf(id, claimsRoot)), id)) })),",
         "reason": "the test fake's records: assembled by readSpecFs (layout.mjs) and written back with serialize in current's layout; reads no file"

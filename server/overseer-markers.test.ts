@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_ENTRY, OVERSEER_SENT_ENTRY, type ChatServerMessage } from "../shared/protocol";
 import { piSession } from "./harness/pi/testing/handle";
+import { newestUserMessage } from "../pi-config/extensions/worktrees/landing.ts";
 import { until as waitUntil } from "./test-wait";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-markers-")));
@@ -370,6 +371,37 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
     await piSession(t.chat).waitForIdle();
     assert.deepEqual(userRows(t.path), [["hi", false], ["a long task", false], ["stop and use pnpm", true]]);
     assert.deepEqual(t.steered, ["stop and use pnpm"], "handed to the SDK as a steer");
+  });
+
+  // `worktree land` reads the branch from inside the turn (§chat.worktrees/land-own-word): the marker must be there by
+  // then. A tool runs only after a model call returns, so the marker present at each model call is present for it.
+  test("the marker is on the branch by the time the turn's model is called: worktree land sees the Overseer sent it", async () => {
+    const path = make("pl-land");
+    const chat = await acquireChat(path, true);
+    let hold: Promise<void> | null = null;
+    const seen: ReturnType<typeof newestUserMessage>[] = [];
+    stubModel(chat, () => {
+      seen.push(newestUserMessage(piSession(chat).sessionManager.getBranch()));
+      const h = hold;
+      hold = null;
+      return h ?? Promise.resolve();
+    });
+    // A prompt that starts a turn.
+    assert.deepEqual(await sessionPrompt.promptSession(path, "land it", await ov()), { ok: true, queued: false, kind: "prompt" });
+    await until(() => seen.length > 0);
+    await piSession(chat).waitForIdle();
+    assert.deepEqual(seen, [{ text: "land it", sentBy: "the Overseer" }]);
+    // Queued mid-turn, as a steer and as a follow-up: each is marked before the model call it enters with.
+    let release!: () => void;
+    hold = new Promise<void>((r) => (release = r));
+    void chat.acceptPrompt("a long task").turn;
+    await until(() => piSession(chat).isStreaming && seen.length === 2);
+    await sessionPrompt.promptSession(path, "merge it", await ov(), "steer");
+    await sessionPrompt.promptSession(path, "land it now", await ov());
+    release();
+    await until(() => seen.some((s) => s.text === "land it now"));
+    await piSession(chat).waitForIdle();
+    assert.deepEqual(seen.slice(1), [{ text: "a long task" }, { text: "merge it", sentBy: "the Overseer" }, { text: "land it now", sentBy: "the Overseer" }]);
   });
 
   test("a queued Overseer message taken back leaves no marker and no pending mark: a held one by Remove, a handed one by Stop", async () => {

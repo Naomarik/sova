@@ -1,7 +1,7 @@
 import { createUniqueId, For, Show } from "solid-js";
 import { ALIGN_STATUS_CHIP, alignStatusOf } from "../lib/align";
 import { alignmentLine, newestFirst, waitingAlignments, waitingTitle } from "../lib/waiting";
-import { OfferActions, OfferContext } from "./OfferCard";
+import { OfferActions, OfferContext, OfferRows } from "./OfferCard";
 import { Chip, Icon, trapFocus } from "./ui";
 import type { WaitingSource } from "./WaitingBadge";
 
@@ -69,6 +69,11 @@ export function WaitingDialog(props: { source: WaitingSource; onClose(): void })
                         </div>
                         <Show when={card.from}>{(f) => <p class="waiting-item-note">From {f().title}</p>}</Show>
                         <Show when={card.note}>{(n) => <p class="waiting-item-note">{n()}</p>}</Show>
+                        <Show when={card.rows}>
+                          <div class="overseer-confirm-items">
+                            <OfferRows card={card} />
+                          </div>
+                        </Show>
                         <div class="waiting-item-foot">
                           <OfferActions card={card} />
                           <button type="button" class="button button-sm button-ghost waiting-show" onClick={() => show(() => props.source.jumpOffer(card))}>

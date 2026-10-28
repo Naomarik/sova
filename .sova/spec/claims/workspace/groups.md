@@ -75,7 +75,10 @@ interface SessionGroup {
   so a group's record survives any build touching it with nothing quietly erased.
 - **Membership is still the assignments map.** `members` is reconciled against it on read: an id
   that left the group drops out, an id the array never learned about is appended. A workspace
-  therefore cannot show a member that isn't assigned, whatever the store says.
+  therefore cannot show a member that isn't assigned, whatever the store says. Nor one its
+  sidebar group doesn't draw: the workspace lists exactly the sidebar group's members, the
+  assigned sessions that can be in a group (§app.session-list/groups), so an organization session
+  assigned before that rule is in neither.
 - **`SessionSummary.parent` and `parentId`** are the session header's `parentSession`, as a
   canonical path and as the session id, set together or not at all. Read-only lineage: they
   survive a promote, a dissolve and a rename, because Sova never writes the header. Use
@@ -358,7 +361,7 @@ apply verbatim. What changes is scoping and chrome:
 | Ready | The chat, the composer live | Included |
 | Mid-turn | The chat, the run status row, `Steer` in its own composer (§chat/composer) | **Excluded**, reason "mid-turn". A shared prompt is not a steer |
 | Open in a TUI | A **watch** pane: read-only transcript, the `TUI` chip (accent, static), and in place of a composer the `.composer-reason` "This session is open in a terminal, so Sova won't write to it." | Excluded, reason "open in a terminal" |
-| Archived **while still a member** — archived from its own pane, or from anywhere else, without leaving the group | The chat, read normally, with a neutral `.chip` "Archived" in the pane head and its composer disabled, reason "This session is archived. Unarchive it to send." **Archiving is the close gesture**: the server disposes the held runtime, so this pane's `/ws/chat` closes from the server side while the pane is still mounted. That close is **expected** — the pane keeps rendering the transcript it has and shows the Archived chip, never the disconnected or busy banner a single-session view would show for the same event. This is the only state in which that happens; an **eliminated** session is not a member and has no pane (see Eliminate) | Excluded, reason "archived" |
+| Archived **while still a member** — archived from its own pane, or from anywhere else, without leaving the group | The chat, read normally, with a neutral `.chip` "Archived" in the pane head and its composer disabled, reason "This session is archived. Unarchive it to send.", with an `Unarchive` button in place of Send (§chat.transcript/instant-open, "An archived chat") **Archiving is the close gesture**: the server disposes the held runtime, so this pane's `/ws/chat` closes from the server side while the pane is still mounted. That close is **expected** — the pane keeps rendering the transcript it has and shows the Archived chip, never the disconnected or busy banner a single-session view would show for the same event. This is the only state in which that happens; an **eliminated** session is not a member and has no pane (see Eliminate) | Excluded, reason "archived" |
 | Config error | The §app/shell open-failure banner, in the pane's own banner slot, with its own actions (Reconnect · Archive, as appropriate to the diagnosis). The transcript area keeps whatever loaded | Excluded, reason "can't be opened" |
 | Foreign-write busy | The `busy` banner the single-session view already shows, with its `Reconnect (force)` action, and the composer disabled | Excluded, reason "another program is writing to it" |
 | Gone from disk (the session file, checked by shape plus one async stat — never a sync stat, and never the member's `cwd`) | The pane is replaced by an `.empty` inside the pane: **"This session's file is gone."** Its transcript was deleted outside Sova. Removing it from the group is all that's left. · button `Remove From Group` | Excluded, reason "the file is gone" |

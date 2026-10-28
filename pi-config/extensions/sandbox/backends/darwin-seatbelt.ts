@@ -38,7 +38,7 @@ import type {
 	Shadow,
 } from "../backend.ts";
 import { canonicalizePath, isWithin, policyKey, writeSet } from "../backend.ts";
-import { proxyEnv } from "../env.ts";
+import { addGitCleanupEnv, proxyEnv } from "../env.ts";
 
 export const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
 
@@ -465,6 +465,10 @@ export class DarwinSeatbeltBackend implements Backend {
 			TMPDIR: canonicalizePath(policy.tmpDir) + "/",
 		};
 		if (network === "proxy") Object.assign(env, proxyEnv(relayPort!));
+		// The command's processes end with it: git must not start a background cleanup it would cut
+		// off (env.ts). macOS never remaps the tmp, so the host path is the one inside.
+		const tmp = canonicalizePath(policy.tmpDir);
+		addGitCleanupEnv(env, tmp, tmp, { ...process.env, ...env });
 
 		const confined: Confined = {
 			// Secrets never reach argv or the spawn env: a shell inside reads them from the fd, exports them, and execs.

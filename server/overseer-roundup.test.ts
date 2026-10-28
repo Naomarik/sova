@@ -168,6 +168,8 @@ describe("sova_outstanding (§app.overseer/roundup)", () => {
   test("sections, in order: at risk, ready, built, uncommitted only, errors, can't confirm (kept apart from not merged), remote targets unchecked; merged leftovers counted", async () => {
     const sessions = [
       summary("rdy", { readiness: readiness([tree({ branch: "feat/rdy" })]) }),
+      summary("lnd", { readiness: readiness([tree({ branch: "feat/lnd", reason: "Ready to land · 2 commits ahead", landing: { state: "ready", commit: "h" } })]) }),
+      summary("spc", { readiness: readiness([tree({ branch: "feat/spc", reason: "Landing specs · 1 draft", landing: { state: "specs", commit: "h", drafts: ["d"] } })]) }),
       summary("blt", { readiness: readiness([tree({ branch: "feat/blt", state: "in-progress", why: "working now", reason: "In progress · working now" }), tree({ path: "/wt/b2", branch: "feat/b2", state: "in-progress", conflicts: 7, reason: "Conflicts with master · 7 files" })]) }),
       summary("emp", { readiness: readiness([tree({ branch: "feat/emp", state: "in-progress", reason: "In progress · no commits yet", noCommits: true } as never)]) }),
       summary("dty", { readiness: readiness([tree({ branch: "feat/dty", state: "in-progress", reason: "In progress · 20 uncommitted files", noCommits: true, dirtyCount: 20 } as never)]) }),
@@ -190,8 +192,11 @@ describe("sova_outstanding (§app.overseer/roundup)", () => {
     const { text, details } = await run(host, "sova_outstanding", {});
     const section = (title: string) => new RegExp(`## ${title.replace(/[()]/g, "\\$&")} \\(\\d+\\)\\n(?:\\(.*\\)\\n)?((?:- .*\\n?)*)`).exec(text)?.[1] ?? "";
     const order = [...text.matchAll(/^## (.*) \(\d+\)$/gm)].map((m) => m[1]);
-    assert.deepEqual(order, ["At risk (removed without a merge)", "Ready to merge", "Built, not merged", "Uncommitted only (lost if the worktree goes)", "Errors", "Can't confirm merged", "Not checked yet"]);
+    assert.deepEqual(order, ["At risk (removed without a merge)", "Ready to land", "Landing specs", "Ready to merge", "Built, not merged", "Uncommitted only (lost if the worktree goes)", "Errors", "Can't confirm merged", "Not checked yet"]);
     assert.match(section("Ready to merge"), /feat\/rdy checks passed, 2 commits ahead/);
+    assert.match(section("Ready to land"), /feat\/lnd 2 commits ahead/);
+    assert.match(section("Landing specs"), /feat\/spc 1 draft/);
+    assert.doesNotMatch(section("Ready to merge"), /feat\/(lnd|spc)/);
     assert.match(section("Built, not merged"), /^- \[Session blt\]\(sova:\/\/s\/blt\) · 1h ago · feat\/blt working now, feat\/b2 conflicts 7 files$/m, "one row per session, its branches comma-joined");
     assert.doesNotMatch(text, /feat\/emp/, "an empty clean leftover is nothing outstanding");
     assert.match(section("Uncommitted only (lost if the worktree goes)"), /feat\/dty 20 uncommitted files, no commits/);
@@ -207,7 +212,7 @@ describe("sova_outstanding (§app.overseer/roundup)", () => {
     assert.match(section("Not checked yet"), /sova:\/\/s\/rmt.*remote target box: never read/);
     assert.doesNotMatch(text, / · idle| · \/w\/proj|read \d+[smhd] ago/, "no idle state, no common folder, no reading age");
     assert.match(text, /^<<untrusted content from other sessions/);
-    assert.match(text, /<<end of untrusted content>>\n[^]*Covered: 10 sessions \(10 active, 0 more .*\)\. Read: 10 sessions' [^]*\(1 with no git reading/);
+    assert.match(text, /<<end of untrusted content>>\n[^]*Covered: 12 sessions \(12 active, 0 more .*\)\. Read: 12 sessions' [^]*\(1 with no git reading/);
   });
 
   test("Needs your answer: one row per session from the digest, open alignment questions and the final reply's question; no separate Waiting section", async () => {

@@ -1196,15 +1196,22 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
       }
     }
   }
-  if (s.archived !== archived) setArchived(s.id, archived);
-  // Archiving is the close gesture: shut the held runtime down (running subagents die with it).
-  // There is no idle timer anymore — a runtime lives until this, a reload, or server shutdown.
-  if (archived) {
-    // Its open tabs keep what they show and don't reconnect: a reconnect would start it again.
-    await closeChat(s.path, "Session archived; its runtime was closed.", { quiet: "archived" });
-    sessionArchived(s.id);
-  }
+  if (archived) await markArchived(s.id, s.path);
+  else if (s.archived) setArchived(s.id, false);
   return { ok: true, summary: { ...s, archived } };
+}
+
+/**
+ * The one way a session becomes archived (§chat.transcript/instant-open, "An archived chat"): the
+ * mark first, so nothing opens it from then on (a tab reconnecting meanwhile is told `closed`), then
+ * its chat closed quietly (its open tabs keep what they show and don't reconnect), then what hangs
+ * on it ended (its workers stopped with any report still waiting to open it, its links, its memory).
+ * A chat still starting now is closed by its own start once that finishes (server/chat-host.ts).
+ */
+export async function markArchived(id: string, path: string): Promise<void> {
+  setArchived(id, true);
+  await closeChat(path, "Session archived; its runtime was closed.", { quiet: "archived" });
+  sessionArchived(id);
 }
 
 /**

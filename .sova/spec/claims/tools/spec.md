@@ -3,7 +3,8 @@
 
 The spec tools preserve declared requirements, keep proposed changes separate, and report what
 was checked against particular inputs. Their checks establish structure and applicability, not
-semantic correctness. The minor mode adds task reminders and the census note, names once after a
+semantic correctness. The minor mode adds task reminders and the census note, hands the writing
+procedure over once per chat when the agent starts to change behavior, names once after a
 session's last edit the foreign § its change landed in that it hasn't read, names in a finished
 code-writing worker's summary the § its changes landed in, and never holds a turn's end; response wording is not proof that implementation and requirements agree.
 
@@ -136,6 +137,8 @@ its parent's; when the worker settles, its parent gets one line naming where the
 - one line for the new files outside the boundary that no claim maps: "Outside the boundary, no
   claim maps: a, b (+N more): spec any whose change a user sees";
 - the write guard, orphaned-evidence, spec-conflict and promote drift notes, when they apply;
+- on the session's first note of any kind, once per chat, the writing procedure after the digest
+  (§tools.spec/writing-on-demand);
 - at the first call after the session's last edit, the one `Unread § your change landed in` line
   (§tools.spec/unread-landed).
 
@@ -274,18 +277,23 @@ an enclosing repository ignores the whole project, no file is left out and `cens
 
 ## §tools.spec/mode-reading — Spec mode teaches contents first, then one passage
 
-The spec minor mode's guide teaches the pull path. The agent finds its roots with `where`: 3–5 of the
+The spec minor mode's guide is two parts (§tools.spec/writing-on-demand): a short part that rides
+every turn and the writing procedure, handed over once when the agent starts to change behavior.
+The short part teaches finding your way: search, read, verify each claim in the code it lists (where
+claim and code disagree, the agent says so), and cite a file or commit for every finding, reporting
+the product, not the procedure; the writing procedure holds the full reading steps below again, with
+everything about writing. Together they teach the pull path. The agent finds its roots with `where`: 3–5 of the
 task's own words as a topic (§tools.spec/where-topic), or a path or name; when no hit fits it tries
 other words once, then `map`, which also orients a task spanning a whole area. It looks at a root's
 neighbours with `toc` (`--dir out`, or `--dir down` for an area) before reading them, and runs `impact --near` on any claim it will change. It then reads each root, and each passage it
 needs, with `read`: every `requires` line whose "what" doesn't rule it out, and any other line
 touching the task. The first `read` brings the frame; later reads add `--no-frame`. A link it didn't read is
 unread, never absent, and "uninvestigated" is unknown, not none. A foreign § its change touched is
-read with `read`. `packet` and `scope` stay listed for whole-chain machine inspection, not as a
-reading step. Every command the guide spells is one the shipped tools parse, with the flags the
-guide pairs with it.
+read with `read`. `packet` and `scope` stay listed, in the writing procedure, for whole-chain
+machine inspection, not as a reading step. Every command either part spells is one the shipped tools
+parse, with the flags it pairs with it.
 
-The guide's promotion lines agree with the draft tool: doc-only evidence covers notes, sections,
+The writing procedure's promotion lines agree with the draft tool: doc-only evidence covers notes, sections,
 agreed records without code (§tools.spec/agreed-promotion) and a change to `embeds`, `about`,
 `core` or `notOwned` alone (§tools.spec/field-promotion); a test drives the draft tool's doc-only rule, so the
 guide fails its test when that rule gains a case the guide doesn't name or drops one it does. For a
@@ -307,9 +315,10 @@ user's go-ahead to build or merge covers committing the docs with the code on it
 for separately; where the user said not to commit, nothing is, and evidence stays pending. A worker
 is told that its parent promotes, on its own branch before calling it ready; a worker promotes,
 commits or records `--commit` evidence only when its brief says to, and then only on its brief's
-branch, never by landing on the default branch. A worker's spec brief lists `toc`, `read` and
-`impact --near` among its read-only commands. The guide rides every turn, so a test caps its word
-count a few words above its length, and growing it is a deliberate change.
+branch, never by landing on the default branch. A worker's spec brief lists `where`, `map`, `toc`,
+`read` and `impact --near` among its read-only commands. The short part rides every turn, so a test
+caps its word count a few words above its length (320), and growing it is a deliberate change; the
+writing procedure has a cap of its own (990).
 
 ## §tools.spec/no-turn-end-check — A turn ends when the model stops
 
@@ -357,8 +366,11 @@ it was merged from, byte for byte, or the promotion is refused as a conflict and
 
 Two Git branches that each promoted spec changes merge without a conflict unless they changed the
 same promise. `.gitattributes` routes the claim files through the draft tool's `merge-claims`
-driver and `manifest.json` through `merge-manifest`; Git needs each defined once per clone, and the
-setup names no project path but the tools' own. `merge-claims` merges a claim file per declaration
+driver; Git needs it defined once per clone, and the setup names no project path but the tools' own.
+A version 1 project also routes `manifest.json` through `merge-manifest`. A version 2 project,
+Sova's among them, routes neither `manifest.json` nor its record files through a driver: Git's own
+line merge merges them, and an older branch whose `.gitattributes` still names `merge-manifest` gets a
+conflict from it, never a quiet merge (§tools.spec/record-layout). `merge-claims` merges a claim file per declaration
 the same way promotion does (§tools.spec/span-promotion), with the merge base, ours and theirs in
 the roles of base, current and draft, so the merged file has the bytes the two promotions give when
 landed one after the other in one tree, in either order. The driver finds declarations from the
@@ -456,8 +468,10 @@ to finish unless every record, the project settings, and `check`'s declarations,
 are the same before and after. With `--drafts` it converts every draft too, and each draft's
 `status` and `diff` stay as they were; it keeps each draft's old files so `--reverse` can restore
 them. On a mixed spec it finishes the move, and refuses a record that differs between the two places.
-No project is converted unless someone runs it; Sova's own spec stays in version 1 until a later
-change converts it.
+No existing project is converted unless someone runs it. A project that starts its spec with the
+draft tool (`new` where no spec exists) starts in version 2: the draft's `manifest.json` is
+`formatVersion` 2 with the `claims` string, and each record it gains goes beside its claim file.
+Sova's own spec is in version 2.
 
 ## §tools.spec/agreed-promotion — An agreed promise lands in the main spec before it is built
 
@@ -539,7 +553,34 @@ so it says who decided before any code exists. If `agree` reports the promotion 
 agent resolves what it lists and promotes. A changed claim that already maps code keeps its new
 `agreed` in the draft and lands with the build, and the build updates those same records. With
 spec off, or align off, nothing is added, and neither mode's prompt block carries this step: it
-rides only that one result. What the align tool records is unchanged.
+rides only that one result. When the session hasn't been told the writing procedure yet, that result
+carries it after this paragraph (§tools.spec/writing-on-demand). What the align tool records is unchanged.
+
+## §tools.spec/writing-on-demand — The writing procedure reaches a session once, when it starts to change behavior
+
+The spec mode's guide is in two parts, each one copy. The short part, `mode/spec-mode.md`, rides
+every turn of every session and worker with spec on: finding your way (search, read, verify in
+the code, cite files). The writing procedure, `spec/WRITING.md` beside `PROMOTE.md` (the agent
+opens it as `$core/../WRITING.md`), holds everything about drafts, agreeing, evidence, promoting
+and a worker's duties, with the same meaning those rules had when they rode every turn. The short
+part tells the agent to read the procedure before its first edit that changes behavior.
+
+The procedure reaches a session once per chat, at whichever comes first. The first is the agent
+reading it itself: a read of a file named `WRITING.md`, or a shell command that prints one. The
+second is the session's first `[spec census]` note of any kind. The third, with align on too, is
+the `align` result that sets an alignment implementing, after its Agree step
+(§tools.spec/align-agree). The census note and the align result carry it as text appended to that
+tool result, headed as the writing procedure, said once, with the file's path. The text comes from
+the installed tools' own copy. When that file is missing, they carry only a one-line pointer to it.
+After the session is compacted it is handed over again at the next of those moments, even if it
+was read or handed over before. It never goes into the system prompt or the mode section, so a
+Claude Code chat never restarts for it (§chat.mode-menu/minor-toggle-keeps-prompt).
+
+A pi worker, a Claude Code worker included, gets it the same way through its own census
+(§tools.spec/census-note), with the procedure's worker section first. A code-writing worker's spec
+brief, when its prompt lacks the spec block, is generated from both parts by anchor, so it keeps
+every writing rule a brief carried before the split. Its read-only commands include `where` and
+`map`.
 
 ## §tools.spec/agree-source-relay — In pi, the go-ahead's message is handed to `agree`, and workers relay it
 
@@ -554,8 +595,8 @@ itself, so a session whose extensions reload in the same process still follows i
 message rather than taking its own earlier `SPEC_AGREE_SOURCE` for a given reference. A worker never
 derives one from its own messages, which are its spawner's brief, not the person's go-ahead; one given
 none runs `agree` only to be refused (`agree-unsourced`, or `agree-source-not-given` for a
-`--source`) and reports the records ready to agree instead. With spec off, nothing is set. The spec mode's text
-says where the reference comes from, that with `SPEC_AGREE_SOURCE` set the agent passes no `--source`,
+`--source`) and reports the records ready to agree instead. With spec off, nothing is set. The spec mode's
+writing procedure (§tools.spec/writing-on-demand) says where the reference comes from, that with `SPEC_AGREE_SOURCE` set the agent passes no `--source`,
 that a source is a reference, never a description, and that an agreement nobody can point to is never stamped.
 
 ## §tools.spec/field-promotion — A record-field-only change lands on doc-only evidence
@@ -594,6 +635,35 @@ graph's warning count, how many of those warnings current does not already have
 (`warningsIntroduced`), and names at most five claims whose mapped code changed under unchanged
 prose, with their total count and the core `foreign --landing` command that lists every one.
 
+## §tools.spec/draft-official — One rule says whether a draft is official
+
+A draft is **official** in a work tree when every claim it changed reads, in that tree's current
+spec, either what the draft says or what a promotion recorded in that tree wrote for it, other than
+the text the draft started from (an earlier promotion its baseline already held speaks for nothing
+it changed). Prose also counts when its blocks carry the draft's change: every block (a paragraph,
+a list item, a table row, a heading; the units a Git merge of claim files merges by,
+§tools.spec/git-merge) the draft added is there, and every one it removed is gone, as a merge of
+another change to the same claim leaves it. A claim here is one § id's record, read wherever
+the tree keeps it (`manifest.json`, or its area's record file, §tools.spec/record-layout), or its prose, its declaration's span in its claim file; the non-blank lines of a claim file outside
+every declaration, and each other manifest key, count as one claim more. A draft changed a claim when its proposal differs from its baseline there. A promotion
+recorded in the tree is any promotion receipt of any draft in its `.sova/spec/drafts/`: each
+promotion records, beside the files it wrote, a hash of each claim it wrote as the draft said it
+and as it wrote it. So:
+
+- a draft promoted as it stands is official, and so is one whose claim a later draft of the same
+  tree reworded and promoted;
+- a draft never promoted isn't, nor one whose claim a catch-up merge replaced with the base
+  branch's text, a hand edit changed, or the draft itself changed again after its promotion;
+- a merge that changes only other claims of the same files, or other blocks of the same claim, the
+  merge round's own merge of master included, changes nothing.
+
+A receipt written before claims were recorded counts, for each id it names, what its own draft now
+says there. The rule is one function of the draft tool, run on the drafts' and the spec's files
+alone, with no Git and no other process. The tool's `drafts` and `prune --official`
+(§tools.spec/draft-hygiene) and Sova's readiness (§chat.worktrees/readiness) call it; the merge
+round's driver reads the verdict `drafts` reports (§chat.merge-round/driver). A draft the rule can't
+read is never official, for each of them.
+
 ## §tools.spec/draft-hygiene — Drafts left behind are reported, and only an approved list or confirmed-official drafts are pruned
 
 `draft drafts` reads every draft of the project (`--worktrees`: of every Git work tree of its
@@ -601,12 +671,18 @@ repository too) and writes nothing. Each draft gets its age (days since its last
 evidence recorded or promoted), one state with the reasons for it, and a suggested action:
 `landed` (an id is still pending while its implementation is on the default branch: a commit its
 evidence names is in that branch, or the work tree's own branch was merged into it after the draft
-was made) suggests promote; `promoted` (every id is already current, was promoted by this draft
-before current moved on, or is on the default branch exactly as the draft says it), `superseded` (nothing pending, and an id current changed differently) and
+was made) suggests promote; `promoted` (every id is already current, or was promoted by this draft
+before current moved on), `superseded` (nothing pending, and an id current changed differently) and
 `empty` (it changes nothing and is older than the age limit) suggest delete; `old` (pending, older
 than the limit, 7 days unless `--days N`), `active` and `unreadable` suggest keep, `landed` with
-the ids whose evidence must be re-recorded first. Each draft also lists `promotedConflict`: the ids
-it promoted before that current now says differently, which count as current in its state. The default branch is the one
+the ids whose evidence must be re-recorded first. Each draft carries the rule's verdict,
+`official` (§tools.spec/draft-official; false for one it can't read), and its ids sort by it: an id
+the rule calls official counts as current, so a draft a later promoted draft reworded reads
+`promoted`; any other is pending or in conflict. Each draft also lists `promotedConflict`: the ids
+in conflict that it promoted before, which count as current in its state but are not official. A
+draft made unofficial only by a claim outside any § (a manifest key, a claim file's lines outside
+its declarations) names no id and reads `active`. A reader that holds work until its drafts are
+official reads `official`, never the state. The default branch is the one
 `promote` names (origin's HEAD, else `master`, else `main`); a project without Git gets no `landed`.
 It exits 1 when any draft is other than `active`.
 
@@ -616,12 +692,12 @@ no draft, a hash that no longer matches (the draft changed after it was approved
 interrupted promotion refuses the whole prune, and nothing is deleted.
 
 `draft prune --official` needs no list: it deletes only drafts the tool itself confirms are already
-official, and keeps every other one. Without `--from` it reads the project's own drafts as `drafts`
-does and deletes those it reads `promoted` with nothing in `promotedConflict`, under the same lock
-and refusal of an interrupted promotion as an approved prune. With `--from DIR` it reads each draft folder directly in `DIR`, a copy
-kept outside the project such as the one a merge round keeps, against the project's current spec
-alone, with no Git: one whose records it changes are all already current, at least one, is deleted;
-one with any record pending or in conflict, one that changes nothing, and one it can't read are kept.
+official, and keeps every other one. It reads each draft folder of the project's own drafts, or
+with `--from DIR` of `DIR` (copies kept outside the project, such as the ones a merge round keeps),
+against the project's current spec by the same rule (§tools.spec/draft-official), with no Git; in
+the project, under the same lock and refusal of an interrupted promotion as an approved prune. One
+that changes at least one claim, every one official, is deleted; one with a claim that isn't, one that changes nothing, and one
+it can't read are kept.
 Without `--write` either form only lists what it would delete and what it keeps, with why. No other
 command deletes a draft, and none suggests deleting one that still has a pending id.
 
@@ -669,8 +745,8 @@ read. The actual ordered streams and serialized inventory data also participate 
 so changing the records or order being navigated invalidates an old token. The command stores no
 sessions, cursors, or source snapshots and runs no project code.
 
-The minor-mode guide lists packets beside `scope` for whole-chain machine inspection; its reading
-path is contents first, then one passage (§tools.spec/mode-reading). Full graph tools remain available for deliberate
+The minor-mode guide's writing procedure lists packets beside `scope` for whole-chain machine
+inspection; its reading path is contents first, then one passage (§tools.spec/mode-reading). Full graph tools remain available for deliberate
 machine inspection and review. No new mandatory assessment or release gate is introduced here.
 
 ### Reading a packet
@@ -951,7 +1027,7 @@ or an untrusted graph.
 
 ## §tools.spec/record-fields — Optional `embeds`, `core`, `about` and `notOwned` record fields
 
-A manifest record may carry four optional fields, each project flagging its own records; none is a
+A record may carry four optional fields, each project flagging its own records; none is a
 new kind, label value or top-level key, so a core that predates them reads the same manifest and
 ignores them. `embeds: [§id]` names surfaces drawn inside this claim, which a reader of it needs
 whole. `core: true` marks a claim, typically an H2, as part of the always-on frame (see

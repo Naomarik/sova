@@ -33,8 +33,8 @@ import {
 	type ClaudeTransportLimits, type ClaudeTransportTimings, type SpawnImpl,
 } from "../transport.ts";
 import {
-	loginEntryFor, manualSwitchText, movedText, switchText,
-	type ClaudeAccountFailure, type ClaudeLoginChoice, type ClaudeLoginEntry, type ClaudeLoginSwitch, type LoginUser,
+	loginEntryFor, manualSwitchText, movedText, preferenceText, switchText,
+	type ClaudeAccountFailure, type ClaudeLoginChoice, type ClaudeLoginContext, type ClaudeLoginEntry, type ClaudeLoginSwitch, type LoginUser,
 } from "../accounts.ts";
 import type { ImageContent, Message, Tool } from "@earendil-works/pi-ai";
 import { PiMcpHost, type HeldMcpCall, type McpContent, type McpToolResult } from "./mcp-host.ts";
@@ -239,6 +239,12 @@ export interface SessionBridgeOptions {
 	 */
 	logins?: ClaudeLoginSource;
 	/**
+	 * The login this process's chats should prefer, and the logins saved for other work
+	 * (accounts.ts loginContextFromEnv: what the host that started the process handed over).
+	 * Absent, or answering undefined: the device's order, as always.
+	 */
+	loginContext?: () => ClaudeLoginContext | undefined;
+	/**
 	 * Where each pi session's resume record is kept on disk (resume-record.ts). Defaults to
 	 * `<agent dir>/claude-code/resume`; `false` keeps them in memory only.
 	 */
@@ -250,14 +256,14 @@ export const defaultResumeDir = (env: NodeJS.ProcessEnv = process.env): string =
 
 /** What the bridge needs of the host's logins; accounts.ts ClaudeLogins is the real one. */
 export interface ClaudeLoginSource {
-	select(current?: string): ClaudeLoginChoice;
-	failover(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): ClaudeLoginChoice | undefined;
+	select(current?: string, ctx?: ClaudeLoginContext): ClaudeLoginChoice;
+	failover(from: ClaudeLoginChoice, failure: ClaudeAccountFailure, ctx?: ClaudeLoginContext): ClaudeLoginChoice | undefined;
 	recordFailure(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): void;
 	forcedFailure?(id: string): ClaudeAccountFailure | undefined;
 	/** `select`, borrowing from the pool first when nothing but `default` is usable here. */
-	acquire?(current?: string): Promise<ClaudeLoginChoice>;
+	acquire?(current?: string, ctx?: ClaudeLoginContext): Promise<ClaudeLoginChoice>;
 	/** `failover` in the pool: the failed login goes back, and the next one may be borrowed. */
-	failoverAsync?(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): Promise<ClaudeLoginChoice | undefined>;
+	failoverAsync?(from: ClaudeLoginChoice, failure: ClaudeAccountFailure, ctx?: ClaudeLoginContext): Promise<ClaudeLoginChoice | undefined>;
 	/** The login is on its way to another device: a child on it restarts on the next login. */
 	leaving?(id: string): boolean;
 	/** Record a child's use of a login (its lease) and how to release it when the login leaves. */
@@ -1607,17 +1613,38 @@ class CliSession {
 			try { await logins.take(current!); } catch { /* selection below falls back */ }
 		}
 		// In the pool, a device with nothing but `default` borrows a login first (accounts.ts acquire).
+		const ctx = this.loginContext();
 		let to: ClaudeLoginChoice;
-		try { to = logins.acquire ? await logins.acquire(current) : logins.select(current); }
+		try { to = logins.acquire ? await logins.acquire(current, ctx) : logins.select(current, ctx); }
 		catch (error) { debugLog({ event: "login-select-failed", session: this.piSessionId, error: String(error) }); return; }
 		this.login = to;
-		if (current === undefined || to.id === current || this.recordedLogin === undefined) { this.announce(to); return; }
+		if (current === undefined || to.id === current || this.recordedLogin === undefined) {
+			// A new choice off the project's login is never silent, a first start included
+			// (§app.claude-logins/project-login): the note names that login and why it was skipped.
+			const prefer = ctx?.prefer;
+			if (prefer && to.id !== prefer.login && to.id !== current) {
+				let skipped: { label: string; cause: string } | undefined;
+				try { skipped = logins.absence?.(prefer.login); } catch { skipped = undefined; }
+				const label = skipped?.label ?? prefer.login;
+				const from: ClaudeLoginChoice = { id: prefer.login, label, env: {} };
+				debugLog({ event: "login-switch", session: this.piSessionId, from: prefer.login, to: to.id, kind: "project" });
+				this.announce(to, { from, to, reason: "moved", text: preferenceText(to, prefer, label, skipped?.cause ?? "is not usable on this device") });
+				return;
+			}
+			this.announce(to);
+			return;
+		}
 		// Never a silent change: the note names the login the session left and why.
 		try { gone = logins.absence?.(current) ?? gone; } catch { /* the first answer stands */ }
 		const from: ClaudeLoginChoice = this.lastLogin?.id === current ? this.lastLogin : { id: current, label: gone?.label ?? current, env: {} };
 		const cause = gone?.cause ?? "is not usable on this device";
 		debugLog({ event: "login-switch", session: this.piSessionId, from: current, to: to.id, kind: "moved" });
 		this.announce(to, { from, to, reason: "moved", text: movedText(from, to, cause) });
+	}
+
+	/** The login context this process was handed (SessionBridgeOptions.loginContext), read per choice. */
+	private loginContext(): ClaudeLoginContext | undefined {
+		try { return this.options.loginContext?.(); } catch { return undefined; }
 	}
 
 	/**
@@ -1725,7 +1752,7 @@ class CliSession {
 			// The pool: `from` goes back to the keeper, and the next login may have to be borrowed
 			// first. The turn waits; nothing of it reached pi yet.
 			turn.failovers++;
-			void logins.failoverAsync(from, failure).catch(() => undefined).then((to) => {
+			void logins.failoverAsync(from, failure, this.loginContext()).catch(() => undefined).then((to) => {
 				if (this.turn !== turn || turn.queue.isEnded()) return;
 				if (!to) { fail(); return; }
 				void this.switchLogin(turn, from, to, failure);
@@ -1733,7 +1760,7 @@ class CliSession {
 			return;
 		}
 		let to: ClaudeLoginChoice | undefined;
-		try { to = logins.failover(from, failure); } catch { to = undefined; }
+		try { to = logins.failover(from, failure, this.loginContext()); } catch { to = undefined; }
 		if (!to) { fail(); return; }
 		turn.failovers++;
 		void this.switchLogin(turn, from, to, failure);

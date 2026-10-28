@@ -221,8 +221,13 @@ describe("the memory choice is kept on the branch", () => {
     log.length = 0;
     const r = await chat.switchMode({ memory: { type: "zoomable" } });
     assert.deepEqual([r.memory?.type, r.memory?.size], ["zoomable", 32]);
-    assert.deepEqual(chat.harness.state.branch().latest(MEMORY)?.data, { v: 1, type: "zoomable", size: 32 });
+    assert.deepEqual(chat.harness.state.branch().latest(MEMORY)?.data, { v: 1, type: "zoomable" }, "a type only: the size is Settings'");
     assert.deepEqual(log.find((m) => m.type === "mode")?.memory, { type: "zoomable", size: 32 }, "a new mode message carries it");
+    const records = () => chat.harness.state.branch().list(MEMORY).length;
+    const before = records();
+    await chat.switchMode({ memory: {} });
+    assert.deepEqual(chat.harness.state.branch().latest(MEMORY)?.data, { v: 1, type: "zoomable" }, "a size-only body (ignored) writes nothing");
+    assert.equal(records(), before);
     assert.ok(!log.some((m) => m.type === "memory_status"), "memory is still off: no status");
     model.reply({ text: "later" });
     await chat.harness.send("a later message");

@@ -102,7 +102,8 @@ The picker has two steps in one panel, **Providers** (what the Model row and `Ct
   Project Assistant's model control (§app.project-assistant/models: Settings → Organizations and the
   Owner card): there the Model row and the ladder pick a value for that setting instead of the
   session's, the ladder is the picked model's, a level the new model lacks is cleared, and the
-  composer's own flyout is unchanged.
+  composer's own flyout is unchanged. Its ladder rows carry the same effort rings as the
+  composer's (§chat.composer/composer-flyout); it has no summary line over its rows.
 - **Positioning.**
   - At ≥768 (e.g. 1440) the flyout is 360px wide (or the viewport minus 32px) with
     `max-height: min(440px, 70dvh)`, `--r-md` and `--shadow-2`, sitting above the trigger. The

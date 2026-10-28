@@ -100,6 +100,10 @@ describe("D3: list_changed, for what the marks can't carry", () => {
     // An org session's project archived (projects.json, not its file): it leaves the Organizations region.
     const org = { orgId: "o1", orgName: "Acme", projectId: "p1", projectName: "Ledger", kind: "gathering" as const };
     assert.equal(listChanged(map([row("a", { org }), row("b")]), map([row("a", { org: { ...org, projectArchived: true } }), row("b")])), true);
+    // A session put into a group, moved, or taken out (another server writing the same group store).
+    assert.equal(listChanged(map(base), map([row("a", { groupId: "g1" }), row("b")])), true);
+    assert.equal(listChanged(map([row("a", { groupId: "g1" }), row("b")]), map([row("a", { groupId: "g2" }), row("b")])), true);
+    assert.equal(listChanged(map([row("a", { groupId: "g1" }), row("b")]), map([row("a", { groupId: "g1" }), row("b")])), false);
   });
 
   test("a session that appears after connect is announced once; nothing on the connect itself", async () => {

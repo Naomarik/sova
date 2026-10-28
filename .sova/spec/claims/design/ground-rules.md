@@ -135,7 +135,7 @@ and `fill="none" stroke="currentColor"`.
 | `close.svg` | Clear search, close dialog |
 | `chevron-left.svg` | Back to list (folded width only) |
 | `chevron-right.svg` | Disclosure twist (rotates 90° when open) |
-| `chevron-down.svg` | Jump to Latest, the mode trigger |
+| `chevron-down.svg` | Jump to Latest, the mode trigger (its last icon, at every width), the Quick Actions button |
 | `terminal.svg` | The tool card for `bash`, and the "Ran `/cmd`" info row |
 | `file.svg` | Tool card for `read` / `write` / `edit` |
 | `more.svg` | Tool card for any other tool |
@@ -164,7 +164,10 @@ and `fill="none" stroke="currentColor"`.
 | `wrench.svg` | The composer's run status while the turn runs a tool (§chat.transcript/streaming): an open-jawed wrench at 45°. New, drawn on the system grid |
 | `gauge.svg` | Usage: the sidebar foot's Usage row. Sova's own, drawn on the system grid |
 | `activity.svg` | Resource monitor: the button at the right end of the sidebar foot's Usage row, and its spine item (§app.resource-monitor/entry-button). A pulse line: flat, one sharp peak and trough, flat again. New, drawn on the system grid |
-| `sliders.svg` | Mode: the mode trigger at the right end of the composer foot (§chat/mode-menu). Three tracks with an offset handle each. New, drawn on the system grid |
+| `sliders.svg` | The normal mode's icon: in the mode trigger at the right end of the composer foot (also alone before the chat's mode is known), the mode menu's Normal row and the profile cards (§chat.mode-menu/trigger). Three tracks with an offset handle each. New, drawn on the system grid |
+| `mode-delegate.svg` | The delegate mode's icon: the mode trigger, its menu row and the profile cards (§chat.mode-menu/trigger). A node with an arrow leaving it to the right. New, drawn on the system grid |
+| `mode-align.svg`, `mode-spec.svg`, `mode-vis.svg`, `mode-codemode.svg`, `mode-memory.svg` | One per built-in minor mode, wherever the major mode's icon shows: align two centred bars on a vertical axis, spec a clipboard with lines, vis a bar chart on axes, codemode a pair of braces, memory a stacked cylinder. A project mode has no file: it is its id's first letter in a rounded square (`.mode-letter`). New, drawn on the system grid |
+| `subagents.svg` | Subagents: the mode menu's Subagents row and the profile cards' subagents count (§chat.profiles/picker). Branching nodes: one node above, a stem down to three below. New, drawn on the system grid |
 | `worker.svg` | Agents: the sidebar foot's Agents row, plus the Teams and Subagents section heads, and the composer's subagents trigger (§app.subagents-pane/trigger) (from the skill's set) |
 | `settings.svg` | Settings: the gear at the right end of the sidebar foot's Agents row, and the Settings dialog's tab rail. A cog on the system grid (the skill ships a sun-burst under this name)
 | `branch.svg` | Git branches and the mesh: the setup card's repository line, a worktree's line on the Agents page, the worktree merge card, the Mesh card and the Settings dialog's Mesh tab |
@@ -179,6 +182,9 @@ and `fill="none" stroke="currentColor"`.
 | `star.svg` | The model menu's favourite toggle; the Overseer's Ideas button |
 | `expand.svg` | Focus (§chat.transcript/focus-view): the round button in the transcript's corner. Four corner brackets. New, drawn on the system grid |
 | `check-circle.svg`, `x-circle.svg`, `menu.svg` | Drawings only (vis): the ok / error tone icons, and wireframe icons |
+
+The effort ring (§chat.composer/behavior) has no file either: the ring and its mark, the max
+level's filled bolt included, are drawn in its own inline SVG.
 
 `/favicon.svg` is the mark on the Indigo dusk gradient, a rounded square: a linear gradient from
 `#4A43D8` at the top-left to `#1E1A5C` at the bottom-right. The middle band is white (`#FFFFFF`),

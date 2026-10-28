@@ -63,7 +63,7 @@ ${SVG_EXAMPLE}
 const htmlSection = (files: Readonly<Record<string, string>>): string => {
   const { example, colours } = freeForm(files);
   return `## html
-Only when no kind above fits and the person would understand their own subject better by playing with it (a slider on their own figure, a Step button through their own process). \`vis html\` is a fragment (inline \`<style>\` and \`<script>\`, no \`<html>\`/\`<head>\`), run sandboxed in a frame on the person's page. Start with \`title:\` / \`caption:\` lines.
+A clickable prototype of a screen the person describes that is beyond a simple one (its look and feel, panes side by side, a dense layout), or something the person would understand better by playing with it (a slider on their own figure, a Step button through their own process). \`vis html\` is a fragment (inline \`<style>\` and \`<script>\`, no \`<html>\`/\`<head>\`), run sandboxed in a frame on the person's page. Start with \`title:\` / \`caption:\` lines.
 ${example}
 - Fit a phone first: 360px wide (flex-wrap, grid with \`fr\`), under about 500px tall.
 - Aim under 4K characters.
@@ -87,6 +87,8 @@ export function gatheringVisGuide(files: Readonly<Record<string, string>> = VIS_
     const section = stripVisComments(files[VIS_KIND_FILES[kind]!]!)
       .replace(/^# vis (.*)$/m, "## $1")
       .replace(/^- `mark` targets: .*\n?/m, "")
+      // The wireframe's pointer to html prototypes and the chat's vis_check: only where html is taught, never vis_check.
+      .replace(/^- Beyond a wireframe: .*\n?/m, opts.html ? "- Beyond a wireframe: for a screen beyond a simple one (look and feel, panes side by side, an editor in a dialog) draw a clickable `vis html` prototype instead.\n" : "")
       .trim();
     return kind === "sequence" ? `${section}\n${SEQUENCE_ACTORS}` : section;
   });

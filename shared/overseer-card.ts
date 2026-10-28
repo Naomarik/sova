@@ -12,7 +12,7 @@
  * as `CardPrepared`.
  */
 import type { HEntry } from "./harness";
-import type { SovaConfirmItem } from "./protocol";
+import { CONFIRM_SECTION_MAX, CONFIRM_SENDS_MAX, type CopyStarter, type LeftoverReason, type SovaConfirmItem } from "./protocol";
 import { type CardOptionLater, type CardOptionRule, GRANT_DEFAULT_MS, GRANT_MAX_AHEAD_MS, GRANTABLE_ACTS, type GrantableAct } from "./overseer-grants";
 
 /** The tool's name, in the loadout and on every tool result. */
@@ -310,10 +310,40 @@ export interface CardOutcome {
   text: string;
 }
 
-/** The display order: ideas, todos, orgs, folders, projects, people, then sessions (the card's row order). */
-const KIND_ORDER: Record<SovaConfirmItem["kind"], number> = { idea: 0, todo: 1, org: 2, folder: 3, project: 4, person: 5, session: 6 };
+/**
+ * The display order: ideas, todos, orgs, folders, projects, people, copies, leftover processes, then
+ * sessions (the card's row order). On a card where any item names a section
+ * (§app.overseer/card-sections): rows with no section first, then each section in the order it first
+ * appears in `items`, that kind order within each. The card numbers its rows 1..N in this order, so
+ * the numbers run top to bottom.
+ */
+const KIND_ORDER: Record<SovaConfirmItem["kind"], number> = { idea: 0, todo: 1, org: 2, folder: 3, project: 4, person: 5, copy: 6, leftover: 7, session: 8 };
 export function displayOrder<T extends SovaConfirmItem>(items: readonly T[]): T[] {
-  return items.map((it, i) => ({ it, i })).sort((a, b) => KIND_ORDER[a.it.kind] - KIND_ORDER[b.it.kind] || a.i - b.i).map((x) => x.it);
+  const sections: (string | undefined)[] = [undefined];
+  for (const it of items) if (it.section !== undefined && !sections.includes(it.section)) sections.push(it.section);
+  const rank = (it: T) => sections.indexOf(it.section);
+  return items
+    .map((it, i) => ({ it, i }))
+    .sort((a, b) => rank(a.it) - rank(b.it) || KIND_ORDER[a.it.kind] - KIND_ORDER[b.it.kind] || a.i - b.i)
+    .map((x) => x.it);
+}
+
+/** Whether any row of a card sits under a heading (then it never collapses). */
+export const hasSections = (card: Pick<OverseerCard, "items">): boolean => card.items.some((it) => it.section !== undefined);
+
+/**
+ * A card's rows under their headings, in display order: one group per section in the order the
+ * rows show (the unsectioned rows, with no heading, first). A card with no sections is one group
+ * with no heading.
+ */
+export function cardSections<T extends Pick<SovaConfirmItem, "section">>(items: readonly T[]): { section?: string; items: T[] }[] {
+  const out: { section?: string; items: T[] }[] = [];
+  for (const it of items) {
+    const last = out.at(-1);
+    if (last && last.section === it.section) last.items.push(it);
+    else out.push({ ...(it.section !== undefined ? { section: it.section } : {}), items: [it] });
+  }
+  return out;
 }
 
 /** An https URL a link option may open: no credentials, a host. */
@@ -416,11 +446,31 @@ function createCard(id: string, o: Record<string, unknown>, env: CardEnv): Overs
     need(prepared.items.length > 0, `${where}: choices are per item, so the card needs items`);
   }
 
-  const items: CardItem[] = displayOrder(prepared.items).map((it, i) => {
+  // A row's heading and its Go-sends text (§app.overseer/card-sections), checked before the order uses them.
+  const rows = prepared.items.map((it) => {
+    const { section, sends, ...rest } = it as typeof it & { section?: unknown; sends?: unknown };
+    const out = rest as typeof it;
+    if (section !== undefined) {
+      need(typeof section === "string" && section.trim() !== "", `${where}: ${it.id}'s section must be a short heading, e.g. "Ready to land"`);
+      const heading = oneLine(section as string);
+      need(heading.length <= CONFIRM_SECTION_MAX, `${where}: ${it.id}'s section is ${heading.length} characters; a heading takes at most ${CONFIRM_SECTION_MAX}`);
+      out.section = heading;
+    }
+    if (sends !== undefined) {
+      need(typeof sends === "string" && sends.trim() !== "", `${where}: ${it.id}'s sends must be the exact message its Go sends`);
+      const words = (sends as string).trim();
+      need(words.length <= CONFIRM_SENDS_MAX, `${where}: ${it.id}'s sends is ${words.length} characters; at most ${CONFIRM_SENDS_MAX}, shown in full on the row`);
+      out.sends = words;
+    }
+    return out;
+  });
+  const items: CardItem[] = displayOrder(rows).map((it, i) => {
     const { default: def, choices: own, ...rest } = it;
     const item: CardItem = { ...(rest as SovaConfirmItem), n: i + 1 };
     if (own !== undefined) item.choices = choiceList(own, `${where}: ${it.id}'s choices`);
     const row = choicesOf({ choices }, item);
+    // Go on a land row is its first choice (§app.overseer/card-land): one it must have.
+    if (item.kind === "session" && item.land) need(row !== undefined, `${where}: ${it.id} is a land row, so it needs choices (its own or the card's), its first one Go`);
     if (def !== undefined) {
       need(row !== undefined, `${where}: ${it.id} has a default, but neither it nor the card has choices`);
       need(row!.some((_, k) => cardLetter(k) === def), `${where}: ${it.id}'s default "${def}" is not one of its choice letters (${row!.map((_, k) => `${cardLetter(k)}. ${row![k]!.label}`).join(", ")})`);
@@ -637,7 +687,9 @@ export function applyCardCall(cards: readonly OverseerCard[], input: unknown, en
   if (creates) {
     const clicks = [answerOptions(card!).length ? `"${card!.id} b: …"` : "", hasChoices(card!) ? `"${card!.id}: 1a …, 2b …" (each letter its own row's)` : ""].filter(Boolean).join(" or ");
     lines.push(
-      `Shown to the ${who} under your reply. It stays open until you record it: when the ${who} answers (a click reads ${clicks}; typed text may name the card, an item number or an option letter), do the act it approves first, then call sova_card answer with their words, or accept for "your recommendation", in the same run once the act succeeded; a refused act leaves the card open.`,
+      `Shown to the ${who} under your reply. It stays open until you record it: when the ${who} answers (a click reads ${clicks}; typed text may name the card, an item number or an option letter), do the act it approves first, then call sova_card answer with their words, or accept for "your recommendation", in the same run once the act succeeded; a refused act leaves the card open.` +
+        (hasChoices(card!) ? ` If you stop partway (a limit, a refusal), record only the rows you acted on: the card stays open with the rest, and Apply on it sends them.` : "") +
+        (card!.items.some((it) => it.sends !== undefined) ? ` A row's Go sends exactly its Go-sends text, the words the ${who} saw.` : ""),
     );
   }
   return { details, text: lines.join("\n") };
@@ -729,6 +781,11 @@ export function normalizeCardItem(v: unknown): CardItem | undefined {
         ...(count(v.workers) && v.workers > 0 ? { workers: v.workers } : {}),
         ...note,
       };
+      if (v.land !== undefined) {
+        const l = v.land;
+        if (!isRecord(l) || !nonEmpty(l.branch) || !str(l.head) || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(l.head)) return undefined;
+        base.land = { branch: l.branch, head: l.head };
+      }
       break;
     }
     case "idea":
@@ -767,10 +824,61 @@ export function normalizeCardItem(v: unknown): CardItem | undefined {
       if (v.status !== "active" && v.status !== "proposed" && v.status !== "left") return undefined;
       base = { kind: "person", id: v.id, orgId: v.orgId, name: v.name, orgName: v.orgName, status: v.status, ...note };
       break;
+    case "copy": {
+      const startedBy = starterOf(v.startedBy);
+      if (!nonEmpty(v.project) || !nonEmpty(v.projectName) || !nonEmpty(v.checkout) || !count(v.slot) || !startedBy || !count(v.links)) return undefined;
+      if (v.branch !== null && !nonEmpty(v.branch)) return undefined;
+      if (v.state !== "running" && v.state !== "stopped" && v.state !== "broken") return undefined;
+      if (v.edits !== "clean" && v.edits !== "uncommitted" && v.edits !== "folder-gone") return undefined;
+      base = {
+        kind: "copy",
+        id: v.id,
+        project: v.project,
+        projectName: v.projectName,
+        slot: v.slot,
+        branch: v.branch as string | null,
+        checkout: v.checkout,
+        state: v.state,
+        startedBy,
+        edits: v.edits,
+        links: v.links,
+        ...(v.working === true ? { working: true } : {}),
+        ...note,
+      };
+      break;
+    }
+    case "leftover":
+      if (!nonEmpty(v.project) || !nonEmpty(v.projectName) || !count(v.slot) || !count(v.port) || !count(v.pid) || !nonEmpty(v.start) || !str(v.command) || !nonEmpty(v.folder)) return undefined;
+      if (v.reason !== "folder-gone" && v.reason !== "branch-on-main") return undefined;
+      if (v.unit !== undefined && !nonEmpty(v.unit)) return undefined;
+      base = {
+        kind: "leftover",
+        id: v.id,
+        project: v.project,
+        projectName: v.projectName,
+        slot: v.slot,
+        port: v.port,
+        pid: v.pid,
+        start: v.start,
+        command: v.command,
+        folder: v.folder,
+        reason: v.reason,
+        ...(v.unit !== undefined ? { unit: v.unit as string } : {}),
+        ...note,
+      };
+      break;
     default:
       return undefined;
   }
   const item: CardItem = { ...base, n: v.n };
+  if (v.section !== undefined) {
+    if (!nonEmpty(v.section)) return undefined;
+    item.section = v.section;
+  }
+  if (v.sends !== undefined) {
+    if (!nonEmpty(v.sends)) return undefined;
+    item.sends = v.sends;
+  }
   if (v.choices !== undefined) {
     const choices = normChoices(v.choices);
     if (!choices) return undefined;
@@ -960,7 +1068,36 @@ export function itemText(it: SovaConfirmItem): string {
       return `folder ${it.id}${it.asked ? ` (the checkout root of ${it.asked})` : ""}${it.name ? `, named ${it.name}` : ""}, ${it.orgId ? `into ${it.orgName} (${it.orgId})` : "standalone"}`;
     case "person":
       return `${it.name} (${it.id}, ${it.status}) in ${it.orgName} (${it.orgId})`;
+    case "copy":
+      return `copy ${it.id} of ${it.projectName} (${it.project}), slot ${it.slot}, ${it.branch ? `branch ${it.branch}` : `folder ${it.checkout}`}, ${it.state}, started by ${starterText(it.startedBy)}${copyFacts(it)}`;
+    case "leftover":
+      return `leftover process on port ${it.port} (slot ${it.slot}) of ${it.projectName} (${it.project}): pid ${it.pid}, ${it.command ? `"${it.command}"` : "command unreadable"}, in ${it.folder}, ${LEFTOVER_REASON_TEXT[it.reason]}${it.unit ? `, unit ${it.unit}` : ""}`;
   }
+}
+
+const starterText = (s: CopyStarter): string => (s.kind === "session" ? `${sessionLink(s.id, cut(s.title, 60))} (${s.id})` : s.label);
+const copyFacts = (it: Extract<SovaConfirmItem, { kind: "copy" }>): string =>
+  [
+    it.edits === "uncommitted" ? "uncommitted edits (a teardown keeps them in its folder)" : it.edits === "folder-gone" ? "its folder is gone" : "",
+    it.links ? `${it.links} active share link${it.links === 1 ? "" : "s"}` : "",
+    it.working ? "its session is working now" : "",
+  ]
+    .filter(Boolean)
+    .map((s) => `, ${s}`)
+    .join("");
+
+/** Why a leftover process may be stopped, in words (the card row and the model's echo). */
+export const LEFTOVER_REASON_TEXT: Record<LeftoverReason, string> = {
+  "folder-gone": "its folder was deleted",
+  "branch-on-main": "its branch is already merged into the main checkout's",
+};
+
+/** A stored copy row's starter, or undefined when malformed. */
+function starterOf(v: unknown): CopyStarter | undefined {
+  if (!isRecord(v)) return undefined;
+  if (v.kind === "session") return nonEmpty(v.id) && str(v.title) ? { kind: "session", id: v.id, title: v.title } : undefined;
+  if (v.kind === "operator" || v.kind === "overseer" || v.kind === "conform" || v.kind === "other") return nonEmpty(v.label) ? { kind: v.kind, label: v.label } : undefined;
+  return undefined;
 }
 
 /** "a. Archive all · b. Keep"; "" without answer options. */
@@ -1012,13 +1149,21 @@ export function cardLines(card: OverseerCard, line: string): string[] {
     const own = it.choices ? ` [choices ${choicesText(it.choices)}]` : "";
     const def = it.default ? ` [default ${it.default}]` : "";
     const done = it.decided ? ` — decided: ${decisionText(card, it, it.decided)}` : "";
-    out.push(`  ${it.n}. ${itemText(it)}${it.note ? ` — ${it.note}` : ""}${own}${def}${done}`);
+    const section = it.section !== undefined ? ` [section ${it.section}]` : "";
+    const sends = it.sends !== undefined ? ` [Go sends: ${JSON.stringify(it.sends)}]` : "";
+    const land = it.kind === "session" && it.land ? ` [land ${it.land.branch} at ${it.land.head.slice(0, 7)}: Go lands it with sova_land]` : "";
+    out.push(`  ${it.n}. ${itemText(it)}${it.note ? ` — ${it.note}` : ""}${section}${land}${sends}${own}${def}${done}`);
   }
   if (card.recommendation) {
     const opt = card.recommendation.option ? `${card.recommendation.option} — ${optionByLetter(card, card.recommendation.option)?.label ?? ""}: ` : "";
     out.push(`  rec: ${opt}${card.recommendation.why}`);
   }
-  if (card.clickOnly) out.push("  click-only: an act that reaches people runs only in the turn its click opens, never on typed text");
+  if (card.clickOnly)
+    out.push(
+      card.items.some((it) => it.kind === "copy" || it.kind === "leftover")
+        ? "  click-only: what it lists is acted on only in the turn its click opens, never on typed text; a copy or leftover row approves only the act its chosen label names (Tear Down, Reset, Stop)"
+        : "  click-only: an act that reaches people runs only in the turn its click opens, never on typed text",
+    );
   return out;
 }
 
@@ -1033,7 +1178,7 @@ export function cardsNote(cards: readonly OverseerCard[], afterCompaction = fals
   if (open.length === 0) return undefined;
   const head = afterCompaction
     ? "[cards] The context was just compacted. The open cards in this conversation, exactly as recorded (the summary above may describe them loosely); ids are stable."
-    : "[cards] Open cards in this conversation. If the user's message answers any of them (a click reads \"c_4 b: …\" or \"c_4: 1a …, 2b …\", each item's letter one of its own choices; typed text may name a card, an item number or an option letter), do the act it approves first, then record it with sova_card (answer with their words, accept for \"your recommendation\") in the same run once the act succeeded, one call per card; a refused act leaves the card open for another click. Drop a card that no longer applies, or replace it (create with replaces). Name a card by its id, never \"the card above\"; ids are stable.";
+    : "[cards] Open cards in this conversation. If the user's message answers any of them (a click reads \"c_4 b: …\" or \"c_4: 1a …, 2b …\", each item's letter one of its own choices; typed text may name a card, an item number or an option letter), do the act it approves first, then record it with sova_card (answer with their words, accept for \"your recommendation\") in the same run once the act succeeded, one call per card; a refused act leaves the card open for another click. If you stop partway (a limit, a refusal), record only the rows you acted on, and say that Apply on the card sends the rest. A row's Go sends exactly its Go-sends text. Drop a card that no longer applies, or replace it (create with replaces). Name a card by its id, never \"the card above\"; ids are stable.";
   const lines = open.flatMap((c) => {
     const stale = activeAt ? staleSessions(c, activeAt) : [];
     return [...cardLines(c, ""), ...stale.map((s) => `  may be stale: ${s.id} active since ${s.at}`)];
@@ -1129,8 +1274,65 @@ export function matchCardClick(card: OverseerCard, text: string): CardClick | nu
   return itemsClick(card, picks) === text ? { card: card.id, items: picks } : null;
 }
 
+/**
+ * The choices the user last applied each row with (§app.overseer/card-partial-apply): the per-item
+ * Apply messages among `texts` (the conversation's user messages, oldest first) that are exactly a
+ * click on `card`, merged in order, so a later Apply's pick of a row wins. Undecided rows of a
+ * partly applied card start on these, not their defaults.
+ */
+export function appliedPicks(card: OverseerCard, texts: Iterable<string>): Record<number, string> {
+  const out: Record<number, string> = {};
+  for (const t of texts) {
+    if (!t.startsWith(`${card.id}: `)) continue;
+    const click = matchCardClick(card, t.trim());
+    if (click && "items" in click) Object.assign(out, click.items);
+  }
+  return out;
+}
+
+/** The picks after a newer snapshot: a row now decided takes none; one still undecided keeps the
+    pick it had (the one it was applied with), else starts from `fresh`. */
+export function keptPicks(card: OverseerCard, prev: Readonly<Record<number, string>>, fresh: Readonly<Record<number, string>>): Record<number, string> {
+  const out: Record<number, string> = {};
+  for (const it of card.items) {
+    if (it.decided) continue;
+    const l = prev[it.n] !== undefined && choiceByLetter(card, it, prev[it.n]!) ? prev[it.n] : fresh[it.n];
+    if (l !== undefined) out[it.n] = l;
+  }
+  return out;
+}
+
 /** The items a click approves: every item for a card-level option, else only those it gave a choice. */
 export function clickItems(card: OverseerCard, click: CardClick): CardItem[] {
   if ("option" in click) return card.items;
   return card.items.filter((it) => click.items[it.n] !== undefined);
 }
+
+/** One item a click touched and the label it chose for it: its row's chosen choice for a per-item Apply, the
+    option's label for a card-level option (which touches every item). */
+export type ClickChoice = { item: CardItem; choice: string };
+
+/** Each item a click touched, with the label it chose (§app.overseer/copies: Sova checks the choice, not just the click). */
+export function clickChoices(card: OverseerCard, click: CardClick): ClickChoice[] {
+  if ("option" in click) {
+    const label = optionByLetter(card, click.option)?.label;
+    return label ? card.items.map((item) => ({ item, choice: label })) : [];
+  }
+  const out: ClickChoice[] = [];
+  for (const item of card.items) {
+    const letter = click.items[item.n];
+    if (letter === undefined) continue;
+    const c = choiceByLetter(card, item, letter);
+    if (c) out.push({ item, choice: c.label });
+  }
+  return out;
+}
+
+/** The acts a copy or leftover row's choice may approve (§app.overseer/copies). */
+export type CopyAct = "teardown" | "reset" | "down" | "stop-leftover";
+
+const ACT_WORD: Record<CopyAct, RegExp> = { teardown: /^tear ?down\b/i, reset: /^reset\b/i, down: /^stop\b/i, "stop-leftover": /^stop\b/i };
+
+/** Whether a chosen label names `act`: only "Tear Down…", "Reset…" or "Stop…" (a card-wide "Tear Down All" too);
+    Keep, Not Now, Cancel and anything else approve nothing. */
+export const choiceNames = (label: string, act: CopyAct): boolean => ACT_WORD[act].test(label.trim());

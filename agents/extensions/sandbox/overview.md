@@ -37,6 +37,10 @@ with its policy templates in `pi-config/sandbox-policy/`. Sova imports its sessi
 - The provisional `starting` entry (`SANDBOX_STARTING`, `isStarting` in `state.ts`) is read by
   `server/sandbox-state.ts` (`SandboxInfo.starting`, the shield's "Turning on…") and by the tour
   recorder (`server/tours/context.ts`, which refuses while it is newest). Keep all three on the constant.
+- `env.ts`'s `writeGitCleanupConfig` (builtins only), imported by `server/chat-runtime/supervisor.ts`: the git
+  system config each chat process gets as `GIT_CONFIG_SYSTEM` (§app.git-cleanup/no-background), the same writer
+  the backends use for their own copy in the session tmp (§chat.sandbox/git-cleanup). Its file must never hold an
+  `[include]` of its own: the idle git cache turns off for any config that has one.
 - The sandbox imports nothing outside its own directory. It asks the server's
   `Symbol.for("sova:tool-command-prefix")` hook for the niceness prefix of tool commands (§app.load-priority/workers);
   unset, as in the TUI, nothing changes.

@@ -167,6 +167,9 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
     says what it did: "Committed {short sha} and pushed.", "Committed {short sha}.", "Nothing new
     to commit. Pushed the commits the remote lacked." or "Nothing new to commit." Then the
     **WhatsApp Number** card (§app.outreach/org-sender): which number the org's messages go from.
+    Last, the **Claude login for its projects** card (§app.claude-logins/project-login): the
+    Claude login every project the org places follows unless the project picks its own; kept on
+    this host, never in the workspace repo.
 - **Rows and width.** A hand-off session row's title and meta line wrap rather than truncate. Each
   card on the org list, org and project pages stops at 880px wide, left-aligned, except the
   project page's Overview, whose cards fill its columns (§app.organizations/project-page). The project
@@ -458,7 +461,9 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   Resume while braked, the one-time note until dismissed, and the switches in groups, one column for
   the overseer on its own and, while an organization places the project, one for the Project
   Assistant from a client); **Sessions it starts** (the gathering and coding sessions'
-  model, thinking, abilities and mode selects, three to a row where they fit); **Extra
+  model, thinking, abilities and mode selects, three to a row where they fit); **Claude login**
+  (§app.claude-logins/project-login: the login the project's new chats start on, "Same as
+  organization" only while placed); **Extra
   instructions**; **Limits** (§app.project-overseer/limits); the Owner Page card while the org has
   an owner (§app.owner-page/controls); **Offers** (§chat.offers/project-list); **All settings** and
   **Settings history** (§app.project-overseer/settings); and a **Danger zone** with **Archive Project** (or

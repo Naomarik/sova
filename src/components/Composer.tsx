@@ -1,7 +1,7 @@
-import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, untrack, type JSX } from "solid-js";
 import { releaseControl } from "../lib/release-control";
 import type { ChatClaudeLogin, SlashCommand, UploadResult } from "../../shared/protocol";
-import { composerLogin } from "../lib/claude-login";
+import { avatarLogins, composerLogin } from "../lib/claude-login";
 import { runControls } from "../lib/compact";
 import { createTouchMode, enterSends, refocusAfterSend, type SendPress } from "../lib/input-mode";
 import { keyboardIsUp, watchKeyboard } from "../lib/voice/keyboard";
@@ -35,7 +35,9 @@ import {
   type PendingImage,
   type RejectedFile,
 } from "../lib/images";
-import { modelLabel, modelProvider } from "../lib/format";
+import { compactModel } from "../lib/format";
+import { EffortRing } from "./EffortRing";
+import { foldFit } from "./fold-fit";
 import { fitPlaceholderNow, type FittedPlaceholder } from "../lib/placeholder-fit";
 import { ensureModels, modelList, thinkingLevelsFor } from "../lib/models";
 import {
@@ -120,6 +122,9 @@ export function Composer(props: {
   path: string;
   readOnly?: ComposerReason | null;
   blocked?: ComposerReason | null;
+  /** An archived chat (§chat.transcript/instant-open, "An archived chat"): Unarchive in place of Send,
+      typing and the draft kept; `blocked` carries the reason. */
+  unarchive?: { run: () => void; busy: boolean } | null;
   running: boolean;
   /** A compaction runs (§chat.slash-commands/compact): Stop and the status row, but no Steer. */
   compacting?: boolean;
@@ -373,7 +378,15 @@ export function Composer(props: {
   };
   // ---- Claude login label: the third trigger, for the login panel (§app.claude-logins/switch-login).
   let loginLabel: HTMLButtonElement | undefined;
-  const loginShown = () => composerLogin(props.claudeLogin?.() ?? null, modelRef(), !!props.running);
+  const loginShown = createMemo(() => composerLogin(props.claudeLogin?.() ?? null, modelRef(), !!props.running, avatarLogins(props.login?.info())));
+  // The avatar tells this device's logins apart, so it reads them once the label shows (the panel
+  // reads them again at each opening). Once per composer: a failed read waits for the panel.
+  let loginsAsked = false;
+  createEffect(() => {
+    if (loginsAsked || !loginShown() || !props.login || untrack(() => props.login!.info())) return;
+    loginsAsked = true;
+    props.login.refresh();
+  });
   const loginOpen = () => !!loginLabel && !!menu()?.open() && menu()?.anchor() === loginLabel;
   let loginOpenAtPress = false;
   const toggleLogin = (fromPointer: boolean) => {
@@ -1239,7 +1252,21 @@ export function Composer(props: {
             />
           </div>
           <div class="composer-actions">
-            <Show when={!props.readOnly}>
+            <Show when={!props.readOnly && props.unarchive}>
+              {(u) => (
+                <button
+                  type="button"
+                  class="button button-primary"
+                  aria-disabled={u().busy ? "true" : undefined}
+                  aria-describedby={paneId("composer-reason")}
+                  onClick={() => !u().busy && u().run()}
+                >
+                  <Icon name="undo" small />
+                  <span class="button-label">Unarchive</span>
+                </button>
+              )}
+            </Show>
+            <Show when={!props.readOnly && !props.unarchive}>
               <button
                 ref={sendButton}
                 type="submit"
@@ -1276,7 +1303,20 @@ export function Composer(props: {
           </div>
         </div>
 
-        <div class="composer-foot">
+        <div
+          class="composer-foot"
+          ref={(foot) => {
+            // The model's short name is the foot's last part to shrink:
+            // where the row doesn't fit once its gaps narrow, the mode switch's icons fold first.
+            const trigger = () => foot.querySelector<HTMLElement>(".mode-more")?.parentElement ?? null;
+            foldFit(foot, {
+              target: trigger,
+              // Not the foot itself: the mode switch's negative end margin always overhangs it.
+              boxes: () => [foot.querySelector<HTMLElement>(".composer-model-id"), trigger()],
+              modes: () => trigger()?.querySelectorAll(":scope > .mode-glyph, :scope > .mode-letter").length ?? 0,
+            });
+          }}
+        >
           <Show when={props.model}>
             <button
               ref={indicator}
@@ -1287,29 +1327,26 @@ export function Composer(props: {
               aria-expanded={indicatorOpen() ? "true" : "false"}
               aria-disabled={disabled() ? "true" : undefined}
               aria-label={`${modelRef() ?? "No model yet"}${levelShown() ? `, thinking ${levelShown()}` : ""} — Change Model & Thinking`}
-              title={`${modelRef() ?? "Choose model"} · Change model & thinking`}
+              title={`${modelRef() ?? "Choose model"}${levelShown() ? ` · thinking ${levelShown()}` : ""} · Change model & thinking`}
               onPointerDown={() => (openAtPress = indicatorOpen())}
               onClick={(e) => toggleIndicator(e.detail > 0)}
             >
-              <Show when={props.model?.pending()}>
-                <span class="live-dot" />
-              </Show>
-              <span class="composer-model-id">{modelLabel(modelRef()) ?? "Choose model"}</span>
-              <Show when={modelProvider(modelRef())}>
-                {(provider) => <span class="composer-model-meta">{provider()}</span>}
-              </Show>
+              {/* One item, model and effort (§chat.composer/behavior): the effort ring, then the
+                  model's short name. A pending switch's dot sits before the value it changes. */}
               <Show when={levelShown()}>
                 {(level) => (
                   <>
-                    <span class="composer-model-sep" aria-hidden="true">·</span>
                     <Show when={props.thinking?.pending()}>
                       <span class="live-dot" />
                     </Show>
-                    <span class="composer-model-level">{level()}</span>
+                    <EffortRing level={level()} />
                   </>
                 )}
               </Show>
-              <Icon name="chevron-down" small class="composer-model-caret" />
+              <Show when={props.model?.pending()}>
+                <span class="live-dot" />
+              </Show>
+              <span class="composer-model-id">{compactModel(modelRef()) ?? "Choose model"}</span>
             </button>
           </Show>
           <Show when={loginShown()}>
@@ -1330,8 +1367,12 @@ export function Composer(props: {
                 <Show when={l().pending}>
                   <span class="live-dot" />
                 </Show>
-                <span class="composer-login-full">{l().text}</span>
-                <span class="composer-login-short">{l().short}</span>
+                <span class="composer-login-avatar" aria-hidden="true">
+                  {l().avatar}
+                </span>
+                <span class="composer-login-full" aria-hidden="true">
+                  {l().text}
+                </span>
               </button>
             )}
           </Show>

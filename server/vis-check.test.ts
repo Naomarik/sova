@@ -22,8 +22,8 @@ const fence = (kind: string, body: string, marker = "```") => `${marker}vis ${ki
 const GOOD_FLOW = "a -> b";
 /** Two arrows in a row: a structural error under any leniency. */
 const BROKEN_FLOW = "a -> -> b";
-const host = (over: Partial<{ visOn: boolean; queued: boolean; writable: boolean }> = {}) => ({
-  visOn: () => over.visOn ?? true,
+const host = (over: Partial<{ drawingsOn: boolean; queued: boolean; writable: boolean }> = {}) => ({
+  drawingsOn: () => over.drawingsOn ?? true,
   queued: () => over.queued ?? false,
   writable: () => over.writable ?? true,
 });
@@ -133,7 +133,7 @@ test("a completed run with a broken block retries once; the retry's own reply is
   assert.ok(r.beforeSettle("completed", host()), "the next run gets its own retry");
 });
 
-test("no retry for a clean reply, an aborted or errored run, a queued message, a foreign writer, or vis off", () => {
+test("no retry for a clean reply, an aborted or errored run, a queued message, a foreign writer, or drawings off", () => {
   const cases: [string, (r: InstanceType<typeof VisRetry>) => unknown][] = [
     ["clean", (r) => (r.assistant(text(fence("flow", GOOD_FLOW))), r.beforeSettle("completed", host()))],
     ["no text", (r) => r.beforeSettle("completed", host())],
@@ -141,7 +141,7 @@ test("no retry for a clean reply, an aborted or errored run, a queued message, a
     ["error", (r) => (r.assistant(text(fence("flow", BROKEN_FLOW))), r.beforeSettle("error", host()))],
     ["queued", (r) => (r.assistant(text(fence("flow", BROKEN_FLOW))), r.beforeSettle("completed", host({ queued: true })))],
     ["not writable", (r) => (r.assistant(text(fence("flow", BROKEN_FLOW))), r.beforeSettle("completed", host({ writable: false })))],
-    ["vis off", (r) => (r.assistant(text(fence("flow", BROKEN_FLOW))), r.beforeSettle("completed", host({ visOn: false })))],
+    ["drawings off", (r) => (r.assistant(text(fence("flow", BROKEN_FLOW))), r.beforeSettle("completed", host({ drawingsOn: false })))],
   ];
   for (const [name, run] of cases) assert.equal(run(new VisRetry()), null, name);
   // The same broken reply with every condition met does retry: the cases above are not vacuous.
@@ -156,7 +156,115 @@ test("thinking and tool calls are not reply text", () => {
   assert.equal(r.beforeSettle("completed", host()), null);
 });
 
+// ---- cramped wireframes and the card's visuals (§chat.markdown/vis-wireframe-room) ------------------
+
+/** Four titled cards side by side on a phone: each gets about 41px, too narrow for its title, under any layout. */
+const CRAMPED_WIREFRAME = `screen "Palette" phone
+row
+  card "Background colour"
+  card "Text colour"
+  card "Main colour"
+  card "Surface colour"`;
+/** The same cards two to a row: room enough. */
+const ROOMY_WIREFRAME = `screen "Palette" phone
+row
+  card "Background colour"
+  card "Text colour"
+row
+  card "Main colour"
+  card "Surface colour"`;
+
+test("a cramped wireframe is a failure, though it draws; the same cards with room are not", () => {
+  const cramped = parseVis("wireframe", CRAMPED_WIREFRAME);
+  assert.ok(cramped.ok && cramped.warnings.length === 0, "it draws, with no warning for the reader");
+  const failures = visFailures(visFences([[fence("wireframe", ROOMY_WIREFRAME), fence("wireframe", CRAMPED_WIREFRAME)].join("\n\n")]));
+  assert.deepEqual(failures.map((f) => [f.index, f.kind, f.cramped?.length]), [[2, "wireframe", 4]]);
+  assert.match(failures[0]!.message, /^cramped: card "Background colour" \(line 3\) /);
+  const note = retryText(failures);
+  assert.match(note, /^One wireframe draws cramped \(labels squeezed into boxes too narrow to read\):\n/);
+  assert.match(note, /- Block 2 \(`vis wireframe`, starting `screen "Palette" phone`\): cramped: card "Background colour" \(line 3\)/);
+  assert.match(note, /draw it as a clickable `vis html` prototype instead/);
+  assert.match(note, /Re-send only the fixed block as a complete fence/);
+  assert.doesNotMatch(note, /source instead/, "nothing failed to draw");
+  assert.deepEqual(retryEntry(failures).details.blocks, [{ index: 2, kind: "wireframe", line: 3, message: failures[0]!.message, cramped: 4 }]);
+});
+
+test("a cramped wireframe retries once in a chat whose drawings come from align (no vis mode), and never with drawings off", () => {
+  const r = new VisRetry();
+  r.assistant(text(fence("wireframe", CRAMPED_WIREFRAME)));
+  assert.equal(r.beforeSettle("completed", host({ drawingsOn: false })), null);
+  const on = new VisRetry();
+  on.assistant(text(fence("wireframe", CRAMPED_WIREFRAME)));
+  assert.ok(on.beforeSettle("completed", host({ drawingsOn: true })));
+  on.assistant(text(fence("wireframe", CRAMPED_WIREFRAME)));
+  assert.equal(on.beforeSettle("completed", host()), null, "the retry's own reply is not judged again");
+});
+
+const alignCall = (id: string, ops: unknown[]) => [{ type: "toolCall", id, name: "align", arguments: { ops } }];
+
+test("the card's visuals: an align call's cramped or broken visual retries, naming where it sits and how to fix it", () => {
+  const r = new VisRetry();
+  r.assistant(
+    alignCall("a1", [
+      { op: "create", title: "T", visual: { kind: "flow", source: GOOD_FLOW }, questions: [{ topic: "x", visual: { kind: "wireframe", source: CRAMPED_WIREFRAME } }, { topic: "y", visual: { kind: "flow", source: `\`\`\`vis flow\n${BROKEN_FLOW}\n\`\`\`` } }] },
+    ]),
+  );
+  const entry = r.beforeSettle("completed", host());
+  assert.ok(entry);
+  assert.match(entry.content, /^Sova could not draw one vis block; the user sees its source instead; and one wireframe draws cramped/);
+  assert.match(entry.content, /- The card's visual for question 1 of the create \(`vis wireframe`/);
+  assert.match(entry.content, /- The card's visual for question 2 of the create \(`vis flow`, starting `a -> -> b`\): line 1: /, "a whole fence given as the source is judged by its body");
+  assert.match(entry.content, /edit_question \{q, visual\}/);
+  assert.doesNotMatch(entry.content, /Re-send only/, "no fence in the reply to re-send");
+  assert.doesNotMatch(entry.content, /visual for the alignment's own/, "the create's own visual draws");
+});
+
+test("the card's visuals: a later write wins, a removal or a failed call drops it, other tools and a clean card are nothing", () => {
+  const fixed = new VisRetry();
+  fixed.assistant(alignCall("a1", [{ op: "edit_question", q: "q2", visual: { kind: "wireframe", source: CRAMPED_WIREFRAME } }]));
+  fixed.assistant(alignCall("a2", [{ op: "edit_question", q: "q2", visual: { kind: "wireframe", source: ROOMY_WIREFRAME } }]));
+  assert.equal(fixed.beforeSettle("completed", host()), null, "fixed later in the run");
+  const removed = new VisRetry();
+  removed.assistant(alignCall("a1", [{ op: "edit_doc", visual: { kind: "wireframe", source: CRAMPED_WIREFRAME } }, { op: "edit_doc", visual: null }]));
+  assert.equal(removed.beforeSettle("completed", host()), null, "removed");
+  const failed = new VisRetry();
+  failed.assistant(alignCall("a1", [{ op: "edit_doc", visual: { kind: "wireframe", source: CRAMPED_WIREFRAME } }]));
+  failed.toolResult({ toolCallId: "a1", isError: true });
+  assert.equal(failed.beforeSettle("completed", host()), null, "the call failed: the card never held it");
+  const other = new VisRetry();
+  other.assistant([{ type: "toolCall", id: "x", name: "write", arguments: { ops: [{ op: "edit_doc", visual: { kind: "wireframe", source: CRAMPED_WIREFRAME } }] } }]);
+  assert.equal(other.beforeSettle("completed", host()), null, "only align's calls write the card");
+  // The same write, kept: it does retry, so the cases above are not vacuous.
+  const kept = new VisRetry();
+  kept.assistant(alignCall("a1", [{ op: "edit_doc", visual: { kind: "wireframe", source: CRAMPED_WIREFRAME } }]));
+  kept.toolResult({ toolCallId: "a1", isError: false });
+  const e = kept.beforeSettle("completed", { ...host(), drawingsOn: () => true });
+  assert.ok(e);
+  assert.match(e.content, /The card's visual for the alignment's own \(`vis wireframe`/);
+  assert.match(e.content, /edit_doc \{visual\}/);
+  // A provider's prefixed name is the same tool.
+  const prefixed = new VisRetry();
+  prefixed.assistant([{ type: "toolCall", id: "p", name: "mcp__sova__align", arguments: { ops: [{ op: "edit_doc", visual: { kind: "wireframe", source: CRAMPED_WIREFRAME } }] } }]);
+  assert.ok(prefixed.beforeSettle("completed", host()));
+});
+
 // ---- vis_check -----------------------------------------------------------------------------------
+
+test("vis_check on a wireframe: whether it draws, each cramped block and what to do, or that every block has room", () => {
+  const cramped = visCheck("wireframe", CRAMPED_WIREFRAME);
+  assert.equal(cramped.details.ok, true);
+  assert.equal(cramped.details.cramped?.length, 4);
+  assert.equal(cramped.details.chars, undefined, "no budget for a wireframe");
+  assert.match(cramped.text, /^OK: this vis wireframe block draws\.\nCramped: 4 blocks' text has no room/);
+  assert.match(cramped.text, /\n- card "Background colour" \(line 3\) /);
+  assert.match(cramped.text, /`vis html` prototype/);
+  const roomy = visCheck("wireframe", ROOMY_WIREFRAME);
+  assert.deepEqual(roomy.details.cramped, []);
+  assert.match(roomy.text, /^OK: this vis wireframe block draws\.\nRoom: every block's text fits\.$/);
+  const broken = visCheck("wireframe", "<div>");
+  assert.equal(broken.details.ok, false);
+  assert.match(broken.text, /^ERROR: this vis wireframe block would not draw/);
+});
 
 test("frameDocument is the frame parser's own document on every body it accepts", () => {
   const bodies = [
@@ -235,7 +343,7 @@ async function scriptedSession(script: string[], visOn: () => boolean, queued: (
           models: [{ id: "scripted-1", name: "Scripted", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 }],
           streamSimple,
         }),
-      visCheckExtension(() => ({ visOn, visToolsOn: visOn, queued, writable: () => true })),
+      visCheckExtension(() => ({ drawingsOn: visOn, visToolsOn: visOn, queued, writable: () => true })),
     ],
   });
   await resourceLoader.reload();
@@ -306,7 +414,9 @@ test("SDK: vis_check runs as a tool", async () => {
     assert.ok(tool);
     const res = await tool.execute("c1", { kind: "svg", source: "<svg></svg>" }, undefined, undefined, undefined as never);
     assert.match((res.content[0] as { text: string }).text, /^OK: this vis svg block draws/);
-    await assert.rejects(tool.execute("c2", { kind: "flow", source: "a -> b" } as never, undefined, undefined, undefined as never), /only html and svg/);
+    await assert.rejects(tool.execute("c2", { kind: "flow", source: "a -> b" } as never, undefined, undefined, undefined as never), /only html, svg and wireframe/);
+    const wf = await tool.execute("c3", { kind: "wireframe", source: CRAMPED_WIREFRAME }, undefined, undefined, undefined as never);
+    assert.match((wf.content[0] as { text: string }).text, /^OK: this vis wireframe block draws\.\nCramped:/);
   } finally {
     session.dispose();
   }

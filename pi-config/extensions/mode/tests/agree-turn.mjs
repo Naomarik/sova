@@ -139,6 +139,13 @@ try {
 	assert.equal(seen.specOnly, false, "spec alone never asks for the agree step");
 	assert.equal(seen.both, true, "align and spec on: the go-ahead's turn carries the agree instruction");
 	assert.match(both, AGREE_STEP, "in its stable words, naming the command");
+	// The go-ahead also hands over the writing procedure, after the Agree step, when the session hasn't been told it.
+	const HANDOVER = /Writing procedure \(once; also at [^)]*WRITING\.md\):/;
+	assert.match(both, HANDOVER, "the go-ahead hands the writing procedure over");
+	assert.ok(both.search(AGREE) < both.search(HANDOVER), "after the Agree step");
+	assert.equal(both.split("Writing procedure (once; also at ").length - 1, 1, "once");
+	assert.doesNotMatch(alignOnly, HANDOVER, "never with spec off");
+	assert.doesNotMatch(specOnly, HANDOVER, "a turn with no note and no go-ahead hands nothing over");
 	console.log("agree-turn: ok");
 } finally {
 	rmSync(scratch, { recursive: true, force: true });

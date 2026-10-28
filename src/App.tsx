@@ -9,7 +9,7 @@ import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../shared/prot
 import { reuseUnchanged } from "./lib/summary-diff";
 import { stampListRows } from "./lib/composer-known";
 import { OptimisticArchive, type ArchiveMutation } from "./lib/optimistic-archive";
-import { setAgentsFeedSource } from "./lib/agents-feed";
+import { agentsTokensWanted, setAgentsFeedSource } from "./lib/agents-feed";
 import { setExplanationsFeedSource } from "./lib/explanations-feed";
 import {
   ApiError,
@@ -53,6 +53,7 @@ import type { ProjectSummary } from "../shared/projects";
 import { onListRefresh } from "./lib/list-refresh";
 import { OrgsView } from "./components/OrgsView";
 import { ProjectsView } from "./components/ProjectsView";
+import { groupMembersOf } from "./lib/regions";
 import { loadSessionGroups, sessionGroups, sessionGroupsLoaded } from "./lib/session-groups";
 import { createThenArchive, dropArchived, newSessionCwd, offersCwd } from "./lib/new-session";
 import { showHiddenFolders } from "./lib/hidden-folders";
@@ -422,7 +423,8 @@ export function App() {
     .then(reconcileTheme)
     .catch(() => {});
   const usage = createPoll(fetchUsage, USAGE_POLL_MS);
-  const agents = createPoll(fetchAgents, AGENTS_POLL_MS);
+  // One poll for the whole app (the sidebar feed reads it); it asks for tokens only while a board is shown.
+  const agents = createPoll(() => fetchAgents({ tokens: agentsTokensWanted() }), AGENTS_POLL_MS);
   setAgentsFeedSource(agents.data);
   const explanations = createPoll(fetchExplanations, EXPLAIN_POLL_MS);
   setExplanationsFeedSource(explanations.data);
@@ -735,10 +737,10 @@ export function App() {
     const id = groupRoute()?.id;
     return id ? (sessionGroups().find((g) => g.id === id) ?? null) : null;
   });
-  /** The group's sessions, in the list's order (newest first); membership is the list's alone. */
+  /** The group's sessions, in the list's order (newest first): exactly the sidebar group's members (regions' `groupMembersOf`). */
   const groupMembers = createMemo(() => {
     const id = groupRoute()?.id;
-    return id ? (list() ?? []).filter((s) => s.groupId === id) : [];
+    return id ? groupMembersOf(list() ?? [], id) : [];
   });
   /** Every session mounted right now: the open one, or every pane of the workspace. */
   const openPaths = createMemo<string[]>(() => {

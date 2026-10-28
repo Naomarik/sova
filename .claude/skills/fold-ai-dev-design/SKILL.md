@@ -354,6 +354,12 @@ compensating for glow is what makes icons vanish on a phone outdoors.
 `minus` `edit` `trash` `check-circle` `alert-circle` `x-circle` `clock` `info` `pause` `diff`
 `branch` `file` `folder` `terminal` `worker` `chat` `undo` `approve` `deploy`
 
+**Sova's own additions** live in the app's `public/icons/` (drawn the same way, named in `IconName`
+in `src/components/ui.tsx`), among them the composer foot's mode and settings icons: `subagents`
+(branching nodes), `mode-delegate`, `mode-align`, `mode-spec`, `mode-vis`, `mode-codemode` and
+`mode-memory`. A project mode has no file: it is its id's first letter in a rounded square
+(`.mode-letter`). The effort ring's bolt is drawn inline in the ring, not a file.
+
 **Inline the SVG** so `currentColor` and the theme reach it; an `<img>` cannot follow either.
 **Adding one:** copy the nearest existing file, keep the 24 viewBox, the 1.5 stroke, and
 `currentColor`; draw on whole or half pixels; ship it here. **Never point a consumer at an

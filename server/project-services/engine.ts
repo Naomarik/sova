@@ -78,10 +78,11 @@ import { defHashOf } from "./def-hash";
 
 export type Caller =
   | { kind: "operator"; confirm?: boolean }
-  | { kind: "overseer"; id: string }
+  /** `approved`: whether the user's click that opened this turn approved `verb` on that copy (§app.overseer/copies). */
+  | { kind: "overseer"; id: string; approved?: CopyApproval }
   /** `act`: its project statechart's act for a verb that is not a read (§app.project-overseer/tools), which holds the
-      level; the engine checks none. */
-  | { kind: "project-overseer"; id: string; root: string; act: VerbAct; deployAct?: true }
+      level; the engine checks none. `approved`: as the Overseer's, for its own project's copies. */
+  | { kind: "project-overseer"; id: string; root: string; act: VerbAct; deployAct?: true; approved?: CopyApproval }
   /** The client's Project Assistant (al_1, al_3): deploy.request any time; deploy.plan and deploy.run only from inside its
       project's released `deploy/run` act (`deployAct`), checked against its column of powers. `up`: only `up` of that one
       instance (a copy the owner's versions list holds, which its start_version checked); `upMain`: only a bare `up` of
@@ -92,6 +93,14 @@ export type Caller =
   | { kind: "conform"; id: string }
   /** Sova itself, on no one's request: `on-merge` reloads the main checkout's copy when main moves (§app.project-services/on-merge). Apply only. */
   | { kind: "system"; id: string };
+
+/** Whether the click that opened the caller's turn approved `verb` on the copy `rec` (a card row listing it, whose chosen
+    label names that verb; §app.overseer/copies). Read per call: it holds only in that turn. */
+export type CopyApproval = (verb: "teardown" | "reset" | "down", rec: InstanceRecord) => boolean;
+
+/** The refusal of a teardown or reset of a copy the caller did not start, outside a click that approved it. */
+export const copyClickRefusal = (verb: string, createdBy: string): string =>
+  `${verb} of a copy you did not start (${createdBy}'s) runs only in the turn the user's click on a card listing it opens: ask with sova_card, listing it under copies with a ${verb === "teardown" ? "Tear Down" : "Reset"} choice`;
 
 /**
  * Resolves once the project statechart took the verb's act; throws its refusal otherwise. `share`'s act
@@ -694,18 +703,21 @@ export class ProjectEngine {
     if (read) return;
     const createdByCaller = !!run.rec && run.rec.createdBy === callerTag(caller);
     if (sharedNamed) throw new VerbFailure("needs-confirm", confirmShared);
+    if (caller.kind === "overseer" || caller.kind === "project-overseer") {
+      // The user's click on a card listing the copy opens the one turn these run in (§app.overseer/copies); never slot 0.
+      // A project overseer's level is its statechart's act (run() sends it once these checks pass).
+      const rec = run.rec;
+      const clicked = (v: "teardown" | "reset" | "down") => !!rec && rec.slot !== 0 && caller.approved?.(v, rec) === true;
+      if (linked && !clicked("down"))
+        throw new VerbFailure(
+          "needs-confirm",
+          `this copy has ${linked} active share link${linked === 1 ? "" : "s"}, which will show the not-running page while it is down: stop it only in the turn the user's click on a card listing it opens (ask with sova_card, listing it under copies; its row shows the links), or revoke the link first`,
+        );
+      if ((verb === "reset" || verb === "teardown") && rec && !createdByCaller && !clicked(verb))
+        throw new VerbFailure("needs-confirm", copyClickRefusal(verb, rec.createdBy));
+      return;
+    }
     if (linked) throw new VerbFailure("needs-confirm", confirmLinked);
-    if (caller.kind === "overseer") {
-      if ((verb === "reset" || verb === "teardown") && run.rec && !createdByCaller)
-        throw new VerbFailure("needs-confirm", `${verb} of an instance you did not create (${run.rec.createdBy}'s) is the operator's: ask them to run it`);
-      return;
-    }
-    if (caller.kind === "project-overseer") {
-      // Its level is its statechart's act (run() sends it once these checks pass).
-      if ((verb === "reset" || verb === "teardown") && run.rec && !createdByCaller)
-        throw new VerbFailure("needs-confirm", `${verb} of an instance you did not create (${run.rec.createdBy}'s) is the operator's: ask them to run it`);
-      return;
-    }
     // The Project Assistant runs no verb on running copies but `up` of the one listed copy its start_version named, once
     // its project's services/run act is taken (actFor, after these checks).
     if (caller.kind === "assistant") {

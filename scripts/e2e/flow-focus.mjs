@@ -4,7 +4,7 @@
 // Serves scripts/e2e/flow-focus/ (Sova's figure shell and flow View, as the chat mounts them) with
 // Vite and drives it in Chromium at a desktop width and a 390px phone: no drawn text ends in "…";
 // each figure is one Tab stop, a panelled one included; a tap picks a shape (aria-pressed, ring,
-// neighbours lit, the rest faded) and opens the reading panel; its buttons move the pick; a second
+// neighbours lit, the rest faded), opens no reading panel and scrolls nothing; a second
 // tap clears it; Escape clears it and goes no further, and with nothing picked reaches the page;
 // the arrow keys walk a wide drawing's shapes and scroll its box to them; start and end dots take a
 // 32px tap area.
@@ -109,8 +109,13 @@ async function run(width, height, tag) {
 
   if (SHOTS) await page.locator('[data-case="login"]').screenshot({ path: join(SHOTS, `login-${tag}-before.png`) });
 
-  await check(`${tag}: a tap picks a shape, lights its neighbours, fades the rest and opens the panel`, async () => {
+  await check(`${tag}: a tap picks a shape, lights its neighbours, fades the rest, opens no panel and scrolls nothing`, async () => {
+    const scrolled = () => page.evaluate(() => [document.scrollingElement.scrollTop, document.scrollingElement.scrollLeft, ...[...document.querySelectorAll('[data-case="login"] .vis-scroll')].flatMap((b) => [b.scrollTop, b.scrollLeft])].join(","));
+    // Playwright scrolls a target into view before it clicks: do that first, so only the pick could move it.
+    await shape(page, "login", "to borrow in the pool?").scrollIntoViewIfNeeded();
+    const before = await scrolled();
     await shape(page, "login", "to borrow in the pool?").click();
+    await page.waitForTimeout(150);
     const pressed = await page.$$eval(`${fig("login")} [aria-pressed="true"]`, (g) => g.map((x) => x.getAttribute("aria-label")));
     assert(pressed.length === 1 && pressed[0].startsWith("Question: Ready here"), JSON.stringify(pressed));
     const cls = await page.$$eval(`${fig("login")} .vis-node`, (g) => Object.fromEntries(g.map((x) => [x.getAttribute("aria-label"), ["sel", "near", "dim"].find((c) => x.classList.contains(`vis-flow-${c}`))])));
@@ -121,35 +126,17 @@ async function run(width, height, tag) {
     assert(lit === 3, `${lit} lit arrows`);
     const opacity = await page.$eval(`${fig("login")} .vis-node.vis-flow-dim`, (g) => getComputedStyle(g).opacity);
     assert(Number(opacity) < 0.5, `dim opacity ${opacity}`);
-    const panel = await page.locator(`${fig("login")} .vis-flow-read`).innerText();
-    assert(/QUESTION/i.test(panel) && panel.includes("Ready here, or free") && panel.includes("From") && panel.includes("Leads to"), panel);
-    const chips = await page.$$eval(`${fig("login")} .vis-flow-read button`, (b) => b.map((x) => x.textContent));
-    assert(JSON.stringify(chips) === JSON.stringify(["Project has a login? (its own, else its org's)", "yes → The project's login", "no → Limit choice (question 2)"]), JSON.stringify(chips));
-    const order = await page.$eval(`[data-case="login"]`, (c) => {
-      const p = c.querySelector(".vis-flow-read");
-      const notes = c.querySelector(".vis-notes");
-      return !!p && !!notes && !!(p.compareDocumentPosition(notes) & Node.DOCUMENT_POSITION_FOLLOWING);
-    });
-    assert(order, "the panel sits above the notes");
+    assert((await page.$$(`[data-case="login"] .vis-flow-read`)).length === 0, "no reading panel");
+    const after = await scrolled();
+    assert(after === before, `scroll moved: ${before} → ${after}`);
   });
 
   if (SHOTS) await page.locator('[data-case="login"]').screenshot({ path: join(SHOTS, `login-${tag}-picked.png`) });
-
-  await check(`${tag}: a panel button moves the pick; its mark note shows with its number`, async () => {
-    await page.locator(`${fig("login")} .vis-flow-read button`, { hasText: "no → Limit choice" }).click();
-    const pressed = await page.$$eval(`${fig("login")} [aria-pressed="true"]`, (g) => g.map((x) => x.getAttribute("aria-label")));
-    assert(pressed.length === 1 && pressed[0].startsWith("Question: Limit choice"), JSON.stringify(pressed));
-    const panel = await page.locator(`${fig("login")} .vis-flow-read`).innerText();
-    assert(panel.includes("your call in question 2") && /\b2\b/.test(panel), panel);
-    const focused = await page.evaluate(() => document.activeElement?.classList.contains("vis-flow"));
-    assert(focused, "the figure keeps focus after its button went away");
-  });
 
   await check(`${tag}: Escape clears the pick and goes no further; with nothing picked it reaches the page`, async () => {
     const before = await page.evaluate(() => window.escapes);
     await page.keyboard.press("Escape");
     assert((await page.$$eval(`${fig("login")} [aria-pressed="true"]`, (g) => g.length)) === 0, "still picked");
-    assert((await page.$$(`${fig("login")} .vis-flow-read`)).length === 0, "panel still open");
     assert((await page.evaluate(() => window.escapes)) === before, "Escape reached the page while a shape was picked");
     await page.keyboard.press("Escape");
     assert((await page.evaluate(() => window.escapes)) === before + 1, "with nothing picked, Escape goes on");
@@ -176,13 +163,13 @@ async function run(width, height, tag) {
     assert((await page.$$eval(`${fig("login")} [aria-pressed="true"]`, (g) => g.length)) === 0, "Space cleared it");
   });
 
-  await check(`${tag}: a panelled figure picks one shape at a time, its panel under the drawing that holds it`, async () => {
+  await check(`${tag}: a panelled figure picks one shape at a time, with no panel`, async () => {
     await shape(page, "sections", "used to be cut short?").click();
     await shape(page, "sections", "every word shown on the drawing?").click();
     const pressed = await page.$$eval(`${fig("sections")} [aria-pressed="true"]`, (g) => g.length);
     assert(pressed === 1, `${pressed} picked`);
     const where = await page.$$eval(`${fig("sections")} .vis-flow-section`, (ss) => ss.map((s) => !!s.querySelector(".vis-flow-read")));
-    assert(JSON.stringify(where) === "[false,true]", JSON.stringify(where));
+    assert(JSON.stringify(where) === "[false,false]", JSON.stringify(where));
     await page.keyboard.press("Escape");
   });
 
@@ -216,10 +203,10 @@ async function run(width, height, tag) {
     const paint = await page.$eval(`${fig("state")} .vis-flow-hit`, (r) => [getComputedStyle(r).fill, getComputedStyle(r).stroke]);
     assert(/rgba\(0, 0, 0, 0\)|transparent/.test(paint[0]) && paint[1] === "none", `the tap area is drawn: ${paint}`);
     await page.locator(`${fig("state")} [aria-label^="Start"]`).first().click({ position: { x: 2, y: 2 } });
-    const panel = await page.locator(`${fig("state")} .vis-flow-read`).innerText();
-    assert(/START/i.test(panel), panel);
-    await page.locator(`${fig("state")} .vis-flow-read button`).first().click();
-    assert(/STATE/i.test(await page.locator(`${fig("state")} .vis-flow-read`).innerText()), "State");
+    const pressed = await page.$$eval(`${fig("state")} [aria-pressed="true"]`, (g) => g.map((x) => x.getAttribute("aria-label")));
+    assert(pressed.length === 1 && pressed[0].startsWith("Start"), JSON.stringify(pressed));
+    const kinds = await page.$$eval(`${fig("state")} .vis-node`, (g) => g.map((x) => x.getAttribute("aria-label")?.split(":")[0]));
+    assert(kinds.includes("State") && kinds.includes("End"), JSON.stringify(kinds));
     await page.keyboard.press("Escape");
   });
 

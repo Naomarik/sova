@@ -7,6 +7,7 @@
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import type { AttentionDigest, LlmInflight, OverseerInfo, SessionFeedMessage } from "../../shared/protocol";
 import { sameInflight } from "./llm-inflight";
+import { loadSessionGroups } from "./session-groups";
 import { applyMarks, createNudgeThrottle, EMPTY_OVERLAY, type MarksOverlay } from "./signals";
 import { createReconnectingSocket } from "./socket";
 
@@ -64,12 +65,22 @@ export function openSessionFeed(refreshList: () => void): void {
     onOpen: (isReconnect) => {
       setOverlay(EMPTY_OVERLAY);
       setInflight(null);
-      if (isReconnect) nudges.nudge();
+      if (isReconnect) {
+        nudges.nudge();
+        // A group change while the socket was down was never pushed.
+        void loadSessionGroups();
+      }
       for (const l of listeners) l.resync();
     },
     onMessage: (msg) => {
       if (msg.type === "marks") setOverlay((o) => applyMarks(o, msg));
       else if (msg.type === "list_changed") nudges.nudge();
+      // A group made, renamed, reordered or deleted, or a member in or out, in any window or by the Overseer: the
+      // groups and the rows' groupId both change (§app.session-list/groups).
+      else if (msg.type === "groups_changed") {
+        void loadSessionGroups();
+        nudges.nudge();
+      }
       // Never a reason to re-read the list: the count is its own fact.
       else if (msg.type === "llm_inflight") setInflight(msg.inflight);
       else if (msg.type === "attention") for (const l of listeners) l.attention(msg.digest);

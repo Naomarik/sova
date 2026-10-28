@@ -4,7 +4,7 @@ import type { ProjectOffersAnswer, SessionOffersAnswer } from "../shared/session
 import { OrgError } from "./org-error";
 import { resolveSessionPath } from "./paths";
 import { readProject } from "./projects/spaces";
-import { canonicalRoot, chooseOfferAt, notNowAt, OfferRefusal, projectOffers, readOffersFile, sessionOffersAt, sessionPathOf, showOffer } from "./session-offers";
+import { canonicalRoot, chooseAllAt, chooseOfferAt, notNowAt, OfferRefusal, projectOffers, readOffersFile, sessionOffersAt, sessionPathOf, showOffer } from "./session-offers";
 import { approveRuns } from "./session-offers-trust";
 
 /**
@@ -67,19 +67,27 @@ export function registerSessionOfferRoutes(app: Hono<any>): void {
         if (!from || !existsSync(from)) throw new OfferRefusal("The session in from doesn't exist.", 404);
       }
       if (b.note !== undefined && typeof b.note !== "string") throw new OfferRefusal("note must be a string", 400);
-      const card = await showOffer({ path, offer: offerName(b.offer), by: "another-chat", ...(typeof b.note === "string" ? { note: b.note } : {}), ...(from ? { from } : {}) });
+      const card = await showOffer({ path, offer: offerName(b.offer), by: "another-chat", ...(typeof b.note === "string" ? { note: b.note } : {}), ...(from ? { from } : {}), ...(b.rows !== undefined ? { rows: b.rows } : {}) });
       return c.json({ card }, 200, NO_STORE);
     }),
   );
-  // A button's click (§chat.offers/card).
+  // A button's click (§chat.offers/card): on a rows card, one row's (`row`), or the all button over the rows it
+  // named (`all`, the row ids its confirm listed).
   app.post(
     "/api/session-offers/choose",
     handle(async (c) => {
       const b = await body(c);
       const path = sessionPath(b.path);
       if (typeof b.card !== "string" || !b.card) throw new OfferRefusal("card names an offer card (of_N)", 400);
+      if (b.all !== undefined) {
+        if (!Array.isArray(b.all) || !b.all.length || b.all.length > 10 || !b.all.every((r) => typeof r === "string" && /^r_[1-9][0-9]*$/.test(r))) throw new OfferRefusal("all lists the row ids its confirm named (r_N)", 400);
+        if (b.button !== undefined || b.row !== undefined) throw new OfferRefusal("all goes without button and row", 400);
+        return c.json({ card: await chooseAllAt(path, b.card, b.all as string[]) }, 200, NO_STORE);
+      }
+      if (b.row !== undefined && (typeof b.row !== "string" || !/^r_[1-9][0-9]*$/.test(b.row))) throw new OfferRefusal("row names a row of the card (r_N)", 400);
+      if (b.button === undefined) throw new OfferRefusal("Name the button pressed (button, from 0), or all on a rows card", 400);
       if (typeof b.button !== "number" || !Number.isInteger(b.button) || b.button < 0) throw new OfferRefusal("button is the button's number, from 0", 400);
-      return c.json({ card: await chooseOfferAt(path, b.card, b.button) }, 200, NO_STORE);
+      return c.json({ card: await chooseOfferAt(path, b.card, b.button, b.row as string | undefined) }, 200, NO_STORE);
     }),
   );
   // Not Now, and its undo.

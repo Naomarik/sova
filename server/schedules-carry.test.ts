@@ -189,7 +189,7 @@ function s1Fixture(root: string, pin: string): ScheduleStore {
     next: { at: Date.parse("2026-10-05T12:00:00Z"), trigger: "every 6h" },
     fires,
     day: { key: "2026-10-05", n: 2 },
-    ready: { "/wt/feat-a": { branch: "feat/a", at: T0 - 2 * HOUR, out: true }, "/wt/feat-b": { branch: "feat/b", at: T0 - HOUR } },
+    ready: { "/wt/feat-a": { branch: "feat/a", commit: "a".repeat(40), at: T0 - 2 * HOUR }, "/wt/feat-b": { branch: "feat/b", at: T0 - HOUR } as never /* a row stored before commits were */ },
   };
   return { version: 1, seq: 1, schedules: [s1], logins: { default: { state: "ready", name: "Claude" } } };
 }

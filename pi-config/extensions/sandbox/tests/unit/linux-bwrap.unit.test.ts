@@ -13,7 +13,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { classifyRun, type Policy } from "../../backend.ts";
 import { findExecutable, LinuxBwrapBackend, mountPlan, parseProcNetUnix, runCapture, type TmpSocketScan, tmpSockets } from "../../backends/linux-bwrap.ts";
-import { scrubEnv } from "../../env.ts";
+import { GIT_CLEANUP_FILE, scrubEnv } from "../../env.ts";
 import { startProxy } from "../../proxy.ts";
 
 const HAVE_BWRAP = process.platform === "linux" && !!findExecutable("bwrap");
@@ -706,4 +706,48 @@ test("secretEnv: bwrap reads it from an fd (--args), never from argv or the retu
 	assert.ok(existsSync(join(ws, "made", "here")), "the mount point of a directory bind");
 	const missing = await b.confine({ argv: ["/bin/true"], cwd: ws, policy: { ...policy, binds: [{ path: join(ws, "f"), source: join(ws, "nope") }] } });
 	assert.equal(missing.ok, false);
+});
+
+/** The `git maintenance` children a trace2 event log records being started. */
+function maintenanceChildren(trace: string): string[][] {
+	const out: string[][] = [];
+	for (const line of trace.split("\n")) {
+		if (!line.trim()) continue;
+		const e = JSON.parse(line) as { event?: string; argv?: string[] };
+		if (e.event === "child_start" && e.argv?.some((a) => a === "maintenance" || a === "gc")) out.push(e.argv);
+	}
+	return out;
+}
+
+/** The host's env for git with no git config variable of any caller's in it (fixture setup). */
+function plainGitEnv(): Record<string, string> {
+	const env: Record<string, string> = {};
+	for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !k.startsWith("GIT_CONFIG")) env[k] = v;
+	return env;
+}
+
+test("git inside starts no background cleanup: maintenance.auto false and gc.auto 0, whatever the command's own GIT_CONFIG_COUNT", { skip }, async (t) => {
+	const ws = scratch(t, "sbx-ws-");
+	const tmp = scratch(t, "sbx-tmp-");
+	const id = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"];
+	execFileSync("git", ["init", "-q", ws], { env: plainGitEnv() });
+	execFileSync("git", [...id, "commit", "-q", "--allow-empty", "-m", "first"], { cwd: ws, env: plainGitEnv() });
+	// An allowlisted GIT_CONFIG_NOSYSTEM would make git skip the file: the backend drops it.
+	const b = new LinuxBwrapBackend();
+	const r = await run(b, makePolicy(ws, tmp, { env: { ...scrubEnv(process.env), GIT_CONFIG_NOSYSTEM: "1" } }), [
+		"git config --get maintenance.auto",
+		"git config --get gc.auto",
+		"GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.name GIT_CONFIG_VALUE_0=x git config --get maintenance.auto",
+		'echo "sys=$GIT_CONFIG_SYSTEM"',
+		`GIT_TRACE2_EVENT=/tmp/trace.json git ${id.join(" ")} commit -q --allow-empty -m inside`,
+	].join("; "));
+	assert.equal(r.code, 0, r.output);
+	assert.deepEqual(r.output.trim().split("\n"), ["false", "0", "false", `sys=/tmp/${GIT_CLEANUP_FILE}`]);
+	assert.equal(r.confined.env.GIT_CONFIG_NOSYSTEM, undefined);
+	assert.deepEqual(maintenanceChildren(readFileSync(join(tmp, "trace.json"), "utf8")), [], "the commit inside started no maintenance");
+	// The control, in the same sandbox: a command that names its own GIT_CONFIG_SYSTEM (one of the
+	// documented overrides) does start one, so the trace can tell the two apart.
+	const c = await run(b, makePolicy(ws, tmp), `GIT_CONFIG_SYSTEM=/dev/null GIT_TRACE2_EVENT=/tmp/control.json git ${id.join(" ")} commit -q --allow-empty -m control`);
+	assert.equal(c.code, 0, c.output);
+	assert.equal(maintenanceChildren(readFileSync(join(tmp, "control.json"), "utf8")).length, 1);
 });

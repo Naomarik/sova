@@ -13,6 +13,7 @@ import type { LinkRefusal, PeerLinkMessageResult } from "../shared/mesh-links";
 import { acquireChatHandle, BusyError, chatHandleById } from "./chat-handle";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { getSessionSummary } from "./sessions-index";
+import { ARCHIVED_REFUSAL } from "./archived-sessions";
 
 export { notifyLinksChanged, setLinkOrigin, setLinksSource } from "./chat-handle";
 
@@ -40,7 +41,7 @@ export async function deliverLinkMessage(path: string, framed: string): Promise<
     if (s.baton) return refused("special", "That is a baton session: only its participants write in it.");
     if (s.org) return refused("special", "That is an organization's session.");
     if (s.workerSession) return refused("special", "That is a worker's session.");
-    if (s.archived) return refused("archived", "That session is archived.");
+    if (s.archived) return refused("archived", ARCHIVED_REFUSAL);
     if (s.live) return refused("tui-live", `It is open in a terminal (pid ${s.live.pid}), so its host must not write to it.`);
     let chat;
     try {

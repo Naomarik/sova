@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ListedProfile, ProfilesListing } from "../../shared/profiles";
 import type { SessionSummary } from "../../shared/protocol";
-import { CARD_FILTER_AFTER, cardCount, cardMatches, cardUnusable, mySettingsCaption, pickerProfiles, pickerSections, profileCaption, profileSummary } from "./profiles";
+import { CARD_FILTER_AFTER, cardCount, cardMatches, cardUnusable, mySettingsCaption, mySettingsCaptionParts, pickerProfiles, pickerSections, profileCaption, profileCaptionParts, profileSettingsLine, profileSummary } from "./profiles";
+import { modeGlyphs } from "./mode-glyphs";
 import { recentEligible } from "./recent";
 import { setSetupContextOpen, setupContextOpen } from "./setup-fold";
 
@@ -95,6 +96,84 @@ test("the picker's order: My settings, Yours, This project, then a shipped profi
     ],
   );
   assert.deepEqual(pickerSections(pickerProfiles(listing([]))).map((x) => x.id), ["mine"], "an empty section is left out");
+});
+
+const COUNTED = [
+  { id: "off", name: "Off", footprint: "the agent picks", models: 0 },
+  { id: "claude-subs", name: "Claude subs", footprint: "Opus 5.5 · Sonnet 5.5", models: 2 },
+];
+
+test("a card's caption parts: only what the profile sets, as glyphs, the words kept as its label", () => {
+  const effortOnly = profileCaptionParts({ thinking: "low", description: "ignored" }, COUNTED);
+  assert.deepEqual(effortOnly, { kind: "glyphs", label: "low", parts: [{ kind: "model", name: null, level: "low", title: "effort low" }] }, "effort only: the ring alone");
+  const modelOnly = profileCaptionParts({ model: "claude-code-cli/claude-opus-5-5", description: "" }, COUNTED);
+  assert.deepEqual(modelOnly.kind === "glyphs" && modelOnly.parts, [{ kind: "model", name: "Opus 5.5", level: null, title: "Opus 5.5" }], "model only: the name alone");
+  const full = profileCaptionParts(
+    { model: "zai/glm-5.3", thinking: "high", subagents: "claude-subs", mode: "delegate", minorModes: ["align", "vis"], description: "ignored" },
+    COUNTED,
+  );
+  assert.equal(full.kind, "glyphs");
+  if (full.kind !== "glyphs") return;
+  assert.equal(full.label, "glm-5.3 · high · subagents: Opus 5.5 · Sonnet 5.5 · delegate · align, vis");
+  assert.deepEqual(
+    full.parts.map((p) => p.kind),
+    ["model", "subagents", "mode", "mode", "mode"],
+    "model and effort, subagents, then the mode icons",
+  );
+  assert.deepEqual(full.parts[1], { kind: "subagents", text: "2", title: "subagents: Opus 5.5 · Sonnet 5.5" }, "the count of distinct models");
+  assert.deepEqual(
+    full.parts.slice(2).map((p) => (p.kind === "mode" ? p.glyph : null)),
+    [
+      { kind: "icon", id: "delegate", icon: "mode-delegate" },
+      { kind: "icon", id: "align", icon: "mode-align" },
+      { kind: "icon", id: "vis", icon: "mode-vis" },
+    ],
+  );
+  const off = profileCaptionParts({ subagents: "off", description: "" }, COUNTED);
+  assert.deepEqual(off.kind === "glyphs" && off.parts, [{ kind: "subagents", text: "off", title: "subagents: off" }]);
+  const older = profileCaptionParts({ subagents: "claude-subs", description: "" }, SUBAGENTS);
+  assert.deepEqual(older.kind === "glyphs" && older.parts[0], { kind: "subagents", text: "claude-subs", title: "subagents: Opus 5.5 · Sonnet 5.5" }, "an older server sends no count: the id, never a parsed footprint");
+});
+
+test("the mode glyphs: the major mode's (normal the sliders), each built-in minor's icon, a project mode's letter", () => {
+  assert.deepEqual(modeGlyphs("normal", ["spec", "codemode", "memory"], ["deploy-notes", "9lives"]), [
+    { kind: "icon", id: "normal", icon: "sliders" },
+    { kind: "icon", id: "spec", icon: "mode-spec" },
+    { kind: "icon", id: "codemode", icon: "mode-codemode" },
+    { kind: "icon", id: "memory", icon: "mode-memory" },
+    { kind: "letter", id: "deploy-notes", letter: "D" },
+    { kind: "letter", id: "9lives", letter: "9" },
+  ]);
+  assert.deepEqual(modeGlyphs("delegate"), [{ kind: "icon", id: "delegate", icon: "mode-delegate" }]);
+  assert.deepEqual(modeGlyphs(null, ["align"]), [{ kind: "icon", id: "align", icon: "mode-align" }]);
+});
+
+test("a card's caption stays words when it isn't settings: a description, a disabled reason", () => {
+  assert.deepEqual(profileCaptionParts({ description: "Reads sessions; no shell." }, COUNTED), { kind: "words", text: "Reads sessions; no shell." }, "description only");
+  assert.deepEqual(
+    profileCaptionParts({ thinking: "high", description: "" }, COUNTED, "Provider zai is turned off in Settings → Models."),
+    { kind: "words", text: "Provider zai is turned off in Settings → Models.", tone: "warn" },
+    "disabled: its reason, in the warn tone, over the settings",
+  );
+  const none = profileCaptionParts({ minorModes: [], description: "x" });
+  assert.deepEqual(none.kind === "glyphs" && none.parts, [{ kind: "words", text: "no minor modes", title: "no minor modes" }], "[] sets something no glyph draws: its words");
+});
+
+test("My settings' caption parts: the modes first, then model and effort", () => {
+  const mine = mySettingsCaptionParts({ mode: "normal", minorModes: ["spec"], model: "claude-code-cli/claude-opus-5-5", thinking: "max" });
+  assert.equal(mine.kind === "glyphs" && mine.label, "Normal · Spec · Opus 5.5 · max");
+  assert.deepEqual(mine.kind === "glyphs" && mine.parts.map((p) => (p.kind === "mode" ? p.glyph.id : p.kind)), ["normal", "spec", "model"]);
+  assert.deepEqual(mine.kind === "glyphs" && mine.parts[0], { kind: "mode", glyph: { kind: "icon", id: "normal", icon: "sliders" }, title: "mode: normal" }, "normal: the sliders stand for it");
+  assert.deepEqual(mySettingsCaptionParts(null), { kind: "words", text: "Your own settings" });
+});
+
+test("the picked profile's settings line spells out what the card's glyphs draw", () => {
+  assert.equal(
+    profileSettingsLine({ model: "claude-code-cli/claude-opus-5-5", thinking: "high", subagents: "claude-subs", mode: "delegate", minorModes: ["align", "spec"] }, COUNTED),
+    "Model: Opus 5.5 · Effort: high · Subagents: Claude subs (Opus 5.5, Sonnet 5.5) · Main mode: delegate · Add-on modes: align, spec",
+  );
+  assert.equal(profileSettingsLine({ thinking: "low", minorModes: [] }), "Effort: low · Add-on modes: none", "what it leaves unset is left out");
+  assert.equal(profileSettingsLine({}), null);
 });
 
 test("My settings' caption: the mode, minor modes, model and effort it stands for", () => {

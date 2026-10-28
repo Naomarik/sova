@@ -1,0 +1,57 @@
+{
+  "§mesh.ui/card": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.transcript/landing-page"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/App.tsx",
+      "src/components/MeshView.tsx",
+      "src/extensions.css"
+    ]
+  },
+  "§mesh.ui/page": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/MeshView.tsx",
+      "src/lib/claude-pool.ts",
+      "src/lib/mesh.ts",
+      "src/mesh.css"
+    ]
+  },
+  "§mesh.ui/settings": {
+    "kind": "behavior",
+    "requires": [
+      "§app/settings-dialog"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/MeshSettings.tsx",
+      "src/lib/mesh-draft.ts",
+      "src/components/SettingsDialog.tsx",
+      "server/mesh/index.ts",
+      "src/lib/settings-nav.ts",
+      "src/lib/settings-nav.test.ts",
+      "src/lib/settings-draft.test.ts"
+    ]
+  },
+  "§mesh/ui": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/MeshView.tsx",
+      "src/mesh.css"
+    ],
+    "notOwned": [
+      "§mesh.peers/grants",
+      "§app.claude-logins/pool",
+      "§mesh/details"
+    ]
+  }
+}

@@ -7,7 +7,9 @@
 //   - a hit that no entry covers fails (a new direct read, or an edited line: re-justify it);
 //   - an entry that no hit uses fails (stale: delete it, so the list shrinks);
 //   - an entry without a real reason fails;
-//   - compared with the committed allowlist at the merge base with master, no entry may be added.
+//   - compared with the committed allowlist at the merge base with master, no entry may be added. A reworded line is
+//     a replacement, not growth, only when its entry is in the same file with the same rule, the file has no more
+//     entries than before, the old line's text is gone from the file, and the new entry gives a real reason.
 // Comment lines are skipped (they cannot read a file); test files, tests/ and fixtures/ directories are exempt
 // (new tests use tests/spec-fixture.mjs).
 import { readFileSync, existsSync } from "node:fs";
@@ -69,9 +71,11 @@ export const globRe = (g) => new RegExp(`^${g.split("**").map((p) => p.split("*"
  * Compare hits with an allowlist. allow = { paths: [{ glob, reason }], lines: { file: [{ rule, text, reason }] } }.
  * scans = Map<file, hits>. → { problems: string[], used: number, unlisted: [{file, line, rule, text}] }
  */
+/** An allowlist reason that justifies nothing: missing, too short to say why, or a placeholder. */
+const bad = (reason) => typeof reason !== "string" || reason.trim().length < 12 || /\b(todo|tbd|fixme|xxx)\b/i.test(reason);
+
 export function compare(scans, allow) {
   const problems = [], unlisted = [];
-  const bad = (reason) => typeof reason !== "string" || reason.trim().length < 12 || /\b(todo|tbd|fixme|xxx)\b/i.test(reason);
   for (const p of allow.paths ?? []) if (bad(p.reason)) problems.push(`allowlist path ${p.glob}: needs a real reason`);
   const usedPaths = new Set();
   let used = 0;
@@ -101,20 +105,42 @@ export function scanRepo(repo, files) {
   return scans;
 }
 
-/** Entries of `after` that `before` lacks (by file, rule, text multiset; paths by glob). */
-export function growth(before, after) {
+/**
+ * Entries of `after` that `before` lacks (by file, rule, text multiset; paths by glob).
+ * A changed entry is a replacement, not growth, only when ALL hold: the same file; the same rule; the file's entry
+ * count in `after` is <= its count in `before`; the old entry's text no longer appears as a line of the file
+ * (`textOf(file)`, the file's current text; without it nothing can be shown gone, so every change is growth); and
+ * the new entry carries a real reason. Each old entry stands for at most one replacement. `replaced`, when given,
+ * collects the replacements accepted ({ file, rule, from, to }).
+ */
+export function growth(before, after, { textOf, replaced } = {}) {
   const out = [];
   const beforePaths = new Set((before.paths ?? []).map((p) => p.glob));
   for (const p of after.paths ?? []) if (!beforePaths.has(p.glob)) out.push(`path ${p.glob} added`);
   for (const [f, entries] of Object.entries(after.lines ?? {})) {
-    const pool = [...(before.lines?.[f] ?? [])];
+    const was = before.lines?.[f] ?? [];
+    const pool = [...was];
+    const unmatched = [];
     for (const e of entries) {
       const i = pool.findIndex((x) => x.rule === e.rule && x.text === e.text);
-      if (i >= 0) pool.splice(i, 1); else out.push(`${f} "${e.text.slice(0, 120)}" (${e.rule}) added`);
+      if (i >= 0) pool.splice(i, 1); else unmatched.push(e);
+    }
+    if (!unmatched.length) continue;
+    let text = null;
+    try { text = textOf ? textOf(f) : null; } catch { text = null; }
+    const lines = typeof text === "string" ? new Set(text.split("\n").map((l) => l.trim())) : null;
+    const noMore = entries.length <= was.length;
+    for (const e of unmatched) {
+      const i = noMore && lines && !bad(e.reason) ? pool.findIndex((g) => g.rule === e.rule && !lines.has(g.text)) : -1;
+      if (i >= 0) { const [g] = pool.splice(i, 1); replaced?.push({ file: f, rule: e.rule, from: g.text, to: e.text }); continue; }
+      out.push(`${f} "${e.text.slice(0, 120)}" (${e.rule}) added`);
     }
   }
   return out;
 }
+
+/** A textOf for growth(): a repo file's current text, or null when it is gone. */
+export const repoText = (repo) => (rel) => { const p = join(repo, rel); return existsSync(p) ? readFileSync(p, "utf8") : null; };
 
 /**
  * The allowlist as committed at the merge base of HEAD and master (or main), or null when that commit has none

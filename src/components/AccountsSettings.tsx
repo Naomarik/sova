@@ -144,6 +144,8 @@ function LoginRow(props: {
   /** What Remove's confirmation says goes away and what stays. */
   removeText: string;
   onRemove: () => void;
+  /** The projects and organizations that use it (§app.claude-logins/project-login). */
+  usedBy?: string[];
 }) {
   const [naming, setNaming] = createSignal(false);
   const [draft, setDraft] = createSignal("");
@@ -209,6 +211,9 @@ function LoginRow(props: {
           </form>
         </Show>
         {props.facts}
+        <Show when={props.usedBy?.length}>
+          <span class="accounts-login-fact">Used by: {props.usedBy!.join(", ")}</span>
+        </Show>
       </div>
       <span class="accounts-login-chips">{props.chips}</span>
       <div class="accounts-login-actions">
@@ -249,7 +254,10 @@ function LoginRow(props: {
       </div>
       <Show when={confirm()}>
         <div class="accounts-login-confirm" role="group" aria-label={`Remove ${called()}`}>
-          <p class="field-hint">{props.removeText}</p>
+          <p class="field-hint">
+            {props.usedBy?.length ? `Used by ${props.usedBy.join(", ")}: they go back to No preference. ` : ""}
+            {props.removeText}
+          </p>
           <span class="button-row">
             <button type="button" class="button button-sm button-ghost" onClick={() => setConfirm(false)}>
               Cancel
@@ -279,6 +287,8 @@ interface LoginActions {
   onClear: (id: string) => void;
   onRemove: (id: string) => void;
   onRename: (id: string, label: string | null) => void;
+  /** Login id → who uses it (GET /api/claude/accounts `usedBy`). */
+  usedBy?: Record<string, string[]>;
 }
 
 /** "5h 42% · weekly 18%" of the account's latest published reading (its logins share one quota). */
@@ -366,6 +376,7 @@ function PoolLogins(props: LoginActions & {
                     return (
                       <LoginRow
                         id={l.id}
+                        usedBy={props.usedBy?.[l.id]}
                         name={name()}
                         {...(l.identity?.email ? { account: l.identity.email } : {})}
                         {...(l.label ? { label: l.label } : {})}
@@ -471,6 +482,7 @@ function LocalLogins(props: LoginActions & { logins: ClaudeLoginRow[]; onOrder: 
                   return (
                     <LoginRow
                       id={l.id}
+                      usedBy={props.usedBy?.[l.id]}
                       name={name()}
                       {...(l.identity?.email ? { account: l.identity.email } : {})}
                       {...(l.label ? { label: l.label } : {})}
@@ -663,6 +675,7 @@ export function AccountsSettingsSection() {
                   onClear={actions.onClear}
                   onRemove={actions.onRemove}
                   onRename={actions.onRename}
+                  usedBy={loaded()?.usedBy}
                 />
               )}
             </Show>
@@ -674,6 +687,7 @@ export function AccountsSettingsSection() {
               onClear={actions.onClear}
               onRemove={actions.onRemove}
               onRename={actions.onRename}
+              usedBy={loaded()?.usedBy}
             />
             <Show when={own()}>
               {(l) => (
@@ -685,6 +699,9 @@ export function AccountsSettingsSection() {
                         <span class="accounts-login-name">{nameOf(l())}</span>
                         <span class="accounts-login-fact">{factsOf(l())}</span>
                         <Show when={ownShares()}>{(email) => <span class="accounts-login-fact">Same account as {email()} above: they share one quota.</span>}</Show>
+                        <Show when={loaded()?.usedBy?.default?.length}>
+                          <span class="accounts-login-fact">Used by: {loaded()!.usedBy!.default!.join(", ")}</span>
+                        </Show>
                       </div>
                       <Standing login={l()} />
                       <div class="accounts-login-actions">

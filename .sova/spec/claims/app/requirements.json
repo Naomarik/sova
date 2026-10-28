@@ -1,0 +1,282 @@
+{
+  "§app.requirements/conversation-drafts": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.requirements/drafts-with-provenance",
+      "§app/baton",
+      "§app.baton/hand-off"
+    ],
+    "code": [
+      "server/conversation-draft.ts",
+      "server/conversation-draft-store.ts",
+      "server/conversation-draft-tools.ts",
+      "server/spec-draft-writer.ts",
+      "shared/conversation-drafts.ts",
+      "shared/baton.ts",
+      "server/conversation-draft.test.ts",
+      "server/conversation-draft.integration.test.ts",
+      "server/conversation-draft-tools.test.ts"
+    ]
+  },
+  "§app.requirements/decisions": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/decisions.ts",
+      "server/reconcile.ts",
+      "server/reconcile.test.ts",
+      "server/test-wait.ts",
+      "server/reconcile.integration.test.ts",
+      "server/spec-tool-fake.ts",
+      "server/spec-draft-writer.ts",
+      "shared/decisions.ts",
+      "server/decisions-routes.ts",
+      "src/components/ProjectPage.tsx",
+      "src/lib/decisions-view.ts",
+      "src/lib/decisions-view.test.ts",
+      "src/lib/api.ts",
+      "src/projects.css",
+      "statecharts/src/sova/statecharts/rules/baton.cljc",
+      "statecharts/src/sova/statecharts/baton.cljc",
+      "statecharts/test/sova/statecharts/refit/baton_test.cljc",
+      "server/decision-markers.test.ts",
+      "server/vendor/statecharts.js",
+      "src/components/ProjectOrgPart.tsx"
+    ],
+    "requires": [
+      "§app.baton/hand-off"
+    ]
+  },
+  "§app.requirements/draft-approval": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.requirements/conversation-drafts",
+      "§app.requirements/promotion",
+      "§app.requirements/promotion-commit"
+    ],
+    "code": [
+      "server/conversation-draft-routes.ts",
+      "server/conversation-draft.ts",
+      "server/reconcile.ts",
+      "shared/conversation-drafts.ts",
+      "server/conversation-draft-tools.test.ts"
+    ]
+  },
+  "§app.requirements/draft-specs": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.requirements/conversation-drafts",
+      "§mesh.peers/grants"
+    ],
+    "code": [
+      "server/conversation-draft-routes.ts",
+      "shared/conversation-drafts.ts",
+      "server/app.ts",
+      "server/conversation-draft-tools.test.ts",
+      "server/mesh/access.ts",
+      "server/mesh/access.test.ts"
+    ]
+  },
+  "§app.requirements/drafts-with-provenance": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/spec-draft-writer.ts",
+      "server/reconcile.test.ts",
+      "server/test-wait.ts",
+      "server/reconcile.integration.test.ts",
+      "server/spec-tool-fake.ts",
+      "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+      "server/overseer-org-part.test.ts"
+    ],
+    "requires": [
+      "§app.requirements/decisions"
+    ]
+  },
+  "§app.requirements/frozen-spec": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/reconcile.ts",
+      "server/decisions-routes.ts",
+      "server/decisions-routes.test.ts",
+      "server/reconcile.test.ts",
+      "server/test-wait.ts",
+      "server/reconcile.integration.test.ts",
+      "server/spec-tool-fake.ts"
+    ],
+    "requires": [
+      "§app.organizations/projects",
+      "§app.requirements/promotion"
+    ]
+  },
+  "§app.requirements/lock-in": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.requirements/conversation-drafts"
+    ],
+    "code": [
+      "server/conversation-draft-store.ts",
+      "server/conversation-draft-tools.ts",
+      "server/baton.ts",
+      "server/conversation-draft-tools.test.ts"
+    ]
+  },
+  "§app.requirements/owner-area": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.requirements/routing",
+      "§app.requirements/promotion",
+      "§app.baton/hand-off",
+      "§app.organizations/roster",
+      "§app.organizations/stakeholder"
+    ],
+    "code": [
+      "shared/decisions.ts",
+      "shared/baton.ts",
+      "server/decisions.ts",
+      "server/reconcile.ts",
+      "server/decisions-routes.ts",
+      "server/baton-loadout.ts",
+      "server/baton-prompt.md",
+      "src/components/ProjectPage.tsx",
+      "src/lib/api.ts",
+      "src/projects.css",
+      "server/baton-owner-area.test.ts",
+      "server/reconcile.test.ts",
+      "server/test-wait.ts",
+      "server/reconcile.integration.test.ts",
+      "server/spec-tool-fake.ts",
+      "server/decisions-routes.test.ts",
+      "server/baton-handoff.test.ts",
+      "server/project-overseer-tools.ts",
+      "shared/decisions.test.ts"
+    ]
+  },
+  "§app.requirements/promotion": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/reconcile.ts",
+      "server/spec-draft-writer.ts",
+      "server/reconcile.test.ts",
+      "server/test-wait.ts",
+      "server/reconcile.integration.test.ts",
+      "server/spec-tool-fake.ts",
+      "server/project-worktrees.ts"
+    ],
+    "requires": [
+      "§app.requirements/drafts-with-provenance",
+      "§app.requirements/decisions"
+    ]
+  },
+  "§app.requirements/promotion-commit": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.requirements/promotion",
+      "§app.project-overseer/coding-worktrees"
+    ],
+    "code": [
+      "server/project-worktrees.ts",
+      "server/project-worktrees.test.ts",
+      "server/reconcile.ts",
+      "server/spec-draft-writer.ts",
+      "shared/decisions.ts",
+      "src/components/ProjectPage.tsx",
+      "src/lib/coding-worktrees.ts"
+    ]
+  },
+  "§app.requirements/reconciler": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/reconcile.ts",
+      "server/decide.ts",
+      "server/decide-settings.ts",
+      "shared/protocol.ts",
+      "server/reconcile.test.ts",
+      "server/test-wait.ts",
+      "server/reconcile.integration.test.ts",
+      "server/spec-tool-fake.ts",
+      "shared/decisions.ts",
+      "src/lib/decisions-view.ts",
+      "src/lib/decisions-view.test.ts",
+      "src/components/ProjectPage.tsx"
+    ],
+    "requires": [
+      "§app.decisions/interface",
+      "§app.decisions/privacy",
+      "§app.requirements/decisions",
+      "§app.requirements/drafts-with-provenance"
+    ]
+  },
+  "§app.requirements/rejected": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed"
+  },
+  "§app.requirements/routing": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/reconcile.ts",
+      "server/sessions-index.ts",
+      "server/reconcile.test.ts",
+      "server/test-wait.ts",
+      "server/reconcile.integration.test.ts",
+      "server/spec-tool-fake.ts",
+      "shared/decisions.ts",
+      "server/project-overseer.ts",
+      "server/baton.ts",
+      "shared/baton.ts",
+      "server/decisions.ts",
+      "src/components/ProjectPage.tsx",
+      "statecharts/src/sova/statecharts/conflict.cljc",
+      "statecharts/test/sova/statecharts/refit/pins_test.cljc"
+    ],
+    "requires": [
+      "§app/baton",
+      "§app.baton/needs-you",
+      "§app.organizations/roster",
+      "§app.requirements/reconciler"
+    ]
+  },
+  "§app/requirements": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/decisions.ts",
+      "server/decisions-routes.ts",
+      "server/decisions-routes.test.ts",
+      "src/lib/decisions-view.ts",
+      "src/lib/decisions-view.test.ts",
+      "src/components/ProjectPage.tsx",
+      "server/conversation-draft-routes.ts",
+      "shared/conversation-drafts.ts"
+    ],
+    "notOwned": [
+      "§app.baton/hand-off",
+      "§app.organizations/stakeholder",
+      "§app/decisions"
+    ]
+  }
+}

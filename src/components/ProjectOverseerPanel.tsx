@@ -1,3 +1,4 @@
+import { ClaudeLoginCard } from "./ClaudeLoginCard";
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, onMount, Show } from "solid-js";
 import { TODO_TEXT_MAX, type IdeaRecord, type OverseerAction, type OverseerTodosInfo } from "../../shared/protocol";
 import {
@@ -360,6 +361,7 @@ export function OverseerSettings(props: { po: ProjectOverseer; /** An organizati
               </SessionModel>
             </div>
           </section>
+          <ClaudeLoginCard kind="project" id={po().projectId()} placed={props.placed} />
           <section class="card orgs-section" aria-labelledby="project-extra-label">
             <ExtraInstructions
               saved={i().settings.extraSystemPrompt}

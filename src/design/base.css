@@ -594,6 +594,14 @@ input.input { text-overflow: ellipsis; }
 .setup-oid         { flex: none; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
 .setup-subject     { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink); }
 .setup-ago         { flex: none; color: var(--color-ink-muted); white-space: nowrap; }
+.setup-gitdir .setup-num { margin-left: 0; }
+/* Stuck or overdue cleanup: warn ink with the alert icon; the words carry it on their own, and
+   wrap beside the icon rather than under it. */
+.setup-gitdir-warn       { flex-wrap: nowrap; align-items: flex-start; }
+.setup-gitdir-warn > span { min-width: 0; }
+.setup-gitdir-warn,
+.setup-gitdir-warn .icon { color: var(--status-warn); }
+.setup-gitdir-warn .icon { flex: none; margin-top: 2px; }
 /* The Tools group (§chat.transcript/setup-card-tools): a disclosure of disclosures, closed by
    default. Each summary is the whole 44px target; the twist turns when it opens. The heading keeps
    the section's eyebrow, the total its mono figures, so a closed group reads like the others. */
@@ -3405,21 +3413,31 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   color: var(--color-ink-muted);
 }
 .composer-reason { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--color-ink-2); }
+/* With no reason it takes no place, so its two gaps go to the model's name in a narrow foot. */
+.composer-reason:empty { display: none; }
+/* A narrow foot is a row of icons: half the gap between them, so the model's short name ("Opus
+   5.5") still reads whole at 320px. It contracts, so a @media floor under the container query. */
+@container composer (max-width: 479px) {
+  .composer-foot { gap: var(--space-2); }
+}
+@media (max-width: 479px) {
+  .composer-foot { gap: var(--space-2); }
+}
 /* First connect's "Connecting…": held back 300ms so a quick switch never flashes it. Reduced motion
    collapses the duration globally but keeps the delay. */
 .composer-reason[data-soft] { animation: composer-reason-in var(--dur-base) var(--ease-standard) 300ms both; }
 @keyframes composer-reason-in { from { opacity: 0; } to { opacity: 1; } }
 
-/* The model indicator: this session's model and thinking level, and the
-   flyout's second trigger. First in the foot, and it stays at every width.
-   The id is the one part that shrinks, so a long ref ellipsizes instead of
-   pushing the mode switch out. */
+/* The model indicator: this session's model and thinking level as one item, the effort ring then
+   the model's short name, and the flyout's second trigger. First in the foot, and it stays at every
+   width. The name is the one part that shrinks, so a long one ellipsizes instead of pushing the mode
+   switch out; the ring never shrinks. */
 
 .composer-model {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   flex: 0 1 auto;
   min-width: 0;
   min-height: var(--control-sm);
@@ -3449,17 +3467,39 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.composer-model-meta { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; }
-.composer-model-sep,
-.composer-model-level { flex: none; }
-.composer-model-caret { flex: none; color: var(--color-ink-muted); transform: rotate(180deg); }
 .composer-model .live-dot { flex: none; }
+
+/* The effort ring (§chat.composer/behavior): the waiting badge's 270° open ring, about 17px, its
+   arc filled to the level on one seven-step scale, a mark in the middle (a dot, L M H X, a bolt).
+   Quiet ink, never the accent: the track the control-border token, the arc and mark ink-2. The
+   same ring sits beside each level of the flyout's Thinking ladder and on the profile cards. */
+.effort-ring { display: block; flex: none; width: 17px; height: 17px; overflow: visible; }
+.effort-ring-track,
+.effort-ring-arc { fill: none; stroke-width: 3.4; stroke-linecap: round; }
+.effort-ring-track { stroke: var(--color-border-strong); }
+.effort-ring-arc { stroke: var(--color-ink-2); }
+.effort-ring-mark { fill: var(--color-ink-2); stroke: none; }
+.effort-ring-letter {
+  font-family: var(--font-body);
+  font-size: 16px; /* in the ring's 34 units: about 8px drawn */
+  font-weight: 700;
+  text-anchor: middle;
+}
+.composer-flyout-item .effort-ring { margin-right: calc(var(--space-1) * -1); }
+/* The model panel's first line: the choice in full words (§chat.composer/composer-flyout). */
+.composer-flyout-summary {
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .composer-model:hover,
 .composer-model[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); }
 .composer-model:hover .composer-model-id,
 .composer-model[aria-expanded="true"] .composer-model-id { color: var(--color-ink); }
-.composer-model:hover .composer-model-caret,
-.composer-model[aria-expanded="true"] .composer-model-caret { color: inherit; }
 .composer-model:active { transform: translateY(1px); }
 .composer-model:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
 .composer-model[aria-disabled="true"] { cursor: not-allowed; }
@@ -3495,21 +3535,40 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   position: absolute;
   inset: calc((var(--tap-min) - var(--control-sm)) / -2) 0;
 }
-.composer-login-full,
-.composer-login-short { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The login's soft chip: the shortest start of its name that tells this device's logins apart (or a
+   number), on a pale fill with no outline. A circle for one letter, a pill for more; it says who.
+   The email comes back beside it only where the foot has room. While the button is hovered or open
+   its fill is --color-sunken, so the chip takes --color-border there to stay visible. */
+.composer-login-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  background: var(--color-sunken);
+  border-radius: var(--r-full);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  color: var(--color-ink-2);
+}
+.composer-login-full { display: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .composer-login .live-dot { flex: none; }
 .composer-login:hover,
 .composer-login[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); }
+.composer-login:hover .composer-login-avatar,
+.composer-login[aria-expanded="true"] .composer-login-avatar { background: var(--color-border); }
 .composer-login:active { transform: translateY(1px); }
 .composer-login:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
 .composer-login[aria-disabled="true"] { cursor: not-allowed; }
 .composer-login[aria-disabled="true"]:hover { background: transparent; color: var(--color-ink-muted); }
 .composer-login[aria-disabled="true"]:active { transform: none; }
-.composer-login-short { display: none; }
-@media (max-width: 640px) {
-  .composer-login { max-width: 12ch; }
-  .composer-login-full { display: none; }
-  .composer-login-short { display: inline; }
+/* Icons at every width; words come back beside them where the foot has room (an expanding rule:
+   no @media floor needed). */
+@container composer (min-width: 620px) {
+  .composer-login-full { display: inline; }
 }
 
 /* The sandbox shield (§chat.composer/sandbox-shield): shown in every state while the runtime
@@ -4051,6 +4110,30 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   color: var(--color-ink-2);
 }
 .mode-trigger .icon { flex: none; color: var(--color-ink-muted); }
+/* In the foot it is icon-first: the words show only where the foot has room (the login's email
+   comes back at the same width). */
+.composer-foot .mode-trigger-label { display: none; }
+@container composer (min-width: 620px) {
+  .composer-foot .mode-trigger-label { display: inline; }
+}
+/* A project mode's glyph: its id's first letter in a rounded square, drawn like an icon (16px,
+   the icon stroke, muted ink), so it reads as one of the mode icons, not as text. */
+.mode-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  border: var(--stroke-icon) solid currentColor;
+  border-radius: var(--r-xs);
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  color: var(--color-ink-muted);
+}
 .mode-trigger-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The minor modes give up their width long before the major mode does. */
 .mode-trigger-minor { flex-shrink: 1000; }
@@ -4066,6 +4149,17 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   content: "";
   position: absolute;
   inset: calc((var(--tap-min) - var(--control-sm)) / -2) 0;
+}
+/* The model's short name is the foot's last part to shrink: where the row is still too tight once
+   its gaps narrow, the composer's foldFit sets data-folded and the icons fold to the first, a quiet
+   "+N" (the rest's count) and the chevron. The trigger never clips its own icons: it gives way by
+   folding, so the name is cut only after that. */
+.mode-more { display: none; flex: none; font-family: var(--font-body); font-size: var(--fs-caption); font-variant-numeric: tabular-nums; color: var(--color-ink-muted); }
+.mode-trigger[data-folded] .mode-more { display: inline; }
+.mode-trigger[data-folded] :is(.mode-glyph, .mode-letter) ~ :is(.mode-glyph, .mode-letter) { display: none; }
+/* Icons only (under 620px, no words to ellipsize): its smallest is its icons. */
+@container composer (max-width: 619.98px) {
+  .composer-foot .mode-trigger { min-width: auto; }
 }
 .mode-trigger[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); }
 .mode-menu > .banner { flex: none; margin: var(--space-2) var(--space-2) 0; }
@@ -6654,6 +6748,10 @@ a.subagent-row { text-decoration: none; }
 .overseer-confirm-item-name { min-width: 0; overflow-wrap: anywhere; }
 .overseer-confirm-item-meta { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); white-space: nowrap; }
 .overseer-confirm-idea-id { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }
+/* A copy or leftover process row's second line (§app.overseer/copies): who started it, its command and folder. */
+.overseer-confirm-item-detail { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: var(--space-2); row-gap: var(--space-1); min-width: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.overseer-confirm-item-command, .overseer-confirm-item-path { font-size: var(--fs-mono); color: var(--color-ink-2); min-width: 0; overflow-wrap: anywhere; }
+.overseer-confirm-item-starter { min-width: 0; overflow-wrap: anywhere; color: var(--color-ink-muted); }
 /* The Overseer's note: what the item is and why the card acts on it. Body ink,
    not muted — it is the reason to read the row; two lines, then clamped. */
 .overseer-confirm-item-note {
@@ -6714,6 +6812,14 @@ a.subagent-row { text-decoration: none; }
 .permit-uses { margin: 0; padding-left: var(--space-4); font-size: var(--fs-caption); line-height: var(--lh-caption); }
 .permit-actions { display: flex; justify-content: flex-end; padding-top: var(--space-1); }
 .permits-error { margin: 0; padding: var(--space-2) var(--space-3); font-size: var(--fs-caption); color: var(--status-error); }
+/* A sectioned card (§app.overseer/card-sections): each heading an eyebrow over its rows, the
+   first row's rule dropped under it; a row's "Go sends" line in full, under its note. */
+.overseer-card-sections { gap: var(--space-3); }
+.overseer-card-section { align-self: stretch; min-width: 0; }
+.overseer-card-section-head { margin: 0; padding-bottom: var(--space-1); }
+.overseer-card-section-head + .overseer-confirm-list .overseer-confirm-item:first-child { border-top: none; }
+.overseer-card-sends { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.overseer-card-sends-label { font-weight: var(--fw-semibold); color: var(--color-ink-2); }
 .overseer-card-decided { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--color-ink-2); font-size: var(--fs-caption); }
 .overseer-card-decided .icon { color: var(--status-success); }
 .overseer-card-jump {

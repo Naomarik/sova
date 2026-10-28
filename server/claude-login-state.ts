@@ -5,6 +5,8 @@ import type { ChatClaudeLogin, ChatServerMessage } from "../shared/protocol";
 import { poolAgent } from "./claude-pool/index";
 import { stateViewOf } from "./harness/pi/state";
 import { CLAUDE_LOGIN } from "./harness/state-kinds";
+import { loginContextForCwd } from "./projects/claude-login";
+import { loginContextFromEnv, type ClaudeLoginContext } from "../pi-config/extensions/claude-code/accounts.ts";
 
 // A chat's Claude login (§app.claude-logins/active-login): the login its newest `claude-login`
 // entry names, which the provider writes when the session's child first starts and at every
@@ -35,6 +37,10 @@ export interface ChatLoginExtra {
   pending?: { id: string; name: string } | null;
   /** How many logins the pool has besides this device's order (tests pass their own). */
   poolOthers?: (order: readonly string[]) => number;
+  /** The chat's folder: before its first record, its project's login comes first (§app.claude-logins/project-login). */
+  cwd?: string;
+  /** Tests: the login context instead of the one the folder resolves to. */
+  context?: ClaudeLoginContext;
 }
 
 /** The chat's login, or null when the registry can't name one. Reads the registry; never touches a login's directory. */
@@ -42,7 +48,14 @@ export function chatClaudeLogin(branch: readonly unknown[], logins: ClaudeLogins
   try {
     const accounts = logins.accounts();
     const recorded = newestLoginEntry(branch);
-    const id = recorded?.login ?? logins.selectId(undefined, accounts);
+    let ctx: ClaudeLoginContext | undefined;
+    if (!recorded) {
+      // A chat process holds no project statecharts: it reads what the server handed it at its start for its
+      // own folder (the provider reads the same). The server's own process works it out from the folder.
+      try { ctx = extra.context ?? (process.env.SOVA_CHAT_UNIT ? loginContextFromEnv() : extra.cwd ? loginContextForCwd(extra.cwd) : undefined); } catch { ctx = undefined; }
+    }
+    const id = recorded?.login ?? logins.selectId(undefined, accounts, ctx);
+    const source = !recorded && ctx?.prefer && ctx.prefer.login === id ? ctx.prefer.source : undefined;
     const identity = logins.identityOf(id, accounts);
     const label = accounts.logins.find((l) => l.id === id)?.label;
     const plan = planLabel(identity);
@@ -56,6 +69,7 @@ export function chatClaudeLogin(branch: readonly unknown[], logins: ClaudeLogins
       // A device holding nothing but its own login still has the pool's to borrow from.
       several: order.length > 1 || (extra.poolOthers ?? othersInPool)(order) > 0,
       ...(extra.pending ? { pending: extra.pending } : {}),
+      ...(source ? { source } : {}),
     };
   } catch {
     return null;

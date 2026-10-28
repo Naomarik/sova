@@ -48,8 +48,9 @@ must stay DOM- and Solid-free), browser testing, and the project skills.
 One runtime import direction runs from the server into `src/`, so these files must load without a DOM
 or Solid, and an edit to them reaches the running server only at its restart:
 
-- `server/vis-check.ts` (the vis retry and the `vis_check` tool) imports `src/vis/parse.ts` and
-  `src/vis/kinds/frame/parse.ts`: the parse side of `src/vis/` (`parse.ts`, `registry.ts`, `src/vis/core/`,
+- `server/vis-check.ts` (the vis retry and the `vis_check` tool) imports `src/vis/parse.ts`,
+  `src/vis/kinds/frame/parse.ts` and `src/vis/kinds/wireframe/layout.ts` (with `kinds/tree/measure.ts`, whose canvas
+  is guarded): the parse side of `src/vis/` (`parse.ts`, `registry.ts`, `src/vis/core/`,
   `kinds/*/parse` and height/layout) stays DOM- and Solid-free at load.
 - `server/baton-view.ts` (the share pages' markup backstop) imports `src/share/markdown.ts`
   (`shareFences`: the share page's own markdown-it parse, so it finds fences exactly as the page draws

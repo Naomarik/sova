@@ -1,0 +1,794 @@
+{
+  "§tools.spec/agree-command": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/agreed-promotion"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+      "pi-config/extensions/spec/tests/agree-command.test.mjs",
+      "pi-config/extensions/spec/DRAFTS.md",
+      "pi-config/extensions/spec/PROMOTE.md",
+      "pi-config/extensions/spec/README.md"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-19T15:37Z",
+      "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+    }
+  },
+  "§tools.spec/agree-source-relay": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/agree-command"
+    ],
+    "code": [
+      "pi-config/extensions/mode/spec-agree.ts",
+      "pi-config/extensions/mode/spec-agree.test.ts",
+      "pi-config/extensions/mode/index.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/mode/spec-mode.md",
+      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/spec/docs/MODE.md"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-19T15:37Z",
+      "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+    }
+  },
+  "§tools.spec/agreed-promotion": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§tools.spec/promotion-integrity"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+      "pi-config/extensions/spec/tests/agreed.test.mjs",
+      "pi-config/extensions/spec/tests/agreed-kept.test.mjs",
+      "pi-config/extensions/spec/DRAFTS.md",
+      "pi-config/extensions/spec/PROMOTE.md",
+      "pi-config/extensions/spec/tests/agree-command.test.mjs"
+    ],
+    "evidence": "verified",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-19T15:37Z",
+      "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+    }
+  },
+  "§tools.spec/align-agree": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§tools.spec/agree-command",
+      "§tools.spec/agreed-promotion",
+      "§tools.spec/mode-reading"
+    ],
+    "code": [
+      "pi-config/extensions/mode/align-tool.ts",
+      "pi-config/extensions/mode/index.ts",
+      "pi-config/extensions/mode/tests/agree-turn.mjs",
+      "pi-config/extensions/spec/docs/MODE.md"
+    ],
+    "evidence": "verified"
+  },
+  "§tools.spec/assessment-observations": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/change-assessments"
+    ],
+    "code": [
+      "server/tests/spec-assessment.mjs",
+      "server/merge-readiness.ts",
+      "shared/protocol.ts",
+      "src/lib/readiness.ts",
+      "src/lib/readiness.test.ts",
+      "src/components/Sidebar.tsx",
+      "server/merge-readiness.test.ts",
+      "server/merge-readiness.integration.test.ts",
+      "pi-config/extensions/mode/spec-assessment.ts",
+      "pi-config/extensions/mode/spec-assessment.test.ts",
+      "pi-config/extensions/mode/tests/assessment-absence.mjs",
+      "pi-config/extensions/mode/spec-worker.ts",
+      "pi-config/extensions/mode/index.ts",
+      "pi-config/extensions/mode/README.md",
+      "pi-config/extensions/mode/tests/smoke.mjs"
+    ]
+  },
+  "§tools.spec/census-created": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/README.md",
+      "pi-config/extensions/spec/tests/census-base.test.mjs"
+    ]
+  },
+  "§tools.spec/census-ignored": {
+    "kind": "behavior",
+    "requires": [],
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/core/README.md",
+      "pi-config/extensions/spec/tests/census-ignored.test.mjs"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-19T15:13Z",
+      "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+    }
+  },
+  "§tools.spec/census-note": {
+    "kind": "behavior",
+    "requires": [
+      "§tools.spec/conflict-recovery",
+      "§tools.spec/git-merge"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/spec-guard.ts",
+      "pi-config/extensions/mode/spec-guard.test.ts",
+      "pi-config/extensions/mode/tests/spec-worker.mjs",
+      "pi-config/extensions/mode/README.md",
+      "pi-config/extensions/claude-code/README.md",
+      "pi-config/extensions/mode/spec-worker.ts",
+      "pi-config/extensions/mode/index.ts",
+      "pi-config/extensions/subagents/index.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-25T21:07Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
+    }
+  },
+  "§tools.spec/census-rank": {
+    "kind": "behavior",
+    "requires": [
+      "§tools.spec/census-created",
+      "§tools.spec/where-lookup"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/README.md",
+      "pi-config/extensions/spec/core/README.md",
+      "pi-config/extensions/spec/tests/census-rank.test.mjs",
+      "pi-config/extensions/spec/tests/core.test.mjs"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-19T15:13Z",
+      "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+    }
+  },
+  "§tools.spec/change-assessments": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/inspection-safety"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec-assess.mjs",
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+      "pi-config/extensions/spec/tests/assessment.test.mjs",
+      "pi-config/extensions/spec/tests/assessment-efficiency.test.mjs",
+      "pi-config/extensions/spec/README.md",
+      "pi-config/extensions/spec/core/README.md"
+    ]
+  },
+  "§tools.spec/conflict-recovery": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/span-promotion"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+      "pi-config/extensions/spec/PROMOTE.md",
+      "pi-config/extensions/spec/DRAFTS.md",
+      "pi-config/extensions/spec/tests/draft.test.mjs",
+      "pi-config/extensions/spec/tests/claims-merge.test.mjs"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-25T21:07Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
+    }
+  },
+  "§tools.spec/contents-view": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/context-packets",
+      "§tools.spec/inspection-safety"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/toc.mjs",
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/tests/toc.test.mjs",
+      "pi-config/extensions/spec/core/README.md",
+      "pi-config/extensions/spec/README.md",
+      "pi-config/extensions/spec/tests/frame.test.mjs"
+    ]
+  },
+  "§tools.spec/context-packets": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/inspection-safety"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/core/packet.mjs",
+      "pi-config/extensions/spec/tests/packet-acceptance.test.mjs",
+      "pi-config/extensions/spec/tests/fixtures/legacy-scope-envelope.json",
+      "pi-config/extensions/subagents/spec-brief.test.ts",
+      "pi-config/extensions/spec/tests/packet.test.mjs",
+      "pi-config/extensions/mode/spec-mode.md",
+      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/README.md",
+      "pi-config/extensions/spec/README.md",
+      "pi-config/extensions/spec/core/README.md",
+      "pi-config/extensions/spec/tests/usage.test.mjs"
+    ]
+  },
+  "§tools.spec/draft-hygiene": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/draft-output"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+      "pi-config/extensions/spec/DRAFTS.md",
+      "pi-config/extensions/spec/PROMOTE.md",
+      "pi-config/extensions/spec/tests/draft-hygiene.test.mjs"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-25T22:33Z",
+      "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+    }
+  },
+  "§tools.spec/draft-official": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/spec/core/official.mjs",
+      "pi-config/extensions/spec/core/official.d.mts",
+      "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+      "pi-config/extensions/spec/tests/draft-official.test.mjs",
+      "server/spec-drafts-state.ts",
+      "server/spec-drafts-state.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-26T06:34Z",
+      "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#ded2d92c"
+    },
+    "requires": [
+      "§tools.spec/promotion-integrity",
+      "§tools.spec/git-merge",
+      "§tools.spec/record-layout"
+    ]
+  },
+  "§tools.spec/draft-output": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [],
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+      "pi-config/extensions/spec/DRAFTS.md",
+      "pi-config/extensions/spec/tests/draft.test.mjs"
+    ]
+  },
+  "§tools.spec/field-promotion": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/promotion-integrity",
+      "§tools.spec/record-fields",
+      "§tools.spec/agreed-promotion"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+      "pi-config/extensions/spec/tests/draft-fields.test.mjs",
+      "pi-config/extensions/spec/DRAFTS.md",
+      "pi-config/extensions/spec/PROMOTE.md"
+    ]
+  },
+  "§tools.spec/frame": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/record-fields",
+      "§tools.spec/context-packets",
+      "§tools.spec/single-read"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/fields.mjs",
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/core/packet.mjs",
+      "pi-config/extensions/spec/core/read.mjs",
+      "pi-config/extensions/spec/tests/frame.test.mjs",
+      "pi-config/extensions/spec/core/toc.mjs",
+      "pi-config/extensions/spec/core/README.md"
+    ]
+  },
+  "§tools.spec/git-merge": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/span-promotion",
+      "§tools.spec/conflict-recovery"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/tests/claims-merge.test.mjs",
+      ".gitattributes",
+      "pi-config/extensions/spec/docs/CHANGELOG.md",
+      "pi-config/extensions/spec/PROMOTE.md",
+      "pi-config/extensions/spec/DRAFTS.md",
+      "pi-config/extensions/spec/README.md",
+      "pi-config/extensions/spec/tests/convert-precut.test.mjs",
+      "pi-config/extensions/spec/tests/pre-cutover-merge.test.mjs",
+      "pi-config/extensions/spec/docs/MODE.md"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-25T23:48Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
+    }
+  },
+  "§tools.spec/graph-payload": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/contents-view",
+      "§tools.spec/record-fields",
+      "§tools.spec/agreed-promotion"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/core/graph.mjs",
+      "pi-config/extensions/spec/tests/map-fixture.mjs",
+      "pi-config/extensions/spec/core/README.md",
+      "pi-config/extensions/spec/tests/map.test.mjs",
+      "pi-config/extensions/spec/README.md",
+      "pi-config/extensions/spec/tests/map-fields.test.mjs"
+    ]
+  },
+  "§tools.spec/inspection-safety": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [],
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/core/sova-spec-review.mjs",
+      "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+      "pi-config/extensions/spec/tests/core.test.mjs",
+      "pi-config/extensions/spec/tests/milestone-integrity.test.mjs",
+      "pi-config/extensions/spec/README.md",
+      "pi-config/extensions/spec/core/README.md",
+      "pi-config/extensions/spec/tests/inspection.test.mjs"
+    ]
+  },
+  "§tools.spec/mode-reading": {
+    "kind": "behavior",
+    "requires": [
+      "§tools.spec/contents-view",
+      "§tools.spec/single-read",
+      "§tools.spec/near-impact",
+      "§tools.spec/spec-map",
+      "§tools.spec/where-lookup",
+      "§tools.spec/where-topic",
+      "§tools.spec/frame",
+      "§tools.spec/context-packets",
+      "§tools.spec/field-promotion",
+      "§tools.spec/census-note",
+      "§tools.spec/agree-command"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/spec-mode.md",
+      "pi-config/extensions/spec/WRITING.md",
+      "pi-config/extensions/mode/spec-guard.ts",
+      "pi-config/extensions/subagents/spec-brief.ts",
+      "pi-config/extensions/subagents/spec-brief.test.ts",
+      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/prompt.ts",
+      "pi-config/extensions/spec/PROMOTE.md"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-22T12:29Z",
+      "source": "pi-session:ecc675e0-f5e1-4efc-915d-91012183b844#6f4c32b2"
+    }
+  },
+  "§tools.spec/near-impact": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/contents-view",
+      "§tools.spec/record-fields"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/core/graph.mjs",
+      "pi-config/extensions/spec/tests/map-fixture.mjs",
+      "pi-config/extensions/spec/core/README.md",
+      "pi-config/extensions/spec/tests/map.test.mjs",
+      "pi-config/extensions/spec/tests/map-fields.test.mjs"
+    ]
+  },
+  "§tools.spec/no-turn-end-check": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "code": [
+      "pi-config/extensions/mode/index.ts",
+      "pi-config/extensions/mode/spec-guard.ts",
+      "pi-config/extensions/mode/spec-worker.ts",
+      "pi-config/extensions/mode/spec-mode.md",
+      "pi-config/extensions/mode/prompt.ts",
+      "pi-config/extensions/subagents/spec-brief.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "server/transcript.ts",
+      "server/app.ts",
+      "server/mesh/access.ts",
+      "shared/protocol.ts",
+      "src/components/Thread.tsx",
+      "src/components/ChatView.tsx",
+      "src/lib/api.ts",
+      "src/app.css",
+      "pi-config/extensions/spec/PROMOTE.md"
+    ],
+    "evidence": "reviewed",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-22T03:00Z",
+      "source": "pi-session:ecc675e0-f5e1-4efc-915d-91012183b844#6f4c32b2"
+    }
+  },
+  "§tools.spec/promotion-integrity": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [],
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+      "pi-config/extensions/spec/tests/draft.test.mjs",
+      "pi-config/extensions/spec/tests/enforce.test.mjs",
+      "pi-config/extensions/spec/tests/publication.test.mjs",
+      "pi-config/extensions/spec/tests/milestone-integrity.test.mjs",
+      "pi-config/extensions/spec/PROMOTE.md",
+      "pi-config/extensions/spec/DRAFTS.md"
+    ]
+  },
+  "§tools.spec/record-fields": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/context-packets",
+      "§tools.spec/contents-view",
+      "§tools.spec/single-read"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/fields.mjs",
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/core/toc.mjs",
+      "pi-config/extensions/spec/core/read.mjs",
+      "pi-config/extensions/spec/tests/frame.test.mjs",
+      "pi-config/extensions/spec/core/packet.mjs",
+      "pi-config/extensions/spec/core/README.md",
+      "pi-config/extensions/spec/README.md",
+      "pi-config/extensions/spec/tests/map-not-owned.test.mjs",
+      "pi-config/extensions/spec/core/map.mjs"
+    ]
+  },
+  "§tools.spec/record-layout": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/git-merge",
+      "§tools.spec/conflict-recovery"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/layout.mjs",
+      "pi-config/extensions/spec/core/layout.d.mts",
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+      "pi-config/extensions/spec/core/sova-spec-review.mjs",
+      "pi-config/extensions/spec/core/sova-spec-assess.mjs",
+      "pi-config/extensions/spec/core/toc.mjs",
+      "pi-config/extensions/spec/core/graph.mjs",
+      "pi-config/extensions/mode/spec-guard.ts",
+      "server/spec-lookup.ts",
+      "server/spec-draft-writer.ts",
+      "server/conversation-draft.ts",
+      "server/spec-tool-fake.ts",
+      ".sova/playbooks/merge-round/scripts/round.mjs",
+      ".sova/playbooks/release/scripts/docs-drift.mjs",
+      "scripts/sim/lib/lookup-probe.ts",
+      "pi-config/extensions/spec/core/README.md",
+      "pi-config/extensions/spec/README.md",
+      "pi-config/extensions/spec/DRAFTS.md",
+      "pi-config/extensions/spec/PROMOTE.md",
+      "pi-config/extensions/spec/docs/CHANGELOG.md",
+      "pi-config/extensions/spec/docs/MODE.md",
+      "site/src/content/docs/modes/spec.md",
+      "pi-config/extensions/spec/tests/layout.test.mjs",
+      "pi-config/extensions/spec/tests/layout-areas.test.mjs",
+      "pi-config/extensions/spec/tests/layout-findings.test.mjs",
+      "pi-config/extensions/spec/tests/layout-guard.test.mjs",
+      "pi-config/extensions/spec/tests/migrate.test.mjs",
+      "pi-config/extensions/spec/tests/cross-layout-merge.test.mjs",
+      "pi-config/extensions/spec/tests/pre-cutover-merge.test.mjs",
+      "pi-config/extensions/spec/tests/spec-fixture.mjs",
+      "server/spec-layout-boundary.test.ts",
+      "pi-config/extensions/spec/tests/layout-order.test.mjs",
+      "pi-config/extensions/spec/tests/draft.test.mjs",
+      "pi-config/extensions/spec/tests/convert-records.test.mjs",
+      "pi-config/extensions/spec/tests/convert-commands.test.mjs",
+      "pi-config/extensions/spec/tests/convert-reverse.test.mjs",
+      "pi-config/extensions/spec/tests/convert-starter.test.mjs",
+      "pi-config/extensions/spec/tests/convert/lib.mjs"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-25T23:48Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
+    }
+  },
+  "§tools.spec/review-playbook": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.playbooks/bundles",
+      "§tools.spec/assessment-observations",
+      "§tools.spec/mode-reading",
+      "§tools.spec/frame"
+    ],
+    "code": [
+      "playbooks/spec-review/PLAYBOOK.md",
+      "server/spec-review-playbook.test.ts",
+      "server/spec-review-playbook.integration.test.ts"
+    ]
+  },
+  "§tools.spec/single-read": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/contents-view",
+      "§tools.spec/context-packets"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/read.mjs",
+      "pi-config/extensions/spec/core/toc.mjs",
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/tests/toc.test.mjs",
+      "pi-config/extensions/spec/core/README.md"
+    ]
+  },
+  "§tools.spec/span-promotion": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/promotion-integrity"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+      "pi-config/extensions/spec/tests/draft-span.test.mjs",
+      "pi-config/extensions/spec/DRAFTS.md",
+      "pi-config/extensions/spec/PROMOTE.md",
+      "pi-config/extensions/spec/README.md"
+    ]
+  },
+  "§tools.spec/spec-map": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/contents-view",
+      "§tools.spec/where-lookup",
+      "§tools.spec/record-fields",
+      "§tools.spec/agreed-promotion"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/map.mjs",
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/core/graph.mjs",
+      "pi-config/extensions/spec/tests/map-fixture.mjs",
+      "pi-config/extensions/spec/core/README.md",
+      "pi-config/extensions/spec/tests/map.test.mjs",
+      "pi-config/extensions/spec/README.md",
+      "pi-config/extensions/spec/tests/map-fields.test.mjs",
+      "pi-config/extensions/spec/tests/map-not-owned.test.mjs"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-19T15:13Z",
+      "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+    }
+  },
+  "§tools.spec/unread-landed": {
+    "kind": "behavior",
+    "requires": [
+      "§tools.spec/census-note",
+      "§tools.spec/census-rank",
+      "§tools.spec/no-turn-end-check"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/spec-guard.ts",
+      "pi-config/extensions/mode/spec-guard.test.ts",
+      "pi-config/extensions/mode/spec-mode.md",
+      "pi-config/extensions/mode/README.md",
+      "pi-config/extensions/spec/docs/MODE.md",
+      "pi-config/extensions/spec/README.md",
+      "site/src/content/docs/modes/spec.md"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-19T15:13Z",
+      "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+    }
+  },
+  "§tools.spec/where-lookup": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/contents-view",
+      "§tools.spec/inspection-safety"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/where.mjs",
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/core/graph.mjs",
+      "pi-config/extensions/spec/tests/map-fixture.mjs",
+      "pi-config/extensions/spec/core/README.md",
+      "pi-config/extensions/spec/tests/where.test.mjs",
+      "pi-config/extensions/spec/README.md"
+    ]
+  },
+  "§tools.spec/where-topic": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/where-lookup"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/where.mjs",
+      "pi-config/extensions/spec/core/topic.mjs",
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/tests/where.test.mjs",
+      "pi-config/extensions/spec/core/README.md",
+      "pi-config/extensions/spec/README.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-11T07:56Z"
+    }
+  },
+  "§tools.spec/worker-landed": {
+    "kind": "behavior",
+    "requires": [
+      "§tools.spec/census-note"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/spec-guard.ts",
+      "pi-config/extensions/mode/spec-worker.ts",
+      "pi-config/extensions/mode/index.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/README.md",
+      "pi-config/extensions/mode/README.md",
+      "pi-config/extensions/claude-code/README.md",
+      "pi-config/extensions/subagents/tests/spec-landed.mjs"
+    ]
+  },
+  "§tools.spec/write-guard": {
+    "kind": "behavior",
+    "requires": [
+      "§tools.spec/census-note",
+      "§tools.spec/promotion-integrity"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/spec-guard.ts",
+      "pi-config/extensions/mode/spec-guard.test.ts",
+      "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+      "pi-config/extensions/spec/tests/draft.test.mjs"
+    ]
+  },
+  "§tools.spec/writing-on-demand": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§tools.spec/mode-reading",
+      "§tools.spec/census-note",
+      "§tools.spec/align-agree",
+      "§chat.mode-menu/minor-toggle-keeps-prompt"
+    ],
+    "code": [
+      "pi-config/extensions/mode/spec-mode.md",
+      "pi-config/extensions/spec/WRITING.md",
+      "pi-config/extensions/mode/spec-guard.ts",
+      "pi-config/extensions/mode/spec-guard.test.ts",
+      "pi-config/extensions/mode/spec-worker.ts",
+      "pi-config/extensions/mode/index.ts",
+      "pi-config/extensions/mode/align-tool.ts",
+      "pi-config/extensions/mode/prompt.ts",
+      "pi-config/extensions/subagents/spec-brief.ts",
+      "pi-config/extensions/subagents/spec-brief.test.ts",
+      "pi-config/extensions/mode/tests/spec-turn.mjs",
+      "pi-config/extensions/mode/tests/spec-worker.mjs",
+      "pi-config/extensions/mode/tests/agree-turn.mjs",
+      "scripts/spec-pointers.test.ts",
+      "pi-config/extensions/spec/docs/MODE.md"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-25T20:24Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
+    },
+    "evidence": "verified"
+  },
+  "§tools/spec": {
+    "kind": "surface",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/spec-guard.ts",
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/core/packet.mjs",
+      "pi-config/extensions/mode/spec-mode.md",
+      "pi-config/extensions/spec/core/sova-spec-assess.mjs"
+    ],
+    "notOwned": [
+      "§chat.merge-round/landing-suites",
+      "§chat/mode-menu"
+    ]
+  }
+}

@@ -35,9 +35,11 @@ server parses fences with the renderer's own code.
 - **One rule for the tools.** `visToolsWanted` in `minor.ts`: the vis tools (`vis_guide`, and in Sova's hosted
   sessions `vis_check`) are in the loadout when vis is on, or align is on in a session started with Visuals.
   Tour tools require explicit vis on instead.
-  `server/vis-check.ts` and `server/chat-manager.ts` take it from there.
+  `server/vis-check.ts` and `server/chat-manager.ts` take it from there. Sova's vis retry asks the same rule, so a chat
+  whose drawings come from align's Visuals gets it too, for its reply's fences and the visuals its `align` calls write
+  on the card; a hard error or a cramped wireframe (`wireframeCramped`, §chat.markdown/vis-wireframe-room) triggers it.
 - **The parse side runs on the server.** `server/vis-check.ts` (the vis retry and the `vis_check` tool) imports
-  `src/vis/parse.ts` and `src/vis/kinds/frame/parse.ts`. So the parse side of `src/vis/` (`parse.ts`, `registry.ts`,
+  `src/vis/parse.ts`, `src/vis/kinds/frame/parse.ts` and `src/vis/kinds/wireframe/layout.ts` (the cramped check). So the parse side of `src/vis/` (`parse.ts`, `registry.ts`,
   `core/`, each kind's parse and height/layout) must stay DOM- and Solid-free at load, and an edit there reaches the
   running server only at its restart.
 - **Share pages.** `server/baton-view.ts` (the share pages' markup backstop) imports `src/share/markdown.ts`
@@ -52,4 +54,7 @@ server parses fences with the renderer's own code.
 - A kind's grammar: its file in `mode/vis/`, the renderer under `src/vis/kinds/<kind>/`, and the golden data
   (`src/vis/golden.json`) together; run those tests.
 - A new kind: `mode/vis/overview.md`'s line for it, the registry, and the site page.
+- A wireframe's sizes (wireframe.css): `layout.ts` in step. What the drawing sizes from its content (a desktop dialog's
+  width, a grid's columns) is decided in `layout.ts` and set by the View, so the drawing, the height estimate and the
+  server's cramped check agree; the rendered-height table in `layout.test.ts` is recaptured in a browser.
 - Anything the parse side imports: keep it DOM- and Solid-free, and say the server needs a restart.

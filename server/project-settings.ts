@@ -676,8 +676,8 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
       const m: { on?: boolean; type?: string; size?: number } = {};
       if (e.on !== undefined) typeof e.on === "boolean" ? (m.on = e.on) : refuse("memory on must be true or false.");
       if (e.type !== undefined) e.type === "uniichat" || e.type === "zoomable" ? (m.type = e.type) : refuse('memory type must be "uniichat" or "zoomable".');
-      if (e.size !== undefined) Number.isInteger(e.size) && e.size > 0 ? (m.size = e.size) : refuse("memory size must be a whole number of bytes.");
-      if (!Object.keys(m).length) refuse("A memory edit names on, type or size.");
+      // A size is ignored: every chat's size, an overseer's too, is Settings → Memory's for its type (§chat.memory/overseer).
+      if (!Object.keys(m).length) refuse("A memory edit names on or type (its size is Settings → Memory's, for every chat).");
       memory = { ...(memory ?? {}), ...m };
     } else if (e.setting === "project") {
       for (const k of Object.keys(e)) if (k !== "setting" && !(PROJECT_EDIT_KEYS as readonly string[]).includes(k)) refuse(`Unknown project setting "${k}" (sova_settings reference project.<setting> lists them).`);

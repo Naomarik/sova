@@ -25,12 +25,12 @@ export function offerToolSpec(sessionId: string, path: string, snapshot: OfferSn
     parameters: offerToolParameters(snapshot),
     executionMode: "sequential",
     async execute(toolCallId: string, params: unknown, _signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
-      const p = (params ?? {}) as { offer?: unknown; note?: unknown };
+      const p = (params ?? {}) as { offer?: unknown; note?: unknown; rows?: unknown };
       if (typeof p.offer !== "string") throw new Error("offer names one of the offers listed in the tool's description. Nothing was shown.");
       const branch = (ctx as ToolCtx | undefined)?.branch?.() ?? [];
       const replyId = lastUserId(branch);
       try {
-        const card = await showOffer({ path, sessionId, offer: p.offer, ...(typeof p.note === "string" ? { note: p.note } : {}), by: "agent", toolCallId, ...(replyId ? { replyId } : {}) });
+        const card = await showOffer({ path, sessionId, offer: p.offer, ...(typeof p.note === "string" ? { note: p.note } : {}), by: "agent", toolCallId, ...(replyId ? { replyId } : {}), ...(p.rows !== undefined ? { rows: p.rows } : {}) });
         const details: OfferDetails = { v: OFFER_DETAILS_VERSION, card };
         return {
           content: [{ type: "text", text: `Shown ${card.id} (${card.name}) under your reply: "${card.title}". The user answers with its buttons; a click arrives as their message, or as a note at your next turn for a button that runs an action.` }],

@@ -1,0 +1,11 @@
+{
+  "§design/token-index": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "verified",
+    "notOwned": [
+      "§design/ground-rules",
+      "§app.settings-dialog/themes"
+    ]
+  }
+}

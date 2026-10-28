@@ -30,9 +30,16 @@ and each merge becomes a card.
 - `spec.ts`: when a merge is recorded, it adds the landing's spec warnings to the merge note (changed files no claim
   maps, draft records left behind, hand-resolved §, orphaned evidence), in any project with a spec, mode on or off.
 
-- `landing.ts` (builtins only): the user's answers on a branch's Landing card, `<state root>/landing.json`
-  (Land It or Not Yet per branch and commit, §chat.worktrees/landing-answers). Sova writes it (a click on
-  the card, `server/session-offers.ts`) and the merge round's driver reads it, carrying an answer over
+- `landing.ts` (builtins only): the user's answers on a branch's Landing card, and their go-ahead typed in
+  the branch's own chat, `<state root>/landing.json` (Land It, a typed go-ahead `by: "owner-chat"`, the
+  captain's `go` `by: "captain-chat"`, Go on an Overseer card's Ready to land row `by: "overseer-card"`, or
+  Not Yet per branch and commit, each with an optional `in`, the session it was given in: additive,
+  §chat.worktrees/landing-answers). Sova writes it (a click on the owner's card or the captain's row,
+  `server/session-offers.ts`; an Overseer card's Go, `server/overseer-land.ts`), so does the driver's `go`
+  (`recordCaptainGoAhead`), so does `worktree land` (only on the user's newest message, read by
+  `typedGoAhead`, and never one a sent marker names, `newestUserMessage`, §chat.worktrees/land-own-word), and
+  the merge round's driver reads it (a typed one or an Overseer card's also wakes the captain's merge-ready
+  schedule, `server/schedules.ts`), carrying an answer over
   clean master merges itself (`round.mjs` `cleanMergeParent`, `landingAnswerAt`). Nothing enforces it:
   `worktree merge` needs no go-ahead. `answerAt`'s newest-answer rule has a copy in the driver
   (`landingAnswer`), held equal by `server/merge-round-rules.test.ts`: change both together.

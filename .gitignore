@@ -41,3 +41,13 @@ Thumbs.db
 scripts/mesh-vps/local.env
 scripts/mesh-termux/local.env
 scripts/mesh-dialout/local.env
+
+# Videos never live in this repository (kept on disk only)
+*.mp4
+*.webm
+*.mov
+*.mkv
+*.m4v
+*.avi
+site/public/video/
+.sova/marketing/assets/video/

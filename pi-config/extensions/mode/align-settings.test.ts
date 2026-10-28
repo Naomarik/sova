@@ -112,7 +112,7 @@ test("the paragraphs: Technical (\"default\") adds no text; Simplified and Proje
 	assert.match(ALIGN_STYLE_PARAGRAPHS.pm!, /Consequence rule: any technical choice with an effect a user would notice \(speed, cost, data kept or lost, limits, something hard to undo\) is asked as a product question/);
 	assert.match(ALIGN_STYLE_PARAGRAPHS.pm!, /Never leave a decision out because it is technical\./);
 	assert.match(ALIGN_STYLE_PARAGRAPHS.pm!, /technical notes \(technical\)/);
-	assert.match(ALIGN_VISUALS_PARAGRAPH, /wireframe for a question about a screen; a flow, state or steps for a change in behaviour/);
+	assert.match(ALIGN_VISUALS_PARAGRAPH, /a wireframe for a simple screen or a flow across screens; an html prototype for a screen beyond a simple one \(look and feel, panes side by side, an editor in a dialog, a dense desktop layout\); a flow, state or steps for a change in behaviour/);
 	assert.match(ALIGN_VISUALS_PARAGRAPH, /call vis_guide with that kind/);
 	assert.match(ALIGN_VISUALS_PARAGRAPH, /In the Project manager writing style never use the code, tree or layers kinds/);
 	assert.doesNotMatch(ALIGN_VISUALS_PARAGRAPH, /Writing style:/, "its words never depend on the style");
@@ -143,7 +143,7 @@ test("composePrompt: the head's align block carries the style and Visuals; the D
 	assert.ok(drawing.startsWith(DELEGATE_ALIGN_BRIDGE.replace(alignFileSchema(false), alignFileSchema(true))), "the same bridge, with the visual schema");
 	assert.ok(drawing.endsWith(`Visuals are on: also copy this paragraph word for word into its prompt:\n\n${PLANNER_VISUALS_PARAGRAPH}`));
 	assert.doesNotMatch(DELEGATE_ALIGN_BRIDGE, /visual|Drawings/i);
-	assert.match(PLANNER_VISUALS_PARAGRAPH, /a wireframe for a question about a screen; a flow, state or steps for a change in behaviour/);
+	assert.match(PLANNER_VISUALS_PARAGRAPH, /a wireframe for a simple screen or a flow across screens; an html prototype for a screen beyond a simple one; a flow, state or steps for a change in behaviour/);
 	assert.match(PLANNER_VISUALS_PARAGRAPH, /at most 3 in all/);
 	assert.ok(PLANNER_VISUALS_PARAGRAPH.includes(`read shared.md and <kind>.md in ${VIS_GUIDE_DIR} and use only that syntax`));
 	// The directory it names is the one vis_guide reads: each taught kind's file and shared.md are there.

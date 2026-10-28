@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { GROUP_LABEL_MAX, GROUP_NAME_MAX, type GroupMember, type GroupSeed, type SessionGroup } from "../shared/protocol";
 import { sessionsChanged } from "./list-generation";
+import { publishFeed } from "./session-feed";
 
 /** The user's sidebar groups, and which session belongs to which.
     Sova's own data, beside the archive and web-session id lists: the session files are never touched. */
@@ -163,6 +164,9 @@ function save({ groups, assignments, extra, version }: Store): void {
   writeFileSync(tmp, JSON.stringify({ ...extra, version, groups, assignments }));
   renameSync(tmp, FILE);
   sessionsChanged();
+  // Every open window re-reads its groups at once (§app.session-list/groups), whoever wrote: a route, the Overseer
+  // through one, an archive or a cleanup dropping assignments.
+  publishFeed({ type: "groups_changed" });
 }
 
 /**

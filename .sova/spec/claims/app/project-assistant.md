@@ -144,7 +144,7 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   drawing couldn't be shown here." The outsider redaction's markup backstop runs on them, in views
   and while streaming alike.
 - **One hidden retry.** When a run of the assistant settles with a `vis` block that has a hard
-  error, it gets the hidden retry note Sova's own chats get (§chat.markdown/visuals, "Feedback to
+  error, or a cramped `vis wireframe` (§chat.markdown/vis-wireframe-room), it gets the hidden retry note Sova's own chats get (§chat.markdown/visuals, "Feedback to
   the model": one `sova-vis-retry` message, at most one retry per run, the same exceptions), so the
   owner sees the fixed drawing. The note is never in the owner's view, its socket or the operator's
   transcript.

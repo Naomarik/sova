@@ -255,11 +255,14 @@ export function sessionsInPlay(branch: readonly HEntry[], now: number, prompted:
 
 const BADGE_WORDS: Record<NonNullable<SessionReadiness["badge"]>, string> = { ready: "ready", waiting: "waiting for the OK", merged: "merged", restart: "merged, restart pending" };
 
-/** Each worktree a session tracks, "branch <name> (<badge>)": the readiness badge for the worktree it
-    speaks for, else that worktree's own state (in-progress, blocked, stale…). None without readiness. */
+/** Each worktree a session tracks, "branch <name> (<badge>)": its landing while one holds (§chat.worktrees/ready-to-land),
+    else the readiness badge for the worktree it speaks for, else that worktree's own state (in-progress, blocked,
+    stale…). None without readiness. */
 export function branchLabels(r: SessionReadiness | undefined): string[] {
   if (!r) return [];
-  return r.trees.map((t) => `branch ${t.branch} (${r.badge && (r.branch === undefined || r.branch === t.branch) ? BADGE_WORDS[r.badge] : t.state})`);
+  const word = (t: SessionReadiness["trees"][number]) =>
+    t.landing ? (t.landing.state === "ready" ? "ready to land" : "landing specs") : r.badge && (r.branch === undefined || r.branch === t.branch) ? BADGE_WORDS[r.badge] : t.state;
+  return r.trees.map((t) => `branch ${t.branch} (${word(t)})`);
 }
 
 /**

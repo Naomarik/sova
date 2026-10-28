@@ -50,7 +50,7 @@ has built (§app.requirements/conversation-drafts, /lock-in, /draft-specs, /draf
   read and after every promotion, never stored: whether a promoted decision is still current
   there, edited there, or built (below).
 - **Who owns which field.** Of a record in the project's spec, the decisions layer owns its prose
-  (the statement, each quote with who said it and when, the supersede line) and the manifest
+  (the statement, each quote with who said it and when, the supersede line) and the record
   fields `decision`, `provenance` and `supersededBy`. It writes `kind: note` and `authority:
   accepted` only when it creates the record. Every other field (`evidence`, `code`, `requires`, a
   relabelled `authority` or `kind`, any other key) is the spec layer's, set by a builder or a
@@ -84,7 +84,7 @@ has built (§app.requirements/conversation-drafts, /lock-in, /draft-specs, /draf
 - The writer is deterministic: no model writes documentation. Each drafted decision becomes a
   `note` record `§requirements.<area>/<slug>` (letters and hyphens only, taken from the statement,
   `-b`, `-c`… on a clash) under an area lede `§requirements/<area>`, both `authority: accepted`. The
-  record's prose is the statement, the quote as a block quote, and `— <name>, <date>`; its manifest
+  record's prose is the statement, the quote as a block quote, and `— <name>, <date>`; its
   record carries `provenance: [{by, name, sessionId, entryId, at, quote}]` and `decision` (the
   index id). The spec core ignores unknown record fields, so neither changes how the tools read it.
 - Text from a conversation can never declare: a line that would start a heading or a fence is
@@ -95,8 +95,9 @@ has built (§app.requirements/conversation-drafts, /lock-in, /draft-specs, /draf
   drafted decision not yet promoted and is rebuilt from current each time. `claims/` and
   `manifest.json` change only by promotion.
 - **A client project needs no setup**: a folder with no spec (and no Git) starts from the tools'
-  empty baseline, and the first promotion creates `.sova/spec/manifest.json` and
-  `claims/requirements/<area>.md`. Sova adds `.sova/spec/.gitignore` (`drafts/`, `reviews/`,
+  empty baseline (format version 2, §tools.spec/record-layout), and the first promotion creates
+  `.sova/spec/manifest.json`, `claims/requirements/<area>.md` and its records beside it in
+  `claims/requirements/<area>.json`. Sova adds `.sova/spec/.gitignore` (`drafts/`, `reviews/`,
   `pilot/`) when it is missing, so a client repo never commits a draft.
 
 ## §app.requirements/reconciler — Comparing, filing and settling
@@ -337,7 +338,7 @@ has built (§app.requirements/conversation-drafts, /lock-in, /draft-specs, /draf
   The decision also goes on to the reconciler as before (§app.requirements/reconciler).
 - **The writer is deterministic** (§app.requirements/drafts-with-provenance): each item becomes a
   `note` record `§requirements.<area>/<slug>` of the draft, written as a decision is. A change is
-  such a note too, naming the record it changes (`changes` in its manifest record, and a "Changes
+  such a note too, naming the record it changes (`changes` in its record, and a "Changes
   §…" line); Sova never rewrites that record: the coding session that builds the change does. An
   item keeps its record id from one rebuild to the next; when the current spec meanwhile took that
   id for another record, it moves to a free one; when the current spec already holds the item's

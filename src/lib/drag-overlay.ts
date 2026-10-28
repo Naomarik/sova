@@ -123,8 +123,9 @@ export interface DragInfo {
   title: string;
   /** The group it is in now; null for none. A peer's group is its own host's, so null there too. */
   groupId: string | null;
-  /** An organization's session: never joins a group (taking one out is fine). */
-  org: boolean;
+  /** Why it can never join a group (an organization's session, regions' `groupRefusal`), or null.
+      Taking one out is fine. */
+  groupRefusal: string | null;
   /** The project the unarchive (Undo) toast names (drag-archive's `orgProjectOf`). */
   orgProject: string | null;
   /** The project the archive toast names: an org session's only (drag-archive's `archivedProjectOf`). */
@@ -163,12 +164,12 @@ export interface DropTiles {
   archiveDisabled: string | null;
 }
 
-export const ORG_GROUP_REASON = "Organization sessions stay with their project.";
+export { ORG_GROUP_REASON } from "./regions";
 export const peerGroupReason = (peer: string) => `Groups hold this host's sessions only. That one lives on ${peer}.`;
 
 /** Every tile the overlay shows for this row, in order, with what each would do. */
 export function dropTiles(d: DragInfo, groups: readonly SessionGroup[], counts: ReadonlyMap<string, number>): DropTiles {
-  const groupNote = d.peer ? peerGroupReason(d.peer) : d.org ? ORG_GROUP_REASON : null;
+  const groupNote = d.peer ? peerGroupReason(d.peer) : d.groupRefusal;
   const current = d.peer ? null : d.groupId;
   const currentGroup = current ? groups.find((g) => g.id === current) : undefined;
   return {

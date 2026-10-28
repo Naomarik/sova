@@ -97,7 +97,7 @@ export interface RunnerFailureSpec {
 export interface Confined {
 	/** What to spawn instead of request.argv; spawn it directly, never through a shell. */
 	argv: string[];
-	/** Environment to spawn it with (policy env + request env + backend additions such as TMPDIR, proxy vars). */
+	/** Environment to spawn it with (policy env + request env + backend additions such as TMPDIR, proxy vars, GIT_CONFIG_SYSTEM). */
 	env: Record<string, string>;
 	enforcement: Enforcement;
 	partialReasons?: string[];

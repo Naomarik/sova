@@ -105,6 +105,22 @@ The server runs on Bun (`bun server/index.ts`, Bun 1.4.2, pinned in `mise.toml`)
   (`server/harness/pi/reader.ts`) does; `server/harness/pi/reader-retention.test.ts` fails when the
   session list's scans keep whole lines again.
 
+### Git's background cleanup
+
+- Nothing Sova runs starts git's automatic background maintenance (`git maintenance run --auto
+  --detach`), which a sandboxed command's end or a chat unit's stop cuts off partway (a killed run once
+  left `multi-pack-index.lock` and grew the repo to 25 GB). Sandboxed commands and chat processes get
+  `GIT_CONFIG_SYSTEM` naming a config with `maintenance.auto=false` and `gc.auto=0`; the server's own
+  commits, merges and fetches carry `NO_BACKGROUND_CLEANUP` (`server/git-no-background.ts`), and its
+  pushes `noBackgroundCleanupEnv()`. **Never put git config in the server's `process.env`**
+  (`GIT_CONFIG_COUNT`/`GIT_CONFIG_PARAMETERS` there turn the idle git cache off), and never give
+  either config file an `[include]`. `server/git-no-background.test.ts` lists any new git write in
+  `server/` without the flags.
+- `server/git-maintenance.ts` registers each project's repository with git's scheduled maintenance
+  and starts git's timers once per machine, outside every chat and sandbox; `SOVA_GIT_MAINTENANCE=off`
+  turns it off (the test runner and `dev:hermetic` set it: both share the user's real global git
+  config otherwise). Spec: §app/git-cleanup.
+
 ### Prices and the share listener
 
 - `pnpm run prices:update` regenerates the checked-in price seed `shared/model-prices/seed.json` from

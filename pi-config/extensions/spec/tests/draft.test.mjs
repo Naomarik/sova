@@ -114,8 +114,12 @@ test("no-Git, no-spec bootstrap: starter draft, snapshot evidence, promotion cre
   const n = newDraft(root, "boot");
   assert.equal(n.specExisted, false);
   assert.ok(!existsSync(join(root, ".sova/spec/manifest.json")));
+  // A new spec starts in format 2: settings in manifest.json, each area's records beside its claim file.
+  const starter = JSON.parse(read(root, D("boot", "manifest.json")));
+  assert.equal(starter.formatVersion, 2);
+  assert.equal(typeof starter.claims, "string", "format 2's claims is the pointer string");
   write(root, D("boot", "claims/a/top.md"), "# §a/top\n\nExisting baseline behavior.\n");
-  editManifest(root, D("boot", "manifest.json"), (m) => { m.claims["§a/top"] = { kind: "behavior", authority: "accepted", requires: [], code: ["lib/one.txt"] }; });
+  write(root, D("boot", "claims/a/top.json"), JSON.stringify({ "§a/top": { kind: "behavior", authority: "accepted", requires: [], code: ["lib/one.txt"] } }, null, 2) + "\n");
   assert.ok(codes(run(root, "promote", "boot", "--id", "§a/top")).includes("evidence-missing"));
   assert.ok(codes(run(root, "evidence", "boot", "--id", "§a/top", "--by", "t", "--verification", "v", "--commit", "HEAD")).includes("not-git"));
   const ev = snap(root, "boot", "§a/top");
@@ -128,10 +132,12 @@ test("no-Git, no-spec bootstrap: starter draft, snapshot evidence, promotion cre
   const w = run(root, "promote", "boot", "--id", "§a/top", "--plan", pv.plan, "--write");
   assert.equal(w.exit, 0, JSON.stringify(w.findings));
   assert.equal(read(root, ".sova/spec/claims/a/top.md"), "# §a/top\n\nExisting baseline behavior.\n");
+  assert.equal(JSON.parse(read(root, ".sova/spec/manifest.json")).formatVersion, 2, "the new spec takes the draft's format 2");
+  assert.deepEqual(Object.keys(JSON.parse(read(root, ".sova/spec/claims/a/top.json"))), ["§a/top"], "the record lands beside its claim file");
   assert.equal(core(root, "check").exit, 0);
   const receipts = JSON.parse(read(root, ".sova/spec/drafts/boot/draft.json")).promotions;
   assert.equal(receipts.length, 1);
-  assert.deepEqual(receipts[0].after, { "claims/a/top.md": sha(read(root, ".sova/spec/claims/a/top.md")), "manifest.json": sha(read(root, ".sova/spec/manifest.json")) },
+  assert.deepEqual(receipts[0].after, { "claims/a/top.json": sha(read(root, ".sova/spec/claims/a/top.json")), "claims/a/top.md": sha(read(root, ".sova/spec/claims/a/top.md")), "manifest.json": sha(read(root, ".sova/spec/manifest.json")) },
     "the receipt records each written file's SHA-256 after the write");
   assert.equal(run(root, "status", "boot").ids[0].current, "already-current");
 });

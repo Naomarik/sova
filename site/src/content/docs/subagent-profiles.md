@@ -1,9 +1,8 @@
 ---
 title: Subagent profiles
 description: A subagent profile is one named set of every model your subagents use. When a provider hits its usage limit, you switch the whole set at once instead of editing four screens.
-group: Modes
-subgroup: Major
-order: 3
+group: Features
+order: 16
 ---
 
 ## What a profile holds

@@ -8,6 +8,32 @@ export function tourPosition(manifest: TourPresentation, saved?: TourPosition): 
   const view = manifest.steps[step]!.views.findIndex(v => v.id === saved!.viewId);
   return view < 0 ? { step: 0, view: 0 } : { step, view };
 }
+/** The player's one place: a step and one of that step's views. */
+export type TourPlace = { step: number; view: number };
+/** Every way a reader moves: Next/Back (and the arrow keys) by whole steps, the Steps list to a step, a chip to a view. */
+export type TourMove = "next" | "back" | { step: number } | { view: number };
+type TourShape = { steps: readonly { views: readonly unknown[] }[] };
+const clampTo = (n: number, length: number) => Math.max(0, Math.min(length - 1, Number.isInteger(n) ? n : 0));
+/** The nearest real place: never a step or a view that doesn't exist. */
+export function tourPlace(manifest: TourShape, place: TourPlace): TourPlace {
+  const step = clampTo(place.step, manifest.steps.length);
+  return { step, view: clampTo(place.view, manifest.steps[step]?.views.length ?? 1) };
+}
+/** One move from one place to one valid place. A move to another step lands on its first view; a move
+    that goes nowhere (Next on the last step, Back on the first, the step already shown) keeps the place. */
+export function tourMove(manifest: TourShape, from: TourPlace, move: TourMove): TourPlace {
+  const here = tourPlace(manifest, from);
+  if (typeof move === "object" && "view" in move) return tourPlace(manifest, { step: here.step, view: move.view });
+  const target = move === "next" ? here.step + 1 : move === "back" ? here.step - 1 : clampTo(move.step, manifest.steps.length);
+  if (target < 0 || target >= manifest.steps.length || target === here.step) return here;
+  return { step: target, view: 0 };
+}
+/** The footer at a place: Back only past the first step; beside Next, the next step's title, and Finish Tour only on the last step. */
+export function tourFooter(manifest: Pick<TourPresentation, "steps">, place: TourPlace): { canBack: boolean; finish: boolean; nextLabel: string } {
+  const { step } = tourPlace(manifest, place);
+  const next = manifest.steps[step + 1];
+  return { canBack: step > 0, finish: !next, nextLabel: next?.title ?? "You're at the last step" };
+}
 export function tourQuestion(manifest: TourPresentation, step: number, view: number): string {
   const s = manifest.steps[step]!, v = s.views[view]!;
   return `About “${manifest.title}”, step ${s.n}: “${s.title}” (${v.title})—can you explain this step and what I should do next?\nTour: ${manifest.id}; edition: ${manifest.editionId}; step: ${s.id}; view: ${v.id}.`;

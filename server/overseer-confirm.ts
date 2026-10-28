@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import { CONFIRM_NOTE_MAX, type SessionSummary, type SovaConfirmItem } from "../shared/protocol";
+import { CONFIRM_NOTE_MAX, CONFIRM_SECTION_MAX, CONFIRM_SENDS_MAX, type SessionSummary, type SovaConfirmItem } from "../shared/protocol";
 
 /**
  * What a card is about, shared by the Overseer's and the project overseer's `sova_card`
@@ -27,6 +27,14 @@ export interface ConfirmLookup {
       standalone): the global Overseer's cards only (§app.overseer/org-project-add). */
   org?(ref: string): Extract<SovaConfirmItem, { kind: "org" }> | null;
   folder?(root: string, org: string | null, name?: string): Promise<Extract<SovaConfirmItem, { kind: "folder" }> | null>;
+  /** The branches of worktrees `s` owns that are Ready to land now, each with its full head sha
+      (§app.overseer/card-land): the global Overseer's cards only; a caller without it takes no land rows. */
+  readyToLand?(s: SessionSummary): Promise<{ branch: string; head: string }[]>;
+  /** A running copy by instance id (§app.overseer/copies): its row, null for no such instance, or why it can't be on a
+      card (the main copy; for a project overseer, another project's). Both overseers' cards. */
+  copy?(ref: string): Promise<Extract<SovaConfirmItem, { kind: "copy" }> | { refused: string } | null>;
+  /** The leftover process on a project's copy port, when Sova calls it safe to stop, else why not. */
+  leftover?(project: string, port: number): Promise<Extract<SovaConfirmItem, { kind: "leftover" }> | { refused: string }>;
 }
 
 const cut = (s: string, max: number) => {
@@ -38,18 +46,27 @@ const ORG_KINDS = ["people", "projects"];
 const ADD_KINDS = ["orgs", "folders"];
 const ADD_EXAMPLE = '"orgs": [{"id": "<org id or name>", "note": "…"}], "folders": [{"root": "/abs/folder or ~/folder", "org": "<org, or leave out: standalone>", "name": "<optional>", "note": "…"}]';
 const ITEMS_EXAMPLE = '{"sessions": [{"id": "<session id>", "note": "What it is. Why it fits."}], "todos": [{"id": "td_…", "note": "…"}]}';
+const COPY_KINDS = ["copies", "leftovers"];
+const COPY_EXAMPLE = '"copies": [{"instance": "<instance id from status>", "note": "…", "choices": ["Tear Down", "Keep"], "default": "a"}], "leftovers": [{"project": "/abs/project root", "port": 5174, "note": "…", "choices": ["Stop", "Keep"]}]';
 const ORG_EXAMPLE = '"people": [{"org": "<org id or name>", "id": "<person id or name>", "note": "…"}], "projects": [{"id": "<project id or name>", "note": "…"}]';
 
 /** One requested item: its id as the model wrote it, its note (whitespace collapsed), the per-item
     choice it starts on and its own choices (a sova_card entry's `default` and `choices`, both
     checked by the card model). */
-type Wanted = { ref: string; note?: string; default?: string; choices?: unknown };
-/** A resolved item, with the `default` and `choices` its entry gave. */
+type Wanted = { ref: string; note?: string; default?: string; choices?: unknown; section?: unknown; sends?: unknown; land?: unknown };
+/** A resolved item, with the `default`, `choices`, `section` and `sends` its entry gave (the last
+    two as written: the card model checks them, shared/overseer-card.ts). */
 export type ResolvedItem = SovaConfirmItem & { default?: string; choices?: unknown };
-const defaultOf = (x: unknown): { default?: string; choices?: unknown } => {
-  const o = x && typeof x === "object" ? (x as { default?: unknown; choices?: unknown }) : {};
+const defaultOf = (x: unknown): { default?: string; choices?: unknown; section?: unknown; sends?: unknown; land?: unknown } => {
+  const o = x && typeof x === "object" ? (x as { default?: unknown; choices?: unknown; section?: unknown; sends?: unknown; land?: unknown }) : {};
   const d = o.default;
-  return { ...(typeof d === "string" && d.trim() ? { default: d.trim().toLowerCase() } : {}), ...(o.choices !== undefined ? { choices: o.choices } : {}) };
+  return {
+    ...(typeof d === "string" && d.trim() ? { default: d.trim().toLowerCase() } : {}),
+    ...(o.choices !== undefined ? { choices: o.choices } : {}),
+    ...(o.section !== undefined ? { section: o.section } : {}),
+    ...(o.sends !== undefined ? { sends: o.sends } : {}),
+    ...(o.land !== undefined && o.land !== false ? { land: o.land } : {}),
+  };
 };
 /** A list of ids, each a bare string or `{id, note}`; the first mention of an id wins. */
 function wanted(v: unknown): Wanted[] {
@@ -75,6 +92,26 @@ function wantedFolders(v: unknown): FolderWanted[] {
     const note = typeof o.note === "string" ? o.note.replace(/\s+/g, " ").trim() : "";
     const name = typeof o.name === "string" ? o.name.trim() : "";
     out.set(`${org}\0${ref}`, { org, ref, ...(name ? { name } : {}), ...(note ? { note } : {}), ...defaultOf(x) });
+  }
+  return [...out.values()];
+}
+
+/** Copies: each `{instance, note?, default?, choices?}` (or a bare instance id); the first mention wins. */
+function wantedCopies(v: unknown): Wanted[] {
+  return wanted((Array.isArray(v) ? v : []).map((x) => (x && typeof x === "object" && typeof (x as { instance?: unknown }).instance === "string" ? { ...(x as object), id: (x as { instance: string }).instance } : x)));
+}
+/** Leftover processes: each `{project, port, note?, default?, choices?}`. */
+type LeftoverWanted = Wanted & { project: string; port: number };
+function wantedLeftovers(v: unknown): LeftoverWanted[] {
+  const out = new Map<string, LeftoverWanted>();
+  for (const x of Array.isArray(v) ? v : []) {
+    const o: { project?: unknown; port?: unknown; note?: unknown } = x && typeof x === "object" ? x : {};
+    const project = typeof o.project === "string" ? o.project.trim() : "";
+    const port = typeof o.port === "number" && Number.isInteger(o.port) ? o.port : typeof o.port === "string" && /^\d+$/.test(o.port) ? Number(o.port) : NaN;
+    const ref = `${project}:${port}`;
+    if (!project || !Number.isInteger(port) || out.has(ref)) continue;
+    const note = typeof o.note === "string" ? o.note.replace(/\s+/g, " ").trim() : "";
+    out.set(ref, { ref, project, port, ...(note ? { note } : {}), ...defaultOf(x) });
   }
   return [...out.values()];
 }
@@ -116,16 +153,17 @@ export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, r
   if (raw === undefined || raw === null) return [];
   const orgs = !!(lookup.person && lookup.project);
   const adds = orgs && !!(lookup.org && lookup.folder);
-  const kinds = [...ITEM_KINDS, ...(orgs ? ORG_KINDS : []), ...(adds ? ADD_KINDS : [])];
+  const copies = !!(lookup.copy && lookup.leftover);
+  const kinds = [...ITEM_KINDS, ...(orgs ? ORG_KINDS : []), ...(adds ? ADD_KINDS : []), ...(copies ? COPY_KINDS : [])];
   if (typeof raw !== "object" || Array.isArray(raw))
     throw refusal(
-      `items is an object: { sessions?: [...], ideas?: [...], todos?: [...]${orgs ? ", people?: [...], projects?: [...]" : ""}${adds ? ", orgs?: [...], folders?: [...]" : ""} }, each entry an id or { id, note }${orgs ? " (a person also names its org: { org, id, note }; a project may)" : ""}${adds ? " (a folder is { root, org?, name?, note })" : ""}.`,
+      `items is an object: { sessions?: [...], ideas?: [...], todos?: [...]${orgs ? ", people?: [...], projects?: [...]" : ""}${adds ? ", orgs?: [...], folders?: [...]" : ""}${copies ? ", copies?: [...], leftovers?: [...]" : ""} }, each entry an id or { id, note }${orgs ? " (a person also names its org: { org, id, note }; a project may)" : ""}${adds ? " (a folder is { root, org?, name?, note })" : ""}.`,
     );
   const r = raw as Record<string, unknown>;
   const stray = Object.keys(r).filter((k) => !kinds.includes(k));
   if (stray.length)
     throw refusal(
-      `No card was shown. items takes only ${adds ? "sessions, ideas, todos, people, projects, orgs and folders" : orgs ? "sessions, ideas, todos, people and projects" : "sessions, ideas and todos"}, each a list; this one has ${stray.join(", ")}. Put each entry in its list, e.g. ${ITEMS_EXAMPLE}${orgs ? `, and ${ORG_EXAMPLE}` : ""}${adds ? `, ${ADD_EXAMPLE}` : ""}.`,
+      `No card was shown. items takes only ${kinds.join(", ").replace(/, ([^,]+)$/, " and $1")}, each a list; this one has ${stray.join(", ")}. Put each entry in its list, e.g. ${ITEMS_EXAMPLE}${orgs ? `, and ${ORG_EXAMPLE}` : ""}${adds ? `, ${ADD_EXAMPLE}` : ""}${copies ? `, ${COPY_EXAMPLE}` : ""}.`,
     );
   const want = {
     sessions: wanted(r.sessions),
@@ -135,13 +173,17 @@ export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, r
     projects: orgs ? wantedOrg(r.projects) : [],
     orgs: adds ? wanted(r.orgs) : [],
     folders: adds ? wantedFolders(r.folders) : [],
+    copies: copies ? wantedCopies(r.copies) : [],
+    leftovers: copies ? wantedLeftovers(r.leftovers) : [],
   };
-  const total = want.sessions.length + want.ideas.length + want.todos.length + want.people.length + want.projects.length + want.orgs.length + want.folders.length;
+  const total = want.sessions.length + want.ideas.length + want.todos.length + want.people.length + want.projects.length + want.orgs.length + want.folders.length + want.copies.length + want.leftovers.length;
   if (total > CONFIRM_ITEMS_MAX) throw refusal(`A card lists at most ${CONFIRM_ITEMS_MAX} items; this one has ${total}. Split it, or ask about the first ${CONFIRM_ITEMS_MAX}.`);
   const out: ResolvedItem[] = [];
-  const unknown = { sessions: [] as string[], ideas: [] as string[], todos: [] as string[], projects: [] as string[], people: [] as string[], orgs: [] as string[], folders: [] as string[] };
+  const unknown = { sessions: [] as string[], ideas: [] as string[], todos: [] as string[], projects: [] as string[], people: [] as string[], orgs: [] as string[], folders: [] as string[], copies: [] as string[] };
+  const refusedRows: string[] = [];
   const self: string[] = [];
   const long: string[] = [];
+  const landing: string[] = [];
   const seen = new Set<string>();
   const noted = <T extends SovaConfirmItem>(item: T, w: Wanted): T & { default?: string; choices?: unknown } => {
     let note = w.note;
@@ -149,7 +191,15 @@ export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, r
       long.push(`${w.ref} (${note.length})`);
       note = cut(note, CONFIRM_NOTE_MAX);
     }
-    return { ...item, ...(note ? { note } : {}), ...(w.default ? { default: w.default } : {}), ...(w.choices !== undefined ? { choices: w.choices } : {}) };
+    return {
+      ...item,
+      ...(note ? { note } : {}),
+      ...(w.default ? { default: w.default } : {}),
+      ...(w.choices !== undefined ? { choices: w.choices } : {}),
+      // Checked by the card model (CardError names the item); carried as written until then.
+      ...(w.section !== undefined ? { section: w.section as string } : {}),
+      ...(w.sends !== undefined ? { sends: w.sends as string } : {}),
+    };
   };
   for (const w of want.sessions) {
     const s = await lookup.session(w.ref);
@@ -157,7 +207,13 @@ export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, r
     else if (lookup.isSelf(s)) self.push(w.ref);
     else if (!seen.has(s.id)) {
       seen.add(s.id);
-      out.push(noted(sessionItem(s), w));
+      const item = sessionItem(s);
+      if (w.land !== undefined) {
+        const land = await landOf(s, w, lookup);
+        if (typeof land === "string") landing.push(land);
+        else (item as Extract<SovaConfirmItem, { kind: "session" }>).land = land;
+      }
+      out.push(noted(item, w));
     }
   }
   for (const w of want.ideas) {
@@ -209,24 +265,65 @@ export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, r
       out.push(noted({ ...p, name: cut(p.name, 120) }, w));
     }
   }
+  // Copies and leftover processes (§app.overseer/copies): after people, before sessions.
+  for (const w of want.copies) {
+    const c = await lookup.copy!(w.ref);
+    if (!c) unknown.copies.push(w.ref);
+    else if ("refused" in c) refusedRows.push(c.refused);
+    else if (!seen.has(`copy/${c.id}`)) {
+      seen.add(`copy/${c.id}`);
+      out.push(noted(c, w));
+    }
+  }
+  for (const w of want.leftovers) {
+    const l = await lookup.leftover!(w.project, w.port);
+    if ("refused" in l) refusedRows.push(l.refused);
+    else if (!seen.has(`leftover/${l.project}/${l.port}`)) {
+      seen.add(`leftover/${l.project}/${l.port}`);
+      out.push(noted(l, w));
+    }
+  }
   const problems: string[] = [];
   const missing = (Object.entries(unknown) as [string, string[]][]).filter(([, v]) => v.length).map(([k, v]) => `${k}: ${v.join(", ")}`);
   if (missing.length)
     problems.push(
-      `These ids match nothing (${missing.join("; ")}). List them again (sova_list_sessions, sova_ideas, sova_todos${orgs ? ", sova_orgs, sova_projects" : ""}) and use the ids exactly as printed.${unknown.folders.length ? " A folder must be an absolute folder of this host (or ~/…) that the Overseer may add, into an org attached here or none." : ""}`,
+      `These ids match nothing (${missing.join("; ")}). List them again (sova_list_sessions, sova_ideas, sova_todos${orgs ? ", sova_orgs, sova_projects" : ""}${copies ? ", sova_project_verbs status" : ""}) and use the ids exactly as printed.${unknown.folders.length ? " A folder must be an absolute folder of this host (or ~/…) that the Overseer may add, into an org attached here or none." : ""}`,
     );
+  if (refusedRows.length) problems.push(refusedRows.join(" "));
   if (self.length) problems.push(`${self.join(", ")} is your own conversation; a card never lists it. Leave it out.`);
+  problems.push(...landing);
   if (problems.length) throw refusal(`No card was shown. ${problems.join(" ")}`);
   cutNotes?.push(...long);
   return out;
+}
+
+/**
+ * A land row's snapshot (§app.overseer/card-land): the branch of the worktree `s` owns that is Ready to land, with
+ * its head commit now. `land: true` takes the one ready branch; `land: "<branch>"` names it, which a session with
+ * more than one ready branch needs. Otherwise the refusal sentence for the card, naming the row.
+ */
+async function landOf(s: SessionSummary, w: Wanted, lookup: ConfirmLookup): Promise<{ branch: string; head: string } | string> {
+  if (!lookup.readyToLand) return `${w.ref}: land rows are the global Overseer's only; leave land out.`;
+  if (w.land !== true && (typeof w.land !== "string" || !w.land.trim())) return `${w.ref}: land is true, or the branch to land ("feat/x").`;
+  const ready = await lookup.readyToLand(s).catch(() => []);
+  const named = typeof w.land === "string" ? w.land.trim() : null;
+  if (named) {
+    const hit = ready.find((r) => r.branch === named);
+    return hit ?? `${w.ref}: ${named} isn't Ready to land now${ready.length ? ` (ready: ${ready.map((r) => r.branch).join(", ")})` : ""}, so it can't be a land row.`;
+  }
+  if (ready.length === 1) return ready[0]!;
+  if (!ready.length) return `${w.ref} has no worktree Ready to land now, so it can't be a land row: leave land out.`;
+  return `${w.ref} has ${ready.length} branches Ready to land (${ready.map((r) => r.branch).join(", ")}): name the one this row lands, land: "<branch>".`;
 }
 
 /** Whether a card may gate an act that reaches people or ends something (§app.overseer/org-people-facing):
     only the global Overseer's (the one that resolves people and projects), when it lists a person, a
     project or a gathering session. A click on it opens the only turn that act runs in; typed text never does. */
 export async function clickOnlyCard(items: SovaConfirmItem[], lookup: ConfirmLookup): Promise<boolean> {
+  // A copy or a leftover process: either overseer's card (§app.overseer/copies).
+  if (items.some((i) => i.kind === "copy" || i.kind === "leftover")) return true;
   if (!lookup.person || !lookup.project) return false;
-  if (items.some((i) => i.kind === "person" || i.kind === "project" || i.kind === "org" || i.kind === "folder")) return true;
+  if (items.some((i) => i.kind === "person" || i.kind === "project" || i.kind === "org" || i.kind === "folder" || (i.kind === "session" && !!i.land))) return true;
   for (const i of items) {
     if (i.kind !== "session") continue;
     const s = await lookup.session(i.id);
@@ -242,27 +339,32 @@ const NOTE_DESC =
 const DEFAULT_DESC = "With choices (this item's own, else the card's): the choice letter this item starts on (\"a\"), your recommendation for it.";
 const CHOICES_DESC =
   'This item\'s own choices, when its actions differ from the card\'s choices (2 to 4 short labels, lettered a, b… for this row only), e.g. ["Archive", "Keep"] on a session with no worktree beside ["Clean Up & Archive", "Archive Only", "Keep"] on the card.';
+const SECTION_DESC = `The heading this row sits under, at most ${CONFIRM_SECTION_MAX} characters ("Ready to land", "Done").`;
+const SENDS_DESC = `The exact message its Go (first choice) sends this session, at most ${CONFIRM_SENDS_MAX} characters; shown on the row.`;
+const rowProps = { section: { type: "string", description: SECTION_DESC }, sends: { type: "string", description: SENDS_DESC } };
+const LAND_DESC =
+  'A Ready to land row: true takes the branch of the worktree this session owns that is Ready to land, or name it ("feat/x") when it has more than one. The card snapshots that branch and its head commit and shows them; the row needs choices, its first one Go. In the turn the Apply opens, call sova_land on it when Go was picked: it lands at that commit, never a newer one. Never send the session "land it".';
 const choicesProp = { type: "array", minItems: 2, maxItems: 4, items: { type: "string", minLength: 1 }, description: CHOICES_DESC };
-const idList = (description: string) => ({
+const idList = (description: string, extra: Record<string, unknown> = {}) => ({
   type: "array",
   items: {
     anyOf: [
       { type: "string" },
       {
         type: "object",
-        properties: { id: { type: "string" }, note: { type: "string", description: NOTE_DESC }, default: { type: "string", description: DEFAULT_DESC }, choices: choicesProp },
+        properties: { id: { type: "string" }, note: { type: "string", description: NOTE_DESC }, default: { type: "string", description: DEFAULT_DESC }, choices: choicesProp, ...rowProps, ...extra },
         required: ["id"],
         additionalProperties: false,
       },
     ],
   },
-  description: `${description} Each entry is { id, note, default?, choices? } (a bare id still works).`,
+  description: `${description} Each entry is { id, note, default?, choices?, section?, sends?${"land" in extra ? ", land?" : ""} } (a bare id still works).`,
 });
 const orgList = (description: string) => ({
   type: "array",
   items: {
     type: "object",
-    properties: { org: { type: "string" }, id: { type: "string" }, note: { type: "string", description: NOTE_DESC }, default: { type: "string", description: DEFAULT_DESC }, choices: choicesProp },
+    properties: { org: { type: "string" }, id: { type: "string" }, note: { type: "string", description: NOTE_DESC }, default: { type: "string", description: DEFAULT_DESC }, choices: choicesProp, ...rowProps },
     required: ["org", "id"],
     additionalProperties: false,
   },
@@ -280,6 +382,7 @@ const folderList = {
       note: { type: "string", description: NOTE_DESC },
       default: { type: "string", description: DEFAULT_DESC },
       choices: choicesProp,
+      ...rowProps,
     },
     required: ["root"],
     additionalProperties: false,
@@ -287,14 +390,48 @@ const folderList = {
   description: "Folders to add as projects (sova_org_project add): { root, org?, name?, note }.",
 };
 
-/** The JSON schema of a card's `items`, for a caller with (`orgs`) or without people, projects, orgs and folders. */
-export function itemsSchema(orgs: boolean): Record<string, unknown> {
+const copyList = {
+  type: "array",
+  items: {
+    anyOf: [
+      { type: "string" },
+      {
+        type: "object",
+        properties: { instance: { type: "string", description: "The copy's instance id, as sova_project_verbs status prints it." }, note: { type: "string", description: NOTE_DESC }, default: { type: "string", description: DEFAULT_DESC }, choices: choicesProp },
+        required: ["instance"],
+        additionalProperties: false,
+      },
+    ],
+  },
+  description:
+    'Running copies (sova_project_verbs teardown, reset or down), each its own row: { instance, note, choices?, default? }. Give it choices such as ["Tear Down", "Keep"] or ["Reset", "Stop", "Keep"]: only a chosen label starting with Tear Down, Reset or Stop approves that act on that copy, in the turn the click opens. Never a main copy (slot 0).',
+};
+const leftoverList = {
+  type: "array",
+  items: {
+    type: "object",
+    properties: {
+      project: { type: "string", description: "The project's root (absolute)." },
+      port: { type: "integer", minimum: 1, maximum: 65535, description: "The copy port it holds, as sova_project_verbs leftovers lists it." },
+      note: { type: "string", description: NOTE_DESC },
+      default: { type: "string", description: DEFAULT_DESC },
+      choices: choicesProp,
+    },
+    required: ["project", "port"],
+    additionalProperties: false,
+  },
+  description: 'Leftover processes holding a project\'s copy port that sova_project_verbs leftovers calls safe to stop: { project, port, note, choices? } (e.g. ["Stop", "Keep"]). Only a Stop choice approves stop-leftover for it.',
+};
+
+/** The JSON schema of a card's `items`, for a caller with (`orgs`) or without people, projects, orgs and folders,
+    and with (`copies`) or without running copies and leftover processes. */
+export function itemsSchema(orgs: boolean, copies = false): Record<string, unknown> {
   return {
     type: "object",
     // Not closed: a misplaced key reaches execute, whose refusal says where it goes (pi's own
     // "schema is false" does not).
     properties: {
-      sessions: idList("Session ids (or sova://s/<id> links)."),
+      sessions: idList("Session ids (or sova://s/<id> links).", orgs ? { land: { anyOf: [{ type: "boolean" }, { type: "string" }], description: LAND_DESC } } : {}),
       ideas: idList("Idea ids (§ns/name)."),
       todos: idList("Todo ids (td_…)."),
       ...(orgs
@@ -305,7 +442,8 @@ export function itemsSchema(orgs: boolean): Record<string, unknown> {
             folders: folderList,
           }
         : {}),
+      ...(copies ? { copies: copyList, leftovers: leftoverList } : {}),
     },
-    description: `Every ${orgs ? "session, idea, todo, person, project, org or folder" : "session, idea or todo"} the question is about, at most ${CONFIRM_ITEMS_MAX}. Required when the card acts on specific things (archive, tick, send, …); then give every item a note. The card numbers them 1..N. Shape: ${ITEMS_EXAMPLE}${orgs ? `; people and projects: ${ORG_EXAMPLE}; orgs and folders: ${ADD_EXAMPLE}. An act that reaches people or ends something (a gathering session, a person leaving, a project archived or imported, an overseer cleared, an org detached), and adding a folder as a project, runs only in the turn this card's click opens, and only on what it lists` : ""}.`,
+    description: `Every ${orgs ? "session, idea, todo, person, project, org or folder" : "session, idea or todo"} the question is about, at most ${CONFIRM_ITEMS_MAX}. Required when the card acts on specific things (archive, tick, send, …); then give every item a note. The card numbers them 1..N. Shape: ${ITEMS_EXAMPLE}${orgs ? `; people and projects: ${ORG_EXAMPLE}; orgs and folders: ${ADD_EXAMPLE}. An act that reaches people or ends something (a gathering session, a person leaving, a project archived or imported, an overseer cleared, an org detached), and adding a folder as a project, runs only in the turn this card's click opens, and only on what it lists` : ""}${copies ? `; copies and leftovers: ${COPY_EXAMPLE}. Tearing down, resetting or stopping a copy you did not start (or one with share links), and stopping a leftover process, run only in the turn this card's click opens, only for a row whose chosen label names the act (Tear Down, Reset, Stop); a typed yes never counts` : ""}.`,
   };
 }

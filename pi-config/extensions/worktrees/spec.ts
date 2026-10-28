@@ -9,6 +9,7 @@ import { execFile } from "node:child_process";
 import { cpSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Git } from "./git.ts";
+import { hasSpec } from "../spec/core/layout.mjs";
 
 /** The spec tools shipped beside this extension (`extensions/spec/core`). */
 export const SPEC_CORE_DIR = join(import.meta.dirname, "..", "spec", "core");
@@ -162,7 +163,7 @@ export type DocsLanding =
 export async function landDocs(git: Git, req: { path: string; branch: string; target?: string }, opts: { coreDir?: string; node?: Node } = {}): Promise<DocsLanding> {
 	const tool = join(opts.coreDir ?? SPEC_CORE_DIR, "sova-spec-draft.mjs");
 	const node = opts.node ?? runNode;
-	if (!existsSync(join(req.path, ".sova", "spec", "manifest.json")) || !draftNames(req.path).length || !existsSync(tool)) return { state: "none" };
+	if (!hasSpec(req.path) || !draftNames(req.path).length || !existsSync(tool)) return { state: "none" };
 	const head = (await git(["rev-parse", "HEAD"], req.path)).stdout.trim();
 	if (!/^[0-9a-f]{40,64}$/.test(head)) return { state: "none" };
 	// The spec's own files must be as committed: the docs commit holds exactly what land wrote.
@@ -244,7 +245,7 @@ export async function carryAgreedDrafts(git: Git, req: { from: string; to: strin
 	const tool = join(coreDir, "sova-spec-draft.mjs");
 	const node = opts.node ?? runNode;
 	const top = (await git(["rev-parse", "--show-toplevel"], req.from)).stdout.trim();
-	if (!top || top === req.to || !draftNames(top).length || !existsSync(tool) || !existsSync(join(req.to, ".sova", "spec", "manifest.json"))) return [];
+	if (!top || top === req.to || !draftNames(top).length || !existsSync(tool) || !hasSpec(req.to)) return [];
 	const j = json((await node([tool, "drafts", "--root", top, "--json"], top)).stdout);
 	const rows: { name?: unknown; pending?: unknown }[] = Array.isArray(j?.drafts) ? j.drafts : [];
 	const { readSpecFs } = await import(join(coreDir, "layout.mjs"));

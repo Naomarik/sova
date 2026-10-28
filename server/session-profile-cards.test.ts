@@ -165,6 +165,12 @@ describe("a card's effort and subagents", () => {
     assert.deepEqual(Object.keys(l.unusable ?? {}).sort(), ["user:dangling", "user:denied"]);
     assert.match(l.unusable!["user:denied"]!, /^Provider zai is turned off in Settings → Models/);
     assert.deepEqual(l.subagents?.map((s) => s.id), ["off", "house", "claude-subs"]);
+    // The cards' subagents count: the footprint's distinct primary models, counted, never parsed by the client.
+    assert.equal(l.subagents?.[0]?.models, 0, "off names no models");
+    for (const s of l.subagents!.slice(1)) {
+      assert.ok(s.models! > 0, `${s.id} names a model`);
+      if (!s.footprint.includes("+")) assert.equal(s.models, s.footprint.split(" · ").length, `${s.id}: ${s.footprint}`);
+    }
   });
 });
 

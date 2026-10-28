@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { GitRepoSummary, SessionSetup } from "../../shared/protocol";
+import type { GitFolderReading, GitRepoSummary, SessionSetup } from "../../shared/protocol";
 import {
   agoLabel,
   CONTEXT_NONE,
@@ -10,6 +10,8 @@ import {
   contextSum,
   fileFacts,
   flipped,
+  folderSizeLabel,
+  gitFolderView,
   gitView,
   hasTokens,
   isSumEmpty,
@@ -223,6 +225,7 @@ test("git repo: the Repository pane's words, the sum only when there is one, the
       { oid: "0a1b2c3", subject: "drop the old thing", ago: "4d ago" },
     ],
     noCommit: null,
+    gitFolder: null,
   });
   // The wire's older shape: only the newest commit. The card draws a log of one, not nothing.
   const single = gitView(repo({ lastCommit: { oid: "1a2b3c4d5e6f7a8b", subject: "fix the thing", at: NOW - 2 * 3600_000 } }), "/home/u", NOW);
@@ -309,4 +312,27 @@ test("a context file in the session's own folder is named from there; one in a s
   const rows = contextRows(setup({ context: [f("/home/u/AGENTS.md"), f("/home/u/proj/AGENTS.md"), f("/home/u/proj-two/AGENTS.md"), f("/opt/x/AGENTS.md")] }), "/home/u");
   assert.deepEqual(rows.map((r) => r.label), ["~/AGENTS.md", "AGENTS.md", "~/proj-two/AGENTS.md", "/opt/x/AGENTS.md"]);
   assert.deepEqual(contextRows(setup({ cwd: "/home/u/proj/", context: [f("/home/u/proj/AGENTS.md")] }), null).map((r) => r.label), ["AGENTS.md"]);
+});
+
+const folder = (over: Partial<GitFolderReading> = {}): GitFolderReading => ({ path: "/home/u/app/.git", bytes: 25 * 1024 ** 3 + 300 * 1024 ** 2, partial: false, packs: 12, loose: 40, warning: null, checkedAt: NOW, ...over });
+
+test("git folder: its size in binary units, one decimal under 10, the folder as its title", () => {
+  assert.deepEqual([0, 812, 1024, 4.2 * 1024 ** 2, 9.96 * 1024 ** 2, 25.3 * 1024 ** 3, 2048 * 1024 ** 4].map(folderSizeLabel), ["0 B", "812 B", "1.0 KB", "4.2 MB", "10 MB", "25 GB", "2,048 TB"]);
+  assert.deepEqual(gitFolderView(folder(), "/home/u", NOW), { label: "Git folder", size: "25 GB", title: "~/app/.git", warning: null });
+  assert.equal(gitFolderView(folder({ partial: true }), "/home/u", NOW).label, "Git folder at least", "a cut walk is a lower bound");
+  const withRow = gitView(repo({ gitFolder: folder() }), "/home/u", NOW);
+  assert.equal(withRow.kind === "repo" && withRow.gitFolder?.size, "25 GB");
+  const without = gitView(repo({}), "/home/u", NOW);
+  assert.equal(without.kind === "repo" && without.gitFolder, null, "no reading (a target, an older server): no row");
+});
+
+test("git folder: stuck and overdue read differently, and each overdue count only when it is over", () => {
+  const stuck = gitFolderView(folder({ warning: { kind: "stuck", lock: "multi-pack-index.lock", path: "/home/u/app/.git/objects/pack/multi-pack-index.lock", since: NOW - 3 * 86_400_000 } }), "/home/u", NOW);
+  assert.deepEqual(stuck.warning, { kind: "stuck", text: "Git's cleanup looks stuck: multi-pack-index.lock was left 3d ago.", title: "~/app/.git/objects/pack/multi-pack-index.lock. If no git command is running, deleting it lets cleanup finish." });
+  const long = gitFolderView(folder({ warning: { kind: "stuck", lock: "commit-graph-chain.lock", path: "/x/.git/objects/info/commit-graphs/commit-graph-chain.lock", since: NOW - 30 * 86_400_000 } }), "/home/u", NOW);
+  assert.match(long.warning!.text, /^Git's cleanup looks stuck: commit-graph-chain\.lock was left on [A-Z][a-z]{2} \d{1,2}\.$/);
+  assert.equal(gitFolderView(folder({ warning: { kind: "overdue", packs: 63 } }), "/home/u", NOW).warning?.text, "Git hasn't cleaned up here in a while: 63 pack files.");
+  assert.equal(gitFolderView(folder({ warning: { kind: "overdue", loose: 12_400 } }), "/home/u", NOW).warning?.text, "Git hasn't cleaned up here in a while: 12,400 loose objects.");
+  assert.equal(gitFolderView(folder({ warning: { kind: "overdue", packs: 51, loose: 6_701 } }), "/home/u", NOW).warning?.text, "Git hasn't cleaned up here in a while: 51 pack files and 6,701 loose objects.");
+  assert.notEqual(stuck.warning?.text.split(":")[0], gitFolderView(folder({ warning: { kind: "overdue", packs: 63 } }), "/home/u", NOW).warning?.text.split(":")[0], "the two say different things");
 });

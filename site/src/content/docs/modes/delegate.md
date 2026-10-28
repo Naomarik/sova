@@ -118,7 +118,7 @@ it read-only. See [strict](/docs/modes/#strict).
 
 ## Where Delegate isn't available
 
-- **The Overseer** is always in normal mode.
+- **The Overseer** is always in [normal](/docs/modes/normal/) mode.
 
 A project's coding sessions start in this computer's default mode, so in Delegate when that is your
 default, and either Overseer can start or switch one into Delegate for large, multi-part work.

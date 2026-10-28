@@ -30,9 +30,9 @@ const haiku: WorkerChoice = { backend: "claude-code", model: "claude-haiku-5-5",
 const glm: WorkerChoice = { backend: "pi", model: "zai/glm-5.3", effort: "low" };
 
 describe("the settings file (mode-memory.json)", () => {
-  test("missing or corrupt: Haiku 5.5 at low effort, no fallback, UniiChat at 128 KB", () => {
+  test("missing or corrupt: Haiku 5.5 at low effort, no fallback, UniiChat at 128 KB, zoomable at 32 KB", () => {
     assert.equal(settings.memoryFile(), join(agentDir, "mode-memory.json"));
-    assert.deepEqual(settings.loadMemorySettings(), { version: 1, summarizer: { primary: haiku, fallback: null } });
+    assert.deepEqual(settings.loadMemorySettings(), { version: 1, summarizer: { primary: haiku, fallback: null }, sizes: { uniichat: 128, zoomable: 32 } });
     assert.deepEqual(settings.defaultMemoryChoice(), { type: "uniichat", size: 128 });
     const f = join(agentDir, "corrupt.json");
     writeFileSync(f, "{ nope");
@@ -43,18 +43,44 @@ describe("the settings file (mode-memory.json)", () => {
   test("a PUT body is strict; a stored file is read tolerantly", () => {
     assert.match((settings.parseMemorySettings({ version: 2 }) as { error: string }).error, /version: 1/);
     assert.match((settings.parseMemorySettings({ version: 1, summarizer: { primary: { backend: "nope" } } }) as { error: string }).error, /^summarizer\.primary:/);
-    assert.match((settings.parseMemorySettings({ version: 1, summarizer: { primary: haiku }, default: { type: "uniichat", size: 7 } }) as { error: string }).error, /^default:/);
+    assert.match((settings.parseMemorySettings({ version: 1, summarizer: { primary: haiku }, default: { type: "nope" } }) as { error: string }).error, /^default:/);
+    assert.match((settings.parseMemorySettings({ version: 1, summarizer: { primary: haiku }, sizes: { uniichat: 600 } }) as { error: string }).error, /^sizes\.uniichat:? must be/);
+    assert.match((settings.parseMemorySettings({ version: 1, summarizer: { primary: haiku }, sizes: { other: 64 } }) as { error: string }).error, /^sizes: other/);
     const f = join(agentDir, "tolerant.json");
-    writeFileSync(f, JSON.stringify({ version: 1, summarizer: { primary: { backend: "nope" }, fallback: glm }, default: { type: "zoomable", size: 9999 } }));
-    assert.deepEqual(settings.loadMemorySettings(f), { version: 1, summarizer: { primary: haiku, fallback: glm } }, "a bad slot reads as its default");
+    writeFileSync(f, JSON.stringify({ version: 1, summarizer: { primary: { backend: "nope" }, fallback: glm }, sizes: { uniichat: 7 }, default: { type: "zoomable", size: 9999 } }));
+    assert.deepEqual(
+      settings.loadMemorySettings(f),
+      { version: 1, summarizer: { primary: haiku, fallback: glm }, sizes: { uniichat: 128, zoomable: 32 }, default: { type: "zoomable" } },
+      "a bad slot reads as its default",
+    );
   });
 
-  test("a choice: a new type without a size takes that type's default size; a record without a size too", () => {
-    assert.deepEqual(settings.applyMemoryPatch({ type: "uniichat", size: 64 }, { type: "zoomable" }), { type: "zoomable", size: 32 });
-    assert.deepEqual(settings.applyMemoryPatch({ type: "uniichat", size: 64 }, { size: 256 }), { type: "uniichat", size: 256 });
-    assert.deepEqual(settings.choiceOf({ type: "zoomable" }), { type: "zoomable", size: 32 });
-    assert.ok("error" in settings.parseMemoryChoice({ size: 600 }, true), "over 512 KB");
-    assert.ok("error" in settings.parseMemoryChoice({}, true));
+  test("a chat's size is Settings' for its type: a record's own size is ignored; a patch is a type only", () => {
+    const f = join(agentDir, "sizes.json");
+    settings.saveMemorySettings({ ...settings.memoryDefaults(), sizes: { uniichat: 64, zoomable: 16 } }, f);
+    assert.deepEqual(settings.choiceOf({ type: "zoomable" }, f), { type: "zoomable", size: 16 });
+    assert.deepEqual(settings.choiceOf({ type: "uniichat", size: 256 }, f), { type: "uniichat", size: 64 }, "an older record's size");
+    assert.deepEqual(settings.choiceOf(null, f), { type: "uniichat", size: 64 }, "no record: the default type");
+    assert.deepEqual(settings.parseMemoryPatch({ type: "zoomable", size: 600 }), { type: "zoomable" }, "a size is ignored, never refused");
+    assert.deepEqual(settings.parseMemoryPatch({ size: 64 }), {});
+    assert.ok("error" in settings.parseMemoryPatch({ type: "nope" }));
+    assert.ok("error" in settings.parseMemoryPatch({}));
+  });
+
+  test("an older default's size moves into sizes once, before Save as default rewrites the default", () => {
+    const f = join(agentDir, "legacy.json");
+    writeFileSync(f, JSON.stringify({ version: 1, summarizer: { primary: haiku, fallback: null }, default: { type: "zoomable", size: 64 } }));
+    assert.deepEqual(settings.defaultMemoryChoice(f), { type: "zoomable", size: 64 }, "read as zoomable's size");
+    settings.saveDefaultMemoryType("uniichat", f);
+    assert.deepEqual(JSON.parse(readFileSync(f, "utf8")), {
+      version: 1,
+      summarizer: { primary: haiku, fallback: null },
+      sizes: { uniichat: 128, zoomable: 64 },
+      default: { type: "uniichat" },
+    });
+    assert.deepEqual(settings.choiceOf({ type: "zoomable" }, f), { type: "zoomable", size: 64 }, "the size outlives the rewrite");
+    writeFileSync(f, JSON.stringify({ version: 1, summarizer: { primary: haiku, fallback: null }, sizes: { zoomable: 128 }, default: { type: "zoomable", size: 64 } }));
+    assert.equal(settings.loadMemorySettings(f).sizes?.zoomable, 128, "a size sizes already names wins");
   });
 });
 
@@ -82,42 +108,59 @@ describe("the routes", () => {
     assert.deepEqual(info.types.map((t: { id: string }) => t.id), ["uniichat", "zoomable"]);
   });
 
-  test("PUT /api/settings/memory saves the summarizer and keeps a stored default it wasn't sent", async () => {
-    settings.saveDefaultMemoryChoice({ type: "zoomable", size: 64 });
-    const body: MemorySettings = { version: 1, summarizer: { primary: glm, fallback: haiku } };
+  test("PUT /api/settings/memory saves the summarizer and sizes, and keeps a stored default and sizes it wasn't sent", async () => {
+    settings.saveDefaultMemoryType("zoomable");
+    const body: MemorySettings = { version: 1, summarizer: { primary: glm, fallback: haiku }, sizes: { uniichat: 256 } };
     const r = await req("PUT", "/api/settings/memory", body);
     assert.equal(r.status, 200);
     const out = await r.json();
     assert.deepEqual(out.warnings, []);
     const saved = JSON.parse(readFileSync(settings.memoryFile(), "utf8"));
-    assert.deepEqual(saved, { version: 1, summarizer: { primary: glm, fallback: haiku }, default: { type: "zoomable", size: 64 } });
+    assert.deepEqual(saved, { version: 1, summarizer: { primary: glm, fallback: haiku }, sizes: { uniichat: 256, zoomable: 32 }, default: { type: "zoomable" } });
+    assert.equal((await req("PUT", "/api/settings/memory", { version: 1, summarizer: { primary: glm, fallback: haiku } })).status, 200);
+    assert.equal(settings.loadMemorySettings().sizes?.uniichat, 256, "a PUT without sizes keeps them");
+    assert.equal((await req("PUT", "/api/settings/memory", { ...body, sizes: { zoomable: 4 } })).status, 400, "under 8 KB");
     assert.equal((await req("PUT", "/api/settings/memory", { version: 1 })).status, 400);
     assert.equal((await app.request("/api/settings/memory", { method: "PUT", body: "nope" })).status, 400);
   });
 
-  test("the Overseer's switch: on by default (UniiChat, 128 KB, never the chats' saved default), kept in overseer.json, told to its held chat, 400 on a bad body", async () => {
+  test("the Overseer's switch: on by default (UniiChat, never the chats' saved default, at Settings' size), kept in overseer.json, told to its held chat, 400 on a bad body", async () => {
     const { readOverseerSettings } = await import("../overseer-store");
     // A Zoomable default saved for ordinary chats (an earlier test saves one) never reaches the Overseer.
-    settings.saveDefaultMemoryChoice({ type: "zoomable", size: 64 });
+    settings.saveDefaultMemoryType("zoomable");
     assert.equal(readOverseerSettings().memory, undefined, "no saved choice");
     const dflt = await (await req("GET", "/api/overseer/memory")).json();
-    assert.deepEqual([dflt.on, dflt.type, dflt.size], [true, "uniichat", 128]);
+    assert.deepEqual([dflt.on, dflt.type, dflt.size], [true, "uniichat", 256], "Settings' UniiChat size");
     assert.deepEqual(dflt.status, { state: "ready", messages: 0, background: 0 }, "on: its held chat's status");
     // Switched off: the setting in force was on, so nothing turns on.
     const off = await (await req("PUT", "/api/overseer/memory", { on: false })).json();
-    assert.deepEqual([off.on, off.type, off.size, off.status.state], [false, "uniichat", 128, "off"]);
+    assert.deepEqual([off.on, off.type, off.size, off.status.state], [false, "uniichat", 256, "off"]);
     assert.deepEqual(overseerCalls.splice(0), ["changed", "switched"]);
-    assert.deepEqual(readOverseerSettings().memory, { on: false, type: "uniichat", size: 128 }, "an explicit off is saved");
+    assert.deepEqual(readOverseerSettings().memory, { on: false, type: "uniichat" }, "an explicit off is saved, no size written");
     assert.equal((await (await req("GET", "/api/overseer/memory")).json()).on, false, "and stays off");
     // A type change while off writes the choice and keeps it off.
     const zoom = await (await req("PUT", "/api/overseer/memory", { type: "zoomable" })).json();
-    assert.deepEqual([zoom.on, zoom.type, zoom.size], [false, "zoomable", 32], "a new type takes its default size");
+    assert.deepEqual([zoom.on, zoom.type, zoom.size], [false, "zoomable", 32], "Settings' zoomable size");
     const on = await (await req("PUT", "/api/overseer/memory", { on: true, type: "uniichat" })).json();
-    assert.deepEqual([on.on, on.type, on.size], [true, "uniichat", 128]);
+    assert.deepEqual([on.on, on.type, on.size], [true, "uniichat", 256]);
     assert.deepEqual(overseerCalls.splice(0), ["changed", "switched", "on", "switched"], "off to on is the turned-on edge");
-    assert.deepEqual(readOverseerSettings().memory, { on: true, type: "uniichat", size: 128 });
-    for (const bad of [{ on: "yes" }, { size: 3 }, { type: "nope" }, []]) assert.equal((await req("PUT", "/api/overseer/memory", bad)).status, 400, JSON.stringify(bad));
-    assert.deepEqual(readOverseerSettings().memory, { on: true, type: "uniichat", size: 128 }, "a refused write changes nothing");
+    assert.deepEqual(readOverseerSettings().memory, { on: true, type: "uniichat" });
+    for (const bad of [{ on: "yes" }, { type: "nope" }, []]) assert.equal((await req("PUT", "/api/overseer/memory", bad)).status, 400, JSON.stringify(bad));
+    assert.deepEqual(readOverseerSettings().memory, { on: true, type: "uniichat" }, "a refused write changes nothing");
+  });
+
+  test("the Overseer's size is Settings': GET resolves it, a PUT's size is ignored, an older stored size is kept unread", async () => {
+    const { readOverseerSettings, writeOverseerSettings } = await import("../overseer-store");
+    writeOverseerSettings({ ...readOverseerSettings(), memory: { on: true, type: "zoomable", size: 128 } });
+    settings.saveMemorySettings({ ...settings.loadMemorySettings(), sizes: { uniichat: 64, zoomable: 16 } });
+    const got = await (await req("GET", "/api/overseer/memory")).json();
+    assert.deepEqual([got.type, got.size], ["zoomable", 16], "not overseer.json's 128");
+    const r = await req("PUT", "/api/overseer/memory", { size: 256 });
+    assert.equal(r.status, 200, "an older client's size pick isn't refused");
+    assert.deepEqual([(await r.json()).size], [16]);
+    const put = await (await req("PUT", "/api/overseer/memory", { type: "uniichat", size: 8 })).json();
+    assert.deepEqual([put.type, put.size], ["uniichat", 64]);
+    assert.deepEqual(readOverseerSettings().memory, { on: true, type: "uniichat", size: 128 }, "the old size is kept, never written anew");
   });
 
   test("a settings save keeps the stored switch, whatever memory its body carries", async () => {

@@ -1,9 +1,10 @@
 import { createEffect, createResource, createSignal, For, on, Show } from "solid-js";
-import type { MemorySettingsInfo, MemoryType } from "../../shared/protocol";
+import type { MemorySettings, MemorySettingsInfo, MemoryType, MemoryTypeInfo } from "../../shared/protocol";
 import { getMemoryOptions, getMemorySettings } from "../lib/api";
 import { fallbackFor, type DraftChoice, type Slot } from "../lib/delegate-form";
 import { tildePath } from "../lib/format";
-import { initialHelpTab, MEMORY_HELP_SETTINGS, MEMORY_HELP_TABS, type HelpDrawing } from "../lib/memory-help";
+import { initialHelpTab, MEMORY_HELP_SETTINGS, MEMORY_HELP_TABS, SIZE_LINES, type HelpDrawing } from "../lib/memory-help";
+import { sizeChoices, sizeLabel, typeInfo } from "../lib/memory-ui";
 import { parseVis } from "../vis/parse";
 import { Figure } from "../vis/Figure";
 import { viewFor } from "../vis/Visual";
@@ -14,7 +15,8 @@ import {
   memorySaveResult,
   memorySaveWarnings,
   memorySaving as saving,
-  sameMemorySettings,
+  sameSizes,
+  sameSummarizer,
   setMemoryDraft as setDraft,
   setMemorySaved,
   toMemoryDraft,
@@ -26,8 +28,9 @@ import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
 
 /**
  * Settings → Memory (§app.settings-dialog/memory): which model writes memory's summaries — a
- * primary and an optional fallback, Delegate's rows. A summarizer is not a worker, so only the
- * policy's global switch marks a model. Saved by the dialog's footer (memory-settings-draft.ts).
+ * primary and an optional fallback, Delegate's rows — and each type's Summary size, which every chat
+ * and the Overseer use. A summarizer is not a worker, so only the policy's global switch marks a
+ * model. Saved by the dialog's footer (memory-settings-draft.ts).
  */
 export function MemorySettingsSection() {
   const [info, { mutate: setInfo, refetch: refetchInfo }] = createResource(getMemorySettings);
@@ -61,8 +64,8 @@ export function MemorySettingsSection() {
             <button
               type="button"
               class="button button-sm button-ghost"
-              disabled={saving() || sameMemorySettings(draft()!, loaded()!.defaults)}
-              onClick={() => setDraft(toMemoryDraft(loaded()!.defaults))}
+              disabled={saving() || sameSummarizer(draft()!, loaded()!.defaults)}
+              onClick={() => setDraft({ ...toMemoryDraft(loaded()!.defaults), sizes: draft()!.sizes })}
             >
               Reset to Defaults
             </button>
@@ -134,6 +137,8 @@ export function MemorySettingsSection() {
           </Show>
         </fieldset>
 
+        <SummarySizes defaults={loaded()!.defaults} types={loaded()!.types} />
+
         <Show when={memorySaveError()}>
           {(e) => <Banner tone="error" title="Couldn't save the memory settings." body={`${sentence(e().message)} Your saved choice is unchanged.`} />}
         </Show>
@@ -144,6 +149,70 @@ export function MemorySettingsSection() {
         </p>
       </Show>
     </section>
+  );
+}
+
+/**
+ * Summary size (§app.settings-dialog/memory, §chat.memory/settings): one select per type, under its own
+ * heading and Reset to Defaults, with the lines that say what a size changes (memory-help.ts's, which
+ * the help card repeats). Edits the shared draft, so it waits for Save with the summarizer.
+ */
+function SummarySizes(props: { defaults: MemorySettings; types: readonly MemoryTypeInfo[] }) {
+  const d = () => draft()!;
+  const setSize = (type: MemoryType, size: number) => setDraft({ ...d(), sizes: { ...d().sizes, [type]: size } });
+  const defaultOf = (type: MemoryType) => toMemoryDraft(props.defaults).sizes[type];
+  const SizeSelect = (p: { type: MemoryType; hint: string }) => (
+    <label class="field">
+      <span class="field-label">{typeInfo(props.types, p.type).label}</span>
+      <span class="select-wrap">
+        <select
+          class="select"
+          id={`memory-size-${p.type}`}
+          aria-describedby={`memory-size-${p.type}-hint memory-size-both-hint`}
+          disabled={saving()}
+          onChange={(e) => setSize(p.type, Number(e.currentTarget.value))}
+        >
+          <For each={sizeChoices(undefined, d().sizes[p.type])}>
+            {(n) => (
+              <option value={n} selected={d().sizes[p.type] === n}>
+                {sizeLabel(p.type, n)}
+                {n === defaultOf(p.type) ? " (default)" : ""}
+              </option>
+            )}
+          </For>
+        </select>
+      </span>
+      <span class="field-hint" id={`memory-size-${p.type}-hint`}>
+        {p.hint}
+      </span>
+    </label>
+  );
+  return (
+    <div class="memory-sizes" role="group" aria-labelledby="settings-memory-sizes-title">
+      <div class="settings-type-head">
+        <h3 class="settings-type-title" id="settings-memory-sizes-title">
+          Summary size
+        </h3>
+        <span class="settings-head-actions">
+          <button
+            type="button"
+            class="button button-sm button-ghost"
+            disabled={saving() || sameSizes(d(), props.defaults)}
+            onClick={() => setDraft({ ...d(), sizes: toMemoryDraft(props.defaults).sizes })}
+          >
+            Reset to Defaults
+          </button>
+        </span>
+      </div>
+      <fieldset class="settings-delegate-profile">
+        <legend class="visually-hidden">Summary size</legend>
+        <SizeSelect type="uniichat" hint={SIZE_LINES.uniichat(d().sizes.uniichat)} />
+        <SizeSelect type="zoomable" hint={SIZE_LINES.zoomable} />
+        <p class="field-hint" id="memory-size-both-hint">
+          {SIZE_LINES.both}
+        </p>
+      </fieldset>
+    </div>
   );
 }
 

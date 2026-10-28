@@ -26,6 +26,9 @@ import { handoffOf } from "./project-previews";
 import { contributedRead, otherSessionsOf, type GapPart, type OverseerToolCtx } from "./projects/contributions";
 import { projectEngine } from "./project-services/routes";
 import { projectOverseerVerbsTool } from "./project-services/tools";
+import { projectRootOf } from "./project-root";
+import { copyApproval, copyItem, leftoverItem, liveLeftoverHost, realCopyRowHost } from "./overseer-copies";
+import type { ClickChoice } from "../shared/overseer-card";
 import type { VerbActOutcome } from "./project-services/engine";
 import { READ_VERBS } from "../shared/project-contract";
 import { copyIntoWorktree, deleteFile, fileListLine, namedFileRows } from "./project-files-tool";
@@ -62,6 +65,9 @@ export interface PoToolHost {
   effective(): { overseer: PowerMap; assistant: PowerMap; brake: Brake | null; autonomy: Autonomy; reason?: string };
   /** The run is the operator's (their message from the UI). */
   attended(): boolean;
+  /** The operator's click that opened this run, per card row with its chosen label (§app.overseer/copies). Absent: its
+      cards take no copies or leftover processes and sova_project_verbs has no copy verbs. */
+  confirmedClicks?(): ClickChoice[] | null;
   overseerId(): string;
   /** The engine that holds the project. */
   engine(): string;
@@ -184,6 +190,8 @@ export const OP_POWER: Record<string, Record<string, PowerId | "always" | "opera
     status: "always", logs: "always", doctor: "always", down: "always", revoke: "always",
     create: "copiesRun", up: "copiesRun", apply: "copiesRun", conform: "copiesRun", test: "copiesRun",
     reset: "copiesReset", teardown: "copiesReset", share: "share", onboard: "onboard",
+    // §app.overseer/copies: the read any time; the stop only in the turn the operator's click opens.
+    leftovers: "always", "stop-leftover": "operator",
     "deploy.status": "always", "deploy.logs": "always", "deploy.check": "always", "deploy.request": "always",
     "deploy.plan": "deploy", "deploy.run": "deploy", "deploy.rollback": "operator",
   },
@@ -394,6 +402,9 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
     return { coding, otherIds: new Set(others().flatMap((o) => o.list().map((x) => x.id))) };
   }
 
+  /** Its project's root, as the services engine keys it. */
+  const ownRoot = async (): Promise<string> => (await projectRootOf(host.project().root)) ?? host.project().root;
+
   /** This project overseer's own conversation: by id, or by its marker for this project. */
   const isOwn = (s: SessionSummary) => s.id === host.overseerId() || s.projectOverseer?.projectId === host.project().id;
   /** A session a card may list or link: the project's coding sessions and the ones other layers keep (its own
@@ -563,6 +574,17 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           return id ? { id, title: m.ideas[id]!.title } : null;
         },
         todo: (ref) => readTodos(p.todos).todos.find((t) => t.id === ref) ?? null,
+        // Its own project's running copies and leftover processes, never another's (§app.overseer/copies).
+        ...(host.confirmedClicks
+          ? {
+              copy: async (ref: string) => copyItem(ref, realCopyRowHost({ session: async (id) => (await host.sessions()).find((x) => x.id === id) ?? null, projectName: () => host.project().name }), await ownRoot()),
+              leftover: async (project: string, port: number) => {
+                const root = await ownRoot();
+                if (((await projectRootOf(project)) ?? project) !== root) return { refused: `port ${port} of ${project}: a card here lists only this project's leftover processes (${root}).` };
+                return leftoverItem(root, port, liveLeftoverHost(projectEngine()), () => host.project().name);
+              },
+            }
+          : {}),
       },
       // A session it may read, or an outside https URL; never an org page (§app.overseer/confirm).
       link: async (t) => {
@@ -981,7 +1003,15 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
     // Project instances (§app.project-services/callers): this project only; every verb but the reads is the project
     // statechart's services/down or services/run, sent once the engine's own checks pass, and logged like any act.
     (() => {
-      const t = projectOverseerVerbsTool(projectEngine, { id: () => host.overseerId(), root: () => host.project().root, act: (verb, instance, detail) => host.servicesAct(verb, instance, detail), ...(host.onboard ? { onboard: (why: string) => host.onboard!(why) } : {}) });
+      const clicks = host.confirmedClicks ? () => host.confirmedClicks!() : null;
+      const t = projectOverseerVerbsTool(projectEngine, {
+        id: () => host.overseerId(),
+        root: () => host.project().root,
+        act: (verb, instance, detail) => host.servicesAct(verb, instance, detail),
+        ...(host.onboard ? { onboard: (why: string) => host.onboard!(why) } : {}),
+        // Its own project's copies and leftover processes, after the operator's click (§app.overseer/copies).
+        ...(clicks ? { copies: { clicks, approved: copyApproval(clicks), host: () => liveLeftoverHost(projectEngine()), root: ownRoot } } : {}),
+      });
       const exec = (id: string, params: any) => t.execute(id, params, undefined, undefined, undefined as never) as Promise<Out>;
       // The engine's own refusal or failure (forbidden, needs-confirm, a verb that failed) comes back as the result,
       // never thrown: the model reads it whole, and the activity log records it refused with the engine's sentence.
@@ -997,7 +1027,8 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         return { content: text(said), details: { verb: "deploy/run" } };
       });
       const viaAct = (v: unknown) => host.deployAct && (v === "deploy.plan" || v === "deploy.run");
-      return { ...t, execute: (id: string, params: any) => (viaAct(params?.verb) ? deployed(id, params) : (READ_VERBS as readonly string[]).includes(String(params?.verb)) ? exec(id, params) : acted(id, params)) } as Tool;
+      const reads = new Set<string>([...READ_VERBS, "leftovers"]);
+      return { ...t, execute: (id: string, params: any) => (viaAct(params?.verb) ? deployed(id, params) : reads.has(String(params?.verb)) ? exec(id, params) : acted(id, params)) } as Tool;
     })(),
     // Another layer's tools (an org's roster, gatherings, decisions, owner updates), wrapped as these are.
     ...host.contributed({ act: (name, run, counts) => act(name, run, counts), read, heldText }),

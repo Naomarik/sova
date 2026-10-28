@@ -1,5 +1,6 @@
 import type { Hono } from "hono";
-import { agentRoot } from "./state-root";
+import { join } from "node:path";
+import { agentRoot, stateRoot } from "./state-root";
 // The claude-code extension's login standing (node built-ins only). See agents/extensions/claude-code/overview.md.
 import { defaultClaudeDir, loginDir, readAccountsState, readiness } from "../pi-config/extensions/claude-code/accounts.ts";
 import { chatHandle } from "./chat-handle";
@@ -16,6 +17,7 @@ import { writeAutoTitle } from "./session-titles";
 import { listSessions } from "./sessions-index";
 import { sessionFeed } from "./session-feed";
 import { BOARD_EVERY_MS, BoardSource, mergeBoardFile, rowsIn } from "./merge-board";
+import { LANDING_FILE_NAME, readLanding } from "../pi-config/extensions/worktrees/landing.ts";
 import { readinessCovers, readinessIdle, readinessReading } from "./merge-readiness";
 import type { HEntry } from "../shared/harness";
 import { readBranch } from "./harness/pi/reader";
@@ -146,6 +148,8 @@ export function startScheduleKeeper(request: AppRequest): ScheduleKeeper {
       const b = await board.get(Math.min(tickMs, 25_000));
       return { pending: b.pending, rowsIn: (root: string) => rowsIn(b, root) };
     },
+    typedGoAheads: () => readLanding(join(stateRoot(), LANDING_FILE_NAME)).goAheads.filter((g) => g.by === "owner-chat"),
+    cardGoAheads: () => readLanding(join(stateRoot(), LANDING_FILE_NAME)).goAheads.filter((g) => g.by === "overseer-card"),
   });
   setScheduleKeeper(keeper);
   const tick = () => void keeper.tick().catch((err) => console.warn("[schedules] tick failed:", err instanceof Error ? err.message : String(err)));

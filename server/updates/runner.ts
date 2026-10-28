@@ -18,6 +18,7 @@ import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync,
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { UpdateJob, UpdateSource, UpdateStep } from "../../shared/protocol";
+import { NO_BACKGROUND_CLEANUP } from "../git-no-background";
 
 export interface UpgradePlan {
   id: string;
@@ -260,14 +261,14 @@ async function upgradeDeveloper(
   }
   step("downloading");
   if ((await git(["cat-file", "-e", `${plan.to.sha}^{commit}`])).code !== 0) {
-    const f = await git(["-c", "fetch.writeFetchHEAD=false", "fetch", "--quiet", "--no-tags", plan.repo, `+${plan.installRef}:refs/sova-updates/target`], 600_000);
+    const f = await git([...NO_BACKGROUND_CLEANUP, "-c", "fetch.writeFetchHEAD=false", "fetch", "--quiet", "--no-tags", plan.repo, `+${plan.installRef}:refs/sova-updates/target`], 600_000);
     if (f.code !== 0) return finish("failed", `Couldn't fetch ${plan.to.label}: ${lastLine(f.out)}. Nothing changed.`);
   }
   if ((await git(["merge-base", "--is-ancestor", plan.from.sha, plan.to.sha])).code !== 0) {
     return finish("failed", `Moving to ${plan.to.label} isn't a fast-forward from your copy, so we won't move it. Nothing changed.`);
   }
   const branch = plan.branch ?? null;
-  const moved = branch ? await git(["merge", "--ff-only", "--quiet", plan.to.sha]) : await git(["checkout", "--quiet", "--detach", plan.to.sha]);
+  const moved = branch ? await git([...NO_BACKGROUND_CLEANUP, "merge", "--ff-only", "--quiet", plan.to.sha]) : await git(["checkout", "--quiet", "--detach", plan.to.sha]);
   if (moved.code !== 0) return finish("failed", `git couldn't move your copy to ${plan.to.label}: ${lastLine(moved.out)}. Nothing changed.`);
 
   const build = join(plan.checkout, `.sova-update-build-${plan.id}`);

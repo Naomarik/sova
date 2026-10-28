@@ -11,6 +11,8 @@ import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, creat
 import { readBatonSettings } from "./baton-settings";
 import { sessionSeesImages } from "./baton-images";
 import { BusyError } from "./chat-handle";
+import { knownLogin, loginOptions, UNKNOWN_LOGIN } from "./claude-login-known";
+import { orgLoginView, setOrgLogin } from "./org-claude-login";
 import {
   addPerson,
   addProject,
@@ -391,6 +393,16 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const b = await body(c);
       await patchOrg(p(c, "id"), { name: b.name, about: b.about }, operatorBy(c));
       return c.json(await orgPage(p(c, "id")));
+    }),
+  );
+  // The org's Claude login for its projects (§app.claude-logins/project-login): kept on this host.
+  app.get("/api/orgs/:id/claude-login", handle(async (c) => c.json({ ...orgLoginView(p(c, "id")), options: loginOptions() })));
+  app.put(
+    "/api/orgs/:id/claude-login",
+    handle(async (c) => {
+      const login = (await body(c)).login;
+      if (login !== "none" && !knownLogin(login)) throw new OrgError(typeof login === "string" ? UNKNOWN_LOGIN : 'Expected { login: <login id> | "none" }');
+      return c.json({ ...setOrgLogin(p(c, "id"), login as string), options: loginOptions() });
     }),
   );
   // r13: the company's working hours (the default for anyone without their own), operator only.

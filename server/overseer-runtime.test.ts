@@ -313,6 +313,7 @@ describe("turns the user did not start are read-only", () => {
     sova_send: { session: "some-id", text: "hi" },
     sova_set_session: { session: "some-id", title: "t" },
     sova_archive: { sessions: ["some-id"] },
+    sova_land: { session: "some-id" },
     sova_group: { op: "create", name: "g" },
     sova_answer_dialog: { session: "some-id", dialog: "d1", answer: "yes" },
     sova_idea: { op: "add", id: "§test/readonly-probe", title: "A probe" },
@@ -513,6 +514,7 @@ describe("every run starts unattended; only the user's own message makes it thei
     sova_send: { session: "some-id", text: "hi" },
     sova_set_session: { session: "some-id", title: "t" },
     sova_archive: { sessions: ["some-id"] },
+    sova_land: { session: "some-id" },
     sova_group: { op: "create", name: "g" },
     sova_answer_dialog: { session: "some-id", dialog: "d1", answer: "yes" },
     sova_idea: { op: "add", id: "§test/readonly-probe", title: "A probe" },
@@ -1193,9 +1195,9 @@ describe("the Overseer's memory (§chat.memory/overseer)", () => {
     assert.ok(chat.memoryHost(), "the engine's host is the chat's own");
   });
 
-  test("with no saved choice it is on, UniiChat at 128 KB, whatever the chats' saved default; an explicit off stays off", async () => {
-    const { saveDefaultMemoryChoice } = await import("./memory/settings");
-    saveDefaultMemoryChoice({ type: "zoomable", size: 64 });
+  test("with no saved choice it is on, UniiChat at Settings' size (128 KB), whatever the chats' saved default; an explicit off stays off", async () => {
+    const { saveDefaultMemoryType } = await import("./memory/settings");
+    saveDefaultMemoryType("zoomable");
     writeOverseerSettings(overseerStore.defaultSettings());
     assert.equal(readOverseerSettings().memory, undefined, "no memory key");
     const chat = await overseerChat();

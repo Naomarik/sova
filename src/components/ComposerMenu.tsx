@@ -1,5 +1,6 @@
 import { createMemo, createSignal, Index, Match, onCleanup, onMount, Show, Switch, type Accessor } from "solid-js";
 import { ensureModels, thinkingLevelsFor } from "../lib/models";
+import { modelSummaryLine } from "../lib/effort";
 import { useHostScope } from "../lib/host-scope";
 import { SANDBOX_ROWS, sandboxStateOf, type SandboxState } from "../lib/sandbox";
 import { loginMenu, resendNote } from "../lib/claude-login";
@@ -11,6 +12,7 @@ import { usePaneId } from "../lib/pane-scope";
 import { bindKey } from "../commands/keys";
 import { paletteRequest } from "../commands/palette-open";
 import { Icon } from "./ui";
+import { EffortRing } from "./EffortRing";
 
 /** What the chat view exposes so the flyout can show and change this session's thinking level. */
 export interface ThinkingControl {
@@ -157,6 +159,15 @@ export function ComposerMenu(props: {
     if (!model) return [];
     return modelPanelRows({ model, thinking: props.thinking, levels: showThinking() ? levels() : [], openPicker: () => openPanel("picker") });
   });
+
+  /** The model panel's first line (§chat.composer/composer-flyout): "{model} · {backend} · {effort}",
+      the target while a switch is pending; the effort left out when the model has no choice of it. */
+  const summary = () => {
+    const model = props.model;
+    if (!model) return null;
+    const level = showThinking() ? (props.thinking?.pending() ?? props.thinking?.level() ?? null) : null;
+    return modelSummaryLine(model.pending() ?? model.model(), level);
+  };
 
   /** The login label's panel: every login by account, the waiting pick and its Cancel. */
   const loginGroups = createMemo(() => {
@@ -328,6 +339,7 @@ export function ComposerMenu(props: {
       <Show when={p.r.role !== "menuitem"} fallback={<Icon name={p.r.icon ?? "more"} small />}>
         <Icon name="check" small class="popover-item-check" />
       </Show>
+      <Show when={p.r.ring}>{(level) => <EffortRing level={level()} />}</Show>
       <span class="composer-flyout-label">{p.r.label}</span>
       <Show when={p.r.busy}>
         <span class="live-dot" />
@@ -412,7 +424,21 @@ export function ComposerMenu(props: {
           </Match>
           {/* The indicator's panel: this session's model, and the ladder that model allows. */}
           <Match when={panel() === "model"}>
-            <div class="model-menu-list composer-flyout-list" role="menu" aria-label="Model and thinking" onKeyDown={onListKeyDown}>
+            {/* The choice spelled out in full, over the two controls that change it. */}
+            <Show when={summary()}>
+              {(line) => (
+                <p class="composer-flyout-summary" id={paneId("composer-flyout-summary")}>
+                  {line()}
+                </p>
+              )}
+            </Show>
+            <div
+              class="model-menu-list composer-flyout-list"
+              role="menu"
+              aria-label="Model and thinking"
+              aria-describedby={summary() ? paneId("composer-flyout-summary") : undefined}
+              onKeyDown={onListKeyDown}
+            >
               <Index each={pick((r) => r.id === "model")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
               <Show when={pick((r) => r.role === "menuitemradio").length > 0}>
                 <div class="popover-sep" role="separator" />

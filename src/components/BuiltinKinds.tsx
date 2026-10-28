@@ -12,6 +12,7 @@ import type { ShowChangesDetails } from "../../pi-config/extensions/show-changes
 import { TourCard } from "./TourCard";
 import type { TourCardDetails } from "../../shared/tour";
 import { OwnerRequestNote } from "./OwnerRequestNote";
+import { OverseerChoiceRow } from "./OverseerCards";
 
 /**
  * The views of Sova's own transcript cards, moved onto the card toolkit one kind at a time
@@ -28,6 +29,7 @@ export const BUILTIN_VIEWS = {
   // An owner request a Start Chat put at the top (§app.project-assistant/request-chat).
   "owner-request": (props: KindViewProps<NonNullable<TranscriptItem["ownerRequest"]>>) => <OwnerRequestNote card={props.value} />,
   "handoff-run": (props: KindViewProps<HandoffRunInfo>) => <HandoffRunRow run={props.value} text={props.item.text ?? ""} />,
+  "overseer-answer": (props: KindViewProps<Extract<NonNullable<TranscriptItem["overseerMark"]>, { kind: "dialog-answer" }>>) => <OverseerChoiceRow title={props.value.title} answer={props.value.answer} />,
 } satisfies Record<string, Component<KindViewProps<never>>>;
 
 /** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is

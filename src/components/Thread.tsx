@@ -889,9 +889,6 @@ export function HistoryItems(props: {
               <Match when={is<BatonMark>("baton")}>
                 {(mark) => <BatonCard mark={mark() as Exclude<BatonMark, { kind: "sent" }>} name={nameOf} wrapupShown={showWrapup()} onWrapupToggle={() => setShowWrapup(!showWrapup())} />}
               </Match>
-              <Match when={is<Extract<NonNullable<TranscriptItem["overseerMark"]>, { kind: "dialog-answer" }>>("overseer-answer")}>
-                {(mark) => <OverseerChoiceRow title={mark().title} answer={mark().answer} />}
-              </Match>
               <Match when={is("assistant-text")}>
                 <AssistantText
                   text={item.text ?? ""}

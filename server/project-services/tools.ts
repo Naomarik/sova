@@ -98,7 +98,7 @@ const ONBOARD_HELP =
 export type OnboardRun = (why: string, params: Record<string, unknown>) => Promise<{ text: string; details: Record<string, unknown> }>;
 
 /** Who sees a share link's URL, in VERB_HELP's words (§app.project-services/share); replaced per tool. */
-const URL_RULE = " and never carries its URL (the operator has it)";
+const URL_RULE = ", never its URL, which only the operator sees";
 const URL_RULE_OVERSEER = " and carries its URL: give it to the user in your reply when they ask for it (status lists each copy's links with theirs too)";
 
 /** The sentence a coding session's tool says about a linked copy's down. */

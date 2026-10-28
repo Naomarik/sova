@@ -151,12 +151,19 @@ export function OfferCardView(props: { card: OfferCard }) {
   );
 }
 
+/** A button of a ButtonSet: an offer card's, or a buttons data card's (DataCards.tsx). */
+export interface ButtonSetItem {
+  label: string;
+  about?: string;
+  confirm?: string;
+}
+
 /**
  * A row of buttons with each button's confirm step (§chat.offers/buttons): its question, then Cancel or the label
  * again. Focus stays in the group through the confirm step: Cancel takes it when the question opens, and the button
  * that asked gets it back on Cancel. `extra` follows the buttons (Not Now).
  */
-function ButtonSet(props: { buttons: OfferCardButton[]; canAct: () => boolean; press: (i: number) => void; extra?: JSX.Element; label?: string }) {
+export function ButtonSet(props: { buttons: readonly ButtonSetItem[]; canAct: () => boolean; press: (i: number) => void; extra?: JSX.Element; label?: string }) {
   const [asking, setAsking] = createSignal<number | null>(null);
   const asked = () => {
     const i = asking();

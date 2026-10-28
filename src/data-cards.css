@@ -1,0 +1,31 @@
+/* The data cards Sova draws from data (§chat.transcript-cards/data-cards, components/DataCards.tsx).
+   The question card is an alignment question (src/design/align-viewer.css) in a card of its own;
+   the buttons card is an offer card's foot. Only what those don't already draw is here. */
+
+.data-card { max-width: var(--measure); }
+
+/* One question: no rule above it, the card's own padding around it. */
+.data-card-question .align-q { border-top: 0; padding-top: 0; }
+
+.data-card-count { flex: none; font-size: var(--fs-caption); }
+
+.data-checklist { list-style: none; margin: 0; display: grid; gap: var(--space-1); }
+.data-checklist .toggle { min-height: var(--tap-min); align-items: center; }
+
+.data-status-body { display: grid; gap: var(--space-1); }
+.data-status-body > p { margin: 0; overflow-wrap: anywhere; }
+.data-status-line { color: var(--color-ink); }
+.data-status-detail { color: var(--color-ink-2); font-size: var(--fs-caption); line-height: var(--lh-caption); }
+
+/* A table scrolls sideways inside its card, never the transcript. */
+.data-table-wrap { overflow-x: auto; }
+.data-table { width: 100%; border-collapse: collapse; font-size: var(--fs-body); line-height: var(--lh-body); }
+.data-table th,
+.data-table td { padding: var(--space-2) var(--space-4); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.data-table th {
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink-2);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  white-space: nowrap;
+}
+.data-table tbody tr + tr td { border-top: var(--stroke-thin) solid var(--color-border); }

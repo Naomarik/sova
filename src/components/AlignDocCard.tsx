@@ -1,4 +1,4 @@
-import { createContext, For, Show, useContext } from "solid-js";
+import { createContext, createMemo, For, Show, useContext } from "solid-js";
 import type { AlignDocInfo, AlignQuestionInfo, AlignRowInfo, AlignTriage } from "../../shared/protocol";
 import { stakesChip } from "../lib/align-triage";
 import type { AlignVisualInfo } from "../../shared/protocol";
@@ -56,7 +56,7 @@ function useReviewOn(): () => boolean {
 }
 
 /** A field's text with its inline code spans and bold runs, the two marks models put in these one-liners; no other markdown. */
-function Inline(props: { text: string }) {
+export function Inline(props: { text: string }) {
   const parts = () => props.text.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/).filter((p) => p !== "");
   return (
     <For each={parts()}>
@@ -310,12 +310,140 @@ function AlignReviewLines(props: { doc: AlignDocInfo }) {
 /** A field's text as plain words, for a truncated line's hover title. */
 const plain = (text: string) => text.replace(/\*\*([^*\n]+)\*\*/g, "$1").replace(/`([^`\n]+)`/g, "$1");
 
-function AlignQuestion(props: { q: AlignQuestionInfo; doc: string; answer?: AlignAnswer | null }) {
+/**
+ * Picking one answer to a lettered question: an alignment card's open question
+ * (§chat.alignment/card) and the question data card (§chat.transcript-cards/data-cards) both pick
+ * through it, so the two answer the same way. A pick is an option by index; the tick takes the
+ * recommendation, and picking the option it names is the same answer.
+ */
+export interface QuestionPicker {
+  /** Why picking can't happen here (the hover title, and the controls disabled), else null. */
+  blocked(): string | null;
+  /** The option picked, by index, else undefined. */
+  picked(): number | undefined;
+  /** Picks option `index`, or with null clears the pick. */
+  pick(index: number | null): void;
+  /** Whether the recommendation is taken. */
+  ticked(): boolean;
+  tick(on: boolean): void;
+}
+
+/**
+ * A question's lettered options and its recommendation line: read-only rows, or, with a picker,
+ * rows to pick (the whole row the target, a visually hidden radio) and the recommendation as a
+ * checkbox's label. The alignment card's questions and the question data card draw with it.
+ */
+export function QuestionChoices(props: {
+  id: string;
+  options?: { label: string; tradeoff?: string }[];
+  recommendation?: AlignQuestionInfo["recommendation"];
+  picker: QuestionPicker | null;
+}) {
   const radioName = `align-q-${++seq}`;
+  const rec = () => (props.recommendation ? recommendedOption({ options: props.options as AlignQuestionInfo["options"], recommendation: props.recommendation }) : undefined);
+  const recLine = (r: AlignQuestionInfo["recommendation"]) => (
+    <>
+      <span class="align-q-line">
+        <span class="align-q-kicker">Recommended</span>
+        <Show when={rec() !== undefined} fallback={<strong><Inline text={r.choice} /></strong>}>
+          <span class="text-mono align-q-letter">{optionLetter(rec()!)}</span> — <strong><Inline text={props.options![rec()!]!.label} /></strong>
+        </Show>
+      </span>
+      <span class="align-q-desc"><Inline text={r.why} /></span>
+    </>
+  );
+  return (
+    <>
+      <Show when={props.options?.length}>
+        <ol class="align-q-options" aria-label="Options">
+          <For each={props.options}>
+            {(o, i) => {
+              const text = () => (
+                <span>
+                  <strong class="align-q-line"><Inline text={o.label} /></strong>
+                  <span class="align-q-desc"><Inline text={o.tradeoff ?? ""} /></span>
+                </span>
+              );
+              return (
+                <li>
+                  {/* On an answerable card an open question's option is a radio's label: the whole
+                      row is the target, picked it takes the selection tint and accent edge, and a click on the picked one
+                      clears it. */}
+                  <Show
+                    when={props.picker}
+                    fallback={
+                      <>
+                        <span class="text-mono align-q-letter">{optionLetter(i())}</span>
+                        {text()}
+                      </>
+                    }
+                  >
+                    {(a) => {
+                      const on = () => a().picked() === i();
+                      return (
+                        <label class="align-q-pick" title={a().blocked() ?? undefined}>
+                          <input
+                            type="radio"
+                            class="visually-hidden"
+                            name={radioName}
+                            checked={on()}
+                            disabled={!!a().blocked()}
+                            aria-label={`Answer ${props.id} with ${optionLetter(i())}: ${plain(o.label)}`}
+                            onClick={(e) => {
+                              a().pick(on() ? null : i());
+                              e.currentTarget.checked = on();
+                            }}
+                          />
+                          <span class="text-mono align-q-letter" aria-hidden="true">{optionLetter(i())}</span>
+                          {text()}
+                        </label>
+                      );
+                    }}
+                  </Show>
+                </li>
+              );
+            }}
+          </For>
+        </ol>
+      </Show>
+      {/* An open question on an answerable card: the recommendation is the checkbox's label, so
+          the whole line is the target and what it takes is what it says. */}
+      <Show when={props.recommendation}>
+        {(r) => (
+          <Show when={props.picker} fallback={<p class="align-q-rec">{recLine(r())}</p>}>
+            {(a) => (
+              <label class="toggle align-q-rec align-q-take" title={a().blocked() ?? undefined}>
+                <input type="checkbox" checked={a().ticked()} disabled={!!a().blocked()} onChange={(e) => a().tick(e.currentTarget.checked)} />
+                <span class="toggle-box" />
+                <span>
+                  <span class="visually-hidden">Take the recommendation for {props.id}. </span>
+                  {recLine(r())}
+                </span>
+              </label>
+            )}
+          </Show>
+        )}
+      </Show>
+    </>
+  );
+}
+
+function AlignQuestion(props: { q: AlignQuestionInfo; doc: string; answer?: AlignAnswer | null }) {
   const state = () => questionStateOf(props.q);
   const chip = () => QUESTION_CHIP[state()];
-  const rec = () => recommendedOption(props.q);
   const take = () => (state() === "open" ? props.answer : null);
+  /** The alignment's answer context, as this question's picker. */
+  const picker = createMemo((): QuestionPicker | null => {
+    const a = take();
+    if (!a) return null;
+    return {
+      blocked: () => a.tickBlocked(),
+      picked: () => a.pickedOption(props.doc, props.q.id),
+      pick: (index) => a.pick(props.doc, props.q.id, index),
+      ticked: () => a.picked(props.doc, props.q.id),
+      tick: (on) => a.toggle(props.doc, props.q.id, on),
+    };
+  });
   const stakes = () => {
     if (state() !== "open" || !props.answer?.triage) return null;
     const rev = props.answer.current(props.doc)?.rev;
@@ -323,17 +451,6 @@ function AlignQuestion(props: { q: AlignQuestionInfo; doc: string; answer?: Alig
     const st = t?.stakes[props.q.id];
     return t && st ? stakesChip(st, t) : null;
   };
-  const recLine = () => (
-    <>
-      <span class="align-q-line">
-        <span class="align-q-kicker">Recommended</span>
-        <Show when={rec() !== undefined} fallback={<strong><Inline text={props.q.recommendation.choice} /></strong>}>
-          <span class="text-mono align-q-letter">{optionLetter(rec()!)}</span> — <strong><Inline text={props.q.options![rec()!]!.label} /></strong>
-        </Show>
-      </span>
-      <span class="align-q-desc"><Inline text={props.q.recommendation.why} /></span>
-    </>
-  );
   const by = (d: NonNullable<AlignQuestionInfo["decision"]>) => (d.by === "user" ? "you" : "accepted recommendation");
   // The outcome: under an opened fold in full, and in its folded summary as one truncated line.
   const outcome = () => {
@@ -397,77 +514,7 @@ function AlignQuestion(props: { q: AlignQuestionInfo; doc: string; answer?: Alig
         <p class="align-q-context"><Inline text={props.q.context ?? ""} /></p>
       </Show>
       <Show when={props.q.visual}>{(v) => <AlignVisual visual={v()} />}</Show>
-      <Show when={props.q.options?.length}>
-        <ol class="align-q-options" aria-label="Options">
-          <For each={props.q.options}>
-            {(o, i) => {
-              const text = () => (
-                <span>
-                  <strong class="align-q-line"><Inline text={o.label} /></strong>
-                  <span class="align-q-desc"><Inline text={o.tradeoff} /></span>
-                </span>
-              );
-              return (
-                <li>
-                  {/* On an answerable card an open question's option is a radio's label: the whole
-                      row is the target, picked it takes the selection tint and accent edge, and a click on the picked one
-                      clears it. */}
-                  <Show
-                    when={take()}
-                    fallback={
-                      <>
-                        <span class="text-mono align-q-letter">{optionLetter(i())}</span>
-                        {text()}
-                      </>
-                    }
-                  >
-                    {(a) => {
-                      const on = () => a().pickedOption(props.doc, props.q.id) === i();
-                      return (
-                        <label class="align-q-pick" title={a().tickBlocked() ?? undefined}>
-                          <input
-                            type="radio"
-                            class="visually-hidden"
-                            name={radioName}
-                            checked={on()}
-                            disabled={!!a().tickBlocked()}
-                            aria-label={`Answer ${props.q.id} with ${optionLetter(i())}: ${plain(o.label)}`}
-                            onClick={(e) => {
-                              a().pick(props.doc, props.q.id, on() ? null : i());
-                              e.currentTarget.checked = on();
-                            }}
-                          />
-                          <span class="text-mono align-q-letter" aria-hidden="true">{optionLetter(i())}</span>
-                          {text()}
-                        </label>
-                      );
-                    }}
-                  </Show>
-                </li>
-              );
-            }}
-          </For>
-        </ol>
-      </Show>
-      {/* An open question on an answerable card: the recommendation is the checkbox's label, so
-          the whole line is the target and what it takes is what it says. */}
-      <Show when={take()} fallback={<p class="align-q-rec">{recLine()}</p>}>
-        {(a) => (
-          <label class="toggle align-q-rec align-q-take" title={a().tickBlocked() ?? undefined}>
-            <input
-              type="checkbox"
-              checked={a().picked(props.doc, props.q.id)}
-              disabled={!!a().tickBlocked()}
-              onChange={(e) => a().toggle(props.doc, props.q.id, e.currentTarget.checked)}
-            />
-            <span class="toggle-box" />
-            <span>
-              <span class="visually-hidden">Take the recommendation for {props.q.id}. </span>
-              {recLine()}
-            </span>
-          </label>
-        )}
-      </Show>
+      <QuestionChoices id={props.q.id} options={props.q.options} recommendation={props.q.recommendation} picker={picker()} />
     </>
   );
   // An open question is what the user answers, so it stays whole; a settled one folds to one line

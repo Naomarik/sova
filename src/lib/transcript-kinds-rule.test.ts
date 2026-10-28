@@ -58,4 +58,5 @@ test("every kind not on the toolkit has exactly one branch, in the list's order,
 
 test("the toolkit's views stay out of the thread's internals", () => {
   assert.doesNotMatch(host, /from "\.\/(Thread|ChatView)"/);
+  assert.doesNotMatch(read("../components/DataCards.tsx"), /from "\.\/(Thread|ChatView)"/);
 });

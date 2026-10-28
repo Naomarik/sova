@@ -24,16 +24,39 @@
  * its own view frame sent, and the page takes only what its card's shell sent
  * (`fromCardBox`), naming the card itself, so a view can never speak for another card.
  *
+ * WebRTC is the one way out no content policy closes (Chromium knows no `webrtc` directive): an
+ * `RTCPeerConnection` with an ICE server sends STUN over UDP wherever it is told. So the view's
+ * document takes every `RTC…` interface off its global before any view code runs, and nothing
+ * else gets a global of its own to run in: the view document's own policy (`cardViewDocCsp`) runs
+ * scripts by a nonce only, which the boot script hides before it runs the view's code by `eval`.
+ * A frame the view makes inherits that policy, so no script of its own, inline handler or
+ * `javascript:` URL ever runs in it, and it is cross-origin to the view (sandboxed, each its own
+ * opaque origin), so the view can't reach its fresh `RTCPeerConnection` either.
+ *
  * The `csp` attribute (CSP Embedded Enforcement) is Chromium's; a browser without it never runs a
  * view (`cardBoxSupported`), as the claim says.
  */
 
-/** The view frame's policy: nothing over the network; inline script and style; media from data: and blob: only. */
-export const CARD_VIEW_CSP =
-  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'";
+const CSP_REST =
+  "style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'";
 
-/** The shell's policy: the same, so every navigation of the view frame it holds is refused (`frame-src 'none'`). */
+/**
+ * The frames' required policy (their `csp` attribute): nothing over the network; inline script
+ * and style, and eval (the view's code runs by it); media from data: and blob: only.
+ */
+export const CARD_VIEW_CSP = `default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; ${CSP_REST}`;
+
+/**
+ * The shell's policy: the same (a nested frame's required policy must fit within its parent's),
+ * so every navigation of the view frame it holds is refused (`frame-src 'none'`).
+ */
 export const CARD_SHELL_CSP = CARD_VIEW_CSP;
+
+/** The view document's own policy, stricter: scripts by its nonce only (the boot), then eval. */
+export const cardViewDocCsp = (nonce: string) => `default-src 'none'; script-src 'nonce-${nonce}' 'unsafe-eval'; ${CSP_REST}`;
+
+/** Where the shell puts each view document's fresh nonce. */
+export const CARD_NONCE_SLOT = "__SOVA_CARD_NONCE__";
 
 /** The message tag every box message carries. */
 export const CARD_BOX_MESSAGE = "sova-card-box";
@@ -72,6 +95,10 @@ const head = (csp: string) =>
  */
 export function cardViewDoc(baseCss: string): string {
   const boot = `(() => {
+  // Before anything else: no WebRTC (see the top of card-box.ts), and no trace of the nonce.
+  for (const n of Object.getOwnPropertyNames(globalThis)) if (/^(webkit)?RTC/.test(n)) delete globalThis[n];
+  document.currentScript.remove();
+  for (const m of document.querySelectorAll("meta[http-equiv]")) m.remove();
   const T = ${JSON.stringify(CARD_BOX_MESSAGE)};
   const up = (m) => parent.postMessage(Object.assign({ [T]: 1 }, m), "*");
   const listeners = new Set();
@@ -93,9 +120,7 @@ export function cardViewDoc(baseCss: string): string {
       ran = true;
       document.getElementById("sova-theme").textContent = String(m.css || "");
       globalThis.__sovaCardBox.init = m.init;
-      const s = document.createElement("script");
-      s.textContent = String(m.code || "");
-      document.body.append(s);
+      try { (0, eval)(String(m.code || "") + "\\n//# sourceURL=card-view.js"); } catch (err) { fail(err && err.stack ? err.message + "\\n" + err.stack : err); }
       measure();
       return;
     }
@@ -103,7 +128,7 @@ export function cardViewDoc(baseCss: string): string {
   });
   up({ op: "ready" });
 })();`;
-  return `<!doctype html><html><head>${head(CARD_VIEW_CSP)}<style id="sova-theme"></style><style>${baseCss.replace(/<\//g, "<\\/")}</style></head><body><div id="root"></div><script>${boot}</script></body></html>`;
+  return `<!doctype html><html><head>${head(cardViewDocCsp(CARD_NONCE_SLOT))}<style id="sova-theme"></style><style>${baseCss.replace(/<\//g, "<\\/")}</style></head><body><div id="root"></div><script nonce="${CARD_NONCE_SLOT}">${boot}</script></body></html>`;
 }
 
 /**
@@ -135,7 +160,7 @@ export function cardShellDoc(viewDoc: string): string {
       view = null;
       up({ [T]: 1, op: "error", message: ${JSON.stringify(CARD_BOX_LEFT)} });
     });
-    f.srcdoc = DOC;
+    f.srcdoc = DOC.split(${JSON.stringify(CARD_NONCE_SLOT)}).join(Array.from(crypto.getRandomValues(new Uint8Array(18)), (b) => b.toString(16).padStart(2, "0")).join(""));
     document.body.append(f);
   };
   addEventListener("message", (e) => {

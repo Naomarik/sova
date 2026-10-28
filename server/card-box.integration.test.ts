@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createSocket } from "node:dgram";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
@@ -62,6 +63,30 @@ const exits: Record<string, string> = {
   "window-open-self": `window.open(L + "/leak/open-self", "_self");`,
 };
 
+/**
+ * WebRTC, which no content policy stops: STUN to a listening UDP port from the view itself, by
+ * every name, and from frames it makes (their own scripts, an inline handler, a javascript: URL,
+ * and reaching into one). `U` is the port.
+ */
+const webrtc = `
+const tries = [];
+const stun = (C, where) => { try { const pc = new C({ iceServers: [{ urls: "stun:127.0.0.1:" + U }] }); pc.createDataChannel("x"); pc.createOffer().then((o) => pc.setLocalDescription(o)).catch(() => {}); tries.push(where + ":made"); } catch (e) { tries.push(where + ":threw"); } };
+for (const n of ["RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel", "RTCSessionDescription", "RTCIceCandidate"]) tries.push(n + ":" + typeof globalThis[n]);
+if (globalThis.RTCPeerConnection) stun(RTCPeerConnection, "view");
+if (globalThis.webkitRTCPeerConnection) stun(webkitRTCPeerConnection, "view-webkit");
+const child = "(" + ((port) => { const C = globalThis.RTCPeerConnection || globalThis.webkitRTCPeerConnection; parent.postMessage({ childRan: typeof C }, "*"); if (C) { const pc = new C({ iceServers: [{ urls: "stun:127.0.0.1:" + port }] }); pc.createDataChannel("x"); pc.createOffer().then((o) => pc.setLocalDescription(o)); } }).toString() + ")(" + U + ")";
+const frame = (attr, value) => { const f = document.createElement("iframe"); f.setAttribute(attr, value); document.body.append(f); return f; };
+frame("srcdoc", "<script>" + child + "<\\/script>");
+frame("srcdoc", "<img src=x onerror='" + child + "'>");
+frame("srcdoc", "<iframe srcdoc='<script>" + child.replace(/'/g, "&#39;") + "<\\/script>'></iframe>");
+frame("src", "javascript:" + encodeURIComponent(child));
+const blank = frame("src", "about:blank");
+try { stun(blank.contentWindow.RTCPeerConnection, "reach-in"); } catch (e) { tries.push("reach-in:threw"); }
+const s = document.createElement("script"); s.textContent = child; document.body.append(s);
+addEventListener("message", (e) => { if (e.data && e.data.childRan) tries.push("child-ran:" + e.data.childRan); });
+setTimeout(() => globalThis.__sovaCardBox.post({ webrtc: tries }), 1500);
+`;
+
 test("a view in the sealed box reaches no server, and only its shell's messages reach the page", async () => {
   const leaks: string[] = [];
   const leak = createServer((req, res) => {
@@ -100,8 +125,15 @@ test("a view in the sealed box reaches no server, and only its shell's messages 
     </script></body></html>`);
   });
   const pagePort = await listen(page);
-  const prelude = `const L = "http://127.0.0.1:${leakPort}", S = "http://127.0.0.1:${pagePort}";\n`;
-  const browser = await launchTourBrowser();
+  const stunHits: string[] = [];
+  const stunControl: string[] = [];
+  const udp = createSocket("udp4").on("message", (m, from) => stunHits.push(`${from.address}:${from.port} ${m.length}B`));
+  const control = createSocket("udp4").on("message", () => stunControl.push("hit"));
+  const udpPort = await new Promise<number>((r) => udp.bind(0, "127.0.0.1", () => r(udp.address().port)));
+  const controlPort = await new Promise<number>((r) => control.bind(0, "127.0.0.1", () => r(control.address().port)));
+  const prelude = `const L = "http://127.0.0.1:${leakPort}", S = "http://127.0.0.1:${pagePort}", U = ${udpPort};\n`;
+  // WebRTC as the user's browser has it, not the Tours' UDP-off policy, or the WebRTC round proves nothing.
+  const browser = await launchTourBrowser(undefined, { webrtcUdp: true });
   try {
     const tab = await browser.newPage();
     const popups: string[] = [];
@@ -132,6 +164,29 @@ test("a view in the sealed box reaches no server, and only its shell's messages 
     assert.ok(first.some((m) => m.op === "height"), "its height reached the page");
     assert.ok(!first.some((m) => m.op === "error"), "nothing in round 1 replaced the view's document");
     assert.equal(await tab.evaluate(() => document.activeElement?.id), "composer", `the view took no focus from the page: ${JSON.stringify(got.map((g) => [g.fromShell, (g.data as { op?: string; user?: boolean })?.op, (g.data as { user?: boolean })?.user]))}`);
+
+    // WebRTC. First the control: the page itself (no box) reaches a STUN listener in this browser,
+    // so a silent listener below means the box stopped it, not that UDP can't get through.
+    await tab.evaluate((port) => {
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: `stun:127.0.0.1:${port}` }] });
+      pc.createDataChannel("x");
+      void pc.createOffer().then((o) => pc.setLocalDescription(o));
+      (window as unknown as { controlPc: RTCPeerConnection }).controlPc = pc;
+    }, controlPort);
+    for (let i = 0; i < 100 && stunControl.length === 0; i++) await new Promise((r) => setTimeout(r, 50));
+    await tab.evaluate(() => (window as unknown as { controlPc: RTCPeerConnection }).controlPc.close());
+    assert.ok(stunControl.length > 0, "control: the page's own STUN request reached its listener");
+    await clear();
+    await run(webrtc);
+    await tab.waitForFunction(() => (window as unknown as { got: Got[] }).got.some((g) => (g.data as { msg?: { webrtc?: unknown } })?.msg?.webrtc), null, { timeout: 15_000 });
+    await new Promise((r) => setTimeout(r, 1000));
+    assert.deepEqual(stunHits, [], "no STUN packet left the box");
+    const rtc = (await taken()).flatMap((m) => (m.op === "api" && (m.msg as { webrtc?: string[] }).webrtc) || []);
+    assert.deepEqual(
+      rtc,
+      ["RTCPeerConnection:undefined", "webkitRTCPeerConnection:undefined", "RTCDataChannel:undefined", "RTCSessionDescription:undefined", "RTCIceCandidate:undefined", "reach-in:threw"],
+      "no RTC interface in the view, nothing reached in a frame it made, and no script of its own ran in one",
+    );
 
     // Then each way of replacing its own document, each in a fresh view: stopped, nothing sent.
     for (const [name, exit] of Object.entries(exits)) {
@@ -167,6 +222,8 @@ test("a view in the sealed box reaches no server, and only its shell's messages 
     assert.deepEqual(leaks, []);
   } finally {
     await browser.close();
+    udp.close();
+    control.close();
     leak.close();
     page.close();
   }

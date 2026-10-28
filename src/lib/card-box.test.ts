@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CARD_BOX_MESSAGE, CARD_SHELL_ATTRS, CARD_SHELL_CSP, CARD_VIEW_ATTRS, CARD_VIEW_CSP, cardBoxSupported, cardShellDoc, cardViewDoc, fromCardBox } from "./card-box";
+import { CARD_BOX_MESSAGE, CARD_NONCE_SLOT, CARD_SHELL_ATTRS, CARD_SHELL_CSP, CARD_VIEW_ATTRS, CARD_VIEW_CSP, cardBoxSupported, cardShellDoc, cardViewDoc, cardViewDocCsp, fromCardBox } from "./card-box";
 
 // The wall itself is proven in a real Chromium (server/card-box.integration.test.ts); these hold its shape.
 
@@ -11,7 +11,7 @@ test("both frames: scripts, but no same-origin, forms, popups or navigation of o
   }
   assert.equal(CARD_SHELL_ATTRS.csp, CARD_SHELL_CSP);
   assert.equal(CARD_VIEW_ATTRS.csp, CARD_VIEW_CSP);
-  for (const csp of [CARD_SHELL_CSP, CARD_VIEW_CSP]) {
+  for (const csp of [CARD_SHELL_CSP, CARD_VIEW_CSP, cardViewDocCsp("n")]) {
     assert.ok(csp.startsWith("default-src 'none';"));
     // Nothing over the network, whichever directive is read.
     assert.doesNotMatch(csp, /https?:|wss?:|\*|'self'/);
@@ -23,10 +23,16 @@ test("both frames: scripts, but no same-origin, forms, popups or navigation of o
 
 test("each document starts with its policy, before any script", () => {
   const view = cardViewDoc("body{color:red}</style><script>x()</script>");
-  assert.ok(view.indexOf(`content="${CARD_VIEW_CSP}"`) < view.indexOf("<script>"));
+  assert.ok(view.indexOf(`content="${cardViewDocCsp(CARD_NONCE_SLOT)}"`) < view.indexOf("<script"));
+  // Scripts in the view's document (and every frame it makes) run by the boot's nonce only.
+  assert.doesNotMatch(cardViewDocCsp("n"), /script-src [^;]*'unsafe-inline'/);
+  assert.equal(cardViewDoc("").split("<script").length, 2, "one script: the boot");
+  assert.ok(view.includes(`<script nonce="${CARD_NONCE_SLOT}">`));
   assert.ok(!view.includes("</style><script>x()"), "base styles can't close their element");
   const shell = cardShellDoc(view);
   assert.ok(shell.indexOf(`content="${CARD_SHELL_CSP}"`) < shell.indexOf("<script>"));
+  // A fresh nonce per view document, filled in by the shell.
+  assert.ok(shell.includes(`.split(${JSON.stringify(CARD_NONCE_SLOT)}).join(`) && shell.includes("crypto.getRandomValues"));
   // The view's document rides inside the shell's script, never closing it.
   assert.equal(shell.split("</script>").length, 2);
 });

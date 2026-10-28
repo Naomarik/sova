@@ -10,7 +10,18 @@
 .data-card-count { flex: none; font-size: var(--fs-caption); }
 
 .data-checklist { list-style: none; margin: 0; display: grid; gap: var(--space-1); }
-.data-checklist .toggle { min-height: var(--tap-min); align-items: center; }
+/* Each item: the box, then its text right beside it, as Sova's other ticked lists; a wrapped item's
+   lines stay in the text column and the box sits on its first line. The whole 44px row is the target. */
+.data-checklist .toggle {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  justify-content: start;
+  align-content: center;
+  align-items: start;
+  gap: var(--space-3);
+  min-height: var(--tap-min);
+}
+.data-checklist .toggle-box { margin-top: calc((1lh - 18px) / 2); }
 
 .data-status-body { display: grid; gap: var(--space-1); }
 .data-status-body > p { margin: 0; overflow-wrap: anywhere; }

@@ -56,6 +56,8 @@ export interface KindContext {
   offer(callId: string | undefined): unknown;
   /** A settings call's details, once it succeeded. */
   settings(callId: string | undefined): unknown;
+  /** Whether a call with this id is on the list (its result then draws inside the call's card). */
+  hasCall?(callId: string): boolean;
   /** A `card` call's card, once it succeeded (§chat.transcript-cards/card-tool). */
   card(callId: string | undefined): CardInfo | undefined;
 }
@@ -71,7 +73,7 @@ export interface KindViewProps<V = unknown> {
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -153,7 +155,9 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   }),
   kind({ id: "settings", match: (it, ctx) => isCall(it) && it.text === SETTINGS_TOOL && ctx.settings(it.toolCallId), host: "page", placement: "anchored", view: { page: "settings" } }),
   kind({ id: "tool", match: (it) => isCall(it), host: "page", placement: "anchored" }),
-  kind({ id: "tool-result", match: (it) => it.kind === "tool-result", host: "page", placement: "anchored" }),
+  // A paired result draws inside its call's card: its own row draws nothing.
+  kind({ id: "tool-result-paired", match: (it, ctx) => it.kind === "tool-result" && !!it.toolCallId && !!ctx.hasCall?.(it.toolCallId), host: "page", placement: "anchored", drawsNothing: true }),
+  kind({ id: "tool-result", match: (it) => it.kind === "tool-result", host: "page", placement: "anchored", view: { page: "tool-result" } }),
 ];
 
 /** A card's reserved height: its data card's estimate, or a line for data that doesn't fit (its error box). */

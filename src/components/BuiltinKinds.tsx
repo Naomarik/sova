@@ -18,6 +18,9 @@ import { profileIconName } from "../lib/profiles";
 import { useThreadRows } from "./thread-rows";
 import { AssistantText, Thinking, UserTurn } from "./MessageRows";
 import { modelLabel, modelMismatch } from "../lib/format";
+import { toolResultView } from "../lib/message";
+import { toolContent } from "../lib/tool-content";
+import { ToolCard } from "./ToolCard";
 import { BriefRow } from "./OverseerCards";
 import { ExplainCard } from "./ExplainCard";
 import { TeamMessageCard } from "./TeamMessageCard";
@@ -53,6 +56,7 @@ export const BUILTIN_VIEWS = {
   user: UserRow,
   "assistant-text": ReplyText,
   thinking: (props: KindViewProps) => <Thinking text={props.item.text ?? ""} />,
+  "tool-result": OrphanResult,
 } satisfies Record<string, Component<KindViewProps<never>>>;
 
 /** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is
@@ -238,5 +242,31 @@ function ReplyText(props: KindViewProps) {
       attachments={item.attachments}
       timing={rows.timing(item.id)}
     />
+  );
+}
+
+/** A tool result: a paired one draws inside its call's card (nothing here); an orphan gets its own. */
+function OrphanResult(props: KindViewProps) {
+  const rows = useThreadRows();
+  const item = props.item;
+  return (
+    <Show when={!item.toolCallId || !rows.hasCall(item.toolCallId)}>
+      {(() => {
+        const view = toolResultView(item);
+        const source = rows.toolSource();
+        const lazy = source && item.tool?.lazy ? toolContent.handle(source, item.id, { resultId: item.id, size: item.tool.bytes }) : undefined;
+        return (
+          <ToolCard
+            name="result"
+            args={undefined}
+            lazy={lazy}
+            status={view.isError ? "error" : "done"}
+            output={view.output}
+            images={item.images}
+            attachments={item.attachments}
+          />
+        );
+      })()}
+    </Show>
   );
 }

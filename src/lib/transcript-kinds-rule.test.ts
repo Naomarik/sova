@@ -38,7 +38,7 @@ const whens = (() => {
 const branchIds = whens.flatMap((w) => /^is(?:<.*>)?\("([^"]+)"\)$/s.exec(w)?.[1] ?? []);
 
 test("Thread.tsx matches no row itself: every branch is the toolkit's, the draw-nothing kinds', or one kind's by its id", () => {
-  assert.ok(whens.length > 5);
+  assert.ok(whens.length >= 2, "the row Switch is read: the toolkit's branch and the draw-nothing kinds' at least");
   for (const w of whens) assert.ok(w === "drawn()" || w === "hit()?.kind.drawsNothing" || /^is(<.*>)?\("[a-z-]+"\)$/s.test(w), `a row matched outside the list: <Match when={${w}}>`);
   assert.equal(whens[0], "drawn()", "the toolkit's rows come first, before any branch here");
   assert.doesNotMatch(rowSwitch, /item\.kind ===/, "no kind test in the row Switch");
@@ -68,6 +68,7 @@ const MOVED: Record<string, string[]> = {
   user: ["UserTurn"],
   "assistant-text": ["AssistantText"],
   thinking: ["Thinking"],
+  "tool-result": [],
 };
 
 test("a kind the toolkit draws has no branch of its own in Thread.tsx", () => {

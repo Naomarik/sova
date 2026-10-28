@@ -2,6 +2,7 @@ import { createContext, useContext } from "solid-js";
 import type { TranscriptItem } from "../../shared/protocol";
 import type { Sender } from "../../shared/senders";
 import type { ReplyTiming } from "../../shared/usage/perf";
+import type { ToolSource } from "../lib/tool-content";
 
 /**
  * What a transcript's whole list knows that one row's view may ask (§chat.transcript-cards/toolkit):
@@ -14,6 +15,10 @@ export interface ThreadRows {
   author(): string;
   /** Whether a user row is on the branch (the profile row waits for one). */
   hasUserRow(): boolean;
+  /** Whether a call with this id is on the list (its result draws inside the call's card). */
+  hasCall(callId: string): boolean;
+  /** Whose transcript this is, for a tool card's content its row doesn't carry (lib/tool-content). */
+  toolSource(): ToolSource | null;
   /** The shown row at index `i` (a reply's head shows when the row above is another's). */
   row(i: number): TranscriptItem | undefined;
   /** A measured reply's figures, by its row id: its first text row's head shows them. */

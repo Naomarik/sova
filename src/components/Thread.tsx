@@ -293,7 +293,7 @@ export function HistoryItems(props: {
   /** The profile row shows once a message is on the branch (§chat.profiles/after-first-message). */
   const hasUserRow = createMemo(() => props.items.some((it) => it.kind === "user"));
   /** What a row's kind may ask of the whole list when it matches (lib/transcript-kinds.ts). */
-  const kinds: KindContext = { hasUserRow, tourCard: tourCardOf, showChanges: showChangesOf, offer: offerOf, settings: settingsOf, card: cardOf };
+  const kinds: KindContext = { hasUserRow, tourCard: tourCardOf, showChanges: showChangesOf, offer: offerOf, settings: settingsOf, card: cardOf, hasCall: (id) => calls().has(id) };
   // Every row stands where it was raised (§chat.transcript-cards/placement): nothing moves to the end.
   const renderable = createMemo(() =>
     props.items.filter((it) => !isChangeRow(it) && !wrapupRows().has(it.id) && !(it.kind === "tool-call" && it.toolCallId && alignCalls().has(it.toolCallId))),
@@ -421,6 +421,8 @@ export function HistoryItems(props: {
   const threadRows: ThreadRows = {
     author: () => props.author,
     hasUserRow,
+    hasCall: (callId) => calls().has(callId),
+    toolSource: () => toolSource,
     row: (i) => rows()[i],
     timing: (id) => timings().get(id),
     senderOf,
@@ -700,26 +702,6 @@ export function HistoryItems(props: {
                     </Show>
                   );
                 })()}
-              </Match>
-              <Match when={is("tool-result")}>
-                {/* Paired results render inside their call's card; orphans get their own. */}
-                <Show when={!item.toolCallId || !calls().has(item.toolCallId)}>
-                  {(() => {
-                    const view = toolResultView(item);
-                    const lazy = toolSource && item.tool?.lazy ? toolContent.handle(toolSource, item.id, { resultId: item.id, size: item.tool.bytes }) : undefined;
-                    return (
-                      <ToolCard
-                        name="result"
-                        args={undefined}
-                        lazy={lazy}
-                        status={view.isError ? "error" : "done"}
-                        output={view.output}
-                        images={item.images}
-                        attachments={item.attachments}
-                      />
-                    );
-                  })()}
-                </Show>
               </Match>
             </Switch>
             {/* Under the bubble, once per entry (see `strips`): the reply place. */}

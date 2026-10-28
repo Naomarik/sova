@@ -898,9 +898,6 @@ export function HistoryItems(props: {
                   </Show>
                 )}
               </Match>
-              <Match when={is<NonNullable<NonNullable<TranscriptItem["report"]>["explain"]>>("explain")}>
-                {(explain) => <ExplainCard explain={explain()} />}
-              </Match>
               <Match when={is<NonNullable<NonNullable<TranscriptItem["report"]>["team"]>>("team-report")}>
                 {(team) => <TeamMessageCard report={item.report!} team={team()} time={item.at} attachments={item.attachments} />}
               </Match>

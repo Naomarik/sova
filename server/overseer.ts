@@ -106,6 +106,7 @@ import { archiveWorktrees } from "./archive-worktrees";
 import { markOwned } from "./write-guard";
 import { signalTextOf, teamStallOf } from "./signals-store";
 import { openOfferOf } from "./session-offers";
+import { openCardsOf } from "./transcript-cards";
 import { readDecisionSettings } from "./decide-settings";
 import { onAttentionChanged } from "./attention-memo";
 import { sessionFeed } from "./session-feed";
@@ -374,6 +375,7 @@ export function attentionDigest(list?: readonly SessionSummary[]): Promise<Retur
         ...(reviews.has(s.path) ? { playbook: reviews.get(s.path)! } : {}),
         ...(signIns.has(s.id) ? { tourSignIn: signIns.get(s.id)! } : {}),
         ...offerField(s),
+        ...cardsField(s),
       };
     });
     // Items of no session: an org project's missing stakeholder, its held acts and conflicts routed to the operator
@@ -395,6 +397,13 @@ function offerField(s: SessionSummary): { offer?: { title: string; at: number } 
   if (s.archived) return {};
   const o = openOfferOf(s.id);
   return o ? { offer: { title: o.title, at: Number.isFinite(o.at) ? o.at : 0 } } : {};
+}
+
+/** The session's open transcript cards (§chat.transcript-cards/answering) as a digest row's field: one Needs you item each. */
+function cardsField(s: SessionSummary): { cards?: { title: string; at: number }[] } {
+  if (s.archived) return {};
+  const open = openCardsOf(s.id);
+  return open.length ? { cards: open.map((c) => ({ title: c.title, at: c.at })) } : {};
 }
 
 function teamStallField(id: string): { teamStall?: { since: number; names: string[] } } {

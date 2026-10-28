@@ -25,6 +25,7 @@ import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
 import { registerProjectFileRoutes } from "./project-files-routes";
 import { registerSessionOfferRoutes } from "./session-offers-routes";
+import { registerTranscriptCardRoutes } from "./transcript-cards-routes";
 import { setFileCopyGuards } from "./project-files-tool";
 import { registerProjectRoutes } from "./projects/routes";
 import { registerProjectServiceRoutes } from "./project-services/routes";
@@ -402,6 +403,7 @@ export function buildApp(deps: AppDeps) {
   registerProjectFileRoutes(app);
   // Session offers: a session's offer cards and clicks, another chat's show, the project page's list (§chat/offers).
   registerSessionOfferRoutes(app);
+  registerTranscriptCardRoutes(app);
   // The usage ledger: every figure of spend, answered by the usage helper (§app.insights/usage-ledger).
   registerUsageRoutes(app);
   registerProjectRoutes(app);

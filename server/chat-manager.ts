@@ -98,9 +98,12 @@ import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./se
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { QUEUE_OPEN_TOOL, queuePushExtension, topicStore } from "./topics";
 import { OFFER_NOTE_MESSAGE, OFFER_TOOL } from "../shared/session-offers";
+import { CARD_NOTE_MESSAGE, CARD_TOOL } from "../shared/transcript-cards";
+import { cardNoteRender } from "./transcript-cards-note";
 
 /** The offer note in this process (a chat the server hosts itself: tests). */
 const offerNoteHere = async (sessionId: string): Promise<string | null> => (await import("./session-offers")).offerNoteFor(sessionId);
+const cardNoteHere = async (sessionId: string, since: string | null): Promise<string | null> => (await import("./transcript-cards")).cardNoteFor(sessionId, since);
 import { noteUsageSession, registerUsageSession, resolveUsageAttribution } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { reviewSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
@@ -169,6 +172,8 @@ export interface ChatHosts {
   instanceNote?: (ctx: HookCtx) => Promise<string | null>;
   /** The offer tool's note of a run button's outcome (§chat.offers/card). */
   offerNote?: (sessionId: string) => Promise<string | null>;
+  /** The transcript cards' note of answers given at once since `since` (§chat.transcript-cards/answering). */
+  cardNote?: (sessionId: string, since: string | null) => Promise<string | null>;
 }
 let chatHosts: ChatHosts = {};
 export function setChatHosts(h: ChatHosts): void {
@@ -4427,6 +4432,8 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
     const outline = special ? false : !isFanoutMember(read);
     // The offer tool, served (its declaration came with the open) or, in this process, from the snapshot.
     const offerSpecs: ToolSpec[] = special ? [] : servedDecls ? servedSpecs(path, (n) => n === OFFER_TOOL) : await (await import("./session-offers-tool")).sessionOfferTools(read.id, path, cwd);
+    // The card tool, the same way, when the snapshot has a type the agent may raise (§chat.transcript-cards/card-tool).
+    const cardSpecs: ToolSpec[] = special ? [] : servedDecls ? servedSpecs(path, (n) => n === CARD_TOOL) : await (await import("./transcript-cards-tool")).sessionCardTools(read.id, path, cwd);
     // A link member's tools are fixed by its creation marker, read at every build (§mesh.links/tools).
     const linkTools = isLinkMember(read) ? "member" : "legacy";
     return {
@@ -4453,11 +4460,14 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
                 : projectVerbsExtension(projectEngine),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
               servedDecls
-                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && !TOUR_TOOLS.has(n)))
+                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && n !== CARD_TOOL && !TOUR_TOOLS.has(n)))
                 : queuePushExtension({ sessionId: () => read.id, title: () => titleOf(read.branch()) }),
               servedVisToolsExtension("sova-tours", servedDecls ? servedSpecs(path, n => TOUR_TOOLS.has(n)) : tourTools(read.id, path), () => visHost.chat ? visHost.chat.modeState.minorModes.includes("vis") : undefined),
               // offer: this project's offers, from the session's snapshot (§chat.offers/tool). Most chats have none: no extension.
               ...(offerSpecs.length ? [servedToolsExtension("sova-session-offers", offerSpecs, (ctx) => (chatHosts.offerNote ?? offerNoteHere)(ctx.sessionId), OFFER_NOTE_MESSAGE)] : []),
+              // card: this project's transcript cards (§chat/transcript-cards). Every ordinary chat hears an
+              // answer given at once at its next turn, even with no tool: a script may raise a card in it.
+              servedToolsExtension("sova-transcript-cards", cardSpecs, cardNoteRender((id, since) => (chatHosts.cardNote ?? cardNoteHere)(id, since)), CARD_NOTE_MESSAGE),
               ...powers,
             ],
             ...overrides,

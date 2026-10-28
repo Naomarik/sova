@@ -163,6 +163,7 @@
     "GET /api/push": {"need":"sessions","is":"pending"},
     "GET /api/schedules": {"need":"sessions","is":"pending"},
     "GET /api/services": {"need":"sessions","is":"pending"},
+    "GET /api/session-cards": {"need":"sessions","is":"command","ids":["session.card.get"]},
     "GET /api/session-groups": {"need":"sessions","is":"command","ids":["session.group.list"]},
     "GET /api/session-offers": {"need":"sessions","is":"command","ids":["session.offers.get"]},
     "GET /api/session-shares": {"need":"sessions","is":"pending"},
@@ -376,6 +377,9 @@
     "POST /api/sandbox": {"need":"sessions","is":"command","ids":["session.sandbox.set"]},
     "POST /api/schedules/approve": {"need":"admin","is":"pending"},
     "POST /api/schedules/revoke": {"need":"admin","is":"pending"},
+    "POST /api/session-cards/answer": {"need":"admin","is":"command","ids":["session.card.answer"]},
+    "POST /api/session-cards/post": {"need":"admin","is":"command","ids":["session.card.post"]},
+    "POST /api/session-cards/trust": {"need":"admin","is":"trust-grants"},
     "POST /api/session-groups": {"need":"sessions","is":"command","ids":["session.group.create"]},
     "POST /api/session-groups/:id/prompt": {"need":"sessions","is":"command","ids":["session.group.send"]},
     "POST /api/session-groups/assign": {"need":"sessions","is":"command","ids":["session.group.assign"]},
@@ -528,6 +532,7 @@
     "server/spec-lookup.ts": ["spec_lookup","code_read"],
     "server/topics.ts": ["queue_push","queue_open"],
     "server/tours/tools.ts": ["<computed: RECORD_TOUR_TOOL>","<computed: SHOW_TOUR_TOOL>","<computed: SHOW_TOUR_TOOL>"],
+    "server/transcript-cards-tool.ts": ["<computed: CARD_TOOL>"],
     "server/vis-check.ts": ["vis_check"]
   }
 }

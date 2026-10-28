@@ -12,6 +12,7 @@ import type { Permit } from "./overseer-grants";
 import type { OverseerCard } from "./overseer-card";
 import type { ReplyTiming, RowFacts, SovaEvent, SovaPart } from "./harness-wire";
 import type { OwnerRequestCard } from "./project-assistant";
+import type { CardInfo } from "./transcript-cards";
 export type { WakeInfo };
 
 export interface SessionSummary {
@@ -225,6 +226,8 @@ export type EntryKind =
   | "report" // subagent reports and other long extension messages (custom_message); see `report`
   | "worktree-merge" // a merge the session recorded (pi-config worktrees extension); see `worktreeMerge`
   | "align" // an `align` tool result that changed an alignment, or an exemption (pi-config mode extension); see `align`
+  | "card" // a transcript card raised from outside the chat (§chat.transcript-cards/raise-command): the page
+           // places it after the entry it was raised after (`card.after`); the server sends no such row. See `card`.
   | "spec-turn" // legacy: the retired spec card; no longer produced, older mesh peers may still send it (renders nothing)
   | "unknown";
 
@@ -417,6 +420,8 @@ export interface TranscriptItem {
       call, whose tool-call row renders nothing once this row is there. A failed call, a `get`, or
       details that don't check out stay an ordinary tool-result. */
   align?: AlignRowInfo;
+  /** kind "card": the card, as GET /api/session-cards reads it (§chat/transcript-cards). */
+  card?: CardInfo;
   /** The entry's timestamp (ISO), on every row whose entry has one. */
   at?: string;
   /** The entry's facts, on its first row only (EntryMeta). Absent on rows to a consumer that asked
@@ -3526,6 +3531,7 @@ export type AttentionKind =
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
   | "held-act"            // act tier, never pushed: a statechart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
   | "offer-waiting"       // act tier, never pushed or briefed: the session shows an open offer card (Land It, §chat.offers/card), idle or working
+  | "card-waiting"        // act tier, never pushed or briefed: the session shows an open transcript card waiting on an answer (§chat.transcript-cards/answering), one per card, idle or working
   | "tour-sign-in"        // act tier, never pushed: one of the session's tour recordings waits for the user to sign in on its card (§app.tours/sites; from the server's memory, gone on restart)
   | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Merge Branch (§app.project-runtime/review; the run's session, `playbook` set)
   | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project page)

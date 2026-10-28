@@ -718,6 +718,21 @@ const FIXTURES: Record<string, Fixture> = {
     status: 200,
     oracle: async (_b, v) => assert.deepEqual((await read("GET", `/api/session-offers?path=${encodeURIComponent(String(v.session))}`)).notNow, []),
   },
+  "session.card.get": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.card.post": {
+    values: () => ({ session: cardsSession(), type: "project.note", data: { title: "Build", tone: "ok", line: "Green." } }),
+    status: 200,
+    oracle: async (_b, v) => assert.equal(((await read("GET", `/api/session-cards?path=${encodeURIComponent(String(v.session))}`)).cards as unknown[]).length, 1),
+  },
+  "session.card.answer": {
+    values: () => {
+      const path = cardsSession();
+      pendingSetup.push(async () => void (await sendTo(app, "POST", "/api/session-cards/post", JSON.stringify({ path, type: "project.ask", data: { title: "Format", ask: "Which?", options: [{ label: "CSV" }, { label: "Parquet" }] } }))));
+      return { session: path, card: "cd_1", answer: { option: 1 } };
+    },
+    status: 200,
+    oracle: async (_b, v) => assert.equal(((await read("GET", `/api/session-cards?path=${encodeURIComponent(String(v.session))}`)).cards as { state: string }[])[0]?.state, "answered"),
+  },
   "project.settings.get": { values: () => withProject(), status: 200 },
   "project.settings.history": { values: () => withProject(), status: 200 },
   "project.overseer.settings.set": {
@@ -770,6 +785,18 @@ function offersSession(): string {
   const d = join(root, `offers-project-${++n}`);
   mkdirSync(join(d, ".sova"), { recursive: true });
   writeFileSync(join(d, ".sova", "offers.json"), JSON.stringify({ version: 1, offers: { hello: { when: "Always.", title: "Say hello?", repeat: "once-per-session", buttons: [{ label: "Hello", about: "Sends hello.", send: "hello" }] } } }));
+  const id = `fuzz-${++n}`;
+  const path = join(sessionsDir, `2026-10-17T00-00-00-000Z_${id}.jsonl`);
+  writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-10-17T00:00:00.000Z", cwd: d })}\n`);
+  return canonicalPath(path);
+}
+/** A fresh session whose folder declares two card types: a status note, and a question answered at once (§chat.transcript-cards/files). */
+function cardsSession(): string {
+  const d = join(root, `cards-project-${++n}`);
+  for (const [name, card] of [["note", { draws: "status" }], ["ask", { draws: "question", answer: "at-once" }]] as const) {
+    mkdirSync(join(d, ".sova", "cards", name), { recursive: true });
+    writeFileSync(join(d, ".sova", "cards", name, "card.json"), JSON.stringify({ version: 1, toolkit: 1, title: name, ...card }));
+  }
   const id = `fuzz-${++n}`;
   const path = join(sessionsDir, `2026-10-17T00-00-00-000Z_${id}.jsonl`);
   writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-10-17T00:00:00.000Z", cwd: d })}\n`);

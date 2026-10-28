@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 486 |
-| Routes a catalogue entry points at | 121 |
-| Catalogue entries | 152 |
+| Routes registered | 490 |
+| Routes a catalogue entry points at | 124 |
+| Catalogue entries | 155 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -24,12 +24,12 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: The catalogue itself | 1 |
 | Class: Test only | 0 |
 | Class: Pages and assets | 7 |
-| Class: Trust grants | 3 |
+| Class: Trust grants | 4 |
 | Class: Middleware and fallbacks | 2 |
 | Pending (not yet a command) | 304 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 8 |
-| Hand-written tool specs | 124 |
+| Hand-written tool specs | 125 |
 
 ## Catalogue entries
 
@@ -70,6 +70,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.offers.choose` | Choose Offer Button | changes | `POST /api/session-offers/choose` | admin |
 | `session.offers.snooze` | Not Now | changes | `POST /api/session-offers/snooze` | admin |
 | `session.offers.unsnooze` | Offer Again | changes | `POST /api/session-offers/unsnooze` | admin |
+| `session.card.post` | Raise Card | changes | `POST /api/session-cards/post` | admin |
+| `session.card.get` | Session Cards | looks | `GET /api/session-cards` | sessions |
+| `session.card.answer` | Answer Card | changes | `POST /api/session-cards/answer` | admin |
 | `project.verb.create` | Project create | changes | `POST /api/project-services/create` | admin |
 | `project.verb.up` | Project up | changes | `POST /api/project-services/up` | admin |
 | `project.verb.down` | Project down | changes | `POST /api/project-services/down` | admin |
@@ -612,15 +615,16 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `ALL /explain/*` | full |
 | `GET /explain/:id` | full |
 
-### Trust grants (3)
+### Trust grants (4)
 
-Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval), applying a settings card with its approvals (§app.project-overseer/settings) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.
+Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval; a project's transcript cards, §chat.transcript-cards/trust), applying a settings card with its approvals (§app.project-overseer/settings) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.
 
 | Route | Mesh need |
 | --- | --- |
 | `POST /api/projects/:pid/offers/approve` | admin |
 | `PUT /api/projects/:pid/services/limit` | admin |
 | `POST /api/projects/:pid/settings/apply` | admin |
+| `POST /api/session-cards/trust` | admin |
 
 ### Middleware and fallbacks (2)
 
@@ -706,6 +710,9 @@ Approving what a project's files may make Sova do (an offers file's run buttons,
 | `POST /api/projects/:pid/unarchive` | admin | `project.unarchive` |
 | `POST /api/push/test` | admin | `push.test` |
 | `POST /api/sandbox` | sessions | `session.sandbox.set` |
+| `GET /api/session-cards` | sessions | `session.card.get` |
+| `POST /api/session-cards/answer` | admin | `session.card.answer` |
+| `POST /api/session-cards/post` | admin | `session.card.post` |
 | `GET /api/session-groups` | sessions | `session.group.list` |
 | `POST /api/session-groups` | sessions | `session.group.create` |
 | `DELETE /api/session-groups/:id` | sessions | `session.group.delete` |
@@ -813,4 +820,5 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/spec-lookup.ts` | 2 | `spec_lookup`, `code_read` |
 | `server/topics.ts` | 2 | `queue_push`, `queue_open` |
 | `server/tours/tools.ts` | 3 | `<computed: RECORD_TOUR_TOOL>`, `<computed: SHOW_TOUR_TOOL>`, `<computed: SHOW_TOUR_TOOL>` |
+| `server/transcript-cards-tool.ts` | 1 | `<computed: CARD_TOOL>` |
 | `server/vis-check.ts` | 1 | `vis_check` |

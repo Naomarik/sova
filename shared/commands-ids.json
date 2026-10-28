@@ -152,7 +152,10 @@
     "project.claude-login.get",
     "project.claude-login.set",
     "org.claude-login.get",
-    "org.claude-login.set"
+    "org.claude-login.set",
+    "session.card.post",
+    "session.card.get",
+    "session.card.answer"
   ],
   "retired": [
     "settings.agents.get"

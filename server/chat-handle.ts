@@ -73,6 +73,8 @@ import type { PowersSend } from "./session-powers";
 import { tourTools } from "./tours/tools";
 import { sessionOfferTools } from "./session-offers-tool";
 import { offerNoteFor } from "./session-offers";
+import { sessionCardTools } from "./transcript-cards-tool";
+import { cardNoteFor } from "./transcript-cards";
 /** The powers host, loaded when first needed (session-profile-routes binds chat-manager at its import). */
 const powersHost = () => import("./session-profile-routes").then((m) => m.powersHost);
 
@@ -684,10 +686,11 @@ export function servedWorkerTools(chatId: ChatId): ServerToolDecl[] {
 export async function servedToolsForChat(chatId: ChatId, sessionId: string, known: () => string | undefined, kind: string | null): Promise<ServerToolDecl[]> {
   const decls = servedToolsFor(chatId, sessionId, known, kind === "powers");
   if (kind !== null && kind !== "powers") return decls;
-  const offers = await sessionOfferTools(sessionId, chatId);
-  if (!offers.length) return decls;
-  serveTools(chatId, offers);
-  return [...decls, ...offers.map(declOfTool)];
+  // Then its `card` tool when its snapshot has a type the agent may raise (§chat.transcript-cards/card-tool).
+  const extra = [...(await sessionOfferTools(sessionId, chatId)), ...(await sessionCardTools(sessionId, chatId))];
+  if (!extra.length) return decls;
+  serveTools(chatId, extra);
+  return [...decls, ...extra.map(declOfTool)];
 }
 
 /** A pusher's title, the one Sova shows for its session (§chat.topics/push): its display title, else
@@ -775,6 +778,8 @@ export async function answerChatAsk(path: string, method: ChatAskMethod, args: u
       return fetchSessionTimings(String(a.sessionId ?? ""));
     case "offers.note":
       return offerNoteFor(String(a.sessionId ?? ""));
+    case "cards.note":
+      return cardNoteFor(String(a.sessionId ?? ""), typeof a.since === "string" ? a.since : null);
     case "powers.sessions":
       return (await powersHost()).sessions();
     case "powers.session":

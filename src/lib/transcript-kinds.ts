@@ -17,6 +17,11 @@
  * drawn by the same host (components/LiveKinds.tsx holds the live views). The settled row that
  * replaces it at the turn's end is the same kind's `view`.
  *
+ * Which rows join a run of the working (§chat.transcript/work-chain, "Work · n steps") is the kinds'
+ * own say too, by one rule for both (`outsideWork`): a call whose kind declares `outsideWork` is the
+ * message, not the working, and breaks the run, settled or streaming, so no row moves out of a run at
+ * the handover.
+ *
  * Like src/vis/registry.ts this file stays free of Solid, the DOM and CSS (views are named or
  * imported lazily), so its order and matching are tested in plain unit tests.
  */
@@ -40,6 +45,7 @@ import { newestByKey } from "./transcript-placement";
 import { explainOf } from "./explain";
 import { isLoginNoteRow } from "./change-rows";
 import { infoEstimate } from "./tail-render";
+import { CARD_TOOLS } from "./hidden-rows";
 
 /** Where a kind draws: in the page (Sova's own), as one of Sova's data cards, or in a sealed frame. */
 export type KindHost = "page" | "data" | "frame";
@@ -168,6 +174,13 @@ export interface TranscriptKind<V = unknown> {
   drawsNothing?: true;
   /** How the kind draws while its turn still streams, before its row settles; absent, it draws only settled. */
   live?: LiveForm;
+  /**
+   * A call this kind draws stands outside the Work run (§chat.transcript/work-chain): it is the
+   * message, not the working, so it breaks the run. `true`: every call the kind matches; a function:
+   * decided by the call's tool name (the tool kind's own cards: a deck card, a link). Absent: a call
+   * of the kind is a step. Read by `outsideWork`, for settled and live rows alike.
+   */
+  outsideWork?: true | ((toolName: string) => boolean);
 }
 
 const kind = <V>(k: TranscriptKind<V>): TranscriptKind => k as unknown as TranscriptKind;
@@ -179,6 +192,13 @@ const doneCall = (input: LiveInput, ctx: LiveKindContext, name: (n: string) => b
   return t?.status === "done" ? t.details : undefined;
 };
 const named = (n: string) => (name: string) => name === n;
+/**
+ * Calls the tool kind draws that stay outside the Work run by name, whatever their result: the deck
+ * card, a link, a session sent to, every tour call (its request, progress and failure rows too,
+ * §app.tours/recording) and a raised card's call from its first streamed argument. An offer is out
+ * only once its card is (the offer kind), as is a show_changes call with valid details.
+ */
+const OUTSIDE_WORK_NAMES: ReadonlySet<string> = new Set([...CARD_TOOLS, ...TOUR_TOOLS, "session_send", "sova_create_session"].filter((n) => n !== OFFER_TOOL));
 
 // In the order Thread.tsx's chains had: the first kind that matches draws the row (settled or live).
 // The settled kinds are told apart by their row kind first, so wake and topic standing before the
@@ -235,6 +255,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   // the turn streams, a call that changed an alignment draws its card whole, as the newest.
   kind({
     id: "align",
+    outsideWork: true,
     match: (it) => it.kind === "align" && it.align,
     host: "page",
     placement: "follow",
@@ -264,6 +285,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   }),
   kind({
     id: "tour",
+    outsideWork: true,
     match: (it, ctx) => isCall(it) && ctx.tourCard(it),
     host: "page",
     placement: "anchored",
@@ -281,6 +303,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   // (§chat.changes/show-changes-card); anything else, a tool card.
   kind({
     id: "show-changes",
+    outsideWork: true,
     match: (it, ctx) => isCall(it) && it.text === SHOW_CHANGES_TOOL && ctx.showChanges(it.toolCallId),
     host: "page",
     placement: "anchored",
@@ -289,6 +312,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   }),
   kind({
     id: "offer",
+    outsideWork: true,
     match: (it, ctx) => isCall(it) && it.text === OFFER_TOOL && ctx.offer(it.toolCallId),
     host: "page",
     placement: "anchored",
@@ -300,6 +324,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   // stands: a follow type's revisions share its key, the newest drawn whole; an anchored card has no key.
   kind({
     id: "card",
+    outsideWork: true,
     match: (it, ctx) => (isCall(it) && it.text === CARD_TOOL && ctx.card(it.toolCallId)) || (it.kind === "card" && it.card),
     estimate: (_it, card: CardInfo) => `${cardEstimate(card)}px`,
     host: "data",
@@ -311,6 +336,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   }),
   kind({
     id: "settings",
+    outsideWork: true,
     match: (it, ctx) => isCall(it) && it.text === SETTINGS_TOOL && ctx.settings(it.toolCallId),
     host: "page",
     placement: "anchored",
@@ -324,7 +350,15 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
     },
   }),
   // Any other call: its tool card, or the card its result reads as (a deck card, a link), streamed arguments and all.
-  kind({ id: "tool", match: (it) => isCall(it), host: "page", placement: "anchored", view: { page: "tool" }, live: { match: (input) => input.kind === "call" && input.block, view: "tool" } }),
+  kind({
+    id: "tool",
+    match: (it) => isCall(it),
+    host: "page",
+    placement: "anchored",
+    view: { page: "tool" },
+    live: { match: (input) => input.kind === "call" && input.block, view: "tool" },
+    outsideWork: (name) => OUTSIDE_WORK_NAMES.has(name),
+  }),
   // A paired result draws inside its call's card: its own row draws nothing.
   kind({ id: "tool-result-paired", match: (it, ctx) => it.kind === "tool-result" && !!it.toolCallId && !!ctx.hasCall?.(it.toolCallId), host: "page", placement: "anchored", drawsNothing: true }),
   kind({ id: "tool-result", match: (it) => it.kind === "tool-result", host: "page", placement: "anchored", view: { page: "tool-result" } }),
@@ -376,6 +410,15 @@ export function liveEndsOf(entry: Extract<LiveEntry, { kind: "assistant" }>): Li
   if (entry.stoppedAt) out.push({ kind: "stopped", at: entry.stoppedAt });
   if (entry.error) out.push({ kind: "error", message: entry.error, ...(entry.model ? { model: entry.model } : {}) });
   return out;
+}
+
+/**
+ * Whether a tool call stands outside the Work run, by its kind's `outsideWork`: the one rule the
+ * settled rows (a `kindOf` hit) and the running turn (a `liveKindOf` hit) both cut their runs by.
+ */
+export function outsideWork(hit: KindHit | undefined, toolName: string): boolean {
+  const o = hit?.kind.outsideWork;
+  return o === true || (typeof o === "function" && o(toolName));
 }
 
 /** Two hits draw the same: the same kind, from the same value. */

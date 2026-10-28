@@ -14,7 +14,7 @@ import type { ScrollSpot } from "../lib/transcript-cache";
 import { anchorCorrection, anchorIndex } from "../lib/scroll-anchor";
 import { carriedStart, chunkStart, fillStops, FIRST_CHUNK, type ImagesAt, initialStart, jumpStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
 import { usePaneId, usePaneScope } from "../lib/pane-scope";
-import { isHiddenBlock, isTourResult, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, CARD_TOOLS } from "../lib/hidden-rows";
+import { isHiddenBlock, isTourResult, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
 import { chainRuns, type ChainRun } from "../lib/chain-rows";
 import { compressWork } from "../lib/work-compression";
 import { isChangeRow } from "../lib/change-rows";
@@ -25,10 +25,9 @@ import { replyHovers } from "../lib/perf";
 import { LiveRowsContext, ThreadRowsContext, useLiveRows, type LiveRows, type ThreadRows } from "./thread-rows";
 import { TurnError } from "./MessageRows";
 import { liveTourCalls, newestTourRows, tourFold, tourLine } from "../lib/tour-rows";
-import { TOUR_TOOLS } from "../../shared/tour";
-import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
-import { normalizeOfferDetails, OFFER_TOOL } from "../../shared/session-offers";
-import { CARD_TOOL as RAISE_CARD_TOOL, normalizeCardDetails as normalizeRaisedCard } from "../../shared/transcript-cards";
+import { normalizeShowChangesDetails } from "../../pi-config/extensions/show-changes/details";
+import { normalizeOfferDetails } from "../../shared/session-offers";
+import { normalizeCardDetails as normalizeRaisedCard } from "../../shared/transcript-cards";
 import { isSettingsToolDetails } from "../../shared/project-settings";
 import { Banner, Chip, Icon } from "./ui";
 import { cardFold, confirmAnswer, isBriefText } from "../lib/overseer";
@@ -39,7 +38,7 @@ import type { ReplyPlace } from "../lib/reply-place";
 import { ReplyPlaceView } from "./ReplyPlace";
 import { InfoRow } from "./InfoRow";
 import { TranscriptKindRow } from "./TranscriptKind";
-import { kindOf, liveBlockInput, liveEndsOf, liveKindOf, sameHit, SETTINGS_TOOL, type KindContext, type KindHit, type LiveInput } from "../lib/transcript-kinds";
+import { kindOf, liveBlockInput, liveEndsOf, liveKindOf, outsideWork, sameHit, type KindContext, type KindHit, type LiveBlockFacts, type LiveInput } from "../lib/transcript-kinds";
 import { isErroredTurnStop } from "../lib/turn";
 
 /** Whose transcript the rows inside are (lib/tool-content): a tool card asks it for the content its
@@ -47,13 +46,8 @@ import { isErroredTurnStop } from "../lib/turn";
 export const ToolSourceContext = createContext<ToolSource | null>(null);
 
 
-/**
- * Tools the thread draws as a card rather than as a tool card: they carry the message (a question
- * with buttons, a link, a profile's session), not the working, so a chain never swallows one
- * `show_changes` joins them only when its details check out, which
- * the caller decides.
- */
-const CARD_RENDER_NAMES: ReadonlySet<string> = new Set([...CARD_TOOLS, "session_send", "sova_create_session"]);
+/** A call's facts, for asking its kind where it stands against the Work run: no live form's call match reads them. */
+const NO_FACTS: LiveBlockFacts = { author: () => "", model: () => undefined, streaming: () => false, showHead: () => false, timing: () => undefined, time: () => undefined };
 
 /**
  * Runs the reader has folded, by the run's own key. Module scope, not component state: the streaming
@@ -297,18 +291,8 @@ export function HistoryItems(props: {
   };
   const alignNewest = (item: TranscriptItem) => newestAligns().has(item.id) && !(item.align?.doc && props.liveAlignIds?.has(item.align.doc.id));
 
-  /** Whether a call draws a card rather than a tool card, by the render's own rule. */
-  const asCard = (it: TranscriptItem): boolean => {
-    if (it.kind !== "tool-call") return false;
-    if (it.text === SHOW_CHANGES_TOOL) return !!showChangesOf(it.toolCallId);
-    if (it.text === OFFER_TOOL) return !!offerOf(it.toolCallId);
-    if (it.text === RAISE_CARD_TOOL) return !!cardOf(it.toolCallId);
-    if (it.text === SETTINGS_TOOL) return !!settingsOf(it.toolCallId);
-    // Every tour call breaks the timeline (§chat.transcript/work-chain): its card, an earlier
-    // call's one line (§app.tours/one-card) and a failure row alike stay outside compressed groups.
-    if (TOUR_TOOLS.has(it.text ?? "")) return true;
-    return cardRow(it) !== undefined || CARD_RENDER_NAMES.has(it.text ?? "");
-  };
+  /** Whether a call stands outside the Work run: its kind says (lib/transcript-kinds.ts `outsideWork`, the live run's rule too). */
+  const asCard = (it: TranscriptItem): boolean => it.kind === "tool-call" && outsideWork(kindOf(it, kinds), it.text ?? "");
 
   /**
    * Consecutive visible working rows draw one timeline, a line per step instead of a card.
@@ -665,19 +649,13 @@ export function LiveEntries(props: {
         if (e.stoppedAt || e.error) blocks.push(null);
       }
     }
+    // A call is a step unless its kind keeps it out, by the settled rows' own rule (`outsideWork`):
+    // a call whose kind keeps it out never joins the run only to leave it at the handover.
+    const ctx = { tool: (id: string) => props.live.tools[id], tourCall: (id: string) => liveTourCalls(props.live.tools).get(id) };
     const working = blocks.map((b) => {
       if (b?.type === "thinking") return true;
       if (b?.type !== "toolCall") return false;
-      if (b.name === SHOW_CHANGES_TOOL) {
-        const tool = props.live.tools[b.id];
-        return !(tool?.status === "done" && normalizeShowChangesDetails(tool.details));
-      }
-      if (b.name === OFFER_TOOL) {
-        const tool = props.live.tools[b.id];
-        return !(tool?.status === "done" && normalizeOfferDetails(tool.details));
-      }
-      if (TOUR_TOOLS.has(b.name)) return false;
-      return !CARD_RENDER_NAMES.has(b.name);
+      return !outsideWork(liveKindOf(liveBlockInput(b, NO_FACTS), ctx), b.name);
     });
     const skip = blocks.map((b) => b !== null && !shows(b));
     // A streaming run folds under its own key: it has no entry id yet, and its block list only

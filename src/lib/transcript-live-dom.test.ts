@@ -7,8 +7,10 @@
 // nudge, a topic batch, a brief, a queued message), its stop and its error. Compared with
 // transcript-live-dom.snapshot.json, taken from the live path before it moved onto the list.
 // Hydration keys and marker comments are left out, and so is a JSX comment SSR prints as text (the old
-// live user row's `{/* … */ <div>}`; the browser draws none), and Math.random is seeded. Regenerate
-// only for a change you mean, and only from the old path:
+// live user row's `{/* … */ <div>}`; the browser draws none), and Math.random is seeded. One change
+// was meant: a settings card stands outside the Work run while streaming, as it does settled (the
+// live and settled runs are cut by one rule, lib/transcript-kinds.ts `outsideWork`), so only "a
+// settings card" was regenerated, from the new path. Regenerate only for a change you mean:
 // WRITE_LIVE_SNAPSHOT=1 pnpm test -- src/lib/transcript-live-dom.test.ts
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";

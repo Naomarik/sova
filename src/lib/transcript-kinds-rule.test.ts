@@ -123,7 +123,21 @@ test("the running turn is drawn through the same list and host: no live branch o
   assert.match(liveEntries, /<LiveRow input=\{\{ kind: "user", entry: e\(\) \}\} \/>/, "a message going in is a LiveRow");
   assert.match(liveEntries, /liveBlockInput\(block,/, "a streamed block is a LiveRow");
   assert.match(liveEntries, /liveEndsOf\(e\(\)\)/, "the reply's end is a LiveRow");
-  for (const src of [liveRow, liveEntries]) assert.doesNotMatch(src.replace(/const liveChains = createMemo[\s\S]*?\n  \}\);\n/, ""), KIND_TESTS, "a kind told apart in the thread's live path");
+  for (const src of [liveRow, liveEntries]) assert.doesNotMatch(src, KIND_TESTS, "a kind told apart in the thread's live path");
+});
+
+test("which calls join the Work run is the kinds' say, by one rule for the settled rows and the running turn", () => {
+  const liveChains = /const liveChains = createMemo[\s\S]*?\n  \}\);\n/.exec(fn("LiveEntries"))?.[0] ?? "";
+  const asCard = /const asCard = [^;]*;/.exec(thread)?.[0] ?? "";
+  assert.ok(liveChains && asCard, "the live and settled run cutters are where the rule expects them");
+  // Both ask the call's kind (lib/transcript-kinds.ts `outsideWork`) and nothing else: no tool name, no card's details.
+  assert.match(liveChains, /outsideWork\(liveKindOf\(/, "the running turn asks the call's live kind");
+  assert.match(asCard, /outsideWork\(kindOf\(/, "the settled rows ask the row's kind");
+  const NAME_TESTS = /_TOOLS?\b|CARD_RENDER_NAMES|\.name === |\.text === |normalize[A-Z]\w*Details|\.has\(b\.name\)/;
+  for (const [what, src] of [["liveChains", liveChains], ["asCard", asCard]] as const) {
+    assert.doesNotMatch(src, NAME_TESTS, `${what} tells a call apart by its tool name or details`);
+    assert.doesNotMatch(src, KIND_TESTS, `${what} tells a kind apart itself`);
+  }
 });
 
 test("Thread.tsx imports no card or message view: every one is drawn by a kind's view or live view", () => {

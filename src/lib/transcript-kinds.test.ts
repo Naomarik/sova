@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TranscriptItem } from "../../shared/protocol";
-import { kindById, kindOf, liveBlockInput, liveEndsOf, liveKindOf, newestRevisions, sameHit, toolkitKinds, TRANSCRIPT_KINDS, type KindContext, type LiveInput, type LiveKindContext, type TranscriptKind } from "./transcript-kinds";
+import { kindById, kindOf, liveBlockInput, liveEndsOf, liveKindOf, newestRevisions, outsideWork, sameHit, toolkitKinds, TRANSCRIPT_KINDS, type KindContext, type LiveInput, type LiveKindContext, type TranscriptKind } from "./transcript-kinds";
 import type { LiveTool } from "./live";
 import { rowEstimate } from "./tail-render";
 
@@ -122,4 +122,17 @@ test("a piece of the running turn is matched by the same list, in its order, by 
   assert.deepEqual(ends.map((e) => [e.kind, idOfLive(e)]), [["stopped", "info"], ["error", "info"]]);
   assert.deepEqual(liveEndsOf({ kind: "assistant", blocks: [], done: true }), []);
   assert.equal(liveKindOf(user("x"), live)?.live, true);
+});
+
+test("a call's kind says whether it stands outside the Work run, by one rule for settled and live rows", () => {
+  const hit = (id: string) => ({ kind: kindById(id)!, value: true });
+  // A card kind's call, once it is that card: a settings change, an offer, show_changes, a raised card, a tour, an alignment.
+  for (const id of ["settings", "offer", "show-changes", "card", "tour", "align"]) assert.equal(outsideWork(hit(id), "x"), true, id);
+  // The tool kind: its own cards by name (whatever their result), every other call a step.
+  for (const name of ["sova_card", "sova_confirm", "sova_link", "sova_unlink", "align", "card", "record_tour", "show_tour", "session_send", "sova_create_session"]) assert.equal(outsideWork(hit("tool"), name), true, name);
+  // An offer, show_changes or a settings call that isn't its card (still running, or failed) is a step.
+  for (const name of ["read", "bash", "offer", "show_changes", "sova_settings"]) assert.equal(outsideWork(hit("tool"), name), false, name);
+  assert.equal(outsideWork(undefined, "card"), false, "no kind, no say");
+  // Every other kind keeps out of it: a row of its kind is no call.
+  for (const k of TRANSCRIPT_KINDS) if (!["settings", "offer", "show-changes", "card", "tour", "align", "tool"].includes(k.id)) assert.equal(k.outsideWork, undefined, k.id);
 });

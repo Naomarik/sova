@@ -137,7 +137,7 @@ describe("sova_project_verbs goes through the project statechart (§app.project-
 });
 
 describe("sova_project_verbs share is the project's services/share (§app.project-overseer/previews)", () => {
-  test("share Off refused; On unattended held, then its hold ends: the link is minted, never in a result; revoke at L0, never held", async () => {
+  test("share Off refused; On unattended held, then its hold ends: the link is minted, its URL in the overseer's own results; revoke at L0, never held", async () => {
     const { stopStaticServe, staticServes } = await import("./preview-serve");
     const { writeFileSync } = await import("node:fs");
     const port = await reservePorts(1); // held across the run's processes, not a free port picked and let go
@@ -185,15 +185,18 @@ describe("sova_project_verbs share is the project's services/share (§app.projec
         setOrgClockForTest(null);
       }
       const status = await verb({ verb: "status", instance });
-      assert.doesNotMatch(status.json, /preview\.example\.invalid/, "the overseer never sees the link");
+      // Its own project's link: in its status and its sova_previews, for it to hand to the operator.
+      const url = status.result.links[0]?.url ?? "";
+      assert.match(url, /^https:\/\/[a-z2-7]{52}\.preview\.example\.invalid\/$/, status.json);
+      assert.ok(status.text.includes(url), "in the text it reads");
       const listed = textOf(await run("sova_previews", {}));
       const id = /^- (pv_[A-Za-z0-9_-]{16}) · running copy /m.exec(listed)?.[1];
       assert.ok(id, listed);
-      assert.doesNotMatch(listed, /preview\.example\.invalid/);
-      // Attended at once: the same link again (idempotent per copy and endpoint), with no URL in the result.
+      assert.ok(listed.includes(`link ${url}`), listed);
+      // Attended at once: the same link again (idempotent per copy and endpoint), its URL in the result.
       const again = await verb({ verb: "share", instance, endpoint: "site.http" }, true);
       assert.equal(again.result.links[0]?.id, id);
-      assert.doesNotMatch(again.json, /preview\.example\.invalid/);
+      assert.equal(again.result.links[0]?.url, url);
       await settings({ autonomy: "L0" });
       const revoked = await verb({ verb: "revoke", link: id });
       assert.equal(revoked.result.ok, true, JSON.stringify(revoked.result.error));

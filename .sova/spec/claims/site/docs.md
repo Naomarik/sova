@@ -68,7 +68,9 @@ the Features group, not under Modes: a profile is not a mode.
 
 ## §site.docs/align — Align and alignments (`/docs/modes/align/`)
 
-The align minor mode: what an alignment holds, answering it, Settings → Alignment (writing style,
+The align minor mode: when an alignment opens (only once the user asked for something built, fixed
+or changed; questions are answered in chat), how each reply opens with a short part for the user and
+folds its working notes, what an alignment holds, answering it, Settings → Alignment (writing style,
 Visuals, review), the card, the composer's badge and session mark, Needs you and notifications, and the terminal
 viewer.
 

@@ -497,7 +497,7 @@ user row.
   §app.project-overseer/previews). `promote`: `sova_promote`. `roster`:
   `sova_roster` approve/decline (history records the overseer as the writer; its read is always allowed).
   `codingStart`: `sova_create_session` (the root or a folder inside it, with a first prompt, an optional `mode`,
-  `minor_modes` and `subagent_profile`; in its own worktree, §app.project-overseer/coding-worktrees). `codingPrompt`: `sova_send` (its
+  `minor_modes`, `subagent_profile` and `already_agreed`, §app.project-overseer/confirm-brief; in its own worktree, §app.project-overseer/coding-worktrees). `codingPrompt`: `sova_send` (its
   project's coding sessions only, and an ordinary session whose folder is inside the project root,
   which is the project's own act: counted as a prompt, held like one; never a
   gathering session; an optional `mode`, `minor_modes` and `subagent_profile` too). Both take any
@@ -716,14 +716,15 @@ user row.
   `codemode`, never `memory` (§chat.memory/where); `[]` turns them all off) and `subagent_profile` (an id in this computer's subagent
   profiles, or `off`; the project overseer's `sova_list_subagent_profiles` lists them). There is no
   ceiling but spec (above): any mode, any minor modes with `spec` among them and any profile are taken. On a start, what the call names
-  replaces that part of this computer's default and the rest is the default's; a named profile is
+  replaces that part of this computer's default and the rest is the default's, except that a start
+  without `already_agreed` also gets align on (§app.project-overseer/confirm-brief); a named profile is
   picked for that session only. Only an unknown name is refused: "Unknown mode {x}: use normal or
   delegate.", "Unknown minor mode {x}: use align, spec, vis or codemode.", "Unknown subagent
   profile: {x}. sova_list_subagent_profiles lists them." Each refusal happens before anything
   else: no session is created, nothing is sent, and no cap or counter is taken, attended or not.
   The reply names the mode and the subagent profile the session started with ("…, mode delegate ·
   visuals, subagent profile Big team."). Both prompts say Delegate suits large, multi-part work,
-  and that spec is always on.
+  and that spec is always on. Both starts also take `already_agreed` (§app.project-overseer/confirm-brief).
 - **`sova_send` with a mode** switches only what it names (the session keeps the rest of its own
   mode and its profile), pins the mode and picks a named profile for that session, then sends the
   text. Mid-turn, the change applies from the session's next turn, and the result says so. The
@@ -740,14 +741,55 @@ user row.
   sent or counted: "It waits on the operator's alignment answers; align stays on until they
   answer." followed by "Nothing was sent." (`sova_send`) or "Nothing was changed."
   (`sova_set_session`). A switch that keeps `align`, or names no minor modes, goes as asked. The
-  project overseer's `sova_send` to a verb playbook's run (§app.project-runtime/verb-playbooks)
-  waiting on them is refused, before anything is taken: "{run title} is waiting on the operator's
-  answers to its alignment questions. Tell the operator; never answer them. Nothing was sent."
+  project overseer's `sova_send` to a verb playbook's run (§app.project-runtime/verb-playbooks), or
+  to a session an Overseer started asking the operator to confirm the brief
+  (§app.project-overseer/confirm-brief), waiting on them is refused, before anything is taken:
+  "{run title} is waiting on the operator's answers to its alignment questions. Tell the operator;
+  never answer them. Nothing was sent." The Overseer's `sova_send` to either is refused the same
+  way, in its own words: "{title} is waiting on the user's answers to its alignment questions. Tell
+  the user; never answer them. Nothing was sent."
 - **A verb playbook's run** starts with align on beside this computer's default mode, set by Sova
   (§app.project-runtime/onboard), because the operator answers its questions.
 - `strict` is never set or offered; a session keeps the strict flag it started with.
 - A gathering session loads no extensions, so it has no mode; what it can do is the project's
   gathering abilities (§app.baton/abilities).
+
+## §app.project-overseer/confirm-brief — An Overseer's coding session first asks what to build
+
+A coding session either Overseer starts (the project overseer's `sova_create_session`, the
+Overseer's `sova_project_overseer` `code`, §app.overseer/org-project-overseers) builds only what the
+operator agreed to. Both starts take **`already_agreed`** (`true` or absent; the code may name it
+otherwise), which the Overseer sets only when the operator has already said, in their own words,
+that they want this built; both prompts say so, and say never to set it on the Overseer's own
+judgement.
+
+- **Without it**, Sova turns align on in the session's mode beside what the Overseer named, whatever
+  its `minor_modes` say (spec stays on; align is never added twice), so the operator's check-in
+  never rests on the Overseer's choice of minor modes; the start's reply names that mode. The
+  session's first turn opens one small alignment before any plan, investigation or edit: one
+  question, topic "What to build", asking "Is this what you want built?", its context the brief
+  restated in plain words (what will be built and what it won't touch), its recommendation "Yes, as
+  restated". Sova asks for it with a paragraph it adds to the first prompt, after the brief and
+  before the commit paragraph (§app.project-overseer/coding-worktrees), as it adds that one; the
+  build's recorded prompt keeps it, which is how Sova knows the session asks first. The session then
+  waits on the operator: its open question puts it in Needs you and on its row
+  (§chat.alignment/session-mark), `sova_list_sessions` marks it as waiting on the operator's
+  answers, and a message either Overseer sends there never ends that wait
+  (§app.overseer/sent-marker). Neither Overseer can message it while it waits: the project
+  overseer's `sova_send` and the Overseer's `sova_send` are refused before anything is sent or
+  counted, as for a verb playbook's run (§app.project-overseer/coding-mode), so neither can answer
+  it. Once the
+  operator answers yes, that is the change request (§chat.alignment/when): the session aligns on the
+  work as any chat does. An answer that changes the brief is recorded as the decision, and the work
+  follows it.
+- **With it**, the session starts as before: in the mode as named (align off if `minor_modes` leave
+  it out), its first prompt the brief, with no extra question.
+- The start's result says which: "… It first asks the operator to confirm the brief." or "… Started
+  as already agreed."
+- **Unchanged:** a verb playbook's run (§app.project-runtime/onboard, §app.project-runtime/deploy-playbook) opens its
+  full alignment straight away; a build a gap's statechart starts by itself
+  (§app.project-overseer/drive) and the operator's own Start Coding Session and New Coding Session
+  get no such note; align stays on by default for new chats.
 
 ## §app.project-overseer/coding-worktrees — Each coding session in its own worktree
 

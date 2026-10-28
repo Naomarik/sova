@@ -101,6 +101,14 @@ also `review` and `close_blocker`, and their refusals of implementing and done,
   same call does it). A document that is done or dropped takes nothing but `status open`.
 - **exempt** `{reason}` — alone in its call, touching no document: the agent records why a work
   request needs no alignment.
+- **The change-request mark** — an op of its own (the code names it), touching no document,
+  alone in its call or before the call's other ops: the agent records that the user's latest prompt
+  asks for something to be built, fixed or changed (§chat.alignment/when). It has no fields the
+  agent must fill but may carry a short note of what was asked. It holds for the run it is made in,
+  until the run settles, and only the settle nudge reads it (§chat.alignment/model); it changes no
+  document, no card, no row mark and no session's wait (§chat.alignment/session-mark). Its answer is
+  one line, "Marked as a change request." Made twice in one run it is answered the same and changes
+  nothing more.
 - **get** — the document (or, with none named, every open one) as markdown, read-only: each
   option a paragraph of its own, `a. **{label}** — {trade-off}`, and the recommendation
   `Recommended: b — **{label}** — {why}` when it names an option, else
@@ -151,7 +159,10 @@ any more, and they count toward no badge, row or digest.
 
 ## §chat.alignment/model — What keeps the agent on it
 
-- **Instructions.** The align prompt block tells the agent to investigate before it records,
+- **Instructions.** The align prompt block tells the agent when an alignment may open and when it
+  must (§chat.alignment/when), how every reply opens and where its working detail goes
+  (§chat.alignment/reply), to mark a run as a change request with the tool's change-request mark
+  (§chat.alignment/tool) before anything else in that run, to investigate before it records,
   to record every alignment with the tool
   and never as reply text (no freeform plan, no numbered list of decisions in prose), to change a document only
   through ops and never by re-creating it, to read "3a" as q3's option a and decide it with that
@@ -161,7 +172,10 @@ any more, and they count toward no badge, row or digest.
   never while a question is open; a go-ahead with questions still open takes the recommendations for
   them first, an answer to only some is not a go-ahead — and `done` when finished. The planning
   worker hand-off is said once, in the bridge paragraph that follows the delegate block while
-  Delegate and align are both on: the investigation goes to at most one non-editing Planning & specs
+  Delegate and align are both on. It follows the same trigger (§chat.alignment/when): only a change
+  request is investigated for an alignment; a question, an explanation, research or brainstorming is
+  answered (or delegated) as the delegate block says, with no planning worker for an alignment. For
+  a change request, the investigation goes to at most one non-editing Planning & specs
   worker (never the Investigation profile), whose one permitted write is the alignment JSON for
   `import` at an absolute path outside the repository that the agent names (the delegate block's
   own no-edit rule names no exception: the bridge does; in a remote session the worker reports the
@@ -196,13 +210,21 @@ any more, and they count toward no badge, row or digest.
   Every later request reads it.
 - **No gate.** Nothing blocks the agent from editing, spawning or creating worktrees while a
   question is open: a dead worker or a parallel concern must never leave the session stuck.
-- **One nudge per run.** When a run is about to settle, align is on, the run made no `align` call,
-  and its final reply reads like a plan that asks the user to decide, the extension adds one hidden
+- **One nudge per run.** When a run is about to settle, align is on, **the run is marked as a
+  change request**, the run made no `align` call, and its final reply reads like a plan that asks
+  the user to decide, the extension adds one hidden
   message (`align-nudge`) telling the agent to record it with `align` (or `exempt` if it isn't a
   design decision) and continues the run once. It never nudges twice in one run (until the run
   settles). Only a successful call that changed a document or recorded an exemption counts as an
-  align call here: a refused call or a bare `get` does not. The reply judged is the run's last
-  assistant message, even one with no text. "Reads like a plan": an old markdown alignment block
+  align call here: a refused call, a bare `get` or the change-request mark alone does not. **The
+  mark** is the agent's own: the run made the tool's change-request mark, or any other `align` call
+  that names an op other than `get` (create, import or any document op, refused or not). The nudge
+  never guesses it from the user's prompt or the reply's words: a run that answered a question,
+  explained, researched or brainstormed and made no such call is never nudged, whatever its reply
+  says. The reply judged is the run's last
+  assistant message, even one with no text, **without its working notes**: the fold
+  (§chat.alignment/reply) and everything after it are dropped before it is read, so a decision
+  question just above the fold is the reply's last paragraph. "Reads like a plan": an old markdown alignment block
   (its `## Alignment: <title>` heading; a heading or bold line that merely mentions alignment is
   not one); a last paragraph with a question that puts a decision to the user — labelled ("open
   questions"), a go-ahead ("should I go ahead", "take my recommendations") or a choice ("which do
@@ -215,6 +237,51 @@ any more, and they count toward no badge, row or digest.
   of about 80 other replies (none after the tightening); across 230 other sessions about 2 in 100
   final replies fire, nearly all prose plans asking for decisions.
 
+## §chat.alignment/when — When an alignment opens
+
+An alignment, and the planning card it draws, opens **only after the user has said they want
+something built, fixed or changed** (a change request). Until then the chat is a conversation:
+
+- **Questions are answered in chat.** A question, a "why", an explanation, research, an
+  investigation and brainstorming are answered in the reply, never with an alignment, however much
+  work the answer took. The reply may end with a plain offer such as "Want me to plan a fix?";
+  that offer is not a card and the agent waits for the user's word. While brainstorming, the reply
+  may lay out options and their trade-offs in prose before the user has said what they want.
+- **A change request opens a card first.** Once the user asks for something to be built, fixed or
+  changed, the agent marks the run as a change request (§chat.alignment/tool), investigates and
+  records an alignment before it builds. A "go", "do it" or "yes" after a plan sketched in chat is a
+  change request like any other: it opens a card first, never the build.
+- **Building waits on a confirmed alignment.** Nothing is built until the user has confirmed an
+  alignment and it is set implementing (§chat.alignment/model), unless the user said to skip
+  alignment or the request is exempt (explicit commands to run, a trivial one-line change the user
+  pointed at, a follow-up that plainly confirms), which the agent records with `exempt` first.
+- **No asking for its own sake.** A request the agent already reads clearly gets the alignment the
+  work needs, with only the questions that would change it; the agent never opens a second,
+  confirm-my-reading alignment for a clear ask, and is not told to lean toward asking.
+
+The delegate bridge (§chat.alignment/model) and the settle nudge follow the same trigger: neither
+acts on a run that is not a change request.
+
+## §chat.alignment/reply — How a reply opens, and where its working goes
+
+While align is on, the align block tells the agent to write **every reply** in two parts:
+
+- **The part the user reads**, first: the answer, what changed, what the user must decide, and any
+  warnings or things the agent did not check. Its target is about 80 words, five short lines at
+  most; it is a target, not a limit. Warnings, failures, risks and what went unchecked always go
+  here, never in the fold.
+- **The working notes**, after it, only when there is working detail (what was read, commands run,
+  reasoning, file-by-file notes): under one line that reads exactly `### Working notes`, a level-3
+  heading, with everything after it to the end of the reply. Nothing the user must read or decide
+  follows it. A reply with nothing beyond the top part has no such line.
+
+The chat renders that heading as a fold, closed (§chat.markdown/working-notes). The settle nudge
+reads the reply without it (§chat.alignment/model). An alignment card never folds this way: every
+open question's context and options' trade-offs stay open on the card (§chat.alignment/card).
+The rule rides the align block, so it holds in every chat with align on (on by default for new
+chats) and in no other; workers never get the align block, so their reports to the agent are
+unchanged.
+
 ## §chat.alignment/card — The card in the transcript
 
 An `align` call that changed a document renders **where the call is**, as a card, instead of the
@@ -223,7 +290,9 @@ revision of each document on the branch** is the full card; every earlier revisi
 document collapses to one line built from its changes, which opens to show that revision in place.
 A failed call keeps the generic tool card with its error, and a `get` its tool card with the
 markdown; an `exempt` is one info row, "No alignment needed: {why}". "Hide tool calls" never folds
-an `align` call: it is the message, not its working.
+an `align` call that changed a document or recorded an exemption: it is the message, not its
+working. A change-request mark alone (§chat.alignment/tool) is working: it keeps the generic tool
+card, which "Hide tool calls" folds like any other.
 
 ```html
 <article class="card align-doc" aria-labelledby="align-doc-{n}">

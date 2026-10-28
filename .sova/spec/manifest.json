@@ -10134,6 +10134,39 @@
         "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#4f6c19c9"
       }
     },
+    "§app.project-overseer/confirm-brief": {
+      "kind": "behavior",
+      "code": [
+        "server/project-coding-mode.ts",
+        "server/project-coding-mode.test.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-tools.ts",
+        "server/project-overseer-tools.test.ts",
+        "server/project-overseer-prompt.md",
+        "server/overseer-org-tools.ts",
+        "server/overseer-org-tools.test.ts",
+        "server/overseer-prompt.md",
+        "server/overseer-tools.ts",
+        "server/overseer.ts",
+        "server/build-loadout.ts",
+        "shared/project-overseer.ts"
+      ],
+      "requires": [
+        "§app.project-overseer/coding-mode",
+        "§app.overseer/org-project-overseers",
+        "§chat.alignment/session-mark",
+        "§chat.alignment/when",
+        "§app.overseer/sent-marker",
+        "§app.project-overseer/coding-worktrees"
+      ],
+      "authority": "accepted",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-27T23:54Z",
+        "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
+      },
+      "evidence": "verified"
+    },
     "§app.project-overseer/gaps": {
       "kind": "behavior",
       "authority": "accepted",
@@ -10327,8 +10360,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-26T18:32Z",
-        "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
+        "at": "2026-10-27T23:54Z",
+        "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
       }
     },
     "§app.project-overseer/watch-loop": {
@@ -11348,7 +11381,12 @@
         "server/overseer-prompt.md",
         "server/overseer-org-view.ts",
         "server/app.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-27T23:54Z",
+        "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
+      }
     },
     "§app.project-overseer/coding-worktrees": {
       "kind": "behavior",
@@ -12773,7 +12811,8 @@
         "server/align-state.test.ts",
         "src/components/Composer.tsx",
         "src/lib/align-picks.ts",
-        "src/lib/align-picks.test.ts"
+        "src/lib/align-picks.test.ts",
+        "src/lib/hidden-rows.test.ts"
       ],
       "requires": [
         "§chat.alignment/state",
@@ -12783,8 +12822,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "at": "2026-10-27T23:54Z",
+        "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
       }
     },
     "§chat.alignment/chip": {
@@ -12851,7 +12890,8 @@
         "pi-config/extensions/mode/tests/smoke.mjs",
         "pi-config/extensions/mode/README.md",
         "pi-config/extensions/mode/align-settings.test.ts",
-        "pi-config/extensions/mode/tests/fixtures/flag-off-master.json"
+        "pi-config/extensions/mode/tests/fixtures/flag-off-master.json",
+        "pi-config/extensions/mode/tests/review-smoke.mjs"
       ],
       "requires": [
         "§chat.alignment/state",
@@ -12859,9 +12899,33 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-26T21:58Z",
-        "source": "pi-session:870ce3a5-70c4-4ee4-86d6-e43d0a143cb2#58d50ef4"
+        "at": "2026-10-27T23:54Z",
+        "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
       }
+    },
+    "§chat.alignment/reply": {
+      "kind": "behavior",
+      "code": [
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/align.ts",
+        "pi-config/extensions/mode/align.test.ts",
+        "pi-config/extensions/mode/index.test.ts",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/mode/tests/align-turn.mjs",
+        "pi-config/extensions/mode/tests/fixtures/flag-off-master.json"
+      ],
+      "requires": [
+        "§chat.alignment/model",
+        "§chat.markdown/working-notes"
+      ],
+      "authority": "accepted",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-27T23:54Z",
+        "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
+      },
+      "evidence": "verified"
     },
     "§chat.alignment/session-mark": {
       "kind": "behavior",
@@ -12926,11 +12990,18 @@
         "pi-config/extensions/mode/align-file.ts",
         "pi-config/extensions/mode/tests/align-old-ops.jsonl",
         "pi-config/extensions/mode/README.md",
-        "pi-config/extensions/mode/tests/fixtures/flag-off-master.json"
+        "pi-config/extensions/mode/tests/fixtures/flag-off-master.json",
+        "pi-config/extensions/mode/index.test.ts",
+        "pi-config/extensions/mode/tests/review-smoke.mjs"
       ],
       "requires": [
         "§chat.alignment/document"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-27T23:54Z",
+        "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
+      }
     },
     "§chat.alignment/tui": {
       "kind": "behavior",
@@ -13428,7 +13499,12 @@
         "§app.project-overseer/ideas-and-todos",
         "§app.overseer/sent-marker",
         "§app.overseer/caps"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-27T23:54Z",
+        "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
+      }
     },
     "§app.overseer/org-projection": {
       "kind": "behavior",
@@ -17850,6 +17926,27 @@
         "at": "2026-10-15T21:59Z"
       }
     },
+    "§chat.markdown/working-notes": {
+      "kind": "behavior",
+      "code": [
+        "src/lib/markdown.ts",
+        "src/components/Markdown.tsx",
+        "src/components/Thread.tsx",
+        "src/design/base.css",
+        "src/components/ReplyMarkdown.tsx",
+        "src/lib/working-notes.test.ts"
+      ],
+      "requires": [
+        "§chat/markdown"
+      ],
+      "authority": "accepted",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-27T23:54Z",
+        "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
+      },
+      "evidence": "verified"
+    },
     "§tools.spec/agree-command": {
       "kind": "behavior",
       "authority": "accepted",
@@ -21107,7 +21204,8 @@
         "statecharts/src/sova/statecharts/build.cljc",
         "statecharts/src/sova/statecharts/rules/runtime.cljc",
         "statecharts/test/sova/statecharts/refit/runtime_test.cljs",
-        "statecharts/EVENTS.md"
+        "statecharts/EVENTS.md",
+        "server/overseer-tools.ts"
       ],
       "requires": [
         "§app.project-runtime/onboard"
@@ -23505,7 +23603,9 @@
         "§chat.alignment/style",
         "§chat.alignment/visuals",
         "§chat.alignment/settings-file",
-        "§app.settings-dialog/alignment"
+        "§app.settings-dialog/alignment",
+        "§chat.alignment/when",
+        "§chat.alignment/reply"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -24583,6 +24683,33 @@
         "at": "2026-10-26T21:58Z",
         "source": "pi-session:870ce3a5-70c4-4ee4-86d6-e43d0a143cb2#58d50ef4"
       }
+    },
+    "§chat.alignment/when": {
+      "kind": "behavior",
+      "code": [
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/align.ts",
+        "pi-config/extensions/mode/align-tool.ts",
+        "pi-config/extensions/mode/index.test.ts",
+        "pi-config/extensions/mode/align.test.ts",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/mode/tests/smoke.mjs",
+        "pi-config/extensions/mode/tests/align-turn.mjs",
+        "pi-config/extensions/mode/tests/fixtures/flag-off-master.json"
+      ],
+      "requires": [
+        "§chat.alignment/model",
+        "§chat.alignment/tool"
+      ],
+      "authority": "accepted",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-27T23:54Z",
+        "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
+      },
+      "evidence": "verified"
     },
     "§design.copy-deck/settings-alignment": {
       "kind": "note",

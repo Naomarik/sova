@@ -1,7 +1,8 @@
 // A project's card declaration and the card's answers (§chat.transcript-cards/files, /answering), pure.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { answerOf, cardToolDescription, normalizeCardInfo, parseCardFile } from "./transcript-cards.ts";
+import { EAGER_TOOLS } from "./protocol.ts";
+import { answerOf, CARD_TOOL, cardToolDescription, normalizeCardInfo, parseCardFile } from "./transcript-cards.ts";
 
 const ok = (name: string, card: unknown, view = false) => parseCardFile(name, JSON.stringify(card), view);
 const base = { version: 1, toolkit: 1, title: "T" };
@@ -39,4 +40,8 @@ test("the tool's words come only from each type's when and shape; a card read ba
   assert.match(d, /Give a key/);
   assert.doesNotMatch(d, /project\.b/, "a type with no when isn't the agent's");
   assert.equal(normalizeCardInfo({ id: "cd_1" }), null);
+});
+
+test("the card tool's rows keep their details, so the page draws the agent's card, not a tool row", () => {
+  assert.ok(EAGER_TOOLS.has(CARD_TOOL), "a slim card row would carry no card and draw as a plain tool call");
 });

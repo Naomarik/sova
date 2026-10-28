@@ -141,6 +141,7 @@
     "GET /api/profiles": {"need":"sessions","is":"pending"},
     "GET /api/projects": {"need":"sessions","is":"command","ids":["project.list"]},
     "GET /api/projects/:pid": {"need":"sessions","is":"command","ids":["project.get"]},
+    "GET /api/projects/:pid/cards": {"need":"sessions","is":"command","ids":["project.cards.list"]},
     "GET /api/projects/:pid/claude-login": {"need":"sessions","is":"command","ids":["project.claude-login.get"]},
     "GET /api/projects/:pid/costs": {"need":"sessions","is":"command","ids":["project.costs"]},
     "GET /api/projects/:pid/files": {"need":"sessions","is":"command","ids":["project.files.list"]},

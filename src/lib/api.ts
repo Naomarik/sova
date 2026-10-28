@@ -2,7 +2,7 @@ import type { AssistantInfo, AssistantOlder, AssistantView, PricedPick, VersionS
 import type { OrgClaudeLogin, ProjectClaudeLogin } from "../../shared/projects";
 import type { ModelPick, WorkModels } from "../../shared/powers";
 import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
-import type { CardAnswerValue, CardInfo, SessionCardsAnswer } from "../../shared/transcript-cards";
+import type { CardAnswerValue, CardInfo, ProjectCardsAnswer, SessionCardsAnswer } from "../../shared/transcript-cards";
 import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow } from "../../shared/project-settings";
 import type { ProfilesListing } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
@@ -1626,3 +1626,5 @@ export const answerSessionCard = (path: string, card: string, answer: CardAnswer
   request<{ card: CardInfo }>("/api/session-cards/answer", { method: "POST", body: JSON.stringify({ path, card, answer, ...(sent ? { sent } : {}) }) });
 /** Trust a project's cards to act, or stop: a trust grant, from this page only. */
 export const setCardTrust = (owner: string, on: boolean) => request<{ owner: string; trusted: boolean }>("/api/session-cards/trust", { method: "POST", body: JSON.stringify({ owner, on }) });
+/** A project's card folders on its main checkout, read now, and whether its cards are trusted. */
+export const getProjectCards = (projectId: string) => request<ProjectCardsAnswer>(`${projectPath(projectId)}/cards`, { cache: "no-store" });

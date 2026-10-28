@@ -761,6 +761,14 @@ const FIXTURES: Record<string, Fixture> = {
     },
     status: 200,
   },
+  "project.cards.list": {
+    values: () => {
+      const v: Record<string, unknown> = {};
+      pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
+      return v;
+    },
+    status: 200,
+  },
 };
 /** A registered project (its overseer's settings read their defaults), made in the set-up. */
 async function newProject(): Promise<string> {

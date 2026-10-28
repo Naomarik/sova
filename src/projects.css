@@ -586,6 +586,13 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .project-offer-buttons { margin: var(--space-1) 0 0; padding-left: var(--space-4); }
 .project-offers-runs { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); margin-bottom: var(--space-3); }
 
+/* The project page's Cards list: its types, each broken folder with what is wrong, its cards' trust. */
+.project-cards-broken { display: flex; flex-direction: column; gap: var(--space-3); margin: var(--space-3) 0 0; padding: 0; list-style: none; }
+.project-card-folder .field-error { margin: var(--space-1) 0 0; overflow-wrap: anywhere; }
+.project-card-folder code { overflow-wrap: anywhere; }
+.project-cards-trust { margin-top: var(--space-3); }
+.project-cards-trust > .orgs-line { flex: 1 1 16rem; }
+
 /* A project's settings (§app.project-overseer/settings): the Settings change card, All settings, the history. */
 .settings-card .card-head { gap: var(--space-2); }
 .settings-card-body { display: flex; flex-direction: column; gap: var(--space-3); }

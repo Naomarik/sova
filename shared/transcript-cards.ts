@@ -255,6 +255,15 @@ export interface SessionCardsAnswer {
   trust?: { owner: string; name: string; trusted: boolean };
 }
 
+/** One folder under a project's `.sova/cards/`, as its Settings tab lists it: `path` is the folder's, from the checkout. */
+export type ProjectCardFolder = { name: string; path: string; ok: true; type: string; title: string } | { name: string; path: string; ok: false; error: string };
+
+/** GET /api/projects/:pid/cards: the project's card folders on its main checkout, read now, and whether its cards are trusted. */
+export interface ProjectCardsAnswer {
+  folders: ProjectCardFolder[];
+  trust: { owner: string; name: string; trusted: boolean };
+}
+
 // ---- answers ------------------------------------------------------------------------------------
 
 /**

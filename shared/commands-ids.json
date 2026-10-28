@@ -155,7 +155,8 @@
     "org.claude-login.set",
     "session.card.post",
     "session.card.get",
-    "session.card.answer"
+    "session.card.answer",
+    "project.cards.list"
   ],
   "retired": [
     "settings.agents.get"

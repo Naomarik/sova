@@ -95,6 +95,22 @@ describe("card folders (§chat.transcript-cards/files)", () => {
     assert.equal(folders.filter((f) => f.ok).length, 16);
     assert.match((folders.at(-1) as { error: string }).error, /Past the first 16/);
   });
+
+  test("the project page's list: each folder by its path, broken ones with what is wrong, and its cards' trust", async () => {
+    const dir = join(root, "listed");
+    writeCard("good", { ...base, title: "Good", draws: "table" }, dir);
+    writeCard("extra", { ...base, title: "x", draws: "table", colour: "red" }, dir);
+    const listed = await cards.projectCards(dir);
+    assert.deepEqual(listed.folders, [
+      { name: "extra", path: ".sova/cards/extra", ok: false, error: '"colour" is not a key card.json has.' },
+      { name: "good", path: ".sova/cards/good", ok: true, type: "project.good", title: "Good" },
+    ]);
+    assert.deepEqual(listed.trust, { owner: cards.projectOwner(dir), name: "listed", trusted: false });
+    cards.setCardsTrusted(cards.projectOwner(dir), true);
+    assert.equal((await cards.projectCards(dir)).trust.trusted, true);
+    cards.setCardsTrusted(cards.projectOwner(dir), false);
+    assert.equal((await cards.projectCards(dir)).trust.trusted, false, "Stop Trusting Cards takes effect at once");
+  });
 });
 
 describe("the snapshot and the tool (§chat.transcript-cards/files, /card-tool)", () => {

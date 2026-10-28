@@ -1,10 +1,12 @@
 import { existsSync } from "node:fs";
 import type { Context, Hono } from "hono";
-import type { CardRaiser, SessionCardsAnswer } from "../shared/transcript-cards";
+import type { CardRaiser, ProjectCardsAnswer, SessionCardsAnswer } from "../shared/transcript-cards";
 import { extensionCaller, showsToken, TOKEN_HEADER } from "./auth";
 import { callerKeys, CALLER_HEADER } from "./caller-keys";
+import { OrgError } from "./org-error";
 import { resolveSessionPath } from "./paths";
-import { answerCard, CardRefusal, raiseCard, sessionCardsAt, setCardsTrusted } from "./transcript-cards";
+import { readProject } from "./projects/spaces";
+import { answerCard, CardRefusal, projectCards, raiseCard, sessionCardsAt, setCardsTrusted } from "./transcript-cards";
 
 /**
  * Transcript cards' routes (§chat/transcript-cards). A session's cards (session.card.get), raising
@@ -22,6 +24,7 @@ const handle =
       return await fn(c);
     } catch (err) {
       if (err instanceof CardRefusal) return c.json({ error: err.message, ...(err.needsTrust ? { needsTrust: err.needsTrust } : {}) }, err.status, NO_STORE);
+      if (err instanceof OrgError) return c.json({ error: err.message }, err.status, NO_STORE);
       if (err instanceof Error && (err as { code?: unknown }).code === "tui-live") return c.json({ error: err.message, code: "tui-live" }, 409, NO_STORE);
       throw err;
     }
@@ -112,6 +115,14 @@ export function registerTranscriptCardRoutes(app: Hono<any>): void {
       const who = await callerOf(c);
       const card = await answerCard({ path, card: b.card, answer: b.answer, by: who.name, via: b.sent === true ? "send" : "at-once" });
       return c.json({ card }, 200, NO_STORE);
+    }),
+  );
+  // The project page's list of its card folders, broken ones with what is wrong, and its cards' trust.
+  app.get(
+    "/api/projects/:pid/cards",
+    handle(async (c) => {
+      const project = readProject(c.req.param("pid") ?? "");
+      return c.json((await projectCards(project.root)) satisfies ProjectCardsAnswer, 200, NO_STORE);
     }),
   );
   // Trust a project's cards to act, or stop: a trust grant, never a catalogue command (§chat.transcript-cards/trust).

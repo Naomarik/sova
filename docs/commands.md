@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 490 |
-| Routes a catalogue entry points at | 124 |
-| Catalogue entries | 155 |
+| Routes registered | 491 |
+| Routes a catalogue entry points at | 125 |
+| Catalogue entries | 156 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -118,6 +118,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.worktree.remove` | Remove Worktree | changes | `POST /api/projects/:pid/overseer/worktrees/remove` | admin |
 | `project.files.list` | List Project Files | looks | `GET /api/projects/:pid/files` | sessions |
 | `project.offers.list` | List Project Offers | looks | `GET /api/projects/:pid/offers` | sessions |
+| `project.cards.list` | List Project Card Types | looks | `GET /api/projects/:pid/cards` | sessions |
 | `project.settings.get` | Show Project Settings | looks | `GET /api/projects/:pid/settings` | sessions |
 | `project.settings.history` | Show Settings History | looks | `GET /api/projects/:pid/settings/history` | sessions |
 | `project.settings.undo` | Undo Settings Change | changes | `POST /api/projects/:pid/settings/undo` | admin |
@@ -683,6 +684,7 @@ Approving what a project's files may make Sova do (an offers file's run buttons,
 | `GET /api/projects/:pid` | sessions | `project.get` |
 | `PATCH /api/projects/:pid` | admin | `project.update` |
 | `POST /api/projects/:pid/archive` | admin | `project.archive` |
+| `GET /api/projects/:pid/cards` | sessions | `project.cards.list` |
 | `GET /api/projects/:pid/claude-login` | sessions | `project.claude-login.get` |
 | `PUT /api/projects/:pid/claude-login` | admin | `project.claude-login.set` |
 | `GET /api/projects/:pid/costs` | sessions | `project.costs` |

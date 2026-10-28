@@ -96,6 +96,7 @@ const PROJECTS_SWEEP: CommandEntry[] = [
   changes("project.worktree.remove", "Remove Worktree", "Remove a coding session's worktree; its branch goes too only when merged.", "POST", "/api/projects/:pid/overseer/worktrees/remove", { pid, "session-id": codingSession }),
   looks("project.files.list", "List Project Files", "The files a project keeps.", "/api/projects/:pid/files"),
   looks("project.offers.list", "List Project Offers", "A project's offers file, read now: each offer, its buttons, run approval and shown/used counts.", "/api/projects/:pid/offers"),
+  looks("project.cards.list", "List Project Card Types", "A project's card folders on its main checkout, read now: each type, or what is wrong with a broken one, and whether its cards are trusted.", "/api/projects/:pid/cards"),
   // A project's settings (§app.project-overseer/settings). Apply and Land are trust grants, never commands.
   looks("project.settings.get", "Show Project Settings", "Every setting of a project, Sova-kept and in its files, with its state; the settings cards waiting and the folder's uncommitted settings edits.", "/api/projects/:pid/settings"),
   looks("project.settings.history", "Show Settings History", "A project's settings changes, newest first: what changed, from and to, and who changed it.", "/api/projects/:pid/settings/history"),

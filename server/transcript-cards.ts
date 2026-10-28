@@ -23,6 +23,7 @@ import {
   type CardInfo,
   type CardRaiser,
   type CardSnapshot,
+  type ProjectCardsAnswer,
   type SessionCardsAnswer,
 } from "../shared/transcript-cards";
 import type { HEntry } from "../shared/harness";
@@ -335,6 +336,21 @@ export function setCardsTrusted(owner: string, on: boolean, file = cardTrustFile
 }
 
 const ownerName = (owner: string): string => basename(owner.replace(/^project:/, "")) || owner;
+
+/**
+ * A project's card folders on its main checkout, read now, each its type or what is wrong with it,
+ * and whether its cards are trusted: what its Settings tab lists. The trust key is the one its
+ * chats' cards ask under, so Stop Trusting Cards there stops every branch's.
+ */
+export async function projectCards(projectRoot: string): Promise<ProjectCardsAnswer> {
+  const checkout = cardsCheckoutOf(projectRoot) ?? projectRoot;
+  const owner = projectOwner((await projectRootOf(projectRoot).catch(() => null)) ?? checkout);
+  const folders = readCardFolders(checkout).map((f) => {
+    const path = `${CARDS_DIR}/${f.name}`;
+    return f.ok ? { name: f.name, path, ok: true as const, type: f.decl.type, title: f.decl.title } : { name: f.name, path, ok: false as const, error: f.error };
+  });
+  return { folders, trust: { owner, name: ownerName(owner), trusted: cardsTrusted(owner) } };
+}
 
 // ---- raising (§chat.transcript-cards/card-tool, /raise-command) ---------------------------------
 

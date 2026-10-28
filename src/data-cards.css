@@ -29,3 +29,18 @@
   white-space: nowrap;
 }
 .data-table tbody tr + tr td { border-top: var(--stroke-thin) solid var(--color-border); }
+
+/* A project's transcript card (components/TranscriptCard.tsx): who raised it above the card, its
+   answer and any trust ask under it, as an offer card shows them. */
+.transcript-card { display: flex; flex-direction: column; gap: var(--space-2); max-width: var(--measure); min-width: 0; }
+.transcript-card > p { margin: 0; }
+.transcript-card-from { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.transcript-card-answer { display: flex; align-items: flex-start; gap: var(--space-2); color: var(--color-ink-2); overflow-wrap: anywhere; }
+.transcript-card-answer > .icon { flex: none; margin-top: 3px; color: var(--status-success); }
+.transcript-card-answer strong { color: var(--color-ink); font-weight: var(--fw-semibold); }
+/* "Waiting for an answer", where nothing can answer it. */
+.transcript-card-answer.text-muted { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.transcript-card-trust .banner-action { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* An earlier revision of a follow card: one line, opening to the card as it was. */
+.transcript-card-revision .disclosure-preview { flex: none; }
+.transcript-card-revision .disclosure-body { padding: var(--space-2) 0 0; white-space: normal; color: inherit; }

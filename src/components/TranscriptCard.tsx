@@ -70,9 +70,8 @@ function CardBody(props: { card: CardInfo; ctx: CardControls | undefined }) {
           <div class="banner banner-warn transcript-card-trust" role="group" aria-label="Trust this project's cards">
             <Icon name="attention" class="banner-icon" />
             <div class="banner-main">
-              <p class="banner-title">
-                Let {a().name}'s cards act for you? They can then run any Sova command, such as sending messages or merging, without asking again.
-              </p>
+              <p class="banner-title">Let {a().name}'s cards act for you?</p>
+              <p class="banner-body">They can then run any Sova command, such as sending messages or merging, without asking again.</p>
             </div>
             <div class="banner-action">
               <button type="button" class="button button-sm button-primary" onClick={() => props.ctx?.trust(true)}>

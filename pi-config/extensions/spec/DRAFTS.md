@@ -137,7 +137,7 @@ The machine can't tell which label is correct.
    not memory, is what "Also updates" names. They also print `driftWarnings`,
    the `check` warnings above (never a refusal), so drift shows even when nobody ran `check`, and
    `sizeWarnings`: each selected declaration the promotion would take over the size cap or grow
-   there (never a refusal, and never one of the findings that keep `agree` from promoting).
+   there (never a refusal, and never one of the findings that keep a landing from writing).
    Evidence on a commit that is gone or not an ancestor of `HEAD` (a rebase after evidence) is
    refused as `evidence-not-ancestor`: never rebase after evidence; re-record evidence on the
    current commit, or merge master in instead.
@@ -165,8 +165,10 @@ The machine can't tell which label is correct.
    `draft.json` back byte for byte, and an interrupted land is put back by `recover --write` (every other
    write refuses until then, `pending-transaction`). It never commits. Its answer: `drafts` (each with
    the § it adds, changes and removes), `left`, `findings` (`{draft, id, code, message, fix}`), `counts`,
-   `paths` (the spec files it wrote, to stage), `commitMessage` `{subject, body}` and `draftsHash` (one
-   hash over every file under each draft's `spec/`, `draft.json` apart). With nothing pending it answers
+   `paths` (the spec files it wrote, to stage), `commitMessage` `{subject, body}`, `draftsHash` (one
+   hash over every file under each draft's `spec/`, `draft.json` apart) and `sizeWarnings`, each
+   landing draft's plan's size warnings as `promote` gives them (report-only: never a refusal, never
+   the exit). With nothing pending it answers
    `nothingToLand` and writes nothing. Exit 0 when everything lands or there is nothing to land, 1 with
    findings, 2 when it can't read the drafts. It needs Git (`not-git`): without Git, promote by hand.
 6. **`refresh NAME [--write]`** moves a draft onto the current spec: `base/` becomes current byte for

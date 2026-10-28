@@ -1644,7 +1644,9 @@ async function cmdLand(root, o) {
       ` (${[counts.added && `${counts.added} new`, counts.changed && `${counts.changed} changed`, counts.removed && `${counts.removed} removed`].filter(Boolean).join(", ") || "no promise"})`;
     const body = [...drafts.map((d) => `- ${d.name}: ${[d.added.length && `adds ${list(d.added)}`, d.changed.length && `changes ${list(d.changed)}`, d.removed.length && `removes ${list(d.removed)}`].filter(Boolean).join("; ") || "its files"}`),
       "", `Evidence at ${commit}, by ${o.by}: ${o.verification}`, "Each promise carries its chat's own verification note."].join("\n");
-    return { commit, drafts, left: all.filter((s) => s.left).map((s) => ({ draft: s.name, why: s.left, ids: s.ids })), findings, counts,
+    // The size cap, report-only: each landing draft's plan gives it as promote does; it never refuses or moves the exit.
+    const sizeWarnings = landing.flatMap((s) => s.plan?.out?.sizeWarnings ?? []);
+    return { commit, drafts, left: all.filter((s) => s.left).map((s) => ({ draft: s.name, why: s.left, ids: s.ids })), findings, counts, sizeWarnings,
       draftsHash: hashed?.hash ?? null, commitMessage: { subject, body } };
   };
   const first = await surveyAll(), hashed = await draftsHashOf(root);
@@ -2543,6 +2545,7 @@ function human(out) {
     L.push(out.nothingToLand ? "land: nothing to land" : `land at ${out.commit.slice(0, 12)}: ${out.counts.drafts} draft(s), ${out.counts.added} new, ${out.counts.changed} changed, ${out.counts.removed} removed ${out.written ? "(written; commit the paths below)" : out.findings.length ? "(refused; nothing written)" : "(preview; nothing written: pass --write)"}`);
     for (const d of out.drafts) L.push(`  ${d.name}: ${d.ids.join(", ")}`);
     for (const l of out.left ?? []) L.push(`  left ${l.draft} (${l.why}): ${l.ids.join(", ")}`);
+    for (const w of out.sizeWarnings ?? []) L.push(`  warn declaration-over-cap: ${w}`);
     for (const f of out.findings) if (f.fix) L.push(`  fix ${f.draft ?? ""} ${f.id ?? ""}: ${f.fix}`);
     for (const p of out.paths ?? []) L.push(`  wrote ${p}`);
   }

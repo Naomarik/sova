@@ -850,11 +850,11 @@ would list master's changes instead.
     - `.sova/spec/.gitignore` admits `claims/**/*.json`.
   - §: + §tools.spec/record-layout; §tools.spec/git-merge, §tools.spec/conflict-recovery,
     §tools.spec/census-note, §chat.merge-round/driver reworded, §tools/spec (its new child) (drafts
-    `spec-store`, `spec-store-2`, promoted on the branch at 9eca2773, and `spec-store-3` at ede39a14;
-    `foreign --base 9b7297f8 --head ede39a14` gives the same list).
+    `spec-store`, `spec-store-2`, promoted on the branch at 8729de33 (9eca2773 before the history rewrite), and `spec-store-3` at
+    1f530638 (ede39a14 before the history rewrite); `foreign --base f16b237e --head 1f530638` gives the same list).
   - Numbers: every read command (check, map, map app, graph, where by words and by path, toc out/in/down,
     read, read --whole, scope, impact, impact --near, packet, census, foreign) gives byte-identical JSON on
-    Sova's spec at 9b7297f8 in format 1 and converted to format 2 at the same path (17 of 17); `migrate`
+    Sova's spec at f16b237e (9b7297f8 before the history rewrite) in format 1 and converted to format 2 at the same path (17 of 17); `migrate`
     converts it into 101 record files (1,167 records) with every identity check passing, and back.
     Median latency over 15 runs, old core on format 1 → new core on format 1 → new core on format 2:
     check 125 → 132 → 138 ms, map 175 → 180 → 177, where (3 words) 465 → 452 → 474, read 78 → 79 → 86,
@@ -890,12 +890,14 @@ would list master's changes instead.
   - §: +§tools.spec/writing-on-demand, §tools.spec/mode-reading, §tools.spec/census-note,
     §tools.spec/align-agree, §chat.mode-menu/workers, §site.docs/spec-mode, §tools.spec/context-packets,
     §tools.spec/agree-source-relay, §tools/spec, §chat.alignment/tool, §chat.mode-menu/codemode (draft
-    `spec-slim-guide`, promoted on the branch at 526e0a07; `foreign --base 9b7297f8 --head 526e0a07`,
-    and after merging al_6 landing 1 `foreign --base ca8ab14e --head 814d49a8`, give the same list).
-    Base: ca8ab14e (was 9b7297f8).
+    `spec-slim-guide`, promoted on the branch at 83b3ef82 (526e0a07 before the history rewrite); `foreign --base f16b237e
+    --head 83b3ef82`, after merging al_6 landing 1 `foreign --base 27019745 --head c0a7dfd3` (ca8ab14e,
+    814d49a8 before the history rewrite), and after merging landing 2 `foreign --base c0d556a4 --head 0985bc61` give the
+    same list). Base: c0d556a4 (was f16b237e, then 27019745).
   - Numbers: round 3 of the context test (pre-registered, PREREG-ctx3 sha256 a67ad622…fbca; report
     sha256 0eaa5cfd…9ffb). Three arms on the same 12 real requests × 2: A no spec, B today's text
-    (9b7297f8), C the short part (brief runs at 328788c3, edit check at 07265a27); graded item by item
+    (f16b237e; 9b7297f8 before the history rewrite), C the short part (brief runs at 18f97803, edit check at 5a776cbe;
+    328788c3 / 07265a27 before the history rewrite); graded item by item
     with the arms pooled. Verdict under its rule §7.2: **KEEP** (not worse than B).
     - Recall A / B / C: 60.6 / 55.2 / 56.6. C − B +1.5 [−4.1, +7.2]; B − A −5.4 [−9.0, −1.3];
       C − A −3.9 [−9.3, +0.9].
@@ -911,6 +913,10 @@ would list master's changes instead.
     - Constraint 5 (light): 964 → 306 words ride every turn; the 976-word procedure is sent once per
       chat. The verdict holds for spec-mode.md sha256 bd4831dc… and WRITING.md 95381eb5… only: a
       change to either needs a new measured run.
+    - WRITING.md: measured text 95381eb5…; changed one sentence for the record layout at 25ac47f4 ("A
+      `manifest.json` conflict" → "A spec conflict in a Git merge", both "follow the census note";
+      now c8f4b273…). round 3's measures don't read that sentence; spec-mode.md is unchanged.
+  - Upgrade: see UPGRADING step 15.
 - **One rule says whether a draft is official, and Sova and the merge round both call it.**
   - Commit: on branch `feat/landing-dependable`; not on master yet: the merge round folds it in.
   - Why: Sova's readiness called a draft promoted when any promotion wrote its files after its last edit
@@ -1211,14 +1217,6 @@ The tools are Node standard library only. Nothing is installed.
     Scripts that read records from `manifest.json` switch to `sova-spec.mjs records --json` (or import
     `layout.mjs`). A merge process of your own that runs `merge-manifest --write` on a `manifest.json`
     conflict should also run it on a conflicted `claims/**/*.json`, and stage the `files` it lists.
-13. **The 2026-10-26 split mode text** (branch `feat/spec-slim`). The spec extension ships a new file,
-    `spec/WRITING.md`, beside `PROMOTE.md`; `install.sh` links the whole `spec` directory, so it arrives
-    with the tools. A project that points its agents at `mode/spec-mode.md` now gets only the short
-    finding-your-way part. Its own agent instructions must also name the writing procedure, before
-    behavior-changing edits: `$core/../WRITING.md` for the installed copy, or the path in this repo, as
-    Sova's `AGENTS.md` does. Without the mode on, nothing hands it over. With the mode on, the first
-    `[spec census]` note carries it once. A hook of your own that parses census notes sees it after the
-    digest, from its `Writing procedure (once` head.
 13. **One rule for official drafts** (branch `feat/landing-dependable`). Copy `core/official.mjs` with the
     tools (step 1). Promotions now record `claims` in their receipt; nothing else changes shape. A merge
     process of your own that judged drafts by `promotedConflict` gets fewer false hand-backs; one that reads
@@ -1237,3 +1235,11 @@ The tools are Node standard library only. Nothing is installed.
     the spec mode on, the census note calls the converted files a direct write to the current spec; they
     are `migrate`'s, so commit them as its `next` says. Instructions of your own that tell agents to edit
     records in `manifest.json` now point at the `.json` beside each claim file.
+15. **The 2026-10-26 split mode text** (branch `feat/spec-slim`). The spec extension ships a new file,
+    `spec/WRITING.md`, beside `PROMOTE.md`; `install.sh` links the whole `spec` directory, so it arrives
+    with the tools. A project that points its agents at `mode/spec-mode.md` now gets only the short
+    finding-your-way part. Its own agent instructions must also name the writing procedure, before
+    behavior-changing edits: `$core/../WRITING.md` for the installed copy, or the path in this repo, as
+    Sova's `AGENTS.md` does. Without the mode on, nothing hands it over. With the mode on, the first
+    `[spec census]` note carries it once. A hook of your own that parses census notes sees it after the
+    digest, from its `Writing procedure (once` head.

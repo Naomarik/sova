@@ -421,6 +421,7 @@ export function HistoryItems(props: {
   const threadRows: ThreadRows = {
     author: () => props.author,
     hasUserRow,
+    senderOf,
     nameOf,
     wrapupShown: showWrapup,
     toggleWrapup: () => setShowWrapup(!showWrapup()),
@@ -606,17 +607,6 @@ export function HistoryItems(props: {
               <Match when={drawn()}>{(h) => <TranscriptKindRow hit={h()} item={item} limitPath={props.limitPath} index={index} reserve={rowEst()} />}</Match>
               {/* A kind still drawn by its branch here, until it moves onto the toolkit; and the kinds that draw nothing. */}
               <Match when={hit()?.kind.drawsNothing}>{null}</Match>
-              <Match when={is("user")}>
-                <UserTurn
-                  text={item.text ?? ""}
-                  time={item.at}
-                  overseer={senderOf(item.id)?.kind === "overseer"}
-                  sender={((s) => (s?.kind === "baton" ? nameOf(s.by) : undefined))(senderOf(item.id))}
-                  fromSession={((s) => (s?.kind === "session" ? { sessionId: s.sessionId, title: s.title, hop: s.hop } : undefined))(senderOf(item.id))}
-                  images={item.images}
-                  attachments={item.attachments}
-                />
-              </Match>
               <Match when={is("assistant-text")}>
                 <AssistantText
                   text={item.text ?? ""}

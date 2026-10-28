@@ -1,5 +1,5 @@
 import { createContext, useContext } from "solid-js";
-import type { TranscriptItem } from "../../shared/protocol";
+import type { Sender } from "../../shared/senders";
 
 /**
  * What a transcript's whole list knows that one row's view may ask (§chat.transcript-cards/toolkit):
@@ -12,6 +12,8 @@ export interface ThreadRows {
   author(): string;
   /** Whether a user row is on the branch (the profile row waits for one). */
   hasUserRow(): boolean;
+  /** Who sent a user row, when its marker says (shared/senders.ts). */
+  senderOf(id: string): Sender | undefined;
   /** A baton person's name by ref ("operator" is You). */
   nameOf(ref: string): string;
   /** Whether a baton wrap-up's turn is shown (folded behind its card until asked for). */

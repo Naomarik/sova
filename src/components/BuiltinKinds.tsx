@@ -16,6 +16,7 @@ import { OwnerRequestNote } from "./OwnerRequestNote";
 import { OverseerChoiceRow } from "./OverseerCards";
 import { profileIconName } from "../lib/profiles";
 import { useThreadRows } from "./thread-rows";
+import { UserTurn } from "./MessageRows";
 import { BriefRow } from "./OverseerCards";
 import { ExplainCard } from "./ExplainCard";
 import { TeamMessageCard } from "./TeamMessageCard";
@@ -48,6 +49,7 @@ export const BUILTIN_VIEWS = {
     const rows = useThreadRows();
     return <BatonCard mark={props.value} name={rows.nameOf} wrapupShown={rows.wrapupShown()} onWrapupToggle={rows.toggleWrapup} />;
   },
+  user: UserRow,
 } satisfies Record<string, Component<KindViewProps<never>>>;
 
 /** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is
@@ -198,5 +200,22 @@ function BatonCard(props: { mark: Exclude<BatonMark, { kind: "sent" }>; name(ref
         )}
       </Match>
     </Switch>
+  );
+}
+
+/** A user's turn, with who sent it when its marker says: the Overseer, a baton person, another session. */
+function UserRow(props: KindViewProps) {
+  const rows = useThreadRows();
+  const item = props.item;
+  return (
+    <UserTurn
+      text={item.text ?? ""}
+      time={item.at}
+      overseer={rows.senderOf(item.id)?.kind === "overseer"}
+      sender={((s) => (s?.kind === "baton" ? rows.nameOf(s.by) : undefined))(rows.senderOf(item.id))}
+      fromSession={((s) => (s?.kind === "session" ? { sessionId: s.sessionId, title: s.title, hop: s.hop } : undefined))(rows.senderOf(item.id))}
+      images={item.images}
+      attachments={item.attachments}
+    />
   );
 }

@@ -71,7 +71,7 @@ export interface KindViewProps<V = unknown> {
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -105,7 +105,7 @@ const isCall = (item: TranscriptItem) => item.kind === "tool-call";
 // In the order Thread.tsx's chain had: the first kind that matches draws the row.
 export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   kind({ id: "brief", match: (it) => it.kind === "user" && isBriefText(it.text), host: "page", placement: "anchored", view: { page: "brief" } }),
-  kind({ id: "user", match: (it) => it.kind === "user", host: "page", placement: "anchored" }),
+  kind({ id: "user", match: (it) => it.kind === "user", host: "page", placement: "anchored", view: { page: "user" } }),
   // The sent markers draw nothing themselves: each tags the row it names.
   kind({ id: "overseer-sent", match: (it) => it.overseerMark?.kind === "sent", host: "page", placement: "anchored", drawsNothing: true }),
   kind({ id: "baton-sent", match: (it) => it.batonMark?.kind === "sent", host: "page", placement: "anchored", drawsNothing: true }),

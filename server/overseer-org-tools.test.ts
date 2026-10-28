@@ -535,9 +535,33 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
       const { keepTokens } = await import("./link-tokens");
       keepTokens("h", [KEPT]);
     }
+    // kind preview: every project's active preview and copy links with their URLs, never a person's own link to one.
+    const links = await import("./preview-links");
+    const kept = await import("./preview-kept");
+    const { record: pv, label } = links.mintPreview({ projectId: project.id, port: 47_311, days: 1 }, new Set());
+    const pvUrl = `https://${label}.preview.example.invalid/`;
+    // A static copy's link (a serve holds its port): read from the serve, never dialled.
+    kept.keepPreview(pv.id, { url: pvUrl, target: { kind: "instance", instance: "in_demo", endpoint: "web.http", serve: "sv-demo" }, branch: "sova/pay" });
+    const { record: sib, label: sibLabel } = links.mintSibling(pv.id, "lena");
+    kept.keepSiblingLink(sib.id, `https://${sibLabel}.preview.example.invalid/`);
+    try {
+      const pvs = await run({ kind: "preview" });
+      assert.match(pvs.text, new RegExp(`^- preview · ${pv.id} · Ledger · running copy in_demo, endpoint web\\.http · on sova/pay · expires \\d{4}-\\d\\d-\\d\\d · the copy is not running · ${pvUrl.replace(/[./]/g, "\\$&")}$`, "m"), pvs.text);
+      assert.ok(!pvs.text.includes(sibLabel) && !pvs.text.includes(sib.id), "never a person's own link");
+      assert.ok(!pvs.text.includes(KEPT), "kind filters");
+      assert.ok((await run({})).text.includes(pvUrl), "listed with the rest");
+      assert.ok((await run({ org: org.id })).text.includes(pvUrl), "its org's");
+      assert.ok(!(await run({ kind: "handoff" })).text.includes(pvUrl));
+      assert.ok(!JSON.stringify(pvs.details).includes(label), "the details carry counts only");
+    } finally {
+      links.revokePreview(sib.id);
+      links.revokePreview(pv.id);
+    }
+    assert.ok(!(await run({ kind: "preview" })).text.includes(pvUrl), "only active ones");
     const log = readFileSync(overseerActionsFile(), "utf8");
     assert.ok(log.includes('"tool":"sova_public_links"'), "control: its calls are logged");
     assert.ok(!log.includes(KEPT), "never the link");
+    assert.ok(!log.includes(label), "never a preview's link");
   });
 
   test("sova_owner send_link (§app.owner-page/send): behind a card listing the owner; its refusal names why, never a link, token or number", async () => {
@@ -587,14 +611,14 @@ describe("archive a project (§app.organizations/archive)", async () => {
     await baton.closeBaton(open.sessionId);
   });
 
-  test("the tool asks first, then archives: via the Overseer, left out of counts and the Organizations region", async () => {
-    attended = true;
+  test("on the user's typed word, no card: archives via the Overseer, left out of counts and the Organizations region", async () => {
+    attended = false;
     card = null;
-    assert.equal((await call("sova_org_project", { op: "archive", org: org.id, project: "Old Site" })).ok, false);
-    card = items(projectItem(org.id, project.id));
+    assert.match((await call("sova_org_project", { op: "archive", org: org.id, project: "Old Site" })).text, /^This turn was not started by the user/, "a run the user did not start");
+    assert.equal(orgs.readProjects(org.id)[0]!.archived, undefined);
+    attended = true;
     const done = await call("sova_org_project", { op: "archive", org: org.id, project: "Old Site" });
     assert.ok(done.ok, done.text);
-    card = null;
     const p = orgs.readProjects(org.id)[0]!;
     assert.equal(p.archived?.via, "overseer");
     assert.equal(orgs.orgsInfo().orgs.find((o) => o.id === org.id)!.projects, 0);
@@ -873,36 +897,30 @@ function sessionIn(cwd: string): string {
 describe("adding projects and attaching organizations for the user (§app.overseer/org-project-add)", async () => {
   const org = await orgs.createOrg({ name: "Addco", dir: join(root, "ws4") });
   const base = join(root, "adds");
-  for (const f of ["plain", "other", "inorg", "viasession"]) mkdirSync(join(base, f), { recursive: true });
+  for (const f of ["plain", "other", "inorg", "viasession", "typed", "clicked", "routed", "routed-org"]) mkdirSync(join(base, f), { recursive: true });
   // A checkout: a subfolder of it registers as its root.
   mkdirSync(join(base, "repo", "sub"), { recursive: true });
   gitIn(join(base, "repo"), "init", "-q", "-b", "main");
 
-  test("a folder without a card, or with a card naming another path or an org, is refused and adds nothing; a refusal takes no org write", async () => {
+  test("on the user's word: their typed message adds a folder with no card; a click on a card with no folder row for it counts too", async () => {
     attended = true;
     limits.reset();
     card = null;
-    const before = listProjects().length;
-    const bare = await call("sova_org_project", { op: "add", root: join(base, "plain") });
-    assert.equal(bare.ok, false);
-    assert.equal(
-      bare.text,
-      `This adds a project, and this turn wasn't opened by a click on a card: reopen the card (sova_card reopen, if you recorded its answer) or ask again with sova_card, listing the folder ${join(base, "plain")} (standalone) in its items, so the user can click it again, and act in the turn that click starts.`,
-    );
-    // With an org: the org asked for, resolved to its id, else as the call wrote it; never a refusal of its own.
-    assert.match((await call("sova_org_project", { op: "add", root: join(base, "plain"), org: "Addco" })).text, new RegExp(`^This adds a project, and this turn wasn't opened by a click on a card: .* listing the folder ${join(base, "plain")} \\(into the organization ${org.id}\\) in its items`));
-    assert.match((await call("sova_org_project", { op: "add", root: join(base, "plain"), org: "No Such Org" })).text, /listing the folder .* \(into the organization No Such Org\) in its items/);
-    card = items(folderItem(join(base, "other")));
-    // A click opened the turn, but its card lists another folder: the card sentence, as before.
-    assert.match((await call("sova_org_project", { op: "add", root: join(base, "plain") })).text, /^This adds a project: ask with sova_card/);
-    card = items(folderItem(join(base, "plain"), org.id));
-    assert.match((await call("sova_org_project", { op: "add", root: join(base, "plain") })).text, /^This adds a project/, "a row into an org approves no standalone add");
-    card = items(folderItem(join(base, "plain"), undefined, "Named"));
-    assert.match((await call("sova_org_project", { op: "add", root: join(base, "plain"), name: "Other name" })).text, /^This adds a project/, "the row's name is the one the click approved");
+    const typed = await call("sova_org_project", { op: "add", root: join(base, "typed"), name: "Typed" });
+    assert.ok(typed.ok, typed.text);
+    const made = projectByRoot(join(base, "typed"))!;
+    assert.equal(typed.text, `Added Typed (${made.id}): ${join(base, "typed")}.`);
+    assert.equal(hostOf(made.id).data(`project/${made.id}`)?.via, "overseer", "recorded as the user's, via the Overseer");
+    assert.equal(limits.count("org"), 1);
+    // The Oct 19 case: a click on a card whose option named the act ("Register …") but whose rows held no folder.
     card = items(projectItem(org.id, "prj_nothing0"));
-    assert.match((await call("sova_org_project", { op: "add", root: join(base, "plain") })).text, /^This adds a project/, "another kind of row");
+    const clicked = await call("sova_org_project", { op: "add", root: join(base, "clicked"), org: "Addco" });
     card = null;
-    assert.equal(listProjects().length, before);
+    assert.ok(clicked.ok, clicked.text);
+    assert.equal(orgs.orgOfProject(projectByRoot(join(base, "clicked"))!.id), org.id);
+    // A refusal still takes no org write: the folder doesn't exist.
+    limits.reset();
+    assert.equal((await call("sova_org_project", { op: "add", root: join(base, "no-such-folder") })).ok, false);
     assert.equal(limits.count("org"), 0);
   });
 
@@ -997,11 +1015,13 @@ describe("adding projects and attaching organizations for the user (§app.overse
     assert.match((await call("sova_org_project", { op: "add", root: join(base, "other"), session: local })).text, /exactly one of root/);
   });
 
-  test("the routes check the card themselves: a sender-marked add without the row is refused (403); a forged header records no via", async () => {
-    const no = await asOverseer("/api/projects", "POST", { root: join(base, "other") });
-    assert.equal(no.status, 403);
-    const wrongOrg = await asOverseer(`/api/orgs/${org.id}/projects`, "POST", { root: join(base, "other") }, { folders: [{ root: join(base, "other"), org: null }] });
-    assert.equal(wrongOrg.status, 403);
+  test("the routes need no card row: a sender-marked add without one lands via the Overseer; a forged header records no via", async () => {
+    const standalone = await asOverseer("/api/projects", "POST", { root: join(base, "routed") });
+    assert.equal(standalone.status, 201);
+    assert.equal(hostOf(projectByRoot(join(base, "routed"))!.id).data(`project/${projectByRoot(join(base, "routed"))!.id}`)?.via, "overseer");
+    const inOrg = await asOverseer(`/api/orgs/${org.id}/projects`, "POST", { root: join(base, "routed-org") }, { folders: [{ root: join(base, "elsewhere"), org: null }] });
+    assert.equal(inOrg.status, 201, "a card row for another folder changes nothing");
+    assert.equal(orgs.orgOfProject(projectByRoot(join(base, "routed-org"))!.id), org.id);
     assert.equal(projectByRoot(join(base, "other")), undefined);
     // Not the secret: the page's own add, the operator's with no via, whatever the headers say.
     const forged = await app.request("/api/projects", { method: "POST", headers: { "content-type": "application/json", "x-sova-overseer": "not-the-secret", [tools.OVERSEER_CARD_HEADER]: "{}" }, body: JSON.stringify({ root: join(base, "other") }) });
@@ -1226,8 +1246,6 @@ describe("a card click through the real turn: UserTurns, confirmedItems on the b
       attended = true;
     }
   }
-  const NO_CLICK = /^This adds a project, and this turn wasn't opened by a click on a card: /;
-  const NOT_LISTED = /^This adds a project: ask with sova_card, listing /;
 
   test("the incident: option a of c_9 registers the folder into its org, named as the row names it", async () => {
     const dir = folder("rakibadesigns");
@@ -1265,51 +1283,31 @@ describe("a card click through the real turn: UserTurns, confirmedItems on the b
     assert.equal(orgs.orgOfProject(projectByRoot(dir)!.id), org.id);
   });
 
-  test("refused, adding nothing: another org, another folder, another name", async () => {
+  test("the call's own folder, org and name are the ones added: the click is the user's word, not a scope", async () => {
     const dir = folder("negatives");
     const elsewhere = folder("elsewhere");
     const c = await conversation(dir, org.id, "RakibaDesigns");
     const { turns, message } = chat();
     message(c.click, "c_9");
-    const branch = [...c.entries, user(c.click)];
-    for (const [why, params] of [
-      ["another org", { org: other.id, name: "RakibaDesigns", root: dir }],
-      ["standalone instead of the row's org", { name: "RakibaDesigns", root: dir }],
-      ["another folder", { org: org.id, name: "RakibaDesigns", root: elsewhere }],
-      ["another name", { org: org.id, name: "Rakiba", root: dir }],
-    ] as const) {
-      const r = await add(turns, branch, params);
-      assert.equal(r.ok, false, why);
-      assert.match(r.text, NOT_LISTED, why);
-    }
-    assert.equal(projectByRoot(dir), undefined);
-    assert.equal(projectByRoot(elsewhere), undefined);
+    const r = await add(turns, [...c.entries, user(c.click)], { org: other.id, name: "Elsewhere", root: elsewhere });
+    assert.ok(r.ok, r.text);
+    assert.equal(orgs.orgOfProject(projectByRoot(elsewhere)!.id), other.id);
+    assert.equal(projectByRoot(elsewhere)!.name, "Elsewhere");
   });
 
-  test("refused, adding nothing: the click's text typed, a later turn, and a Retry's replay", async () => {
-    const dir = folder("no-click");
-    const c = await conversation(dir, org.id, "RakibaDesigns");
-    const params = { org: org.id, name: "RakibaDesigns", root: dir };
-    // Identical text, typed: no card mark.
+  test("typed: the click's text typed and a later turn are each the user's word and add", async () => {
+    const c = await conversation(folder("no-click"), org.id, "RakibaDesigns");
     const typed = chat();
     typed.message(c.click);
-    assert.equal(typed.turns.attended(), true, "control: still the user's turn");
-    const t = await add(typed.turns, [...c.entries, user(c.click)], params);
-    assert.match(t.text, NO_CLICK);
-    assert.match(t.text, new RegExp(`listing the folder ${dir} \\(into the organization ${org.id}\\) in its items`), "names the org asked for");
-    // A later turn: the click opened the run before; this one is opened by another message.
+    assert.equal(typed.turns.confirmedCard(), null, "control: no card mark");
+    const t = await add(typed.turns, [...c.entries, user(c.click)], { org: org.id, name: "Typed Click", root: folder("typed-click") });
+    assert.ok(t.ok, t.text);
     const later = chat();
     later.message(c.click, "c_9");
     later.message("and the other one?");
     assert.equal(later.turns.confirmedCard(), null);
-    const l = await add(later.turns, [...c.entries, user(c.click), user("and the other one?")], params);
-    assert.match(l.text, NO_CLICK);
-    // A Retry: the branch rewound to before the click and the same text sent again, with no card mark
-    // (chat-queue-clients.test.ts pins that the replay carries none).
-    const retry = chat();
-    retry.message(c.click);
-    const rr = await add(retry.turns, [...c.entries, user(c.click)], params);
-    assert.match(rr.text, NO_CLICK);
-    assert.equal(projectByRoot(dir), undefined);
+    const l = await add(later.turns, [...c.entries, user(c.click), user("and the other one?")], { root: folder("later-turn") });
+    assert.ok(l.ok, l.text);
+    assert.ok(projectByRoot(join(base, "typed-click")) && projectByRoot(join(base, "later-turn")));
   });
 });

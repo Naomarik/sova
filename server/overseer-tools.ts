@@ -58,7 +58,7 @@ import { MEMORY_CODING_REFUSAL } from "../shared/memory";
 import { alignDropRefusal, codingSpecRefusal, SPEC_ALWAYS_ON } from "./project-coding-mode";
 import { projectCodingIds } from "./project-sessions";
 import { listProjects } from "./projects/spaces";
-import { copyApproval, copyItem, leftoverItem, liveLeftoverHost, nameOr, realCopyRowHost } from "./overseer-copies";
+import { copyApproval, copyItem, leftoverItem, liveLeftoverHost, nameOr, realCopyRowHost, starterWorking } from "./overseer-copies";
 import type { ClickChoice } from "../shared/overseer-card";
 import { projectRootOf } from "./project-root";
 import { LookupRefusal, SPEC_LOOKUP_TOOL, specLookup } from "./spec-lookup";
@@ -66,6 +66,7 @@ import { draftActTools, draftSpecsTool } from "./conversation-draft-routes";
 import type { TailEnding } from "./sessions-index";
 import type { RemovedWorktree } from "./removed-worktrees";
 import type { ProjectSummary } from "../shared/projects";
+import type { PreviewView } from "../shared/preview-links";
 import {
   byRecency,
   cursorOf,
@@ -1179,15 +1180,15 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
       name: "sova_public_links",
       label: "Public links",
       description:
-        "This host's live public links, with their URLs, to give the user when they ask for one: session shares (/s/), gathering hand-offs (/h/) and organization owner pages (/i/). One line per live link: its kind; a share's title, recipient and share id; a hand-off's org, person, gathering title and number; an owner link's org and owner; then its expiry and URL. A link made before links were kept reads 'link not kept': the user gets a new one on its page. This host only. Give a link only to the user, never into another session or message.",
-      promptSnippet: "this host's live share, hand-off and owner links with their URLs (give one when the user asks)",
+        "This host's live public links, with their URLs, to give the user when they ask for one: session shares (/s/), gathering hand-offs (/h/), organization owner pages (/i/), and every project's active preview links and running copies' share links (preview). One line per live link: its kind; a share's title, recipient and share id; a hand-off's org, person, gathering title and number; an owner link's org and owner; a preview's id, project, what it serves (a running copy's endpoint, a port or a folder) and branch; then its expiry, a preview's state, and URL. A link made before links were kept reads 'link not kept': the user gets a new one on its page. This host only. Give a link only to the user, never into another session or message.",
+      promptSnippet: "this host's live share, hand-off, owner and preview links with their URLs (give one when the user asks)",
       parameters: obj({
-        kind: str("session | handoff | owner (default all).", { enum: ["session", "handoff", "owner"] }),
-        session: str("Only this session's links: a session id (its shares, or a gathering session's hand-off links)."),
-        org: str("Only this organization's hand-off and owner links: its id or exact name."),
+        kind: str("session | handoff | owner | preview (default all).", { enum: ["session", "handoff", "owner", "preview"] }),
+        session: str("Only this session's links: a session id (its shares, a gathering session's hand-off links, or the previews of a coding session's app)."),
+        org: str("Only this organization's hand-off, owner and preview links: its id or exact name."),
       }),
       execute: read(async (p, call) => {
-        const kind = p.kind as "session" | "handoff" | "owner" | undefined;
+        const kind = p.kind as "session" | "handoff" | "owner" | "preview" | undefined;
         let orgId: string | undefined;
         if (typeof p.org === "string" && p.org) {
           try {
@@ -1214,7 +1215,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
             }
           }
         }
-        if (kind !== "session") {
+        if (kind !== "session" && kind !== "preview") {
           for (const r of orgLinkRows(now)) {
             if ((kind === "handoff" && r.kind !== "handoff") || (kind === "owner" && r.kind !== "owner")) continue;
             if (orgId && r.orgId !== orgId) continue;
@@ -1222,6 +1223,20 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
             if (r.link) kept++;
             const what = r.kind === "handoff" ? `hand-off · ${r.orgName} · ${r.personName} · "${cut(r.sessionTitle ?? "", 80)}" · hand-off #${r.n}` : `owner link · ${r.orgName} · ${r.personName}`;
             lines.push(`- ${what} · expires ${day(r.expiresAt)} · ${r.link ?? "link not kept"}`);
+          }
+        }
+        // Every project's active preview links and running copies' share links, never a person's own link to one
+        // (§app.overseer/tools, §app.outreach/links).
+        if (!kind || kind === "preview") {
+          const projects = host.projects?.() ?? listProjects();
+          const { previewViews } = await import("./project-previews");
+          for (const v of await previewViews()) {
+            if (v.state !== "active" || v.siblingOf) continue;
+            const pr = projects.find((x) => x.id === v.projectId);
+            if (orgId && !(pr?.space.kind === "org" && pr.space.orgId === orgId)) continue;
+            if (session && v.sessionId !== session) continue;
+            if (v.url) kept++;
+            lines.push(previewLinkLine(v, pr?.name ?? v.projectId, day));
           }
         }
         const warning = shareState().warning;
@@ -1889,6 +1904,8 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
       host.confirmedClicks
         ? { clicks: () => host.confirmedClicks!(), approved: copyApproval(() => host.confirmedClicks!()), host: () => liveLeftoverHost(projectEngine()) }
         : undefined,
+      // The user's word opens stopping a copy and sharing; a finished conversation's copy, its teardown (§app.overseer/copies).
+      { word: () => host.attended(), working: starterWorking((id) => host.session(id)) },
     ),
     ...orgTools({
       act,
@@ -2005,3 +2022,12 @@ export function contactRedactingTool<T extends ToolSpec>(tool: T): T {
 
 /** Every tool name the Overseer has: its own plus the file built-ins (write and edit guarded, overseer-file-tools.ts) and wake_nudge. */
 export const BUILTIN_ALLOWED = ["read", "grep", "find", "ls", "write", "edit", "wake_nudge"];
+
+/** One active preview or running copy's share link as sova_public_links lists it, its URL included. Pure. */
+export function previewLinkLine(v: PreviewView, project: string, day: (iso: string) => string): string {
+  const t = v.target ?? { kind: "port" as const, port: v.port };
+  const what = v.instance ? `running copy ${v.instance}, endpoint ${v.endpoint ?? `port ${v.port}`}` : t.kind === "static" ? `folder ${t.folder}` : `port ${t.port}`;
+  const branch = v.branch ?? (v.instance ? "main" : null);
+  const state = v.instance ? (v.running ? "the copy answers" : "the copy is not running") : v.running ? "app is running" : t.kind === "static" ? "not serving the folder" : `nothing on port ${t.port}`;
+  return `- preview · ${v.id} · ${project} · ${what}${branch ? ` · on ${branch}` : ""} · expires ${day(v.expiresAt)} · ${state} · ${v.url ?? "link not kept"}`;
+}

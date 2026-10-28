@@ -8,7 +8,7 @@ import { sessionsChanged } from "./list-generation";
  * What else a preview has (§mesh.public/preview): `<stateRoot>/preview-kept.json`, beside
  * preview-links.json, whose keys never change (an older Sova reads that file strictly, so a new key
  * there would serve no preview after a rollback). Per preview id: its link (the secret: kept for
- * this host's operator and the project overseer, §app.project-overseer/previews), its target, the
+ * this host's operator and the overseers, §app.project-overseer/previews), its target, the
  * coding session and branch it shows, its purpose. 0600, written atomically, host-local, never
  * synced or committed.
  *
@@ -193,20 +193,21 @@ export function dropSiblingLinks(keep: (id: string) => boolean): string[] {
   return gone;
 }
 
+/** A kept link's label (the secret part), or null when it is no preview link. Pure. */
+export function linkLabel(url: string | undefined | null): string | null {
+  if (!url) return null;
+  try {
+    const label = new URL(url).hostname.split(".")[0] ?? "";
+    return PREVIEW_LABEL_RE.test(label) ? label : null;
+  } catch {
+    return null; // not a URL: not kept
+  }
+}
+
 /** Every kept link's label (the secret part), for the redactions and the leak checks. */
 export function keptLabels(): string[] {
-  const out: string[] = [];
   const file = read();
-  for (const url of [...Object.values(file.previews).map((k) => k.url), ...Object.values(file.siblingLinks ?? {})]) {
-    if (!url) continue;
-    try {
-      const label = new URL(url).hostname.split(".")[0] ?? "";
-      if (PREVIEW_LABEL_RE.test(label)) out.push(label);
-    } catch {
-      // not a URL: not kept
-    }
-  }
-  return out;
+  return [...Object.values(file.previews).map((k) => k.url), ...Object.values(file.siblingLinks ?? {})].map(linkLabel).filter((l): l is string => !!l);
 }
 
 /** What stands in for a kept link in text that must never carry one. */

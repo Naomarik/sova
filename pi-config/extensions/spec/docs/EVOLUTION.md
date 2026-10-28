@@ -402,6 +402,18 @@ held out, labels frozen by hash before any comparison; a second labelling of 14 
   dev, and the best rule reaches 57%. A § the change contradicts through a number written `30_000` is never
   `stale`: the number pattern skips digits joined by `_`.
 
+## Records per area (al_6, 2026-10-26: `feat/spec-store` tools, `feat/spec-convert` data)
+
+One `manifest.json` of about 800 KB (793,538 bytes at 27019745, 823,298 when converted) held every record, so most spec branches met in one file. Landing 1
+shipped tools that read and write both layouts; landing 2 converted Sova's spec (102 record files beside
+their claim files, median 5,061 bytes, largest 39,802) and dropped the manifest merge driver, and new specs
+start in format 2. Before, from `tests/bench/merge-collisions.mjs --since 2026-09-23 --until 27019745`
+(688 merges): both sides changed the records file in 45%, Git's line merge conflicted in 17%; replayed one
+file per area, 15% and 4%, and 29 of the 30 per-area conflicts are one record changed two ways; 27
+whole-spec takes; 7.2 re-apply commits a week. Targets (GOALS.md constraint 3): both-sides changes ≤ 15%,
+Git conflicts on record files ≤ 5%, re-apply commits halved, whole-spec recoveries 0. Tool latency: about
+5 to 10 ms more per call (101 files read instead of one); answers identical.
+
 ## Retired: the assessment companion (2026-10-26, branch `feat/spec-size`; not on master yet)
 
 `sova-spec-assess.mjs` recorded input-bound dispositions for a change. It ran automatically only from 10-02
@@ -412,6 +424,11 @@ saved reviews stay. A 6 KB per-claim size warning ships on the same branch. 124 
 the cap, waiting for the per-area migration.
 
 ## Open
+
+- **Records per area, after the conversion.** Run `tests/bench/merge-collisions.mjs --since <conversion
+  commit>` at 1 and 2 weeks after landing 2 and record the four numbers above against their targets; if
+  both-sides changes or Git conflicts don't move, decide on a revert (`migrate --reverse --write` on a
+  fresh branch, restoring the `.gitattributes` line), as GOALS.md requires.
 
 - **Claim-file merges without the driver** (audit #2, P8). Two seams the merge replay found, not
   fixed: Git reads `.gitattributes` from the work tree's side of a merge, so a branch cut before

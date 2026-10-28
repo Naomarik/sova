@@ -1121,6 +1121,9 @@ export interface ClaudeAccountsInfo {
   pool?: ClaudePoolInfo;
   /** macOS only: Claude Code's own login can't be read here (§app.claude-logins/macos-keychain). Absent otherwise. */
   claudeOwnLoginUnreadable?: true;
+  /** Login id → the projects and organizations here that use it ("Project Acme", "Organization Fold")
+      (§app.claude-logins/project-login). Absent when none does. */
+  usedBy?: Record<string, string[]>;
 }
 /** A device of the mesh, as the pool shows it. */
 export interface ClaudePoolDevice {
@@ -1188,6 +1191,9 @@ export interface ChatClaudeLogin {
   /** A pick waiting for the running reply to end, or being applied (a borrow in flight)
       (§app.claude-logins/switch-queue). */
   pending?: { id: string; name: string };
+  /** Not recorded yet, and the login shown is the chat's project's (`project`) or its organization's
+      for its projects (`org`) (§app.claude-logins/project-login). Absent otherwise. */
+  source?: "project" | "org";
 }
 /** How every refusal of `set_claude_login` begins, so the chat shows it as that switch's banner. */
 export const LOGIN_UNCHANGED = "Claude login unchanged:";
@@ -1302,6 +1308,27 @@ export interface GitCommit {
   at: number;
 }
 
+/** A repository's git folder (the one a linked worktree shares with its main checkout), read by
+    stat: every file's size summed, and what says git's cleanup there is stuck or overdue. */
+export interface GitFolderReading {
+  /** The git folder, absolute. */
+  path: string;
+  /** Sum of the files' sizes; a lower bound when `partial`. */
+  bytes: number;
+  /** The walk stopped at its entry cap. */
+  partial: boolean;
+  /** `objects/pack/*.pack` files (always whole: the pack folder is walked first). */
+  packs: number;
+  /** Loose objects (`objects/xx/*`); a lower bound when `partial`. */
+  loose: number;
+  /** At most one, stuck first. `stuck`: a cleanup lock (multi-pack-index.lock or
+      commit-graph-chain.lock) more than an hour old, `since` its mtime (ms epoch). `overdue`: more
+      than 50 pack files or 6,700 loose objects; each count present only when it is over. */
+  warning: { kind: "stuck"; lock: string; path: string; since: number } | { kind: "overdue"; packs?: number; loose?: number } | null;
+  /** When it was read (ms epoch); a cached reading keeps its time. */
+  checkedAt: number;
+}
+
 /** Where the read ran: this machine, or the session's target. */
 export type GitWhere = { kind: "local" } | { kind: "remote"; target: string };
 
@@ -1334,6 +1361,10 @@ export interface GitRepoSummary {
       yet reads `lastCommit` instead and shows the one commit it has. A transitional read, not a
       permanent contract. */
   commits?: GitCommit[];
+  /** The repository's git folder, for the new-session card (server/git-folder.ts). Local
+      repositories only; absent on a target, when the folder couldn't be read, and from a server
+      older than the field. Additive. */
+  gitFolder?: GitFolderReading;
   /** Changed paths, conflicted first, then by path; cut at the server's cap (`filesTotal`). */
   files: GitFileChange[];
   /** Changed paths git reported, before the cap. */
@@ -1925,16 +1956,18 @@ export interface ProjectModeApprovalNeeded {
 // The `memory` minor mode: the model works from a summary of the whole chat (the VIEW: one-line
 // summaries, recent ones fine and old ones coarse) and opens any line word for word with its `zoom`
 // tool. Turned on from a chat's mode menu only (web; never the terminal, a worker or a profile) and,
-// for the Overseer, from its own toggle. Two types; each chat keeps its own type and view size.
+// for the Overseer, from its own toggle. Two types; each chat keeps its own type, and every chat uses
+// the view size Settings → Memory holds for its type (MemorySettings.sizes).
 //
 // POST /api/mode?path=… { minorModes?, memory?: Partial<ChatMemoryChoice> } -> ChatModeResult
-//                                  `memory` alone is a valid body (a type or size change; kept even while
-//                                  memory is off). 400 a bad type or size; 400 "memory" in minorModes for a
+//                                  `memory` alone is a valid body (a type change; kept even while memory is
+//                                  off). `memory.size` is ignored: the size is Settings'. 400 a bad type;
+//                                  400 "memory" in minorModes for a
 //                                  chat that can't have it (the Overseer: use its own route below; a baton or
 //                                  project-overseer session).
-// POST /api/mode?path=… { saveDefault: true } also saves this chat's memory choice as the default (the
+// POST /api/mode?path=… { saveDefault: true } also saves this chat's memory type as the default (the
 //                                  memory settings file's `default`).
-// POST /api/mode { minorModes?, memory? } (no path) writes the default only, as before.
+// POST /api/mode { minorModes?, memory? } (no path) writes the default only, as before (a memory type only).
 // GET  /api/memory?path=…        -> MemoryOutline (the lines the model sees now, oldest first; works for a
 //                                  chat that isn't open too. 400 no/bad path, 404 not a session)
 // GET  /api/memory/open?path=…&id=<first message>&n=<messages, a power of 2>
@@ -1942,17 +1975,21 @@ export interface ProjectModeApprovalNeeded {
 //                                  long ones in pages). 400 bad id/n, 404 no such line yet
 // GET  /api/settings/memory      -> MemorySettingsInfo (<agent dir>/mode-memory.json; missing → defaults)
 // GET  /api/settings/memory/options -> DelegateOptions (the same discovery as spec/options)
-// PUT  /api/settings/memory MemorySettings -> MemorySaveResult (replaces the summarizer; `default` absent keeps
-//                                  the stored one. 400 bad shape; unverifiable or policy-denied models save
-//                                  with a warning. Every chat's summarizer reads it at its next summary)
-// GET  /api/overseer/memory      -> OverseerMemoryInfo (no saved choice: on, UniiChat at 128 KB, whatever the
-//                                  chats' saved default is)
-// PUT  /api/overseer/memory { on?, type?, size? } -> OverseerMemoryInfo (kept in overseer.json; reaches the
-//                                  Overseer from its next turn. 400 bad body)
+// PUT  /api/settings/memory MemorySettings -> MemorySaveResult (replaces the summarizer and the sizes; `sizes`
+//                                  or `default` absent keeps the stored ones. 400 bad shape or a size outside
+//                                  [MEMORY_SIZE_MIN, MEMORY_SIZE_MAX]; unverifiable or policy-denied models save
+//                                  with a warning. Every chat's summarizer reads it at its next summary, and
+//                                  its size at its next turn or compaction)
+// GET  /api/overseer/memory      -> OverseerMemoryInfo (no saved choice: on, UniiChat, whatever the chats'
+//                                  saved default is; the size is Settings' for the type)
+// PUT  /api/overseer/memory { on?, type? } -> OverseerMemoryInfo (kept in overseer.json; reaches the
+//                                  Overseer from its next turn. `size` is ignored: the size is Settings'.
+//                                  400 bad body)
 // GET  /api/projects/:pid/overseer/memory -> OverseerMemoryInfo (that project overseer's own switch, on the
 //                                  same terms; 404 unknown project)
-// PUT  /api/projects/:pid/overseer/memory { on?, type?, size? } -> OverseerMemoryInfo (kept as `memory` in the
-//                                  project overseer's overseer.json; reaches it from its next turn. 400 bad body)
+// PUT  /api/projects/:pid/overseer/memory { on?, type? } -> OverseerMemoryInfo (kept as `memory` in the
+//                                  project overseer's overseer.json; reaches it from its next turn. `size` is
+//                                  ignored. 400 bad body)
 // WS (chat): { type: "memory_status", status } after hello while memory is on, and on every change
 //                                  (the turn it goes off included), only from a runtime with the memory
 //                                  engine (an ordinary chat, the Overseer, a project overseer). No message:
@@ -1980,22 +2017,22 @@ export interface MemoryTypeInfo {
   rowDescription: string;
   /** "UniiChat — by Victor Taelin" */
   detail: string;
-  /** "Read the design ↗" target, when the type has a write-up. */
+  /** The help card's "Read the design ↗" target, when the type has a write-up. */
   link?: string;
-  /** The view size (KB) a chat of this type uses until it picks one. */
+  /** The view size (KB) of this type until Settings → Memory sets one. */
   defaultSize: number;
 }
 
 /** A chat's memory choice. `size`: the view grows to `size` KB, then merges down to half of it
     (UniiChat's 64–128 KB is 128); for zoomable compaction, the size of the openable summary a
-    compaction leaves. */
+    compaction leaves. The type is the chat's; the size is always Settings' for that type. */
 export interface ChatMemoryChoice {
   type: MemoryType;
   size: number;
 }
 
-/** ModeInfo.memory: the choice, plus what can be chosen. `sizes`: the panel's suggested sizes (KB);
-    any whole number in [MEMORY_SIZE_MIN, MEMORY_SIZE_MAX] is accepted. */
+/** ModeInfo.memory: the choice, plus what can be chosen. `sizes`: the suggested sizes (KB) Settings →
+    Memory offers; any whole number in [MEMORY_SIZE_MIN, MEMORY_SIZE_MAX] is accepted there. */
 export interface MemoryModeInfo extends ChatMemoryChoice {
   types: MemoryTypeInfo[];
   sizes: number[];
@@ -2061,11 +2098,15 @@ export interface MemoryOutline {
 export type MemoryOpen = { lines: MemoryLine[] } | { message: MemoryMessage };
 
 /** <agent dir>/mode-memory.json. `summarizer`: who writes the summaries (default Claude Code
-    claude-haiku-5-5 at low effort); `default`: the choice new chats start from (Save as default). */
+    claude-haiku-5-5 at low effort); `sizes`: each type's view size (KB) every chat and the Overseer use
+    (absent on a write: keep the stored ones; always both on a read); `default`: the type new chats
+    start from (Save as default). An older file's `default.size` is read once into `sizes` and never
+    written again. */
 export interface MemorySettings {
   version: 1;
   summarizer: { primary: WorkerChoice; fallback: WorkerChoice | null };
-  default?: ChatMemoryChoice;
+  sizes?: Partial<Record<MemoryType, number>>;
+  default?: { type: MemoryType; size?: number };
 }
 
 export interface MemorySettingsInfo {
@@ -2657,7 +2698,7 @@ export type WatchServerMessage =
 // missing/corrupt sources: they return an honest empty/unavailable payload.
 // ---------------------------------------------------------------------------
 // GET /api/insights/usage          -> UsageInsight
-// GET /api/insights/agents         -> AgentsInsight     (all live pi processes; poll ~5s)
+// GET /api/insights/agents         -> AgentsInsight     (all live pi processes; poll ~5s; ?tokens=1 adds `tokens`)
 // POST /api/upload                -> UploadResult 201  (raw image bytes; Content-Type: image/*; saved in /tmp)
 // POST /api/upload?draft=<session path> -> UploadResult 201  (same, saved durably in that session's folder
 //                                  <agent dir>/sova/attachments/<session id>/; 400 invalid session path, 404 no such session)
@@ -3104,6 +3145,30 @@ export interface AgentsInsight {
   at: number;
   totals: { sessions: number; working: number; total: number; teams: number; teamWorking: number; soloWorking: number };
   sessions: LiveAgentSession[]; // working first, then by lastActivity
+  /** Output tokens of each Sova-hosted main thread, its workers at any depth rolled up, keyed by
+      its session id: only sessions with tokens in the last 5 minutes (§app.insights/session-token-rate),
+      each one `SessionTokens` as one string (shared/session-tokens-wire.ts). Only on `?tokens=1`
+      (the board asks while it is shown): then `{}` when none, and absent only from older servers
+      (every row then reads as unmeasured). */
+  tokens?: Record<string, string>;
+}
+
+/** One board row's output tokens: its last 5 minutes as 30 s epoch slots (`end` = the server's
+    current slot), oldest first, each list starting at its oldest non-zero slot and ending at `end`,
+    and each part's 30-minute total. A list absent = no tokens in the last 5 minutes; a total absent =
+    none in the last 30 (a part idle over 5 minutes still sends its total). Sent encoded
+    (shared/session-tokens-wire.ts). */
+export interface SessionTokens {
+  end: number;
+  /** The session's own chat processes'. */
+  own?: number[];
+  /** Its 30-minute total, present even without `own` when it wrote only earlier in the 30. */
+  own30?: number;
+  /** Its workers', at any depth. */
+  workers?: number[];
+  workers30?: number;
+  /** Some of these calls' tokens are known missing (a Claude Code turn running, a ring not reported). */
+  partial?: true;
 }
 
 export interface OutlineTopic {
@@ -3359,7 +3424,7 @@ export type OverseerProactivity = "off" | "badge" | "brief";
 
 export interface OverseerQuickAction {
   id: string;
-  /** Title Case, short: "What Needs Me". */
+  /** Title Case, short: "Get Things Moving". */
   label: string;
   /** One line shown under the label in the flyout. */
   description: string;
@@ -3382,7 +3447,8 @@ export interface OverseerCaps {
 
 /** `<stateRoot>/overseer.json`. Tolerant on read, strict on PUT. */
 export interface OverseerSettings {
-  version: 1;
+  /** 2 since the one-time move off the old five quick actions (§app.overseer/quick-actions-move). */
+  version: 2;
   /** "provider/model"; null = pi's default. Never becomes the default for new sessions. */
   model: string | null;
   /** off…max, clamped to the model; null = the model's default. */
@@ -3398,9 +3464,10 @@ export interface OverseerSettings {
   explorer: WorkerChoice;
   /** Resume the runs a server restart cut off (§app.overseer/auto-resume). Absent = on. */
   autoResume?: boolean;
-  /** The Overseer's memory: its own switch, type and size. Absent = no choice made:
-      on, UniiChat at 128 KB. Written only by PUT /api/overseer/memory; a settings PUT keeps the stored one. */
-  memory?: { on: boolean; type: MemoryType; size: number };
+  /** The Overseer's memory (§chat.memory/overseer): its own switch and type. Absent = no choice made: on,
+      UniiChat. Written only by PUT /api/overseer/memory; a settings PUT keeps the stored one. `size`: an older
+      file's, kept but ignored (the size is Settings → Memory's for the type). */
+  memory?: { on: boolean; type: MemoryType; size?: number };
 }
 
 export interface OverseerSettingsInfo {
@@ -3634,11 +3701,14 @@ export interface SovaConfirmDetails {
 }
 
 /** One thing a confirm card is about. A session row: its folder's short name (`project`), last
-    activity (ISO), a one-line summary when it has one, and how many subagents were working.
-    `note`: the Overseer's own words on what the item is and why the card acts on it (≤ 2 short
-    sentences, `CONFIRM_NOTE_MAX` characters). */
-export type SovaConfirmItem =
-  | { kind: "session"; id: string; title: string; project?: string; lastActiveAt?: string; summary?: string; workers?: number; note?: string }
+    activity (ISO), a one-line summary when it has one, and how many subagents were working; a land
+    row (the global Overseer's only, §app.overseer/card-land) also the branch Ready to land and its
+    full head sha when the card was raised, which its Go lands at. `note`: the Overseer's own words on what the item is and why the card acts on it (≤ 2 short
+    sentences, `CONFIRM_NOTE_MAX` characters). Every kind may also carry the row fields of
+    `SovaConfirmRow` (a section heading, what Go sends). */
+export type SovaConfirmItem = SovaConfirmRow &
+  (
+  | { kind: "session"; id: string; title: string; project?: string; lastActiveAt?: string; summary?: string; workers?: number; land?: { branch: string; head: string }; note?: string }
   | { kind: "idea"; id: string; title: string; note?: string }
   | { kind: "todo"; id: string; text: string; note?: string }
   /** A project registered on this host: its name, and the org's when one places it (§app.overseer/org-tools). */
@@ -3649,7 +3719,65 @@ export type SovaConfirmItem =
   | { kind: "org"; id: string; name: string; note?: string }
   /** A folder to add as a project (§app.overseer/org-project-add): `id` is its checkout root, `asked` the folder as
       given when that differs, the org it goes into (none: standalone) and the name it gets when the card named one. */
-  | { kind: "folder"; id: string; asked?: string; orgId?: string; orgName?: string; name?: string; note?: string };
+  | { kind: "folder"; id: string; asked?: string; orgId?: string; orgName?: string; name?: string; note?: string }
+  /** A running copy of a project (§app.overseer/copies): `id` is its instance id. Its own row, never a session's; who
+      started it; whether its folder has uncommitted edits or is gone; how many active share links it has (never a URL);
+      `working`: the session that started it is working now. */
+  | {
+      kind: "copy";
+      id: string;
+      project: string;
+      projectName: string;
+      slot: number;
+      branch: string | null;
+      checkout: string;
+      state: "running" | "stopped" | "broken";
+      startedBy: CopyStarter;
+      edits: "clean" | "uncommitted" | "folder-gone";
+      links: number;
+      working?: boolean;
+      note?: string;
+    }
+  /** A process holding one of a project's copy ports that Sova calls safe to stop (§app.overseer/copies): `id` is
+      `<port>:<pid>:<start>`, which the stop checks again; `command` redacted, at most 120 characters. */
+  | {
+      kind: "leftover";
+      id: string;
+      project: string;
+      projectName: string;
+      slot: number;
+      port: number;
+      pid: number;
+      start: string;
+      command: string;
+      folder: string;
+      reason: LeftoverReason;
+      unit?: string;
+      note?: string;
+    }
+  );
+
+/**
+ * What a card row carries whatever its kind (§app.overseer/card-sections), snapshotted when the
+ * card was raised: `section`, the heading it sits under; `sends`, the exact message the Overseer
+ * sends that session when the row's Go (its first choice) is applied. New per-row facts go here
+ * (any kind) or on one kind's variant above (a session's alone).
+ */
+export interface SovaConfirmRow {
+  section?: string;
+  sends?: string;
+}
+
+/** The longest section heading and Go-sends text one confirm item may carry. */
+export const CONFIRM_SECTION_MAX = 40;
+export const CONFIRM_SENDS_MAX = 600;
+
+/** Who started a copy, as its card row shows it. */
+export type CopyStarter = { kind: "session"; id: string; title: string } | { kind: "operator" | "overseer" | "conform" | "other"; label: string };
+
+/** Why a process holding a copy port is a leftover: its folder is deleted or missing, or its branch's own commits are
+    already merged into the main checkout's. */
+export type LeftoverReason = "folder-gone" | "branch-on-main";
 
 /** The longest note one confirm item may carry. */
 export const CONFIRM_NOTE_MAX = 220;
@@ -4559,6 +4687,11 @@ export type SessionFeedMessage =
       to live, busy/activity or lastActiveAt). No payload: the client refetches the list
       (coalesced). */
   | { type: "list_changed" }
+  /** The session groups changed (a group made, renamed, reordered or deleted, or a session put into
+      or taken out of one, by any client or the Overseer: server/session-groups.ts writes it). No
+      payload: the client re-reads GET /api/session-groups and the list. Never on connect. Additive:
+      a client that predates it ignores it. */
+  | { type: "groups_changed" }
   /** The logical LLM calls in flight on this host and every connected host: sent once on every
       connect, then on each change of the total or its coverage. Never a reason to re-read the
       list. */

@@ -1,0 +1,83 @@
+{
+  "§design.ground-rules/color-budget": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "core": true
+  },
+  "§design.ground-rules/icons": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "public/favicon.svg",
+      "public/manifest.webmanifest",
+      "index.html",
+      "scripts/pwa-icons.sh",
+      "public/icons/pwa-192.png",
+      "public/icons/pwa-512.png",
+      "public/icons/pwa-192-maskable.png",
+      "public/icons/pwa-512-maskable.png",
+      "public/icons/apple-touch-icon.png",
+      "public/icons/activity.svg",
+      "public/icons/bulb.svg",
+      "public/icons/wrench.svg",
+      "public/icons/mic.svg",
+      "src/components/ui.tsx",
+      "src/vis/icons.ts",
+      "src/vis/kinds/wireframe/icons.ts",
+      "public/icons/share.svg",
+      "public/icons/shield-on.svg",
+      "public/icons/shield-partial.svg",
+      "public/icons/shield-off.svg",
+      "public/icons/subagents.svg",
+      "public/icons/mode-delegate.svg",
+      "public/icons/mode-align.svg",
+      "public/icons/mode-spec.svg",
+      "public/icons/mode-vis.svg",
+      "public/icons/mode-codemode.svg",
+      "public/icons/mode-memory.svg"
+    ]
+  },
+  "§design.ground-rules/motion": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "verified"
+  },
+  "§design.ground-rules/text-fit": {
+    "kind": "behavior",
+    "code": [
+      "src/design/base.css"
+    ],
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "core": true
+  },
+  "§design.ground-rules/theme": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/theme.ts",
+      "index.html",
+      "src/lib/theme.test.ts"
+    ]
+  },
+  "§design.ground-rules/voice": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "core": true
+  },
+  "§design/ground-rules": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "notOwned": [
+      "§design/copy-deck",
+      "§design/token-index",
+      "§design/deviations"
+    ]
+  }
+}

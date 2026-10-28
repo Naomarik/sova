@@ -1,12 +1,14 @@
 # .sova/spec: Sova's product documentation
 
 This directory is the requirement for what Sova does. The prose lives in `claims/`, one file per
-document, under `§` IDs (foldaidev's grammar). `manifest.json` holds each ID's kind, relations
-and labels. [USAGE.md](USAGE.md) has the commands.
+document, under `§` IDs (foldaidev's grammar). Beside each document, `claims/<ns>/<name>.json`
+holds each of its IDs' kind, relations and labels; `manifest.json` holds the project settings.
+[USAGE.md](USAGE.md) has the commands.
 
 ## Authority
 
-- **Current documentation** is `manifest.json` plus `claims/`, and nothing else.
+- **Current documentation** is `manifest.json` plus `claims/` (the `.md` documents and the `.json`
+  records beside them), and nothing else.
 - **`migrated` is not verified.** A record labelled `"authority": "migrated", "evidence":
   "unreviewed"` carries prose that is the requirement, but nobody has checked the code against
   it, so it is not evidence that a feature works.
@@ -25,7 +27,8 @@ and labels. [USAGE.md](USAGE.md) has the commands.
 
 | Path | What |
 |---|---|
-| `manifest.json` | One record per ID: `kind` (`surface`, `behavior`, `section`, `note`), `requires`, `members`, `code`, the labels `authority` and `evidence`, and the optional fields `agreed` (who decided, and when), `embeds`, `core`, `about` and `notOwned` (pi-config/extensions/spec/core/README.md). Relations only; prose never. |
+| `manifest.json` | The project settings (format version 2): `formatVersion`, `grammar` (where claims live), `boundary` (what `census` counts), and a `claims` string saying where the records are. Never records. |
+| `claims/<ns>/<name>.json` | The records of `claims/<ns>/<name>.md`'s IDs, one per ID: `kind` (`surface`, `behavior`, `section`, `note`), `requires`, `members`, `code`, the labels `authority` and `evidence`, and the optional fields `agreed` (who decided, and when), `embeds`, `core`, `about` and `notOwned` (pi-config/extensions/spec/core/README.md). Relations only; prose never. |
 | `claims/<ns>/<name>.md` | One document. The H1 `# §ns/name — Title` is its lede, and each H2 `## §ns.name/slug — Title` is a child. Plain H3 and deeper are prose inside that child. |
 | `drafts/` | Proposed changes, one full copy per draft. Local only. |
 | `reviews/` | Review packets and records. Local only. |

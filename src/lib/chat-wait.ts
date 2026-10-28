@@ -76,6 +76,14 @@ export const waitOnHello = (wait: ChatWait): ChatWait => ({ ready: true, lost: f
     view, nothing to hand back (each send it took was acknowledged or refused before it closed). */
 export const waitOnSleep = (wait: ChatWait): ChatWait => ({ ready: false, lost: false, conn: wait.conn, open: false, asleep: true });
 
+/** The wait a chat view opens in: an archived chat's is asleep from the start, so it holds no socket
+    and shows only its file's rows (§chat.transcript/instant-open, "An archived chat"). */
+export const waitAtOpen = (archived: boolean): ChatWait => (archived ? waitOnSleep(WAIT_START) : WAIT_START);
+
+/** Whether something that needs the chat (a send, its tab coming to the front, another tab's open)
+    may wake it: only a chat asleep, and never an archived one, which waits for Unarchive. */
+export const mayWake = (wait: ChatWait, archived: boolean): boolean => !!wait.asleep && !archived;
+
 /** Something needs the chat: the view connects, and says Connecting until that connection's hello. */
 export const waitOnWake = (wait: ChatWait): ChatWait => ({ ready: false, lost: false, conn: wait.conn, open: false, waking: true });
 

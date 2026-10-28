@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ChatClaudeLogin, ClaudeAccountsInfo, ClaudeLoginRow, ClaudePoolInfo, ClaudePoolLogin } from "../../shared/protocol";
-import { composerLogin, loginMenu, resendNote } from "./claude-login";
+import { avatarLogins, composerLogin, loginAvatar, loginMenu, resendNote } from "./claude-login";
 import { stampTime } from "./format";
 
 const login = (over: Partial<ChatClaudeLogin> = {}): ChatClaudeLogin => ({ id: "l-0000000a", name: "a@example.com", email: "a@example.com", planLabel: "Max 20x", recorded: true, several: true, ...over });
@@ -9,10 +9,15 @@ const login = (over: Partial<ChatClaudeLogin> = {}): ChatClaudeLogin => ({ id: "
 test("the indicator shows the chat's login on a Claude Code model when the host has several", () => {
   const shown = composerLogin(login(), "claude-code-cli/opus");
   assert.equal(shown?.text, "a@example.com");
-  assert.equal(shown?.short, "a");
+  assert.equal(shown?.avatar, "a", "no device logins read yet: the first letter");
   assert.match(shown!.title, /^This chat runs on this Claude login: a@example.com · Max 20x\./);
   assert.equal(shown?.label, "Claude login: a@example.com");
   assert.match(composerLogin(login({ recorded: false }), "claude-code-cli/opus")!.title, /^This chat starts on this Claude login/);
+  // §app.claude-logins/project-login: before the first record, where the login comes from.
+  assert.match(composerLogin(login({ recorded: false }), "claude-code-cli/opus")!.title, /^This chat starts on this Claude login \(first ready on this device\): /);
+  assert.match(composerLogin(login({ recorded: false, source: "project" }), "claude-code-cli/opus")!.title, /^This chat starts on this Claude login \(set for this project\): /);
+  assert.match(composerLogin(login({ recorded: false, source: "org" }), "claude-code-cli/opus")!.title, /^This chat starts on this Claude login \(set for this project's organization\): /);
+  assert.match(composerLogin(login({ recorded: true, source: "project" }), "claude-code-cli/opus")!.title, /^This chat runs on this Claude login: /, "a recorded login says it runs there");
   assert.match(composerLogin(login({ name: "Work" }), "claude-code-cli/opus")!.title, /: Work · a@example.com · Max 20x\./, "a label names it besides the email");
   assert.equal(composerLogin(login({ email: undefined, name: "default" }), "claude-code-cli/opus")?.text, "default");
 });
@@ -22,6 +27,62 @@ test("no indicator off Claude Code, with a single login, or without a login", ()
   assert.equal(composerLogin(login(), null), null);
   assert.equal(composerLogin(login({ several: false }), "claude-code-cli/opus"), null);
   assert.equal(composerLogin(null, "claude-code-cli/opus"), null);
+});
+
+test("the avatar is the shortest start of the name no other login of this device shares", () => {
+  const two = [
+    { id: "default", name: "own@example.com" },
+    { id: "l-1", name: "work@example.com" },
+  ];
+  assert.equal(loginAvatar("default", "own@example.com", two), "o", "usually one letter");
+  assert.equal(loginAvatar("l-1", "work@example.com", two), "w");
+  const close = [
+    { id: "default", name: "own@example.com" },
+    { id: "l-1", name: "Owl@example.com" },
+  ];
+  assert.equal(loginAvatar("default", "own@example.com", close), "own", "case-insensitive: o and ow are shared, own is not");
+  assert.equal(loginAvatar("l-1", "Owl@example.com", close), "owl", "lower case, as the comparison reads");
+  assert.equal(loginAvatar("l-1", "", [...close.slice(0, 1), { id: "l-1", name: "OWL@x" }]), "owl", "the device's row names it, not the argument");
+  const short = [
+    { id: "default", name: "a@example.com" },
+    { id: "l-1", name: "ab@example.com" },
+  ];
+  assert.equal(loginAvatar("default", "a@example.com", short), "a", "a whole short name is its own start, never \"a@\"");
+  assert.equal(loginAvatar("l-1", "ab@example.com", short), "ab");
+});
+
+test("the avatar is a number when no start of up to 3 letters separates the logins", () => {
+  const later = [
+    { id: "default", name: "omar@a.com" },
+    { id: "l-1", name: "omar@b.com" },
+    { id: "l-2", name: "bea@example.com" },
+  ];
+  // "oma" is shared; they differ only after the 3rd character.
+  assert.equal(loginAvatar("default", "omar@a.com", later), "1", "its place in the device's order");
+  assert.equal(loginAvatar("l-1", "omar@b.com", later), "2");
+  assert.equal(loginAvatar("l-2", "bea@example.com", later), "b", "a login prefixes can separate keeps its letter");
+  const same = [
+    { id: "default", name: "a@example.com" },
+    { id: "l-1", name: "A@example.com" },
+  ];
+  assert.equal(loginAvatar("default", "a@example.com", same), "1", "identical names: a number");
+  assert.equal(loginAvatar("l-1", "a@example.com", same), "2");
+  assert.equal(loginAvatar("l-9", "a@example.com", same), "3", "a login the device doesn't list yet: after its last");
+});
+
+test("the indicator's avatar compares against this device's logins, the waiting pick's too", () => {
+  const info = {
+    logins: [
+      { id: "default", identity: { email: "a@example.com" } },
+      { id: "l-0000000a", identity: { email: "ab@example.com" } },
+      { id: "l-0000000b", label: "Backup", identity: null },
+    ],
+  } as unknown as ClaudeAccountsInfo;
+  const logins = avatarLogins(info);
+  assert.deepEqual(logins.map((l) => l.name), ["a@example.com", "ab@example.com", "Backup"], "email, else label, else id");
+  assert.equal(composerLogin(login({ email: "ab@example.com", name: "ab@example.com" }), "claude-code-cli/opus", false, logins)?.avatar, "ab");
+  const waiting = login({ pending: { id: "l-0000000b", name: "Backup" } });
+  assert.equal(composerLogin(waiting, "claude-code-cli/opus", true, logins)?.avatar, "b");
 });
 
 // ---- The login panel (§app.claude-logins/switch-login, /switch-queue, /switch-cost) --------------
@@ -105,7 +166,7 @@ test("mesh on: held logins, free ones at the keeper to borrow, and where every o
 test("the label shows a waiting pick after a live dot, and says it goes after the reply", () => {
   const waiting = login({ pending: { id: "l-0000000b", name: "b@example.com" } });
   const shown = composerLogin(waiting, "claude-code-cli/opus", true)!;
-  assert.deepEqual([shown.text, shown.short, shown.pending], ["b@example.com", "b", true]);
+  assert.deepEqual([shown.text, shown.avatar, shown.pending], ["b@example.com", "b", true]);
   assert.equal(shown.title, "Switching to b@example.com after this reply. Open to cancel.");
   assert.equal(composerLogin(waiting, "claude-code-cli/opus", false)!.title, "Switching to b@example.com.", "idle: it is landing now");
   assert.equal(composerLogin(login(), "claude-code-cli/opus", true)!.pending, false);

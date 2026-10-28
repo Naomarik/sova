@@ -1,0 +1,27 @@
+{
+  "§app.overseer-commands/overseer-sweep": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app/overseer-commands",
+      "§app.overseer/ideas"
+    ],
+    "code": [
+      "shared/commands/overseer.ts",
+      "shared/commands/projects.ts",
+      "shared/commands-ids.json",
+      "server/commands-overseer.test.ts",
+      "server/commands-fuzz.test.ts",
+      "server/commands-inventory/baseline.json"
+    ]
+  },
+  "§app/overseer-commands": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "shared/commands/overseer.ts"
+    ]
+  }
+}

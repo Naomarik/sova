@@ -14,7 +14,9 @@ Every `/docs/` page is one Markdown file in the docs collection (`src/content/do
 its URL under `/docs/`, and an `index.md` is its folder's own page. Each file's front matter gives
 a title, a description, a group (Start, Modes, Features or Setup), an optional subgroup (Major or
 Minor, under Modes) and an order. Pages are listed by group in that order, then a group's own pages
-before each subgroup, then by `order`; the sidebar and Previous/Next follow that sequence. A page
+before each subgroup, then by `order`; the sidebar and Previous/Next follow that sequence. The
+Modes group holds only pages about modes, and only a page about a mode sits in a subgroup (Major or
+Minor); a page about something else goes in another group. A page
 shows the shared header, the page list grouped with subgroups as labelled indented lists (a sticky
 sidebar from 1024px wide, a `<details>` menu above the page below that, no script), an eyebrow with
 the group or subgroup label, the title, the description as a lead, the body, Previous/Next links,
@@ -42,9 +44,16 @@ project's own modes as one row), and links to the feature and setup pages.
 ## §site.docs/modes — Modes (`/docs/modes/`)
 
 The major and minor modes side by side, switching them per chat from the composer's mode menu,
-the default for new sessions (memory's type and size with it), strict, a short memory section that
+the default for new sessions (memory's type with it), strict, a short memory section that
 links to its own page (§site.docs/memory), the terminal's commands, what workers get (spec, and each
 project mode that says so), and the sessions that choose their own mode, and a project's own minor modes (§site.docs/project-modes).
+
+## §site.docs/normal — Normal (`/docs/modes/normal/`)
+
+The default major mode: the agent you chat with does the work itself and can still start workers
+and teams; when to choose it over Delegate (one agent that talks with you and does the work,
+keeping the whole conversation, with no hand-off); switching to and from Delegate; the Overseer
+always runs in it.
 
 ## §site.docs/delegate — Delegate (`/docs/modes/delegate/`)
 
@@ -54,7 +63,8 @@ teams, watching workers, and workers after a restart.
 ## §site.docs/subagent-profiles — Subagent profiles (`/docs/subagent-profiles/`)
 
 What a subagent profile holds (its alignment override included), how a chat picks one, editing them in Settings, switching a chat's
-profile after a usage limit, and Off. A profile never turns on a project mode.
+profile after a usage limit, and Off. A profile never turns on a project mode. The page sits in
+the Features group, not under Modes: a profile is not a mode.
 
 ## §site.docs/align — Align and alignments (`/docs/modes/align/`)
 
@@ -172,7 +182,7 @@ The memory minor mode: what it does and that the transcript never changes, turni
 mode menu, the two types (UniiChat, credited to Victor Taelin with a link to his design, and
 zoomable compaction), the Memory type panel and Save as default, the `zoom` and `date` tools,
 updating, preparing and problems, rewind and fork, the Session pane's Memory outline, Settings →
-Memory and its help, where memory can't be on (the terminal, workers, coding sessions, session
+Memory with each type's summary size and its help, where memory can't be on (the terminal, workers, coding sessions, session
 profiles), and the overseers' own switches, on by default.
 
 ## §site.docs/updates — Updates (`/docs/updates/`)

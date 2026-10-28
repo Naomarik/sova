@@ -9,7 +9,7 @@ order: 1
 
 The **major mode** is one of two:
 
-- **normal**: Pi as usual. The agent does the work itself.
+- **[normal](/docs/modes/normal/)**: Pi as usual. The agent does the work itself.
 - **delegate**: Orchestrate: route planning, investigation and implementation to workers by
   profile. See [Delegate](/docs/modes/delegate/).
 
@@ -47,7 +47,7 @@ Press it to open the menu. It has these groups:
   keeps the menu open, so you can set several. Spec's row has a gear too, **Configure Spec**, that
   opens Settings → Subagents at its spec writer section. Memory is the last row, listed only in a
   chat whose runtime can run it; its row has a chevron, **Memory type**, that opens a panel to
-  choose the chat's [memory type and summary size](#memory).
+  choose the chat's [memory type](#memory).
 - **This project · {name}**, only in a chat whose project has [project modes](/docs/modes/project-modes/):
   one row per mode, with its description and, when it applies, its state, such as **Asks before
   turning on** for a mode with tools, commands or hooks you haven't approved. A mode turned on
@@ -92,7 +92,7 @@ follows it; its first switch pins that chat to its own modes from then on.
 you ask for exactly that:
 
 - **Save as default** in the menu. It makes this chat's major mode, strict flag, minor modes and
-  subagent profile what new sessions start from, with its memory type and size. Project modes are
+  subagent profile what new sessions start from, with its memory type. Project modes are
   never part of the default. It reads **Already the default**, and can't be pressed, when all of
   these already match.
 - `/mode default` in a terminal, which saves the current session's mode (not its subagent profile).
@@ -178,17 +178,18 @@ chat's full history back.
 Each chat picks one of two types in the **Memory type** panel:
 
 - **UniiChat**, by Victor Taelin: one chat that never ends. Every turn sends the summary lines of
-  the whole chat before it, then the turn itself. The lines grow to the chat's size, 128 KB by
-  default, then merge down to half of it.
+  the whole chat before it, then the turn itself. The lines grow to UniiChat's summary size,
+  128 KB by default, then merge down to half of it.
 - **Zoomable compaction**, Sova's: the chat runs as without memory until it would compact. Then the
   compacted part becomes summary lines the model can open, instead of a one-off summary. Its size is
   the size of those lines, 32 KB by default.
 
-The type and size are this chat's own, kept while memory is off, and Save as default saves them.
+The type is this chat's own, kept while memory is off, and Save as default saves it. Each type's
+summary size is set once for every chat, in Settings → Memory.
 Turning memory on in a chat that already has messages prepares it in the background ("Preparing
 memory: 120 of 480 messages"); its turns go out as without memory until that's done. The Session
 pane's Memory outline shows the lines the model sees now. Settings → Memory picks the summarizer's
-model, with a fallback.
+model, with a fallback, and each type's summary size.
 
 Only a Sova chat's mode menu turns memory on, whatever the chat's model. A terminal can turn it off
 but not on, a terminal session that starts from a default with memory drops it, and workers and

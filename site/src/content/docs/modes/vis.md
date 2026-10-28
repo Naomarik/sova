@@ -31,7 +31,7 @@ Sova draws it with its own code instead of showing the block's text.
 | `vis wireframe` | Low-fidelity phone or desktop screens, with arrows between them; a row can pin blocks to its end, let one block fill the room, share its width in set proportions and line its blocks up |
 | `vis matrix` | A comparison grid with yes, no, partial or text cells |
 | `vis code` | An annotated snippet: highlighted, numbered lines with notes |
-| `vis html`, `vis svg` | Free-form, when no other kind fits (see below) |
+| `vis html`, `vis svg` | Free-form: a clickable prototype of any screen beyond a simple one, something to play with, or a drawing no kind covers (see below) |
 
 Any drawing can **mark** up to 8 items, each with a tone and a short numbered note listed under
 the drawing. Colour is never the only signal: a marked item is also heavier, and carries its
@@ -91,13 +91,25 @@ box, at phone widths too. While the agent is still writing a block, its place ho
 - **Broken.** A block that can't be read shows as an ordinary code block, with a line saying why:
   "Couldn't draw this vis {kind} block (line N: …), so here is its source."
 
-When a reply has a broken block, Sova tells the agent with a hidden note, once, and the agent gets
-one more chance in the same run to re-send only the fixed blocks. The broken block stays visible
-above the fix.
+- **Cramped.** A wireframe whose labels would be squeezed into boxes too narrow to read still
+  draws, with no warning line; Sova treats it like a broken block (below).
+
+When a reply has a broken block or a cramped wireframe, Sova tells the agent with a hidden note,
+once, and the agent gets one more chance in the same run to re-send only the fixed blocks (or, for
+a dense screen, a clickable `vis html` prototype instead). The first drawing stays visible above the
+fix. This happens wherever the agent draws: with vis on, or with align on in a chat that started
+with Visuals, where it also covers the drawings on the alignment card.
+
+A wireframe sizes itself by what it holds: a short desktop dialog stays small and one holding a
+layout or a form takes most of the screen, a grid has as many columns as its room holds, and text
+wraps between words, never letter by letter.
 
 ## Free-form drawings, and safety
 
-`vis html` and `vis svg` are the fallback when no kind fits. The model's markup never enters
+`vis html` is the agent's default for any screen beyond a simple one (where the look and feel
+matters, panes side by side, an editor in a dialog, a dense desktop layout), without your asking
+for HTML; a wireframe stays for simple screens and flows across screens. `vis html` and `vis svg`
+also draw something to play with, or a picture no kind covers. The model's markup never enters
 Sova's own page:
 
 - It runs in a sandboxed frame, cut off from Sova's page, whose rules block scripts, styles,
@@ -120,7 +132,8 @@ Sova's own page:
 With vis on, the agent has a short entry in its instructions: when to draw, and one line per kind.
 Each kind's exact syntax comes from a `vis_guide` tool, which the agent calls before the first
 drawing of a kind in a chat, so a reply that draws nothing carries no drawing grammar. A
-`vis_check` tool, in chats Sova runs, lets it test a free-form block before sending it. Both tools
+`vis_check` tool, in chats Sova runs, lets it test a free-form block or a wireframe before sending
+it. Both tools
 come and go with the mode, and a chat with align on that started with Visuals has them too. The
 `tour` entry instead returns its recording workflow, with Sova's hosted `record_tour` and
 `show_tour` tools. Tour tools require vis mode on; align with Visuals alone keeps drawing tools

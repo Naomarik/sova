@@ -10,6 +10,7 @@ import { BATON_DECISION_ENTRY, OPERATOR } from "../shared/baton";
 import type { DecisionProvider, DecisionRequest } from "./decide";
 import { scratchRoot } from "./test-scratch";
 import { until } from "./test-wait";
+import { readSpecFs, serialize } from "../pi-config/extensions/spec/core/layout.mjs";
 
 // In no repository: each spec-only client below is a plain folder, so promotions commit nowhere.
 const tmp = scratchRoot("sova-reconcile-");
@@ -140,7 +141,29 @@ async function asARunWould(orgId: string, projectId: string, rows: { id: string;
     await hostOf(orgId).act(decisions.decisionSid(orgId, projectId, id), "reconcile/result", result, envelopeFor(orgId, projectId, { by: "system", attended: false }), { settle: true });
 }
 
-const specManifest = (root: string) => JSON.parse(readFileSync(join(root, ".sova", "spec", "manifest.json"), "utf8"));
+// A spec directory's records, in whichever layout it holds them (a new spec starts in format 2: each area's
+// records in the .json beside its claim file), shaped as `{claims}` for the assertions below.
+function recordsIn(specDir: string): Record<string, any> {
+  const s = readSpecFs(specDir, ".");
+  if (s.state !== "present" || s.problems.length) throw new Error(`${specDir}: no readable spec`);
+  return s.records as Record<string, any>;
+}
+const specManifest = (root: string) => ({ claims: recordsIn(join(root, ".sova", "spec")) });
+const draftManifest = (root: string) => ({ claims: recordsIn(join(root, ".sova", "spec", "drafts", "sova-decisions", "spec")) });
+/** Change current's records in place, in its own layout, as a builder's own promotion would; returns an undo. */
+function editCurrentRecords(root: string, fn: (claims: Record<string, any>) => void): () => void {
+  const dir = join(root, ".sova", "spec");
+  const s = readSpecFs(dir, ".");
+  if (s.state !== "present" || !s.manifest) throw new Error(`${dir}: no readable spec`);
+  const was = new Map(["manifest.json", ...s.recordFiles].map((rel) => [rel, readFileSync(join(dir, rel), "utf8")]));
+  const claims = structuredClone(s.records) as Record<string, any>;
+  fn(claims);
+  for (const [rel, text] of serialize(s.layout, { ...s.manifest, claims }, { prevRecordFiles: s.recordFiles })) {
+    if (text === null) rmSync(join(dir, rel));
+    else writeFileSync(join(dir, rel), text);
+  }
+  return () => { for (const [rel, text] of was) writeFileSync(join(dir, rel), text); };
+}
 
 /** The reconciler's 2 s wait (a settle session's request), passed on the org clock so its due run fires at once;
     then what `find` picks once no run is going (undefined when it never does). */
@@ -338,7 +361,8 @@ describe("decisions → conflicts → draft → promotion", async () => {
     assert.deepEqual(info.decisions.map((d) => d.state).sort(), ["drafted", "drafted"]);
     assert.equal(info.spec.exists, false, "no current spec yet");
     assert.equal(info.spec.draft, "sova-decisions");
-    const dm = JSON.parse(readFileSync(join(client, ".sova", "spec", "drafts", "sova-decisions", "spec", "manifest.json"), "utf8"));
+    assert.equal(JSON.parse(readFileSync(join(client, ".sova", "spec", "drafts", "sova-decisions", "spec", "manifest.json"), "utf8")).formatVersion, 2, "a project with no spec starts in format 2");
+    const dm = draftManifest(client);
     const rid = info.decisions.find((d) => d.id === d30)!.recordId!;
     assert.match(rid, /^§requirements\.invoicing\/[a-z-]+$/);
     assert.deepEqual(dm.claims["§requirements/invoicing"], { kind: "note", authority: "accepted" });
@@ -515,7 +539,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
       assert.equal(byId.get(res)!.supersededBy, kept.id);
       assert.equal(byId.get(done!.b)!.supersededBy, kept.id);
       assert.equal(kept.state, "drafted", JSON.stringify(kept));
-      const dm = JSON.parse(readFileSync(join(client, ".sova", "spec", "drafts", "sova-decisions", "spec", "manifest.json"), "utf8"));
+      const dm = draftManifest(client);
       assert.ok(dm.claims[kept.recordId!], JSON.stringify({ kept, run: reconcile.listDecisions(org.id, project.id).lastRun, keys: Object.keys(dm.claims) }));
       assert.deepEqual(dm.claims[kept.recordId!].provenance.map((p: any) => p.quote), [kept.quote, "Two days."]);
       assert.equal(dm.claims[byId.get(res)!.recordId ?? "none"], undefined, "no second record");
@@ -636,14 +660,11 @@ describe("decisions → conflicts → draft → promotion", async () => {
     writeFileSync(md, bytes);
     assert.equal(reconcile.specStatusOf(org.id, project.id).editedOutside, false);
     // A builder recording evidence writes the spec too: frozen means only promotion does.
-    const mf = join(client, ".sova", "spec", "manifest.json");
-    const mbytes = readFileSync(mf, "utf8");
-    const m = JSON.parse(mbytes);
-    const rid = Object.keys(m.claims).find((k) => k.startsWith("§requirements.invoicing/"))!;
-    m.claims[rid].evidence = "verified";
-    writeFileSync(mf, JSON.stringify(m));
+    const undo = editCurrentRecords(client, (claims) => {
+      claims[Object.keys(claims).find((k) => k.startsWith("§requirements.invoicing/"))!].evidence = "verified";
+    });
     assert.equal(reconcile.specStatusOf(org.id, project.id).editedOutside, true);
-    writeFileSync(mf, mbytes);
+    undo();
     await reconcile.setFrozen(org.id, project.id, false);
     writeFileSync(md, `${bytes}\nA hand edit.\n`);
     assert.equal(reconcile.specStatusOf(org.id, project.id).editedOutside, undefined);
@@ -907,7 +928,7 @@ describe("restatements, confirmations and resolutions that say something else", 
       const d = byId();
       assert.ok(d.get(t30)!.folded?.includes(id));
       assert.equal(d.get(t30)!.state, "drafted", "the kept rule stays promotable");
-      const dm = JSON.parse(readFileSync(join(client, ".sova", "spec", "drafts", "sova-decisions", "spec", "manifest.json"), "utf8"));
+      const dm = draftManifest(client);
       const records = Object.entries(dm.claims).filter(([k, v]: [string, any]) => k.startsWith("§requirements.terms/") && !v.supersededBy);
       assert.equal(records.length, 2, `the 30-day rule and the Friday rule, no duplicate: ${records.map(([k]) => k)}`);
     } finally {
@@ -1100,7 +1121,6 @@ describe("the decisions layer owns only its fields", async () => {
   const kim = await orgs.addPerson(org.id, { name: "Kim Park", role: "Finance", decides: ["invoicing"] });
   const s = await baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Invoices", goal: "g" });
   const md = join(client, ".sova", "spec", "claims", "requirements", "invoicing.md");
-  const manifestFile = join(client, ".sova", "spec", "manifest.json");
   let a = "";
   let b = "";
   const row = (info: { decisions: { id: string }[] }, id: string) => info.decisions.find((d) => d.id === id) as any;
@@ -1115,12 +1135,12 @@ describe("the decisions layer owns only its fields", async () => {
     assert.equal(row(r.info, a).build, "not-built");
     assert.deepEqual([r.info.spec.built, r.info.spec.notBuilt], [0, 2]);
     // The builder, in spec mode on its branch, records evidence and code, relabels, and the file's layout differs.
-    const m = specManifest(client);
     const ra = row(r.info, a).recordId;
     const rb = row(r.info, b).recordId;
-    Object.assign(m.claims[ra], { evidence: "verified", code: ["src/due.js"] });
-    Object.assign(m.claims[rb], { authority: "migrated", requires: [] });
-    writeFileSync(manifestFile, `${JSON.stringify(m, null, 2)}\n`);
+    editCurrentRecords(client, (claims) => {
+      Object.assign(claims[ra], { evidence: "verified", code: ["src/due.js"] });
+      Object.assign(claims[rb], { authority: "migrated", requires: [] });
+    });
     writeFileSync(md, `${readFileSync(md, "utf8")}\n\n`);
     const info = await reconcile.reconcileProject(org.id, project.id);
     assert.equal(row(info, a).state, "promoted", "evidence and code are the spec layer's");
@@ -1143,7 +1163,7 @@ describe("the decisions layer owns only its fields", async () => {
     assert.equal(row(drafted, a).state, "drafted", "a folded quote is the decisions layer's: promotable again");
     const ra = row(drafted, a).recordId;
     const rb = row(drafted, b).recordId;
-    const draftRec = JSON.parse(readFileSync(join(client, ".sova", "spec", "drafts", "sova-decisions", "spec", "manifest.json"), "utf8")).claims[ra];
+    const draftRec = draftManifest(client).claims[ra];
     assert.equal(draftRec.evidence, "verified", "the draft keeps the builder's evidence");
     assert.deepEqual(draftRec.code, ["src/due.js"]);
     const before = readFileSync(md, "utf8");

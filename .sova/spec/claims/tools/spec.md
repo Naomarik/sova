@@ -357,8 +357,11 @@ it was merged from, byte for byte, or the promotion is refused as a conflict and
 
 Two Git branches that each promoted spec changes merge without a conflict unless they changed the
 same promise. `.gitattributes` routes the claim files through the draft tool's `merge-claims`
-driver and `manifest.json` through `merge-manifest`; Git needs each defined once per clone, and the
-setup names no project path but the tools' own. `merge-claims` merges a claim file per declaration
+driver; Git needs it defined once per clone, and the setup names no project path but the tools' own.
+A version 1 project also routes `manifest.json` through `merge-manifest`. A version 2 project,
+Sova's among them, routes neither `manifest.json` nor its record files through a driver: Git's own
+line merge merges them, and an older branch whose `.gitattributes` still names `merge-manifest` gets a
+conflict from it, never a quiet merge (§tools.spec/record-layout). `merge-claims` merges a claim file per declaration
 the same way promotion does (§tools.spec/span-promotion), with the merge base, ours and theirs in
 the roles of base, current and draft, so the merged file has the bytes the two promotions give when
 landed one after the other in one tree, in either order. The driver finds declarations from the
@@ -456,8 +459,10 @@ to finish unless every record, the project settings, and `check`'s declarations,
 are the same before and after. With `--drafts` it converts every draft too, and each draft's
 `status` and `diff` stay as they were; it keeps each draft's old files so `--reverse` can restore
 them. On a mixed spec it finishes the move, and refuses a record that differs between the two places.
-No project is converted unless someone runs it; Sova's own spec stays in version 1 until a later
-change converts it.
+No existing project is converted unless someone runs it. A project that starts its spec with the
+draft tool (`new` where no spec exists) starts in version 2: the draft's `manifest.json` is
+`formatVersion` 2 with the `claims` string, and each record it gains goes beside its claim file.
+Sova's own spec is in version 2.
 
 ## §tools.spec/agreed-promotion — An agreed promise lands in the main spec before it is built
 
@@ -594,6 +599,35 @@ graph's warning count, how many of those warnings current does not already have
 (`warningsIntroduced`), and names at most five claims whose mapped code changed under unchanged
 prose, with their total count and the core `foreign --landing` command that lists every one.
 
+## §tools.spec/draft-official — One rule says whether a draft is official
+
+A draft is **official** in a work tree when every claim it changed reads, in that tree's current
+spec, either what the draft says or what a promotion recorded in that tree wrote for it, other than
+the text the draft started from (an earlier promotion its baseline already held speaks for nothing
+it changed). Prose also counts when its blocks carry the draft's change: every block (a paragraph,
+a list item, a table row, a heading; the units a Git merge of claim files merges by,
+§tools.spec/git-merge) the draft added is there, and every one it removed is gone, as a merge of
+another change to the same claim leaves it. A claim here is one § id's record, read wherever
+the tree keeps it (`manifest.json`, or its area's record file, §tools.spec/record-layout), or its prose, its declaration's span in its claim file; the non-blank lines of a claim file outside
+every declaration, and each other manifest key, count as one claim more. A draft changed a claim when its proposal differs from its baseline there. A promotion
+recorded in the tree is any promotion receipt of any draft in its `.sova/spec/drafts/`: each
+promotion records, beside the files it wrote, a hash of each claim it wrote as the draft said it
+and as it wrote it. So:
+
+- a draft promoted as it stands is official, and so is one whose claim a later draft of the same
+  tree reworded and promoted;
+- a draft never promoted isn't, nor one whose claim a catch-up merge replaced with the base
+  branch's text, a hand edit changed, or the draft itself changed again after its promotion;
+- a merge that changes only other claims of the same files, or other blocks of the same claim, the
+  merge round's own merge of master included, changes nothing.
+
+A receipt written before claims were recorded counts, for each id it names, what its own draft now
+says there. The rule is one function of the draft tool, run on the drafts' and the spec's files
+alone, with no Git and no other process. The tool's `drafts` and `prune --official`
+(§tools.spec/draft-hygiene) and Sova's readiness (§chat.worktrees/readiness) call it; the merge
+round's driver reads the verdict `drafts` reports (§chat.merge-round/driver). A draft the rule can't
+read is never official, for each of them.
+
 ## §tools.spec/draft-hygiene — Drafts left behind are reported, and only an approved list or confirmed-official drafts are pruned
 
 `draft drafts` reads every draft of the project (`--worktrees`: of every Git work tree of its
@@ -601,12 +635,18 @@ repository too) and writes nothing. Each draft gets its age (days since its last
 evidence recorded or promoted), one state with the reasons for it, and a suggested action:
 `landed` (an id is still pending while its implementation is on the default branch: a commit its
 evidence names is in that branch, or the work tree's own branch was merged into it after the draft
-was made) suggests promote; `promoted` (every id is already current, was promoted by this draft
-before current moved on, or is on the default branch exactly as the draft says it), `superseded` (nothing pending, and an id current changed differently) and
+was made) suggests promote; `promoted` (every id is already current, or was promoted by this draft
+before current moved on), `superseded` (nothing pending, and an id current changed differently) and
 `empty` (it changes nothing and is older than the age limit) suggest delete; `old` (pending, older
 than the limit, 7 days unless `--days N`), `active` and `unreadable` suggest keep, `landed` with
-the ids whose evidence must be re-recorded first. Each draft also lists `promotedConflict`: the ids
-it promoted before that current now says differently, which count as current in its state. The default branch is the one
+the ids whose evidence must be re-recorded first. Each draft carries the rule's verdict,
+`official` (§tools.spec/draft-official; false for one it can't read), and its ids sort by it: an id
+the rule calls official counts as current, so a draft a later promoted draft reworded reads
+`promoted`; any other is pending or in conflict. Each draft also lists `promotedConflict`: the ids
+in conflict that it promoted before, which count as current in its state but are not official. A
+draft made unofficial only by a claim outside any § (a manifest key, a claim file's lines outside
+its declarations) names no id and reads `active`. A reader that holds work until its drafts are
+official reads `official`, never the state. The default branch is the one
 `promote` names (origin's HEAD, else `master`, else `main`); a project without Git gets no `landed`.
 It exits 1 when any draft is other than `active`.
 
@@ -616,12 +656,12 @@ no draft, a hash that no longer matches (the draft changed after it was approved
 interrupted promotion refuses the whole prune, and nothing is deleted.
 
 `draft prune --official` needs no list: it deletes only drafts the tool itself confirms are already
-official, and keeps every other one. Without `--from` it reads the project's own drafts as `drafts`
-does and deletes those it reads `promoted` with nothing in `promotedConflict`, under the same lock
-and refusal of an interrupted promotion as an approved prune. With `--from DIR` it reads each draft folder directly in `DIR`, a copy
-kept outside the project such as the one a merge round keeps, against the project's current spec
-alone, with no Git: one whose records it changes are all already current, at least one, is deleted;
-one with any record pending or in conflict, one that changes nothing, and one it can't read are kept.
+official, and keeps every other one. It reads each draft folder of the project's own drafts, or
+with `--from DIR` of `DIR` (copies kept outside the project, such as the ones a merge round keeps),
+against the project's current spec by the same rule (§tools.spec/draft-official), with no Git; in
+the project, under the same lock and refusal of an interrupted promotion as an approved prune. One
+that changes at least one claim, every one official, is deleted; one with a claim that isn't, one that changes nothing, and one
+it can't read are kept.
 Without `--write` either form only lists what it would delete and what it keeps, with why. No other
 command deletes a draft, and none suggests deleting one that still has a pending id.
 
@@ -951,7 +991,7 @@ or an untrusted graph.
 
 ## §tools.spec/record-fields — Optional `embeds`, `core`, `about` and `notOwned` record fields
 
-A manifest record may carry four optional fields, each project flagging its own records; none is a
+A record may carry four optional fields, each project flagging its own records; none is a
 new kind, label value or top-level key, so a core that predates them reads the same manifest and
 ignores them. `embeds: [§id]` names surfaces drawn inside this claim, which a reader of it needs
 whole. `core: true` marks a claim, typically an H2, as part of the always-on frame (see

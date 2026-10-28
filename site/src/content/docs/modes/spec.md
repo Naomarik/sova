@@ -9,8 +9,9 @@ order: 6
 ## The project's spec
 
 A project's spec is its documentation of what the product does, kept in the repository under
-`.sova/spec/`: Markdown files that state the claims, and a record of each claim, kept either in one
-`manifest.json` or in a small file beside each Markdown file (the tools read both). A
+`.sova/spec/`: Markdown files that state the claims, and a record of each claim in a small file
+beside its Markdown file (an older spec may keep every record in one `manifest.json`; the tools read
+both, and one command converts it). A
 claim is one promise about the product, listed with the files that implement it and labels saying
 how far it has been checked. A project with no spec yet can start one: the agent begins it in a
 draft.

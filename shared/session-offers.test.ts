@@ -5,6 +5,8 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { COMMANDS, findCommand } from "./commands-catalog.ts";
 import {
+  checkRows,
+  fillRow,
   fillText,
   liveOffer,
   normalizeOfferDetails,
@@ -13,6 +15,7 @@ import {
   OFFERS_MAX,
   parseOffersFile,
   rarelyUsed,
+  rowKeysOf,
   RUN_ALLOWED,
   runAllowed,
   runButtonsOf,
@@ -120,6 +123,10 @@ test("Sova's own offers file parses, and gives no Sova chat the tool", () => {
     ],
   );
   assert.deepEqual(landing.onlyIf, ["no-open-alignment", "ready-to-land"]);
+  // The captain's landing card (§chat.offers/landing-rows): rows, and Land All naming the rows it lands.
+  assert.equal(landing.rows?.max, 10);
+  assert.equal(landing.rows?.all?.label, "Land All");
+  assert.match(landing.rows?.all?.confirm ?? "", /\{rows\}/);
   assert.equal(JSON.parse(readFileSync(new URL("../.sova/offers.json", import.meta.url), "utf8")).mainMerges, undefined, "Sova's repository has no merge guard switch");
   assert.equal(snapshotOf(f), null);
 });
@@ -152,4 +159,41 @@ test("fills, details and the rarely-used hint", () => {
   assert.equal(rarelyUsed(4, 0), false);
   assert.equal(rarelyUsed(5, 0), true);
   assert.equal(rarelyUsed(5, 1), false);
+});
+
+test("rows: the shape, the caps and the placeholders (§chat.offers/file, §chat.offers/buttons)", () => {
+  const rowsOffer = (over: Record<string, unknown> = {}) => offer({ rows: { max: 3 }, buttons: [{ label: "Review", about: "Reviews it.", send: "Review {row.file}.", confirm: "Review {row.file} in {project}?" }], ...over });
+  const ok = parseOffersFile(file({ r: rowsOffer({ rows: { max: 3, all: { label: "Review All", about: "Reviews all.", confirm: "Review {rows}?" } } }) }));
+  assert.ok(ok.state === "ok" && ok.offers[0]!.ok, JSON.stringify(ok));
+  const def = ok.state === "ok" && ok.offers[0]!.ok ? ok.offers[0]!.def : null;
+  assert.deepEqual(rowKeysOf(def!), ["file"]);
+  assert.equal(fillRow("Review {row.file}.", { file: "a.ts" }), "Review a.ts.");
+  for (const [over, re] of [
+    [{ rows: { max: 11 } }, /whole number from 1 to 10/],
+    [{ rows: { max: 0 } }, /whole number from 1 to 10/],
+    [{ rows: { max: 2, more: 1 } }, /unknown key "more"/],
+    [{ rows: { max: 2, all: { label: "All", about: "x" } } }, /needs "confirm"/],
+    [{ rows: { max: 2, all: { label: "All", about: "x", confirm: "{row.file}" } } }, /only an offer with "rows" fills|only \{branch\}/],
+    [{ rows: { max: 2, all: { label: "Review", about: "x", confirm: "c" } } }, /already is/],
+    [{ rows: { max: 2 }, buttons: [{ label: "Run", about: "Runs.", run: "project.worktree.merge" }] }, /send buttons only/],
+    [{ rows: { max: 2 }, buttons: [{ label: "R", about: "R.", send: "{row.Bad_Key}" }] }, /a row key is lowercase/],
+  ] as const)
+    assert.match(errorOf(file({ r: rowsOffer(over) }), "r"), re, JSON.stringify(over));
+  // {row.<key>} belongs only to an offer that declares rows.
+  assert.match(errorOf(file({ p: offer({ buttons: [{ label: "R", about: "R.", send: "Review {row.file}." }] }) }), "p"), /only an offer with "rows"/);
+  // Rows as a shower supplies them: strict, capped at the file's max and at 10.
+  const ten = parseOffersFile(file({ r: rowsOffer({ rows: { max: 10 } }) }));
+  const tenDef = ten.state === "ok" && ten.offers[0]!.ok ? ten.offers[0]!.def : null;
+  assert.equal(checkRows(tenDef!, Array.from({ length: 10 }, (_, i) => ({ label: `f${i}`, values: { file: `f${i}` } }))).ok, true);
+  const eleven = checkRows(tenDef!, Array.from({ length: 11 }, (_, i) => ({ label: `f${i}`, values: { file: `f${i}` } })));
+  assert.ok(!eleven.ok && /at most 10/.test(eleven.error));
+  const multi = checkRows(tenDef!, [{ label: "a\nb", values: { file: "x" } }]);
+  assert.ok(!multi.ok && /one line/.test(multi.error));
+});
+
+test("a card's rows read back strictly from the wire", () => {
+  const card = { id: "of_1", name: "landing", title: "Branches ready to land", buttons: [], at: "t", by: "another-chat", state: "open", rows: [{ id: "r_1", label: "feat/x", buttons: [{ label: "Land It", about: "a", kind: "send" }], state: "chosen", choice: { index: 0, label: "Land It", at: "t", where: "Merge Captain" }, progress: "landing", branch: "feat/x", commit: "abc1234", owner: { id: "o", title: "Fix" } }], all: { label: "Land All", about: "a", confirm: "c", rows: ["r_1"] }, more: 2 };
+  const back = normalizeOfferDetails({ v: 1, card });
+  assert.deepEqual(back, card);
+  assert.equal(normalizeOfferDetails({ v: 1, card: { ...card, rows: [{ ...card.rows[0], state: "bogus" }] } }), undefined, "a bad row makes no card");
 });

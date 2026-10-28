@@ -60,8 +60,7 @@ import { canonicalPath } from "./paths";
 import { startableIn } from "./project-folder";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
-import { displayTitleOf, getSessionSummary, idOf, indexedSessionPaths, listSessions } from "./sessions-index";
-import { setArchived } from "./archived-sessions";
+import { displayTitleOf, getSessionSummary, idOf, indexedSessionPaths, listSessions, markArchived } from "./sessions-index";
 import { actOrThrow, heldAt, holdByRef, holdRef, refusalError } from "./org-engine";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { listPreviews, PreviewRefused } from "./preview-links";
@@ -76,6 +75,8 @@ import type { Envelope, LedgerCounts } from "./org-envelope";
 import { ledgerOf } from "./org-stamp";
 import { rowsOf } from "./transcript";
 import { joinedText, readBranch } from "./harness/pi/reader";
+import { confirmedClicks } from "./overseer-copies";
+import type { ClickChoice } from "../shared/overseer-card";
 import { projectOverseerUnread } from "./project-overseer-unread";
 import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
@@ -179,6 +180,13 @@ function attendedOf(rt: Rt): boolean {
   if (run && run.call.chatId === rt.chatId) return run.call.attended;
   return (rt.chatId ? chatHandle(rt.chatId)?.mirror.attended : false) ?? false;
 }
+/** The operator's click that opened this run, per card row with its chosen label (§app.overseer/copies): only a
+    server-hosted tool's run of this overseer's chat carries the click's mark; anything else has none. */
+function clicksOf(rt: Rt): ClickChoice[] | null {
+  const run = serverToolCall();
+  if (!run || run.call.chatId !== rt.chatId) return null;
+  return confirmedClicks(run.call.card, run.chat.branch(), (h) => joinedText(h, { images: false }));
+}
 function rtOf(projectId: string): Rt {
   let rt = rts.get(projectId);
   if (!rt) {
@@ -236,7 +244,10 @@ const droppedSince = (before: OverseerState | null, after: OverseerState | null)
 /** Archive conversations past the history's 20; they stay in the workspace repo, like every
     workspace file (Clean Up never deletes one, §app.session-list/cleanup-org-guard). */
 async function dropHistory(ids: string[]): Promise<void> {
-  for (const id of ids) if (await pathOfId(id)) setArchived(id, true);
+  for (const id of ids) {
+    const path = await pathOfId(id);
+    if (path) await markArchived(id, path);
+  }
 }
 
 /** The project statechart's overseer region (its watch reads has-overseer from it): `overseer/start` when it has
@@ -690,6 +701,7 @@ function toolHost(rt: Rt): PoToolHost {
     settings,
     effective: () => powersOf(projectId, settings()),
     attended: () => rt.attended(),
+    confirmedClicks: () => clicksOf(rt),
     overseerId: () => readPoState(paths)?.current ?? "",
     engine,
     gaps: () => gapsOf(engine(), projectId),

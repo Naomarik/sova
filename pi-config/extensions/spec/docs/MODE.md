@@ -27,7 +27,7 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
 | Merge note | `worktrees/spec.ts` | When a worktree merge is recorded, it adds the landing's warnings to the merge note: changed files no claim maps, draft records left behind, hand-resolved §, orphaned evidence. This applies in any project with a spec, mode on or off. |
 | Spec writer setting | `mode/spec.ts`, `server/spec-settings.ts` | Which worker (backend · model · effort) writes draft claims and evidence while spec is on. The legacy file is `<agent dir>/mode-spec.json`; Sova's Settings → Subagents now edits it per profile. `null` means the session writes the spec itself. |
 | The tools | `spec/core/*.mjs` | Read-only `sova-spec.mjs`, `sova-spec-draft.mjs` (drafts, evidence, promotion, `merge-manifest`, `migrate`), the review companion, and the modules they load. `layout.mjs` is the one reader and writer of records, in both layouts (one list in `manifest.json`, or one beside each claim file); Sova's server readers, the merge round and the release check use it or `sova-spec.mjs records`. |
-| Manifest merge driver | `.gitattributes`, `sova-spec-draft.mjs merge-manifest` | `.sova/spec/manifest.json` merges record by record in Git, through a driver each clone defines once (below). |
+| Merge drivers | `.gitattributes`, `sova-spec-draft.mjs merge-claims`, `merge-manifest` | Claim files merge per declaration in Git, through a driver each clone defines once (below). Record files (`claims/**/*.json`, format 2) and `manifest.json` use Git's own line merge; `merge-manifest` finishes a merge across the two layouts, and is a format 1 project's manifest driver. |
 
 ## How they connect
 
@@ -91,15 +91,16 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
 ## The merge driver, once per clone
 
 ```sh
-git config merge.sova-spec-manifest.driver \
-  'node pi-config/extensions/spec/core/sova-spec-draft.mjs merge-manifest --root . --base %O --ours %A --theirs %B --write'
 git config merge.sova-spec-claims.driver \
   'node pi-config/extensions/spec/core/sova-spec-draft.mjs merge-claims --root . --base %O --ours %A --theirs %B --path %P --write'
 ```
 
-`.gitattributes` routes `.sova/spec/manifest.json` to `merge=sova-spec-manifest` and `.sova/spec/claims/**/*.md`
-to `merge=sova-spec-claims`. Worktrees share the clone's
-config. Without the driver, Git falls back to its line merge.
+`.gitattributes` routes `.sova/spec/claims/**/*.md` to `merge=sova-spec-claims`. Worktrees share the
+clone's config. Without the driver, Git falls back to its line merge. Sova's spec is in format 2, so
+`manifest.json` and the record files have no driver; a format 1 project also routes `manifest.json` to
+`merge=sova-spec-manifest` (DRAFTS.md). A branch from before Sova's conversion still names that driver in
+its own `.gitattributes`; the driver refuses the format 2 `manifest.json`, so the merge stops with a
+conflict that `merge-manifest --write` finishes.
 
 ## Where the requirements live
 

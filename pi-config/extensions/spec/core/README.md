@@ -45,7 +45,8 @@ Each promise has its prose (a declaration in `claims/<path>.md`) and a record (k
   `a/b.json`; a directory kind `§section.x/y` in `section/x/y.json`). A record file is a plain JSON
   object of id → record, ids in code-point order, 2-space indent and a trailing newline; an area with
   no records has no record file. Record values are byte-for-byte those of format 1, so evidence bound
-  to a record stays valid across the two.
+  to a record stays valid across the two. A new spec (`sova-spec-draft.mjs new` where none exists)
+  starts in format 2; an existing one stays in its format until someone runs `migrate`.
 
 Every command reads both and gives the same answer on the same spec in either; every reader goes
 through one module, `layout.mjs` (Node standard library only, with `layout.d.mts` for TypeScript
@@ -518,7 +519,8 @@ CLI or capture-local reader):
 - `sova-spec-draft.mjs` handles drafts. `new NAME --write` copies the whole current graph into
   `.sova/spec/drafts/NAME/`. Promotion checks the draft and the merged candidate with
   `check --spec` before it writes anything. A project with no `.sova/spec` starts here: `new`
-  begins from an empty baseline, `{"formatVersion": 1, "claims": {}}`. So there's no separate
+  begins from an empty baseline in format 2: a `manifest.json` of `{"formatVersion": 2, "claims":
+  "records live beside each claim file, in claims/**/*.json"}`, records beside each claim file. So there's no separate
   `init`, and docs are written piecemeal as features are worked on. `merge-manifest` merges a
   conflicted `manifest.json` record by record (as a Git merge driver it writes Git's `%A` file,
   the one write outside `.sova/spec/`). See `../DRAFTS.md`.

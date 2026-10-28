@@ -3,7 +3,8 @@
  *
  * The set is the session's own `worktrees` custom entry (state.ts), a whole snapshot per change,
  * restored from the branch like mode's and the sandbox's. The parent agent manages it with one
- * tool, `worktree` (create, attach, detach, merge, list); there is no command and no pane control.
+ * tool, `worktree` (create, attach, detach, merge, land, list); there is no command and no pane control.
+ * `land` records the user's go-ahead typed in this chat ("land it") for the merge captain (landing.ts).
  * Workers never load this extension (subagents refuses it as a worker extension), so they never
  * have the tool.
  *
@@ -22,6 +23,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { createWorktree, defaultTarget, forkPoint, GitError, type Git, inspectWorktree, landedStats, mergeWorktree, type MergeProbe, probeMerge, runGit } from "./git.ts";
+import { landingFile, newestUserMessage, recordGoAhead, typedGoAhead } from "./landing.ts";
 import { type MergeSpecReport, mergeSpecReport, specLines } from "./spec.ts";
 import {
 	activeTrees,
@@ -50,7 +52,7 @@ const SANDBOX_DISCOVER_EVENT = "sandbox:discover";
 const REMOTE_SESSION_EVENT = "remote:session";
 const REMOTE_DISCOVER_EVENT = "remote:discover";
 
-const Action = StringEnum(["create", "attach", "detach", "merge", "list"] as const);
+const Action = StringEnum(["create", "attach", "detach", "merge", "land", "list"] as const);
 
 /** @internal Test seam. */
 export interface WorktreesOptions {
@@ -58,12 +60,15 @@ export interface WorktreesOptions {
 	now?: () => number;
 	/** The spec report of a merge (default spec.ts `mergeSpecReport`). */
 	specReport?: typeof mergeSpecReport;
+	/** Where `land` records the go-ahead (default landing.ts `landingFile()`). */
+	landingFile?: () => string;
 }
 
 export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = {}) {
 	const git = options.git ?? runGit;
 	const now = options.now ?? Date.now;
 	const specReport = options.specReport ?? mergeSpecReport;
+	const goAheadFile = options.landingFile ?? (() => landingFile());
 	let set: WorktreesActive | undefined;
 	let sessionId = "";
 	let sandboxOn = false;
@@ -201,18 +206,19 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 		name: "worktree",
 		label: "Worktree",
 		description:
-			"Manage the git worktrees this session works in. create {name, base?, path?} runs git worktree add -b feat/<name> (default path <parent of the main checkout>/.worktrees/<repo>-<name>, base the session cwd's HEAD); attach {path} tracks an existing worktree's top level (one another session created is fine); detach {path} stops tracking it (nothing is deleted); merge {path, target?} merges its branch into target (default master) where target is checked out and clean, else fast-forward only; list shows the set. Workers may start only in the session cwd or inside an active tracked worktree.",
+			"Manage the git worktrees this session works in. create {name, base?, path?} runs git worktree add -b feat/<name> (default path <parent of the main checkout>/.worktrees/<repo>-<name>, base the session cwd's HEAD); attach {path} tracks an existing worktree's top level (one another session created is fine); detach {path} stops tracking it (nothing is deleted); merge {path, target?} merges its branch into target (default master) where target is checked out and clean, else fast-forward only; land {path?} records the user's go-ahead, typed in this chat (\"land it\", \"merge it\"), for the merge captain to land the branch at its head (default the worktree this session's folder is in; only when the user's newest message says so, with nothing uncommitted); list shows the set. Workers may start only in the session cwd or inside an active tracked worktree.",
 		promptSnippet: "Create, attach, detach, merge and list this session's git worktrees",
 		promptGuidelines: [
 			"Use the worktree tool, not bash, to create or track a git worktree: workers may only start in this session's cwd or inside a worktree the session tracks.",
 			"Merge a worktree's branch with worktree merge so the merge is recorded; a merge you make with plain git during a turn is detected afterwards.",
+			"When the user types in this chat that its branch should land (\"land it\", \"merge it\"), commit what is left, then call worktree land at once: that records their go-ahead, and the merge captain lands the branch once its checks pass. Never tell the user to press Land It or wait for a Landing card instead; when the branch is ready, tell them they can type \"land it\" here.",
 		],
 		parameters: Type.Object(
 			{
 				action: Action,
 				name: Type.Optional(Type.String({ description: "create: the worktree name; the branch is feat/<name>." })),
 				base: Type.Optional(Type.String({ description: "create: commit or branch to base on (default the session cwd's HEAD)." })),
-				path: Type.Optional(Type.String({ description: "create: where to put it; attach, detach, merge: the worktree (its path, or its branch name)." })),
+				path: Type.Optional(Type.String({ description: "create: where to put it; attach, detach, merge, land: the worktree (its path, or its branch name; land defaults to the worktree this session's folder is in)." })),
 				target: Type.Optional(Type.String({ description: "merge: the branch to merge into (default master)." })),
 			},
 			{ additionalProperties: false },
@@ -256,6 +262,31 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 						if (t.status !== "active") return done(`${t.path} is already ${statusText(t)}.\n${listing()}`);
 						record(withTree(set, { ...t, status: "dropped" }));
 						return done(`Detached ${t.path}; nothing on disk was touched.\n${listing()}`);
+					}
+					case "land": {
+						const newest = newestUserMessage(ctx.sessionManager.getBranch());
+						// Another sender's message is never the user's word, whatever it says (§chat.worktrees/land-own-word).
+						if (newest.sentBy)
+							throw new Error(
+								`The newest message in this chat was sent by ${newest.sentBy}, not typed by the user, so it isn't their go-ahead to land, whatever it says. Nothing was recorded. Only the user's own word lands a branch: "land it" typed by them in this chat (or Go on a Ready to land row of an Overseer card they apply).`,
+							);
+						const word = typedGoAhead(newest.text);
+						if (!word) throw new Error("Only the user's own word lands a branch: their newest message in this chat must say to land or merge it (\"land it\"). Nothing was recorded; ask them to type it here.");
+						const tracked = params.path ? find(params.path, ctx.cwd) : undefined;
+						if (params.path && !tracked) throw new Error(`No tracked worktree ${params.path}.\n${listing()}`);
+						const top = tracked?.path ?? canonical((await git(["rev-parse", "--show-toplevel"], ctx.cwd)).stdout.trim() || ctx.cwd);
+						const f = await inspectWorktree(git, top);
+						const main = await defaultTarget(git, f.path);
+						if (f.branch === main || f.branch === "master" || f.branch === "main") throw new Error(`${f.path} is on ${f.branch}, which branches land into: there is nothing to land. Nothing was recorded.`);
+						const dirty = await git(["status", "--porcelain"], f.path);
+						if (dirty.code !== 0) throw new GitError(`git status failed in ${f.path}: ${dirty.stderr.trim()}`);
+						const files = dirty.stdout.split("\n").filter(Boolean).length;
+						if (files) throw new Error(`${f.branch} has ${files} uncommitted file${files === 1 ? "" : "s"}: the go-ahead is for a commit. Commit or remove them, then call worktree land again. Nothing was recorded.`);
+						recordGoAhead({ branch: f.branch, commit: f.head, ...(sessionId ? { session: sessionId } : {}), at: new Date(now()).toISOString(), by: "owner-chat", ...(word.withoutSpecs ? { withoutSpecs: true as const } : {}) }, goAheadFile());
+						return done(
+							`Recorded the user's go-ahead to land ${f.branch} at ${shortSha(f.head)}${word.withoutSpecs ? ", without its specs" : ""}. The merge captain checks it and lands it once its checks pass: tell the user it is with the captain, and nothing else is needed from them. A new commit on ${f.branch} needs their word again.`,
+							{ landing: { branch: f.branch, commit: f.head, withoutSpecs: word.withoutSpecs }, trees: set?.trees ?? [] },
+						);
 					}
 					case "merge": {
 						if (!params.path) throw new Error("merge needs a path or branch.");

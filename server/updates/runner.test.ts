@@ -224,7 +224,7 @@ test("developer copy: fast-forward, install, build into staging, swap, restart; 
   const w = world(dev(), [CO, `${CO}/dist`, `${CO}/dist-share`]);
   const job = await runUpgrade(devPlan(), w.deps);
   assert.equal(job.state, "succeeded");
-  assert.ok(w.calls.includes(`git -C ${CO} merge --ff-only --quiet ${NEW}`), "on a branch: merge --ff-only");
+  assert.ok(w.calls.includes(`git -C ${CO} -c maintenance.auto=false -c gc.auto=0 merge --ff-only --quiet ${NEW}`), "on a branch: merge --ff-only, starting no background cleanup");
   assert.ok(w.calls.includes("pnpm install --frozen-lockfile"));
   assert.ok(w.calls.includes(`mv ${CO}/dist ${CO}/dist.sova-previous-job1`));
   assert.ok(w.calls.includes(`mv ${CO}/.sova-update-build-job1/dist ${CO}/dist`));

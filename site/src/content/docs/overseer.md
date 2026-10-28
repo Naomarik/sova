@@ -13,7 +13,7 @@ It has no shell. It acts through Sova, with limits you set, and writes files onl
 
 The **Overseer** button, with the eye icon, sits at the right end of the session list's toolbar. When the list is collapsed, the eye alone is there. `Alt+O` opens it from anywhere. The badge on the button counts the Overseer's own messages you haven't read yet. Once a project has a project overseer running, a **▾** joins the button: it lists those overseers, marks the ones with a new reply or a failed last turn, and ends with **All Projects**.
 
-The Overseer is always in the normal mode, with no minor modes, so its composer has no mode switch. In its place is **Quick Actions**, a list of ready-made prompts: What Needs Me, What Finished, What's Running, Tidy Up, and Where Was I. You can edit, add, remove, and reorder them in Settings → Overseer. Just before it, a [memory](/docs/modes/memory/) switch turns the Overseer's memory on or off from its next turn; it starts on.
+The Overseer is always in the normal mode, with no minor modes, so its composer has no mode switch. In its place is **Quick Actions**, a list of ready-made prompts: Get Things Moving (every session stuck on a next step, on one card you apply) and Tidy Up (finished and stale sessions sorted onto one card to archive or keep). Each one ends in a card, and nothing is sent or archived until you apply it. You can edit, add, remove, and reorder them in Settings → Overseer. Just before it, a [memory](/docs/modes/memory/) switch turns the Overseer's memory on or off from its next turn; it starts on.
 
 [**Focus**](/docs/change-direction/#focus-on-the-conversation) works here too: the head keeps only the conversation's title, and Quick Actions go away with the composer until you press it again.
 

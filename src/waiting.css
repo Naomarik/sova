@@ -35,33 +35,34 @@
 }
 .waiting-badge:hover { background: var(--color-sunken); }
 .waiting-badge:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
-/* The reference glyph at ~0.62 scale: 42 units tall, about 26px. */
-.waiting-badge-glyph { display: block; width: 25px; height: 26px; overflow: visible; }
+/* The reference glyph at 0.75 scale: 40 by 42 units, 30px wide and about 31px tall, inside the
+   box's one-line band, so the box keeps its height. */
+.waiting-badge-glyph { display: block; width: 30px; height: 31.5px; overflow: visible; }
 
 .waiting-badge-track,
-.waiting-badge-progress { fill: none; stroke-width: 3; stroke-linecap: round; }
+.waiting-badge-progress { fill: none; stroke-width: 2.6; stroke-linecap: round; }
 .waiting-badge-track { stroke: var(--color-border-strong); }
 .waiting-badge-progress { stroke: var(--color-accent); }
 .waiting-badge-count {
   fill: var(--color-ink);
   font-family: var(--font-body);
-  font-size: 10px;
-  font-weight: var(--fw-semibold);
+  font-size: 14px; /* 11.5 for two digits, 9.2 for 99+: the inline style, countSize() */
+  font-weight: 700;
   text-anchor: middle;
   font-variant-numeric: tabular-nums;
 }
 .waiting-badge-dot { fill: var(--color-ink); }
 /* The numeral rides over the ring's top; a surface-coloured halo keeps it clear of the track. A
-   serif, as the agreed reference draws it (al_1): Inter's I and II read as bars at 8px. */
+   serif, as the agreed reference draws it (al_1): Inter's I and II read as bars. */
 .waiting-badge-cards {
   fill: var(--color-accent);
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 8px;
+  font-size: 12.5px;
   font-weight: 700;
   text-anchor: middle;
   paint-order: stroke;
   stroke: var(--color-surface);
-  stroke-width: 3px;
+  stroke-width: 4px;
 }
 
 /* Nothing undecided and no card: muted, the accent gone, low opacity. Still a button. */
@@ -126,3 +127,11 @@
 .waiting-item-foot .offer-card-actions > .offer-card-confirm { flex-basis: 100%; display: flex; flex-direction: column; gap: var(--space-2); }
 .waiting-item-foot .offer-card-actions > .offer-card-confirm > p { margin: 0; }
 .waiting-show { margin-left: auto; }
+
+/* A rows card's rows (§chat.offers/card, Rows): the row's line, its owner chat as a link of its own, then
+   its buttons or its state. The row itself is never a link. */
+.offer-card-row { gap: var(--space-1); padding-block: var(--space-2); }
+.offer-card-row .overseer-confirm-answer { margin: 0; }
+.overseer-confirm-item-meta.offer-card-row-owner { color: var(--color-accent); white-space: normal; overflow-wrap: anywhere; }
+.offer-card-row .offer-card-actions > .offer-card-confirm { display: flex; flex-direction: column; gap: var(--space-2); }
+.offer-card-row .offer-card-confirm > p { margin: 0; }

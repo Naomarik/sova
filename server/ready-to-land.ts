@@ -1,13 +1,13 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { WorktreeLanding } from "../shared/protocol";
+import type { ReadinessState, WorktreeLanding } from "../shared/protocol";
 import { isExcluded, readDecisionSettings } from "./decide-settings";
 import { stateRoot } from "./state-root";
-import { latestOutcome } from "./turn-outcomes";
+import { latestOutcome, type TurnOutcomeRecord } from "./turn-outcomes";
 
 /**
  * Ready to land (§chat.worktrees/ready-to-land): a worktree's head commit whose work is finished, kept
- * once it is so for that commit. The pure rule is `landingLive` (the code-only conditions) plus
+ * once it is so for that commit. The pure rule is `landingLive` (the code-only conditions, on the tree's readiness) plus
  * "finished" (`finishedOf`, the turn card's outcome; the code-only conditions alone when Decisions'
  * attention signals are off). The store, `<state root>/ready-to-land.json`, keeps per session and tree
  * the commit that was Ready to land and whether Sova told the session to land its specs for it:
@@ -44,16 +44,11 @@ export interface LandingSession {
     excluded), so the code-only conditions decide alone. */
 export type Finished = "yes" | "no" | "off";
 
-/** The live conditions (§chat.worktrees/ready-to-land): no uncommitted file at all, a commit ahead,
-    no conflict, no temporary commit, the newest check not failing, no open question, nothing running. Pure. */
-export function landingLive(t: LandingTree, s: LandingSession): boolean {
-  if (!t.readable || t.merged || !t.head) return false;
-  if (t.dirty || (t.dirtyCount ?? 0) > 0) return false;
-  if (!t.ahead || t.ahead < 1) return false;
-  if (t.conflicts || t.tempCommit) return false;
-  if (s.lastCheck && !s.lastCheck.ok) return false;
-  return s.openQuestions === 0 && !s.running;
-}
+/** The live conditions (§chat.worktrees/ready-to-land): the tree's readiness is ready or waiting (a commit ahead,
+    no conflict, no temporary commit, the newest check not failing, no open question, nothing running), with
+    a head and no uncommitted file at all. Pure. */
+export const landingLive = (t: LandingTree, state: ReadinessState): boolean =>
+  !!t.head && !t.dirty && !t.dirtyCount && (state === "ready" || state === "waiting-approval");
 
 /** One thing that keeps a finished branch from Ready to land, as Sova's note counts it, and what fixes it. */
 export interface LandingBlocker {
@@ -73,8 +68,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
  * running, an open question: none of those is the session's to fix now). Pure.
  */
 export function landingBlockers(t: LandingTree, s: LandingSession, drafts: readonly string[] | undefined): LandingBlocker[] | undefined {
-  if (!t.readable || t.merged || !t.head || !t.ahead || t.ahead < 1) return undefined;
-  if (s.running || s.openQuestions > 0) return undefined;
+  if (!t.readable || t.merged || !t.head || !t.ahead || s.running || s.openQuestions > 0) return undefined;
   const out: LandingBlocker[] = [];
   const dirty = t.dirtyCount ?? (t.dirty ? 1 : 0);
   if (dirty > 0) {
@@ -91,11 +85,12 @@ export function landingBlockers(t: LandingTree, s: LandingSession, drafts: reado
 }
 
 /** The message Sova sends a finished session whose branch can't be offered for landing yet (§chat.worktrees/ready-to-land).
-    It names what blocks the card and never mentions Land It: there is no card to press. */
+    It names what blocks the landing and never mentions Land It or a card: there is no card to press. Once nothing
+    blocks it, the user's typed go-ahead lands it, which the session records with `worktree land`. */
 export function blockedNoteText(branch: string, commit: string, blockers: readonly LandingBlocker[]): string {
   const list = blockers.map((b) => b.text).join(", ");
   const fixes = blockers.map((b) => b.fix).join("; ");
-  return `Sova: ${branch} is finished at ${commit.slice(0, 7)}, but it can't be queued to land yet: ${list}. On ${branch}, ${fixes}. Its landing card shows only once nothing blocks it.`;
+  return `Sova: ${branch} is finished at ${commit.slice(0, 7)}, but it can't be queued to land yet: ${list}. On ${branch}, ${fixes}. Once nothing blocks it, the user's go-ahead lands it: when they type "land it" in this chat, record it with the worktree tool's land action.`;
 }
 
 /** The line a session answers with when it can't land its specs. */
@@ -107,8 +102,8 @@ export const specsWhyOf = (reply: string | undefined): string | undefined => {
 };
 
 /** A tree's landing, or undefined. `held`: the store says this head was Ready to land already. Pure. */
-export function landingOf(t: LandingTree, s: LandingSession, finished: Finished, held: boolean, drafts: readonly string[] | undefined, specsWhy?: string): WorktreeLanding | undefined {
-  if (!landingLive(t, s)) return undefined;
+export function landingOf(t: LandingTree, state: ReadinessState, finished: Finished, held: boolean, drafts: readonly string[] | undefined, specsWhy?: string): WorktreeLanding | undefined {
+  if (!landingLive(t, state)) return undefined;
   if (!held && finished === "no") return undefined;
   const left = drafts?.length ? [...drafts] : undefined;
   return { state: left ? "specs" : "ready", commit: t.head!, ...(left ? { drafts: left } : {}), ...(left && specsWhy ? { specsWhy } : {}) };
@@ -121,13 +116,22 @@ export function landingReason(l: WorktreeLanding, ahead?: number): string {
   return ["Landing specs", `${n} draft${n === 1 ? "" : "s"}`, ...(l.specsWhy ? [`can't land them: ${l.specsWhy}`] : [])].join(" · ");
 }
 
+/** Whether one turn outcome says the last reply's work is finished (§chat.worktrees/ready-to-land): it is
+    that reply's, and it did what was asked, or it waits only for the go-ahead to land, merge, push or
+    restart, from the user or the merge captain. Pure. */
+export function finishedFromOutcome(rec: TurnOutcomeRecord | undefined, lastReplyId: string | undefined): "yes" | "no" {
+  if (!rec || !lastReplyId || rec.turnId !== lastReplyId) return "no";
+  if (rec.outcome === "did-what-was-asked") return "yes";
+  const waits = rec.outcome === "waiting-on-user" || rec.outcome === "waiting-on-team";
+  return waits && rec.askKind === "restart-or-merge-go" ? "yes" : "no";
+}
+
 /** Whether a session's turns get an outcome at all, and the last reply's: the default `finished`. */
 export function finishedOf(sessionId: string, cwd: string, lastReplyId: string | undefined): Finished {
   const settings = readDecisionSettings();
   if (!settings.features.attention || !settings.jev.enabled || isExcluded(settings, cwd)) return "off";
   if (!lastReplyId) return "no";
-  const rec = latestOutcome(sessionId);
-  return rec && rec.turnId === lastReplyId && rec.outcome === "did-what-was-asked" ? "yes" : "no";
+  return finishedFromOutcome(latestOutcome(sessionId), lastReplyId);
 }
 
 // ---- the store ------------------------------------------------------------------------------------

@@ -20,14 +20,17 @@ const writeQueue = (entries: object[]) => writeFileSync(queueFile, JSON.stringif
 
 function deps(over: Partial<Parameters<typeof q.processLandingQueue>[0]> = {}) {
   const shows: unknown[] = [];
+  const rows: unknown[] = [];
   const profiles: Record<string, string | undefined> = { "/s/cap": "merge-captain", "/s/own": undefined };
   return {
     shows,
+    rows,
     d: {
       pathOf: async (id: string) => (id === "cap" || id === "own" || id === "other" ? `/s/${id}` : undefined),
       summary: async (path: string) => ({ id: path.slice(3), path, profile: profiles[path] ? { id: profiles[path] } : undefined }) as unknown as SessionSummary,
       head: async () => HEAD,
       show: async (input: unknown) => (shows.push(input), { id: "of_1" }),
+      addRow: async (input: { branch: string }) => (rows.push(input), { card: "of_9", row: "r_1" }),
       now: () => 2_000,
       queueFile: () => queueFile,
       shownFile: () => shownFile,
@@ -42,7 +45,7 @@ test("a captain's queued branch is shown once, for that worktree, from the capta
   const { d, shows } = deps();
   assert.equal(await q.processLandingQueue(d), 1);
   assert.deepEqual(shows, [{ path: "/s/own", sessionId: "own", offer: "landing", by: "another-chat", from: "/s/cap", tree: "/wt/x" }]);
-  assert.deepEqual(q.readShown(shownFile).q1, { at: 2_000, card: "of_1" });
+  assert.deepEqual(q.readShown(shownFile).q1, { at: 2_000, card: "of_1", row: { card: "of_9", row: "r_1" } }, "and a row on the captain's landing card");
   assert.equal(await q.processLandingQueue(d), 0, "answered once");
   assert.equal(shows.length, 1);
 });
@@ -65,4 +68,22 @@ test("refused, and said why: not a captain, a moved head, an old entry, Sova's o
   const refusing = deps({ show: async () => { throw new OfferRefusal('"landing" shows only when the branch is ready to land, and it doesn\'t now. Nothing was shown.'); } });
   await q.processLandingQueue(refusing.d);
   assert.match((q.readShown(shownFile).e as { refused: string }).refused, /ready to land/);
+});
+
+test("q1: a refusal about the owner's chat alone still adds the captain's row; one about the branch adds none", async () => {
+  rmSync(shownFile, { force: true });
+  writeQueue([entry({ id: "chat" }), entry({ id: "branch" })]);
+  const { d, rows } = deps({
+    show: async (input: unknown) => {
+      if ((input as { path: string }).path === "/s/own" && rows.length === 0) throw new OfferRefusal('The offer "x" is still open in this session; the user answers it first. Nothing was shown.', 409, true);
+      throw new OfferRefusal('"landing" shows only when the branch is ready to land, and it doesn\'t now. Nothing was shown.');
+    },
+  });
+  await q.processLandingQueue(d);
+  const r = q.readShown(shownFile) as Record<string, { refused?: string; row?: unknown }>;
+  assert.match(r.chat!.refused!, /still open/);
+  assert.deepEqual(r.chat!.row, { card: "of_9", row: "r_1" });
+  assert.match(r.branch!.refused!, /ready to land/);
+  assert.equal(r.branch!.row, undefined);
+  assert.equal(rows.length, 1);
 });

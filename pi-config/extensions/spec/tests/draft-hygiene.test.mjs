@@ -219,7 +219,7 @@ test("prune --official deletes only drafts every record of which is already offi
   assert.equal(pv.exit, 0, JSON.stringify(pv.findings));
   assert.deepEqual(tree(root, ".sova/spec"), before, "a preview deletes nothing");
   assert.deepEqual(pv.wouldDelete.map((t) => t.name), ["same"]);
-  assert.deepEqual(pv.kept.map((k) => [k.name, k.state]).sort(), [["broken", "unreadable"], ["clash", "superseded"], ["fresh", "active"], ["nothing", "active"]]);
+  assert.deepEqual(pv.kept.map((k) => [k.name, k.state]).sort(), [["broken", "unreadable"], ["clash", "pending"], ["fresh", "pending"], ["nothing", "empty"]]);
 
   const w = run(root, "prune", "--official", "--write");
   assert.equal(w.exit, 0, JSON.stringify(w.findings));

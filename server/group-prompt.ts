@@ -1,5 +1,5 @@
 import type { BatchPromptResult, BatchRefusal, BatchRefusalCode } from "../shared/protocol";
-import { isArchived } from "./archived-sessions";
+import { ARCHIVED_REFUSAL, isArchived } from "./archived-sessions";
 import { acquireChatHandle, activeConfigFailure, BusyError, chatHandle, ConfigError } from "./chat-handle";
 import { readLive } from "./live";
 import { readAssignments, readGroups } from "./session-groups";
@@ -99,7 +99,7 @@ export const realBatchDeps: BatchDeps = {
 const SENTENCE: Record<BatchRefusalCode, string> = {
   "mid-turn": "It is mid-turn. A shared prompt is not a steer: wait for it, or stop it in its own pane.",
   "tui-live": "It is open in a terminal, so this server must not write to it.",
-  archived: "It is archived.",
+  archived: ARCHIVED_REFUSAL,
   config: "Its working directory is gone, so its runtime cannot be opened.",
   busy: "Another process wrote to it just now.",
   missing: "Its session file no longer exists.",

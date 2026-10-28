@@ -380,8 +380,10 @@ test("real a-pane packet12k smoke delivers exact useful seed/orientation fragmen
   const requested = ids.map((id) => full.passages.find((p) => p.id === id));
   for (const p of requested) assert.ok(p, "current corpus contains the requested seed and orientation");
   // Packet delivers scope's closure plus what it embeds, then the notes whose `about` names a delivered claim.
-  // Computed here from the manifest, not from packet's code.
-  const claims = JSON.parse(readFileSync(join(projectRoot, ".sova/spec/manifest.json"), "utf8")).claims;
+  // Computed here from the records (`records --json`, either layout), not from packet's code.
+  const rec = spawnSync(process.execPath, [CLI, "records", "--root", projectRoot, "--json"], { encoding: "utf8", maxBuffer: 1 << 28 });
+  assert.equal(rec.status, 0, rec.stderr);
+  const claims = JSON.parse(rec.stdout).records;
   const delivered = new Set(full.passages.map((p) => p.id));
   for (const id of delivered) for (const e of claims[id]?.embeds ?? []) {
     const whole = [e, ...Object.keys(claims).filter((k) => k.startsWith(`${e.replace("/", ".")}/`))];

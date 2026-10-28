@@ -1,0 +1,364 @@
+{
+  "§app.owner-page/content": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.owner-page/link",
+      "§app.baton/outsider-view",
+      "§app.owner-page/conversations",
+      "§app.owner-page/updates",
+      "§app.owner-page/never",
+      "§app.tours/handoffs"
+    ],
+    "code": [
+      "server/owner-page.ts",
+      "server/owner-page-built.test.ts",
+      "shared/owner.ts",
+      "src/share/owner-view.tsx",
+      "src/share/thread.tsx",
+      "src/lib/owner-words.ts",
+      "src/lib/owner-words.test.ts",
+      "server/owner-page.test.ts",
+      "server/owner-page.integration.test.ts",
+      "server/tours/bindings-scope.ts",
+      "server/tours/bindings-routes.ts",
+      "server/tours/bindings-routes.test.ts",
+      "server/tours/public-view.ts",
+      "server/tour-routes.ts",
+      "src/share/OwnerApp.tsx",
+      "server/share/edge.ts",
+      "server/share/routes.ts",
+      "src/share/versions.tsx",
+      "src/share/assistant-view.tsx",
+      "src/lib/share-follow.ts",
+      "src/lib/share-follow.test.ts",
+      "server/owner-page-tabs.integration.test.ts",
+      "src/share/owner.css",
+      "src/lib/owner-abilities.ts",
+      "src/share/brand.tsx",
+      "src/share/load-older.ts",
+      "src/lib/paged.ts",
+      "src/lib/paged.test.ts",
+      "src/lib/owner-seen.ts",
+      "src/lib/owner-seen.test.ts",
+      "server/owner-answer.ts",
+      "server/owner-answer.test.ts",
+      "server/project-assistant.ts",
+      "server/org-routes.ts",
+      "src/lib/api.ts",
+      "src/components/OwnerCard.tsx"
+    ],
+    "agreed": {
+      "by": "omar (user)",
+      "at": "2026-10-25T20:05Z",
+      "source": "pi-session:01a173c3-7183-70d4-a656-e47ab7fd7392#7bd7cdaa"
+    }
+  },
+  "§app.owner-page/controls": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.owner-page/owner",
+      "§app.owner-page/link",
+      "§app.owner-page/conversations",
+      "§app.owner-page/updates",
+      "§app.organizations/org-page"
+    ],
+    "code": [
+      "src/components/OwnerCard.tsx",
+      "src/components/OwnerProjectCard.tsx",
+      "src/components/ProjectPage.tsx",
+      "src/components/OrgsView.tsx",
+      "src/components/BatonStrip.tsx",
+      "src/components/PersonPage.tsx",
+      "src/lib/owner-card.ts",
+      "src/lib/owner-card.test.ts",
+      "src/lib/person-page.ts",
+      "src/lib/api.ts",
+      "server/person-page.ts",
+      "server/org-routes.ts",
+      "src/design/base.css",
+      "src/components/OwnerCardAssistant.tsx",
+      "src/lib/assistant-model-rows.ts",
+      "src/lib/assistant-model-rows.test.ts",
+      "src/components/OwnerVersionSummaries.tsx",
+      "server/project-assistant-routes.ts"
+    ],
+    "agreed": {
+      "by": "Omar (al_1 go-ahead)",
+      "at": "2026-10-24T21:08Z",
+      "source": "pi-session:3ca7d7a1-521f-40ef-8493-5da871963c1c#56f51242"
+    }
+  },
+  "§app.owner-page/conversations": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.owner-page/owner",
+      "§app.baton/goal-and-loadout",
+      "§app.tours/handoffs"
+    ],
+    "code": [
+      "server/baton.ts",
+      "server/owner-page.ts",
+      "server/orgs.ts",
+      "server/org-routes.ts",
+      "server/person-links.ts",
+      "shared/baton.ts",
+      "src/components/BatonStrip.tsx",
+      "src/components/OwnerProjectCard.tsx",
+      "server/owner-page.test.ts",
+      "server/owner-page.integration.test.ts",
+      "server/tours/bindings-scope.ts",
+      "server/tours/bindings-routes.ts",
+      "server/tours/bindings-routes.test.ts",
+      "server/tours/public-view.ts",
+      "server/tour-routes.ts",
+      "src/share/OwnerApp.tsx",
+      "src/share/owner-view.tsx",
+      "src/share/thread.tsx",
+      "server/share/edge.ts",
+      "server/share/routes.ts",
+      "server/baton-view.ts",
+      "src/lib/owner-words.ts",
+      "src/lib/owner-words.test.ts"
+    ],
+    "agreed": {
+      "by": "omar (user)",
+      "at": "2026-10-25T16:19Z",
+      "source": "pi-session:01a173c3-7183-70d4-a656-e47ab7fd7392#93a64791"
+    }
+  },
+  "§app.owner-page/link": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.owner-page/owner",
+      "§app.baton/links",
+      "§app.baton/share-listener",
+      "§app.baton/visits",
+      "§app.tours/handoffs"
+    ],
+    "code": [
+      "server/person-links.ts",
+      "server/owner.ts",
+      "server/share/routes.ts",
+      "server/share/listener.ts",
+      "server/visits.ts",
+      "server/org-routes.ts",
+      "shared/owner.ts",
+      "src/share/OwnerApp.tsx",
+      "src/share/owner-view.tsx",
+      "server/owner-page.test.ts",
+      "server/owner-page.integration.test.ts",
+      "server/share/share-state.ts",
+      "server/owner-link-idle.test.ts",
+      "server/share/edge.ts",
+      "server/tours/bindings-scope.ts",
+      "server/tours/bindings-routes.ts",
+      "server/tours/bindings-routes.test.ts",
+      "server/tours/public-view.ts",
+      "server/tour-routes.ts",
+      "src/share/thread.tsx"
+    ]
+  },
+  "§app.owner-page/never": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.baton/outsider-view",
+      "§app.organizations/privacy",
+      "§app.tours/handoffs"
+    ],
+    "code": [
+      "server/owner-page.ts",
+      "server/share/hub.ts",
+      "server/owner-page-privacy.test.ts",
+      "server/owner-page-privacy.integration.test.ts",
+      "server/tours/bindings-scope.ts",
+      "server/tours/bindings-routes.ts",
+      "server/tours/bindings-routes.test.ts",
+      "server/tours/public-view.ts",
+      "server/tour-routes.ts",
+      "src/share/OwnerApp.tsx",
+      "src/share/owner-view.tsx",
+      "src/share/thread.tsx",
+      "server/share/edge.ts",
+      "server/share/routes.ts",
+      "server/version-summaries.ts",
+      "server/version-summaries.test.ts",
+      "server/owner-versions.ts",
+      "shared/owner.ts"
+    ],
+    "agreed": {
+      "by": "omar (user)",
+      "at": "2026-10-25T16:19Z",
+      "source": "pi-session:01a173c3-7183-70d4-a656-e47ab7fd7392#93a64791"
+    }
+  },
+  "§app.owner-page/owner": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.organizations/roster",
+      "§app.organizations/workspace-repo"
+    ],
+    "code": [
+      "server/orgs.ts",
+      "server/owner.ts",
+      "server/org-routes.ts",
+      "shared/orgs.ts",
+      "src/components/OwnerCard.tsx",
+      "src/lib/owner-card.ts",
+      "server/owner-page.test.ts",
+      "server/owner-page.integration.test.ts",
+      "statecharts/src/sova/statecharts/org.cljc"
+    ]
+  },
+  "§app.owner-page/page": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.baton/share-listener",
+      "§app.owner-page/content",
+      "§app.tours/handoffs"
+    ],
+    "code": [
+      "src/share/main.tsx",
+      "src/share/OwnerApp.tsx",
+      "src/share/owner-view.tsx",
+      "src/share/owner.css",
+      "src/share/thread.css",
+      "server/share/listener.ts",
+      "server/share/routes.ts",
+      "server/owner-page.test.ts",
+      "server/owner-page.integration.test.ts",
+      "src/design/tokens.css",
+      "src/share/index.html",
+      "server/share/share-state.ts",
+      "server/tours/bindings-scope.ts",
+      "server/tours/bindings-routes.ts",
+      "server/tours/bindings-routes.test.ts",
+      "server/tours/public-view.ts",
+      "server/tour-routes.ts",
+      "src/share/thread.tsx",
+      "server/share/edge.ts",
+      "server/tours/bindings-app.integration.test.ts",
+      "src/lib/owner-problem.ts",
+      "src/lib/owner-problem.test.ts",
+      "src/share/assistant-view.tsx",
+      "server/owner-page-tabs.integration.test.ts",
+      "server/share-router.test.ts",
+      "server/owner-request-close.test.ts",
+      "src/share/theme.ts",
+      "src/share/brand.tsx",
+      "server/org-routes.ts"
+    ],
+    "agreed": {
+      "by": "omar (user)",
+      "at": "2026-10-25T18:32Z",
+      "source": "pi-session:01a173c3-7183-70d4-a656-e47ab7fd7392#cbe59d9a"
+    }
+  },
+  "§app.owner-page/rejected": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed"
+  },
+  "§app.owner-page/send": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.owner-page/owner",
+      "§app.owner-page/link",
+      "§app.outreach/send",
+      "§app.outreach/links",
+      "§app.overseer/org-people-facing",
+      "§app.overseer/caps"
+    ],
+    "code": [
+      "server/overseer-org-tools.ts",
+      "server/overseer-org-view.ts",
+      "server/overseer-prompt.md",
+      "server/outreach/core.ts",
+      "server/outreach/links.ts",
+      "server/outreach/log.ts",
+      "shared/outreach.ts",
+      "server/owner.ts",
+      "server/person-links.ts",
+      "server/owner-attention.ts",
+      "server/org-history-capture.ts",
+      "statecharts/src/sova/statecharts/org.cljc",
+      "server/vendor/statecharts.js",
+      "server/overseer-owner-send.test.ts",
+      "server/overseer-org-part.ts",
+      "server/overseer-org-tools.test.ts",
+      "statecharts/test/sova/statecharts/refit/org_project_test.cljc"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-19T17:08Z",
+      "source": "pi-session:01a15500-4be1-7306-a0f9-1fe0d5e9f90e#cf4c45cb"
+    }
+  },
+  "§app.owner-page/updates": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.owner-page/owner",
+      "§app.project-overseer/tools",
+      "§app.project-overseer/autonomy-levels",
+      "§app.organizations/about"
+    ],
+    "code": [
+      "server/project-updates.ts",
+      "server/project-overseer.ts",
+      "server/project-overseer-tools.ts",
+      "server/project-overseer-prompt.md",
+      "server/org-routes.ts",
+      "shared/owner.ts",
+      "src/components/OwnerProjectCard.tsx",
+      "src/lib/owner-card.ts",
+      "server/owner-updates.test.ts"
+    ]
+  },
+  "§app/owner-page": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/owner-page.ts",
+      "src/share/OwnerApp.tsx",
+      "src/share/owner-view.tsx",
+      "shared/owner.ts",
+      "server/tours/bindings-scope.ts",
+      "server/tours/bindings-routes.ts",
+      "server/tours/bindings-routes.test.ts",
+      "server/tours/public-view.ts",
+      "server/tour-routes.ts",
+      "src/share/thread.tsx",
+      "server/share/edge.ts",
+      "server/share/routes.ts",
+      "src/share/brand.tsx"
+    ],
+    "notOwned": [
+      "§app.baton/share-listener",
+      "§app.baton/outsider-view",
+      "§app.organizations/org-page"
+    ],
+    "agreed": {
+      "by": "omar (user)",
+      "at": "2026-10-25T16:19Z",
+      "source": "pi-session:01a173c3-7183-70d4-a656-e47ab7fd7392#93a64791"
+    }
+  }
+}

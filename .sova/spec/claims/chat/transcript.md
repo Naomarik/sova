@@ -1050,7 +1050,8 @@ end, whether or not its process is running. Opening it starts it, as a send woul
 list, a reload, a tab the browser discarded coming back, a restored session and every pane of a
 workspace, hidden tabs included (§workspace.groups/layout-tabs), each connect, and the process starts
 behind the rows (§app.chat-processes/idle-stop); the chat's `hello` then brings its state (its
-modes, model and controls). Nothing opens a chat asleep. The Overseer, a project overseer, a baton
+modes, model and controls). Nothing opens a chat asleep, except an archived chat, which opening never
+starts ("An archived chat", below). The Overseer, a project overseer, a baton
 session, a chat whose profile grants powers and a peer's chat open this way too, a peer's through
 that peer. Views that
 only watch (a TUI's session, a worker's or a hidden chat's file, an earlier conversation) are
@@ -1126,10 +1127,31 @@ unchanged.
   first, so nothing it took comes back to the composer, and a server call it took is answered by it,
   never failed as unreachable. The socket closes with a code the web app never retries (4422), so
   a tab still on an older build, which doesn't know `closed`, stays down too. A person's own
-  action on a closed chat from anywhere else opens it the same way, never answering "open the chat
-  first": a mode switch or a save of its mode as the default, a sandbox switch, a subagent profile
+  action on a closed chat from anywhere else opens it the same way (an archived chat excepted, below),
+  never answering "open the chat first": a mode switch or a save of its mode as the default, a sandbox switch, a subagent profile
   pick, a restored worker's resume. What only reads it never opens it: its subagent profile
   (`GET /api/settings/subagents?path=`) and its memory outline come from its file.
+- **An archived chat.** An archived chat (§app.session-list/regions-top-and-archive) reads only
+  until someone unarchives it. Opening it in any way (the Archive press itself, a click in the list,
+  a reload, a reconnect, its workspace tab coming to the front, another tab or device) shows its
+  saved rows from the file and starts nothing: the tab holds no socket, and a socket that connects
+  anyway (a tab that didn't know yet, an older build) is answered `closed` (`archived`) and closed
+  with the code no tab retries, before any process starts. No note floats, no banner shows, and
+  nothing retries. The composer keeps what you type and your draft, says "This session is archived.
+  Unarchive it to send." as its reason, and shows an Unarchive button in place of Send; the mode, model and other
+  controls wait. Unarchive brings Send back, and the chat starts at the first send, as a chat
+  closed while its tab is open does. Every other way to start it is refused with "That session is
+  archived; unarchive it first." and changes nothing: a mode, sandbox or subagent profile switch, a
+  restored worker's resume, a message from a script, a tour, a schedule or another chat
+  (`POST /api/sessions/prompt`), each a 409 where it is a request, and a message a closed tab
+  handed the server for it comes back as the session's draft. A worker's report never opens an
+  archived parent. Every way of archiving (the Archive button, a drop on the Archive tile, the
+  board's ⋯ menu, a project overseer's conversation pushed past its history) marks it archived,
+  closes its chat quietly and cancels any report still waiting to open it. A chat still starting
+  when it is archived closes as soon as its start finishes; a chat found running while archived
+  (left from before this rule, or taken back by a restarted server) is closed quietly too, and its
+  open tabs keep what they show. The special chats (the Overseer, a project overseer, a baton
+  session) are never archived this way and keep their own rules.
 - **Refusals after the paint.** A chat that turns out to be open in a TUI, or written by an unknown
   process, reopens read only over the rows already shown (§chat.transcript/live-watch). A chat that
   can't open (its remote placeholder folder is gone, its folder can't be reached; a local folder
@@ -1577,6 +1599,7 @@ heading is `Repository`, with no count and no total.
       <span class="setup-subject" title="spec: the three commits' claims, promoted from their draft">spec: the three commits' claims, promoted from their draft</span>
       <span class="setup-ago">2h ago</span></li>
   </ul>
+  <p class="setup-git setup-gitdir">…folder icon… <span>Git folder</span> <span class="setup-num">25 GB</span></p>   <!-- /setup-card-git-folder -->
   <p class="setup-note">…at most one note, when there is one…</p>
 </div>
 ```
@@ -1599,6 +1622,8 @@ heading is `Repository`, with no count and no total.
 - **Commits.** Up to three rows, newest first (/setup-card-figures). An unborn repository shows
   none and no line in their place, since the head already says "no commits yet". Any other
   repository with none to show gets "The last commits couldn't be read." in their place.
+- **The git folder.** After the commits, the git folder's size and, when its cleanup looks stuck
+  or overdue, a warning (/setup-card-git-folder).
 - **A cut status.** When git status's output hit its size cap, every count is a lower bound. The
   changes line reads `At least {tallies}`, or `Not fully read` when nothing was tallied, and
   never `Clean`. The note says "Git status was cut short, so these counts are lower bounds."
@@ -1652,6 +1677,38 @@ repository around the folder. Two of its figures:
   figure that isn't there is dropped rather than zeroed: a row the server sent no estimate for shows
   no figure at all (never its size, never `≈0 tokens` for a file nobody counted), and a total
   without estimates keeps bytes and lines.
+
+## §chat.transcript/setup-card-git-folder — Setup card: the git folder's size, and when its cleanup is stuck
+
+Right after the commits (or the line standing in their place), the Repository group of a new
+session's setup card has one more row: how big the repository's git folder is, and a short warning
+when git's cleanup looks stuck or hasn't run for a long time (§app/git-cleanup). Only the setup
+card shows it; the session pane's Repository section doesn't.
+
+```html
+<p class="setup-git setup-gitdir" title="~/webapps/sova/.git">…folder icon… <span>Git folder</span> <span class="setup-num">25 GB</span></p>
+<p class="setup-git setup-gitdir-warn">…alert icon… <span>Git's cleanup looks stuck: multi-pack-index.lock was left 3d ago.</span></p>   <!-- only with a warning -->
+```
+
+- **The size.** Every file in the repository's git folder, the one a linked worktree shares with
+  its main checkout, each file's size summed, never by running `du`. The words are `Git folder
+  {size}`, the size in binary units with one decimal under 10 (`812 B`, `4.2 MB`, `25 GB`), and
+  the row's title is the folder (`~/…` here). A count that stopped at its limit of 50,000 entries
+  reads `Git folder at least {size}`. The server reads it with the rest of the group and reuses it
+  for 5 minutes per git folder, so a big repository is not walked on every card. A session on a
+  target, or a folder the server couldn't read, shows no row.
+- **Stuck.** When one of git's cleanup locks in that folder (`objects/maintenance.lock`, `gc.pid`,
+  `objects/pack/multi-pack-index.lock`, `objects/info/commit-graphs/commit-graph-chain.lock`) is
+  more than 1 hour old, a
+  second row reads "Git's cleanup looks stuck: {lock name} was left {age}.", the age in the app's
+  relative words ("2h ago", "3d ago", "Mar 4"). Its title is the lock's full path and "If no git
+  command is running, deleting it lets cleanup finish."
+- **Overdue.** Otherwise, when the folder holds more than 50 pack files, or more than 6,700 loose
+  objects (git's own `gc.auto` default), the row reads "Git hasn't cleaned up here in a while:
+  {n} pack files.", "…: {n} loose objects.", or with both "…: {n} pack files and {n} loose
+  objects." (digits with thousands commas).
+- At most one warning, stuck first. It is drawn in warn ink with the alert icon, and its words
+  carry it alone.
 
 ## §chat.transcript/setup-card-toggles — Setup card: switching context files and skills off
 

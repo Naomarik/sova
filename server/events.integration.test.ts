@@ -134,7 +134,9 @@ test("a real turn in a chat Sova runs: turn.started then turn.ended, hosted, the
   assert.equal("source" in ended.f && ended.f.source, "hosted");
   assert.ok(started.f.type === "event" && ended.f.type === "event" && started.f.seq < ended.f.seq);
   assert.ok(Math.abs(ended.t - settled.t) <= 1000, `turn.ended ${ended.t - settled.t} ms from the settle frame`);
-  await new Promise((r) => setTimeout(r, 6000)); // a feed re-diff or two: no observed duplicate
+  // An absence: no observed duplicate. The session feed re-diffs at most once a second (server/session-feed.ts
+  // minGapMs), so 2 s holds a re-diff or two.
+  await new Promise((r) => setTimeout(r, 2000));
   const turns = ev.frames.filter((x) => x.f.type === "event" && x.f.name.startsWith("turn.") && "path" in x.f && x.f.path === s.path);
   assert.deepEqual(
     turns.map((x) => x.f.type === "event" && "source" in x.f && `${x.f.name}:${x.f.source}`),
@@ -162,7 +164,9 @@ test("a title set: one session.renamed (observed); a resume after a disconnect g
   // While no one listens (within the linger), a second rename.
   const res2 = await fetch(`http://${host}/api/sessions/title`, { method: "POST", headers: { ...headers(), "content-type": "application/json" }, body: JSON.stringify({ path: s.path, title: "Renamed twice" }) });
   assert.equal(res2.status, 200);
-  await new Promise((r) => setTimeout(r, 6000)); // the feed's next read, held by the lingering hub
+  // The feed's next read, held by the lingering hub: it reads at most once a second (server/session-feed.ts
+  // minGapMs), so within 2 s.
+  await new Promise((r) => setTimeout(r, 2000));
   const back = eventsClient(`?stream=${hello.stream}&since=${last}`);
   await back.opened;
   const again = await back.until(isEvent("session.renamed", s.path));

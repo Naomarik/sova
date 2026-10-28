@@ -71,7 +71,7 @@ export interface KindViewProps<V = unknown> {
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "overseer-answer";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "overseer-answer" | "profile-mark";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -110,7 +110,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   kind({ id: "overseer-sent", match: (it) => it.overseerMark?.kind === "sent", host: "page", placement: "anchored", drawsNothing: true }),
   kind({ id: "baton-sent", match: (it) => it.batonMark?.kind === "sent", host: "page", placement: "anchored", drawsNothing: true }),
   kind({ id: "session-sent", match: (it) => it.sessionMark?.kind === "sent", host: "page", placement: "anchored", drawsNothing: true }),
-  kind({ id: "profile-mark", match: (it) => it.profileMark, host: "page", placement: "anchored" }),
+  kind({ id: "profile-mark", match: (it) => it.profileMark, host: "page", placement: "anchored", view: { page: "profile-mark" } }),
   kind({ id: "baton", match: (it) => it.batonMark && it.batonMark.kind !== "sent" && it.batonMark, host: "page", placement: "anchored" }),
   kind({ id: "overseer-answer", match: (it) => it.overseerMark?.kind === "dialog-answer" && it.overseerMark, host: "page", placement: "anchored", view: { page: "overseer-answer" } }),
   kind({ id: "worktree-merge", match: (it) => it.kind === "worktree-merge" && it.worktreeMerge, host: "page", placement: "anchored", view: { page: "worktree-merge" } }),

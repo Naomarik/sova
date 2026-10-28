@@ -13,6 +13,8 @@ import { TourCard } from "./TourCard";
 import type { TourCardDetails } from "../../shared/tour";
 import { OwnerRequestNote } from "./OwnerRequestNote";
 import { OverseerChoiceRow } from "./OverseerCards";
+import { profileIconName } from "../lib/profiles";
+import { useThreadRows } from "./thread-rows";
 
 /**
  * The views of Sova's own transcript cards, moved onto the card toolkit one kind at a time
@@ -30,6 +32,7 @@ export const BUILTIN_VIEWS = {
   "owner-request": (props: KindViewProps<NonNullable<TranscriptItem["ownerRequest"]>>) => <OwnerRequestNote card={props.value} />,
   "handoff-run": (props: KindViewProps<HandoffRunInfo>) => <HandoffRunRow run={props.value} text={props.item.text ?? ""} />,
   "overseer-answer": (props: KindViewProps<Extract<NonNullable<TranscriptItem["overseerMark"]>, { kind: "dialog-answer" }>>) => <OverseerChoiceRow title={props.value.title} answer={props.value.answer} />,
+  "profile-mark": ProfileMarkRow,
 } satisfies Record<string, Component<KindViewProps<never>>>;
 
 /** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is
@@ -53,5 +56,20 @@ function HandoffRunRow(props: { run: HandoffRunInfo; text: string }) {
         <span>{props.text}</span>
       </span>
     </div>
+  );
+}
+
+/** The profile a session runs with, shown once a message is on the branch (§chat.profiles/after-first-message). */
+function ProfileMarkRow(props: KindViewProps<NonNullable<TranscriptItem["profileMark"]>>) {
+  const rows = useThreadRows();
+  return (
+    <Show when={rows.hasUserRow() && props.value.profile}>
+      {(p) => (
+        <p class="profile-row" title="The profile this session runs with. It was fixed when the first message was sent.">
+          <Icon name={profileIconName(p().icon)} small />
+          {props.item.text}
+        </p>
+      )}
+    </Show>
   );
 }

@@ -874,18 +874,6 @@ export function HistoryItems(props: {
                   attachments={item.attachments}
                 />
               </Match>
-              <Match when={is<NonNullable<TranscriptItem["profileMark"]>>("profile-mark")}>
-                {(mark) => (
-                  <Show when={hasUserRow() && mark().profile}>
-                    {(p) => (
-                      <p class="profile-row" title="The profile this session runs with. It was fixed when the first message was sent.">
-                        <Icon name={profileIconName(p().icon)} small />
-                        {item.text}
-                      </p>
-                    )}
-                  </Show>
-                )}
-              </Match>
               <Match when={is<BatonMark>("baton")}>
                 {(mark) => <BatonCard mark={mark() as Exclude<BatonMark, { kind: "sent" }>} name={nameOf} wrapupShown={showWrapup()} onWrapupToggle={() => setShowWrapup(!showWrapup())} />}
               </Match>

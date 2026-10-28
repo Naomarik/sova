@@ -857,7 +857,7 @@ test("spec writer: the paragraph names the exact worker, the drafts-only rule, a
 	const onPrimary = buildSpecWriterPrompt(routeWriter(WRITER, { "claude-code": offering("claude-opus-5-5"), pi: piOffering("zai/glm-5.3") }, () => null)!);
 	assert.match(onPrimary, /^Spec writer: draft claims and evidence records are written by one worker, spawned with agent_spawn on exactly this backend, model and effort → backend "claude-code", model "claude-opus-5-5", effort "medium"; fallback backend "pi", model "zai\/glm-5\.3", effort "high"\. /);
 	assert.match(onPrimary, /Give it the relevant spec passages quoted literally, the files the task changed, and the verification you did\./);
-	assert.match(onPrimary, /It writes only under `\.sova\/spec\/drafts\/`, never current `claims\/` or `manifest\.json`; you check its draft, run the checks and the census, and promote yourself\./);
+	assert.match(onPrimary, /It writes only under `\.sova\/spec\/drafts\/`, never current `claims\/` or `manifest\.json`; you check its draft, run the checks and the census, and record a note per promise; the landing makes it official\./);
 	assert.match(onPrimary, /retry once with the fallback only if one is listed above, and say so; otherwise ask the user which model to use — never substitute one of your own\.$/);
 	assert.equal(onPrimary.match(/\n/g), null, "one paragraph");
 	// No fallback configured: a failed primary means asking.

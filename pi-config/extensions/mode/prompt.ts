@@ -104,7 +104,7 @@ export function buildSpecWriterPrompt(route: SlotRoute): string {
 		route.via === "primary"
 			? " If its spawn fails because its model is unavailable, retry once with the fallback only if one is listed above, and say so; otherwise ask the user which model to use — never substitute one of your own."
 			: "";
-	return `Spec writer: draft claims and evidence records are written by one worker, spawned with agent_spawn on exactly this backend, model and effort → ${routeTarget(route, "handing off spec writing")} Give it the relevant spec passages quoted literally, the files the task changed, and the verification you did. It writes only under \`.sova/spec/drafts/\`, never current \`claims/\` or \`manifest.json\`; you check its draft, run the checks and the census, and promote yourself.${retry}`;
+	return `Spec writer: draft claims and evidence records are written by one worker, spawned with agent_spawn on exactly this backend, model and effort → ${routeTarget(route, "handing off spec writing")} Give it the relevant spec passages quoted literally, the files the task changed, and the verification you did. It writes only under \`.sova/spec/drafts/\`, never current \`claims/\` or \`manifest.json\`; you check its draft, run the checks and the census, and record a note per promise; the landing makes it official.${retry}`;
 }
 
 /**

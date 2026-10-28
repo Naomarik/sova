@@ -1,6 +1,6 @@
 import { children, createContext, createEffect, createMemo, createSignal, For, lazy, Match, on, onCleanup, Show, Switch, untrack, useContext, type JSX } from "solid-js";
 import type { RowFacts } from "../../shared/harness-wire";
-import type { HandoffRunInfo, TmpAttachment, TranscriptItem } from "../../shared/protocol";
+import type { TmpAttachment, TranscriptItem } from "../../shared/protocol";
 import { rowFacts } from "../../shared/wire-v1";
 import type { BatonMark } from "../../shared/baton";
 import { wrapupRowIds } from "../lib/wrapup-rows";
@@ -388,30 +388,6 @@ function BatonCard(props: { mark: Exclude<BatonMark, { kind: "sent" }>; name(ref
 
 /** The info row moved to its own file with the info kind's view (TranscriptKind.tsx); kept here for its importers. */
 export { InfoRow };
-
-/** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is
-    the live dot while the fork writes; the result entry (same id) replaces it in place. */
-function HandoffRunRow(props: { run: HandoffRunInfo; text: string }) {
-  return (
-    <div class="info-row" role="note">
-      <span class="info-row-text">
-        <Show when={props.run.status === "running"} fallback={<Icon name="info" small />}>
-          {/* The explain card's 16px slot, so the dot sits where the icon would. */}
-          <span class="explain-card-live" aria-hidden="true">
-            <span class="live-dot" />
-          </span>
-        </Show>
-        <Show when={props.run.status === "failed"}>
-          <Chip tone="error">Failed</Chip>
-        </Show>
-        <Show when={props.run.status === "interrupted"}>
-          <Chip tone="warn">Interrupted</Chip>
-        </Show>
-        <span>{props.text}</span>
-      </span>
-    </div>
-  );
-}
 
 function Unknown(props: { raw: unknown }) {
   const type = () => (isObj(props.raw) ? str(props.raw.type) : undefined) ?? "unknown";
@@ -948,9 +924,6 @@ export function HistoryItems(props: {
               </Match>
               <Match when={is<NonNullable<TranscriptItem["report"]>>("report")}>
                 {(report) => <ReportRow report={report()} attachments={item.attachments} />}
-              </Match>
-              <Match when={is<HandoffRunInfo>("handoff-run")}>
-                {(run) => <HandoffRunRow run={run()} text={item.text ?? ""} />}
               </Match>
               <Match when={is("tool")}>
                 {(() => {

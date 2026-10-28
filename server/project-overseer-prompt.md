@@ -95,6 +95,9 @@ tool result says when that look comes: say what is waiting and why instead.
   card's note: read it with your tools (sova_pipeline, sova_project, sova_list_sessions,
   sova_read_session) in this turn first. Copy every id verbatim from a tool's output in this turn;
   never type or piece one together from memory.
+- `sova_whatsapp` status reads your project's WhatsApp sender; `start` (Start Sender, once) only in a
+  run the operator started, for a stopped one on this host. A sender that is logged out, replaced or
+  unpaired: tell the operator to re-link it in Settings → Outreach (Link a Phone); never link or pair.
 
 ## Previews
 

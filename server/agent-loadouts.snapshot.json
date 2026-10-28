@@ -1,7 +1,7 @@
 {
   "families": {
     "overseer": {
-      "bytes": 89787,
+      "bytes": 91142,
       "tools": [
         {
           "name": "sova_attention",
@@ -2565,6 +2565,37 @@
           }
         },
         {
+          "name": "sova_whatsapp",
+          "label": "WhatsApp sender",
+          "description": "This host's WhatsApp senders: the default, an organization's pick (org) or an added number (sender: its entry id, local:<name>). status (any run): its state read afresh (open, connecting, down, logged-out, replaced, blocked, unpaired, unreachable, or stopped: no process answers its socket), the sender's own sentence, whether it is paused, and what can be done. start (only in a run the user started): Settings' Start Sender, once: only for a sender on this host that doesn't answer and whose systemd user unit is installed and stopped or failed; never a restart, stop, reconnect or loop. A sender that is logged out, replaced or unpaired needs a phone linked again: tell the user to re-link it in Settings → Outreach (Link a Phone) on the sender's host; you never link, pair or ask for a code.",
+          "promptSnippet": "the WhatsApp sender's state; start a stopped one (Start Sender)",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "description": "status | start",
+                "enum": [
+                  "status",
+                  "start"
+                ]
+              },
+              "org": {
+                "type": "string",
+                "description": "Optional: the organization whose sender (its pick, else the default); id or exact name."
+              },
+              "sender": {
+                "type": "string",
+                "description": "Optional: a sender's entry id (local, local:<name>, peer:<id>)."
+              }
+            },
+            "required": [
+              "op"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
           "name": "sova_org_history",
           "label": "Org history",
           "description": "Read an organization's recorded history: what was requested, decided (decisions not to act included), held, refused, built and merged, who initiated, decided and carried it out, and the reason recorded at the time. search lists events; event reads one in full with its sources; trace follows its recorded causes and results; packet gives a bounded context. Only in a turn the operator started.",
@@ -2824,7 +2855,7 @@
       ]
     },
     "overseer+copies": {
-      "bytes": 95572,
+      "bytes": 96927,
       "tools": [
         {
           "name": "sova_attention",
@@ -5476,6 +5507,37 @@
               }
             },
             "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "sova_whatsapp",
+          "label": "WhatsApp sender",
+          "description": "This host's WhatsApp senders: the default, an organization's pick (org) or an added number (sender: its entry id, local:<name>). status (any run): its state read afresh (open, connecting, down, logged-out, replaced, blocked, unpaired, unreachable, or stopped: no process answers its socket), the sender's own sentence, whether it is paused, and what can be done. start (only in a run the user started): Settings' Start Sender, once: only for a sender on this host that doesn't answer and whose systemd user unit is installed and stopped or failed; never a restart, stop, reconnect or loop. A sender that is logged out, replaced or unpaired needs a phone linked again: tell the user to re-link it in Settings → Outreach (Link a Phone) on the sender's host; you never link, pair or ask for a code.",
+          "promptSnippet": "the WhatsApp sender's state; start a stopped one (Start Sender)",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "description": "status | start",
+                "enum": [
+                  "status",
+                  "start"
+                ]
+              },
+              "org": {
+                "type": "string",
+                "description": "Optional: the organization whose sender (its pick, else the default); id or exact name."
+              },
+              "sender": {
+                "type": "string",
+                "description": "Optional: a sender's entry id (local, local:<name>, peer:<id>)."
+              }
+            },
+            "required": [
+              "op"
+            ],
             "additionalProperties": false
           }
         },

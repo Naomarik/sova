@@ -43,6 +43,7 @@ import { operatorEnvelopeOf } from "./projects/spaces";
 import { orgConfirmLookup, orgTools } from "./overseer-org-tools";
 import { orgHistoryParams, orgHistoryRead } from "./org-history-tools";
 import { codeHistoryTools } from "./overseer-code-history";
+import { whatsappTool } from "./overseer-whatsapp";
 import { resolveAnyProject, resolveOrg, resolvePerson } from "./overseer-org-view";
 import { contactRedactor, loggedArgs } from "./overseer-org-view";
 import { linkState as shareLinkState, listShares, type ShareLinkRecord } from "./session-shares";
@@ -1933,6 +1934,17 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
     }),
     // A project's code history and Sova's own server log, read-only, any run (§app.overseer/code-history).
     ...codeHistoryTools({ overseerId: () => host.overseerId(), refusal: (m) => new Refusal(m), obj, str, int }),
+    // The WhatsApp senders' state, and Start Sender of a stopped one in a turn the user started (§app.outreach/overseer-sender).
+    whatsappTool({
+      who: "global",
+      resolveOrg: (ref) => resolveOrg(ref).id,
+      attended: () => host.attended(),
+      unattendedRefusal: UNATTENDED_REFUSAL,
+      overseerId: () => host.overseerId(),
+      refusal: (m) => new Refusal(m),
+      obj,
+      str,
+    }),
     // The organization's history: read when the operator's turn asks for it.
     {
       name: "sova_org_history",

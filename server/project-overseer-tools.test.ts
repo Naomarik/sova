@@ -167,7 +167,7 @@ describe("the powers, as the statecharts declare them (al_3)", () => {
   test("every tool the runtime registers has a power, and every power entry names a tool (its own, or one the org part contributes)", () => {
     const own = fake().tools.map((t) => t.name);
     for (const name of own) assert.ok(name in TOOL_POWER, name);
-    for (const name of Object.keys(TOOL_POWER)) assert.ok(own.includes(name) || ORG_PART_TOOLS.includes(name) || ["spec_lookup", "sova_draft_specs", "sova_draft_approve", "sova_draft_build"].includes(name), name);
+    for (const name of Object.keys(TOOL_POWER)) assert.ok(own.includes(name) || ORG_PART_TOOLS.includes(name) || ["spec_lookup", "sova_draft_specs", "sova_draft_approve", "sova_draft_build", "sova_whatsapp"].includes(name), name);
   });
 
   test("one power per tool and per op: every entry is a power, always or operator; a per-op tool lists each op", () => {

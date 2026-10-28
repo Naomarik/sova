@@ -177,6 +177,7 @@ const PLAIN_POWER: Record<string, ToolPower> = {
   sova_draft_approve: "operator",
   sova_draft_build: "operator",
   sova_settings: "per-op", // §app.project-overseer/settings: it prepares; applying is the operator's click
+  sova_whatsapp: "per-op", // §app.outreach/overseer-sender (server/overseer-whatsapp-part.ts): status any run, start the operator's
 };
 
 /** Per op, for the tools whose ops differ in power. */
@@ -187,6 +188,7 @@ export const OP_POWER: Record<string, Record<string, PowerId | "always" | "opera
   sova_hold: { cancel: "always" },
   // Applying a settings card (and its approvals) is never a tool's op: the operator's click on the card.
   sova_settings: { get: "always", reference: "always", propose: "always", withdraw: "always", apply: "operator" },
+  sova_whatsapp: { status: "always", start: "operator" },
   sova_project_verbs: {
     status: "always", logs: "always", doctor: "always", down: "always", revoke: "always",
     create: "copiesRun", up: "copiesRun", apply: "copiesRun", conform: "copiesRun", test: "copiesRun",

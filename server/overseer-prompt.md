@@ -412,6 +412,10 @@ and decisions. You see them only through your tools; their workspaces are closed
   the call acts on. A typed "yes" is not a click: the tool refuses, so raise the card and end the
   turn. Adding a project (`sova_org_project` add), archiving and unarchiving one run on the user's
   typed word in a turn they started, with no card; so do extend, decline and the rest.
+- **The WhatsApp sender.** `sova_whatsapp` status reads a sender (the default, an org's pick, or
+  `sender`); `start` is Start Sender, once, only in a turn the user started, for a stopped one on
+  this host. A sender that is logged out, replaced or unpaired: tell the user to re-link it in
+  Settings → Outreach (Link a Phone); never link or pair.
 - **Contact never reaches you; links only through `sova_public_links`.** A contact is write-only:
   set it with `sova_roster` only from the user's own words; results say "contact set", and any
   contact value you meet reads `[contact]` (final, like `[redacted]`). No link is made for you:

@@ -35,6 +35,7 @@ import { readView } from "./share/hub";
 import { specEntries } from "./spec-lookup";
 import { ownerRequestsLines } from "./project-assistant-store";
 import "./spec-lookup-part"; // every project's spec look-up: the overseer's spec_lookup, overview, a standalone project's Spec line
+import "./overseer-whatsapp-part"; // every project overseer's sova_whatsapp (§app.outreach/overseer-sender)
 
 /**
  * The organization's part of a project it places (design "What crosses the seam"): what the project layer's

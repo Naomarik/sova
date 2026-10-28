@@ -44,7 +44,7 @@ import {
   setOperatorName,
   type OperatorBy,
 } from "./orgs";
-import { ADD_LEAD, confirmRefusal, OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerCardScope, overseerSender } from "./overseer-sender";
+import { confirmRefusal, OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerCardScope, overseerSender } from "./overseer-sender";
 import { overseerFolder } from "./overseer-folders";
 import { batonData, startedOf, toldOf } from "./baton-told";
 import type { EnvelopeCard } from "./org-envelope";
@@ -319,16 +319,11 @@ export function operatorBy(c: Context): OperatorBy {
 /** The card rows a sender-marked call carried (§app.overseer/org-project-add): only meaningful when `by.via` is set. */
 const cardScope = (c: Context) => overseerCardScope(c.req.header(OVERSEER_CARD_HEADER));
 
-/** The folder the global Overseer's Add Project in `orgId` registers: one it may add, on the card its call carried
-    as a folder row into this org (with the name, when the row names one); else the refusal. */
-async function overseerOrgAddRoot(c: Context, orgId: string, rawRoot: unknown, name: unknown): Promise<string> {
-  const folders = cardScope(c).folders.filter((f) => f.org === orgId);
-  const refusal = (what: string) => new OrgError(confirmRefusal(what, ADD_LEAD), 403);
-  if (!folders.length) throw refusal(`the folder ${typeof rawRoot === "string" ? rawRoot.trim() : "to add"} (into this organization)`);
+/** The folder the global Overseer's Add Project in `orgId` registers (§app.overseer/org-project-add): one it may add
+    (the file guard's refusal otherwise). It runs on the user's word, which the Overseer's act wrapper checks: no card row. */
+async function overseerOrgAddRoot(rawRoot: unknown): Promise<string> {
   const f = await overseerFolder(rawRoot);
   if ("problem" in f) throw new OrgError(f.problem);
-  const named = typeof name === "string" && name.trim() ? name.trim() : undefined;
-  if (!folders.some((x) => x.root === f.root && (x.name === undefined || x.name === named))) throw refusal(`the folder ${f.root} (into this organization)`);
   return f.asked;
 }
 
@@ -570,7 +565,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const id = p(c, "id");
       const b = await body(c);
       const by = operatorBy(c);
-      const root = by.via ? await overseerOrgAddRoot(c, id, b.root, b.name) : b.root;
+      const root = by.via ? await overseerOrgAddRoot(b.root) : b.root;
       const made = await addProject(id, { name: b.name, root }, by);
       return c.json({ ...(await orgPage(id)), ...(made.normalizedFrom ? { normalizedFrom: made.normalizedFrom } : {}) }, 201);
     }),

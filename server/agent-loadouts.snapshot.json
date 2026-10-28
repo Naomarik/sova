@@ -1,7 +1,7 @@
 {
   "families": {
     "overseer": {
-      "bytes": 87867,
+      "bytes": 87823,
       "tools": [
         {
           "name": "sova_attention",
@@ -1892,7 +1892,7 @@
         {
           "name": "sova_org_project",
           "label": "Project",
-          "description": "Without op: read one registered project (in an organization or not) and its project overseer (level chosen and in force, watching, models, coding mode, extra instructions, allowances, held items, last actions), its coding sessions, ideas and to-dos (items: true lists the open to-dos and ideas with ids) and its cost; for a project an organization places, also its gathering sessions, decisions and open conflicts, spec status and the last owner update. With op (only in a turn the user started): edit {project, name?, root?, stakeholder? (a person, or none), owner_hidden?} (stakeholder and owner_hidden only for a project an organization places); archive {project} (only in the turn a confirm card's click opened, listing the project; refused while anything in it is open, naming what); unarchive {project}; add {root | session | clone, org?, name?}: register a folder of this host (root: absolute or ~/…) or a session's folder (session), standalone or with org placed in that organization, only in the turn a confirm card's click opened, listing it as a folder row {root, org?, name?}; or clone {repo, parent, folder?} (https:// with no user or password in the URL, ssh://, user@host:path or GitHub's owner/name; parent absolute or ~/…; standalone; no card); import {project, org}: move a standalone project into an organization (its history is committed to the org's workspace repo; it can't be undone), only in the turn a confirm card's click opened, listing the project.",
+          "description": "Without op: read one registered project (in an organization or not) and its project overseer (level chosen and in force, watching, models, coding mode, extra instructions, allowances, held items, last actions), its coding sessions, ideas and to-dos (items: true lists the open to-dos and ideas with ids) and its cost; for a project an organization places, also its gathering sessions, decisions and open conflicts, spec status and the last owner update. With op (only in a turn the user started): edit {project, name?, root?, stakeholder? (a person, or none), owner_hidden?} (stakeholder and owner_hidden only for a project an organization places); archive {project} (on the user's word: their typed message is enough, no card; refused while anything in it is open, naming what); unarchive {project}; add {root | session | clone, org?, name?}: register a folder of this host (root: absolute or ~/…) or a session's folder (session), standalone or with org placed in that organization, on the user's word (their typed message is enough, no card); or clone {repo, parent, folder?} (https:// with no user or password in the URL, ssh://, user@host:path or GitHub's owner/name; parent absolute or ~/…; standalone; no card); import {project, org}: move a standalone project into an organization (its history is committed to the org's workspace repo; it can't be undone), only in the turn a confirm card's click opened, listing the project.",
           "promptSnippet": "read a project and its overseer; or edit, archive, unarchive, add (folder, session's folder, clone) or import a project",
           "parameters": {
             "type": "object",
@@ -2766,7 +2766,7 @@
       ]
     },
     "overseer+copies": {
-      "bytes": 93652,
+      "bytes": 93608,
       "tools": [
         {
           "name": "sova_attention",
@@ -4749,7 +4749,7 @@
         {
           "name": "sova_org_project",
           "label": "Project",
-          "description": "Without op: read one registered project (in an organization or not) and its project overseer (level chosen and in force, watching, models, coding mode, extra instructions, allowances, held items, last actions), its coding sessions, ideas and to-dos (items: true lists the open to-dos and ideas with ids) and its cost; for a project an organization places, also its gathering sessions, decisions and open conflicts, spec status and the last owner update. With op (only in a turn the user started): edit {project, name?, root?, stakeholder? (a person, or none), owner_hidden?} (stakeholder and owner_hidden only for a project an organization places); archive {project} (only in the turn a confirm card's click opened, listing the project; refused while anything in it is open, naming what); unarchive {project}; add {root | session | clone, org?, name?}: register a folder of this host (root: absolute or ~/…) or a session's folder (session), standalone or with org placed in that organization, only in the turn a confirm card's click opened, listing it as a folder row {root, org?, name?}; or clone {repo, parent, folder?} (https:// with no user or password in the URL, ssh://, user@host:path or GitHub's owner/name; parent absolute or ~/…; standalone; no card); import {project, org}: move a standalone project into an organization (its history is committed to the org's workspace repo; it can't be undone), only in the turn a confirm card's click opened, listing the project.",
+          "description": "Without op: read one registered project (in an organization or not) and its project overseer (level chosen and in force, watching, models, coding mode, extra instructions, allowances, held items, last actions), its coding sessions, ideas and to-dos (items: true lists the open to-dos and ideas with ids) and its cost; for a project an organization places, also its gathering sessions, decisions and open conflicts, spec status and the last owner update. With op (only in a turn the user started): edit {project, name?, root?, stakeholder? (a person, or none), owner_hidden?} (stakeholder and owner_hidden only for a project an organization places); archive {project} (on the user's word: their typed message is enough, no card; refused while anything in it is open, naming what); unarchive {project}; add {root | session | clone, org?, name?}: register a folder of this host (root: absolute or ~/…) or a session's folder (session), standalone or with org placed in that organization, on the user's word (their typed message is enough, no card); or clone {repo, parent, folder?} (https:// with no user or password in the URL, ssh://, user@host:path or GitHub's owner/name; parent absolute or ~/…; standalone; no card); import {project, org}: move a standalone project into an organization (its history is committed to the org's workspace repo; it can't be undone), only in the turn a confirm card's click opened, listing the project.",
           "promptSnippet": "read a project and its overseer; or edit, archive, unarchive, add (folder, session's folder, clone) or import a project",
           "parameters": {
             "type": "object",

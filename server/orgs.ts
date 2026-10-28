@@ -1070,10 +1070,20 @@ function writerEnvelope(orgId: string, by: ProfileChange["by"]): Envelope {
 }
 
 /** Add a person (the operator's; `referral` creates a proposed one). Returns the person as stored. */
-export async function addPerson(orgId: string, input: PersonInput, by: ProfileChange["by"] = { kind: "operator" }): Promise<Person> {
+export async function addPerson(orgId: string, input: PersonInput, by: ProfileChange["by"] = { kind: "operator" }, word?: OwnWord): Promise<Person> {
   const personId = shortId("p_");
-  await actOrThrow(orgId, orgSid(orgId), "person/add", { personId, person: input, namesTaken: namesTaken(orgId), ...writerPayload(by) }, writerEnvelope(orgId, by), SETTLE);
+  await actOrThrow(orgId, orgSid(orgId), "person/add", { personId, person: input, namesTaken: namesTaken(orgId), ...writerPayload(by), ...(word ? { ownWord: true } : {}) }, word?.envelope ?? writerEnvelope(orgId, by), SETTLE);
   return findPerson(orgId, personId)!;
+}
+
+/**
+ * A project overseer's roster write on the operator's own word (a turn their own message started, never a
+ * run they did not start or a message the global Overseer sent): its turn's envelope, attended. The person
+ * statechart then lets the `overseer` writer create an active person and write any person's contact
+ * (field authority); without it, or unattended, the writer keeps its own fields.
+ */
+export interface OwnWord {
+  envelope: Envelope;
 }
 
 /**
@@ -1081,11 +1091,11 @@ export async function addPerson(orgId: string, input: PersonInput, by: ProfileCh
  * steering fields): the person statechart checks field authority and every cap, and routes a status in
  * the patch to its one transition (C10). Returns the person as stored.
  */
-export async function applyChange(orgId: string, personId: string, patch: Record<string, unknown>, by: ProfileChange["by"]): Promise<Person> {
+export async function applyChange(orgId: string, personId: string, patch: Record<string, unknown>, by: ProfileChange["by"], word?: OwnWord): Promise<Person> {
   const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
   // A person whose snapshot doesn't load is no unknown person: the host answers "Fix or restore it, then reload."
   if (!findPerson(orgId, personId) && !unreadable(orgId, personSid(orgId, personId))) throw new OrgError("Unknown person", 404);
-  await actOrThrow(orgId, personSid(orgId, personId), "person/edit", { patch: clean, namesTaken: namesTaken(orgId, personId), ...writerPayload(by) }, writerEnvelope(orgId, by), SETTLE);
+  await actOrThrow(orgId, personSid(orgId, personId), "person/edit", { patch: clean, namesTaken: namesTaken(orgId, personId), ...writerPayload(by), ...(word ? { ownWord: true } : {}) }, word?.envelope ?? writerEnvelope(orgId, by), SETTLE);
   if ("tz" in clean || "hours" in clean) await rewindowOrgHours(orgId);
   return findPerson(orgId, personId)!;
 }

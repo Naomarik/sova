@@ -177,7 +177,7 @@ describe("the powers, as the statecharts declare them (al_3)", () => {
       else assert.ok(kinds.has(p), `${tool}: ${p}`);
     }
     for (const [tool, ops] of Object.entries(OP_POWER)) for (const [op, p] of Object.entries(ops)) assert.ok(kinds.has(p), `${tool} ${op}: ${p}`);
-    assert.deepEqual(OP_POWER.sova_roster, { read: "always", approve: "roster", decline: "roster" });
+    assert.deepEqual(OP_POWER.sova_roster, { read: "always", approve: "roster", decline: "roster", add: "operator", contact: "operator" });
     assert.deepEqual([TOOL_POWER.sova_pipeline, TOOL_POWER.sova_hold, TOOL_POWER.sova_correct, TOOL_POWER.sova_set_state, TOOL_POWER.sova_project_verbs], ["always", "always", "per-op", "operator", "per-op"]);
     assert.deepEqual([TOOL_POWER.spec_lookup, TOOL_POWER.sova_draft_specs, TOOL_POWER.sova_draft_approve, TOOL_POWER.sova_draft_build], ["always", "always", "operator", "operator"]);
   });

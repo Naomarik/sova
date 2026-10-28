@@ -159,6 +159,8 @@ interface Rt {
   chatId?: string;
   /** Whether the run in progress answers a message the operator sent (UserTurns, in the chat). */
   attended(): boolean;
+  /** …and that message is the operator's own (typed or their click), never one the global Overseer sent. */
+  ownMessage(): boolean;
   /** The run id of the look whose turn runs now: an act the overseer makes in it names it (`lookRun`),
       so the history links it to that look. */
   lookRun?: string;
@@ -180,6 +182,12 @@ function attendedOf(rt: Rt): boolean {
   if (run && run.call.chatId === rt.chatId) return run.call.attended;
   return (rt.chatId ? chatHandle(rt.chatId)?.mirror.attended : false) ?? false;
 }
+/** The operator's own message opened this run: only a server-hosted tool's run of this overseer's chat says so
+    (the call's `own`); anything else is not (fail closed). */
+function ownMessageOf(rt: Rt): boolean {
+  const run = serverToolCall();
+  return !!run && run.call.chatId === rt.chatId && run.call.attended && run.call.own === true;
+}
 /** The operator's click that opened this run, per card row with its chosen label (§app.overseer/copies): only a
     server-hosted tool's run of this overseer's chat carries the click's mark; anything else has none. */
 function clicksOf(rt: Rt): ClickChoice[] | null {
@@ -190,7 +198,7 @@ function clicksOf(rt: Rt): ClickChoice[] | null {
 function rtOf(projectId: string): Rt {
   let rt = rts.get(projectId);
   if (!rt) {
-    const made: Rt = { projectId, attended: () => attendedOf(made) };
+    const made: Rt = { projectId, attended: () => attendedOf(made), ownMessage: () => ownMessageOf(made) };
     rts.set(projectId, (rt = made));
   }
   return rt;
@@ -675,6 +683,7 @@ function partCtx(rt: Rt, paths: ProjectOverseerPaths): OverseerPartCtx {
     settings: () => readPoSettings(paths),
     effective: () => effectiveOf(projectId),
     attended: () => rt.attended(),
+    ownMessage: () => rt.ownMessage(),
     overseerId: () => readPoState(paths)?.current ?? "",
     envelope: () => overseerEnvelope(projectId, paths, rt.attended()),
     gatheringChoice: (input) => gatheringChoice(projectId, input),
@@ -1372,11 +1381,14 @@ registerSpecialHost({
 });
 
 /** The project's tools as its runtime builds them, for the tests. */
-export const toolsForTest = (projectId: string, opts: { attended?: boolean } = {}) => {
+export const toolsForTest = (projectId: string, opts: { attended?: boolean; own?: boolean } = {}) => {
   const rt = rtOf(projectId);
-  if (opts.attended === undefined) return projectOverseerTools(toolHost(rt));
-  // As in a turn the operator started (or not), whatever the runtime's own turn says.
-  return projectOverseerTools(toolHost({ ...rt, attended: () => opts.attended! }));
+  if (opts.attended === undefined && opts.own === undefined) return projectOverseerTools(toolHost(rt));
+  // As in a turn the operator started (or not), whatever the runtime's own turn says; `own`: by their own
+  // message (default: when attended), or by one the global Overseer sent (false).
+  const attended = opts.attended ?? opts.own ?? false;
+  const own = attended && (opts.own ?? true);
+  return projectOverseerTools(toolHost({ ...rt, attended: () => attended, ownMessage: () => own }));
 };
 
 /** Whether the project's overseer is answering the operator right now (tests). */

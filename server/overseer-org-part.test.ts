@@ -131,6 +131,41 @@ describe("its levels (§app.project-overseer/autonomy-levels)", () => {
     await settings(portal.id, { autonomy: "L1" });
   });
 
+  test("sova_roster add and contact: only on the operator's own word; contact is write-only, `[contact]` in its activity and history", async () => {
+    const own = (params: Record<string, unknown>, opts: { attended?: boolean; own?: boolean } = { own: true }) =>
+      po.toolsForTest(portal.id, opts).find((t) => t.name === "sova_roster")!.execute("call-roster", params as never, undefined, undefined, undefined as never);
+    const WORD = /^Error: Adding a person or a contact is the operator's: ask them in your reply or with sova_card\.$/;
+    const RITA = "+90 555 000 0111";
+    const before = orgs.readRoster(org.id).length;
+    // A run the operator did not start, and a message the global Overseer sent: refused, nothing written.
+    for (const opts of [{ attended: false }, { attended: true, own: false }]) {
+      await assert.rejects(() => own({ op: "add", name: "Rita Kaya", contact: { whatsapp: RITA } }, opts), WORD, JSON.stringify(opts));
+      await assert.rejects(() => own({ op: "contact", person: "Tony", contact: { whatsapp: RITA } }, opts), WORD, JSON.stringify(opts));
+    }
+    assert.equal(orgs.readRoster(org.id).length, before, "no one was added");
+    // The operator's own message: added, active, the contact never echoed.
+    const added = await own({ op: "add", name: "Rita Kaya", role: "Front desk", language: "tr", contact: { whatsapp: RITA } });
+    const rita = orgs.readRoster(org.id).find((p) => p.name === "Rita Kaya")!;
+    assert.equal(textOf(added), `Added Rita Kaya (${rita.id}), contact set.`);
+    assert.equal(rita.status, "active");
+    assert.equal(rita.contact?.whatsapp, RITA);
+    assert.equal(textOf(await own({ op: "add", name: "Sami" })), `Added Sami (${orgs.readRoster(org.id).find((p) => p.name === "Sami")!.id}).`);
+    // contact on an existing person: a key given replaces that one, the rest stay; empty clears them all.
+    assert.equal(textOf(await own({ op: "contact", person: "Tony", contact: { whatsapp: RITA } })), "Tony: contact set.");
+    assert.deepEqual(orgs.readRoster(org.id).find((p) => p.id === tony.id)!.contact, { email: "tony@example.invalid", phone: "15550000101", whatsapp: RITA });
+    assert.equal(textOf(await own({ op: "contact", person: "Sami", contact: {} })), "Sami: contact cleared.");
+    await assert.rejects(() => own({ op: "add", name: "Tony" }), /Tony is already on the roster\./, "the roster's own rules apply");
+    // The history names the project overseer as the writer; nothing it reads gives a value back.
+    const lines = orgs.readHistory(org.id, rita.id);
+    assert.ok(lines.length && lines.every((l) => l.by.kind === "overseer"), JSON.stringify(lines.map((l) => l.by)));
+    for (const r of [await run("sova_roster", { op: "read" }), await run("sova_project")]) assert.doesNotMatch(JSON.stringify(r), /555 000 0111|5550000111/);
+    assert.doesNotMatch(po.renderProjectOverseerPrompt(portal.id, []), /555 000 0111/);
+    const logged = actions().filter((a) => a.tool === "sova_roster" && (a.args?.op === "add" || a.args?.op === "contact"));
+    assert.ok(logged.length >= 4, "each call is in its activity");
+    for (const a of logged) if ("contact" in a.args) assert.equal(a.args.contact, "[contact]");
+    assert.doesNotMatch(JSON.stringify(logged), /555 000 0111/);
+  });
+
   test("sova_send_status is a read at every level", async () => {
     await settings(portal.id, { autonomy: "L0" });
     assert.match(textOf(await run("sova_send_status", {}, { attended: false })), /no WhatsApp sends match/);

@@ -181,7 +181,7 @@ const PLAIN_POWER: Record<string, ToolPower> = {
 
 /** Per op, for the tools whose ops differ in power. */
 export const OP_POWER: Record<string, Record<string, PowerId | "always" | "operator">> = {
-  sova_roster: { read: "always", approve: "roster", decline: "roster" },
+  sova_roster: { read: "always", approve: "roster", decline: "roster", add: "operator", contact: "operator" },
   sova_files: { list: "always", copy: "codingPrompt", delete: "operator" },
   sova_correct: { reopen: "bookkeeping", "skip-stall": "bookkeeping", relink: "bookkeeping", "clear-failed": "bookkeeping", merged: "markMerged" },
   sova_hold: { cancel: "always" },
@@ -349,6 +349,13 @@ export function gapOf(q: { gap?: unknown }): string {
   return g.startsWith("§") ? g : `§${g}`;
 }
 
+/** A call's arguments as its action log keeps them: every `contact` value is `[contact]`. */
+function contactScrubbed<T>(v: T): T {
+  if (Array.isArray(v)) return v.map(contactScrubbed) as T;
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "contact" && x !== undefined ? "[contact]" : contactScrubbed(x)])) as T;
+  return v;
+}
+
 // ---- the tools -------------------------------------------------------------------------------------
 
 export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor = serverRedactor): Tool[] {
@@ -357,8 +364,9 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
   function act(name: string, run: (params: any, toolCallId: string) => Promise<Out>, counts: PoLimitKind | undefined = COUNTS[name]) {
     return async (toolCallId: string, params: any, signal?: AbortSignal): Promise<Out> => {
       const log = (outcome: "ok" | "partial" | "refused" | "error", error?: string, note?: string) =>
-        // A kept preview link never reaches the log, even in a refused call's arguments (§app.project-overseer/previews).
-        logAction(redactPreviewLinksDeep({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: params, outcome, ...(error !== undefined ? { error } : {}), ...(note ? { note } : {}) }), p.actions);
+        // A kept preview link never reaches the log, even in a refused call's arguments (§app.project-overseer/previews);
+        // a contact it was given (sova_roster add, contact) is `[contact]` there, never the value.
+        logAction(redactPreviewLinksDeep({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: contactScrubbed(params), outcome, ...(error !== undefined ? { error } : {}), ...(note ? { note } : {}) }), p.actions);
       try {
         const refused = operatorOnlyRefusal(name, host.attended());
         if (refused) throw new Refusal(refused);

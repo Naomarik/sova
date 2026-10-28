@@ -206,6 +206,9 @@ export interface ServerToolCall {
   name: string;
   params: unknown;
   attended: boolean;
+  /** Attended, and opened by the person's own message, never by one the global Overseer sent (its
+      message route). Absent (an older chat process): not their own. */
+  own?: boolean;
   card: string | null;
 }
 

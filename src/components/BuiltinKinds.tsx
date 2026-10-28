@@ -17,6 +17,7 @@ import { profileIconName } from "../lib/profiles";
 import { useThreadRows } from "./thread-rows";
 import { BriefRow } from "./OverseerCards";
 import { ExplainCard } from "./ExplainCard";
+import { TeamMessageCard } from "./TeamMessageCard";
 
 /**
  * The views of Sova's own transcript cards, moved onto the card toolkit one kind at a time
@@ -37,6 +38,9 @@ export const BUILTIN_VIEWS = {
   "profile-mark": ProfileMarkRow,
   brief: (props: KindViewProps) => <BriefRow text={props.item.text ?? ""} time={props.item.at} />,
   explain: (props: KindViewProps<NonNullable<NonNullable<TranscriptItem["report"]>["explain"]>>) => <ExplainCard explain={props.value} />,
+  "team-report": (props: KindViewProps<NonNullable<NonNullable<TranscriptItem["report"]>["team"]>>) => (
+    <TeamMessageCard report={props.item.report!} team={props.value} time={props.item.at} attachments={props.item.attachments} />
+  ),
 } satisfies Record<string, Component<KindViewProps<never>>>;
 
 /** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is

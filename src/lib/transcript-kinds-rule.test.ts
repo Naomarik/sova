@@ -62,6 +62,7 @@ const MOVED: Record<string, string[]> = {
   "profile-mark": [],
   brief: ["BriefRow"],
   explain: ["ExplainCard"],
+  "team-report": ["TeamMessageCard"],
 };
 
 test("a kind the toolkit draws has no branch of its own in Thread.tsx", () => {

@@ -301,12 +301,13 @@
       "server/overseer-owner-send.test.ts",
       "server/overseer-org-part.ts",
       "server/overseer-org-tools.test.ts",
-      "statecharts/test/sova/statecharts/refit/org_project_test.cljc"
+      "statecharts/test/sova/statecharts/refit/org_project_test.cljc",
+      "server/private-text-match.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-19T17:08Z",
-      "source": "pi-session:01a15500-4be1-7306-a0f9-1fe0d5e9f90e#cf4c45cb"
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
     }
   },
   "§app.owner-page/updates": {
@@ -328,8 +329,19 @@
       "shared/owner.ts",
       "src/components/OwnerProjectCard.tsx",
       "src/lib/owner-card.ts",
-      "server/owner-updates.test.ts"
-    ]
+      "server/owner-updates.test.ts",
+      "server/outreach/core.ts",
+      "server/overseer-org-part.ts",
+      "server/private-text-match.ts",
+      "server/private-text-match.test.ts",
+      "server/overseer-org-part.test.ts",
+      "server/org-about-privacy.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+    }
   },
   "§app/owner-page": {
     "kind": "surface",

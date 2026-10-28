@@ -129,13 +129,17 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   a search, one idea, an idea's scope and impact, an idea's explorer; §app.overseer/ideas); the
   user's todos (`sova_todos`: open, done or all; §app.overseer/todos); the links this host knows
   (`sova_links`, §app.overseer/links-tools); this host's live public links with their URLs
-  (`sova_public_links {kind?: "session" | "handoff" | "owner", session?, org?}`: one line per live
+  (`sova_public_links {kind?: "session" | "handoff" | "owner" | "preview", session?, org?}`: one line per live
   link, its kind, then a session share's title, recipient label and share id, a hand-off's org,
-  person, gathering title and hand-off number, or an owner link's org and owner, then its expiry
-  and URL, or "link not kept" for one made before tokens were kept, §app.session-share/link; the
+  person, gathering title and hand-off number, an owner link's org and owner, or a preview's id
+  (`pv_…`), project, what it serves (a running copy's endpoint, a port, or a folder) and branch,
+  then its expiry, its state and URL, or "link not kept" for one made before tokens were kept,
+  §app.session-share/link; `preview` lists every project's active preview links and running copies'
+  share links, never a person's own link to one (§app.outreach/links); the
   address warning when links can't open from outside; this host only; its action-log line names
   the tool and how many links it gave, never a link; the prompt says to give a link when the user
-  asks for one, and project overseers don't have it); this host's organizations, their projects and project
+  asks for one, and project overseers don't have it); every registered project's code history and
+  Sova's own server log (`sova_project_git`, `sova_server_log`, §app.overseer/code-history); this host's organizations, their projects and project
   overseers, and one roster person (`sova_orgs`, `sova_org_project`, `sova_org_person`,
   §app.overseer/org-reads), and, in turns the operator started, an organization's history
   (`sova_org_history`, §app.org-history/readers), never a contact or a link
@@ -177,11 +181,14 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   `send_link`, §app.owner-page/send), gathering sessions (`sova_gather`, §app.overseer/org-people-facing) and
   project overseers (`sova_project_overseer`, §app.overseer/org-project-overseers); any project's
   running instances on this host (`sova_project_verbs`, §app.project-services/callers: status,
-  logs and doctor at any time, the other verbs (`share` is the operator's: `needs-confirm`; `revoke`
-  is its own), and `onboard`, which starts the Project verbs
+  logs and doctor at any time, the other verbs (`share` included, its result carrying the link's URL,
+  §app.project-services/share; `revoke` is its own), and `onboard`, which starts the Project verbs
   playbook on a registered project (§app.project-runtime/onboard), in a turn the user started; its
-  `leftovers` read and, in the turn a card click opens, teardown, reset and stop of copies it did not
-  start and `stop-leftover`, §app.overseer/copies).
+  `leftovers` read; stop of any copy, and teardown and reset of copies it did not start whose
+  conversation is finished or archived, on the user's word; and, in the turn a card click opens,
+  teardown and reset of a copy whose conversation is still working and `stop-leftover`,
+  §app.overseer/copies); the WhatsApp sender's state, and its start when it is stopped or failed
+  (`sova_whatsapp`, §app.outreach/overseer-sender).
 - **Sending (`sova_send`) is typing in that session's composer.** Idle, with subagents working or
   not, the message starts a turn. Mid-turn it is **queued as a follow-up** behind the running turn
   by default: a queued row in that session, "Queued", which the user can remove until it is
@@ -334,7 +341,7 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   launching or messaging an explorer), every `sova_todo` operation, ticking included, and every
   organization act (`sova_org`, `sova_org_project`, `sova_roster`, `sova_owner`,
   `sova_project_decisions`, `sova_gather`, `sova_project_overseer`, a message to a project overseer
-  included). Still allowed: every read, `sova_note`, `sova_card`, `sova_navigate`
+  included), and `sova_whatsapp` `start`. Still allowed: every read, `sova_note`, `sova_card`, `sova_navigate`
   (which never moves a tab in such a turn), and `read`/`grep`/`find`/`ls`. The refusal tells the
   model to stop and raise a `sova_card` card instead; the user's click starts a turn in which it
   may act, within the caps. The one exception is an act on sessions that a live approval for later
@@ -400,6 +407,35 @@ their read tools (§app.overseer/tools, "Files").
   a settings file it edits shows the operator as uncommitted edits to land or discard,
   §app.project-overseer/settings), and that a refused write
   is final: never the same file another way, never a session asked to write it.
+
+## §app.overseer/code-history — Reading a project's code history and Sova's server log
+
+The global Overseer has no shell (§app.overseer/hosting), so two reads give it what it would
+otherwise ask a session to run. Both are reads: allowed in every run, attended or not, no side
+effects, on this host only. Project overseers don't have them.
+
+- **`sova_project_git {project, command, args?}`** runs git, read-only, in the root of one project
+  registered in Sova (`project`: its id or exact name; standalone or in an attached organization),
+  so it sees that repository's branches and worktrees. `command` is one of `status`, `log`, `diff`,
+  `show`, `branch` and `merge-base`; `args` are revisions, paths and options that only shape the
+  output. `branch` only lists (`--list`, `-a`, `-r`, `-v`, `--merged`, `--no-merged`, `--contains`,
+  `--show-current`): naming a branch to make, `-d`, `-D`, `-m`, `-c`, `-u` or any other option
+  that changes something is refused. Any write subcommand (commit, checkout, switch, reset, merge,
+  rebase, stash, fetch, push, worktree, tag, config, …) is refused, and so are options that write a
+  file, run a program or point git elsewhere (`-c`, `-C`, `--git-dir`, `--work-tree`,
+  `--exec-path`, `--output`, `--ext-diff`, `--textconv`); a refusal names what it refused, and
+  nothing runs. It never writes to the repository (not even the index refresh `status` would make)
+  and runs no program the repository's config names (a pager, an external diff, a textconv, an
+  fsmonitor, a hook). A path outside the project root, or one the Overseer's file guard denies
+  (§app.overseer/tools), is refused. The output is cut at 12,000 characters, saying so.
+- **`sova_server_log {lines?}`** gives the newest lines of this Sova server's own log, its systemd
+  user unit's journal: `lines` defaults to 100, at most 500. Where there is no such journal it says
+  why and reads nothing: on macOS (the launchd agent's log file, which it doesn't read), when the
+  server runs as no systemd user unit, or when `journalctl` isn't on the host.
+- **Redacted.** Both outputs go through the Overseer's tool wrapper: every known secret value and
+  secret shape becomes `[redacted]`, and every roster contact `[contact]` (§app.overseer/tools,
+  §app.overseer/org-projection). Its action-log line names the project and command, or the line
+  count, never the output.
 
 ## §app.overseer/session-truth — What `sova_session` says is true now
 
@@ -805,7 +841,10 @@ jumps to it (§app.overseer/links).
   open, "Or type your answer." follows the buttons. A card that may gate an act that reaches people
   or ends something, the global Overseer's card listing a person, a project, an org, a folder, a
   gathering session or a Ready to land row, and either overseer's card listing a copy or a leftover
-  process (`clickOnly`), has no such hint: only its click approves that act. A click that
+  process (`clickOnly`), has no such hint: only its click approves that act (adding, archiving or
+  unarchiving a project, which the user's typed word in a turn they started approves with no card
+  at all, and stopping a copy, tearing down or resetting one whose conversation is finished, which
+  their word approves too, aside: §app.overseer/org-people-facing, §app.overseer/copies). A click that
   doesn't reach the Overseer (the chat refuses it, is restarting, reloads or closes before taking
   it, its connection ends before the chat opens, or the queued click leaves undelivered) never goes
   into the composer, where sending it again would be typed text that approves nothing: its card's
@@ -979,12 +1018,14 @@ session is on which branch survives a compaction and a restart:
   its buttons, never the composer, with the same note.
 - An earlier project overseer conversation stays read only: its cards show no live buttons.
 
-## §app.overseer/copies — Copies and leftover processes, behind a click
+## §app.overseer/copies — Copies on the user's word, leftover processes behind a click
 
-The Overseer, and each project overseer within its own project, can tear down, reset or stop any
-running copy of a project (§app/project-services), whoever started it, and stop a leftover process
-that holds one of a project's copy ports, but only in the turn the user's click on a card listing
-that copy or process opens. No helper session is needed.
+The Overseer, and each project overseer within its own project, can stop any running copy of a
+project (§app/project-services) on the user's word, and tear down or reset one it did not start on
+the user's word once the conversation that started it is finished or archived; a card's click is
+needed only while that conversation is still working, and to stop a leftover process that holds
+one of a project's copy ports. The user's word is a turn the user started: a message they typed,
+or a card click. No helper session is needed.
 
 - **Rows.** `sova_card`'s `items` take `copies: [{instance, note?, default?, choices?}]` (an instance
   id as `status` prints it) and `leftovers: [{project, port, note?, default?, choices?}]`. Each copy is
@@ -1010,15 +1051,25 @@ that copy or process opens. No helper session is needed.
   reset, "Stop…" a stop of a copy or of a leftover process); for a card-level option, the option's
   label must start with that word ("Tear Down All"). Keep, Not Now, Cancel and any other label approve
   nothing, even as a card-wide button. A row the click gave no choice approves nothing.
-- **What the click opens.** In that turn, through `sova_project_verbs`: `teardown` and `reset` of a
-  copy the caller did not start; `down` and `teardown` of a copy with active share links (its row
-  shows the count; teardown ends them as always, §app.project-services/share); and `stop-leftover`.
-  Without such a click those answer `needs-confirm` with a sentence telling it to ask with `sova_card`,
-  listing the copy under `copies` (or the port under `leftovers`). A plain `down` of a copy without
-  share links, and every verb on a copy the caller started, keep their rules
-  (§app.project-services/callers). Stopping a shared service stays the operator's, and slot 0 stays out
-  of reach: no click approves either. A project overseer's act still goes through its statechart, and
-  the click turn is the operator's, so it is taken whatever its powers say.
+- **What the user's word opens.** In a turn the user started, through `sova_project_verbs`: `down`
+  of any copy, one with active share links included (the copy's data is kept, and its links answer
+  the not-running page until it is up again, then work as before, §app.project-services/share);
+  `teardown` and `reset` of a copy the caller did not start, once the conversation that started it is
+  finished (not working now) or archived, or when no conversation started it (the operator, an
+  overseer's earlier copy, conformance). Teardown ends the copy's share links as always.
+- **What only a click opens.** `teardown` and `reset` of a copy the caller did not start while the
+  conversation that started it is still working, and `stop-leftover`, run only in the turn a click on
+  a card listing that copy (with a choice naming that act) or that process opens. Otherwise they
+  answer `needs-confirm` with a sentence telling it to ask with `sova_card`, listing the copy under
+  `copies` (or the port under `leftovers`), and saying, for a copy, that its conversation is still
+  working. Outside a turn the user started, `down` of a copy with active share links, and teardown and
+  reset of a copy the caller did not start, answer `needs-confirm` too. A plain `down` of a copy
+  without share links, and every verb on a copy the caller started, keep their rules
+  (§app.project-services/callers). Stopping a shared service stays the operator's, deploys keep their
+  own callers (§app.project-services/deploy-callers), and slot 0 stays out of reach: no word or click
+  resets or tears down a project's main copy the caller did not start. A project overseer's act still
+  goes through its statechart, and the user's turn is the operator's, so it is taken whatever its
+  powers say.
 - **Uncommitted edits stay.** Teardown of a copy whose folder has uncommitted edits goes ahead and
   keeps the folder (the worktree is removed only when clean, and the branch never,
   §app.project-services/teardown); the reply says the edits were kept in their folder, as teardown's
@@ -1043,10 +1094,12 @@ that copy or process opens. No helper session is needed.
   SIGKILL if the port is not free within 5 s. The result names the port and slot it freed. Telling who
   holds a port needs Linux; elsewhere both say "Sova can't tell which process holds a port on this
   computer."
-- **Told to the model.** The tools' descriptions and both prompts say when to raise such a card (every
-  copy or process under `copies` or `leftovers`, per-row choices such as Tear Down / Reset / Stop / Keep
-  with each row's default on its recommendation), to act in the turn the click opens, to relay kept
-  edits and each refusal as the result gives it, and that a typed yes never counts.
+- **Told to the model.** The tools' descriptions and both prompts say that the user's word is
+  enough to stop a copy, and to tear down or reset one whose conversation is finished or archived;
+  when to raise a card (a copy whose conversation is still working, every leftover process: each under
+  `copies` or `leftovers`, per-row choices such as Tear Down / Reset / Stop / Keep with each row's
+  default on its recommendation), to act in the turn the click opens, to relay kept edits and each
+  refusal as the result gives it, and that a typed yes never answers such a card.
 
 ## §app.overseer/transcript-window — Only the rows shown or jumped to
 
@@ -2201,8 +2254,8 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   result of `about` names the text's length, never the text.
 - **`sova_org_project {op}`**: `edit {org?, project, name?, root?, stakeholder?, owner_hidden?}`
   (a stakeholder by id or name, or `none`, only for a placed project), `archive {org?, project}`
-  and `unarchive {org?, project}` (§app.organizations/archive; archive asks first,
-  §app.overseer/org-people-facing), `add {root | session | clone, org?, name?}` and `import
+  and `unarchive {org?, project}` (§app.organizations/archive; both on the user's typed word in a
+  turn they started, no card, §app.overseer/org-people-facing), `add {root | session | clone, org?, name?}` and `import
   {project, org}` (§app.overseer/org-project-add).
 - **`sova_org {op}`** also takes `attach {dir}` and `detach {org}` (§app.overseer/org-project-add).
 - **`sova_roster {op}`**: `add {org, name, role?, decides?, skills?, language?, voice?, contact?}`
@@ -2235,17 +2288,11 @@ organization write (§app.overseer/caps); a refusal takes nothing.
   of this host (`root`: an absolute path; a leading `~/` is the user's home) or a session's folder
   (`session`: a session of this host whose files are local; a remote or peer session is refused),
   standalone through `POST /api/projects`, or with `org` placed in that org through its Add Project
-  (`POST /api/orgs/:id/projects`). It runs only in the turn opened by a click on a confirm card
-  (§app.overseer/confirm) listing a **folder** row with that folder's checkout root and the same org,
-  or none for standalone (and, when the row names one, the same name); anywhere else it refuses with
-  the card sentence before any other refusal: "This adds a project: ask with sova_card, listing
-  {what} in its items, and act in the turn the user's click starts." When no click on a card opened
-  the turn at all, that first refusal names the folder with the org the call asked for (its id when
-  it resolves, else the org as the call wrote it; "(standalone)" only when the call names no org)
-  and says why: "This adds a project, and this turn wasn't opened by a click on a card: reopen the
-  card (sova_card reopen, if you recorded its answer) or ask again with sova_card, listing {what} in
-  its items, so the user can click it again, and act in the turn that click starts." The route
-  checks the same row on the card the call carries (403 without it). A folder the Overseer's file guard denies
+  (`POST /api/orgs/:id/projects`). It runs on the user's word: in a turn the user started, their
+  typed message is enough, with no card, and so is their click on any card (§app.overseer/confirm);
+  when that card lists a **folder** row with this folder's checkout root and the same org (or none
+  for standalone) and the call names no name, the row's name is used. Neither the tool nor the route
+  asks for a card row. A run the user did not start refuses it, as every act. A folder the Overseer's file guard denies
   (credentials, an org workspace; §app.overseer/tools) is refused by the tool, the card and the
   route; otherwise it is refused where the page refuses (§app.projects/registration). The result:
   "Added {name} ({id})[ in {org}]: {root}[, the checkout root of {folder}]."
@@ -2337,17 +2384,19 @@ organization write (§app.overseer/caps); a refusal takes nothing.
   typed by a person, until it is handed over. A Retry (regenerate) of the click's message carries no
   mark: the turn it starts approves nothing. The ops: `sova_gather` `start`, `offer`,
   `handoff`, `take`, `close`, `revoke_link` and `send_link`; `sova_owner` `send_link`; `sova_roster` `leave`, and a `revert` that sets
-  `left`; `sova_project_overseer` `clear`; `sova_org_project` `archive`, `import` and `add` of a
-  folder or a session's folder (never a clone); `sova_org` `detach` (§app.overseer/org-project-add).
+  `left`; `sova_project_overseer` `clear`; `sova_org_project` `import`; `sova_org` `detach`
+  (§app.overseer/org-project-add).
   Anywhere else (a typed
   "yes", the click's text typed or pasted, a card that didn't list the target, a card already answered,
   superseded or dropped, a later turn, a Retry of the click, a card from before card ids) the op refuses without doing anything, before any other
-  refusal it could get (an archive with no card gets this, not "Stop these first"). The statecharts check
+  refusal it could get. The statecharts check
   it (§app.project-overseer/statecharts): the Overseer's calls to the routes carry its turn's card
   beside its sender mark:
   "This reaches people or ends something: ask with sova_card, listing {what} in its items, and
-  act in the turn the user's click starts." `extend`, `decline`, `unarchive` and every other op
-  need no card. So the card itself never invites a typed answer: a global Overseer card listing a
+  act in the turn the user's click starts." `extend`, `decline`, every other op, and these acts
+  on projects need no card: `sova_org_project` `add` (of a folder, a session's folder or a clone),
+  `archive` and `unarchive` run on the user's typed word in a turn they started; a click on any card
+  starts such a turn too (§app.overseer/org-project-add). So the card itself never invites a typed answer: a global Overseer card listing a
   person, a project, a folder, an org or a gathering session drops its "Or type your answer." hint
   (§app.overseer/confirm). The same click test gates the copy and leftover-process acts of both
   overseers, where Sova also checks each row's choice (§app.overseer/copies).

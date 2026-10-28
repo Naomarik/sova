@@ -85,11 +85,21 @@
       "server/test-wait.ts",
       "server/org-routes.ts",
       "statecharts/src/sova/statecharts/rules/person.cljc",
-      "statecharts/src/sova/statecharts/person.cljc"
+      "statecharts/src/sova/statecharts/person.cljc",
+      "server/project-overseer-tools.ts",
+      "statecharts/test/sova/statecharts/refit/person_test.cljc",
+      "statecharts/EVENTS.md",
+      "server/vendor/statecharts.js",
+      "server/overseer-org-part.ts"
     ],
     "requires": [
       "§app.organizations/roster"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+    }
   },
   "§app.organizations/files-card": {
     "kind": "behavior",

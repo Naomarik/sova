@@ -10,6 +10,7 @@ import { ShowChangesCard } from "./ChangesViewer";
 import type { ShowChangesDetails } from "../../pi-config/extensions/show-changes/details";
 import { TourCard } from "./TourCard";
 import type { TourCardDetails } from "../../shared/tour";
+import { OwnerRequestNote } from "./OwnerRequestNote";
 
 /**
  * The views of Sova's own transcript cards, moved onto the card toolkit one kind at a time
@@ -23,4 +24,6 @@ export const BUILTIN_VIEWS = {
   offer: (props: KindViewProps<OfferCard>) => <OfferCardView card={props.value} />,
   "show-changes": (props: KindViewProps<ShowChangesDetails>) => <ShowChangesCard details={props.value} />,
   tour: (props: KindViewProps<TourCardDetails>) => <TourCard details={props.value} />,
+  // An owner request a Start Chat put at the top (§app.project-assistant/request-chat).
+  "owner-request": (props: KindViewProps<NonNullable<TranscriptItem["ownerRequest"]>>) => <OwnerRequestNote card={props.value} />,
 } satisfies Record<string, Component<KindViewProps<never>>>;

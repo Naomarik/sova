@@ -43,7 +43,6 @@ import type { ReplyTiming } from "../../shared/usage/perf";
 import { replyHovers } from "../lib/perf";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { ThreadRowsContext, type ThreadRows } from "./thread-rows";
-import { OwnerRequestNote } from "./OwnerRequestNote";
 import { ShowChangesCard } from "./ChangesViewer";
 import { TourCard } from "./TourCard";
 import { liveTourCalls, newestTourRows, tourFold, tourLine } from "../lib/tour-rows";
@@ -950,8 +949,6 @@ export function HistoryItems(props: {
               <Match when={is<NonNullable<TranscriptItem["report"]>>("report")}>
                 {(report) => <ReportRow report={report()} attachments={item.attachments} />}
               </Match>
-              {/* An owner request a Start Chat put at the top (§app.project-assistant/request-chat). */}
-              <Match when={is<NonNullable<TranscriptItem["ownerRequest"]>>("owner-request")}>{(card) => <OwnerRequestNote card={card()} />}</Match>
               <Match when={is<HandoffRunInfo>("handoff-run")}>
                 {(run) => <HandoffRunRow run={run()} text={item.text ?? ""} />}
               </Match>

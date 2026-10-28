@@ -136,7 +136,7 @@ export default function DrawingView(props: { decl: OwnKind; drawing: OwnDrawing;
         </pre>
       </Show>
       <div class="vis-body" hidden={source()}>
-        <Show when={error()}>{(why) => <CardErrorBox why={why().trim().replace(/\.$/, "")} reload={reload} />}</Show>
+        <Show when={error()}>{(why) => <CardErrorBox why={why().trim().replace(/\.$/, "")} reload={reload} noun="drawing" />}</Show>
         <iframe
           ref={(el) => {
             for (const [k, v] of Object.entries(CARD_SHELL_ATTRS)) el.setAttribute(k, v);

@@ -59,12 +59,12 @@ export const whyOf = (err: unknown): string => {
 };
 
 /** A card's error box: what went wrong, in the error colour, and Reload (§chat.transcript-cards/toolkit). */
-export function CardErrorBox(props: { why: string; reload: () => void }) {
+export function CardErrorBox(props: { why: string; reload: () => void; /** What couldn't be drawn: a card (the default) or a drawing. */ noun?: "card" | "drawing" }) {
   return (
     <div class="banner banner-error card-error" role="status">
       <Icon name="alert-circle" class="banner-icon" />
       <div class="banner-main">
-        <p class="banner-title">This card couldn't be drawn: {props.why}.</p>
+        <p class="banner-title">This {props.noun ?? "card"} couldn't be drawn: {props.why}.</p>
       </div>
       <div class="banner-action">
         <button type="button" class="button button-sm" onClick={() => props.reload()}>

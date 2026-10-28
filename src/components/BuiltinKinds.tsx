@@ -1,4 +1,4 @@
-import { For, Match, Show, Switch, type Component } from "solid-js";
+import { createMemo, For, Match, Show, Switch, type Component } from "solid-js";
 import type { BatonMark } from "../../shared/baton";
 import { Chip, Icon } from "./ui";
 import type { KindViewProps } from "../lib/transcript-kinds";
@@ -18,9 +18,13 @@ import { profileIconName } from "../lib/profiles";
 import { useThreadRows } from "./thread-rows";
 import { AssistantText, Thinking, UserTurn } from "./MessageRows";
 import { modelLabel, modelMismatch } from "../lib/format";
-import { toolResultView } from "../lib/message";
+import { resultDetails as detailsOf, toolCallArgs, toolResultView } from "../lib/message";
+import { confirmDetails } from "../lib/overseer";
+import { CARD_TOOL, LEGACY_CONFIRM_TOOL } from "../../shared/overseer-card";
+import { profileToolCard, ProfileToolCardView } from "./ProfileCards";
+import { CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo } from "./OverseerCards";
 import { toolContent } from "../lib/tool-content";
-import { ToolCard } from "./ToolCard";
+import { ToolCard, type ToolStatus } from "./ToolCard";
 import { BriefRow } from "./OverseerCards";
 import { ExplainCard } from "./ExplainCard";
 import { TeamMessageCard } from "./TeamMessageCard";
@@ -57,6 +61,7 @@ export const BUILTIN_VIEWS = {
   "assistant-text": ReplyText,
   thinking: (props: KindViewProps) => <Thinking text={props.item.text ?? ""} />,
   "tool-result": OrphanResult,
+  tool: ToolRow,
 } satisfies Record<string, Component<KindViewProps<never>>>;
 
 /** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is
@@ -267,6 +272,94 @@ function OrphanResult(props: KindViewProps) {
           />
         );
       })()}
+    </Show>
+  );
+}
+
+/** A tool call: its card (a deck card, a legacy confirm, a link, a profile's send) when its result
+    reads as one, else the tool card with its result folded in. */
+function ToolRow(props: KindViewProps) {
+  const rows = useThreadRows();
+  const item = props.item;
+  const source = rows.toolSource();
+  const view = () => {
+    const r = item.toolCallId ? rows.result(item.toolCallId) : undefined;
+    return r ? toolResultView(r) : undefined;
+  };
+  const status = (): ToolStatus => {
+    const v = view();
+    if (v) return v.isError ? "error" : "done";
+    return rows.running(props.index?.() ?? 0) ? "running" : "none";
+  };
+  const resultDetails = () => {
+    const r = item.toolCallId ? rows.result(item.toolCallId) : undefined;
+    return r ? detailsOf(r) : undefined;
+  };
+  // A legacy card (from before card ids): read-only, answered by the rule it had then.
+  const confirm = () =>
+    item.text === LEGACY_CONFIRM_TOOL && status() !== "error"
+      ? (confirmDetails(resultDetails()) ?? confirmDetails(toolCallArgs(item)))
+      : null;
+  const card = () => (item.text === CARD_TOOL && status() === "done" ? rows.cardRow(item) : undefined);
+  /** A made or ended link reads as a card naming its members (§app.overseer/links-tools);
+      running or failed, the plain tool card. */
+  const linked = () =>
+    (item.text === "sova_link" || item.text === "sova_unlink") && status() === "done" ? linkDetails(resultDetails()) : null;
+  /** session_send and a profile's sova_create_session read as cards (§chat.profiles/delivery). */
+  /** The arguments and output its rows don't carry, asked for by the call's row id. */
+  const lazy = createMemo(() => {
+    const r = item.toolCallId ? rows.result(item.toolCallId) : undefined;
+    if (!source || !(item.tool?.lazy || r?.tool?.lazy)) return undefined;
+    return toolContent.handle(source, item.id, { resultId: r?.id, callId: item.toolCallId, size: (item.tool?.bytes ?? 0) + (r?.tool?.bytes ?? 0) });
+  });
+  const profileCard = () => profileToolCard(item.text, status(), toolCallArgs(item), resultDetails(), view()?.output);
+  return (
+    <Show
+      when={!card()}
+      fallback={
+        <Show when={card()!.newest} fallback={<CardRevision card={card()!.card} line={card()!.details.line} />}>
+          <DeckCard card={card()!.card} line={card()!.details.line} />
+        </Show>
+      }
+    >
+    <Show
+      when={confirm()}
+      fallback={
+    <Show
+      when={linked()}
+      fallback={
+    <Show
+      when={profileCard()}
+      fallback={
+    <ToolCard
+      name={item.text ?? "tool"}
+      args={toolCallArgs(item)}
+      summary={rows.tourEarlier(item) ?? item.tool?.summary}
+      stats={(item.text === "edit" || item.text === "write") && item.toolCallId ? rows.result(item.toolCallId)?.tool?.stats : undefined}
+      calls={item.toolCallId ? rows.result(item.toolCallId)?.tool?.calls : undefined}
+      lazy={lazy()}
+      details={resultDetails()}
+      status={status()}
+      output={view()?.output}
+      images={item.toolCallId ? rows.result(item.toolCallId)?.images : undefined}
+      attachments={item.toolCallId ? rows.result(item.toolCallId)?.attachments : undefined}
+      action={item.text === "sova_navigate" && status() === "done" ? <NavigateGo details={resultDetails()} /> : undefined}
+    />
+      }
+    >
+      {(card) => <ProfileToolCardView card={card()} />}
+    </Show>
+      }
+    >
+      {(d) => <LinkCard details={d()} ended={item.text === "sova_unlink"} />}
+    </Show>
+      }
+    >
+      {(details) => {
+        const answer = () => rows.confirmAnswer(item, details());
+        return <ConfirmCard details={details()} answered={answer().answered} choice={answer().choice} />;
+      }}
+    </Show>
     </Show>
   );
 }

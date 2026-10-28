@@ -422,6 +422,11 @@ export function HistoryItems(props: {
     author: () => props.author,
     hasUserRow,
     hasCall: (callId) => calls().has(callId),
+    result: (callId) => results().get(callId),
+    running: (i) => props.streaming && i >= openFrom(),
+    tourEarlier,
+    cardRow,
+    confirmAnswer: (item, details) => confirmAnswer(props.items, props.items.indexOf(item), details),
     toolSource: () => toolSource,
     row: (i) => rows()[i],
     timing: (id) => timings().get(id),
@@ -618,90 +623,6 @@ export function HistoryItems(props: {
                     <AlignCard report={item.report!} align={align()} attachments={item.attachments} />
                   </Show>
                 )}
-              </Match>
-              <Match when={is("tool")}>
-                {(() => {
-                  const view = () => {
-                    const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
-                    return r ? toolResultView(r) : undefined;
-                  };
-                  const status = (): ToolStatus => {
-                    const v = view();
-                    if (v) return v.isError ? "error" : "done";
-                    return props.streaming && index() >= openFrom() ? "running" : "none";
-                  };
-                  const resultDetails = () => {
-                    const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
-                    return r ? detailsOf(r) : undefined;
-                  };
-                  // A legacy card (from before card ids): read-only, answered by the rule it had then.
-                  const confirm = () =>
-                    item.text === LEGACY_CONFIRM_TOOL && status() !== "error"
-                      ? (confirmDetails(resultDetails()) ?? confirmDetails(toolCallArgs(item)))
-                      : null;
-                  const card = () => (item.text === CARD_TOOL && status() === "done" ? cardRow(item) : undefined);
-                  /** A made or ended link reads as a card naming its members (§app.overseer/links-tools);
-                      running or failed, the plain tool card. */
-                  const linked = () =>
-                    (item.text === "sova_link" || item.text === "sova_unlink") && status() === "done" ? linkDetails(resultDetails()) : null;
-                  /** session_send and a profile's sova_create_session read as cards (§chat.profiles/delivery). */
-                  /** The arguments and output its rows don't carry, asked for by the call's row id. */
-                  const lazy = createMemo(() => {
-                    const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
-                    if (!toolSource || !(item.tool?.lazy || r?.tool?.lazy)) return undefined;
-                    return toolContent.handle(toolSource, item.id, { resultId: r?.id, callId: item.toolCallId, size: (item.tool?.bytes ?? 0) + (r?.tool?.bytes ?? 0) });
-                  });
-                  const profileCard = () => profileToolCard(item.text, status(), toolCallArgs(item), resultDetails(), view()?.output);
-                  return (
-                    <Show
-                      when={!card()}
-                      fallback={
-                        <Show when={card()!.newest} fallback={<CardRevision card={card()!.card} line={card()!.details.line} />}>
-                          <DeckCard card={card()!.card} line={card()!.details.line} />
-                        </Show>
-                      }
-                    >
-                    <Show
-                      when={confirm()}
-                      fallback={
-                    <Show
-                      when={linked()}
-                      fallback={
-                    <Show
-                      when={profileCard()}
-                      fallback={
-                    <ToolCard
-                      name={item.text ?? "tool"}
-                      args={toolCallArgs(item)}
-                      summary={tourEarlier(item) ?? item.tool?.summary}
-                      stats={(item.text === "edit" || item.text === "write") && item.toolCallId ? results().get(item.toolCallId)?.tool?.stats : undefined}
-                      calls={item.toolCallId ? results().get(item.toolCallId)?.tool?.calls : undefined}
-                      lazy={lazy()}
-                      details={resultDetails()}
-                      status={status()}
-                      output={view()?.output}
-                      images={item.toolCallId ? results().get(item.toolCallId)?.images : undefined}
-                      attachments={item.toolCallId ? results().get(item.toolCallId)?.attachments : undefined}
-                      action={item.text === "sova_navigate" && status() === "done" ? <NavigateGo details={resultDetails()} /> : undefined}
-                    />
-                      }
-                    >
-                      {(card) => <ProfileToolCardView card={card()} />}
-                    </Show>
-                      }
-                    >
-                      {(d) => <LinkCard details={d()} ended={item.text === "sova_unlink"} />}
-                    </Show>
-                      }
-                    >
-                      {(details) => {
-                        const answer = () => confirmAnswer(props.items, props.items.indexOf(item), details());
-                        return <ConfirmCard details={details()} answered={answer().answered} choice={answer().choice} />;
-                      }}
-                    </Show>
-                    </Show>
-                  );
-                })()}
               </Match>
             </Switch>
             {/* Under the bubble, once per entry (see `strips`): the reply place. */}

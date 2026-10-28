@@ -82,6 +82,7 @@ in master's history through 83dd1240). From the field-only rule on, it gives the
 | Rule A, M6 content, R1 | 558a816a, f9069bbb, 85f4e788 | Packet carries the notes about every claim it delivers; the product spec gains code lists, `about` links, ledes, whats and the frame; `toc --dir down` lists the notes about an H1's H2s | See "Rule A and M6 content" below. |
 | M3b topic search | 8d26139c (promotion 1ecd9cf9) | `where <topic words…>`: several unquoted words are one query; claims and areas ranked by field-weighted BM25 (`core/topic.mjs`) in topic rows of their own; name and path rows unchanged | Search bench (`tests/search/`), dev 52 queries: R@3 0% → 59.6%, MRR 0 → 0.532 against a9b87037; held-out 48, run once at 0b43feb9: R@3 64.6%, MRR 0.552; 110 name and path lookups identical to a9b87037. Agent arm with the old mode text: no measurable difference (correct 90 of 96 with the old search and 87 with topic search, about 55k tokens per run in both): agents rarely used it, hence M2b. |
 | M2b search-first text | 6f33e2ac (`feat/spec-where-first`, before the merge round) | Step 1 finds roots with `where` and 3–5 of the task's words (or a path or name), tries other words once, then `map` (also for a whole-area task); the tools line lists `where <path\|name\|topic words>` first | Agent arm, blind-graded, 36 questions × 2 reps, GLM 5.3 high and DeepSeek Flash 4.1 low, same tools, only the mode text differs: median tokens per run −27% to −37% in all four sets (GLM 46.1k → 29.1k and 59.3k → 41.0k; DeepSeek 78.1k → 51.2k and 91.1k → 66.1k); correct 265 / 288 against 270 / 288 for master's text; wrong answers 2 against 1. Misses cluster on questions worded unlike the spec, where a plausible wrong hit replaces the overview the area list gave. A titles-only area list (`map --titles`, read once per task beside `where`) was tried and dropped: −11 / 288 correct, 3 wrong. |
+| Split mode text (al_3) | `feat/spec-slim` (before the merge round) | `spec-mode.md` becomes a 306-word finding-your-way part (search, read, verify in the code, cite files); the writing steps move to `spec/WRITING.md`, handed over once per chat (self-read, first census note, or the align go-ahead; again after compaction), never in the prompt | Round 3 of the context test, pre-registered, 12 real requests × 2, arms pooled for grading: recall no spec / today / short 60.6 / 55.2 / 56.6, short − today +1.5 [−4.1, +7.2], wrong −0.04, process items 1.79 → 1.58, no-file items 3.50 → 2.71, tokens 204k → 189k; edit check claim-before-code 5/6 in both arms (5 of 6 short-arm agents read WRITING.md themselves). Verdict KEEP (not worse). Today's text still trails no spec by 5.4 points [−9.0, −1.3]: the split didn't close that gap. |
 
 The rest are re-applied harness updates and docs; see [CHANGELOG.md](CHANGELOG.md).
 
@@ -413,6 +414,15 @@ file per area, 15% and 4%, and 29 of the 30 per-area conflicts are one record ch
 whole-spec takes; 7.2 re-apply commits a week. Targets (GOALS.md constraint 3): both-sides changes ≤ 15%,
 Git conflicts on record files ≤ 5%, re-apply commits halved, whole-spec recoveries 0. Tool latency: about
 5 to 10 ms more per call (101 files read instead of one); answers identical.
+
+## Retired: the assessment companion (2026-10-26, branch `feat/spec-size`; not on master yet)
+
+`sova-spec-assess.mjs` recorded input-bound dispositions for a change. It ran automatically only from 10-02
+to 10-04 (switched off on 10-03), and nothing ran it after that. Its 215 packets named no claim, and none
+was ever concluded (al_5 plan, decision q5). So it served no goal. The tool, its transport, its read policy
+and its tests are gone, and the packets are archived outside the repository. The review companion and its
+saved reviews stay. A 6 KB per-claim size warning ships on the same branch. 124 of Sova's claims are over
+the cap, waiting for the per-area migration.
 
 ## Open
 

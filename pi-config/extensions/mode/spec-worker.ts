@@ -14,22 +14,31 @@
  * After each census step the census state goes to the file SOVA_SPEC_LANDED_FILE names (set by the
  * spawning session): the parent reads from it the one line naming the § this worker's changes landed in.
  *
+ * The worker's first note of any kind hands over the writing procedure (`$core/../WRITING.md`), once, its
+ * Workers section first, unless the worker read it itself; a compaction re-arms it.
+ *
  * No prompt, command or tool of its own; the trusted tools are found as spec-mode.md's `$core` line finds
  * them. PI_SPEC_CENSUS_HOOK=0 turns the census off.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { homedir } from "node:os";
-import { bashCommands, CensusHook, coreDir, driftNote, LANDED_FILE_ENV, SpecWriteGuard, writeLanded } from "./spec-guard.ts";
+import { bashCommands, CensusHook, coreDir, driftNote, LANDED_FILE_ENV, procedureToldIn, SpecWriteGuard, writeLanded } from "./spec-guard.ts";
 
 export default function specWorker(pi: ExtensionAPI): void {
-	const census = new CensusHook({ core: () => coreDir(process.env, homedir()) });
+	const census = new CensusHook({ core: () => coreDir(process.env, homedir()), worker: true });
 	const writes = new SpecWriteGuard();
 	const off = () => process.env.PI_SPEC_CENSUS_HOOK === "0";
 	let running = false;
 
-	pi.on("session_start", async () => {
-		census.reset();
+	// A resumed worker was told the writing procedure if its history since the last compaction shows it.
+	pi.on("session_start", async (_event, ctx) => {
+		census.reset(procedureToldIn(ctx.sessionManager.getBranch()));
 		running = false;
+	});
+
+	// The procedure went with the history: it is handed over again with the next note.
+	pi.on("session_compact", async () => {
+		census.rearmProcedure();
 	});
 
 	// The tree as the run finds it is the baseline, so the run's first edit is already a delta.
@@ -53,7 +62,7 @@ export default function specWorker(pi: ExtensionAPI): void {
 	pi.on("tool_result", async (event, ctx) => {
 		if (off()) return;
 		const { text: forbidden, lost } = await writes.after(event.toolCallId, { cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
-		const { text: digest, failure } = await census.after({
+		const { text: digest, failure, procedure } = await census.after({
 			id: event.toolCallId,
 			cwd: ctx.cwd,
 			orphansSaid: lost,
@@ -65,7 +74,7 @@ export default function specWorker(pi: ExtensionAPI): void {
 		});
 		writeLanded(process.env[LANDED_FILE_ENV], census.snapshot());
 		// Workers are headless: a failure is said to the model (F12).
-		const text = [forbidden, driftNote(event.toolName, event.input, event.content), digest, failure].filter(Boolean).join("\n");
+		const text = [forbidden, driftNote(event.toolName, event.input, event.content), digest, failure, procedure ? `\n${procedure}` : ""].filter(Boolean).join("\n");
 		if (text) return { content: [...event.content, { type: "text" as const, text }] };
 	});
 

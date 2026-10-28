@@ -3,7 +3,8 @@
 
 The spec tools preserve declared requirements, keep proposed changes separate, and report what
 was checked against particular inputs. Their checks establish structure and applicability, not
-semantic correctness. The minor mode adds task reminders and the census note, names once after a
+semantic correctness. The minor mode adds task reminders and the census note, hands the writing
+procedure over once per chat when the agent starts to change behavior, names once after a
 session's last edit the foreign § its change landed in that it hasn't read, names in a finished
 code-writing worker's summary the § its changes landed in, and never holds a turn's end; response wording is not proof that implementation and requirements agree.
 
@@ -21,65 +22,10 @@ or the drafts the tool confirms are already official.
 Records may also declare `embeds` (surfaces drawn inside a claim), `core` and `about` (the target a
 note serves), `notOwned` (on an area, the claims elsewhere that own what a reader might look for in it), and an `agreed` decision (who decided, when, and where the go-ahead was given); the claims flagged `core` form an
 always-on frame that arrives with the first page of a `read`.
-They change context delivery, not release policy. Structured observation-only assessments are separately
-recorded input-bound comparisons, not proof of requirements truth or mandatory release policy.
+A claim over the size cap is warned about when a draft takes it there or grows it, and never refused.
+They change context delivery, not release policy.
 A shipped playbook runs these tools for a review the operator starts, inside limits the operator
 sets, and only then.
-
-## §tools.spec/change-assessments — Input-bound structured comparisons
-
-Observation-only structured assessments retain explicitly routed claim candidates and unmapped
-changed files with changed, preserved, not-applicable or unresolved recorder dispositions, reasons
-and verification bases bound to exact claim and implementation inputs. Absent, unreadable,
-uninvestigated or changed inputs remain explicitly unknown or stale. No disposition, declared
-label or applicable receipt establishes semantic correctness or changes release policy. Batch
-exclusions retain candidate identities without duplicate claim prose.
-
-Durable metadata-only receipts keep declared labels, accepted-intent assertions, recorded
-verification outcomes and current input applicability distinct, with nullable task and worker
-attribution. Preparation starts every candidate unresolved; omission never excludes it. Explicit
-paths and caller-declared snapshot baselines support projects without Git; missing baselines remain
-unknown. In Git projects, resolved commit hashes and initial dirty snapshot hashes are separately
-identified. Assessment-specific inspection refuses its own receipt storage before graph, claim-tree
-or lazy incumbent contents are read, including optional draft triage's current-tree reads; ordinary
-inspection CLI policies keep their existing behavior.
-Refused inputs are not read, raw source and logs are not retained, and concurrent
-cooperating writers cannot overwrite immutable receipts. The tools do not authenticate identity or
-infer exhaustive behavioral candidates. Status enumeration preserves unread, corrupt and capped
-receipt inventories as incomplete and keeps unknown owner attribution visible.
-
-Each capture uses a fresh in-memory inspection graph and batches immutable Git blob inspection
-without dropping routed candidates, closure inputs or refusal findings. Separate captures and
-status checks do not share cached source state, and existing inspection CLI output and refusal
-contracts remain unchanged. The raw manifest and claim bytes actually parsed by that graph must
-match their bound present input hashes within the capture; mixed source versions refuse as a race,
-even when the requested claim's own prose is unchanged. Optional draft triage binds the exact
-proposed, baseline and current manifest/claim sources it reads; changes to those inputs stale prior
-assessments even when candidate identities and reasons stay unchanged.
-
-## §tools.spec/assessment-observations — Assessments run only when asked
-
-No session, pi worker (a Claude Code worker included) or worktree-configured worker runs an assessment
-capture, records a task baseline or writes an assessment receipt by itself: not when a task starts,
-after any tool call, when a turn ends or when a session reopens, with spec on or off. Sessions and
-workers have no assessment tool. An assessment is an explicit companion CLI operation that an
-operator or agent asks for: `prepare` against a declared known base revision, then `record` and
-`status`. Its receipt names that declared base, never a claimed task start. Nothing captures a
-snapshot baseline on the caller's behalf, so a late call cannot subtract the task's own earlier edits
-or commits: with a known base and no declared snapshot, every committed and working-tree change since
-that base is included. Attribution is only what the caller passes; absent attribution stays null.
-
-Receipts and session task and error entries left by earlier automatic observation stay as they are:
-readable, immutable, and never migrated, rewritten or deleted. The state a native
-Claude Code worker hook left from then stays on disk as it was: those hooks no longer run
-(§tools.spec/no-turn-end-check). Session-list and
-merge-readiness refreshes do not consume assessment receipts or query their status. Explicit assessments never change continuations, ordinary
-readiness checks, footer rules or release gates. Successful preparations and records remain normal
-operations even with outstanding claims or failed verification declarations, and stale or unknown
-status remains a valid query. A newer unresolved same-task observation is not hidden by an older
-preserved record. Failed verification remains an explicit outcome distinct from current input
-applicability and the recorder's disposition. Legacy labels without receipts remain declarations
-with unknown assessment provenance.
 
 ## §tools.spec/review-playbook — A spec review runs only when the operator starts it
 
@@ -107,8 +53,8 @@ not a sandbox), with the trusted spec tools at the declared base, and with the a
 reading. Each published command re-establishes the tools' location, root and base itself, never
 relying on an earlier call. It reads a claim as spec mode does (§tools.spec/mode-reading): `toc`
 for the claim's neighbours, then `read` for one exact passage at a time, the first read bringing the frame and every later one
-adding `--no-frame`, keeping whole-chain `packet` and `scope` out of its reading step. A request for a durable assessment receipt is reported as needing a
-separate opt-in method, since the companion has no bounded view of its capture. The report has
+adding `--no-frame`, keeping whole-chain `packet` and `scope` out of its reading step. A request for a durable assessment receipt is reported as having
+no tool, since the assessment companion is retired. The report has
 fixed sections within the report length and keeps observed, inferred and proposed apart; changes to
 the playbook's own method appear there only as proposed diffs, never applied by the run.
 
@@ -136,6 +82,8 @@ its parent's; when the worker settles, its parent gets one line naming where the
 - one line for the new files outside the boundary that no claim maps: "Outside the boundary, no
   claim maps: a, b (+N more): spec any whose change a user sees";
 - the write guard, orphaned-evidence, spec-conflict and promote drift notes, when they apply;
+- on the session's first note of any kind, once per chat, the writing procedure after the digest
+  (§tools.spec/writing-on-demand);
 - at the first call after the session's last edit, the one `Unread § your change landed in` line
   (§tools.spec/unread-landed).
 
@@ -274,18 +222,23 @@ an enclosing repository ignores the whole project, no file is left out and `cens
 
 ## §tools.spec/mode-reading — Spec mode teaches contents first, then one passage
 
-The spec minor mode's guide teaches the pull path. The agent finds its roots with `where`: 3–5 of the
+The spec minor mode's guide is two parts (§tools.spec/writing-on-demand): a short part that rides
+every turn and the writing procedure, handed over once when the agent starts to change behavior.
+The short part teaches finding your way: search, read, verify each claim in the code it lists (where
+claim and code disagree, the agent says so), and cite a file or commit for every finding, reporting
+the product, not the procedure; the writing procedure holds the full reading steps below again, with
+everything about writing. Together they teach the pull path. The agent finds its roots with `where`: 3–5 of the
 task's own words as a topic (§tools.spec/where-topic), or a path or name; when no hit fits it tries
 other words once, then `map`, which also orients a task spanning a whole area. It looks at a root's
 neighbours with `toc` (`--dir out`, or `--dir down` for an area) before reading them, and runs `impact --near` on any claim it will change. It then reads each root, and each passage it
 needs, with `read`: every `requires` line whose "what" doesn't rule it out, and any other line
 touching the task. The first `read` brings the frame; later reads add `--no-frame`. A link it didn't read is
 unread, never absent, and "uninvestigated" is unknown, not none. A foreign § its change touched is
-read with `read`. `packet` and `scope` stay listed for whole-chain machine inspection, not as a
-reading step. Every command the guide spells is one the shipped tools parse, with the flags the
-guide pairs with it.
+read with `read`. `packet` and `scope` stay listed, in the writing procedure, for whole-chain
+machine inspection, not as a reading step. Every command either part spells is one the shipped tools
+parse, with the flags it pairs with it.
 
-The guide's promotion lines agree with the draft tool: doc-only evidence covers notes, sections,
+The writing procedure's promotion lines agree with the draft tool: doc-only evidence covers notes, sections,
 agreed records without code (§tools.spec/agreed-promotion) and a change to `embeds`, `about`,
 `core` or `notOwned` alone (§tools.spec/field-promotion); a test drives the draft tool's doc-only rule, so the
 guide fails its test when that rule gains a case the guide doesn't name or drops one it does. For a
@@ -307,9 +260,10 @@ user's go-ahead to build or merge covers committing the docs with the code on it
 for separately; where the user said not to commit, nothing is, and evidence stays pending. A worker
 is told that its parent promotes, on its own branch before calling it ready; a worker promotes,
 commits or records `--commit` evidence only when its brief says to, and then only on its brief's
-branch, never by landing on the default branch. A worker's spec brief lists `toc`, `read` and
-`impact --near` among its read-only commands. The guide rides every turn, so a test caps its word
-count a few words above its length, and growing it is a deliberate change.
+branch, never by landing on the default branch. A worker's spec brief lists `where`, `map`, `toc`,
+`read` and `impact --near` among its read-only commands. The short part rides every turn, so a test
+caps its word count a few words above its length (320), and growing it is a deliberate change; the
+writing procedure has a cap of its own (990).
 
 ## §tools.spec/no-turn-end-check — A turn ends when the model stops
 
@@ -430,7 +384,7 @@ and a trailing newline. An area with no record has no record file. A record hold
 either layout, so evidence recorded against one stays valid in the other.
 
 Every spec tool reads and writes records through one shared module, `core/layout.mjs`: the core's
-commands, the draft tool, the review and assessment tools, Sova's own spec readers and the merge
+commands, the draft tool, the review tool, Sova's own spec readers and the merge
 round. Each gives the same answers on the same spec in either layout. A promotion writes in the layout
 of the tree it promotes into, and a draft keeps its own. A script that can't import the module runs
 `sova-spec.mjs records [--at REV] [--id §x]… --json`, which prints `{layout, meta, records}` and never
@@ -544,7 +498,34 @@ so it says who decided before any code exists. If `agree` reports the promotion 
 agent resolves what it lists and promotes. A changed claim that already maps code keeps its new
 `agreed` in the draft and lands with the build, and the build updates those same records. With
 spec off, or align off, nothing is added, and neither mode's prompt block carries this step: it
-rides only that one result. What the align tool records is unchanged.
+rides only that one result. When the session hasn't been told the writing procedure yet, that result
+carries it after this paragraph (§tools.spec/writing-on-demand). What the align tool records is unchanged.
+
+## §tools.spec/writing-on-demand — The writing procedure reaches a session once, when it starts to change behavior
+
+The spec mode's guide is in two parts, each one copy. The short part, `mode/spec-mode.md`, rides
+every turn of every session and worker with spec on: finding your way (search, read, verify in
+the code, cite files). The writing procedure, `spec/WRITING.md` beside `PROMOTE.md` (the agent
+opens it as `$core/../WRITING.md`), holds everything about drafts, agreeing, evidence, promoting
+and a worker's duties, with the same meaning those rules had when they rode every turn. The short
+part tells the agent to read the procedure before its first edit that changes behavior.
+
+The procedure reaches a session once per chat, at whichever comes first. The first is the agent
+reading it itself: a read of a file named `WRITING.md`, or a shell command that prints one. The
+second is the session's first `[spec census]` note of any kind. The third, with align on too, is
+the `align` result that sets an alignment implementing, after its Agree step
+(§tools.spec/align-agree). The census note and the align result carry it as text appended to that
+tool result, headed as the writing procedure, said once, with the file's path. The text comes from
+the installed tools' own copy. When that file is missing, they carry only a one-line pointer to it.
+After the session is compacted it is handed over again at the next of those moments, even if it
+was read or handed over before. It never goes into the system prompt or the mode section, so a
+Claude Code chat never restarts for it (§chat.mode-menu/minor-toggle-keeps-prompt).
+
+A pi worker, a Claude Code worker included, gets it the same way through its own census
+(§tools.spec/census-note), with the procedure's worker section first. A code-writing worker's spec
+brief, when its prompt lacks the spec block, is generated from both parts by anchor, so it keeps
+every writing rule a brief carried before the split. Its read-only commands include `where` and
+`map`.
 
 ## §tools.spec/agree-source-relay — In pi, the go-ahead's message is handed to `agree`, and workers relay it
 
@@ -559,8 +540,8 @@ itself, so a session whose extensions reload in the same process still follows i
 message rather than taking its own earlier `SPEC_AGREE_SOURCE` for a given reference. A worker never
 derives one from its own messages, which are its spawner's brief, not the person's go-ahead; one given
 none runs `agree` only to be refused (`agree-unsourced`, or `agree-source-not-given` for a
-`--source`) and reports the records ready to agree instead. With spec off, nothing is set. The spec mode's text
-says where the reference comes from, that with `SPEC_AGREE_SOURCE` set the agent passes no `--source`,
+`--source`) and reports the records ready to agree instead. With spec off, nothing is set. The spec mode's
+writing procedure (§tools.spec/writing-on-demand) says where the reference comes from, that with `SPEC_AGREE_SOURCE` set the agent passes no `--source`,
 that a source is a reference, never a description, and that an agreement nobody can point to is never stamped.
 
 ## §tools.spec/field-promotion — A record-field-only change lands on doc-only evidence
@@ -627,6 +608,25 @@ alone, with no Git and no other process. The tool's `drafts` and `prune --offici
 (§tools.spec/draft-hygiene) and Sova's readiness (§chat.worktrees/readiness) call it; the merge
 round's driver reads the verdict `drafts` reports (§chat.merge-round/driver). A draft the rule can't
 read is never official, for each of them.
+
+## §tools.spec/declaration-cap — A claim over 6 KB is warned about, never refused
+
+A claim's size is the UTF-8 bytes of its prose in its claim file: an H1 from its heading to its first
+H2, an H2 from its heading to the next heading, trailing blank lines left out, as `read` and `toc`
+count it. Its record's bytes in `manifest.json` or an area's record file never count, so a claim has
+the same size in either record layout. The cap is 6,144 B, or the spec's optional top-level
+`declarationCap`, a whole number of bytes of at least 1; any other value is a warning
+(`declaration-cap-invalid`) and 6,144 B holds.
+
+`check` gives the cap and how many declarations are over it in its counts (`cap`, `overCap`) and
+each declaration's `bytes`, with no finding per declaration. `draft check` warns
+(`declaration-over-cap`, with `bytes`, `cap` and `was`, its size on the draft's base, absent for a new
+claim) for each declaration the draft takes from at or below the cap to over it, or makes larger while
+it is over; one over the cap that the draft leaves as it was or shrinks is counted under `preexisting`.
+Each warning says to split the claim by topic into sibling claims, the old § keeping a short summary
+that `requires` its parts. A promotion preview or write gives the same warning for each selected
+declaration it would land that way (`sizeWarnings`). None of them refuses anything or changes an exit
+status, and none makes `agree`'s promotion plan unclean.
 
 ## §tools.spec/draft-hygiene — Drafts left behind are reported, and only an approved list or confirmed-official drafts are pruned
 
@@ -709,9 +709,9 @@ read. The actual ordered streams and serialized inventory data also participate 
 so changing the records or order being navigated invalidates an old token. The command stores no
 sessions, cursors, or source snapshots and runs no project code.
 
-The minor-mode guide lists packets beside `scope` for whole-chain machine inspection; its reading
-path is contents first, then one passage (§tools.spec/mode-reading). Full graph tools remain available for deliberate
-machine inspection and review. No new mandatory assessment or release gate is introduced here.
+The minor-mode guide's writing procedure lists packets beside `scope` for whole-chain machine
+inspection; its reading path is contents first, then one passage (§tools.spec/mode-reading). Full graph tools remain available for deliberate
+machine inspection and review. No new mandatory release gate is introduced here.
 
 ### Reading a packet
 

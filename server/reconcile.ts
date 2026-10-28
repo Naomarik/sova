@@ -1191,6 +1191,8 @@ function verificationFor(store: DecisionStore, id: string, conflicts: Conflict[]
   );
 }
 
+const heldReason = (branch: string): string => `it is being built on ${branch}: it becomes official when that branch lands`;
+
 /** Who asked for a promotion: only the operator naming ids one by one may promote a decision made
     outside its author's decision area. */
 export type PromoteMode = "operator-explicit" | "bulk" | "overseer";
@@ -1205,9 +1207,12 @@ export async function promoteDecisions(orgId: string, projectId: string, ids: st
   await syncSpecFacts(orgId, projectId);
   const rows = new Map(listDecisions(orgId, projectId).decisions.map((d) => [d.id, d]));
   const refused: PromoteResult["refused"] = [];
+  // A decision a Build carried onto its own branch becomes official when that branch lands (§app.requirements/draft-approval).
+  const held = await import("./conversation-draft-routes").then((m) => m.decisionsHeldForBranch(projectId)).catch(() => new Map<string, string>());
   for (const id of [...new Set(ids)]) {
     const row = rows.get(id);
     if (!row) refused.push({ id, reason: "unknown decision" });
+    else if (held.has(id)) refused.push({ id, reason: heldReason(held.get(id)!) });
     else if (row.state !== "drafted") refused.push({ id, reason: `it is ${row.state}; only a reconciled (drafted) decision can be promoted` });
     else if (!row.authorOwnsArea && opts.by !== "operator-explicit") refused.push({ id, reason: `outside ${row.name}'s decision area: promote it explicitly by id` });
   }
@@ -1233,7 +1238,12 @@ async function promoteEffect(orgId: string, projectId: string, e: Effect): Promi
   assignRecordIds(project.root, store);
   const want = new Set(Array.isArray(e.ids) ? e.ids.map(String) : []);
   const refused = Array.isArray(e.refused) ? (e.refused as PromoteResult["refused"]) : [];
-  const rows = store.decisions.filter((x) => want.has(x.id));
+  // Whoever asked (the operator, an overseer, the statechart's own drive): a decision a Build carried onto
+  // its branch is left to that branch (§app.requirements/draft-approval).
+  const held = await import("./conversation-draft-routes").then((m) => m.decisionsHeldForBranch(projectId)).catch(() => new Map<string, string>());
+  for (const id of want)
+    if (held.has(id) && !refused.some((r) => r.id === id)) refused.push({ id, reason: heldReason(held.get(id)!) });
+  const rows = store.decisions.filter((x) => want.has(x.id) && !held.has(x.id));
   let promoted: string[] = [];
   let draft: string | undefined;
   let commit: PromoteCommit | undefined;

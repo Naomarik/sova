@@ -48,6 +48,9 @@ export interface DraftItem {
   status: DraftItemStatus;
   /** The coding session the operator started to build it (a change), when one was. */
   buildSessionId?: string;
+  /** The branch a Build carried this conversation's draft onto (its worktree's): the item becomes official
+      when that branch lands, so Approve and the reconciler's promotion leave it to the branch. */
+  buildBranch?: string;
   /** When the operator approved it. */
   approvedAt?: string;
   /** Seeded at rollout from a decision recorded before conversation drafts. */
@@ -105,7 +108,7 @@ export interface DraftSpecSummary {
 export interface DraftApproveResult {
   /** Item ids promoted into the current spec now (new requirements). */
   promoted: string[];
-  /** Item ids approved, waiting for a coding session to build them (changes). */
+  /** Item ids approved, waiting for a coding session to build them (changes, and new items a Build carried onto its branch). */
   waitingForBuild: string[];
   /** Item ids whose decision the legacy path had already promoted (marked promoted, not promoted again). */
   alreadyPromoted: string[];
@@ -122,6 +125,8 @@ export interface DraftBuildResult {
   path?: string;
   /** The item ids it was asked to build. */
   items: string[];
+  /** The branch the conversation's draft was carried onto (its worktree), when it was. */
+  branch?: string;
 }
 
 /** At most this many items in one conversation's record. */

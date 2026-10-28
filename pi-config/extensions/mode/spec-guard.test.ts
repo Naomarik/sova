@@ -33,6 +33,11 @@ import {
 	specReads,
 	unreadLine,
 	UNREAD_PREFIX,
+	PROCEDURE_HEAD,
+	procedurePath,
+	procedureToldIn,
+	readsProcedure,
+	workerFirst,
 	type CensusView,
 	type RankedView,
 	type SpecIO,
@@ -309,6 +314,112 @@ test("CensusHook on a real Git tree: bash-style writes are caught by the git del
 	} finally {
 		rmSync(project, { recursive: true, force: true });
 	}
+});
+
+test("the writing procedure: handed over whole with the first note of any kind, once; again after a compaction; never after the agent read it", async () => {
+	mkdirSync(scratchRoot, { recursive: true });
+	const project = mkdtempSync(join(scratchRoot, "spec-procedure-"));
+	try {
+		const put = (rel: string, text: string) => {
+			mkdirSync(dirname(join(project, rel)), { recursive: true });
+			writeFileSync(join(project, rel), text);
+		};
+		const git = (...args: string[]) =>
+			assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", project, ...args]).status, 0, `git ${args.join(" ")}`);
+		put(".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims: { "§app/shell": { kind: "surface", code: ["src/App.tsx"] } } }));
+		put(".sova/spec/claims/app/shell.md", "# §app/shell\n\nShell.\n");
+		put("src/App.tsx", "1\n");
+		put("README.md", "r\n");
+		put(".sova/spec/.gitignore", "/drafts/\n");
+		git("init", "-q");
+		git("add", "-A");
+		git("commit", "-qm", "base");
+		const writing = readFileSync(procedurePath(CORE), "utf8").trimEnd();
+		assert.equal(procedurePath(CORE), join(CORE, "..", "WRITING.md"), "the copy beside the trusted tools: $core/../WRITING.md");
+		let n = 0;
+		const edit = async (hook: CensusHook, toolName = "bash") => {
+			put(`src/f${++n}.ts`, "x\n");
+			return hook.after({ cwd: project, toolName, input: { command: "cat > f <<EOF" } });
+		};
+
+		// The first note of any kind (here: an unmapped file outside the boundary) carries it, whole.
+		const hook = new CensusHook({ core: () => CORE });
+		await hook.prime(project);
+		put("README.md", "changed\n");
+		const first = await hook.after({ cwd: project, toolName: "bash", input: { command: "true" } });
+		assert.ok(first.text?.startsWith(DIGEST_TAG), "the census note itself is unchanged");
+		assert.equal(first.procedure, `${PROCEDURE_HEAD}; also at ${procedurePath(CORE)}):\n\n${writing}`);
+		assert.ok(!first.text?.includes(PROCEDURE_HEAD), "never folded into the digest's own lines");
+		// Once per session: later notes don't repeat it.
+		const second = await edit(hook);
+		assert.ok(second.text?.startsWith(DIGEST_TAG));
+		assert.equal(second.procedure, undefined, "said once");
+		// A compaction re-arms it: the next note hands it over again.
+		hook.rearmProcedure();
+		const silent = await hook.after({ cwd: project, toolName: "bash", input: { command: "true" } });
+		assert.equal(silent.procedure, undefined, "a call with no note hands nothing over");
+		assert.ok((await edit(hook)).procedure?.startsWith(PROCEDURE_HEAD), "after a compaction, with the next note");
+
+		// The agent read it itself first: no hand-over. A read tool, or a shell command that prints it.
+		for (const [toolName, input] of [["read", { path: procedurePath(CORE) }], ["bash", { command: 'core=/a/core; cat "$core/../WRITING.md"' }]] as const) {
+			const reader = new CensusHook({ core: () => CORE });
+			await reader.prime(project);
+			assert.deepEqual(await reader.after({ cwd: project, toolName, input }), {}, `${toolName}: the read itself is no note`);
+			const note = await edit(reader);
+			assert.ok(note.text?.startsWith(DIGEST_TAG));
+			assert.equal(note.procedure, undefined, `${toolName}: read first, never handed over`);
+			// F4: read, then compacted, then a note: it is handed over again.
+			reader.rearmProcedure();
+			assert.ok((await edit(reader)).procedure?.includes(writing), `${toolName}: read before a compaction is not read after it`);
+		}
+
+		// A reopened session whose history shows it told starts told; reset() alone starts untold.
+		const reopened = new CensusHook({ core: () => CORE });
+		reopened.reset(true);
+		await reopened.prime(project);
+		assert.equal((await edit(reopened)).procedure, undefined);
+		reopened.reset();
+		await reopened.prime(project);
+		assert.ok((await edit(reopened)).procedure);
+
+		// An older install without the file: a one-line pointer, still once.
+		const missing: SpecIO = { ...localIO, readFile: (path) => (path.endsWith("WRITING.md") ? (() => { throw new Error("ENOENT"); })() : localIO.readFile(path)) };
+		const older = new CensusHook({ io: missing, core: () => CORE });
+		await older.prime(project);
+		assert.equal((await edit(older)).procedure, `${PROCEDURE_HEAD}): before your next edit that changes behavior, read ${procedurePath(CORE)}.`);
+		assert.equal((await edit(older)).procedure, undefined);
+
+		// A worker: its Workers section first.
+		const worker = new CensusHook({ core: () => CORE, worker: true });
+		await worker.prime(project);
+		const told = (await edit(worker)).procedure!;
+		assert.ok(told.startsWith(`${PROCEDURE_HEAD}; also at ${procedurePath(CORE)}; you are a worker, so its Workers section comes first):\n\n## Workers\n`), told.slice(0, 200));
+		assert.ok(told.includes("If you are a worker: a parent session started you"));
+		assert.equal(told.split("\n").filter((l) => l.startsWith("Before coding:")).length, 1, "the whole procedure still follows");
+	} finally {
+		rmSync(project, { recursive: true, force: true });
+	}
+});
+
+test("readsProcedure, workerFirst and procedureToldIn: a self-read, a worker's order, and what a session's history shows since its last compaction", () => {
+	assert.ok(readsProcedure("read", { path: "/h/.pi/agent/extensions/spec/WRITING.md" }));
+	assert.ok(readsProcedure("Read", { file_path: "WRITING.md" }));
+	assert.ok(readsProcedure("bash", { command: 'core=/x; sed -n 1,80p "$core/../WRITING.md"' }));
+	assert.ok(readsProcedure("bash", { command: "cd /p && head -100 pi-config/extensions/spec/WRITING.md" }));
+	assert.ok(!readsProcedure("bash", { command: "echo WRITING.md" }), "naming it is no read");
+	assert.ok(!readsProcedure("bash", { command: "cat NOTWRITING.md" }));
+	assert.ok(!readsProcedure("read", { path: "/p/docs/PROMOTE.md" }));
+	assert.ok(!readsProcedure("edit", { path: "/p/WRITING.md" }), "an edit is no read");
+	assert.equal(workerFirst("# T\n\nA.\n\n## Workers\n\nW.\n"), "## Workers\n\nW.\n\n# T\n\nA.");
+	assert.equal(workerFirst("# T\n\nA."), "# T\n\nA.", "no Workers section: as it is");
+	const result = (text: string) => ({ type: "message", message: { role: "toolResult", content: [{ type: "text", text }] } });
+	const call = (name: string, args: object) => ({ type: "message", message: { role: "assistant", content: [{ type: "toolCall", name, arguments: args }] } });
+	assert.equal(procedureToldIn([]), false);
+	assert.equal(procedureToldIn([result(`out\n${DIGEST_TAG} x\n\n${PROCEDURE_HEAD}; also at /c/../WRITING.md):\n\nbody`)]), true, "handed over in a tool result");
+	assert.equal(procedureToldIn([call("read", { path: "/a/spec/WRITING.md" })]), true, "read by the agent");
+	assert.equal(procedureToldIn([result(`${PROCEDURE_HEAD}; …`), { type: "compaction" }]), false, "a compaction starts afresh");
+	assert.equal(procedureToldIn([{ type: "compaction" }, call("bash", { command: "cat x/WRITING.md" })]), true);
+	assert.equal(procedureToldIn([{ type: "message", message: { role: "user", content: [{ type: "text", text: PROCEDURE_HEAD }] } }]), false, "only a tool result counts, never a user's words");
 });
 
 test("a manifest.json in a Git conflict: the census says to run merge-manifest, then the one recovery, once per conflict", async () => {

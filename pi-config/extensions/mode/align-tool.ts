@@ -40,6 +40,8 @@ export interface AlignToolHost {
 	style?(): "default" | "simplified" | "pm";
 	/** Whether the spec minor mode is on now: a go-ahead then is also the spec's Agree step. */
 	specOn?(): boolean;
+	/** The spec writing procedure, once per session: its text when the session hasn't been told it yet, else undefined. */
+	specProcedure?(): Promise<string | undefined>;
 }
 
 /**
@@ -293,7 +295,10 @@ export function registerAlignTool(pi: ExtensionAPI, host: AlignToolHost, form: A
 				});
 				if (outcome.details.doc) host.changed(outcome.details.doc);
 				const goAhead = outcome.details.doc && outcome.details.changes.some((c) => c.kind === "status" && c.to === "implementing");
-				const text = goAhead && host.specOn?.() ? `${outcome.text}\n\n${alignSpecAgreeText(outcome.details.doc!.id)}` : outcome.text;
+				const agree = goAhead && host.specOn?.();
+				// The go-ahead is a moment to hand the writing procedure over, after the Agree step (§tools.spec/writing-on-demand).
+				const procedure = agree ? await host.specProcedure?.() : undefined;
+				const text = agree ? [outcome.text, alignSpecAgreeText(outcome.details.doc!.id), procedure].filter(Boolean).join("\n\n") : outcome.text;
 				return { content: [{ type: "text" as const, text }], details: outcome.details as AlignDetails };
 			} catch (error) {
 				if (error instanceof AlignError) throw new Error(`${error.message}. Nothing was changed.`);

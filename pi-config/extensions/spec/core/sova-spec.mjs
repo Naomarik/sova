@@ -142,12 +142,11 @@ function safePath(root, rel) {
 // The review companion's refusal policy must hold in this subprocess too, before contents are read.
 const SECRET_DIRS = new Set([".git", ".hg", ".svn", ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker"]);
 const SECRET_FILE = /^(?:\.env(?:\..*)?|\.envrc|auth\.json|credentials(?:\.json)?|\.netrc|\.npmrc|\.pypirc|\.pgpass|\.git-credentials|\.htpasswd|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|secrets?(?:(?:[.-][a-z0-9_-]+)*\.(?:json|ya?ml|toml|ini|conf|cfg|env|txt|properties|xml|enc|age|asc))?|.*\.(?:pem|key|p12|pfx|jks|keystore|kdbx|gpg))$/i;
-let reviewPolicy = false, assessmentPolicy = false;
+let reviewPolicy = false;
 // recordPair: a layout-2 record file with its claim file beside it, read for its records whatever its name.
 function reviewRefusal(rel, recordPair = false) {
   if (!reviewPolicy) return null;
   const segs = toPosix(rel).split("/"), low = toPosix(rel).toLowerCase();
-  if (assessmentPolicy && (low === `${DEFAULT_SPEC}/assessments` || low.startsWith(`${DEFAULT_SPEC}/assessments/`))) return "receipt/cache storage is not an input";
   if ([`${DEFAULT_SPEC}/reviews`, `${DEFAULT_SPEC}/.cache`].some((d) => low === d || low.startsWith(d + "/"))) return "review/cache storage is never its own input";
   if (segs.some((s) => SECRET_DIRS.has(s.toLowerCase()))) return "secret, config or runtime-state directory";
   return !recordPair && SECRET_FILE.test(segs.at(-1)) ? "secret or credential file" : null;
@@ -604,12 +603,27 @@ function check(ctx) {
     if (Object.keys(LABELS).every((k) => r[k] === undefined)) labels.unlabeled++;
   }
   const edges = [...ctx.claims.values()].reduce((n, r) => n + (r.requires?.length ?? 0), 0);
-  // Every parsed declaration, so a caller can attribute prose changes to ids. textSha256 hashes exactly scope's text.
+  // Every parsed declaration, so a caller can attribute prose changes to ids. textSha256 hashes exactly scope's text;
+  // bytes is its prose size in the claim file (as read and toc count it), never its record's.
+  const cap = declarationCap(ctx);
+  let overCap = 0;
   const declarations = [...ctx.decls.keys()].sort().map((id) => {
-    const d = ctx.decls.get(id);
-    return { id, file: d.file, lines: d.lines, level: d.level, textSha256: sha(d.text) };
+    const d = ctx.decls.get(id), bytes = Buffer.byteLength(d.text);
+    if (bytes > cap) overCap++;
+    return { id, file: d.file, lines: d.lines, level: d.level, textSha256: sha(d.text), bytes };
   });
-  return { counts: { records: ctx.claims.size, declarations: ctx.decls.size, kinds, labels, requiresEdges: edges, codePaths: code.length }, declarations, frontier, code };
+  return { counts: { records: ctx.claims.size, declarations: ctx.decls.size, kinds, labels, requiresEdges: edges, codePaths: code.length, cap, overCap }, declarations, frontier, code };
+}
+
+// The most prose bytes one declaration should hold: the spec's top-level `declarationCap`, else 6,144. Counted only,
+// never a finding per declaration, so check's exit stays what the other findings make it.
+export const DECLARATION_CAP = 6144;
+function declarationCap(ctx) {
+  const v = ctx.m.declarationCap;
+  if (v === undefined) return DECLARATION_CAP;
+  if (Number.isSafeInteger(v) && v >= 1) return v;
+  add("warn", "declaration-cap-invalid", `declarationCap ${JSON.stringify(v)} is not a whole number of bytes of at least 1; the default ${DECLARATION_CAP} B holds`);
+  return DECLARATION_CAP;
 }
 
 // The manifest boundary. → {include, exclude, skipped, inBoundary} | null (missing: warned) | false (invalid: error).
@@ -1309,6 +1323,7 @@ function human(out) {
     const lb = out.counts.labels, fmt = (o) => Object.entries(o).map(([k, n]) => `${k} ${n}`).join(", ") || "none";
     L.push(`records ${out.counts.records}, declarations ${out.counts.declarations}, requires edges ${out.counts.requiresEdges}, code paths ${out.counts.codePaths}`,
       `labels: authority ${fmt(lb.authority)}; evidence ${fmt(lb.evidence)}; unlabeled ${lb.unlabeled} (declared, not verified)`);
+    if (out.counts.cap !== undefined) L.push(`declarations over the ${out.counts.cap} B cap: ${out.counts.overCap} (draft check warns when a draft makes one cross it or grow)`);
   }
   if (out.census?.mode === "changed") {
     const c = out.census;
@@ -1405,7 +1420,7 @@ function main(argv) {
   if (look?.command === "impact-near") return nearMain(look.rest, lookCore());
   const opt = parseArgs(argv);
   packetInvocation = argv[0] === "packet" || opt.pos[0] === "packet";
-  reviewPolicy = opt["read-policy"] === "review"; assessmentPolicy = false;
+  reviewPolicy = opt["read-policy"] === "review";
   if (packetInvocation) return packetMain(opt);
   let out = { tool: "sova-spec", command: opt.cmd ?? null };
   if (opt.help) { process.stdout.write(USAGE + "\n"); return 0; }
@@ -1442,33 +1457,25 @@ function main(argv) {
   return out.exit;
 }
 
-// Internal stdlib reader for companions: one graph per capture, existing command semantics.
+// Internal stdlib reader for companions: one graph per reader, existing command semantics.
 // Every synchronous query scopes all module state and JSON-detaches its result, like a CLI child.
-// No reader or source cache is shared across captures or status invocations.
+// No reader is shared across calls: make a new one to see changed inputs.
 export function createInspection(root, { spec = DEFAULT_SPEC, readPolicy = "default" } = {}) {
   root = resolve(root);
-  let ctx = null, loaded = [], selected = spec, sourceFiles = [], sourceConflict = false;
+  let ctx = null, loaded = [], selected = spec;
   const within = (base, fn) => {
-    const saved = { findings, reviewPolicy, assessmentPolicy, packetInputs, packetInvocation };
-    findings = [...base]; reviewPolicy = readPolicy !== "default"; assessmentPolicy = readPolicy === "assessment"; packetInputs = null; packetInvocation = false;
+    const saved = { findings, reviewPolicy, packetInputs, packetInvocation };
+    findings = [...base]; reviewPolicy = readPolicy === "review"; packetInputs = null; packetInvocation = false;
     try { return fn(); } finally {
-      ({ findings, reviewPolicy, assessmentPolicy, packetInputs, packetInvocation } = saved);
+      ({ findings, reviewPolicy, packetInputs, packetInvocation } = saved);
     }
   };
   within([], () => {
     const choice = specDir(spec);
-    if (choice.why || !["default", "review", "assessment"].includes(readPolicy)) add("error", "usage", "invalid inspection spec or read policy");
+    if (choice.why || !["default", "review"].includes(readPolicy)) add("error", "usage", "invalid inspection spec or read policy");
     else {
       selected = choice.rel;
-      // Reuse raw-byte hashing at the actual read, not re-encoded parsed text or a second open.
-      packetInputs = { files: [], tree: [] };
       ctx = load(root, selected);
-      const seen = new Map();
-      sourceFiles = packetInputs.files.map(([path, sha256]) => {
-        if (seen.has(path) && seen.get(path) !== sha256) sourceConflict = true;
-        if (!seen.has(path)) seen.set(path, sha256); // never overwrite the first parsed version
-        return { path, sha256 };
-      });
     }
     loaded = [...findings];
   });
@@ -1487,7 +1494,6 @@ export function createInspection(root, { spec = DEFAULT_SPEC, readPolicy = "defa
     return JSON.parse(JSON.stringify(out));
   });
   return Object.freeze({
-    sourceHashes: () => JSON.parse(JSON.stringify({ files: sourceFiles, conflict: sourceConflict })),
     check: () => query("check"),
     scope: (id) => query("scope", id),
     impact: (id) => query("impact", id),

@@ -10,6 +10,8 @@
  * - **Forbidden writes** (SpecWriteGuard): the current spec written by hand, or commits a draft's evidence
  *   names rewritten (a rebase after evidence), are said in the same digest by the call that did it.
  * - **Promote drift** (driftNote): a promote call's drift warnings, relayed in the same digest.
+ * - **The writing procedure** (CensusHook.takeProcedure): the session's first note of any kind carries
+ *   `$core/../WRITING.md` once, unless the agent read it first; a compaction re-arms it.
  *
  * Plain node: builtins only, erasable TypeScript only, no pi types — the mode extension's hooks
  * (index.ts) and the Claude Code workers' hook script (subagents) import the same code. Everything that
@@ -416,6 +418,8 @@ export interface CensusResult {
 	text?: string;
 	/** The census couldn't run: the model line (failureNote), once per cause per work tree. */
 	failure?: string;
+	/** The writing procedure, handed over with the session's first note (CensusHook.takeProcedure): appended after it. */
+	procedure?: string;
 }
 
 /** A bash call that ran the census itself already shows it. */
@@ -436,6 +440,64 @@ export const NO_DRAFT_NOTE =
 
 /** The model's line when the census can't run. */
 export const failureNote = (why: string): string => `${DIGEST_TAG} incomplete: ${why}; run census by hand`;
+
+// ── The writing procedure, handed over once (§tools.spec/writing-on-demand) ──
+
+/** The writing procedure's file name, beside the tools' PROMOTE.md: `$core/../WRITING.md`. */
+export const PROCEDURE_FILE = "WRITING.md";
+/** The opening words of every hand-over, so a session's history shows whether it was told. */
+export const PROCEDURE_HEAD = "Writing procedure (once";
+
+/** Where the trusted tools' own copy of the procedure is. */
+export const procedurePath = (core: string): string => join(dirname(core), PROCEDURE_FILE);
+
+/** A worker reads its own duties first: the procedure's `## Workers` section moved ahead of the rest. */
+export function workerFirst(text: string): string {
+	const at = text.search(/^## Workers\s*$/m);
+	if (at < 0) return text;
+	return `${text.slice(at).trimEnd()}\n\n${text.slice(0, at).trimEnd()}`;
+}
+
+/**
+ * The hand-over text: a head naming the file, then the file as the trusted tools have it (a worker's
+ * section first). When the file can't be read (an older install), the head alone, as a pointer.
+ */
+export function procedureNote(core: string, worker: boolean, read: (path: string) => string | undefined): string {
+	const path = procedurePath(core);
+	const text = read(path);
+	if (text === undefined || !text.trim()) return `${PROCEDURE_HEAD}): before your next edit that changes behavior, read ${path}.`;
+	const who = worker ? "; you are a worker, so its Workers section comes first" : "";
+	return `${PROCEDURE_HEAD}; also at ${path}${who}):\n\n${(worker ? workerFirst(text) : text).trimEnd()}`;
+}
+
+const READERS = new Set(["cat", "sed", "head", "tail", "less", "more", "bat", "nl", "awk", "node", "bun", "python3", "python"]);
+const namesProcedure = (word: unknown): boolean => typeof word === "string" && (word === PROCEDURE_FILE || word.endsWith(`/${PROCEDURE_FILE}`));
+
+/** Whether a tool call reads the procedure itself: a read tool on a file named WRITING.md, or a shell command that prints one. */
+export function readsProcedure(toolName: string, input: unknown): boolean {
+	const args = (input ?? {}) as { path?: unknown; file_path?: unknown; command?: unknown };
+	if (toolName === "read" || toolName === "Read") return namesProcedure(args.path) || namesProcedure(args.file_path);
+	if (toolName.toLowerCase() !== "bash" || typeof args.command !== "string") return false;
+	return simpleCommands(args.command).some((words) => READERS.has(words[0]?.split("/").pop() ?? "") && words.slice(1).some(namesProcedure));
+}
+
+/**
+ * Whether a pi session branch shows the procedure told since its last compaction: a hand-over in a tool
+ * result, or a call that read it. What a reopened session restores; a compaction starts it afresh.
+ */
+export function procedureToldIn(branch: readonly unknown[]): boolean {
+	let told = false;
+	for (const entry of branch) {
+		const e = entry as { type?: string; message?: { role?: string; content?: unknown } };
+		if (e.type === "compaction") told = false;
+		if (e.type !== "message" || !Array.isArray(e.message?.content)) continue;
+		for (const part of e.message.content as { type?: string; text?: unknown; name?: unknown; arguments?: unknown }[]) {
+			if (e.message.role === "toolResult" && part?.type === "text" && typeof part.text === "string" && part.text.includes(PROCEDURE_HEAD)) told = true;
+			if (e.message.role === "assistant" && part?.type === "toolCall" && typeof part.name === "string" && readsProcedure(part.name, part.arguments)) told = true;
+		}
+	}
+	return told;
+}
 
 /**
  * The digest for the files new since the last look, or undefined when there is nothing to say: a first
@@ -936,17 +998,45 @@ export class CensusHook {
 	private chain: Promise<unknown> = Promise.resolve();
 	private readonly io: SpecIO;
 	private readonly core: () => string;
+	/** A worker's hand-over leads with the procedure's Workers section. */
+	private readonly worker: () => boolean;
+	/** The writing procedure is told in this session (since its last compaction): handed over, or read by the agent. */
+	private told = false;
 
-	constructor(options: { io?: SpecIO; core: () => string }) {
+	constructor(options: { io?: SpecIO; core: () => string; worker?: boolean | (() => boolean) }) {
 		this.io = options.io ?? localIO;
 		this.core = options.core;
+		const worker = options.worker;
+		this.worker = typeof worker === "function" ? worker : () => worker === true;
 	}
 
-	/** A new session (or a switch to another): nothing seen yet. */
-	reset(): void {
+	/** A new session (or a switch to another): nothing seen yet; `told` is what its history shows (procedureToldIn). */
+	reset(told = false): void {
 		this.states = new Map();
 		this.open = 0;
 		this.pending.clear();
+		this.told = told;
+	}
+
+	/** A compaction: the procedure is handed over again at the next moment, even if it was told before. */
+	rearmProcedure(): void {
+		this.told = false;
+	}
+
+	/** The procedure counts as told: the agent opened it itself. */
+	markProcedure(): void {
+		this.told = true;
+	}
+
+	/** The hand-over, once: its text if the session hasn't been told yet (and from now on it has), else undefined. */
+	async takeProcedure(): Promise<string | undefined> {
+		if (this.told) return undefined;
+		this.told = true;
+		const core = this.core();
+		const text = await Promise.resolve()
+			.then(() => this.io.readFile(procedurePath(core)))
+			.catch(() => undefined);
+		return procedureNote(core, this.worker(), () => text);
 	}
 
 	/** Each work tree's census state, by top: what a worker's landed line is read from. */
@@ -1012,6 +1102,7 @@ export class CensusHook {
 	}
 
 	after(call: CensusCall): Promise<CensusResult> {
+		if (readsProcedure(call.toolName, call.input)) this.told = true;
 		if (CENSUS_SKIP_TOOLS.has(call.toolName)) return Promise.resolve({});
 		// A failed call (an error result) is closed here like any other: what it changed is its own.
 		if (!call.id || this.pending.delete(call.id) || !this.pending.size) this.open = Math.max(0, this.open - 1);
@@ -1028,7 +1119,9 @@ export class CensusHook {
 				if (result.text) texts.push(result.text);
 				if (result.failure) failures.push(result.failure);
 			}
-			return { ...(texts.length ? { text: texts.join("\n") } : {}), ...(failures.length ? { failure: failures.join("\n") } : {}) };
+			// The session's first census note of any kind hands the writing procedure over, once.
+			const procedure = texts.length || failures.length ? await this.takeProcedure() : undefined;
+			return { ...(texts.length ? { text: texts.join("\n") } : {}), ...(failures.length ? { failure: failures.join("\n") } : {}), ...(procedure ? { procedure } : {}) };
 		}, {} as CensusResult);
 	}
 }

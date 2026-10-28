@@ -71,7 +71,7 @@ export interface KindViewProps<V = unknown> {
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -126,7 +126,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   kind({ id: "align-report", match: (it) => it.kind === "report" && it.report && alignOf(it.report), host: "page", placement: "anchored" }),
   kind({ id: "explain", match: (it) => it.kind === "report" && it.report && explainOf(it.report), host: "page", placement: "anchored", view: { page: "explain" } }),
   kind({ id: "team-report", match: (it) => it.kind === "report" && it.report?.team, host: "page", placement: "anchored", view: { page: "team-report" } }),
-  kind({ id: "report", match: (it) => it.kind === "report" && it.report, host: "page", placement: "anchored" }),
+  kind({ id: "report", match: (it) => it.kind === "report" && it.report, host: "page", placement: "anchored", view: { page: "report" } }),
   // An owner request a Start Chat put at the top (§app.project-assistant/request-chat).
   kind({ id: "owner-request", match: (it) => it.kind === "info" && it.ownerRequest, host: "page", placement: "anchored", view: { page: "owner-request" } }),
   kind({ id: "handoff-run", match: (it) => it.kind === "info" && it.handoffRun, host: "page", placement: "anchored", view: { page: "handoff-run" } }),

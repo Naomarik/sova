@@ -18,6 +18,7 @@ import { useThreadRows } from "./thread-rows";
 import { BriefRow } from "./OverseerCards";
 import { ExplainCard } from "./ExplainCard";
 import { TeamMessageCard } from "./TeamMessageCard";
+import { ReportRow } from "./ReportRow";
 
 /**
  * The views of Sova's own transcript cards, moved onto the card toolkit one kind at a time
@@ -41,6 +42,7 @@ export const BUILTIN_VIEWS = {
   "team-report": (props: KindViewProps<NonNullable<NonNullable<TranscriptItem["report"]>["team"]>>) => (
     <TeamMessageCard report={props.item.report!} team={props.value} time={props.item.at} attachments={props.item.attachments} />
   ),
+  report: (props: KindViewProps<NonNullable<TranscriptItem["report"]>>) => <ReportRow report={props.value} attachments={props.item.attachments} />,
 } satisfies Record<string, Component<KindViewProps<never>>>;
 
 /** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is

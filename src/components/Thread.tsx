@@ -898,9 +898,6 @@ export function HistoryItems(props: {
                   </Show>
                 )}
               </Match>
-              <Match when={is<NonNullable<TranscriptItem["report"]>>("report")}>
-                {(report) => <ReportRow report={report()} attachments={item.attachments} />}
-              </Match>
               <Match when={is("tool")}>
                 {(() => {
                   const view = () => {

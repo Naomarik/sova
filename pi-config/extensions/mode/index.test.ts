@@ -541,7 +541,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	// Promotion is no longer conditional on a commit: promote, or say why not.
 	assert.match(spec, /- Before promoting, read `\$core\/\.\.\/PROMOTE\.md`; promote what you verified, or say in your reply why not\./);
 	assert.doesNotMatch(spec, /Before `git commit`, if/, "the old conditional is gone");
-	assert.match(spec, /A `manifest\.json` conflict: follow the census note\./);
+	assert.match(spec, /A spec conflict in a Git merge: follow the census note\./);
 	// The `--doc-only` cases are checked against the draft tool itself: see "the guide's doc-only cases are the draft tool's".
 	assert.match(usage("sova-spec-draft.mjs", "--no-such-flag"), /merge-manifest/, "merge-manifest is a draft command");
 	assert.match(spec, /never put `§` IDs or spec annotations in source code/);

@@ -110,8 +110,9 @@ guide gets a brief quoting the rules from both parts. The note says:
 
 - its brief is its go-ahead;
 - it works in the draft its brief names, or says which one it started;
-- it doesn't promote or commit unless its brief says so, and then only on its brief's branch,
-  never by landing on the default branch, because the parent promotes on its own branch;
+- it doesn't commit unless its brief says so, and then only on its brief's branch, never by
+  landing on the default branch; its notes on what it verified go in its draft, which lands with
+  the branch;
 - its final report lists each claim it updated that existed before the task.
 
 When a worker that wrote code finishes, its summary carries one line naming the claims its changes

@@ -1062,6 +1062,15 @@ would list master's changes instead.
       docs line with the promises one click away; Land It records the drafts it showed;
     - PROMOTE.md leads with the landing and keeps the manual path; GOALS.md: "Docs land with their code"
       is now done by the landing, and Agree is only for the person's own decision.
+    - the mode text's promote instructions (approved wording, applied on top of al_3): WRITING.md's step 4
+      agree sentence, the evidence/agree paragraph (a note per promise; `agree` only for the user's own
+      decision; Land It is never agreement), the promote bullet (the landing makes drafts official; one
+      `land` before the last commit where nothing lands branches), the finishing bullet, the go-ahead
+      paragraph and the worker paragraph; the worker note (mode/prompt.ts) and the worker brief's pin
+      follow; align-tool.ts's result no longer says `agree` promotes; AGENTS.md's Landing bullet.
+    - Hashes: WRITING.md 95381eb5… (round 3, measured) → c8f4b273… (al_6 landing 2's merge sentence) →
+      e1c22f58… (this change; 980 → 1023 words, its cap 990 → 1030); spec-mode.md unchanged, bd4831dc….
+      Round 3's verdict covers 95381eb5… only: these sentences need their own measured run to extend it.
   - §: computed at landing with `sova-spec.mjs foreign --base <first parent> --head <commit>` (expected
     §chat.worktrees/ready-to-land, §chat.worktrees/pane, §chat.worktrees/landing-answers, §chat.merge-round/round,
     §chat.merge-round/driver, §chat.offers/conditions, §chat.offers/sova-landing, §tools.spec/agree-command,

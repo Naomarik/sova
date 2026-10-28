@@ -101,8 +101,11 @@ also update Y" list live in its guide: read the guide of every area your task to
   go-ahead survives the captain's clean master merge into the branch; a new commit of the branch's
   own needs a new word. No merge into master needs a recorded go-ahead. A project without a captain
   declares its own landing offer, or none.
-- **Specs land with the branch.** Sova tells a finished session once per commit to promote its spec
-  drafts on its branch and commit them; the branch reads Landing specs until then. If it can't,
+- **Specs land with the branch.** A branch's spec drafts become official when it lands: once every
+  check passed, the merge round's check makes them official as one docs commit, so code and docs
+  land in one merge. A chat writes drafts and one verification note per promise; drafts that don't
+  fit, or that changed after Land It, hold the branch (Landing specs) and Sova tells the chat what
+  to fix. If it can't,
   the user may land it without them: "land it without its specs" typed in the chat (`worktree land`
   records that), or the card's Merge Without Specs….
 - **The one exception:** a Project Overseer's settings change card on Sova's own project lands its

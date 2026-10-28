@@ -11,12 +11,13 @@
       "pi-config/extensions/spec/tests/agree-command.test.mjs",
       "pi-config/extensions/spec/DRAFTS.md",
       "pi-config/extensions/spec/PROMOTE.md",
-      "pi-config/extensions/spec/README.md"
+      "pi-config/extensions/spec/README.md",
+      "pi-config/extensions/spec/tests/land.test.mjs"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-19T15:37Z",
-      "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+      "at": "2026-10-28T15:18Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
     }
   },
   "§tools.spec/agree-source-relay": {
@@ -76,7 +77,12 @@
       "pi-config/extensions/mode/tests/agree-turn.mjs",
       "pi-config/extensions/spec/docs/MODE.md"
     ],
-    "evidence": "verified"
+    "evidence": "verified",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-28T15:18Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
+    }
   },
   "§tools.spec/assessment-observations": {
     "kind": "behavior",
@@ -208,8 +214,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-25T21:07Z",
-      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
+      "at": "2026-10-28T15:18Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
     }
   },
   "§tools.spec/contents-view": {
@@ -303,6 +309,24 @@
       "pi-config/extensions/spec/DRAFTS.md",
       "pi-config/extensions/spec/tests/draft.test.mjs"
     ]
+  },
+  "§tools.spec/draft-refresh": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/span-promotion"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+      "pi-config/extensions/spec/tests/refresh.test.mjs",
+      "pi-config/extensions/spec/DRAFTS.md"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-28T15:18Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
+    }
   },
   "§tools.spec/field-promotion": {
     "kind": "behavior",
@@ -401,6 +425,25 @@
       "pi-config/extensions/spec/tests/inspection.test.mjs"
     ]
   },
+  "§tools.spec/land": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§tools.spec/promotion-integrity"
+    ],
+    "code": [
+      "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+      "pi-config/extensions/spec/tests/land.test.mjs",
+      "pi-config/extensions/spec/DRAFTS.md",
+      "pi-config/extensions/spec/PROMOTE.md"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-28T15:18Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
+    }
+  },
   "§tools.spec/mode-reading": {
     "kind": "behavior",
     "requires": [
@@ -430,8 +473,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-22T12:29Z",
-      "source": "pi-session:ecc675e0-f5e1-4efc-915d-91012183b844#6f4c32b2"
+      "at": "2026-10-28T15:22Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
     }
   },
   "§tools.spec/near-impact": {
@@ -476,8 +519,8 @@
     "evidence": "reviewed",
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-22T03:00Z",
-      "source": "pi-session:ecc675e0-f5e1-4efc-915d-91012183b844#6f4c32b2"
+      "at": "2026-10-28T15:22Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
     }
   },
   "§tools.spec/promotion-integrity": {
@@ -789,6 +832,11 @@
     "notOwned": [
       "§chat.merge-round/landing-suites",
       "§chat/mode-menu"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-28T15:18Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
+    }
   }
 }

@@ -26,7 +26,8 @@
     "code": [
       ".sova/playbooks/merge-round/scripts/round.mjs",
       ".sova/playbooks/merge-round/tests/round.test.mjs",
-      "server/merge-round-rules.test.ts"
+      "server/merge-round-rules.test.ts",
+      ".sova/playbooks/merge-round/tests/spec-landing.test.mjs"
     ],
     "requires": [
       "§chat.merge-round/private-names",
@@ -34,9 +35,9 @@
       "§chat.worktrees/merge-board"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-27T23:49Z",
-      "source": "pi-session:ed430338-abe1-4918-8a4e-6842c2f9782d#651d1bdc"
+      "by": "naomarik",
+      "at": "2026-10-28T15:18Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
     }
   },
   "§chat.merge-round/landing-suites": {
@@ -83,9 +84,9 @@
       "§chat.worktrees/merge-board"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-27T23:49Z",
-      "source": "pi-session:ed430338-abe1-4918-8a4e-6842c2f9782d#651d1bdc"
+      "by": "naomarik",
+      "at": "2026-10-28T15:18Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
     }
   },
   "§chat/merge-round": {

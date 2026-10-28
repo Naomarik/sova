@@ -35,17 +35,29 @@ by argument list with no shell, locally only (a remote session refuses it).
   given, based on `base` or the session cwd's `HEAD`. The branch it is based on (`base` when it names a
   branch, else the branch the cwd has checked out; none for a commit or a detached HEAD) is kept as
   its base branch, which is where git first looks for it merged (§chat.worktrees/merged-state); it
-  is not the `merge` default. It is tracked as `created`.
+  is not the `merge` default. It is tracked as `created`. In a project with a spec, each spec draft
+  of the session's checkout that holds a record not yet official carrying `agreed` (a decision the
+  user made there) is copied, whole, into the new worktree's drafts, unless one of that name is there
+  already, so it becomes official when that branch lands; the answer names them, and the checkout
+  keeps its copy.
 - **attach** `{path}`: tracks an existing worktree top level (a subdirectory, or a detached HEAD,
   is refused) as `attached`; its base is its fork point from `master` (else `main`). A worktree
   another session created may be attached.
 - **detach** `{path}`: marks it `dropped`. Nothing is deleted on disk.
-- **merge** `{path, target?}`: merges the worktree's branch into `target` (default `master`, or
+- **merge** `{path, target?, withoutDocs?}`: merges the worktree's branch into `target` (default `master`, or
   `main` in a repository without `master`, whatever its base branch) and records the merge (§chat.worktrees/merge-card). Where `target` is checked out, that checkout
   must have no tracked changes, and the merge runs there (fast-forward when possible, else a merge
   commit; a conflict is aborted and reported, changing nothing). Where it is not checked out, only
   a fast-forward is done. No merge needs a recorded go-ahead, into `main` or `master` included
-  (§chat.worktrees/landing-answers).
+  (§chat.worktrees/landing-answers). In a project with a spec, the worktree's spec drafts become
+  official first, on its branch: the draft tool's `land --write` at the branch's head (§tools.spec/land),
+  then one commit of exactly the spec files it wrote, with its message and the trailer
+  `Sova-Spec-Landing: worktree-tool`, and the answer says so with its counts. Drafts that don't fit
+  (`land` refuses), uncommitted changes in the spec, or a docs commit that would clash with the
+  target stop the merge with what to fix and nothing changed: the docs commit is taken back and
+  the drafts read as they did. A merge that can't run anyway gets no docs commit. With
+  `withoutDocs: true`, which its description says to pass only on the user's word, the drafts are
+  left behind and the spec warnings name them.
 - **land** `{path?}`: records the user's go-ahead, typed in this chat ("land it", "merge it"), to
   land the worktree's branch, for the merge captain (§chat.worktrees/landing-answers). It is taken
   only when the user's newest message in the chat says to land or merge (a message that says not
@@ -160,12 +172,14 @@ worktree's status becomes `merged`. In a project with a spec (`.sova/spec/`), th
 in its answer, and its card's message carries the merge line alone; a merge seen after a turn says
 them in its message. They are: the changed files no claim maps (spec any whose change a user
 sees); a draft with records never promoted, in the worktree or in another worktree whose branch
-the merge brings in, said once per draft in a session and again when its pending § change (into
-a branch other than the repository's default: promote them on it before it lands; into the
-default branch, master or main: they didn't land with the code, and stay in the worktree's drafts
-folder until they are promoted on a fresh branch from the default branch, never on it directly;
-another session's are named); a merge commit that resolved § by hand (they differ from both parents); an
-evidence commit the branch no longer contains; and that the spec warnings could not be computed.
+the merge brings in, said once per draft in a session and again when its pending § change (the
+merge made the worktree's own drafts official first, so its own left are ones the merge was told to
+leave: into a branch other than the repository's default, copy the draft into that branch's
+worktree so it lands with it; into the default branch, master or main: they didn't land with the
+code, and stay in the worktree's drafts folder until they land with a fresh branch from the default
+branch, never on it directly; another session's land when its worktree's branch lands); a merge
+commit that resolved § by hand (they differ from both parents); and that the spec warnings could
+not be computed.
 No line names the § the merge changed, deleted or renamed, or the § whose mapped code changed
 under unchanged prose, and none asks for a line in the reply. Those lines never change the card. The message never starts a turn; one sent while a turn runs
 lands when that turn ends. A branch with no commits beyond its base is never "merged". The TUI
@@ -227,7 +241,9 @@ to merge and Waiting for your OK are success, In progress neutral, Blocked and S
 worktree that is Ready to land (§chat.worktrees/ready-to-land) reads **Ready to land** (success) in
 place of Ready to merge or Waiting for your OK, and its line starts "Ready to land"; one Landing
 specs reads **Landing specs** (info; warn, with the session's reason as its `title`, when it can't
-land them) with the line "Landing specs · 2 drafts" (and "· can't land them: <why>"). Under the facts, one visible
+land them) with the line "Landing specs · docs don't fit" (or "· docs changed since Land It", and
+"· can't land them: <why>"). When docs land with a Ready to land worktree its line ends with them:
+"Ready to land · 3 commits ahead · docs: 2 new, 1 changed". Under the facts, one visible
 muted line gives the reason, so a phone gets it without hover: the readiness's `reason` ("Ready to
 merge · checks passed · 19 commits ahead", "Conflicts with master · 17 files"), else the chip's
 word and the why joined by " · ", and no line when there is neither. It wraps; it never truncates. The section follows the
@@ -385,32 +401,42 @@ in `<state root>/ready-to-land.json`, even when a later reply asks nothing or it
 something else; it goes when the branch's head moves, the branch lands, or a live condition above
 stops holding (a new uncommitted file, a failing check, an open question, a turn running).
 
-**Specs land with the branch.** When the worktree holds spec drafts that aren't official
-(§tools.spec/draft-official), the landing
-reads **Landing specs** instead (the Session tab's chip, its line "Landing specs · 2 drafts", and
+**Docs land with the branch.** Spec drafts in the worktree don't keep it from Ready to land: the
+landing makes them official (§chat.merge-round/driver; whether a draft is official is §tools.spec/draft-official). Each promise in them still needs its chat's
+own short verification note (the draft tool's `evidence --note`, §tools.spec/land) before the head
+counts as Ready to land. Once per head commit and set of drafts, Sova tries the drafts the way the
+landing will (the draft tool's `land` without writing, in a process of its own for at most a
+minute, never holding up readiness) and keeps the answer per worktree, head and drafts; until it
+has answered, the head isn't Ready to land yet. When they would land, the landing is Ready to land
+and carries its docs: how many drafts, how many promises are new and how many changed, and their
+names. When they wouldn't (a promise with no verification note, one that changed in the branch's
+spec since its draft was made, a proposal mixed into a file that lands), the landing reads
+**Landing specs** instead (the Session tab's chip, its line "Landing specs · docs don't fit", and
 the merge board, §chat.worktrees/merge-board). Sova then tells the session once per head commit,
-as a message in its chat, to make its specs official on its own branch (promote its drafts) and
-commit them, or, when it can't, to answer with one line `Can't land specs: <why>`; the user is
-never asked. The session's newest reply with that line gives the why, shown on the chip and the
-Landing card (§chat.offers/sova-landing). Once the drafts are promoted and committed the new head
-is Ready to land by the same rule.
+as a message in its chat, what doesn't fit and to fix it in its drafts, which needs no commit, or,
+when it can't, to answer with one line `Can't land specs: <why>`; the user is never asked. The
+session's newest reply with that line gives the why, shown on the chip and the Landing card
+(§chat.offers/sova-landing). After the user's Land It, drafts whose files change (they no longer
+match the hash Land It recorded, §chat.worktrees/landing-answers) make the landing read Landing
+specs too, with the line "Landing specs · docs changed since Land It" naming those drafts, until
+the user answers a Landing card for the drafts as they are now.
 
 **What still blocks the card.** When the session's latest turn outcome says its work is finished
 but a worktree it tracks isn't Ready to land at its head for reasons the session can fix itself
-(uncommitted files, spec drafts not promoted, conflicts with its base, a temporary commit subject,
+(uncommitted files, conflicts with its base, a temporary commit subject,
 a failing check run), and the project's offers file has an offer shown only when Ready to land
 (`ready-to-land`, as Sova's own Landing offer), Sova tells the session once per head commit, as a
 message in its chat, what still blocks its landing, each blocker counted ("1 uncommitted file,
-11 spec drafts to make official"): to fix them on its branch, and that once nothing does, the
+conflicts with master in 2 files"): to fix them on its branch, and that once nothing does, the
 user's go-ahead lands it: when they type "land it" in that chat, the session records it with
-`worktree land` (§chat.worktrees/tool). That message never mentions Land It or a card. When spec drafts are the only thing left, the
-specs message above is sent instead. Nothing is sent while a turn runs, for an archived or
+`worktree land` (§chat.worktrees/tool). That message never mentions Land It or a card. Nothing is sent while a turn runs, for an archived or
 terminal session, or when the outcome doesn't say the work is finished (or no outcome is ever
 recorded for the session).
 
 **One word wherever it is written.** While a landing holds, the worktree's reason line itself
-reads it, in place of Ready to merge or Waiting for your OK: "Ready to land · 3 commits ahead",
-or "Landing specs · 2 drafts" (with "· can't land them: <why>" once the session said why). Every
+reads it, in place of Ready to merge or Waiting for your OK: "Ready to land · 3 commits ahead"
+(ending "· docs: 2 new, 1 changed" when drafts land with it), or "Landing specs · docs don't fit"
+(or "· docs changed since Land It", with "· can't land them: <why>" once the session said why). Every
 reader that writes the reason shows it as is: the Session tab's chip and line, the merge board
 (§chat.worktrees/merge-board) and so the merge round's `status`, `session_detail`, and the
 branch labels the Overseer's and the agents' session lists print ("branch feat/x (ready to
@@ -436,9 +462,17 @@ The user's word in the Merge Captain's chat, recorded by the round's driver (`go
 Not Yet also names the chat it was given in, so the other place can say where
 (§chat.offers/landing-rows). Any of them, at the commit an open Landing card or captain row is for,
 settles that card and row: they read the answer and where it was given. Both may be recorded at one commit: the later
-recorded time wins, and Not Yet wins a tie or a time that can't be read. The merge round's driver
+recorded time wins, and Not Yet wins a tie or a time that can't be read. A Land It also keeps the
+branch's spec drafts as the card or row showed them: their names and one hash over the files under each
+draft's `spec/` (its `draft.json`, where notes and evidence go, apart). Beside the answers the file
+keeps the docs entries the merge round committed (§chat.merge-round/driver): branch, commit, its
+parent, when and the drafts, the newest 200. Every writer, Sova and the merge round alike, holds
+one lock while it re-reads and replaces the file, so an answer and a docs entry written at once never
+drop each other. The merge round's driver
 reads them as the user's word (§chat.merge-round/driver), and a typed go-ahead or one from an
-Overseer card also wakes the captain (§chat.schedules/merge-ready); nothing else acts on them.
+Overseer card also wakes the captain (§chat.schedules/merge-ready), and Sova's readiness reads a
+Land It's drafts (§chat.worktrees/ready-to-land); nothing else acts on them. A Land It is never the
+user's agreement to the promises that land: no record is stamped `agreed` by it.
 Every later write keeps a go-ahead marked as given on the Overseer's card, as it keeps the others.
 
 Nothing enforces them. No merge needs a recorded go-ahead: the `worktree` tool's merge

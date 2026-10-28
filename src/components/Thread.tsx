@@ -1,4 +1,4 @@
-import { children, createContext, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, untrack, useContext, type JSX } from "solid-js";
+import { children, createContext, createEffect, createMemo, createSignal, For, lazy, Match, on, onCleanup, Show, Switch, untrack, useContext, type JSX } from "solid-js";
 import type { RowFacts } from "../../shared/harness-wire";
 import type { HandoffRunInfo, TmpAttachment, TranscriptItem } from "../../shared/protocol";
 import { rowFacts } from "../../shared/wire-v1";
@@ -50,6 +50,7 @@ import { liveTourCalls, newestTourRows, tourFold, tourLine } from "../lib/tour-r
 import { normalizeTourCardDetails, TOUR_TOOLS } from "../../shared/tour";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
 import { normalizeOfferDetails, OFFER_TOOL } from "../../shared/session-offers";
+import { CARD_TOOL as RAISE_CARD_TOOL, normalizeCardDetails as normalizeRaisedCard } from "../../shared/transcript-cards";
 import { OfferCardView } from "./OfferCard";
 import { SettingsToolCard } from "./SettingsChangeCard";
 import { isSettingsToolDetails } from "../../shared/project-settings";
@@ -69,6 +70,8 @@ import { TopicCard } from "./TopicCard";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { rowProvider } from "../lib/subagent-limit";
 import { TranscriptKindRow } from "./TranscriptKind";
+/** A card the running turn raised, before its row settles: the toolkit's own card view, loaded when first needed. */
+const LiveTranscriptCard = lazy(() => import("./TranscriptCard"));
 import { kindOf, sameHit, SETTINGS_TOOL, type KindContext, type KindHit } from "../lib/transcript-kinds";
 import { isErroredTurnStop } from "../lib/turn";
 
@@ -556,6 +559,11 @@ export function HistoryItems(props: {
     const r = callId ? results().get(callId) : undefined;
     return r && !toolResultView(r).isError ? normalizeOfferDetails(detailsOf(r)) : undefined;
   };
+  /** A `card` call's card, once it succeeded (§chat.transcript-cards/card-tool). */
+  const cardOf = (callId: string | undefined) => {
+    const r = callId ? results().get(callId) : undefined;
+    return r && !toolResultView(r).isError ? normalizeRaisedCard(detailsOf(r)) : undefined;
+  };
   /** A sova_settings propose's card, once it succeeded (§app.project-overseer/settings). */
   const settingsOf = (callId: string | undefined) => {
     const r = callId ? results().get(callId) : undefined;
@@ -570,7 +578,7 @@ export function HistoryItems(props: {
   /** The profile row shows once a message is on the branch (§chat.profiles/after-first-message). */
   const hasUserRow = createMemo(() => props.items.some((it) => it.kind === "user"));
   /** What a row's kind may ask of the whole list when it matches (lib/transcript-kinds.ts). */
-  const kinds: KindContext = { hasUserRow, tourCard: tourCardOf, showChanges: showChangesOf, offer: offerOf, settings: settingsOf };
+  const kinds: KindContext = { hasUserRow, tourCard: tourCardOf, showChanges: showChangesOf, offer: offerOf, settings: settingsOf, card: cardOf };
   // Every row stands where it was raised (§chat.transcript-cards/placement): nothing moves to the end.
   const renderable = createMemo(() =>
     props.items.filter((it) => !isChangeRow(it) && !wrapupRows().has(it.id) && !(it.kind === "tool-call" && it.toolCallId && alignCalls().has(it.toolCallId))),
@@ -620,6 +628,7 @@ export function HistoryItems(props: {
     if (it.kind !== "tool-call") return false;
     if (it.text === SHOW_CHANGES_TOOL) return !!showChangesOf(it.toolCallId);
     if (it.text === OFFER_TOOL) return !!offerOf(it.toolCallId);
+    if (it.text === RAISE_CARD_TOOL) return !!cardOf(it.toolCallId);
     if (it.text === SETTINGS_TOOL) return !!settingsOf(it.toolCallId);
     // Every tour call breaks the timeline (§chat.transcript/work-chain): its card, an earlier
     // call's one line (§app.tours/one-card) and a failure row alike stay outside compressed groups.
@@ -1142,12 +1151,15 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
             return d && !tour() ? tourLine(d) : undefined;
           };
           const offer = () => (b().name === OFFER_TOOL && status() === "done" ? normalizeOfferDetails(tool()?.details) : undefined);
+          /** A transcript card the running turn raised (§chat.transcript-cards/card-tool): drawn as soon as its call returns. */
+          const raised = () => (b().name === RAISE_CARD_TOOL && status() === "done" ? normalizeRaisedCard(tool()?.details) : undefined);
           const settingsCard = () => {
             const d = b().name === SETTINGS_TOOL && status() === "done" ? tool()?.details : undefined;
             return isSettingsToolDetails(d) && (d.card || d.appliedNow.length) ? d : undefined;
           };
           return (
             <Show when={!settingsCard()} fallback={<SettingsToolCard details={settingsCard()!} />}>
+            <Show when={!raised()} fallback={<LiveTranscriptCard item={{ id: b().id, kind: "tool-call", text: RAISE_CARD_TOOL, toolCallId: b().id }} value={raised()!} />}>
             <Show when={!offer()} fallback={<OfferCardView card={offer()!} />}>
             <Show when={!tour()} fallback={<TourCard details={tour()!} />}>
             <Show when={!changes()} fallback={<ShowChangesCard details={changes()!} />}>
@@ -1178,6 +1190,7 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
                 >
                   {(d) => <LinkCard details={d()} ended={b().name === "sova_unlink"} />}
                 </Show>
+            </Show>
             </Show>
             </Show>
             </Show>

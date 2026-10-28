@@ -20,6 +20,8 @@ import type { TranscriptItem } from "../../shared/protocol";
 import { rowFacts } from "../../shared/wire-v1";
 import { isBriefText } from "../../shared/senders";
 import { OFFER_TOOL } from "../../shared/session-offers";
+import { CARD_TOOL, type CardInfo } from "../../shared/transcript-cards";
+import { checkCardData, dataCardHeight } from "../../shared/view-cards";
 import { SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
 import { alignKey, alignOf } from "./align";
 import { newestByKey } from "./transcript-placement";
@@ -54,6 +56,8 @@ export interface KindContext {
   offer(callId: string | undefined): unknown;
   /** A settings call's details, once it succeeded. */
   settings(callId: string | undefined): unknown;
+  /** A `card` call's card, once it succeeded (§chat.transcript-cards/card-tool). */
+  card(callId: string | undefined): CardInfo | undefined;
 }
 
 /** What a toolkit view gets: its row, the value its kind's match gave, and what the transcript knows of it. */
@@ -133,10 +137,28 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   // (§chat.changes/show-changes-card); anything else, a tool card.
   kind({ id: "show-changes", match: (it, ctx) => isCall(it) && it.text === SHOW_CHANGES_TOOL && ctx.showChanges(it.toolCallId), host: "page", placement: "anchored" }),
   kind({ id: "offer", match: (it, ctx) => isCall(it) && it.text === OFFER_TOOL && ctx.offer(it.toolCallId), host: "page", placement: "anchored" }),
+  // A project's transcript card (§chat/transcript-cards), one of Sova's data cards: the agent's at its
+  // `card` call, one raised from outside at the row the page placed it as. Its type says where it
+  // stands: a follow type's revisions share its key, the newest drawn whole; an anchored card has no key.
+  kind({
+    id: "card",
+    match: (it, ctx) => (isCall(it) && it.text === CARD_TOOL && ctx.card(it.toolCallId)) || (it.kind === "card" && it.card),
+    estimate: (_it, card: CardInfo) => `${cardEstimate(card)}px`,
+    host: "data",
+    placement: "follow",
+    key: (_it, card: CardInfo) => (card.placement === "follow" && card.key ? `${card.type}\u0000${card.key}` : undefined),
+    view: { load: () => import("../components/TranscriptCard") as unknown as Promise<{ default: Component<KindViewProps> }> },
+  }),
   kind({ id: "settings", match: (it, ctx) => isCall(it) && it.text === SETTINGS_TOOL && ctx.settings(it.toolCallId), host: "page", placement: "anchored" }),
   kind({ id: "tool", match: (it) => isCall(it), host: "page", placement: "anchored" }),
   kind({ id: "tool-result", match: (it) => it.kind === "tool-result", host: "page", placement: "anchored" }),
 ];
+
+/** A card's reserved height: its data card's estimate, or a line for data that doesn't fit (its error box). */
+function cardEstimate(card: CardInfo): number {
+  const c = checkCardData(card.draws, card.data);
+  return (c.ok ? dataCardHeight(card.draws, c.data) : 56) + (card.by.kind === "agent" ? 0 : 24) + (card.answer ? 28 : 0);
+}
 
 const BY_ID = new Map(TRANSCRIPT_KINDS.map((k) => [k.id, k]));
 if (BY_ID.size !== TRANSCRIPT_KINDS.length) throw new Error("transcript-kinds: two kinds share an id");

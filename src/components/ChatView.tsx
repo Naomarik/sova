@@ -25,6 +25,9 @@ import { courier, Outbox, sendsOf, sendsOnTheWay, takeBackHere, type Frame } fro
 import { chatCourier } from "../lib/chat-courier";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
 import { createOfferControls, OfferContext, OfferTray } from "./OfferCard";
+import { CardContext, createCardControls } from "../lib/card-controls";
+import { cardPicksLabel, cardPicksMessage } from "../lib/card-picks";
+import { outsideCardRowId, placeOutsideCards } from "../lib/transcript-placement";
 import type { OfferCard } from "../../shared/session-offers";
 import { SettingsCardContext } from "./SettingsChangeCard";
 import type { OverseerApprovals } from "./OverseerApprovalsPanel";
@@ -1660,6 +1663,15 @@ export function ChatView(props: {
   // Offer cards (§chat.offers/card): an ordinary chat's, read from the server, again after each turn.
   const offers = props.overseer || props.projectOverseer ? undefined : createOfferControls(() => props.path, (c) => !!c.toolCallId, () => !archivedPane() && !batonGate());
   if (offers) createEffect(on(() => live.running, (now, before) => void (before && !now && offers.refresh()), { defer: true }));
+  // Transcript cards (§chat/transcript-cards): an ordinary chat's, read from the server, again after each turn.
+  const raisedCards = props.overseer || props.projectOverseer ? undefined : createCardControls(() => props.path, () => !archivedPane() && !batonGate());
+  if (raisedCards) createEffect(on(() => live.running, (now, before) => void (before && !now && raisedCards.refresh()), { defer: true }));
+  /** The thread's rows with the cards raised from outside the chat placed where they were raised (lib/transcript-placement). */
+  const threadItems = createMemo(() => {
+    const list = items();
+    const outside = raisedCards?.outside() ?? [];
+    return list && outside.length ? placeOutsideCards(list, outside, (card): TranscriptItem => ({ id: outsideCardRowId(card.id), kind: "card", at: card.at, card })) : list;
+  });
   /** Show in Chat for an offer card (§chat.composer/waiting-dialog): its `offer` call's row (the
       jump's highlight included), else the card where it stands (the tray at the thread's end). */
   const jumpToOffer = (card: OfferCard) => {
@@ -1767,9 +1779,20 @@ export function ChatView(props: {
   };
   const composerPicks = createMemo(() => {
     const p = picks();
-    return pickCount(p) === 0
-      ? null
-      : { label: picksLabel(p), compose: (text: string) => composeWithPicks(p, text), clear: () => clearPicks(props.path) };
+    // A gathering transcript card's picks join the alignment's (§chat.transcript-cards/answering): one line per card.
+    const cp = raisedCards?.picks() ?? {};
+    const nCards = Object.keys(cp).length;
+    if (pickCount(p) === 0 && nCards === 0) return null;
+    const label = [pickCount(p) ? picksLabel(p) : "", nCards ? cardPicksLabel(cp) : ""].filter(Boolean).join("; ");
+    return {
+      label,
+      compose: (text: string) => composeWithPicks(p, [nCards ? cardPicksMessage(cp) : "", text].filter((t) => t !== "").join("\n\n")),
+      clear: () => {
+        clearPicks(props.path);
+        raisedCards?.clearPicks();
+      },
+      ...(nCards ? { sent: () => raisedCards?.sent(cp) } : {}),
+    };
   });
 
   if (props.overseer?.bindSender) {
@@ -2351,8 +2374,9 @@ export function ChatView(props: {
               }}>
               <SettingsCardContext.Provider value={!!props.projectOverseer && !archivedPane()}>
               <OfferContext.Provider value={offers}>
+              <CardContext.Provider value={raisedCards}>
               <HistoryItems
-                items={list()}
+                items={threadItems() ?? list()}
                 author={props.author}
                 names={batonNames()}
                 streaming={live.running}
@@ -2375,6 +2399,7 @@ export function ChatView(props: {
                 queueActions={queueActions}
               />
               <OfferTray />
+              </CardContext.Provider>
               </OfferContext.Provider>
               </SettingsCardContext.Provider>
               </TourSessionContext.Provider>

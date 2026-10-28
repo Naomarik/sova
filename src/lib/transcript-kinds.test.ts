@@ -15,6 +15,7 @@ const ctx = (over: Partial<KindContext> = {}): KindContext => ({
   showChanges: () => undefined,
   offer: () => undefined,
   settings: () => undefined,
+  card: () => undefined,
   ...over,
 });
 const idOf = (item: TranscriptItem, c = ctx()) => kindOf(item, c)?.kind.id;
@@ -25,7 +26,8 @@ test("ids are unique, plain names, and each kind is anchored or follows by a key
   for (const k of TRANSCRIPT_KINDS) {
     assert.match(k.id, /^[a-z][a-z0-9-]*$/, "Sova's own kinds have plain names");
     assert.ok(k.placement === "anchored" || (k.placement === "follow" && typeof k.key === "function"), k.id);
-    assert.equal(k.host, "page", "Sova's own kinds draw in the page");
+    // A project's card raised as one of Sova's data cards draws through the data host; every other kind is Sova's own, in the page.
+    assert.equal(k.host, k.id === "card" ? "data" : "page", "Sova's own kinds draw in the page");
   }
   assert.equal(kindById("wake")?.id, "wake");
 });

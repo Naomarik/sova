@@ -2,6 +2,7 @@ import type { AssistantInfo, AssistantOlder, AssistantView, PricedPick, VersionS
 import type { OrgClaudeLogin, ProjectClaudeLogin } from "../../shared/projects";
 import type { ModelPick, WorkModels } from "../../shared/powers";
 import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
+import type { CardAnswerValue, CardInfo, SessionCardsAnswer } from "../../shared/transcript-cards";
 import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow } from "../../shared/project-settings";
 import type { ProfilesListing } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
@@ -1616,3 +1617,12 @@ export const undoSettingsRow = (projectId: string, id: string) =>
 export const getProjectOffers = (projectId: string) => request<ProjectOffersAnswer>(`${projectPath(projectId)}/offers`, { cache: "no-store" });
 export const approveProjectOfferRuns = (projectId: string, fingerprint: string) =>
   request<ProjectOffersAnswer>(`${projectPath(projectId)}/offers/approve`, { method: "POST", body: JSON.stringify({ fingerprint }) });
+
+// ---- transcript cards: a session's cards, answering one, trusting a project's cards (§chat/transcript-cards) ----
+
+export const getSessionCards = (path: string) => request<SessionCardsAnswer>(`/api/session-cards?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+/** A press on a card, at once; `sent`: a gathered pick recorded once its message went out. A refusal that needs trust carries `needsTrust` in its body. */
+export const answerSessionCard = (path: string, card: string, answer: CardAnswerValue, sent = false) =>
+  request<{ card: CardInfo }>("/api/session-cards/answer", { method: "POST", body: JSON.stringify({ path, card, answer, ...(sent ? { sent } : {}) }) });
+/** Trust a project's cards to act, or stop: a trust grant, from this page only. */
+export const setCardTrust = (owner: string, on: boolean) => request<{ owner: string; trusted: boolean }>("/api/session-cards/trust", { method: "POST", body: JSON.stringify({ owner, on }) });

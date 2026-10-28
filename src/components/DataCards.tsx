@@ -33,6 +33,8 @@ export interface DataCardAnswer {
   picker?: QuestionPicker | null;
   /** A checklist item ticked or unticked, by index. */
   tick?: (index: number, done: boolean) => void;
+  /** Whether item `index` shows ticked now (a staged or recorded answer); absent: the data's own `done`. */
+  ticked?: (index: number) => boolean;
   /** Why ticking can't happen here, else null. */
   tickBlocked?: () => string | null;
   /** The buttons card: whether a press can count now, and the press itself. */
@@ -87,7 +89,7 @@ export function QuestionDataCard(props: { card: QuestionCard; id?: string; answe
 /** The checklist card: 1 to 50 lines, each ticked or not; ticking only where the card takes answers. */
 export function ChecklistDataCard(props: { card: ChecklistCard; answer?: DataCardAnswer }) {
   const titleId = `data-card-${++seq}`;
-  const done = () => props.card.items.filter((i) => i.done).length;
+  const done = () => props.card.items.filter((it, i) => props.answer?.ticked?.(i) ?? it.done).length;
   return (
     <section class="card data-card data-card-checklist" aria-labelledby={titleId}>
       <div class="card-head">
@@ -103,16 +105,17 @@ export function ChecklistDataCard(props: { card: ChecklistCard; answer?: DataCar
           {(item, i) => {
             const blocked = () => props.answer?.tickBlocked?.() ?? null;
             const tick = props.answer?.tick;
+            const shown = () => props.answer?.ticked?.(i()) ?? item.done;
             return (
               <li>
                 <label class="toggle" title={tick ? (blocked() ?? undefined) : undefined}>
                   <input
                     type="checkbox"
-                    checked={item.done}
+                    checked={shown()}
                     disabled={!tick || !!blocked()}
                     onChange={(e) => {
                       if (tick && !blocked()) tick(i(), e.currentTarget.checked);
-                      e.currentTarget.checked = item.done;
+                      e.currentTarget.checked = shown();
                     }}
                   />
                   <span class="toggle-box" />

@@ -217,7 +217,13 @@ export function Composer(props: {
   restored?: { text: string } | null;
   /** Answers picked on an alignment card (§chat.alignment/card), staged for the next send:
       the row names them, and `compose` puts their line ahead of the typed text in one message. */
-  picks?: { label: string; compose(text: string): string; clear(): void } | null;
+  picks?: {
+    label: string;
+    compose(text: string): string;
+    clear(): void;
+    /** After a send that carried them (before clear): a gathering transcript card's picks are recorded as its answers. */
+    sent?(): void;
+  } | null;
   /** Whether the draft holds anything to send (text or an attachment), as it changes. */
   onDraft?(has: boolean): void;
 }) {
@@ -856,6 +862,7 @@ export function Composer(props: {
     const picks = props.picks;
     if (props.onSend(withImagePaths(picks ? picks.compose(text().trim()) : text().trim(), pending), props.running, attachments)) {
       touched = true;
+      picks?.sent?.();
       picks?.clear();
       setText("");
       clearDraft(props.path);

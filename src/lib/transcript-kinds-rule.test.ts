@@ -46,7 +46,7 @@ test("Thread.tsx matches no row itself: every branch is the toolkit's, the draw-
 
 test("a kind the toolkit draws has no branch of its own in Thread.tsx", () => {
   const drawn = toolkitKinds();
-  assert.deepEqual(drawn, ["wake", "topic", "compaction", "info"], "the kinds on the toolkit so far: add a moved kind here as it moves");
+  assert.deepEqual(drawn, ["wake", "topic", "compaction", "info", "card"], "the kinds on the toolkit so far: add a moved kind here as it moves");
   for (const id of drawn) assert.ok(!branchIds.includes(id), `${id} is drawn by the toolkit and by a branch in Thread.tsx`);
   for (const view of ["WakeCard", "TopicCard", "Compaction", "InfoRow", "SubagentLimitRow"]) assert.doesNotMatch(rowSwitch, new RegExp(`<${view}[\\s>]`), `${view} drawn in the row Switch`);
 });

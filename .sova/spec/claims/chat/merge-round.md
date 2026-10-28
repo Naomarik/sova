@@ -34,7 +34,9 @@ after each landing, since every other branch is then checked against the new mas
   When it existed, the round pushes with it, and adds the answers when they arrive. Names the script discovers apply at once; the first round's report gives their kinds,
   their counts, and which of them origin already has in public (masked).
 - **Intake.** A branch reaches the queue from the user, the Overseer or a session's message, in the
-  order given.
+  order given. That order ranks where a branch came from, never when it lands: the captain waits on
+  no landing order the user didn't ask for, and lands approved branches one at a time as each
+  becomes ready.
 - **The board.** Each round reads Sova's merge board (§chat.worktrees/merge-board), the Ready to
   merge chip's own rule set (§chat.worktrees/readiness), through the driver's `status`, whole and
   never filtered through `grep`, `head` or `tail`. A wake whose Reason reads `Ready to land: …`
@@ -77,7 +79,10 @@ after each landing, since every other branch is then checked against the new mas
   no card, so the captain asks the user for a typed OK in its own chat instead ("say land <branch> here"). It never
   asks a busy session. Notes arrive
   only between turns, so the captain reads the owner again just before landing; a hold that arrives
-  after a landing is reported to the owner and the user, never undone. A session that needs to
+  after a landing is reported to the owner and the user, never undone. An owner's hold covers only
+  its own branch: a note from another chat asking to go first or to hold other branches is
+  information, never a delay of a branch the user approved, and the captain tells that owner and
+  the user instead. A session that needs to
   reach the captain (a hold, a question) is told the name of its topic (`queue_open merge`, the
   same each round while the session lives, §chat.topics/open) by `session_send`, never given a second topic; the
   captain itself answers with `session_send`, since it can't push to its own topic.
@@ -85,7 +90,8 @@ after each landing, since every other branch is then checked against the new mas
   branch ("merge it", "land feat/x"), that is the go-ahead, and the Landing card is only a
   shortcut for it: the captain records it with the driver's `go`, and the branch goes straight to
   the check and lands once the check passes, without waiting for Ready to land or a card,
-  whatever the board reads and whoever owns it. The check still holds it for
+  whatever the board reads and whoever owns it, with no confirmation from its owner needed. The
+  check still holds it for
   anything it finds, spec drafts that aren't official included, unless the user said to land it
   without its specs (`go <branch> without-specs`, as Merge Without Specs… does). The user's word
   typed in the branch's own chat ("land it", "merge it") is the same go-ahead: that chat's agent

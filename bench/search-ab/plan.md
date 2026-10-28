@@ -162,6 +162,19 @@ what prompted it.
    neither system's snippets reveal which one found it. A mined query is shown with the user's
    request that preceded the Overseer's call, the only statement of what it was after. The pool is
    40 held-out queries: the mined ones first (seeded order), then known-item ones to fill.
+4. **Zero false answers selects the held-out constants** (2026-10-28, the user's call, decided after
+   seeing the dev results; it overrides amendment 2's rule of switching only for an MRR gain). The
+   held-out configuration is the dev row with no false answer on the dev no-answer queries that
+   keeps the most pooled dev Recall@3, then MRR; a tie goes to fewer changes from the starting
+   constants. Amendment 2 applies only when no row reaches zero. Prompted by the dev sweep:
+   minCoverage 1 still answered 3 of 37 dev negatives. Each of the 3 was a stemmer merge: in every
+   session shown, at least one query word was present only as another form of its stem. The
+   candidate gained four options for this sweep (defaults off, so the starting constants are
+   unchanged): `coverageOn: surface` (a query word counts toward coverage only as written, a whole
+   word), `window: k` (coverage is the best share of query words any k adjacent messages hold
+   together), and the score floors `floorRel` (a share of the best hit's score) and `floorAbs`. The
+   sweep logs every single change from the starting constants, then each on top of minCoverage 1,
+   then combinations, which were written only after the single rows were logged. All on dev only.
 
 ## Risks, stated before the runs
 

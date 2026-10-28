@@ -15,6 +15,18 @@ export const DEFAULTS = {
   weights: { title: 4, summary: 2, user: 1, assistant: 1 },
   /** A session matching fewer than this share of the query's terms is not shown. */
   minCoverage: 0.5,
+  /** What counts a query word as present for coverage: its stem anywhere (`stem`), or the word
+      exactly as written, a whole word (`surface`): the stemmer's merges (`pickles` = `pickle`) then
+      add score but not coverage. */
+  coverageOn: "stem" as "stem" | "surface",
+  /** 0: coverage counts the whole session (title, summary, every message). k > 0: coverage is the
+      best share of query words any k adjacent messages hold together (title and summary not
+      counted), so with minCoverage 1 every word must sit within k messages of each other. */
+  window: 0,
+  /** A hit scoring below this share of the best hit's score is not shown (0: off). */
+  floorRel: 0,
+  /** A hit scoring below this is not shown (0: off). */
+  floorAbs: 0,
   /** How many sessions a call shows, and snippets each (the incumbent's 20 × 3). */
   sessions: 20,
   snippets: 3,
@@ -68,6 +80,9 @@ interface Msg {
   text: string;
 }
 
+/** A text's whole words as written, lowercased: wordsOf's cut, without the stemmer. */
+const surfaceOf = (text: string): Set<string> => new Set(wordsOf(text).map((w) => w.word.toLowerCase()));
+
 const tfOf = (ts: readonly string[]): Map<string, number> => {
   const m = new Map<string, number>();
   for (const t of ts) m.set(t, (m.get(t) ?? 0) + 1);
@@ -80,8 +95,10 @@ export interface Index {
   msgs: Msg[];
   /** term → message indexes holding it */
   postings: Map<string, number[]>;
-  /** per doc: title and summary term frequencies and lengths */
-  head: { title: Map<string, number>; titleLen: number; summary: Map<string, number>; summaryLen: number }[];
+  /** word as written (lowercased) → message indexes holding it, for surface coverage */
+  surface: Map<string, number[]>;
+  /** per doc: title and summary term frequencies and lengths, and their words as written */
+  head: { title: Map<string, number>; titleLen: number; summary: Map<string, number>; summaryLen: number; titleWords: Set<string>; summaryWords: Set<string> }[];
   /** per doc, per message field: message times (ascending) and running lengths, for lengths as of a time */
   runs: { user: { at: number[]; cum: number[] }; assistant: { at: number[]; cum: number[] } }[];
   avgMsgLen: number;
@@ -90,13 +107,14 @@ export interface Index {
 export function buildIndex(docs: readonly Doc[]): Index {
   const msgs: Msg[] = [];
   const postings = new Map<string, number[]>();
+  const surface = new Map<string, number[]>();
   const head: Index["head"] = [];
   const runs: Index["runs"] = [];
   let lenSum = 0;
   docs.forEach((d, di) => {
     const title = tokens(d.title);
     const summary = tokens(d.summary);
-    head.push({ title: tfOf(title), titleLen: title.length, summary: tfOf(summary), summaryLen: summary.length });
+    head.push({ title: tfOf(title), titleLen: title.length, summary: tfOf(summary), summaryLen: summary.length, titleWords: surfaceOf(d.title), summaryWords: surfaceOf(d.summary) });
     const run = { user: { at: [] as number[], cum: [] as number[] }, assistant: { at: [] as number[], cum: [] as number[] } };
     const sorted = [...d.messages].sort((a, b) => a.lineAt - b.lineAt);
     for (const m of sorted) {
@@ -111,13 +129,18 @@ export function buildIndex(docs: readonly Doc[]): Index {
         if (!p) postings.set(t, (p = []));
         p.push(k);
       }
+      for (const w of surfaceOf(m.text)) {
+        let p = surface.get(w);
+        if (!p) surface.set(w, (p = []));
+        p.push(k);
+      }
       const r = run[m.who];
       r.at.push(m.lineAt);
       r.cum.push((r.cum[r.cum.length - 1] ?? 0) + ts.length);
     }
     runs.push(run);
   });
-  return { docs, byId: new Map(docs.map((d, i) => [d.id, i])), msgs, postings, head, runs, avgMsgLen: lenSum / (msgs.length || 1) };
+  return { docs, byId: new Map(docs.map((d, i) => [d.id, i])), msgs, postings, surface, head, runs, avgMsgLen: lenSum / (msgs.length || 1) };
 }
 
 /** Running length of a field's messages written by `t`. */
@@ -135,6 +158,25 @@ function lenAt(r: { at: number[]; cum: number[] }, t: number): number {
   return k < 0 ? 0 : r.cum[k]!;
 }
 
+/** The most distinct query words (0..n-1) any `w` adjacent messages hold together, given each
+    (message index, word) occurrence sorted by message index. */
+export function bestWindow(occ: readonly (readonly [number, number])[], w: number, n: number): number {
+  const count = new Array<number>(n).fill(0);
+  let distinct = 0;
+  let best = 0;
+  let lo = 0;
+  for (let hi = 0; hi < occ.length; hi++) {
+    const [k, x] = occ[hi]!;
+    if (count[x]!++ === 0) distinct++;
+    while (occ[lo]![0] <= k - w) {
+      if (--count[occ[lo]![1]]! === 0) distinct--;
+      lo++;
+    }
+    if (distinct > best) best = distinct;
+  }
+  return best;
+}
+
 export interface Hit {
   id: string;
   score: number;
@@ -150,6 +192,8 @@ export function search(ix: Index, scope: readonly string[], q: string, t: number
   const { base, joined } = queryTerms(q);
   if (!base.size) return [];
   const terms = [...base.keys(), ...joined];
+  const coverageOn = c.coverageOn ?? "stem";
+  const window = c.window ?? 0;
   const inScope = new Map<number, number>(); // doc → recency rank
   scope.forEach((id, r) => {
     const d = ix.byId.get(id);
@@ -195,6 +239,39 @@ export function search(ix: Index, scope: readonly string[], q: string, t: number
     }
     tfs.set(term, per);
   }
+  // Coverage other than "the stem anywhere": per doc, which query words are present (whole-session
+  // surface), or each (message, word) occurrence (a window).
+  const baseList = [...base.entries()];
+  const surfaceHeld = new Map<number, Set<number>>();
+  const occ = new Map<number, [number, number][]>();
+  if (coverageOn === "surface" || window > 0) {
+    baseList.forEach(([term, word], x) => {
+      const ks = (coverageOn === "surface" ? ix.surface.get(word) : ix.postings.get(term)) ?? [];
+      for (const k of ks) {
+        const m = ix.msgs[k]!;
+        if (m.lineAt > t || !inScope.has(m.doc)) continue;
+        if (window > 0) {
+          let o = occ.get(m.doc);
+          if (!o) occ.set(m.doc, (o = []));
+          o.push([k, x]);
+        } else {
+          let s = surfaceHeld.get(m.doc);
+          if (!s) surfaceHeld.set(m.doc, (s = new Set()));
+          s.add(x);
+        }
+      }
+      if (window === 0)
+        for (const d of inScope.keys()) {
+          const h = ix.head[d]!;
+          if (h.titleWords.has(word) || (summaryOn(d) && h.summaryWords.has(word))) {
+            let s = surfaceHeld.get(d);
+            if (!s) surfaceHeld.set(d, (s = new Set()));
+            s.add(x);
+          }
+        }
+    });
+    for (const o of occ.values()) o.sort((a, b) => a[0] - b[0]);
+  }
   const idf = new Map(terms.map((term) => {
     const n = tfs.get(term)!.size;
     return [term, Math.log(1 + (N - n + 0.5) / (n + 0.5))];
@@ -215,9 +292,14 @@ export function search(ix: Index, scope: readonly string[], q: string, t: number
         if (tf) s += c.weights[f] * idf.get(term)! * (tf * (c.k1 + 1)) / (tf + c.k1 * (1 - c.b + c.b * (l[f] / avg[f])));
       }
     }
+    if (window > 0) covered = bestWindow(occ.get(d) ?? [], window, base.size);
+    else if (coverageOn === "surface") covered = surfaceHeld.get(d)?.size ?? 0;
     const coverage = covered / base.size;
     if (s > 0 && coverage >= c.minCoverage) scored.push({ d, score: s, coverage, all: covered === base.size });
   }
+  const top = Math.max(0, ...scored.map((x) => x.score));
+  const floor = Math.max(c.floorAbs ?? 0, (c.floorRel ?? 0) * top);
+  if (floor > 0) for (let i = scored.length - 1; i >= 0; i--) if (scored[i]!.score < floor) scored.splice(i, 1);
   scored.sort((a, b) => Number(b.all) - Number(a.all) || b.score - a.score || inScope.get(a.d)! - inScope.get(b.d)!);
   const words = [...base.values()];
   return scored.slice(0, c.sessions).map(({ d, score, coverage }) => {

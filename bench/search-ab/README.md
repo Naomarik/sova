@@ -13,10 +13,14 @@ per-query ranks live in the private folder (`--private`, `SEARCH_AB_PRIVATE`, de
 ```sh
 bun bench/search-ab/freeze.ts      # manifest, offline listing, project list (private folder)
 bun bench/search-ab/mine.ts        # query sets and labels, frozen (refuses to overwrite without --force)
-bun bench/search-ab/bench.ts       # instrument check, dev runs, sweep, results/dev-*.md
+bun bench/search-ab/bench.ts       # instrument check, dev runs, sweeps, results/dev-*.md
+bun bench/search-ab/bench.ts --tune-false # the false-answer sweep alone (dev, bm25f), held-out constants
 bun bench/search-ab/bench.ts --label      # grade the held-out pool (blind, resumable)
 bun bench/search-ab/bench.ts --heldout    # held-out scoring, once, after every grade is in
 ```
+
+`--out <dir>` sends the dev run's private outputs (instrument check, per-query runs, sweeps,
+held-out constants) somewhere other than the private folder, e.g. when that folder is read-only.
 
 Copy the sessions before `freeze.ts` with `cp -a --reflink=always` (never a link), after
 `node scripts/hermetic-agent-dir.mjs --copied-sessions` when the copy sits in an agent dir a hermetic

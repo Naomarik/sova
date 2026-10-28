@@ -5,13 +5,13 @@ import { mkdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } 
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { scratchRoot } from "../../server/test-scratch";
-import { checkOne, gradeLoop, NEAR_T_MS, type PoolItem } from "./bench";
-import { buildIndex, compoundsOf, DEFAULTS, type Doc, queryTerms, search, tokens } from "./bm25f";
+import { changesOf, checkOne, falseRows, gradeLoop, NEAR_T_MS, type PoolItem } from "./bench";
+import { bestWindow, buildIndex, compoundsOf, DEFAULTS, type Doc, queryTerms, search, tokens } from "./bm25f";
 import { privateDir, ROOT, splitOf } from "./common";
 import { asOf, type ListingRow, loadCorpus, readSession, truncatedCopy } from "./corpus";
 import { stem } from "./topic";
 import { runIncumbent, scopeAsOf } from "./incumbent";
-import { falseAnswerRate, firstRank, gradedScores, percentile, pickHeldoutRow, pool, summarize } from "./metrics";
+import { falseAnswerRate, firstRank, gradedScores, percentile, pickHeldoutRow, pickZeroFalseRow, pool, summarize } from "./metrics";
 import { distinctive, mineLog, rng, shuffle } from "./mine";
 
 const root = scratchRoot("search-ab-");
@@ -91,6 +91,44 @@ describe("bm25f", () => {
     assert.deepEqual(hits.map((h) => h.id), ["b"]);
     assert.equal(hits[0]!.snippets.length, 1);
     assert.match(hits[0]!.snippets[0]!.text, /durian/);
+  });
+
+  // The no-answer cases: words whose stems meet in a session that never holds them as written, or
+  // that sit far apart in it.
+  const odd = buildIndex([
+    doc("stems", "Parser", [["the cook pickles rows", T0], ["then slicing them", T0 + 1]]),
+    doc("exact", "Parser", [["it pickle rows", T0], ["rows sliced", T0 + 1]]),
+    doc("apart", "Notes", [["pickle here", T0], ["alpha", T0 + 1], ["beta", T0 + 2], ["gamma", T0 + 3], ["sliced there", T0 + 4]]),
+    doc("titled", "Pickle sliced", [["nothing else", T0]]),
+  ]);
+  const oddScope = ["stems", "exact", "apart", "titled"];
+  const ids = (c: Partial<typeof DEFAULTS>) => search(odd, oddScope, "pickle sliced", T0 + H, { ...DEFAULTS, minCoverage: 1, ...c }).map((h) => h.id).sort();
+
+  test("surface coverage: a word counts only as written, whole, in a title, summary or message", () => {
+    assert.deepEqual(ids({}), ["apart", "exact", "stems", "titled"]);
+    assert.deepEqual(ids({ coverageOn: "surface" }), ["apart", "exact", "titled"]);
+    // Below minCoverage 1 the stem-only session still shows, its coverage counted on surface words.
+    const partial = search(odd, oddScope, "pickle sliced", T0 + H, { ...DEFAULTS, coverageOn: "surface", minCoverage: 0 }).find((h) => h.id === "stems");
+    assert.equal(partial?.coverage, 0);
+  });
+
+  test("a window: every word within k adjacent messages; title and summary do not count", () => {
+    assert.deepEqual(ids({ window: 1 }), []);
+    assert.deepEqual(ids({ window: 2 }), ["exact", "stems"]);
+    assert.deepEqual(ids({ window: 2, coverageOn: "surface" }), ["exact"]);
+    assert.deepEqual(ids({ window: 5 }), ["apart", "exact", "stems"]);
+    assert.equal(bestWindow([[0, 0], [4, 1]], 4, 2), 1);
+    assert.equal(bestWindow([[0, 0], [4, 1]], 5, 2), 2);
+    assert.equal(bestWindow([[3, 0], [3, 1], [9, 0]], 1, 2), 2);
+    assert.equal(bestWindow([], 3, 2), 0);
+  });
+
+  test("score floors: relative to the best hit, or absolute", () => {
+    const all = search(odd, oddScope, "pickle sliced", T0 + H, { ...DEFAULTS, minCoverage: 1 });
+    const best = all[0]!.score;
+    assert.deepEqual(search(odd, oddScope, "pickle sliced", T0 + H, { ...DEFAULTS, minCoverage: 1, floorRel: 1 }).map((h) => h.score), all.filter((h) => h.score >= best).map((h) => h.score));
+    assert.deepEqual(search(odd, oddScope, "pickle sliced", T0 + H, { ...DEFAULTS, floorAbs: best + 1 }), []);
+    assert.equal(search(odd, oddScope, "pickle sliced", T0 + H, { ...DEFAULTS, minCoverage: 1, floorAbs: 1e-9 }).length, all.length);
   });
 });
 
@@ -226,6 +264,21 @@ describe("metrics", () => {
     assert.equal(pickHeldoutRow(base, [{ mrr: 0.51, falseRate: 0.1 }]), null);
     assert.equal(pickHeldoutRow(base, [{ mrr: 0.6, falseRate: 0.3 }]), null);
     assert.deepEqual(pickHeldoutRow(base, [{ mrr: 0.53, falseRate: 0.2 }, { mrr: 0.55, falseRate: 0.1 }]), { mrr: 0.55, falseRate: 0.1 });
+  });
+  test("amendment 4: zero false answers, then the most Recall@3, then MRR, then fewer changes", () => {
+    const r = (name: string, recall3: number, mrr: number, falseRate: number, changes: number) => ({ name, recall3, mrr, falseRate, changes });
+    assert.equal(pickZeroFalseRow([r("a", 0.9, 0.9, 0.01, 1)]), null);
+    assert.equal(pickZeroFalseRow([r("a", 0.5, 0.9, 0, 1), r("b", 0.6, 0.1, 0, 3)])?.name, "b");
+    assert.equal(pickZeroFalseRow([r("a", 0.6, 0.5, 0, 1), r("b", 0.6, 0.6, 0, 3)])?.name, "b");
+    assert.equal(pickZeroFalseRow([r("a", 0.6, 0.6, 0, 3), r("b", 0.6, 0.6, 0, 2), r("c", 0.6, 0.6, 0, 2)])?.name, "b");
+  });
+  test("a row's changes are the constants it moves from the starting ones; row names are unique", () => {
+    assert.equal(changesOf(DEFAULTS), 0);
+    assert.equal(changesOf({ ...DEFAULTS, minCoverage: 1, coverageOn: "surface" }), 2);
+    assert.equal(changesOf({ ...DEFAULTS, weights: { ...DEFAULTS.weights, title: 1 } }), 1);
+    const names = falseRows().map((x) => x.name);
+    assert.equal(new Set(names).size, names.length);
+    for (const x of falseRows()) assert.equal(changesOf(x.c), x.name.split(" + ").length, x.name);
   });
 });
 

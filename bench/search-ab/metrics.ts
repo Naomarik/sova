@@ -54,3 +54,14 @@ export function pickHeldoutRow<R extends { mrr: number; falseRate: number }>(bas
   for (const r of rows) if (r.mrr >= base.mrr + 0.02 && r.falseRate <= base.falseRate && (!best || r.mrr > best.mrr)) best = r;
   return best;
 }
+
+/** plan.md amendment 4: among rows with no false answer, the one keeping the most pooled Recall@3,
+    then MRR; a tie goes to fewer changes from the starting constants. Null when none has zero. */
+export function pickZeroFalseRow<R extends { recall3: number; mrr: number; falseRate: number; changes: number }>(rows: readonly R[]): R | null {
+  let best: R | null = null;
+  for (const r of rows) {
+    if (r.falseRate !== 0) continue;
+    if (!best || r.recall3 > best.recall3 || (r.recall3 === best.recall3 && (r.mrr > best.mrr || (r.mrr === best.mrr && r.changes < best.changes)))) best = r;
+  }
+  return best;
+}

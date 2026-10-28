@@ -8,15 +8,18 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { SEARCH_LIMIT_MS, snippetOf } from "../../server/overseer-roundup";
 import { buildIndex, type Constants, DEFAULTS, type Doc, type Index, search } from "./bm25f";
-import { copyDir, privateDir, readJson, sha256, writeJson } from "./common";
+import { copyDir, opt, privateDir, readJson, sha256, writeJson } from "./common";
 import { type ListingRow, loadCorpus, type Session } from "./corpus";
 import { type IncumbentRun, type Project, runIncumbent, scopeAsOf } from "./incumbent";
-import { falseAnswerRate, firstRank, gradedScores, percentile, pickHeldoutRow, pool, summarize } from "./metrics";
+import { falseAnswerRate, firstRank, gradedScores, percentile, pickHeldoutRow, pickZeroFalseRow, pool, summarize } from "./metrics";
 import { type LoggedSearch, type Query, rng, shuffle } from "./mine";
 
 const args = process.argv.slice(2);
 const COPY = copyDir(args);
 const PRIV = privateDir(args);
+/** Where the dev run writes its private outputs (instrument check, per-query runs, held-out
+    constants): `--out`, else the private folder. For a private folder that is read-only. */
+const OUT = opt(args, "out") ? privateDir(["--private", opt(args, "out")!]) : PRIV;
 const ASOF = join(COPY, "..", "asof");
 
 export interface CheckRow {
@@ -177,6 +180,86 @@ export function sweepRows(): { name: string; c: Constants }[] {
   return rows;
 }
 
+/** How many constants a configuration changes from DEFAULTS (a tie between rows goes to fewer). */
+export function changesOf(c: Constants): number {
+  const flat = (o: object, p = ""): [string, unknown][] => Object.entries(o).flatMap(([k, v]) => (v && typeof v === "object" ? flat(v, `${p}${k}.`) : [[`${p}${k}`, v] as [string, unknown]]));
+  const d = new Map(flat(DEFAULTS));
+  return flat(c).filter(([k, v]) => d.get(k) !== v).length;
+}
+
+/** plan.md amendment 4: the false-answer sweep. Single changes from the starting constants first,
+    then each on top of minCoverage 1, then combinations (written after the single rows were logged). */
+export function falseRows(): { name: string; c: Constants }[] {
+  const rows: { name: string; c: Constants }[] = [];
+  const set = (name: string, f: (c: Constants) => void) => {
+    const c = structuredClone(DEFAULTS);
+    f(c);
+    rows.push({ name, c });
+  };
+  const singles: [string, (c: Constants) => void][] = [
+    ["coverageOn surface", (c) => (c.coverageOn = "surface")],
+    ...[1, 2, 3].map((k): [string, (c: Constants) => void] => [`window ${k}`, (c) => (c.window = k)]),
+    ...[0.25, 0.5].map((v): [string, (c: Constants) => void] => [`floorRel ${v}`, (c) => (c.floorRel = v)]),
+    ...[5, 10, 15].map((v): [string, (c: Constants) => void] => [`floorAbs ${v}`, (c) => (c.floorAbs = v)]),
+  ];
+  for (const [name, f] of singles) set(name, f);
+  set("minCoverage 1", (c) => (c.minCoverage = 1));
+  for (const [name, f] of singles)
+    set(`minCoverage 1 + ${name}`, (c) => {
+      c.minCoverage = 1;
+      f(c);
+    });
+  // Combinations, added after the rows above were logged: around the best zero-false row.
+  set("minCoverage 0.67 + coverageOn surface", (c) => {
+    c.minCoverage = 0.67;
+    c.coverageOn = "surface";
+  });
+  for (const [name, f] of singles.filter(([n]) => n !== "coverageOn surface"))
+    set(`minCoverage 1 + coverageOn surface + ${name}`, (c) => {
+      c.minCoverage = 1;
+      c.coverageOn = "surface";
+      f(c);
+    });
+  return rows;
+}
+
+export interface FalseRow {
+  name: string;
+  changes: number;
+  recall3: number;
+  mrr: number;
+  falseRate: number;
+  per: Record<string, { recall3: number; mrr: number }>;
+}
+
+async function falseSweep(corpus: readonly Session[], ix: Index, dev: readonly Query[], projects: readonly Project[]): Promise<FalseRow[]> {
+  const out: FalseRow[] = [];
+  for (const row of [{ name: "starting constants", c: DEFAULTS }, ...falseRows()]) {
+    const rs: QueryRun[] = [];
+    for (const q of dev) rs.push(await runQuery(corpus, ix, q, projects, row.c, { incumbent: false }));
+    const x = score(rs, "bm25f");
+    const per = Object.fromEntries(SETS.map((s) => [s, { recall3: x.per[s]!.recall3, mrr: x.per[s]!.mrr }]));
+    out.push({ name: row.name, changes: changesOf(row.c), recall3: x.pooled.recall3, mrr: x.pooled.mrr, falseRate: x.falseRate, per });
+    console.log(`  ${row.name.padEnd(50)} R@3 ${pct(x.pooled.recall3)} MRR ${f3(x.pooled.mrr)} false ${pct(x.falseRate).padStart(6)} | ${SETS.map((s) => `${s} ${pct(per[s]!.recall3)}/${f3(per[s]!.mrr)}`).join(" ")}`);
+  }
+  return out;
+}
+
+const constantsOf = (name: string): Constants => (name === "starting constants" ? DEFAULTS : [...sweepRows(), ...falseRows()].find((r) => r.name === name)!.c);
+
+/** `--tune-false`: the index and the false-answer sweep on dev only (no instrument check, no
+    incumbent), then the held-out constants under amendment 4. */
+async function tuneFalse(corpus: readonly Session[], queries: readonly Query[], projects: readonly Project[]): Promise<void> {
+  const ix = buildIndex(docsOf(corpus));
+  console.log("== FALSE-ANSWER SWEEP (dev, bm25f; plan.md amendment 4)");
+  const rows = await falseSweep(corpus, ix, queries.filter((q) => q.split === "dev"), projects);
+  writeJson(join(OUT, "false-sweep-dev.json"), rows);
+  const pick = pickZeroFalseRow(rows);
+  console.log(`  held-out runs: ${pick ? pick.name : "no row has zero false answers"} (plan.md amendment 4)`);
+  if (pick) writeJson(join(OUT, "heldout-constants.json"), { row: pick.name, rule: "amendment 4", constants: constantsOf(pick.name) });
+  process.exit(0);
+}
+
 async function main(): Promise<void> {
   const rows: ListingRow[] = readJson(join(PRIV, "listing.json")).rows;
   const j = readJson(join(PRIV, "judgments.json"));
@@ -189,10 +272,11 @@ async function main(): Promise<void> {
 
   if (args.includes("--label")) return label(corpus, j.queries, projects, args.includes("--prepare"));
   if (args.includes("--heldout")) return heldout(corpus, j.queries, projects);
+  if (args.includes("--tune-false")) return tuneFalse(corpus, j.queries, projects);
 
   console.log("== 1. INSTRUMENT CHECK");
   const check = await instrumentCheck(corpus, j.logged, projects);
-  writeJson(join(PRIV, "instrument-check.json"), check);
+  writeJson(join(OUT, "instrument-check.json"), check);
   const hitsOk = check.filter((c) => c.hitsMatch).length;
   const totalOk = check.filter((c) => c.totalMatch).length;
   const nearOk = check.filter((c) => c.nearT).length;
@@ -220,7 +304,7 @@ async function main(): Promise<void> {
   const dev: Query[] = j.queries.filter((q: Query) => q.split === "dev");
   const runs: QueryRun[] = [];
   for (const q of dev) runs.push(await runQuery(corpus, ix, q, projects));
-  writeJson(join(PRIV, "runs-dev.json"), runs);
+  writeJson(join(OUT, "runs-dev.json"), runs);
   const scores = Object.fromEntries(SYSTEMS.map((s) => [s, score(runs, s)])) as Record<SystemKey, ReturnType<typeof score>>;
   const refused = runs.filter((r) => r.incumbent.refused).length;
   const stopped = runs.filter((r) => r.incumbent10s.stoppedShort).length;
@@ -242,9 +326,18 @@ async function main(): Promise<void> {
     sweep.push({ name: row.name, mrr: x.pooled.mrr, recall3: x.pooled.recall3, falseRate: x.falseRate });
     console.log(`  ${row.name.padEnd(16)} R@3 ${pct(x.pooled.recall3)} MRR ${f3(x.pooled.mrr)} false ${pct(x.falseRate)}`);
   }
-  const pick = pickHeldoutRow(base, sweep);
-  console.log(`  held-out runs: ${pick ? pick.name : "the starting constants"} (plan.md amendment 2)`);
-  writeJson(join(PRIV, "heldout-constants.json"), { row: pick?.name ?? null, constants: pick ? sweepRows().find((r) => r.name === pick.name)!.c : DEFAULTS });
+  const pick2 = pickHeldoutRow(base, sweep);
+  console.log(`  amendment 2 would run: ${pick2 ? pick2.name : "the starting constants"}`);
+
+  console.log("== 5. FALSE-ANSWER SWEEP (dev, bm25f; plan.md amendment 4)");
+  const falseSw = await falseSweep(corpus, ix, dev, projects);
+  writeJson(join(OUT, "false-sweep-dev.json"), falseSw);
+  const pick4 = pickZeroFalseRow(falseSw);
+  // Amendment 4 (the user's call, after seeing dev): the zero-false-answer row; amendment 2 only when none has zero.
+  const heldoutName = pick4?.name ?? pick2?.name ?? "starting constants";
+  const rule = pick4 ? "amendment 4" : "amendment 2";
+  console.log(`  held-out runs: ${heldoutName} (plan.md ${rule})`);
+  writeJson(join(OUT, "heldout-constants.json"), { row: heldoutName === "starting constants" ? null : heldoutName, rule, constants: constantsOf(heldoutName) });
 
   // ---- results: totals only (no query, id, title, path or snippet) ----
   const date = new Date().toISOString().slice(0, 10);
@@ -262,7 +355,9 @@ async function main(): Promise<void> {
     incumbent: { refused, stoppedShort10s: stopped },
     unreachable,
     sweep: [base, ...sweep],
-    heldoutRow: pick?.name ?? null,
+    falseSweep: falseSw,
+    heldoutRow: heldoutName === "starting constants" ? null : heldoutName,
+    heldoutRule: rule,
   };
   writeJson(join(import.meta.dirname, "results", `${name}.json`), totals);
   const row = (s: SystemKey, label: string) => {
@@ -301,7 +396,15 @@ async function main(): Promise<void> {
     "",
     table(["Row", "R@3", "MRR", "False answers"], [base, ...sweep].map((r) => [r.name, pct(r.recall3), f3(r.mrr), pct(r.falseRate)])),
     "",
-    `Held-out runs: ${pick ? pick.name : "the starting constants"} (plan.md amendment 2).`,
+    `Amendment 2 alone would run: ${pick2 ? pick2.name : "the starting constants"}.`,
+    "",
+    "## False-answer sweep (dev, bm25f; plan.md amendment 4)",
+    "",
+    "The user asked for zero false answers as the selection criterion, after seeing the dev results above. Single changes from the starting constants, then each on top of minCoverage 1, then combinations. Per set: R@3 / MRR.",
+    "",
+    table(["Row", "Changes", "R@3", "MRR", "False answers", ...SETS], falseSw.map((r) => [r.name, String(r.changes), pct(r.recall3), f3(r.mrr), pct(r.falseRate), ...SETS.map((s) => `${pct(r.per[s]!.recall3)} / ${f3(r.per[s]!.mrr)}`)])),
+    "",
+    `Held-out runs: ${heldoutName} (plan.md ${rule}).`,
     "",
   ].join("\n");
   writeFileSync(join(import.meta.dirname, "results", `${name}.md`), md);

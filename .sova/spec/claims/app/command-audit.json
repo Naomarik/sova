@@ -12,7 +12,9 @@
       "scripts/sova-token.mjs",
       "server/caller-auth.test.ts",
       "scripts/sova-token-caller.test.ts",
-      "server/sova-caller.integration.test.ts"
+      "server/sova-caller.integration.test.ts",
+      "server/transcript-cards-routes.ts",
+      "server/caller-keys.ts"
     ],
     "evidence": "verified"
   },
@@ -83,7 +85,9 @@
       "server/command-audit-events.test.ts",
       "server/sova-caller.integration.test.ts",
       "scenarios/audit.json",
-      "server/caller-auth.test.ts"
+      "server/caller-auth.test.ts",
+      "server/transcript-cards-routes.ts",
+      "server/caller-keys.ts"
     ],
     "evidence": "verified"
   },

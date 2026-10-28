@@ -38,7 +38,8 @@ pending attachments, then the input row (mic, `plus` trigger, textarea, Send, St
 
     <!-- answers picked on an alignment card (recommendations ticked, options picked), staged for
          the next send (§chat.alignment/card); each question reads "rec" or its option's letter;
-         omit when there are none -->
+         a gathering transcript card's picks join them by its id, "cd_4 b"
+         (§chat.transcript-cards/answering); omit when there are none -->
     <div class="align-picks" role="group" aria-label="Staged answers">
       <span class="icon icon-sm" style="--icon: url(/icons/check.svg)" aria-hidden="true"></span>
       <span class="align-picks-text">Answering: <span class="text-mono">al_3 q1 rec, q2 b; al_4 q2 rec</span></span>
@@ -285,8 +286,9 @@ the session's list not here yet) fades in after a short delay, about 300 ms, so 
 flashes it; under reduced motion it appears after the same delay without the fade. "Reconnecting"
 and every other reason show at once, and the controls are disabled from the first frame either way.
 
-Send is enabled by typed text, an attachment, **or answers picked on an alignment card alone**
-(§chat.alignment/card): with picks and no text it sends just their line. With picks staged, a
+Send is enabled by typed text, an attachment, **or answers picked on an alignment card or a
+gathering transcript card alone** (§chat.alignment/card, §chat.transcript-cards/answering): with
+picks and no text it sends just their lines. With picks staged, a
 typed local command (`/new`, `/tree`, `/agents`…) is sent as text after them, not run.
 
 Use `aria-disabled="true"` rather than `disabled` on buttons whose reason matters. That keeps them

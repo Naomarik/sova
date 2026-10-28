@@ -269,7 +269,9 @@
       "src/lib/message-actions.test.ts",
       "src/lib/message-actions.ts",
       "src/lib/message-reveal.ts",
-      "src/lib/inputs.ts"
+      "src/lib/inputs.ts",
+      "src/components/LiveKinds.tsx",
+      "src/lib/work-run-handover.test.ts"
     ],
     "agreed": {
       "by": "naomarik",
@@ -739,7 +741,10 @@
       "src/components/Thread.tsx",
       "src/design/base.css",
       "src/lib/hidden-rows.ts",
-      "src/lib/hidden-rows.test.ts"
+      "src/lib/hidden-rows.test.ts",
+      "src/lib/transcript-kinds.ts",
+      "src/components/LiveKinds.tsx",
+      "src/lib/work-run-handover.test.ts"
     ]
   },
   "§chat/transcript": {

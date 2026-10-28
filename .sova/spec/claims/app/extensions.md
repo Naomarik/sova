@@ -5,12 +5,13 @@ An extension is a small web app the user installs into Sova: a built UI (a folde
 `index.html`) and a backend the user runs on this machine. Sova shows it as a card on the landing
 page and as a page at `#/ext/<id>`, serves its UI and forwards its API and sockets from Sova's own
 origin, and knows nothing about what it does. The host is generic: no extension is named, special
-cased or shipped by Sova. The interface is `ext-contract-v1.16`; any change to it is a version bump
+cased or shipped by Sova. The interface is `ext-contract-v1.17`; any change to it is a version bump
 agreed with the extensions built on it. v1.15 added what an extension offers (§app.extensions/offers)
 and what it adds under replies (§app.commands/reply-slot). v1.16 added each backend's own key
 (§app.extensions/backend-key), a command's `menu` key (§app.extensions/session-menu), and the `row`
-and `card` places (§app.extensions/row-chips, §app.extensions/card-status). An extension that
-declares none of them sees no change.
+and `card` places (§app.extensions/row-chips, §app.extensions/card-status). v1.17 added the card
+types and drawing kinds it adds to chat transcripts (§app.extensions/views), additions only. An
+extension that declares none of them sees no change.
 
 ## §app.extensions/manifest — The manifest
 
@@ -37,10 +38,11 @@ installer does.
 - **Optional fields fall back quietly.** No `title` → the id. `description` is omitted when empty.
   An `icon` that isn't a plain icon name (`[a-z0-9-]+`, a file in `public/icons/`) is ignored,
   because it ends up in a CSS `url()`. Unknown keys are ignored.
-- **`commands` and `screens` are what it offers.** An entry may list its own actions under
-  `commands` (§app.commands/extension-commands) and the places on Sova's screens it adds to under
-  `screens`. The server validates both into the list's `offers` field (§app.extensions/offers); a
-  bad one never drops the entry. The `sova` command line reads `commands` from this file itself.
+- **`commands`, `screens`, `cards` and `drawings` are what it offers.** An entry may list its own
+  actions under `commands` (§app.commands/extension-commands), the places on Sova's screens it adds
+  to under `screens`, and the transcript card types and drawing kinds it adds under `cards` and
+  `drawings` (§app.extensions/views). The server validates them into the list's `offers` field
+  (§app.extensions/offers); a bad one never drops the entry. The `sova` command line reads `commands` from this file itself.
 
 ## §app.extensions/serving — The UI, the API and the sockets
 
@@ -89,7 +91,7 @@ and api, so a manifest edit that moves the backend is probed afresh.
 
 ## §app.extensions/offers — What an extension offers
 
-`GET /api/extensions` carries what each entry declares it offers Sova, as `offers` (since ext-contract-v1.15; v1.16 added `menu`, `row` and `card`):
+`GET /api/extensions` carries what each entry declares it offers Sova, as `offers` (since ext-contract-v1.15; v1.16 added `menu`, `row` and `card`; v1.17 added `cards` and `drawings`):
 the one generic mechanism every place on Sova's screens reads, so a place asks only the extensions
 that said they add to it.
 
@@ -101,8 +103,10 @@ that said they add to it.
   (today `reply`, §app.commands/reply-place; `row`, §app.extensions/row-chips; and `card`,
   §app.extensions/card-status), each once, the first 16 names read. An unknown name is
   left out, so a newer extension works on an older Sova.
+- **`offers.cards`** and **`offers.drawings`**: its valid card types and drawing kinds
+  (§app.extensions/views), each as its checked declaration, by its namespaced name.
 - **Only what was declared validly.** A key with nothing valid under it is absent, and an entry with
-  neither has no `offers` at all: its list item is byte for byte what it was before v1.15.
+  none of them has no `offers` at all: its list item is byte for byte what it was before v1.15.
 - **Built from checked strings, never copied.** Only the fields above, from values that passed
   their rule, reach the list; nothing else in the entry (an env, a header, a token) does. Sova's
   token never appears in it.
@@ -233,6 +237,10 @@ every Sova API. For example, it can create a session with `POST /api/sessions`. 
 for Sova's one local user. Nothing loads that the user didn't list in the manifest, and the
 manifest holds only loopback backends. Its backend has the same power through its own key
 (§app.extensions/backend-key), and every call it makes with that key is recorded as its own.
+Its card views and drawing kinds in a chat's transcript are the exception: they never run on Sova's
+origin, only in a sealed box walled off from Sova and the network, and they act through the view
+API only once the user has trusted that extension's cards (§chat.transcript-cards/sealed-box,
+§chat.transcript-cards/trust).
 
 ## §app.extensions/backend-key — Each backend's own key
 
@@ -383,3 +391,33 @@ in the same spot. After Sova's items come the groups that extensions add.
   title} answered HTTP {status}." No answer, or none within 10 seconds, toasts "{extension title}
   isn't answering." Each toast is
   also announced to screen readers.
+
+## §app.extensions/views — Card types and drawing kinds in chat transcripts
+
+Since `ext-contract-v1.17`, an entry may declare transcript card types and drawing kinds
+(§chat/transcript-cards). Both are additions: an entry without them, and an older extension, sees no
+change.
+
+- **`cards`**: up to 16 card types, each `{name, title, when?, draws, data?, answer?, placement?,
+  height?, view?, toolkit}`, with the meanings and rules of a project's `card.json`
+  (§chat.transcript-cards/files), except that `view` is the path, inside the entry's `dist`, of the
+  extension's built view module (an ES module built against the toolkit version `toolkit` names,
+  §chat.transcript-cards/versions). Its type is `<extension id>.<name>`.
+- **`drawings`**: up to 8 drawing kinds, each `{name, accepts, data?, height?, view, guide,
+  toolkit}`, as a project's kind (§chat.transcript-cards/drawing-kinds), with `view` and `guide`
+  (a markdown file) as paths inside `dist`. Its fence word is `<extension id>.<name>`.
+- **Checked one at a time.** Each declaration is validated on its own; a bad one (an unknown key, a
+  bad name, a missing or out-of-bounds field, a second one of the same name, one past the limit, a
+  `view` or `guide` path outside `dist` or missing) is left out and logged once per server process,
+  and never drops the entry or its other declarations. An extension whose id is `project` (in any
+  case) declares none: that is the namespace of a project's own cards and kinds.
+- **Run only in the sealed box.** Sova bundles a view module from `dist` with its own toolkit and
+  `solid-js` and the files beside it (§chat.transcript-cards/building), and watches them, so a
+  rebuilt view redraws its cards (§chat.transcript-cards/redraw); it runs only in a sealed box,
+  never on Sova's origin (§chat.transcript-cards/sealed-box). A backend's key file is never served
+  this way.
+- **Fixed per chat.** A chat's snapshot takes the declarations of the extensions installed when it
+  starts, after the project's own, each name once (§chat.transcript-cards/files). A card or drawing
+  whose extension is no longer installed shows its error box, "{title} is no longer installed."
+- **Its own trust.** Its cards ask to act, and are trusted, by its id, apart from any project's
+  (§chat.transcript-cards/trust); its page says so while they are, with **Stop Trusting Cards**.

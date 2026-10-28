@@ -1447,9 +1447,13 @@ feed's last list while nothing has changed since it was built, and builds a list
   ready to land" (§chat.offers/landing-rows), its open rows counted. It goes when the card is
   answered, set to Not Now, no longer offered or replaced by a newer commit. Never a phone
   notification and never a brief: it lists in Needs you and counts in "need you" only.
+- **Needs you, a transcript card** (§chat.transcript-cards/answering): `card-waiting` on a session,
+  not archived, that shows an open card waiting on an answer, idle or working, one item per card,
+  "Waiting on your answer: {the card's title}", dated by when it was raised. It goes when the card
+  is answered or its raiser marks it done. Never a phone notification and never a brief.
 - **Only real blockers are act.** The act tier — Needs you, the Overseer's "need you" count, its
   briefs and phone notifications — is exactly: open alignment questions on an unmerged branch, open dialogs, errored
-  turns, subagent errors, proposed playbook runs, open option cards (never briefed), failed deploys and deploy requests, tour recordings waiting for a sign-in, WhatsApp sending down, and the baton and roster hand-offs and held acts below. A team
+  turns, subagent errors, proposed playbook runs, open option cards and transcript cards (never briefed), failed deploys and deploy requests, tour recordings waiting for a sign-in, WhatsApp sending down, and the baton and roster hand-offs and held acts below. A team
   that seems stalled and a branch ready to merge are decide items: a line in the digest and a
   quiet mark on the session's row, never a brief.
 - **The softer tier: guesses.** A turn card's guesses (§app.decisions/attention-signals) — a

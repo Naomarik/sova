@@ -127,7 +127,7 @@ reconciler: the placement spawns that). v2.
 | event | by | payload | notes |
 |---|---|---|---|
 | `project/edit` | op | `{name?, root?}` + `invalid` | |
-| `project/archive` / `project/unarchive` | op (GO: card for archive) | + `blockers {phrases?, coding?, overseerWorking?}` | "Stop these first: {list}." (409); idempotent |
+| `project/archive` / `project/unarchive` | op (GO: on the user's word, no card) | + `blockers {phrases?, coding?, overseerWorking?}` | "Stop these first: {list}." (409); idempotent |
 | `overseer/start` / `overseer/clear` | op | `{conversationId}` | clear keeps ≤ 20 earlier; sends `ledger/reset-message` to the watch |
 | `preview/start` | overseer (power `share`, held unattended) · op | `{codingSession, port \| folder, purpose, days?, overseerId}` + the host's `invalid` (the session, the port's listener, the folder, Sova's ports, the address) | archived, the host's check, then the purpose; effect `preview {codingSession, port\|folder, purpose, days?, overseerId}` (never a link; the host mints and keeps it) |
 | `services/down` | overseer (always: `sova_project_verbs down`; never held, counts nothing) | `{verb, instance?}` + the host's `invalid` | the host's check only (never refused for an archived project); no effect: the act is the gate, the host runs the verb once it is taken |

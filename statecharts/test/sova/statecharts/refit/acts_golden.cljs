@@ -68,7 +68,7 @@
    ["project" ":overseer/start"] {}
    ["placement" ":owner-update/post"] {:hold true, :people-facing true, :power "ownerUpdates", :tool "sova_owner_update", :what? true}
    ["project" ":preview/start"] {:hold true, :people-facing true, :power "share", :tool "sova_preview", :what? true}
-   ["project" ":project/archive"] {:card? true, :people-facing true}
+   ["project" ":project/archive"] {}
    ["project" ":project/edit"] {}
    ["project" ":project/unarchive"] {}
    ["project" ":services/down"] {:power "always", :tool "sova_project_verbs"}

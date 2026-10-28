@@ -111,6 +111,11 @@
       (is (= "Site is archived. Unarchive it first." (h/refusal (project-moved (placement) [:archived :no-overseer] {}) plsid :baton/start (assoc op :session-id "s1")))
           "the placement starts nothing for an archived project (its exported facts)")
       (is (h/in? (h/send! a psid :project/unarchive op) psid :active)))
+    (testing "the global Overseer archives on the user's word: no card (§app.overseer/org-people-facing)"
+      (is (h/in? (h/send! x psid :project/archive {:by "operator" :via "overseer"}) psid :archived))
+      (is (= "This reaches people or ends something: ask with sova_card, listing the project pr1 in its items, and act in the turn the user's click starts."
+             (h/refusal x psid :overseer/clear {:by "operator" :via "overseer"}))
+          "control: clear keeps its card"))
     (testing "q7: the overseer's build only in a turn the operator started, whatever the switches"
       (is (= "A coding session starts only in a turn the operator started: ask with sova_card."
              (h/refusal x psid :build/start {:by "overseer" :autonomy "L3" :session-id "c1"})))

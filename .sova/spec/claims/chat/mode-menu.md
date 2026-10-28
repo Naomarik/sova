@@ -426,12 +426,11 @@ spec's block, from the parent's saved copy of it, with its tools when the worker
 - **What a worker gets.** While the parent chat has spec on, every worker it starts — pi or
   Claude Code, plain, remote, sandboxed, hosted, or a team member — gets the spec block
   (`spec-mode.md`, byte for byte: the guide's short part) at the end of its system prompt, after its agent type, its
-  brief and any remote instructions, followed by a short **worker note**: the brief is its
-  go-ahead; it works in the draft its brief names (or says which it started); it promotes, commits
-  or records `--commit` evidence only when the brief says so, and then only on the brief's branch,
-  never by landing on the default branch — the parent promotes, on its own branch before calling it
-  ready; and its final
-  report lists each foreign § it updated. The writing procedure reaches a worker that writes code once,
+  brief and any remote instructions, followed by a short **worker note**: its parent's branch's
+  landing makes the drafts official; the brief is its go-ahead; it works in the draft its brief
+  names (or says which it started) and records its notes there; it commits only when the brief says
+  so, and then only on the brief's branch, never by landing on the default branch; and its final
+  report lists each foreign § it updated. The note never tells it to promote. The writing procedure reaches a worker that writes code once,
   with its first census note, its Workers section first, in the note's own words
   (§tools.spec/writing-on-demand). Nothing else of the parent's mode reaches it: no
   Delegate block, no align block, no Delegate+align bridge, and never the spec-writer paragraph

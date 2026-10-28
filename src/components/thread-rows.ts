@@ -28,6 +28,10 @@ export interface ThreadRows {
   tourEarlier(item: TranscriptItem): string | undefined;
   /** A deck card call's card: the newest row draws it whole with the card's newest snapshot, an earlier one a line. */
   cardRow(item: TranscriptItem): { details: CardDetails; card: OverseerCard; newest: boolean } | undefined;
+  /** The row of the newest alignment report: only it draws the old alignment card. */
+  latestAlign(): string | undefined;
+  /** Whether an alignment row is its document's newest revision (drawn whole; earlier ones one line). */
+  alignNewest(item: TranscriptItem): boolean;
   /** A legacy confirm's answer, from the user rows after it. */
   confirmAnswer(item: TranscriptItem, details: SovaConfirmDetails): { answered: boolean; choice: string | null };
   /** The shown row at index `i` (a reply's head shows when the row above is another's). */

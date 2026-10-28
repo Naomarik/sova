@@ -70,6 +70,7 @@ const MOVED: Record<string, string[]> = {
   thinking: ["Thinking"],
   "tool-result": [],
   tool: ["ToolCard", "DeckCard", "CardRevision", "ConfirmCard", "LinkCard", "ProfileToolCardView", "NavigateGo"],
+  "align-report": ["AlignCard"],
 };
 
 test("a kind the toolkit draws has no branch of its own in Thread.tsx", () => {

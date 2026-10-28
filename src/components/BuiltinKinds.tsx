@@ -25,6 +25,7 @@ import { profileToolCard, ProfileToolCardView } from "./ProfileCards";
 import { CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo } from "./OverseerCards";
 import { toolContent } from "../lib/tool-content";
 import { ToolCard, type ToolStatus } from "./ToolCard";
+import { AlignCard } from "./AlignCard";
 import { BriefRow } from "./OverseerCards";
 import { ExplainCard } from "./ExplainCard";
 import { TeamMessageCard } from "./TeamMessageCard";
@@ -62,6 +63,7 @@ export const BUILTIN_VIEWS = {
   thinking: (props: KindViewProps) => <Thinking text={props.item.text ?? ""} />,
   "tool-result": OrphanResult,
   tool: ToolRow,
+  "align-report": AlignReportRow,
 } satisfies Record<string, Component<KindViewProps<never>>>;
 
 /** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is
@@ -360,6 +362,16 @@ function ToolRow(props: KindViewProps) {
         return <ConfirmCard details={details()} answered={answer().answered} choice={answer().choice} />;
       }}
     </Show>
+    </Show>
+  );
+}
+
+/** An alignment report from before the alignment document: only the newest draws its card. */
+function AlignReportRow(props: KindViewProps<NonNullable<NonNullable<TranscriptItem["report"]>["align"]>>) {
+  const rows = useThreadRows();
+  return (
+    <Show when={props.item.id === rows.latestAlign()} fallback={<span class="align-superseded" hidden />}>
+      <AlignCard report={props.item.report!} align={props.value} attachments={props.item.attachments} />
     </Show>
   );
 }

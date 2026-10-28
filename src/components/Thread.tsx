@@ -426,6 +426,8 @@ export function HistoryItems(props: {
     running: (i) => props.streaming && i >= openFrom(),
     tourEarlier,
     cardRow,
+    latestAlign,
+    alignNewest,
     confirmAnswer: (item, details) => confirmAnswer(props.items, props.items.indexOf(item), details),
     toolSource: () => toolSource,
     row: (i) => rows()[i],
@@ -617,13 +619,6 @@ export function HistoryItems(props: {
               {/* A kind still drawn by its branch here, until it moves onto the toolkit; and the kinds that draw nothing. */}
               <Match when={hit()?.kind.drawsNothing}>{null}</Match>
               <Match when={is<NonNullable<TranscriptItem["align"]>>("align")}>{(row) => <AlignRow row={row()} newest={alignNewest(item)} />}</Match>
-              <Match when={is<NonNullable<NonNullable<TranscriptItem["report"]>["align"]>>("align-report")}>
-                {(align) => (
-                  <Show when={item.id === latestAlign()} fallback={<span class="align-superseded" hidden />}>
-                    <AlignCard report={item.report!} align={align()} attachments={item.attachments} />
-                  </Show>
-                )}
-              </Match>
             </Switch>
             {/* Under the bubble, once per entry (see `strips`): the reply place. */}
             <Show when={strip()}>{(strip) => <ReplyPlaceView place={props.actions!} strip={strip()} />}</Show>

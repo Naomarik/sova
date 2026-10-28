@@ -73,7 +73,7 @@ export interface KindViewProps<V = unknown> {
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -125,7 +125,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   // An open alignment follows the chat by revision: each `align` call is a new row, its newest
   // revision draws the whole card and earlier ones one line (lib/align.ts `newestAlignRows`).
   kind({ id: "align", match: (it) => it.kind === "align" && it.align, host: "page", placement: "follow", key: (it) => alignKey(it) }),
-  kind({ id: "align-report", match: (it) => it.kind === "report" && it.report && alignOf(it.report), host: "page", placement: "anchored" }),
+  kind({ id: "align-report", match: (it) => it.kind === "report" && it.report && alignOf(it.report), host: "page", placement: "anchored", view: { page: "align-report" } }),
   kind({ id: "explain", match: (it) => it.kind === "report" && it.report && explainOf(it.report), host: "page", placement: "anchored", view: { page: "explain" } }),
   kind({ id: "team-report", match: (it) => it.kind === "report" && it.report?.team, host: "page", placement: "anchored", view: { page: "team-report" } }),
   kind({ id: "report", match: (it) => it.kind === "report" && it.report, host: "page", placement: "anchored", view: { page: "report" } }),

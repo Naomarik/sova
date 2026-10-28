@@ -3,7 +3,7 @@ import type { ThinkingLevel } from "../shared/profiles";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
-import { agentRoot } from "./state-root";
+import { agentRoot, stateRoot } from "./state-root";
 import { fromPiToolDefinition } from "./harness/pi/tools";
 import { createSessionFile } from "./harness/pi/state";
 import { PROJECT_OVERSEER } from "./harness/state-kinds";
@@ -49,7 +49,7 @@ import { pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
 import { CARDS_NOTE_MESSAGE, cardsNote } from "../shared/overseer-card";
 import { cardsOnBranch, nowLine } from "./overseer-run-note";
 import { changedText, openingOn, toldOn, type LivePart } from "./overseer-opening";
-import { RootConfinement } from "./overseer-deny";
+import { type Exclusion, OTHER_PROJECT_REFUSAL, RootConfinement } from "./overseer-deny";
 import { sessionAttachmentsDir } from "./attachments";
 import { overseerFileTools } from "./overseer-file-tools";
 import { getIdea, promptToc, readManifest, readProse, updateIdea } from "./overseer-ideas";
@@ -103,6 +103,7 @@ import {
   type ArchiveBlockers,
   engineOf,
   engineOrThrow,
+  listProjects,
   operatorEnvelopeOf,
   overseerPausedSince,
   projectArchived,
@@ -1196,7 +1197,18 @@ export function projectContextFiles<T extends { path: string }>(files: T[], root
 /** What the project overseer's file tools never read, even inside its root: the folders other layers
     reserve (an attached org's workspace: the roster's contacts, every project's transcripts) and pi's
     and Sova's state (the host's link store, every session). */
-const confinedOut = () => [...reservedRoots(), agentRoot(), join(homedir(), ".pi")];
+const confinedOut = () => [...reservedRoots(), agentRoot(), stateRoot(), join(homedir(), ".pi")];
+
+/** What its read/grep/find/ls never read, reading anywhere else on the host:
+    `confinedOut`, and the root of every project placed in an organization other than its own (for a
+    standalone project: every placed project), other clients' work. */
+function readOut(projectId: string): Exclusion[] {
+  const own = spaceOf(engineOrThrow(projectId), projectId);
+  const others = listProjects().filter(
+    (p) => p.id !== projectId && p.root && p.space.kind === "org" && (own.kind !== "org" || p.space.orgId !== own.orgId),
+  );
+  return [...confinedOut(), ...others.map((p) => ({ dir: p.root, why: OTHER_PROJECT_REFUSAL }))];
+}
 
 /** Each conversation's opening values (overseer-opening.ts), once a run has read or set them. */
 const openedValues = new Map<string, Record<string, string>>();
@@ -1216,7 +1228,7 @@ function poFileSpecs(path: string, rt: Rt): ToolSpec[] {
     undefined,
     () => {
       const own = sessionAttachmentsDir(idOf(path));
-      return new RootConfinement(projectOf(rt.projectId).root, confinedOut(), own ? [own] : []);
+      return new RootConfinement(projectOf(rt.projectId).root, readOut(rt.projectId), own ? [own] : [], { readAnywhere: true });
     },
     {
       protectedRoots: confinedOut,

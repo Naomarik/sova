@@ -13,7 +13,6 @@ import type { ShowChangesDetails } from "../../pi-config/extensions/show-changes
 import { TourCard } from "./TourCard";
 import type { TourCardDetails } from "../../shared/tour";
 import { OwnerRequestNote } from "./OwnerRequestNote";
-import { OverseerChoiceRow } from "./OverseerCards";
 import { profileIconName } from "../lib/profiles";
 import { useThreadRows } from "./thread-rows";
 import { AssistantText, Thinking, UserTurn } from "./MessageRows";
@@ -22,14 +21,14 @@ import { resultDetails as detailsOf, toolCallArgs, toolResultView } from "../lib
 import { confirmDetails } from "../lib/overseer";
 import { CARD_TOOL, LEGACY_CONFIRM_TOOL } from "../../shared/overseer-card";
 import { profileToolCard, ProfileToolCardView } from "./ProfileCards";
-import { CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo } from "./OverseerCards";
+import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow } from "./OverseerCards";
 import { toolContent } from "../lib/tool-content";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { AlignCard } from "./AlignCard";
-import { BriefRow } from "./OverseerCards";
 import { ExplainCard } from "./ExplainCard";
 import { TeamMessageCard } from "./TeamMessageCard";
 import { ReportRow } from "./ReportRow";
+import { AlignRow } from "./AlignDocCard";
 
 /**
  * The views of Sova's own transcript cards, moved onto the card toolkit one kind at a time
@@ -64,6 +63,7 @@ export const BUILTIN_VIEWS = {
   "tool-result": OrphanResult,
   tool: ToolRow,
   "align-report": AlignReportRow,
+  align: AlignDocRow,
 } satisfies Record<string, Component<KindViewProps<never>>>;
 
 /** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is
@@ -374,4 +374,10 @@ function AlignReportRow(props: KindViewProps<NonNullable<NonNullable<TranscriptI
       <AlignCard report={props.item.report!} align={props.value} attachments={props.item.attachments} />
     </Show>
   );
+}
+
+/** An alignment document's revision: the newest draws the whole card, each earlier one a line. */
+function AlignDocRow(props: KindViewProps<NonNullable<TranscriptItem["align"]>>) {
+  const rows = useThreadRows();
+  return <AlignRow row={props.value} newest={rows.alignNewest(props.item)} />;
 }

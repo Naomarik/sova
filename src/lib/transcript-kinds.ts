@@ -5,11 +5,11 @@
  * wins). A kind is an id, what it matches, the height it reserves before it draws, where it draws
  * (`host`), where it stands (`placement`), and its view.
  *
- * A kind with a `view` is drawn by the toolkit (components/TranscriptKind.tsx), inside its own
- * error box with Reload. A kind without one is still drawn by its own branch in Thread.tsx, keyed by
- * this list's id: the built-ins move onto the toolkit one step at a time, smallest first, the
+ * Every kind has a `view`, drawn by the toolkit (components/TranscriptKind.tsx) inside its own
+ * error box with Reload, or draws nothing (`drawsNothing`). Sova's own kinds are page views
+ * (components/BuiltinKinds.tsx), moved onto the toolkit one at a time, smallest first, the
  * alignment card last (§chat.transcript-cards/built-ins). Thread.tsx never matches a row itself
- * (transcript-kinds-rule.test.ts).
+ * and draws no kind of its own (transcript-kinds-rule.test.ts).
  *
  * Like src/vis/registry.ts this file stays free of Solid, the DOM and CSS (views are named or
  * imported lazily), so its order and matching are tested in plain unit tests.
@@ -73,7 +73,7 @@ export interface KindViewProps<V = unknown> {
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report" | "align";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -95,7 +95,7 @@ export interface TranscriptKind<V = unknown> {
   placement: Placement;
   /** A `follow` kind's card, shared by its revisions: the newest row per key draws it whole. */
   key?(item: TranscriptItem, value: V): string | undefined;
-  /** Drawn by the toolkit. Absent: drawn by its own branch in Thread.tsx, until it migrates. */
+  /** Drawn by the toolkit. Absent only on a kind that draws nothing. */
   view?: KindView;
   /** A row the transcript keeps for its facts but never draws (a sent marker): no view, no branch. */
   drawsNothing?: true;
@@ -124,7 +124,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   kind({ id: "thinking", match: (it) => it.kind === "thinking", host: "page", placement: "anchored", view: { page: "thinking" } }),
   // An open alignment follows the chat by revision: each `align` call is a new row, its newest
   // revision draws the whole card and earlier ones one line (lib/align.ts `newestAlignRows`).
-  kind({ id: "align", match: (it) => it.kind === "align" && it.align, host: "page", placement: "follow", key: (it) => alignKey(it) }),
+  kind({ id: "align", match: (it) => it.kind === "align" && it.align, host: "page", placement: "follow", key: (it) => alignKey(it), view: { page: "align" } }),
   kind({ id: "align-report", match: (it) => it.kind === "report" && it.report && alignOf(it.report), host: "page", placement: "anchored", view: { page: "align-report" } }),
   kind({ id: "explain", match: (it) => it.kind === "report" && it.report && explainOf(it.report), host: "page", placement: "anchored", view: { page: "explain" } }),
   kind({ id: "team-report", match: (it) => it.kind === "report" && it.report?.team, host: "page", placement: "anchored", view: { page: "team-report" } }),

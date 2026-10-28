@@ -71,6 +71,7 @@ const MOVED: Record<string, string[]> = {
   "tool-result": [],
   tool: ["ToolCard", "DeckCard", "CardRevision", "ConfirmCard", "LinkCard", "ProfileToolCardView", "NavigateGo"],
   "align-report": ["AlignCard"],
+  align: ["AlignRow"],
 };
 
 test("a kind the toolkit draws has no branch of its own in Thread.tsx", () => {
@@ -86,7 +87,13 @@ test("every kind not on the toolkit has exactly one branch, in the list's order,
   assert.deepEqual(branchIds, legacy, "Thread.tsx's branches, one per kind, in the list's order");
 });
 
+test("no card is left on the old path: every kind is drawn by the toolkit or draws nothing, and the row Switch holds those two branches only", () => {
+  for (const k of TRANSCRIPT_KINDS) assert.ok(k.view || k.drawsNothing, `${k.id} has neither a view nor drawsNothing`);
+  assert.deepEqual(whens, ["drawn()", "hit()?.kind.drawsNothing"]);
+  assert.deepEqual(branchIds, []);
+});
+
 test("the toolkit's views stay out of the thread's internals", () => {
-  assert.doesNotMatch(host, /from "\.\/(Thread|ChatView)"/);
-  assert.doesNotMatch(read("../components/DataCards.tsx"), /from "\.\/(Thread|ChatView)"/);
+  for (const file of ["TranscriptKind.tsx", "DataCards.tsx", "BuiltinKinds.tsx", "MessageRows.tsx", "thread-rows.ts"])
+    assert.doesNotMatch(read(`../components/${file}`), /from "\.\/(Thread|ChatView)"/, file);
 });

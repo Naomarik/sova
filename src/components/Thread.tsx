@@ -1,17 +1,14 @@
 import { children, createContext, createEffect, createMemo, createSignal, For, lazy, Match, on, onCleanup, Show, Switch, untrack, useContext, type JSX } from "solid-js";
-import type { RowFacts } from "../../shared/harness-wire";
-import type { TmpAttachment, TranscriptItem } from "../../shared/protocol";
+import type { TranscriptItem } from "../../shared/protocol";
 import { rowFacts } from "../../shared/wire-v1";
-import type { BatonMark } from "../../shared/baton";
 import { wrapupRowIds } from "../lib/wrapup-rows";
 import { readHoldTop } from "../lib/read-hold";
 import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState, shownUserState } from "../lib/live";
-import { agoTime, modelLabel, modelMismatch, prettyJson, stampTime } from "../lib/format";
-import { useMinuteNow } from "../lib/minute-clock";
-import { isObj, resultDetails as detailsOf, str, toolCallArgs, toolResultView } from "../lib/message";
+import { modelLabel, prettyJson, stampTime } from "../lib/format";
+import { isObj, resultDetails as detailsOf, str, toolResultView } from "../lib/message";
 import { toolContent, type ToolSource } from "../lib/tool-content";
 import { stripPastedPaths } from "../lib/path-attachments";
-import { focusView, home, setFocusView } from "../lib/ui-state";
+import { focusView, setFocusView } from "../lib/ui-state";
 import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, registerRows, registerTranscript, transcriptRoot } from "../lib/jump";
 import type { RowTarget } from "../lib/older-rows";
 import type { ScrollSpot } from "../lib/transcript-cache";
@@ -22,23 +19,12 @@ import { isHiddenBlock, isTourResult, liveHiddenCounts, splitHidden, thinkingHid
 import { chainRuns, type ChainRun } from "../lib/chain-rows";
 import { compressWork } from "../lib/work-compression";
 import { isChangeRow } from "../lib/change-rows";
-import { stripSessionHeader } from "../../shared/profiles";
 import { sendersOf } from "../../shared/senders";
-import { profileIconName } from "../lib/profiles";
-import { profileToolCard, ProfileToolCardView } from "./ProfileCards";
 import { isTurnStart } from "../lib/turn";
 import { parseWakeNudge } from "../../shared/wake";
 import { parseTopicBatch } from "../../shared/topic-message";
-import { ImageStrip } from "./ImageStrip";
-import { PathAttachment } from "./PathAttachment";
-import { ReportRow } from "./ReportRow";
-import { TeamMessageCard } from "./TeamMessageCard";
-import { AlignCard } from "./AlignCard";
 import { AlignRow } from "./AlignDocCard";
-import { ExplainCard } from "./ExplainCard";
 import { alignRowFromDetails, latestAlignId, newestAlignRows } from "../lib/align";
-import { Markdown } from "./Markdown";
-import { ReplyTimingHead } from "./ReplyTiming";
 import type { ReplyTiming } from "../../shared/usage/perf";
 import { replyHovers } from "../lib/perf";
 import { ToolCard, type ToolStatus } from "./ToolCard";
@@ -55,9 +41,9 @@ import { OfferCardView } from "./OfferCard";
 import { SettingsToolCard } from "./SettingsChangeCard";
 import { isSettingsToolDetails } from "../../shared/project-settings";
 import { Banner, Chip, Icon } from "./ui";
-import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow, useOverseerThread } from "./OverseerCards";
-import { cardFold, confirmAnswer, confirmDetails, isBriefText } from "../lib/overseer";
-import { CARD_TOOL, LEGACY_CONFIRM_TOOL, normalizeCardDetails } from "../../shared/overseer-card";
+import { BriefRow, CardRevision, DeckCard, LinkCard, linkDetails, NavigateGo, useOverseerThread } from "./OverseerCards";
+import { cardFold, confirmAnswer, isBriefText } from "../lib/overseer";
+import { CARD_TOOL, normalizeCardDetails } from "../../shared/overseer-card";
 import { MessageActions, type MessageActionItem } from "./MessageActions";
 import { type MessageStrip, sameStrip, stripsByRow } from "../lib/message-actions";
 import { backWords } from "../lib/error-feed";
@@ -578,11 +564,6 @@ export function HistoryItems(props: {
           const strip = createMemo(() => strips().get(index()), undefined, { equals: sameStrip });
           /** The row's kind, by the toolkit's list in its order (lib/transcript-kinds.ts): the first that matches draws it. */
           const hit = createMemo(() => kindOf(item, kinds), undefined, { equals: sameHit });
-          /** The value the row's kind matched with, when it is kind `id` (a branch still drawn here, until it moves onto the toolkit). */
-          const is = <V,>(id: string): V | undefined => {
-            const h = hit();
-            return h?.kind.id === id ? (h.value as V) : undefined;
-          };
           /** The row's hit, when the toolkit draws it. */
           const drawn = (): KindHit | undefined => {
             const h = hit();
@@ -616,9 +597,8 @@ export function HistoryItems(props: {
             <Switch fallback={<Unknown raw={item.entry} />}>
               {/* Rows the toolkit draws, each in its own error box. */}
               <Match when={drawn()}>{(h) => <TranscriptKindRow hit={h()} item={item} limitPath={props.limitPath} index={index} reserve={rowEst()} />}</Match>
-              {/* A kind still drawn by its branch here, until it moves onto the toolkit; and the kinds that draw nothing. */}
+              {/* The kinds that draw nothing (a sent marker, a paired result). */}
               <Match when={hit()?.kind.drawsNothing}>{null}</Match>
-              <Match when={is<NonNullable<TranscriptItem["align"]>>("align")}>{(row) => <AlignRow row={row()} newest={alignNewest(item)} />}</Match>
             </Switch>
             {/* Under the bubble, once per entry (see `strips`): the reply place. */}
             <Show when={strip()}>{(strip) => <ReplyPlaceView place={props.actions!} strip={strip()} />}</Show>

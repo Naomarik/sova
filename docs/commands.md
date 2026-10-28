@@ -30,7 +30,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Pending (not yet a command) | 304 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 8 |
-| Hand-written tool specs | 125 |
+| Hand-written tool specs | 128 |
 
 ## Catalogue entries
 
@@ -820,12 +820,14 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/memory/tools.ts` | 2 | `<computed: MEMORY_ZOOM_TOOL>`, `<computed: MEMORY_DATE_TOOL>` |
 | `server/org-history-tools.ts` | 2 | `sova_history`, `sova_decide` |
 | `server/overseer-card-tool.ts` | 1 | `<computed: CARD_TOOL>` |
+| `server/overseer-code-history.ts` | 2 | `sova_project_git`, `sova_server_log` |
 | `server/overseer-idea-tools.ts` | 2 | `sova_ideas`, `sova_idea` |
 | `server/overseer-link-tools.ts` | 3 | `sova_link`, `sova_unlink`, `sova_links` |
 | `server/overseer-org-part.ts` | 10 | `sova_decisions`, `sova_roster`, `sova_start_gathering`, `sova_offer`, `sova_close_gathering`, `sova_owner_update`, `sova_send_to_person`, `sova_send_status`, `sova_reconcile`, `sova_promote` |
 | `server/overseer-org-tools.ts` | 10 | `sova_orgs`, `sova_org_person`, `sova_projects`, `sova_org_project`, `sova_org`, `sova_roster`, `sova_owner`, `sova_project_decisions`, `sova_gather`, `sova_project_overseer` |
 | `server/overseer-todo-tools.ts` | 2 | `sova_todos`, `sova_todo` |
 | `server/overseer-tools.ts` | 24 | `sova_attention`, `sova_list_sessions`, `sova_outstanding`, `sova_search_sessions`, `sova_session`, `sova_public_links`, `sova_alignment`, `sova_read_session`, `sova_list_groups`, `sova_list_targets`, `sova_list_models`, `sova_list_subagent_profiles`, `sova_list_folders`, `sova_create_session`, `sova_send`, `sova_set_session`, `sova_archive`, `sova_land`, `sova_group`, `sova_answer_dialog`, `sova_navigate`, `sova_note`, `sova_org_history`, `<computed: SPEC_LOOKUP_TOOL>` |
+| `server/overseer-whatsapp.ts` | 1 | `sova_whatsapp` |
 | `server/playbook-tools.ts` | 1 | `<computed: PLAYBOOK_READ_TOOL>` |
 | `server/project-assistant-tools.ts` | 7 | `report_issue`, `start_fix`, `deploy`, `owner_versions`, `start_version`, `start_feature_chat`, `requirement_agree` |
 | `server/project-overseer-tools.ts` | 18 | `sova_project`, `sova_list_subagent_profiles`, `sova_list_sessions`, `sova_read_session`, `sova_todos`, `sova_note`, `sova_idea`, `sova_previews`, `sova_preview`, `sova_create_session`, `sova_send`, `sova_files`, `sova_pipeline`, `sova_hold`, `sova_correct`, `sova_set_state`, `sova_settings`, `sova_todo` |

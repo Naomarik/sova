@@ -342,14 +342,16 @@ Sova's tools in a new session (see "Restored workers and `agent_resume`").
 While the spawning session has the `spec` minor mode on (the mode extension announces its active
 modes as `mode:state` on `pi.events`; `mode:discover` asks), every worker that can change code
 (`bash`, `edit` or `write`, a Claude Code worker's included) gets the **worker spec brief** appended to its system prompt: `spec-brief.ts`,
-whole sentences quoted from `mode/spec-mode.md` by anchor, with `$core` pinned to this pi-config's
-`spec/core`. `spec-brief.test.ts` pins the generated text, so a change to a carried rule in
-spec-mode.md fails there until the brief is reviewed. Ad hoc workers and team members alike;
+whole sentences quoted by anchor from the spec mode's two parts, `mode/spec-mode.md` and the writing
+procedure `spec/WRITING.md` (so it keeps every writing rule up front), with `$core` pinned to this
+pi-config's `spec/core`; its commands include `where` and `map`. `spec-brief.test.ts` pins the generated
+text, so a change to a carried rule in either file fails there until the brief is reviewed. Ad hoc workers and team members alike;
 remote workers and `useWorktreeConfig` workers (which load the spec mode itself) do not get it.
 
 pi workers (a Claude Code worker included), which load only their listed extensions, also load
 `../mode/spec-worker.ts` (the mode extension's census hook alone: a census digest after a
-tool call that changes `git status`), under the same condition as the brief; it is plumbing, so
+tool call that changes `git status`; its first note hands the worker the writing procedure once, its
+Workers section first), under the same condition as the brief; it is plumbing, so
 the spawn summary does not list it. No worker is given a spec ledger.
 
 When such a worker settles, its summary (the completion message, `agent_wait`'s

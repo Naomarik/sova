@@ -120,10 +120,10 @@ export interface PreviewError {
 
 /**
  * The one shape a preview leaves Sova's tools in (§app.project-overseer/previews): `sova_previews`
- * and `sova_preview` put it in their results' `details`. It never carries the link: a tool result is
- * part of the overseer's session file, which the org's workspace repo commits and may push. A tool
- * that sends a preview to a person (sova_send_to_person) takes its `id` and gives them their own link to
- * it, made on the server. `linkKept` says whether the operator has its link (false for a preview made
+ * and `sova_preview` put it in their results' `details`. `url` is the preview's own kept link (null when
+ * none is kept), so the overseer can give it to the operator in a reply; never a person's own link to it.
+ * A tool that sends a preview to a person (sova_send_to_person) takes its `id` and gives them their own
+ * link to it, made on the server. `linkKept` says whether a link is kept (false for a preview made
  * before links were kept, which can still be sent by its id); `purpose`, `sessionId` and `branch` are null when unknown; `running` is null unless it is
  * active. Fixed: fields are only ever added, under a new `v`.
  */
@@ -141,6 +141,8 @@ export interface PreviewHandoff {
   running: boolean | null;
   /** `operator`, or `session:<overseer conversation id>`. */
   createdBy: string;
+  /** The preview's own kept link, or null (none kept). */
+  url: string | null;
 }
 
 export const PREVIEW_PURPOSE_MAX = 200;

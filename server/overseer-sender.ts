@@ -49,8 +49,8 @@ export interface CardFolder {
   name?: string;
 }
 
-/** The card's folder and org rows in `header` (§app.overseer/org-project-add), which the project and org routes check
-    themselves: never part of a statechart's envelope. Empty when none or unreadable; only trusted next to the sender mark. */
+/** The card's folder and org rows in `header` (§app.overseer/org-project-add): the org routes check a detach's org row
+    themselves (an add needs no row: it runs on the user's word); never part of a statechart's envelope. Empty when none or unreadable; only trusted next to the sender mark. */
 export function overseerCardScope(header: string | undefined): { folders: CardFolder[]; orgs: string[] } {
   const none = { folders: [], orgs: [] };
   if (!header) return none;
@@ -71,9 +71,3 @@ export function overseerCardScope(header: string | undefined): { folders: CardFo
 /** The refusal of a card-gated act outside a confirmed turn (§app.overseer/org-people-facing); `lead` says what kind of act it is. */
 export const confirmRefusal = (what: string, lead = "This reaches people or ends something") =>
   `${lead}: ask with sova_card, listing ${what} in its items, and act in the turn the user's click starts.`;
-/** The lead of an add's refusal (§app.overseer/org-project-add). */
-export const ADD_LEAD = "This adds a project";
-/** An add's refusal when no click on a card opened the turn at all (§app.overseer/org-project-add):
-    `what` names the folder with the org the call asked for. */
-export const addNoClickRefusal = (what: string) =>
-  `${ADD_LEAD}, and this turn wasn't opened by a click on a card: reopen the card (sova_card reopen, if you recorded its answer) or ask again with sova_card, listing ${what} in its items, so the user can click it again, and act in the turn that click starts.`;

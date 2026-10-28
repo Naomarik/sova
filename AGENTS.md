@@ -170,9 +170,12 @@ claim a feature.
 - Drafts and reviews are local only (`.sova/spec/.gitignore`); commit by explicit path, as
   `.sova/spec/README.md` shows, never `git add -A`.
 - **Before and while a task changes behavior, follow the spec discipline.** If your system prompt
-  already includes the `# Minor mode: spec` block, follow it without rereading. Otherwise read
-  `pi-config/extensions/mode/spec-mode.md`, the same text, and follow it. It applies in Sova whether or
-  not that mode is on; don't turn any mode on. Commands are in `.sova/spec/USAGE.md`.
+  already includes the `# Minor mode: spec` block, follow it without rereading; otherwise read
+  `pi-config/extensions/mode/spec-mode.md`, the same text, and follow it. Before your first edit that
+  changes behavior, read `pi-config/extensions/spec/WRITING.md`, the writing procedure (drafts,
+  agreeing, evidence, promoting), unless a census note or an alignment's go-ahead already handed it to
+  you. Both apply in Sova whether or not that mode is on; don't turn any mode on. Commands are in
+  `.sova/spec/USAGE.md`.
 - A change to the spec tools themselves: read [agents/modes/spec/overview.md](agents/modes/spec/overview.md).
 - Before planning anything that changes what a Claude Code chat's model sees or which tools it has,
   read §app/claude-code-provider: Sova owns the conversation and the tools; the CLI is only the model.

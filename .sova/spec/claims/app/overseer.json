@@ -249,6 +249,30 @@
       "source": "pi-session:01a16fb6-1014-7539-b91a-750b94daff7d#6f6f4e53"
     }
   },
+  "§app.overseer/code-history": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.overseer/tools",
+      "§app.overseer/hosting",
+      "§app.overseer/org-projection"
+    ],
+    "code": [
+      "server/overseer-tools.ts",
+      "server/overseer-prompt.md",
+      "server/overseer-deny.ts",
+      "server/overseer-code-history.ts",
+      "server/overseer-code-history.test.ts",
+      "server/commands-inventory/baseline.json",
+      "docs/commands.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+    }
+  },
   "§app.overseer/confirm": {
     "kind": "behavior",
     "authority": "accepted",
@@ -295,7 +319,8 @@
       "src/lib/run-status.test.ts",
       "src/app.css",
       "src/design/align-viewer.css",
-      "src/lib/overseer-card-rows.test.ts"
+      "src/lib/overseer-card-rows.test.ts",
+      "server/overseer-sender.ts"
     ],
     "requires": [
       "§app.overseer/tools",
@@ -304,8 +329,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-27T09:33Z",
-      "source": "pi-session:01a16fb6-1014-7539-b91a-750b94daff7d#6f6f4e53"
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
     }
   },
   "§app.overseer/copies": {
@@ -344,9 +369,9 @@
       "§app.project-services/instances"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-26T19:25Z",
-      "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
     }
   },
   "§app.overseer/default-quick-actions": {
@@ -789,7 +814,10 @@
       "server/queue.test.ts",
       "server/chat-queue-clients.test.ts",
       "server/overseer-copies.ts",
-      "server/overseer-copies.test.ts"
+      "server/overseer-copies.test.ts",
+      "statecharts/src/sova/statecharts/proj.cljc",
+      "server/vendor/statecharts.js",
+      "statecharts/EVENTS.md"
     ],
     "requires": [
       "§app.overseer/confirm",
@@ -800,9 +828,9 @@
       "§app.organizations/roster"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-26T18:32Z",
-      "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
     }
   },
   "§app.overseer/org-project-add": {
@@ -823,7 +851,14 @@
       "server/overseer-org-tools.test.ts",
       "server/search-tools-fake.ts",
       "server/overseer-runtime.test.ts",
-      "server/projects/routes.test.ts"
+      "server/projects/routes.test.ts",
+      "statecharts/src/sova/statecharts/proj.cljc",
+      "statecharts/src/sova/statecharts/org.cljc",
+      "server/vendor/statecharts.js",
+      "statecharts/test/sova/statecharts/refit/org_project_test.cljc",
+      "statecharts/test/sova/statecharts/refit/acts_golden.cljs",
+      "statecharts/EVENTS.md",
+      "server/overseer-confirm.ts"
     ],
     "requires": [
       "§app.overseer/org-writes",
@@ -838,8 +873,9 @@
       "§app.overseer/tools"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-19T08:01Z"
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
     }
   },
   "§app.overseer/org-project-overseers": {
@@ -942,7 +978,8 @@
       "server/decisions-routes.ts",
       "server/overseer-org-tools.ts",
       "server/overseer-org-tools.test.ts",
-      "server/search-tools-fake.ts"
+      "server/search-tools-fake.ts",
+      "server/overseer-sender.ts"
     ],
     "requires": [
       "§app.organizations/field-authority",
@@ -952,7 +989,12 @@
       "§app.organizations/projects",
       "§app.owner-page/owner",
       "§app.requirements/promotion"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+    }
   },
   "§app.overseer/proactivity": {
     "kind": "behavior",
@@ -1301,7 +1343,7 @@
   "§app.overseer/tools": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "server/overseer-tools.ts",
       "server/overseer-deny.ts",
@@ -1332,7 +1374,12 @@
       "server/agent-loadouts.test.ts",
       "server/agent-loadouts.snapshot.json",
       "server/overseer-roundup.ts",
-      "server/overseer-copies.test.ts"
+      "server/overseer-copies.test.ts",
+      "shared/preview-links.ts",
+      "server/outreach/unit.ts",
+      "server/overseer-code-history.ts",
+      "server/overseer-whatsapp.ts",
+      "server/project-previews.ts"
     ],
     "requires": [
       "§app.overseer/caps",
@@ -1341,9 +1388,9 @@
       "§mesh.peers/listener"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-26T18:32Z",
-      "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
     }
   },
   "§app.overseer/transcript-window": {

@@ -11,8 +11,19 @@
       "server/outreach.test.ts",
       "server/outreach/sender-test-fixtures.ts",
       "server/outreach-test-fixtures.ts",
-      "server/outreach.integration.test.ts"
-    ]
+      "server/outreach.integration.test.ts",
+      "server/outreach/routes.ts",
+      "server/overseer-org-part.ts",
+      "server/private-text-match.ts",
+      "server/private-text-match.test.ts",
+      "server/preview-kept.ts",
+      "server/org-about-privacy.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+    }
   },
   "§app.outreach/decisions": {
     "kind": "behavior",
@@ -34,7 +45,12 @@
     "requires": [
       "§app.overseer/org-people-facing",
       "§app.project-overseer/tools"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+    }
   },
   "§app.outreach/guide": {
     "kind": "behavior",
@@ -90,7 +106,12 @@
     "requires": [
       "§app.baton/links",
       "§mesh.public/preview"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+    }
   },
   "§app.outreach/log": {
     "kind": "behavior",
@@ -133,6 +154,37 @@
       "§app.outreach/sender-list",
       "§app.outreach/send"
     ]
+  },
+  "§app.outreach/overseer-sender": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.outreach/sender-controls",
+      "§app.outreach/sender-health",
+      "§app.outreach/org-sender",
+      "§app.outreach/sender-link"
+    ],
+    "code": [
+      "server/outreach/unit.ts",
+      "server/outreach/health.ts",
+      "server/overseer-tools.ts",
+      "server/project-overseer-tools.ts",
+      "server/overseer-prompt.md",
+      "server/project-overseer-prompt.md",
+      "server/overseer-whatsapp.ts",
+      "server/overseer-whatsapp-part.ts",
+      "server/overseer-whatsapp.test.ts",
+      "server/overseer-org-part.ts",
+      "server/commands-inventory/baseline.json",
+      "docs/commands.md",
+      "server/overseer-runtime.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+    }
   },
   "§app.outreach/secrets": {
     "kind": "behavior",
@@ -254,12 +306,18 @@
       "server/outreach-unit.test.ts",
       "server/outreach.test.ts",
       "server/outreach-test-fixtures.ts",
-      "server/outreach/sender-test-fixtures.ts"
+      "server/outreach/sender-test-fixtures.ts",
+      "server/outreach/health.ts"
     ],
     "requires": [
       "§app.outreach/sender-route",
       "§mesh.peers/grants"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+    }
   },
   "§app.outreach/sender-health": {
     "kind": "behavior",
@@ -357,6 +415,11 @@
       "§app.baton/links",
       "§app.project-overseer/holds",
       "§app.organizations/working-hours"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+    }
   }
 }

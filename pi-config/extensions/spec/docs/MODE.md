@@ -2,7 +2,8 @@
 
 The spec minor mode is a discipline for coding agents. Behavior is written into `.sova/spec/` and agreed
 before code, and every change goes through a draft. The mode has two halves:
-- **Text.** It puts one text into the agent's system prompt.
+- **Text.** It puts one short text into the agent's system prompt (finding your way) and hands the
+  writing procedure over once, as a tool result, when the agent starts to change behavior.
 - **Mechanical checks.** It runs the census after tool calls, so the text holds without the model remembering it. Nothing runs at the end of a turn: a turn ends when the model stops.
 
 Workers get a reduced copy of both. This page names each piece, where it lives, and how they connect.
@@ -15,7 +16,9 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
 
 | Piece | Where | What it does |
 |---|---|---|
-| The guide | `mode/spec-mode.md` | The text injected while the mode is on. It is the only copy: everything else quotes or loads it. |
+| The guide | `mode/spec-mode.md` | The short part, injected while the mode is on: search, read, verify in the code, cite files, and where the writing procedure is. It is the only copy: everything else quotes or loads it. |
+| The writing procedure | `spec/WRITING.md` | The second part: drafts, agreeing, evidence, promotion, a worker's duties (its `## Workers` section). Never in the prompt; the agent opens it as `$core/../WRITING.md`. The only copy. |
+| Hand-over | `mode/spec-guard.ts` (`CensusHook.takeProcedure`, `procedureToldIn`, `readsProcedure`), `mode/index.ts`, `mode/align-tool.ts`, `mode/spec-worker.ts` | Once per chat, the session's first census note of any kind (or, with align on, the go-ahead's result) appends the procedure read from the installed copy, unless the agent read it itself. A compaction re-arms it; a reopened session restores it from its history. A worker's copy leads with its Workers section. |
 | Loading | `mode/minor.ts` | Reads `spec-mode.md` once at load (`SPEC_INSTRUCTIONS`, trailing whitespace trimmed) and extracts its one `sh` block as `SPEC_CORE_SHELL`, the line that finds the trusted tools. |
 | Prompt composition | `mode/prompt.ts` | `composePrompt` appends minor blocks after the major mode's in registry order; with a spec writer set, the spec block gains the writer paragraph (`buildSpecWriterPrompt`). `composeWorkerPrompt` gives a worker the spec block plus `SPEC_WORKER_NOTE`. |
 | Agree step | `mode/align-tool.ts` (`alignSpecAgreeText`), `mode/index.ts` (`specOn`) | With align on too, the `align` call that sets an alignment implementing ends its result text (never its `details`) with the Agree step: write the decisions as promises in a draft, `agree` them (which promotes the ones that map no code). Neither mode's prompt block changes. |
@@ -23,10 +26,10 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
 | The census note | `mode/spec-guard.ts` (`CensusHook`, `CENSUS_SKIP_TOOLS`) | After a tool call that can write, it compares the work tree's `git status` with the last look. On the first changed file in the spec boundary, and on each new file, it runs `sova-spec.mjs census --changed` and appends a short `[spec census]` digest to that tool result. At the first call after the session's last edit it runs `census --changed --related` once and adds one line, `Unread § your change landed in`, naming the foreign § the session's own files landed in that it hasn't `read` (`specReads` over its shell commands), at most 10 marked read first (census relevance 0.036 or more, or a stale literal), the rest left, uncounted, to the census command that lists them ("lower-ranked: <command>"). |
 | Forbidden writes | `mode/spec-guard.ts` (`SpecWriteGuard`) | It says so, in the same digest, when the current spec is written by hand, or when commits that a draft's evidence names are rewritten. |
 | pi worker checks | `mode/spec-worker.ts` | The same census for a pi worker, a Claude Code worker included (it is a pi worker on the Claude Code provider). Workers start with `--no-extensions`, so the spawn path loads this file with `-e`. |
-| Worker brief | `subagents/spec-brief.ts` | A fixed excerpt of `spec-mode.md` for a code-writing worker whose prompt doesn't already carry the spec block. Each rule is found by an anchor and quoted whole, so the brief is generated, never hand-copied. |
+| Worker brief | `subagents/spec-brief.ts` | A fixed excerpt of both parts (`spec-mode.md`, then `WRITING.md`) for a code-writing worker whose prompt doesn't already carry the spec block. Each rule is found by an anchor and quoted whole, so the brief is generated, never hand-copied; it keeps every writing rule up front. |
 | Merge note | `worktrees/spec.ts` | When a worktree merge is recorded, it adds the landing's warnings to the merge note: changed files no claim maps, draft records left behind, hand-resolved §, orphaned evidence. This applies in any project with a spec, mode on or off. |
 | Spec writer setting | `mode/spec.ts`, `server/spec-settings.ts` | Which worker (backend · model · effort) writes draft claims and evidence while spec is on. The legacy file is `<agent dir>/mode-spec.json`; Sova's Settings → Subagents now edits it per profile. `null` means the session writes the spec itself. |
-| The tools | `spec/core/*.mjs` | Read-only `sova-spec.mjs`, `sova-spec-draft.mjs` (drafts, evidence, promotion, `merge-manifest`, `migrate`), the review and assessment companions, and the modules they load. `layout.mjs` is the one reader and writer of records, in both layouts (one list in `manifest.json`, or one beside each claim file); Sova's server readers, the merge round and the release check use it or `sova-spec.mjs records`. |
+| The tools | `spec/core/*.mjs` | Read-only `sova-spec.mjs`, `sova-spec-draft.mjs` (drafts, evidence, promotion, `merge-manifest`, `migrate`), the review companion, and the modules they load. `layout.mjs` is the one reader and writer of records, in both layouts (one list in `manifest.json`, or one beside each claim file); Sova's server readers, the merge round and the release check use it or `sova-spec.mjs records`. |
 | Merge drivers | `.gitattributes`, `sova-spec-draft.mjs merge-claims`, `merge-manifest` | Claim files merge per declaration in Git, through a driver each clone defines once (below). Record files (`claims/**/*.json`, format 2) and `manifest.json` use Git's own line merge; `merge-manifest` finishes a merge across the two layouts, and is a format 1 project's manifest driver. |
 
 ## How they connect
@@ -44,6 +47,14 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
 3. **Find the tools.** The guide's `sh` line resolves `$core` to `<agent dir>/extensions/spec/core`, where
    `pi-config/install.sh` links these tools. The agent runs only that trusted copy. A copy inside a
    project is foreign code, never run without asking; the installed extension is the only supported way to run the tools.
+3a. **The writing procedure.** The short part tells the agent to read `$core/../WRITING.md` before its
+   first edit that changes behavior. If it hasn't (a read tool on a file named `WRITING.md`, or a shell
+   command that prints one), the session's first `[spec census]` note of any kind carries it, whole,
+   after the digest, headed `Writing procedure (once; also at <path>)`, read from the trusted tools'
+   copy (a one-line pointer when that file is missing); with align on, the go-ahead's result carries
+   it after the Agree step if it comes first. It is said once per chat: a compaction re-arms it, and a
+   reopened session restores whether it was told from its branch since the last compaction. It never
+   enters the system prompt or the `<mode>` section, so a Claude Code chat never restarts for it.
 4. **Census while working.** After each tool call (bash included), `CensusHook` compares `git status`.
    - Tools that cannot write are skipped by name (`CENSUS_SKIP_TOOLS`). A skipped call doesn't move the
      baseline.
@@ -107,6 +118,7 @@ conflict that `merge-manifest --write` finishes.
 | Piece | Claim |
 |---|---|
 | What the guide teaches about reading | §tools.spec/mode-reading |
+| The writing procedure's hand-over | §tools.spec/writing-on-demand |
 | The census note | §tools.spec/census-note |
 | The unread line after the last edit | §tools.spec/unread-landed |
 | The census's ranking by changed lines | §tools.spec/census-rank |

@@ -123,6 +123,11 @@ try {
 	assert.match(seen(requests[at + 1]), /\[spec census\] 1 changed file\(s\) in the boundary/, "the digest reached the model");
 	assert.match(seen(requests[at + 1]), /No draft yet/);
 	assert.match(seen(requests[at + 1]), /§app\/shell/);
+	// The first note hands the writing procedure over, once, in the tool result (never the system prompt).
+	const handedOver = (req) => seen(req).split("Writing procedure (once; also at ").length - 1;
+	assert.equal(handedOver(requests[at + 1]), 1, "the first note carries the writing procedure");
+	assert.match(seen(requests[at + 1]), /extensions\/spec\/WRITING\.md\):\\n\\n# Spec: the writing procedure/);
+	assert.match(seen(requests[at + 1]), /Behavior no claim covers gets a new claim/);
 
 	// The same file again: no second digest, and still nothing at the turn's end.
 	at = requests.length;
@@ -130,6 +135,19 @@ try {
 	await session.prompt("once more");
 	assert.equal(requests.length, at + 2);
 	assert.doesNotMatch(seen(requests[at + 1]).split("once more")[1] ?? "", /\[spec census\]/, "no digest for a file already reported");
+	assert.equal(handedOver(requests[at + 1]), 1, "said once per chat: the earlier hand-over is still the only one");
+
+	// A compaction re-arms it: the next note hands it over again.
+	script.push({ text: "Summary of the work so far." });
+	settingsManager.applyOverrides({ compaction: { keepRecentTokens: 1 } });
+	await session.compact();
+	assert.ok(sessionManager.getBranch().some((e) => e.type === "compaction"), "compacted");
+	at = requests.length;
+	script.push({ tool: "bash", args: { command: "printf 'n\\n' > src/New.tsx" } }, { text: "Added a file." });
+	await session.prompt("add a file");
+	assert.equal(handedOver(requests[at + 1]), 1, "after a compaction it is handed over again, once");
+	const lastResult = requests[at + 1].messages.filter((m) => m.role === "toolResult").at(-1);
+	assert.match(JSON.stringify(lastResult), /Writing procedure \(once; also at /, "on the new note itself, not a kept older one");
 
 	// A promote --write that changes a claim's text: no re-prompt, warning or line asked for.
 	git("add", "-A");

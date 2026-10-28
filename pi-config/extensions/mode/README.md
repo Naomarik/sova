@@ -143,13 +143,21 @@ writer**).
   Work that changes no behavior — refactors, tests, tooling — is exempt, and
   the agent says it is claiming the exemption. The documentation changes only
   through drafts; a promotion `conflict` is per declaration, and it is
-  re-applied in a new draft from current. The discipline itself
-  is [`spec-mode.md`](spec-mode.md), and nowhere else. `minor.ts` reads it at
-  load: the injected block is that file byte for byte, minus trailing
-  whitespace, and its one `sh` block is the shell prefix `minor.ts` exports as
-  `SPEC_CORE_SHELL`. A missing, repeated or multi-line block fails the load. A
-  project may point its agents at the same file without the mode; Sova's
-  `AGENTS.md` does. The tools it runs without asking are the three linked into
+  re-applied in a new draft from current. The discipline itself is two
+  files, each one copy: [`spec-mode.md`](spec-mode.md), the short
+  finding-your-way part that rides every turn, and
+  [`../spec/WRITING.md`](../spec/WRITING.md), the writing procedure (drafts,
+  agreeing, evidence, promoting, a worker's duties). `minor.ts` reads
+  `spec-mode.md` at load: the injected block is that file byte for byte, minus
+  trailing whitespace, and its one `sh` block is the shell prefix `minor.ts`
+  exports as `SPEC_CORE_SHELL`. A missing, repeated or multi-line block fails
+  the load. The writing procedure never enters the prompt: the short part
+  tells the agent to read `$core/../WRITING.md` before its first edit that
+  changes behavior, and the session's first `[spec census]` note of any kind,
+  or an `align` go-ahead, hands it over once (`CensusHook.takeProcedure`)
+  unless the agent read it itself; a compaction re-arms it, and a reopened
+  session restores it from its history (`procedureToldIn`). A project may
+  point its agents at both files without the mode; Sova's `AGENTS.md` does. The tools it runs without asking are the three linked into
   the agent directory (`<agent dir>/extensions/spec/core/`, resolved like pi's
   own agent dir: an exact `~` or a leading `~/` is home), always through that
   `sh` recipe, never a guessed path. A copy inside the
@@ -228,15 +236,10 @@ writer**).
     warnings included). Nothing runs at the turn's end, and no worker writes a
     spec ledger.
 
-  - **No automatic assessments.** Neither the session, its pi workers (`spec-worker.ts`)
-    nor Claude Code workers' hooks run the assessment companion, capture a task
-    baseline or write a receipt, and none of them has an assessment tool. An
-    assessment is an explicit `sova-spec-assess.mjs prepare <name> --base <known rev>`,
-    `record` and `status` (`.sova/spec/USAGE.md`, `../spec/README.md`); attribution is
-    only what its caller passes as `--attribution-json`. Receipts and task entries
-    left by the earlier automatic observer stay as they are; an old native hook state
-    keeps its assessment fields unchanged and ignored, while its census fields
-    update as usual.
+  - **No assessments.** The assessment companion is retired: no session, pi worker
+    or Claude Code worker hook runs one or has an assessment tool. An old native
+    hook state keeps its assessment fields unchanged and ignored, while its census
+    fields update as usual.
 
   See `../spec/README.md`.
 - **codemode** — gives the model pi's `codemode` tool (pi's `docs/codemode.md`):
@@ -765,7 +768,9 @@ cannot compile without deciding):
   worker-scope minors only: for spec, the `spec-mode.md` block byte for byte,
   then `SPEC_WORKER_NOTE` (the brief is the go-ahead; the parent promotes unless
   the brief says otherwise, and then only on its branch, never on the default
-  branch; the final report lists each foreign § it updated).
+  branch; the final report lists each foreign § it updated; the same words as
+  the writing procedure's Workers section, which its census hands it, that
+  section first, with its first note).
   Never the Delegate block, the align block or bridge, the vis guide, or the
   writer paragraph.
 - **Delivered over the bus** (`events.ts`), like the sandbox's state: the
@@ -815,15 +820,9 @@ node tests/note-turn.mjs      # real pi session + scripted provider: a minor tog
 node tests/align-turn.mjs     # real pi session + scripted provider: the align tool, its hidden notes (per prompt, after a compaction) and the settle nudge
 node tests/style-turn.mjs     # real pi session + scripted provider: the writing style in the head, its one note, reopen; Visuals by flag and file
 node --test spec-guard.test.ts # the census: digest, per tree (real Git + spec tools), failure once per cause, write guard, drift note, command detection
-node --test spec-assessment.test.ts # the assessment transport, and that nothing else is left to capture with
-node tests/assessment-absence.mjs # session, worktree-config worker, pi worker and Claude Code hooks never call a trapped companion by themselves
 node tests/spec-turn.mjs      # real pi session + scripted provider: census digest, forbidden writes, drift note, no turn-end check, mode:state
 node tests/spec-worker.mjs    # real pi session loading only spec-worker.ts (a pi worker's -e): the census digest; no turn-end check, no ledger
 ```
 
-Sova repository integration only, from its root: `node server/tests/spec-assessment.mjs`
-exercises actual common worker spawning through a scripted RPC child running the pinned SDK,
-owner reopen, readiness and a spec-on mode session with no assessment call, then the explicit
-companion CLI against the known start revision.
-This cross-boundary fixture is not required by, and does not run on, a standalone copy of
-`pi-config/`; the extension and its portable tests import no Sova runtime.
+The extension and its portable tests import no Sova runtime, so they run on a standalone copy of
+`pi-config/`.

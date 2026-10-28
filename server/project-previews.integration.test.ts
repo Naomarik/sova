@@ -155,18 +155,19 @@ describe("the overseer's guard: L1, the hold, the operator's turn (§app.project
     }
   });
 
-  test("in the operator's own turn it runs at once, even at L0; the result is the fixed shape, never the link", async () => {
+  test("in the operator's own turn it runs at once, even at L0; the result is the fixed shape, with its own link", async () => {
     await settings({ autonomy: "L0", holdMin: 10 });
     const out = await run("sova_preview", folderStart, true);
     assert.equal(holdsOf().length, 0, "never held in the operator's turn");
     const p = out.details.preview as Record<string, unknown>;
-    assert.deepEqual(Object.keys(p).sort(), ["branch", "createdBy", "expiresAt", "id", "linkKept", "projectId", "purpose", "running", "sessionId", "state", "target", "v"]);
+    assert.deepEqual(Object.keys(p).sort(), ["branch", "createdBy", "expiresAt", "id", "linkKept", "projectId", "purpose", "running", "sessionId", "state", "target", "url", "v"]);
     assert.deepEqual([p.v, p.sessionId, p.branch, p.state, p.running, p.purpose], [1, "c-shop", "sova/shop-abc123", "active", true, "The shop for Ana"]);
     assert.deepEqual(p.target, { kind: "static", folder: "dist" });
     assert.equal(p.linkKept, true);
     const url = (await list()).find((v) => v.id === p.id)!.url!;
     assert.match(url, /^https:\/\/[a-z2-7]{52}\.preview\.example\.invalid\/$/, "kept, for the operator's list");
-    assert.ok(!JSON.stringify(out).includes(labelOf(url)), "never in the overseer's result");
+    assert.equal(p.url, url, "its own kept link, for the overseer to hand to the operator");
+    assert.ok(JSON.stringify(out.content).includes(url), "and in the text it reads");
   });
 
   test("turning one off is never held: at L0, in a run of its own, at once", async () => {
@@ -285,9 +286,18 @@ describe("the kept link is a secret (§mesh.public/preview, §app.project-overse
     assert.equal(kept.redactPreviewLinksDeep({ title: "nothing here" }).title, "nothing here");
   });
 
-  test("no overseer tool result or error carries a kept link, even text that holds one", async () => {
+  test("the overseer's tools carry its own project's links; the backstop hides any other kept link", async () => {
     const urls = (await list()).map((v) => v.url).filter(Boolean) as string[];
     assert.ok(urls.length);
+    // Its own project's active links reach it (sova_previews), for the operator.
+    const listed = JSON.stringify(await run("sova_previews", {}, true));
+    const active = (await list()).filter((v) => v.state === "active" && v.url).map((v) => v.url!);
+    for (const u of active) assert.ok(listed.includes(u), "its own active link is listed");
+    // With its project, the backstop passes that project's own links and hides every other (another project's, a person's).
+    const own = previewLinkFree({ name: "t", label: "t", description: "", parameters: {}, execute: async () => ({ content: [{ type: "text", text: `see ${urls[0]}` }], details: {} }) } as never, () => project.id);
+    assert.deepEqual(await own.execute("c", {} as never, undefined, undefined, undefined as never), { content: [{ type: "text", text: `see ${urls[0]}` }], details: {} });
+    const elsewhere = previewLinkFree({ name: "t", label: "t", description: "", parameters: {}, execute: async () => ({ content: [{ type: "text", text: `see ${urls[0]}` }], details: {} }) } as never, () => "prj_otherprj");
+    assert.deepEqual(await elsewhere.execute("c", {} as never, undefined, undefined, undefined as never), { content: [{ type: "text", text: "see [preview link]" }], details: {} });
     const seen: string[] = [];
     for (const [name, params] of [
       ["sova_previews", {}],
@@ -303,9 +313,10 @@ describe("the kept link is a secret (§mesh.public/preview, §app.project-overse
         seen.push(String(err));
       }
     }
-    const all = (await list()).map((v) => v.url).filter(Boolean) as string[];
-    for (const u of all) for (const out of seen) assert.ok(!out.includes(labelOf(u)), `a kept link in a tool result: ${out.slice(0, 120)}`);
-    // The backstop every overseer tool passes through: a result or error that holds a kept link shows [preview link].
+    // A link no longer active never shows in a line: only "link no longer active".
+    const dead = (await list()).filter((v) => v.state !== "active" && v.url).map((v) => v.url!);
+    for (const u of dead) for (const out of seen) assert.ok(!out.includes(`link ${u}`), `a dead link in a tool line: ${out.slice(0, 120)}`);
+    // With no project, the backstop hides every kept link: a result or error that holds one shows [preview link].
     const leaky = previewLinkFree({ name: "t", label: "t", description: "", parameters: {}, execute: async () => ({ content: [{ type: "text", text: `see ${urls[0]}` }], details: { u: urls[0] } }) } as never);
     const r = await leaky.execute("c", {} as never, undefined, undefined, undefined as never);
     assert.deepEqual(r, { content: [{ type: "text", text: "see [preview link]" }], details: { u: "[preview link]" } });
@@ -535,8 +546,8 @@ describe("a person's own link is kept for the operator's Sent to line alone (§m
       }
     }
     for (const out of seen) assert.ok(!out.includes(label), `a person's link in a tool result: ${out.slice(0, 160)}`);
-    // The backstop every overseer tool passes through knows the person's link too.
-    const leaky = previewLinkFree({ name: "t", label: "t", description: "", parameters: {}, execute: async () => ({ content: [{ type: "text", text: `see ${url}` }], details: { u: url } }) } as never);
+    // The backstop every overseer tool passes through knows the person's link too, even with its own project.
+    const leaky = previewLinkFree({ name: "t", label: "t", description: "", parameters: {}, execute: async () => ({ content: [{ type: "text", text: `see ${url}` }], details: { u: url } }) } as never, () => project.id);
     assert.deepEqual(await leaky.execute("c", {} as never, undefined, undefined, undefined as never), { content: [{ type: "text", text: "see [preview link]" }], details: { u: "[preview link]" } });
     // Turned off on its own: it leaves the list and the file at once.
     await previews.turnOffPreview(sibling);

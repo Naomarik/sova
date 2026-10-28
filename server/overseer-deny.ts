@@ -214,7 +214,12 @@ export class OverseerGuard extends SecretGuard {
 /** What the project overseer's read/grep/find/ls answer for a path outside its project root. */
 export const outsideRootRefusal = (root: string) => `That path is outside the project root ${root}; the project overseer reads only inside it.`;
 /** …and for the org workspace or Sova's own state, even when the root holds them. */
-export const EXCLUDED_REFUSAL = "That folder holds an organization's workspace or Sova's own state; the project overseer can't read it.";
+export const EXCLUDED_REFUSAL = "That folder holds an organization's workspace or Sova's or pi's own state; the project overseer can't read it.";
+/** …and, reading anywhere on the host, for another client's project (a project placed in another organization). */
+export const OTHER_PROJECT_REFUSAL = "That folder is another client's project; the project overseer can't read it.";
+
+/** A folder a confinement never opens: as given (refused with EXCLUDED_REFUSAL), or with its own reason. */
+export type Exclusion = string | { dir: string; why: string };
 
 /**
  * Confines one tool call to a root: a path is inside only if it is, both as written (resolved, so
@@ -222,23 +227,33 @@ export const EXCLUDED_REFUSAL = "That folder holds an organization's workspace o
  * under none of `excluded` (either way). The root and each excluded folder are taken both as given
  * and at their realpath.
  *
- * `readable`: folders outside the root that `read` alone may open (the conversation's own
- * attachments folder). A path is in one only if it is, both ways, inside the same folder; that wins
- * over `excluded` for that folder alone. grep/find/ls never ask (`readProblem` is read's).
+ * `readAnywhere` (the project overseer's read/grep/find/ls): `problem`
+ * no longer holds a path to the root, only out of every excluded folder (the excluded still win);
+ * `writeProblem` stays held to the root.
+ *
+ * `readable`: folders that `read` alone may open (the conversation's own attachments folder). A path
+ * is in one only if it is, both ways, inside the same folder; that wins over `excluded` for that
+ * folder alone. grep/find/ls never ask (`readProblem` is read's).
  */
 export class RootConfinement {
   private readonly roots: string[];
-  private readonly excluded: string[];
+  private readonly excluded: { dir: string; why: string }[];
   private readonly readable: string[][];
+  private readonly readAnywhere: boolean;
   constructor(
     readonly root: string,
-    excluded: string[] = [],
+    excluded: Exclusion[] = [],
     readable: string[] = [],
+    opts: { readAnywhere?: boolean } = {},
   ) {
     const both = (p: string) => [...new Set([resolve(p), realpathLoose(p)])];
     this.roots = both(root);
-    this.excluded = excluded.flatMap(both);
+    this.excluded = excluded.flatMap((x) => {
+      const { dir, why } = typeof x === "string" ? { dir: x, why: EXCLUDED_REFUSAL } : x;
+      return both(dir).map((d) => ({ dir: d, why }));
+    });
     this.readable = readable.map(both);
+    this.readAnywhere = opts.readAnywhere === true;
   }
   /** `problem`, for the read tool: null also for a path inside one of the `readable` folders. */
   readProblem(p: string): string | null {
@@ -248,9 +263,17 @@ export class RootConfinement {
   }
   /** Why `p` (absolute) may not be read, or null when it may. */
   problem(p: string): string | null {
+    return this.readAnywhere ? this.excludedProblem(p) : this.rootProblem(p);
+  }
+  /** Held to the root, then out of every excluded folder. */
+  private rootProblem(p: string): string | null {
     const forms = [resolve(p), realpathLoose(p)];
     if (!forms.every((c) => this.roots.some((r) => within(c, r)))) return outsideRootRefusal(this.root);
-    if (forms.some((c) => this.excluded.some((d) => within(c, d)))) return EXCLUDED_REFUSAL;
+    return this.excludedProblem(p);
+  }
+  private excludedProblem(p: string): string | null {
+    const forms = [resolve(p), realpathLoose(p)];
+    for (const x of this.excluded) if (forms.some((c) => within(c, x.dir))) return x.why;
     return null;
   }
   check(p: string): void {
@@ -260,9 +283,9 @@ export class RootConfinement {
   /** Why `p` may not be written, or null: `problem` with the write sentences. The `readable` folders
       never open to a write. */
   writeProblem(p: string): string | null {
-    const why = this.problem(p);
-    if (why === EXCLUDED_REFUSAL) return EXCLUDED_WRITE_REFUSAL;
-    return why === null ? null : outsideRootWriteRefusal(this.root);
+    const why = this.rootProblem(p);
+    if (why === null) return null;
+    return why === outsideRootRefusal(this.root) ? outsideRootWriteRefusal(this.root) : EXCLUDED_WRITE_REFUSAL;
   }
 }
 

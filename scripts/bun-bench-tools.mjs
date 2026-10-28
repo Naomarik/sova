@@ -34,8 +34,6 @@ const cases = [
 	// server/spec-draft-writer.ts runDraftTool (read-only verbs; NO_COLOR as the server sets it)
 	{ name: "draft check", argv: () => [path.join(core, "sova-spec-draft.mjs"), "check", "server-runtime", "--root", root, "--json"], env: { NO_COLOR: "1" } },
 	{ name: "draft status", argv: () => [path.join(core, "sova-spec-draft.mjs"), "status", "server-runtime", "--root", root, "--json"], env: { NO_COLOR: "1" } },
-	// mode/spec-assessment.ts callAssessment
-	{ name: "assess status", argv: () => [path.join(core, "sova-spec-assess.mjs"), "status", "--owner-session", "bench-session", "--root", root, "--json"] },
 ].filter((c) => !ONLY?.length || ONLY.includes(c.name));
 
 function runOnce(c, exe) {

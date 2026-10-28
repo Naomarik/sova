@@ -10,6 +10,7 @@ import { workingSubagents } from "./live";
 import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, openEngineIds, type Effect, type OrgHostApi } from "./org-engine";
 import type { Envelope } from "./org-envelope";
 import { canonicalPath } from "./paths";
+import { carryOnCut } from "./draft-carry";
 import { projectOf, projectOverseerPaths, readPoState } from "./project-overseer-store";
 import { buildSid, engineOf, projectHost } from "./projects/spaces";
 import type { CodingModeSwitch, ProjectCodingMode } from "../shared/project-overseer";
@@ -377,6 +378,8 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
       return { later: true };
     }
     const cut = await cutWorktree(repo as GitRoot, folder, slugTitle(sessionId, d));
+    // A Build from a conversation's draft: the draft goes into the worktree before the session starts.
+    await carryOnCut(sessionId, (repo as GitRoot).top, cut.worktree.path, cut.worktree.branch);
     try {
       await createBuildSession(cut.cwd, sessionId, d);
     } catch (err) {

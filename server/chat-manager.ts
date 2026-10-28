@@ -1393,7 +1393,7 @@ class ChatSession {
     this.flushDeferredAppends();
     const images = item.images as ImageInput[] | undefined;
     // The message goes in labelled with its send's key (§app.chat-processes/worker-instructions).
-    const toSdk = <T>(send: () => T) => this.sendKeys.run(item.key, () => this.toSdk(item.origin, send, item.confirm));
+    const toSdk = <T>(send: () => T) => this.sendKeys.run(item.key, () => this.toSdk(item.origin, send, item.confirm, !!item.overseer));
     // What the extensions' input handlers are told: a person's input, or Sova's own (§app.overseer/input-source).
     const source = inputSourceOf(item);
     // The sender's mark goes in with the message, never earlier: a held item is not in the SDK,
@@ -1442,8 +1442,9 @@ class ChatSession {
       project overseer), one the user sent from the UI (`origin` "client") is marked as it goes, so
       the turn it opens is known as theirs by identity, not text; a confirm card's click in the Overseer
       and in a project overseer (whose copy cards it approves, §app.overseer/copies). */
-  private toSdk<T>(origin: QueueItem["origin"], send: () => T, confirm?: string): T {
-    if (origin === "client" && this.userTurns) return this.userTurns.send(send, this.takesClicks ? confirm : undefined);
+  private toSdk<T>(origin: QueueItem["origin"], send: () => T, confirm?: string, byOverseer = false): T {
+    // `byOverseer`: the global Overseer sent it (its message route): the operator's, but never their own message.
+    if (origin === "client" && this.userTurns) return this.userTurns.send(send, this.takesClicks ? confirm : undefined, { overseer: byOverseer });
     // A profile session with powers tells the user's own messages by identity too (its limits).
     if (origin === "client" && this.profileState?.run) return this.profileState.run.turns.send(send);
     return send();
@@ -2977,7 +2978,7 @@ class ChatSession {
     if (send) this.senderMarks.push(send);
     if (opts?.sentBySession) this.profileState?.run?.expectHop(text, opts.sentBySession.hop);
     const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
-    const turn = this.sendKeys.run(key, () => this.toSdk(origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm));
+    const turn = this.sendKeys.run(key, () => this.toSdk(origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm, !!opts?.sentByOverseer));
     this.noteStarting(turn);
     if (key !== undefined) turn.then(() => this.sendKeys.done(key), (err) => this.keyedTurnFailed(key, err));
     if (send)
@@ -4219,6 +4220,7 @@ export function serverToolSpec(chatId: string, decl: ServerToolDecl): ToolSpec {
         name: decl.name,
         params,
         attended: turns?.attended() ?? false,
+        own: turns?.ownMessage() ?? false,
         card: turns?.confirmedCard() ?? null,
       };
       const local: ServerToolLocal = {

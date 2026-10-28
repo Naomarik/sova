@@ -850,17 +850,73 @@ would list master's changes instead.
     - `.sova/spec/.gitignore` admits `claims/**/*.json`.
   - §: + §tools.spec/record-layout; §tools.spec/git-merge, §tools.spec/conflict-recovery,
     §tools.spec/census-note, §chat.merge-round/driver reworded, §tools/spec (its new child) (drafts
-    `spec-store`, `spec-store-2`, promoted on the branch at 9eca2773, and `spec-store-3` at ede39a14;
-    `foreign --base 9b7297f8 --head ede39a14` gives the same list).
+    `spec-store`, `spec-store-2`, promoted on the branch at 8729de33 (9eca2773 before the history rewrite), and `spec-store-3` at
+    1f530638 (ede39a14 before the history rewrite); `foreign --base f16b237e --head 1f530638` gives the same list).
   - Numbers: every read command (check, map, map app, graph, where by words and by path, toc out/in/down,
     read, read --whole, scope, impact, impact --near, packet, census, foreign) gives byte-identical JSON on
-    Sova's spec at 9b7297f8 in format 1 and converted to format 2 at the same path (17 of 17); `migrate`
+    Sova's spec at f16b237e (9b7297f8 before the history rewrite) in format 1 and converted to format 2 at the same path (17 of 17); `migrate`
     converts it into 101 record files (1,167 records) with every identity check passing, and back.
     Median latency over 15 runs, old core on format 1 → new core on format 1 → new core on format 2:
     check 125 → 132 → 138 ms, map 175 → 180 → 177, where (3 words) 465 → 452 → 474, read 78 → 79 → 86,
     census 131 → 127 → 137. Merge-collision numbers after the conversion: at 1 and 2 weeks after landing 2.
   - Upgrade: see UPGRADING step 12.
 
+- **The mode text splits: finding your way for everyone, the writing steps when behavior changes.**
+  - Commit: on branch `feat/spec-slim` (alignment al_3); not on master yet. Round 3 passed its
+    pre-registered rule (KEEP), the condition for landing.
+  - Why: in round 2 of the context test (spec-ctx-2026-10-25, 12 real requests), briefs with the spec
+    found 60% of the facts that mattered against 67% without it. They spent 26 items on documentation
+    process against 9, and 52 items named no file against 15. But that round changed the content and
+    the instructions together. About two thirds of the 964-word text rode every turn but mattered only
+    once an agent changed behavior.
+  - Changed:
+    - `mode/spec-mode.md` is now the short finding-your-way part: search, read, verify in the code,
+      cite files, report the product. It also says where the writing procedure is. 964 → 306 words,
+      cap 966 → 320.
+    - New `spec/WRITING.md` holds the writing procedure (drafts, agree, evidence, promotion, machine
+      inspection and a `## Workers` section). Its sentences are today's, word for word, so the meaning
+      is the same. 976 words, cap 990.
+    - The procedure reaches a session once per chat, as text appended to a tool result. It comes with
+      the session's first `[spec census]` note of any kind or, with align on, the go-ahead's result,
+      unless the agent read it first. A compaction re-arms it; a reopened session restores it from its
+      history. It never enters the prompt, so a Claude Code chat doesn't restart for it.
+    - A worker's hand-over (`spec-worker.ts`) leads with its Workers section.
+    - The fallback worker brief is generated from both parts and keeps every rule it carried, plus the
+      finding-your-way steps and the Workers paragraph. Its commands gain `where` and `map`.
+    - `SPEC_WORKER_NOTE` is unchanged, and a test pins it to the Workers paragraph.
+    - The replay agent arm copies `WRITING.md` into its work directory.
+    - A codemode script's call that hands the procedure over passes it whole to the script's result, the
+      one the model reads (`mode/tests/codemode-handover.mjs`).
+  - §: +§tools.spec/writing-on-demand, §tools.spec/mode-reading, §tools.spec/census-note,
+    §tools.spec/align-agree, §chat.mode-menu/workers, §site.docs/spec-mode, §tools.spec/context-packets,
+    §tools.spec/agree-source-relay, §tools/spec, §chat.alignment/tool, §chat.mode-menu/codemode (draft
+    `spec-slim-guide`, promoted on the branch at 83b3ef82 (526e0a07 before the history rewrite); `foreign --base f16b237e
+    --head 83b3ef82`, after merging al_6 landing 1 `foreign --base 27019745 --head c0a7dfd3` (ca8ab14e,
+    814d49a8 before the history rewrite), and after merging landing 2 `foreign --base c0d556a4 --head 0985bc61` give the
+    same list). Base: c0d556a4 (was f16b237e, then 27019745).
+  - Numbers: round 3 of the context test (pre-registered, PREREG-ctx3 sha256 a67ad622…fbca; report
+    sha256 0eaa5cfd…9ffb). Three arms on the same 12 real requests × 2: A no spec, B today's text
+    (f16b237e; 9b7297f8 before the history rewrite), C the short part (brief runs at 18f97803, edit check at 5a776cbe;
+    328788c3 / 07265a27 before the history rewrite); graded item by item
+    with the arms pooled. Verdict under its rule §7.2: **KEEP** (not worse than B).
+    - Recall A / B / C: 60.6 / 55.2 / 56.6. C − B +1.5 [−4.1, +7.2]; B − A −5.4 [−9.0, −1.3];
+      C − A −3.9 [−9.3, +0.9].
+    - Wrong items per brief, C − B: −0.04 [−0.38, +0.25]. Misled 0 / 0, reinvented 0 / 0.
+    - Process items per brief B 1.79 → C 1.58 (A 1.00); items naming no file B 3.50 → C 2.71 (A 0.79).
+    - Tokens per brief (geometric mean) B 204k → C 189k.
+    - Edit check (t02 t03 t04 t05 t08 t09, real builds): claim before the first code edit B 5/6,
+      C 5/6. In 5 of 6 C builds the agent read `WRITING.md` itself before any code edit; in t02 the
+      procedure arrived once with the first census note (the safety net, counted a miss), and that
+      agent called its change a defect fix with no claim, as B's t02 agent did. A draft with no error
+      finding: 5/6 in both arms (`check` exit 0: 0/6 in both, since it exits 1 on any note).
+    - Blinding: tell check 40%, grader arm guesses 35%, double-grade κ 0.87.
+    - Constraint 5 (light): 964 → 306 words ride every turn; the 976-word procedure is sent once per
+      chat. The verdict holds for spec-mode.md sha256 bd4831dc… and WRITING.md 95381eb5… only: a
+      change to either needs a new measured run.
+    - WRITING.md: measured text 95381eb5…; changed one sentence for the record layout at 25ac47f4 ("A
+      `manifest.json` conflict" → "A spec conflict in a Git merge", both "follow the census note";
+      now c8f4b273…). round 3's measures don't read that sentence; spec-mode.md is unchanged.
+  - Upgrade: see UPGRADING step 15.
 - **One rule says whether a draft is official, and Sova and the merge round both call it.**
   - Commit: on branch `feat/landing-dependable`; not on master yet: the merge round folds it in.
   - Why: Sova's readiness called a draft promoted when any promotion wrote its files after its last edit
@@ -976,6 +1032,45 @@ would list master's changes instead.
     The tools read both layouts, so neither needs a tool change.
   - Upgrade: see UPGRADING step 14.
 
+- **A claim over 6 KB is warned about; a conversation's decision goes official with its build's branch; the
+  assessment tool is retired** (al_5, first part: the warning, decision a7 and decision a8; the claim migration
+  waits for al_6's conversion).
+  - Commit: on branch `feat/spec-size`; not on master yet.
+  - Why: claims over 8 KB were 23% of reads and 56% of the bytes read (goal 6). Decisions agreed in a
+    conversation were published on the main line before their build existed, so a reversal took a second spec
+    change (goal 1, constraint 5). The assessment companion had served no goal since 10-03.
+  - Changed:
+    - size cap: one claim's size is its prose bytes in its claim file, as `read`/`toc` count it, never its
+      record's, so both record layouts agree. The cap is 6,144 B, or the spec's top-level `declarationCap`
+      (`declaration-cap-invalid` warns on a bad value). `check` gives `counts.cap`, `counts.overCap` and each
+      declaration's `bytes`, with no finding per declaration, so its exit never moves. `draft check` warns
+      `declaration-over-cap` (in `introduced`, with `bytes`, `cap`, `was`) when a draft takes a claim over the
+      cap or grows one that is over; an unchanged or shrinking one counts under `preexisting`. `promote` gives
+      `sizeWarnings` for the selected claims. Nothing refuses, and `agree`'s clean-plan test ignores it. The
+      warning says how to split (by topic into sibling claims, the old § keeping a summary that requires its
+      parts); the mode text is unchanged (al_3 holds `spec-mode.md`);
+    - Sova's server: Build of a conversation's draft copies that draft into the coding session's new worktree
+      after the cut and before the session starts (only where Git ignores the drafts folder). Its items
+      record the branch (`buildBranch`). Approve and the reconciler's promotion leave such items to that
+      branch until its records are in the main line's spec, so they become official when the branch lands. A
+      build with no branch (a folder outside Git, a worktree named later) changes nothing: Approve still
+      publishes directly;
+    - retired: `core/sova-spec-assess.mjs`, its tests, `mode/spec-assessment.ts` (+ test,
+      `tests/assessment-absence.mjs`), `server/tests/spec-assessment.mjs`, the bench case, the core's and the
+      draft tool's `assessment` read policy, `inputSources` and `sourceHashes()`. `createInspection` and
+      `inspectDraft` keep `default` and `review`, and their tests moved to `tests/inspection-reader.test.mjs`.
+      The review tool's tests pass alone (58/58). The local packets are archived, not deleted (36 in the main
+      checkout, 130 in 4 older worktrees).
+  - §: + §tools.spec/declaration-cap; − §tools.spec/change-assessments, − §tools.spec/assessment-observations;
+    §tools/spec, §tools.spec/review-playbook, §tools.spec/record-layout, §tools.spec/context-packets,
+    §tools.spec/inspection-safety (code), §app.requirements/draft-approval, §app.requirements/promotion,
+    §chat.worktrees/readiness, §app/idle-git-cache (draft `spec-size`).
+  - Numbers: Sova's spec at ca8ab14 has 124 claims over 6,144 B; a draft that changes none introduces 0
+    warnings (`preexisting: declaration-over-cap 124`). `check` keeps its exit (1, as before) and its JSON
+    grows 2.1% (1,155,126 → 1,179,463 B, the `bytes` field). `draft check` text on an unchanged draft:
+    31,798 → 31,824 B. The read-cost measures (median/p90 bytes per read) move only with the migration.
+  - Upgrade: see UPGRADING step 16.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -1016,7 +1111,6 @@ The tools are Node standard library only. Nothing is installed.
    | `official.mjs` | The one rule for whether a draft is official (`drafts`, `prune --official`, a host's own readiness) |
    | `sova-spec-draft.mjs` | Drafts, evidence, promotion, `merge-manifest`, `merge-claims` |
    | `sova-spec-review.mjs` | The review companion |
-   | `sova-spec-assess.mjs` | The assessment companion |
 
 2. **Set up the merge drivers, once per clone.** Add these two lines to `.gitattributes`:
 
@@ -1179,3 +1273,17 @@ The tools are Node standard library only. Nothing is installed.
     the spec mode on, the census note calls the converted files a direct write to the current spec; they
     are `migrate`'s, so commit them as its `next` says. Instructions of your own that tell agents to edit
     records in `manifest.json` now point at the `.json` beside each claim file.
+15. **The 2026-10-26 split mode text** (branch `feat/spec-slim`). The spec extension ships a new file,
+    `spec/WRITING.md`, beside `PROMOTE.md`; `install.sh` links the whole `spec` directory, so it arrives
+    with the tools. A project that points its agents at `mode/spec-mode.md` now gets only the short
+    finding-your-way part. Its own agent instructions must also name the writing procedure, before
+    behavior-changing edits: `$core/../WRITING.md` for the installed copy, or the path in this repo, as
+    Sova's `AGENTS.md` does. Without the mode on, nothing hands it over. With the mode on, the first
+    `[spec census]` note carries it once. A hook of your own that parses census notes sees it after the
+    digest, from its `Writing procedure (once` head.
+16. **The size cap and the retired assessment tool** (2026-10-26, branch `feat/spec-size`). Copy every
+    `core/*.mjs` again and delete `core/sova-spec-assess.mjs` from any copy. `check --json` declarations
+    gain `bytes` and its `counts` gain `cap`/`overCap`; `draft check` may list `declaration-over-cap`
+    warnings and `promote` gives `sizeWarnings`. No exit code changes. A project that wants another cap sets
+    a top-level `declarationCap` (bytes) in `manifest.json`. A script that ran `sova-spec-assess.mjs` or
+    passed `readPolicy: "assessment"` to `createInspection`/`inspectDraft` loses it: use the review tool.

@@ -141,32 +141,38 @@ const once = (key, f) => { if (!memo.has(key)) memo.set(key, f()); return memo.g
 
 /**
  * The master (or main) commit the branch last merged before the cutover: the tools and spec every chat had before
- * landing 2, format 1. Before landing that is the merge base of the cutover with master; after landing, master's
- * first-parent history holds the landing merge L (the cutover in L, not in L^1), and it is the merge base with L^1.
+ * landing 2, format 1, as findPreLanding finds it in this repository; SOVA_CONVERT_BASE=<rev> overrides it.
  */
 export function preLandingMaster(cutover) {
-  return once(`pre:${cutover}`, () => {
-    if (process.env.SOVA_CONVERT_BASE) return revParse(process.env.SOVA_CONVERT_BASE);
-    for (const m of ["master", "main", "origin/master", "origin/main"]) {
-      const tip = tryRev(m);
-      if (!tip) continue;
-      let at = tip;
-      if (isAncestor(cutover, tip)) {
-        const landing = rgit("log", "--first-parent", "--merges", "--format=%H %P", tip).split("\n").filter(Boolean)
-          .map((l) => l.split(" ")).find(([x, p1]) => isAncestor(cutover, x) && !isAncestor(cutover, p1));
-        if (!landing) continue;
-        at = landing[1];
-      }
-      const mb = gitRaw(["merge-base", cutover, at]);
-      if (mb.status === 0 && formatAt(mb.stdout.trim()) === 1) return mb.stdout.trim();
-    }
-    return null;
-  });
+  return once(`pre:${cutover}`, () => (process.env.SOVA_CONVERT_BASE ? revParse(process.env.SOVA_CONVERT_BASE) : findPreLanding(gitRaw, cutover)));
+}
+
+/**
+ * The pre-landing master in a repository reached through run(args) → { status, stdout } (git -C <repo> <args>): the
+ * format 1 master (or main) commit the branch merged right before the cutover:
+ *   - not landed (the cutover is not in the branch tip): merge-base(cutover, tip);
+ *   - landed, by a merge or a fast-forward, and whatever lands after it: the cutover's parent P is the branch's merge
+ *     of master, a two-parent merge whose second parent is format 1: P^2 (what mergedMaster asserts). No walk of
+ *     master's first-parent history, which later fast-forward landings take off the cutover's line.
+ * null when neither fits; requireBases then fails hard (nothing skips).
+ */
+export function findPreLanding(run, cutover, branches = ["master", "main", "origin/master", "origin/main"]) {
+  const out = (args) => { const r = run(args); return r.status === 0 ? String(r.stdout).trim() : null; };
+  const has = (rev) => run(["merge-base", "--is-ancestor", cutover, rev]).status === 0;
+  const v1 = (rev) => { const t = out(["show", `${rev}:${SPEC}/manifest.json`]); try { return t !== null && JSON.parse(t).formatVersion === 1; } catch { return false; } };
+  for (const name of branches) {
+    const tip = out(["rev-parse", "--verify", "-q", `${name}^{commit}`]);
+    if (!tip) continue;
+    if (!has(tip)) { const m = out(["merge-base", cutover, tip]); if (m && v1(m)) return m; continue; }
+    const parents = (out(["log", "-1", "--format=%P", `${cutover}^1`]) ?? "").split(" ").filter(Boolean);
+    if (parents.length === 2 && v1(parents[1])) return parents[1];
+  }
+  return null;
 }
 /**
  * The master commit the flip's parent merged, derived from the branch (no pinned id, so a re-raced merge + flip needs
  * no test commit): the flip's parent must be a merge whose second parent is merge-base(flip, master), found as
- * preLandingMaster does (after landing, through the landing merge's first parent). SOVA_CONVERT_MASTER=<rev>
+ * preLandingMaster does (after landing, the flip's parent's second parent itself). SOVA_CONVERT_MASTER=<rev>
  * overrides the derivation; the merge-parent check still applies. Fails hard when it can't be found.
  */
 export function mergedMaster(cutover, base) {

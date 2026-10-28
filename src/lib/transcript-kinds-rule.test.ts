@@ -60,6 +60,7 @@ const MOVED: Record<string, string[]> = {
   "handoff-run": ["HandoffRunRow"],
   "overseer-answer": ["OverseerChoiceRow"],
   "profile-mark": [],
+  brief: ["BriefRow"],
 };
 
 test("a kind the toolkit draws has no branch of its own in Thread.tsx", () => {

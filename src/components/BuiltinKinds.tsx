@@ -15,6 +15,7 @@ import { OwnerRequestNote } from "./OwnerRequestNote";
 import { OverseerChoiceRow } from "./OverseerCards";
 import { profileIconName } from "../lib/profiles";
 import { useThreadRows } from "./thread-rows";
+import { BriefRow } from "./OverseerCards";
 
 /**
  * The views of Sova's own transcript cards, moved onto the card toolkit one kind at a time
@@ -33,6 +34,7 @@ export const BUILTIN_VIEWS = {
   "handoff-run": (props: KindViewProps<HandoffRunInfo>) => <HandoffRunRow run={props.value} text={props.item.text ?? ""} />,
   "overseer-answer": (props: KindViewProps<Extract<NonNullable<TranscriptItem["overseerMark"]>, { kind: "dialog-answer" }>>) => <OverseerChoiceRow title={props.value.title} answer={props.value.answer} />,
   "profile-mark": ProfileMarkRow,
+  brief: (props: KindViewProps) => <BriefRow text={props.item.text ?? ""} time={props.item.at} />,
 } satisfies Record<string, Component<KindViewProps<never>>>;
 
 /** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is

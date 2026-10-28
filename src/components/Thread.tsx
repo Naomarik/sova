@@ -860,9 +860,6 @@ export function HistoryItems(props: {
               <Match when={drawn()}>{(h) => <TranscriptKindRow hit={h()} item={item} limitPath={props.limitPath} index={index} reserve={rowEst()} />}</Match>
               {/* A kind still drawn by its branch here, until it moves onto the toolkit; and the kinds that draw nothing. */}
               <Match when={hit()?.kind.drawsNothing}>{null}</Match>
-              <Match when={is("brief")}>
-                <BriefRow text={item.text ?? ""} time={item.at} />
-              </Match>
               <Match when={is("user")}>
                 <UserTurn
                   text={item.text ?? ""}

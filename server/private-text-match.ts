@@ -1,5 +1,5 @@
 /**
- * The private-text backstop's matcher (§app.outreach/channels, §app.owner-page/updates): does a text a model
+ * The private-text backstop's matcher (a note's, an owner update's): does a text a model
  * wrote repeat a run of PRIVATE_REPEAT or more characters of a private source, ignoring case and spacing?
  * Pure: no reads. The words it names are cut from the checked text (what the model itself wrote), never from
  * the source, so a refusal tells the model nothing it didn't already put in its own text.

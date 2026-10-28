@@ -289,11 +289,11 @@ const NOTE_KIND = {
   profile: "a profile",
 } as const;
 
-/** A note that holds a preview link this host keeps: a preview goes as its own link (§app.outreach/links). */
+/** A note that holds a preview link this host keeps: a preview goes as its own link (the send's `preview`). */
 export const PREVIEW_IN_NOTE = "A preview link goes to people as a link of its own (preview), never in a note.";
 
 /**
- * An overseer's note repeating private text or a contact, refused like an owner update (§app.outreach/channels):
+ * An overseer's note repeating private text or a contact, refused like an owner update:
  * the refusal names the kind and the words it matched (a contact only as "a contact"). With no project (an
  * organization's own send), the private text of every project of the org. `except`: the conversation whose
  * link the note goes with; its goal and briefings are not private to it. A note the operator writes

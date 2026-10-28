@@ -1,4 +1,4 @@
-// The private-text backstop's matcher (§app.outreach/channels, §app.owner-page/updates): about 60 characters in a
+// The private-text backstop's matcher (a note's, an owner update's): about 60 characters in a
 // row, ignoring case and spacing; the words named are the checked text's own, widened to whole words.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";

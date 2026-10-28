@@ -148,7 +148,7 @@ export function lastBuildFinishedAt(projectId: string): number | null {
   return last;
 }
 
-/** Which private text a text repeats (§app.outreach/channels): a source's kind and the words of the text it
+/** Which private text a text repeats: a source's kind and the words of the text it
     matched, or a contact (never shown). */
 export type PrivateHit = { kind: "about" | "notes" | "goal" | "instructions" | "profile"; words: string } | { kind: "contact" };
 
@@ -166,7 +166,7 @@ export function orgPrivateTextHit(orgId: string, text: string): PrivateHit | nul
 }
 
 /**
- * The private text a text an overseer wrote repeats, or null (§app.outreach/channels, §app.owner-page/updates).
+ * The private text a text an overseer wrote repeats, or null (a note's or an owner update's backstop).
  * The overseer's prompt holds the org's About text, its notes and the operator's instructions: any run of
  * OWNER_UPDATE_REPEAT characters from those, from a conversation's goal or a hand-off briefing, or from a
  * person's profile, and any contact value, is a hit. The words it names are cut from `text`, never from the
@@ -196,7 +196,7 @@ export function privateTextHit(orgId: string, projectId: string | null, text: st
 }
 
 /**
- * The refusal for an owner update that repeats private text, or null (§app.owner-page/updates): which kind
+ * The refusal for an owner update that repeats private text, or null: which kind
  * of text (About and notes, or the rest) and the words it matched, so the overseer rewrites just them.
  */
 export function ownerUpdateLeak(orgId: string, projectId: string | null, text: string): string | null {

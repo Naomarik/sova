@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 486 |
-| Routes a catalogue entry points at | 121 |
-| Catalogue entries | 152 |
+| Routes registered | 487 |
+| Routes a catalogue entry points at | 122 |
+| Catalogue entries | 153 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -154,6 +154,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `insights.session.workers` | Hidden Workers | looks | `GET /api/insights/session/workers` | sessions |
 | `insights.session.inbox` | Team Member Inbox | looks | `GET /api/insights/session/inbox` | sessions |
 | `sova.health` | Server Health | looks | `GET /api/health` | sessions |
+| `server.restart` | Restart Sova | changes | `POST /api/updates/restart` | full |
 | `settings.sova.get` | Sova's Own Settings | looks | `GET /api/settings` | sessions |
 | `settings.models.get` | Model Policy | looks | `GET /api/settings/models` | sessions |
 | `settings.provider-limits.get` | Provider Limits | looks | `GET /api/settings/provider-limits` | sessions |
@@ -748,6 +749,7 @@ Approving what a project's files may make Sova do (an offers file's run buttons,
 | `GET /api/settings/team` | sessions | `settings.team.get` |
 | `GET /api/targets` | sessions | `targets.list` |
 | `GET /api/transcript` | sessions | `session.read` |
+| `POST /api/updates/restart` | full | `server.restart` |
 | `GET /api/usage/costs` | sessions | `usage.costs` |
 | `GET /api/usage/performance` | sessions | `usage.performance` |
 | `GET /api/usage/prices` | sessions | `usage.prices` |

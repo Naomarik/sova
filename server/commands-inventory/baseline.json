@@ -418,6 +418,7 @@
     "POST /api/tours/:sessionId/jobs/:jobId/sign-in": {"need":"full","is":"pending"},
     "POST /api/updates/apply": {"need":"full","is":"pending"},
     "POST /api/updates/check": {"need":"full","is":"pending"},
+    "POST /api/updates/restart": {"need":"full","is":"command","ids":["server.restart"]},
     "POST /api/upload": {"need":"sessions","is":"pending"},
     "POST /api/usage/prices/refresh": {"need":"admin","is":"command","ids":["usage.prices.refresh"]},
     "POST /api/usage/sessions": {"need":"admin","is":"command","ids":["usage.sessions"]},

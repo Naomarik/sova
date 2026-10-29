@@ -5513,6 +5513,25 @@ export interface UpdatesRunning {
   canUpgrade: boolean;
   /** Why not, in a sentence, when it can't. */
   whyNot: string | null;
+  /** When this server started (`GET /api/health`'s startedAt). Absent from older servers. */
+  startedAt?: string;
+  /** May Restart Sova restart this server now (a service runs it, and no upgrade runs). */
+  canRestart?: boolean;
+  /** Why not, in a sentence, when it can't. */
+  restartWhyNot?: string | null;
+  /** The service that runs this server, for a terminal check (`systemctl --user status <name>`, or a launchd label). */
+  restartUnit?: { manager: "systemd" | "launchd"; name: string } | null;
+  /** Code on disk newer than what runs: commits since the start, and changes not committed since then; null when it matches or can't be read. */
+  diskAhead?: { commits: number; dirty: boolean } | null;
+}
+
+/** `POST /api/updates/restart`'s answer (202): the restart is scheduled. */
+export interface RestartScheduled {
+  scheduled: true;
+  /** The server's startedAt now: the restart is done once `GET /api/health` answers another. */
+  startedAt: string;
+  /** Seconds until the service restarts. */
+  inSeconds: number;
 }
 
 /** What a check found newer, or not. */

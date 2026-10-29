@@ -42,10 +42,11 @@ can change the dialog's size by being long or short.
 
 The first tab, in two parts. Above: how **this browser** draws Sova. Nothing there is written to
 the machine — no policy file, no server endpoint — which is the line between those settings and
-Models, where a switch is a rule every session obeys. Below, under the heading **Updates · this
-machine**: this machine's updates (§app/updates), the one part of General the server keeps. The
-panel's intro says so ("How this browser draws Sova. The settings above stay in this browser;
-another device keeps its own. Updates, below, are this machine's."), because "settings" in a tool with a shared config
+Models, where a switch is a rule every session obeys. Below, under the headings **Server · this
+machine** and **Updates · this machine**: this machine's server and its updates (§app/updates),
+the parts of General the server keeps. The panel's intro says so ("How this browser draws Sova.
+The settings above stay in this browser; another device keeps its own. The server and its updates,
+below, are this machine's."), because "settings" in a tool with a shared config
 file is otherwise an open question.
 
 - **Sessions in Recent** — how many rows the sidebar's Recent region shows
@@ -78,6 +79,12 @@ places is a count that disagrees in one of them.
   It applies as you flip it, and persists in `localStorage["sova:show-summaries"]` for the same
   reason as the count: it is this browser's, not the machine's. Only the stored value `false` turns
   it off; a missing or unreadable value is on.
+
+- **Server · this machine** — after the browser's settings and before Updates, under its own
+  heading: when this server started, the branch and commit it runs, and **Restart Sova**, an action
+  that runs at once after its inline confirm; a copy no service runs shows the block with no button
+  and says why (§app.updates/restart). It is not part of any form: Save Changes neither stages nor
+  writes it.
 
 - **Updates · this machine** — last, under its own heading: what runs, the last check and what it
   found, Check Now, the upgrade button and its progress (§app/updates), then **Update from**,

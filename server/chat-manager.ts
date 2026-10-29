@@ -1253,6 +1253,8 @@ class ChatSession {
       mirrorTotal: () => this.harness.queue.mirrorTotal(),
       mirrorFor: (kind) => this.harness.queue.mirrorFor(kind),
       mirrorHas: (kind, text) => this.harness.queue.mirrorHas(kind, text),
+      // A handed steer stays removable on its own until the agent takes it (quirk P29 steer-remove).
+      steerTicket: () => this.harness.queue.steerTicket?.(),
     },
     streaming: () => this.harness.isRunning(),
     // A Claude login switch landing holds it too, so the next turn starts on the new login.

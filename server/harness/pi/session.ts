@@ -36,6 +36,7 @@ import { liveHistory, toHEntry } from "./reader";
 import { resourcesOf } from "./resources";
 import { piSessionState } from "./state";
 import { fromPiTool } from "./tools";
+import { steerTicket } from "./steer-ticket";
 import { watchUserMessages } from "./turns";
 import { v1Frame, writtenEntryId } from "./wire";
 
@@ -360,6 +361,8 @@ export class PiHarnessSession implements HarnessSession {
       mirrorHas: (kind, text) => (kind === "steer" ? this.s.getSteeringMessages() : this.s.getFollowUpMessages()).includes(text),
       clear: () => this.s.clearQueue(),
       continue: () => this.s.agent.continue(),
+      // P29: one handed steer taken back out of both of pi's copies (steer-ticket.ts).
+      steerTicket: () => steerTicket(this.s),
     };
   }
   abort(): Promise<void> {

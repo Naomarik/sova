@@ -191,14 +191,49 @@ describe("the queue, seen by two tabs on one chat", () => {
     await new Promise((r) => setTimeout(r, 20));
     assert.deepEqual([...piSession(chat).getSteeringMessages()], ["one more thing", "and another"], "both steers are in pi, in order");
     assert.deepEqual([...piSession(chat).getFollowUpMessages()], [], "the follow-up is still Sova's");
-    assert.deepEqual(chat.queue.snapshot().map((i) => [i.id.startsWith("k") ? i.id : "batch", i.kind, i.state]), [["k1", "steer", "sending"], ["k2", "steer", "sending"], ["batch", "followUp", "queued"]]);
-    // Handed over, a message is no longer removable on its own: Stop takes it back.
+    // Handed to pi, a steer still reads Queued: it can be taken back until the agent takes it.
+    assert.deepEqual(chat.queue.snapshot().map((i) => [i.id.startsWith("k") ? i.id : "batch", i.kind, i.state]), [["k1", "steer", "queued"], ["k2", "steer", "queued"], ["batch", "followUp", "queued"]]);
+  });
+
+  test("a steer handed to pi is removed on its own, out of pi's real queue and its mirror, and every client hears it", async () => {
+    const { chat, me, mine, theirs } = await twoClients();
+    Object.defineProperty(piSession(chat), "isStreaming", { get: () => true, configurable: true });
+    for (const k of ["k1", "k2", "k3"]) chat.handle(me, { type: "steer", text: "same words", clientId: k });
+    await until(() => piSession(chat).getSteeringMessages().length === 3);
+    const lane = piSession(chat).agent.peekQueuedMessages();
+    assert.equal(lane.length, 3, "all three are in pi's real queue");
     mine.length = 0;
+    theirs.length = 0;
     chat.handle(me, { type: "queue_remove", id: "r1", itemId: "k2" });
+    await until(() => mine.some((m) => m.type === "queue_removed"));
+    for (const log of [mine, theirs]) {
+      const gone = log.find((m) => m.type === "queue_item_gone") as Extract<ChatServerMessage, { type: "queue_item_gone" }>;
+      assert.deepEqual([gone?.itemId, gone?.reason], ["k2", "removed"], "both tabs learn it was removed");
+    }
+    assert.ok(!theirs.some((m) => m.type === "queue_removed"), "the ack is the requester's alone");
+    assert.deepEqual(piSession(chat).agent.peekQueuedMessages(), [lane[0], lane[2]], "exactly k2's message left pi; its twins stay, in order");
+    assert.deepEqual([...piSession(chat).getSteeringMessages()], ["same words", "same words"]);
+    assert.deepEqual(chat.queue.snapshot().map((i) => [i.id, i.state]), [["k1", "queued"], ["k3", "queued"]]);
+    // Stop after the removal: only the survivors come back.
+    mine.length = 0;
+    chat.handle(me, { type: "abort" });
+    await until(() => mine.some((m) => m.type === "queue_cleared"));
+    const cleared = mine.find((m) => m.type === "queue_cleared") as Extract<ChatServerMessage, { type: "queue_cleared" }>;
+    assert.deepEqual(cleared.steering, ["same words", "same words"], "the removed one never comes back");
+  });
+
+  test("a follow-up handed to pi is still refused on its own: Stop takes it back", async () => {
+    const { chat, me, mine } = await twoClients();
+    Object.defineProperty(piSession(chat), "isStreaming", { get: () => true, configurable: true });
+    chat.handle(me, { type: "prompt", text: "after the turn", clientId: "f1" });
+    await until(() => piSession(chat).getFollowUpMessages().length === 1);
+    assert.deepEqual(chat.queue.snapshot().map((i) => [i.id, i.state]), [["f1", "sending"]]);
+    mine.length = 0;
+    chat.handle(me, { type: "queue_remove", id: "r1", itemId: "f1" });
     await until(() => mine.some((m) => m.type === "queue_remove_refused"));
     const refused = mine.find((m) => m.type === "queue_remove_refused") as Extract<ChatServerMessage, { type: "queue_remove_refused" }>;
     assert.deepEqual([refused.reason, refused.message], ["internal", HANDED_REFUSAL]);
-    assert.deepEqual([...piSession(chat).getSteeringMessages()], ["one more thing", "and another"], "nothing was taken out of pi");
+    assert.deepEqual([...piSession(chat).getFollowUpMessages()], ["after the turn"], "nothing was taken out of pi");
   });
 
   test("a composer message sent while this tab still shows the chat idle, the server already busy, is a STEER (the quick second message)", async () => {

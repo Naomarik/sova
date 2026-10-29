@@ -1612,7 +1612,7 @@ export function ChatView(props: {
     try {
       // The answer does the work, and it comes in two halves: `queue_item_gone` is broadcast, so
       // the row leaves every tab including this one, while `queue_removed` is ours alone and only
-      // settles this request and hands the text to this composer. A refusal says why, and for
+      // settles this request (a removal is a discard: the text never comes back). A refusal says why, and for
       // "consumed" leaves the row as the delivered message it turned out to be.
       await ask("queue_remove", queueRemoveFrame(id));
     } finally {

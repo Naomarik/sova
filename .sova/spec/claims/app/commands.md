@@ -64,7 +64,7 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `session.offers.unsnooze`, `project.offers.list`, `project.settings.get`,
   `project.settings.history`, `project.settings.undo`, `project.settings.propose.withdraw`,
   `project.overseer.settings.set`, `project.claude-login.get`, `project.claude-login.set`,
-  `org.claude-login.get`, `org.claude-login.set`.
+  `org.claude-login.get`, `org.claude-login.set`, `server.restart`.
   The `project.verb.*` ids are made from the verb lists of `shared/project-contract.ts`, so a new
   verb is a new entry. The in-chat actions are the `chat.*` entries (§app.chat-actions/catalogue),
   and `chat.mode-command` runs a project mode's command (§chat.mode-menu/project-mode-commands).

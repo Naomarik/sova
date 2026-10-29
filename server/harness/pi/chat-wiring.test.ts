@@ -321,6 +321,46 @@ describe("a worker's keyed sends (§app.chat-processes/worker-instructions)", ()
     assert.equal(chat.queue.size, 0);
   });
 
+  test(`${as}: of three steers handed to pi mid-turn, the middle one is removed; the agent's next step gets the other two, together`, async () => {
+    const { chat, model, client, log } = await openChat(undefined, { worker: as === "worker" });
+    const { events, off } = feedOf(chat);
+    const release = model.hold();
+    model.reply({ text: "working" }, { text: "one reply to both" });
+    const run = chat.harness.send("long task");
+    await until(() => model.calls.length === 1, "the first reply, held");
+    const texts = ["one", "two", "three"];
+    if (as === "chat") for (const [i, t] of texts.entries()) chat.handle(client as never, { type: "steer", text: t, clientId: `c${i + 1}` });
+    else for (const [i, t] of texts.entries()) await send(chat, t, `w:s${i + 1}`, "steer");
+    await until(() => piSession(chat).getSteeringMessages().length === 3, "all three handed to pi");
+    assert.deepEqual(chat.queue.snapshot().map((i) => [i.text, i.state]), [["one", "queued"], ["two", "queued"], ["three", "queued"]], "handed, each still Queued");
+    const two = chat.queue.snapshot().find((i) => i.text === "two")!;
+    log.length = 0;
+    if (as === "chat") {
+      chat.handle(client as never, { type: "queue_remove", id: "r1", itemId: two.id });
+      await until(() => log.some((m) => m.type === "queue_removed" || m.type === "queue_remove_refused"), "the removal's answer");
+      assert.ok(log.some((m) => m.type === "queue_removed"), `removed: ${JSON.stringify(log.filter((m) => m.type.startsWith("queue")))}`);
+    } else assert.equal((await chat.queue.remove(two.id)).ok, true);
+    assert.ok(log.some((m) => m.type === "queue_item_gone" && m.itemId === two.id && m.reason === "removed"), "the client is told it was removed");
+    assert.deepEqual([...piSession(chat).getSteeringMessages()], ["one", "three"], "out of pi's mirror");
+    assert.equal(piSession(chat).agent.peekQueuedMessages().length, 2, "and out of its real queue");
+    release();
+    await run;
+    await idle(chat);
+    off();
+    assert.equal(model.calls.length, 2, "one model call after the steers");
+    const users = ((model.calls[1]!.context as { messages: { role: string; content: unknown }[] }).messages).filter((m) => m.role === "user");
+    const text = (m: { content: unknown }) => (Array.isArray(m.content) ? m.content.filter((c: { type?: string }) => c.type === "text").map((c: { text?: string }) => c.text).join("") : String(m.content));
+    assert.deepEqual(users.map(text), ["first ask", "long task", "one", "three"], "the removed steer never reached the model");
+    if (as === "worker") {
+      // The feed tells a never-run send at the run's settle, before it (as Stop's are).
+      const told = events
+        .filter((e) => e.type === "send_dropped" || e.type === "agent_settled" || (e.type === "message_start" && e.message?.role === "user" && e.sendKey))
+        .map((e) => (e.type === "send_dropped" ? `dropped ${e.sendKey}` : e.type === "agent_settled" ? e.type : `ran ${e.sendKey}`));
+      assert.deepEqual(told, ["ran w:s1", "ran w:s3", "dropped w:s2", "agent_settled"], "the worker's feed is told the removed one never runs");
+    }
+    assert.equal(chat.queue.size, 0);
+  });
+
   if (as === "worker")
     test("worker: Stop with two keyed steers handed to pi: each is told as never run, before the settle", async () => {
       const { chat, model } = await openChat(undefined, { worker: true });

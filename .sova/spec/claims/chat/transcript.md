@@ -494,16 +494,24 @@ extensions add under a reply comes after it, outside the strip, and never change
 ## §chat.transcript/a-queued-message — A queued message (§chat/composer, sending)
 
 A message of yours that hasn't been delivered says which state it is in, with a dot and the word:
-`Sending…` while nothing is known to hold it, `Queued` once the server says it holds it, and
-`Sending…` again once the server has handed it to the agent, which takes it at its next step. Only
-a queued row carries an action — one `Remove this queued message` — and it is removed BY ITS ID, so
-a duplicate in the middle of three goes and its twins stay, and an images-only message is a row like
-any other. A row handed to the agent never draws one: it can no longer be taken back on its own, only
-by Stop, which takes every waiting message back to the composer, in order. A delivered row never
-draws one either: nothing can be recalled then. A `Sending…` row draws no Remove at all, not even a
-disabled one: before the server answers nothing holds it, and once handed over it can't be taken
-back on its own. A message the server holds behind a turn (a playbook's follow-up, a steer waiting
-behind one) turns `Queued` and gets its Remove when the server says so.
+`Sending…` while nothing is known to hold it, then `Queued` once the server says it holds it. A
+steer (what you type while the agent works) handed into the running turn stays `Queued` until the
+agent takes it at its next step; a handed follow-up (a worker's report, a wake-up, a playbook's step,
+the Overseer's message that goes in when the turn ends), and a steer that started a turn of its own,
+read `Sending…` again. Every `Queued` row carries one action, `Remove this queued message`, removed
+BY ITS ID: a duplicate in the middle of three goes, and its twins still reach the agent together, in
+order. An images-only message is a row like any other; a steer whose images are being described
+stays `Queued`, and Remove then takes it out the moment that step finishes, so the agent never gets
+it. Remove never takes another waiting message, even one with the same text, nor one something else
+queued (a reminder, a worker's report, an extension's steer). When Sova can't name the one message a
+handed steer is, it refuses rather than guess, with "pi queued work of its own alongside this
+message, so it can't be taken back on its own. Press Stop to clear the queue.", and that row's
+Remove stays off from then on. A removed message's text does not come back. Stop
+takes every waiting message back to the composer, in order (after a removal, only the rest). A
+`Sending…` row and a delivered row draw no Remove at all, not even a disabled one. A message the
+server holds behind a turn (a playbook's follow-up, a steer waiting behind one) turns `Queued` and
+gets its Remove when the server says so. All of this holds in every chat: pi, Claude Code, workers,
+team members.
 
 **The live transcript keeps the session file's order at every moment.** A message waiting to be
 taken sits below everything the agent has done so far in the turn. When the agent takes it, its row
@@ -553,10 +561,11 @@ A click on an Overseer's card is the exception wherever text would come back (cl
 dropped): the row goes, its text never reaches the composer, and its card's buttons come back with
 the note "Your click didn't reach the Overseer. Click again." (§app.overseer/confirm).
 
-A removal the server refuses because the agent already took the message says "Already sent. It
-can't be removed now.", and the row becomes the delivered message it turned out to be. One that
-reaches the server after the message was handed over is refused with "It's already with the agent,
-which takes it at its next step. Stop takes it back."
+A removal the server refuses because the agent already took the message, even in the same instant
+Remove was pressed, says "Already sent. It can't be removed now.", and the row becomes the
+delivered message it turned out to be, as does every message handed before it. One that reaches the
+server after a follow-up was handed over is refused with "It's already with the agent, which takes
+it at its next step. Stop takes it back."
 
 ## §chat.transcript/streaming — Streaming (chat sessions)
 

@@ -2277,6 +2277,8 @@ export interface QueueItem {
   /** Stable for the item's whole life; equals the sender's `clientId` when it gave one. */
   id: string;
   kind: "steer" | "followUp";
+  /** "queued": Sova can still take it back on its own (it holds it, or it is a steer handed to the agent
+      that the agent hasn't taken yet); "sending": handed to the agent with no way back but Stop. */
   state: "queued" | "sending";
   text: string;
   /** How many images ride with it. The bytes are never echoed back. */

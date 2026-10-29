@@ -79,6 +79,17 @@ export function CostsTab(props: { query: CostsQuery; sessions: SessionSummary[] 
   const projectTitle = (id: string) => projects()?.projects.find((p) => p.id === id)?.name;
   /** The By model rows opened, by row key: here, above the answer, so a refresh or a new range keeps them. */
   const [openModels, setOpenModels] = createSignal<ReadonlySet<string>>(new Set());
+  // A model no longer listed (a new range, a filter, an answer with nothing spent, which shows no
+  // table at all) doesn't come back open: pruned on every answer, here where every answer lands.
+  // The poll reconciles each answer into one store, so the rows' keys are what is tracked, never
+  // the answer object (the same proxy from one answer to the next).
+  createEffect(
+    on(
+      () => poll.data()?.byModel.map(modelRowKey),
+      (keys) => keys && setOpenModels((s) => keepListed(s, keys)),
+      { defer: true },
+    ),
+  );
 
   const [pulled, setPulled] = createSignal<PricesInfo | null>(null);
   const [pulling, setPulling] = createSignal(false);
@@ -560,8 +571,6 @@ function ModelTable(props: { answer: UsageCosts; open: ReadonlySet<string>; setO
     equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]),
   });
   const rowOf = (key: string) => props.answer.byModel.find((r) => modelRowKey(r) === key);
-  // A model that leaves the table (a new range, a filter) doesn't come back open.
-  createEffect(on(keys, (k) => props.setOpen((s) => keepListed(s, k)), { defer: true }));
   return (
     <TableCard
       id="costs-models"

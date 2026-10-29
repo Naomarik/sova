@@ -24,13 +24,19 @@
 .cost-open[aria-expanded="true"] > .icon { transform: rotate(90deg); }
 .cost-open-name { display: inline-flex; flex-direction: column; min-width: 0; }
 .cost-open:hover .cost-open-name > .text-mono { text-decoration: underline; }
+/* The whole row takes the click; the name underlines on hover, as the Performance tab's does. */
 .cost-model-row { cursor: pointer; }
-.cost-model-row:hover > :is(th, td) { background: var(--color-sunken); }
+.cost-model-row:hover .cost-open-name > .text-mono { text-decoration: underline; }
 
 /* The opened row: the breakdown on the sunken fill, so it reads as inside the model's row. */
 .md .cost-detail-row > td { padding: var(--space-3); background: var(--color-sunken); white-space: normal; }
 .cost-detail-row[hidden] { display: none !important; }
 .cost-breakdown { display: flex; flex-direction: column; gap: var(--space-2); width: 0; min-width: 100%; text-align: left; }
+/* A table that scrolls sideways in a narrow pane (the session pane's Usage tab, a mid-width Costs
+   tab): the breakdown keeps to the visible width of the scrolling wrap and stays in view while the
+   figures scroll, never as wide as the table. */
+:is(.cost-table-wrap, .usage-table-wrap):has(.cost-detail-row) { container-type: inline-size; }
+.cost-detail-row .cost-breakdown { position: sticky; left: var(--space-3); width: calc(100cqi - 2 * var(--space-3)); min-width: 0; }
 .cost-breakdown-h { margin: 0; font-size: var(--fs-body); line-height: var(--lh-body); font-weight: var(--fw-semibold); color: var(--color-ink); }
 
 /* The bar: the four parts side by side, each as wide as its share of the cost. */
@@ -42,7 +48,8 @@
 .cost-part-input { background: var(--color-border-strong); }
 
 /* The legend: one line of parts, wrapping; one part per line on a phone. */
-.cost-split-legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); margin: 0; padding: 0; list-style: none; }
+.cost-split-legend, .md .cost-split-legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); margin: 0; padding: 0; list-style: none; }
+.md .cost-split-legend > li { margin: 0; }
 .cost-split-item { display: inline-flex; align-items: baseline; gap: var(--space-2); color: var(--color-ink-2); white-space: nowrap; }
 .cost-split-swatch { flex: none; align-self: center; width: 10px; height: 10px; border-radius: 2px; }
 .cost-split-label { color: var(--color-ink); }
@@ -54,12 +61,24 @@
   .cost-table-stack tbody.cost-model > tr.cost-model-row { border-bottom: 0; }
   .cost-detail-row { display: block; }
   .md .cost-table-stack .cost-detail-row > td { display: block; padding: var(--space-3); background: var(--color-sunken); }
-  .cost-split-legend { flex-direction: column; }
+  /* Stacked, nothing scrolls sideways: the breakdown takes the block's width as it is. */
+  .cost-table-stack .cost-detail-row .cost-breakdown { position: static; width: auto; min-width: 0; }
+  .cost-split-legend, .md .cost-split-legend { flex-direction: column; }
+  /* One part per line: its name, dollars and share, then its tokens under the name. */
+  .cost-split-item { flex-wrap: wrap; white-space: normal; gap: 0 var(--space-2); }
+  .cost-split-tokens { flex-basis: 100%; padding-left: calc(10px + var(--space-2)); }
+  .cost-table-stack .cost-open { margin: 0; }
 }
 
 /* The session pane's Usage tab: its stacked rows (under 400px of pane, base.css) give the detail the whole width. */
 @container subagents (max-width: 399px) {
   .usage-table tr.cost-detail-row { display: block; padding: 0; }
   .md .usage-table .cost-detail-row > td { display: block; padding: var(--space-3); background: var(--color-sunken); }
-  .cost-split-legend { flex-direction: column; }
+  .usage-table .cost-detail-row .cost-breakdown { position: static; width: auto; min-width: 0; }
+  .cost-split-legend, .md .cost-split-legend { flex-direction: column; }
+  .cost-split-item { flex-wrap: wrap; white-space: normal; gap: 0 var(--space-2); }
+  .cost-split-tokens { flex-basis: 100%; padding-left: calc(10px + var(--space-2)); }
+  .usage-table .cost-open { margin: 0; }
+  /* Where sits level with the name, whose button is a 44px target. */
+  .md .usage-table tr.cost-model-row > .usage-table-where { align-self: center; }
 }

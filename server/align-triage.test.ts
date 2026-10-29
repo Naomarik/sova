@@ -48,6 +48,16 @@ test("one question per open question, over the title, summary and open questions
   assert.ok(st.includes("Old rows are deleted for good"), "each option's consequence line");
 });
 
+test("each stakes question names its own question by id and topic, and no other", () => {
+  const qs = triageQuestions(doc(1) as never) as Record<string, { instructions: string }>;
+  const i1 = qs.stakes_q1!.instructions, i2 = qs.stakes_q2!.instructions;
+  assert.ok(i1.includes("q1") && i1.includes('"a"'), i1);
+  assert.ok(i2.includes("q2") && i2.includes('"b"'), i2);
+  assert.equal(/\bq2\b/.test(i1), false, "q1's instructions never name q2");
+  assert.equal(/\bq1\b/.test(i2), false, "q2's instructions never name q1");
+  assert.notEqual(i1, i2);
+});
+
 test("asked once per card version, cached; a new version asks again", async () => {
   const fake = createFakeProvider({ reply: REPLY });
   const file = join(agentDir, "triage-1.json");

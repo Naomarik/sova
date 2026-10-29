@@ -357,7 +357,7 @@ describe("the About text has one reader in the server", () => {
     assert.match(text, /if \(about\) lines\.push\("", \.\.\.aboutView\(orgId, now\)\)/, "and only for about: true");
   });
 
-  test("in the org's part of the project overseer, only the prompt section reads it, and the owner-update guard (to keep it out)", () => {
+  test("in the org's part of the project overseer, only the prompt section reads it, and the private-text guard (to keep it out)", () => {
     const text = sources.find((s) => s.file === "overseer-org-part.ts")!.text;
     const calls = [...text.matchAll(/\breadOrgAbout\(/g)].map((m) => m.index!);
     assert.equal(calls.length, 2, "two calls");
@@ -366,12 +366,15 @@ describe("the About text has one reader in the server", () => {
       const end = text.indexOf("\n}\n", start);
       return start >= 0 && at > start && at < end;
     };
-    assert.ok(within(calls[0]!, "function orgPrompt(") || within(calls[0]!, "export function ownerUpdateLeak("));
-    assert.ok(within(calls[1]!, "export function ownerUpdateLeak(") || within(calls[1]!, "function orgPrompt("));
+    const GUARD = "export function privateTextHit(";
+    assert.ok(within(calls[0]!, "function orgPrompt(") || within(calls[0]!, GUARD));
+    assert.ok(within(calls[1]!, GUARD) || within(calls[1]!, "function orgPrompt("));
     assert.ok(within(calls[0]!, "function orgPrompt(") !== within(calls[1]!, "function orgPrompt("), "one in each");
-    // The guard only answers which source a text repeats: it returns a label, never the text.
-    const guard = text.slice(text.indexOf("export function ownerUpdateLeak("), text.indexOf("\n}\n", text.indexOf("export function ownerUpdateLeak(")));
-    assert.match(guard, /: string \| null \{/);
-    for (const r of guard.matchAll(/return ([^;]+);/g)) assert.match(r[1]!, /^(null|what|true|false|PRIVATE|OTHER|PREVIEW_IN_OWNER_UPDATE|"[^"]*")$/, `returns ${r[1]}`);
+    // The guard answers which source a text repeats, and the words of the CHECKED text that matched (cut from
+    // `text` by repeatedRun): never the source's own text.
+    const guard = text.slice(text.indexOf(GUARD), text.indexOf("\n}\n", text.indexOf(GUARD)));
+    assert.match(guard, /: PrivateHit \| null \{/);
+    for (const r of guard.matchAll(/return ([^;]+);/g)) assert.match(r[1]!, /^(null|\{ kind, words \}|\{ kind: "contact" \})$/, `returns ${r[1]}`);
+    assert.match(guard, /const words = t \? repeatedRun\(text, t\) : null;/, "the words come from the checked text");
   });
 });

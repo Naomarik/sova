@@ -8,7 +8,6 @@ machine output.
 | `sova-spec.mjs` | Never. It reads a spec and prints its prose and relations. |
 | `sova-spec-draft.mjs` | Only with `--write`: drafts under `drafts/`, and the current docs on `promote`. |
 | `sova-spec-review.mjs` | Only on `prepare --write` and `record`, under `reviews/`. |
-| `sova-spec-assess.mjs` | Optional observations: only on `prepare --write` and `record --write`, under `assessments/`. |
 
 The tools run only from the installed spec extension (`$core`); no project, Sova included, keeps a
 copy. Resolve `$core` with exactly this line:
@@ -81,7 +80,7 @@ warnings), never complete behavioral context or proof of reading earlier pages. 
 `more`/`done` describes only selected-stream navigation; `next` is null only when it is done.
 Exit `1` means something relevant is unknown, stale or unread, or the packet stream has more.
 Exit `2` means refused/untrusted, including a packet budget that cannot make progress. Packet errors
-also fit supported budgets and have no stderr side channel. This adds no assessment or release gate.
+also fit supported budgets and have no stderr side channel. This adds no release gate.
 
 **While coding**, exempt work included, spec mode runs the census after each tool call that
 brings newly changed files and adds a `[spec census]` note to its result; without spec mode, run
@@ -159,29 +158,31 @@ A draft is a proposal. Agreeing on it approves the intent, and makes nothing cur
 Documenting what the code already does, where the docs miss or misstate it, is its own draft.
 Don't mix it into a feature's draft.
 
-`.gitattributes` routes `manifest.json` through `merge-manifest` and the claim files through
-`merge-claims`, so two branches that change different records, or different declarations of one
-claim file, merge without a conflict, in the same bytes whichever landed first. Git needs each
-driver defined once per clone (worktrees share it):
+Sova's records are in format version 2: each area's records sit in `claims/<path>.json` beside its
+claim file `claims/<path>.md`, and `manifest.json` keeps only the project settings
+([core/README.md](../../pi-config/extensions/spec/core/README.md), "Record layouts"). Edit a draft's
+records in the `.json` beside the claim file, never in `manifest.json`. A script that needs the
+records runs `node pi-config/extensions/spec/core/sova-spec.mjs records --root . --json` (`--at REV`
+for a revision) instead of reading the files. A spec left holding records both ways is refused
+(`layout-mixed`) with the one command that finishes it.
+
+`.gitattributes` routes the claim files through `merge-claims`, so two branches that change
+different declarations of one claim file merge without a conflict, in the same bytes whichever
+landed first. Git needs the driver defined once per clone (worktrees share it):
 
 ```sh
-git config merge.sova-spec-manifest.driver \
-  'node pi-config/extensions/spec/core/sova-spec-draft.mjs merge-manifest --root . --base %O --ours %A --theirs %B --write'
 git config merge.sova-spec-claims.driver \
   'node pi-config/extensions/spec/core/sova-spec-draft.mjs merge-claims --root . --base %O --ours %A --theirs %B --path %P --write'
 ```
 
-Without them, Git falls back to its line merge. Both sides changing the same record, or the same
-block of one declaration (a list item, a table row, a paragraph), still conflict; `merge-claims`
-then leaves Git's conflict markers, with both sides' prose.
-
-Sova's records are in format version 1: one list in `manifest.json`. The tools also read and write
-format 2, where each area's records sit in `claims/<path>.json` beside its claim file
-([core/README.md](../../pi-config/extensions/spec/core/README.md), "Record layouts"). A script that
-needs the records runs `node pi-config/extensions/spec/core/sova-spec.mjs records --root . --json`
-(`--at REV` for a revision) instead of reading `manifest.json`. `sova-spec-draft.mjs migrate` converts
-between the two; it hasn't been run on Sova's spec. A spec left holding records both ways is refused
-(`layout-mixed`) with the one command that finishes it.
+Record files and `manifest.json` go through Git's own line merge: two branches changing different
+areas never meet, and two changing different fields of one record combine (the landing report lists
+that record as hand-resolved). Both sides changing the same record, or the same block of one
+declaration (a list item, a table row, a paragraph), still conflict; `merge-claims` then leaves Git's
+conflict markers, with both sides' prose. A branch from before the conversion that merges master gets
+a conflict in `manifest.json` (its own `.gitattributes` still names the old `merge-manifest` driver,
+which refuses a format 2 manifest); `merge-manifest --write` finishes that merge in format 2. A
+clone's leftover `merge.sova-spec-manifest.driver` setting is harmless.
 
 [DRAFTS.md](../../pi-config/extensions/spec/DRAFTS.md) has the layout, the lock and the limits.
 
@@ -204,37 +205,6 @@ Until a packet is written (`prepare --write`), `status` exits 2 with `packet-mis
 `baseline` is taken. A stale packet is prepared again under a new name. Never edit
 anything under `reviews/` by hand. See
 [the tools README](../../pi-config/extensions/spec/README.md).
-
-## Optional structured observations
-
-Assessments run only when someone asks: no session, worker or hook runs one by itself. They do not
-add a required release gate or replace the existing review workflow. Prepare against a known
-base, the revision the work started from (noted before it began, or `git merge-base master HEAD`);
-every change since it is included, a file already dirty then too:
-
-```sh
-a=pi-config/extensions/spec/core/sova-spec-assess.mjs
-base=$(git merge-base master HEAD)
-node $a prepare change-review --root . --base $base                # preview
-node $a prepare change-review --root . --base $base --write
-node $a record change-review --root . --by reviewer \
-  --decisions-json '{"decisions":[],"files":[]}' --write            # deliberately leaves items unresolved
-node $a status change-review --root .
-node $a status --root . --owner-session '<owner session id>'
-```
-
-Record explicit `changed`, `preserved`, `not-applicable` or `unresolved` dispositions with reasons
-and structured verification bases; batches retain candidate IDs without duplicate claim prose.
-The empty example records no verification and resolves nothing. Input applicability, disposition,
-accepted-intent assertions, declared labels and recorded verification outcomes are separate: none
-proves semantic correctness or changes readiness policy. Status exit 0 means only current known
-inputs, even when coverage is unresolved or recorded verification failed. Missing inputs/baselines
-remain unknown; changed inputs stale a receipt. No-Git explicit paths/snapshot baselines work too.
-
-Immutable metadata receipts stay locally ignored under `assessments/`; no raw source or logs are
-retained. Paths, identity and rationale can themselves be private, so publication is a separate
-explicit decision. [The tools README](../../pi-config/extensions/spec/README.md) has the full
-schema, attribution, refusal and applicability distinctions.
 
 ## What no tool tells you
 

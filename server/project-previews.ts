@@ -370,7 +370,7 @@ export async function previewViews(filter: { projectId?: string } = {}, deps: { 
   return out;
 }
 
-/** The one shape a preview leaves the tools in (shared/preview-links.ts PreviewHandoff): never its link. Pure. */
+/** The one shape a preview leaves the tools in (shared/preview-links.ts PreviewHandoff): its own kept link, never a person's. Pure. */
 export function handoffOf(v: PreviewView): PreviewHandoff {
   return {
     v: 1,
@@ -385,6 +385,7 @@ export function handoffOf(v: PreviewView): PreviewHandoff {
     state: v.state,
     running: v.state === "active" ? v.running ?? false : null,
     createdBy: v.createdBy,
+    url: v.siblingOf ? null : v.url ?? null,
   };
 }
 

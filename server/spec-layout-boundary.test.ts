@@ -11,7 +11,7 @@ import { writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import {
-  committedAllowlist, compare, draftAllowlist, growth, isScanned, listSources, loadAllowlist, scanRepo, scanText,
+  committedAllowlist, compare, draftAllowlist, growth, isScanned, listSources, loadAllowlist, repoText, scanRepo, scanText,
 } from "../pi-config/extensions/spec/tests/layout/guard-scan.mjs";
 
 const REPO = resolve(import.meta.dirname, "..");
@@ -52,5 +52,5 @@ test("only core/layout.mjs reads the spec's records outside pi-config (allowlist
 test("the repo allowlist only shrinks (against the committed list at the merge base with master)", () => {
   const before = committedAllowlist(REPO, ALLOW_REL);
   if (!before) return; // the change that adds the list has nothing to grow past
-  assert.deepEqual(growth(before.allow, allow), [], `grew past ${before.at}`);
+  assert.deepEqual(growth(before.allow, allow, { textOf: repoText(REPO) }), [], `grew past ${before.at}`);
 });

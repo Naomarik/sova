@@ -162,24 +162,27 @@ describe("every core command answers the same in both layouts", { skip: !hasGit 
   });
 });
 
-// ---------------------------------------------------------------- Sova's own spec, converted in a scratch dir
+// ---------------------------------------------------------------- Sova's own spec, written both ways in scratch dirs
+// The real spec at HEAD (whatever its layout), read by the fixture's own reader and written once in each layout.
 describe("Sova's own spec at HEAD reads the same in both layouts", { skip: !hasGit }, () => {
-  const A = tmp("spec-layout-sova-");
-  const ar = spawnSync("sh", ["-c", `git -C "$1" archive HEAD .sova/spec | tar -x -C "$2"`, "sh", REPO, A], { encoding: "utf8" });
+  const S = tmp("spec-layout-sova-");
+  const ar = spawnSync("sh", ["-c", `git -C "$1" archive HEAD .sova/spec | tar -x -C "$2"`, "sh", REPO, S], { encoding: "utf8" });
   assert.equal(ar.status, 0, ar.stderr);
-  const v1 = JSON.parse(read(A, `${SPEC}/manifest.json`));
+  const { manifest, records } = recordsOnDisk(S);
   const claims = {};
-  const croot = join(A, SPEC, "claims");
+  const croot = join(S, SPEC, "claims");
   const walk = (d, rel = "") => { for (const n of readdirSync(d)) { const p = join(d, n); if (n.endsWith(".md")) claims[rel + n] = readFileSync(p, "utf8"); else if (!n.includes(".")) walk(p, `${rel}${n}/`); } };
   walk(croot);
-  const B = tmp("spec-layout-sova-");
-  const { claims: records, ...meta } = v1;
-  writeSpec(B, { layout: 2, meta, records, claims });
-  for (const f of [".sova/spec/README.md", ".sova/spec/USAGE.md"]) if (existsSync(join(A, f))) put(B, f, read(A, f));
+  const { claims: _c, formatVersion: _v, ...meta } = manifest;
+  const A = writeSpec(tmp("spec-layout-sova-"), { layout: 1, meta, records, claims });
+  const B = writeSpec(tmp("spec-layout-sova-"), { layout: 2, meta, records, claims });
+  for (const f of [".sova/spec/README.md", ".sova/spec/USAGE.md"]) if (existsSync(join(S, f))) { put(A, f, read(S, f)); put(B, f, read(S, f)); }
 
-  test("format 1 is the real spec (v1, > 1000 records) and B holds every record in area files", () => {
-    assert.equal(v1.formatVersion, 1);
+  test("A is the real spec in format 1 (> 1000 records) and B holds every record in area files", () => {
+    assert.equal(layoutOnDisk(A), 1);
+    assert.equal(layoutOnDisk(B), 2);
     assert.ok(Object.keys(records).length > 1000);
+    assert.deepEqual(recordsOnDisk(A).records, records);
     assert.deepEqual(recordsOnDisk(B).records, records);
     assert.ok(Object.keys(recordFiles(meta, records)).length > 50, "many area files");
   });

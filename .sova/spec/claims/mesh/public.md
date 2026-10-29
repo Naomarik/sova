@@ -451,7 +451,9 @@ mesh off. Copy is §design.copy-deck/public-links.
   branch it shows, and its purpose, each only when known. A copy's link dials its port as a port
   preview does; a static copy's only while that copy's own serve holds the port. It is read tolerantly: a file that
   can't be read keeps no link and serves no folder, and every preview still opens. The link is a
-  secret kept for the operator: the project overseer never sees it, and names a preview by its id
+  secret kept for the operator and the overseers: the overseers' tools give it (the project
+  overseer only its own project's), so they can hand it to the operator in a reply; a coding
+  session never sees it, and a preview is sent to a person by its id
   (§app.project-overseer/previews). A preview made before this file existed has no kept link, only
   its hash: its link was shown once, when it was made, and is never guessed. A sibling has no entry
   of its own among the previews: it shows its original's target, session and purpose. **Its

@@ -425,13 +425,15 @@ spec's block, from the parent's saved copy of it, with its tools when the worker
 
 - **What a worker gets.** While the parent chat has spec on, every worker it starts — pi or
   Claude Code, plain, remote, sandboxed, hosted, or a team member — gets the spec block
-  (`spec-mode.md`, byte for byte) at the end of its system prompt, after its agent type, its
+  (`spec-mode.md`, byte for byte: the guide's short part) at the end of its system prompt, after its agent type, its
   brief and any remote instructions, followed by a short **worker note**: the brief is its
   go-ahead; it works in the draft its brief names (or says which it started); it promotes, commits
   or records `--commit` evidence only when the brief says so, and then only on the brief's branch,
   never by landing on the default branch — the parent promotes, on its own branch before calling it
   ready; and its final
-  report lists each foreign § it updated. Nothing else of the parent's mode reaches it: no
+  report lists each foreign § it updated. The writing procedure reaches a worker that writes code once,
+  with its first census note, its Workers section first, in the note's own words
+  (§tools.spec/writing-on-demand). Nothing else of the parent's mode reaches it: no
   Delegate block, no align block, no Delegate+align bridge, and never the spec-writer paragraph
   (a worker can't spawn one). With spec off the worker's prompt carries nothing from the mode.
 - **Not everyone.** A team's monitor (it has no tools) gets no spec block. A worker on its
@@ -492,7 +494,8 @@ chat's other tools, several at once, and filters their output before the model r
   call it made with its status (Running, Done, Failed, Cancelled), live while it runs, then its
   output.
 - **With spec on**, a `[spec census]` or spec-guard note about a call the script made is repeated on
-  the script's own result, the one the model reads (§tools.spec/census-note).
+  the script's own result, the one the model reads (§tools.spec/census-note), and so is the writing
+  procedure a script's call hands over, whole (§tools.spec/writing-on-demand).
 
 ## §chat.mode-menu/project-modes — A project's own minor modes
 
@@ -741,6 +744,26 @@ tools away from the orchestrator.
 - **Sova never sets it.** A switch from the menu can't carry it, the Overseer leaves it as it is
   (§app.overseer/hosting), and a project's coding sessions never set or offer it
   (§app.project-overseer/coding-mode). A worker is never strict.
+
+## §chat.mode-menu/delegate-teams — Delegate: a team, or separate workers
+
+In Delegate, the instructions tell the orchestrator how to choose between a team (`team_create`)
+and separate workers (`agent_spawn`):
+
+- **Asked for a team.** When the user asks for a team, the orchestrator always starts a real team
+  with `team_create`. It never starts separate workers and calls them the team.
+- **Parts that depend on each other.** Without being asked, it starts a team when parts of the work
+  must run at the same time on shared work (the same files or interfaces), or when an implementer
+  and a checker must go back and forth.
+- **Otherwise, separate workers.** Independent parts and single jobs go to separate workers with
+  `agent_spawn`. The align planning worker (§chat.alignment/model), the align reviewer
+  (§chat.alignment-review/route) and the spec writer stay single separate workers, as before.
+- **The tool says the same.** `team_create`'s guideline, which a chat's model has in either major
+  mode, says to use a team when the user asks for one or when the parts of the work depend on each
+  other mid-task, and `agent_spawn` for independent parts and single jobs.
+- **Teams themselves don't change.** A team still gets the standing coordinator and monitor its
+  chat's subagent profile configures (§teams/defaults), and the limits of 24 running workers per
+  chat and 24 seats per team still hold (§app.teams/running-limit, §app.teams/seats).
 
 ## §chat.mode-menu/terminal — From a terminal
 

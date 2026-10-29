@@ -1,0 +1,202 @@
+{
+  "§chat.sandbox/backends": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/sandbox/backend.ts",
+      "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+      "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
+      "pi-config/extensions/sandbox/backends/unsupported.ts",
+      "pi-config/extensions/sandbox/realpath.ts",
+      "pi-config/extensions/sandbox/tests/unit/backend.unit.test.ts"
+    ]
+  },
+  "§chat.sandbox/fail-closed": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/sandbox/backend.ts",
+      "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+      "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
+      "pi-config/extensions/sandbox/backends/unsupported.ts",
+      "pi-config/extensions/sandbox/index.ts",
+      "pi-config/extensions/sandbox/tools.ts"
+    ]
+  },
+  "§chat.sandbox/git-cleanup": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.sandbox/what-on-enforces",
+      "§app.git-cleanup/no-background"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-25T22:36Z",
+      "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
+    },
+    "code": [
+      "pi-config/extensions/sandbox/env.ts",
+      "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+      "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
+      "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts",
+      "pi-config/extensions/sandbox/tests/unit/darwin-seatbelt.unit.test.ts",
+      "pi-config/extensions/sandbox/tests/unit/env.unit.test.ts",
+      "pi-config/extensions/sandbox/README.md"
+    ]
+  },
+  "§chat.sandbox/limits": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/sandbox/tools.ts",
+      "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+      "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts"
+    ],
+    "about": [
+      "§chat.sandbox/what-on-enforces"
+    ]
+  },
+  "§chat.sandbox/off-is-today": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/sandbox/index.ts",
+      "pi-config/extensions/sandbox/tools.ts"
+    ]
+  },
+  "§chat.sandbox/policy-file": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/sandbox/policy.ts",
+      "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+      "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
+      "pi-config/extensions/sandbox/tools.ts",
+      "pi-config/extensions/sandbox/index.ts",
+      "pi-config/sandbox-policy/linux/policy.json",
+      "pi-config/sandbox-policy/linux/CLAUDE.md",
+      "pi-config/sandbox-policy/darwin/policy.json",
+      "pi-config/sandbox-policy/darwin/CLAUDE.md",
+      "pi-config/install.sh",
+      "scripts/hermetic-agent-dir.mjs"
+    ]
+  },
+  "§chat.sandbox/project-tightening": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/sandbox/policy.ts"
+    ]
+  },
+  "§chat.sandbox/states": {
+    "kind": "behavior",
+    "requires": [
+      "§chat/sandbox",
+      "§chat.sandbox/toggle",
+      "§chat.sandbox/workers",
+      "§chat.worktrees/workers"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/sandbox/state.ts",
+      "pi-config/extensions/sandbox/index.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "server/sandbox-state.ts",
+      "server/sandbox-state.test.ts",
+      "server/sandbox-route.test.ts",
+      "shared/protocol.ts",
+      "pi-config/extensions/sandbox/README.md",
+      "pi-config/extensions/sandbox/tests/state.unit.test.ts",
+      "pi-config/extensions/sandbox/tests/index.unit.test.ts",
+      "pi-config/extensions/sandbox/tests/cache-invariant.mjs",
+      "pi-config/extensions/sandbox/tests/run.mjs",
+      "pi-config/extensions/subagents/index.test.ts",
+      "pi-config/extensions/claude-code/provider/session-bridge.ts"
+    ]
+  },
+  "§chat.sandbox/toggle": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/sandbox/index.ts",
+      "pi-config/extensions/sandbox/state.ts",
+      "pi-config/extensions/sandbox/tools.ts"
+    ]
+  },
+  "§chat.sandbox/what-on-enforces": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/sandbox/backend.ts",
+      "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+      "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
+      "pi-config/extensions/sandbox/policy.ts",
+      "pi-config/extensions/sandbox/proxy.ts",
+      "pi-config/extensions/sandbox/env.ts",
+      "pi-config/extensions/sandbox/tools.ts",
+      "pi-config/extensions/sandbox/index.ts",
+      "pi-config/extensions/sandbox/tests/unit/proxy.unit.test.ts",
+      "pi-config/extensions/sandbox/session-policy.ts",
+      "pi-config/extensions/sandbox/README.md"
+    ]
+  },
+  "§chat.sandbox/workers": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/claude-code/transport.ts",
+      "pi-config/extensions/sandbox/index.ts",
+      "pi-config/extensions/sandbox/state.ts",
+      "pi-config/extensions/sandbox/policy.ts",
+      "pi-config/extensions/sandbox/tools.ts",
+      "pi-config/extensions/sandbox/README.md",
+      "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+      "pi-config/extensions/sandbox/tests/policy.unit.test.ts",
+      "pi-config/extensions/sandbox/launch.ts",
+      "pi-config/extensions/sandbox/tests/index.unit.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-12T13:59Z"
+    }
+  },
+  "§chat/sandbox": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/sandbox/index.ts",
+      "pi-config/extensions/sandbox/state.ts",
+      "pi-config/extensions/sandbox/tools.ts",
+      "pi-config/extensions/sandbox/policy.ts",
+      "pi-config/extensions/sandbox/backend.ts",
+      "pi-config/extensions/sandbox/README.md"
+    ],
+    "notOwned": [
+      "§chat.composer/sandbox-shield",
+      "§chat.worktrees/sandbox",
+      "§app.claude-logins/registry"
+    ]
+  }
+}

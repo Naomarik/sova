@@ -24,11 +24,28 @@
 (def contact-keys [:email :phone :whatsapp :other])
 
 (def field-authority
-  "FIELD_AUTHORITY: the fields each writer may set. `referral` may only create a proposed person."
-  {"operator" (set profile-fields)
-   "wrapup"   #{:skills :competence :language :voice}
-   "overseer" #{:skills :competence :language :voice}
-   "referral" #{:name :status :contact :role :decides :referral}})
+  "FIELD_AUTHORITY: the fields each writer may set. `referral` may only create a proposed person.
+   `overseer-add` and `overseer-contact`: the project overseer in a turn the operator's own message
+   started (`own-word-writer`): creating an active person, and any person's contact besides its own fields."
+  {"operator"         (set profile-fields)
+   "wrapup"           #{:skills :competence :language :voice}
+   "overseer"         #{:skills :competence :language :voice}
+   "overseer-add"     #{:name :contact :role :decides :skills :competence :language :voice}
+   "overseer-contact" #{:contact :skills :competence :language :voice}
+   "referral"         #{:name :status :contact :role :decides :referral}})
+
+(def ^:private writer-names
+  "The writer a refusal names: the overseer's own-word authorities are still the overseer's."
+  {"overseer-add" "overseer" "overseer-contact" "overseer"})
+
+(defn own-word-writer
+  "The authority a write by `writer` has: the project overseer's (`overseer`) in a turn the operator's own
+   message started (the event's host-stamped `own-word` and an attended envelope) is `overseer-add` when
+   creating, else `overseer-contact`; anyone else's, or the overseer's in any other turn, `writer` itself."
+  [writer e creating?]
+  (if (and (= writer "overseer") (true? (:own-word e)) (true? (:attended e)))
+    (if creating? "overseer-add" "overseer-contact")
+    writer))
 
 (defn- trim [s] (str/trim s))
 
@@ -161,7 +178,7 @@
     (cond
       (nil? allowed) (r/refuse 400 (str "Unknown writer: " writer))
       :else (when-let [f (first (remove allowed fields))]
-              (r/refuse 409 (str "A " writer " change may not write " (name f) "."))))))
+              (r/refuse 409 (str "A " (get writer-names writer writer) " change may not write " (name f) "."))))))
 
 (defn- same? [a b]
   (= (if (and (coll? a) (empty? a)) nil a) (if (and (coll? b) (empty? b)) nil b)))

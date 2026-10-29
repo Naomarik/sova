@@ -68,8 +68,12 @@ routes, all on Claude Code:
 
 ## Teams
 
-Besides single workers, the agent can start a **team**, in either major mode. From the chat's
-subagent profile, a new team can get two standing members:
+Besides single workers, the agent can start a **team**, in either major mode. It starts one when
+you ask for a team, or when parts of the work depend on each other: they change the same files or
+interfaces at the same time, or one worker builds while another checks. Otherwise it uses single
+workers.
+
+From the chat's subagent profile, a new team can get two standing members:
 
 - a **coordinator**, which does no implementation and is the only member that talks to your chat;
 - a **monitor**, which watches the team's context and provider usage on a timer, and reports to the

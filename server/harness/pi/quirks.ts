@@ -432,6 +432,24 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi takes a steering mode per session that no settings reload resets",
   },
   {
+    id: "P29",
+    name: "steer-remove",
+    kind: "monkey-patch",
+    relies:
+      "pi's _queueSteer pushes the text onto AgentSession._steeringMessages, announces it (queue_update) and hands the message object to this.agent.steer in one synchronous block; the agent keeps it in steeringQueue.messages (PendingMessageQueue, reassigned on each drain) until the loop drains it, and message_start splices the mirror by text. So a wrap of agent.steer, after the call, sees the very object a hand-off queued (told by the hand-off's async context), and splicing that object out of the lane and one entry of its text out of the mirror, synchronously, takes exactly that steer back: the agent never gets it, the other steers (twins of the same words included) still land together, and clearQueue() hands back only the rest.",
+    pi: ["Agent.steer", "Agent.steeringQueue", "PendingMessageQueue.messages", "PendingMessageQueue.drain", "AgentSession._steeringMessages", "AgentSession._queueSteer", "AgentSession._emitQueueUpdate", "AgentSession.clearQueue", "Agent.peekQueuedMessages"],
+    where: [
+      { file: "server/harness/pi/steer-ticket.ts", symbol: "tapSteers" },
+      { file: "server/harness/pi/steer-ticket.ts", symbol: "laneOf" },
+      { file: "server/harness/pi/steer-ticket.ts", symbol: "mirrorOf" },
+      { file: "server/harness/pi/steer-ticket.ts", symbol: "takeSteerOut" },
+      { file: "server/harness/pi/session.ts", symbol: "PiHarnessSession.queue" },
+      { file: "server/queue.ts", symbol: "WebQueue.removeHanded" },
+    ],
+    canary: "P29 steer-remove: the object agent.steer is handed sits in steeringQueue.messages, and splicing it and its text out of both copies takes exactly that steer back",
+    retireWhen: "pi offers removing one queued message by identity",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

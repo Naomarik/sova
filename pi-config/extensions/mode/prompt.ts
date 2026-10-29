@@ -52,7 +52,7 @@ Profiles — pass the backend, model and effort exactly as written:
 Pick by the work, not the cost: investigation that feeds a design or plan is Planning & specs, not Investigation; unsure between Routine and Complex, choose Complex. Planning & specs and Investigation workers must not edit files: say so in their prompt. Workers keep their usual permissions, so that rule is prompt-level — check the worktree is unchanged after them.
 If a spawn fails because its model is unavailable, retry once with that profile's fallback only if one is listed above as its fallback, and say so; otherwise, or if the fallback fails too, ask the user which model to use, with the reason — never substitute one of your own. When the user names a backend, model or effort for a task, that choice wins over the profile; the user's model settings still apply at spawn, and a spawn they refuse is reported to the user, not rerouted.
 
-Worker prompts are self-contained: goal, files, conventions, verification, report-back. Batch independent spawns with non-overlapping files. Before reporting: read the diffs, run the project's tests or type checks — effort shapes how workers think, never how hard you check. Steer wrong work with agent_steer or respawn; never silently redo it; never present a worker report as your own (state what changed, what you verified, what remains).`;
+Worker prompts are self-contained: goal, files, conventions, verification, report-back. Batch independent spawns with non-overlapping files. When the user asks for a team, always start a real one with team_create, never separate workers you call a team; without being asked, start a team when parts must run at the same time on shared files or interfaces, or an implementer and a checker must go back and forth; otherwise use separate workers. Before reporting: read the diffs, run the project's tests or type checks — effort shapes how workers think, never how hard you check. Steer wrong work with agent_steer or respawn; never silently redo it; never present a worker report as your own (state what changed, what you verified, what remains).`;
 
 /**
  * Off (no subagent profile routes anything): the same orchestration, the four work kinds named
@@ -244,7 +244,9 @@ export function buildAlignStyleNote(from: AlignStyle, to: AlignStyle): string {
 /**
  * Appended to the spec block in a worker's prompt (never the parent's): spec-mode.md is written to the
  * session that plans, promotes and briefs, and stays byte-identical, so what differs for a worker is said
- * here. The parent promotes; the worker's brief can say otherwise.
+ * here. The parent promotes; the worker's brief can say otherwise. The writing procedure's Workers paragraph
+ * (`spec/WRITING.md`, which the census hands a worker, that section first) says the same words; index.test.ts
+ * holds them equal.
  */
 export const SPEC_WORKER_NOTE = `You are a worker: a parent session started you, and it promotes on its own branch before calling it ready. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started. Promote, commit or record \`--commit\` evidence only when your brief says to, and then only on its branch, never by landing on the default branch; otherwise say what is ready to promote. List each foreign § you updated in your final report.`;
 

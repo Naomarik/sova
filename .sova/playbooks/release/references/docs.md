@@ -4,7 +4,7 @@ Between step 2 and step 3, and only if the user opts in. It never runs on its ow
 
 ## The offer
 1. **List the affected pages.** From the release worktree, with the release commit made: `node .sova/playbooks/release/scripts/docs-drift.mjs --base vPREV --root . [--json]`. It compares, for each `§site.docs/<page>` record, the record and each claim in its `requires` at `vPREV` against the release worktree, and prints each Docs page (`site/src/content/docs/`) with its changed sources (`changed`, `new`, `removed`). It reads only the spec and always exits 0.
-2. **Name new features with no page.** From the changed claims (`git diff vPREV -- .sova/spec/manifest.json` and the `spec: promote` subjects since `vPREV`), name each shipped feature a user would look for that no `§site.docs/*` record requires.
+2. **Name new features with no page.** From the changed claims (`node pi-config/extensions/spec/core/sova-spec.mjs foreign --base vPREV --head HEAD --root . --json`: its `changes` and `created`, which read the records in either layout; and the `spec: promote` subjects since `vPREV`), name each shipped feature a user would look for that no `§site.docs/*` record requires.
 3. **Ask the user**, once, with both lists: update these pages in this release, and give which new features a page? No answer, or no: skip the step, and carry both lists to the report at step 4.
 
 ## On yes

@@ -68,9 +68,7 @@ the Features group, not under Modes: a profile is not a mode.
 
 ## §site.docs/align — Align and alignments (`/docs/modes/align/`)
 
-The align minor mode: when an alignment opens (only once the user asked for something built, fixed
-or changed; questions are answered in chat), how each reply opens with a short part for the user and
-folds its working notes, what an alignment holds, answering it, Settings → Alignment (writing style,
+The align minor mode: what an alignment holds, answering it, Settings → Alignment (writing style,
 Visuals, review), the card, the composer's badge and session mark, Needs you and notifications, and the terminal
 viewer.
 
@@ -81,7 +79,9 @@ route, when it runs, blockers, and what the card shows.
 
 ## §site.docs/spec-mode — Spec (`/docs/modes/spec/`)
 
-The spec minor mode: working from the project's spec, the census note and its one unread line before
+The spec minor mode: its guide's two parts (finding your way on every turn, the writing procedure
+once, before the first behavior-changing edit or with the first census note or an alignment's
+go-ahead), working from the project's spec, the census note and its one unread line before
 finishing, updating a claim the task didn't create without asking and listing it in the reply's one
 spec line ("Also updates …"), the Agree step when align is on too, drafts and promotion, the spec
 writer, what workers get (and the claims a finished worker's changes landed in), and project coding

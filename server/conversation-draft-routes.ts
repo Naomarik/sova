@@ -189,6 +189,8 @@ export async function approveDraft(projectId: string, sessionId: string, items?:
     const st = statusNow(it, legacy, current, rec.sessionId);
     if (it.kind === "new") {
       if (st === "promoted" || st === "built") alreadyPromoted.push(it.id);
+      // Carried onto a Build's branch: official when that branch lands, never published from here.
+      else if (it.buildBranch) waitingForBuild.push(it.id);
       else toPromote.push(it);
     } else if (st === "agreed" || st === "approved") waitingForBuild.push(it.id);
   }
@@ -229,6 +231,25 @@ export async function approveDraft(projectId: string, sessionId: string, items?:
   // The draft follows: promoted records are current now, so they leave the draft's changes.
   const caught = await catchUpRecord(place, next, now, base);
   return { promoted, waitingForBuild, alreadyPromoted, ...(commit ? { commit } : {}), draft: summaryOfRecord(caught, place.name ?? projectId, place.root, base) };
+}
+
+/**
+ * The project's decisions a Build carried onto a branch and not yet official (§app.requirements/draft-approval):
+ * decision id → branch. The reconciler's promotion refuses them until that branch lands.
+ */
+export function decisionsHeldForBranch(projectId: string): Map<string, string> {
+  const out = new Map<string, string>();
+  let place: ReturnType<typeof placeOf>;
+  try {
+    place = placeOf(projectId);
+  } catch {
+    return out;
+  }
+  const current = currentClaims(place.root);
+  for (const rec of recordsOf(projectId))
+    for (const i of rec.items)
+      if (i.decisionId && i.buildBranch && i.kind === "new" && i.status !== "dropped" && i.status !== "promoted" && i.status !== "built" && !(i.recordId && i.recordId in current)) out.set(i.decisionId, i.buildBranch);
+  return out;
 }
 
 /** A legacy promotion of these decisions: their items in any conversation's record of the project read promoted. */
@@ -295,7 +316,7 @@ export function buildPrompt(rec: ConversationDraftRecord, items: readonly DraftI
   return `${lines.join("\n").trimEnd()}\n`;
 }
 
-type StartDraftBuild = (projectId: string, input: { title: string; prompt: string; extra?: { conversationDraft: string } }) => Promise<{ sessionId: string; path?: string }>;
+type StartDraftBuild = (projectId: string, input: { title: string; prompt: string; extra?: { conversationDraft: string } }) => Promise<{ sessionId: string; path?: string; carriedTo?: string }>;
 let startForTest: StartDraftBuild | null = null;
 /** Tests: what starts the coding session (null: the project overseer's startDraftBuild). */
 export function setDraftBuildStarterForTest(f: StartDraftBuild | null): void {
@@ -327,10 +348,14 @@ export async function buildDraft(projectId: string, sessionId: string, items?: u
   const ids = new Set(chosen.map((i) => i.id));
   writeRecord(place.workspace, {
     ...rec,
-    items: rec.items.map((i) => (ids.has(i.id) ? { ...i, ...(i.kind === "change" ? { status: "approved" as const } : {}), approvedAt: i.approvedAt ?? at, buildSessionId: made.sessionId } : i)),
+    items: rec.items.map((i) =>
+      ids.has(i.id)
+        ? { ...i, ...(i.kind === "change" || (made.carriedTo && i.status === "agreed") ? { status: "approved" as const } : {}), approvedAt: i.approvedAt ?? at, buildSessionId: made.sessionId, ...(made.carriedTo ? { buildBranch: made.carriedTo } : {}) }
+        : i,
+    ),
     updatedAt: at,
   });
-  return { sessionId: made.sessionId, title, ...(made.path ? { path: made.path } : {}), items: chosen.map((i) => i.id) };
+  return { sessionId: made.sessionId, title, ...(made.path ? { path: made.path } : {}), items: chosen.map((i) => i.id), ...(made.carriedTo ? { branch: made.carriedTo } : {}) };
 }
 
 // ---- the overseers' approve and build -------------------------------------------------------------------------------

@@ -63,7 +63,7 @@ node "$core/sova-spec.mjs" read '<§id>' --budget 12000 --root "$R" --json   # t
 
 **Retro.** The history in the forms above, the draft folders under `<root>/.sova/spec/drafts/` and, for a draft in scope, `node "$core/sova-spec-draft.mjs" status <name> --root "$R" --json`, and `session_read` of the brief's sessions only, when this session has that tool: bounded slices of visible rows, no more than the question needs. Never session files, transcript exports, hidden thinking, system prompts or credentials; without `session_read`, the sessions are unknown.
 
-**Assessment receipts are not part of this playbook.** The companion `sova-spec-assess.mjs` prints its whole capture, often near a megabyte, and no tool here gives a bounded view of it. When the operator asks for a durable receipt, don't run it: say in the report that it needs a separate opt-in method, and go on with the review.
+**No assessment receipts.** The assessment companion that made them is retired. When the operator asks for a durable receipt, say in the report that there is no tool for one, and go on with the review.
 
 ## Evidence rules
 - Name the revision a claim is true at, and link each finding to its source: `path:line`, a § id, or the command that showed it.

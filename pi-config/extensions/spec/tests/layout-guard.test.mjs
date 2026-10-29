@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { REPO } from "./layout/lib.mjs";
-import { scanText, isScanned, compare, growth, listSources, scanRepo, committedAllowlist, draftAllowlist, loadAllowlist, LAYOUT_MODULE } from "./layout/guard-scan.mjs";
+import { scanText, isScanned, compare, growth, repoText, listSources, scanRepo, committedAllowlist, draftAllowlist, loadAllowlist, LAYOUT_MODULE } from "./layout/guard-scan.mjs";
 
 const ALLOW_REL = "pi-config/extensions/spec/tests/layout/allowlist.json";
 const ROOTS = ["pi-config/extensions"];
@@ -105,6 +105,43 @@ test("ratchet: growth against the committed list catches an added entry or path,
   assert.equal(growth({ paths: [] }, { paths: [{ glob: "x/**", reason: REASON }] }).length, 1);
 });
 
+// A reworded allowlisted line is a replacement, not growth, only when ALL hold: same file, same rule, no more entries
+// in that file than before, the old text gone from the file, and a real reason on the new entry.
+const OLD_LINE = 'const m = readSource(root, where("manifest.json"), inputSources, readPolicy);';
+const NEW_LINE = 'const m = readSource(root, where("manifest.json"));';
+const fileWith = (...lines) => (rel) => (rel === "f.ts" ? lines.join("\n") + "\n" : null);
+const listOf = (...entries) => ({ lines: { "f.ts": entries } });
+const ent = (text, reason = REASON, rule = "names-manifest") => ({ rule, text, reason });
+test("ratchet growth: (1) a reword in place, old text gone, reason given, is a replacement", () => {
+  const replaced = [];
+  assert.deepEqual(growth(listOf(ent(OLD_LINE)), listOf(ent(NEW_LINE)), { textOf: fileWith("const a = 1;", NEW_LINE), replaced }), []);
+  assert.deepEqual(replaced, [{ file: "f.ts", rule: "names-manifest", from: OLD_LINE, to: NEW_LINE }]);
+  // beside entries that did not change
+  const other = ent("if (!existsSync(join(dir, MANIFEST))) return;");
+  assert.deepEqual(growth(listOf(other, ent(OLD_LINE)), listOf(other, ent(NEW_LINE)), { textOf: fileWith(other.text, NEW_LINE) }), []);
+});
+test("ratchet growth: (2) a reword plus one extra entry in the same file is growth", () => {
+  const extra = ent('const p = join(spec, "manifest.json");');
+  assert.ok(growth(listOf(ent(OLD_LINE)), listOf(ent(NEW_LINE), extra), { textOf: fileWith(NEW_LINE, extra.text) }).length >= 1);
+});
+test("ratchet growth: (3) a new entry in a file that had none is growth", () => {
+  assert.equal(growth({ lines: {} }, listOf(ent(NEW_LINE)), { textOf: fileWith(NEW_LINE) }).length, 1);
+  assert.equal(growth({ lines: { "g.ts": [ent(OLD_LINE)] } }, { lines: { "g.ts": [ent(OLD_LINE)], "f.ts": [ent(NEW_LINE)] } }, { textOf: fileWith(NEW_LINE) }).length, 1, "another file's entry is not replaced from here");
+});
+test("ratchet growth: (4) a reword without a real reason is growth", () => {
+  for (const reason of ["", "probe", "TODO later", null])
+    assert.equal(growth(listOf(ent(OLD_LINE)), listOf(ent(NEW_LINE, reason)), { textOf: fileWith(NEW_LINE) }).length, 1, String(reason));
+  assert.equal(growth(listOf(ent(OLD_LINE)), listOf({ rule: "names-manifest", text: NEW_LINE }), { textOf: fileWith(NEW_LINE) }).length, 1, "no reason key");
+});
+test("ratchet growth: a reword is growth when the old text is still in the file, the rule differs, or the file can't be read", () => {
+  assert.equal(growth(listOf(ent(OLD_LINE)), listOf(ent(NEW_LINE)), { textOf: fileWith(OLD_LINE, NEW_LINE) }).length, 1, "old line still there: an addition");
+  assert.equal(growth(listOf(ent(OLD_LINE)), listOf(ent(NEW_LINE, REASON, "reads-claims")), { textOf: fileWith(NEW_LINE) }).length, 1, "another rule");
+  assert.equal(growth(listOf(ent(OLD_LINE)), listOf(ent(NEW_LINE))).length, 1, "no textOf: nothing can be shown gone");
+  assert.equal(growth(listOf(ent(OLD_LINE)), listOf(ent(NEW_LINE)), { textOf: () => null }).length, 1, "file gone");
+  assert.equal(growth(listOf(ent(OLD_LINE)), listOf(ent(NEW_LINE), ent("const q = `${SPEC}/manifest.json`;")), { textOf: fileWith(NEW_LINE, "const q = `${SPEC}/manifest.json`;") }).length, 2, "count grew: no replacement at all");
+  assert.equal(growth(listOf(ent(OLD_LINE)), listOf(ent(NEW_LINE), ent(NEW_LINE + " ")), { textOf: fileWith(NEW_LINE) }).length >= 1, true, "one old entry stands for one replacement");
+});
+
 // ---------------------------------------------------------------- 3. the real scan
 const files = listSources(REPO, ROOTS);
 const scans = scanRepo(REPO, files);
@@ -127,5 +164,5 @@ test("only core/layout.mjs reads the spec's records in pi-config/extensions (all
 test("the pi-config allowlist only shrinks (against the committed list at the merge base with master)", () => {
   const before = committedAllowlist(REPO, ALLOW_REL);
   if (!before) return; // the change that adds the list has nothing to grow past
-  assert.deepEqual(growth(before.allow, allow), [], `grew past ${before.at}`);
+  assert.deepEqual(growth(before.allow, allow, { textOf: repoText(REPO) }), [], `grew past ${before.at}`);
 });

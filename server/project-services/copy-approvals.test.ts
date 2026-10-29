@@ -1,6 +1,8 @@
-// The Overseers' copy acts behind a click (§app.overseer/copies, §app.project-services/callers): teardown and reset of
-// a copy the caller did not start, and down of a copy with share links, run only when the turn's click approved that
-// verb on that copy; slot 0 never; a plain stop and a session's rules unchanged. On a host in memory (fake-host.ts), a
+// The Overseers' copy acts on the user's word or behind a click (§app.overseer/copies, §app.project-services/callers):
+// outside a turn the user started, teardown and reset of a copy the caller did not start, and down of a copy with share
+// links, run only when the turn's click approved that verb on that copy; in a turn the user started, down of any copy
+// runs, and so do teardown and reset once the conversation that started the copy is not working; slot 0 never; a plain
+// stop and a session's rules unchanged. On a host in memory (fake-host.ts), a
 // temp PI_CODING_AGENT_DIR, the preview address pinned by env.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -18,6 +20,7 @@ const { ProjectEngine } = await import("./engine");
 type Caller = import("./engine").Caller;
 const { readRegistry } = await import("./store");
 const { linksOf } = await import("./share");
+const { mutateRegistry } = await import("./store");
 
 const op: Caller = { kind: "operator" };
 const BASE = 23_000;
@@ -41,6 +44,18 @@ const approving = (ok: string[]) => (verb: string, rec: { id: string }) => ok.in
 const overseer = (ok: string[] = []): Caller => ({ kind: "overseer", id: "ov", approved: approving(ok) });
 const acts: string[] = [];
 const po = (ok: string[] = [], root = project): Caller => ({ kind: "project-overseer", id: "po", root, act: async (verb, instance) => void acts.push(`${verb}:${instance}`), approved: approving(ok) });
+/** The same callers in a turn the user started; `working`: the starting conversations working now (absent: no lookup). */
+const working = (ids: string[]) => async (sid: string) => ids.includes(sid);
+const overseerWord = (o: { ok?: string[]; busy?: string[] | null } = {}): Caller => ({
+  kind: "overseer",
+  id: "ov",
+  approved: approving(o.ok ?? []),
+  word: () => true,
+  ...(o.busy === null ? {} : { working: working(o.busy ?? []) }),
+});
+const poWord = (busy: string[] = []): Caller => ({ ...(po() as Extract<Caller, { kind: "project-overseer" }>), word: () => true, working: working(busy) });
+/** Say a copy was started by conversation `sid`. */
+const startedBy = (id: string, sid: string) => mutateRegistry((r) => void (r.instances.find((i) => i.id === id)!.createdBy = `session:${sid}`));
 
 before(() => {
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-copyok-proj-")));
@@ -67,7 +82,7 @@ test("teardown and reset of a copy it did not start: refused with the card sente
   const id = a.instance!;
   const t = shaped(await engine.run("teardown", { instance: id }, overseer()));
   assert.equal(t.error?.code, "needs-confirm");
-  assert.match(t.error!.message, /^teardown of a copy you did not start \(operator's\) runs only in the turn the user's click on a card listing it opens: ask with sova_card, listing it under copies/);
+  assert.match(t.error!.message, /^teardown of a copy you did not start \(operator's\) runs only on the user's word, in a turn they started: ask them/);
   // A click that approved a reset approves no teardown, and one for another copy approves nothing here.
   assert.equal((await engine.run("teardown", { instance: id }, overseer([`reset:${id}`, "teardown:other-copy"]))).error?.code, "needs-confirm");
   const r = shaped(await engine.run("reset", { instance: id }, overseer([`reset:${id}`])));
@@ -101,7 +116,7 @@ test("down and teardown of a copy with share links: refused without the click, r
   assert.equal(linksOf(id, { activeOnly: true }).length, 1);
   const no = shaped(await engine.run("down", { instance: id }, overseer()));
   assert.equal(no.error?.code, "needs-confirm");
-  assert.match(no.error!.message, /1 active share link.*listing it under copies/);
+  assert.match(no.error!.message, /1 active share link.*only on the user's word, in a turn they started/);
   assert.equal((await engine.run("down", { instance: id }, po())).error?.code, "needs-confirm");
   // A teardown approval is no stop approval.
   assert.equal((await engine.run("down", { instance: id }, overseer([`teardown:${id}`]))).error?.code, "needs-confirm");
@@ -115,6 +130,43 @@ test("down and teardown of a copy with share links: refused without the click, r
   assert.equal(readRegistry().instances.some((i) => i.id === id), false);
 });
 
+test("on the user's word: down of a linked copy runs, its links kept; teardown and reset once the starting conversation is not working", async () => {
+  const d = shaped(await engine.run("up", { project, branch: "sova/d" }, op));
+  assert.equal(d.ok, true, JSON.stringify(d.error));
+  const id = d.instance!;
+  assert.equal(shaped(await engine.run("share", { instance: id, endpoint: "web.http", confirm: true }, op)).ok, true);
+  // Down of a copy with a share link: the word is enough (no click); its link stays and the copy comes back up.
+  const down = shaped(await engine.run("down", { instance: id }, overseerWord()));
+  assert.equal(down.ok, true, JSON.stringify(down.error));
+  assert.equal(linksOf(id, { activeOnly: true }).length, 1, "its links stay through down");
+  acts.length = 0;
+  assert.equal(shaped(await engine.run("up", { instance: id }, op)).ok, true);
+  const pdown = shaped(await engine.run("down", { instance: id }, poWord()));
+  assert.equal(pdown.ok, true, JSON.stringify(pdown.error));
+  assert.deepEqual(acts, [`down:${id}`], "the project overseer's act is still sent");
+  // Started by a conversation that is still working: the word is not enough, a click is.
+  startedBy(id, "s-busy");
+  const busy = shaped(await engine.run("reset", { instance: id }, overseerWord({ busy: ["s-busy"] })));
+  assert.equal(busy.error?.code, "needs-confirm");
+  assert.match(busy.error!.message, /^reset of a copy you did not start \(session:s-busy's\) runs only in the turn the user's click on a card listing it opens.*\(its conversation is still working\)$/);
+  assert.equal((await engine.run("reset", { instance: id }, poWord(["s-busy"]))).error?.code, "needs-confirm");
+  // No way to tell whether it works: as if it did.
+  assert.equal((await engine.run("reset", { instance: id }, overseerWord({ busy: null }))).error?.code, "needs-confirm");
+  const clicked = shaped(await engine.run("reset", { instance: id }, overseerWord({ ok: [`reset:${id}`], busy: ["s-busy"] })));
+  assert.equal(clicked.ok, true, JSON.stringify(clicked.error));
+  // Not working (finished or archived): the word is enough; outside a turn the user started it is not.
+  assert.equal((await engine.run("reset", { instance: id }, overseer())).error?.code, "needs-confirm");
+  const reset = shaped(await engine.run("reset", { instance: id }, poWord()));
+  assert.equal(reset.ok, true, JSON.stringify(reset.error));
+  const t = shaped(await engine.run("teardown", { instance: id }, overseerWord()));
+  assert.equal(t.ok, true, JSON.stringify(t.error));
+  assert.equal(linksOf(id, { activeOnly: true }).length, 0, "teardown ends its links");
+  assert.equal(readRegistry().instances.some((i) => i.id === id), false);
+  // A copy no conversation started (the operator's): the word is enough, with no lookup at all.
+  const e = shaped(await engine.run("create", { project, branch: "sova/e" }, op));
+  assert.equal(shaped(await engine.run("teardown", { instance: e.instance }, overseerWord({ busy: null }))).ok, true);
+});
+
 test("slot 0 is never approved, whatever the click said", async () => {
   const main = shaped(await engine.run("create", { project }, op));
   assert.equal(main.ok, true, JSON.stringify(main.error));
@@ -122,6 +174,7 @@ test("slot 0 is never approved, whatever the click said", async () => {
   const all = (v: string) => ["teardown", "reset", "down"].map((x) => `${x}:${v}`);
   assert.equal((await engine.run("reset", { instance: main.instance }, overseer(all(main.instance!)))).error?.code, "needs-confirm");
   assert.equal((await engine.run("teardown", { instance: main.instance }, overseer(all(main.instance!)))).error?.code, "needs-confirm", "the click approves no slot 0, before teardown's own refusal");
+  assert.equal((await engine.run("reset", { instance: main.instance }, overseerWord({ ok: all(main.instance!) }))).error?.code, "needs-confirm", "nor does the user's word");
   assert.equal((await engine.run("teardown", { instance: main.instance, confirm: true }, op)).error?.code, "refused-slot0", "and slot 0 is no one's to tear down");
   assert.ok(readRegistry().instances.some((i) => i.id === main.instance), "the main copy stays");
 });

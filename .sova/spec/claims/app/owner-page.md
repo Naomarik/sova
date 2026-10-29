@@ -278,11 +278,12 @@ A visible conversation's reviewed tour attachment follows that same conversation
 - **For the client, never the private context.** The overseer's prompt says updates are for a
   non-technical client: plain words, no names of tools, branches, files or models, no judgments
   about people, and never anything from "About this organization", its notes, a goal or a
-  person's profile. As a backstop the tool refuses a text that repeats 24 or more characters in a
-  row (ignoring case and spacing) of the org's About text, the overseer's notes, the operator's
+  person's profile. As a backstop the tool refuses a text that repeats about 60 or more characters
+  in a row (ignoring case and spacing) of the org's About text, the overseer's notes, the operator's
   extra instructions, a conversation's goal or briefing, or a roster person's role, voice, skills
   or referral reason, or that contains any of their contact details; it says which kind of text
-  (About and notes, or the rest), never the text. The text is at most 2,000
+  (About and notes, or the rest) and names the words it matched, so the overseer can rewrite just
+  them (a contact detail is named only as "a contact", never shown). The text is at most 2,000
   characters, plain text; an `http://` or `https://` address in it becomes a link on the page (a
   demo address the operator gave goes there). A text that holds a preview link this host keeps
   is refused: a preview link goes to people through the operator
@@ -481,7 +482,8 @@ Tour reads reveal only a checked public presentation bound to a conversation and
 - **The message.** "{operator name} sent you your page for {org name}." (§design.copy-deck/owner-page),
   or the user's note instead when they asked for one, then the link (§app.outreach/channels). A
   note is at most 500 characters and is refused when it repeats a contact or private text of the
-  org or any of its projects.
+  org or any of its projects, on the terms of §app.outreach/channels (about 60 characters in a
+  row, the matched words named).
 - **What the Overseer says.** Sent: "Sent {name} their owner page link on WhatsApp." A definite
   failure or refusal: "Not sent to {name}: {why}.", then, when the send made a new link, "A new
   owner link was made but not delivered, and their old link no longer works: copy the new one from

@@ -1,0 +1,205 @@
+{
+  "§app.worker-restore/claude-bridge-restart": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/claude-code/provider/session-bridge.ts",
+      "pi-config/extensions/claude-code/provider/session-records.ts",
+      "pi-config/extensions/claude-code/provider/fork-point.ts",
+      "pi-config/extensions/claude-code/provider/resume-record.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-10T10:58Z"
+    }
+  },
+  "§app.worker-restore/failure-reason": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/runner.ts",
+      "pi-config/extensions/subagents/README.md"
+    ],
+    "requires": [
+      "§app.worker-restore/worker-record"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-13T00:43Z"
+    }
+  },
+  "§app.worker-restore/restore": {
+    "kind": "behavior",
+    "requires": [
+      "§app.worker-restore/worker-record",
+      "§app.worker-restore/transcript-protocol",
+      "§app.worker-restore/usage-from-transcripts"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/registry.ts",
+      "server/insights.ts",
+      "shared/protocol.ts",
+      "src/lib/insights.ts",
+      "src/lib/workers.ts",
+      "src/components/SubagentPane.tsx",
+      "server/worker-restore.ts",
+      "server/worker-adapters.ts",
+      "server/chat-manager.ts",
+      "src/components/SessionDetails.tsx",
+      "src/design/base.css",
+      "pi-config/extensions/sessions/index.ts",
+      "pi-config/extensions/sessions/schema.ts",
+      "pi-config/extensions/sessions/workers.ts",
+      "pi-config/extensions/sessions/render.ts",
+      "pi-config/extensions/sessions/public/SCHEMA.md",
+      "scripts/dev-server.mjs",
+      "pi-config/extensions/subagents/restored.ts",
+      "pi-config/extensions/subagents/teams.ts",
+      "src/components/AgentsView.tsx",
+      "pi-config/extensions/subagents/worker-transcript.ts",
+      "src/components/SessionUsage.tsx"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-13T02:54Z"
+    }
+  },
+  "§app.worker-restore/resume": {
+    "kind": "behavior",
+    "requires": [
+      "§app.worker-restore/restore",
+      "§chat.sandbox/workers"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/registry.ts",
+      "pi-config/extensions/subagents/runner.ts",
+      "pi-config/extensions/claude-code/transport.ts",
+      "server/chat-manager.ts",
+      "server/worker-resume.ts",
+      "server/index.ts",
+      "server/app.ts",
+      "src/lib/api.ts",
+      "src/components/SubagentPane.tsx",
+      "pi-config/extensions/subagents/README.md",
+      "pi-config/extensions/subagents/restored.ts",
+      "pi-config/extensions/subagents/teams.ts",
+      "pi-config/extensions/subagents/restore.test.ts",
+      "server/worker-restore.ts",
+      "shared/protocol.ts",
+      "pi-config/extensions/subagents/claude-workers.ts",
+      "pi-config/extensions/subagents/claude-workers.test.ts",
+      "server/quiet-close-actions.test.ts",
+      "server/chat-host.ts"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-10-26T22:15Z",
+      "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
+    }
+  },
+  "§app.worker-restore/transcript-protocol": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/worker-transcript.ts",
+      "pi-config/extensions/subagents/adapters/index.ts",
+      "pi-config/extensions/subagents/adapters/pi.ts",
+      "pi-config/extensions/claude-code/transcript-adapter.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-12T13:59Z"
+    }
+  },
+  "§app.worker-restore/usage-from-transcripts": {
+    "kind": "behavior",
+    "requires": [
+      "§app.worker-restore/transcript-protocol",
+      "§app.worker-restore/worker-record"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/worker-transcript.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "server/insights.ts",
+      "shared/protocol.ts",
+      "server/worker-restore.ts",
+      "server/claude-transcript.ts",
+      "pi-config/extensions/subagents/adapters/pi.ts",
+      "pi-config/extensions/claude-code/transcript-adapter.ts",
+      "src/components/SessionDetails.tsx",
+      "server/usage-helper/query.ts"
+    ]
+  },
+  "§app.worker-restore/worker-record": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/registry.ts",
+      "pi-config/extensions/subagents/worker-transcript.ts",
+      "pi-config/extensions/subagents/README.md",
+      "server/worker-sessions.ts",
+      "server/insights.ts",
+      "server/worktrees.ts",
+      "server/harness/pi/fork.ts",
+      "server/harness/state-kinds.ts",
+      "pi-config/extensions/subagents/worker-transcript.test.ts",
+      "server/worker-sessions.test.ts",
+      "server/harness/pi/golden/expected/synthetic/workers/align-scan.json",
+      "server/harness/pi/golden/expected/synthetic/workers/attention-turn.json",
+      "server/harness/pi/golden/expected/synthetic/workers/fork.json",
+      "server/harness/pi/golden/expected/synthetic/workers/insights-facts.json",
+      "server/harness/pi/golden/expected/synthetic/workers/overseer-folds.json",
+      "server/harness/pi/golden/expected/synthetic/workers/reader.json",
+      "server/harness/pi/golden/expected/synthetic/workers/readiness-scan.json",
+      "server/harness/pi/golden/expected/synthetic/workers/regenerate.json",
+      "server/harness/pi/golden/expected/synthetic/workers/rewind.json",
+      "server/harness/pi/golden/expected/synthetic/workers/rows-each.json",
+      "server/harness/pi/golden/expected/synthetic/workers/rows.json",
+      "server/harness/pi/golden/expected/synthetic/workers/share-view.json",
+      "server/harness/pi/golden/expected/synthetic/workers/tail-turn.json",
+      "server/harness/pi/golden/expected/synthetic/workers/tail.json",
+      "server/harness/pi/golden/expected/synthetic/workers/transcript-rows.json",
+      "server/harness/pi/golden/expected/synthetic/workers/watch.json",
+      "server/harness/pi/golden/fixtures/synthetic/workers.jsonl"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-13T12:56Z"
+    }
+  },
+  "§app/worker-restore": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/registry.ts",
+      "pi-config/extensions/subagents/worker-transcript.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-13T02:54Z"
+    },
+    "notOwned": [
+      "§app.chat-processes/worker-crash",
+      "§app.subagents-pane/transcript-view",
+      "§chat.sandbox/workers"
+    ]
+  }
+}

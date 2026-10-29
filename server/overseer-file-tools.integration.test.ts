@@ -41,8 +41,18 @@ describe("the Overseer's find and grep never return a secret", () => {
   });
 });
 
-describe("the project overseer's find and grep stay inside the project root", () => {
+describe("the project overseer's find and grep: from the root or a parent, never into an excluded folder", () => {
   const { box, pcall } = confinedBox(fx);
+
+  test("a search from a parent of the root reaches the rest, and leaves workspaces, Sova's state and other clients' projects out", async () => {
+    const found = await pcall("find", { pattern: "**/*", path: box });
+    assert.match(found, /outside\.txt/);
+    assert.match(found, /proj\/README\.md/);
+    assert.doesNotMatch(found, /roster\.json|baton-links|plan\.md|\.env$/m);
+    const grepped = await pcall("grep", { pattern: "MARK", path: box });
+    assert.match(grepped, /outside\.txt/);
+    assert.doesNotMatch(grepped, /roster|baton-links|plan\.md/);
+  });
 
   test("find: searches from the root are held to it, whatever the pattern", async () => {
     for (const pattern of ["*", "**/*", "roster.json", "../*", "/**", `${box}/**`, "**/outside.txt"]) {

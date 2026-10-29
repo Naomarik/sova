@@ -1,0 +1,124 @@
+{
+  "§chat.topics/delivery": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/chat-manager.ts",
+      "server/topic-delivery.ts",
+      "server/index.ts",
+      "server/app.ts",
+      "shared/topic-message.ts",
+      "server/topics-runtime.test.ts"
+    ],
+    "requires": [
+      "§chat.topics/store",
+      "§chat.topics/open",
+      "§chat.profiles/limits",
+      "§mesh.links/delivery"
+    ]
+  },
+  "§chat.topics/open": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/session-powers.ts",
+      "server/topics.ts",
+      "server/topic-store.ts",
+      "shared/profiles.ts",
+      "server/topic-store.test.ts",
+      "server/topics-runtime.test.ts"
+    ],
+    "requires": [
+      "§chat.profiles/session-tools",
+      "§chat.topics/store"
+    ]
+  },
+  "§chat.topics/push": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/topics.ts",
+      "server/chat-manager.ts",
+      "server/topics-runtime.test.ts",
+      "server/topic-store.ts"
+    ],
+    "requires": [
+      "§chat.topics/open",
+      "§chat.topics/store"
+    ]
+  },
+  "§chat.topics/row": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/topic-message.ts",
+      "server/transcript.ts",
+      "shared/protocol.ts",
+      "shared/row-counts.ts",
+      "src/components/Thread.tsx",
+      "src/components/TopicCard.tsx",
+      "src/components/ChatView.tsx",
+      "src/components/WatchView.tsx",
+      "src/lib/turn.ts",
+      "src/lib/message-actions.ts",
+      "server/chat-manager.ts",
+      "server/sessions-index.ts",
+      "server/session-autotitle.ts",
+      "server/session-tags.ts",
+      "server/attention-signals.ts",
+      "server/merge-readiness.ts",
+      "server/align-state.ts",
+      "server/session-share-view.ts",
+      "server/topics-runtime.test.ts"
+    ],
+    "requires": [
+      "§chat.topics/delivery",
+      "§chat.transcript/transcript-items",
+      "§app.decisions/session-tags",
+      "§app.decisions/asks-user"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T14:32Z",
+      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+    }
+  },
+  "§chat.topics/store": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/topic-store.ts",
+      "server/topic-store.test.ts",
+      "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+      "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
+      "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts"
+    ],
+    "requires": []
+  },
+  "§chat/topics": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/topics.ts",
+      "server/topic-store.ts",
+      "server/topic-delivery.ts",
+      "shared/topic-message.ts"
+    ],
+    "notOwned": [
+      "§chat/merge-round",
+      "§mesh.links/delivery",
+      "§app.decisions/session-tags"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-23T14:32Z",
+      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+    }
+  }
+}

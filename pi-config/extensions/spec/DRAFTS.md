@@ -49,7 +49,10 @@ Nothing is written without `--write`. Quote IDs, because `§` is not a shell wor
 
 `new` copies everything: the manifest and **every** file under its `claimsRoot`. It never copies
 a subset, so the draft graph is always complete. With no current spec, the baseline is empty, and
-`spec/` starts with `{"formatVersion": 1, "claims": {}}` for you to author into. This is how a
+`spec/` starts in format 2 ("Record layouts and `migrate`" below) for you to author into: a
+`manifest.json` of `{"formatVersion": 2, "claims": "records live beside each claim file, in
+claims/**/*.json"}`, and each claim file's records go in the `.json` beside it
+(`claims/a/top.md`'s in `claims/a/top.json`). This is how a
 project with no docs documents existing behavior piecemeal as features are worked on. Nothing
 else is required beforehand: no prior docs and no Git. Only the records you promote need an
 `authority` label (see below). A `claims/` tree with no
@@ -95,6 +98,12 @@ The machine can't tell which label is correct.
      or not an ancestor of `HEAD`, usually a rebase after evidence. The newest evidence entry
      for each ID is active. Superseded entries remain in history but no longer raise this warning;
      an older multi-ID entry remains active for IDs a newer entry has not replaced.
+   - `declaration-over-cap` (warn, in `introduced`, with `bytes`, `cap` and `was`): a declaration
+     the draft takes from at or below the size cap to over it, or makes larger while it is over. The
+     size is its prose bytes in its claim file, never its record's; the cap is 6,144 B or the spec's
+     top-level `declarationCap`. One over the cap that the draft leaves alone or shrinks counts under
+     `preexisting`. Split such a claim by topic into sibling claims, the old § keeping a short summary
+     that `requires` its parts. It never refuses and never changes the exit status.
 2. **Implement the change and verify it.** The tool never does this part.
 3. **`evidence`** records, for each changed ID, what was verified and against which
    implementation bytes:
@@ -126,7 +135,9 @@ The machine can't tell which label is correct.
    has, plus each current H1 that gains a new H2 (`alsoChangesDetail: [{id, change, children?}]`,
    `change` one of `text`, `record`, `text+record`, `deleted`, `file`, `child-added`). That list,
    not memory, is what "Also updates" names. They also print `driftWarnings`,
-   the `check` warnings above (never a refusal), so drift shows even when nobody ran `check`.
+   the `check` warnings above (never a refusal), so drift shows even when nobody ran `check`, and
+   `sizeWarnings`: each selected declaration the promotion would take over the size cap or grow
+   there (never a refusal, and never one of the findings that keep `agree` from promoting).
    Evidence on a commit that is gone or not an ancestor of `HEAD` (a rebase after evidence) is
    refused as `evidence-not-ancestor`: never rebase after evidence; re-record evidence on the
    current commit, or merge master in instead.
@@ -379,7 +390,7 @@ depend on which side landed first; the output is 2-space JSON, as promotion writ
   `merge-manifest --write` writes the merged manifest to the working tree. It never stages; run
   `sova-spec.mjs check`, resolve `claims/`, then `git add .sova/spec/manifest.json`. Outside a
   conflict it refuses (`not-conflicted`).
-- **As a Git merge driver**, so the conflict never happens:
+- **As a Git merge driver** (format 1 only), so the conflict never happens:
 
   ```sh
   echo '.sova/spec/manifest.json merge=sova-spec-manifest' >> .gitattributes
@@ -390,7 +401,12 @@ depend on which side landed first; the output is 2-space JSON, as promotion writ
   Git runs it at the repository top; it writes `%A` on success and exits 1 on a same-key conflict,
   which Git reports as a conflict with ours' bytes in place. Sides in different record layouts
   (format 1 on one side, 2 on the other) exit 1 (`layout-mismatch`) and write nothing, so Git keeps
-  the conflict for the index mode below.
+  the conflict for the index mode below. A format 2 project routes neither `manifest.json` nor its
+  record files through a driver, and drops that `.gitattributes` line when it converts: Git's own line
+  merge merges them. A branch from before the conversion still names the driver in its own
+  `.gitattributes`, and the driver refuses a format 2 `manifest.json` (its `claims` is a string), so that
+  branch's merge of the converted default branch stops with a conflict for the index mode below,
+  never a quiet merge.
 - **Records beside each claim file (format version 2), or a merge across layouts.** When a side of the
   merge is in format 2, a `claims/**/*.json` record file is conflicted, or the merged tree holds records
   both ways, `merge-manifest` reads base, ours and theirs from the merge's own commits (merge-base, HEAD,
@@ -425,7 +441,11 @@ changes (`migrate-dirty`), a promotion is pending, or the drafts lock is held; a
 target format is `already-v1` / `already-v2`. On a mixed tree it finishes the move (into the default
 branch tip's layout), refusing a record that differs between its two places (`record-duplicate`).
 Commit the result as one commit of its own; a `.sova/spec/.gitignore` that doesn't admit
-`claims/**/*.json` is named in `next`.
+`claims/**/*.json` is named in `next`. Converting to format 2, drop any
+`.sova/spec/manifest.json merge=sova-spec-manifest` line from `.gitattributes` in that commit (keep
+`merge=sova-spec-claims`); converting back, restore it. With the spec mode on, the census note calls
+the converted files a direct write to the current spec: they are `migrate`'s own, so commit them; never
+undo them.
 
 ## A claims conflict in a Git merge
 

@@ -1,4 +1,4 @@
-// The one case that runs the real spec assessment tool: merge-readiness.integration.test.ts.
+// Merge readiness with git faked; the case that runs a real merge driver is merge-readiness.integration.test.ts.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -486,7 +486,7 @@ test("01a0e63c: an empty leftover worktree (clean, no commits, idle) does not hi
   assert.equal(r.sessionReadinessOf([empty], {}, 4)?.badge, undefined);
 });
 
-test("routine readiness never invokes assessment status and retains ordinary checks and attention", async () => {
+test("routine readiness calls no retired spec-observation hook and keeps its ordinary checks and attention", async () => {
   let statusCalls = 0;
   // Deliberately supply the retired hook as an extra property: restoring its old call is a failure,
   // even if readiness catches the error and still returns the correct ordinary state.

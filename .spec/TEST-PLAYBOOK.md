@@ -1,7 +1,7 @@
 # Acceptance playbook: the Sova spec system
 
 This file is a complete brief for an orchestrating agent. It tells you how to drive every advertised claim
-of the Sova spec system (the `.sova/spec` documentation, its four tools (`sova-spec`, `sova-spec-draft`, `sova-spec-review`, `sova-spec-assess`), the `spec` minor mode and the
+of the Sova spec system (the `.sova/spec` documentation, its three tools (`sova-spec`, `sova-spec-draft`, `sova-spec-review`), the `spec` minor mode and the
 Sova instruction that points at it) through isolated scenarios, have independent observers score them,
 and hand back a report in which every claim is accounted for. You need nothing from the conversation that
 produced this file.
@@ -53,9 +53,10 @@ verdict's `reason`.
 
 The system in one paragraph each:
 
-- **Docs.** A project's documentation is `.sova/spec/manifest.json` (records keyed by `§` IDs: `kind`
+- **Docs.** A project's documentation is its records (keyed by `§` IDs: `kind`
   surface/behavior/section/note, `requires`, `members`, `code`, `incumbent`, labels `authority`
-  candidate/migrated/accepted and `evidence` unreviewed/reviewed/verified) plus `claims/<ns>/<name>.md` prose
+  candidate/migrated/accepted and `evidence` unreviewed/reviewed/verified; in format 2, Sova's, each claim
+  file's in the `.json` beside it, in format 1 all in `.sova/spec/manifest.json`) plus `claims/<ns>/<name>.md` prose
   whose H1/H2 headings declare the IDs. Labels are declared, never derived and never proof.
 - **Core** (`sova-spec.mjs`, never writes): `check`, `census`, `foreign`, the reading path `map`, `where`,
   `toc '<§id>' --dir …`, `read '<§id>'` and `impact '<§id>' --near` (§tools.spec/spec-map, /where-lookup,

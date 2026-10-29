@@ -19,8 +19,7 @@ This page is the extension's guide; each mode has its own below.
   [vis](vis/overview.md), [memory](memory/overview.md). `codemode` is a pi built-in Sova adds and this mode switches
   (§chat.mode-menu/codemode); see [the harness guide](../server/harness/overview.md).
 - Tests: the `mode` line of `pi-config/README.md` "Tests" (`cd pi-config/extensions/mode && node --test index.test.ts …`;
-  the README's Verification section says what each file covers). Sova-only, from the repo root:
-  `node server/tests/spec-assessment.mjs`.
+  the README's Verification section says what each file covers).
 
 ## What Sova relies on
 

@@ -1,0 +1,130 @@
+{
+  "§app.installer/app-entry": {
+    "kind": "behavior",
+    "requires": [
+      "§app/installer",
+      "§app.installer/service",
+      "§app.access/token",
+      "§app.access/unlock"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "scripts/install.sh",
+      "scripts/install.test.sh",
+      "README.md",
+      "docs/getting-started.md",
+      "site/src/content/docs/install.md"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-11T11:27Z"
+    }
+  },
+  "§app.installer/bun": {
+    "kind": "behavior",
+    "requires": [
+      "§app.server-runtime/choice"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "scripts/install.sh",
+      "scripts/install.test.sh",
+      "scripts/fetch-bun.sh",
+      "scripts/bun-release.txt"
+    ]
+  },
+  "§app.installer/claude-code-provider": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "scripts/install.sh",
+      "scripts/install.test.sh"
+    ]
+  },
+  "§app.installer/idempotent": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "scripts/install.sh",
+      "scripts/install.test.sh"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-11T11:27Z"
+    }
+  },
+  "§app.installer/pi-extensions": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "scripts/install.sh",
+      "scripts/install.test.sh"
+    ]
+  },
+  "§app.installer/portable": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "scripts/install.sh",
+      "scripts/install.test.sh",
+      "scripts/install.integration.test.ts"
+    ]
+  },
+  "§app.installer/ref": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "scripts/install.sh",
+      "scripts/install.test.sh",
+      "scripts/install.integration.test.ts",
+      "site/src/data/site.ts"
+    ],
+    "agreed": {
+      "by": "user (al_2 go-ahead)",
+      "at": "2026-10-13T13:02Z"
+    }
+  },
+  "§app.installer/service": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "scripts/install.sh",
+      "scripts/install.test.sh",
+      "scripts/install.integration.test.ts",
+      "docs/running-as-a-service.md"
+    ]
+  },
+  "§app/installer": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "scripts/install.sh",
+      "scripts/install.test.sh",
+      "scripts/install.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-14T15:54Z"
+    },
+    "notOwned": [
+      "§app/access",
+      "§app/updates",
+      "§app.server-runtime/choice"
+    ]
+  }
+}

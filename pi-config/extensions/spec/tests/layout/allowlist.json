@@ -36,62 +36,10 @@
         "reason": "git status pathspec for current-spec files (manifest.json and claims/**, record files included); reads no record"
       }
     ],
-    "pi-config/extensions/spec/core/sova-spec-assess.mjs": [
-      {
-        "rule": "names-manifest",
-        "text": "const mf = await inspect(root, `${q.spec}/manifest.json`);",
-        "reason": "the settings file is a bound assessment input (bytes and hash); its records go through layout.mjs in format 2"
-      },
-      {
-        "rule": "reads-claims",
-        "text": "if (layoutOf(manifest) === 1 && !obj(manifest.claims)) throw new Fail(2, \"core-contract\", \"manifest claims unavailable\");",
-        "reason": "the assessment's records: the format 1 root, or (format 2) layout.mjs assemble over the bound record files"
-      },
-      {
-        "rule": "reads-claims",
-        "text": "entry.roles = sorted([...entry.roles, role]); if (claim) entry.claims = sorted([...entry.claims, claim]);",
-        "reason": "a code entry's own list of claim ids (the claims that map one input file), not the spec's records"
-      },
-      {
-        "rule": "names-manifest",
-        "text": "await add(`${q.spec}/manifest.json`, \"manifest\"); await add(`${q.spec}/README.md`, \"optional-policy\");",
-        "reason": "the settings file is a bound assessment input (bytes and hash); its records go through layout.mjs in format 2"
-      },
-      {
-        "rule": "reads-claims",
-        "text": "for (const [id, record] of Object.entries(manifest.claims)) for (const raw of record.code ?? []) {",
-        "reason": "the assessment's records: the format 1 root, or (format 2) layout.mjs assemble over the bound record files"
-      },
-      {
-        "rule": "names-manifest",
-        "text": "await add(`.sova/spec/drafts/${q.draft}/base/manifest.json`, \"draft-baseline\");",
-        "reason": "the settings file is a bound assessment input (bytes and hash); its records go through layout.mjs in format 2"
-      },
-      {
-        "rule": "names-manifest",
-        "text": "const bm = await inspect(root, `.sova/spec/drafts/${q.draft}/base/manifest.json`);",
-        "reason": "the settings file is a bound assessment input (bytes and hash); its records go through layout.mjs in format 2"
-      },
-      {
-        "rule": "reads-claims",
-        "text": "const own = scope.passages.find((p) => p.id === id), rec = manifest.claims[id];",
-        "reason": "the assessment's records: the format 1 root, or (format 2) layout.mjs assemble over the bound record files"
-      },
-      {
-        "rule": "names-manifest",
-        "text": "const boundManifest = inputs.get(rel(`${q.spec}/manifest.json`));",
-        "reason": "the settings file is a bound assessment input (bytes and hash); its records go through layout.mjs in format 2"
-      }
-    ],
     "pi-config/extensions/spec/core/sova-spec-draft.mjs": [
       {
         "rule": "names-manifest",
-        "text": "inputSources?.push({ path: where(\"manifest.json\"), state: \"absent\" });",
-        "reason": "readTree reads the settings file (kept in both layouts) as one file of the tree, with the draft tool's refusal rules; its records go through layout.mjs assemble"
-      },
-      {
-        "rule": "names-manifest",
-        "text": "const m = await readSource(root, where(\"manifest.json\"), inputSources, readPolicy);",
+        "text": "const m = await readSource(root, where(\"manifest.json\"));",
         "reason": "readTree reads the settings file (kept in both layouts) as one file of the tree, with the draft tool's refusal rules; its records go through layout.mjs assemble"
       },
       {

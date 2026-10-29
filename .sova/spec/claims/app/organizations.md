@@ -860,7 +860,9 @@ Organizations region's own Needs you, never the global one.
     the operator's with `via: "overseer"` (§app.overseer/org-attribution). `via` never widens or
     narrows what a change may do.
   - `wrapup` and `overseer` (autonomous writers; `overseer` is a project's overseer, never the
-    global Overseer): only `skills`, `competence`, `language`, `voice`.
+    global Overseer): only `skills`, `competence`, `language`, `voice`. In a turn the operator's own
+    message started, `overseer` may also create an active person and write any person's `contact`
+    (§app.project-overseer/roster-add).
   - `referral`: only creating a `proposed` person with its referral details; its contact must be a
     real channel (§app.organizations/referrals).
 - A change outside its writer's fields is refused whole and appends nothing.

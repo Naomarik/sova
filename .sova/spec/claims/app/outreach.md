@@ -17,7 +17,9 @@ organization sends from its own pick or the default, never from another (§app.o
 Sova never installs, restarts or stops a sender. It starts one, reconnects or pauses it, or links or
 unlinks a phone, only when the operator presses that button in Settings → Outreach on the sender's
 own host (§app.outreach/sender-controls, §app.outreach/sender-link); a host that sends through a
-peer's sender may reconnect it too, when that peer grants it full control.
+peer's sender may reconnect it too, when that peer grants it full control. The one other start is
+an overseer's, in a turn the user started, of a stopped or failed sender on this host: the same one
+start as Start Sender (§app.outreach/overseer-sender).
 
 ## §app.outreach/channels — Channels and addresses
 
@@ -34,10 +36,18 @@ peer's sender may reconnect it too, when that peer grants it full control.
   page link's "{operator name} sent you your page for {org name}." (§app.owner-page/send). The
   operator name is this host's operator display name (`orgs.json` `operator.name`,
   §app.organizations/registry). The hand-off's question, the goal and the briefing never go into it.
-- A note is at most 500 characters, shown to the person as written. One that repeats private text
-  (About this organization, the overseer's notes, a goal or briefing, the operator's instructions, a
-  profile) or any roster contact value is refused, as an owner update is (§app.owner-page/updates):
-  "This note repeats private text (…). Write it again in your own words."
+- A note is at most 500 characters, shown to the person as written. A note an overseer writes (the
+  global Overseer's or a project overseer's) that repeats private text (About this organization,
+  the overseer's notes, a goal or briefing, the operator's instructions, a profile), about 60
+  characters or more in a row (ignoring case and spacing), or any roster contact value, is refused,
+  as an owner update is (§app.owner-page/updates): "This note repeats private text ({kind}:
+  "{matched words}"). Write it again in your own words.", naming the words it matched (a contact
+  value is named only as "a contact", never shown). The goal and briefing of the conversation whose
+  link the note goes with are not private to that note: they are left out of the check. An overseer's
+  note that holds a preview link this host keeps is refused first: "A preview link goes to people as
+  a link of its own (preview), never in a note." A note the
+  operator writes themselves on the page (Send on WhatsApp, the app's own send) is never checked
+  for private text or contacts.
 
 ## §app.outreach/sender-route — How this host reaches the sender
 
@@ -189,7 +199,9 @@ peer's sender may reconnect it too, when that peer grants it full control.
   Link a Phone and Unlink This Number are §app.outreach/sender-link.
 - `POST /api/outreach/sender/{reconnect,pause,start} {sender?, on?}` serve the operator's own
   browser only: 404 through the mesh proxy or from a peer, 403 for a request carrying the
-  Overseer's sender header, so no tool reaches them. `sender` is an entry id (400 when malformed;
+  Overseer's sender header, so no tool reaches the routes. The overseers' own sender tool calls the
+  same Start in-process, on its own terms (§app.outreach/overseer-sender); nothing else of these
+  controls reaches a model. `sender` is an entry id (400 when malformed;
   409 when no sender has it, or outreach is off), else the default. Each answers that sender's info
   afresh, or 409 with the why: a peer's sender is never paused or started from here, and Start
   refuses a sender that answers ("The sender is already running.").
@@ -197,6 +209,38 @@ peer's sender may reconnect it too, when that peer grants it full control.
   listener lets through only with the admin grant (§mesh.peers/grants; denied, it says "The sender's
   host doesn't give this host full control, so only its own Settings can reconnect it.") and which
   is refused 403 while the account is blocked.
+
+## §app.outreach/overseer-sender — The overseers read the sender and start a stopped one
+
+Both overseers have `sova_whatsapp {op: "status" | "start"}`. The global Overseer reaches the
+default sender, an organization's pick (`org`) or an added number (`sender`, its entry id); a
+project overseer only the sender its organization sends through (§app.outreach/org-sender), or
+this host's default for a standalone project.
+
+- **Status** (a read, any run): the sender's label, where it runs (this host or a peer's), its
+  state as Sova last read it, read afresh first (§app.outreach/sender-health: `open`, `connecting`
+  with its next try, `down`, `logged-out`, `replaced`, `blocked`, `unpaired`, `unreachable`, or
+  stopped: no process answers its socket), the sender's own sentence for it, whether it is paused
+  (on its host, or all sending from this host), and what can be done: "start it" when Start applies,
+  else the step for the user. It never carries a phone number (beyond the last 3 digits the sender
+  reports), a QR, a pairing code, a credential or a path under the sender's home.
+- **Start** (an act: the global Overseer's in a turn the user started; a project overseer's in a run
+  the operator started; refused in any other run as their acts are) is Settings' **Start Sender**
+  (§app.outreach/sender-controls) and nothing more: only for a sender on this host, only while it
+  doesn't answer and its systemd user unit is installed and inactive or failed, `systemctl --user
+  start {unit}` once. It never restarts, stops, reconnects, pauses, resumes or loops; a sender that
+  answers is refused with "The sender is already running.", a peer's sender with "That sender runs
+  on {host}: start it there.", and a sender with no unit with "Sova can't start this sender: it has
+  no systemd user unit here.", and one whose unit is neither inactive nor failed with "{unit} is
+  {state}: Sova starts it only while it is stopped.". Its result is the sender's state read afresh
+  after the start.
+- **Re-linking is the user's.** A sender that is logged out, replaced or unpaired needs a phone
+  linked again: neither tool starts a link or a pairing, shows or asks for a code, or unlinks. Status
+  says so, and the prompts and the tool's description tell the overseers to tell the user to re-link
+  it in Settings → Outreach (Link a Phone, §app.outreach/sender-link) on the sender's host. A blocked
+  sender is reconnected only by the user, as Settings says.
+- Every call is in the overseer's action log (the project overseer's activity), naming the sender
+  by its label, never a number.
 
 ## §app.outreach/sender-link — Linking and unlinking a phone from Settings
 
@@ -371,7 +415,9 @@ peer's sender may reconnect it too, when that peer grants it full control.
   page link); `address-off`,
   `address-unreachable`, `address-not-accepted` (the public address's warning). `link` is left for
   a reference of the wrong kind or an unexpected error.
-- No model sees a link, a token or a number: tools take ids and answer with the outcome.
+- No model sees a hand-off or owner link, a person's own link to a preview, a token or a number:
+  tools take ids and answer with the outcome. A preview's own link is the one exception: the
+  overseers' tools give it (§app.project-overseer/previews), never its sibling's.
 
 ## §app.outreach/log — The send log
 
@@ -437,7 +483,8 @@ peer's sender may reconnect it too, when that peer grants it full control.
   message.", or "Held: the WhatsApp message to {name} waits until {time} so the operator can cancel
   it; …", or why not. Its prompt and the tool's description say plainly that it can message roster
   people on WhatsApp and that each message it sends on its own waits in the cancellable hold.
-- A gathering's own model never sends. No model sees a link, a token or a number.
+- A gathering's own model never sends. No model sees a link a send makes, a token or a number
+  (a preview's own link aside, §app.outreach/links).
 
 ## §app.outreach/sender — The WhatsApp sender
 

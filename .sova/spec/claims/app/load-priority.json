@@ -1,0 +1,41 @@
+{
+  "§app.load-priority/workers": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/priority.ts",
+      "pi-config/extensions/subagents/priority.test.ts",
+      "pi-config/extensions/subagents/runner.ts",
+      "pi-config/extensions/sandbox/index.ts",
+      "server/process-priority.ts",
+      "server/process-priority.test.ts",
+      "server/process-priority.integration.test.ts",
+      "server/chat-manager.ts",
+      "server/tours/runner.ts"
+    ],
+    "requires": [
+      "§app/tours"
+    ],
+    "agreed": {
+      "by": "user (guided-tours build brief)",
+      "at": "2026-10-15T04:40:29.961829+00:00"
+    }
+  },
+  "§app/load-priority": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [],
+    "code": [
+      "docs/perf/2026-10-03-load-and-freezes.md",
+      "docs/perf/RUNBOOK.md",
+      "scripts/perf/load-experiment.mjs",
+      "scripts/perf/load-standin.mjs"
+    ],
+    "notOwned": [
+      "§app/chat-processes",
+      "§app/resource-monitor"
+    ]
+  }
+}

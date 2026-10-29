@@ -345,6 +345,8 @@ describe("turns the user did not start are read-only", () => {
     ...["promote", "resolve", "route", "freeze"].map((op): [string, Record<string, unknown>] => ["sova_project_decisions", { op, org: "any", project: "any", ids: ["d"], conflict: "cf_x", keep: "a", to: "operator", frozen: true }]),
     ...["offer", "handoff", "take", "close", "extend", "revoke_link"].map((op): [string, Record<string, unknown>] => ["sova_gather", { op, session: "some-id", to: ["a", "b"], by: 1 }]),
     ...["start", "run_now", "clear", "idea", "todo", "message", "code"].map((op): [string, Record<string, unknown>] => ["sova_project_overseer", { op, org: "any", project: "any", text: "hello", action: "add", prompt: "p", title: "t" }]),
+    // §app.outreach/overseer-sender: Start Sender is an act; its status a read (below).
+    ["sova_whatsapp", { op: "start" }],
   ];
   const ALLOWED: Record<string, Record<string, unknown>> = {
     sova_note: { op: "read" },
@@ -362,6 +364,10 @@ describe("turns the user did not start are read-only", () => {
     ["sova_org_project", { org: "any", project: "any" }],
     ["sova_project_verbs", { verb: "status", project: agentDir }],
     ["sova_project_verbs", { verb: "doctor", project: agentDir }],
+    // §app.overseer/code-history: reads in any run (each refused here by its own check before anything runs).
+    ["sova_project_git", { project: "no-such-project", command: "log" }],
+    ["sova_server_log", { lines: 0 }],
+    ["sova_whatsapp", { op: "status", sender: "not an id" }],
   ];
 
   test("every Overseer tool is classified: acting, allowed unattended, or a read", () => {

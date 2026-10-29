@@ -745,6 +745,26 @@ tools away from the orchestrator.
   (§app.overseer/hosting), and a project's coding sessions never set or offer it
   (§app.project-overseer/coding-mode). A worker is never strict.
 
+## §chat.mode-menu/delegate-teams — Delegate: a team, or separate workers
+
+In Delegate, the instructions tell the orchestrator how to choose between a team (`team_create`)
+and separate workers (`agent_spawn`):
+
+- **Asked for a team.** When the user asks for a team, the orchestrator always starts a real team
+  with `team_create`. It never starts separate workers and calls them the team.
+- **Parts that depend on each other.** Without being asked, it starts a team when parts of the work
+  must run at the same time on shared work (the same files or interfaces), or when an implementer
+  and a checker must go back and forth.
+- **Otherwise, separate workers.** Independent parts and single jobs go to separate workers with
+  `agent_spawn`. The align planning worker (§chat.alignment/model), the align reviewer
+  (§chat.alignment-review/route) and the spec writer stay single separate workers, as before.
+- **The tool says the same.** `team_create`'s guideline, which a chat's model has in either major
+  mode, says to use a team when the user asks for one or when the parts of the work depend on each
+  other mid-task, and `agent_spawn` for independent parts and single jobs.
+- **Teams themselves don't change.** A team still gets the standing coordinator and monitor its
+  chat's subagent profile configures (§teams/defaults), and the limits of 24 running workers per
+  chat and 24 seats per team still hold (§app.teams/running-limit, §app.teams/seats).
+
 ## §chat.mode-menu/terminal — From a terminal
 
 In a pi terminal session the same per-session mode is switched with `/mode`, a palette category,

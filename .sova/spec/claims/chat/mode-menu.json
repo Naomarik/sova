@@ -26,6 +26,29 @@
       "pi-config/extensions/mode/tests/codemode-handover.mjs"
     ]
   },
+  "§chat.mode-menu/delegate-teams": {
+    "kind": "behavior",
+    "requires": [
+      "§app/teams",
+      "§teams/defaults",
+      "§app.teams/running-limit",
+      "§app.teams/seats",
+      "§chat.alignment/model",
+      "§chat.alignment-review/route"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "pi-config/extensions/mode/prompt.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/mode/tests/fixtures/flag-off-master.json"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-10-29T08:55Z",
+      "source": "pi-session:01a18449-3180-7289-9604-872364de6a92#6b6ec653"
+    }
+  },
   "§chat.mode-menu/how-a-switch-reaches-the-chat": {
     "kind": "behavior",
     "authority": "accepted",

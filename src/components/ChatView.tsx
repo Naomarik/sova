@@ -55,7 +55,6 @@ import {
   queuedText,
   runDetail,
   seedLive,
-  offersRemove,
   liveInputCount,
   takeBackQueued,
   unsentRows,
@@ -118,19 +117,18 @@ import type { RewindRefusal } from "../../shared/protocol";
 import { COMPACT_IMAGES_REFUSAL, compactCommand } from "../../shared/compact";
 import { COMPACT_STREAMING_REASON, COMPACTING_REASON, compactedAnnouncement } from "../lib/compact";
 import {
-  ACTION_LABEL,
   actionReason,
   actionsFor,
   COPIED,
   copyable,
   queueGoneEffect,
-  queueRemoveReason,
   queueRemoveRefusalText,
   type ActionState,
   SHARE_WAIT_REASON,
 } from "../lib/message-actions";
 import { shareHref } from "../lib/share-slice";
 import type { MessageActionItem } from "./MessageActions";
+import { queueRemoveFrame, queueRowActions } from "../lib/queue-actions";
 import { isInput } from "../lib/turn";
 import { noteLinks } from "../lib/links-live";
 import { jumpToEntry, jumpWhenArrived, landExplainJump, transcriptRoot } from "../lib/jump";
@@ -1603,21 +1601,10 @@ export function ChatView(props: {
   /** A message of ours that hasn't been delivered: one Remove, by the id the server knows it by.
       A row with no id (sent before this build, or by a client that minted none) offers nothing —
       there is no truthful way to name it to the server. */
-  const queueActions = (row: { id?: string; state: LiveUserState; text: string; handed?: boolean }): MessageActionItem[] => {
-    const id = row.id;
-    // Only a row the server can still take back (Queued, a steer handed to the agent included) has one
-    // (§chat.transcript/a-queued-message): a Sending… row draws none, before the server's answer or as a
-    // handed follow-up (Stop takes that back).
-    if (!id || !offersRemove(row)) return [];
-    return [
-      {
-        kind: "remove",
-        label: ACTION_LABEL.remove,
-        reason: queueRemoveReason({ state: "queued", pending: removing().includes(id), chat: true, sharedQueue: sharedQueue().includes(id) }),
-        run: () => removeQueued(id),
-      },
-    ];
-  };
+  // Only a row the server can still take back (Queued, a steer handed to the agent included) has one
+  // (§chat.transcript/a-queued-message): a Sending… row draws none (lib/queue-actions.ts).
+  const queueActions = (row: { id?: string; state: LiveUserState; text: string; handed?: boolean }): MessageActionItem[] =>
+    queueRowActions(row, { removing: removing(), sharedQueue: sharedQueue(), remove: (id) => void removeQueued(id) });
 
   const removeQueued = async (id: string) => {
     if (removing().includes(id)) return;
@@ -1627,7 +1614,7 @@ export function ChatView(props: {
       // the row leaves every tab including this one, while `queue_removed` is ours alone and only
       // settles this request and hands the text to this composer. A refusal says why, and for
       // "consumed" leaves the row as the delivered message it turned out to be.
-      await ask("queue_remove", { type: "queue_remove", itemId: id });
+      await ask("queue_remove", queueRemoveFrame(id));
     } finally {
       setRemoving((l) => l.filter((x) => x !== id));
     }

@@ -47,9 +47,9 @@ export interface SteerTicket {
   run<T>(handOff: () => T): T;
   /**
    * Take it back out, synchronously: nothing can take it meanwhile. `removed`: it is out of the agent's
-   * queue (and of what a clear hands back) and the agent never gets it. `later`: the hand-off has not
-   * queued it yet; it is taken out the moment it is, before anything else runs, and a later `remove()`
-   * says `removed`. `taken`: the agent's queue no longer holds it (its loop took it, or a clear did).
+   * queue (and of what a clear hands back) and the agent never gets it. `later`: the hand-off is still
+   * running (its input handlers); when it settles, the message is taken out if the hand-off queued
+   * exactly one, and a later `remove()` says `removed` (else `taken` or `unknown`). `taken`: the agent's queue no longer holds it (its loop took it, or a clear did).
    * `unknown`: there is no one message to name (the hand-off queued none, or more than one).
    */
   remove(): "removed" | "later" | "taken" | "unknown";

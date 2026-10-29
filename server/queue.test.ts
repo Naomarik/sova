@@ -75,12 +75,15 @@ class FakeSdk {
   gate: Promise<void> | null = null;
   /** The hand-off queues its steer twice in its own context (no one message to name). */
   doublePush = false;
+  /** The input step queues a steer of its own, in the hand-off's context, before ours (then waits on `gate`). */
+  inContextForeign: string | null = null;
 
   async handOff(item: WebQueueItem, streaming: boolean): Promise<void> {
     const ticket = this.activeTicket;
     this.activeTicket = null;
     if (this.guardError) throw this.guardError;
     await tick(this.handlerDelay);
+    if (this.inContextForeign !== null && item.kind === "steer") this.enqueue("steer", this.inContextForeign, ticket);
     if (this.gate) await this.gate;
     if (this.guardError) throw this.guardError;
     this.handed.push({ kind: item.kind, text: item.text, images: item.images?.length ?? 0, streaming });
@@ -214,7 +217,8 @@ class FakeSdk {
 /**
  * The fake's SteerTicket, to the contract's words (shared/harness-session.ts; the real one, steer-ticket.ts,
  * is pinned against pi by contract.test.ts P29): the first steer its own hand-off queues is its; removed
- * before that, it comes out the moment it is queued; two in its hand-off, or none once settled: unknown.
+ * while the hand-off runs, it comes out when the hand-off settles, only if exactly one was queued;
+ * two in its hand-off, or none once settled: unknown, and nothing is spliced.
  */
 class FakeTicket implements HandedTicket {
   private token: object | null = null;
@@ -226,23 +230,24 @@ class FakeTicket implements HandedTicket {
   run<T>(handOff: () => T): T {
     this.sdk.activeTicket = this;
     const out = handOff();
-    const done = () => void (this.settled = true);
+    const done = () => {
+      this.settled = true;
+      if (this.wanted && this.pushes === 1 && this.token) this.removed = this.sdk.takeOut(this.token) === "removed";
+    };
     void (out as unknown as Promise<unknown>).then(done, done);
     return out;
   }
   queued(token: object): void {
     if (++this.pushes !== 1) return;
     this.token = token;
-    if (this.wanted) this.removed = this.sdk.takeOut(token) === "removed";
   }
   remove(): "removed" | "later" | "taken" | "unknown" {
     if (this.removed) return "removed";
-    if (this.pushes > 1) return "unknown";
-    if (!this.token) {
-      if (this.settled) return "unknown";
+    if (!this.settled) {
       this.wanted = true;
       return "later";
     }
+    if (this.pushes !== 1 || !this.token) return "unknown";
     const out = this.sdk.takeOut(this.token);
     if (out === "removed") this.removed = true;
     return out;
@@ -1229,6 +1234,25 @@ describe("a handed steer stays removable until the agent takes it (§chat.transc
     assert.equal(r.queue.size, 0);
     await settle();
     assert.deepEqual(r.gone(r.one), [["img", "removed"]], "and it never departs a second time");
+  });
+
+  test("X during the image step, with an input step that queued a foreign steer first in its context: refused shared_queue, the foreign steer stays", async () => {
+    const sdk = new FakeSdk();
+    let open!: () => void;
+    sdk.gate = new Promise<void>((resolve) => (open = resolve));
+    sdk.inContextForeign = "an extension's own steer";
+    const r = rig(sdk, { tickets: true });
+    steer(r, "img", "look", [{ type: "image", data: "AAAA", mimeType: "image/png" }]);
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["an extension's own steer"], "the foreign steer is in pi; ours is still in its handler");
+    const removal = r.queue.remove("img");
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["an extension's own steer"], "nothing was taken out at the first push");
+    open();
+    const outcome = await removal;
+    assert.deepEqual(outcome.ok ? null : outcome.reason, "shared_queue", "no one message to name: refused, never guessed");
+    assert.deepEqual(r.sdk.realSteering, ["an extension's own steer", "look"], "nothing spliced: the foreign steer stays, and so does ours");
+    assert.deepEqual(r.gone(r.one), [], "nothing departed");
   });
 
   test("a removal waiting on a hand-off that fails is refused, and the failure is what is reported", async () => {

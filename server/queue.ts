@@ -34,8 +34,8 @@ import type { QueueGoneReason, QueueItem, QueueRemoveRefusal } from "../shared/p
  * the hand-off queued (by identity, never by text, so one of three identical steers is that one and
  * another sender's steer is never it) and takes it out of the agent's queue on its own, synchronously,
  * so it is either still there and goes, or already taken and is a sent message. One asked to go while
- * its hand-off is still running (an image being described) goes the moment pi queues it. When the
- * ticket cannot name one message the removal is refused (`shared_queue`), never guessed. A handed
+ * its hand-off is still running (an image being described) goes when that hand-off settles, if it
+ * queued exactly one message (else it is refused, nothing spliced). When the ticket cannot name one message the removal is refused (`shared_queue`), never guessed. A handed
  * FOLLOW-UP, and a steer that started a turn of its own, cannot be removed: Stop takes them back.
  * Items still held in Sova are a plain array: removing a middle one, one of three identical texts, or
  * an image-only one is a splice that cannot fail and cannot reorder anything.
@@ -181,7 +181,7 @@ export interface SdkQueueView {
   /**
    * A ticket for the steer about to be handed over (shared/harness-session.ts SteerTicket): `run` the
    * hand-off inside it, and `remove()` takes that one message back out of the SDK's queue,
-   * synchronously — "removed", "later" (not queued yet: it goes the moment it is), "taken" (the agent
+   * synchronously — "removed", "later" (its hand-off still runs: it goes when that settles, if it queued exactly one), "taken" (the agent
    * already has it) or "unknown" (no one message to name). Absent: handed steers can't be removed.
    */
   steerTicket?(): HandedTicket | undefined;
@@ -443,7 +443,8 @@ export class WebQueue {
   }
 
   /** A handed steer, by its ticket. Synchronous against the SDK's queue, except while its own hand-off
-      runs: then it goes the moment pi queues it, and the answer waits for the hand-off to settle. */
+      runs: then the ticket takes it out as the hand-off settles (only if it queued exactly one message),
+      and the answer waits for that: removed, consumed if the agent took it meanwhile, or shared_queue. */
   private async removeHanded(item: WebQueueItem, ticket: HandedTicket): Promise<RemoveOutcome> {
     const out = ticket.remove();
     if (out === "removed") {

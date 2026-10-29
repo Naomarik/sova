@@ -96,7 +96,13 @@ class PiSteerTicket implements SteerTicket {
       this.settled = true;
       throw err;
     }
-    const done = () => void (this.settled = true);
+    const done = () => {
+      this.settled = true;
+      // A removal asked for while the hand-off ran: now its pushes are all known. Exactly one is this
+      // hand-off's own message; any other count (an input handler's own steer pushed in this context
+      // too, or nothing) names no one message, and nothing is spliced.
+      if (this.wanted && this.pushes === 1 && this.message) this.removed = takeSteerOut(this.session, this.message) === "removed";
+    };
     if (out && typeof (out as { then?: unknown }).then === "function") (out as unknown as Promise<unknown>).then(done, done);
     else done();
     return out;
@@ -106,19 +112,18 @@ class PiSteerTicket implements SteerTicket {
   queued(message: unknown): void {
     this.pushes++;
     if (this.pushes !== 1 || !message || typeof message !== "object") return;
+    // Only recorded, even when a removal is waiting: the first push in this context may be an input
+    // handler's own steer, so nothing is taken out before the hand-off settles (run's `done`).
     this.message = message;
-    // A removal asked for before pi queued it: out again before anything else can run.
-    if (this.wanted) this.removed = takeSteerOut(this.session, message) === "removed";
   }
 
   remove(): "removed" | "later" | "taken" | "unknown" {
     if (this.removed) return "removed";
-    if (this.pushes > 1) return "unknown";
-    if (!this.message) {
-      if (this.settled) return "unknown";
+    if (!this.settled) {
       this.wanted = true;
       return "later";
     }
+    if (this.pushes !== 1 || !this.message) return "unknown";
     const out = takeSteerOut(this.session, this.message);
     if (out === "removed") this.removed = true;
     return out;

@@ -462,7 +462,13 @@ function.** Standalone `claude` use outside Sova and pi is not recorded.
   caller names, so two concurrent side calls never take each other's owner. A worker names its
   parent session.
 - **Counted once.** Records are deduplicated by their key, so a replayed stream or a record read
-  twice adds nothing. Nothing is recounted from transcripts: spend from before the ledger existed
+  twice adds nothing. A Claude Code residual record whose key names a `[1m]` model
+  (`ccr:<session>:<total>:claude-opus-5-5[1m]`) is a double count, written before 7 Oct 2026 when
+  the residual compared the CLI's `[1m]`-keyed totals with messages naming the model without it,
+  so it re-added its whole turn: such a record is never folded into any figure, in any day, and the
+  developer cache check (§app.insights/usage-resend) leaves it out too. No record written since
+  has that key; the one-off repair (§app.insights/usage-ledger-repair) removes the old ones from
+  the files. Nothing is recounted from transcripts: spend from before the ledger existed
   is not shown.
 - **Off the main loop.** A helper child process of the server reads the records (at its start it
   catches up every day and every file past what it already read, then follows appends), keeps a
@@ -476,6 +482,32 @@ function.** Standalone `claude` use outside Sova and pi is not recorded.
   checked-in seed is only the starting copy when that file is missing. The server pulls models.dev
   every 6 hours and on demand, and a pull only adds dated periods: an old period is never dropped
   or rewritten.
+
+## §app.insights/usage-ledger-repair — Removing the 4–7 Oct doubled residuals from the usage files
+
+**A one-off script, `bun scripts/usage-repair-1m-residuals.ts`, removes the doubled `[1m]` Claude
+Code residual records (§app.insights/usage-ledger, "Counted once") from the usage files of
+2026-10-04 to 2026-10-07, keeping a backup first.** It reads the agent dir from `--agent-dir`, else
+`$PI_CODING_AGENT_DIR`, else `~/.pi/agent`, and no other days.
+
+- **Dry run by default.** Without `--write` it changes nothing: it lists per day and file how many
+  lines go, the records removed, the expected drop in dollars, and those days' totals by model
+  before and after (`--json` for the same as data), then says to stop Sova's server and run it
+  again with `--write`.
+- **`--write`.** First it copies the four day folders, and the usage helper's saved snapshots of
+  those days, to `<agent dir>/usage/v1-backup-<yyyymmdd-hhmmss>/` beside `v1`, and checks each copy
+  byte for byte. Then it rewrites each file without the doubled lines, through a temporary file and
+  a rename (a sealed `.jsonl.gz` gzipped again, an unfinished last line kept as it is), and deletes
+  those days' snapshots so the helper counts the days again from their files when the server next
+  starts, reusing no saved offset or row.
+- **It refuses** to write, changing nothing, while a Sova server or usage helper on this agent dir
+  runs (read from `/proc` on Linux); when it can't see this machine's processes (no `/proc`, or a
+  sandbox's own), unless `--assume-stopped` says the server was stopped by hand; when a day holds a
+  half-done helper write (`.sealing`, `.tmp`); and when the backup folder already exists.
+- **No notice** on any tab: the totals of those days simply fall once the helper recounts them.
+- **Undo.** Stop the server, put the backup's day folders back under `usage/v1` and its snapshots
+  back under `sova/usage-ledger/days`, and start it again. The files come back as they were, but the
+  ledger still never folds a doubled residual, so the doubled amounts don't return.
 
 ## §app.insights/reply-timing — Measured reply timing: each reply's wait, thinking and reply time, recorded once
 
@@ -642,7 +674,8 @@ launch with `launch` recorded: the re-send dollars and tokens, how many launches
 many picked up Claude's saved copy, and the reasons (each `why` with its `fallback`), costliest
 first. A conversation's own calls only: its workers and side calls are not in it, and records from
 before the field existed count nothing. A developer check (`pnpm run claude:cache-check`) reads the
-ledger files only, never calls a model, and prints per kind of conversation the share of its Claude
+ledger files only, never calls a model, leaves out the doubled `[1m]` residuals the ledger leaves
+out (§app.insights/usage-ledger), and prints per kind of conversation the share of its Claude
 spend that went to re-sending history and the top reasons; for records without `launch` it
 estimates a re-send from the token pattern (a cache write over 5,000 tokens where the cache read
 falls short of the call before it by at least 5,000).
@@ -683,7 +716,7 @@ and neither does one whose launches were never recorded.
 - **Sections.** Stats: Total, Main sessions, Workers, One-shots, each a dollar figure with a small
   line under it, its cache hit rate (`96% from cache`; with no cache read or write in it, "No cache
   use reported"). A daily cost bar chart (local days). Tables by provider (tokens · hit rate ·
-  cost), by model (input · cache · hit rate · output · cost), by kind and by project
+  cost), by model (Model · New input · Cache reads · Hit rate · Output · Cost, below), by kind and by project
   (registered projects, code checkouts, the Overseer and Other folders, §app.insights/cost-by-project).
   Top sessions, most expensive first; a click opens
   the session, and a row whose conversation re-sent its history says so under its name
@@ -692,14 +725,45 @@ and neither does one whose launches were never recorded.
   cache write), output left out, in whole percent (`<1%` and `>99%` at the edges, never a rounded
   `0%` or `100%` that isn't exact). A table row with no cache read or write shows `—`, its `title`
   "No cache use reported for this model." (a provider row: "… for this provider."); such rows still
-  count their input in a card's rate. A rate only: no figure of money saved.
+  count their input in a card's rate. A rate only: no figure of money saved. A Hit rate cell's
+  `title` reads `{reads} of {new input + reads} input tokens read from cache`.
+- **By model.** **New input** is the input tokens not read from cache: uncached input plus cache
+  writes, so a provider that bills its new content as cache writes (Claude Code) and one that bills
+  it as plain input read alike; its `title` gives the split, `{uncached} uncached · {writes}
+  written to cache` (`91k uncached · 162.6M written to cache`). **Cache reads** is the cache read
+  tokens alone. There is no separate cache write column: writes show in New input's `title` and in
+  the row's breakdown.
+- **A model row opens to where its cost went.** A click anywhere on the row (not one that ends a
+  text selection), or Enter or Space on its name, opens or closes it; the name is a button with a
+  chevron that turns when open (`aria-expanded`, `aria-controls` the detail row; screen readers
+  hear ", show where {model}'s cost went" / ", hide …"). Every row starts closed and any number
+  can be open. An open row stays open through the tab's refresh and a change of range or filter
+  while its model is still listed; a model that leaves the table comes back closed. The open state
+  is not in the URL. The open row shows **Where {model}'s cost went**: one horizontal bar in four
+  parts, each as wide as its share of the row's dollars, then a legend in one fixed order, never
+  sorted by size: **Cache writes, Cache reads, Output, Input**. Each part shows its dollars, its
+  share of the row's cost in whole percent (`<1%` and `>99%` at the edges, as Hit rate) and its
+  token count (`{n} tok`). Hovering Cache writes splits it into 1-hour and 5-minute writes, each
+  its dollars and tokens (screen readers get the split as text). The parts are ink shades told
+  apart by label and order as much as by shade, never by color alone.
+  - **No price.** A model with no price on record shows the token split only and "No price on
+    record, so no cost split."
+  - **Free.** A model that costs nothing shows the token split only and, for a local model, "It
+    runs on this device, so it costs nothing." (otherwise "It costs nothing, so there is no cost
+    split.").
+  - **Partly priced.** The dollars and shares split the priced calls only; each part's tokens
+    still count every call, and a note says so: "{n} tokens had no price: the dollars split the
+    priced calls, the token counts cover every call." (1: "1 token …").
 - **Prices.** "Prices as of {date}" with the last change found, and a **Refresh Prices** button that
   pulls the prices now (§app.insights/usage-ledger); it says so when pulling is off or the prices are
   still the starter list.
 - **When the helper is down** the tab says the counter isn't running yet and that nothing was lost;
   it never shows another count.
 - **This device.** The tab says it counts this device only.
-- Works at phone widths: tables stack under 560px of page width.
+- Works at phone widths: tables stack under 560px of page width. Stacked, By model keeps one block
+  per model; tapping the model's name opens its breakdown under the block, the legend one part per
+  line with its tokens under its name. Where a table scrolls sideways, an open breakdown keeps to
+  the visible width.
 
 ## §app.insights/cost-by-project — The Costs tab's By project table
 

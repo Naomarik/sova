@@ -230,15 +230,21 @@ strip, empty or not: a tab that came and went would move the strip under the rea
   `{n} tokens in and out · $x · {p}% from cache` (input + output; cache in its `title`; dollars at API prices,
   subscriptions included; the cache hit rate, below, left out when the session reported no cache use). Under it, when the session's own conversation re-sent its history, the
   re-sent line (§app.insights/usage-resend-display). Then a table with one row per model × origin, the main thread first and
-  then the biggest spender: Model · Where (Main thread, Side calls, Subagents) · In · Out ·
-  Cache read · Cache write · Hit rate · Cost, with a **Main thread Σ** footer. The **cache hit rate** is the
+  then the biggest spender: Model · Where (Main thread, Side calls, Subagents) · New input · Out ·
+  Cache reads · Hit rate · Cost, with a **Main thread Σ** footer. New input (uncached input plus
+  cache writes, its `title` the split) replaces In and Cache write, as on the Costs tab
+  (§app.insights/cost-history). The **cache hit rate** is the
   share of input tokens read from cache: cache read ÷ (input + cache read + cache write), output
   left out, in whole percent (`<1%` and `>99%` at the edges, never a rounded `0%` or `100%` that
   isn't exact). A row with no cache read or write shows `—`, its `title` "No cache use reported
-  for this model."; such rows still count their input in the headline's and Σ's rates. Every branch counts, retries
+  for this model."; such rows still count their input in the headline's and Σ's rates. Each model
+  row opens to **Where {model}'s cost went** as the Costs tab's By model rows do, staying open
+  through the tab's polls while listed (the Σ footer doesn't open); in a table that scrolls
+  sideways the breakdown keeps to the pane's visible width. Every branch counts, retries
   and housekeeping included; a fork counts only its own calls. Then this session's workers:
   `{n} subagents · {w} working`. Under 400px of pane the table stacks, one block per row: Model and
-  Where on its first line, each count labelled under it. Before anything is spent the tab says
+  Where on its first line, each count labelled under it; an open row's breakdown spans the block,
+  its legend one part per line. Before anything is spent the tab says
   "Nothing spent in this session yet." (the worker count still shows when there are workers);
   while the first load is out it shows a placeholder, never that line.
 - **Sharing** holds the Sharing section (§app.session-share/sheet). The pane reads the session's

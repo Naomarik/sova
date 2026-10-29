@@ -58,16 +58,18 @@
       "server/usage-routes.ts",
       "server/usage-helper/query.ts",
       "server/usage-helper/price-book.ts",
-      "shared/usage/wire.ts"
+      "shared/usage/wire.ts",
+      "src/components/CostBreakdown.tsx",
+      "src/cost-breakdown.css"
     ],
     "requires": [
       "§app.insights/usage-ledger",
       "§app.insights/team-cards"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-22T10:03Z",
-      "source": "pi-session:9036aa60-89be-4d56-a5e2-2a554f0bf09b#dcfc92f9"
+      "by": "user",
+      "at": "2026-10-29T10:30Z",
+      "source": "pi-session:d5243096-4638-4e5a-b0a2-a6393cd8c7cb#2879ee9c"
     }
   },
   "§app.insights/explanations-page": {
@@ -705,8 +707,27 @@
       "§app.project-costs/pricing"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-13T00:16Z"
+      "by": "user",
+      "at": "2026-10-29T10:30Z",
+      "source": "pi-session:d5243096-4638-4e5a-b0a2-a6393cd8c7cb#2879ee9c"
+    }
+  },
+  "§app.insights/usage-ledger-repair": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.insights/usage-ledger"
+    ],
+    "code": [
+      "scripts/usage-repair-1m-residuals.ts",
+      "scripts/usage-repair-1m-residuals.test.ts",
+      "server/usage-helper/records.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-29T10:30Z",
+      "source": "pi-session:d5243096-4638-4e5a-b0a2-a6393cd8c7cb#2879ee9c"
     }
   },
   "§app.insights/usage-model-rows": {
@@ -794,7 +815,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-10T10:06Z"
+      "at": "2026-10-29T10:30Z",
+      "source": "pi-session:d5243096-4638-4e5a-b0a2-a6393cd8c7cb#2879ee9c"
     },
     "evidence": "verified"
   },

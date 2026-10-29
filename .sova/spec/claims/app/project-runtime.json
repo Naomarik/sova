@@ -273,7 +273,8 @@
       "statecharts/src/sova/statecharts/build.cljc",
       "statecharts/src/sova/statecharts/rules/runtime.cljc",
       "statecharts/test/sova/statecharts/refit/runtime_test.cljs",
-      "statecharts/EVENTS.md"
+      "statecharts/EVENTS.md",
+      "server/overseer-tools.ts"
     ],
     "requires": [
       "§app.project-runtime/onboard"

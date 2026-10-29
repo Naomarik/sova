@@ -515,6 +515,27 @@
       "source": "pi-session:870ce3a5-70c4-4ee4-86d6-e43d0a143cb2#58d50ef4"
     }
   },
+  "§chat.markdown/working-notes": {
+    "kind": "behavior",
+    "code": [
+      "src/lib/markdown.ts",
+      "src/components/Markdown.tsx",
+      "src/components/Thread.tsx",
+      "src/design/base.css",
+      "src/components/ReplyMarkdown.tsx",
+      "src/lib/working-notes.test.ts"
+    ],
+    "requires": [
+      "§chat/markdown"
+    ],
+    "authority": "accepted",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-27T23:54Z",
+      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
+    },
+    "evidence": "verified"
+  },
   "§chat/markdown": {
     "kind": "surface",
     "authority": "accepted",

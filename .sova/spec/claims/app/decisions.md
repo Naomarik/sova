@@ -350,9 +350,13 @@ appends (one line each).
 
 - **What it asks.** One request per alignment card version (`al_N` at its `rev`): for each open
   question, `stakes_{qN}`, a choice of low-risk / deletes-data / costs-money /
-  changes-architecture-or-contract. The state is the document's title and summary and each open
-  question's topic, ask, options with their consequence lines, and recommendation; never the
-  findings, notes, code or files. Redacted before it leaves, like every request.
+  changes-architecture-or-contract. Each `stakes_{qN}` question's instructions name that question
+  by its id and topic and tell the assessor to judge only that question, the card's title, summary
+  and other questions being background only, so each chip rates its own question, not the card as
+  a whole. The state is the document's title and summary and each open question's topic, ask,
+  options with their consequence lines, and recommendation; never the findings, notes, code or
+  files. Redacted before it leaves, like every request. Labels stored before this wording are kept
+  as they are and never asked again; a new card version is asked with it.
 - **When and which.** When a card with open questions is shown (`GET /api/sessions/align-triage`),
   only with **attention signals on**, through the same privacy gate and exclusions as the turn
   card (§app.decisions/attention-signals). The answer is stored per session, document and `rev`

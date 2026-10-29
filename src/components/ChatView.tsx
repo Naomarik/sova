@@ -1605,8 +1605,9 @@ export function ChatView(props: {
       there is no truthful way to name it to the server. */
   const queueActions = (row: { id?: string; state: LiveUserState; text: string; handed?: boolean }): MessageActionItem[] => {
     const id = row.id;
-    // Only a row the server holds (Queued) has one (§chat.transcript/a-queued-message): a Sending… row
-    // draws none, before the server's answer or once handed to the agent (Stop takes that back).
+    // Only a row the server can still take back (Queued, a steer handed to the agent included) has one
+    // (§chat.transcript/a-queued-message): a Sending… row draws none, before the server's answer or as a
+    // handed follow-up (Stop takes that back).
     if (!id || !offersRemove(row)) return [];
     return [
       {

@@ -7,10 +7,10 @@ import type { QueueGoneReason, QueueItem, QueueRemoveRefusal } from "../shared/p
  * WHY THERE IS ONE AT ALL. The SDK can queue messages (`steer`, `prompt` with a
  * `streamingBehavior`) but it cannot un-queue ONE of them: `AgentSession` exposes `clearQueue()`,
  * `getSteeringMessages()`, `getFollowUpMessages()` and `pendingMessageCount`, and the queues
- * underneath (`PendingMessageQueue`) have enqueue/peek/drain/clear only. Per-item removal is
- * therefore either a reach-in to private fields or an app-side queue. This is the app-side queue,
- * and it uses PUBLIC SDK API only — nothing here reads or splices a private field, so a pin bump
- * cannot silently change what a removal does.
+ * underneath (`PendingMessageQueue`) have enqueue/peek/drain/clear only. Items still held here are
+ * an app-side queue: removing one is a splice of our own array. A HANDED steer is taken back through
+ * the harness (`SdkQueueView.steerTicket`, quirk P29 steer-remove: the pi adapter splices pi's own
+ * copies, by the message's identity); nothing in this module reads or splices a pi field itself.
  *
  * THE RULE THAT MAKES IT WORK: a run of our items is handed to the SDK only when the SDK IS HOLDING
  * NOTHING AT ALL (`Agent.hasQueuedMessages()` false — ours or anyone's, either kind), and the items
@@ -29,11 +29,16 @@ import type { QueueGoneReason, QueueItem, QueueRemoveRefusal } from "../shared/p
  * still counts the earlier ones as held (`settleEarlierHanded` catches the case where an event shows
  * the gap). That is a split batch and a late "delivered", never a lost or reordered message.
  *
- * A HANDED ITEM CANNOT BE REMOVED (§chat.transcript/a-queued-message): taking one of N back out of
- * pi needs `clearQueue()`, which empties everything, and re-handing the rest would run their input
- * handlers again. Stop takes them all back, in order. Items still held in Sova are a plain array:
- * removing a middle one, one of three identical texts, or an image-only one is a splice that cannot
- * fail and cannot reorder anything.
+ * A HANDED STEER STAYS REMOVABLE until the agent takes it (§chat.transcript/a-queued-message). Each
+ * steer is handed over with a TICKET (`SdkQueueView.steerTicket`): the harness names the very message
+ * the hand-off queued (by identity, never by text, so one of three identical steers is that one and
+ * another sender's steer is never it) and takes it out of the agent's queue on its own, synchronously,
+ * so it is either still there and goes, or already taken and is a sent message. One asked to go while
+ * its hand-off is still running (an image being described) goes the moment pi queues it. When the
+ * ticket cannot name one message the removal is refused (`shared_queue`), never guessed. A handed
+ * FOLLOW-UP, and a steer that started a turn of its own, cannot be removed: Stop takes them back.
+ * Items still held in Sova are a plain array: removing a middle one, one of three identical texts, or
+ * an image-only one is a splice that cannot fail and cannot reorder anything.
  *
  * WHICH QUEUE IS READ, AND WHY IT IS NOT THE OBVIOUS ONE. There are TWO structures per kind, and
  * the visible one is the wrong one:
@@ -72,7 +77,7 @@ import type { QueueGoneReason, QueueItem, QueueRemoveRefusal } from "../shared/p
  * Neither reading trusts a non-zero mirror to mean anything, which is what makes them immune to
  * the entries it holds for ever.
  *
- * WHAT IS NOT SOLVED, ON PURPOSE. A handed item is never removed one by one (above). Extensions
+ * WHAT IS NOT SOLVED, ON PURPOSE. A handed follow-up is never removed one by one (above). Extensions
  * queue follow-ups of their own (`pi.sendUserMessage(…, {deliverAs:"followUp"})` — wake-nudge, btw,
  * explain, subagents, command-palette), so `clearQueue()` is lossless only when ours is all that is
  * in there; Stop clears the lot and hands every text back. Every approximation in here is built to
@@ -173,6 +178,19 @@ export interface SdkQueueView {
    * exactly that when a message of the other kind carries our text.
    */
   mirrorHas(kind: QueueKind, text: string): boolean;
+  /**
+   * A ticket for the steer about to be handed over (shared/harness-session.ts SteerTicket): `run` the
+   * hand-off inside it, and `remove()` takes that one message back out of the SDK's queue,
+   * synchronously — "removed", "later" (not queued yet: it goes the moment it is), "taken" (the agent
+   * already has it) or "unknown" (no one message to name). Absent: handed steers can't be removed.
+   */
+  steerTicket?(): HandedTicket | undefined;
+}
+
+/** shared/harness-session.ts SteerTicket, structurally (this module imports nothing from the harness). */
+export interface HandedTicket {
+  run<T>(handOff: () => T): T;
+  remove(): "removed" | "later" | "taken" | "unknown";
 }
 
 /**
@@ -244,7 +262,8 @@ export type RemoveOutcome =
 /** How many departures are remembered for the sake of a removal that lost its race. */
 const DEPARTED_MEMORY = 100;
 
-/** Why a handed item can't be removed (§chat.transcript/a-queued-message). */
+/** Why a handed item with no ticket can't be removed (a follow-up, or a steer that started a turn;
+    §chat.transcript/a-queued-message). Their rows draw no Remove, so only an API caller reads it. */
 export const HANDED_REFUSAL = "It's already with the agent, which takes it at its next step. Stop takes it back.";
 
 const REFUSALS: Record<Exclude<QueueRemoveRefusal, "internal">, string> = {
@@ -296,10 +315,15 @@ export class WebQueue {
    * for in-flight requests, not a history.
    */
   private departed = new Map<string, QueueGoneReason>();
+  /** The ticket of each handed steer that has one (by item id): what can still take it back. */
+  private tickets = new Map<string, HandedTicket>();
+  /** Removals asked for while that item's hand-off was still running: settled when it ends. */
+  private removeAfterHandOff = new Set<string>();
 
   constructor(private readonly deps: QueueDeps) {}
 
-  /** The wire snapshot: the handed items first (they go out first, "sending"), then the waiting ones. */
+  /** The wire snapshot: the handed items first (they go out first), then the waiting ones. A handed
+      steer with a ticket is still "queued": it can be taken back until the agent takes it. */
   snapshot(): QueueItem[] {
     const wire = (it: WebQueueItem, state: QueueItem["state"]): QueueItem => ({
       id: it.id,
@@ -311,7 +335,7 @@ export class WebQueue {
       ...(it.overseer ? { overseer: true as const } : {}),
       ...(it.session ? { fromSession: { sessionId: it.session.sessionId, title: it.session.title } } : {}),
     });
-    return [...this.handed.map((it) => wire(it, "sending")), ...this.held.map((it) => wire(it, "queued"))];
+    return [...this.handed.map((it) => wire(it, this.tickets.has(it.id) ? "queued" : "sending")), ...this.held.map((it) => wire(it, "queued"))];
   }
 
   get size(): number {
@@ -390,8 +414,10 @@ export class WebQueue {
   }
 
   /**
-   * Remove one item by id. A WAITING item always goes. A HANDED one never does
-   * (§chat.transcript/a-queued-message): it is already with the agent, and Stop takes it back.
+   * Remove one item by id. A WAITING item always goes. A HANDED steer with a ticket goes while the
+   * agent has not taken it (its ticket takes exactly that message out of the SDK's queue); one the
+   * agent took is refused `consumed`, and one the ticket can't name `shared_queue`. Any other handed
+   * item never goes (§chat.transcript/a-queued-message): Stop takes it back.
    */
   async remove(itemId: string): Promise<RemoveOutcome> {
     const idx = this.held.findIndex((it) => it.id === itemId);
@@ -401,7 +427,10 @@ export class WebQueue {
       this.deps.onChange(this.snapshot());
       return { ok: true, item };
     }
-    if (!this.handed.some((it) => it.id === itemId)) return this.refuseDeparted(itemId);
+    const handedItem = this.handed.find((it) => it.id === itemId);
+    if (!handedItem) return this.refuseDeparted(itemId);
+    const ticket = this.tickets.get(itemId);
+    if (ticket) return this.removeHanded(handedItem, ticket);
     // "no" is the REAL queue being empty, which is the only honest proof of delivery: the loop
     // has taken it and the model is getting it, whether or not `message_start` has been emitted.
     if (!this.handing && this.sdkTookHanded()) {
@@ -411,6 +440,36 @@ export class WebQueue {
       return refuse("consumed");
     }
     return refuse("internal", HANDED_REFUSAL);
+  }
+
+  /** A handed steer, by its ticket. Synchronous against the SDK's queue, except while its own hand-off
+      runs: then it goes the moment pi queues it, and the answer waits for the hand-off to settle. */
+  private async removeHanded(item: WebQueueItem, ticket: HandedTicket): Promise<RemoveOutcome> {
+    const out = ticket.remove();
+    if (out === "removed") {
+      this.dropHanded(item);
+      this.depart(item, "removed");
+      this.deps.onChange(this.snapshot());
+      void this.pump();
+      return { ok: true, item };
+    }
+    if (out === "later") {
+      this.removeAfterHandOff.add(item.id);
+      while (this.handing && this.handed.at(-1) === item) await this.handOffSettled;
+      this.removeAfterHandOff.delete(item.id);
+      if (this.departed.get(item.id) === "removed") return { ok: true, item };
+      if (this.handed.includes(item)) return this.removeHanded(item, ticket);
+      return this.refuseDeparted(item.id);
+    }
+    if (out === "taken") {
+      // pi's lane is first in, first out: what was handed before it was taken with it.
+      const done = this.handed.splice(0, this.handed.indexOf(item) + 1);
+      for (const it of done) this.depart(it, "delivered");
+      this.deps.onChange(this.snapshot());
+      void this.pump();
+      return refuse("consumed");
+    }
+    return refuse("shared_queue");
   }
 
   /** Every handed item has been delivered: each departs so, in order. */
@@ -429,6 +488,7 @@ export class WebQueue {
 
   /** Record the departure, then announce it. Both, always, in that order. */
   private depart(item: WebQueueItem, reason: QueueGoneReason): void {
+    this.tickets.delete(item.id);
     this.departed.set(item.id, reason);
     if (this.departed.size > DEPARTED_MEMORY) this.departed.delete(this.departed.keys().next().value!);
     this.deps.onGone(item, reason);
@@ -503,6 +563,7 @@ export class WebQueue {
     this.closed = true;
     this.held = [];
     this.clearHanded();
+    this.tickets.clear();
     if (this.settleRetry) clearTimeout(this.settleRetry);
     this.settleRetry = null;
   }
@@ -627,7 +688,11 @@ export class WebQueue {
       this.lastMirrorObserved = this.deps.sdk.mirrorTotal();
       this.grewWhileHanding = false;
       const streaming = this.deps.streaming();
-      this.deps.onChange(this.snapshot()); // the row flips to "sending" before we await anything
+      // A steer into a running turn waits in the SDK's queue for the agent's next step: its ticket keeps
+      // it removable until then. One handed to an idle agent starts a turn of its own and gets none.
+      const ticket = next.kind === "steer" && streaming ? this.deps.sdk.steerTicket?.() : undefined;
+      if (ticket) this.tickets.set(next.id, ticket);
+      this.deps.onChange(this.snapshot()); // a row with no ticket flips to "sending" before we await anything
       // A Stop that arrives during the hand-off waits on this instead of reading the SDK's count,
       // which is 0 for an item that has not been given to it YET as well as for one it has already
       // taken. The finally is what makes that promise safe to await: every exit from the block
@@ -637,8 +702,9 @@ export class WebQueue {
       this.handing = true;
       try {
         try {
-          await this.deps.handOff(next, streaming);
+          await (ticket ? ticket.run(() => this.deps.handOff(next, streaming)) : this.deps.handOff(next, streaming));
         } catch (err) {
+          if (!this.handed.includes(next)) continue; // removed meanwhile (its ticket took it out)
           this.dropHanded(next);
           this.depart(next, "failed");
           this.deps.onHandOffError(next, err);
@@ -646,6 +712,15 @@ export class WebQueue {
           continue;
         }
         if (this.closed) return;
+        // Removed while its hand-off ran: already gone (pi had queued it), or asked for before pi
+        // queued it, in which case the ticket took it out the moment pi did. The removal says which.
+        if (!this.handed.includes(next)) continue;
+        if (ticket && this.removeAfterHandOff.has(next.id) && ticket.remove() === "removed") {
+          this.dropHanded(next);
+          this.depart(next, "removed");
+          this.deps.onChange(this.snapshot());
+          continue;
+        }
         // Queued: look again, for it drained already, or another steer may join it. Joining steers of
         // ours, `hasQueued()` is true whatever became of this one: only its own push, seen as growth,
         // says it was queued. Alone, growth also covers a push the loop took at once (the queue is
@@ -697,6 +772,7 @@ export class WebQueue {
   }
 
   private clearHanded(): void {
+    for (const it of this.handed) this.tickets.delete(it.id);
     this.handed = [];
   }
 
@@ -704,6 +780,7 @@ export class WebQueue {
   private dropHanded(item: WebQueueItem): void {
     const i = this.handed.indexOf(item);
     if (i >= 0) this.handed.splice(i, 1);
+    this.tickets.delete(item.id);
     if (!this.handed.length) this.clearHanded();
   }
 

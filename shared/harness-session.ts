@@ -36,6 +36,25 @@ export interface SendOptions {
   onAccepted?: () => void;
 }
 
+/**
+ * One steer being handed to the agent, followed by identity so it can be taken back on its own while the
+ * agent has not taken it (server/queue.ts, §chat.transcript/a-queued-message). Its message is the first steer
+ * `run`'s call queues (told by the call's async context, never by text), so a twin of the same words, or
+ * another sender's steer queued meanwhile, is never it.
+ */
+export interface SteerTicket {
+  /** Hand the steer over inside `handOff`; returns what `handOff` returns. */
+  run<T>(handOff: () => T): T;
+  /**
+   * Take it back out, synchronously: nothing can take it meanwhile. `removed`: it is out of the agent's
+   * queue (and of what a clear hands back) and the agent never gets it. `later`: the hand-off has not
+   * queued it yet; it is taken out the moment it is, before anything else runs, and a later `remove()`
+   * says `removed`. `taken`: the agent's queue no longer holds it (its loop took it, or a clear did).
+   * `unknown`: there is no one message to name (the hand-off queued none, or more than one).
+   */
+  remove(): "removed" | "later" | "taken" | "unknown";
+}
+
 /** The agent's own queues. `hasQueued` is the real queue (false is the only proof of delivery); the
     mirror totals are a change detector only (server/queue.ts SdkQueueView, which this satisfies). */
 export interface HarnessQueue {
@@ -43,6 +62,9 @@ export interface HarnessQueue {
   mirrorTotal(): number;
   mirrorFor(kind: "steer" | "followUp"): number;
   mirrorHas(kind: "steer" | "followUp", text: string): boolean;
+  /** A ticket for the next steer handed over (SteerTicket). A harness that can't take one queued steer back
+      on its own has none: its handed steers then stay out of reach, as follow-ups are. */
+  steerTicket?(): SteerTicket;
   /** Empties both queues and returns their texts. */
   clear(): { steering: string[]; followUp: string[] };
   /** Runs what the agent already holds (steering first, then follow-ups); never called with an empty

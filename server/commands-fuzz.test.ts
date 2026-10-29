@@ -280,6 +280,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "project.settings.propose.withdraw": "a valid call needs a settings card, which only the project overseer's sova_settings propose makes, in its chat",
   "usage.prices.refresh": "fetches the price list over the network; the in-process ledger here has prices off, so a valid call changes nothing",
   "push.test": "sends a real notification to every registered device",
+  "server.restart": "a valid call schedules a restart of the service that runs this server (and in-process it is refused before any body is read: only the operator's browser or the token may)",
   "chat.stop": "a valid call on an open chat drives its process; on a closed one it writes nothing, so no effect oracle can read it back",
   "chat.compact": "acquires a chat handle, which starts the chat's process",
   "chat.rewind": "acquires a chat handle, which starts the chat's process",

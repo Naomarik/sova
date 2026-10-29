@@ -122,7 +122,7 @@ import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, Host
 import type { MeshResync, ResyncJob, ResyncStart } from "../../shared/mesh-resync";
 import type { LinkSeen, LinkThread } from "../../shared/mesh-links";
 import type { MonitorHistory, MonitorResolution, MonitorSnapshot } from "../../shared/protocol";
-import type { UpdatesSettings, UpdatesState } from "../../shared/protocol";
+import type { RestartScheduled, UpdatesSettings, UpdatesState } from "../../shared/protocol";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { ModelPolicy } from "./model-policy";
 import type {
@@ -470,6 +470,8 @@ export const checkUpdates = () => request<UpdatesState>("/api/updates/check", { 
 export const putUpdatesSettings = (settings: UpdatesSettings) => request<UpdatesState>("/api/updates/settings", { method: "PUT", body: JSON.stringify(settings) });
 /** Start the upgrade to `target`, the commit the last check offered. */
 export const applyUpdate = (target: string) => request<UpdatesState>("/api/updates/apply", { method: "POST", body: JSON.stringify({ target, confirm: true }) });
+/** Restart Sova (Settings → General): 202 once its service is scheduled to restart a few seconds later. */
+export const restartSova = () => request<RestartScheduled>("/api/updates/restart", { method: "POST" });
 
 /** The align mode's writing style and Visuals (GET /api/settings/align, mode-align.json). */
 export const getAlignSettings = () => request<AlignSettingsInfo>("/api/settings/align");

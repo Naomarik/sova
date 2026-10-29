@@ -417,6 +417,17 @@ export const OTHER_ENTRIES: CommandEntry[] = [
     meshNeed: "sessions",
   },
   {
+    id: "server.restart",
+    label: "Restart Sova",
+    summary: "Restart this machine's Sova through the service that runs it, a few seconds after answering. Chats keep running; open tabs reconnect. Refused when no service runs this copy or an upgrade runs.",
+    effect: "changes",
+    params: {},
+    route: { method: "POST", path: "/api/updates/restart" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "full",
+  },
+  {
     id: "settings.sova.get",
     label: "Sova's Own Settings",
     summary: "Sova's own switches, from Alignment and Experimental.",

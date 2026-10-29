@@ -153,6 +153,7 @@
     "project.claude-login.set",
     "org.claude-login.get",
     "org.claude-login.set",
+    "server.restart",
     "session.card.post",
     "session.card.get",
     "session.card.answer",

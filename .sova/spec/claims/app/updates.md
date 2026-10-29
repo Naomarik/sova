@@ -4,7 +4,9 @@ Sova keeps itself current from its own repository, `github.com/Naomarik/sova`, a
 The **Updates · this machine** section at the bottom of Settings → General
 (§app.settings-dialog/general) says what this server runs, checks the chosen source for something
 newer, and upgrades this machine's copy when the operator says so, or by itself when Upgrade
-automatically is on. An upgrade never moves to older code, never touches a copy it can't move
+automatically is on. The **Server · this machine** block above it says when this server started
+and restarts it, from there or from Sova's command line (§app.updates/restart). An upgrade never
+moves to older code, never touches a copy it can't move
 safely, and keeps the version that runs now until the new one answers. The server owns all of it:
 checks run whether or not a browser is open, and the state lives in `<stateRoot>/updates.json`.
 
@@ -138,7 +140,8 @@ Sessions, settings and chats are never touched by an upgrade.
   rollback moves the branch back to the commit it was at, reinstalls and puts the previous build
   back. Local branches, other worktrees, stashes and untracked files are never touched.
 
-Only one upgrade runs at a time, and Check Now waits while it does. A finished upgrade's outcome
+Only one upgrade runs at a time, and Check Now waits while it does. No upgrade starts while a
+restart is scheduled (§app.updates/restart). A finished upgrade's outcome
 stays in the section for a day, with the path of its log, and is kept in `updates.json`
 (`lastUpgrade`: from, to, when, outcome, log).
 
@@ -153,15 +156,89 @@ installed again automatically. Upgrade by hand to try it again."); the button
 still offers it. An upgrade that failed and changed nothing (a network error) is tried again at the
 next check.
 
+## §app.updates/restart — Restart Sova
+
+The **Server · this machine** block of Settings → General, just above Updates · this machine,
+says when this server started ("Started 2h ago") and the branch and short commit it started on,
+in mono (`master · abc1234`), and offers **Restart Sova**. What it shows comes with
+`GET /api/updates` (in `running`: `startedAt`, `canRestart`, `restartWhyNot`, `restartUnit`,
+`diskAhead`), readable like the rest of it.
+
+- **Which copy can.** Only a copy whose server is the main process of the service that runs it
+  restarts itself: an **Installed copy** run by the installer's login service, or a **Developer
+  copy** (§app.updates/running). Every other copy (a hermetic or terminal-started server, an
+  installed copy the launcher started with no service, any linked worktree, even one Sova's
+  project tools run as a unit) shows the block with no button and says "This copy isn't run by a
+  service, so it can't restart itself. Restart it where you started it."
+- **Asking.** Pressing Restart Sova asks once, inline: "Sova restarts in a few seconds. Chats
+  keep running; open tabs reconnect." with **Restart Now** and **Cancel**. When the code on disk is
+  newer than what runs, the confirm adds a line naming only what applies: "It loads newer code: 3
+  new commits and uncommitted changes since it started." ("1 new commit", or "uncommitted
+  changes" alone). Commits are those on the checkout's `HEAD` since the commit the server started
+  on; uncommitted changes count only when the tree's build id (the one a chat's `On older code`
+  reads, §app.chat-processes/code-pickup) differs from the one the server started with, so changes
+  it already started with don't. Cancel closes the question and restarts nothing.
+- **One start time.** This server's start is one value, when its process started: `GET /api/health`'s
+  `startedAt`, `running.startedAt` in `GET /api/updates`, and the restart's reply all give the same
+  one, so the old process never answers as a new start.
+- **The restart.** Confirmed, the block first reads the start to wait past from `GET /api/health`,
+  falling back to the start it already shows; with neither, it restarts nothing and says "Couldn't
+  restart Sova: it didn't say when it started, so we couldn't tell when it's back. Nothing was
+  restarted." Then `POST /api/updates/restart` schedules the restart of the service
+  that runs this server the way an adopted unit's `apply` does (§app.project-services/adopt) and
+  answers 202 first (`scheduled`, the current `startedAt`, `inSeconds`); the service restarts 3
+  seconds later (`systemd-run --user --on-active=3s` running `systemctl --user restart <unit>`; on
+  macOS a process in a session of its own that runs `launchctl kickstart -k` on the agent).
+  Nothing builds, nothing is checked for busy sessions and nothing is held: chats, workers and
+  replies keep running in their own processes (§app.chat-processes/survives-restart), and each
+  moves to the new code at its next quiet moment (§app.chat-processes/code-pickup).
+- **While it restarts.** The button reads "Restarting…" and is disabled, and a polite live region
+  says "Sova is restarting. Waiting for it to answer…". The page asks `GET /api/health` every
+  second until it answers with a start other than the one it read before asking; then the same region says "Restarted just now.
+  Runs master · abc1234." and the started line shows the new start. Nothing else announces it: no
+  toast elsewhere.
+- **When it doesn't come back.** After a minute with no new start, a warning says "Sova hasn't
+  come back after a minute." and "Check its service from a terminal:
+  `systemctl --user status <unit>`." (on macOS `launchctl print gui/$(id -u)/<label>`) "We keep
+  asking, and say so here when it answers." It then asks every 5 seconds; when Sova answers, the
+  warning goes and the block says Restarted.
+- **When it can't start.** A restart that is refused, or that can't be scheduled (`systemd-run` or
+  the macOS process fails: 500 with its reason), shows an error, "Couldn't restart Sova: <reason>.
+  Nothing was restarted.", and the button is back as it was.
+- **One at a time, never with an upgrade.** While an upgrade runs, the button is disabled and the
+  block says "An upgrade is running; it restarts Sova itself."; the server refuses a restart then
+  (409, the same words). While a restart is scheduled, another is refused (409, "Sova is already
+  restarting."), and so is an upgrade, Upgrade automatically's included (409, "Sova is
+  restarting. Upgrade once it's back."). A scheduled restart that hasn't stopped this server
+  within 2 minutes didn't happen: both refusals clear and the button is back.
+
+**Who may.** `POST /api/updates/restart` answers the operator at a signed-in browser (a
+same-origin request on the main listener, as §app.updates/operator says) and a script on this
+machine: a call on the main listener that passed the gate and shows the token in `x-sova-token`,
+as the command line's does. The catalogue lists it as `server.restart` (§app/settings-commands),
+so `sova run server.restart` restarts Sova from a terminal, without the inline question. A call
+from the peer listener (a mesh peer, `sova run server.restart --host <peer>` included), a call
+with no socket (the Overseer's in-process dispatch, a schedule), a call carrying the Overseer's
+sender header, and an extension's backend (its key isn't the token) are refused with 403
+("Restart Sova is the operator's: open Settings → General, or run `sova run server.restart` on
+this machine."). No agent tool offers it; a chat's shell that runs the command line reaches it as
+any script on this machine does. Every restart asked for is recorded with its origin: the server's
+log names who asked (`browser`, `command server.restart (<caller>)` or `script (<caller>)`, the
+caller as §app.command-audit/attribution names it), the unit, and whether it was scheduled or
+refused; a script's call also leaves its row in Sova's record of who ran what
+(§app.command-audit/record).
+
 ## §app.updates/operator — Only the operator
 
-Only the operator, at a signed-in browser, can check, change the update settings or upgrade:
+Only the operator, at a signed-in browser, can check, change the update settings or upgrade
+(restarting is the one Updates action a script on this machine may also take,
+§app.updates/restart):
 `POST /api/updates/check`, `PUT /api/updates/settings` and `POST /api/updates/apply` answer a
 request on the main listener that passed the gate (§app.access/gate) and that a browser marks as
 same-origin (`Sec-Fetch-Site: same-origin`). A call with no socket (the Overseer's in-process
 dispatch, a schedule), a call from the peer listener, and a call carrying the Overseer's sender
 header are refused with 403 ("Updates are the operator's: open Settings → General."). No agent tool
-reaches them, and a mesh peer needs the `full` grant even to read them (§mesh.peers/grants). `GET /api/updates` (what runs, what the last check found, the job's progress) is
+reaches them, none of them is on the command catalogue, and a mesh peer needs the `full` grant even to read them (§mesh.peers/grants). `GET /api/updates` (what runs, what the last check found, the job's progress) is
 readable like any gated route. The daily check and Upgrade automatically are the server's own.
 
 ## §app.updates/reload-note — "A newer Sova is available"

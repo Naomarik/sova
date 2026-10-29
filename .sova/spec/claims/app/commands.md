@@ -64,8 +64,7 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `session.offers.unsnooze`, `project.offers.list`, `project.settings.get`,
   `project.settings.history`, `project.settings.undo`, `project.settings.propose.withdraw`,
   `project.overseer.settings.set`, `project.claude-login.get`, `project.claude-login.set`,
-  `org.claude-login.get`, `org.claude-login.set`, `session.card.post`, `session.card.get`,
-  `session.card.answer`, `project.cards.list`.
+  `org.claude-login.get`, `org.claude-login.set`, `server.restart`.
   The `project.verb.*` ids are made from the verb lists of `shared/project-contract.ts`, so a new
   verb is a new entry. The in-chat actions are the `chat.*` entries (§app.chat-actions/catalogue),
   and `chat.mode-command` runs a project mode's command (§chat.mode-menu/project-mode-commands).
@@ -81,10 +80,7 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `project.overseer.settings.set` is the project overseer's settings PATCH (§app.project-overseer/settings).
   Applying a card is a trust grant and no entry. The `*.claude-login.*` entries read and set the
   Claude login a project's, or an organization's projects', new chats start on
-  (§app.claude-logins/project-login). The `session.card.*` entries raise or update a transcript
-  card, read a session's cards and answer one (§chat.transcript-cards/raise-command), and
-  `project.cards.list` is the project page's Cards section (§chat.transcript-cards/files); trusting a
-  project's or an extension's cards is a trust grant and no entry (§chat.transcript-cards/trust).
+  (§app.claude-logins/project-login).
 - **Its mesh reach is its route's.** Each entry's `meshNeed` is the capability the peer listener's
   classifier gives its method and path (§mesh.peers/grants), and a test fails when they differ.
 - **Never a door the operator keeps closed.** No entry targets the peer routes (`/api/peer`,

@@ -126,6 +126,7 @@ export type CommandId =
   | "insights.session.workers"
   | "insights.session.inbox"
   | "sova.health"
+  | "server.restart"
   | "settings.sova.get"
   | "settings.models.get"
   | "settings.provider-limits.get"
@@ -1533,6 +1534,8 @@ export interface CommandParams {
   };
   /** What this server runs: its start, its commit and its runtime. (only looks; needs the card's owner trusted) */
   "sova.health": Record<string, never>;
+  /** Restart this machine's Sova through the service that runs it, a few seconds after answering. Chats keep running; open tabs reconnect. Refused when no service runs this copy or an upgrade runs. (changes something; needs the card's owner trusted) */
+  "server.restart": Record<string, never>;
   /** Sova's own switches, from Alignment and Experimental. (only looks; needs the card's owner trusted) */
   "settings.sova.get": Record<string, never>;
   /** The model policy: which models are disabled. (only looks; needs the card's owner trusted) */
@@ -1851,6 +1854,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "insights.session.workers": "looks",
   "insights.session.inbox": "looks",
   "sova.health": "looks",
+  "server.restart": "changes",
   "settings.sova.get": "looks",
   "settings.models.get": "looks",
   "settings.provider-limits.get": "looks",

@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   barShare,
+  breakdownKind,
   cacheHitRate,
+  cacheWriteSplit,
+  costParts,
+  hitRateTitle,
+  newInput,
+  newInputTitle,
+  shareWords,
   cacheRateWords,
   type CostChoice,
   costBars,
@@ -234,4 +241,102 @@ test("a rate reads in whole percent, never a rounded 0% or 100% that isn't exact
   assert.equal(cacheRateWords(0.994), "99%");
   assert.equal(cacheRateWords(0.995), ">99%");
   assert.equal(cacheRateWords(1), "100%");
+});
+
+const spend = (tokens: ReturnType<typeof tok> & { cacheWrite1h?: number }, usdBy: Partial<ReturnType<typeof tok>>, extra: { unpricedTokens?: number } = {}) => {
+  const by = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, ...usdBy };
+  return { tokens: { ...tokens, cacheWrite1h: tokens.cacheWrite1h ?? 0 }, usdBy: by, usd: by.input + by.output + by.cacheRead + by.cacheWrite, unpricedTokens: extra.unpricedTokens ?? 0 };
+};
+
+test("new input is uncached input plus cache writes; its hover says the split", () => {
+  // Claude-like: almost nothing uncached, the new content written to cache.
+  const t = tok(3_900_000, 66_800_000, 1_300_000, 233_000);
+  assert.equal(newInput(t), 5_200_000);
+  assert.equal(newInputTitle(t, String), "3900000 uncached · 1300000 written to cache");
+  // The hit rate's denominator is new input plus reads, so the rate itself is unchanged.
+  assert.equal(cacheHitRate(t), 66_800_000 / (newInput(t) + 66_800_000));
+  assert.equal(hitRateTitle(t, String), `66800000 of ${newInput(t) + 66_800_000} input tokens read from cache`);
+});
+
+test("a model's cost parts come in one fixed order, never by size", () => {
+  const parts = costParts(spend(tok(10, 1000, 100, 50), { input: 1, cacheRead: 2, cacheWrite: 90, output: 7 }));
+  assert.deepEqual(
+    parts.map((p) => [p.part, p.label]),
+    [
+      ["cacheWrite", "Cache writes"],
+      ["cacheRead", "Cache reads"],
+      ["output", "Output"],
+      ["input", "Input"],
+    ],
+  );
+  // The same order when another part is the biggest.
+  assert.deepEqual(
+    costParts(spend(tok(10, 1000, 100, 50), { input: 90, cacheRead: 2, cacheWrite: 1, output: 7 })).map((p) => p.part),
+    ["cacheWrite", "cacheRead", "output", "input"],
+  );
+  assert.deepEqual(
+    parts.map((p) => p.usd),
+    [90, 2, 7, 1],
+  );
+  assert.deepEqual(
+    parts.map((p) => p.tokens),
+    [100, 1000, 50, 10],
+  );
+  assert.deepEqual(
+    parts.map((p) => shareWords(p.share)),
+    ["90%", "2%", "7%", "1%"],
+  );
+  assert.equal(
+    parts.reduce((s, p) => s + p.share!, 0),
+    1,
+  );
+});
+
+test("a part's share keeps the hit rate's edges: <1% and >99%, never a rounded 0% or 100%", () => {
+  const parts = costParts(spend(tok(1, 1, 1, 1), { cacheWrite: 999.5, input: 0.5 }));
+  assert.deepEqual(
+    parts.map((p) => shareWords(p.share)),
+    [">99%", "0%", "0%", "<1%"],
+  );
+});
+
+test("nothing priced has no shares; its token split still shows", () => {
+  const parts = costParts(spend(tok(10, 20, 30, 40), {}));
+  assert.ok(parts.every((p) => p.share === null && p.usd === 0));
+  assert.deepEqual(
+    parts.map((p) => shareWords(p.share)),
+    ["—", "—", "—", "—"],
+  );
+  assert.deepEqual(
+    parts.map((p) => p.tokens),
+    [30, 20, 40, 10],
+  );
+});
+
+test("a partly priced model splits the priced dollars; its tokens cover every call", () => {
+  // 100 tokens of the 1,100 had no price: dollars come from the priced calls only.
+  const row = spend(tok(200, 600, 200, 100), { cacheWrite: 3, cacheRead: 1 }, { unpricedTokens: 100 });
+  const parts = costParts(row);
+  assert.deepEqual(
+    parts.map((p) => shareWords(p.share)),
+    ["75%", "25%", "0%", "0%"],
+  );
+  assert.equal(parts[0]!.tokens, 200);
+  assert.equal(breakdownKind({ ...row, status: "mixed" }), "partly");
+});
+
+test("what a breakdown can say: priced, partly, free, unpriced", () => {
+  const priced = spend(tok(1, 1, 1, 1), { input: 1 });
+  assert.equal(breakdownKind({ ...priced, status: "priced" }), "priced");
+  const free = spend(tok(100, 0, 0, 50), {});
+  assert.equal(breakdownKind({ ...free, status: "free" }), "free");
+  const unpriced = spend(tok(100, 0, 0, 50), {}, { unpricedTokens: 150 });
+  assert.equal(breakdownKind({ ...unpriced, status: "unpriced" }), "unpriced");
+  // A mixed row with no dollars at all and every token unpriced reads as unpriced, never $0.00 splits.
+  assert.equal(breakdownKind({ ...unpriced, status: "mixed" }), "unpriced");
+});
+
+test("cache writes split into 1-hour and 5-minute writes", () => {
+  const row = spend({ ...tok(0, 0, 1000), cacheWrite1h: 800 }, { cacheWrite: 10, cacheWrite1h: 9 });
+  assert.deepEqual(cacheWriteSplit(row), { hour: { usd: 9, tokens: 800 }, fiveMin: { usd: 1, tokens: 200 } });
 });

@@ -8,7 +8,6 @@ import {
   byCost,
   cacheHitRate,
   cacheRateWords,
-  cacheSum,
   COST_RANGES,
   costBars,
   costsApiSearch,
@@ -17,11 +16,13 @@ import {
   costWord,
   dayKey,
   facetChoices,
-  inputSum,
+  hitRateTitle,
   kindName,
   kindOne,
   kindRows,
   modelChoices,
+  newInput,
+  newInputTitle,
   noCacheNote,
   pickedLabel,
   priceChangeWords,
@@ -43,6 +44,7 @@ import { announce } from "../lib/ui-state";
 import "../projects.css";
 import "../costs-tab.css";
 import { ActionMenu } from "./ActionMenu";
+import { CostBreakdown, detailId, keepListed, OpenName, rowClick, toggleKey } from "./CostBreakdown";
 import { ResendLine } from "./ResendLine";
 import { sessionHref } from "./Sidebar";
 import { Banner, Icon } from "./ui";
@@ -75,6 +77,8 @@ export function CostsTab(props: { query: CostsQuery; sessions: SessionSummary[] 
   // Project names for the project table: the org project's own name, read once.
   const [projects] = createResource(() => listProjects().catch(() => null));
   const projectTitle = (id: string) => projects()?.projects.find((p) => p.id === id)?.name;
+  /** The By model rows opened, by row key: here, above the answer, so a refresh or a new range keeps them. */
+  const [openModels, setOpenModels] = createSignal<ReadonlySet<string>>(new Set());
 
   const [pulled, setPulled] = createSignal<PricesInfo | null>(null);
   const [pulling, setPulling] = createSignal(false);
@@ -145,7 +149,7 @@ export function CostsTab(props: { query: CostsQuery; sessions: SessionSummary[] 
               <div class="costs-tables">
                 <ProviderTable answer={a()} />
                 <KindTable answer={a()} />
-                <ModelTable answer={a()} />
+                <ModelTable answer={a()} open={openModels()} setOpen={setOpenModels} />
                 <ProjectTable answer={a()} name={projectTitle} />
               </div>
               <Show when={a().topSessions.length}>
@@ -352,7 +356,7 @@ function HitRate(props: { spend: Pick<UsageSpend, "tokens">; of?: "model" | "pro
   const title = () =>
     rate() === null
       ? noCacheNote(props.of)
-      : `${tokens(props.spend.tokens.cacheRead)} of ${tokens(inputSum(props.spend.tokens))} input tokens read from cache`;
+      : hitRateTitle(props.spend.tokens, tokens);
   return (
     <Num label="Hit rate" title={title()}>
       <span class="cost-figure">{cacheRateWords(rate())}</span>
@@ -425,7 +429,7 @@ function CostChart(props: { answer: UsageCosts; query: CostsQuery; now: number }
 }
 
 /** A section card holding one table. */
-function TableCard(props: { id: string; title: string; caption: string; class?: string; stack?: boolean; head: JSX.Element; children: JSX.Element }) {
+function TableCard(props: { id: string; title: string; caption: string; class?: string; stack?: boolean; bodies?: boolean; head: JSX.Element; children: JSX.Element }) {
   return (
     <section class={props.class ? `card costs-card ${props.class}` : "card costs-card"} aria-labelledby={props.id}>
       <h2 class="costs-h2" id={props.id}>
@@ -437,7 +441,10 @@ function TableCard(props: { id: string; title: string; caption: string; class?: 
           <thead>
             <tr>{props.head}</tr>
           </thead>
-          <tbody>{props.children}</tbody>
+          {/* `bodies`: the children are tbodies of their own (a row and its detail). */}
+          <Show when={props.bodies} fallback={<tbody>{props.children}</tbody>}>
+            {props.children}
+          </Show>
         </table>
       </div>
     </section>
@@ -544,22 +551,33 @@ function KindTable(props: { answer: UsageCosts }) {
   );
 }
 
-function ModelTable(props: { answer: UsageCosts }) {
+/** A By model row's key: its model, and what was asked for when another model answered. */
+const modelRowKey = (r: UsageModelRow) => `${r.provider}/${r.model}${r.asked ? `?asked=${r.asked}` : ""}`;
+
+function ModelTable(props: { answer: UsageCosts; open: ReadonlySet<string>; setOpen(next: (s: ReadonlySet<string>) => ReadonlySet<string>): void }) {
+  // Keyed by row key, not by the row objects a poll builds afresh: an opened row stays open, its button keeps focus.
+  const keys = createMemo(() => byCost(props.answer.byModel, modelRowKey).map(modelRowKey), undefined, {
+    equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]),
+  });
+  const rowOf = (key: string) => props.answer.byModel.find((r) => modelRowKey(r) === key);
+  // A model that leaves the table (a new range, a filter) doesn't come back open.
+  createEffect(on(keys, (k) => props.setOpen((s) => keepListed(s, k)), { defer: true }));
   return (
     <TableCard
       id="costs-models"
       title="By model"
-      caption="Tokens, cache hit rate and cost by model"
+      caption="New input, cache reads, cache hit rate, output and cost by model; open a model for where its cost went"
       class="costs-wide"
       stack
+      bodies
       head={
         <>
           <th scope="col">Model</th>
           <th scope="col" align="right">
-            Input
+            New input
           </th>
           <th scope="col" align="right">
-            Cache
+            Cache reads
           </th>
           <th scope="col" align="right">
             Hit rate
@@ -573,33 +591,56 @@ function ModelTable(props: { answer: UsageCosts }) {
         </>
       }
     >
-      <For each={byCost(props.answer.byModel, (r) => `${r.provider}/${r.model}${r.asked ? `?asked=${r.asked}` : ""}`)}>
-        {(r) => (
-          <tr>
-            <th
-              scope="row"
-              title={[r.priceKey && r.priceKey !== `${r.provider}/${r.model}` ? `${r.provider}/${r.model}, priced as ${r.priceKey}` : `${r.provider}/${r.model}`, usageModelNote(r)].filter(Boolean).join(". ")}
-            >
-              <span class="text-mono">{compactModel(r.model) ?? r.model}{r.asked ? " ⚠" : ""}</span>
-              <span class="cost-session-meta">{providerName(r.provider)}</span>
-            </th>
-            <Num label="Input">
-              <Tok n={r.tokens.input} />
-            </Num>
-            <Num label="Cache" title={`${tokens(r.tokens.cacheRead)} read · ${tokens(r.tokens.cacheWrite)} written`}>
-              <Tok n={cacheSum(r.tokens)} />
-            </Num>
-            <HitRate spend={r} />
-            <Num label="Output">
-              <Tok n={r.tokens.output} />
-            </Num>
-            <Num label="Cost">
-              <ModelUsd row={r} />
-            </Num>
-          </tr>
+      <For each={keys()}>
+        {(key) => (
+          <Show when={rowOf(key)}>
+            {(r) => <ModelRows row={r()} open={props.open.has(key)} onToggle={() => props.setOpen((s) => toggleKey(s, key))} />}
+          </Show>
         )}
       </For>
     </TableCard>
+  );
+}
+
+/** A model's row and, once opened, where its cost went. A tbody per model keeps the pair together. */
+function ModelRows(props: { row: UsageModelRow; open: boolean; onToggle(): void }) {
+  const detail = detailId();
+  const name = () => compactModel(props.row.model) ?? props.row.model;
+  const r = () => props.row;
+  return (
+    <tbody class="cost-model">
+      <tr class="cost-model-row" onClick={rowClick(() => props.onToggle())}>
+        <th
+          scope="row"
+          title={[r().priceKey && r().priceKey !== `${r().provider}/${r().model}` ? `${r().provider}/${r().model}, priced as ${r().priceKey}` : `${r().provider}/${r().model}`, usageModelNote(r())].filter(Boolean).join(". ")}
+        >
+          <OpenName open={props.open} controls={detail} name={name()}>
+            <span class="text-mono">{name()}{r().asked ? " ⚠" : ""}</span>
+            <span class="cost-session-meta">{providerName(r().provider)}</span>
+          </OpenName>
+        </th>
+        <Num label="New input" title={newInputTitle(r().tokens, tokens)}>
+          <Tok n={newInput(r().tokens)} />
+        </Num>
+        <Num label="Cache reads">
+          <Tok n={r().tokens.cacheRead} />
+        </Num>
+        <HitRate spend={r()} />
+        <Num label="Output">
+          <Tok n={r().tokens.output} />
+        </Num>
+        <Num label="Cost">
+          <ModelUsd row={r()} />
+        </Num>
+      </tr>
+      <tr class="cost-detail-row" id={detail} hidden={!props.open}>
+        <td colSpan={6}>
+          <Show when={props.open}>
+            <CostBreakdown row={r()} name={name()} />
+          </Show>
+        </td>
+      </tr>
+    </tbody>
   );
 }
 

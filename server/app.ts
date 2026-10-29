@@ -29,6 +29,7 @@ import { setFileCopyGuards } from "./project-files-tool";
 import { registerProjectRoutes } from "./projects/routes";
 import { registerProjectServiceRoutes } from "./project-services/routes";
 import { registerServicesViewRoutes } from "./project-services/view-routes";
+import { serverStart } from "./project-services/self-host";
 import { registerDecisionRoutes } from "./decisions-routes";
 import { registerConversationDraftRoutes } from "./conversation-draft-routes";
 import { registerVoiceRoutes } from "./voice/service";
@@ -162,8 +163,10 @@ const DESIGN_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "src",
 /** AGENTS.md for the connection agent (owned by pi-config's remote extension team; read per request). */
 const CONNECT_TEMPLATE = fileURLToPath(new URL("./connect-agent-template.md", import.meta.url));
 
-/** When this process started, and the commit its checkout had then (§chat.profiles/live-commit). */
-const SERVER_STARTED_AT = new Date().toISOString();
+/** When this process started, and the commit its checkout had then (§chat.profiles/live-commit).
+    One source with serverStart(): POST /api/updates/restart answers the same startedAt, which the
+    Settings block waits to see change. */
+const SERVER_STARTED_AT = serverStart().startedAt;
 const SERVER_HEAD: string | null = (() => {
   try {
     return execFileSync("git", ["rev-parse", "HEAD"], { cwd: dirname(fileURLToPath(import.meta.url)), timeout: 5_000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;

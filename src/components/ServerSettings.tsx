@@ -28,13 +28,18 @@ export function ServerSettingsSection() {
   const upgrading = () => updatesState()?.job?.state === "running";
 
   const restart = async () => {
-    const before = running()?.startedAt;
     setPhase("sending");
     setError(null);
     setLate(false);
-    let from: string;
+    // The start to wait past, read from health itself just before asking: the wait compares health with health.
+    const from = (await healthStartedAt()) ?? running()?.startedAt ?? null;
+    if (!from) {
+      setError("Couldn't restart Sova: it didn't say when it started, so we couldn't tell when it's back. Nothing was restarted.");
+      setPhase("idle");
+      return;
+    }
     try {
-      from = (await restartSova()).startedAt || before || "";
+      await restartSova();
     } catch (err) {
       setError(`Couldn't restart Sova: ${clause(err instanceof Error ? err.message : String(err))}. Nothing was restarted.`);
       setPhase("idle");

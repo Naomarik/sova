@@ -97,3 +97,23 @@ test("the line once Sova is back names what it runs", () => {
   assert.equal(restartedLine({ branch: "master", startedHead: "abcdef0123", head: "ffff" }), "Restarted just now. Runs master · abcdef0.");
   assert.equal(restartedLine({ branch: null, startedHead: null, head: null }), "Restarted just now.");
 });
+
+test("the old process answering with the same start is never a restart: the wait goes on until another start", async () => {
+  // Health keeps answering the start it had before (the restart hasn't fired yet), then goes down, then comes back new.
+  const x = rig((t) => (t < 3_000 ? "A" : t < 5_000 ? null : "B"));
+  assert.equal(x.w.before, "A");
+  assert.equal(await waitForRestart(x.w), "B");
+  assert.equal(x.asked[0], 0, "the first answer came at once");
+  assert.ok(x.asked.length > 1, "and it did not end the wait");
+  assert.equal(x.clock.t, 5_000);
+  // Health never changes: the wait never reports a restart; after a minute it says Sova is late.
+  const y = rig(() => "A");
+  let polls = 0;
+  const inner = y.w.health;
+  y.w.health = async () => {
+    if (++polls === 80) y.stopNow();
+    return inner();
+  };
+  assert.equal(await waitForRestart(y.w), null, "not restarted");
+  assert.equal(y.late(), LATE_MS);
+});

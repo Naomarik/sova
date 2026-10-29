@@ -84,10 +84,21 @@ async function send(headers: Record<string, string>, env: Record<string, unknown
 const BROWSER = { Cookie: `${AUTH_COOKIE}=${token}`, Origin: `http://${self}`, "Sec-Fetch-Site": "same-origin" };
 const CLI = { "x-sova-token": token, "x-sova-command": "server.restart" };
 
-test("the operator's browser: 202 with the start it replaces, and the service is scheduled once", async () => {
+async function health(): Promise<{ startedAt: string }> {
+  const incoming = { headers: { host: self, cookie: `${AUTH_COOKIE}=${token}` }, socket: { remoteAddress: "127.0.0.1" }, url: "/api/health", method: "GET" };
+  const res = await app.fetch(new Request(`http://${self}/api/health`, { headers: { Host: self, Cookie: `${AUTH_COOKIE}=${token}` } }), { incoming });
+  assert.equal(res.status, 200);
+  return (await res.json()) as { startedAt: string };
+}
+
+test("the operator's browser: 202 with exactly the startedAt GET /api/health answers, and the service is scheduled once", async () => {
   const r = await send(BROWSER);
   assert.equal(r.status, 202);
-  assert.deepEqual(r.body, { scheduled: true, startedAt: "2026-10-29T11:00:00.000Z", inSeconds: 3 });
+  const h = await health();
+  // The Settings block waits for health to answer another start: the reply and health must be one value,
+  // or the old process's first answer reads as a new start.
+  assert.equal(r.body.startedAt, h.startedAt);
+  assert.deepEqual(r.body, { scheduled: true, startedAt: h.startedAt, inSeconds: 3 });
   assert.deepEqual(scheduled, [{ manager: "systemd", name: "sova-runtime.service" }]);
 });
 

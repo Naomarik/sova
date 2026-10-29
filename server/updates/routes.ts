@@ -228,7 +228,8 @@ export function registerUpdatesRoutes(app: Hono): void {
     }
     try {
       const r = await updates().restart(who.origin);
-      return c.json({ scheduled: true, startedAt: r.startedAt ?? serverStart().startedAt, inSeconds: r.inSeconds }, 202);
+      // The startedAt GET /api/health answers (one source, serverStart()): the restart is done once health answers another.
+      return c.json({ scheduled: true, startedAt: serverStart().startedAt, inSeconds: r.inSeconds }, 202);
     } catch (err) {
       return refused(c, err);
     }

@@ -14,11 +14,22 @@
       "server/queue.test.ts",
       "server/chat-queue-clients.test.ts",
       "server/harness/pi/chat-wiring.test.ts",
-      "server/harness/pi/session-golden.test.ts"
+      "server/harness/pi/session-golden.test.ts",
+      "server/harness/pi/QUIRKS.md",
+      "shared/harness-session.ts",
+      "server/harness/pi/session.ts",
+      "server/harness/pi/steer-ticket.ts",
+      "server/harness/pi/quirks.ts",
+      "server/harness/pi/contract.test.ts",
+      "server/harness/pi/steer-ticket.test.ts",
+      "src/lib/queue-actions.ts",
+      "src/lib/queue-actions.browser.test.ts",
+      "shared/protocol.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-19T08:14Z"
+      "at": "2026-10-29T09:34Z",
+      "source": "pi-session:7774126c-f6f7-4414-8c26-534dc01e10e3#a2f4983f"
     }
   },
   "§chat.transcript/accessibility": {

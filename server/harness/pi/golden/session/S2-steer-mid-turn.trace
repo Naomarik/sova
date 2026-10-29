@@ -27,17 +27,17 @@ B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"0
 step A sends {"type":"steer","text":"steer one","clientId":"c2"}
 A {"type":"queue","items":[{"id":"c2","kind":"steer","state":"queued","text":"steer one","origin":"client"}]}
 B {"type":"queue","items":[{"id":"c2","kind":"steer","state":"queued","text":"steer one","origin":"client"}]}
-A {"type":"queue","items":[{"id":"c2","kind":"steer","state":"sending","text":"steer one","origin":"client"}]}
-B {"type":"queue","items":[{"id":"c2","kind":"steer","state":"sending","text":"steer one","origin":"client"}]}
+A {"type":"queue","items":[{"id":"c2","kind":"steer","state":"queued","text":"steer one","origin":"client"}]}
+B {"type":"queue","items":[{"id":"c2","kind":"steer","state":"queued","text":"steer one","origin":"client"}]}
 sdk steer ["steer one",null,{"source":"interactive"}]
 A {"type":"send_ack","clientId":"c2","queued":true}
 step B sends {"type":"steer","text":"","images":[{"data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==","mimeType":"image/png"}],"clientId":"c3"}
-A {"type":"queue","items":[{"id":"c2","kind":"steer","state":"sending","text":"steer one","origin":"client"},{"id":"c3","kind":"steer","state":"queued","text":"","images":1,"origin":"client"}]}
-B {"type":"queue","items":[{"id":"c2","kind":"steer","state":"sending","text":"steer one","origin":"client"},{"id":"c3","kind":"steer","state":"queued","text":"","images":1,"origin":"client"}]}
+A {"type":"queue","items":[{"id":"c2","kind":"steer","state":"queued","text":"steer one","origin":"client"},{"id":"c3","kind":"steer","state":"queued","text":"","images":1,"origin":"client"}]}
+B {"type":"queue","items":[{"id":"c2","kind":"steer","state":"queued","text":"steer one","origin":"client"},{"id":"c3","kind":"steer","state":"queued","text":"","images":1,"origin":"client"}]}
 B {"type":"send_ack","clientId":"c3","queued":true}
 A {"type":"event","event":{"type":"queue_update","steering":["steer one"],"followUp":[]}}
-A {"type":"queue","items":[{"id":"c2","kind":"steer","state":"sending","text":"steer one","origin":"client"},{"id":"c3","kind":"steer","state":"sending","text":"","images":1,"origin":"client"}]}
-B {"type":"queue","items":[{"id":"c2","kind":"steer","state":"sending","text":"steer one","origin":"client"},{"id":"c3","kind":"steer","state":"sending","text":"","images":1,"origin":"client"}]}
+A {"type":"queue","items":[{"id":"c2","kind":"steer","state":"queued","text":"steer one","origin":"client"},{"id":"c3","kind":"steer","state":"queued","text":"","images":1,"origin":"client"}]}
+B {"type":"queue","items":[{"id":"c2","kind":"steer","state":"queued","text":"steer one","origin":"client"},{"id":"c3","kind":"steer","state":"queued","text":"","images":1,"origin":"client"}]}
 sdk steer ["",[{"type":"image","data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==","mimeType":"image/png"}],{"source":"interactive"}]
 A {"type":"event","event":{"type":"queue_update","steering":["steer one",""],"followUp":[]}}
 step release the reply

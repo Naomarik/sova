@@ -27,13 +27,13 @@ B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"0
 step A sends {"type":"steer","text":"steer one","clientId":"s1"}
 A {"type":"queue","items":[{"id":"s1","kind":"steer","state":"queued","text":"steer one","origin":"client"}]}
 B {"type":"queue","items":[{"id":"s1","kind":"steer","state":"queued","text":"steer one","origin":"client"}]}
-A {"type":"queue","items":[{"id":"s1","kind":"steer","state":"sending","text":"steer one","origin":"client"}]}
-B {"type":"queue","items":[{"id":"s1","kind":"steer","state":"sending","text":"steer one","origin":"client"}]}
+A {"type":"queue","items":[{"id":"s1","kind":"steer","state":"queued","text":"steer one","origin":"client"}]}
+B {"type":"queue","items":[{"id":"s1","kind":"steer","state":"queued","text":"steer one","origin":"client"}]}
 sdk steer ["steer one",null,{"source":"interactive"}]
 A {"type":"send_ack","clientId":"s1","queued":true}
 step B sends {"type":"prompt","text":"follow one","clientId":"f1"}
-A {"type":"queue","items":[{"id":"s1","kind":"steer","state":"sending","text":"steer one","origin":"client"},{"id":"f1","kind":"followUp","state":"queued","text":"follow one","origin":"client"}]}
-B {"type":"queue","items":[{"id":"s1","kind":"steer","state":"sending","text":"steer one","origin":"client"},{"id":"f1","kind":"followUp","state":"queued","text":"follow one","origin":"client"}]}
+A {"type":"queue","items":[{"id":"s1","kind":"steer","state":"queued","text":"steer one","origin":"client"},{"id":"f1","kind":"followUp","state":"queued","text":"follow one","origin":"client"}]}
+B {"type":"queue","items":[{"id":"s1","kind":"steer","state":"queued","text":"steer one","origin":"client"},{"id":"f1","kind":"followUp","state":"queued","text":"follow one","origin":"client"}]}
 B {"type":"send_ack","clientId":"f1","queued":true}
 A {"type":"event","event":{"type":"queue_update","steering":["steer one"],"followUp":[]}}
 step B sends {"type":"abort"}

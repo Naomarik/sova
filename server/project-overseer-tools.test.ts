@@ -167,7 +167,7 @@ describe("the powers, as the statecharts declare them (al_3)", () => {
   test("every tool the runtime registers has a power, and every power entry names a tool (its own, or one the org part contributes)", () => {
     const own = fake().tools.map((t) => t.name);
     for (const name of own) assert.ok(name in TOOL_POWER, name);
-    for (const name of Object.keys(TOOL_POWER)) assert.ok(own.includes(name) || ORG_PART_TOOLS.includes(name) || ["spec_lookup", "sova_draft_specs", "sova_draft_approve", "sova_draft_build"].includes(name), name);
+    for (const name of Object.keys(TOOL_POWER)) assert.ok(own.includes(name) || ORG_PART_TOOLS.includes(name) || ["spec_lookup", "sova_draft_specs", "sova_draft_approve", "sova_draft_build", "sova_whatsapp"].includes(name), name);
   });
 
   test("one power per tool and per op: every entry is a power, always or operator; a per-op tool lists each op", () => {
@@ -177,7 +177,7 @@ describe("the powers, as the statecharts declare them (al_3)", () => {
       else assert.ok(kinds.has(p), `${tool}: ${p}`);
     }
     for (const [tool, ops] of Object.entries(OP_POWER)) for (const [op, p] of Object.entries(ops)) assert.ok(kinds.has(p), `${tool} ${op}: ${p}`);
-    assert.deepEqual(OP_POWER.sova_roster, { read: "always", approve: "roster", decline: "roster" });
+    assert.deepEqual(OP_POWER.sova_roster, { read: "always", approve: "roster", decline: "roster", add: "operator", contact: "operator" });
     assert.deepEqual([TOOL_POWER.sova_pipeline, TOOL_POWER.sova_hold, TOOL_POWER.sova_correct, TOOL_POWER.sova_set_state, TOOL_POWER.sova_project_verbs], ["always", "always", "per-op", "operator", "per-op"]);
     assert.deepEqual([TOOL_POWER.spec_lookup, TOOL_POWER.sova_draft_specs, TOOL_POWER.sova_draft_approve, TOOL_POWER.sova_draft_build], ["always", "always", "operator", "operator"]);
   });
@@ -622,7 +622,7 @@ describe("the statechart tools (q2, q9, q10)", () => {
 });
 
 describe("preview links (§app.project-overseer/previews)", () => {
-  const SHAPE = ["v", "id", "linkKept", "purpose", "expiresAt", "projectId", "sessionId", "branch", "target", "state", "running", "createdBy"].sort();
+  const SHAPE = ["v", "id", "linkKept", "purpose", "expiresAt", "projectId", "sessionId", "branch", "target", "state", "running", "createdBy", "url"].sort();
 
   test("sova_previews lists each with its link, what it serves, session and state, in the one fixed shape", async () => {
     const old: PreviewView = { ...PREVIEW, id: "pv_BBBBBBBBBBBBBBBB", url: null, purpose: null, sessionId: "in-tree", sessionFrom: "worktree", createdBy: "operator", running: false, port: 8731, target: { kind: "port", port: 8731 } };
@@ -632,39 +632,42 @@ describe("preview links (§app.project-overseer/previews)", () => {
     const t = out.content[0]!.text;
     const lines = t.split("\n");
     assert.ok(lines[lines.length - 1]!.includes("pv_CCCCCCCCCCCCCCCC · folder dist"), "active ones first, then the rest");
-    assert.match(t, new RegExp(`pv_AAAAAAAAAAAAAAAA · port 5173 · in-tree "Worktree" on sova/fix-abc123 · "The shop for Ana" · made by you · active, app is running · expires 2026-10-01T10:00:00.000Z · link kept for the operator · send it by its id$`, "m"));
-    assert.match(t, /pv_BBBBBBBBBBBBBBBB · port 8731 · in-tree "Worktree" on sova\/fix-abc123 \(matched by its worktree\) · made by the operator · active, nothing on port 8731 · .* · no link kept for the operator \(shown only when it was made\) · send it by its id/);
-    assert.match(t, /turned off · off since 2026-09-30T11:00:00.000Z/);
+    assert.match(t, new RegExp(`pv_AAAAAAAAAAAAAAAA · port 5173 · in-tree "Worktree" on sova/fix-abc123 · "The shop for Ana" · made by you · active, app is running · expires 2026-10-01T10:00:00.000Z · link ${PREVIEW.url} · send it by its id$`, "m"));
+    assert.match(t, /pv_BBBBBBBBBBBBBBBB · port 8731 · in-tree "Worktree" on sova\/fix-abc123 \(matched by its worktree\) · made by the operator · active, nothing on port 8731 · .* · no link kept \(shown only when it was made\) · send it by its id/);
+    assert.match(t, /turned off · off since 2026-09-30T11:00:00.000Z · link no longer active · send it by its id/);
     assert.equal(out.details.v, 1);
-    assert.ok(!JSON.stringify(out).includes(PREVIEW_LABEL), "never the link, in content or details");
+    // Its own project's link, for the overseer to hand to the operator: in the line and in the handoff.
+    assert.equal(t.split(PREVIEW_LABEL).length - 1, 1, "the active one's link, once in the text");
     for (const h of out.details.previews) assert.deepEqual(Object.keys(h).sort(), SHAPE);
     const byId = Object.fromEntries(out.details.previews.map((h) => [h.id, h]));
     assert.equal(byId.pv_BBBBBBBBBBBBBBBB!.linkKept, false, "no link kept, never guessed");
     assert.equal(byId.pv_CCCCCCCCCCCCCCCC!.running, null, "running only while active");
-    assert.deepEqual(byId.pv_AAAAAAAAAAAAAAAA, { v: 1, id: PREVIEW.id, linkKept: true, purpose: "The shop for Ana", expiresAt: PREVIEW.expiresAt, projectId: "prj_bbbbbbbb", sessionId: "in-tree", branch: "sova/fix-abc123", target: { kind: "port", port: 5173 }, state: "active", running: true, createdBy: "session:po-1" });
+    assert.deepEqual(byId.pv_AAAAAAAAAAAAAAAA, { v: 1, id: PREVIEW.id, linkKept: true, purpose: "The shop for Ana", expiresAt: PREVIEW.expiresAt, projectId: "prj_bbbbbbbb", sessionId: "in-tree", branch: "sova/fix-abc123", target: { kind: "port", port: 5173 }, state: "active", running: true, createdBy: "session:po-1", url: PREVIEW.url });
+    assert.equal(byId.pv_BBBBBBBBBBBBBBBB!.url, null);
   });
 
-  test("sova_previews lists a running copy's link by id, endpoint, branch, state and expiry, never its link", async () => {
+  test("sova_previews lists a running copy's link by id, endpoint, branch, state, expiry and its link while active", async () => {
     const copy: PreviewView = { ...PREVIEW, id: "pv_DDDDDDDDDDDDDDDD", instance: "in_7", endpoint: "web.http", branch: "sova/pay-3f9a1c", sessionId: null, purpose: null, createdBy: "session:po-1", port: 4100 };
     const main: PreviewView = { ...copy, id: "pv_EEEEEEEEEEEEEEEE", instance: "in_8", branch: null, running: false };
     const gone: PreviewView = { ...copy, id: "pv_FFFFFFFFFFFFFFFF", state: "off", revokedAt: "2026-09-30T11:00:00.000Z", running: undefined };
     const { run } = fake({ previews: [copy, main, gone] });
     const out = (await run("sova_previews")) as { content: { text: string }[] };
     const t = out.content[0]!.text;
-    assert.match(t, /^- pv_DDDDDDDDDDDDDDDD · running copy in_7, endpoint web\.http, on sova\/pay-3f9a1c · shared by you · active, the copy answers · expires 2026-10-01T10:00:00\.000Z · send it by its id$/m);
+    assert.match(t, /^- pv_DDDDDDDDDDDDDDDD · running copy in_7, endpoint web\.http, on sova\/pay-3f9a1c · shared by you · active, the copy answers · expires 2026-10-01T10:00:00\.000Z · link https:\/\/[a-z]+\.preview\.example\.invalid\/ · send it by its id$/m);
     assert.match(t, /^- pv_EEEEEEEEEEEEEEEE · running copy in_8, endpoint web\.http, on the main checkout · shared by you · active, the copy is not running · /m);
-    assert.match(t, /^- pv_FFFFFFFFFFFFFFFF · .* · revoked · revoked 2026-09-30T11:00:00\.000Z · /m);
-    assert.ok(!JSON.stringify(out).includes(PREVIEW_LABEL), "never the link, in content or details");
+    assert.match(t, /^- pv_FFFFFFFFFFFFFFFF · .* · revoked · revoked 2026-09-30T11:00:00\.000Z · send it by its id$/m, "a revoked link is not shown");
   });
 
   test("the prompt and the tools say who gets a running copy's link, and how to see and stop what runs", () => {
     const prompt = readFileSync(join(import.meta.dirname, "project-overseer-prompt.md"), "utf8");
-    assert.match(prompt, /in a standalone project it is only for the operator/);
-    assert.match(prompt, /In an\s+organization's project you may then send it to one of its people with `sova_send_to_person`/);
+    assert.match(prompt, /Who gets a running copy's link: you may give it to the operator in your reply\. In an\s+organization's project you may also send it to one of its people with `sova_send_to_person`/);
+    assert.match(prompt, /You see a preview's link \(`sova_previews`, `sova_preview`, `sova_project`\): give it to the operator\s+in your reply when they ask for it/);
+    assert.doesNotMatch(prompt, /never see a preview's link/);
     assert.match(prompt, /`sova_project_verbs` status lists every running copy of the project/);
-    assert.match(prompt, /stop any copy at will with `sova_project_verbs` down \(always allowed, never held\)\. A copy with an active\s+share link answers needs-confirm to down: revoke its links first/);
+    assert.match(prompt, /stop any copy at will with `sova_project_verbs` down \(always allowed, never held\)\. A copy with an active\s+share link stops on the operator's word, in a turn they started/);
+    assert.match(prompt, /once the conversation that started it is finished or\s+archived/);
     const previews = fake().tools.find((x) => x.name === "sova_previews")!;
-    assert.match(previews.description, /In a standalone project such a link is only for the operator/);
+    assert.match(previews.description, /Give such a link to the operator in a reply/);
   });
 
   test("sova_project lists the active ones under Previews", async () => {
@@ -682,7 +685,8 @@ describe("preview links (§app.project-overseer/previews)", () => {
     const out = (await run("sova_preview", { op: "start", session: "sova://s/in-tree", folder: "dist", purpose: "The shop for Ana" })) as { content: { text: string }[]; details: { v: number; preview: Record<string, unknown> } };
     assert.deepEqual(calls, ['preview:in-tree:{"folder":"dist"}:The shop for Ana']);
     assert.ok(out.content[0]!.text.startsWith("Made a preview link: pv_AAAAAAAAAAAAAAAA · folder dist"));
-    assert.ok(!JSON.stringify(out).includes(PREVIEW_LABEL), "the result never carries the link");
+    assert.ok(out.content[0]!.text.includes(`link ${PREVIEW.url}`), "the result carries its own link, for the operator");
+    assert.equal(out.details.preview.url, PREVIEW.url);
     assert.equal(out.details.v, 1);
     assert.deepEqual(Object.keys(out.details.preview).sort(), SHAPE);
     assert.deepEqual(out.details.preview.target, { kind: "static", folder: "dist" });

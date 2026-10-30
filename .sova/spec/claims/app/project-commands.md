@@ -20,6 +20,7 @@ control sends to the route named, so every answer and refusal is the route's own
 - `project.worktree.list`, `project.worktree.merge`, `project.worktree.remove` (`/api/projects/:pid/overseer/worktrees…`): a project's coding sessions' worktrees; merge one's branch into its target, or remove it.
 - `project.files.list` (`GET /api/projects/:pid/files`): the files a project keeps.
 - `project.costs` (`GET /api/projects/:pid/costs`): a project's cost card; `fresh=1` waits for a new count.
+- `project.cards.list` (`GET /api/projects/:pid/cards`): a project's transcript card and drawing folders on its main checkout, broken ones with what is wrong, and whether its cards are trusted (§chat.transcript-cards/files).
 
 Each entry's mesh need is what the peer listener's classifier gives its route. Reading one kept
 file (`GET /api/projects/:pid/files/:id`) is not an entry: its answer is the file's bytes as a

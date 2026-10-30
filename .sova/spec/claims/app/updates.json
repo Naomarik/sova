@@ -75,7 +75,8 @@
       "server/updates/routes.test.ts",
       "server/app.ts",
       "server/mesh/access.ts",
-      "src/lib/api.ts"
+      "src/lib/api.ts",
+      "server/updates/restart-route.test.ts"
     ],
     "agreed": {
       "by": "user",
@@ -103,6 +104,40 @@
       "by": "user",
       "at": "2026-10-16T05:27Z"
     }
+  },
+  "§app.updates/restart": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app/updates",
+      "§app.updates/running",
+      "§app.updates/operator",
+      "§app.updates/upgrade",
+      "§app.project-services/adopt",
+      "§app.chat-processes/survives-restart",
+      "§app.chat-processes/code-pickup",
+      "§app.access/gate",
+      "§app.command-audit/record",
+      "§app.command-audit/attribution",
+      "§app/settings-commands"
+    ],
+    "code": [
+      "server/updates/routes.ts",
+      "server/updates/manager.ts",
+      "server/updates/disk-ahead.ts",
+      "shared/protocol.ts",
+      "server/app.ts",
+      "src/components/ServerSettings.tsx",
+      "src/lib/restart.ts",
+      "src/lib/api.ts",
+      "src/app.css",
+      "server/updates/manager-restart.test.ts",
+      "server/updates/restart-route.test.ts",
+      "server/updates/disk-ahead.test.ts",
+      "server/updates/install-kind.test.ts",
+      "src/lib/restart.test.ts"
+    ]
   },
   "§app.updates/running": {
     "kind": "behavior",
@@ -170,7 +205,8 @@
       "src/components/UpdatesSettings.tsx",
       "scripts/install.sh",
       "scripts/install.test.sh",
-      "src/lib/updates.ts"
+      "src/lib/updates.ts",
+      "server/updates/manager-restart.test.ts"
     ],
     "agreed": {
       "by": "user",

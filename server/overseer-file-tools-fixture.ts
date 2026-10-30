@@ -2,7 +2,7 @@ import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, wr
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { overseerFileTools } from "./overseer-file-tools";
-import { EXCLUDED_REFUSAL, outsideRootRefusal, RootConfinement, SECRET_REFUSAL, SecretGuard, secretRules } from "./overseer-deny";
+import { EXCLUDED_REFUSAL, type Exclusion, OTHER_PROJECT_REFUSAL, outsideRootRefusal, RootConfinement, SECRET_REFUSAL, SecretGuard, secretRules } from "./overseer-deny";
 
 /**
  * Tests only (nothing in the server imports this): the fake home of overseer-file-tools.test.ts and
@@ -99,7 +99,8 @@ export function secretBox() {
 /**
  * The project overseer's box inside a secretBox: <box>/proj is the root; <box>/org is the org's
  * workspace beside it, <box>/proj/ws another one the root happens to hold, <box>/state Sova's
- * state. Every file holds MARK.
+ * state, <box>/client another organization's project. Every file holds MARK. Its read/grep/find/ls
+ * read anywhere but those (`readAnywhere`, as the project overseer's do); `exclusions` is that list.
  */
 export function confinedBox({ root, home, put, guard }: ReturnType<typeof secretBox>) {
   const box = join(root, "confined");
@@ -107,14 +108,17 @@ export function confinedBox({ root, home, put, guard }: ReturnType<typeof secret
   const orgWs = join(box, "org");
   const innerWs = join(proot, "ws");
   const state = join(box, "state");
+  const client = join(box, "client");
   const IN = [join(proot, "README.md"), join(proot, "src", "a.ts")];
-  const OUT = [join(orgWs, "roster.json"), join(box, "outside.txt"), join(innerWs, "roster.json"), join(state, "baton-links.json"), join(home, "AGENTS.md")];
+  const OUT = [join(orgWs, "roster.json"), join(box, "outside.txt"), join(innerWs, "roster.json"), join(state, "baton-links.json"), join(home, "AGENTS.md"), join(client, "plan.md")];
   for (const p of [...IN, ...OUT]) put(p, "MARK here\n");
   put(join(proot, ".env"));
   symlinkSync(orgWs, join(proot, "org-link"));
   symlinkSync(join(box, "outside.txt"), join(proot, "notes.md"));
   symlinkSync(box, join(proot, "up"));
-  const ptools = Object.fromEntries(overseerFileTools(proot, guard, undefined, () => new RootConfinement(proot, [orgWs, innerWs, state])).map((t) => [t.name, t]));
+  symlinkSync(client, join(proot, "client-link"));
+  const exclusions: Exclusion[] = [orgWs, innerWs, state, { dir: client, why: OTHER_PROJECT_REFUSAL }];
+  const ptools = Object.fromEntries(overseerFileTools(proot, guard, undefined, () => new RootConfinement(proot, exclusions, [], { readAnywhere: true })).map((t) => [t.name, t]));
   const pcall = async (name: string, params: Record<string, unknown>) => {
     try {
       const r = await ptools[name]!.execute("tc", params as never, undefined, undefined, undefined as never);
@@ -125,5 +129,6 @@ export function confinedBox({ root, home, put, guard }: ReturnType<typeof secret
   };
   const outside = `ERROR: ${outsideRootRefusal(proot)}`;
   const excluded = `ERROR: ${EXCLUDED_REFUSAL}`;
-  return { box, proot, orgWs, innerWs, state, IN, OUT, pcall, outside, excluded };
+  const otherProject = `ERROR: ${OTHER_PROJECT_REFUSAL}`;
+  return { box, proot, orgWs, innerWs, state, client, exclusions, IN, OUT, pcall, outside, excluded, otherProject };
 }

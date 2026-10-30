@@ -306,9 +306,9 @@ gives. A shared service the project's record still names that no definition decl
 exception: down stops it by its unit's name and marks it stopped, as a `stop:<name>` step that says
 it is shared and in no definition; while any of those definitions is unreadable it is left alone.
 Idempotent: a second down answers `changed: false`. Down of an instance with an active share link
-(§app.project-services/share) needs a confirm, which the operator gives, or an Overseer's turn opened
-by the user's click on a card row showing that copy's links (§app.overseer/copies); `needs-confirm`
-otherwise, naming how many links. Its links stay, and show the not-running page while it is down.
+(§app.project-services/share) needs a confirm, which the operator gives, or for an Overseer a turn
+the user started (their typed word or a click, §app.overseer/copies); `needs-confirm` otherwise,
+naming how many links. Its links stay, and show the not-running page while it is down.
 An adopted slot 0 refuses `down` (`refused-slot0`); see §app.project-services/adopt.
 
 ## §app.project-services/apply — apply
@@ -456,18 +456,25 @@ like the others: one result shape, every caller.
   that same link, its expiry moved to the later of its current one and `days` from now.
 - **Who shares.** The operator, confirmed (`confirm`; the Branches tab's confirm, the CLI's
   `--confirm`), else `needs-confirm`. The project overseer through its statechart's act `services/share` (power `share`, people-facing, held like a preview; §app.project-services/callers). The
-  global Overseer gets `needs-confirm` ("The operator shares it from the project's Branches tab.").
+  global Overseer in a turn the user started, on the same limits as everyone (a declared endpoint
+  only, never a copy whose data is `sensitive`, at most 7 days or `share.maxDays`); in a run the
+  user did not start it is refused, as every act of its is (§app.overseer/tools).
   A coding session gets `forbidden`. `revoke` is open to any caller with the instance in scope and
   is never an act or held.
 - **Its end.** A link ends at its expiry, at revoke, or when its copy is torn down: teardown revokes
   every link of the instance, and every person's sibling of them (§app.outreach/links), before its
   slot is freed, so a later copy in that slot never answers an old link. Down of a copy with an
-  active link needs a confirm: the operator's `confirm`, or for an Overseer a turn opened by the
-  user's click on a card row that shows its link count (§app.overseer/copies), else `needs-confirm`.
+  active link keeps its links: they answer the not-running page while it is down and work again
+  when it is up. It needs a confirm: the operator's `confirm`, or for an Overseer a turn the user
+  started (their word, typed or a click, §app.overseer/copies), else `needs-confirm`.
 - **Where the URL goes.** The result's `links` carry `{id, instance, endpoint, port, createdAt,
   expiresAt, state, createdBy, url?}`; `createdBy` is `operator` or `session:<id>` (the project
-  overseer's conversation), as preview-links.json keeps it; `url` only for the operator (routes and
-  CLI). No tool result of any model carries a link's URL, and the redaction filter still applies.
+  overseer's conversation), as preview-links.json keeps it; `url` for the operator (routes and
+  CLI) and in both Overseers' `sova_project_verbs` results (the global Overseer's for any project,
+  a project overseer's for its own), so they can hand the link to the user in a reply
+  (§app.project-overseer/previews). A coding session's `project_verbs` result never carries a URL.
+  A link an overseer repeats stays in its conversation, which for a project overseer of an
+  organization is in the org's workspace history, where it stays readable until the link expires.
   Status lists each instance's active links. A share or revoke that changed something is a `link`
   step (`share`, `revoke`, teardown's `links`); a held share is a skipped `share` step whose detail
   says it is held, with no link.
@@ -570,11 +577,17 @@ same engine in-process, never over HTTP:
   checkout; from the main checkout it is refused `invalid-request` naming its tracked worktrees
   when it has any, and `forbidden` otherwise.
 - **`sova_project_verbs`** for the Overseers. The global Overseer reads any project and acts in a
-  turn the user started; the project overseer acts only on its project: reads always, and every other verb only once its project statechart took the act (`services/down` always, `services/run` with `copiesRun` for create, up, apply, test and conform, `services/reset` with `copiesReset` for reset and teardown; any of them in a run the operator started; §app.project-overseer/tools). With its power Off (or a brake on) the statechart refuses with the power's sentence telling it to file it as an idea or raise a confirm card, and the engine never runs; the engine itself checks no power. For both, reset and teardown of an instance it did not
-  create, and down of a copy with an active share link, answer `needs-confirm` unless the turn was
-  opened by the user's click on a card that lists that copy, with a choice naming that verb
-  (§app.overseer/copies; the project overseer only for its own project's copies); then they run.
-  Stopping a shared service answers `needs-confirm` whatever the click: the operator does it. Their
+  turn the user started; the project overseer acts only on its project: reads always, and every other verb only once its project statechart took the act (`services/down` always, `services/run` with `copiesRun` for create, up, apply, test and conform, `services/reset` with `copiesReset` for reset and teardown; any of them in a run the operator started; §app.project-overseer/tools). With its power Off (or a brake on) the statechart refuses with the power's sentence telling it to file it as an idea or raise a confirm card, and the engine never runs; the engine itself checks no power. For both (the project overseer only for
+  its own project's copies), on the user's word, a turn the user started (typed or a card click):
+  `down` of any copy runs, one with active share links included (its links are kept and work again
+  when it is up); reset and teardown of an instance it did not create run once the conversation that
+  started that copy is finished (not working) or archived, or when no conversation started it (the
+  operator, conformance). While that conversation is still working, they need the user's click on a
+  card that lists that copy with a choice naming that verb (§app.overseer/copies). Outside a turn
+  the user started, down of a copy with an active share link, and reset and teardown of an instance
+  it did not create, answer `needs-confirm`. A project's main copy (slot 0) is never reset or torn
+  down by an overseer that did not start it, whatever the word or click.
+  Stopping a shared service answers `needs-confirm` whatever the word or click: the operator does it. Their
   `leftovers` read and `stop-leftover` (§app.overseer/copies) are the Overseers' tool's own verbs, not
   the engine's.
 - **The Project Assistant** (the `assistant` caller, §app.project-assistant/tools): only `up`, and
@@ -587,8 +600,8 @@ same engine in-process, never over HTTP:
   refuses it like any caller but the operator.
 
 `share` (§app.project-services/share) is the operator's, confirmed; the project overseer's through its statechart's act `services/share` (power `share`, people-facing, held like a preview), run only after every
-check of the share passed, so a refused share never reaches the statechart; the global Overseer's is
-`needs-confirm` ("The operator shares it from the project's Branches tab."); a coding session's is
+check of the share passed, so a refused share never reaches the statechart; the global Overseer's
+runs in a turn the user started (refused in any other run, as its every act); a coding session's is
 `forbidden`. `revoke` is any caller's with the instance in scope (a session: its own checkouts'), with
 no act, never held and taking no lock. Sova itself, on no one's request (the `system` caller: today
 only onMerge, §app.project-services/on-merge), runs `apply` and the reads, nothing else: any other

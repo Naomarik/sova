@@ -29,6 +29,9 @@ export interface OverseerPartCtx {
   effective(): { autonomy: Autonomy; reason?: string };
   /** The run is the operator's. */
   attended(): boolean;
+  /** The run is the operator's and their own message (typed, or their click) opened it, never one the global
+      Overseer sent. */
+  ownMessage(): boolean;
   /** The current conversation's id. */
   overseerId(): string;
   /** This turn's envelope for an act of the overseer's. */

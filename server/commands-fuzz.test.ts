@@ -280,6 +280,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "project.settings.propose.withdraw": "a valid call needs a settings card, which only the project overseer's sova_settings propose makes, in its chat",
   "usage.prices.refresh": "fetches the price list over the network; the in-process ledger here has prices off, so a valid call changes nothing",
   "push.test": "sends a real notification to every registered device",
+  "server.restart": "a valid call schedules a restart of the service that runs this server (and in-process it is refused before any body is read: only the operator's browser or the token may)",
   "chat.stop": "a valid call on an open chat drives its process; on a closed one it writes nothing, so no effect oracle can read it back",
   "chat.compact": "acquires a chat handle, which starts the chat's process",
   "chat.rewind": "acquires a chat handle, which starts the chat's process",
@@ -718,6 +719,21 @@ const FIXTURES: Record<string, Fixture> = {
     status: 200,
     oracle: async (_b, v) => assert.deepEqual((await read("GET", `/api/session-offers?path=${encodeURIComponent(String(v.session))}`)).notNow, []),
   },
+  "session.card.get": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.card.post": {
+    values: () => ({ session: cardsSession(), type: "project.note", data: { title: "Build", tone: "ok", line: "Green." } }),
+    status: 200,
+    oracle: async (_b, v) => assert.equal(((await read("GET", `/api/session-cards?path=${encodeURIComponent(String(v.session))}`)).cards as unknown[]).length, 1),
+  },
+  "session.card.answer": {
+    values: () => {
+      const path = cardsSession();
+      pendingSetup.push(async () => void (await sendTo(app, "POST", "/api/session-cards/post", JSON.stringify({ path, type: "project.ask", data: { title: "Format", ask: "Which?", options: [{ label: "CSV" }, { label: "Parquet" }] } }))));
+      return { session: path, card: "cd_1", answer: { option: 1 } };
+    },
+    status: 200,
+    oracle: async (_b, v) => assert.equal(((await read("GET", `/api/session-cards?path=${encodeURIComponent(String(v.session))}`)).cards as { state: string }[])[0]?.state, "answered"),
+  },
   "project.settings.get": { values: () => withProject(), status: 200 },
   "project.settings.history": { values: () => withProject(), status: 200 },
   "project.overseer.settings.set": {
@@ -739,6 +755,14 @@ const FIXTURES: Record<string, Fixture> = {
     oracle: async (_b, v) => assert.equal(((await read("GET", `/api/projects/${v.pid}/overseer`)).settings as { holdMin: number }).holdMin, 10),
   },
   "project.offers.list": {
+    values: () => {
+      const v: Record<string, unknown> = {};
+      pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
+      return v;
+    },
+    status: 200,
+  },
+  "project.cards.list": {
     values: () => {
       const v: Record<string, unknown> = {};
       pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
@@ -770,6 +794,18 @@ function offersSession(): string {
   const d = join(root, `offers-project-${++n}`);
   mkdirSync(join(d, ".sova"), { recursive: true });
   writeFileSync(join(d, ".sova", "offers.json"), JSON.stringify({ version: 1, offers: { hello: { when: "Always.", title: "Say hello?", repeat: "once-per-session", buttons: [{ label: "Hello", about: "Sends hello.", send: "hello" }] } } }));
+  const id = `fuzz-${++n}`;
+  const path = join(sessionsDir, `2026-10-17T00-00-00-000Z_${id}.jsonl`);
+  writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-10-17T00:00:00.000Z", cwd: d })}\n`);
+  return canonicalPath(path);
+}
+/** A fresh session whose folder declares two card types: a status note, and a question answered at once (§chat.transcript-cards/files). */
+function cardsSession(): string {
+  const d = join(root, `cards-project-${++n}`);
+  for (const [name, card] of [["note", { draws: "status" }], ["ask", { draws: "question", answer: "at-once" }]] as const) {
+    mkdirSync(join(d, ".sova", "cards", name), { recursive: true });
+    writeFileSync(join(d, ".sova", "cards", name, "card.json"), JSON.stringify({ version: 1, toolkit: 1, title: name, ...card }));
+  }
   const id = `fuzz-${++n}`;
   const path = join(sessionsDir, `2026-10-17T00-00-00-000Z_${id}.jsonl`);
   writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-10-17T00:00:00.000Z", cwd: d })}\n`);

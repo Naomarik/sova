@@ -12,6 +12,10 @@ import { chipHtml } from "./path-attachments";
 import { groupLinkIndex, resolveAppLink, sessionIndex } from "./session-links";
 import type { VisBase } from "../vis/core/grammar";
 import { parseVis, visKindWord, type ParseResult } from "../vis/parse";
+import { ownKindOf, parseOwnDrawing, type DrawingDecl, type OwnDrawing } from "../../shared/drawing-kinds";
+
+/** A chat's own drawing kind as the page holds it (no guide). */
+type OwnKind = Omit<DrawingDecl, "guide">;
 import { canonicalKind } from "../vis/registry";
 import clojure from "highlight.js/lib/languages/clojure";
 import cmake from "highlight.js/lib/languages/cmake";
@@ -135,6 +139,8 @@ interface RenderEnv {
   linkStack: LinkKind[];
   /** The row's /tmp image paths (TranscriptItem.attachments), shown as chips in prose. */
   paths?: Map<string, TmpAttachment>;
+  /** The chat's own drawing kinds (§chat.transcript-cards/drawing-kinds): a `vis <owner>.<name>` fence of one draws as it. */
+  own?: readonly OwnKind[];
   /** Parsed `vis` fences, by the index in their placeholder's data-vis. */
   visuals: RenderedVisual[];
 }
@@ -148,6 +154,8 @@ export interface RenderedVisual {
   fence: string;
   /** Its body, for Source. */
   body: string;
+  /** One of the chat's own kinds: its declaration and what its fence gives its view (drawn in a sealed box, not by KINDS). */
+  own?: { decl: OwnKind; drawing: OwnDrawing };
 }
 
 /** An external link, an in-app one (same tab, no external note), or nothing. */
@@ -301,6 +309,18 @@ const renderVis = (t: { content: string; info: string; markup: string }, kind: s
     // tall, so the text streaming in below it doesn't leap when the fence closes.
     return `<div class="md-vis-pending"><p class="md-vis-pending-line"><span class="md-vis-pending-dot" aria-hidden="true"></span>Drawing ${esc(kind || "a visual")}… <span class="md-vis-pending-count">${lines} ${lines === 1 ? "line" : "lines"}</span></p></div>\n`;
   }
+  // One of the chat's own kinds: always namespaced, so never one of Sova's (shared/drawing-kinds.ts).
+  const own = kind.includes(".") ? ownKindOf(env.own, kind) : undefined;
+  if (own) {
+    const o = parseOwnDrawing(own, t.content);
+    if (!o.ok) {
+      const where = o.line > 0 ? `line ${o.line}: ` : "";
+      return renderCode(t.content, t.info, env, true, `vis ${kind}`, " md-vis-source") + `<p class="md-vis-error">Couldn't draw this ${esc(`vis ${kind}`)} block (${esc(where + o.message)}), so here is its source.</p>\n`;
+    }
+    const fence = `${t.markup}${t.info}\n${t.content}${t.markup}`;
+    const i = env.visuals.push({ kind, spec: { kind } as unknown as VisBase, fence, body: t.content, own: { decl: own, drawing: o.drawing } }) - 1;
+    return `<div class="md-vis" data-vis="${i}" data-vis-key="${hash(fence)}"></div>\n`;
+  }
   const r = parseCached(kind, t.content);
   if (!r.ok) {
     const where = r.line > 0 ? `line ${r.line}: ` : "";
@@ -353,8 +373,8 @@ export interface RenderedMarkdown {
  * Renders model markdown to safe HTML. `streaming`: an unclosed fence renders as an open code
  * block (a closing fence is appended for rendering only) and stays unhighlighted until it closes.
  */
-export function renderMarkdown(text: string, streaming = false, attachments?: TmpAttachment[]): RenderedMarkdown {
-  const env: RenderEnv = { codes: [], openFence: null, linkStack: [], visuals: [] };
+export function renderMarkdown(text: string, streaming = false, attachments?: TmpAttachment[], own?: readonly OwnKind[]): RenderedMarkdown {
+  const env: RenderEnv = { codes: [], openFence: null, linkStack: [], visuals: [], ...(own?.length ? { own } : {}) };
   if (attachments?.length) env.paths = new Map(attachments.map((a) => [a.path, a]));
   let source = text;
   const open = streaming ? unclosedFence(text) : null;

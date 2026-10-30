@@ -16,8 +16,9 @@ import { stateRoot } from "./state-root";
 export const CALLER_HEADER = "x-sova-caller";
 
 /** Who a call came from: its chat while the key's process runs, an installed extension whose own key
-    let it in (server/extension-keys.ts), any other key, or none at all. */
-export type Caller = `chat:${string}` | `ext:${string}` | "unattributed" | "no-key";
+    let it in (server/extension-keys.ts), a transcript card's view by its type (a command it ran
+    through the page, §chat.transcript-cards/view-api), any other key, or none at all. */
+export type Caller = `chat:${string}` | `ext:${string}` | `card:${string}` | "unattributed" | "no-key";
 
 interface KeyRecord {
   hash: string;

@@ -48,13 +48,21 @@ which is also its live view: its tool calls render as tool cards as they happen.
   refused); the project's own context files do, and only those inside the project root: never the
   agent dir's or a folder's above the root (the home folder's `AGENTS.md`). Its tools
   (§app.project-overseer/tools), memory's `zoom` and `date` while its memory is on
-  (§chat.memory/overseer), plus read-only `read`, `grep`, `find` and `ls` **confined to the
-  project root**: every path, as written (`..`, `~`, absolute) and at its realpath (a symlink in the
-  root that leads out), must be inside the root, and none may be inside an attached org's
-  workspace (the roster's contacts, every project's transcripts) or pi's or Sova's state (the
-  host's link store, every session), even when the root holds them. A path argument that fails is
-  refused with the reason; a listing or search leaves such entries out; a secret file inside the
-  root is still refused. One folder outside the root is open to `read` alone: this conversation's
+  (§chat.memory/overseer), plus read-only `read`, `grep`, `find` and `ls` **anywhere on the host
+  but other clients' work, Sova's and pi's own state, and secrets**: every path, as written (`..`,
+  `~`, absolute) and at its realpath (a symlink that leads elsewhere), must be outside every
+  attached org's workspace (its own org's included: the roster's contacts, every project's
+  transcripts), outside every registered project placed in an organization other than its own (for
+  a standalone project: every project placed in an organization): its root, its git worktrees (git's
+  own list and the folders Sova cuts beside its repository) and its running copies' checkouts, a
+  folder that holds this project's own root aside ("That folder is another client's project; the
+  project overseer can't read it."), outside Sova's
+  state root and pi's agent dirs (`~/.pi/agent` and the active agent dir: the host's link store,
+  every session, settings), and not a secret the Overseer's file guard denies (§app.overseer/tools:
+  credential files by place and name, `~/.ssh` and the other secret directories, `/proc`, hard
+  links to them). A path argument that fails is refused with the reason; a listing or search from a
+  parent (`/`, `~`) leaves such entries out, uncounted. The prompt says where it may read and where
+  not. One folder of Sova's state is open to `read` alone: this conversation's
   own attachments folder (`<stateRoot>/attachments/<its session id>/`, where an image the
   operator pastes into its composer is saved, §chat/images), so it sees what the operator attaches, an image as
   an image. A path there must be inside that folder both as written and at its realpath (a symlink
@@ -418,7 +426,9 @@ user row.
   inside the project root; never another project's, an overseer's or a subagent's own), `sova_roster` (read: every person as the prompt's roster shows them, plus their status when not active, never contact; both it and `sova_project` name the main stakeholder, as the prompt
   does), `sova_todos` (operator turns only, §app.project-overseer/ideas-and-todos),
   `sova_previews` (the project's preview links, §app.project-overseer/previews; `sova_project`
-  lists its active ones too, under "Previews"), `sova_send_status` (below), `sova_history` (its
+  lists its active ones too, under "Previews"), `sova_send_status` (below), `sova_whatsapp` status
+  (its WhatsApp sender's state; its `start`, of a stopped or failed sender, in the operator's turns
+  only, §app.outreach/overseer-sender), `sova_history` (its
   project's history, §app.org-history/readers), `sova_list_subagent_profiles` (this computer's
   subagent profiles: Off and each profile's id, name and worker footprint, the default marked, for
   `subagent_profile`, §app.project-overseer/coding-mode), `spec_lookup {op, words?, ref?, more?}` (its own project's spec on the main line, full view, §app.spec-lookup/tool).
@@ -455,10 +465,12 @@ user row.
   instance runs within the project's slots. With its power Off (or braked) the call refuses with the
   power's sentence and nothing runs; when the services engine then refuses or fails the verb, its activity
   row is refused with the engine's code and message, and the tool's result carries the engine's whole
-  answer; once taken, the verb's own rules still apply: reset and teardown of an
-  instance it did not create and stopping a copy with an active share link (§app.project-services/share)
-  answer `needs-confirm`, except in the turn the operator's click on its card listing that copy opens
-  (§app.overseer/copies), and stopping a shared service always answers `needs-confirm` (the
+  answer; once taken, the verb's own rules still apply (§app.overseer/copies): in a turn the
+  operator started, stopping any copy runs, one with an active share link included
+  (§app.project-services/share), and so do reset and teardown of an instance it did not create once
+  the conversation that started it is finished or archived; while that conversation still works they
+  need the operator's click on its card listing that copy. In any other run those answer
+  `needs-confirm`, and stopping a shared service always answers `needs-confirm` (the
   operator's). Its `leftovers {}` (a read) lists the processes holding its project's copy ports, and
   `stop-leftover {port}` stops one only in the turn such a click opens (§app.overseer/copies); neither
   reaches another project. `share` is `services/share`
@@ -511,7 +523,8 @@ user row.
   registered and current. The overseer may start it when the Software standing is unregistered,
   stale or failed; with `onboard` Off it raises a card instead; it never merges. `markMerged`:
   `sova_correct` merged; `bookkeeping`: `sova_correct`'s other corrections (§app.project-overseer/corrections).
-  Operator turns only: `sova_todo`.
+  Operator turns only: `sova_todo`; `sova_roster` `add` and `contact`, only in a turn the operator's
+  own message started (§app.project-overseer/roster-add).
 - **Every start names its gap.** `sova_start_gathering` and `sova_offer` take a required `gap`: a
   `§gap/…` idea of the project (the session becomes that gap's, §app.project-overseer/gaps), or
   `"none"` for a question that serves no gap. Without it: 'Say which gap this is for: gap
@@ -571,6 +584,29 @@ user row.
   from the new-session default first.
   A coding session's mode is never one of these settings: it is the one the call names, else this
   computer's default mode (§app.project-overseer/coding-mode).
+
+## §app.project-overseer/roster-add — Adding a person the operator names
+
+- **What.** In an organization's project, `sova_roster` also takes `add {name, role?, decides?,
+  skills?, language?, voice?, contact?}`, which adds an active person to its organization's roster,
+  and `contact {person, contact}`, which sets a roster person's contact (`email`, `phone`,
+  `whatsapp`, `other`; the keys given replace those, a key given empty clears that one, and an empty
+  contact clears them all). The roster's caps and rules apply as on the page
+  (§app.organizations/roster); a refusal changes nothing. A standalone project's overseer has no
+  `sova_roster` at all (it is an organization's tool).
+- **Only from the operator's own message.** Both run only in a turn the operator started with their
+  own message (typed in its composer, or their click on its card), never in a run they did not
+  start (a look, a wake-up, a held act's release, a message the global Overseer sent), whatever its
+  powers: "Adding a person or a contact is the operator's: ask them in your reply or with
+  sova_card." Its prompt and the tool's description say to take the name and contact exactly as
+  the operator gave them, never from a person's or a session's words. No hold, no allowance.
+- **Contact is write-only.** The result says only "Added {name} ({id})[, contact set]" or "contact
+  set" / "contact cleared", never a value. Nothing gives a contact back to it: its roster read,
+  `sova_project` and its prompt never carry one, and its activity, the transition log and its
+  history reads show the call with `[contact]` in the value's place. The operator's message keeps
+  the value as they wrote it.
+- **Recorded.** The history line names the project overseer as the writer (`overseer`,
+  §app.organizations/field-authority), in the operator's turn.
 
 ## §app.project-overseer/settings — It configures the whole project; you approve what widens
 
@@ -895,17 +931,17 @@ user row.
   sessions' running apps to a stakeholder, the whole site at its own public address, until it is
   deleted or expires. The prompt has a **Previews** section, and the two tools' descriptions
   say the same: what previews are for, that a link reaches anyone who has it, to make one only
-  for a stakeholder who should see the app now, to check it answers, that the overseer never sees
-  a link, that a preview reaches a person with `sova_send_to_person` and its `preview` id (they get
-  their own link to it, §app.outreach/links) or through the operator, who has the link on the
-  project page, and to delete it once it has served its purpose, which is for good (every link
+  for a stakeholder who should see the app now, to check it answers, that the overseer sees a
+  preview's link and may give it to the operator in a reply when they ask for it, that a preview
+  reaches a person with `sova_send_to_person` and its `preview` id (they get their own link to it,
+  §app.outreach/links) or through the operator, and to delete it once it has served its purpose, which is for good (every link
   sent from it stops working with it, and nothing brings one back). If the app went down, whoever runs it (the coding session, prompted with
   `sova_send`) starts it again: Sova never starts an app for a preview. A running copy's link is the
   one exception: the operator may Start its stopped copy from the Previews card
   (§mesh.public/preview-card); a visit never starts anything.
 - **See.** `sova_previews` (read, any level) lists the project's previews, active ones first:
-  each one's id, whether the operator has its link ("link kept for the operator", or "no link
-  kept for the operator (shown only when it was made)", then "send it by its id"), what it serves ("port {n}", or "folder {path}" relative to its
+  each one's id, its link (the URL, or "no link kept (shown only when it was made)", then "send it
+  by its id"), what it serves ("port {n}", or "folder {path}" relative to its
   worktree), its coding session and branch, its purpose, who made it (you or the operator), its
   expiry and its state ("active, app is running", "active, nothing on port {n}", "active, not
   serving the folder", "turned off", "expired"). `sova_project` lists the active ones under
@@ -919,8 +955,8 @@ user row.
   process listens is refused, naming why, and so is a port of Sova's own. `purpose` (required, one
   line, at most 200 characters) says what it shows and to whom. `days` is 1 to 30, default 1.
   Every preview rule holds (§mesh.public/preview): loopback only, never Sova's own ports, a
-  preview address needed. The link is kept for the operator (§mesh.public/preview); the result
-  names the preview by its id and never carries the link.
+  preview address needed. The link is kept (§mesh.public/preview); the result names the preview
+  by its id and carries its link.
 - **Guarded as the people-facing act it is.** A start is the project statechart's `preview/start` act: power `share` (§app.project-overseer/autonomy-levels), held (§app.project-overseer/holds). In a turn the operator
   started it goes ahead at once; in a run the operator did not start it needs `share` On and no brake, then waits in the hold ("A preview link: {purpose}"), cancellable from Needs you and the Pipeline, and goes ahead when the hold ends. The session, target and port
   rules are checked at the call (a refusal is logged and holds nothing) and again when it goes
@@ -933,19 +969,20 @@ user row.
   statechart's `services/share` act, guarded as `preview/start` is: power `share`, people-facing, held ("A preview link: {endpoint} of a running copy ({branch})"), refused while the
   project is archived, counted against no allowance; its effect mints the link once it goes ahead,
   checked again then, and its payload and result carry the link's id, never the link. The tool's
-  result names the link by its id, endpoint, expiry and state, never its URL. `sova_previews` lists
-  these links too, each with its id, endpoint, the copy's branch ("main" for the main checkout),
-  its expiry and its state, never the link. `revoke {link | instance}` takes them away at any level
-  and in any run, never held. Who gets the link: in a standalone project it is only for the
-  operator, who sees it in Sova; in an organization's project the overseer may then send it to a
-  roster person with `sova_send_to_person` and its `preview` id. The prompt's Previews section
+  result names the link by its id, endpoint, expiry, state and URL (§app.project-services/share).
+  `sova_previews` lists these links too, each with its id, endpoint, the copy's branch ("main" for
+  the main checkout), its expiry, its state and its URL. `revoke {link | instance}` takes them away at any level
+  and in any run, never held. Who gets the link: the overseer may give it to the operator in a
+  reply; in an organization's project it may also send it to a roster person with
+  `sova_send_to_person` and its `preview` id (they get their own link to it). The prompt's Previews section
   and the tool descriptions say so.
 - **Seeing and stopping what runs.** The prompt also says how to see and stop any running copy of
   the project at will: `sova_project_verbs status` lists every copy (main and each worktree's) with
   its state, and `down` stops one at any time (always allowed), never held; a copy with an active share link
-  answers `needs-confirm` to it (§app.project-services/share), so the prompt says to revoke its links
-  first (`revoke {instance}`), then stop it, or to ask with a card listing the copy, whose click lets
-  it stop the copy with its links (§app.overseer/copies).
+  stops on the operator's word, in a turn they started (its data and links are kept: the links work
+  again once it is up), and answers `needs-confirm` in any other run (§app.project-services/share),
+  so the prompt says to ask the operator, or to revoke its links first (`revoke {instance}`), then
+  stop it (§app.overseer/copies).
 - **Delete.** `sova_preview {op: "off", id}` deletes one of this project's previews at once and for
   good, at any level and in any run, never held and never waiting for a review: it only takes
   something away. It is the card's Delete (`POST /api/previews/<id>/off`); its result says
@@ -953,9 +990,9 @@ user row.
   overseer's activity as "Deleted a preview link" (with its purpose).
 - **One shape for what comes next.** Both tools put each preview in their result's `details` in one
   fixed shape, `PreviewHandoff` (`shared/preview-links.ts`): `{v: 1, id, linkKept, purpose,
-  expiresAt, projectId, sessionId, branch, target, state, running, createdBy}`, never the
-  link: `linkKept` says whether the operator has it (any active preview can still be sent by its
-  id); `purpose`, `sessionId` and `branch` null
+  expiresAt, projectId, sessionId, branch, target, state, running, createdBy, url}`: `url` is the
+  preview's own kept link, null when none is kept, never a person's own link to it; `linkKept` says
+  whether one is kept (any active preview can still be sent by its id); `purpose`, `sessionId` and `branch` null
   when unknown, `target` `{kind: "port", port}` or `{kind: "static", folder}`, `running` null
   unless it is active; `sova_previews` as `{v: 1, previews}`, a start as `{v: 1, preview}`, a held
   start as `{v: 1, held}`. `sova_send_to_person` takes that `id` as its `preview` and gives the
@@ -964,17 +1001,27 @@ user row.
   or the operator's by port) is matched whenever it is read: the process listening on its port,
   when its working folder is inside one of the project's coding sessions' worktrees, names that
   session and its branch. Nothing is written: its records stay as they are.
-- **The link is a secret, and the overseer never sees it.** A kept link is only in the operator's
-  `/api/previews` answers (main listener only) and on the project page. It is never in any of the
-  overseer's tool results or errors (they are part of its session file, which the org's workspace
-  repo commits): every one of its tools passes its result through a filter that shows "[preview
-  link]" in place of a kept link, whatever text held it. Nor is it in the session list
+- **The link is a secret the overseers may hand to the operator.** A kept link is in the operator's
+  `/api/previews` answers (main listener only), on the project page, and in the overseers' tool
+  results: this project overseer's `sova_previews`, `sova_project`, `sova_preview` and
+  `sova_project_verbs` (its own project's links only), and the global Overseer's
+  `sova_project_verbs` and `sova_public_links` (every project's, §app.overseer/tools). Either may
+  give it to the operator in a reply. Its conversation is part of its session file, which the org's
+  workspace repo commits, so a link it repeats stays in the org's workspace history, readable there
+  until the link expires or is deleted; the operator accepted that. A person's own link to a
+  preview (§app.outreach/links) is never in any model's tool result: any kept link other than its
+  own project's that one of a project overseer's tool results or errors holds (another project's, a
+  person's own; in a transcript or a file it reads) shows "[preview link]" in its place. A coding session never sees a
+  preview's or a running copy's link: none of its tools' results carries one
+  (§app.project-services/share). Nor is it in the session list
   (`SessionSummary`: a title or summary line that holds one shows "[preview link]" in its place,
   replaced before the text is cut, §app.session-list/content-rules),
-  the org's gathering rows, the owner page, the share payloads (`/h/`, `/i/`, `/s/`), the
-  transition log, the overseer's activity log or the server's own logs. An owner update, or a
+  the org's gathering rows, the owner page, the share payloads (`/h/`, `/i/`, `/s/`, every shared
+  copy of a chat), the Overseer's roundup (§app.overseer/roundup), the transition log, the
+  overseer's activity log or the server's own logs. An owner update, or a
   gathering's `public_title`, `question`, `goal` or `why`, that holds a kept link is refused: "A
-  preview link goes to people through the operator, never in {what}."
+  preview link goes to people through the operator, never in {what}."; a note to a person that holds
+  one is refused too (§app.outreach/channels).
 
 ## §app.project-overseer/files — Files people sent, into a coding session
 

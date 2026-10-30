@@ -133,10 +133,20 @@ test("sharing again answers the same link, its expiry the later; days beyond the
   assert.ok(links.extendPreview(first.id, 7));
 });
 
-test("who shares: the operator confirmed, the project overseer through its act; the global Overseer needs the operator; a session never", async () => {
+test("who shares: the operator confirmed, the project overseer through its act; the global Overseer in a turn the user started; a session never", async () => {
   const ov = shaped(await engine.run("share", { instance: a.instance, endpoint: "web.http" }, { kind: "overseer", id: "ov1" }));
   assert.equal(ov.error?.code, "needs-confirm");
-  assert.equal(ov.error?.message, "The operator shares it from the project's Branches tab.");
+  assert.equal(ov.error?.message, "share runs only in a turn the user started: ask them");
+  assert.equal(shaped(await engine.run("share", { instance: a.instance, endpoint: "web.http" }, { kind: "overseer", id: "ov1", word: () => false })).error?.code, "needs-confirm");
+  // In the user's turn: on everyone's limits (a declared endpoint, the days cap), its result carrying the URL.
+  const attended: Caller = { kind: "overseer", id: "ov1", word: () => true };
+  assert.equal(shaped(await engine.run("share", { instance: a.instance, endpoint: "web.admin" }, attended)).error?.code, "share-denied");
+  assert.equal(shaped(await engine.run("share", { instance: a.instance, endpoint: "web.http", days: 8 }, attended)).error?.code, "invalid-request");
+  const mine0 = linksOf(a.instance!).find((l) => l.endpoint === "web.http")!;
+  const go = shaped(await engine.run("share", { instance: a.instance, endpoint: "web.http" }, attended));
+  assert.equal(go.ok, true, JSON.stringify(go.error));
+  assert.equal(go.links[0]?.id, mine0.id, "the same active link, as for anyone");
+  assert.match(go.links[0]?.url ?? "", /^https:\/\/[a-z2-7]{52}\.preview\.example\.invalid\/$/);
   const se = shaped(await engine.run("share", { instance: a.instance, endpoint: "web.http" }, { kind: "session", id: "s1", root: project, own: [a.checkout!] }));
   assert.equal(se.error?.code, "forbidden");
   const acts: unknown[][] = [];
@@ -153,20 +163,23 @@ test("who shares: the operator confirmed, the project overseer through its act; 
   const refused = shaped(await engine.run("share", { instance: a.instance, endpoint: "web.admin" }, { kind: "project-overseer", id: "po1", root: project, act: async (...args) => void acts.push(args) }));
   assert.equal(refused.error?.code, "share-denied");
   assert.equal(acts.length, 1);
-  // Taken (or released): the act's effect runs the share again with a pass-through act; the link has no url for it.
+  // Taken (or released): the act's effect runs the share again with a pass-through act; its result carries the url.
   const made = shaped(await engine.run("share", { instance: a.instance, endpoint: "site.http", days: 2 }, { kind: "project-overseer", id: "po1", root: project, act: async () => undefined }));
   assert.equal(made.ok, true, JSON.stringify(made.error));
   assert.equal(made.links[0]?.createdBy, "session:po1", "preview-links.json keeps the overseer as its conversation");
-  assert.equal(made.links[0]?.url, undefined);
+  assert.match(made.links[0]?.url ?? "", /\.preview\.example\.invalid\/$/);
   assert.deepEqual(keptPreview(made.links[0]!.id)?.target, { kind: "instance", instance: a.instance, endpoint: "site.http", generation: 1 });
-  // Status lists each copy's links; the url only for the operator, and no tool result carries one.
+  // Status lists each copy's links; the url for the operator and both Overseers, never a coding session.
   const mine = shaped(await engine.run("status", { project }, op)).instances!.find((i) => i.instance === a.instance)!;
   assert.deepEqual(mine.links.map((l) => [l.endpoint, !!l.url]), [["web.http", true], ["site.http", true]]);
   assert.deepEqual(mine.share, { endpoints: ["web.http", "site.http"], refused: null });
   const theirs = shaped(await engine.run("status", { project }, { kind: "overseer", id: "ov1" }));
-  const text = renderResult(theirs);
-  assert.ok(!/preview\.example\.invalid/.test(text), "no URL in a tool result");
-  assert.equal(theirs.instances!.find((i) => i.instance === a.instance)!.links.length, 2);
+  assert.deepEqual(theirs.instances!.find((i) => i.instance === a.instance)!.links.map((l) => !!l.url), [true, true]);
+  const po = shaped(await engine.run("status", { instance: a.instance }, { kind: "project-overseer", id: "po1", root: project, act: async () => undefined }));
+  assert.deepEqual(po.links.map((l) => !!l.url), [true, true]);
+  const session = shaped(await engine.run("status", { instance: a.instance }, { kind: "session", id: "s1", root: project, own: [a.checkout!] }));
+  assert.equal(session.links.length, 2);
+  assert.ok(!/preview\.example\.invalid/.test(renderResult(session)), "no URL in a coding session's result");
 });
 
 test("down of a linked copy needs the operator's confirm; its links stay and a visit starts nothing", async () => {

@@ -25,6 +25,9 @@ import { courier, Outbox, sendsOf, sendsOnTheWay, takeBackHere, type Frame } fro
 import { chatCourier } from "../lib/chat-courier";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
 import { createOfferControls, OfferContext, OfferTray } from "./OfferCard";
+import { CardContext, createCardControls } from "../lib/card-controls";
+import { cardPicksLabel, cardPicksMessage } from "../lib/card-picks";
+import { outsideCardRowId, placeOutsideCards } from "../lib/transcript-placement";
 import type { OfferCard } from "../../shared/session-offers";
 import { SettingsCardContext } from "./SettingsChangeCard";
 import type { OverseerApprovals } from "./OverseerApprovalsPanel";
@@ -55,7 +58,6 @@ import {
   queuedText,
   runDetail,
   seedLive,
-  offersRemove,
   liveInputCount,
   takeBackQueued,
   unsentRows,
@@ -118,19 +120,18 @@ import type { RewindRefusal } from "../../shared/protocol";
 import { COMPACT_IMAGES_REFUSAL, compactCommand } from "../../shared/compact";
 import { COMPACT_STREAMING_REASON, COMPACTING_REASON, compactedAnnouncement } from "../lib/compact";
 import {
-  ACTION_LABEL,
   actionReason,
   actionsFor,
   COPIED,
   copyable,
   queueGoneEffect,
-  queueRemoveReason,
   queueRemoveRefusalText,
   type ActionState,
   SHARE_WAIT_REASON,
 } from "../lib/message-actions";
 import { shareHref } from "../lib/share-slice";
 import type { MessageActionItem } from "./MessageActions";
+import { queueRemoveFrame, queueRowActions } from "../lib/queue-actions";
 import { isInput } from "../lib/turn";
 import { noteLinks } from "../lib/links-live";
 import { jumpToEntry, jumpWhenArrived, landExplainJump, transcriptRoot } from "../lib/jump";
@@ -1603,20 +1604,10 @@ export function ChatView(props: {
   /** A message of ours that hasn't been delivered: one Remove, by the id the server knows it by.
       A row with no id (sent before this build, or by a client that minted none) offers nothing —
       there is no truthful way to name it to the server. */
-  const queueActions = (row: { id?: string; state: LiveUserState; text: string; handed?: boolean }): MessageActionItem[] => {
-    const id = row.id;
-    // Only a row the server holds (Queued) has one (§chat.transcript/a-queued-message): a Sending… row
-    // draws none, before the server's answer or once handed to the agent (Stop takes that back).
-    if (!id || !offersRemove(row)) return [];
-    return [
-      {
-        kind: "remove",
-        label: ACTION_LABEL.remove,
-        reason: queueRemoveReason({ state: "queued", pending: removing().includes(id), chat: true, sharedQueue: sharedQueue().includes(id) }),
-        run: () => removeQueued(id),
-      },
-    ];
-  };
+  // Only a row the server can still take back (Queued, a steer handed to the agent included) has one
+  // (§chat.transcript/a-queued-message): a Sending… row draws none (lib/queue-actions.ts).
+  const queueActions = (row: { id?: string; state: LiveUserState; text: string; handed?: boolean }): MessageActionItem[] =>
+    queueRowActions(row, { removing: removing(), sharedQueue: sharedQueue(), remove: (id) => void removeQueued(id) });
 
   const removeQueued = async (id: string) => {
     if (removing().includes(id)) return;
@@ -1624,9 +1615,9 @@ export function ChatView(props: {
     try {
       // The answer does the work, and it comes in two halves: `queue_item_gone` is broadcast, so
       // the row leaves every tab including this one, while `queue_removed` is ours alone and only
-      // settles this request and hands the text to this composer. A refusal says why, and for
+      // settles this request (a removal is a discard: the text never comes back). A refusal says why, and for
       // "consumed" leaves the row as the delivered message it turned out to be.
-      await ask("queue_remove", { type: "queue_remove", itemId: id });
+      await ask("queue_remove", queueRemoveFrame(id));
     } finally {
       setRemoving((l) => l.filter((x) => x !== id));
     }
@@ -1660,6 +1651,23 @@ export function ChatView(props: {
   // Offer cards (§chat.offers/card): an ordinary chat's, read from the server, again after each turn.
   const offers = props.overseer || props.projectOverseer ? undefined : createOfferControls(() => props.path, (c) => !!c.toolCallId, () => !archivedPane() && !batonGate());
   if (offers) createEffect(on(() => live.running, (now, before) => void (before && !now && offers.refresh()), { defer: true }));
+  // Transcript cards (§chat/transcript-cards): an ordinary chat's, read from the server, again after each turn.
+  // A card's view stages text at the end of the draft (§chat.transcript-cards/view-api), as `staged` below.
+  const [stagedText, setStagedText] = createSignal<{ text: string } | null>(null);
+  const raisedCards =
+    props.overseer || props.projectOverseer
+      ? undefined
+      : createCardControls(() => props.path, () => !archivedPane() && !batonGate(), {
+          stage: (text) => setStagedText({ text }),
+          session: () => ({ id: props.summary?.()?.id ?? "", title: props.summary?.()?.title ?? "" }),
+        });
+  if (raisedCards) createEffect(on(() => live.running, (now, before) => void (before && !now && raisedCards.refresh()), { defer: true }));
+  /** The thread's rows with the cards raised from outside the chat placed where they were raised (lib/transcript-placement). */
+  const threadItems = createMemo(() => {
+    const list = items();
+    const outside = raisedCards?.outside() ?? [];
+    return list && outside.length ? placeOutsideCards(list, outside, (card): TranscriptItem => ({ id: outsideCardRowId(card.id), kind: "card", at: card.at, card })) : list;
+  });
   /** Show in Chat for an offer card (§chat.composer/waiting-dialog): its `offer` call's row (the
       jump's highlight included), else the card where it stands (the tray at the thread's end). */
   const jumpToOffer = (card: OfferCard) => {
@@ -1767,9 +1775,20 @@ export function ChatView(props: {
   };
   const composerPicks = createMemo(() => {
     const p = picks();
-    return pickCount(p) === 0
-      ? null
-      : { label: picksLabel(p), compose: (text: string) => composeWithPicks(p, text), clear: () => clearPicks(props.path) };
+    // A gathering transcript card's picks join the alignment's (§chat.transcript-cards/answering): one line per card.
+    const cp = raisedCards?.picks() ?? {};
+    const nCards = Object.keys(cp).length;
+    if (pickCount(p) === 0 && nCards === 0) return null;
+    const label = [pickCount(p) ? picksLabel(p) : "", nCards ? cardPicksLabel(cp) : ""].filter(Boolean).join("; ");
+    return {
+      label,
+      compose: (text: string) => composeWithPicks(p, [nCards ? cardPicksMessage(cp) : "", text].filter((t) => t !== "").join("\n\n")),
+      clear: () => {
+        clearPicks(props.path);
+        raisedCards?.clearPicks();
+      },
+      ...(nCards ? { sent: () => raisedCards?.sent(cp) } : {}),
+    };
   });
 
   if (props.overseer?.bindSender) {
@@ -2351,8 +2370,9 @@ export function ChatView(props: {
               }}>
               <SettingsCardContext.Provider value={!!props.projectOverseer && !archivedPane()}>
               <OfferContext.Provider value={offers}>
+              <CardContext.Provider value={raisedCards}>
               <HistoryItems
-                items={list()}
+                items={threadItems() ?? list()}
                 author={props.author}
                 names={batonNames()}
                 streaming={live.running}
@@ -2375,6 +2395,7 @@ export function ChatView(props: {
                 queueActions={queueActions}
               />
               <OfferTray />
+              </CardContext.Provider>
               </OfferContext.Provider>
               </SettingsCardContext.Provider>
               </TourSessionContext.Provider>
@@ -2534,6 +2555,7 @@ export function ChatView(props: {
         onDraft={setHasDraft}
         onAbort={abort}
         restored={restored()}
+        staged={stagedText()}
       />
       <Show when={showPlaybooks()}>
         <PlaybooksDialog

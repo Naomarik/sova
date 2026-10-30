@@ -92,7 +92,8 @@
       "src/lib/work-compression.ts",
       "src/lib/work-compression.test.ts",
       "src/components/SettingsDialog.tsx",
-      "src/components/UpdatesSettings.tsx"
+      "src/components/UpdatesSettings.tsx",
+      "src/components/ServerSettings.tsx"
     ],
     "agreed": {
       "by": "user",

@@ -12,9 +12,10 @@ import type { ExtensionInfo, ExtensionOffers } from "../shared/protocol";
 import { offersOf } from "../shared/extension-offers";
 import { extCommandsFrom, type ExtCommandEntry } from "../shared/commands-ext";
 import { stateRoot } from "./state-root";
+import { viewOffersOf } from "./extension-views";
 import { isExtensionKey, sovaToken } from "./auth";
 
-// The generic extension host (ext-contract-v1.16: v1.15 plus each backend's own key, server/extension-keys.ts, and a command's optional `menu` key, src/lib/menu-place.ts). An extension is a static UI (`dist`) plus a
+// The generic extension host (ext-contract-v1.17: v1.15 plus each backend's own key, server/extension-keys.ts, and a command's optional `menu` key, src/lib/menu-place.ts, v1.16; card types and drawing kinds in chat transcripts, server/extension-views.ts, v1.17). An extension is a static UI (`dist`) plus a
 // loopback HTTP backend (`api`), both named in a manifest the user installs; Sova never writes it.
 // Sova serves the UI at /ext/<id>/, proxies /ext/<id>/api/* and /ext/<id>/ws/* to the backend,
 // and lists the extensions (with a cached health probe, and what each declares it offers) at
@@ -93,8 +94,11 @@ export function validateExtension(raw: unknown): { entry: ExtensionEntry; offers
   if (typeof r.description === "string" && r.description.trim()) entry.description = r.description.trim();
   if (typeof r.icon === "string" && ICON_RE.test(r.icon)) entry.icon = r.icon;
   // A bad `commands` or `screens` leaves out only what is bad, never the entry.
-  const { offers, dropped } = offersOf(r.id, r);
-  for (const why of dropped) warnOnce(`${r.id}: left out ${why}`);
+  const { offers: base, dropped } = offersOf(r.id, r);
+  // Its card types and drawing kinds (v1.17), each checked on its own against its dist.
+  const views = viewOffersOf(entry, r);
+  for (const why of [...dropped, ...views.dropped]) warnOnce(`${r.id}: left out ${why}`);
+  const offers = base || views.offers.cards || views.offers.drawings ? { ...(base ?? {}), ...views.offers } : null;
   return offers ? { entry, offers } : { entry };
 }
 
@@ -116,6 +120,9 @@ export function installedExtensionCommands(): ExtCommandEntry[] {
   }
   return out;
 }
+
+/** Every installed entry with what it offers (its card types and drawing kinds among them): a chat's snapshot reads it. */
+export const readExtensionsWithOffers = (): Array<{ entry: ExtensionEntry; offers?: ExtensionOffers }> => readManifest().map(({ entry, offers }) => (offers ? { entry, offers } : { entry }));
 
 /** readExtensions, each entry with what it offers (and its raw `commands`, for the full entries). */
 function readManifest(): Array<{ entry: ExtensionEntry; offers?: ExtensionOffers; commands?: unknown }> {
@@ -292,7 +299,7 @@ export function serveExtensionFile(entry: ExtensionEntry, rest: string): Respons
 
 /** Whether `file`, once links are followed (symbolic or hard), is a backend's key or the file of their hashes
     (§app.extensions/backend-key): a `dist` that holds them, or links to them, never serves them. */
-function isKeyFile(file: string): boolean {
+export function isKeyFile(file: string): boolean {
   let real: string;
   try {
     real = realpathSync(file);

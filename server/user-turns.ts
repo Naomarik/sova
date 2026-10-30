@@ -74,8 +74,13 @@ const STATE_NOTES = new Set<string>([CARDS_NOTE_MESSAGE, ID_NOTE_MESSAGE]);
  * `send` and is unattended: that turn is read-only, never the reverse.
  */
 export class UserTurns {
-  private readonly sending = new AsyncLocalStorage<{ open: boolean; confirm?: string }>();
+  private readonly sending = new AsyncLocalStorage<{ open: boolean; confirm?: string; overseer?: true }>();
   private readonly fromUser = new WeakSet<object>();
+  /** A marked message the global Overseer sent (through the project overseer's message route): the
+      operator's to its model and limits, but not the operator's own message. */
+  private readonly fromOverseer = new WeakSet<object>();
+  /** The user's part of this run was opened by a message the global Overseer sent. */
+  private byOverseer = false;
   /** A marked message that is a click on a card: that card's id (`c_N`). */
   private readonly confirmOf = new WeakMap<object, string>();
   /** The card whose click opened the user's part of this run, while it lasts. */
@@ -92,8 +97,8 @@ export class UserTurns {
   private rerun: boolean | null = null;
   /** Run the SDK call that hands a message the user sent to the runtime. `confirm`: the message is a
       click on the card with that id, `c_N` (the chat runtime says so; typed text never is). */
-  send<T>(send: () => T, confirm?: string): T {
-    return this.sending.run({ open: true, ...(confirm ? { confirm } : {}) }, send);
+  send<T>(send: () => T, confirm?: string, opts: { overseer?: boolean } = {}): T {
+    return this.sending.run({ open: true, ...(confirm ? { confirm } : {}), ...(opts.overseer ? { overseer: true as const } : {}) }, send);
   }
   /** Mark, from now on, the user message each `send` produces as it reaches this session's agent. */
   watch(session: UserMessageSource): void {
@@ -109,6 +114,7 @@ export class UserTurns {
     ctx.open = false;
     this.fromUser.add(message as object);
     if (ctx.confirm) this.confirmOf.set(message as object, ctx.confirm);
+    if (ctx.overseer) this.fromOverseer.add(message as object);
   }
   /** One event from the Overseer session's stream; returns true when a message the user sent
       entered the context (the per-turn caps renew). */
@@ -179,7 +185,10 @@ export class UserTurns {
     const mine = this.fromUser.delete(message as object);
     const card = this.confirmOf.get(message as object) ?? null;
     this.confirmOf.delete(message as object);
+    const overseer = this.fromOverseer.delete(message as object);
     this.now = mine && !parseWakeNudge(text) && !text.startsWith(OVERSEER_BRIEF_PREFIX);
+    // Kept with the run it opened (a re-run of a failed request included) until a new message decides again.
+    this.byOverseer = this.now && overseer;
     // Only the click itself opens a confirmed run: a later message, typed or not, is a new run of its own.
     this.card = this.now ? card : null;
     this.batch = this.now;
@@ -188,6 +197,11 @@ export class UserTurns {
   attended(): boolean {
     return this.now;
   }
+  /** Attended, and opened by the operator's own message (typed, or their click), never by one the global
+      Overseer sent: what only the operator's own word may do (adding a person, setting a contact). */
+  ownMessage(): boolean {
+    return this.now && !this.byOverseer;
+  }
   /** The confirm card whose click opened the user's part of this run, or null (§app.overseer/org-people-facing). */
   confirmedCard(): string | null {
     return this.now ? this.card : null;
@@ -195,6 +209,7 @@ export class UserTurns {
   /** /clear: nothing carries over. */
   reset(): void {
     this.now = false;
+    this.byOverseer = false;
     this.batch = false;
     this.retry = null;
     this.rerun = null;

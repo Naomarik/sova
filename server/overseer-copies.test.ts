@@ -182,6 +182,9 @@ test("the Overseer's tool: leftovers is a read; stop-leftover goes through its a
   const p = projectOverseerVerbsTool((() => ({})) as never, { id: () => "po", root: () => "/p/demo", act: async () => {}, copies: { ...copies, root: async () => "/p/demo" } });
   const prun = async (params: Record<string, unknown>) => ((await p.execute("k", params, undefined, undefined, undefined as never)) as { content: { text: string }[] }).content[0]!.text;
   assert.match(await prun({ verb: "leftovers", project: "/p/other" }), /forbidden: this caller acts only on its own project/);
-  assert.match(t.description, /run only in the turn the user's click on a card listing it opens/);
+  assert.match(t.description, /only in the turn the user's click on a card listing it opens/);
+  assert.match(t.description, /runs on the user's word once its conversation is finished or archived/);
+  assert.match(t.description, /carries its URL: give it to the user in your reply/);
+  assert.match(p.description, /On the operator's word \(a turn they started\): stopping a copy with an active share link/);
   assert.doesNotMatch(t.description, /down of a copy with an active link is the operator's/, "the old rule is gone from this tool's words");
 });

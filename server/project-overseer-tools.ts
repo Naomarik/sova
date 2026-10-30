@@ -21,13 +21,14 @@ import type { EnabledEvent } from "./statecharts";
 import type { FeedEntry } from "./org-host";
 import type { HeldAct, PipelineRow } from "../shared/pipeline";
 import { PREVIEW_PURPOSE_MAX, type PreviewView } from "../shared/preview-links";
-import { holdsPreviewLink, redactPreviewLinks, redactPreviewLinksDeep } from "./preview-kept";
+import { holdsPreviewLink, keptLabels, keptPreview, linkLabel, redactPreviewLinks, redactPreviewLinksDeep } from "./preview-kept";
+import { listPreviews } from "./preview-links";
 import { handoffOf } from "./project-previews";
 import { contributedRead, otherSessionsOf, type GapPart, type OverseerToolCtx } from "./projects/contributions";
 import { projectEngine } from "./project-services/routes";
 import { projectOverseerVerbsTool } from "./project-services/tools";
 import { projectRootOf } from "./project-root";
-import { copyApproval, copyItem, leftoverItem, liveLeftoverHost, realCopyRowHost } from "./overseer-copies";
+import { copyApproval, copyItem, leftoverItem, liveLeftoverHost, realCopyRowHost, starterWorking } from "./overseer-copies";
 import type { ClickChoice } from "../shared/overseer-card";
 import type { VerbActOutcome } from "./project-services/engine";
 import { READ_VERBS } from "../shared/project-contract";
@@ -176,16 +177,18 @@ const PLAIN_POWER: Record<string, ToolPower> = {
   sova_draft_approve: "operator",
   sova_draft_build: "operator",
   sova_settings: "per-op", // §app.project-overseer/settings: it prepares; applying is the operator's click
+  sova_whatsapp: "per-op", // §app.outreach/overseer-sender (server/overseer-whatsapp-part.ts): status any run, start the operator's
 };
 
 /** Per op, for the tools whose ops differ in power. */
 export const OP_POWER: Record<string, Record<string, PowerId | "always" | "operator">> = {
-  sova_roster: { read: "always", approve: "roster", decline: "roster" },
+  sova_roster: { read: "always", approve: "roster", decline: "roster", add: "operator", contact: "operator" },
   sova_files: { list: "always", copy: "codingPrompt", delete: "operator" },
   sova_correct: { reopen: "bookkeeping", "skip-stall": "bookkeeping", relink: "bookkeeping", "clear-failed": "bookkeeping", merged: "markMerged" },
   sova_hold: { cancel: "always" },
   // Applying a settings card (and its approvals) is never a tool's op: the operator's click on the card.
   sova_settings: { get: "always", reference: "always", propose: "always", withdraw: "always", apply: "operator" },
+  sova_whatsapp: { status: "always", start: "operator" },
   sova_project_verbs: {
     status: "always", logs: "always", doctor: "always", down: "always", revoke: "always",
     create: "copiesRun", up: "copiesRun", apply: "copiesRun", conform: "copiesRun", test: "copiesRun",
@@ -348,6 +351,13 @@ export function gapOf(q: { gap?: unknown }): string {
   return g.startsWith("§") ? g : `§${g}`;
 }
 
+/** A call's arguments as its action log keeps them: every `contact` value is `[contact]`. */
+function contactScrubbed<T>(v: T): T {
+  if (Array.isArray(v)) return v.map(contactScrubbed) as T;
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "contact" && x !== undefined ? "[contact]" : contactScrubbed(x)])) as T;
+  return v;
+}
+
 // ---- the tools -------------------------------------------------------------------------------------
 
 export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor = serverRedactor): Tool[] {
@@ -356,8 +366,9 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
   function act(name: string, run: (params: any, toolCallId: string) => Promise<Out>, counts: PoLimitKind | undefined = COUNTS[name]) {
     return async (toolCallId: string, params: any, signal?: AbortSignal): Promise<Out> => {
       const log = (outcome: "ok" | "partial" | "refused" | "error", error?: string, note?: string) =>
-        // A kept preview link never reaches the log, even in a refused call's arguments (§app.project-overseer/previews).
-        logAction(redactPreviewLinksDeep({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: params, outcome, ...(error !== undefined ? { error } : {}), ...(note ? { note } : {}) }), p.actions);
+        // A kept preview link never reaches the log, even in a refused call's arguments (§app.project-overseer/previews);
+        // a contact it was given (sova_roster add, contact) is `[contact]` there, never the value.
+        logAction(redactPreviewLinksDeep({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: contactScrubbed(params), outcome, ...(error !== undefined ? { error } : {}), ...(note ? { note } : {}) }), p.actions);
       try {
         const refused = operatorOnlyRefusal(name, host.attended());
         if (refused) throw new Refusal(refused);
@@ -672,9 +683,9 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       label: "Previews",
       description:
         "The project's preview links: each shows one coding session's running app (a port it serves, or a folder of its worktree that Sova serves) to a stakeholder at its own public address, until it is deleted or expires. " +
-        "Lists each one's id, whether the operator has its link (previews made before links were kept have none), what it serves, its coding session and branch, its purpose, who made it, its expiry and whether the app answers now. Active ones first. You never see a link: send a preview to a person with sova_send_to_person and its `preview` id (they get their own link to it), or tell the operator, who has it on the project page. " +
-        "It also lists the links to the project's running copies (sova_project_verbs share): each one's id, endpoint, the copy's branch, expiry and state. In a standalone project such a link is only for the operator; in an organization's project you may send it to one of its people by its id (sova_send_to_person).",
-      promptSnippet: "list the project's preview links and running copies' links (id, what it serves, state; never the link)",
+        "Lists each one's id, its link (previews made before links were kept have none), what it serves, its coding session and branch, its purpose, who made it, its expiry and whether the app answers now. Active ones first. Anyone with a link can use the app: give it to the operator in your reply when they ask for it; send a preview to a person with sova_send_to_person and its `preview` id (they get their own link to it). " +
+        "It also lists the links to the project's running copies (sova_project_verbs share): each one's id, endpoint, the copy's branch, expiry, state and link. Give such a link to the operator in a reply; in an organization's project you may also send it to one of its people by its id (sova_send_to_person).",
+      promptSnippet: "list the project's preview links and running copies' links (id, what it serves, state, link)",
       parameters: obj({}),
       execute: read(async () => {
         const all = await host.previews();
@@ -691,7 +702,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       description:
         "Start or delete a preview link: one of the project's coding sessions' running apps at its own public address, for a stakeholder to see now. " +
         "start: `session` (a coding session with a worktree), and either `port` (one that session already serves: the program listening must run from its worktree) or `folder` (a folder of its worktree, relative to it, that Sova serves: built static files, never a dot-folder), plus `purpose` (one line: what it shows and to whom). " +
-        "Anyone with the link can use the app as if they were on this computer, so make one only when a stakeholder should see it now and check it answers. You never see the link (it would land in your session file): send the preview to a person with sova_send_to_person and its `preview` id (they get their own link to it), or tell the operator, who has the link on the project page. Sova never starts the app: if it stopped, have its coding session start it again (sova_send). " +
+        "Anyone with the link can use the app as if they were on this computer, so make one only when a stakeholder should see it now and check it answers. The result carries its link: give it to the operator in your reply when they ask for it (it stays in your conversation); send the preview to a person with sova_send_to_person and its `preview` id (they get their own link to it). Sova never starts the app: if it stopped, have its coding session start it again (sova_send). " +
         "Unattended it needs the Share power and waits in a hold the operator can cancel. off: `id` deletes one at once and for good (its link and every link sent from it stop working, and nothing brings one back), always allowed; delete a preview once it has served its purpose.",
       promptSnippet: "start (the Share power, held unattended) or delete a preview link of a coding session's app",
       parameters: obj(
@@ -729,7 +740,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         if ("held" in made) return { content: text(heldText(`the preview link "${cut(purpose, 80)}"`, made.held)), details: { v: 1, held: made.held.id } };
         const v = made.preview;
         return {
-          content: text(`Made a preview link: ${previewLine(v).slice(2)}. Check sova_previews says it is serving; the link is the operator's (you never see it): send it to a person with sova_send_to_person, preview "${v.id}", or tell the operator it is ready.`),
+          content: text(`Made a preview link: ${previewLine(v).slice(2)}. Check sova_previews says it is serving; give the link to the operator in your reply, or send it to a person with sova_send_to_person, preview "${v.id}" (they get their own link).`),
           details: { v: 1, preview: handoffOf(v), note: `Made a preview link: ${cut(purpose, 120)}` },
         };
       }),
@@ -1011,6 +1022,8 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         ...(host.onboard ? { onboard: (why: string) => host.onboard!(why) } : {}),
         // Its own project's copies and leftover processes, after the operator's click (§app.overseer/copies).
         ...(clicks ? { copies: { clicks, approved: copyApproval(clicks), host: () => liveLeftoverHost(projectEngine()), root: ownRoot } } : {}),
+        // The operator's word opens stopping a linked copy; a finished conversation's copy, its teardown (§app.overseer/copies).
+        turn: { word: () => host.attended(), working: starterWorking(async (id) => (await host.sessions()).find((x) => x.id === id) ?? null) },
       });
       const exec = (id: string, params: any) => t.execute(id, params, undefined, undefined, undefined as never) as Promise<Out>;
       // The engine's own refusal or failure (forbidden, needs-confirm, a verb that failed) comes back as the result,
@@ -1034,26 +1047,45 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
     ...host.contributed({ act: (name, run, counts) => act(name, run, counts), read, heldText }),
   ];
 
-  return tools.map((t) => previewLinkFree(redactingTool(t, redactor)));
+  return tools.map((t) => previewLinkFree(redactingTool(t, redactor), () => host.project().id));
 }
 
 /**
- * No tool result or error of the overseer's carries a kept preview link (§app.project-overseer/previews): its
- * results are part of its session file, which the org's workspace repo commits. The preview tools never put one
- * there; this is the backstop for any other text that holds one (a transcript sova_read_session reads, say).
+ * The overseer sees its own project's kept preview links, and may hand one to the operator
+ * (§app.project-overseer/previews); no tool result or error of its carries any other: a person's own link
+ * (§app.outreach/links) or another project's. This is the backstop for any text that holds one (a transcript
+ * sova_read_session reads, a file). With no `project`, every kept link is redacted.
  */
-export function previewLinkFree(t: Tool): Tool {
+export function previewLinkFree(t: Tool, project?: () => string): Tool {
+  const labels = () => {
+    const all = keptLabels();
+    if (!project) return all;
+    const own = new Set(ownPreviewLabels(project()));
+    return all.filter((l) => !own.has(l));
+  };
   return {
     ...t,
     execute: async (...args: Parameters<Tool["execute"]>) => {
+      const hidden = labels();
       try {
-        return redactPreviewLinksDeep(await t.execute(...args));
+        return redactPreviewLinksDeep(await t.execute(...args), hidden);
       } catch (err) {
-        if (err instanceof Error && holdsPreviewLink(err.message)) throw new Error(redactPreviewLinks(err.message));
+        if (err instanceof Error && holdsPreviewLink(err.message, hidden)) throw new Error(redactPreviewLinks(err.message, hidden));
         throw err;
       }
     },
   };
+}
+
+/** The labels of `projectId`'s own previews' kept links (never a person's sibling). */
+function ownPreviewLabels(projectId: string): string[] {
+  const out: string[] = [];
+  for (const v of listPreviews({ projectId })) {
+    if (v.siblingOf) continue;
+    const l = linkLabel(keptPreview(v.id)?.url);
+    if (l) out.push(l);
+  }
+  return out;
 }
 
 /** The session parameter's description: the id as the tools print it. */
@@ -1062,7 +1094,7 @@ const SESSION_PARAM = 'Session id as sova_list_sessions lists it (a bare id; "so
 /** A gathering's texts reach a person as written: a kept preview link never goes there (§app.project-overseer/previews). */
 export const PREVIEW_IN_GATHERING = "A preview link goes to people through the operator, never in a gathering's title, question, goal or why.";
 
-/** One preview as the tools list it: id, what it serves, its session, purpose, who, state, expiry and whether a link is kept (never the link). Pure. */
+/** One preview as the tools list it: id, what it serves, its session, purpose, who, state, expiry and its kept link. Pure. */
 export function previewLine(v: PreviewView): string {
   if (v.instance) return copyLinkLine(v);
   const t = v.target ?? { kind: "port" as const, port: v.port };
@@ -1071,15 +1103,15 @@ export function previewLine(v: PreviewView): string {
     v.state === "off" ? "turned off" : v.state === "expired" ? "expired" : t.kind === "static" ? (v.running ? "active, serving the folder" : "active, not serving the folder") : v.running ? "active, app is running" : `active, nothing on port ${t.port}`;
   const session = v.sessionId ? ` · ${v.sessionId}${v.sessionTitle ? ` "${cut(v.sessionTitle, 60)}"` : ""}${v.branch ? ` on ${v.branch}` : ""}${v.sessionFrom === "worktree" ? " (matched by its worktree)" : ""}` : "";
   const who = v.createdBy === "operator" ? "the operator" : "you";
-  return `- ${v.id} · ${what}${session}${v.purpose ? ` · "${cut(v.purpose, 120)}"` : ""} · made by ${who} · ${state} · ${v.state === "active" ? `expires ${v.expiresAt}` : v.revokedAt ? `off since ${v.revokedAt}` : `expired ${v.expiresAt}`} · ${v.url ? "link kept for the operator" : "no link kept for the operator (shown only when it was made)"} · send it by its id`;
+  return `- ${v.id} · ${what}${session}${v.purpose ? ` · "${cut(v.purpose, 120)}"` : ""} · made by ${who} · ${state} · ${v.state === "active" ? `expires ${v.expiresAt}` : v.revokedAt ? `off since ${v.revokedAt}` : `expired ${v.expiresAt}`} · ${v.url ? (v.state === "active" ? `link ${v.url}` : "link no longer active") : "no link kept (shown only when it was made)"} · send it by its id`;
 }
 
-/** A running copy's share link (§app.project-overseer/previews): id, endpoint, the copy's branch, who, state and expiry (never the link). Pure. */
+/** A running copy's share link (§app.project-overseer/previews): id, endpoint, the copy's branch, who, state, expiry and its link. Pure. */
 export function copyLinkLine(v: PreviewView): string {
   const state = v.state === "off" ? "revoked" : v.state === "expired" ? "expired" : v.running ? "active, the copy answers" : "active, the copy is not running";
   const who = v.createdBy === "operator" ? "the operator" : "you";
   const when = v.state === "active" ? `expires ${v.expiresAt}` : v.revokedAt ? `revoked ${v.revokedAt}` : `expired ${v.expiresAt}`;
-  return `- ${v.id} · running copy ${v.instance}, endpoint ${v.endpoint ?? `port ${v.port}`}, on ${v.branch ?? "the main checkout"} · shared by ${who} · ${state} · ${when} · send it by its id`;
+  return `- ${v.id} · running copy ${v.instance}, endpoint ${v.endpoint ?? `port ${v.port}`}, on ${v.branch ?? "the main checkout"} · shared by ${who} · ${state} · ${when}${v.url && v.state === "active" ? ` · link ${v.url}` : ""} · send it by its id`;
 }
 
 /** The built-ins it has besides its own tools: file access in the project root (write and edit in the operator's turns only). */

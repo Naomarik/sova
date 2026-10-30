@@ -60,6 +60,27 @@
     (is (= "language must be a BCP-47 tag such as es-CO" (h/refusal x sid :person/edit {:by "wrapup" :patch {:language "spanish!"}})))
     (is (= "Bob is already on the roster." (h/refusal x sid :person/edit (assoc op :patch {:name "Bob"} :names-taken #{"bob"}))))))
 
+(deftest the-project-overseer-on-the-operators-own-word
+  (testing "person/edit: its contact write needs the host's own-word stamp and an attended turn"
+    (let [x (born ana)
+          word {:by "overseer" :by-kind "overseer" :attended true :own-word true}]
+      (is (= "A overseer change may not write contact." (h/refusal x sid :person/edit {:by "overseer" :by-kind "overseer" :attended true :patch {:contact {:whatsapp "+57 300 000 0001"}}})) "an attended turn alone: the Overseer's message, say")
+      (is (= "A overseer change may not write contact." (h/refusal x sid :person/edit {:by "overseer" :by-kind "overseer" :own-word true :patch {:contact {:whatsapp "+57 300 000 0001"}}})) "unattended, whatever the stamp")
+      (is (= "A overseer change may not write role." (h/refusal x sid :person/edit (assoc word :patch {:role "Boss"}))) "only contact besides its own fields")
+      (let [y (h/send! (h/clear! x sid) sid :person/edit (assoc word :patch {:contact {:whatsapp "+57 300 000 0001"}}))]
+        (is (= {:whatsapp "+57 300 000 0001"} (:contact (h/data y sid))))
+        (is (= "overseer" (get-in (first (h/outbox y sid)) [:by :kind])) "the history line names the overseer"))))
+  (testing "person/add: creating an active person, never a status or the operator's own fields"
+    (let [e {:own-word true :attended true}
+          add (fn [writer e p] (rp/apply-change nil p (rp/own-word-writer writer e true) #{}))]
+      (is (= "overseer-add" (rp/own-word-writer "overseer" e true)))
+      (is (= "overseer" (rp/own-word-writer "overseer" {:own-word true} true)) "unattended")
+      (is (= "operator" (rp/own-word-writer "operator" e true)) "only the overseer's authority moves")
+      (is (= "active" (get-in (add "overseer" e {:name "Rita" :role "Ops" :contact {:email "rita@example.test"}}) [:person :status])))
+      (is (= "A overseer change may not write name." (:sentence (add "overseer" {:attended true} {:name "Rita"}))) "no own-word stamp")
+      (is (= "A overseer change may not write status." (:sentence (add "overseer" e {:name "Rita" :status "proposed"}))))
+      (is (= "A overseer change may not write tz." (:sentence (add "overseer" e {:name "Rita" :tz "Europe/Istanbul"})))))))
+
 (deftest nothing-changed-writes-nothing
   (let [x (-> (born ana) (h/clear! sid) (h/send! sid :person/edit (assoc op :patch {:role "CFO"})))]
     (is (= [] (h/kinds x sid)))))

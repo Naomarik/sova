@@ -1,6 +1,7 @@
 import type { TranscriptItem } from "../../shared/protocol";
 import { TOUR_TOOLS } from "../../shared/tour";
 import { OFFER_TOOL } from "../../shared/session-offers";
+import { CARD_TOOL } from "../../shared/transcript-cards";
 import { rowFacts } from "../../shared/wire-v1";
 import { isChangeRow } from "./change-rows";
 import type { LiveBlock, LiveState } from "./live";
@@ -32,7 +33,7 @@ export interface HiddenSplit {
 /** Tools the thread renders as cards (the Overseer's question with buttons and link card, an
     alignment) rather than tool cards: "Hide tool calls" never folds them, since they are the
     message, not its working. */
-export const CARD_TOOLS: ReadonlySet<string> = new Set(["sova_card", "sova_confirm", "sova_link", "sova_unlink", "align", OFFER_TOOL, ...TOUR_TOOLS]);
+export const CARD_TOOLS: ReadonlySet<string> = new Set(["sova_card", "sova_confirm", "sova_link", "sova_unlink", "align", OFFER_TOOL, CARD_TOOL, ...TOUR_TOOLS]);
 
 /** Ids of the calls that render as cards (their paired results go with them). */
 const cardCallIds = (items: TranscriptItem[]) =>

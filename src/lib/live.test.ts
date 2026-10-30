@@ -484,6 +484,26 @@ test("a row the agent takes ahead of an older waiting one moves above it; the wa
   assert.deepEqual(drawn(s), ["agent:", "you:c2", `you:${batch}`, "you:c1"]);
 });
 
+test("a steer the server has handed to the agent stays Queued with its Remove until the agent takes it; then none", () => {
+  const [s, set] = store();
+  for (const id of ["s1", "s2", "s3"]) addPendingPrompt(set, "same", [], [], id);
+  const row = (id: string) => s.entries.find((e) => e.kind === "user" && e.id === id) as Extract<LiveState["entries"][number], { kind: "user" }>;
+  // The server's snapshot for three steers it has handed to the agent (each with its ticket): "queued".
+  applyQueue(set, ["s1", "s2", "s3"].map((id) => queued(id, "same", { kind: "steer", state: "queued" })));
+  for (const id of ["s1", "s2", "s3"]) {
+    assert.equal(shownUserState(row(id)), "queued", `${id} reads Queued`);
+    assert.equal(offersRemove(row(id)), true, `${id} offers its Remove`);
+  }
+  // The middle one is removed: it goes, its twins keep theirs.
+  markRemoved(set, "s2");
+  applyQueue(set, ["s1", "s3"].map((id) => queued(id, "same", { kind: "steer", state: "queued" })));
+  assert.deepEqual(s.entries.flatMap((e) => (e.kind === "user" ? [[e.id, shownUserState(e), offersRemove(e)]] : [])), [["s1", "queued", true], ["s3", "queued", true]]);
+  // The agent takes them (queue_item_gone delivered): sent messages, nothing to remove.
+  markDelivered(set, "s1");
+  markDelivered(set, "s3");
+  assert.deepEqual(s.entries.flatMap((e) => (e.kind === "user" ? [[e.id, shownUserState(e), offersRemove(e)]] : [])), [["s1", "delivered", false], ["s3", "delivered", false]]);
+});
+
 test("only a row the server holds offers Remove: never one still Sending, before the server's answer or after the hand-off", () => {
   const [s, set] = store();
   addPendingPrompt(set, "typed", [], [], "c1");

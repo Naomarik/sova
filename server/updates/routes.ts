@@ -2,14 +2,19 @@ import { spawn } from "node:child_process";
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Context, Hono } from "hono";
+import { showsToken, TOKEN_HEADER } from "../auth";
+import { CALLER_HEADER, callerKeys } from "../caller-keys";
+import { buildId, currentGenerationOf } from "../chat-runtime/generations";
+import { COMMAND_HEADER } from "../command-audit";
 import { OVERSEER_SENDER_HEADER } from "../overseer-sender";
-import { serverCheckout, serverStart } from "../project-services/self-host";
+import { RESTART_DELAY_SEC, scheduleRestart, serverCheckout, serverStart } from "../project-services/self-host";
 import { stateHash } from "../project-services/store";
 import { agentRoot, stateRoot } from "../state-root";
 import { repoUrlOf } from "./check";
 import { firstLine, gitIn, realExec } from "./git";
 import { detectInstall, realProbe, type InstallInfo } from "./install-kind";
-import { UpdatesManager, UpdatesRefusal } from "./manager";
+import { diskAheadOf, type DiskAhead } from "./disk-ahead";
+import { UpdatesManager, UpdatesRefusal, type RestartOrigin } from "./manager";
 import { installRunner, type UpgradePlan } from "./runner";
 import { checksOffIn } from "./state";
 
@@ -29,6 +34,27 @@ export function operatorRefusal(c: Context): string | null {
   if (c.req.header(OVERSEER_SENDER_HEADER) !== undefined) return OPERATOR_ONLY;
   if ((c.req.header("sec-fetch-site") ?? "").toLowerCase() !== "same-origin") return OPERATOR_ONLY;
   return null;
+}
+
+export const RESTART_REFUSED = "Restart Sova is the operator's: open Settings → General, or run `sova run server.restart` on this machine.";
+
+/**
+ * Who may restart Sova (POST /api/updates/restart): the operator's browser, as operatorRefusal says,
+ * and Sova's command line or a script on this machine showing the install token (x-sova-token, as
+ * every catalogued command does). Never the peer listener, the Overseer, an in-process call, or an
+ * extension's backend (its key isn't the token). The origin names who asked, for the server log;
+ * a token call also leaves its row in the command audit.
+ */
+export function restartCaller(c: Context): { origin: RestartOrigin } | { refusal: string } {
+  const env = c.env as { incoming?: unknown; meshPeer?: unknown } | undefined;
+  if (!env?.incoming || env.meshPeer) return { refusal: RESTART_REFUSED };
+  if (c.req.header(OVERSEER_SENDER_HEADER) !== undefined) return { refusal: RESTART_REFUSED };
+  if (showsToken(c.req.header(TOKEN_HEADER))) {
+    const who = callerKeys.callerOf(c.req.header(CALLER_HEADER));
+    return { origin: c.req.header(COMMAND_HEADER)?.trim() === "server.restart" ? `command server.restart (${who})` : `script (${who})` };
+  }
+  if ((c.req.header("sec-fetch-site") ?? "").toLowerCase() !== "same-origin") return { refusal: RESTART_REFUSED };
+  return { origin: "browser" };
 }
 
 let listen = { port: Number(process.env.PORT) || 4800, host: process.env.HOST || "127.0.0.1" };
@@ -89,6 +115,23 @@ export function jobEnvOf(env: NodeJS.ProcessEnv): Record<string, string> {
 }
 
 let installCache: { at: number; info: Promise<InstallInfo> } | null = null;
+/** The build this server started with when no chat host recorded one (startUpdates). */
+let startBuild: Promise<string> | null = null;
+let aheadCache: { at: number; ahead: Promise<DiskAhead | null> } | null = null;
+
+/** Code on disk newer than what runs, read at most every 5 s (each read runs git status and diff). */
+function diskAhead(): Promise<DiskAhead | null> {
+  const checkout = serverCheckout();
+  if (!checkout) return Promise.resolve(null);
+  if (aheadCache && Date.now() - aheadCache.at < 5_000) return aheadCache.ahead;
+  const ahead = (async () => {
+    const gen = currentGenerationOf()?.id;
+    const start = gen && gen !== "unknown" ? gen : await (startBuild ?? Promise.resolve("unknown"));
+    return diskAheadOf({ git: gitIn(checkout), startedHead: serverStart().head, startBuild: start === "unknown" ? null : start, buildNow: () => buildId(checkout) });
+  })().catch(() => null);
+  aheadCache = { at: Date.now(), ahead };
+  return ahead;
+}
 
 /** This server's updates, built once with the real git, clock and launcher. */
 export function updates(): UpdatesManager {
@@ -119,6 +162,10 @@ export function updates(): UpdatesManager {
     jobEnv: () => jobEnvOf(process.env),
     serverLog: join(stateRoot(), "app-server.log"),
     log: (line) => console.log(line),
+    startedAt: serverStart().startedAt,
+    restart: (unit) => scheduleRestart(unit.name),
+    restartDelaySec: RESTART_DELAY_SEC,
+    diskAhead,
   });
   return manager;
 }
@@ -131,6 +178,8 @@ export function setUpdatesForTest(m: UpdatesManager | null): void {
 /** After listen: the real port, then the daily check's schedule. */
 export function startUpdates(port: number, host: string): void {
   listen = { port, host };
+  const checkout = serverCheckout();
+  if (checkout && !startBuild) startBuild = buildId(checkout).catch(() => "unknown");
   updates().start();
 }
 
@@ -168,6 +217,22 @@ export function registerUpdatesRoutes(app: Hono): void {
       return refused(c, err);
     }
     return c.json(await updates().state());
+  });
+
+  // Restart Sova (Settings → General, `sova run server.restart`): 202 first, the service restarts a few seconds later.
+  app.post("/api/updates/restart", async (c) => {
+    const who = restartCaller(c);
+    if ("refusal" in who) {
+      console.log(`[updates] restart refused: not the operator's browser or command line`);
+      return c.json({ error: who.refusal }, 403);
+    }
+    try {
+      const r = await updates().restart(who.origin);
+      // The startedAt GET /api/health answers (one source, serverStart()): the restart is done once health answers another.
+      return c.json({ scheduled: true, startedAt: serverStart().startedAt, inSeconds: r.inSeconds }, 202);
+    } catch (err) {
+      return refused(c, err);
+    }
   });
 
   app.post("/api/updates/apply", async (c) => {

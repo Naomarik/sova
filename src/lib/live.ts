@@ -50,9 +50,11 @@ export type LiveBlock =
 export type LiveUserState = "sending" | "queued" | "delivered";
 
 /**
- * The state a pending row of ours shows (§chat.transcript/a-queued-message). A queued row the server
- * has handed to the agent shows `Sending…` again, with no Remove: it lands at the agent's next step
- * (several steers land together) and can't be taken back on its own any more, only by Stop.
+ * The state a pending row of ours shows (§chat.transcript/a-queued-message). A row the server still
+ * reports `queued` is `Queued`, with its Remove, until the agent takes it: a steer the server has
+ * handed to the agent included (several land together at its next step; one can still come out on its
+ * own until then). A row the server reports `sending` (a follow-up handed to the agent) or no longer
+ * lists (`handed`) shows `Sending…` again, with no Remove: only Stop takes it back.
  */
 export function shownUserState(row: { state: LiveUserState; handed?: boolean }): LiveUserState {
   return row.state === "queued" && row.handed ? "sending" : row.state;
@@ -60,10 +62,10 @@ export function shownUserState(row: { state: LiveUserState; handed?: boolean }):
 
 /**
  * Whether a pending row of ours offers its Remove (§chat.transcript/a-queued-message): only while the
- * server says it HOLDS it (`Queued`). A row still `Sending…` offers none at all, not even a disabled
- * one: before the server's answer nothing holds it (and a typed steer is handed over the moment the
- * server has it), and once handed over it can't be taken back on its own, only by Stop. A row with no
- * id can't be named to the server.
+ * server says it can still take it back (`Queued`), a steer already handed to the agent included. A row
+ * still `Sending…` offers none at all, not even a disabled one: before the server's answer nothing holds
+ * it, and a handed follow-up can't be taken back on its own, only by Stop. A row with no id can't be
+ * named to the server.
  */
 export function offersRemove(row: { id?: string; state: LiveUserState; handed?: boolean }): boolean {
   return !!row.id && shownUserState(row) === "queued";
@@ -98,8 +100,8 @@ export type LiveEntry =
       id?: string;
       /** Which queue holds it while it is queued. */
       queueKind?: "steer" | "followUp";
-      /** The message is out of the queue's reach: the server has handed it to the pi SDK, or a
-          snapshot no longer lists it. Not a claim about WHY it left — only `message_start` says
+      /** The message is out of the queue's reach: the server reports it `sending` (handed to the
+          agent with no way back on its own: a follow-up), or a snapshot no longer lists it. Not a claim about WHY it left — only `message_start` says
           delivered, a removal says removed and `queue_cleared` says a Stop took it back. */
       handed?: boolean;
       /** The agent's own `message.start` for this message has been applied to this row, so no
@@ -275,8 +277,10 @@ export function addPendingPrompt(
 
 /**
  * One item of the server's queue snapshot (`queue`). `state` is the SERVER's word for how far the
- * item has got — "queued" = it holds it and a removal always succeeds; "sending" = handed to the
- * pi SDK, so a removal may come back refused. Neither is delivery: that is `message_start`.
+ * item has got — "queued" = it can still take it back (it holds it, or it is a steer handed to the
+ * agent that the agent hasn't taken: a removal then succeeds unless the agent takes it that instant);
+ * "sending" = handed to the agent with no way back on its own (a follow-up). Neither is delivery:
+ * that is `message_start`.
  */
 export interface QueuedItem {
   id: string;

@@ -13,6 +13,11 @@ for word. The entries are:
 - **Insights:** `insights.usage`, `insights.usage.history`, `insights.agents`,
   `insights.worktrees`, `insights.session.workers`.
 - **Health:** `sova.health`.
+- **The server:** `server.restart` restarts Sova, as Settings → General's Restart Sova does,
+  answering at once and restarting about 3 seconds later; it takes no params and asks nothing. Only
+  the operator's browser or a script on this machine may run it: a mesh peer and the Overseer are
+  refused
+  (§app.updates/restart; `meshNeed` `full`, its route's).
 - **Settings, read:** `settings.<doc>.get` for `sova`, `models`,
   `provider-limits`, `align`, `delegate`, `spec`, `team`, `summarizer`, `overseer`, `memory` and
   `subagents`.

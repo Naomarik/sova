@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 486 |
-| Routes a catalogue entry points at | 121 |
-| Catalogue entries | 152 |
+| Routes registered | 497 |
+| Routes a catalogue entry points at | 126 |
+| Catalogue entries | 157 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -24,12 +24,13 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: The catalogue itself | 1 |
 | Class: Test only | 0 |
 | Class: Pages and assets | 7 |
-| Class: Trust grants | 3 |
+| Class: Trust grants | 5 |
+| Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
 | Pending (not yet a command) | 304 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 8 |
-| Hand-written tool specs | 124 |
+| Hand-written tool specs | 128 |
 
 ## Catalogue entries
 
@@ -70,6 +71,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.offers.choose` | Choose Offer Button | changes | `POST /api/session-offers/choose` | admin |
 | `session.offers.snooze` | Not Now | changes | `POST /api/session-offers/snooze` | admin |
 | `session.offers.unsnooze` | Offer Again | changes | `POST /api/session-offers/unsnooze` | admin |
+| `session.card.post` | Raise Card | changes | `POST /api/session-cards/post` | admin |
+| `session.card.get` | Session Cards | looks | `GET /api/session-cards` | sessions |
+| `session.card.answer` | Answer Card | changes | `POST /api/session-cards/answer` | admin |
 | `project.verb.create` | Project create | changes | `POST /api/project-services/create` | admin |
 | `project.verb.up` | Project up | changes | `POST /api/project-services/up` | admin |
 | `project.verb.down` | Project down | changes | `POST /api/project-services/down` | admin |
@@ -115,6 +119,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.worktree.remove` | Remove Worktree | changes | `POST /api/projects/:pid/overseer/worktrees/remove` | admin |
 | `project.files.list` | List Project Files | looks | `GET /api/projects/:pid/files` | sessions |
 | `project.offers.list` | List Project Offers | looks | `GET /api/projects/:pid/offers` | sessions |
+| `project.cards.list` | List Project Card Types | looks | `GET /api/projects/:pid/cards` | sessions |
 | `project.settings.get` | Show Project Settings | looks | `GET /api/projects/:pid/settings` | sessions |
 | `project.settings.history` | Show Settings History | looks | `GET /api/projects/:pid/settings/history` | sessions |
 | `project.settings.undo` | Undo Settings Change | changes | `POST /api/projects/:pid/settings/undo` | admin |
@@ -154,6 +159,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `insights.session.workers` | Hidden Workers | looks | `GET /api/insights/session/workers` | sessions |
 | `insights.session.inbox` | Team Member Inbox | looks | `GET /api/insights/session/inbox` | sessions |
 | `sova.health` | Server Health | looks | `GET /api/health` | sessions |
+| `server.restart` | Restart Sova | changes | `POST /api/updates/restart` | full |
 | `settings.sova.get` | Sova's Own Settings | looks | `GET /api/settings` | sessions |
 | `settings.models.get` | Model Policy | looks | `GET /api/settings/models` | sessions |
 | `settings.provider-limits.get` | Provider Limits | looks | `GET /api/settings/provider-limits` | sessions |
@@ -612,15 +618,28 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `ALL /explain/*` | full |
 | `GET /explain/:id` | full |
 
-### Trust grants (3)
+### Trust grants (5)
 
-Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval), applying a settings card with its approvals (§app.project-overseer/settings) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.
+Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval; a project's transcript cards, §chat.transcript-cards/trust), applying a settings card with its approvals (§app.project-overseer/settings) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.
 
 | Route | Mesh need |
 | --- | --- |
 | `POST /api/projects/:pid/offers/approve` | admin |
 | `PUT /api/projects/:pid/services/limit` | admin |
 | `POST /api/projects/:pid/settings/apply` | admin |
+| `GET /api/session-cards/trust` | sessions |
+| `POST /api/session-cards/trust` | admin |
+
+### A card view's own calls (4)
+
+What a transcript card's or a drawing's sealed view asks through its box, for its own card only (§chat.transcript-cards/view-api, /drawing-kinds): its built code, the state Sova keeps for it, and a catalogue command run as the card (which records the command itself). The box's plumbing, from the page: never an action of its own.
+
+| Route | Mesh need |
+| --- | --- |
+| `GET /api/session-cards/drawing` | sessions |
+| `POST /api/session-cards/run` | admin |
+| `POST /api/session-cards/state` | admin |
+| `GET /api/session-cards/view` | sessions |
 
 ### Middleware and fallbacks (2)
 
@@ -679,6 +698,7 @@ Approving what a project's files may make Sova do (an offers file's run buttons,
 | `GET /api/projects/:pid` | sessions | `project.get` |
 | `PATCH /api/projects/:pid` | admin | `project.update` |
 | `POST /api/projects/:pid/archive` | admin | `project.archive` |
+| `GET /api/projects/:pid/cards` | sessions | `project.cards.list` |
 | `GET /api/projects/:pid/claude-login` | sessions | `project.claude-login.get` |
 | `PUT /api/projects/:pid/claude-login` | admin | `project.claude-login.set` |
 | `GET /api/projects/:pid/costs` | sessions | `project.costs` |
@@ -706,6 +726,9 @@ Approving what a project's files may make Sova do (an offers file's run buttons,
 | `POST /api/projects/:pid/unarchive` | admin | `project.unarchive` |
 | `POST /api/push/test` | admin | `push.test` |
 | `POST /api/sandbox` | sessions | `session.sandbox.set` |
+| `GET /api/session-cards` | sessions | `session.card.get` |
+| `POST /api/session-cards/answer` | admin | `session.card.answer` |
+| `POST /api/session-cards/post` | admin | `session.card.post` |
 | `GET /api/session-groups` | sessions | `session.group.list` |
 | `POST /api/session-groups` | sessions | `session.group.create` |
 | `DELETE /api/session-groups/:id` | sessions | `session.group.delete` |
@@ -748,6 +771,7 @@ Approving what a project's files may make Sova do (an offers file's run buttons,
 | `GET /api/settings/team` | sessions | `settings.team.get` |
 | `GET /api/targets` | sessions | `targets.list` |
 | `GET /api/transcript` | sessions | `session.read` |
+| `POST /api/updates/restart` | full | `server.restart` |
 | `GET /api/usage/costs` | sessions | `usage.costs` |
 | `GET /api/usage/performance` | sessions | `usage.performance` |
 | `GET /api/usage/prices` | sessions | `usage.prices` |
@@ -798,12 +822,14 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/memory/tools.ts` | 2 | `<computed: MEMORY_ZOOM_TOOL>`, `<computed: MEMORY_DATE_TOOL>` |
 | `server/org-history-tools.ts` | 2 | `sova_history`, `sova_decide` |
 | `server/overseer-card-tool.ts` | 1 | `<computed: CARD_TOOL>` |
+| `server/overseer-code-history.ts` | 2 | `sova_project_git`, `sova_server_log` |
 | `server/overseer-idea-tools.ts` | 2 | `sova_ideas`, `sova_idea` |
 | `server/overseer-link-tools.ts` | 3 | `sova_link`, `sova_unlink`, `sova_links` |
 | `server/overseer-org-part.ts` | 10 | `sova_decisions`, `sova_roster`, `sova_start_gathering`, `sova_offer`, `sova_close_gathering`, `sova_owner_update`, `sova_send_to_person`, `sova_send_status`, `sova_reconcile`, `sova_promote` |
 | `server/overseer-org-tools.ts` | 10 | `sova_orgs`, `sova_org_person`, `sova_projects`, `sova_org_project`, `sova_org`, `sova_roster`, `sova_owner`, `sova_project_decisions`, `sova_gather`, `sova_project_overseer` |
 | `server/overseer-todo-tools.ts` | 2 | `sova_todos`, `sova_todo` |
 | `server/overseer-tools.ts` | 24 | `sova_attention`, `sova_list_sessions`, `sova_outstanding`, `sova_search_sessions`, `sova_session`, `sova_public_links`, `sova_alignment`, `sova_read_session`, `sova_list_groups`, `sova_list_targets`, `sova_list_models`, `sova_list_subagent_profiles`, `sova_list_folders`, `sova_create_session`, `sova_send`, `sova_set_session`, `sova_archive`, `sova_land`, `sova_group`, `sova_answer_dialog`, `sova_navigate`, `sova_note`, `sova_org_history`, `<computed: SPEC_LOOKUP_TOOL>` |
+| `server/overseer-whatsapp.ts` | 1 | `sova_whatsapp` |
 | `server/playbook-tools.ts` | 1 | `<computed: PLAYBOOK_READ_TOOL>` |
 | `server/project-assistant-tools.ts` | 7 | `report_issue`, `start_fix`, `deploy`, `owner_versions`, `start_version`, `start_feature_chat`, `requirement_agree` |
 | `server/project-overseer-tools.ts` | 18 | `sova_project`, `sova_list_subagent_profiles`, `sova_list_sessions`, `sova_read_session`, `sova_todos`, `sova_note`, `sova_idea`, `sova_previews`, `sova_preview`, `sova_create_session`, `sova_send`, `sova_files`, `sova_pipeline`, `sova_hold`, `sova_correct`, `sova_set_state`, `sova_settings`, `sova_todo` |
@@ -813,4 +839,5 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/spec-lookup.ts` | 2 | `spec_lookup`, `code_read` |
 | `server/topics.ts` | 2 | `queue_push`, `queue_open` |
 | `server/tours/tools.ts` | 3 | `<computed: RECORD_TOUR_TOOL>`, `<computed: SHOW_TOUR_TOOL>`, `<computed: SHOW_TOUR_TOOL>` |
+| `server/transcript-cards-tool.ts` | 1 | `<computed: CARD_TOOL>` |
 | `server/vis-check.ts` | 1 | `vis_check` |

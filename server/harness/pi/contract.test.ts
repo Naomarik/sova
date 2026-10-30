@@ -5,7 +5,7 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P28 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P29 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
@@ -22,6 +22,7 @@ import { PiHarnessSession } from "./session.ts";
 import { SendKeys } from "../../send-keys.ts";
 import { WebQueue } from "../../queue.ts";
 import { steerAllAtOnce } from "./queue-modes.ts";
+import { steerTicket } from "./steer-ticket.ts";
 
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-pi-contract-")));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -1014,6 +1015,93 @@ return w + ":" + r.stopReason;`;
     assert.deepEqual(await twoSteers("s3", "s4"), { calls: 2, last: ["s3", "s4"] }, "and still lands them together");
     assert.equal(readFileSync(settingsFile, "utf8"), before, "settings.json is untouched");
     assert.equal("steeringMode" in JSON.parse(readFileSync(settingsFile, "utf8")), false, "no steeringMode in settings.json");
+    session.dispose();
+  });
+
+  test("P29 steer-remove: the object agent.steer is handed sits in steeringQueue.messages, and splicing it and its text out of both copies takes exactly that steer back", async () => {
+    // An input handler held open on "slow …" texts: the window a described image keeps a hand-off in.
+    let openGate: () => void = () => {};
+    const gate = () => new Promise<void>((r) => (openGate = r));
+    let gated: Promise<void> | null = null;
+    const settingsManager = SettingsManager.inMemory({ cacheWarming: "off", retry: { enabled: false } } as never);
+    steerAllAtOnce(settingsManager as never);
+    const { session, model } = await quirkSession({
+      settingsManager,
+      extensions: [(api: any) => api.on("input", async (event: any) => {
+        if (String(event.text).startsWith("slow")) await (gated = gate());
+        return undefined;
+      })],
+    });
+    const harness = new PiHarnessSession({ session } as never);
+    const lane = () => (session.agent as any).steeringQueue.messages as unknown[];
+    assert.ok(Array.isArray(lane()), "Agent.steeringQueue.messages is the real lane (an array)");
+    assert.ok(Array.isArray((session as any)._steeringMessages), "AgentSession._steeringMessages is the text mirror (an array)");
+    const usersOf = (call: { context: unknown }) => ((call.context as any).messages as any[]).filter((m) => m.role === "user").map(userText);
+
+    // 1. Three identical steers behind a held reply; the middle one comes out, by identity.
+    let release = model.hold();
+    let run = session.prompt("go");
+    await until(() => model.calls.length === 1, "the held reply");
+    const tickets = [steerTicket(session), steerTicket(session), steerTicket(session)];
+    for (const t of tickets) await t.run(() => harness.steer("same"));
+    const queued = session.agent.peekQueuedMessages();
+    assert.equal(queued.length, 3, "all three in the lane (steering mode all)");
+    assert.deepEqual(lane(), queued, "peekQueuedMessages() previews the lane, object for object");
+    assert.equal(tickets[1]!.remove(), "removed");
+    assert.deepEqual(lane(), [queued[0], queued[2]], "exactly the middle object left the lane; its twins stay, in order");
+    assert.equal(session.agent.peekQueuedMessages().length, 2);
+    assert.deepEqual([...session.getSteeringMessages()], ["same", "same"], "and one entry of its text left the mirror");
+    assert.equal(tickets[1]!.remove(), "removed", "asking again says the same");
+    release();
+    await run;
+    assert.deepEqual(usersOf(model.calls[1]!), ["go", "same", "same"], "the next step got the two twins together, never the removed one");
+    assert.equal(tickets[0]!.remove(), "taken", "a steer the loop drained can't come back");
+    assert.equal(session.getSteeringMessages().length, 0, "the mirror emptied as they started");
+
+    // 2. Stop after a removal: clearQueue() hands back only the survivors.
+    release = model.hold();
+    run = session.prompt("again");
+    await until(() => model.calls.length === 3, "the second held reply");
+    const [x, y, z] = [steerTicket(session), steerTicket(session), steerTicket(session)];
+    await x.run(() => harness.steer("x"));
+    await y.run(() => harness.steer("y"));
+    await z.run(() => harness.steer("z"));
+    assert.equal(y.remove(), "removed");
+    assert.deepEqual(session.clearQueue().steering, ["x", "z"], "the removed text is not handed back");
+    assert.equal(session.agent.hasQueuedMessages(), false);
+
+    // 3. Another sender's steer of the same words is never the ticket's, and two inside one hand-off are refused.
+    const mine = steerTicket(session);
+    await mine.run(() => harness.steer("twin"));
+    await session.steer("twin"); // queued outside any ticket's hand-off
+    const foreign = lane()[1];
+    assert.equal(mine.remove(), "removed");
+    assert.deepEqual(lane(), [foreign], "the other sender's twin stays");
+    const both = steerTicket(session);
+    await both.run(async () => {
+      await harness.steer("one");
+      await harness.steer("two");
+    });
+    assert.equal(both.remove(), "unknown", "two steers in one hand-off: no one message to name");
+    assert.equal(lane().length, 3, "and nothing was taken out");
+    session.clearQueue();
+
+    // 4. Asked for while the hand-off is still in its input handler: out the instant pi queues it.
+    const slow = steerTicket(session);
+    const handing = slow.run(() => harness.steer("slow one"));
+    await until(() => gated !== null, "the input handler holding the hand-off");
+    assert.equal(slow.remove(), "later", "not queued yet");
+    openGate();
+    await handing;
+    assert.equal(session.agent.hasQueuedMessages(), false, "pi queued it and it came straight out");
+    assert.deepEqual([...session.getSteeringMessages()], [], "its text too");
+    assert.equal(slow.remove(), "removed");
+    const none = steerTicket(session);
+    await none.run(async () => {});
+    assert.equal(none.remove(), "unknown", "a hand-off that queued nothing names nothing");
+    release();
+    await run;
+    assert.deepEqual(usersOf(model.calls.at(-1)!).slice(-1), ["again"], "nothing removed or cleared reached the model");
     session.dispose();
   });
 

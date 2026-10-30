@@ -101,6 +101,8 @@ const GLOBS = [
   "pi-config/extensions/claude-code/provider/memory-layout.test.ts",
   // Which Claude program every spawn runs (builtins only; the server imports it).
   "pi-config/extensions/claude-code/claude-executable.test.ts",
+  // The offline search A/B harness (bench/search-ab/plan.md), on synthetic sessions.
+  "bench/search-ab/*.test.ts",
 ];
 const isBrowserTest = (f) => f.endsWith(".browser.test.ts");
 /** Each tier's recorded wall times, and how many files it runs at once. */

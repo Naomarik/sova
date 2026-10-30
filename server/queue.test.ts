@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { ChatServerMessage, QueueGoneReason, QueueItem } from "../shared/protocol";
-import { HANDED_REFUSAL, type QueueDeps, WebQueue, type WebQueueItem } from "./queue";
+import { HANDED_REFUSAL, type HandedTicket, type QueueDeps, WebQueue, type WebQueueItem } from "./queue";
 
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 /** Let every pending microtask AND timer settle; the pump is `void`-ed, so nothing awaits it. */
@@ -65,10 +65,26 @@ class FakeSdk {
       (`_emitQueueUpdate`). Modelled, because the queue reads GROWTH out of that sequence and a
       fake that stayed silent would hide the one-in-one-out case entirely. */
   onQueueUpdate: ((steering: number, followUp: number) => void) | null = null;
+  /** One identity per REAL steering entry, index for index (pi's message objects): what a ticket names,
+      so twins of the same text are told apart, as the real lane's objects are. */
+  steerTokens: object[] = [];
+  /** The ticket whose `run` is calling `handOff` right now: the fake's stand-in for the async context
+      the real ticket reads (steer-ticket.ts). Taken by the hand-off it starts, synchronously. */
+  activeTicket: FakeTicket | null = null;
+  /** Held open, the hand-off waits here before queueing (an input handler describing an image). */
+  gate: Promise<void> | null = null;
+  /** The hand-off queues its steer twice in its own context (no one message to name). */
+  doublePush = false;
+  /** The input step queues a steer of its own, in the hand-off's context, before ours (then waits on `gate`). */
+  inContextForeign: string | null = null;
 
   async handOff(item: WebQueueItem, streaming: boolean): Promise<void> {
+    const ticket = this.activeTicket;
+    this.activeTicket = null;
     if (this.guardError) throw this.guardError;
     await tick(this.handlerDelay);
+    if (this.inContextForeign !== null && item.kind === "steer") this.enqueue("steer", this.inContextForeign, ticket);
+    if (this.gate) await this.gate;
     if (this.guardError) throw this.guardError;
     this.handed.push({ kind: item.kind, text: item.text, images: item.images?.length ?? 0, streaming });
     this.keys.push(item.key);
@@ -79,14 +95,37 @@ class FakeSdk {
       this.streaming = true;
       return;
     }
-    this.enqueue(item.kind, expanded);
+    this.enqueue(item.kind, expanded, ticket);
+    if (this.doublePush && item.kind === "steer") this.enqueue(item.kind, expanded, ticket);
   }
 
-  /** AgentSession._queueSteer/_queueFollowUp: push BOTH structures. */
-  enqueue(kind: "steer" | "followUp", text: string): void {
+  /** AgentSession._queueSteer/_queueFollowUp: push BOTH structures; a steer's object is shown to the
+      ticket of the hand-off that queued it, after the push (tapSteers). */
+  enqueue(kind: "steer" | "followUp", text: string, ticket?: FakeTicket | null): void {
     (kind === "steer" ? this.realSteering : this.realFollowUp).push(text);
     (kind === "steer" ? this.mirrorSteering : this.mirrorFollowUp).push(text);
     this.emitQueueUpdate();
+    if (kind !== "steer") return;
+    const token = {};
+    this.steerTokens.push(token);
+    ticket?.queued(token);
+  }
+
+  /** Another sender's steer (an extension, a reminder): queued in no ticket's hand-off. */
+  foreignSteer(text: string): void {
+    this.enqueue("steer", text);
+  }
+
+  /** takeSteerOut: that very entry out of the real lane, one entry of its text out of the mirror. */
+  takeOut(token: object): "removed" | "taken" {
+    const i = this.steerTokens.indexOf(token);
+    if (i < 0) return "taken";
+    const [text] = this.realSteering.splice(i, 1);
+    this.steerTokens.splice(i, 1);
+    const j = this.mirrorSteering.lastIndexOf(text!);
+    if (j >= 0) this.mirrorSteering.splice(j, 1);
+    this.emitQueueUpdate();
+    return "removed";
   }
 
   private emitQueueUpdate(): void {
@@ -98,6 +137,7 @@ class FakeSdk {
       follow-up lane one at a time (pi's default). The mirror still lists them until `announce` — the
       window BUG 2 lives in. */
   drain(kind: "steer" | "followUp" = "steer"): string[] {
+    if (kind === "steer") this.steerTokens.splice(0);
     return kind === "steer" ? this.realSteering.splice(0) : this.realFollowUp.splice(0, 1);
   }
 
@@ -166,6 +206,7 @@ class FakeSdk {
     const drained = { steering: [...this.mirrorSteering], followUp: [...this.mirrorFollowUp] };
     this.realSteering = [];
     this.realFollowUp = [];
+    this.steerTokens = [];
     this.mirrorSteering = [];
     this.mirrorFollowUp = [];
     this.onQueueUpdate?.(0, 0); // clearQueue() emits too, synchronously, before it returns
@@ -173,9 +214,50 @@ class FakeSdk {
   }
 }
 
+/**
+ * The fake's SteerTicket, to the contract's words (shared/harness-session.ts; the real one, steer-ticket.ts,
+ * is pinned against pi by contract.test.ts P29): the first steer its own hand-off queues is its; removed
+ * while the hand-off runs, it comes out when the hand-off settles, only if exactly one was queued;
+ * two in its hand-off, or none once settled: unknown, and nothing is spliced.
+ */
+class FakeTicket implements HandedTicket {
+  private token: object | null = null;
+  private pushes = 0;
+  private settled = false;
+  private wanted = false;
+  private removed = false;
+  constructor(private readonly sdk: FakeSdk) {}
+  run<T>(handOff: () => T): T {
+    this.sdk.activeTicket = this;
+    const out = handOff();
+    const done = () => {
+      this.settled = true;
+      if (this.wanted && this.pushes === 1 && this.token) this.removed = this.sdk.takeOut(this.token) === "removed";
+    };
+    void (out as unknown as Promise<unknown>).then(done, done);
+    return out;
+  }
+  queued(token: object): void {
+    if (++this.pushes !== 1) return;
+    this.token = token;
+  }
+  remove(): "removed" | "later" | "taken" | "unknown" {
+    if (this.removed) return "removed";
+    if (!this.settled) {
+      this.wanted = true;
+      return "later";
+    }
+    if (this.pushes !== 1 || !this.token) return "unknown";
+    const out = this.sdk.takeOut(this.token);
+    if (out === "removed") this.removed = true;
+    return out;
+  }
+}
+
 /** The queue, wired to the fake exactly as `ChatSession` wires it to the real session, and two
-    clients behind one broadcast — the fan-out the contract promises for every departure. */
-function rig(sdk = new FakeSdk()) {
+    clients behind one broadcast — the fan-out the contract promises for every departure. `tickets`:
+    the harness names each handed steer (the pi adapter does), so a handed steer stays removable. */
+function rig(sdk = new FakeSdk(), o: { tickets?: boolean } = {}) {
   const one: ChatServerMessage[] = [];
   const two: ChatServerMessage[] = [];
   const broadcast = (m: ChatServerMessage) => {
@@ -189,6 +271,7 @@ function rig(sdk = new FakeSdk()) {
       mirrorTotal: () => sdk.mirrorTotal(),
       mirrorFor: (kind) => (kind === "steer" ? sdk.mirrorSteering : sdk.mirrorFollowUp).length,
       mirrorHas: (kind, text) => (kind === "steer" ? sdk.mirrorSteering : sdk.mirrorFollowUp).includes(text),
+      ...(o.tickets ? { steerTicket: () => new FakeTicket(sdk) } : {}),
     },
     streaming: () => sdk.streaming,
     paused: () => sdk.paused,
@@ -1056,5 +1139,205 @@ describe("a keyed item and pi's settle window (§app.chat-processes/worker-instr
     r.sdk.settling = false;
     await settle();
     assert.deepEqual(r.sdk.handed, []);
+  });
+});
+
+describe("a handed steer stays removable until the agent takes it (§chat.transcript/a-queued-message)", () => {
+  const steer = (r: ReturnType<typeof rig>, id: string, text = id, images?: { type: "image"; data: string; mimeType: string }[]) =>
+    r.queue.enqueue({ kind: "steer", text, origin: "client", id, ...(images ? { images } : {}) });
+
+  test("handed steers read Queued; the middle of three identical ones goes, its twins stay in order and land together", async () => {
+    const r = rig(new FakeSdk(), { tickets: true });
+    for (const id of ["a1", "a2", "a3"]) steer(r, id, "same");
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["same", "same", "same"], "all three handed to pi at once");
+    assert.deepEqual(states(r.lastSnapshot(r.one)), ["a1:queued", "a2:queued", "a3:queued"], "handed, yet still Queued: removable");
+    const outcome = await r.queue.remove("a2");
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(r.gone(r.one), [["a2", "removed"]]);
+    assert.deepEqual(r.gone(r.two), [["a2", "removed"]], "every client is told");
+    assert.deepEqual(r.sdk.realSteering, ["same", "same"], "one entry left pi's real lane");
+    assert.deepEqual(r.sdk.mirrorSteering, ["same", "same"], "and one entry of its text left the mirror");
+    assert.deepEqual(ids(r.lastSnapshot(r.one)), ["a1", "a3"]);
+    assert.equal(r.one.some((m) => m.type === "queue_cleared"), false, "a removal is no Stop: nothing comes back");
+    assert.deepEqual(r.sdk.deliver(), ["same", "same"], "the agent's next step takes the other two together");
+    r.queue.onSdkEvent();
+    await settle();
+    assert.deepEqual(r.gone(r.one), [["a2", "removed"], ["a1", "delivered"], ["a3", "delivered"]], "in the order sent");
+    assert.equal(r.queue.size, 0);
+  });
+
+  test("removing the FIRST and the LAST of identical twins takes exactly those entries", async () => {
+    const r = rig(new FakeSdk(), { tickets: true });
+    for (const id of ["t1", "t2", "t3"]) steer(r, id, "same");
+    await settle();
+    const tokens = [...r.sdk.steerTokens];
+    assert.equal((await r.queue.remove("t3")).ok, true);
+    assert.equal((await r.queue.remove("t1")).ok, true);
+    assert.deepEqual(r.sdk.steerTokens, [tokens[1]], "only t2's own entry is left, by identity");
+  });
+
+  test("another sender's steer between ours is never removed, even with the same words", async () => {
+    const r = rig(new FakeSdk(), { tickets: true });
+    steer(r, "A1", "A");
+    await settle();
+    r.sdk.foreignSteer("A"); // an extension's steer, queued in no hand-off of ours
+    steer(r, "A2", "A");
+    steer(r, "A3", "A");
+    await settle();
+    const [mine1, foreign, mine2, mine3] = r.sdk.steerTokens;
+    assert.equal(r.sdk.steerTokens.length, 4, "[A, foreign A, A, A] in pi's lane");
+    assert.equal((await r.queue.remove("A2")).ok, true);
+    assert.deepEqual(r.sdk.steerTokens, [mine1, foreign, mine3], "A2's own entry went; the foreign twin stays");
+    assert.equal((await r.queue.remove("A1")).ok, true);
+    assert.equal((await r.queue.remove("A3")).ok, true);
+    assert.deepEqual(r.sdk.steerTokens, [foreign], "after removing all of ours, the foreign one is still there");
+    assert.deepEqual(r.sdk.realSteering, ["A"]);
+    assert.notEqual(mine2, foreign);
+  });
+
+  test("a hand-off that queued two steers names no one message: refused shared_queue, nothing taken out", async () => {
+    const sdk = new FakeSdk();
+    sdk.doublePush = true;
+    const r = rig(sdk, { tickets: true });
+    steer(r, "d", "dup");
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["dup", "dup"]);
+    const outcome = await r.queue.remove("d");
+    assert.deepEqual(outcome.ok ? null : outcome.reason, "shared_queue", "refused, never guessed");
+    assert.deepEqual(r.sdk.realSteering, ["dup", "dup"], "nothing of anyone's was removed");
+    assert.deepEqual(r.gone(r.one), []);
+  });
+
+  test("removed while its hand-off is still in its input handler: it goes the moment pi queues it, and the agent never gets it", async () => {
+    const sdk = new FakeSdk();
+    let open!: () => void;
+    sdk.gate = new Promise<void>((resolve) => (open = resolve));
+    const r = rig(sdk, { tickets: true });
+    steer(r, "img", "look", [{ type: "image", data: "AAAA", mimeType: "image/png" }]);
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, [], "still in its handler: pi has nothing yet");
+    assert.deepEqual(states(r.lastSnapshot(r.one)), ["img:queued"], "Queued while its image is described");
+    const removal = r.queue.remove("img");
+    let answered = false;
+    void removal.then(() => (answered = true));
+    await settle();
+    assert.equal(answered, false, "the answer waits for the hand-off to settle");
+    open();
+    const outcome = await removal;
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(r.gone(r.one), [["img", "removed"]]);
+    assert.equal(r.sdk.handed.length, 1, "the hand-off did run to its end");
+    assert.equal(r.sdk.hasQueued(), false, "and pi holds nothing");
+    assert.deepEqual(r.sdk.mirrorSteering, []);
+    assert.deepEqual(r.sdk.deliver(), [], "the agent's next step gets nothing of it");
+    assert.equal(r.queue.size, 0);
+    await settle();
+    assert.deepEqual(r.gone(r.one), [["img", "removed"]], "and it never departs a second time");
+  });
+
+  test("X during the image step, with an input step that queued a foreign steer first in its context: refused shared_queue, the foreign steer stays", async () => {
+    const sdk = new FakeSdk();
+    let open!: () => void;
+    sdk.gate = new Promise<void>((resolve) => (open = resolve));
+    sdk.inContextForeign = "an extension's own steer";
+    const r = rig(sdk, { tickets: true });
+    steer(r, "img", "look", [{ type: "image", data: "AAAA", mimeType: "image/png" }]);
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["an extension's own steer"], "the foreign steer is in pi; ours is still in its handler");
+    const removal = r.queue.remove("img");
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["an extension's own steer"], "nothing was taken out at the first push");
+    open();
+    const outcome = await removal;
+    assert.deepEqual(outcome.ok ? null : outcome.reason, "shared_queue", "no one message to name: refused, never guessed");
+    assert.deepEqual(r.sdk.realSteering, ["an extension's own steer", "look"], "nothing spliced: the foreign steer stays, and so does ours");
+    assert.deepEqual(r.gone(r.one), [], "nothing departed");
+  });
+
+  test("a removal waiting on a hand-off that fails is refused, and the failure is what is reported", async () => {
+    const sdk = new FakeSdk();
+    let open!: () => void;
+    sdk.gate = new Promise<void>((resolve) => (open = resolve));
+    const r = rig(sdk, { tickets: true });
+    steer(r, "f");
+    await settle();
+    const removal = r.queue.remove("f");
+    sdk.guardError = new Error("a terminal took the file");
+    open();
+    const outcome = await removal;
+    assert.equal(outcome.ok, false);
+    assert.deepEqual(r.gone(r.one), [["f", "failed"]]);
+  });
+
+  test("the steer behind one removed mid-hand-off still goes in, and lands", async () => {
+    const sdk = new FakeSdk();
+    let open!: () => void;
+    sdk.gate = new Promise<void>((resolve) => (open = resolve));
+    const r = rig(sdk, { tickets: true });
+    steer(r, "x");
+    steer(r, "y");
+    await settle();
+    const removal = r.queue.remove("x");
+    sdk.gate = null;
+    open();
+    assert.equal((await removal).ok, true);
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["y"], "only y is in pi");
+    r.sdk.deliver();
+    r.queue.onSdkEvent();
+    await settle();
+    assert.deepEqual(r.gone(r.one), [["x", "removed"], ["y", "delivered"]]);
+  });
+
+  test("remove vs the agent's drain: once the loop took it, refused consumed and the row is delivered, even with someone else's steer queued after", async () => {
+    const r = rig(new FakeSdk(), { tickets: true });
+    steer(r, "a");
+    steer(r, "b");
+    await settle();
+    r.sdk.drain(); // the loop takes both; message_start not yet emitted
+    r.sdk.foreignSteer("someone else's"); // pi holds something again, not ours
+    const outcome = await r.queue.remove("b");
+    assert.deepEqual(outcome.ok ? null : [outcome.reason, outcome.message], ["consumed", "That message has already been sent."]);
+    assert.deepEqual(r.gone(r.one), [["a", "delivered"], ["b", "delivered"]], "taken in order, both delivered");
+    assert.deepEqual(r.sdk.realSteering, ["someone else's"], "the foreign steer is untouched");
+  });
+
+  test("Stop after a removal hands back only the survivors", async () => {
+    const r = rig(new FakeSdk(), { tickets: true });
+    for (const id of ["s1", "s2", "s3"]) steer(r, id);
+    await settle();
+    assert.equal((await r.queue.remove("s2")).ok, true);
+    const cleared = await r.queue.drain();
+    assert.deepEqual(cleared.steering, ["s1", "s3"], "the removed text never comes back to the composer");
+    assert.deepEqual(r.gone(r.one), [["s2", "removed"], ["s1", "cleared"], ["s3", "cleared"]]);
+  });
+
+  test("an images-only handed steer is removable, and the queue is not stranded by its empty text", async () => {
+    const r = rig(new FakeSdk(), { tickets: true });
+    steer(r, "pic", "", [{ type: "image", data: "AAAA", mimeType: "image/png" }]);
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, [""]);
+    assert.equal((await r.queue.remove("pic")).ok, true);
+    assert.deepEqual([r.sdk.realSteering, r.sdk.mirrorSteering], [[], []], "out of both copies, though its text is empty");
+    steer(r, "next");
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["next"], "the next steer goes straight in");
+  });
+
+  test("still not removable on its own: a handed follow-up, and a steer that started a turn", async () => {
+    const r = rig(new FakeSdk(), { tickets: true });
+    r.queue.enqueue({ kind: "followUp", text: "later", origin: "client", id: "fu" });
+    await settle();
+    assert.deepEqual(states(r.lastSnapshot(r.one)), ["fu:sending"]);
+    assert.deepEqual(await r.queue.remove("fu"), { ok: false, reason: "internal", message: HANDED_REFUSAL });
+    const idle = new FakeSdk();
+    idle.streaming = false;
+    idle.handlerDelay = 5;
+    const r2 = rig(idle, { tickets: true });
+    steer(r2, "go");
+    await tick(1);
+    assert.deepEqual(states(r2.lastSnapshot(r2.one)), ["go:sending"], "a steer to an idle agent starts a turn: no ticket");
+    assert.deepEqual(await r2.queue.remove("go"), { ok: false, reason: "internal", message: HANDED_REFUSAL });
   });
 });

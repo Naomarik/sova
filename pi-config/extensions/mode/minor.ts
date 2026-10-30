@@ -69,6 +69,12 @@ export const WEB_ONLY_MINOR_MODES: readonly MinorMode[] = MINOR_MODES.filter((mo
  */
 export const WEB_MINOR_HOOK = Symbol.for("sova:web-minor");
 
+/**
+ * The server's hook (globalThis, Symbol.for) for a session's own drawing kinds: `(sessionId) =>
+ * {kind, guide, line}[]` (vis-guide-tool.ts reads it). Unset, a session has none.
+ */
+export const VIS_OWN_KINDS_HOOK = Symbol.for("sova:vis-own-kinds");
+
 /** Why turning `minor` on is refused in `sessionId` here, or undefined when it may be. */
 export function webMinorRefusal(minor: MinorMode, sessionId: string | undefined): string | undefined {
 	if (MINOR_SURFACES[minor] !== "web") return undefined;

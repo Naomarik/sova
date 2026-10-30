@@ -49,7 +49,7 @@ import { adoptedLogs, adoptedPids, adoptedStatus, DriverError, rssOf, type Adopt
 import { hostPortOwner } from "./proctable";
 import type { NoteFacts } from "./note";
 import { RESTART_DELAY_SEC, scheduleRestart, serverCheckout, serverStart } from "./self-host";
-import { checkShare, instanceOfLink, linksOf, OVERSEER_SHARE_REFUSAL, revokeLinks, ShareFailure, shareInstance, shareRefusal } from "./share";
+import { checkShare, instanceOfLink, linksOf, revokeLinks, ShareFailure, shareInstance, shareRefusal } from "./share";
 import { publishedPorts, publisherOf, type ContainerQuery } from "./container-ports";
 import {
   dataRootOf,
@@ -78,11 +78,13 @@ import { defHashOf } from "./def-hash";
 
 export type Caller =
   | { kind: "operator"; confirm?: boolean }
-  /** `approved`: whether the user's click that opened this turn approved `verb` on that copy (§app.overseer/copies). */
-  | { kind: "overseer"; id: string; approved?: CopyApproval }
+  /** `approved`: whether the user's click that opened this turn approved `verb` on that copy (§app.overseer/copies).
+      `word`: whether the user started this turn (typed or a click), read per call; absent: never. `working`: whether
+      the conversation (session id) that started a copy is working now; absent: always (a click is needed). */
+  | { kind: "overseer"; id: string; approved?: CopyApproval; word?: () => boolean; working?: CreatorWorking }
   /** `act`: its project statechart's act for a verb that is not a read (§app.project-overseer/tools), which holds the
-      level; the engine checks none. `approved`: as the Overseer's, for its own project's copies. */
-  | { kind: "project-overseer"; id: string; root: string; act: VerbAct; deployAct?: true; approved?: CopyApproval }
+      level; the engine checks none. `approved`, `word`, `working`: as the Overseer's, for its own project's copies. */
+  | { kind: "project-overseer"; id: string; root: string; act: VerbAct; deployAct?: true; approved?: CopyApproval; word?: () => boolean; working?: CreatorWorking }
   /** The client's Project Assistant (al_1, al_3): deploy.request any time; deploy.plan and deploy.run only from inside its
       project's released `deploy/run` act (`deployAct`), checked against its column of powers. `up`: only `up` of that one
       instance (a copy the owner's versions list holds, which its start_version checked); `upMain`: only a bare `up` of
@@ -98,9 +100,26 @@ export type Caller =
     label names that verb; §app.overseer/copies). Read per call: it holds only in that turn. */
 export type CopyApproval = (verb: "teardown" | "reset" | "down", rec: InstanceRecord) => boolean;
 
+/** Whether the conversation `sessionId` (a copy's starter, `session:<id>`) is working now: false once it is finished
+    (idle) or archived (§app.overseer/copies). */
+export type CreatorWorking = (sessionId: string) => Promise<boolean>;
+
+/** The conversation that started a copy (its `createdBy` `session:<id>`), or null: the operator, an overseer, conformance. */
+export const starterSession = (createdBy: string): string | null => (createdBy.startsWith("session:") ? createdBy.slice("session:".length) || null : null);
+
 /** The refusal of a teardown or reset of a copy the caller did not start, outside a click that approved it. */
 export const copyClickRefusal = (verb: string, createdBy: string): string =>
-  `${verb} of a copy you did not start (${createdBy}'s) runs only in the turn the user's click on a card listing it opens: ask with sova_card, listing it under copies with a ${verb === "teardown" ? "Tear Down" : "Reset"} choice`;
+  `${verb} of a copy you did not start (${createdBy}'s) runs only in the turn the user's click on a card listing it opens, while the conversation that started it is still working: ask with sova_card, listing it under copies with a ${verb === "teardown" ? "Tear Down" : "Reset"} choice`;
+
+/** The refusal of a teardown or reset of a copy the caller did not start, outside a turn the user started. */
+export const copyWordRefusal = (verb: string, createdBy: string): string =>
+  `${verb} of a copy you did not start (${createdBy}'s) runs only on the user's word, in a turn they started: ask them (once its conversation is finished their word is enough; while it works, ask with sova_card, listing it under copies with a ${verb === "teardown" ? "Tear Down" : "Reset"} choice)`;
+
+/** The share refusal for the global Overseer outside a turn the user started (§app.project-services/share). */
+export const OVERSEER_SHARE_UNATTENDED = "share runs only in a turn the user started: ask them";
+
+/** Who gets a share link's URL in a result (§app.project-services/share): the operator and both Overseers, never a coding session. */
+export const seesLinkUrls = (c: Caller): boolean => c.kind === "operator" || c.kind === "overseer" || c.kind === "project-overseer";
 
 /**
  * Resolves once the project statechart took the verb's act; throws its refusal otherwise. `share`'s act
@@ -469,7 +488,7 @@ export class ProjectEngine {
       if (isDeployVerb(verb)) throw new VerbFailure("unsupported", `${verb} runs through the deployer, which this engine has not got`);
       await this.resolveTarget(run);
       if (run.verb === "teardown" && !run.rec) return await this.result(run);
-      this.authorize(run);
+      this.authorize(run, await this.starterWorking(run));
       // Every check a share makes runs before its act: a refused share never reaches the statechart.
       if (run.verb === "share") await this.shareChecks(run);
       const outcome = await actFor(caller, run.verb, run.rec?.id ?? null, run.verb === "share" ? { endpoint: run.req.endpoint!, ...(run.req.days !== undefined ? { days: run.req.days } : {}) } : undefined);
@@ -479,7 +498,7 @@ export class ProjectEngine {
       }
       if (outcome && "done" in outcome) {
         // The act's effect made the link (shareFromAct): read back, never made twice.
-        run.extra.links = linksOf(run.rec!.id, { withUrl: false }).filter((l) => l.id === outcome.done.id);
+        run.extra.links = linksOf(run.rec!.id, { withUrl: seesLinkUrls(caller) }).filter((l) => l.id === outcome.done.id);
         run.steps.push({ id: "share", kind: "link", result: "done", ms: 0, detail: `shared ${run.req.endpoint}` });
         return await this.result(run);
       }
@@ -670,7 +689,19 @@ export class ProjectEngine {
     if (!run.req.confirm) throw new VerbFailure("needs-confirm", `${what}: confirm it (sova-project apply … --confirm)`);
   }
 
-  private authorize(run: Run): void {
+  /** Whether the conversation that started the copy a reset or teardown aims at is working now (§app.overseer/copies):
+      read only for an Overseer's call on a copy it did not start; a copy no conversation started is not. */
+  private async starterWorking(run: Run): Promise<boolean> {
+    const { caller, rec } = run;
+    if ((caller.kind !== "overseer" && caller.kind !== "project-overseer") || !rec || (run.verb !== "reset" && run.verb !== "teardown")) return false;
+    if (rec.createdBy === callerTag(caller)) return false;
+    const sid = starterSession(rec.createdBy);
+    if (!sid) return false;
+    if (!caller.working) return true;
+    return caller.working(sid).catch(() => true);
+  }
+
+  private authorize(run: Run, starterWorking = false): void {
     this.selfHosted(run);
     const { caller, verb } = run;
     const sharedNamed = verb === "down" && !!run.req.services?.length && !!run.def && run.req.services.some((n) => run.def!.services.find((s) => s.name === n)?.scope === "shared");
@@ -681,7 +712,8 @@ export class ProjectEngine {
     if (verb === "share") {
       if (caller.kind === "operator" && !run.req.confirm)
         throw new VerbFailure("needs-confirm", "a share link lets anyone who has it use this copy as if they were on this computer: confirm it (sova-project share … --confirm)");
-      if (caller.kind === "overseer") throw new VerbFailure("needs-confirm", OVERSEER_SHARE_REFUSAL);
+      // The global Overseer shares in a turn the user started, on everyone's limits (shareChecks, after this).
+      if (caller.kind === "overseer" && caller.word?.() !== true) throw new VerbFailure("needs-confirm", OVERSEER_SHARE_UNATTENDED);
       if (caller.kind === "session") throw new VerbFailure("forbidden", "a coding session never shares a copy: the operator does, from the project's Branches tab");
       if (caller.kind === "conform") throw new VerbFailure("forbidden", "conformance never shares a copy");
     }
@@ -704,17 +736,24 @@ export class ProjectEngine {
     const createdByCaller = !!run.rec && run.rec.createdBy === callerTag(caller);
     if (sharedNamed) throw new VerbFailure("needs-confirm", confirmShared);
     if (caller.kind === "overseer" || caller.kind === "project-overseer") {
-      // The user's click on a card listing the copy opens the one turn these run in (§app.overseer/copies); never slot 0.
-      // A project overseer's level is its statechart's act (run() sends it once these checks pass).
+      // The user's word (a turn they started, typed or a click) stops any copy, and tears down or resets one whose
+      // starting conversation is finished or archived; while it still works, only a click on a card listing the copy
+      // does (§app.overseer/copies). Never slot 0 of a copy it did not start. A project overseer's level is its
+      // statechart's act (run() sends it once these checks pass).
       const rec = run.rec;
+      const word = caller.word?.() === true;
       const clicked = (v: "teardown" | "reset" | "down") => !!rec && rec.slot !== 0 && caller.approved?.(v, rec) === true;
-      if (linked && !clicked("down"))
+      if (linked && !word && !clicked("down"))
         throw new VerbFailure(
           "needs-confirm",
-          `this copy has ${linked} active share link${linked === 1 ? "" : "s"}, which will show the not-running page while it is down: stop it only in the turn the user's click on a card listing it opens (ask with sova_card, listing it under copies; its row shows the links), or revoke the link first`,
+          `this copy has ${linked} active share link${linked === 1 ? "" : "s"}, which will show the not-running page while it is down: stop it only on the user's word, in a turn they started (ask them; its data and links are kept), or revoke the link first`,
         );
-      if ((verb === "reset" || verb === "teardown") && rec && !createdByCaller && !clicked(verb))
-        throw new VerbFailure("needs-confirm", copyClickRefusal(verb, rec.createdBy));
+      if ((verb === "reset" || verb === "teardown") && rec && !createdByCaller) {
+        if (rec.slot === 0) throw new VerbFailure("needs-confirm", `${verb} of a project's main copy (slot 0) you did not start is the operator's`);
+        if (clicked(verb)) return;
+        if (!word) throw new VerbFailure("needs-confirm", copyWordRefusal(verb, rec.createdBy));
+        if (starterWorking) throw new VerbFailure("needs-confirm", `${copyClickRefusal(verb, rec.createdBy)} (its conversation is still working)`);
+      }
       return;
     }
     if (linked) throw new VerbFailure("needs-confirm", confirmLinked);
@@ -1807,7 +1846,7 @@ export class ProjectEngine {
       const { link, changed } = await shareInstance({ ...(await this.shareInput(run)), sovaPorts: await this.sovaPorts() });
       run.steps.push({ id: "share", kind: "link", result: changed ? "done" : "skipped", ms: 0, detail: `${link.endpoint} until ${link.expiresAt}` });
       const { url, ...rest } = link;
-      run.extra.links = [run.caller.kind === "operator" && url ? { ...rest, url } : rest];
+      run.extra.links = [seesLinkUrls(run.caller) && url ? { ...rest, url } : rest];
     } catch (err) {
       if (err instanceof ShareFailure) throw new VerbFailure(err.code, err.message);
       throw err;
@@ -1842,7 +1881,7 @@ export class ProjectEngine {
 
   private async status(run: Run): Promise<void> {
     run.extra.checks = [await this.supervisorCheck(run.def)];
-    if (run.rec) run.extra.links = linksOf(run.rec.id, { activeOnly: true, withUrl: run.caller.kind === "operator" });
+    if (run.rec) run.extra.links = linksOf(run.rec.id, { activeOnly: true, withUrl: seesLinkUrls(run.caller) });
     if (run.rec || run.req.instance) return;
     // A whole project: every instance.
     const reg = readRegistry();
@@ -1860,7 +1899,7 @@ export class ProjectEngine {
         state: this.stateOf(sub, services),
         services,
         createdBy: rec.createdBy,
-        links: linksOf(rec.id, { activeOnly: true, withUrl: run.caller.kind === "operator" }),
+        links: linksOf(rec.id, { activeOnly: true, withUrl: seesLinkUrls(run.caller) }),
         share: await this.shareFacts(sub),
       });
     }

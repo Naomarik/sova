@@ -63,6 +63,7 @@
       (#{:person/approve :person/decline} ev) "operator"
       (= :person/revert ev) "operator"
       (= :person/leave ev) "operator"
+      (= :person/edit ev) (rp/own-word-writer (writer data) (b/evt data) false)
       :else (writer data))))
 
 (defn change

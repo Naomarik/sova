@@ -98,9 +98,16 @@ import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./se
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { QUEUE_OPEN_TOOL, queuePushExtension, topicStore } from "./topics";
 import { OFFER_NOTE_MESSAGE, OFFER_TOOL } from "../shared/session-offers";
+import { CARD_NOTE_MESSAGE, CARD_TOOL } from "../shared/transcript-cards";
+import { cardNoteRender } from "./transcript-cards-note";
+import { installVisOwnKindsHook, recordedCardSnapshot } from "./transcript-cards";
+
+// A chat's own drawing kinds reach its vis_guide tool (§chat.transcript-cards/drawing-kinds).
+installVisOwnKindsHook();
 
 /** The offer note in this process (a chat the server hosts itself: tests). */
 const offerNoteHere = async (sessionId: string): Promise<string | null> => (await import("./session-offers")).offerNoteFor(sessionId);
+const cardNoteHere = async (sessionId: string, since: string | null): Promise<string | null> => (await import("./transcript-cards")).cardNoteFor(sessionId, since);
 import { noteUsageSession, registerUsageSession, resolveUsageAttribution } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { reviewSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
@@ -169,6 +176,8 @@ export interface ChatHosts {
   instanceNote?: (ctx: HookCtx) => Promise<string | null>;
   /** The offer tool's note of a run button's outcome (§chat.offers/card). */
   offerNote?: (sessionId: string) => Promise<string | null>;
+  /** The transcript cards' note of answers given at once since `since` (§chat.transcript-cards/answering). */
+  cardNote?: (sessionId: string, since: string | null) => Promise<string | null>;
 }
 let chatHosts: ChatHosts = {};
 export function setChatHosts(h: ChatHosts): void {
@@ -1253,6 +1262,8 @@ class ChatSession {
       mirrorTotal: () => this.harness.queue.mirrorTotal(),
       mirrorFor: (kind) => this.harness.queue.mirrorFor(kind),
       mirrorHas: (kind, text) => this.harness.queue.mirrorHas(kind, text),
+      // A handed steer stays removable on its own until the agent takes it (quirk P29 steer-remove).
+      steerTicket: () => this.harness.queue.steerTicket?.(),
     },
     streaming: () => this.harness.isRunning(),
     // A Claude login switch landing holds it too, so the next turn starts on the new login.
@@ -1384,7 +1395,7 @@ class ChatSession {
     this.flushDeferredAppends();
     const images = item.images as ImageInput[] | undefined;
     // The message goes in labelled with its send's key (§app.chat-processes/worker-instructions).
-    const toSdk = <T>(send: () => T) => this.sendKeys.run(item.key, () => this.toSdk(item.origin, send, item.confirm));
+    const toSdk = <T>(send: () => T) => this.sendKeys.run(item.key, () => this.toSdk(item.origin, send, item.confirm, !!item.overseer));
     // What the extensions' input handlers are told: a person's input, or Sova's own (§app.overseer/input-source).
     const source = inputSourceOf(item);
     // The sender's mark goes in with the message, never earlier: a held item is not in the SDK,
@@ -1433,8 +1444,9 @@ class ChatSession {
       project overseer), one the user sent from the UI (`origin` "client") is marked as it goes, so
       the turn it opens is known as theirs by identity, not text; a confirm card's click in the Overseer
       and in a project overseer (whose copy cards it approves, §app.overseer/copies). */
-  private toSdk<T>(origin: QueueItem["origin"], send: () => T, confirm?: string): T {
-    if (origin === "client" && this.userTurns) return this.userTurns.send(send, this.takesClicks ? confirm : undefined);
+  private toSdk<T>(origin: QueueItem["origin"], send: () => T, confirm?: string, byOverseer = false): T {
+    // `byOverseer`: the global Overseer sent it (its message route): the operator's, but never their own message.
+    if (origin === "client" && this.userTurns) return this.userTurns.send(send, this.takesClicks ? confirm : undefined, { overseer: byOverseer });
     // A profile session with powers tells the user's own messages by identity too (its limits).
     if (origin === "client" && this.profileState?.run) return this.profileState.run.turns.send(send);
     return send();
@@ -1838,6 +1850,7 @@ class ChatSession {
         }
         return !this.hasForeignWrites();
       },
+      ownKinds: () => recordedCardSnapshot(this.harness.id)?.drawings ?? [],
     };
   }
 
@@ -2967,7 +2980,7 @@ class ChatSession {
     if (send) this.senderMarks.push(send);
     if (opts?.sentBySession) this.profileState?.run?.expectHop(text, opts.sentBySession.hop);
     const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
-    const turn = this.sendKeys.run(key, () => this.toSdk(origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm));
+    const turn = this.sendKeys.run(key, () => this.toSdk(origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm, !!opts?.sentByOverseer));
     this.noteStarting(turn);
     if (key !== undefined) turn.then(() => this.sendKeys.done(key), (err) => this.keyedTurnFailed(key, err));
     if (send)
@@ -4209,6 +4222,7 @@ export function serverToolSpec(chatId: string, decl: ServerToolDecl): ToolSpec {
         name: decl.name,
         params,
         attended: turns?.attended() ?? false,
+        own: turns?.ownMessage() ?? false,
         card: turns?.confirmedCard() ?? null,
       };
       const local: ServerToolLocal = {
@@ -4427,6 +4441,8 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
     const outline = special ? false : !isFanoutMember(read);
     // The offer tool, served (its declaration came with the open) or, in this process, from the snapshot.
     const offerSpecs: ToolSpec[] = special ? [] : servedDecls ? servedSpecs(path, (n) => n === OFFER_TOOL) : await (await import("./session-offers-tool")).sessionOfferTools(read.id, path, cwd);
+    // The card tool, the same way, when the snapshot has a type the agent may raise (§chat.transcript-cards/card-tool).
+    const cardSpecs: ToolSpec[] = special ? [] : servedDecls ? servedSpecs(path, (n) => n === CARD_TOOL) : await (await import("./transcript-cards-tool")).sessionCardTools(read.id, path, cwd);
     // A link member's tools are fixed by its creation marker, read at every build (§mesh.links/tools).
     const linkTools = isLinkMember(read) ? "member" : "legacy";
     return {
@@ -4453,11 +4469,14 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
                 : projectVerbsExtension(projectEngine),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
               servedDecls
-                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && !TOUR_TOOLS.has(n)))
+                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && n !== CARD_TOOL && !TOUR_TOOLS.has(n)))
                 : queuePushExtension({ sessionId: () => read.id, title: () => titleOf(read.branch()) }),
               servedVisToolsExtension("sova-tours", servedDecls ? servedSpecs(path, n => TOUR_TOOLS.has(n)) : tourTools(read.id, path), () => visHost.chat ? visHost.chat.modeState.minorModes.includes("vis") : undefined),
               // offer: this project's offers, from the session's snapshot (§chat.offers/tool). Most chats have none: no extension.
               ...(offerSpecs.length ? [servedToolsExtension("sova-session-offers", offerSpecs, (ctx) => (chatHosts.offerNote ?? offerNoteHere)(ctx.sessionId), OFFER_NOTE_MESSAGE)] : []),
+              // card: this project's transcript cards (§chat/transcript-cards). Every ordinary chat hears an
+              // answer given at once at its next turn, even with no tool: a script may raise a card in it.
+              servedToolsExtension("sova-transcript-cards", cardSpecs, cardNoteRender((id, since) => (chatHosts.cardNote ?? cardNoteHere)(id, since)), CARD_NOTE_MESSAGE),
               ...powers,
             ],
             ...overrides,

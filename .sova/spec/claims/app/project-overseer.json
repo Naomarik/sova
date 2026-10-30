@@ -274,7 +274,7 @@
   "§app.project-overseer/identity": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "server/project-overseer.ts",
       "server/project-overseer-store.ts",
@@ -303,7 +303,8 @@
       "server/spec-tool-fake.ts",
       "server/overseer-opening.ts",
       "server/overseer-run-note.ts",
-      "server/project-overseer-opening.test.ts"
+      "server/project-overseer-opening.test.ts",
+      "server/other-project-dirs.ts"
     ],
     "requires": [
       "§app.overseer/hosting",
@@ -311,8 +312,9 @@
       "§chat/images"
     ],
     "agreed": {
-      "by": "user (go-ahead: fix the spec, docs audit)",
-      "at": "2026-10-15T22:32Z"
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
     }
   },
   "§app.project-overseer/limits": {
@@ -481,7 +483,7 @@
   "§app.project-overseer/previews": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§mesh.public/preview",
       "§mesh.public/preview-serve",
@@ -510,12 +512,16 @@
       "server/project-overseer-tools-statecharts.test.ts",
       "server/project-overseer-tools-statecharts.integration.test.ts",
       "statecharts/test/sova/statecharts/refit/general_projects_test.cljs",
-      "server/overseer-org-part.ts"
+      "server/overseer-org-part.ts",
+      "server/project-services/tools.ts",
+      "server/project-services/share.ts",
+      "server/overseer-tools.ts",
+      "server/harness/pi/golden/special-model-view.json"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-26T18:32Z",
-      "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
     }
   },
   "§app.project-overseer/reviews": {
@@ -554,6 +560,42 @@
       "§app.project-overseer/corrections",
       "§app.project-overseer/statechart-tools"
     ]
+  },
+  "§app.project-overseer/roster-add": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.organizations/roster",
+      "§app.organizations/field-authority",
+      "§app.project-overseer/tools"
+    ],
+    "code": [
+      "server/project-overseer-tools.ts",
+      "server/project-overseer-prompt.md",
+      "server/org-routes.ts",
+      "server/orgs.ts",
+      "server/overseer-org-part.ts",
+      "server/overseer-org-part.test.ts",
+      "server/project-overseer.ts",
+      "server/projects/contributions.ts",
+      "server/user-turns.ts",
+      "server/user-turns.test.ts",
+      "server/chat-manager.ts",
+      "server/chat-runtime/host.ts",
+      "shared/chat-runtime.ts",
+      "statecharts/src/sova/statecharts/person.cljc",
+      "statecharts/src/sova/statecharts/rules/person.cljc",
+      "statecharts/test/sova/statecharts/refit/person_test.cljc",
+      "statecharts/EVENTS.md",
+      "server/vendor/statecharts.js",
+      "server/harness/pi/golden/special-model-view.json"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+    }
   },
   "§app.project-overseer/settings": {
     "kind": "behavior",
@@ -791,16 +833,21 @@
       "server/org-history-preview.test.ts",
       "server/agent-loadouts.test.ts",
       "server/agent-loadouts.snapshot.json",
-      "server/overseer-copies.test.ts"
+      "server/overseer-copies.test.ts",
+      "server/outreach/unit.ts",
+      "server/project-services/engine.ts",
+      "server/overseer-whatsapp-part.ts",
+      "server/overseer-whatsapp.ts",
+      "server/projects/contributions.ts"
     ],
     "requires": [
       "§app.baton/goal-and-loadout",
       "§app.organizations/field-authority"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-26T18:32Z",
-      "source": "pi-session:01a1785c-f1a4-7412-baca-955a80feb4dc#089947ed"
+      "by": "user",
+      "at": "2026-10-28T13:39Z",
+      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
     }
   },
   "§app.project-overseer/watch-loop": {

@@ -150,8 +150,14 @@
       "server/spec-settings.ts",
       "server/team-defaults.ts",
       "shared/team-defaults.ts",
-      "server/align-settings.ts"
-    ]
+      "server/align-settings.ts",
+      "pi-config/extensions/mode/align-settings.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-30T01:15Z",
+      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#00a2d68b"
+    }
   },
   "§chat.subagent-profiles/settings": {
     "kind": "behavior",

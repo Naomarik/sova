@@ -68,10 +68,12 @@ the Features group, not under Modes: a profile is not a mode.
 
 ## §site.docs/align — Align and alignments (`/docs/modes/align/`)
 
-The align minor mode: when an alignment opens (only once the user asked for something built, fixed
-or changed; questions are answered in chat), how each reply opens with a short part for the user and
-folds its working notes, what an alignment holds, answering it, Settings → Alignment (writing style,
-Visuals, review), the card, the composer's badge and session mark, Needs you and notifications, and the terminal
+The align minor mode: when an alignment opens (Eager, the default, for any request that implies
+work; Careful, only when the user wants the product changed or the agent can't tell, questions
+answered in chat; on both, nothing built before a confirmed card and a go-ahead to a plan sketched
+in chat opens a card first), how each reply opens with a short part for the user and folds its
+working notes, what an alignment holds, answering it, Settings → Alignment (eagerness, writing
+style, Visuals, review), the card, the composer's badge and session mark, Needs you and notifications, and the terminal
 viewer.
 
 ## §site.docs/align-review — Adversarial review (`/docs/modes/align/review/`)

@@ -11,9 +11,10 @@ for sessions Sova holds and sessions it only watches, with one web-only shortcut
 holds, the card can tick recommendations to take, pick an option as a question's answer, and go
 with all of the recommendations (§chat.alignment/card).
 Those only compose an ordinary message for the agent to record, exactly as if it were typed; the
-TUI user types the same words. How the agent writes alignments — its writing style — and whether it
-draws on the card (Visuals) are set in Settings → Alignment (§chat.alignment/settings-file,
-§chat.alignment/style, §chat.alignment/visuals).
+TUI user types the same words. How readily an alignment opens (Eagerness), how the agent writes
+alignments (its writing style) and whether it draws on the card (Visuals) are set in Settings →
+Alignment (§chat.alignment/settings-file, §chat.alignment/eagerness, §chat.alignment/style,
+§chat.alignment/visuals).
 
 ## §chat.alignment/document — What an alignment holds
 
@@ -103,9 +104,9 @@ also `review` and `close_blocker`, and their refusals of implementing and done,
   request needs no alignment.
 - **The change-request mark** — an op of its own (the code names it), touching no document,
   alone in its call or before the call's other ops: the agent records that the user's latest prompt
-  asks for something to be built, fixed or changed (§chat.alignment/when). It has no fields the
+  is a change request, one that opens an alignment (§chat.alignment/when). It has no fields the
   agent must fill but may carry a short note of what was asked. It holds for the run it is made in,
-  until the run settles, and only the settle nudge reads it (§chat.alignment/model); it changes no
+  until the run settles, and only the settle nudge reads it, under Careful (§chat.alignment/model); it changes no
   document, no card, no row mark and no session's wait (§chat.alignment/session-mark). Its answer is
   one line, "Marked as a change request." Made twice in one run it is answered the same and changes
   nothing more.
@@ -115,6 +116,12 @@ also `review` and `close_blocker`, and their refusals of implementing and done,
   `Recommended: **{choice}** — {why}`. Technical notes follow the approach under
   "Technical notes", and a visual is its source in a `vis {kind}` code block, under its question
   or after the summary.
+
+The tool's description and its guidelines state when an alignment opens in the same words as the
+align block's part shared by both Eagerness choices and the delegate bridge (§chat.alignment/eagerness):
+a prompt the align block says opens an alignment is a change request, marked first; nothing is
+built before a confirmed alignment; a go-ahead to anything sketched in chat opens one first. They
+never name a choice, so a change of Eagerness never changes the tool.
 
 The tool's description and the ops' own descriptions tell the model how a reply maps onto ops:
 decide what the user answered, accept only what they told it to take the recommendation on, leave
@@ -160,8 +167,10 @@ any more, and they count toward no badge, row or digest.
 
 ## §chat.alignment/model — What keeps the agent on it
 
-- **Instructions.** The align prompt block tells the agent when an alignment may open and when it
-  must (§chat.alignment/when), how every reply opens and where its working detail goes
+- **Instructions.** The align prompt block tells the agent when an alignment opens, in the chat's
+  Eagerness's own words (§chat.alignment/when, §chat.alignment/eagerness), and what holds on both
+  choices (nothing built before a confirmed alignment; a go-ahead to a sketch opens one; the
+  narrowed exemptions), how every reply opens and where its working detail goes
   (§chat.alignment/reply), to mark a run as a change request with the tool's change-request mark
   (§chat.alignment/tool) before anything else in that run, to investigate before it records,
   to record every alignment with the tool
@@ -173,14 +182,19 @@ any more, and they count toward no badge, row or digest.
   never while a question is open; a go-ahead with questions still open takes the recommendations for
   them first, an answer to only some is not a go-ahead — and `done` when finished. The planning
   worker hand-off is said once, in the bridge paragraph that follows the delegate block while
-  Delegate and align are both on. It follows the same trigger (§chat.alignment/when): only a change
-  request is investigated for an alignment; a question, an explanation, research or brainstorming is
-  answered (or delegated) as the delegate block says, with no planning worker for an alignment. For
-  a change request, the investigation goes to at most one non-editing Planning & specs
+  Delegate and align are both on. It states the trigger in the same words as the align block's
+  shared part and the tool's description (§chat.alignment/eagerness), true under both choices: a
+  prompt the align block says opens an alignment is a change request, investigated for one; any
+  other is answered (or delegated) as the delegate block says, with no planning worker for an
+  alignment. For a change request, the investigation goes to at most one non-editing Planning & specs
   worker (never the Investigation profile), whose one permitted write is the alignment JSON for
   `import` at an absolute path outside the repository that the agent names (the delegate block's
   own no-edit rule names no exception: the bridge does; in a remote session the worker reports the
-  JSON and the agent creates inline), and the agent imports that file, never retyping it. The tool's
+  JSON and the agent creates inline), and the agent imports that file, never retyping it. When the
+  same matter was first investigated by a lighter worker (an Investigation worker the delegate block
+  sent on a bug report or a question) and the user then asks for the change, the agent's brief to the
+  planning worker carries the root cause that worker found, so the planning worker starts from it
+  rather than investigating again from nothing. The tool's
   own description and guidelines carry the core of it too, since they sit in pi's tools section.
 - **Writing style and Visuals.** The Project manager and Simplified styles add their paragraph to
   the align block (§chat.alignment/style), and Visuals on adds the visuals paragraph after it
@@ -211,18 +225,20 @@ any more, and they count toward no badge, row or digest.
   Every later request reads it.
 - **No gate.** Nothing blocks the agent from editing, spawning or creating worktrees while a
   question is open: a dead worker or a parallel concern must never leave the session stuck.
-- **One nudge per run.** When a run is about to settle, align is on, **the run is marked as a
-  change request**, the run made no `align` call, and its final reply reads like a plan that asks
-  the user to decide, the extension adds one hidden
+- **One nudge per run.** When a run is about to settle, align is on, the run made no `align` call,
+  its final reply reads like a plan that asks the user to decide, and, **under Careful only, the
+  run is marked as a change request** (§chat.alignment/eagerness), the extension adds one hidden
   message (`align-nudge`) telling the agent to record it with `align` (or `exempt` if it isn't a
   design decision) and continues the run once. It never nudges twice in one run (until the run
   settles). Only a successful call that changed a document or recorded an exemption counts as an
-  align call here: a refused call, a bare `get` or the change-request mark alone does not. **The
-  mark** is the agent's own: the run made the tool's change-request mark, or any other `align` call
-  that names an op other than `get` (create, import or any document op, refused or not). The nudge
-  never guesses it from the user's prompt or the reply's words: a run that answered a question,
-  explained, researched or brainstormed and made no such call is never nudged, whatever its reply
-  says. The reply judged is the run's last
+  align call here: a refused call, a bare `get` or the change-request mark alone does not. The
+  Eagerness the nudge follows is the one in effect when the run settles. **Under Eager** it needs no
+  mark: any run whose reply reads like a plan is nudged, as before the mark existed. **Under
+  Careful, the mark** is the agent's own: the run made the tool's change-request mark, or any other
+  `align` call that names an op other than `get` (create, import or any document op, refused or
+  not). The nudge never guesses it from the user's prompt or the reply's words: under Careful a run
+  that answered a question, explained, researched or brainstormed and made no such call is never
+  nudged, whatever its reply says. The reply judged is the run's last
   assistant message, even one with no text, **without its working notes**: the fold
   (§chat.alignment/reply) and everything after it are dropped before it is read, so a decision
   question just above the fold is the reply's last paragraph. "Reads like a plan": an old markdown alignment block
@@ -240,28 +256,45 @@ any more, and they count toward no badge, row or digest.
 
 ## §chat.alignment/when — When an alignment opens
 
-An alignment, and the planning card it draws, opens **only after the user has said they want
-something built, fixed or changed** (a change request). Until then the chat is a conversation:
+Which prompts open an alignment, and the planning card it draws, depends on the chat's
+**Eagerness** (§chat.alignment/eagerness): the align block carries the chosen trigger and only
+that one. Whatever the choice, a prompt that opens one is a **change request**: the agent marks the
+run with the tool's change-request mark (§chat.alignment/tool) before anything else in it,
+investigates, and records an alignment before it builds.
 
-- **Questions are answered in chat.** A question, a "why", an explanation, research, an
-  investigation and brainstorming are answered in the reply, never with an alignment, however much
-  work the answer took. The reply may end with a plain offer such as "Want me to plan a fix?";
-  that offer is not a card and the agent waits for the user's word. While brainstorming, the reply
-  may lay out options and their trade-offs in prose before the user has said what they want.
-- **A change request opens a card first.** Once the user asks for something to be built, fixed or
-  changed, the agent marks the run as a change request (§chat.alignment/tool), investigates and
-  records an alignment before it builds. A "go", "do it" or "yes" after a plan sketched in chat is a
-  change request like any other: it opens a card first, never the build.
-- **Building waits on a confirmed alignment.** Nothing is built until the user has confirmed an
-  alignment and it is set implementing (§chat.alignment/model), unless the user said to skip
-  alignment or the request is exempt (explicit commands to run, a trivial one-line change the user
-  pointed at, a follow-up that plainly confirms), which the agent records with `exempt` first.
-- **No asking for its own sake.** A request the agent already reads clearly gets the alignment the
-  work needs, with only the questions that would change it; the agent never opens a second,
-  confirm-my-reading alignment for a clear ask, and is not told to lean toward asking.
+- **Eager** (the default). Any prompt that implies work (a feature, an investigated fix, a
+  refactor, a migration, new files, or any multi-step change) gets an alignment first. When the ask
+  already looks fully specified, the agent still records a short alignment with its reading of it
+  and asks the user to confirm. It is told to lean heavily toward asking. Questions and
+  explanations need no alignment.
+- **Careful.** The agent asks itself one thing about the user's message: what do they want to be
+  different when this is done? If it is the product (how it looks, behaves or is built), the
+  message is a change request, however it is phrased. If they want to know or understand something
+  and the product can stay as it is, it is a question, answered in the reply, never with an
+  alignment, however much work the answer took. An investigation into something broken or lacking
+  is the first step of a change request: its findings go on an alignment card, never into a plan
+  written in the reply. When the agent can't tell which the message is, it opens the alignment
+  anyway. It asks a clarifying question first only when the message can't be planned without one.
+  A request it already reads clearly gets the alignment the work needs, with only the questions
+  that would change it, never a second, confirm-my-reading alignment. The trigger is this test and
+  nothing else: the block lists no example phrases.
 
-The delegate bridge (§chat.alignment/model) and the settle nudge follow the same trigger: neither
-acts on a run that is not a change request.
+On both choices, and not part of the setting:
+
+- **Building waits on a confirmed alignment.** Nothing is built, edited or handed to implementation
+  workers until the user has confirmed an alignment and it is set implementing
+  (§chat.alignment/model), unless the user said to skip alignment or the request is exempt, which
+  the agent records with `exempt` first. Exempt: explicit commands to run, a trivial one-line change
+  the user pointed at, and a follow-up that plainly confirms, which means only an answer to an
+  existing alignment card or the go-ahead for a command to run.
+- **A go-ahead to a sketch opens a card.** A "go", "yes", "do it" or "fix it" to anything the
+  agent sketched in chat (a plan, a fix, options in prose) is a change request, never a
+  confirmation: it opens an alignment first, never the build.
+
+The settle nudge follows the chosen trigger (§chat.alignment/model): under Eager it judges any run's
+reply, under Careful only a run marked as a change request. The delegate bridge's planning worker
+and the align tool's own description state the trigger in the same words as each other and as the
+align block, true under both choices (§chat.alignment/eagerness).
 
 ## §chat.alignment/reply — How a reply opens, and where its working goes
 
@@ -529,7 +562,7 @@ The TUI draws each `align` call as one dim line naming the document and its ops,
 a compact card: the id, title, status and open count, the change line, and the open questions with
 their recommendations, by letter and label when one names an option (the whole document, options
 lettered, with its technical notes and each visual as its source text, when the tool row is
-expanded). The TUI reads the writing style and Visuals from `mode-align.json` like Sova
+expanded). The TUI reads the Eagerness, writing style and Visuals from `mode-align.json` like Sova
 (§chat.alignment/settings-file); adversarial review stays `pi --adversarial-review` only. A widget above the editor
 lists the open alignments ("◇ align · al_3 2/7 open · al_2 implementing · alt+a view") while align is
 on. The viewer (`/align`, the viewer key) shows one document at a time as markdown, ←/→ switching
@@ -538,23 +571,61 @@ older session's `align-doc` entries keep their one-line transcript marker.
 
 ## §chat.alignment/settings-file — `mode-align.json`
 
-The align mode's writing style and Visuals are one file, `<agent dir>/mode-align.json`, `{version:
-1, style, visuals}`: `style` is `default`, `simplified` or `pm` (Project manager), `visuals` a
-boolean. One module, `pi-config/extensions/mode/align-settings.ts` (node built-ins only, beside
+The align mode's Eagerness, writing style and Visuals are one file, `<agent dir>/mode-align.json`,
+`{version: 1, style, visuals, eagerness?}`: `style` is `default`, `simplified` or `pm` (Project
+manager), `visuals` a boolean, `eagerness` `careful` or absent (Eager; `eager` written by hand reads
+the same). One module, `pi-config/extensions/mode/align-settings.ts` (node built-ins only, beside
 `mode/spec.ts`), owns it: the shape, a strict parse (another version, an unknown key, a style outside
-the three or a non-boolean `visuals` is malformed, with a sentence naming the field), a reader that
-reads a missing or malformed file as Project manager with Visuals off, and an atomic writer. The
+the three, a non-boolean `visuals` or an `eagerness` other than `eager` or `careful` is malformed,
+with a sentence naming the field), a reader that reads a missing or malformed file as Project
+manager with Visuals off and Eager, and an atomic writer. A file with no `eagerness` parses as
+before and reads as Eager; the writer stores the field only for Careful, so a file saved with Eager
+is the same bytes an older device already accepts. The
 stored `default` is the style the user reads as **Technical**; it is kept as written, never migrated
 or rewritten, so every device and the mesh keep accepting the file. Settings →
 Alignment writes it (§app.settings-dialog/alignment). The mode extension reads it, in the TUI and in
-every runtime Sova hosts — the style at each turn boundary, Visuals at each session start — and
+every runtime Sova hosts — the style and Eagerness at each turn boundary, Visuals at each session start — and
 Sova's server reads Visuals at a chat's first start (§chat.alignment/visuals). With the mesh on it
 syncs like `mode-spec.json`: whole file, newest edit wins, checked with the module's own parser
 before it is written.
 
-Which style and Visuals a chat uses: its subagent profile's `alignment` override, field by field
-(§chat.subagent-profiles/file), else this file. A profile with no override reads exactly as this
-file does.
+Which Eagerness, style and Visuals a chat uses: its subagent profile's `alignment` override, field
+by field (§chat.subagent-profiles/file), else this file. A profile with no override reads exactly as
+this file does.
+
+## §chat.alignment/eagerness — Eagerness
+
+The Eagerness decides how readily an alignment opens. It changes only two things: what the align
+block tells the agent about which prompts open an alignment (§chat.alignment/when), and whether the
+settle nudge needs the change-request mark (§chat.alignment/model). It never changes the tool, the
+ops, the cards, the reply's two parts, the change-request mark's instruction, the planning worker
+hand-off or what a review records. There are two, listed in this order everywhere: **Eager** and
+**Careful**. A user who has saved none (a new user, a new device, a missing or unreadable file,
+§chat.alignment/settings-file) gets **Eager**. There is no third choice.
+
+- **Eager** opens an alignment for any prompt that implies work and leans toward asking; the settle
+  nudge judges every run's reply.
+- **Careful** opens one when the user wants the product to be different (the intent test of
+  §chat.alignment/when), and when the agent can't tell; the settle nudge judges only a run marked as a
+  change request.
+
+**The words that never change.** The align block has one part every chat gets, whatever its
+Eagerness: a change request is marked first, investigated and recorded before it is built; nothing
+is built before a confirmed alignment; a go-ahead to anything sketched in chat opens one first; the
+narrowed exemptions. The align tool's description and guidelines and the Delegate+align bridge
+paragraph state that part in the same words and point at the align block for which prompts open an
+alignment; they never name a choice, so a change of Eagerness never changes the tool set or the
+bridge. Only the choice's own trigger paragraph in the align block differs.
+
+**How it reaches a chat.** The Eagerness is read at each turn boundary, like the writing style
+(§chat.alignment/style). Its trigger paragraph is part of the align block when the prompt's head is
+built, and the block is never rewritten mid-session. A later change reaches an open chat with align
+on as **one** hidden `mode-note` at its next run, once per change: the new choice's trigger
+paragraph, saying it replaces the one the align block carries. It may ride the same note as a
+writing style change. The note's details record the Eagerness it told and the head's, so a reopened
+chat neither tells it twice nor loses what its head was built with; a head with no such record was
+built Eager. The settle nudge reads the Eagerness in effect when the run settles, so a change counts
+for it from the next run, note or not.
 
 ## §chat.alignment/style — Writing style
 

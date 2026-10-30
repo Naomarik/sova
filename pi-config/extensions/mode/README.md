@@ -136,10 +136,17 @@ writer**).
   covers in a feature draft before coding, claims only the files the task
   changed, leaves none of them unclaimed, reads before finishing each § the
   census note's one `Unread § your change landed in` line marks read first
-  (its command lists the rest), and promotes what it verified (or says why it could not).
-  A branch isn't done or ready to land until its drafts are promoted on it, and the
-  go-ahead to build or merge covers committing them; a draft whose branch already
-  landed is promoted on a fresh branch, never on the default branch.
+  (its command lists the rest), and records a verification note per promise it
+  changed (`evidence --note`), saying what it didn't verify. The branch's landing
+  makes its drafts official (`land`, after the checks pass, committing the docs with
+  the code); drafts that don't fit come back to the chat to fix, with no commit
+  (a clash: `refresh`). Where nothing lands branches, the agent runs `land` once
+  before its last commit. A branch isn't done or ready to land until each promise
+  it changed has its note, and the go-ahead to build or merge covers committing the
+  docs with the code; a draft whose branch already landed without it lands with a
+  fresh branch from the default branch, never on the default branch itself.
+  `agree` is only for a decision the user made in the chat: it stamps the record
+  and makes nothing official; Land It is never agreement.
   Work that changes no behavior — refactors, tests, tooling — is exempt, and
   the agent says it is claiming the exemption. The documentation changes only
   through drafts; a promotion `conflict` is per declaration, and it is
@@ -147,7 +154,7 @@ writer**).
   files, each one copy: [`spec-mode.md`](spec-mode.md), the short
   finding-your-way part that rides every turn, and
   [`../spec/WRITING.md`](../spec/WRITING.md), the writing procedure (drafts,
-  agreeing, evidence, promoting, a worker's duties). `minor.ts` reads
+  agreeing, verification notes, landing, a worker's duties). `minor.ts` reads
   `spec-mode.md` at load: the injected block is that file byte for byte, minus
   trailing whitespace, and its one `sh` block is the shell prefix `minor.ts`
   exports as `SPEC_CORE_SHELL`. A missing, repeated or multi-line block fails
@@ -681,7 +688,8 @@ independent of Delegate:
   backend, model and effort to write draft claims and record evidence; give it
   the relevant spec passages quoted literally, the files the task changed and
   the verification done; it writes only under `.sova/spec/drafts/`, never
-  `claims/` or `manifest.json`; the session checks its draft and promotes. An
+  `claims/` or `manifest.json`; the session checks its draft, runs the checks
+  and the census, and records a note per promise; the landing makes it official. An
   unavailable model means one retry on the listed fallback, disclosed, else
   asking the user — never a substitute. A writer that can't run at all is
   rendered as Delegate renders a profile with no worker. The paragraph is the
@@ -766,9 +774,12 @@ cannot compile without deciding):
 - **`spec` does; `align` and `vis` do not** (a worker's replies are read by its
   parent session, not rendered for the user). `composeWorkerPrompt` (`prompt.ts`) is the
   worker-scope minors only: for spec, the `spec-mode.md` block byte for byte,
-  then `SPEC_WORKER_NOTE` (the brief is the go-ahead; the parent promotes unless
-  the brief says otherwise, and then only on its branch, never on the default
-  branch; the final report lists each foreign § it updated; the same words as
+  then `SPEC_WORKER_NOTE` (its parent's branch's landing makes the drafts
+  official; the brief is the go-ahead; it works in the draft the brief names, or
+  says which it started, and records its notes there; it commits only when the
+  brief says so, and then only on its branch, never by landing on the default
+  branch; the final report lists each foreign § it updated; it never says
+  promote; the same words as
   the writing procedure's Workers section, which its census hands it, that
   section first, with its first note).
   Never the Delegate block, the align block or bridge, the vis guide, or the

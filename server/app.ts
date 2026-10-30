@@ -968,7 +968,7 @@ export function buildApp(deps: AppDeps) {
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: "Expected JSON body { version: 1, style, visuals }" }, 400);
+      return c.json({ error: "Expected JSON body { version: 1, style, visuals, eagerness? }" }, 400);
     }
     const result = saveAlignSettingsBody(body);
     return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);

@@ -627,8 +627,10 @@ assert.match(card, /implementing · all 2 decided · v3 · q2 accepted · → im
 const full = alignTool.renderResult(going, { expanded: true, isPartial: false }, ctx.ui.theme).render(100).join("\n");
 assert.match(full, /a\. \*\*alt\+a\*\* — free today[\s\S]*Recommended: a — \*\*alt\+a\*\*/, "expanded: the whole document");
 
-// The settle nudge: once per run, only in a run the agent marked as a change request, when the run
-// made no align call and the reply plans in prose.
+// The settle nudge: once per run, when the run made no align call and the reply plans in prose; under
+// Careful only in a run the agent marked as a change request (§chat.alignment/eagerness).
+const alignSettingsPath = path.join(process.env.PI_CODING_AGENT_DIR, "mode-align.json");
+writeFileSync(alignSettingsPath, JSON.stringify({ version: 1, style: "pm", visuals: false, eagerness: "careful" }));
 const plan = "The plan is ready.\n\n**Open questions, with my suggested answers:**\n1. **Cap:** 400\n2. **Group:** by worker\n\nShould I go ahead with those answers?";
 const settle = () => hook("agent_before_settle", { type: "agent_before_settle", entries: [], continue: false, outcome: "completed" });
 let markN = 0;
@@ -692,6 +694,11 @@ await hook("agent_settled", {});
 await mark();
 await hook("turn_end", { turnIndex: 4, message: assistant("Lane E is finished; lanes B–D are still running."), toolResults: [] });
 assert.equal(await settle(), undefined, "a report is not nudged");
+await hook("agent_settled", {});
+// Eager (no eagerness saved): the unmarked plan is nudged, as before the mark existed.
+rmSync(alignSettingsPath);
+await hook("turn_end", { turnIndex: 5, message: assistant(plan), toolResults: [] });
+assert.equal((await settle())?.continue, true, "Eager: a run nobody marked is nudged");
 await hook("agent_settled", {});
 await commands.get("mode").handler("align off", ctx);
 await hook("turn_end", { turnIndex: 5, message: assistant(plan), toolResults: [] });

@@ -13,11 +13,20 @@ major mode. While it's on, the agent works out what to build with you first, and
 agreement as an **alignment** with its `align` tool. A chat can hold several alignments at once,
 one per concern.
 
-An alignment opens only once you've said you want something built, fixed or changed. Questions,
-explanations, research and brainstorming are answered in chat; the agent may end with an offer
-such as "Want me to plan a fix?" and waits for your word. Once you ask for a change (a "go" after
-a plan it sketched in chat included), it records an alignment first and builds nothing until you
-confirm it, unless you said to skip alignment.
+When an alignment opens depends on the **Eagerness** you choose in Settings → Alignment:
+
+- **Eager**, the default: any request that implies work (a feature, a fix it investigated, a
+  refactor, new files, any multi-step change) gets an alignment first, even one that already looks
+  fully specified, and the agent leans toward asking. Questions and explanations need none.
+- **Careful**: the agent asks itself what you want to be different when it's done. If it's the
+  product, however you phrase it, it opens an alignment; if you want to know or understand
+  something and the product can stay as it is, the answer comes in chat. Looking into something
+  broken or missing is the first step of a change, so what it finds goes on a card, not into a plan
+  in the reply. When it can't tell, it opens the alignment anyway.
+
+Either way, nothing is built until you confirm an alignment (unless you said to skip alignment),
+and a "go", "yes" or "fix it" to anything the agent sketched in chat opens a card first rather than
+starting the build.
 
 While align is on, every reply opens with a short part for you: the answer, what changed, what you
 must decide, and any warnings or things it didn't check. The agent's working detail, when there
@@ -43,8 +52,12 @@ Ids are never reused within an alignment, so "q3" keeps meaning the same questio
 
 ## Settings → Alignment
 
-How the agent writes alignments is set in **Settings → Alignment**:
+How readily alignments open and how the agent writes them is set in **Settings → Alignment**:
 
+- **Eagerness.** **Eager**, the default, opens an alignment card for any request that implies
+  work, and leans toward asking first. **Careful** opens one when you want something changed;
+  questions get their answer in chat. Either way, nothing is built until you confirm a card. A
+  change reaches open chats at their next message.
 - **Writing style.** **Project manager**, the default, describes only screens, wording and
   behaviour, with no code; it still asks a technical choice you'd notice (speed, cost, data kept or
   lost) as a product question, and puts the technical detail in the technical notes. **Simplified**
@@ -56,8 +69,8 @@ How the agent writes alignments is set in **Settings → Alignment**:
 - **Review.** **Adversarial review** has a read-only reviewer check the plan and the diff of risky
   work. See [Adversarial review](/docs/modes/align/review/).
 
-A subagent profile can set its own writing style and visuals (Settings → Subagents). pi's terminal
-UI reads the same writing style and Visuals.
+A subagent profile can set its own eagerness, writing style and visuals (Settings → Subagents).
+pi's terminal UI reads the same eagerness, writing style and Visuals.
 
 ## Status
 

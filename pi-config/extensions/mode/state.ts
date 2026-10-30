@@ -8,7 +8,7 @@
  */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { isAlignStyle, type AlignStyle } from "./align-settings.ts";
+import { isAlignEagerness, isAlignStyle, type AlignEagerness, type AlignStyle } from "./align-settings.ts";
 import { MINOR_MODES, normalizeMinorModes, type MinorMode } from "./minor.ts";
 import { isProjectModeSnapshot, normalizeProjectModeRefs, PROJECT_SNAPSHOT_TYPE, type ProjectModeRef, type ProjectModeSnapshot } from "./project-format.ts";
 
@@ -210,6 +210,7 @@ export const MODE_NOTE_TYPE = "mode-note";
  * A mode note's `details`: the minor modes in effect after it, and those whose whole guide it carried.
  * `style` / `headStyle`, only on a note that told the align writing style: the
  * style the model was told by it, and the one the prompt's align block was built with.
+ * `eagerness` / `headEagerness` likewise, only on a note that told the Eagerness (§chat.alignment/eagerness).
  */
 export interface ModeNoteDetails {
 	v: 1;
@@ -217,6 +218,8 @@ export interface ModeNoteDetails {
 	guides: MinorMode[];
 	style?: AlignStyle;
 	headStyle?: AlignStyle;
+	eagerness?: AlignEagerness;
+	headEagerness?: AlignEagerness;
 	/** The project modes in effect after it (refs); absent on notes from before project modes, read as none. */
 	projectModes?: ProjectModeRef[];
 	/** The shas of the project mode copies whose whole block it carried. */
@@ -225,15 +228,17 @@ export interface ModeNoteDetails {
 
 /**
  * A `custom` entry (not in the model's context) the extension appends when a head is fixed with the align
- * block written in a style other than Default: the style the prompt's align block
- * was built with, so a reopen rebuilds that head even when no note recorded it. A Default head writes
- * none: a head fixed since the last compaction that nothing records was built in Default.
+ * block written in a style other than Default, or at Careful: the style (and Eagerness) the prompt's align
+ * block was built with, so a reopen rebuilds that head even when no note recorded it. A Default, Eager head
+ * writes none: a head fixed since the last compaction that nothing records was built in Default, Eager.
  */
 export const MODE_HEAD_TYPE = "mode-head";
 
 export interface ModeHeadRecord {
 	v: 1;
 	style: AlignStyle;
+	/** Only for Careful; absent: the head was built Eager. */
+	eagerness?: AlignEagerness;
 }
 
 /**
@@ -254,6 +259,10 @@ export interface ModeHead {
 	 * else Default once a prompt was sent since that compaction; undefined while none has been.
 	 */
 	headStyle?: AlignStyle;
+	/** The newest Eagerness-telling note since that compaction: the Eagerness told, and the head's. */
+	eagerness?: { told: AlignEagerness; head: AlignEagerness };
+	/** The Eagerness the head's align block was built with, by the same rule as headStyle (none recorded: Eager). */
+	headEagerness?: AlignEagerness;
 	/** The project modes the head was built with, while `head` is set; absent: none. */
 	projectHead?: ProjectModeRef[];
 	/** The project modes the model was last told are on (with `told`). */
@@ -277,6 +286,8 @@ export function restoreHead(entries: readonly { type: string; customType?: strin
 	const projectGuides = new Set<string>();
 	let style: ModeHead["style"];
 	let recorded: AlignStyle | undefined;
+	let eagerness: ModeHead["eagerness"];
+	let recordedEagerness: AlignEagerness | undefined;
 	let sent = false;
 	const guides = new Set<MinorMode>();
 	if (!Array.isArray(entries)) return { head, told, guides: [] };
@@ -289,7 +300,10 @@ export function restoreHead(entries: readonly { type: string; customType?: strin
 		if (entry.type === "custom_message" || (entry.type === "message" && (entry.message as { role?: unknown } | undefined)?.role === "user")) sent = true;
 		if (entry.type === "custom" && entry.customType === MODE_HEAD_TYPE) {
 			const data = entry.data as Partial<ModeHeadRecord> | null | undefined;
-			if (recorded === undefined && data?.v === 1 && isAlignStyle(data.style)) recorded = data.style;
+			if (recorded === undefined && data?.v === 1 && isAlignStyle(data.style)) {
+				recorded = data.style;
+				recordedEagerness = isAlignEagerness(data.eagerness) ? data.eagerness : "eager";
+			}
 			continue;
 		}
 		if (entry.type === "custom_message" && entry.customType === MODE_NOTE_TYPE) {
@@ -301,6 +315,7 @@ export function restoreHead(entries: readonly { type: string; customType?: strin
 			}
 			if (Array.isArray(details.projectGuides)) for (const sha of details.projectGuides) if (typeof sha === "string") projectGuides.add(sha);
 			if (style === undefined && isAlignStyle(details.style) && isAlignStyle(details.headStyle)) style = { told: details.style, head: details.headStyle };
+			if (eagerness === undefined && isAlignEagerness(details.eagerness) && isAlignEagerness(details.headEagerness)) eagerness = { told: details.eagerness, head: details.headEagerness };
 			for (const mode of normalizeMinorModes(details.guides)) guides.add(mode);
 			continue;
 		}
@@ -314,7 +329,8 @@ export function restoreHead(entries: readonly { type: string; customType?: strin
 	}
 	// A head no entry records equals the active set, but the style it was built with is the entries' to say.
 	const headStyle = style?.head ?? recorded ?? (sent || head !== undefined ? "default" : undefined);
-	const styled = { ...(style ? { style } : {}), ...(headStyle ? { headStyle } : {}) };
+	const headEagerness = eagerness?.head ?? recordedEagerness ?? (sent || head !== undefined ? "eager" : undefined);
+	const styled = { ...(style ? { style } : {}), ...(headStyle ? { headStyle } : {}), ...(eagerness ? { eagerness } : {}), ...(headEagerness ? { headEagerness } : {}) };
 	if (head === undefined) return { head, told: undefined, guides: [], ...styled };
 	// Project fields only when they say something: absent reads as none (the head fixed, so not "follows the active set").
 	const projectToldNow = told !== undefined ? (projectTold ?? []) : (projectHead ?? []);

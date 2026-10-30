@@ -106,9 +106,9 @@ function sessionIdOf(ctx: ExtensionContext): string | undefined {
 		return undefined;
 	}
 }
-import { ALIGN_SETTINGS_FILE, alignSettingsReader, resolveAlign, type AlignStyle } from "./align-settings.ts";
+import { ALIGN_SETTINGS_FILE, alignSettingsReader, resolveAlign, type AlignEagerness, type AlignStyle } from "./align-settings.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
-import { applyModeSection, buildAlignStyleNote, buildModeNote, buildProjectModeNote, buildSpecWriterPrompt, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, statusLabel, workerProjectModes } from "./prompt.ts";
+import { applyModeSection, buildAlignEagernessNote, buildAlignStyleNote, buildModeNote, buildProjectModeNote, buildSpecWriterPrompt, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, statusLabel, workerProjectModes } from "./prompt.ts";
 import { discoverProjectModes, readProjectMode } from "./project-discovery.ts";
 import { PROJECT_MODE_PREFIX, PROJECT_MODES_DIR, PROJECT_SNAPSHOT_TYPE, projectModeArg, projectToolName, type ProjectModeListing, type ProjectModeProblem, type ProjectModeRef, type ProjectModeSnapshot } from "./project-format.ts";
 import { isApproved } from "./project-tools-approval.ts";
@@ -293,7 +293,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	const reviewOn = (): boolean => reviewFlag;
 	/** mode-align.json, re-read (one stat) whenever consulted. */
 	const readAlignSettings = alignSettingsReader(join(getAgentDir(), ALIGN_SETTINGS_FILE));
-	/** The writing style and Visuals this chat would use now: its profile's override, else the host's file. */
+	/** The Eagerness, writing style and Visuals this chat would use now: its profile's override, else the host's file. */
 	const alignNow = () => resolveAlign(readAlignSettings(), subagents().alignment);
 	/**
 	 * This session's Visuals (§chat.alignment/visuals), fixed at session_start: the caller's flag, else
@@ -307,7 +307,10 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	let headStyle: AlignStyle | undefined;
 	/** The writing style the model was last told: the head's, then each style note's (§chat.alignment/style). */
 	let toldStyle: AlignStyle | undefined;
-	const alignOptions = (style: AlignStyle) => ({ style, visuals: alignVisuals });
+	/** The Eagerness the head's align block was built with, and the one the model was last told (§chat.alignment/eagerness): as the style's. */
+	let headEagerness: AlignEagerness | undefined;
+	let toldEagerness: AlignEagerness | undefined;
+	const alignOptions = (style: AlignStyle, eagerness: AlignEagerness) => ({ eagerness, style, visuals: alignVisuals });
 	/** The reviewer route a probe should cover: flag on, align on, not a worker, and the profile names one. */
 	const probedReviewer = () => (reviewOn() && hasMinor(active, "align") && !workerRole ? subagents().reviewer : null);
 	/** Re-read this chat's pick from its branch. */
@@ -353,7 +356,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	let runUserAsked = false;
 	/**
 	 * The agent marked this run as a change request (§chat.alignment/when): an align call naming any op
-	 * but get, refused or not. Only the agent's own call sets it; the nudge never guesses it from words.
+	 * but get, refused or not. Only the agent's own call sets it; the nudge (under Careful) never guesses it from words.
 	 */
 	let runMarked = false;
 	/** The open overlay viewer, refreshed live on each align call; undefined when closed. */
@@ -470,7 +473,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	const modeBlock = (): string | undefined =>
 		workerRole
 			? composeWorkerPrompt({ minorModes: headMinors() })
-			: composePrompt(active, routes, writerRoute, headMinors(), alignOptions(headStyle ?? alignNow().style), copiesOf(headProjects()).map((copy) => copy.text));
+			: composePrompt(active, routes, writerRoute, headMinors(), alignOptions(headStyle ?? alignNow().style, headEagerness ?? alignNow().eagerness), copiesOf(headProjects()).map((copy) => copy.text));
 
 	/** A run is about to send the prompt: a head not sent since the start or the last compaction is the active set from now on. */
 	function fixHead(): void {
@@ -482,28 +485,32 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		toldProjects = [...projectHead];
 		projectGuides = [];
 		toldWriter = head.includes("spec") ? writerInstruction() : undefined;
-		// A head rebuilt on reopen keeps the style the branch recorded for it (restoreActiveState). A new
-		// one built in a style other than Default records it (MODE_HEAD_TYPE); a Default head records nothing.
-		if (headStyle === undefined) {
-			headStyle = alignNow().style;
-			if (!workerRole && head.includes("align") && headStyle !== "default") {
+		// A head rebuilt on reopen keeps the style and Eagerness the branch recorded for it (restoreActiveState).
+		// A new one built in a style other than Default, or Careful, records them (MODE_HEAD_TYPE); a Default,
+		// Eager head records nothing.
+		if (headStyle === undefined || headEagerness === undefined) {
+			const now = alignNow();
+			headStyle ??= now.style;
+			headEagerness ??= now.eagerness;
+			if (!workerRole && head.includes("align") && (headStyle !== "default" || headEagerness !== "eager")) {
 				try {
-					pi.appendEntry<ModeHeadRecord>(MODE_HEAD_TYPE, { v: 1, style: headStyle });
+					pi.appendEntry<ModeHeadRecord>(MODE_HEAD_TYPE, { v: 1, style: headStyle, ...(headEagerness === "careful" ? { eagerness: headEagerness } : {}) });
 				} catch {
-					// Best-effort: without it, a reopen reads this head as Default.
+					// Best-effort: without it, a reopen reads this head as Default, Eager.
 				}
 			}
 		}
 		toldStyle ??= headStyle;
+		toldEagerness ??= headEagerness;
 	}
 
 	/** The hidden note for what the model hasn't been told yet, now counted as told; undefined when there is nothing. */
 	function takeNote(): { customType: string; content: string; display: false; details: ModeNoteDetails } | undefined {
 		if (head === undefined) return undefined;
-		const style = alignNow().style;
+		const { style, eagerness } = alignNow();
 		const note = workerRole
 			? buildModeNote(workerMinorModes(told), workerMinorModes(active.minorModes), { head: workerMinorModes(head), guides }, null, true)
-			: buildModeNote(told, active.minorModes, { head, guides }, writerRoute, false, alignOptions(style));
+			: buildModeNote(told, active.minorModes, { head, guides }, writerRoute, false, alignOptions(style, eagerness));
 		const instruction = writerInstruction();
 		const routeNote = !workerRole && active.minorModes.includes("spec") && !head.includes("spec") && !note?.guides.includes("spec") && toldWriter !== instruction
 			? `Spec writer routing now applies instead of any earlier writer routing.\n\n${instruction}` : undefined;
@@ -512,11 +519,16 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		const alignGuide = note?.guides.includes("align") ?? false;
 		const was = toldStyle ?? headStyle ?? "default";
 		const styleNote = !workerRole && hasMinor(active, "align") && !alignGuide && was !== style ? buildAlignStyleNote(was, style) : undefined;
+		// The Eagerness (§chat.alignment/eagerness) the same way: a choice changed since it was told gets its trigger paragraph.
+		const wasEagerness = toldEagerness ?? headEagerness ?? "eager";
+		const eagernessNote = !workerRole && hasMinor(active, "align") && !alignGuide && wasEagerness !== eagerness ? buildAlignEagernessNote(eagerness) : undefined;
 		const projectNote = workerRole ? undefined : buildProjectModeNote(toldProjects, projectModesOf(active), { head: projectHead ?? [], guides: projectGuides }, snapshots);
-		if (!note && !routeNote && !styleNote && !projectNote) return undefined;
+		if (!note && !routeNote && !styleNote && !eagernessNote && !projectNote) return undefined;
 		if (active.minorModes.includes("spec")) toldWriter = instruction;
 		const toldAlignStyle = alignGuide || styleNote !== undefined;
 		if (toldAlignStyle) toldStyle = style;
+		const toldAlignEagerness = alignGuide || eagernessNote !== undefined;
+		if (toldAlignEagerness) toldEagerness = eagerness;
 		told = [...active.minorModes];
 		guides = normalizeMinorModes([...guides, ...(note?.guides ?? [])]);
 		toldProjects = projectModesOf(active);
@@ -530,7 +542,8 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 			...(projectNote && projectNote.guides.length > 0 ? { projectGuides: projectNote.guides } : {}),
 		};
 		if (toldAlignStyle) Object.assign(details, { style, headStyle: headStyle ?? style });
-		return { customType: MODE_NOTE_TYPE, content: [note?.text, projectNote?.text, routeNote, styleNote].filter(Boolean).join("\n\n"), display: false, details };
+		if (toldAlignEagerness) Object.assign(details, { eagerness, headEagerness: headEagerness ?? eagerness });
+		return { customType: MODE_NOTE_TYPE, content: [note?.text, projectNote?.text, routeNote, styleNote, eagernessNote].filter(Boolean).join("\n\n"), display: false, details };
 	}
 
 	/**
@@ -935,6 +948,9 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		// a head still to be fixed follows the style now until then.
 		headStyle = restoredHead.headStyle;
 		toldStyle = restoredHead.style?.told ?? headStyle;
+		// The Eagerness by the same rule (none recorded: Eager), §chat.alignment/eagerness.
+		headEagerness = restoredHead.headEagerness;
+		toldEagerness = restoredHead.eagerness?.told ?? headEagerness;
 		// A restore can land on a different strict flag than the tools currently reflect.
 		if (active.mode === "delegate" && active.strict) applyStrictTools();
 		else restoreTools();
@@ -1485,12 +1501,14 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	});
 
 	/**
-	 * One nudge per run: a run about to settle with align on, marked as a change request, no align
-	 * call, and a final reply (without its working notes) that reads like a plan asking the user to
-	 * decide gets a hidden message and one more request. A run nobody marked is never nudged.
+	 * One nudge per run: a run about to settle with align on, no align call, and a final reply (without
+	 * its working notes) that reads like a plan asking the user to decide gets a hidden message and one
+	 * more request. Under Careful (§chat.alignment/eagerness, read as the run settles) only a run marked as
+	 * a change request: a run nobody marked is never nudged. Under Eager any run is judged.
 	 */
 	pi.on("agent_before_settle", async (event) => {
-		if (!hasMinor(active, "align") || !runMarked || nudged || runAlignCalls > 0 || event.outcome !== "completed") return;
+		if (!hasMinor(active, "align") || nudged || runAlignCalls > 0 || event.outcome !== "completed") return;
+		if (!runMarked && alignNow().eagerness === "careful") return;
 		if (!looksLikeUncapturedPlan(lastReplyText, { userAsked: runUserAsked })) return;
 		nudged = true;
 		return {
@@ -1531,6 +1549,8 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		projectGuides = [];
 		headStyle = undefined;
 		toldStyle = undefined;
+		headEagerness = undefined;
+		toldEagerness = undefined;
 		// The writing procedure went with the history: it is handed over again at the next moment.
 		specCensus.rearmProcedure();
 		syncHostSection();

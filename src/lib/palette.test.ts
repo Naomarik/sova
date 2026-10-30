@@ -240,7 +240,7 @@ test("form: one field per param, a session is the open one, JSON is left out", (
   assert.deepEqual(f.fields.map((x) => [x.name, x.kind]), [["session", "session"], ["model", "text"], ["thinking", "select"], ["mode", "text"], ["minor-modes", "text"]]);
   assert.equal(f.fields.find((x) => x.name === "thinking")!.options![0], ""); // optional: can stay unset
   assert.equal(f.fields.find((x) => x.name === "minor-modes")!.hint, "Separate with commas");
-  assert.deepEqual(formOf(entry("settings.align.set")).leftOut, ["style", "visuals"]);
+  assert.deepEqual(formOf(entry("settings.align.set")).leftOut, ["style", "visuals", "eagerness"]);
   assert.deepEqual(formOf(entry("models.favorite")).fields.map((x) => x.kind), ["text", "checkbox"]);
 });
 

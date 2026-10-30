@@ -9,6 +9,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type TSchema } from "typebox";
 import { ALIGN_FILE_MAX_BYTES, readAlignFile } from "./align-file.ts";
 import { renderAlignCall, renderAlignResult } from "./align-ui.ts";
+import { ALIGN_TRIGGER_SHARED } from "./minor.ts";
 import {
 	ALIGN_BLOCKER_CLOSES,
 	alignFileSchema,
@@ -61,7 +62,7 @@ export interface AlignToolForm {
 
 export const ALIGN_TOOL_DESCRIPTION = `Record alignments with the user: one document per concern (id al_N) with a title, a one-line summary, findings (f1, f2…), approach steps (a1…), rejected alternatives (x1…), technical notes (t1…) and questions for the user (q1…), each question carrying your recommendation. Ids are assigned in order and never change or get reused.
 
-An alignment opens only for a change request: the user said they want something built, fixed or changed. Mark that run first with {"ops": [{"op": "change_request"}]} (alone, or as the first op of a call). A question, an explanation, research or brainstorming is answered in chat with no align call.
+${ALIGN_TRIGGER_SHARED} The mark is {"ops": [{"op": "change_request"}]} (alone, or as the first op of a call). Any other prompt is answered in chat with no align call.
 
 A call applies its ops in order to ONE alignment, atomically: if any op is invalid nothing changes and the error says why. To change an existing alignment pass doc ("al_2"); it is required while more than one is open. Each op takes only the fields its schema lists. The result lists the alignment's open questions.
 
@@ -74,7 +75,7 @@ Example: the user replied "q2: weekly is fine; take your rec on q4", and asked t
 {"doc": "al_3", "ops": [{"op": "decide", "q": "q2", "decision": "Weekly"}, {"op": "accept", "qs": ["q4"]}, {"op": "edit", "id": "a2", "text": "Upload to GCS"}]}`;
 
 export const ALIGN_TOOL_GUIDELINES = [
-	"While the align minor mode is on, open an alignment only for a change request (the user said to build, fix or change something), and mark that run first with align change_request; answer questions, explanations, research and brainstorming in chat.",
+	`While the align minor mode is on: ${ALIGN_TRIGGER_SHARED} The mark is align change_request; answer any other prompt in chat.`,
 	"While the align minor mode is on, record every alignment (a plan, open questions, decisions the user must make) with the align tool — never as reply text or a numbered list in prose; the user reads the alignment card, so keep the reply to a sentence or two.",
 	"Record the user's answers by question id (\"3a\" is q3's option a: decide it with that option's label): decide the ones they answered, in their words; accept only the ones they told you to take your recommendation on (accept_all only when they said it for every open question); leave the rest open. Change an alignment only with ops; never create it again.",
 	"Set status implementing before building, never while a question is open, and done when finished and verified; use exempt with a reason for a work request that needs no alignment.",
@@ -200,7 +201,7 @@ const opSchemas = (visual: boolean): Record<AlignOpName, { description: string; 
 	},
 	change_request: {
 		description:
-			"Mark this run as a change request: the user's latest prompt asks for something to be built, fixed or changed. Before anything else in the run; alone in its call or before its other ops. Touches no alignment. Never for a question, an explanation, research or brainstorming.",
+			"Mark this run as a change request: the user's latest prompt is one the align instructions say opens an alignment. Before anything else in the run; alone in its call or before its other ops. Touches no alignment. Never for a prompt that opens none.",
 		fields: { note: S("Optional: what was asked, in a few words.") },
 	},
 	get: { description: "Return the alignment as markdown (every open one when there is no doc).", fields: {} },

@@ -13,9 +13,9 @@ import type { AlignOverride } from "../pi-config/extensions/mode/align-settings.
 import { loadSubagentProfiles, readProfilesDefault, resolveSubagents } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import type { AlignSettingsInfo } from "../shared/protocol";
 
-// The align mode's writing style and Visuals (§chat.alignment/settings-file): Settings → Alignment's
+// The align mode's Eagerness, writing style and Visuals (§chat.alignment/settings-file): Settings → Alignment's
 // part that is not Sova's own. The file (~/.pi/agent/mode-align.json) and its rules are the mode
-// extension's (pi-config/extensions/mode/align-settings.ts): every session re-reads the style at its
+// extension's (pi-config/extensions/mode/align-settings.ts): every session re-reads the style and Eagerness at its
 // next turn boundary, Visuals at its start; Sova also reads Visuals at a chat's first start, for the
 // chat's launch record (chat-manager.ts). Adversarial review stays in Sova's settings (web-settings.ts).
 

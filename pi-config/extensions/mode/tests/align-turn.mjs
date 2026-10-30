@@ -4,8 +4,9 @@
 //   carries the document's snapshot in `details`, which the next session start folds back;
 // - the hidden `align-state` note reaches the model on the next user prompt, and no alignment text
 //   enters the system prompt;
-// - a run the agent marked as a change request that ends in a prose plan gets one hidden
-//   `align-nudge` and exactly one more request; a run nobody marked (a question answered) gets none.
+// - under Careful, a run the agent marked as a change request that ends in a prose plan gets one hidden
+//   `align-nudge` and exactly one more request, and a run nobody marked (a question answered) gets none;
+//   under Eager (the default, §chat.alignment/eagerness) an unmarked run ending in a plan is nudged too.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -109,7 +110,9 @@ try {
 	assert.doesNotMatch(noteReq.prompt, /Export|JSONL/, "nothing about the alignment is in the system prompt");
 	assert.equal(noteReq.prompt, requests[0].prompt, "the system prompt did not change because of an alignment");
 
-	// A question answered with a plan-shaped reply and no mark: never nudged, whatever it says.
+	// Careful: a question answered with a plan-shaped reply and no mark: never nudged, whatever it says.
+	const alignFile = path.join(agentDir, "mode-align.json");
+	writeFileSync(alignFile, JSON.stringify({ version: 1, style: "pm", visuals: false, eagerness: "careful" }));
 	const asked = requests.length;
 	script.push({ text: "Playbooks are recipes a project runs.\n\nShould I go ahead with that?" });
 	await session.prompt("explain playbooks");
@@ -131,6 +134,15 @@ try {
 	const nudges = sessionManager.getBranch().filter((e) => e.type === "custom_message" && e.customType === "align-nudge");
 	assert.equal(nudges.length, 1);
 	assert.equal(nudges[0].display, false, "hidden from the transcript");
+
+	// Eager (no eagerness saved): the same plan in a run nobody marked is nudged once, one more request.
+	rmSync(alignFile);
+	const eagerAt = requests.length;
+	script.push({ text: PLAN }, { text: PLAN });
+	await session.prompt("add a cap");
+	assert.equal(requests.length, eagerAt + 2, "Eager: the unmarked plan, exactly one continuation");
+	assert.match(seen(requests[eagerAt + 1]), /\[align\] Your last reply reads like a plan/);
+	assert.equal(sessionManager.getBranch().filter((e) => e.type === "custom_message" && e.customType === "align-nudge").length, 2);
 
 	// A new session start folds the branch back.
 	const { foldAlignments } = await import("../align.ts");

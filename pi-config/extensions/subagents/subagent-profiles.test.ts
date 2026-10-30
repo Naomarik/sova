@@ -326,19 +326,21 @@ test("seedReviewer: the default goes only to profiles without the key; None and 
 	assert.equal(fs.readFileSync(subagentProfilesPath(dir), "utf8"), "{ nope");
 });
 
-test("alignment (writing style, Visuals): optional, field by field over the host's mode-align.json; no override reads as before", () => {
-	const parsed = parseSubagentProfiles(file([profile("old", "Old"), profile("pm", "PM", { alignment: { style: "pm" } }), profile("vis", "Vis", { alignment: { visuals: true } })]));
+test("alignment (Eagerness, writing style, Visuals): optional, field by field over the host's mode-align.json; no override reads as before", () => {
+	const parsed = parseSubagentProfiles(file([profile("old", "Old"), profile("pm", "PM", { alignment: { style: "pm" } }), profile("vis", "Vis", { alignment: { visuals: true } }), profile("careful", "Careful", { alignment: { eagerness: "careful" } })]));
 	assert.ok(parsed.ok);
 	const [old, pm, vis] = parsed.value.profiles;
 	assert.equal("alignment" in old!, false, "a parse never adds the key");
 	assert.deepEqual(pm!.alignment, { style: "pm" });
 	assert.deepEqual(vis!.alignment, { visuals: true });
+	assert.deepEqual(parsed.value.profiles[3]!.alignment, { eagerness: "careful" }, "an Eagerness override parses");
 	const dir = tempDir();
 	writeSubagentProfiles(dir, file([profile("old", "Old")]));
 	assert.equal(fs.readFileSync(subagentProfilesPath(dir), "utf8").includes("alignment"), false, "a profile without one writes none");
 	// Strict: never empty, nothing unknown, each value checked, named under the profile.
 	for (const [alignment, error] of [
-		[{}, /^profiles\[0\]\.alignment must set style or visuals/m],
+		[{}, /^profiles\[0\]\.alignment must set eagerness, style or visuals/m],
+		[{ eagerness: "bold" }, /^profiles\[0\]\.alignment\.eagerness must be one of eager, careful/m],
 		[{ style: "expert" }, new RegExp(`^profiles\\[0\\]\\.alignment\\.style must be one of ${ALIGN_STYLES.join(", ")}$`, "m")],
 		[{ visuals: "on" }, /^profiles\[0\]\.alignment\.visuals must be true or false/m],
 		[{ review: true }, /^profiles\[0\]\.alignment: unknown field "review"/m],

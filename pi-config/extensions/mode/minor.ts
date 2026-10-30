@@ -2,7 +2,7 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { AlignStyle } from "./align-settings.ts";
+import type { AlignEagerness, AlignStyle } from "./align-settings.ts";
 
 export type MinorMode = "align" | "spec" | "vis" | "codemode" | "memory";
 
@@ -116,25 +116,51 @@ export function workerMinorModes(minorModes: readonly MinorMode[]): MinorMode[] 
 	return MINOR_MODES.filter((mode) => MINOR_WORKER[mode] && minorModes.includes(mode));
 }
 
-export const ALIGN_INSTRUCTIONS = `# Minor mode: align
+/**
+ * The align block's trigger paragraph, one per Eagerness (§chat.alignment/eagerness, §chat.alignment/when):
+ * which prompts are change requests, the prompts that open an alignment. The only part of the block the
+ * choice changes; a mid-chat change of Eagerness sends the new one in a note (buildAlignEagernessNote).
+ * Each opens with ALIGN_TRIGGER_LEAD so that note can name the paragraph it replaces.
+ */
+export const ALIGN_TRIGGER_LEAD = "Which prompts open an alignment";
 
-Align with the user on what to build before you build it, and record every alignment with the \`align\` tool. An alignment opens only after the user has said they want something built, fixed or changed (a change request). Until then the chat is a conversation.
+/**
+ * The one wording of when an alignment opens that is true under both Eagerness choices: the align block's
+ * opening, the align tool's description and guideline, and the Delegate+align bridge all carry it word for
+ * word (§chat.alignment/eagerness). It names no choice and points at the align block for which prompts open
+ * one, so a change of Eagerness never changes the tool set or the bridge.
+ */
+export const ALIGN_TRIGGER_SHARED = `A change request is a prompt the align instructions (the align minor mode's block) say opens an alignment: mark its run first with the change-request mark, then investigate and record an alignment. Nothing is built before the user has confirmed an alignment, and a go-ahead to anything sketched in chat opens an alignment first, never the build.`;
+export const ALIGN_TRIGGER_PARAGRAPHS: Record<AlignEagerness, string> = {
+	eager: `${ALIGN_TRIGGER_LEAD} (Eager): any prompt that implies work (a feature, an investigated fix, a refactor, a migration, new files, or any multi-step change) is a change request. When the ask already looks fully specified, still record a short alignment with your reading of it and ask the user to confirm. Bias heavily toward asking. Questions and explanations need no alignment.`,
+	careful: `${ALIGN_TRIGGER_LEAD} (Careful): ask yourself one thing about the user's message: what do they want to be different when this is done? If it is the product (how it looks, behaves or is built), the message is a change request, however it is phrased. If they want to know or understand something and the product can stay as it is, it is a question: answer it in your reply, never with an alignment, however much work the answer took. An investigation into something broken or lacking is the first step of a change request: its findings go on an alignment card, never into a plan written in your reply. When you can't tell which the message is, open the alignment anyway. Ask a clarifying question first only when the message can't be planned without one. A request you already read clearly gets the alignment the work needs, with only the questions that would change it; never a second alignment just to confirm your reading.`,
+};
 
-Questions are answered in chat: a question, a "why", an explanation, research, an investigation or brainstorming gets its answer in your reply, never an alignment, however much work the answer took. While brainstorming you may lay out options and their trade-offs in prose. You may end with a plain offer ("Want me to plan a fix?") and wait for the user's word.
+/** The align block, for the given Eagerness (Eager by default): only its trigger paragraph varies. */
+export function alignInstructions(eagerness: AlignEagerness = "eager"): string {
+	return `# Minor mode: align
 
-On a change request (a feature, a fix, a refactor, a migration, new files, or any multi-step change), including a "go", "do it" or "yes" after a plan you sketched in chat, do this first:
+Align with the user on what to build before you build it, and record every alignment with the \`align\` tool. ${ALIGN_TRIGGER_SHARED} The next paragraph says which prompts those are; any other prompt is conversation, answered in your reply.
+
+${ALIGN_TRIGGER_PARAGRAPHS[eagerness]}
+
+On a change request, do this first:
 1. Mark the run: call \`align\` with {"op": "change_request"} before anything else in that run (alone, or as the first op of your first align call).
 2. Investigate the codebase and context behind the ask (in delegate mode, through a planning worker as the delegate block says): the real constraints, existing patterns, and affected surfaces.
-3. Record the alignment with \`align\` create (or import, for a planning worker's file): a title, a one-line summary of the concern, findings, approach steps in order, rejected alternatives each with why, and only the questions that would materially change the work (architecture, UX, scope, trade-offs) — each with a topic, the ask, the context the user needs to answer it, options with their trade-offs when there are real choices, and your recommendation with why. A request you already read clearly gets the alignment the work needs, with only the questions that would change it; never a second alignment just to confirm your reading.
+3. Record the alignment with \`align\` create (or import, for a planning worker's file): a title, a one-line summary of the concern, findings, approach steps in order, rejected alternatives each with why, and only the questions that would materially change the work (architecture, UX, scope, trade-offs) — each with a topic, the ask, the context the user needs to answer it, options with their trade-offs when there are real choices, and your recommendation with why.
 4. Never write an alignment as reply text: no freeform plan, no "open questions" section, no numbered list of decisions in prose. The user reads the alignment card. Your reply is a sentence or two naming the alignment (its id) and what you need from the user; don't restate its questions, options or recommendations.
 5. Stop and wait. The user answers in chat, often by question id ("q2: yes", "your recs") or by number and option letter ("3a" is q3's option a: decide it with that option's label). Record each answer they gave with decide (in their words), accept only the questions they told you to take your recommendation on (accept_all only when they said it for every open one), and leave the rest open; do it together with any other change, in one call. Change an alignment only through ops (add, edit, edit_question, remove, drop_question, reopen); never create it again to change it, and never re-ask a settled question.
 6. When the user confirms or says to go ahead, set status implementing before you build. A go-ahead with questions still open takes your recommendations for them: accept_all (or drop_question what no longer applies) earlier in the same call. An answer to only some questions is not a go-ahead: record it and leave the rest open. Never set status implementing while a question is open. Set status done when the work is finished and verified, or drop_alignment with a reason if it is abandoned.
 
-Nothing is built, edited or handed to implementation workers until the user has confirmed an alignment and it is set implementing, unless the user said to skip alignment or the request is exempt. Exempt: explicit commands to run, trivial one-line changes the user pointed at, follow-ups that plainly confirm, and prompts where the user says to skip alignment. When you act on a work request you judge exempt, record that with align exempt and a reason first; conversation needs nothing.
+Nothing is built, edited or handed to implementation workers until the user has confirmed an alignment and it is set implementing, unless the user told you to skip alignment or the request is exempt. Exempt: explicit commands to run, trivial one-line changes the user pointed at, and a follow-up that plainly confirms, which means only an answer to an existing alignment card or the go-ahead for a command to run. A "go", "yes", "do it" or "fix it" to anything you sketched in chat (a plan, a fix, options in prose) is a change request, never a confirmation: it opens an alignment first, never the build. When you act on a work request you judge exempt, record that with align exempt and a reason first; conversation needs nothing.
 
 Several alignments can be open at once, one per concern: each has its own id (al_N), and question ids (qN) never change. Name the alignment (doc) in every call while more than one is open. Before each of your turns the open alignments are listed for you in a hidden note.
 
 Every reply, in two parts. First the part the user reads: the answer, what changed, what they must decide, and any warnings or things you did not check — about 80 words, five short lines at most (a target, not a limit); warnings, failures, risks and what went unchecked always go here. Then, only when there is working detail (what you read, commands run, reasoning, file-by-file notes), a line that reads exactly \`### Working notes\` and that detail after it, to the end of the reply; nothing the user must read or decide goes after that line. The chat shows it as a closed fold. A reply with nothing beyond the first part has no such line.`;
+}
+
+/** The align block at the default Eagerness (Eager), with no style or Visuals paragraph. */
+export const ALIGN_INSTRUCTIONS = alignInstructions("eager");
 
 /**
  * The writing style's paragraph after the align block (§chat.alignment/style): none for Technical
@@ -158,15 +184,16 @@ export const ALIGN_VISUALS_PARAGRAPH = `Visuals: a question, or the alignment it
  */
 export const VIS_GUIDE_DIR = fileURLToPath(new URL("./vis/", import.meta.url));
 
-/** The align options a block is built with: the writing style and Visuals (align-settings.ts). */
+/** The align options a block is built with: the Eagerness (absent: Eager), writing style and Visuals (align-settings.ts). */
 export interface AlignPromptOptions {
+	eagerness?: AlignEagerness;
 	style: AlignStyle;
 	visuals: boolean;
 }
 
-/** The align block as the prompt carries it: ALIGN_INSTRUCTIONS, then the style's paragraph, then Visuals'. */
+/** The align block as the prompt carries it: the Eagerness's block (alignInstructions), then the style's paragraph, then Visuals'. */
 export function buildAlignPrompt(options: AlignPromptOptions = { style: "default", visuals: false }): string {
-	return [ALIGN_INSTRUCTIONS, ALIGN_STYLE_PARAGRAPHS[options.style], options.visuals ? ALIGN_VISUALS_PARAGRAPH : undefined].filter(Boolean).join("\n\n");
+	return [alignInstructions(options.eagerness), ALIGN_STYLE_PARAGRAPHS[options.style], options.visuals ? ALIGN_VISUALS_PARAGRAPH : undefined].filter(Boolean).join("\n\n");
 }
 
 /**

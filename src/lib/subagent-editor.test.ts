@@ -138,4 +138,12 @@ test("Alignment: the summary says what the profile overrides; Use host default s
   assert.equal("alignment" in back, false, "both on Use host default: no key, as before the field existed");
   assert.equal("alignment" in p, false, "the input is never changed");
   assert.equal(sectionProblems(both).has("alignment"), false, "a choice is always valid: the section never holds Save");
+  // Eagerness (§chat.alignment/eagerness): first in the summary, field by field like the others.
+  const careful = withAlignment(both, { eagerness: "careful" });
+  assert.deepEqual(careful.alignment, { style: "pm", visuals: true, eagerness: "careful" });
+  assert.equal(alignmentSummary(careful), "Careful · Project manager · visuals on");
+  assert.equal(alignmentSummary(withAlignment(p, { eagerness: "eager" })), "Eager", "Eager over a Careful host is an override too");
+  const onlyEagerness = withAlignment(withAlignment(careful, { style: "host" }), { visuals: "host" });
+  assert.deepEqual(onlyEagerness.alignment, { eagerness: "careful" }, "the Eagerness alone keeps the key");
+  assert.equal("alignment" in withAlignment(onlyEagerness, { eagerness: "host" }), false, "all three on Use host default: no key");
 });

@@ -255,21 +255,21 @@ test("composePrompt joins the delegate block and minor blocks", () => {
 	assert.match(align, /status done when the work is finished/);
 	assert.match(align, /align exempt and a reason/);
 	assert.match(align, /Several alignments can be open at once/);
-	// When an alignment opens (§chat.alignment/when): only on a change request, marked first; questions are
-	// answered in chat; never told to lean toward asking or to confirm a clear reading.
-	assert.match(align, /opens only after the user has said they want something built, fixed or changed/);
-	assert.match(align, /Questions are answered in chat/);
-	assert.match(align, /"Want me to plan a fix\?"/);
-	assert.match(align, /a "go", "do it" or "yes" after a plan you sketched in chat/);
+	// When an alignment opens (§chat.alignment/when): the default block is Eager's (master's trigger), a
+	// change request is marked first, and a go-ahead to a sketch opens a card (align-settings.test.ts: both choices).
+	assert.match(align, /Which prompts open an alignment \(Eager\): any prompt that implies work/);
+	assert.match(align, /Bias heavily toward asking/);
+	assert.match(align, /A "go", "yes", "do it" or "fix it" to anything you sketched in chat/);
 	assert.match(align, /\{"op": "change_request"\} before anything else in that run/);
-	assert.match(align, /unless the user said to skip alignment or the request is exempt/);
-	assert.doesNotMatch(align, /Bias heavily toward asking|still record a short alignment|fully specified/);
+	assert.match(align, /unless the user told you to skip alignment or the request is exempt/);
+	assert.doesNotMatch(align, /only after the user has said|Want me to plan a fix/, "the branch's middle rule is gone");
 	// Every reply's two parts (§chat.alignment/reply): the fold's exact heading.
 	assert.match(align, /a line that reads exactly `### Working notes`/);
 	assert.match(align, /about 80 words, five short lines at most \(a target, not a limit\)/);
 	assert.match(align, /warnings, failures, risks and what went unchecked always go here/);
-	// The bridge follows the same trigger.
-	assert.match(DELEGATE_ALIGN_BRIDGE, /for change requests only: a question, an explanation, research or brainstorming is answered \(or delegated\)/);
+	// The bridge follows the same trigger, in the shared words.
+	assert.match(DELEGATE_ALIGN_BRIDGE, /for change requests only\. A change request is a prompt the align instructions \(the align minor mode's block\) say opens an alignment/);
+	assert.match(DELEGATE_ALIGN_BRIDGE, /Any other prompt is answered \(or delegated\) as the delegate block says, with no planning worker for an alignment/);
 	assert.match(DELEGATE_ALIGN_BRIDGE, /align \{op: "change_request"\}/);
 	// No markdown template survives: the parser that read it is gone.
 	assert.doesNotMatch(align, /^#{2,3} (Alignment|Findings|Open questions|Status)/m);
@@ -1224,16 +1224,16 @@ test("restoreHead: the newest recorded head, the newest note, and nothing across
 	const note = (minorModes: MinorMode[], guides: MinorMode[]) => ({ type: "custom_message", customType: MODE_NOTE_TYPE, details: { v: 1, minorModes, guides } });
 	assert.deepEqual(restoreHead([]), { head: undefined, told: undefined, guides: [] }, "never sent: the head follows the active set");
 	assert.deepEqual(restoreHead([pin(["vis"])]), { head: undefined, told: undefined, guides: [] }, "a Sova pin carries no head");
-	assert.deepEqual(restoreHead([pin(["vis"], [])]), { head: [], told: [], guides: [], headStyle: "default" }, "recorded, not told yet");
+	assert.deepEqual(restoreHead([pin(["vis"], [])]), { head: [], told: [], guides: [], headStyle: "default", headEagerness: "eager" }, "recorded, not told yet");
 	assert.deepEqual(
 		restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), pin([]), note([], [])]),
-		{ head: [], told: [], guides: ["vis"], headStyle: "default" },
+		{ head: [], told: [], guides: ["vis"], headStyle: "default", headEagerness: "eager" },
 		"an entry equal to its head carries none; the older one still names it, and every guide since counts",
 	);
-	assert.deepEqual(restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), pin([])]), { head: [], told: ["vis"], guides: ["vis"], headStyle: "default" }, "a switch not told yet: told is the last note's");
+	assert.deepEqual(restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), pin([])]), { head: [], told: ["vis"], guides: ["vis"], headStyle: "default", headEagerness: "eager" }, "a switch not told yet: told is the last note's");
 	assert.deepEqual(
 		restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), { type: "compaction" }, pin(["spec", "vis"], ["vis"])]),
-		{ head: ["vis"], told: ["vis"], guides: [], headStyle: "default" },
+		{ head: ["vis"], told: ["vis"], guides: [], headStyle: "default", headEagerness: "eager" },
 		"notes before a compaction don't count",
 	);
 	assert.deepEqual(restoreHead([pin(["vis"], []), { type: "compaction" }]).head, undefined, "a compaction rebuilds the head from the active set");
@@ -1267,9 +1267,14 @@ test("buildModeNote in the worker form: spec turned on carries the worker note, 
  * The real extension on a minimal host with align on (the `minor` flag): the settle nudge's hooks
  * driven directly, one run at a time (§chat.alignment/when, §chat.alignment/model).
  */
-async function nudgeHost() {
+async function nudgeHost(eagerness?: "careful" | "eager") {
 	const prevDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = tmp();
+	// The host's mode-align.json (§chat.alignment/eagerness): absent, Eager.
+	if (eagerness) writeFileSync(join(process.env.PI_CODING_AGENT_DIR, "mode-align.json"), JSON.stringify({ version: 1, style: "pm", visuals: false, eagerness }));
+	/** Change the file mid-session: the nudge reads the Eagerness in effect when the run settles. */
+	const setEagerness = (to: "careful" | "eager") => writeFileSync(join(process.env.PI_CODING_AGENT_DIR!, "mode-align.json"), JSON.stringify({ version: 1, style: "pm", visuals: false, ...(to === "careful" ? { eagerness: to } : {}) }));
+	const agentDir = process.env.PI_CODING_AGENT_DIR;
 	const { default: modeExtension } = await import("./index.ts");
 	const hooks = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>();
 	const noop = () => {};
@@ -1307,13 +1312,34 @@ async function nudgeHost() {
 		if (prevDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = prevDir;
 	};
-	return { run, restore };
+	return { run, restore, setEagerness: (to: "careful" | "eager") => {
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		setEagerness(to);
+	} };
 }
 
 const nudgedBy = (settled: { entries: { customType?: string }[] } | undefined) => settled?.entries.some((e) => e.customType === ALIGN_NUDGE_MESSAGE) === true;
 
-test("settle nudge: a run nobody marked as a change request is never nudged, whatever its reply asks", async () => {
+test("settle nudge, Eager (the default): any run whose reply reads like a plan is nudged, marked or not", async () => {
 	const host = await nudgeHost();
+	try {
+		const reply = "Plan:\n- add the route\n- add the button\n\nShould I go ahead?";
+		const settled = await host.run("add an export", [], reply);
+		assert.equal(nudgedBy(settled), true, "no mark, no file: Eager judges the run's reply");
+		assert.equal(settled?.continue, true);
+		assert.equal(nudgedBy(await host.run("explain playbooks", [], "Playbooks are recipes a project runs, step by step.")), false, "a reply that reads like no plan is left alone");
+		// The Eagerness in effect when the run settles: Careful now, so the same unmarked run is left alone.
+		host.setEagerness("careful");
+		assert.equal(nudgedBy(await host.run("add an export", [], reply)), false, "Careful: unmarked, never nudged");
+		host.setEagerness("eager");
+		assert.equal(nudgedBy(await host.run("add an export", [], reply)), true, "back to Eager: nudged again");
+	} finally {
+		host.restore();
+	}
+});
+
+test("settle nudge, Careful: a run nobody marked as a change request is never nudged, whatever its reply asks", async () => {
+	const host = await nudgeHost("careful");
 	try {
 		const settled = await host.run("explain playbooks", [], "Playbooks are recipes a project runs, step by step.\n\nShould I go ahead with that?");
 		assert.equal(nudgedBy(settled), false, "no ALIGN_NUDGE_MESSAGE without the mark");
@@ -1325,8 +1351,8 @@ test("settle nudge: a run nobody marked as a change request is never nudged, wha
 	}
 });
 
-test("settle nudge: with the change-request mark (or any align op but get) the same reply is nudged once", async () => {
-	const host = await nudgeHost();
+test("settle nudge, Careful: with the change-request mark (or any align op but get) the same reply is nudged once", async () => {
+	const host = await nudgeHost("careful");
 	try {
 		const reply = "Playbooks are recipes a project runs, step by step.\n\nShould I go ahead with that?";
 		const settled = await host.run("explain playbooks", [{ ops: [{ op: "change_request" }] }], reply);

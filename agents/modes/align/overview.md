@@ -35,13 +35,20 @@ reaches both.
 - The hidden `align-state` / `align-nudge` custom messages must stay hidden in Sova (`display: false`).
 - An older session's `align-doc` custom entries are read-only.
 
-**The settings file.** `mode-align.json` (agent dir) holds the writing style and Visuals:
-`{version: 1, style: "pm" | "simplified" | "default", visuals}` (`default` is shown as Technical and never
-migrated). One module, `align-settings.ts` (builtins only plus `mode/delegate.ts`), holds the shape, the strict
+**The settings file.** `mode-align.json` (agent dir) holds the Eagerness, writing style and Visuals:
+`{version: 1, style: "pm" | "simplified" | "default", visuals, eagerness?: "careful"}` (`default` is shown as
+Technical and never migrated; no `eagerness` is Eager, and the writer stores it only for Careful so an Eager file
+keeps the bytes older devices accept; §chat.alignment/eagerness). One module, `align-settings.ts` (builtins only plus `mode/delegate.ts`), holds the shape, the strict
 parse, a reader that reads a missing or malformed file as Project manager with Visuals off, the atomic writer and
 `resolveAlign`. Settings → Alignment writes it; it syncs like
-`mode-spec.json`. A subagent profile's optional `alignment` `{style?, visuals?}` overrides it field by field
+`mode-spec.json`. A subagent profile's optional `alignment` `{eagerness?, style?, visuals?}` overrides it field by field
 (§chat.alignment/settings-file).
+- **Eagerness** is re-read at each turn boundary like the style; only the align block's trigger paragraph
+  (`ALIGN_TRIGGER_PARAGRAPHS`) and the settle nudge's mark gate depend on it. The tool's description, its guideline
+  and the Delegate bridge carry `ALIGN_TRIGGER_SHARED` and never name a choice: never make them depend on it (it
+  would change the tool set and restart Claude Code chats). A change reaches an open chat as one hidden `mode-note`
+  (`buildAlignEagernessNote`) whose details record `eagerness` / `headEagerness`; a Careful head is in its `mode-head`
+  record (`eagerness: "careful"`; none: Eager).
 - **Style** is re-read by every session at each turn boundary. A change reaches an open chat as one hidden
   `mode-note` whose details record `style` / `headStyle`. A head fixed in a style other than Technical records it in the
   extension's own `mode-head` custom entry `{v: 1, style}` (none: Technical, once a prompt went out since the last

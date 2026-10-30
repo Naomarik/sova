@@ -1,8 +1,8 @@
 /** The delegate system-prompt text, prompt composition, and status labels. Pure functions: unit-testable. */
 import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateDefaults, type DelegateProfileId, type WorkerChoice } from "./delegate.ts";
 import { alignFileSchema } from "./align.ts";
-import { ALIGN_STYLE_LABELS, type AlignStyle } from "./align-settings.ts";
-import { ALIGN_STYLE_PARAGRAPHS, buildMinorPrompt, MINOR_MODES, promptedMinorModes, VIS_GUIDE_DIR, workerMinorModes, type AlignPromptOptions, type MinorMode } from "./minor.ts";
+import { ALIGN_EAGERNESS_LABELS, ALIGN_STYLE_LABELS, type AlignEagerness, type AlignStyle } from "./align-settings.ts";
+import { ALIGN_STYLE_PARAGRAPHS, ALIGN_TRIGGER_LEAD, ALIGN_TRIGGER_PARAGRAPHS, ALIGN_TRIGGER_SHARED, buildMinorPrompt, MINOR_MODES, promptedMinorModes, VIS_GUIDE_DIR, workerMinorModes, type AlignPromptOptions, type MinorMode } from "./minor.ts";
 import { routeAll, usable, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import type { Mode, ModeState } from "./state.ts";
 import { WORKER_MODES_CAP, type ProjectModeRef, type ProjectModeSnapshot } from "./project-format.ts";
@@ -88,7 +88,7 @@ export const PLANNER_VISUALS_PARAGRAPH = `Drawings: where a picture explains fas
  */
 export function buildDelegateAlignBridge(visuals = false): string {
 	const draw = visuals ? ` Visuals are on: also copy this paragraph word for word into its prompt:\n\n${PLANNER_VISUALS_PARAGRAPH}` : "";
-	return `The align minor mode is on and takes precedence over delegation, for change requests only: a question, an explanation, research or brainstorming is answered (or delegated) as the delegate block says, with no planning worker for an alignment. Once the user asks for something to be built, fixed or changed, mark the run (align {op: "change_request"}) and spawn at most one non-editing Planning & specs worker to investigate (never the Investigation profile: it is design work). Workers have no align tool: tell the planning worker that its one permitted write is the alignment JSON (${alignFileSchema(visuals)}), at an absolute path outside the repository that you name in its prompt (e.g. /tmp/align-<topic>-<n>.json); then import it with align {op: "import", path: that same absolute path} — never relay or retype its plan. In a remote session (tools on a target) import is refused: have the worker put the JSON in its report and pass its fields to align create. Spawn no implementation worker until the user has confirmed and the alignment's status is implementing, and give implementation workers the decided questions (align get). When the align instructions, or a later note, carry a "Writing style" paragraph, copy the one in effect word for word into the planning worker's prompt, so the JSON it writes follows it.${draw}`;
+	return `The align minor mode is on and takes precedence over delegation, for change requests only. ${ALIGN_TRIGGER_SHARED} Any other prompt is answered (or delegated) as the delegate block says, with no planning worker for an alignment. On a change request, mark the run (align {op: "change_request"}) and spawn at most one non-editing Planning & specs worker to investigate (never the Investigation profile: it is design work). When a lighter worker (an Investigation worker you sent on a bug report or a question) already investigated the same matter and the user then asks for the change, put the root cause it found in the planning worker's prompt, so it starts from it rather than investigating again from nothing. Workers have no align tool: tell the planning worker that its one permitted write is the alignment JSON (${alignFileSchema(visuals)}), at an absolute path outside the repository that you name in its prompt (e.g. /tmp/align-<topic>-<n>.json); then import it with align {op: "import", path: that same absolute path} — never relay or retype its plan. In a remote session (tools on a target) import is refused: have the worker put the JSON in its report and pass its fields to align create. Spawn no implementation worker until the user has confirmed and the alignment's status is implementing, and give implementation workers the decided questions (align get). When the align instructions, or a later note, carry a "Writing style" paragraph, copy the one in effect word for word into the planning worker's prompt, so the JSON it writes follows it.${draw}`;
 }
 
 /** The bridge in a chat without Visuals. */
@@ -239,6 +239,15 @@ export function buildAlignStyleNote(from: AlignStyle, to: AlignStyle): string {
 		return `Writing style change: the user set the align writing style to ${ALIGN_STYLE_LABELS[to]}. The earlier "Writing style: ${ALIGN_STYLE_LABELS[from]}" paragraph no longer applies; write alignments with the files, code and technical trade-offs they need from now on.`;
 	}
 	return `Writing style change: the user set the align writing style to ${ALIGN_STYLE_LABELS[to]}. It applies to every alignment you write or change from now on, instead of any earlier writing style:\n\n${paragraph}`;
+}
+
+/**
+ * The hidden note for an Eagerness changed after the model was told one (§chat.alignment/eagerness): the
+ * new choice's trigger paragraph, replacing the one the align block (or an earlier note) carries. Nothing
+ * else in the block depends on the choice, so nothing else is said.
+ */
+export function buildAlignEagernessNote(to: AlignEagerness): string {
+	return `Eagerness change: the user set the align eagerness to ${ALIGN_EAGERNESS_LABELS[to]}. This paragraph replaces the "${ALIGN_TRIGGER_LEAD}" paragraph your align instructions carry (or an earlier note gave), from now on:\n\n${ALIGN_TRIGGER_PARAGRAPHS[to]}`;
 }
 
 /**

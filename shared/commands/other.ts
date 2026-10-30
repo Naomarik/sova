@@ -540,11 +540,12 @@ export const OTHER_ENTRIES: CommandEntry[] = [
   {
     id: "settings.align.set",
     label: "Save Alignment Settings",
-    summary: "Save the align mode's writing style and Visuals.",
+    summary: "Save the align mode's Eagerness, writing style and Visuals.",
     effect: "changes",
     params: {
       style: { type: "json", description: "The writing style", in: "body" },
       visuals: { type: "json", description: "The Visuals", in: "body" },
+      eagerness: { type: "json", description: "The Eagerness: \"careful\", or omitted for Eager", in: "body" },
     },
     route: { method: "PUT", path: "/api/settings/align", fixed: { version: 1 } },
     sessionKey: null,

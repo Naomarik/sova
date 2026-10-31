@@ -1,6 +1,7 @@
+import { execFile } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { open } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HBlock } from "../shared/harness";
 import type { AttentionItem, AttentionKind, AttentionTier, BranchStatus, ReadinessState, SessionReadiness, SessionSummary, WorktreeReadiness } from "../shared/protocol";
@@ -8,11 +9,13 @@ import { parseWakeNudge } from "../shared/wake";
 import { isLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
 import { canonical, normalizeMergeDetails, type TrackedWorktree, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
+import { goAheadFor, LANDING_FILE_NAME } from "../pi-config/extensions/worktrees/landing.ts";
+import { stateRoot } from "./state-root";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { asksUserOf } from "./signals-store";
 import { isCaptain } from "./merge-board";
-import { unofficialDrafts } from "./spec-drafts-state";
-import { blockedNoteText, type Finished, fileLandingStore, finishedOf, type LandingBlocker, landingBlockers, landingOf, landingReason, type LandingStore, specsNudgeText, specsWhyOf } from "./ready-to-land";
+import { type DraftsHash, draftsChanged, draftsHash, unofficialDrafts } from "./spec-drafts-state";
+import { blockedNoteText, type DocsPreview, docsNudgeText, type Finished, fileLandingStore, finishedOf, type LandingBlocker, landingBlockers, type LandingDocs, landingLive, landingOf, landingReason, type LandingStore, specsWhyOf } from "./ready-to-land";
 import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
 import { WORKTREES } from "./harness/state-kinds";
@@ -493,6 +496,13 @@ export interface ReadinessDeps {
   finished: (sessionId: string, cwd: string, lastReplyId: string | undefined) => Finished;
   /** The spec drafts a tree holds not promoted, by name. */
   drafts: (dir: string) => string[] | undefined;
+  /** The drafts' hash as a Land It sees them (spec-drafts-state draftsHash). */
+  draftsHash?: (dir: string) => DraftsHash | undefined;
+  /** Sova's try of a tree's drafts at a head and drafts hash, the way the landing will (§chat.worktrees/ready-to-land):
+      the answer once known, else "pending" (it is started, and `done` runs when it has answered). */
+  docsPreview?: (dir: string, head: string, hash: string, done: () => void) => DocsPreview | "pending";
+  /** The user's Land It at exactly this branch and commit, with the drafts it was pressed for (landing.json). */
+  goAheadAt?: (branch: string, commit: string) => { drafts?: { hash: string; names: string[]; each?: Record<string, string> } } | undefined;
   /** The heads kept Ready to land. */
   landing: LandingStore;
   /** Sova's message to a session (the specs nudge); absent: never sent. */
@@ -514,6 +524,9 @@ const defaultDeps = (): ReadinessDeps => ({
   inputsStamp: gitInputsStamp,
   finished: finishedOf,
   drafts: (dir) => unofficialDrafts(dir),
+  draftsHash,
+  docsPreview: previewDocs,
+  goAheadAt: (branch, commit) => goAheadOf(branch, commit),
   landing: fileLandingStore(),
   nudge: async (path, text) => (await import("./session-offers")).sendToSession(path, text),
   landingOffered: async (dir) => {
@@ -648,10 +661,20 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
     if (landingOn) {
       const held = deps.landing.held(s.id, t.path);
       const heldHere = !!held && held.commit === tf.head;
-      landing = landingOf(tf, r.state, finished, heldHere, drafts, specsWhy);
+      const drafts = tf.readable && !tf.merged ? deps.drafts(t.path) : undefined;
+      // Drafts land with the branch (§chat.worktrees/ready-to-land): Sova tries them once per head and set of drafts.
+      let docs: LandingDocs | undefined;
+      if (drafts?.length && tf.head && landingLive(tf, r.state)) {
+        const hashed = deps.draftsHash?.(t.path);
+        const preview = deps.docsPreview ? deps.docsPreview(t.path, tf.head, hashed?.hash ?? "", () => requeue(s.path)) : ({ drafts, added: [], changed: [], problems: [] } as DocsPreview);
+        const pressed = deps.goAheadAt?.(tf.branch, tf.head)?.drafts;
+        const changedSinceGoAhead = pressed ? draftsChanged(pressed, hashed) : [];
+        docs = { drafts, preview, ...(changedSinceGoAhead.length ? { changedSinceGoAhead } : {}) };
+      }
+      landing = landingOf(tf, r.state, finished, heldHere, docs, specsWhy);
       // Finished but not Ready to land: what the session can fix, for Sova's once-per-commit note.
       if (!landing && finished === "yes" && tf.head) {
-        const blockers = landingBlockers(tf, sf, drafts);
+        const blockers = landingBlockers(tf, sf);
         if (blockers?.length) blocked.push({ path: t.path, branch: tf.branch, commit: tf.head, blockers });
       }
       if (writes) {
@@ -892,16 +915,17 @@ export function checkReadinessInputs(): number {
   return n;
 }
 
-/** Once per head commit, tell a session whose finished branch still holds spec drafts to land them on
-    its branch (§chat.worktrees/ready-to-land): never the user, never again for that commit. */
+/** Once per head commit, tell a session whose finished branch's drafts wouldn't land with it what doesn't fit
+    (§chat.worktrees/ready-to-land): never the user, never again for that commit. Drafts changed since the user's
+    Land It are the user's to answer again, on a new Landing card: nothing is sent for them. */
 function nudgeSpecs(s: SessionSummary, value: SessionReadiness): void {
   const send = deps.nudge;
   if (!send || s.archived || s.live) return;
   for (const t of value.trees) {
     const l = t.landing;
-    if (l?.state !== "specs" || l.specsWhy || !l.drafts?.length) continue;
+    if (l?.state !== "specs" || l.specsWhy || !l.docs?.problems?.length || l.docs.changedSinceGoAhead?.length) continue;
     if (!deps.landing.nudge(s.id, t.path, l.commit)) continue;
-    void send(s.path, specsNudgeText(t.branch, l.commit, l.drafts)).catch((err) => console.warn(`[readiness] specs nudge to ${s.path}: ${(err as Error).message}`));
+    void send(s.path, docsNudgeText(t.branch, l.commit, l.docs.problems)).catch((err) => console.warn(`[readiness] docs nudge to ${s.path}: ${(err as Error).message}`));
   }
   // A finished branch its landing card can't show for yet: what blocks it, once per head commit, only in a
   // project that offers the card at all, and never a word of Land It (§chat.worktrees/ready-to-land).
@@ -913,6 +937,65 @@ function nudgeSpecs(s: SessionSummary, value: SessionReadiness): void {
       if (!deps.landing.tell(s.id, b.path, b.commit)) return;
       await send(s.path, blockedNoteText(b.branch, b.commit, b.blockers));
     })().catch((err) => console.warn(`[readiness] landing note to ${s.path}: ${(err as Error).message}`));
+  }
+}
+
+/** Read a session's readiness again soon (Sova's try of its drafts has answered). */
+function requeue(path: string): void {
+  const hit = cache.get(path);
+  if (!hit || queued.has(path)) return;
+  forced.add(path);
+  queued.set(path, fileInput(hit.row));
+  void drain();
+}
+
+// ---- Sova's try of a head's drafts (§chat.worktrees/ready-to-land) --------------------------------------
+
+const DRAFT_TOOL = join(dirname(fileURLToPath(import.meta.url)), "..", "pi-config", "extensions", "spec", "core", "sova-spec-draft.mjs");
+const PREVIEW_TIMEOUT_MS = 60_000;
+const previews = new Map<string, { result?: DocsPreview; waiters: (() => void)[] }>();
+
+/** The draft tool's `land --commit <head>` without writing, in a process of its own (at most a minute), cached per
+    tree, head and drafts hash; a tool that fails or gives no answer is a problem, so a head never lands untried. */
+function previewDocs(dir: string, head: string, hash: string, done: () => void): DocsPreview | "pending" {
+  const key = `${dir}\n${head}\n${hash}`;
+  const hit = previews.get(key);
+  if (hit?.result) return hit.result;
+  if (hit) {
+    hit.waiters.push(done);
+    return "pending";
+  }
+  const entry: { result?: DocsPreview; waiters: (() => void)[] } = { waiters: [done] };
+  previews.set(key, entry);
+  if (previews.size > 300) previews.delete(previews.keys().next().value as string);
+  execFile(process.execPath, [DRAFT_TOOL, "land", "--commit", head, "--by", "Sova's try at readiness", "--verification", "readiness preview", "--root", dir, "--json"],
+    { timeout: PREVIEW_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, NO_COLOR: "1" } }, (err, stdout) => {
+      entry.result = previewOf(String(stdout ?? ""), err);
+      for (const w of entry.waiters.splice(0)) {
+        try { w(); } catch {}
+      }
+    });
+  return "pending";
+}
+
+/** land's JSON answer → what would land, or why not. */
+export function previewOf(stdout: string, err?: unknown): DocsPreview {
+  let j: { exit?: number; drafts?: { name?: string; added?: string[]; changed?: string[]; removed?: string[] }[]; findings?: { draft?: string | null; id?: string | null; code?: string; message?: string }[] } | null = null;
+  try { j = JSON.parse(stdout); } catch {}
+  if (!j || typeof j.exit !== "number") return { drafts: [], added: [], changed: [], problems: [`Sova couldn't try the drafts (${err instanceof Error ? err.message.split("\n")[0] : "the draft tool gave no answer"})`] };
+  const drafts = (j.drafts ?? []).map((d) => String(d.name));
+  const added = (j.drafts ?? []).flatMap((d) => d.added ?? []);
+  const changed = (j.drafts ?? []).flatMap((d) => [...(d.changed ?? []), ...(d.removed ?? [])]);
+  const problems = j.exit === 0 ? [] : (j.findings ?? []).map((f) => `${f.id ?? (f.draft ? `draft ${f.draft}` : f.code ?? "a draft")}${f.draft && f.id ? ` (draft ${f.draft})` : ""}: ${f.message ?? f.code ?? "refused"}`);
+  return { drafts, added, changed, problems: j.exit !== 0 && !problems.length ? ["the draft tool refused the landing"] : problems };
+}
+
+/** The Land It at exactly this branch and commit (landing.json), with its drafts. */
+function goAheadOf(branch: string, commit: string): { drafts?: { hash: string; names: string[]; each?: Record<string, string> } } | undefined {
+  try {
+    return goAheadFor(branch, commit, join(stateRoot(), LANDING_FILE_NAME));
+  } catch {
+    return undefined;
   }
 }
 

@@ -104,7 +104,7 @@ export function buildSpecWriterPrompt(route: SlotRoute): string {
 		route.via === "primary"
 			? " If its spawn fails because its model is unavailable, retry once with the fallback only if one is listed above, and say so; otherwise ask the user which model to use — never substitute one of your own."
 			: "";
-	return `Spec writer: draft claims and evidence records are written by one worker, spawned with agent_spawn on exactly this backend, model and effort → ${routeTarget(route, "handing off spec writing")} Give it the relevant spec passages quoted literally, the files the task changed, and the verification you did. It writes only under \`.sova/spec/drafts/\`, never current \`claims/\` or \`manifest.json\`; you check its draft, run the checks and the census, and promote yourself.${retry}`;
+	return `Spec writer: draft claims and evidence records are written by one worker, spawned with agent_spawn on exactly this backend, model and effort → ${routeTarget(route, "handing off spec writing")} Give it the relevant spec passages quoted literally, the files the task changed, and the verification you did. It writes only under \`.sova/spec/drafts/\`, never current \`claims/\` or \`manifest.json\`; you check its draft, run the checks and the census, and record a note per promise; the landing makes it official.${retry}`;
 }
 
 /**
@@ -253,11 +253,11 @@ export function buildAlignEagernessNote(to: AlignEagerness): string {
 /**
  * Appended to the spec block in a worker's prompt (never the parent's): spec-mode.md is written to the
  * session that plans, promotes and briefs, and stays byte-identical, so what differs for a worker is said
- * here. The parent promotes; the worker's brief can say otherwise. The writing procedure's Workers paragraph
+ * here. The branch's landing makes drafts official; the worker's brief says what it commits. The writing procedure's Workers paragraph
  * (`spec/WRITING.md`, which the census hands a worker, that section first) says the same words; index.test.ts
  * holds them equal.
  */
-export const SPEC_WORKER_NOTE = `You are a worker: a parent session started you, and it promotes on its own branch before calling it ready. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started. Promote, commit or record \`--commit\` evidence only when your brief says to, and then only on its branch, never by landing on the default branch; otherwise say what is ready to promote. List each foreign § you updated in your final report.`;
+export const SPEC_WORKER_NOTE = `You are a worker: a parent session started you, and its branch's landing makes the drafts official. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started, and record your notes there. Commit only when your brief says to, and then only on its branch, never by landing on the default branch. List each foreign § you updated in your final report.`;
 
 /** One minor mode's block as a worker receives it: spec gets the worker note, never the writer paragraph. */
 function buildWorkerMinorPrompt(mode: MinorMode): string {

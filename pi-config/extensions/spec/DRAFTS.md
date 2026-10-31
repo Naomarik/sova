@@ -137,10 +137,55 @@ The machine can't tell which label is correct.
    not memory, is what "Also updates" names. They also print `driftWarnings`,
    the `check` warnings above (never a refusal), so drift shows even when nobody ran `check`, and
    `sizeWarnings`: each selected declaration the promotion would take over the size cap or grow
-   there (never a refusal, and never one of the findings that keep `agree` from promoting).
+   there (never a refusal, and never one of the findings that keep a landing from writing).
    Evidence on a commit that is gone or not an ancestor of `HEAD` (a rebase after evidence) is
    refused as `evidence-not-ancestor`: never rebase after evidence; re-record evidence on the
    current commit, or merge master in instead.
+5. **Or let the landing do 3 and 4** (the usual path in a Git project). The chat records only its
+   note on what it verified: `evidence NAME --id '§x'… --by WHO --verification TEXT --note --write`
+   binds the text to the record and prose as the draft has them, with no implementation, and is never
+   evidence a manual `promote` accepts. At the landing, `land --commit REV --by WHO --verification TEXT
+   [--write]` takes every draft of the project and every record each changes that current doesn't say
+   yet (pending, in conflict, or promoted before and said differently now), and:
+   - leaves a draft whose every such record is `authority: "candidate"` (`left`, `why: "proposals"`);
+     a proposal mixed into a landing draft holds it (`candidate-label`) and needs no note;
+   - needs each other record's note from its chat, the newest entry naming it with a verification
+     text (a note, or evidence recorded the old way) bound to its record and prose as they are now
+     (`verification-missing`, `verification-stale`);
+   - records evidence at REV for each, one entry per record (`landing: true`, the landing's
+     verification then the chat's note): `doc-only` where doc-only evidence applies, else `commit`
+     with the record's `code` as it is at REV (`evidence-code-missing`, `input-uncommitted`);
+   - gives a record with new or rewritten prose and no `authority` the label `accepted` in current,
+     never in the draft (the receipt names them: `promotions[].landing.authority`);
+   - refuses everything `promote` refuses, a declaration still holding `refresh`'s marker lines
+     (`conflict-markers`) and two landing drafts changing the same file or record (`drafts-overlap`).
+   Without `--write` it only answers. With `--write` it promotes every draft under the drafts lock,
+   draft by draft through the same plan and transaction as `promote`, after writing a journal of every
+   byte it may change (`drafts/.land/`): any refusal or failure puts the spec and each draft's
+   `draft.json` back byte for byte, and an interrupted land is put back by `recover --write` (every other
+   write refuses until then, `pending-transaction`). It never commits. Its answer: `drafts` (each with
+   the § it adds, changes and removes), `left`, `findings` (`{draft, id, code, message, fix}`), `counts`,
+   `paths` (the spec files it wrote, to stage), `commitMessage` `{subject, body}`, `draftsHash` (one
+   hash over every file under each draft's `spec/`, `draft.json` apart) and `sizeWarnings`, each
+   landing draft's plan's size warnings as `promote` gives them (report-only: never a refusal, never
+   the exit). With nothing pending it answers
+   `nothingToLand` and writes nothing. Exit 0 when everything lands or there is nothing to land, 1 with
+   findings, 2 when it can't read the drafts. It needs Git (`not-git`): without Git, promote by hand.
+6. **`refresh NAME [--write]`** moves a draft onto the current spec: `base/` becomes current byte for
+   byte (and `draft.json`'s `base.files` and `base.commit`), and `spec/` is the per-declaration
+   three-way merge promotion computes. A declaration both sides changed is written as one block for the
+   chat to rewrite as one text, then delete the marker lines:
+   ```
+   <<<<<<< current: <§id> changed here since the draft was made
+   <current's text>
+   =======
+   <the draft's text>
+   >>>>>>> draft
+   ```
+   A file that can't be merged per declaration gets the block around the whole file; a record or a
+   manifest setting both changed keeps the draft's. Its answer: `rebased`, `merged` (current's changes
+   brought in), `conflicts` (`{id, file, kind: "prose" | "file" | "record"}`). Exit 0 clean or nothing to
+   do, 1 with conflicts. Notes and evidence stay bound to what the chat wrote.
 
 ## What promotion checks, all before any write
 
@@ -163,7 +208,9 @@ again **per declaration** (see "Per-declaration merge" below); only what that fi
 | `agree-source-not-reference` | The source (`--source`, or the variable) is a description, not a reference: a scheme, a colon and a locator with no spaces, such as `pi-session:<session id>#<entry id>` (both ids), a URL or `chat:c1#m3` (exit 1, nothing stamped). Pass the reference, or omit `--source` when the variable is set. |
 | `agree-source-unresolved` / `agreed-source-unresolved` | A `pi-session:<session id>#<entry id>` source doesn't resolve: no session file under `$PI_CODING_AGENT_DIR/sessions` (else `~/.pi/agent/sessions`) is named `…_<session id>.jsonl` or carries that id in its header, or the entry isn't there, or it isn't a `message` by the `user` (exit 1, nothing stamped; at promotion, a hand-written stamp). Pass the reference of the user message that holds the go-ahead, or report the records ready to agree. Only `pi-session:` is resolved: any other scheme (a URL, `chat:…`) is checked for its form alone, for projects whose go-ahead lives outside pi. |
 | `agree-source-not-given` | The process is a worker (its runtime set `SPEC_AGREE_GIVEN`) that was given no reference, and `--source` names one (exit 1, nothing stamped). A worker can't name the go-ahead itself: report the records ready to agree. |
-| `agree-not-promoted` | `agree` stamped (and recorded evidence), but the promotion it previewed was not clean, so it wrote nothing to current. The message lists the plan's refusals, drift warnings, notes and foreign §; the output carries them under `promotion`. |
+| `conflict-markers` | A declaration in the draft still holds the block `refresh` wrote around a change both sides made. Rewrite it as one text and delete the marker lines. |
+| `verification-missing` / `verification-stale` | (`land`) A record the landing would make official has no note from its chat, or changed in the draft after it. Record one: `evidence NAME --id '§x' --by WHO --verification TEXT --note --write`. |
+| `drafts-overlap` | (`land`) Two drafts change the same claim file or record. Move one draft's change into the other, or delete it. |
 | `base-untrusted` | The draft's baseline graph doesn't load in the core (exit 2), so changes can't be attributed to IDs. Start a new draft from a fixed current. |
 | `draft-invalid` | The draft's own graph doesn't load (exit 2). Run `check NAME` and fix it. |
 | `not-changed`, `plan-changed`, `nothing-to-write`, `pending-transaction`, `lock-occupied`, `race` | These mean what they say. |
@@ -230,9 +277,9 @@ files, else `agree-source-unresolved`, while other schemes are checked for their
 reference refuses any `--source`, `agree-source-not-given`) and `authority: "accepted"`;
 a declaration with prose but no record gets one (an H1 is a surface, an H2 a behavior). For each
 one that maps no code and isn't labelled `reviewed` or `verified`, it records `--doc-only` evidence,
-with `--by` and `--verification` as given, and promotes it: when that promotion lands and when it
-doesn't is in PROMOTE.md ("Agreed, promoted by `agree`"). A record that maps code is only stamped:
-its build records commit or snapshot evidence. An `agreed` this draft already gave, by the same
+with `--by` and `--verification` as given. It promotes nothing: the record becomes official when its
+branch lands (`land`, step 5), the evidence's verification standing as the chat's note; its answer says so
+(`lands`). A record that maps code is only stamped: its build records its note. An `agreed` this draft already gave, by the same
 person from the same source, is kept, so running it again changes nothing. Without `--write` it previews. With the align
 minor mode on too, the align tool's result for the go-ahead (status implementing) tells the agent
 to do exactly this before building.

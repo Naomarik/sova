@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -137,4 +137,41 @@ test("newestUserMessage: the newest user message's text, and who sent it when a 
 	assert.deepEqual(newestUserMessage([user("u1", "hi"), mark("sova-overseer-sent", "u1"), user("u2", "land it"), mark("sova-rewind", "u2")]), { text: "land it" });
 	// The newest is another sender's: never an older one of the user's instead.
 	assert.deepEqual(newestUserMessage([user("u1", "land it"), reply, user("u2", "land it"), mark("sova-session-sent", "u2")]).sentBy, "another session");
+});
+
+test("Sova's go-aheads and the merge round's docs entries, written at once from many processes, never drop each other (one lock)", async () => {
+	const { spawn } = await import("node:child_process");
+	const { existsSync, utimesSync } = await import("node:fs");
+	const dir = mkdtempSync(join(tmpdir(), "landing-lock-"));
+	const file = join(dir, "landing.json");
+	const landingTs = join(import.meta.dirname, "landing.ts");
+	const roundMjs = join(import.meta.dirname, "..", "..", "..", ".sova", "playbooks", "merge-round", "scripts", "round.mjs");
+	const hex = (n: number, k: number) => `${n.toString(16).padStart(4, "0")}${k.toString(16).padStart(4, "0")}`.padEnd(40, "a");
+	const run = (code: string) =>
+		new Promise<number>((done) => {
+			const p = spawn(process.execPath, ["--input-type=module", "-e", code], { stdio: "inherit" });
+			p.on("exit", (c) => done(c ?? 1));
+		});
+	const N = 15;
+	const jobs: Promise<number>[] = [];
+	for (let w = 0; w < 4; w++) {
+		jobs.push(run(`import { recordGoAhead } from ${JSON.stringify(landingTs)}; for (let i = 0; i < ${N}; i++) recordGoAhead({ branch: "b", commit: ${JSON.stringify("")} + "${hex(w, 0).slice(0, 8)}".slice(0, 4) + String(i).padStart(4, "0") + "b".repeat(32), at: new Date().toISOString(), by: "land-it" }, ${JSON.stringify(file)});`));
+		jobs.push(run(`import { appendDocsEntry } from ${JSON.stringify(roundMjs)}; for (let i = 0; i < ${N}; i++) appendDocsEntry(${JSON.stringify(file)}, { branch: "b", sha: "${hex(w, 0).slice(0, 4)}" + String(i).padStart(4, "0") + "c".repeat(32), parent: "d".repeat(40), at: new Date().toISOString(), drafts: [] });`));
+	}
+	try {
+		assert.deepEqual(await Promise.all(jobs), Array(8).fill(0), "every writer finished");
+		const d = JSON.parse(readFileSync(file, "utf8"));
+		assert.equal(d.goAheads.length, 4 * N, "no go-ahead was dropped");
+		assert.equal(d.docsEntries.length, 4 * N, "no docs entry was dropped");
+		assert.equal(readLanding(file).docsEntries?.length, 4 * N, "landing.ts reads them back");
+		assert.ok(!existsSync(`${file}.lock`), "the lock is gone");
+		// A lock left behind by a writer that died is taken over once stale; a fresh one is waited for.
+		writeFileSync(`${file}.lock`, "");
+		const old = new Date(Date.now() - 60_000);
+		utimesSync(`${file}.lock`, old, old);
+		recordGoAhead({ branch: "b", commit: "e".repeat(40), at: new Date().toISOString(), by: "land-it" }, file);
+		assert.ok(goAheadFor("b", "e".repeat(40), file), "a stale lock is taken over");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });

@@ -18,15 +18,15 @@ Trusted tools: start each bash command that runs them with exactly \`core=/agent
 - Cite files: every finding names the code file or commit it rests on. In briefs, plans and answers, report the product, not this procedure.
 - Every behavior change is spec'd. Before your first edit that changes behavior, read \`$core/../WRITING.md\`, the writing procedure (it also arrives once, with your first \`[spec census]\` note or an alignment's go-ahead).
 - Exempt from drafts, not census: work changing no behavior (refactor, tests, tooling), decided from passages you read, never memory; a test that fails or flakes because of product code is that code's behavior fix, never test-only; say you claim the exemption.
-- Behavior no claim covers gets a new claim in a feature draft before coding. Write its sentence before the first code edit; \`new\` alone isn't enough. When the task's go-ahead already agrees to it, run \`agree\` on it then, before that edit, not at the end.
+- Behavior no claim covers gets a new claim in a feature draft before coding. Write its sentence before the first code edit; \`new\` alone isn't enough. When the user decided it in this chat, run \`agree\` on it then, before that edit, not at the end.
 - While coding, a \`[spec census]\` note on a tool result is the census, run for you: act on it.
 - Any § the task didn't create is foreign, your new claim's parent included, wherever you put the claim.
 - Where the task needs a change that contradicts its text or adds what a user sees that it lacks, even one your new claim describes, update it in your draft without asking (the go-ahead covers it and restamps any \`agreed\`), never for a gap it already had or a defect; list each foreign § your draft or workers edit in your reply: "Also updates §X: <what>".
 - Documentation changes only through drafts, never by editing current \`claims/\` or \`manifest.json\`: \`node "$core/sova-spec-draft.mjs" <command> --root <project root> --json\`.
 - Documenting what the code already does is its own baseline draft, never mixed into a feature draft.
 - Read each § the census note's \`Unread § your change landed in\` line (once, after your last edit) marks read first; its \`census --changed --related\` command lists the rest. Every changed file in the boundary is claimed; any outside it whose change a user sees is spec'd.
-- The task's go-ahead authorizes its drafts, evidence and promotions as one bounded batch; no dialog per claim, and nothing at session start. A go-ahead to build or merge covers committing them with the code, never asked separately; told not to commit, leave evidence pending; never commit unrelated changes.
-- If you are a worker: a parent session started you, and it promotes on its own branch before calling it ready. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started. Promote, commit or record \`--commit\` evidence only when your brief says to, and then only on its branch, never by landing on the default branch; otherwise say what is ready to promote. List each foreign § you updated in your final report.`;
+- The task's go-ahead authorizes its drafts and notes as one bounded batch; no dialog per claim, and nothing at session start. A go-ahead to build or merge covers committing them with the code, never asked separately; told not to commit, say what is ready; never commit unrelated changes.
+- If you are a worker: a parent session started you, and its branch's landing makes the drafts official. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started, and record your notes there. Commit only when your brief says to, and then only on its branch, never by landing on the default branch. List each foreign § you updated in your final report.`;
 
 test("both parts still carry every rule the worker brief quotes, and the brief is the pinned text", () => {
 	assert.deepEqual(missingRules(SPEC_BRIEF_SOURCE), [], "an anchor is gone or repeated in spec-mode.md + WRITING.md: update CARRIED_RULES");
@@ -39,7 +39,7 @@ test("a code-writing worker's brief keeps every writing rule it carried before t
 	// The opening words of each rule the brief carried when spec-mode.md was the whole procedure.
 	for (const rule of [
 		"never put `§` IDs", "Every behavior change is spec'd.", "Exempt from drafts, not census:", "Behavior no claim covers gets a new claim",
-		"When the task's go-ahead already agrees to it, run `agree` on it then", "While coding, a `[spec census]` note", "Any § the task didn't create is foreign",
+		"When the user decided it in this chat, run `agree` on it then", "While coding, a `[spec census]` note", "Any § the task didn't create is foreign",
 		"Where the task needs a change", "Documentation changes only through drafts", "Documenting what the code already does",
 		"Read each § the census note's `Unread § your change landed in` line", "The task's go-ahead authorizes", "A go-ahead to build or merge covers committing",
 	]) assert.ok(brief.includes(rule), rule);

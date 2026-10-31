@@ -51,7 +51,7 @@ export interface AlignToolHost {
  * block's trusted-tools prefix, which is in context whenever spec is on.
  */
 export function alignSpecAgreeText(docId: string): string {
-	return `Spec mode is on too, so this go-ahead is the Agree step. Before building, write each decision of ${docId} that changes behavior as a promise in a spec draft (a new claim, or the claim it changes), then run \`node "$core/sova-spec-draft.mjs" agree <draft> --id '<§id>' --by <who gave the go-ahead> --verification "${docId} go-ahead" --root <project root> --json --write\`. For records that map no code, \`agree\` records doc-only evidence and promotes them itself when the plan is clean; if it says agree-not-promoted, resolve what it lists and promote. A changed claim that maps code keeps its new \`agreed\` in the draft and lands with the build. The build updates those same records. Skip this when no decision changes behavior.`;
+	return `Spec mode is on too, so this go-ahead is the Agree step. Before building, write each decision of ${docId} that changes behavior as a promise in a spec draft (a new claim, or the claim it changes), then run \`node "$core/sova-spec-draft.mjs" agree <draft> --id '<§id>' --by <who gave the go-ahead> --verification "${docId} go-ahead" --root <project root> --json --write\`. For records that map no code, \`agree\` records doc-only evidence; they become official when the branch lands. A changed claim that maps code keeps its new \`agreed\` in the draft and lands with the build. The build updates those same records. Skip this when no decision changes behavior.`;
 }
 
 /** Which form of the tool is registered: the review ops, and the visual fields (§chat.alignment/visuals). */

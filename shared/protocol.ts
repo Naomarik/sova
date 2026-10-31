@@ -12,6 +12,7 @@ import type { Permit } from "./overseer-grants";
 import type { OverseerCard } from "./overseer-card";
 import type { ReplyTiming, RowFacts, SovaEvent, SovaPart } from "./harness-wire";
 import type { OwnerRequestCard } from "./project-assistant";
+import type { CardInfo } from "./transcript-cards";
 export type { WakeInfo };
 
 export interface SessionSummary {
@@ -225,6 +226,8 @@ export type EntryKind =
   | "report" // subagent reports and other long extension messages (custom_message); see `report`
   | "worktree-merge" // a merge the session recorded (pi-config worktrees extension); see `worktreeMerge`
   | "align" // an `align` tool result that changed an alignment, or an exemption (pi-config mode extension); see `align`
+  | "card" // a transcript card raised from outside the chat (§chat.transcript-cards/raise-command): the page
+           // places it after the entry it was raised after (`card.after`); the server sends no such row. See `card`.
   | "spec-turn" // legacy: the retired spec card; no longer produced, older mesh peers may still send it (renders nothing)
   | "unknown";
 
@@ -272,6 +275,8 @@ export const EAGER_TOOLS: ReadonlySet<string> = new Set([
   "sova_navigate",
   // An offer card (§chat.offers/card, shared/session-offers.ts OFFER_TOOL): its details are the card.
   "offer",
+  // A project's transcript card, raised by the agent's `card` tool (shared/transcript-cards.ts CARD_TOOL): its details are the card.
+  "card",
   // The project overseer's Settings change card (§app.project-overseer/settings): a propose's details are the card.
   "sova_settings",
   // Tours retain only a validated small card projection; full authoring input remains lazy.
@@ -417,6 +422,8 @@ export interface TranscriptItem {
       call, whose tool-call row renders nothing once this row is there. A failed call, a `get`, or
       details that don't check out stay an ordinary tool-result. */
   align?: AlignRowInfo;
+  /** kind "card": the card, as GET /api/session-cards reads it (§chat/transcript-cards). */
+  card?: CardInfo;
   /** The entry's timestamp (ISO), on every row whose entry has one. */
   at?: string;
   /** The entry's facts, on its first row only (EntryMeta). Absent on rows to a consumer that asked
@@ -3529,6 +3536,7 @@ export type AttentionKind =
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
   | "held-act"            // act tier, never pushed: a statechart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
   | "offer-waiting"       // act tier, never pushed or briefed: the session shows an open offer card (Land It, §chat.offers/card), idle or working
+  | "card-waiting"        // act tier, never pushed or briefed: the session shows an open transcript card waiting on an answer (§chat.transcript-cards/answering), one per card, idle or working
   | "tour-sign-in"        // act tier, never pushed: one of the session's tour recordings waits for the user to sign in on its card (§app.tours/sites; from the server's memory, gone on restart)
   | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Merge Branch (§app.project-runtime/review; the run's session, `playbook` set)
   | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project page)
@@ -4062,7 +4070,15 @@ export interface ExtensionOffers {
   /** The places on Sova's screens it adds to; Sova asks it for each through GET
       /ext/<id>/api/screens/<place> (shared/extension-offers.ts SCREEN_PLACES). */
   screens?: ScreenPlace[];
+  /** Since v1.17: its transcript card types, each its checked declaration, typed `<id>.<name>`
+      (§app.extensions/views, shared/transcript-cards.ts checkExtCard). */
+  cards?: import("./transcript-cards").CardDecl[];
+  /** Since v1.17: its drawing kinds, each its checked declaration by its fence word `<id>.<name>`, with
+      its view and guide paths inside `dist`. */
+  drawings?: ExtensionDrawingOffer[];
 }
+/** An extension's drawing kind as its offers carry it (§app.extensions/views). */
+export type ExtensionDrawingOffer = Omit<import("./drawing-kinds").DrawingDecl, "guide" | "ext"> & { view: string; guide: string };
 export interface ExtensionCommandInfo {
   name: string; // [a-z0-9][a-z0-9-]{0,47}
   label: string;
@@ -5514,6 +5530,25 @@ export interface UpdatesRunning {
   canUpgrade: boolean;
   /** Why not, in a sentence, when it can't. */
   whyNot: string | null;
+  /** When this server started (`GET /api/health`'s startedAt). Absent from older servers. */
+  startedAt?: string;
+  /** May Restart Sova restart this server now (a service runs it, and no upgrade runs). */
+  canRestart?: boolean;
+  /** Why not, in a sentence, when it can't. */
+  restartWhyNot?: string | null;
+  /** The service that runs this server, for a terminal check (`systemctl --user status <name>`, or a launchd label). */
+  restartUnit?: { manager: "systemd" | "launchd"; name: string } | null;
+  /** Code on disk newer than what runs: commits since the start, and changes not committed since then; null when it matches or can't be read. */
+  diskAhead?: { commits: number; dirty: boolean } | null;
+}
+
+/** `POST /api/updates/restart`'s answer (202): the restart is scheduled. */
+export interface RestartScheduled {
+  scheduled: true;
+  /** The server's startedAt now: the restart is done once `GET /api/health` answers another. */
+  startedAt: string;
+  /** Seconds until the service restarts. */
+  inSeconds: number;
 }
 
 /** What a check found newer, or not. */

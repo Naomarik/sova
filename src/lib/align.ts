@@ -8,6 +8,7 @@
 
 import type { AlignDocInfo, AlignQuestionInfo, AlignReportInfo, AlignRowInfo, ReportInfo, TranscriptItem } from "../../shared/protocol";
 import type { Tone } from "../components/ui";
+import { newestByKey } from "./transcript-placement";
 
 export type AlignStatus = "aligning" | "confirmed" | "implementing" | "done" | "dropped";
 export type AlignQuestionState = "open" | "decided" | "dropped";
@@ -165,9 +166,12 @@ export function foldAlignRows(
 
 /** Row id → true for the newest row of each document: those render the full card, the rest one line. */
 export function newestAlignRows(items: readonly TranscriptItem[]): Set<string> {
-  const newest = new Map<string, string>();
-  for (const it of items) if (it.kind === "align" && it.align?.doc) newest.set(it.align.doc.id, it.id);
-  return new Set(newest.values());
+  return newestByKey(items, alignKey, (it) => it.id);
+}
+
+/** An alignment row's card: its document, shared by every revision. */
+export function alignKey(it: TranscriptItem): string | undefined {
+  return it.kind === "align" ? it.align?.doc?.id : undefined;
 }
 
 /** The composer chip's counts over the open documents: how many, their decided questions, all their live questions. */

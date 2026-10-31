@@ -66,6 +66,7 @@ import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { BatonSettingsSection } from "./BatonSettings";
 import { ProfilesSettingsSection } from "./ProfilesSettings";
 import { TypographySection } from "./TypographySection";
+import { ServerSettingsSection } from "./ServerSettings";
 import { UpdatesSettingsSection } from "./UpdatesSettings";
 import { VoiceSettingsSection } from "./VoiceSetup";
 import { Banner, Icon, trapFocus } from "./ui";
@@ -414,7 +415,8 @@ function ExperimentalPanel() {
  * The browser's part is written to no machine — no policy file, no server endpoint — which is the
  * line between it and Models, and the reason the sidebar's Recent region has no control of its own:
  * a count that could be set in two places would disagree in one of them. The Updates section at the
- * bottom is the machine's, Save-gated like every server-backed form (UpdatesSettings.tsx).
+ * bottom is the machine's, Save-gated like every server-backed form (UpdatesSettings.tsx); above it,
+ * the machine's server and Restart Sova (ServerSettings.tsx).
  */
 function GeneralPanel() {
   /**
@@ -460,7 +462,7 @@ function GeneralPanel() {
     <>
       <p class="settings-intro">
         How this browser draws Sova. The settings above stay in this browser; another device keeps
-        its own. Updates, below, are this machine's.
+        its own. The server and its updates, below, are this machine's.
       </p>
       <div class="field settings-field">
         <label class="field-label" for="recent-count">
@@ -527,6 +529,7 @@ function GeneralPanel() {
           active. A draft's first line still shows.
         </span>
       </div>
+      <ServerSettingsSection />
       <UpdatesSettingsSection />
     </>
   );

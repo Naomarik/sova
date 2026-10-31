@@ -1,0 +1,367 @@
+{
+  "§chat.transcript-cards/answering": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§chat.composer/anatomy",
+      "§app.overseer/attention-digest"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:24Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    },
+    "evidence": "verified",
+    "code": [
+      "server/transcript-cards.ts",
+      "server/transcript-cards-note.ts",
+      "server/transcript-cards-routes.ts",
+      "server/transcript-cards.test.ts",
+      "src/lib/card-picks.ts",
+      "src/lib/card-controls.ts",
+      "src/components/TranscriptCard.tsx",
+      "src/components/ChatView.tsx",
+      "server/attention.ts"
+    ]
+  },
+  "§chat.transcript-cards/building": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:24Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    },
+    "evidence": "verified",
+    "code": [
+      "server/card-views.ts",
+      "server/card-views-babel.d.ts",
+      "server/card-views.integration.test.ts",
+      "package.json",
+      "pnpm-lock.yaml"
+    ]
+  },
+  "§chat.transcript-cards/built-ins": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§chat.alignment/card",
+      "§chat.offers/card"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:24Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    },
+    "evidence": "verified",
+    "code": [
+      "src/components/BuiltinKinds.tsx",
+      "src/components/MessageRows.tsx",
+      "src/components/InfoRow.tsx",
+      "src/components/LiveKinds.tsx",
+      "src/components/thread-rows.ts",
+      "src/components/Thread.tsx",
+      "src/lib/transcript-builtins-dom.test.ts",
+      "src/lib/transcript-builtins-dom.snapshot.json",
+      "src/lib/transcript-kinds-rule.test.ts"
+    ]
+  },
+  "§chat.transcript-cards/card-tool": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§chat.offers/tool"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:24Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    },
+    "evidence": "verified",
+    "code": [
+      "server/transcript-cards-tool.ts",
+      "shared/transcript-cards.ts",
+      "server/transcript-cards.ts",
+      "server/transcript-cards.test.ts",
+      "shared/protocol.ts"
+    ]
+  },
+  "§chat.transcript-cards/data-cards": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§chat.alignment/card",
+      "§chat.offers/buttons"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:25Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    },
+    "evidence": "verified",
+    "code": [
+      "shared/view-cards.ts",
+      "shared/view-cards.test.ts",
+      "src/components/DataCards.tsx",
+      "src/data-cards.css",
+      "src/lib/data-cards.test.ts",
+      "src/lib/align-question-dom.test.ts",
+      "src/lib/align-question-dom.snapshot.json",
+      "src/components/AlignDocCard.tsx",
+      "src/components/OfferCard.tsx"
+    ]
+  },
+  "§chat.transcript-cards/drawing-kinds": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§chat.markdown/visuals"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:25Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    },
+    "evidence": "verified",
+    "code": [
+      "shared/drawing-kinds.ts",
+      "shared/drawing-kinds.test.ts",
+      "server/transcript-drawings.test.ts",
+      "server/transcript-drawings-page.integration.test.ts",
+      "server/extension-views.ts",
+      "src/components/DrawingView.tsx",
+      "src/lib/markdown.ts",
+      "src/components/Markdown.tsx",
+      "src/vis/markdown.test.ts",
+      "pi-config/extensions/mode/vis-guide-tool.ts",
+      "pi-config/extensions/mode/minor.ts",
+      "pi-config/extensions/mode/index.test.ts"
+    ]
+  },
+  "§chat.transcript-cards/files": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§chat.mode-menu/project-modes",
+      "§chat.offers/tool"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:25Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    },
+    "evidence": "verified",
+    "code": [
+      "shared/transcript-cards.ts",
+      "shared/transcript-cards.test.ts",
+      "shared/card-schema.ts",
+      "shared/card-schema.test.ts",
+      "server/transcript-cards.ts",
+      "server/transcript-cards.test.ts",
+      "server/transcript-cards-routes.ts",
+      "src/components/ProjectCardsCard.tsx",
+      "src/components/ProjectPage.tsx",
+      "shared/commands/projects.ts"
+    ]
+  },
+  "§chat.transcript-cards/placement": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§chat.transcript/rendering"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T16:19Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#7836476d"
+    },
+    "evidence": "verified",
+    "code": [
+      "src/lib/transcript-placement.ts",
+      "src/lib/transcript-placement.test.ts",
+      "src/components/TranscriptCard.tsx",
+      "src/lib/card-controls.ts",
+      "server/transcript-cards.ts"
+    ]
+  },
+  "§chat.transcript-cards/raise-command": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.commands/catalogue",
+      "§app.chat-actions/terminal-open"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:25Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    },
+    "evidence": "verified",
+    "code": [
+      "server/transcript-cards-routes.ts",
+      "server/transcript-cards.ts",
+      "server/transcript-cards.test.ts",
+      "shared/commands/sessions.ts",
+      "shared/commands-ids.json"
+    ]
+  },
+  "§chat.transcript-cards/redraw": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.extensions/serving"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:25Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    },
+    "evidence": "verified",
+    "code": [
+      "server/card-views.ts",
+      "server/card-views.integration.test.ts",
+      "server/transcript-cards-routes.ts",
+      "src/components/CardView.tsx",
+      "src/components/DrawingView.tsx"
+    ]
+  },
+  "§chat.transcript-cards/sealed-box": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.settings-dialog/themes"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:25Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    },
+    "evidence": "verified",
+    "code": [
+      "src/lib/card-box.ts",
+      "src/lib/card-box.test.ts",
+      "src/lib/card-box-css.ts",
+      "src/lib/card-box-css.test.ts",
+      "server/card-box.integration.test.ts",
+      "src/components/CardView.tsx",
+      "src/components/TranscriptCard.tsx",
+      "server/transcript-drawings-page.integration.test.ts"
+    ]
+  },
+  "§chat.transcript-cards/toolkit": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§chat.transcript/rendering"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:25Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    },
+    "evidence": "verified",
+    "code": [
+      "src/lib/transcript-kinds.ts",
+      "src/lib/transcript-kinds.test.ts",
+      "src/lib/transcript-kinds-rule.test.ts",
+      "src/components/TranscriptKind.tsx",
+      "src/components/LiveKinds.tsx",
+      "src/components/thread-rows.ts",
+      "src/components/Thread.tsx",
+      "src/lib/transcript-kinds-dom.test.ts",
+      "src/lib/transcript-kinds-dom.snapshot.json",
+      "src/lib/transcript-live-dom.test.ts",
+      "src/lib/transcript-live-dom.snapshot.json",
+      "src/lib/work-run-handover.test.ts"
+    ]
+  },
+  "§chat.transcript-cards/trust": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.commands/catalogue"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:25Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    },
+    "evidence": "verified",
+    "code": [
+      "server/transcript-cards.ts",
+      "server/transcript-cards-routes.ts",
+      "server/transcript-cards.test.ts",
+      "src/components/TranscriptCard.tsx",
+      "src/components/CardView.tsx",
+      "src/components/ProjectCardsCard.tsx",
+      "src/components/ExtensionView.tsx",
+      "src/lib/card-controls.ts",
+      "src/lib/api.ts"
+    ]
+  },
+  "§chat.transcript-cards/versions": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:25Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    },
+    "evidence": "verified",
+    "code": [
+      "shared/transcript-cards.ts",
+      "shared/transcript-cards.test.ts",
+      "src/card-toolkit/index.ts",
+      "server/transcript-cards-routes.ts",
+      "src/components/CardView.tsx"
+    ]
+  },
+  "§chat.transcript-cards/view-api": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.commands/catalogue",
+      "§app.commands/extension-commands",
+      "§app.command-audit/list"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:25Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    },
+    "evidence": "verified",
+    "code": [
+      "src/lib/card-view-host.ts",
+      "src/lib/card-view-host.test.ts",
+      "src/card-toolkit/index.ts",
+      "src/card-toolkit/commands.gen.ts",
+      "shared/card-toolkit-types.ts",
+      "shared/card-toolkit-types.test.ts",
+      "scripts/card-toolkit-types.mjs",
+      "server/transcript-cards.ts",
+      "server/transcript-cards-routes.ts",
+      "server/transcript-cards.test.ts",
+      "src/components/CardView.tsx",
+      "src/components/Composer.tsx",
+      "src/components/ChatView.tsx"
+    ]
+  },
+  "§chat/transcript-cards": {
+    "kind": "surface",
+    "authority": "accepted",
+    "notOwned": [
+      "§app.extensions/views",
+      "§chat.alignment/card",
+      "§chat.offers/card",
+      "§chat/composer",
+      "§app.commands/reply-place"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:25Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    }
+  }
+}

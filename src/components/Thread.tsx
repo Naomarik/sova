@@ -1,213 +1,53 @@
 import { children, createContext, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, untrack, useContext, type JSX } from "solid-js";
-import type { RowFacts } from "../../shared/harness-wire";
-import type { HandoffRunInfo, TmpAttachment, TranscriptItem } from "../../shared/protocol";
+import type { TranscriptItem } from "../../shared/protocol";
 import { rowFacts } from "../../shared/wire-v1";
-import type { BatonMark } from "../../shared/baton";
 import { wrapupRowIds } from "../lib/wrapup-rows";
 import { readHoldTop } from "../lib/read-hold";
-import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState, shownUserState } from "../lib/live";
-import { agoTime, modelLabel, modelMismatch, prettyJson, stampTime, thousands, tildePath } from "../lib/format";
-import { useMinuteNow } from "../lib/minute-clock";
-import { isObj, resultDetails as detailsOf, str, toolCallArgs, toolResultView } from "../lib/message";
+import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState } from "../lib/live";
+import { modelLabel, prettyJson } from "../lib/format";
+import { isObj, resultDetails as detailsOf, str, toolResultView } from "../lib/message";
 import { toolContent, type ToolSource } from "../lib/tool-content";
-import { stripPastedPaths } from "../lib/path-attachments";
-import { focusView, home, setFocusView } from "../lib/ui-state";
+import { focusView, setFocusView } from "../lib/ui-state";
 import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, registerRows, registerTranscript, transcriptRoot } from "../lib/jump";
 import type { RowTarget } from "../lib/older-rows";
 import type { ScrollSpot } from "../lib/transcript-cache";
 import { anchorCorrection, anchorIndex } from "../lib/scroll-anchor";
 import { carriedStart, chunkStart, fillStops, FIRST_CHUNK, type ImagesAt, initialStart, jumpStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
 import { usePaneId, usePaneScope } from "../lib/pane-scope";
-import { isAlignMarkOnly, isHiddenBlock, isTourResult, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, CARD_TOOLS } from "../lib/hidden-rows";
+import { isHiddenBlock, isTourResult, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
 import { chainRuns, type ChainRun } from "../lib/chain-rows";
 import { compressWork } from "../lib/work-compression";
-import { isChangeRow, isLoginNoteRow } from "../lib/change-rows";
-import { stripSessionHeader } from "../../shared/profiles";
+import { isChangeRow } from "../lib/change-rows";
 import { sendersOf } from "../../shared/senders";
-import { profileIconName } from "../lib/profiles";
-import { profileToolCard, ProfileToolCardView } from "./ProfileCards";
 import { isTurnStart } from "../lib/turn";
-import { parseWakeNudge } from "../../shared/wake";
-import { parseTopicBatch } from "../../shared/topic-message";
-import { ImageStrip } from "./ImageStrip";
-import { PathAttachment, PathText } from "./PathAttachment";
-import { ReportRow } from "./ReportRow";
-import { TeamMessageCard } from "./TeamMessageCard";
-import { AlignCard } from "./AlignCard";
-import { AlignRow } from "./AlignDocCard";
-import { ExplainCard } from "./ExplainCard";
-import { alignOf, alignRowFromDetails, latestAlignId, newestAlignRows } from "../lib/align";
-import { explainOf } from "../lib/explain";
-import { ReplyMarkdown } from "./ReplyMarkdown";
-import { ReplyTimingHead } from "./ReplyTiming";
-import type { ReplyTiming } from "../../shared/usage/perf";
+import { latestAlignId, newestAlignRows } from "../lib/align";
 import { replyHovers } from "../lib/perf";
-import { ToolCard, type ToolStatus } from "./ToolCard";
-import { WakeCard } from "./WakeCard";
-import { TopicCard } from "./TopicCard";
-import { WorktreeMergeCard } from "./WorktreeMergeCard";
-import { OwnerRequestNote } from "./OwnerRequestNote";
-import { ShowChangesCard } from "./ChangesViewer";
-import { TourCard } from "./TourCard";
+import { LiveRowsContext, ThreadRowsContext, useLiveRows, type LiveRows, type ThreadRows } from "./thread-rows";
+import { TurnError } from "./MessageRows";
 import { liveTourCalls, newestTourRows, tourFold, tourLine } from "../lib/tour-rows";
-import { normalizeTourCardDetails, TOUR_TOOLS } from "../../shared/tour";
-import { SubagentLimitRow } from "./SubagentLimitRow";
-import { rowProvider } from "../lib/subagent-limit";
-import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
-import { normalizeOfferDetails, OFFER_TOOL } from "../../shared/session-offers";
-import { OfferCardView } from "./OfferCard";
-import { SettingsToolCard } from "./SettingsChangeCard";
+import { normalizeShowChangesDetails } from "../../pi-config/extensions/show-changes/details";
+import { normalizeOfferDetails } from "../../shared/session-offers";
+import { normalizeCardDetails as normalizeRaisedCard } from "../../shared/transcript-cards";
 import { isSettingsToolDetails } from "../../shared/project-settings";
-/** The project overseer's settings tool: a propose draws its Settings change card. */
-const SETTINGS_TOOL = "sova_settings";
 import { Banner, Chip, Icon } from "./ui";
-import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow, useOverseerThread } from "./OverseerCards";
-import { cardFold, confirmAnswer, confirmDetails, isBriefText } from "../lib/overseer";
-import { CARD_TOOL, LEGACY_CONFIRM_TOOL, normalizeCardDetails } from "../../shared/overseer-card";
-import { MessageActions, type MessageActionItem } from "./MessageActions";
+import { cardFold, confirmAnswer, isBriefText } from "../lib/overseer";
+import type { MessageActionItem } from "./MessageActions";
 import { type MessageStrip, sameStrip, stripsByRow } from "../lib/message-actions";
 import { backWords } from "../lib/error-feed";
 import type { ReplyPlace } from "../lib/reply-place";
 import { ReplyPlaceView } from "./ReplyPlace";
+import { InfoRow } from "./InfoRow";
+import { TranscriptKindRow } from "./TranscriptKind";
+import { kindOf, liveBlockInput, liveEndsOf, liveKindOf, outsideWork, sameHit, type KindContext, type KindHit, type LiveBlockFacts, type LiveInput } from "../lib/transcript-kinds";
+import { isErroredTurnStop } from "../lib/turn";
 
 /** Whose transcript the rows inside are (lib/tool-content): a tool card asks it for the content its
     row doesn't carry. Absent: the rows carry all they draw. */
 export const ToolSourceContext = createContext<ToolSource | null>(null);
 
-/** "1:43 PM · 5m ago": the clock in mono, then its age, kept current by the one minute clock
-    every head shares. The age drops once it would only repeat the date (past 7 days). */
-function Stamp(props: { iso?: string }) {
-  const now = useMinuteNow();
-  return (
-    <Show when={props.iso}>
-      {(iso) => (
-        <span class="message-stamp" title={iso()}>
-          <span class="message-time">{stampTime(iso(), now())}</span>
-          <Show when={agoTime(iso(), now())}>{(ago) => <span class="message-ago"> · {ago()}</span>}</Show>
-        </span>
-      )}
-    </Show>
-  );
-}
 
-/** The head label for a message that hasn't been delivered yet. "Sending…" is only true while
-    nothing has acknowledged it; once the server says it holds the message, the truth is "Queued"
-    — it may sit there for minutes, until the agent next polls its queue. */
-const PENDING_LABEL: Partial<Record<LiveUserState, string>> = { sending: "Sending…", queued: "Queued" };
-
-/** A message Sova queued for itself (a group send from another surface, a remote status probe)
-    is still a message to this session, but it is not one you typed here — and a row that says
-    "You" over a message you never wrote is the kind of small lie that makes the rest suspect. */
-const AUTHOR = { client: "You", server: "Sent by Sova" } as const;
-
-function UserTurn(props: {
-  text: string;
-  time?: string;
-  state?: LiveUserState;
-  origin?: "client" | "server";
-  /** The Overseer sent this message (its `sova-overseer-sent` marker names this row). */
-  overseer?: boolean;
-  /** A baton participant's name (its `sova-baton-sent` marker names this row, §app.baton/attribution). */
-  sender?: string;
-  /** Another session sent this message (its `sova-session-sent` marker, §chat.profiles/delivery). */
-  fromSession?: { sessionId: string; title: string; hop?: number };
-  images?: string[];
-  attachments?: TmpAttachment[];
-}) {
-  const author = () =>
-    props.fromSession ? "From a session" : props.overseer ? "Overseer" : (props.sender ?? AUTHOR[props.origin ?? "client"]);
-  // The model reads the header line; the row shows it as the sender header instead.
-  const text = () => (props.fromSession ? stripSessionHeader(props.text) : props.text);
-  return (
-    <>
-    <Show when={props.fromSession}>
-      {(from) => (
-        <p class="session-sender">
-          <Icon name="network" small />
-          <span>
-            From <a href={`#/sid/${encodeURIComponent(from().sessionId)}`}>{from().title || "another session"}</a>
-          </span>
-          <Show when={from().hop !== undefined}>
-            <span class="text-muted">· hop {from().hop}</span>
-          </Show>
-        </p>
-      )}
-    </Show>
-    <article
-      class="message message-user"
-      classList={{ "message-from-session": !!props.fromSession }}
-      aria-label={props.time ? `${author()}, ${stampTime(props.time)}` : author()}
-    >
-      <div class="message-head">
-        <Show when={props.overseer} fallback={<span class="message-author">{author()}</span>}>
-          <span class="message-author overseer-author" title="Sent by the Overseer">
-            <Icon name="eye" small />
-            Overseer
-          </span>
-        </Show>
-        <Stamp iso={props.time} />
-        <Show when={props.state && PENDING_LABEL[props.state]}>
-          {(label) => <span class="message-pending">{label()}</span>}
-        </Show>
-      </div>
-      <ImageStrip images={props.images} where="in your message" />
-      <For each={props.attachments}>{(a) => <PathAttachment attachment={a} where="in your message" />}</For>
-      <Show when={text()}>
-        <div class="message-body message-text">{text()}</div>
-      </Show>
-    </article>
-    </>
-  );
-}
-
-function AssistantText(props: {
-  text: string;
-  author: string;
-  /** Full "provider/model" behind `author` (its short form), for hover. */
-  model?: string;
-  time?: string;
-  streaming?: boolean;
-  showHead: boolean;
-  attachments?: TmpAttachment[];
-  /** The reply's own measurement (its entry's `reply` fact): the head's time shows it. Absent: the
-      head is as it always was. */
-  timing?: ReplyTiming;
-}) {
-  const author = () => <span class="message-author text-mono" title={props.model}>{props.author}</span>;
-  return (
-    <article
-      class="message"
-      classList={{ "message-streaming": !!props.streaming }}
-      aria-label={props.time ? `${props.author}, ${stampTime(props.time)}` : props.author}
-    >
-      <Show when={props.showHead || props.streaming}>
-        <Show
-          when={!props.streaming && !!props.time && props.timing}
-          fallback={
-            <div class="message-head">
-              {author()}
-              <Show when={props.streaming}>
-                <span class="live-dot" />
-              </Show>
-              <Stamp iso={props.time} />
-            </div>
-          }
-        >
-          {(t) => <ReplyTimingHead timing={t()} author={author()} stamp={<Stamp iso={props.time} />} />}
-        </Show>
-      </Show>
-      <ReplyMarkdown text={props.text} streaming={props.streaming} attachments={props.attachments} />
-    </article>
-  );
-}
-
-/**
- * Tools the thread draws as a card rather than as a tool card: they carry the message (a question
- * with buttons, a link, a profile's session), not the working, so a chain never swallows one
- * `show_changes` joins them only when its details check out, which
- * the caller decides.
- */
-const CARD_RENDER_NAMES: ReadonlySet<string> = new Set([...CARD_TOOLS, "session_send", "sova_create_session"]);
+/** A call's facts, for asking its kind where it stands against the Work run: no live form's call match reads them. */
+const NO_FACTS: LiveBlockFacts = { author: () => "", model: () => undefined, streaming: () => false, showHead: () => false, timing: () => undefined, time: () => undefined };
 
 /**
  * Runs the reader has folded, by the run's own key. Module scope, not component state: the streaming
@@ -247,174 +87,8 @@ function ChainFold(props: { run: ChainRun & { key: string; failed: number; runni
   );
 }
 
-function Thinking(props: { text: string; streaming?: boolean }) {
-  const preview = () => {
-    const first = props.text.trim().split("\n")[0] ?? "";
-    return first.length > 80 ? `${first.slice(0, 80)}…` : first;
-  };
-  return (
-    <details class="disclosure">
-      <summary class="disclosure-summary">
-        <Icon name="chevron-right" small class="icon-twist" />
-        <span class="disclosure-label">Thinking</span>
-        <Show when={props.streaming}>
-          <span class="live-dot" />
-        </Show>
-        <Show when={preview()}>
-          <span class="disclosure-preview">· {preview()}</span>
-        </Show>
-      </summary>
-      <div class="disclosure-body thinking-body">{props.text}</div>
-    </details>
-  );
-}
-
-/** A baton entry in the operator's transcript (§app.baton/attribution): a hand-off, an offer and its
-    lease, a decision, a proposed person, the wrap-up, done. Typed as the full mark so kinds the
-    protocol field gains later render here once. */
-function BatonCard(props: { mark: Exclude<BatonMark, { kind: "sent" }>; name(ref: string): string; wrapupShown: boolean; onWrapupToggle(): void }) {
-  const m = props.mark;
-  const names = (refs: string[]) => refs.map(props.name).join(", ");
-  return (
-    <Switch>
-      <Match when={m.kind === "handoff" && m}>
-        {(h) => (
-          <aside class="baton-card" aria-label={`Hand-off ${h().n}`}>
-            <span class="baton-card-head">
-              Hand-off {h().n}: {props.name(h().from)} → {props.name(h().to)}
-            </span>
-            <div class="baton-card-body">{h().question}</div>
-            <Show when={h().briefing}>
-              <div class="baton-card-brief">Briefing: {h().briefing}</div>
-            </Show>
-          </aside>
-        )}
-      </Match>
-      <Match when={m.kind === "offer" && m}>
-        {(o) => (
-          <aside class="baton-card" aria-label={`Offer, hand-off ${o().n}`}>
-            <span class="baton-card-head">
-              Hand-off {o().n}: {props.name(o().from)} → offered to {names(o().to)}
-            </span>
-            <div class="baton-card-body">{o().question}</div>
-            <Show when={o().briefing}>
-              <div class="baton-card-brief">Briefing: {o().briefing}</div>
-            </Show>
-          </aside>
-        )}
-      </Match>
-      <Match when={m.kind === "lease" && m}>
-        {(l) => (
-          <p class="baton-card-line">
-            {l().event === "claimed" ? `${props.name(l().by)} took the offer.` : `${props.name(l().by)} went quiet, so the offer is open to every invitee again.`}
-          </p>
-        )}
-      </Match>
-      <Match when={m.kind === "decision" && m}>
-        {(d) => (
-          <aside class="baton-card" aria-label="Decision">
-            <span class="baton-card-head">
-              Decision · {d().area} · {props.name(d().by)}
-            </span>
-            <div class="baton-card-body">{d().statement}</div>
-            <div class="baton-card-quote">“{d().quote}”</div>
-          </aside>
-        )}
-      </Match>
-      <Match when={m.kind === "proposal" && m}>
-        {(r) => (
-          <aside class="baton-card" aria-label={`Proposed: ${r().name}`}>
-            <span class="baton-card-head">
-              Proposed for the roster · {r().name}
-              {r().role ? ` (${r().role})` : ""} · by {props.name(r().by)}
-            </span>
-            <div class="baton-card-body">{r().why}</div>
-          </aside>
-        )}
-      </Match>
-      <Match when={m.kind === "wrapup" && m}>
-        {(w) => {
-          const end = () => (w().phase === "end" ? (w() as Extract<BatonMark, { kind: "wrapup"; phase: "end" }>) : null);
-          return (
-            <Show
-              when={end()}
-              fallback={
-                <p class="baton-card-line">
-                  Wrap-up turn: it reads this session for profile updates and quotes profiles, so it's folded here.{" "}
-                  <button type="button" class="button button-sm button-ghost" aria-expanded={props.wrapupShown} onClick={() => props.onWrapupToggle()}>
-                    {props.wrapupShown ? "Fold Wrap-up Turn" : "Show Wrap-up Turn"}
-                  </button>
-                </p>
-              }
-            >
-              {(e) => (
-                <aside class="baton-card" aria-label="Wrap-up">
-                  <span class="baton-card-head">Wrap-up</span>
-                  <div class="baton-card-body">
-                    {e().error
-                      ? `Stopped: ${e().error} No profile changed after that.`
-                      : `${e().applied.length} profile ${e().applied.length === 1 ? "field" : "fields"} updated${e().refused.length ? `, ${e().refused.length} refused` : ""}.`}
-                  </div>
-                  <For each={e().applied}>{(a) => <div class="baton-card-brief">{props.name(a.personId)} · {a.field}</div>}</For>
-                  <For each={e().refused}>
-                    {(r) => (
-                      <div class="baton-card-brief">
-                        Refused: {props.name(r.personId)} · {r.field} — {r.reason}
-                      </div>
-                    )}
-                  </For>
-                </aside>
-              )}
-            </Show>
-          );
-        }}
-      </Match>
-      <Match when={m.kind === "done" && m}>
-        {(d) => (
-          <aside class="baton-card" aria-label="Done">
-            <span class="baton-card-head">Done</span>
-            <div class="baton-card-body">{d().summary}</div>
-          </aside>
-        )}
-      </Match>
-    </Switch>
-  );
-}
-
-export function InfoRow(props: { children: JSX.Element }) {
-  return (
-    <div class="info-row" role="note">
-      <span class="info-row-text">
-        <Icon name="info" small />
-        <span>{props.children}</span>
-      </span>
-    </div>
-  );
-}
-
-/** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is
-    the live dot while the fork writes; the result entry (same id) replaces it in place. */
-function HandoffRunRow(props: { run: HandoffRunInfo; text: string }) {
-  return (
-    <div class="info-row" role="note">
-      <span class="info-row-text">
-        <Show when={props.run.status === "running"} fallback={<Icon name="info" small />}>
-          {/* The explain card's 16px slot, so the dot sits where the icon would. */}
-          <span class="explain-card-live" aria-hidden="true">
-            <span class="live-dot" />
-          </span>
-        </Show>
-        <Show when={props.run.status === "failed"}>
-          <Chip tone="error">Failed</Chip>
-        </Show>
-        <Show when={props.run.status === "interrupted"}>
-          <Chip tone="warn">Interrupted</Chip>
-        </Show>
-        <span>{props.text}</span>
-      </span>
-    </div>
-  );
-}
+/** The info row moved to its own file with the info kind's view (TranscriptKind.tsx); kept here for its importers. */
+export { InfoRow };
 
 function Unknown(props: { raw: unknown }) {
   const type = () => (isObj(props.raw) ? str(props.raw.type) : undefined) ?? "unknown";
@@ -434,54 +108,8 @@ function Unknown(props: { raw: unknown }) {
   );
 }
 
-const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
-
-/** A compaction entry: where it happened in the thread, with its summary on demand. */
-function Compaction(props: { compaction: NonNullable<RowFacts["compaction"]> }) {
-  const tokens = () => props.compaction.tokensBefore ?? null;
-  const details = () => (isObj(props.compaction.details) ? props.compaction.details : {});
-  const read = () => strings(details().readFiles);
-  const changed = () => strings(details().modifiedFiles);
-  return (
-    <details class="disclosure compaction">
-      <summary class="disclosure-summary">
-        <Icon name="chevron-right" small class="icon-twist" />
-        <span class="disclosure-label">Compacted</span>
-        <span class="disclosure-preview">
-          <Show when={tokens() !== null} fallback="· earlier messages summarized">
-            · <span class="text-mono">{thousands(tokens()!)}</span> tokens summarized
-          </Show>
-        </span>
-      </summary>
-      <div class="disclosure-body">
-        <div class="compaction-summary">{props.compaction.summary ?? ""}</div>
-        <Show when={read().length > 0}>
-          <p class="toolcard-section-label">Files read</p>
-          <ul class="compaction-files">
-            <For each={read()}>{(f) => <li>{tildePath(f, home())}</li>}</For>
-          </ul>
-        </Show>
-        <Show when={changed().length > 0}>
-          <p class="toolcard-section-label">Files changed</p>
-          <ul class="compaction-files">
-            <For each={changed()}>{(f) => <li>{tildePath(f, home())}</li>}</For>
-          </ul>
-        </Show>
-      </div>
-    </details>
-  );
-}
-
-/** "The turn stopped with an error." Kept in the thread, in flow, so it stays in the record. */
-export function TurnError(props: { message: string }) {
-  return (
-    <Banner
-      tone="error"
-      title="The turn stopped with an error."
-      body={`${props.message.replace(/\.$/, "")}. Your messages are kept. Send again to retry.`}
-    />
-  );
-}
+/** The turn's error banner lives with the message rows (the running turn's error row draws it); kept here for its importers. */
+export { TurnError };
 
 /** "This chat didn't start." The chat's start failed, its server-side retry too (§chat.transcript/states):
     no turn ran, so never "The turn stopped…". `back`: messages that went back to the composer. */
@@ -495,12 +123,7 @@ export function StartError(props: { message: string; back: number }) {
   );
 }
 
-/** A transcript row that ends a turn on an error (the `${entryId}:stop` info row): the error's own
-    words sit in its text, its producer's model on the row. The server words it "Error…" for a
-    stop reason of "error" and "Aborted…" otherwise. */
-export function isErroredTurnStop(it: TranscriptItem): boolean {
-  return it.kind === "info" && it.id.endsWith(":stop") && (it.text ?? "").startsWith("Error");
-}
+export { isErroredTurnStop };
 
 /**
  * Stands in for the rows "Hide tool calls" and "Hide thinking" remove: each count, with any
@@ -589,16 +212,6 @@ export function HistoryItems(props: {
   const wrapupRows = createMemo(() => (showWrapup() ? new Set<string>() : wrapupRowIds(props.items)));
   /** Calls whose result is an alignment row: the row is the card, so the call has no row at all. */
   const alignCalls = createMemo(() => new Set(props.items.flatMap((it) => (it.kind === "align" && it.toolCallId ? [it.toolCallId] : []))));
-  const renderable = createMemo(() =>
-    props.items.filter((it) => !isChangeRow(it) && !wrapupRows().has(it.id) && !(it.kind === "tool-call" && it.toolCallId && alignCalls().has(it.toolCallId))),
-  );
-  const split = createMemo(() =>
-    props.hideTools || props.hideThinking ? splitHidden(renderable(), { tools: !!props.hideTools, thinking: !!props.hideThinking }) : null,
-  );
-  /** The rows rendered: all of them, or everything but tool rows while they're hidden. */
-  const rows = () => split()?.shown ?? renderable();
-  /** Measured replies: their first reply-text row's head shows the figures (its entry's `reply` fact). */
-  const timings = createMemo(() => replyHovers(props.items, entryIdOf, (r) => rowFacts(r)?.reply));
   const results = createMemo(() => {
     const byCall = new Map<string, TranscriptItem>();
     for (const it of props.items) if (it.kind === "tool-result" && it.toolCallId) byCall.set(it.toolCallId, it);
@@ -614,6 +227,11 @@ export function HistoryItems(props: {
     const r = callId ? results().get(callId) : undefined;
     return r && !toolResultView(r).isError ? normalizeOfferDetails(detailsOf(r)) : undefined;
   };
+  /** A `card` call's card, once it succeeded (§chat.transcript-cards/card-tool). */
+  const cardOf = (callId: string | undefined) => {
+    const r = callId ? results().get(callId) : undefined;
+    return r && !toolResultView(r).isError ? normalizeRaisedCard(detailsOf(r)) : undefined;
+  };
   /** A sova_settings propose's card, once it succeeded (§app.project-overseer/settings). */
   const settingsOf = (callId: string | undefined) => {
     const r = callId ? results().get(callId) : undefined;
@@ -625,6 +243,21 @@ export function HistoryItems(props: {
   const tourCards = createMemo(() => newestTourRows(props.items, props.liveTourIds));
   /** The full card, for the call that draws it. */
   const tourCardOf = (item: TranscriptItem) => (tourCards().has(item.id) ? tours().rows.get(item.id) : undefined);
+  /** The profile row shows once a message is on the branch (§chat.profiles/after-first-message). */
+  const hasUserRow = createMemo(() => props.items.some((it) => it.kind === "user"));
+  /** What a row's kind may ask of the whole list when it matches (lib/transcript-kinds.ts). */
+  const kinds: KindContext = { hasUserRow, tourCard: tourCardOf, showChanges: showChangesOf, offer: offerOf, settings: settingsOf, card: cardOf, hasCall: (id) => calls().has(id) };
+  // Every row stands where it was raised (§chat.transcript-cards/placement): nothing moves to the end.
+  const renderable = createMemo(() =>
+    props.items.filter((it) => !isChangeRow(it) && !wrapupRows().has(it.id) && !(it.kind === "tool-call" && it.toolCallId && alignCalls().has(it.toolCallId))),
+  );
+  const split = createMemo(() =>
+    props.hideTools || props.hideThinking ? splitHidden(renderable(), { tools: !!props.hideTools, thinking: !!props.hideThinking }) : null,
+  );
+  /** The rows rendered: all of them, or everything but tool rows while they're hidden. */
+  const rows = () => split()?.shown ?? renderable();
+  /** Measured replies: their first reply-text row's head shows the figures (its entry's `reply` fact). */
+  const timings = createMemo(() => replyHovers(props.items, entryIdOf, (r) => rowFacts(r)?.reply));
   /** An earlier call's one line: what it reported then, as its row carries it. */
   const tourEarlier = (item: TranscriptItem): string | undefined => {
     const d = tours().rows.get(item.id);
@@ -658,17 +291,8 @@ export function HistoryItems(props: {
   };
   const alignNewest = (item: TranscriptItem) => newestAligns().has(item.id) && !(item.align?.doc && props.liveAlignIds?.has(item.align.doc.id));
 
-  /** Whether a call draws a card rather than a tool card, by the render's own rule. */
-  const asCard = (it: TranscriptItem): boolean => {
-    if (it.kind !== "tool-call") return false;
-    if (it.text === SHOW_CHANGES_TOOL) return !!showChangesOf(it.toolCallId);
-    if (it.text === OFFER_TOOL) return !!offerOf(it.toolCallId);
-    if (it.text === SETTINGS_TOOL) return !!settingsOf(it.toolCallId);
-    // Every tour call breaks the timeline (§chat.transcript/work-chain): its card, an earlier
-    // call's one line (§app.tours/one-card) and a failure row alike stay outside compressed groups.
-    if (TOUR_TOOLS.has(it.text ?? "")) return true;
-    return cardRow(it) !== undefined || (CARD_RENDER_NAMES.has(it.text ?? "") && !isAlignMarkOnly(it.text, toolCallArgs(it)));
-  };
+  /** Whether a call stands outside the Work run: its kind says (lib/transcript-kinds.ts `outsideWork`, the live run's rule too). */
+  const asCard = (it: TranscriptItem): boolean => it.kind === "tool-call" && outsideWork(kindOf(it, kinds), it.text ?? "");
 
   /**
    * Consecutive visible working rows draw one timeline, a line per step instead of a card.
@@ -723,8 +347,6 @@ export function HistoryItems(props: {
   const senders = createMemo(() => sendersOf(props.items));
   const senderOf = (id: string) => senders().get(entryIdOf(id));
   const nameOf = (ref: string) => props.names?.[ref] ?? (ref === "operator" ? "You" : "Someone");
-  /** The profile row shows once a message is on the branch (§chat.profiles/after-first-message). */
-  const hasUserRow = createMemo(() => props.items.some((it) => it.kind === "user"));
   /**
    * Where the action strips go, by rendered-row index. One per ENTRY: a reply rendered as three
    * blocks is one message, and three strips under it would be three Regenerates for one turn.
@@ -738,6 +360,26 @@ export function HistoryItems(props: {
     return -1;
   });
   const openFrom = () => props.openFrom ?? lastUserIndex() + 1;
+  /** What the views of Sova's own kinds may ask of this list (components/thread-rows.ts). */
+  const threadRows: ThreadRows = {
+    author: () => props.author,
+    hasUserRow,
+    hasCall: (callId) => calls().has(callId),
+    result: (callId) => results().get(callId),
+    running: (i) => props.streaming && i >= openFrom(),
+    tourEarlier,
+    cardRow,
+    latestAlign,
+    alignNewest,
+    confirmAnswer: (item, details) => confirmAnswer(props.items, props.items.indexOf(item), details),
+    toolSource: () => toolSource,
+    row: (i) => rows()[i],
+    timing: (id) => timings().get(id),
+    senderOf,
+    nameOf,
+    wrapupShown: showWrapup,
+    toggleWrapup: () => setShowWrapup(!showWrapup()),
+  };
   /**
    * Tail-first (lib/tail-render): inside a transcript, the newest rows are built with the list and
    * the older ones prepended above them while the browser is idle, up to MAX_BUILT_ROWS, then as
@@ -867,6 +509,7 @@ export function HistoryItems(props: {
           </Show>
         </div>
       </Show>
+      <ThreadRowsContext.Provider value={threadRows}>
       <For each={built()}>
         {(item, local) => {
           const index = indexOf ? () => indexOf().get(item) ?? local() : local;
@@ -876,6 +519,18 @@ export function HistoryItems(props: {
           // arriving above (a tail-first hello's history), an append or a turn-end reload would
           // otherwise rebuild the buttons of every message on the page.
           const strip = createMemo(() => strips().get(index()), undefined, { equals: sameStrip });
+          /** The row's kind, by the toolkit's list in its order (lib/transcript-kinds.ts): the first that matches draws it. */
+          const hit = createMemo(() => kindOf(item, kinds), undefined, { equals: sameHit });
+          /** The row's hit, when the toolkit draws it. */
+          const drawn = (): KindHit | undefined => {
+            const h = hit();
+            return h?.kind.view ? h : undefined;
+          };
+          /** The row's height until it is first drawn: its kind's own estimate where the toolkit draws it. */
+          const rowEst = () => {
+            const h = drawn();
+            return rowEstimate(item, ...shownImages(item), !!chain(), foldedRun(chain()), !!chain()?.first, h?.kind.estimate?.(item, h.value));
+          };
           return (
           // A link message is a partner's, shown only in the Agents tab (§mesh.links/transcript):
           // no row at all here, not even the wrapper. It still counts as a turn start (above).
@@ -893,231 +548,14 @@ export function HistoryItems(props: {
             data-chain-last={chain()?.last ? "" : undefined}
             data-chain-folded={foldedRun(chain()) ? "" : undefined}
             data-entry={item.id}
-            style={{ "--entry-est": rowEstimate(item, ...shownImages(item), !!chain(), foldedRun(chain()), !!chain()?.first) }}
+            style={{ "--entry-est": rowEst() }}
           >
             <Show when={foldable(chain()) ? chain() : null}>{(run) => <ChainFold run={run()} />}</Show>
             <Switch fallback={<Unknown raw={item.entry} />}>
-              <Match when={item.kind === "user" && isBriefText(item.text)}>
-                <BriefRow text={item.text ?? ""} time={item.at} />
-              </Match>
-              <Match when={item.kind === "user"}>
-                <UserTurn
-                  text={item.text ?? ""}
-                  time={item.at}
-                  overseer={senderOf(item.id)?.kind === "overseer"}
-                  sender={((s) => (s?.kind === "baton" ? nameOf(s.by) : undefined))(senderOf(item.id))}
-                  fromSession={((s) => (s?.kind === "session" ? { sessionId: s.sessionId, title: s.title, hop: s.hop } : undefined))(senderOf(item.id))}
-                  images={item.images}
-                  attachments={item.attachments}
-                />
-              </Match>
-              {/* The sent marker draws nothing itself: it tags the row it names (above). */}
-              <Match when={item.overseerMark?.kind === "sent"}>{null}</Match>
-              <Match when={item.batonMark?.kind === "sent"}>{null}</Match>
-              <Match when={item.sessionMark?.kind === "sent"}>{null}</Match>
-              <Match when={item.profileMark}>
-                {(mark) => (
-                  <Show when={hasUserRow() && mark().profile}>
-                    {(p) => (
-                      <p class="profile-row" title="The profile this session runs with. It was fixed when the first message was sent.">
-                        <Icon name={profileIconName(p().icon)} small />
-                        {item.text}
-                      </p>
-                    )}
-                  </Show>
-                )}
-              </Match>
-              <Match when={item.batonMark && item.batonMark.kind !== "sent" && item.batonMark}>
-                {(mark) => <BatonCard mark={mark() as Exclude<BatonMark, { kind: "sent" }>} name={nameOf} wrapupShown={showWrapup()} onWrapupToggle={() => setShowWrapup(!showWrapup())} />}
-              </Match>
-              <Match when={item.overseerMark?.kind === "dialog-answer" && item.overseerMark}>
-                {(mark) => <OverseerChoiceRow title={mark().title} answer={mark().answer} />}
-              </Match>
-              <Match when={item.kind === "worktree-merge" && item.worktreeMerge}>
-                {(merge) => <WorktreeMergeCard merge={merge()} time={item.at} />}
-              </Match>
-              <Match when={item.kind === "wake" && item.wake}>
-                {(wake) => <WakeCard nudge={wake()} text={item.text ?? ""} time={item.at} />}
-              </Match>
-              <Match when={item.kind === "topic" && item.topic}>
-                {(batch) => <TopicCard batch={batch()} time={item.at} />}
-              </Match>
-              {/* Legacy: the retired spec card's row, still sent by older mesh peers. */}
-              <Match when={item.kind === "spec-turn"}>{null}</Match>
-              <Match when={item.kind === "assistant-text"}>
-                <AssistantText
-                  text={item.text ?? ""}
-                  author={modelLabel(item.model, item.answered) ?? props.author}
-                  model={[item.model, modelMismatch(item.model, item.answered)].filter(Boolean).join(" · ") || undefined}
-                  time={item.at}
-                  showHead={
-                    rows()[index() - 1]?.kind !== "assistant-text" || rows()[index() - 1]?.model !== item.model
-                  }
-                  attachments={item.attachments}
-                  timing={timings().get(item.id)}
-                />
-              </Match>
-              <Match when={item.kind === "thinking"}>
-                <Thinking text={item.text ?? ""} />
-              </Match>
-              <Match when={item.kind === "align" && item.align}>{(row) => <AlignRow row={row()} newest={alignNewest(item)} />}</Match>
-              <Match when={item.kind === "report" && item.report && alignOf(item.report)}>
-                {(align) => (
-                  <Show when={item.id === latestAlign()} fallback={<span class="align-superseded" hidden />}>
-                    <AlignCard report={item.report!} align={align()} attachments={item.attachments} />
-                  </Show>
-                )}
-              </Match>
-              <Match when={item.kind === "report" && item.report && explainOf(item.report)}>
-                {(explain) => <ExplainCard explain={explain()} />}
-              </Match>
-              <Match when={item.kind === "report" && item.report?.team}>
-                {(team) => <TeamMessageCard report={item.report!} team={team()} time={item.at} attachments={item.attachments} />}
-              </Match>
-              <Match when={item.kind === "report" && item.report}>
-                {(report) => <ReportRow report={report()} attachments={item.attachments} />}
-              </Match>
-              {/* An owner request a Start Chat put at the top (§app.project-assistant/request-chat). */}
-              <Match when={item.kind === "info" && item.ownerRequest}>{(card) => <OwnerRequestNote card={card()} />}</Match>
-              <Match when={item.kind === "info" && item.handoffRun}>
-                {(run) => <HandoffRunRow run={run()} text={item.text ?? ""} />}
-              </Match>
-              <Match when={item.kind === "info" && rowFacts(item)?.compaction}>
-                {(compaction) => <Compaction compaction={compaction()} />}
-              </Match>
-              {/* A Claude login note waits for the first message, like the profile row. */}
-              <Match when={isLoginNoteRow(item) && !hasUserRow()}>{null}</Match>
-              <Match when={item.kind === "info"}>
-                <>
-                  <InfoRow>
-                    <PathText text={item.text ?? ""} attachments={item.attachments} />
-                  </InfoRow>
-                  {/* A turn that ended on an error keeps its "Error: …" row (the transcript's
-                      `${entryId}:stop`); the limit row rides beside it with that turn's own
-                      provider (the row's `model` — never the session's current one). */}
-                  <Show when={props.limitPath && isErroredTurnStop(item) ? { path: props.limitPath, item } : null}>
-                    {(x) => <SubagentLimitRow path={x().path} message={x().item.text?.replace(/^Error: /, "") ?? ""} provider={rowProvider(x().item.model)} />}
-                  </Show>
-                </>
-              </Match>
-              {/* A show_changes result whose details check out reads as a card that opens the
-                  changes viewer (§chat.changes/show-changes-card); anything else, a tool card. */}
-              <Match when={item.kind === "tool-call" && tourCardOf(item)}>
-                {(details) => <TourCard details={details()} />}
-              </Match>
-              <Match when={item.kind === "tool-call" && item.text === SHOW_CHANGES_TOOL && showChangesOf(item.toolCallId)}>
-                {(details) => <ShowChangesCard details={details()} />}
-              </Match>
-              <Match when={item.kind === "tool-call" && item.text === OFFER_TOOL && offerOf(item.toolCallId)}>
-                {(card) => <OfferCardView card={card()} />}
-              </Match>
-              <Match when={item.kind === "tool-call" && item.text === SETTINGS_TOOL && settingsOf(item.toolCallId)}>
-                {(details) => <SettingsToolCard details={details()} />}
-              </Match>
-              <Match when={item.kind === "tool-call"}>
-                {(() => {
-                  const view = () => {
-                    const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
-                    return r ? toolResultView(r) : undefined;
-                  };
-                  const status = (): ToolStatus => {
-                    const v = view();
-                    if (v) return v.isError ? "error" : "done";
-                    return props.streaming && index() >= openFrom() ? "running" : "none";
-                  };
-                  const resultDetails = () => {
-                    const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
-                    return r ? detailsOf(r) : undefined;
-                  };
-                  // A legacy card (from before card ids): read-only, answered by the rule it had then.
-                  const confirm = () =>
-                    item.text === LEGACY_CONFIRM_TOOL && status() !== "error"
-                      ? (confirmDetails(resultDetails()) ?? confirmDetails(toolCallArgs(item)))
-                      : null;
-                  const card = () => (item.text === CARD_TOOL && status() === "done" ? cardRow(item) : undefined);
-                  /** A made or ended link reads as a card naming its members (§app.overseer/links-tools);
-                      running or failed, the plain tool card. */
-                  const linked = () =>
-                    (item.text === "sova_link" || item.text === "sova_unlink") && status() === "done" ? linkDetails(resultDetails()) : null;
-                  /** session_send and a profile's sova_create_session read as cards (§chat.profiles/delivery). */
-                  /** The arguments and output its rows don't carry, asked for by the call's row id. */
-                  const lazy = createMemo(() => {
-                    const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
-                    if (!toolSource || !(item.tool?.lazy || r?.tool?.lazy)) return undefined;
-                    return toolContent.handle(toolSource, item.id, { resultId: r?.id, callId: item.toolCallId, size: (item.tool?.bytes ?? 0) + (r?.tool?.bytes ?? 0) });
-                  });
-                  const profileCard = () => profileToolCard(item.text, status(), toolCallArgs(item), resultDetails(), view()?.output);
-                  return (
-                    <Show
-                      when={!card()}
-                      fallback={
-                        <Show when={card()!.newest} fallback={<CardRevision card={card()!.card} line={card()!.details.line} />}>
-                          <DeckCard card={card()!.card} line={card()!.details.line} />
-                        </Show>
-                      }
-                    >
-                    <Show
-                      when={confirm()}
-                      fallback={
-                    <Show
-                      when={linked()}
-                      fallback={
-                    <Show
-                      when={profileCard()}
-                      fallback={
-                    <ToolCard
-                      name={item.text ?? "tool"}
-                      args={toolCallArgs(item)}
-                      summary={tourEarlier(item) ?? item.tool?.summary}
-                      stats={(item.text === "edit" || item.text === "write") && item.toolCallId ? results().get(item.toolCallId)?.tool?.stats : undefined}
-                      calls={item.toolCallId ? results().get(item.toolCallId)?.tool?.calls : undefined}
-                      lazy={lazy()}
-                      details={resultDetails()}
-                      status={status()}
-                      output={view()?.output}
-                      images={item.toolCallId ? results().get(item.toolCallId)?.images : undefined}
-                      attachments={item.toolCallId ? results().get(item.toolCallId)?.attachments : undefined}
-                      action={item.text === "sova_navigate" && status() === "done" ? <NavigateGo details={resultDetails()} /> : undefined}
-                    />
-                      }
-                    >
-                      {(card) => <ProfileToolCardView card={card()} />}
-                    </Show>
-                      }
-                    >
-                      {(d) => <LinkCard details={d()} ended={item.text === "sova_unlink"} />}
-                    </Show>
-                      }
-                    >
-                      {(details) => {
-                        const answer = () => confirmAnswer(props.items, props.items.indexOf(item), details());
-                        return <ConfirmCard details={details()} answered={answer().answered} choice={answer().choice} />;
-                      }}
-                    </Show>
-                    </Show>
-                  );
-                })()}
-              </Match>
-              <Match when={item.kind === "tool-result"}>
-                {/* Paired results render inside their call's card; orphans get their own. */}
-                <Show when={!item.toolCallId || !calls().has(item.toolCallId)}>
-                  {(() => {
-                    const view = toolResultView(item);
-                    const lazy = toolSource && item.tool?.lazy ? toolContent.handle(toolSource, item.id, { resultId: item.id, size: item.tool.bytes }) : undefined;
-                    return (
-                      <ToolCard
-                        name="result"
-                        args={undefined}
-                        lazy={lazy}
-                        status={view.isError ? "error" : "done"}
-                        output={view.output}
-                        images={item.images}
-                        attachments={item.attachments}
-                      />
-                    );
-                  })()}
-                </Show>
-              </Match>
+              {/* Rows the toolkit draws, each in its own error box. */}
+              <Match when={drawn()}>{(h) => <TranscriptKindRow hit={h()} item={item} limitPath={props.limitPath} index={index} reserve={rowEst()} />}</Match>
+              {/* The kinds that draw nothing (a sent marker, a paired result). */}
+              <Match when={hit()?.kind.drawsNothing}>{null}</Match>
             </Switch>
             {/* Under the bubble, once per entry (see `strips`): the reply place. */}
             <Show when={strip()}>{(strip) => <ReplyPlaceView place={props.actions!} strip={strip()} />}</Show>
@@ -1127,6 +565,7 @@ export function HistoryItems(props: {
           );
         }}
       </For>
+      </ThreadRowsContext.Provider>
       <Show when={split()?.hidden.length ? split() : null}>
         {(s) => (
           <HiddenRows calls={s().calls} failed={s().failed} thinking={s().thinking}>
@@ -1138,113 +577,29 @@ export function HistoryItems(props: {
   );
 }
 
-function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: string; model?: string; streaming: boolean; showHead: boolean; timing?: ReplyTiming; time?: string }) {
-  const overseerThread = useOverseerThread();
-  return (
-    <Switch>
-      <Match when={props.block.type === "text" && props.block}>
-        {(b) => (
-          <Show when={b().text}>
-            <AssistantText text={b().text} author={props.author} model={props.model} streaming={props.streaming} showHead={props.showHead} timing={props.timing} time={props.timing ? props.time : undefined} />
-          </Show>
-        )}
-      </Match>
-      <Match when={props.block.type === "thinking" && props.block}>
-        {(b) => <Thinking text={b().text} streaming={props.streaming} />}
-      </Match>
-      <Match when={props.block.type === "toolCall" && props.block}>
-        {(b) => {
-          const tool = () => props.live.tools[b().id];
-          const status = (): ToolStatus => {
-            const t = tool();
-            if (t) return t.status;
-            return props.live.running ? "running" : "none";
-          };
-          /** A card this run raised or changed: the card itself, as soon as the result lands. */
-          const card = () => (b().name === CARD_TOOL && status() === "done" ? normalizeCardDetails(tool()?.details) : undefined);
-          /** The card at the fold's newest snapshot; null when a later call (this run's too) changed
-              it since this one, so this call is a revision line and never takes a click. */
-          const deck = () => {
-            const own = card()?.card;
-            if (!own) return undefined;
-            const newest = overseerThread?.card?.(own.id) ?? own;
-            return newest.rev > own.rev ? null : newest;
-          };
-          const linked = () => ((b().name === "sova_link" || b().name === "sova_unlink") && status() === "done" ? linkDetails(tool()?.details) : null);
-          // A finished call keeps what it streamed for the settled row that replaces this one, so a
-          // card open now stays drawn while the fetch asks the session file (lib/tool-content).
-          const toolSource = useContext(ToolSourceContext);
-          createEffect(() => {
-            const t = tool();
-            if (!toolSource || !t || (t.status !== "done" && t.status !== "error")) return;
-            const args = b().args ?? t.args;
-            toolContent.seed(toolSource, b().id, {
-              ...(args !== undefined ? { args } : {}),
-              result: { output: t.output, isError: t.status === "error", ...(t.details !== undefined ? { details: t.details } : {}) },
-            });
-          });
-          /** An align result that changed an alignment: its card, as soon as the result lands. */
-          const aligned = () => (b().name === "align" && status() === "done" ? alignRowFromDetails(tool()?.details) : undefined);
-          /** A show_changes result: its card, as soon as the call finishes (§chat.changes/show-changes-card). */
-          const changes = () => (b().name === SHOW_CHANGES_TOOL && status() === "done" ? normalizeShowChangesDetails(tool()?.details) : undefined);
-          const tourDone = () => (TOUR_TOOLS.has(b().name) && status() === "done" ? normalizeTourCardDetails(tool()?.details) : undefined);
-          /** The card only on this run's newest call for its tour; an earlier one reads as its line (§app.tours/one-card). */
-          const tour = () => {
-            const d = tourDone();
-            return d && liveTourCalls(props.live.tools).get(d.tourId) === b().id ? d : undefined;
-          };
-          const tourEarlier = () => {
-            const d = tourDone();
-            return d && !tour() ? tourLine(d) : undefined;
-          };
-          const offer = () => (b().name === OFFER_TOOL && status() === "done" ? normalizeOfferDetails(tool()?.details) : undefined);
-          const settingsCard = () => {
-            const d = b().name === SETTINGS_TOOL && status() === "done" ? tool()?.details : undefined;
-            return isSettingsToolDetails(d) && (d.card || d.appliedNow.length) ? d : undefined;
-          };
-          return (
-            <Show when={!settingsCard()} fallback={<SettingsToolCard details={settingsCard()!} />}>
-            <Show when={!offer()} fallback={<OfferCardView card={offer()!} />}>
-            <Show when={!tour()} fallback={<TourCard details={tour()!} />}>
-            <Show when={!changes()} fallback={<ShowChangesCard details={changes()!} />}>
-            <Show when={!aligned()} fallback={<div class="entry-live-align" data-align-live={aligned()?.doc?.id}><AlignRow row={aligned()!} newest /></div>}>
-            <Show
-              when={!card()?.card}
-              fallback={
-                <Show when={deck()} fallback={<CardRevision card={card()!.card!} line={card()!.line} />}>
-                  {(c) => <DeckCard card={c()} line={card()!.line} />}
-                </Show>
-              }
-            >
-                <Show
-                  when={linked()}
-                  fallback={
-                    <ToolCard
-                      name={b().name}
-                      summary={tourEarlier()}
-                      args={b().args ?? tool()?.args}
-                      argsText={b().argsText}
-                      details={tool()?.details}
-                      status={status()}
-                      output={tool()?.output}
-                      images={tool()?.images}
-                      action={b().name === "sova_navigate" && status() === "done" ? <NavigateGo details={tool()?.details} /> : undefined}
-                    />
-                  }
-                >
-                  {(d) => <LinkCard details={d()} ended={b().name === "sova_unlink"} />}
-                </Show>
-            </Show>
-            </Show>
-            </Show>
-            </Show>
-            </Show>
-            </Show>
-          );
-        }}
-      </Match>
-    </Switch>
-  );
+/**
+ * One piece of the running turn (a message going in, a streamed block, a call, the reply's end), drawn
+ * by the first kind whose live form matches it (lib/transcript-kinds.ts `liveKindOf`) in the toolkit's
+ * host, as a settled row is. A finished call also keeps what it streamed for the settled row that
+ * replaces this one, so a card open now stays drawn while the fetch asks the session file
+ * (lib/tool-content).
+ */
+function LiveRow(props: { input: LiveInput }) {
+  const rows = useLiveRows();
+  const input = props.input;
+  const hit = createMemo(() => liveKindOf(input, rows), undefined, { equals: sameHit });
+  const toolSource = useContext(ToolSourceContext);
+  if (input.kind === "call")
+    createEffect(() => {
+      const t = rows.tool(input.block.id);
+      if (!toolSource || !t || (t.status !== "done" && t.status !== "error")) return;
+      const args = input.block.args ?? t.args;
+      toolContent.seed(toolSource, input.block.id, {
+        ...(args !== undefined ? { args } : {}),
+        result: { output: t.output, isError: t.status === "error", ...(t.details !== undefined ? { details: t.details } : {}) },
+      });
+    });
+  return <Show when={hit()}>{(h) => <TranscriptKindRow hit={h()} input={input} />}</Show>;
 }
 
 /** The in-progress run assembled from streaming events. `hideTools` and `hideThinking` drop those
@@ -1294,19 +649,13 @@ export function LiveEntries(props: {
         if (e.stoppedAt || e.error) blocks.push(null);
       }
     }
+    // A call is a step unless its kind keeps it out, by the settled rows' own rule (`outsideWork`):
+    // a call whose kind keeps it out never joins the run only to leave it at the handover.
+    const ctx = { tool: (id: string) => props.live.tools[id], tourCall: (id: string) => liveTourCalls(props.live.tools).get(id) };
     const working = blocks.map((b) => {
       if (b?.type === "thinking") return true;
       if (b?.type !== "toolCall") return false;
-      if (b.name === SHOW_CHANGES_TOOL) {
-        const tool = props.live.tools[b.id];
-        return !(tool?.status === "done" && normalizeShowChangesDetails(tool.details));
-      }
-      if (b.name === OFFER_TOOL) {
-        const tool = props.live.tools[b.id];
-        return !(tool?.status === "done" && normalizeOfferDetails(tool.details));
-      }
-      if (TOUR_TOOLS.has(b.name)) return false;
-      return !CARD_RENDER_NAMES.has(b.name) || isAlignMarkOnly(b.name, b.args);
+      return !outsideWork(liveKindOf(liveBlockInput(b, NO_FACTS), ctx), b.name);
     });
     const skip = blocks.map((b) => b !== null && !shows(b));
     // A streaming run folds under its own key: it has no entry id yet, and its block list only
@@ -1332,8 +681,19 @@ export function LiveEntries(props: {
     return runs;
   });
   const liveChainOf = (block: LiveBlock) => liveChains().get(block) ?? undefined;
+  /** What the live views may ask of this run (components/thread-rows.ts `LiveRows`). */
+  const liveRows: LiveRows = {
+    live: () => props.live,
+    tool: (callId) => props.live.tools[callId],
+    tourCall: (tourId) => liveTourCalls(props.live.tools).get(tourId),
+    names: () => props.names,
+    limitPath: () => props.limitPath,
+    get queueActions() {
+      return props.queueActions;
+    },
+  };
   return (
-    <>
+    <LiveRowsContext.Provider value={liveRows}>
       <For each={props.live.entries}>
         {(entry: LiveEntry) => (
           /* What the last row read (ThreadScroller `spot`) needs of a live message: the entry it was
@@ -1344,43 +704,8 @@ export function LiveEntries(props: {
             data-queued={entry.kind === "user" && !entry.started && !entry.entryId ? "" : undefined}
           >
           <Switch>
-            <Match when={entry.kind === "user" && entry}>
-              {(e) => (
-                <Show
-                  when={parseWakeNudge(e().text)}
-                  fallback={
-                    <Show when={parseTopicBatch(e().text)} fallback={
-                    <Show when={!isBriefText(e().text)} fallback={<BriefRow text={e().text} />}>
-                    {
-                    /* A queued row has no `.entry` around it, so it brings the hover/tap region
-                       its Remove needs to be revealed by (base.css; `display: contents`, so the
-                       wrapper changes nothing about how the row lays out). */
-                    <div class="message-actions-host">
-                      <UserTurn
-                        text={e().attachments ? stripPastedPaths(e().text) : e().text}
-                        state={shownUserState(e())}
-                        origin={e().origin}
-                        overseer={e().overseer}
-                        fromSession={e().fromSession}
-                        sender={e().by ? (props.names?.[e().by!] ?? (e().by === "operator" ? "You" : "Someone")) : undefined}
-                        images={e().images}
-                        attachments={e().attachments}
-                      />
-                      <Show when={props.queueActions && e().state !== "delivered" ? props.queueActions(e()) : null}>
-                        {(items) => <Show when={items().length > 0}><MessageActions label="Actions for your queued message" align="end" items={items()} /></Show>}
-                      </Show>
-                    </div>
-                    }
-                    </Show>
-                    }>
-                      {(batch) => <TopicCard batch={batch()} />}
-                    </Show>
-                  }
-                >
-                  {(wake) => <WakeCard nudge={wake()} text={e().text} />}
-                </Show>
-              )}
-            </Match>
+            {/* A message going in: a wake, a topic batch, a brief or a turn of yours (lib/transcript-kinds.ts). */}
+            <Match when={entry.kind === "user" && entry}>{(e) => <LiveRow input={{ kind: "user", entry: e() }} />}</Match>
             <Match when={entry.kind === "assistant" && entry}>
               {(e) => (
                 <>
@@ -1388,18 +713,15 @@ export function LiveEntries(props: {
                   <For each={e().blocks}>
                     {(block, i) => {
                       const chain = () => liveChainOf(block);
-                      const view = () => (
-                        <LiveBlockView
-                          block={block}
-                          live={props.live}
-                          author={modelLabel(e().model) ?? props.author}
-                          model={e().model}
-                          streaming={blockStreams(e(), i())}
-                          showHead={shownBefore(e().blocks, i())?.type !== "text"}
-                          timing={e().done && e().reply && firstText(e().blocks) === i() ? e().reply : undefined}
-                          time={e().endedAt}
-                        />
-                      );
+                      const input = liveBlockInput(block, {
+                        author: () => modelLabel(e().model) ?? props.author,
+                        model: () => e().model,
+                        streaming: () => blockStreams(e(), i()),
+                        showHead: () => shownBefore(e().blocks, i())?.type !== "text",
+                        timing: () => (e().done && e().reply && firstText(e().blocks) === i() ? e().reply : undefined),
+                        time: () => e().endedAt,
+                      });
+                      const view = () => <LiveRow input={input} />;
                       return (
                       <Show when={shows(block) && !foldedStep(chain())}>
                         <Show when={compressWork()} fallback={view()}>
@@ -1418,21 +740,8 @@ export function LiveEntries(props: {
                       );
                     }}
                   </For>
-                  <Show when={e().stoppedAt}>
-                    <InfoRow>
-                      Stopped by you at <code>{stampTime(e().stoppedAt!)}</code>.
-                    </InfoRow>
-                  </Show>
-                  <Show when={e().error}>
-                    {(err) => (
-                      <>
-                        <TurnError message={err()} />
-                        {/* The failure's own row carries its own provider (its producing model) —
-                            never a worker's, never the chat model of right now. */}
-                        <Show when={props.limitPath}>{(p) => <SubagentLimitRow path={p()} message={err()} provider={rowProvider(e().model)} />}</Show>
-                      </>
-                    )}
-                  </Show>
+                  {/* The reply's end: stopped by you, or its error. */}
+                  <For each={liveEndsOf(e())}>{(end) => <LiveRow input={end} />}</For>
                 </>
               )}
             </Match>
@@ -1445,13 +754,13 @@ export function LiveEntries(props: {
           <HiddenRows calls={h().calls} failed={h().failed} running={h().running} thinking={h().thinking}>
             {() => (
               <For each={hiddenBlocks()}>
-                {(b) => <LiveBlockView block={b} live={props.live} author={props.author} streaming={hiddenStreams(b)} showHead={false} />}
+                {(b) => <LiveRow input={liveBlockInput(b, { author: () => props.author, model: () => undefined, streaming: () => hiddenStreams(b), showHead: () => false, timing: () => undefined, time: () => undefined })} />}
               </For>
             )}
           </HiddenRows>
         )}
       </Show>
-    </>
+    </LiveRowsContext.Provider>
   );
 }
 

@@ -55,7 +55,7 @@ const PLAYWRIGHT_DISABLED_FEATURES = `--disable-features=${PLAYWRIGHT_FEATURES.j
 const TOUR_DISABLED_FEATURES = `--disable-features=${[...PLAYWRIGHT_FEATURES, "NetworkPrediction", "SpeculationRulesPrefetchFuture", "SpeculationRulesPrefetchProxy", "Prerender2", "PreloadingHeuristics", "LinkPreconnect"].join(",")}`;
 
 /** Fresh temporary profile and pipe-based Playwright transport, never a personal CDP browser. */
-export async function launchTourBrowser(executablePath = discoverTourBrowser()): Promise<Browser> {
+export async function launchTourBrowser(executablePath = discoverTourBrowser(), opts: { webrtcUdp?: boolean } = {}): Promise<Browser> {
   const proxy = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY ?? process.env.https_proxy ?? process.env.http_proxy;
   // Crashpad/XDG must never fall back to the inherited read-only HOME or a personal profile.
   const { root, paths, cleanup } = createTourBrowserStorage();
@@ -65,7 +65,9 @@ export async function launchTourBrowser(executablePath = discoverTourBrowser()):
     env: { ...process.env, ...paths },
     // The controller and browser are already inside the chat's OS sandbox. Chromium's inner
     // user-namespace sandbox cannot nest on every host; disabling it does not remove the outer one.
-    args: [`--crash-dumps-dir=${join(root, "crashes")}`, "--no-sandbox", "--disable-dev-shm-usage", "--disable-quic", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+    args: [`--crash-dumps-dir=${join(root, "crashes")}`, "--no-sandbox", "--disable-dev-shm-usage", "--disable-quic",
+      // A test of a wall that must hold WebRTC itself (the card box's) asks for the user's default.
+      ...(opts.webrtcUdp ? [] : ["--force-webrtc-ip-handling-policy=disable_non_proxied_udp"]),
       // No speculative contact outside the per-request consent and address checks: no DNS prefetch,
       // preconnect, speculation-rules prefetch/prerender or background networking.
       "--dns-prefetch-disable", "--disable-background-networking", "--disable-blink-features=SpeculationRules", TOUR_DISABLED_FEATURES],

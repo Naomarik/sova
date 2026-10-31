@@ -2,6 +2,7 @@ import type { AssistantInfo, AssistantOlder, AssistantView, PricedPick, VersionS
 import type { OrgClaudeLogin, ProjectClaudeLogin } from "../../shared/projects";
 import type { ModelPick, WorkModels } from "../../shared/powers";
 import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
+import type { CardAnswerValue, CardInfo, ProjectCardsAnswer, SessionCardsAnswer } from "../../shared/transcript-cards";
 import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow } from "../../shared/project-settings";
 import type { ProfilesListing } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
@@ -121,7 +122,7 @@ import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, Host
 import type { MeshResync, ResyncJob, ResyncStart } from "../../shared/mesh-resync";
 import type { LinkSeen, LinkThread } from "../../shared/mesh-links";
 import type { MonitorHistory, MonitorResolution, MonitorSnapshot } from "../../shared/protocol";
-import type { UpdatesSettings, UpdatesState } from "../../shared/protocol";
+import type { RestartScheduled, UpdatesSettings, UpdatesState } from "../../shared/protocol";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { ModelPolicy } from "./model-policy";
 import type {
@@ -469,6 +470,8 @@ export const checkUpdates = () => request<UpdatesState>("/api/updates/check", { 
 export const putUpdatesSettings = (settings: UpdatesSettings) => request<UpdatesState>("/api/updates/settings", { method: "PUT", body: JSON.stringify(settings) });
 /** Start the upgrade to `target`, the commit the last check offered. */
 export const applyUpdate = (target: string) => request<UpdatesState>("/api/updates/apply", { method: "POST", body: JSON.stringify({ target, confirm: true }) });
+/** Restart Sova (Settings → General): 202 once its service is scheduled to restart a few seconds later. */
+export const restartSova = () => request<RestartScheduled>("/api/updates/restart", { method: "POST" });
 
 /** The align mode's writing style and Visuals (GET /api/settings/align, mode-align.json). */
 export const getAlignSettings = () => request<AlignSettingsInfo>("/api/settings/align");
@@ -1616,3 +1619,34 @@ export const undoSettingsRow = (projectId: string, id: string) =>
 export const getProjectOffers = (projectId: string) => request<ProjectOffersAnswer>(`${projectPath(projectId)}/offers`, { cache: "no-store" });
 export const approveProjectOfferRuns = (projectId: string, fingerprint: string) =>
   request<ProjectOffersAnswer>(`${projectPath(projectId)}/offers/approve`, { method: "POST", body: JSON.stringify({ fingerprint }) });
+
+// ---- transcript cards: a session's cards, answering one, trusting a project's cards (§chat/transcript-cards) ----
+
+export const getSessionCards = (path: string) => request<SessionCardsAnswer>(`/api/session-cards?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+/** A press on a card, at once; `sent`: a gathered pick recorded once its message went out. A refusal that needs trust carries `needsTrust` in its body. */
+export const answerSessionCard = (path: string, card: string, answer: CardAnswerValue, sent = false) =>
+  request<{ card: CardInfo }>("/api/session-cards/answer", { method: "POST", body: JSON.stringify({ path, card, answer, ...(sent ? { sent } : {}) }) });
+/** Trust a project's cards to act, or stop: a trust grant, from this page only. */
+/** An extension's cards' trust, for its page (§chat.transcript-cards/trust). */
+export const getExtensionCardsTrust = (id: string) => request<{ owner: string; name: string; trusted: boolean }>(`/api/session-cards/trust?ext=${encodeURIComponent(id)}`, { cache: "no-store" });
+/** A drawing kind's built view (§chat.transcript-cards/drawing-kinds), the way getCardView gets a card's. */
+export const getDrawingView = (path: string, kind: string, have?: string | null, wait = false, signal?: AbortSignal) =>
+  request<{ ok: true; hash: string; code: string } | { ok: false; hash: string; error: string; outdated?: boolean }>(
+    `/api/session-cards/drawing?path=${encodeURIComponent(path)}&kind=${encodeURIComponent(kind)}${have ? `&have=${encodeURIComponent(have)}` : ""}${wait ? "&wait=1" : ""}`,
+    { cache: "no-store", ...(signal ? { signal } : {}) },
+  );
+export const setCardTrust = (owner: string, on: boolean) => request<{ owner: string; trusted: boolean }>("/api/session-cards/trust", { method: "POST", body: JSON.stringify({ owner, on }) });
+/** A view card's built code (§chat.transcript-cards/building): at once, or with `have` and `wait`, once a save changes it. */
+export const getCardView = (path: string, type: string, have?: string | null, wait = false, signal?: AbortSignal) =>
+  request<{ ok: true; hash: string; code: string } | { ok: false; hash: string; error: string; outdated?: boolean }>(
+    `/api/session-cards/view?path=${encodeURIComponent(path)}&type=${encodeURIComponent(type)}${have ? `&have=${encodeURIComponent(have)}` : ""}${wait ? "&wait=1" : ""}`,
+    { cache: "no-store", ...(signal ? { signal } : {}) },
+  );
+/** The state Sova keeps for a view's card. */
+export const setSessionCardState = (path: string, card: string, state: unknown) =>
+  request<{ ok: true }>("/api/session-cards/state", { method: "POST", body: JSON.stringify({ path, card, state }) });
+/** A view's command, run as its card; a refusal that needs trust carries `needsTrust` in its body. */
+export const runSessionCardCommand = (path: string, card: string, command: string, params: unknown) =>
+  request<{ ok: boolean; status: number; body: unknown }>("/api/session-cards/run", { method: "POST", body: JSON.stringify({ path, card, command, params }) });
+/** A project's card folders on its main checkout, read now, and whether its cards are trusted. */
+export const getProjectCards = (projectId: string) => request<ProjectCardsAnswer>(`${projectPath(projectId)}/cards`, { cache: "no-store" });

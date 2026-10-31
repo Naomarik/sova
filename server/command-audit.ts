@@ -6,7 +6,9 @@
 // line, scripts, a chat's tools, the link extension, an extension's backend. A browser
 // (cookie only), the page, in-process calls and the peer listener never come here, and neither does
 // a call the gate let in without the token (an exempt path, auth off), so only the token's holder
-// can add a row. A row is `{at, caller, command?, method, route, status}`: the route as the server
+// can add a row. One more kind of row: a transcript card's view running a command through the page
+// (caller `card:<type>`, §chat.transcript-cards/view-api), which the server itself notes when it runs
+// it (server/transcript-cards-routes.ts). A row is `{at, caller, command?, method, route, status}`: the route as the server
 // registers it, never the request's path, query, body or headers.
 //
 // Off the request path: note() only queues (at most QUEUE_MAX rows, ~2 MB, the oldest dropped and counted);

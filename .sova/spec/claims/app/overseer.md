@@ -1634,6 +1634,10 @@ host's session files. The reply is never changed, and the client still links eve
   It opens a flyout listing the quick actions, each with its label and a short description.
   Picking one sends its prompt (queued as a follow-up while a turn runs). The Overseer's memory
   switch sits just before it (§app.overseer/memory-switch).
+- After a pick, focus follows the composer's Send rule (§chat.composer/focus), judged from the
+  press on the Quick Actions button, since the flyout takes focus out of the textarea before the
+  pick: on a phone the keyboard stays down unless you were typing with it up; a mouse, pen or a
+  flyout opened by keyboard returns focus to the textarea.
 - While the composer is disabled the button still opens, and each quick action carries the
   disabled reason instead of running.
 - Defaults: two, in this order, **Get Things Moving** and **Tidy Up**

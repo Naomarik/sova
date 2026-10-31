@@ -1048,15 +1048,17 @@
       "src/components/Composer.tsx",
       "src/components/OverseerCards.tsx",
       "src/design/base.css",
-      "src/app.css"
+      "src/app.css",
+      "src/lib/input-mode.ts"
     ],
     "requires": [
-      "§app.settings-dialog/overseer"
+      "§app.settings-dialog/overseer",
+      "§chat.composer/focus"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-27T09:33Z",
-      "source": "pi-session:01a16fb6-1014-7539-b91a-750b94daff7d#6f6f4e53"
+      "at": "2026-10-31T13:22Z",
+      "source": "pi-session:9bf178cf-ac0e-4c07-b96e-64387c1097fc#cd59540b"
     }
   },
   "§app.overseer/quick-actions-move": {

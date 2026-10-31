@@ -3,8 +3,8 @@ import { releaseControl } from "../lib/release-control";
 import type { ChatClaudeLogin, SlashCommand, UploadResult } from "../../shared/protocol";
 import { avatarLogins, composerLogin } from "../lib/claude-login";
 import { runControls } from "../lib/compact";
-import { createTouchMode, enterSends, refocusAfterSend, type SendPress } from "../lib/input-mode";
-import { keyboardIsUp, watchKeyboard } from "../lib/voice/keyboard";
+import { createTouchMode, enterSends, notePress as pressAt, refocusAfterSend, type SendPress } from "../lib/input-mode";
+import { watchKeyboard } from "../lib/voice/keyboard";
 import { enterRunsLocal, insertCommand, localCommand, menuCommands, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
 import { registerComposer } from "../commands/composers";
@@ -265,7 +265,7 @@ export function Composer(props: {
   /** How the current Send or Stop press began, taken by the click it ends in. */
   let press: SendPress | null = null;
   const notePress = (e: PointerEvent) => {
-    press = { touch: e.pointerType === "touch", focused: document.activeElement === input, keyboardUp: keyboardIsUp() };
+    press = pressAt(e, input);
   };
   const takePress = () => {
     const p = press;

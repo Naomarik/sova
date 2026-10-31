@@ -1558,12 +1558,14 @@ export interface CommandParams {
   "settings.memory.get": Record<string, never>;
   /** The subagent profile library. (only looks; needs the card's owner trusted) */
   "settings.subagents.get": Record<string, never>;
-  /** Save the align mode's writing style and Visuals. (changes something; needs the card's owner trusted) */
+  /** Save the align mode's Eagerness, writing style and Visuals. (changes something; needs the card's owner trusted) */
   "settings.align.set": {
     /** The writing style */
     "style"?: unknown;
     /** The Visuals */
     "visuals"?: unknown;
+    /** The Eagerness: "careful", or omitted for Eager */
+    "eagerness"?: unknown;
   };
   /** Set or clear the model and thinking every organization's Project Assistant uses unless it picks its own. (changes something; needs the card's owner trusted) */
   "settings.assistant-default.set": {

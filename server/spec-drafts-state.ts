@@ -1,4 +1,5 @@
-import { readdirSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { draftOfficial } from "../pi-config/extensions/spec/core/official.mjs";
 
@@ -58,4 +59,73 @@ function stampOf(stamps: string): string {
   } catch {
     return "";
   }
+}
+
+/** The spec drafts as a Land It sees them (§chat.worktrees/landing-answers): one hash over every file under each
+    draft's `spec/` (lines `<draft>/<path under spec/> <sha256>`, sorted, joined by "\n"; `draft.json`, where notes,
+    evidence and receipts go, apart), each draft's own hash over its lines, and the names. The draft tool's `land`
+    and the merge round compute the same. undefined: no drafts. */
+export interface DraftsHash {
+  hash: string;
+  names: string[];
+  each: Record<string, string>;
+}
+
+const DRAFT_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const sha = (buf: Buffer) => createHash("sha256").update(buf).digest("hex");
+const readOr = (path: string): Buffer | null => {
+  try {
+    return readFileSync(path);
+  } catch {
+    return null;
+  }
+};
+/** Every file under `dir`, relative, `/`-separated. */
+function filesUnder(dir: string, rel = ""): string[] {
+  const out: string[] = [];
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = readdirSync(join(dir, rel), { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    const r = rel ? `${rel}/${e.name}` : e.name;
+    if (e.isDirectory()) out.push(...filesUnder(dir, r));
+    else if (e.isFile()) out.push(r);
+  }
+  return out;
+}
+
+export function draftsHash(dir: string): DraftsHash | undefined {
+  const draftsDir = join(dir, ".sova", "spec", "drafts");
+  let names: string[];
+  try {
+    names = readdirSync(draftsDir, { withFileTypes: true }).filter((e) => e.isDirectory() && DRAFT_NAME.test(e.name)).map((e) => e.name).sort();
+  } catch {
+    return undefined;
+  }
+  if (!names.length) return undefined;
+  const hashOf = (lines: string[]) => createHash("sha256").update([...lines].sort().join("\n")).digest("hex");
+  const all: string[] = [];
+  const each: Record<string, string> = {};
+  for (const n of names) {
+    const lines: string[] = [];
+    for (const rel of filesUnder(join(draftsDir, n, "spec"))) {
+      const buf = readOr(join(draftsDir, n, "spec", rel));
+      if (buf) lines.push(`${n}/${rel} ${sha(buf)}`);
+    }
+    each[n] = hashOf(lines);
+    all.push(...lines);
+  }
+  return { hash: hashOf(all), names, each };
+}
+
+/** The drafts that changed since a Land It recorded `pressed`, sorted; [] when none did. Without per-draft hashes a
+    changed whole names every draft (the merge round's draftsChanged). */
+export function draftsChanged(pressed: { hash: string; names: string[]; each?: Record<string, string> } | undefined, now: DraftsHash | undefined): string[] {
+  if (!pressed || (now?.hash ?? null) === pressed.hash) return [];
+  const names = [...new Set([...pressed.names, ...(now?.names ?? [])])].sort();
+  if (!pressed.each) return names;
+  return names.filter((n) => (pressed.each![n] ?? null) !== (now?.each[n] ?? null));
 }

@@ -1071,6 +1071,53 @@ would list master's changes instead.
     31,798 → 31,824 B. The read-cost measures (median/p90 bytes per read) move only with the migration.
   - Upgrade: see UPGRADING step 16.
 
+- **Landing makes a branch's drafts official; chats no longer promote** (al_4).
+  - Commit: on branch `feat/spec-land`; not on master yet: the merge round folds it in.
+  - Why: 615–667 commits since 09-23 (18%) were docs-only, 483 of them promote commits a chat made a median
+    83 s after its code commit; about 2,000 bookkeeping calls in 14 days; 100+ re-apply commits after master
+    merges; 1 in 4–5 product landings left docs behind; 195 agree stamps the user never gave.
+  - Depends on: the shared record layer (al_6 landing 1, `layout.mjs`).
+  - Changed:
+    - `sova-spec-draft.mjs land --commit REV --by WHO --verification TEXT [--write]`: every draft's pending
+      records in one all-or-nothing step under the drafts lock, each needing its chat's verification note
+      (`verification-missing`, `verification-stale`), evidence recorded at REV (doc-only where that applies),
+      new or rewritten prose with no label landing `accepted` (never edited in the draft), proposal-only
+      drafts left, a journal (`drafts/.land/`) that puts everything back on any failure and that `recover
+      --write` puts back after an interruption; it never commits and returns the paths and a commit message;
+    - `evidence --note`: the chat's note, bound to the record and prose, never evidence for a manual promote;
+    - `refresh NAME [--write]`: re-bases a draft on current, a declaration both changed one marked block,
+      refused by land and promote while it holds the markers (`conflict-markers`);
+    - `agree` stamps and records doc-only evidence but no longer promotes; the branch's landing does;
+    - the merge round's `check` runs every check first and only then lands the drafts as one docs commit
+      with the trailer `Sova-Spec-Landing: <round>` (a failing check writes nothing about the docs); Land It
+      carries across that recorded commit only; a Land It whose drafts changed since (its drafts hash) holds
+      the branch; drafts that don't fit hold it with a hand-back; `ask`/`reply` no longer hand back drafts;
+      `"specLanding": "off"` in the round's settings brings back the old hold;
+    - the `worktree` tool's merge lands the drafts first (one docs commit, taken back when it would clash
+      with the target), `withoutDocs` on the user's word; its create carries the main checkout's agreed drafts;
+      the orphaned-evidence warning goes;
+    - Sova: drafts no longer keep a branch from Ready to land; Sova tries them once per head and set of
+      drafts; Landing specs only for drafts that don't fit or changed since Land It; the Landing card's
+      docs line with the promises one click away; Land It records the drafts it showed;
+    - PROMOTE.md leads with the landing and keeps the manual path; GOALS.md: "Docs land with their code"
+      is now done by the landing, and Agree is only for the person's own decision.
+    - the mode text's promote instructions (approved wording, applied on top of al_3): WRITING.md's step 4
+      agree sentence, the evidence/agree paragraph (a note per promise; `agree` only for the user's own
+      decision; Land It is never agreement), the promote bullet (the landing makes drafts official; one
+      `land` before the last commit where nothing lands branches), the finishing bullet, the go-ahead
+      paragraph and the worker paragraph; the worker note (mode/prompt.ts) and the worker brief's pin
+      follow; align-tool.ts's result no longer says `agree` promotes; AGENTS.md's Landing bullet.
+    - Hashes: WRITING.md 95381eb5… (round 3, measured) → c8f4b273… (al_6 landing 2's merge sentence) →
+      e1c22f58… (this change; 980 → 1023 words, its cap 990 → 1030); spec-mode.md unchanged, bd4831dc….
+      Round 3's verdict covers 95381eb5… only: these sentences need their own measured run to extend it.
+  - §: computed at landing with `sova-spec.mjs foreign --base <first parent> --head <commit>` (expected
+    §chat.worktrees/ready-to-land, §chat.worktrees/pane, §chat.worktrees/landing-answers, §chat.merge-round/round,
+    §chat.merge-round/driver, §chat.offers/conditions, §chat.offers/sova-landing, §tools.spec/agree-command,
+    §tools/spec, + §tools.spec/land).
+  - Numbers: before (09-23..10-23, the baseline frozen for this build) spec-only commits 18%, median 83 s,
+    bookkeeping calls ~1,970/14 days, landings without docs 20–25%; after: filled in 14 days after landing.
+  - Upgrade: see UPGRADING step 17.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -1287,3 +1334,11 @@ The tools are Node standard library only. Nothing is installed.
     warnings and `promote` gives `sizeWarnings`. No exit code changes. A project that wants another cap sets
     a top-level `declarationCap` (bytes) in `manifest.json`. A script that ran `sova-spec-assess.mjs` or
     passed `readPolicy: "assessment"` to `createInspection`/`inspectDraft` loses it: use the review tool.
+17. **Landing makes drafts official** (branch `feat/spec-land`). Copy every `core/*.mjs` again. A merge process
+    of your own runs `sova-spec-draft.mjs land --commit <branch head> --by <who> --verification <text> --write`
+    in the branch's worktree after its checks pass and before merging, and commits exactly the `paths` it
+    returns with the `commitMessage` it returns; when it exits 1 nothing was written: hand the branch back
+    with its `findings`. Chats record a note per promise (`evidence --note`) instead of evidence and
+    promotion; `agree` no longer promotes, so a project with no landing step runs `land --write` once before
+    its last commit. Scripts parsing `Landing specs`, `docs not promoted`, `agree-not-promoted` or the
+    orphaned-evidence warning change.

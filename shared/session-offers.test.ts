@@ -117,8 +117,8 @@ test("Sova's own offers file parses, and gives no Sova chat the tool", () => {
   assert.deepEqual(
     landing.buttons.map((b) => [b.label, !!b.send, b.to ?? null, b.onlyIf ?? [], b.landing ?? null, !!b.confirm]),
     [
-      ["Land It", true, "shower", ["specs-promoted"], "go-ahead", false],
-      ["Merge Without Specs…", true, "shower", ["specs-left"], "go-ahead-without-specs", true],
+      ["Land It", true, "shower", ["docs-fit"], "go-ahead", false],
+      ["Merge Without Specs…", true, "shower", ["specs-left", "specs-why"], "go-ahead-without-specs", true],
       ["Not Yet", true, null, [], "not-yet", false],
     ],
   );

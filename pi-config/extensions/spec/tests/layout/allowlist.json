@@ -5,7 +5,7 @@
     "pi-config/extensions/mode/prompt.ts": [
       {
         "rule": "names-manifest",
-        "text": "return `Spec writer: draft claims and evidence records are written by one worker, spawned with agent_spawn on exactly this backend, model and effort → ${routeTarget(route, \"handing off spec writing\")} Give it the relevant spec passages quoted literally, the files the task changed, and the verification you did. It writes only under \\`.sova/spec/drafts/\\`, never current \\`claims/\\` or \\`manifest.json\\`; you check its draft, run the checks and the census, and promote yourself.${retry}`;",
+        "text": "return `Spec writer: draft claims and evidence records are written by one worker, spawned with agent_spawn on exactly this backend, model and effort → ${routeTarget(route, \"handing off spec writing\")} Give it the relevant spec passages quoted literally, the files the task changed, and the verification you did. It writes only under \\`.sova/spec/drafts/\\`, never current \\`claims/\\` or \\`manifest.json\\`; you check its draft, run the checks and the census, and record a note per promise; the landing makes it official.${retry}`;",
         "reason": "prompt text telling the spec writer which current files it never writes; names the file, reads nothing"
       }
     ],

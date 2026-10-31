@@ -114,6 +114,9 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   - `ready-to-land`: the worktree is Ready to land (§chat.worktrees/ready-to-land), or its specs
     can't land and it says why (`Can't land specs:`).
   - `specs-promoted`: the worktree holds no spec draft left unpromoted.
+  - `docs-fit`: the worktree is Ready to land and not Landing specs: its drafts, if any, would land
+    with it.
+  - `specs-why`: the session said why its spec drafts can't land (`Can't land specs:`).
   - `specs-left`: it holds one or more.
   An offer shown for one worktree (the Merge Captain's queue, §chat.merge-round/round) reads these,
   its branch and its commit from that worktree; otherwise from the session's folder.
@@ -173,7 +176,8 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
 ## §chat.offers/card — The card
 
 - **Look.** The card is drawn like the Overseer's decision cards (§app.overseer/confirm): its id
-  (`of_N`), the title, the agent's note under it, then the file's buttons in order and a quiet
+  (`of_N`), the title, the agent's note under it, a docs line under that when Sova gave the card
+  one (§chat.offers/sova-landing), then the file's buttons in order and a quiet
   **Not Now** button. Each button's `about` line is its tooltip. It stands where the `offer` call is
   in the transcript, among the turn's steps, as soon as the call returns; the card's state is read
   from Sova (again after each turn, after a click, and every 20 seconds while the project has an
@@ -254,20 +258,29 @@ Ready to land (§chat.worktrees/ready-to-land). Its title is "Land {branch} at {
 commit shortened to 7 characters. Its buttons are send
 buttons only:
 
-- **Land It** (only when no spec draft is left): records the go-ahead for this commit and sends it
-  to the captain ("Go ahead: land {branch} at {commit}."), who lands, pushes and restarts as
-  usual without asking again. It is a shortcut for telling the captain, for Go on the branch's Ready to land row of an
+- **Land It** (only when its docs fit, `docs-fit`): records the go-ahead for this commit, with the
+  spec drafts as the card showed them (§chat.worktrees/landing-answers), and sends it to the captain
+  ("Go ahead: land {branch} at {commit}."), who lands, pushes and restarts as usual without asking
+  again; its drafts become official at that landing. It never records the user as agreeing to a
+  promise. It is a shortcut for telling the captain, for Go on the branch's Ready to land row of an
   Overseer card (§app.overseer/card-land), or for typing "land it" in
   the session's chat, which records the same go-ahead (§chat.worktrees/tool): no merge waits for it.
 - **Merge Without Specs…** (only when drafts are left and the session said why it can't land
-  them): asks first, naming the drafts that stay behind to promote later on a fresh branch from
+  them, `specs-left` and `specs-why`): asks first, naming the drafts that stay behind to promote later on a fresh branch from
   master, then records the go-ahead without specs and sends the captain the go-ahead without them.
 - **Not Yet**: records Not Yet for this commit and tells this session's agent to keep working; the
   captain leaves the branch until its head changes.
 
 The offer also declares `rows` (`max` 10, `all` **Land All**) for the captain's own card
 (§chat.offers/landing-rows): every queued branch is also a row there, and one answer, given on
-either card or typed in either chat, settles both.
+either card or typed in either chat, settles both. A row's Land It records the drafts as the row
+showed them, as the card's does, and a go-ahead recorded for other drafts settles neither.
+
+When spec drafts land with the branch, the card says so in one line under its title, "Lands with
+its docs: 2 new promises, 1 changed", with **Show the promises** opening their § names under it,
+and closing them again. When the drafts changed after the user's Land It at this commit
+(§chat.worktrees/ready-to-land), the card is shown again at the same commit, once per set of
+drafts, and its line starts "Its docs changed since your Land It: <drafts>.".
 
 ## §chat.offers/landing-rows — The Merge Captain's landing card
 

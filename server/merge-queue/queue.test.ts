@@ -872,12 +872,24 @@ function execGit(cwd: string, args: string[], input: string): string {
 describe("setting up the checks", () => {
   const DEF_TEXT = '{"version":1,"services":{"web":{"cmd":["true"]}}}\n';
 
-  test("no definition: refused, saying to set up the project first; one answer only", async () => {
+  test("no definition: Try It runs on a minimal one and Save creates it (version plus merge) as one commit; one answer only", async () => {
     const k = makeKit({ checks: "unset" });
     try {
       const q = await k.q();
-      await assert.rejects(q.setup({ none: true }), /has no \.sova\/project\.json/);
       await assert.rejects(q.setup({ none: true, command: "make test" }), /give one answer/);
+      const before = k.repo.head();
+      const t = await q.setup({ command: "make test", dryRun: true });
+      await q.tryingNow();
+      assert.deepEqual(k.run.inputs[0]!.project.def!.services, []);
+      assert.equal(q.store.readRun(t.run!.id)!.verdict, "passed");
+      assert.equal(k.repo.head(), before, "a try saves nothing");
+      const r = await q.setup({ command: "make test" });
+      assert.equal(sh(k.repo.root, "rev-parse", `${r.commit}^`), before, "one commit on the target");
+      assert.equal(sh(k.repo.root, "diff", "--name-only", before, r.commit!), ".sova/project.json");
+      const saved = JSON.parse(sh(k.repo.root, "show", "master:.sova/project.json"));
+      assert.deepEqual(saved, { version: 1, merge: { checks: [{ id: "tests", label: "Tests", run: ["sh", "-c", "make test"] }] } });
+      assert.match(sh(k.repo.root, "log", "-1", "--format=%s"), /new \.sova\/project\.json/);
+      assert.equal(sh(k.repo.root, "status", "--porcelain"), "");
     } finally {
       await k.done();
     }

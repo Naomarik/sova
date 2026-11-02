@@ -664,13 +664,17 @@ export class ProjectQueue {
       if (kinds !== 1) throw new MergeFailure("invalid-request", "give one answer: a test command, a list of checks, or none (no automated tests)");
       const head = await this.targetHead();
       if (!head) throw new MergeFailure("not-found", `no branch ${this.q.target} in ${this.root}`);
-      const shown = await this.git(["show", `${head}:.sova/project.json`], this.root);
-      if (shown.code !== 0) throw new MergeFailure("unsupported", `${this.root} has no .sova/project.json on ${this.q.target} yet: set up its project verbs first (the project's onboarding), then its checks`);
-      let raw: Record<string, unknown>;
-      try {
-        raw = JSON.parse(shown.stdout) as Record<string, unknown>;
-      } catch {
-        throw new MergeFailure("invalid-request", `.sova/project.json on ${this.q.target} isn't JSON`);
+      // No definition yet: the answer makes a minimal one (version plus the merge section), saved the same way.
+      const exists = (await this.git(["cat-file", "-e", `${head}:.sova/project.json`], this.root)).code === 0;
+      let raw: Record<string, unknown> = { version: 1 };
+      if (exists) {
+        const shown = await this.git(["show", `${head}:.sova/project.json`], this.root);
+        if (shown.code !== 0) throw new MergeFailure("busy", `can't read .sova/project.json on ${this.q.target}: ${shown.stderr.trim()}`);
+        try {
+          raw = JSON.parse(shown.stdout) as Record<string, unknown>;
+        } catch {
+          throw new MergeFailure("invalid-request", `.sova/project.json on ${this.q.target} isn't JSON`);
+        }
       }
       const timeout = req.takesMin ? Math.min(HOOK_TIMEOUT_MAX, Math.max(60, req.takesMin * 60 * 2)) : undefined;
       const slug = (label: string, i: number) => label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || `check-${i + 1}`;
@@ -776,7 +780,7 @@ export class ProjectQueue {
         const name = (await this.git(["config", "user.name"], this.root)).stdout.trim();
         const email = (await this.git(["config", "user.email"], this.root)).stdout.trim();
         const ident = name && email ? {} : { GIT_AUTHOR_NAME: name || "Sova merge queue", GIT_AUTHOR_EMAIL: email || "merge-queue@sova.invalid", GIT_COMMITTER_NAME: name || "Sova merge queue", GIT_COMMITTER_EMAIL: email || "merge-queue@sova.invalid" };
-        const c = await this.git(["commit-tree", tree, "-p", head, "-m", `Merge queue: set up checks (${label})`], this.root, { env: { ...process.env, ...ident } });
+        const c = await this.git(["commit-tree", tree, "-p", head, "-m", `Merge queue: set up checks (${label})${exists ? "" : "; new .sova/project.json"}`], this.root, { env: { ...process.env, ...ident } });
         if (c.code !== 0) throw new MergeFailure("busy", `git commit-tree failed: ${c.stderr.trim()}`);
         const commit = c.stdout.trim();
         this.landing = true;

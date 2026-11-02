@@ -64,12 +64,19 @@ describe("what a run checks", () => {
     process.env.CLAUDE_CONFIG_DIR = "/leak";
     process.env.SOVA_CHAT_ID = "leak";
     process.env.ANTHROPIC_API_KEY = "leak";
+    process.env.MISE_STATE_DIR = "/ws/mise-state";
+    process.env.MISE_GITHUB_TOKEN = "leak";
+    process.env.XDG_DATA_HOME = "/ws/data";
     try {
       const scope = { project: "/p/demo", projectId: "demo1", copy: "/p/.worktrees/demo-merge", slot: 19, data: "/s/data", target: "master", base: "b".repeat(40), tip: "t".repeat(40), changedFile: "/s/changed.txt" };
       const e = envOf(declared, scope, { step: "unit", out: "/s/out.json", picked: true });
       expect(e.CLAUDE_CONFIG_DIR).toBeUndefined();
       expect(e.SOVA_CHAT_ID).toBeUndefined();
       expect(e.ANTHROPIC_API_KEY).toBeUndefined();
+      // mise's own settings and the XDG homes reach a check (its mise is the server's), never a mise token.
+      expect(e.MISE_STATE_DIR).toBe("/ws/mise-state");
+      expect(e.XDG_DATA_HOME).toBe("/ws/data");
+      expect(e.MISE_GITHUB_TOKEN).toBeUndefined();
       // No names set up for this project: a file that doesn't exist (scan secrets only, push held), never the server's.
       expect(e.SOVA_LEAK_NAMES).toBe("/s/data/no-private-names.json");
       expect(envOf(declared, { ...scope, leakNames: "/s/names.json" }).SOVA_LEAK_NAMES).toBe("/s/names.json");
@@ -79,6 +86,9 @@ describe("what a run checks", () => {
       delete process.env.CLAUDE_CONFIG_DIR;
       delete process.env.SOVA_CHAT_ID;
       delete process.env.ANTHROPIC_API_KEY;
+      delete process.env.MISE_STATE_DIR;
+      delete process.env.MISE_GITHUB_TOKEN;
+      delete process.env.XDG_DATA_HOME;
     }
   });
 

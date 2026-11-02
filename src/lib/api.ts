@@ -1480,6 +1480,8 @@ export async function runMergeVerb(project: string | null, verb: `merge.${string
     throw err;
   }
 }
+/** A chat's merge queue cards: one per branch it owns, from its approval on (`session.merge-cards`). */
+export const getMergeCards = (sessionId: string) => request<{ cards: import("../../shared/merge-queue").MergeCard[] }>(`/api/merge-queue/cards?session=${encodeURIComponent(sessionId)}`);
 /** What runs on this host now, every project's (Running branches on `#/projects`). */
 export const getHostServices = () => request<HostServicesView>("/api/services");
 export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);

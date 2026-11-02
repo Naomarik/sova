@@ -4,6 +4,7 @@ import { Chip, Icon } from "./ui";
 import type { KindViewProps } from "../lib/transcript-kinds";
 import type { HandoffRunInfo, TranscriptItem } from "../../shared/protocol";
 import { WorktreeMergeCard } from "./WorktreeMergeCard";
+import { isMergeQueueText } from "../../shared/merge-queue";
 import { SettingsToolCard } from "./SettingsChangeCard";
 import type { SettingsToolDetails } from "../../shared/project-settings";
 import { OfferCardView } from "./OfferCard";
@@ -226,6 +227,7 @@ function UserRow(props: KindViewProps) {
       text={item.text ?? ""}
       time={item.at}
       overseer={rows.senderOf(item.id)?.kind === "overseer"}
+      mergeQueue={isMergeQueueText(item.text)}
       sender={((s) => (s?.kind === "baton" ? rows.nameOf(s.by) : undefined))(rows.senderOf(item.id))}
       fromSession={((s) => (s?.kind === "session" ? { sessionId: s.sessionId, title: s.title, hop: s.hop } : undefined))(rows.senderOf(item.id))}
       images={item.images}

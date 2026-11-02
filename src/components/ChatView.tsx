@@ -29,6 +29,7 @@ import { createOfferControls, OfferContext, OfferTray } from "./OfferCard";
 import { CardContext, createCardControls } from "../lib/card-controls";
 import { cardPicksLabel, cardPicksMessage } from "../lib/card-picks";
 import { outsideCardRowId, placeOutsideCards } from "../lib/transcript-placement";
+import { createMergeCards } from "../lib/merge-cards";
 import type { OfferCard } from "../../shared/session-offers";
 import { SettingsCardContext } from "./SettingsChangeCard";
 import type { OverseerApprovals } from "./OverseerApprovalsPanel";
@@ -1687,10 +1688,12 @@ export function ChatView(props: {
           session: () => ({ id: props.summary?.()?.id ?? "", title: props.summary?.()?.title ?? "" }),
         });
   if (raisedCards) createEffect(on(() => live.running, (now, before) => void (before && !now && raisedCards.refresh()), { defer: true }));
+  // The merge queue's cards for this chat's branches (one per branch, from Land on): Sova's own, placed like outside cards.
+  const queueCards = props.overseer || props.projectOverseer ? undefined : createMergeCards(() => props.summary?.()?.id);
   /** The thread's rows with the cards raised from outside the chat placed where they were raised (lib/transcript-placement). */
   const threadItems = createMemo(() => {
     const list = items();
-    const outside = raisedCards?.outside() ?? [];
+    const outside = [...(raisedCards?.outside() ?? []), ...(queueCards?.rows() ?? [])];
     return list && outside.length ? placeOutsideCards(list, outside, (card): TranscriptItem => ({ id: outsideCardRowId(card.id), kind: "card", at: card.at, card })) : list;
   });
   /** Show in Chat for an offer card (§chat.composer/waiting-dialog): its `offer` call's row (the

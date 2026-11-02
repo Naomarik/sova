@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { after, before, describe, test } from "node:test";
 import type { Browser, BrowserContext, Page } from "playwright-core";
-import type { MergeEntry, MergeQueueView, MergeRun, WorktreeMergeProject, WorktreeQueueInfo } from "../shared/merge-queue";
+import type { MergeCard, MergeEntry, MergeQueueView, MergeRun, WorktreeMergeProject, WorktreeQueueInfo } from "../shared/merge-queue";
 import type { SessionSummary, SessionWorktreeInfo } from "../shared/protocol";
 import type { ProjectSummary } from "../shared/projects";
 import { launchTourBrowser } from "./tours/browser";
@@ -232,10 +232,12 @@ interface Opened {
   calls: { verb: string; body: Record<string, unknown> }[];
   /** From now on the server answers the worktree rows through `f`. */
   move(f: (rows: SessionWorktreeInfo[]) => SessionWorktreeInfo[]): void;
+  /** Every frame the page sent on the chat's socket: a prompt or steer here would be a post into the chat. */
+  frames: string[];
 }
 
 /** Sova at `width` on `hash`, every request answered: the session, its worktrees, the project, its queue. */
-async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo[]; view?: MergeQueueView } = {}): Promise<Opened> {
+async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo[]; view?: MergeQueueView; cards?: MergeCard[]; items?: unknown[] } = {}): Promise<Opened> {
   const phone = width < 768;
   // Reduced motion: a screenshot shows each screen's end state, never a fade half-way.
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce" });
@@ -248,9 +250,12 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
   let tryRun: MergeRun | undefined;
   const json = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
   const ok = (verb: string, merge: unknown) => ({ v: 1, verb, project: ROOT_DIR, instance: null, slot: null, generation: null, checkout: null, branch: null, ok: true, changed: true, state: "stopped", steps: [], services: [], data: [], links: [], defHash: null, merge });
+  const frames: string[] = [];
+  const items = o.items ?? [{ id: "u1", kind: "user", text: "Make drafts survive a reload.", at: iso(20) }];
   await page.routeWebSocket(/.*/, (ws) => {
     if (!new URL(ws.url()).pathname.startsWith("/ws/chat")) return;
-    ws.send(JSON.stringify({ type: "hello", items: [{ id: "u1", kind: "user", text: "Make drafts survive a reload.", at: iso(20) }], isStreaming: false, model: "mock/m1", thinking: "off", context: null }));
+    ws.onMessage((m) => frames.push(String(m)));
+    ws.send(JSON.stringify({ type: "hello", items, isStreaming: false, model: "mock/m1", thinking: "off", context: null }));
   });
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
@@ -283,7 +288,8 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
       calls.push({ verb: p.endsWith("runtime/merge") ? "runtime.merge" : "worktrees.merge", body: JSON.parse(route.request().postData() ?? "{}") });
       return route.fulfill(json(p.endsWith("runtime/merge") ? RUNTIME : WORKTREES));
     }
-    if (p === "/api/transcript") return route.fulfill(json({ items: [], context: null }));
+    if (p === "/api/transcript") return route.fulfill(json({ items, context: null }));
+    if (p === "/api/merge-queue/cards") return route.fulfill(json({ cards: url.searchParams.get("session") === SESSION.id ? (o.cards ?? []) : [] }));
     if (p === "/api/insights/session") return route.fulfill(json({ outline: null, compactions: [], teams: [], workers: [], worktrees: moved ? moved(o.rows ?? ALL_ROWS) : (o.rows ?? ALL_ROWS) }));
     if (p === "/api/projects") return route.fulfill(json({ projects: [PROJECT] }));
     if (p === `/api/projects/${PID}`) return route.fulfill(json(PROJECT));
@@ -302,7 +308,7 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
   });
   await page.goto(`${ORIGIN}/${hash}`);
   assert.equal(await page.evaluate(() => innerWidth), width);
-  return { page, ctx, calls, move: (f) => (moved = f) };
+  return { page, ctx, calls, frames, move: (f) => (moved = f) };
 }
 
 /** MQ_UI_SHOTS=<dir>: keep a screenshot of each screen (by hand, for a look). */
@@ -329,12 +335,79 @@ const lastCall = (o: Opened, verb: string) => [...o.calls].reverse().find((c) =>
 async function noRestartOrLive(page: Page, scope: string) {
   const text = await page.locator(scope).first().evaluate((el) => {
     const c = el.cloneNode(true) as HTMLElement;
-    for (const n of c.querySelectorAll(".wt-queue-note, .mq-note")) n.remove();
+    for (const n of c.querySelectorAll(".wt-queue-note, .mq-note, .mq-card-note")) n.remove();
     return `${c.innerText} ${[...c.querySelectorAll("[aria-label],[title]")].map((e) => `${e.getAttribute("aria-label") ?? ""} ${e.getAttribute("title") ?? ""}`).join(" ")}`;
   });
   assert.doesNotMatch(text, /\brestart|\bnot live\b|\blive\b/i, `${scope} says Restart or live: ${text.slice(0, 400)}`);
 }
 const noSideScroll = async (page: Page) => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, "nothing scrolls sideways");
+
+/** The chat's rows: Land typed early, the chat went on, then later messages. */
+const CHAT_ITEMS = [
+  { id: "u1", kind: "user", text: "land it", at: iso(40) },
+  { id: "a1", kind: "assistant-text", text: "Queued.", at: iso(39), model: "mock/m1" },
+  { id: "u2", kind: "user", text: "Now the badge.", at: iso(10) },
+  { id: "a2", kind: "assistant-text", text: "On it.", at: iso(9), model: "mock/m1" },
+];
+const mc = (id: string, branch: string, x: Partial<MergeCard>): MergeCard => ({
+  id,
+  entry: id,
+  session: SESSION.id,
+  project: PID,
+  root: ROOT_DIR,
+  branch,
+  target: "master",
+  commit: sha("c"),
+  approvedBy: "typed",
+  state: "queued",
+  notes: [],
+  revisions: [{ id: `${id}:1`, kind: "approved", at: iso(40), after: "u1", state: "queued", position: 1 }],
+  updatedAt: iso(1),
+  ...x,
+});
+const LANDED_AT = iso(5);
+/** Six branches, six cards: one landed (its approval folded above), one of every other kind. */
+const CARDS: MergeCard[] = [
+  mc("me_a", "feat/settle-cpu", {
+    state: "landed",
+    stats: { commits: 8, added: 970, removed: 45 },
+    landed: { sha: sha("4"), from: sha("1"), at: LANDED_AT, pushed: "not-pushed", pushWhy: "push held: private names not set up yet" },
+    newerCommits: 1,
+    head: sha("5"),
+    notes: [
+      { kind: "thread", text: NOTE, at: LANDED_AT },
+      { kind: "flaky", text: "server/a.test.ts failed, then passed on a rerun", at: LANDED_AT },
+    ],
+    revisions: [
+      { id: "me_a:1", kind: "approved", at: iso(40), after: "u1", state: "queued", position: 1 },
+      { id: "me_a:2", kind: "landed", at: LANDED_AT, after: "a2", state: "landed" },
+    ],
+  }),
+  mc("me_b", "fix/conflict-chip", {
+    state: "behaviour-differs",
+    conflict: { files: ["src/a.ts"], verdict: "behaviour-differs", ours: "Master retries the save twice.", theirs: "The branch never retries.", proposal: "Keep master's retry.", at: iso(4) },
+    revisions: [
+      { id: "me_b:1", kind: "approved", at: iso(40), after: "u1", state: "queued", position: 2 },
+      { id: "me_b:2", kind: "behaviour-differs", at: iso(4), after: "a2", state: "behaviour-differs" },
+    ],
+  }),
+  mc("me_c", "feat/hack", {
+    state: "review-flagged",
+    review: { verdict: "blocking", text: "Leaves a workaround in land.ts with no test.", commit: sha("e"), at: iso(3) },
+    revisions: [{ id: "me_c:1", kind: "review-flagged", at: iso(3), after: "a2", state: "review-flagged" }],
+  }),
+  mc("me_d", "fix/worker-restore", { state: "checking", progress: { done: 4, total: 7 }, revisions: [{ id: "me_d:1", kind: "approved", at: iso(39), after: "a1", state: "queued", position: 1 }] }),
+  mc("me_e", "feat/pending-chip", { state: "queued", position: 2, eta: { startsInMs: 6 * 60_000, takesMs: 9 * 60_000 }, revisions: [{ id: "me_e:1", kind: "approved", at: iso(39), after: "a1", state: "queued", position: 2 }] }),
+  mc("me_f", "fix/draft-autosave-race", {
+    state: "needs-fix",
+    run: "mr_fail",
+    reason: "Unit tests fail with this branch and pass on master.",
+    failures: [{ run: "mr_fail", step: "check:unit", label: "Unit tests", detail: "1 failed", tests: ["src/lib/drafts.test.ts › saves a draft once"] }],
+    explanation: { text: "The autosave timer now fires twice when the tab regains focus.", at: iso(2) },
+    revisions: [{ id: "me_f:1", kind: "needs-fix", at: iso(2), after: "a2", state: "needs-fix", run: "mr_fail" }],
+  }),
+];
+const POSTS = /"type":"(prompt|steer|follow_up)"/;
 
 for (const width of [1280, 390]) {
   describe(`${width}px`, () => {
@@ -565,6 +638,105 @@ for (const width of [1280, 390]) {
       await until("the row's Merge Branch", () => o.calls.some((c) => c.verb === "worktrees.merge"));
       assert.equal(o.calls.filter((c) => c.verb === "merge.add").length, 0);
       await shot(page, `${width}-project-rows-unset`);
+      await o.ctx.close();
+    });
+
+    test("the chat's queue cards: one per branch, Landed like the Merged card, its approval folded above", async () => {
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { rows: READY_ROWS, cards: CARDS, items: CHAT_ITEMS });
+      const { page } = o;
+      const landed = page.locator('.mq-chat-card[data-branch="feat/settle-cpu"]').last();
+      await landed.waitFor({ timeout: 20_000 });
+      // Six branches, six whole cards; the two approvals that moved on are folded lines.
+      await until("six cards", async () => (await page.locator(".transcript-card > .mq-chat-card").count()) === 6);
+      const folded = page.locator(".mq-card-folded");
+      assert.equal(await folded.count(), 2);
+      assert.deepEqual(await folded.locator(".disclosure-label").allTextContents(), ["feat/settle-cpu · Queued 1st", "fix/conflict-chip · Queued 2nd"]);
+      // The Landed card: the Merged card's head, its numbers and time, its notes, why it wasn't pushed, and Land Again.
+      const t = await words(landed);
+      assert.match(t, /Landed/);
+      assert.match(t, /feat\/settle-cpu into master/);
+      assert.match(t, /4444444/);
+      assert.match(t, /8 commits · \+970 −45 · /);
+      assert.match(t, /Merge thread: Changes server code; restart Sova to pick it up\./);
+      assert.match(t, /Flaky: server\/a\.test\.ts failed, then passed on a rerun/);
+      assert.match(t, /Not pushed: Push held: private names not set up yet\./);
+      assert.match(t, /1 newer commit not included/);
+      assert.equal(await landed.getByRole("button", { name: "Review Changes from feat/settle-cpu" }).count(), 1);
+      assert.equal(await landed.getByRole("button", { name: "Land Again feat/settle-cpu" }).count(), 1);
+      assert.equal(await landed.locator(".chip-success").count(), 1, "the LANDED pill");
+      // The head reads as the Merged card's: pill and title on one line; at desktop width Review Changes ends it.
+      const box = async (sel: string) => (await landed.locator(sel).first().boundingBox())!;
+      const pill = await box(".chip");
+      const title = await box(".worktree-merge-title");
+      assert.ok(Math.abs(pill.y + pill.height / 2 - (title.y + title.height / 2)) < 8, "pill and title share a line");
+      if (width >= 768) {
+        const review = await box(".worktree-merge-review");
+        assert.ok(review.x > title.x + title.width, "Review Changes at the head's end");
+        assert.ok(Math.abs(review.y + review.height / 2 - (title.y + title.height / 2)) < 12, "on the head's line");
+      }
+      // Where each copy stands: the folded approval right after "land it", the landed card after the last reply.
+      const order = await page.evaluate(() => {
+        const at = (sel: string) => [...document.querySelectorAll(".thread *")].findIndex((n) => n.matches(sel));
+        return { fold: at('.mq-card-folded[data-branch="feat/settle-cpu"]'), u2: at('[aria-label^="You"]:not(:first-of-type)'), card: at('.transcript-card > .mq-chat-card[data-branch="feat/settle-cpu"]') };
+      });
+      assert.ok(order.fold >= 0 && order.card > order.fold, `the newest copy is below the folded one: ${JSON.stringify(order)}`);
+      // Opening a folded copy shows the card read-only: no actions on an earlier copy.
+      await folded.first().locator("summary").click();
+      assert.equal(await folded.first().getByRole("button", { name: /^Land Again/ }).count(), 0);
+      // Live cards: the steps while checking, the estimate while queued.
+      assert.match(await words(page.locator('.transcript-card > .mq-chat-card[data-branch="fix/worker-restore"]')), /Checking · 4 of 7 steps/);
+      assert.match(await words(page.locator('.transcript-card > .mq-chat-card[data-branch="feat/pending-chip"]')), /Queued · 2nd.*starts in ~6 min · takes ~9 min/);
+      // Needs a fix: the failing check with its log, its test, and the merge thread's later explanation on the same card.
+      const fix = page.locator('.transcript-card > .mq-chat-card[data-branch="fix/draft-autosave-race"]');
+      const ft = await words(fix);
+      assert.match(ft, /Unit tests · 1 failed/);
+      assert.match(ft, /src\/lib\/drafts\.test\.ts › saves a draft once/);
+      assert.match(ft, /Merge thread: The autosave timer now fires twice when the tab regains focus\./);
+      assert.equal(await fix.getByRole("link", { name: "Log of Unit tests" }).getAttribute("href"), `#/projects/${PID}/merge-queue/mr_fail`);
+      await noSideScroll(page);
+      await noRestartOrLive(page, ".thread");
+      await shot(page, `${width}-chat-cards`);
+      await landed.screenshot({ path: process.env.MQ_UI_SHOTS ? join(process.env.MQ_UI_SHOTS, `${width}-landed-card.png`) : join(dist, `${width}-landed-card.png`) });
+      await o.ctx.close();
+    });
+
+    test("the chat's waiting cards act on the queue and post nothing into the chat", async () => {
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { rows: READY_ROWS, cards: CARDS, items: CHAT_ITEMS });
+      const { page } = o;
+      const card = (b: string) => page.locator(`.transcript-card > .mq-chat-card[data-branch="${b}"]`);
+      await card("fix/conflict-chip").waitFor({ timeout: 20_000 });
+      const before = o.frames.length;
+      assert.match(await words(card("fix/conflict-chip")), /Master retries the save twice\..*The branch never retries\..*Keep master's retry\./);
+      await card("fix/conflict-chip").getByRole("button", { name: "Accept fix/conflict-chip" }).click();
+      await until("accept", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.entry === "me_b" && c.body.answer === "accept"));
+      await card("fix/conflict-chip").getByRole("button", { name: "Send Back fix/conflict-chip" }).click();
+      await until("send back", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.entry === "me_b" && c.body.answer === "send-back"));
+      assert.match(await words(card("feat/hack")), /Review: Leaves a workaround in land\.ts with no test\./);
+      await card("feat/hack").getByRole("button", { name: "Land Anyway feat/hack" }).click();
+      await until("land anyway", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.entry === "me_c" && c.body.answer === "land-anyway"));
+      await card("feat/pending-chip").getByRole("button", { name: "Cancel feat/pending-chip" }).click();
+      await until("cancel", () => o.calls.some((c) => c.verb === "merge.cancel" && c.body.entry === "me_e"));
+      await card("feat/settle-cpu").getByRole("button", { name: "Land Again feat/settle-cpu" }).click();
+      await until("land again", () => o.calls.some((c) => c.verb === "merge.add" && c.body.branch === "feat/settle-cpu"));
+      assert.deepEqual(lastCall(o, "merge.add").body, { project: ROOT_DIR, branch: "feat/settle-cpu", commit: sha("5") }, "Land Again pins the head the card showed");
+      // Nothing went into the chat: no prompt, steer or follow-up frame, and the composer is untouched.
+      const sent = o.frames.slice(before).filter((f) => POSTS.test(f));
+      assert.deepEqual(sent, [], "a queue button posted to the chat");
+      assert.equal(await page.locator("textarea[id$='composer-input']").first().inputValue(), "");
+      await shot(page, `${width}-chat-waiting-card`);
+      await o.ctx.close();
+    });
+
+    test("a turn the merge queue started reads as the queue's, not yours", async () => {
+      const items = [...CHAT_ITEMS, { id: "u3", kind: "user", text: "[merge-queue] fix/draft-autosave-race needs a fix: Unit tests fail with this branch.", at: iso(1) }];
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { items });
+      const { page } = o;
+      const row = page.locator(".message-from-queue");
+      await row.waitFor({ timeout: 20_000 });
+      const t = await words(row);
+      assert.match(t, /Merge queue/);
+      assert.doesNotMatch(t, /\[merge-queue\]/);
+      assert.match(t, /fix\/draft-autosave-race needs a fix/);
       await o.ctx.close();
     });
 

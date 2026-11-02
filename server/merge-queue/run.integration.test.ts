@@ -2,7 +2,7 @@
 // whose failure a red check is. The queue around it is tested in the scenario suite.
 import { after, describe, test } from "node:test";
 import { expect } from "./testing/expect";
-import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { MergeEntry, RunStep } from "../../shared/merge-queue";
 import { parseDefinition } from "../../shared/project-contract";
@@ -274,6 +274,37 @@ describe("a merge run", () => {
     // A branch the checks blame: its own failure wins; the review is never waited on.
     const red = await run(fx, fx.branch("r-red", { "tests/a.txt": "fail\n", "review.conf": "ok\n" }), { review: true, deps });
     expect(red.out).toMatchObject({ verdict: "failed", blame: "branch" });
+  });
+
+  test("two projects run at once, each in its own copy (same repo name, different folders): no shared lock, no crossing", async () => {
+    const a = fixture({ name: "app" });
+    const b = fixture({ name: "app" });
+    expect(mergeCopyPath(a.project)).not.toBe(mergeCopyPath(b.project));
+    // Each holds its unit check at a gate until both are running: they must overlap to pass.
+    const ba = a.branch("x", { "tests/a.txt": "gate a\n" });
+    const bb = b.branch("y", { "tests/a.txt": "gate b\n" });
+    const ra = run(a, ba);
+    const rb = run(b, bb);
+    for (let i = 0; i < 400 && !(a.atGate("a") && b.atGate("b")); i++) await new Promise((r) => setTimeout(r, 25));
+    expect(a.atGate("a") && b.atGate("b")).toBe(true);
+    a.openGate("a");
+    b.openGate("b");
+    const [oa, ob] = await Promise.all([ra, rb]);
+    expect(oa.out).toMatchObject({ verdict: "passed", copy: mergeCopyPath(a.project) });
+    expect(ob.out).toMatchObject({ verdict: "passed", copy: mergeCopyPath(b.project) });
+    expect(new Set(callsAt(a, "unit").map((c) => c.cwd))).toEqual(new Set([mergeCopyPath(a.project)]));
+    expect(new Set(callsAt(b, "unit").map((c) => c.cwd))).toEqual(new Set([mergeCopyPath(b.project)]));
+  });
+
+  test("a branch worktree where the copy would go (a branch named merge) is refused, never reset", async () => {
+    const fx = fixture();
+    git(fx.project, ["worktree", "add", "-q", "-b", "merge", mergeCopyPath(fx.project), fx.target]);
+    const mine = join(mergeCopyPath(fx.project), "work-in-progress.txt");
+    writeFileSync(mine, "unsaved\n");
+    const r = await run(fx, fx.branch("z", { "src/app.txt": "z\n" }));
+    expect(r.out.verdict).toBe("machine");
+    expect(r.out.why).toMatch(/worktree the queue didn't make \(branch merge\)/);
+    expect(readFileSync(mine, "utf8")).toBe("unsaved\n");
   });
 
   test("every step's log exists from its first line", async () => {

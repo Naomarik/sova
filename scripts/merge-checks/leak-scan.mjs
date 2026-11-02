@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Merge check and the check before a push: scans the commits about to be published (diff lines they
 // add, their messages, the names of files they add) for secrets and for the private names listed in
-// `privateNames` of a JSON file: --names <file>, else SOVA_LEAK_NAMES, else `<state root>/merge-round.json`.
+// `privateNames` of a JSON file: --names <file>, else SOVA_LEAK_NAMES (the merge queue sets the project's own), else
+// `<state root>/merge-round.json` (Sova's). As a merge check (SOVA_VERB=merge), a missing or empty list scans for
+// secrets alone and notes that the push is held; otherwise it fails closed (exit 2).
 // Node builtins only.
 //
 //   node scripts/merge-checks/leak-scan.mjs [--range <a>..<b>] [--repo <dir>] [--names <file>]
@@ -55,20 +57,32 @@ function stop(why) {
   process.exit(2);
 }
 
-let raw;
+// As a merge check (SOVA_VERB=merge) a project whose private names aren't set up yet is scanned for secrets alone and
+// says so: the queue holds its push until they are. Run by hand, or before a push, it fails closed.
+const asCheck = process.env.SOVA_VERB === "merge";
+const notes = [];
+let raw = "";
+let names = [];
 try {
   raw = readFileSync(settingsFile, "utf8");
 } catch {
-  stop(`${settingsFile} is missing, so the private names can't be checked.`);
+  if (!asCheck) stop(`${settingsFile} is missing, so the private names can't be checked.`);
+  notes.push("private names not set up yet: scanned for secrets only, and the push is held");
 }
-let settings;
-try {
-  settings = JSON.parse(raw);
-} catch {
-  stop(`${settingsFile} isn't valid JSON.`);
+if (raw) {
+  let settings;
+  try {
+    settings = JSON.parse(raw);
+  } catch {
+    stop(`${settingsFile} isn't valid JSON.`);
+  }
+  names = Array.isArray(settings?.privateNames) ? settings.privateNames.filter((x) => typeof x === "string" && x.trim()) : [];
+  if (!names.length) {
+    if (!asCheck) stop(`${settingsFile} lists no privateNames.`);
+    notes.push("private names not set up yet (the list is empty): scanned for secrets only, and the push is held");
+  }
 }
-const names = Array.isArray(settings?.privateNames) ? settings.privateNames.filter((x) => typeof x === "string" && x.trim()) : [];
-if (!names.length) stop(`${settingsFile} lists no privateNames.`);
+for (const n of notes) console.log(`leak-scan: ${n}.`);
 // Each name's line in the settings file, so a hit can point at it without repeating it.
 const rawLines = raw.split("\n");
 const listLine = (term) => {
@@ -155,8 +169,8 @@ const unique = [...new Set(hits)];
 if (unique.length) {
   console.log(`leak-scan: ${unique.length} hit${unique.length === 1 ? "" : "s"} in ${range}. Push nothing; fix these first.`);
   for (const h of unique) console.log(`- ${h}`);
-  report({ passed: 0, failed: unique.length, failures: unique.slice(0, 50).map((h) => ({ name: h })) });
+  report({ passed: 0, failed: unique.length, failures: unique.slice(0, 50).map((h) => ({ name: h })), notes });
   process.exit(1);
 }
-report({ passed: commits, failed: 0, failures: [] });
+report({ passed: commits, failed: 0, failures: [], notes });
 console.log(`leak-scan: no private names or secrets in ${range} (${commits} commit${commits === 1 ? "" : "s"}).`);

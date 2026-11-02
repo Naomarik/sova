@@ -105,6 +105,15 @@ describe("merge checks", () => {
     const closed = runCheck("leak-scan", tree, root, ["c.txt"], base, { SOVA_LEAK_NAMES: join(root, "missing.json") });
     expect(closed.code).toBe(2);
     expect(closed.report?.failed).toBe(1);
+    // As the queue's check, a project with no names yet is scanned for secrets only, and says the push is held.
+    const asCheck = runCheck("leak-scan", tree, root, ["c.txt"], base, { SOVA_LEAK_NAMES: join(root, "missing.json"), SOVA_VERB: "merge" });
+    expect(asCheck.code).toBe(0);
+    expect(String((asCheck.report?.notes as string[])[0])).toMatch(/private names not set up yet.*push is held/);
+    writeFileSync(join(tree, "d.txt"), `key = "sk-${"a".repeat(40)}"\n`);
+    git("add", "d.txt");
+    git("commit", "-qm", "secret");
+    const secret = runCheck("leak-scan", tree, root, ["d.txt"], base, { SOVA_LEAK_NAMES: join(root, "missing.json"), SOVA_VERB: "merge" });
+    expect(secret.code).toBe(1);
   });
 
   test("spec: a tree with a spec is checked by the spec tools; missing tools fail rather than pass", () => {

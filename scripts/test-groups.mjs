@@ -96,6 +96,29 @@ export const GROUPS = [
       ...SELF,
     ],
   },
+  {
+    name: "merge-queue",
+    title: "Merge queue",
+    // The merge queue on real throwaway repositories: runs in a merge copy, its checks as real processes, the queue
+    // landing and recovering, and (slowest) Sova's own checks in a copy of Sova. A landing that touches the queue,
+    // its checks or what they read runs them.
+    files: ["server/merge-queue/*.integration.test.ts", "scripts/merge-checks/*.integration.test.ts"],
+    except: [],
+    landing: "triggered",
+    triggers: [
+      "server/merge-queue/**",
+      "scripts/merge-checks/**",
+      "shared/merge-queue.ts",
+      "shared/project-contract.ts",
+      "shared/project-slots.ts",
+      ".sova/project.json",
+      "pi-config/extensions/spec/core/**",
+      "pi-config/extensions/worktrees/**",
+      "server/merge-queue-*",
+      ...TEST_SETUP,
+      ...SELF,
+    ],
+  },
 ];
 
 /** The name of the everyday set: every integration file in no group. */

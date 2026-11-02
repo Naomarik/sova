@@ -96,6 +96,23 @@ test("nothing ran, nothing was left: no marker, no checkout, no worktree", async
   await deployer.run("deploy.check", { project }, op);
   for (const f of ["ship", "build", "check-token"]) assert.equal(existsSync(join(project, `RAN-${f}`)), false, f);
   assert.equal(existsSync(join(project, "RAN-CHECK")), false);
-  assert.deepEqual(readdirSync(join(deployRoot(), "checkouts")), []);
+  // Never under the state root (a checkout there reads the state root's files as its own), and none left beside the project.
+  assert.equal(existsSync(join(deployRoot(), "checkouts")), false);
+  const beside = join(parent, ".worktrees");
+  assert.deepEqual(existsSync(beside) ? readdirSync(beside).filter((n) => n.includes("-deploy-")) : [], []);
   assert.equal(git(["worktree", "list", "--porcelain"]).split("\n").filter((l) => l.startsWith("worktree ")).length, 1);
+});
+
+test("a check's fresh checkout is cut beside the project, never under the state root", async () => {
+  const seen: string[] = [];
+  const spy: typeof import("./engine").realGit = async (args, cwd) => {
+    if (args[0] === "worktree" && args[1] === "add") seen.push(args.at(-2)!);
+    const { realGit } = await import("./engine");
+    return realGit(args, cwd);
+  };
+  const d = new Deployer(new ProjectEngine({ driver: new DetachedDriver() }), { git: spy });
+  await d.run("deploy.check", { project }, op);
+  assert.equal(seen.length, 1);
+  assert.ok(seen[0]!.startsWith(join(parent, ".worktrees", `${project.split("/").pop()}-deploy-check-`)), seen[0]);
+  assert.ok(!seen[0]!.startsWith(process.env.PI_CODING_AGENT_DIR!), "under the state root");
 });

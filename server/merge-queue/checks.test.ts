@@ -70,6 +70,9 @@ describe("what a run checks", () => {
       expect(e.CLAUDE_CONFIG_DIR).toBeUndefined();
       expect(e.SOVA_CHAT_ID).toBeUndefined();
       expect(e.ANTHROPIC_API_KEY).toBeUndefined();
+      // No names set up for this project: a file that doesn't exist (scan secrets only, push held), never the server's.
+      expect(e.SOVA_LEAK_NAMES).toBe("/s/data/no-private-names.json");
+      expect(envOf(declared, { ...scope, leakNames: "/s/names.json" }).SOVA_LEAK_NAMES).toBe("/s/names.json");
       expect(e).toMatchObject({ SOVA_VERB: "merge", SOVA_STEP: "unit", SOVA_OUT: "/s/out.json", SOVA_MERGE_BASE: scope.base, SOVA_MERGE_TIP: scope.tip, SOVA_MERGE_TARGET: "master", SOVA_MERGE_CHANGED: "/s/changed.txt", SOVA_MERGE_PICKED: "1", SOVA_CHECKOUT: scope.copy, SOVA_PORT_WEB_HTTP: String(5100 + 19) });
       expect(templateVarsOf(declared, scope)).toMatchObject({ "merge.base": scope.base, "merge.tip": scope.tip, "merge.target": "master", checkout: scope.copy, main: "/p/demo", "ports.web.http": String(5100 + 19) });
     } finally {

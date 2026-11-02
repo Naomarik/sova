@@ -85,7 +85,7 @@ export const picksOf = (list: readonly PlannedCheck[]): CheckPick[] =>
 // ---- environment ----------------------------------------------------------------------------------
 
 /** What a check inherits from the server: nothing secret, nothing that points at a chat or a repository. */
-const ENV_ALLOW = ["PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TZ", "XDG_RUNTIME_DIR", "SHELL", "TMPDIR", "PI_CODING_AGENT_DIR", "SOVA_SPEC_CORE", "SOVA_LEAK_NAMES", "SOVA_RUNTIME", "SOVA_BUN"];
+const ENV_ALLOW = ["PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TZ", "XDG_RUNTIME_DIR", "SHELL", "TMPDIR", "PI_CODING_AGENT_DIR", "SOVA_SPEC_CORE", "SOVA_RUNTIME", "SOVA_BUN"];
 
 /** The facts a run gives its processes and templates. */
 export interface CopyScope {
@@ -102,6 +102,8 @@ export interface CopyScope {
   tip?: string;
   /** The file listing the changed paths. */
   changedFile?: string;
+  /** This project's private-names file for the leak scan (SOVA_LEAK_NAMES); absent: none set up. */
+  leakNames?: string;
 }
 
 export function templateVarsOf(def: ProjectDef, s: CopyScope): Record<string, string> {
@@ -141,6 +143,8 @@ export function envOf(def: ProjectDef, s: CopyScope, extra: { step?: string; out
     SOVA_MERGE_TIP: s.tip ?? "HEAD",
     SOVA_MERGE_TARGET: s.target,
     ...(s.changedFile ? { SOVA_MERGE_CHANGED: s.changedFile } : {}),
+    // Each project's own names: never another project's, never the server's.
+    SOVA_LEAK_NAMES: s.leakNames ?? join(s.data, "no-private-names.json"),
     ...(extra.step ? { SOVA_STEP: extra.step } : {}),
     ...(extra.out ? { SOVA_OUT: extra.out } : {}),
     ...(extra.picked ? { SOVA_MERGE_PICKED: "1" } : {}),

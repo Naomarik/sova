@@ -35,6 +35,9 @@ export interface RunDeps extends ReviewDeps {
   /** Brings up services a check requires, in the copy; returns the slot its ports are numbered by, and how to stop
    *  them. Absent: a check that requires services fails as a machine problem (nothing can start them). */
   services?: (o: { root: string; copy: string; names: string[]; log: (s: string) => void; signal: AbortSignal }) => Promise<{ slot: number; down: () => Promise<void> }>;
+  /** The project's private-names file for the leak scan (keyed per project; Sova's is <state>/merge-round.json).
+   *  Null, or a file that doesn't exist: the scan checks secrets only and notes the push is held. */
+  leakNames?: (project: { id: string; root: string }) => string | null;
 }
 
 const now = () => new Date().toISOString();
@@ -226,7 +229,8 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   // The changed paths the checks read (SOVA_MERGE_CHANGED): the branch's against the target.
   const changed = (await gitProc(copy, ["diff", "--name-only", `${base}...${mergeSha}`])).out.split("\n").filter(Boolean);
   const changedFile = join(input.runDir, "changed.txt");
-  const scope: CopyScope = { project: project.root, projectId: project.id, copy, slot: mergeSlotOf(def), data: join(input.runDir, "data"), target, base, tip: mergeSha, changedFile };
+  const names = deps.leakNames?.({ id: project.id, root: project.root }) ?? null;
+  const scope: CopyScope = { project: project.root, projectId: project.id, copy, slot: mergeSlotOf(def), data: join(input.runDir, "data"), target, base, tip: mergeSha, changedFile, ...(names ? { leakNames: names } : {}) };
   mkdirSync(scope.data, { recursive: true });
   writeFileSync(changedFile, `${changed.join("\n")}\n`);
 

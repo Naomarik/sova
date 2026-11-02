@@ -6,7 +6,7 @@
  * node_modules, kept for its cache), the spec drafts folder emptied.
  */
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, realpathSync, renameSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { stateRoot } from "../state-root";
@@ -141,9 +141,23 @@ export async function gitOut(cwd: string, args: string[], opts: { signal?: Abort
 
 // ---- the copy -------------------------------------------------------------------------------------
 
+/** The mark the queue leaves in its copy's own git dir: a worktree without it is never reset. */
+async function markerFile(path: string): Promise<string> {
+  return join(await gitOut(path, ["rev-parse", "--path-format=absolute", "--git-dir"]), "sova-merge-copy");
+}
+async function isOurCopy(path: string): Promise<boolean> {
+  try {
+    return existsSync(await markerFile(path));
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Make the copy exist and stand at `base`, clean: cut it (a detached worktree of `root`) when missing, else check it is
- * still one of `root`'s worktrees (one that isn't is moved aside, never written into) and reset it. Every git command
+ * Make the copy exist and stand at `base`, clean: cut it (a detached worktree of `root`, marked as the queue's) when
+ * missing, else check it is still the queue's own worktree of `root` and reset it. A folder there that is no worktree
+ * of `root` is moved aside, never written into; one of the project's own worktrees there (a branch named "merge") is
+ * refused, never reset. Every git command
  * and its output goes to `log`. Throws CopyRefused for a path under the state root, Error for git failing.
  */
 export async function prepareCopy(o: { root: string; path: string; base: string; log: (s: string) => void; signal?: AbortSignal; state?: string; home?: string }): Promise<void> {
@@ -158,17 +172,22 @@ export async function prepareCopy(o: { root: string; path: string; base: string;
     const common = await gitProc(o.path, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
     const mine = await gitProc(o.root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
     const top = await gitProc(o.path, ["rev-parse", "--show-toplevel"]);
-    const ok = common.code === 0 && mine.code === 0 && top.code === 0 && real(common.out.trim()) === real(mine.out.trim()) && real(top.out.trim()) === real(o.path);
-    if (!ok) {
+    const worktree = common.code === 0 && mine.code === 0 && top.code === 0 && real(common.out.trim()) === real(mine.out.trim()) && real(top.out.trim()) === real(o.path);
+    if (!worktree) {
       const aside = `${o.path}.not-a-copy-${Date.now()}`;
       o.log(`${o.path} isn't a worktree of ${o.root}: moved aside to ${aside}\n`);
       renameSync(o.path, aside);
+    } else if (!(await isOurCopy(o.path))) {
+      // One of the project's own worktrees (a branch named "merge" is cut at this very path): never reset it.
+      const branch = (await gitProc(o.path, ["symbolic-ref", "--quiet", "--short", "HEAD"])).out.trim();
+      throw new CopyRefused(`${o.path} is a worktree the queue didn't make${branch ? ` (branch ${branch})` : ""}; the queue never resets it. Move that worktree, then resume the queue`);
     }
   }
   if (!existsSync(o.path)) {
     mkdirSync(dirname(o.path), { recursive: true });
     const r = await step(o.root, ["worktree", "add", "--detach", "--force", o.path, o.base]);
     if (r.code !== 0) throw new Error(`cutting the merge copy at ${o.path} failed: ${r.out.trim().split("\n").pop() || `exit ${r.code}`}`);
+    writeFileSync(await markerFile(o.path), `${o.root}\n`);
     return;
   }
   // A merge (or cherry-pick, rebase) a stopped run left in progress goes first; failure means none was.
@@ -200,7 +219,7 @@ export async function moveCopy(o: { path: string; commit: string; log: (s: strin
 /** Remove the copy (its worktree record too). For a project leaving the queue; never for a run. */
 export async function dropCopy(root: string, path: string): Promise<void> {
   assertCopyOutsideState(path, { root });
-  if (basename(path) !== `${basename(root)}-merge`) return;
+  if (basename(path) !== `${basename(root)}-merge` || !(await isOurCopy(path))) return;
   await gitProc(root, ["worktree", "remove", "--force", "--force", "--", path]);
   rmSync(path, { recursive: true, force: true });
   // Whatever git couldn't remove is gone now: drop this one's record, never another worktree's.

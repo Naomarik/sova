@@ -23,6 +23,7 @@ import {
   playbookDir,
   replaceReason,
   setMergeThread,
+  threadOf,
   type ThreadDeps,
   type ThreadEvent,
   type ThreadSession,
@@ -205,8 +206,9 @@ test("thread down: notify returns at once while the thread hangs or throws, and 
   assert.match(f.created[0]!.text, /mq_4/);
 });
 
-test("with no thread wired, the server's notify is a no-op and no chat is a thread; wired, hasMergeThread says so", () => {
+test("with no thread wired, the server's notify is a no-op and no chat is a thread; wired, hasMergeThread and threadOf say so", async () => {
   assert.equal(hasMergeThread(), false);
+  assert.equal(threadOf("/p"), null);
   assert.doesNotThrow(() => mergeThread().notify("/p", queued()));
   assert.equal(mergeThread().isThreadChat("/p", "s1"), false);
   const t = new MergeThread(fakeSova(scratchRoot("mq-thread-")).deps);
@@ -214,6 +216,10 @@ test("with no thread wired, the server's notify is a no-op and no chat is a thre
   try {
     assert.equal(hasMergeThread(), true);
     assert.equal(mergeThread(), t);
+    assert.equal(threadOf("/p"), null);
+    t.notify("/p", queued());
+    await t.idle("/p");
+    assert.deepEqual(threadOf("/p"), { session: "s1", startedAt: new Date(T0).toISOString() });
   } finally {
     setMergeThread(null);
   }

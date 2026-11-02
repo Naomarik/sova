@@ -248,6 +248,12 @@ export function mergeThread(): Pick<MergeThread, "notify" | "isThreadChat"> {
   return current ?? { notify: () => {}, isThreadChat: () => false };
 }
 
+/** The project's thread for the queue's view: its chat and when it started (ISO), or null. */
+export function threadOf(root: string): { session: string; startedAt: string } | null {
+  const rec = current?.record(root);
+  return rec ? { session: rec.sessionId, startedAt: new Date(rec.startedAt).toISOString() } : null;
+}
+
 /** The server wired a thread keeper: the queue may wait for a conflict judgement (none: it hands back at once). */
 export function hasMergeThread(): boolean {
   return current !== null;

@@ -15,23 +15,23 @@
     },
     {
       "paths": ["src/components/Composer*.tsx", "src/components/WorktreesControl.tsx", "src/components/WorktreesModal.tsx", "src/lib/composer*.ts", "src/lib/focus-view*.ts"],
-      "pick": { "id": "tour", "select": ["scripts/e2e/focus-view.mjs", "scripts/e2e/instant-open.mjs"] },
-      "why": "the composer changed: drive its browser tours"
+      "pick": { "id": "e2e", "select": ["scripts/e2e/focus-view.mjs", "scripts/e2e/instant-open.mjs"] },
+      "why": "the composer changed: drive its browser walkthroughs"
     },
     {
       "paths": ["src/components/Transcript*.tsx", "src/lib/transcript*.ts", "src/lib/follow*.ts"],
-      "pick": { "id": "tour", "select": ["scripts/e2e/transcript-follow.mjs", "scripts/e2e/transcript-drift.mjs", "scripts/e2e/jump-settle.mjs"] },
-      "why": "the transcript view changed: drive its scrolling tours"
+      "pick": { "id": "e2e", "select": ["scripts/e2e/transcript-follow.mjs", "scripts/e2e/transcript-drift.mjs", "scripts/e2e/jump-settle.mjs"] },
+      "why": "the transcript view changed: drive its scrolling walkthroughs"
     },
     {
       "paths": ["src/components/Overseer*.tsx", "src/components/Schedule*.tsx", "src/lib/schedules*.ts"],
-      "pick": { "id": "tour", "select": ["scripts/e2e/overseer-schedules-menu.mjs"] },
-      "why": "the Overseer's schedules menu changed: drive its tour"
+      "pick": { "id": "e2e", "select": ["scripts/e2e/overseer-schedules-menu.mjs"] },
+      "why": "the Overseer's schedules menu changed: drive its walkthrough"
     },
     {
       "paths": ["src/vis/kinds/flow/**"],
-      "pick": { "id": "tour", "select": ["scripts/e2e/flow-focus.mjs"] },
-      "why": "the flow view changed: drive its focus tour"
+      "pick": { "id": "e2e", "select": ["scripts/e2e/flow-focus.mjs"] },
+      "why": "the flow view changed: drive its focus walkthrough"
     },
     {
       "paths": ["server/tours/**", "shared/tour*", "server/tour-routes.ts", "server/project-services/tour-target*", "server/share/tour-*", "pi-config/extensions/sandbox/**"],

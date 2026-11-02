@@ -239,7 +239,19 @@
         "id": "q0000012",
         "at": 1788256818000,
         "text": "Merged. Restart the server to pick it up."
-      }
+      },
+      "replies": [
+        {
+          "id": "q000000a",
+          "at": 1788256810000,
+          "text": "Two questions are open on Export. Shall I go on?"
+        },
+        {
+          "id": "q0000012",
+          "at": 1788256818000,
+          "text": "Merged. Restart the server to pick it up."
+        }
+      ]
     }
   },
   "prefix": {
@@ -489,7 +501,19 @@
         "id": "q0000012",
         "at": 1788256818000,
         "text": "Merged. Restart the server to pick it up."
-      }
+      },
+      "replies": [
+        {
+          "id": "q000000a",
+          "at": 1788256810000,
+          "text": "Two questions are open on Export. Shall I go on?"
+        },
+        {
+          "id": "q0000012",
+          "at": 1788256818000,
+          "text": "Merged. Restart the server to pick it up."
+        }
+      ]
     }
   }
 }

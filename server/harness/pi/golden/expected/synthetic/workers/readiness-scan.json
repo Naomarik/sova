@@ -125,7 +125,14 @@
         "id": "o000000c",
         "at": 1788256812000,
         "text": "The team finished."
-      }
+      },
+      "replies": [
+        {
+          "id": "o000000c",
+          "at": 1788256812000,
+          "text": "The team finished."
+        }
+      ]
     }
   },
   "prefix": {
@@ -261,7 +268,14 @@
         "id": "o000000c",
         "at": 1788256812000,
         "text": "The team finished."
-      }
+      },
+      "replies": [
+        {
+          "id": "o000000c",
+          "at": 1788256812000,
+          "text": "The team finished."
+        }
+      ]
     }
   }
 }

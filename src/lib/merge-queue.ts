@@ -310,7 +310,8 @@ export function pushedWords(h: MergeQueueView["heads"]): { label: string; tone: 
   if (h.pushWhy) return { label: "Not pushed", tone: "warn", why: h.pushWhy };
   if (!h.pushed) return { label: "No remote", tone: "neutral" };
   if (h.pushed === h.target) return { label: "Pushed", tone: "success" };
-  return { label: "Behind", tone: "warn", why: "Pushes after the next landing." };
+  // The target is ahead of origin (Save Checks' commit, say) and the queue gave no reason: never invisible.
+  return { label: "Not pushed", tone: "warn", why: "not pushed yet: goes out with the next landing" };
 }
 
 /** The paused banner's title. */

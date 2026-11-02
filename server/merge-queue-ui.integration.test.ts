@@ -752,6 +752,26 @@ for (const width of [1280, 390]) {
       await o.ctx.close();
     });
 
+    test("the strip says master is ahead of origin: Save Checks' reason, or none given", async () => {
+      for (const heads of [
+        { target: sha("4"), pushed: sha("1"), pushWhy: "not pushed yet: goes out with the next landing" },
+        { target: sha("4"), pushed: sha("1") },
+      ]) {
+        const o = await open(width, `#/projects/${PID}/merge-queue`, { view: viewOf({ heads }) });
+        const strip = o.page.getByRole("group", { name: "master and origin" });
+        await strip.waitFor({ timeout: 20_000 });
+        const t = await words(strip);
+        assert.match(t, /4444444/);
+        assert.match(t, /1111111/);
+        assert.match(t, /Not pushed/);
+        assert.match(t, /Not pushed yet: goes out with the next landing\./);
+        assert.doesNotMatch(t, /Pushed(?! to origin)/, "never Pushed while ahead");
+        await noSideScroll(o.page);
+        await shot(o.page, `${width}-push-waits${heads.pushWhy ? "" : "-noreason"}`);
+        await o.ctx.close();
+      }
+    });
+
     test("the strip says why master isn't pushed (heads.pushWhy)", async () => {
       const o = await open(width, `#/projects/${PID}/merge-queue`, { view: viewOf({ heads: { target: sha("4"), pushed: sha("1"), pushWhy: "push held: private names not set up yet" } }) });
       const strip = o.page.getByRole("group", { name: "master and origin" });

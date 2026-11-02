@@ -117,6 +117,8 @@ test("tags, chips and the paused title", () => {
   assert.equal(verdictChip({ verdict: "machine" }).label, "Setup failed · nobody blamed");
   assert.equal(pushedWords({ target: SHA, pushed: SHA }).label, "Pushed");
   assert.equal(pushedWords({ target: SHA, pushWhy: "held for a release" }).why, "held for a release");
+  // Ahead of origin with no reason given still says so.
+  assert.deepEqual(pushedWords({ target: SHA, pushed: "b".repeat(40) }), { label: "Not pushed", tone: "warn", why: "not pushed yet: goes out with the next landing" });
 });
 
 const step = (x: Partial<RunStep>): RunStep => ({ id: x.id ?? "s", kind: "check", label: "Unit", result: "pending", ms: 0, log: "", ...x });

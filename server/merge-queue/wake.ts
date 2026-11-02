@@ -1,3 +1,4 @@
+import { MERGE_QUEUE_SESSION } from "../../shared/senders";
 import { ARCHIVED_REFUSAL } from "../archived-sessions";
 
 /**
@@ -8,7 +9,7 @@ import { ARCHIVED_REFUSAL } from "../archived-sessions";
  * worktree tool's `land` refuses a marked message whatever it says. Throws when the chat can't take it (a terminal
  * holds it, it is archived, an Overseer's, a baton's): the caller keeps it as the chat's hidden line instead.
  */
-export const MERGE_QUEUE_SENDER = { sessionId: "merge-queue", title: "Merge queue", hop: 0 } as const;
+export const MERGE_QUEUE_SENDER = { sessionId: MERGE_QUEUE_SESSION, title: "Merge queue", hop: 0 } as const;
 
 export async function sendQueueWake(sessionPath: string, text: string): Promise<void> {
   const [{ getSessionSummary }, { acquireChatHandle }, { projectOverseerOfPath }] = await Promise.all([import("../sessions-index"), import("../chat-handle"), import("../project-overseer-store")]);

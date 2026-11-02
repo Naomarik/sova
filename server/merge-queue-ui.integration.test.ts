@@ -876,6 +876,7 @@ for (const width of [1280, 390]) {
       const bt = await words(ban);
       assert.match(bt, /Can't tell whose failure\. Nothing landed; master didn't move\./);
       assert.match(await words(page.locator(".mq-run .cluster").first()), /Can't tell whose failure · waiting for you/);
+      assert.equal(await page.getByText("Nothing has merged from this run.").count(), 0, "the banner says it, once");
       await expectWhy(bt);
       await ban.getByRole("button", { name: "Send feat/slow-build back to its chat" }).click();
       await until("send back from the run page", () => o.calls.filter((x) => x.verb === "merge.answer" && x.body.answer === "send-back").length >= 2);

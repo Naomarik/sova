@@ -94,7 +94,7 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
                 Back to Queue
               </a>
             </div>
-            <Verdict run={r()} target={props.view.target} />
+            <Verdict run={r()} target={props.view.target} unattributed={entry()?.state === "unattributed"} />
             <Show when={entry()?.state === "unattributed" && (entry()!.run ?? r().id) === r().id && entry()}>
               {(e) => <Unattributed projectId={props.projectId} entry={e()} target={props.view.target} />}
             </Show>
@@ -187,7 +187,7 @@ function Unattributed(props: { projectId: string; entry: MergeEntry; target: str
 }
 
 /** The verdict banner and, for a red run, whose failure it is. */
-function Verdict(props: { run: MergeRun; target: string }) {
+function Verdict(props: { run: MergeRun; target: string; /** Its own banner says it: no generic line above it. */ unattributed?: boolean }) {
   const r = () => props.run;
   const rows = () => attribution(r());
   const failedStep = () => r().steps.find((s) => s.result === "failed" && (s.kind === "check" || s.kind === "setup" || s.kind === "install" || s.kind === "review"));
@@ -208,7 +208,7 @@ function Verdict(props: { run: MergeRun; target: string }) {
       <Show when={r().verdict === "void"}>
         <Banner tone="info" title="This run stopped before it finished. Nothing was blamed." body={sentence(r().why) || "It runs again from the start."} />
       </Show>
-      <Show when={r().verdict === "running" || r().verdict === "waiting" || r().verdict === "conflict"}>
+      <Show when={!props.unattributed && (r().verdict === "running" || r().verdict === "waiting" || r().verdict === "conflict")}>
         <p class="text-caption mq-nothing">Nothing has merged from this run. {props.target} moves only once every check passes.</p>
       </Show>
       <Show when={r().verdict === "passed"}>

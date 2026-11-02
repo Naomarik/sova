@@ -182,3 +182,34 @@ test("byActivity and the version header", () => {
   assert.equal(parseListVersion(null), null);
   assert.equal(parseListVersion("x"), null);
 });
+
+test("a lost rows_hello: the first rows frame is taken as the hello and the list re-read, then followed", () => {
+  const t = make();
+  t.lr.socketOpened();
+  assert.equal(t.lr.message(marks), false); // legacy so far
+  assert.equal(t.lr.message(delta(3, [row("b", 2)])), true);
+  assert.equal(t.refetches(), 1);
+  t.lr.fetchStarted();
+  t.lr.message(delta(4, [row("c", 3)]));
+  const out = t.lr.snapshot([row("b", 2), row("a", 1)], { epoch: E, version: 4 });
+  assert.deepEqual(out.map((s) => s.id), ["c", "b", "a"]);
+  assert.equal(t.lr.following, true);
+});
+
+test("a lost rows_hello seen first as a rows_check re-reads too; reads without a version stay legacy whatever comes", () => {
+  const t = make();
+  t.lr.socketOpened();
+  t.lr.message(marks);
+  t.lr.message({ type: "rows_check", epoch: E, version: 2, digest: "0" });
+  assert.equal(t.refetches(), 1);
+  const u = make();
+  u.lr.socketOpened();
+  u.lr.message(hello(0));
+  for (let i = 0; i < 5; i++) {
+    u.lr.fetchStarted();
+    u.lr.snapshot([row("a", 1)], null);
+  }
+  const asked = u.refetches();
+  u.lr.message(delta(0, [row("b", 2)]));
+  assert.equal(u.refetches(), asked, "no read loop once reads proved unversioned");
+});

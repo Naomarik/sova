@@ -42,6 +42,9 @@ export class ListRows {
   private inFlight = 0;
   private buffer: RowsFrame[] = [];
   private epochMisses = 0;
+  /** Legacy because reads carry no version (not for want of a hello): rows frames can't be followed. */
+  private unversioned = false;
+  private open = false;
   /** Full reads this asked for (tests, measurement). */
   refetches = 0;
 
@@ -59,14 +62,17 @@ export class ListRows {
 
   /** The feed socket (re)opened: its first frame says what it speaks. Nothing earlier carries over. */
   socketOpened(): void {
+    this.open = true;
     this.mode = "unknown";
     this.epochMisses = 0;
+    this.unversioned = false;
     this.hello = null;
     this.buffer = [];
   }
 
   /** The socket closed: until it reopens, the list is read the old way. */
   socketClosed(): void {
+    this.open = false;
     this.mode = "legacy";
     this.hello = null;
     this.buffer = [];
@@ -107,7 +113,10 @@ export class ListRows {
       // other than the socket's. Try again a few times, then follow the old way.
       this.at = null;
       this.buffer = [];
-      if (++this.epochMisses > MAX_EPOCH_MISSES) this.mode = "legacy";
+      if (++this.epochMisses > MAX_EPOCH_MISSES) {
+        this.mode = "legacy";
+        this.unversioned = true;
+      }
       else this.ask();
       return rows;
     }
@@ -136,6 +145,16 @@ export class ListRows {
       this.mode = "legacy";
     }
     if (msg.type === "rows_hello") return true;
+    if (this.mode === "legacy" && this.open && !this.unversioned && (msg.type === "rows" || msg.type === "rows_check")) {
+      // A rows frame without its hello (lost or late): the server speaks rows, and sends this
+      // socket no list_changed. Take it as the hello, holding nothing it can prove: re-read.
+      this.mode = "rows";
+      this.hello = { epoch: msg.epoch, version: msg.type === "rows" ? msg.from : msg.version };
+      this.at = null;
+      if (msg.type === "rows") this.buffer.push(msg);
+      if (!this.inFlight) this.ask();
+      return true;
+    }
     if (this.mode !== "rows") return msg.type === "rows" || msg.type === "rows_check";
     if (msg.type === "list_changed") {
       // Too big for a frame: the held rows' version is behind from here on.

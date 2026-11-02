@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
-import { APP, LIST_PLUS, STATE, mergeCopyOf, mergesOnto, resolution, reviewer, settled, setup, testedHead } from "./fixtures/scenario-kit";
-import { Fixture, git, until } from "./fixtures/repo";
-import type { HarnessOptions } from "./fixtures/harness";
+import { APP, LIST_PLUS, STATE, mergeCopyOf, mergesOnto, resolution, reviewer, settled, setup, testedHead } from "./testing/scenario-kit";
+import { Fixture, git, until } from "./testing/repo";
+import type { HarnessOptions } from "./testing/harness";
 import type { MergeEntry } from "../../shared/merge-queue";
 
 /**
  * The merge queue's use cases (team brief, TESTING): landing, the master guard and the live tree. Each on a real git repository in a temp dir with a bare
- * origin: the real queue on the real run, driven through the queue's verb methods (fixtures/harness.ts); only the
+ * origin: the real queue on the real run, driven through the queue's verb methods (testing/harness.ts); only the
  * branch's chat, the merge thread and the reviewer chat are stood in for. Waits are on conditions.
  */
 void [APP, LIST_PLUS, STATE, mergeCopyOf, mergesOnto, resolution, reviewer, settled, setup, testedHead, Fixture, git, until, existsSync, writeFileSync, join, assert];

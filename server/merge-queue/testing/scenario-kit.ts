@@ -48,14 +48,25 @@ export function testedHead(fx: Fixture, mark = 0, script: "unit" | "build" | "ru
 export const mergesOnto = (fx: Fixture, from: string) => Number(git(fx.project, ["rev-list", "--count", "--merges", "--first-parent", `${from}..${fx.target}`]));
 
 /** The thread's resolution, made the way its playbook says (playbooks/merge-queue/references/conflicts.md): a side
- *  worktree at the pinned commit, the target merged in, `content` for `file`. */
+ *  worktree detached at the target's head, the pinned commit merged in, `content` for `file`: parents [target, pinned]. */
 export function resolution(fx: Fixture, pinned: string, file: string, content: string): string {
   const side = fx.worktreeOf(`resolve-${pinned.slice(0, 7)}-${Date.now()}`);
+  git(fx.project, ["worktree", "add", "-q", "--detach", side, fx.head()]);
+  git(side, ["merge", "-q", "--no-ff", "--no-commit", pinned], { allowFail: true });
+  writeFileSync(join(side, file), content);
+  git(side, ["add", file]);
+  git(side, ["commit", "-q", "--no-edit", "-m", "merge queue: resolve"]);
+  return git(side, ["rev-parse", "HEAD"]);
+}
+
+/** The same resolution with the parents the other way round ([pinned, target]): refused as needing the user's look. */
+export function reversedResolution(fx: Fixture, pinned: string, file: string, content: string): string {
+  const side = fx.worktreeOf(`resolve-rev-${pinned.slice(0, 7)}-${Date.now()}`);
   git(fx.project, ["worktree", "add", "-q", "--detach", side, pinned]);
   git(side, ["merge", "-q", "--no-ff", "--no-commit", fx.head()], { allowFail: true });
   writeFileSync(join(side, file), content);
   git(side, ["add", file]);
-  git(side, ["commit", "-q", "--no-edit", "-m", "merge queue: resolve"]);
+  git(side, ["commit", "-q", "--no-edit", "-m", "merge queue: resolve (reversed)"]);
   return git(side, ["rev-parse", "HEAD"]);
 }
 

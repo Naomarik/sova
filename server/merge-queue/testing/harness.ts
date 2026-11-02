@@ -6,7 +6,7 @@
  * captured), the merge thread (a scripted stand-in that answers through the queue's own verb methods) and the
  * reviewer chat (a stand-in that reads the commit and answers through merge.review's method).
  *
- * The crash case runs the queue in a child process (fixtures/queue-child.ts) that SIGKILLs itself right before or
+ * The crash case runs the queue in a child process (testing/queue-child.ts) that SIGKILLs itself right before or
  * right after the landing's fast-forward (an injected git wrapper; no product hook), then a fresh queue recovers.
  */
 import { spawn } from "node:child_process";
@@ -276,7 +276,7 @@ export class QueueHarness {
    */
   async crashAt(fault: "before-ff" | "after-ff", o: { resume?: boolean } = {}): Promise<{ childExit: string; childLog: string }> {
     await this.queues.stop();
-    const child = spawn(process.execPath, [join(REPO_ROOT, "server/merge-queue/fixtures/queue-child.ts"), JSON.stringify({ stateRoot: this.stateRoot, root: this.fx.project, fault, resume: o.resume === true })], {
+    const child = spawn(process.execPath, [join(REPO_ROOT, "server/merge-queue/testing/queue-child.ts"), JSON.stringify({ stateRoot: this.stateRoot, root: this.fx.project, fault, resume: o.resume === true })], {
       env: { ...process.env, PI_CODING_AGENT_DIR: this.stateRoot },
       stdio: ["ignore", "pipe", "pipe"],
     });

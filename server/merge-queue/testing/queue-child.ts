@@ -5,7 +5,7 @@
  * command (`merge --ff-only` in the main checkout, or `update-ref refs/heads/<target>`). Nothing in the product
  * knows about this: it is the queue's ordinary `git` dependency.
  *
- *   bun server/merge-queue/fixtures/queue-child.ts '{"stateRoot": "...", "root": "...", "fault": "before-ff"|"after-ff"}'
+ *   bun server/merge-queue/testing/queue-child.ts '{"stateRoot": "...", "root": "...", "fault": "before-ff"|"after-ff"}'
  */
 import { type Git, realGit } from "../guard";
 import { MergeQueues } from "../queue";

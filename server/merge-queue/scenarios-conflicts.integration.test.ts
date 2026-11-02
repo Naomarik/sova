@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
-import { APP, LIST_PLUS, STATE, mergeCopyOf, mergesOnto, resolution, reviewer, settled, setup, testedHead } from "./fixtures/scenario-kit";
-import { Fixture, git, until } from "./fixtures/repo";
-import type { HarnessOptions } from "./fixtures/harness";
+import { APP, LIST_PLUS, STATE, mergeCopyOf, mergesOnto, resolution, reversedResolution, reviewer, settled, setup, testedHead } from "./testing/scenario-kit";
+import { Fixture, git, until } from "./testing/repo";
+import type { HarnessOptions } from "./testing/harness";
 import type { MergeEntry } from "../../shared/merge-queue";
 
 /**
  * The merge queue's use cases (team brief, TESTING): conflicts the merge thread judges. Each on a real git repository in a temp dir with a bare
- * origin: the real queue on the real run, driven through the queue's verb methods (fixtures/harness.ts); only the
+ * origin: the real queue on the real run, driven through the queue's verb methods (testing/harness.ts); only the
  * branch's chat, the merge thread and the reviewer chat are stood in for. Waits are on conditions.
  */
 void [APP, LIST_PLUS, STATE, mergeCopyOf, mergesOnto, resolution, reviewer, settled, setup, testedHead, Fixture, git, until, existsSync, writeFileSync, join, assert];
@@ -142,5 +142,21 @@ describe("conflicts", () => {
     const s = await h.waitEntry(eb.id, ["needs-fix", "behaviour-differs"]);
     assert.equal(s.state, "needs-fix", `${s.state}: ${s.reason}`);
     assert.match(s.reason ?? "", /conflict/i);
+  });
+
+  test("S2e: a resolution with its parents reversed ([pinned, target]) is never landed: it waits for the user with a clear why", async () => {
+    const { fx, h, b } = await twoAppenders({
+      thread: {
+        conflict: async (h, e) => {
+          const c = reversedResolution(h.fx, e.commit, "src/list.txt", LIST_PLUS("delta\necho"));
+          await h.resolve(e.id, { verdict: "no-behaviour-change", files: ["src/list.txt"], ours: "delta", theirs: "echo", proposal: "keep both", commit: c });
+        },
+      },
+    });
+    const before = fx.head();
+    const s = await h.waitEntry((await h.add({ branch: b.branch })).id, settled);
+    assert.equal(s.state, "behaviour-differs", `${s.state}: ${s.reason}`);
+    assert.match(s.reason ?? JSON.stringify(s.conflict?.sanity), /second parent|approved commit/);
+    assert.equal(fx.head(), before);
   });
 });

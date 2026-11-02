@@ -8,7 +8,7 @@ import type { MergeEntry, RunStep } from "../../shared/merge-queue";
 import { parseDefinition } from "../../shared/project-contract";
 import type { RunInput, RunOutcome } from "./contract";
 import { mergeCopyPath } from "./copy";
-import { Fixture, git, REPO_ROOT } from "./fixtures/repo";
+import { Fixture, git, REPO_ROOT } from "./testing/repo";
 import { deliverReview, type StartReviewer } from "./review-step";
 import { engineServices, makeRunMerge, type RunDeps } from "./run";
 

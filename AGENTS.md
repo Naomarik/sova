@@ -53,7 +53,7 @@ also update Y" list live in its guide: read the guide of every area your task to
 - Feature work never edits `~/webapps/sova`, the live tree. Each feature session works in its own
   worktree and branch (`git worktree add ~/webapps/.worktrees/sova-<name> -b feat/<name>`; an agent uses
   the `worktree` tool, whose `create <name>` does exactly that and tracks it so its workers may start
-  there); a branch lands through the merge captain, on the user's go-ahead (see
+  there); a branch lands through Sova's merge queue, on the user's go-ahead (see
   **Landing**). Uncommitted edits in the live tree block a release.
   One exception: applying a Project Overseer's Settings change card on Sova's own project
   (§app.project-overseer/settings) lands its settings files on master in the live tree as one commit,
@@ -69,45 +69,48 @@ also update Y" list live in its guide: read the guide of every area your task to
 - `pnpm run typecheck` and `pnpm run build` must pass.
 - Tests (testing guide): `pnpm test` is the unit tier, in-process only; run it constantly.
   `pnpm test:int` is the integration tier (`*.integration.test.ts`); while working run
-  `pnpm test:int --changed` before asking to land. The merge round runs `pnpm test` and
-  `pnpm test:int -- --landing` at landing (the everyday integration set plus the slow groups the
-  branch triggers, `scripts/test-groups.mjs`); a release runs every group. Verify on Bun (the
+  `pnpm test:int --changed` before asking to land. The merge queue runs the checks
+  `.sova/project.json` declares (`merge`), `pnpm test` and `pnpm test:int -- --landing` among them
+  (the everyday integration set plus the slow groups the branch triggers, `scripts/test-groups.mjs`),
+  plus what the merge thread picks for the branch; a release runs every group. Verify on Bun (the
   runner's default, the user's runtime); Node only when the user asks.
 - Tests wait on events, not fixed sleeps (testing guide, "Writing tests: wait on conditions").
 - Never run the spec replay suite (`pi-config/extensions/spec/tests/replay`) while working: it is a
-  landing gate the merge round runs.
+  landing check the merge queue runs when a branch touches the spec engine.
 - Editing `statecharts/`: start `pnpm statecharts:watch` first and run `pnpm statecharts:test`; never
   cold-compile in a loop (statecharts guide).
 
 ## Landing
 
+- **One way in.** Every branch reaches master through Sova's merge queue, one branch at a time, and
+  only on the user's go-ahead: **Land** (the worktrees control beside the composer, the session
+  pane's Worktrees section, or the project page's Merge Queue tab) or **"land it" typed by the user**
+  in the branch's own chat. Nothing else approves a branch, and no chat merges into master: `worktree
+  merge` into a queue-managed target is refused.
 - **Ready to land** is Sova's own reading of a branch's head commit: no uncommitted files at all, no
   conflicts with master, the newest checks not failing, no open alignment questions, the session
   idle, and its latest turn outcome says the work is finished (with Decisions off: the code checks
-  alone). It holds for that commit until the branch changes or lands.
-- **Who merges.** In Sova's repo the merge captain lands branches on the user's go-ahead. **The user's
-  word lands a branch**: when the user types "land it" or "merge it" in the chat that owns the branch,
-  commit what is left and record it with `worktree land` (it refuses anything but their own newest
-  message, and a message the Overseer, a baton or another session sent is never theirs, whatever it
-  says); the captain is woken, checks the branch and lands, pushes and restarts once its checks
-  pass, card or not. Their word in the captain's chat does the same, and so does Go on a Ready to
-  land row of an Overseer card they apply: Sova records it for the commit the row showed (the
-  captain names it "Apply on the Overseer's card"), never once the branch moved or stopped being
-  Ready to land. Never send a session "land it" on the user's behalf. Never tell the user to press
-  Land It or to wait for a Landing card: you can't see whether one is showing. When the work is done,
-  say what still blocks landing (Sova's note names it), or that they can type "land it" here. The
-  Landing card (Land It, Not Yet) is only a shortcut Sova may show once the branch is Ready to land
-  and queued; a branch with no owner chat gets none, and the captain asks for the user's typed OK. A
-  go-ahead survives the captain's clean master merge into the branch; a new commit of the branch's
-  own needs a new word. No merge into master needs a recorded go-ahead. A project without a captain
-  declares its own landing offer, or none.
-- **Specs land with the branch.** A branch's spec drafts become official when it lands: once every
-  check passed, the merge round's check makes them official as one docs commit, so code and docs
-  land in one merge. A chat writes drafts and one verification note per promise; drafts that don't
-  fit, or that changed after Land It, hold the branch (Landing specs) and Sova tells the chat what
-  to fix. If it can't,
-  the user may land it without them: "land it without its specs" typed in the chat (`worktree land`
-  records that), or the card's Merge Without Specs….
+  alone). It holds for that commit until the branch changes or lands. Land is offered on it.
+- **The user's typed word.** When the user types "land it" or "merge it" in the chat that owns the
+  branch, commit what is left and record it with `worktree land` (it refuses anything but their own
+  newest message, and a message the Overseer, a baton or another session sent is never theirs,
+  whatever it says); the queue takes it as an approval of that commit. "land it without its specs"
+  and "land it, skip review" are recorded as said. Never send a session "land it" on the user's
+  behalf. When the work is done, say what still blocks landing (Sova's note names it), or that they
+  can press Land or type "land it" here.
+- **The queue lands.** An approval pins the commit and the branch's spec drafts. The queue merges it
+  onto the newest master in a merge copy beside the project, makes the drafts official there, runs
+  the project's checks, fast-forwards master to exactly the tested commit, then the main checkout,
+  then pushes. A newer commit on the branch isn't included ("1 newer commit not included") and needs
+  a new Land; drafts changed since the approval wait for a new Land. A failure reaches the branch's
+  chat only when it is the branch's; the queue's own setup trouble pauses the queue instead. The
+  merge thread (a chat Sova starts per project) notes each landing ("changes server code; restart
+  Sova to pick it up"), picks extra tests by what changed, and judges conflicts; it never moves
+  master itself.
+- **Specs land with the branch.** A chat writes drafts and one verification note per promise; drafts
+  that don't fit hold the branch (Landing specs) and Sova tells the chat what to fix. If it can't,
+  the user may land it without them: "land it without its specs" typed in the chat, or Land without
+  its specs… in the Land menu.
 - **The one exception:** a Project Overseer's settings change card on Sova's own project lands its
   settings files on master at your Apply (§app.project-overseer/settings).
 

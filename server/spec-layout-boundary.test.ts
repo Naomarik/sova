@@ -27,7 +27,7 @@ test("the repo scan reaches every root and the known spec readers (it cannot pas
   assert.ok(files.length > 500, `${files.length} files scanned`);
   for (const root of ROOTS.filter((r) => r !== "src" && r !== "shared"))
     assert.ok(files.some((f) => f.startsWith(`${root}/`)), `${root}/ is scanned`);
-  for (const f of ["server/spec-lookup.ts", "server/spec-draft-writer.ts", ".sova/playbooks/merge-round/scripts/round.mjs", "scripts/sim/lib/checks.mjs"])
+  for (const f of ["server/spec-lookup.ts", "server/spec-draft-writer.ts", "scripts/sim/lib/checks.mjs"])
     assert.ok(files.includes(f), `${f} is scanned`);
   assert.ok((scans.get("server/spec-lookup.ts") ?? []).some((h) => h.rule === "names-manifest"), "spec-lookup's existence probe is found");
   assert.equal(files.some((f) => f.startsWith("pi-config/")), false, "pi-config has its own guard");

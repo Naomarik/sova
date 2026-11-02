@@ -1,5 +1,5 @@
 // The integration tier's slow groups, and what triggers each: one list that a landing
-// (`run-tests.mjs --landing`, the merge round's check) and a session's own `--changed` run both read,
+// (`run-tests.mjs --landing`, the merge queue's check) and a session's own `--changed` run both read,
 // so the two agree on what gets tested (§app.server-runtime/test-tiers). Builtins only.
 //
 // A group is integration files (`files`, less `except`) and the paths whose change can break them
@@ -191,5 +191,5 @@ export function selectFiles(files, changed, { mode, closure = (fs) => fs, only =
   return { files: files.filter((f) => keep.has(f)), ran, skipped, hits: hit };
 }
 
-/** The key the merge round keeps a run's timings under: "core", or "core+trial" for the everyday set and Chat processes. */
+/** The key the merge queue keeps a run's timings under: "core", or "core+trial" for the everyday set and Chat processes. */
 export const setKey = (ran) => [EVERYDAY, ...ran].join("+");

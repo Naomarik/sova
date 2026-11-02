@@ -42,5 +42,5 @@ export const canApprove = (s: PlaybookSchedule): boolean => !!s.pin && (s.state 
 /** Whether Revoke Schedule applies: approved, running or paused. */
 export const canRevoke = (s: PlaybookSchedule): boolean => !!s.id && (s.state === "active" || s.state === "paused");
 
-/** "Merge captain" with its zone when the header names one. */
+/** "Runs as Nightly tidy" with its zone when the header names one. */
 export const runsAsText = (s: PlaybookSchedule): string => `Runs as ${s.profileLabel ?? s.profile ?? "its profile"}${s.tz ? ` · ${s.tz} time` : ""}`;

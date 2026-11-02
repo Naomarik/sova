@@ -341,7 +341,7 @@ export const SETTINGS_REFERENCE: Record<SettingId, ReferenceEntry> = {
     edit: '{setting: "playbook", id: "<id>", text: …} with the schedule lines in its frontmatter',
     grant: "A change to when:, tz: or profile: (the schedule's pin): its approval.",
     keys: {
-      when: 'when it runs ("weekdays 09:00", "every 2h", "claude-limit-reset", "merge-ready")',
+      when: 'when it runs ("weekdays 09:00", "every 2h", "claude-limit-reset")',
       tz: "an IANA time zone",
       profile: "the profile its runs use (required)",
       task: "the first message of each run",

@@ -57,7 +57,7 @@ const CLEAN = [
 for (const [name, text] of CLEAN) test(`guard rule form not flagged: ${name}`, () => assert.deepEqual(rules(text), [], text));
 
 test("guard scope: tests, fixtures and type files are exempt; layout.mjs is the one module allowed; source is scanned", () => {
-  for (const f of ["pi-config/extensions/spec/core/sova-spec.mjs", "pi-config/extensions/mode/spec-guard.ts", "pi-config/extensions/worktrees/spec.ts", "server/spec-lookup.ts", ".sova/playbooks/merge-round/scripts/round.mjs"])
+  for (const f of ["pi-config/extensions/spec/core/sova-spec.mjs", "pi-config/extensions/mode/spec-guard.ts", "pi-config/extensions/worktrees/spec.ts", "server/spec-lookup.ts", ".sova/playbooks/merge-queue/scripts/picks.mjs"])
     assert.equal(isScanned(f), true, f);
   for (const f of [LAYOUT_MODULE, "pi-config/extensions/spec/core/layout.d.mts", "pi-config/extensions/spec/tests/draft.test.mjs", "pi-config/extensions/spec/tests/replay/lib.mjs", "server/spec-lookup.test.ts", "server/harness/fixtures/boundary/x.ts", "pi-config/extensions/mode/spec-guard.test.ts"])
     assert.equal(isScanned(f), false, f);

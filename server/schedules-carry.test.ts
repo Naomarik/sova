@@ -29,7 +29,7 @@ after(() => rmSync(agentDir, { recursive: true, force: true }));
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const T0 = Date.parse("2026-10-05T08:50:00Z");
-const WHEN = "merge-ready; every 6h; claude-limit-reset";
+const WHEN = "every 6h; claude-limit-reset";
 const CAPTAIN_PATH = "/sessions/captain.jsonl";
 let n = 0;
 
@@ -178,9 +178,9 @@ function world(opts: { profile?: boolean; automation?: unknown; store?: (w: { ro
   };
 }
 
-/** The live store's s1, sanitized: 30 wakes into the captain, today's count, the board's ready map, the next fire. */
+/** The live store's s1, sanitized: 30 wakes into the captain, today's count, the next fire. */
 function s1Fixture(root: string, pin: string): ScheduleStore {
-  const fires = Array.from({ length: 30 }, (_, i) => ({ at: T0 - (30 - i) * HOUR, real: T0 - (30 - i) * HOUR, trigger: i % 3 ? "merge-ready" : "every 6h", kind: "wake" as const, sessionId: "captain", path: CAPTAIN_PATH }));
+  const fires = Array.from({ length: 30 }, (_, i) => ({ at: T0 - (30 - i) * HOUR, real: T0 - (30 - i) * HOUR, trigger: i % 3 ? "claude-limit-reset" : "every 6h", kind: "wake" as const, sessionId: "captain", path: CAPTAIN_PATH }));
   const s1: StoredSchedule = {
     id: "s1",
     root,
@@ -189,13 +189,12 @@ function s1Fixture(root: string, pin: string): ScheduleStore {
     next: { at: Date.parse("2026-10-05T12:00:00Z"), trigger: "every 6h" },
     fires,
     day: { key: "2026-10-05", n: 2 },
-    ready: { "/wt/feat-a": { branch: "feat/a", commit: "a".repeat(40), at: T0 - 2 * HOUR }, "/wt/feat-b": { branch: "feat/b", at: T0 - HOUR } as never /* a row stored before commits were */ },
   };
   return { version: 1, seq: 1, schedules: [s1], logins: { default: { state: "ready", name: "Claude" } } };
 }
 
 describe("s1 carries over to the automation file with no gap and no re-approval", () => {
-  test("same id, approval time, fires, day count, ready map and next fire; no s2, no Needs approval; one backup", async () => {
+  test("same id, approval time, fires, day count and next fire; no s2, no Needs approval; one backup", async () => {
     const w = world({ automation: AUTOMATION, store: ({ root, pin }) => s1Fixture(root, pin) });
     const before = readFileSync(w.file, "utf8");
     const fixture = JSON.parse(before) as ScheduleStore;
@@ -212,7 +211,7 @@ describe("s1 carries over to the automation file with no gap and no re-approval"
     assert.equal(row.approved!.pin, was.approved!.pin, "the header pin kept, for an older Sova");
     assert.ok(row.approved!.pin2 && row.approved!.carried === T0);
     assert.deepEqual(row.fires, was.fires);
-    assert.deepEqual([row.day, row.ready, row.next], [was.day, was.ready, was.next]);
+    assert.deepEqual([row.day, row.next], [was.day, was.next]);
     assert.deepEqual(row.session, { id: "captain", path: CAPTAIN_PATH }, "its own session: the captain the header's fires woke");
     assert.equal(row.host, "h_thisone1");
     const outcomes = w.log().map((l) => l.outcome);

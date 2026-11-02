@@ -3543,7 +3543,7 @@ export type AttentionKind =
   | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
   | "held-act"            // act tier, never pushed: a statechart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
-  | "offer-waiting"       // act tier, never pushed or briefed: the session shows an open offer card (Land It, §chat.offers/card), idle or working
+  | "offer-waiting"       // act tier, never pushed or briefed: the session shows an open offer card (§chat.offers/card), idle or working
   | "card-waiting"        // act tier, never pushed or briefed: the session shows an open transcript card waiting on an answer (§chat.transcript-cards/answering), one per card, idle or working
   | "tour-sign-in"        // act tier, never pushed: one of the session's tour recordings waits for the user to sign in on its card (§app.tours/sites; from the server's memory, gone on restart)
   | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Merge Branch (§app.project-runtime/review; the run's session, `playbook` set)
@@ -3720,14 +3720,12 @@ export interface SovaConfirmDetails {
 }
 
 /** One thing a confirm card is about. A session row: its folder's short name (`project`), last
-    activity (ISO), a one-line summary when it has one, and how many subagents were working; a land
-    row (the global Overseer's only, §app.overseer/card-land) also the branch Ready to land and its
-    full head sha when the card was raised, which its Go lands at. `note`: the Overseer's own words on what the item is and why the card acts on it (≤ 2 short
+    activity (ISO), a one-line summary when it has one, and how many subagents were working. `note`: the Overseer's own words on what the item is and why the card acts on it (≤ 2 short
     sentences, `CONFIRM_NOTE_MAX` characters). Every kind may also carry the row fields of
     `SovaConfirmRow` (a section heading, what Go sends). */
 export type SovaConfirmItem = SovaConfirmRow &
   (
-  | { kind: "session"; id: string; title: string; project?: string; lastActiveAt?: string; summary?: string; workers?: number; land?: { branch: string; head: string }; note?: string }
+  | { kind: "session"; id: string; title: string; project?: string; lastActiveAt?: string; summary?: string; workers?: number; note?: string }
   | { kind: "idea"; id: string; title: string; note?: string }
   | { kind: "todo"; id: string; text: string; note?: string }
   /** A project registered on this host: its name, and the org's when one places it (§app.overseer/org-tools). */
@@ -4627,8 +4625,8 @@ export interface WorktreeReadiness {
 
 /** A worktree whose work is finished at its head commit (§chat.worktrees/ready-to-land). */
 export interface WorktreeLanding {
-  /** "ready": Ready to land (its drafts, if any, land with it); "specs": finished, but its drafts don't fit or
-      changed since the user's Land It (Landing specs). */
+  /** "ready": Ready to land (its drafts, if any, land with it); "specs": finished, but its drafts don't fit
+      (Landing specs). */
   state: "ready" | "specs";
   /** The full head sha it holds for. */
   commit: string;
@@ -4649,8 +4647,6 @@ export interface WorktreeLandingDocs {
   names: string[];
   /** Why they don't fit (state "specs"), one line each. */
   problems?: string[];
-  /** The drafts whose files changed since the user's Land It at this head (state "specs"). */
-  changedSinceGoAhead?: string[];
 }
 
 /** The row's badge, the first that holds (§chat.worktrees/readiness). */

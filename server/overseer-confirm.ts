@@ -27,9 +27,6 @@ export interface ConfirmLookup {
       standalone): the global Overseer's cards only (§app.overseer/org-project-add). */
   org?(ref: string): Extract<SovaConfirmItem, { kind: "org" }> | null;
   folder?(root: string, org: string | null, name?: string): Promise<Extract<SovaConfirmItem, { kind: "folder" }> | null>;
-  /** The branches of worktrees `s` owns that are Ready to land now, each with its full head sha
-      (§app.overseer/card-land): the global Overseer's cards only; a caller without it takes no land rows. */
-  readyToLand?(s: SessionSummary): Promise<{ branch: string; head: string }[]>;
   /** A running copy by instance id (§app.overseer/copies): its row, null for no such instance, or why it can't be on a
       card (the main copy; for a project overseer, another project's). Both overseers' cards. */
   copy?(ref: string): Promise<Extract<SovaConfirmItem, { kind: "copy" }> | { refused: string } | null>;
@@ -53,19 +50,18 @@ const ORG_EXAMPLE = '"people": [{"org": "<org id or name>", "id": "<person id or
 /** One requested item: its id as the model wrote it, its note (whitespace collapsed), the per-item
     choice it starts on and its own choices (a sova_card entry's `default` and `choices`, both
     checked by the card model). */
-type Wanted = { ref: string; note?: string; default?: string; choices?: unknown; section?: unknown; sends?: unknown; land?: unknown };
+type Wanted = { ref: string; note?: string; default?: string; choices?: unknown; section?: unknown; sends?: unknown };
 /** A resolved item, with the `default`, `choices`, `section` and `sends` its entry gave (the last
     two as written: the card model checks them, shared/overseer-card.ts). */
 export type ResolvedItem = SovaConfirmItem & { default?: string; choices?: unknown };
-const defaultOf = (x: unknown): { default?: string; choices?: unknown; section?: unknown; sends?: unknown; land?: unknown } => {
-  const o = x && typeof x === "object" ? (x as { default?: unknown; choices?: unknown; section?: unknown; sends?: unknown; land?: unknown }) : {};
+const defaultOf = (x: unknown): { default?: string; choices?: unknown; section?: unknown; sends?: unknown } => {
+  const o = x && typeof x === "object" ? (x as { default?: unknown; choices?: unknown; section?: unknown; sends?: unknown }) : {};
   const d = o.default;
   return {
     ...(typeof d === "string" && d.trim() ? { default: d.trim().toLowerCase() } : {}),
     ...(o.choices !== undefined ? { choices: o.choices } : {}),
     ...(o.section !== undefined ? { section: o.section } : {}),
     ...(o.sends !== undefined ? { sends: o.sends } : {}),
-    ...(o.land !== undefined && o.land !== false ? { land: o.land } : {}),
   };
 };
 /** A list of ids, each a bare string or `{id, note}`; the first mention of an id wins. */
@@ -183,7 +179,6 @@ export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, r
   const refusedRows: string[] = [];
   const self: string[] = [];
   const long: string[] = [];
-  const landing: string[] = [];
   const seen = new Set<string>();
   const noted = <T extends SovaConfirmItem>(item: T, w: Wanted): T & { default?: string; choices?: unknown } => {
     let note = w.note;
@@ -207,13 +202,7 @@ export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, r
     else if (lookup.isSelf(s)) self.push(w.ref);
     else if (!seen.has(s.id)) {
       seen.add(s.id);
-      const item = sessionItem(s);
-      if (w.land !== undefined) {
-        const land = await landOf(s, w, lookup);
-        if (typeof land === "string") landing.push(land);
-        else (item as Extract<SovaConfirmItem, { kind: "session" }>).land = land;
-      }
-      out.push(noted(item, w));
+      out.push(noted(sessionItem(s), w));
     }
   }
   for (const w of want.ideas) {
@@ -291,29 +280,9 @@ export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, r
     );
   if (refusedRows.length) problems.push(refusedRows.join(" "));
   if (self.length) problems.push(`${self.join(", ")} is your own conversation; a card never lists it. Leave it out.`);
-  problems.push(...landing);
   if (problems.length) throw refusal(`No card was shown. ${problems.join(" ")}`);
   cutNotes?.push(...long);
   return out;
-}
-
-/**
- * A land row's snapshot (§app.overseer/card-land): the branch of the worktree `s` owns that is Ready to land, with
- * its head commit now. `land: true` takes the one ready branch; `land: "<branch>"` names it, which a session with
- * more than one ready branch needs. Otherwise the refusal sentence for the card, naming the row.
- */
-async function landOf(s: SessionSummary, w: Wanted, lookup: ConfirmLookup): Promise<{ branch: string; head: string } | string> {
-  if (!lookup.readyToLand) return `${w.ref}: land rows are the global Overseer's only; leave land out.`;
-  if (w.land !== true && (typeof w.land !== "string" || !w.land.trim())) return `${w.ref}: land is true, or the branch to land ("feat/x").`;
-  const ready = await lookup.readyToLand(s).catch(() => []);
-  const named = typeof w.land === "string" ? w.land.trim() : null;
-  if (named) {
-    const hit = ready.find((r) => r.branch === named);
-    return hit ?? `${w.ref}: ${named} isn't Ready to land now${ready.length ? ` (ready: ${ready.map((r) => r.branch).join(", ")})` : ""}, so it can't be a land row.`;
-  }
-  if (ready.length === 1) return ready[0]!;
-  if (!ready.length) return `${w.ref} has no worktree Ready to land now, so it can't be a land row: leave land out.`;
-  return `${w.ref} has ${ready.length} branches Ready to land (${ready.map((r) => r.branch).join(", ")}): name the one this row lands, land: "<branch>".`;
 }
 
 /** Whether a card may gate an act that reaches people or ends something (§app.overseer/org-people-facing):
@@ -323,7 +292,7 @@ export async function clickOnlyCard(items: SovaConfirmItem[], lookup: ConfirmLoo
   // A copy or a leftover process: either overseer's card (§app.overseer/copies).
   if (items.some((i) => i.kind === "copy" || i.kind === "leftover")) return true;
   if (!lookup.person || !lookup.project) return false;
-  if (items.some((i) => i.kind === "person" || i.kind === "project" || i.kind === "org" || i.kind === "folder" || (i.kind === "session" && !!i.land))) return true;
+  if (items.some((i) => i.kind === "person" || i.kind === "project" || i.kind === "org" || i.kind === "folder")) return true;
   for (const i of items) {
     if (i.kind !== "session") continue;
     const s = await lookup.session(i.id);
@@ -339,11 +308,9 @@ const NOTE_DESC =
 const DEFAULT_DESC = "With choices (this item's own, else the card's): the choice letter this item starts on (\"a\"), your recommendation for it.";
 const CHOICES_DESC =
   'This item\'s own choices, when its actions differ from the card\'s choices (2 to 4 short labels, lettered a, b… for this row only), e.g. ["Archive", "Keep"] on a session with no worktree beside ["Clean Up & Archive", "Archive Only", "Keep"] on the card.';
-const SECTION_DESC = `The heading this row sits under, at most ${CONFIRM_SECTION_MAX} characters ("Ready to land", "Done").`;
+const SECTION_DESC = `The heading this row sits under, at most ${CONFIRM_SECTION_MAX} characters ("Needs you", "Done").`;
 const SENDS_DESC = `The exact message its Go (first choice) sends this session, at most ${CONFIRM_SENDS_MAX} characters; shown on the row.`;
 const rowProps = { section: { type: "string", description: SECTION_DESC }, sends: { type: "string", description: SENDS_DESC } };
-const LAND_DESC =
-  'A Ready to land row: true takes the branch of the worktree this session owns that is Ready to land, or name it ("feat/x") when it has more than one. The card snapshots that branch and its head commit and shows them; the row needs choices, its first one Go. In the turn the Apply opens, call sova_land on it when Go was picked: it lands at that commit, never a newer one. Never send the session "land it".';
 const choicesProp = { type: "array", minItems: 2, maxItems: 4, items: { type: "string", minLength: 1 }, description: CHOICES_DESC };
 const idList = (description: string, extra: Record<string, unknown> = {}) => ({
   type: "array",
@@ -358,7 +325,7 @@ const idList = (description: string, extra: Record<string, unknown> = {}) => ({
       },
     ],
   },
-  description: `${description} Each entry is { id, note, default?, choices?, section?, sends?${"land" in extra ? ", land?" : ""} } (a bare id still works).`,
+  description: `${description} Each entry is { id, note, default?, choices?, section?, sends? } (a bare id still works).`,
 });
 const orgList = (description: string) => ({
   type: "array",
@@ -431,7 +398,7 @@ export function itemsSchema(orgs: boolean, copies = false): Record<string, unkno
     // Not closed: a misplaced key reaches execute, whose refusal says where it goes (pi's own
     // "schema is false" does not).
     properties: {
-      sessions: idList("Session ids (or sova://s/<id> links).", orgs ? { land: { anyOf: [{ type: "boolean" }, { type: "string" }], description: LAND_DESC } } : {}),
+      sessions: idList("Session ids (or sova://s/<id> links)."),
       ideas: idList("Idea ids (§ns/name)."),
       todos: idList("Todo ids (td_…)."),
       ...(orgs

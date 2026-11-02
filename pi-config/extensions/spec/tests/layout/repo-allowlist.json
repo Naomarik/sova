@@ -27,63 +27,6 @@
     }
   ],
   "lines": {
-    ".sova/playbooks/merge-round/scripts/round.mjs": [
-      {
-        "rule": "names-manifest",
-        "text": ": \"take master's whole spec with `git checkout --no-overlay master -- .sova/spec/manifest.json .sova/spec/claims`, resolve the rest and commit the merge, promote your drafts again with the same --ids (re-record stale evidence)\";",
-        "reason": "the format 1 hand-back text naming the files for git checkout; reads nothing"
-      },
-      {
-        "rule": "names-manifest",
-        "text": "export const specConflicts = (files) => files.filter((f) => f === \".sova/spec/manifest.json\" || f.startsWith(\".sova/spec/claims/\"));",
-        "reason": "conflict path filter over git's unmerged list; reads no record"
-      },
-      {
-        "rule": "names-manifest",
-        "text": "const MANIFEST = \".sova/spec/manifest.json\";",
-        "reason": "the path constant used by the existence probes and the conflict step below; reads no record"
-      },
-      {
-        "rule": "names-manifest",
-        "text": "const r = await git(main, [\"show\", `refs/heads/master:${MANIFEST}`]);",
-        "reason": "masterLayout: reads only master's formatVersion to word the hand-back (format 1 whole-spec, format 2 per area); never its records"
-      },
-      {
-        "rule": "names-manifest",
-        "text": "const files = Array.isArray(out.files) && out.files.length ? out.files : [MANIFEST];",
-        "reason": "conflict handling: matches and stages the paths merge-manifest wrote (the settings file among them); reads no record"
-      },
-      {
-        "rule": "names-manifest",
-        "text": "const what = files.length > 1 || files[0] !== MANIFEST ? \"The spec's records\" : \"manifest.json\";",
-        "reason": "conflict handling: matches and stages the paths merge-manifest wrote (the settings file among them); reads no record"
-      },
-      {
-        "rule": "names-manifest",
-        "text": "if (conflicted.includes(MANIFEST) || conflicted.some(isRecordFile)) {",
-        "reason": "conflict handling: matches and stages the paths merge-manifest wrote (the settings file among them); reads no record"
-      },
-      {
-        "rule": "names-manifest",
-        "text": "if (!existsSync(join(tree, MANIFEST))) return { lines: [\"spec: none in this project.\", ...drafted], statuses };",
-        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record"
-      },
-      {
-        "rule": "names-manifest",
-        "text": "if (!existsSync(join(tree, MANIFEST)) || !existsSync(join(this.specCore, \"sova-spec-draft.mjs\"))) return drafts.map((name) => ({ name, pending: null }));",
-        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record"
-      },
-      {
-        "rule": "names-manifest",
-        "text": "if (!existsSync(join(main, MANIFEST)) || !existsSync(join(this.specCore, \"sova-spec-draft.mjs\"))) return [\"Kept draft copies: not pruned (no spec or spec tools in the main checkout), all kept.\"];",
-        "reason": "existence probe: asks only whether a spec is there (the file name is kept in both layouts); reads no record"
-      },
-      {
-        "rule": "names-manifest",
-        "text": "if (!existsSync(join(tree, MANIFEST))) return { state: \"ok\" };",
-        "reason": "existence probe before the post-merge records check: no spec there, nothing to read; reads no record"
-      }
-    ],
     "scripts/sim/contracts.mjs": [
       {
         "rule": "names-manifest",

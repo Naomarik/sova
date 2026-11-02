@@ -45,7 +45,7 @@ The requirement is §tools/spec (`.sova/spec/claims/tools/spec.md`); MODE.md des
   mode's writer: one backend, model and effort plus an optional fallback, or `null` (the session writes the spec
   itself). It seeds and backs the subagent profiles' spec writer, syncs like the other mode files, and is re-read at
   each turn boundary by every session with spec on, in either major mode.
-- **Never run the replay suite while working.** `tests/replay` is a landing gate the merge round runs, one at a time per
+- **Never run the replay suite while working.** `tests/replay` is a landing check the merge queue runs, one at a time per
   machine, when a landing touches `spec/core/`, `spec/tests/replay/` or `mode/spec-guard.ts`. Without `SOVA_SPEC_REPLAY=1` every test in it skips.
 - **What Sova imports.** `server/spec-drafts-state.ts` imports `core/official.mjs` (types in `official.d.mts`), the
   one rule for whether a draft is official, and through it `sova-spec.mjs`: both stay free of work at import. An

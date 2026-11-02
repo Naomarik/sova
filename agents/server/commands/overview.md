@@ -91,7 +91,7 @@ list, or an extension, by default, without anyone re-implementing it. Spec: `§a
 
 | Rule | Held by |
 | --- | --- |
-| A new user-visible action gets a catalogue entry by default, in the same change | review, and this guide's `watches` (the merge round's also-update nudge on `server/app.ts`) |
+| A new user-visible action gets a catalogue entry by default, in the same change | review, and this guide's `watches` |
 | An entry points at the existing route and never re-implements it: running it is the web app's own request | `server/commands-catalog.test.ts` (every route registered; an entry's request gets the route's own answer, refusals word for word) |
 | Additions only add: nothing intercepts, vetoes or rewrites one of Sova's actions | the catalogue holds no handler, only data; `src/lib/reply-slot.test.ts` (a chip can't take one of Sova's action names) |
 | Agents get an action only when it is opened to them on purpose | nothing in the catalogue becomes an agent tool by being listed; a tool is its own change, reviewed as one |

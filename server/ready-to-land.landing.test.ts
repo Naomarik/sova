@@ -63,7 +63,6 @@ function setUp(over: Partial<Parameters<typeof r.configureReadiness>[0]> = {}, f
     landing: fileLandingStore(() => join(agentDir, `rtl-${n}.json`)),
     drafts: () => ["alpha", "beta"],
     draftsHash: () => ({ hash: "h".repeat(64), names: ["alpha", "beta"], each: { alpha: "1".repeat(64), beta: "2".repeat(64) } }),
-    goAheadAt: () => undefined,
     docsPreview: () => FITS,
     finished: () => finished,
     nudge: async (_p, text) => void sent.push(text),
@@ -135,26 +134,6 @@ test("not Ready to land until Sova has tried the drafts; its answer arriving rea
     done!();
     const after = await s.read();
     assert.equal(after?.landing?.state, "ready");
-  } finally {
-    r.resetReadiness();
-  }
-});
-
-test("a14: the drafts changed since the user's Land It at this head hold it, naming only the changed draft, with no note to the session", async () => {
-  const pressed = { hash: "p".repeat(64), names: ["alpha", "beta"], each: { alpha: "1".repeat(64), beta: "0".repeat(64) } };
-  const s = setUp({ goAheadAt: (branch, commit) => (branch === BRANCH && commit === HEAD ? { drafts: pressed } : undefined) });
-  try {
-    const t = await s.read();
-    assert.equal(t?.landing?.state, "specs");
-    assert.deepEqual(t?.landing?.docs?.changedSinceGoAhead, ["beta"]);
-    assert.deepEqual(s.sent, [], "the user's press is the user's: the session isn't told");
-  } finally {
-    r.resetReadiness();
-  }
-  // The control: the press saw exactly these drafts.
-  const same = setUp({ goAheadAt: () => ({ drafts: { hash: "h".repeat(64), names: ["alpha", "beta"], each: { alpha: "1".repeat(64), beta: "2".repeat(64) } } }) });
-  try {
-    assert.equal((await same.read())?.landing?.state, "ready");
   } finally {
     r.resetReadiness();
   }

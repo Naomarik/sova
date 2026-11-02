@@ -138,9 +138,9 @@ export interface FollowUpInput {
   reply: { id: string; at: number; text: string };
   /** The mechanical follow-ups, so they are not judged again. */
   routine: { restart_pending: boolean; push_pending: boolean; cleanup: number };
-  /** A merge captain's or an Overseer's session: never checked (its reply after a merge is a round
-      report about other branches). */
-  skip?: "captain" | "overseer";
+  /** The merge thread's or an Overseer's session: never checked (its reply after a merge is about the
+      queue's branches, not its own work). */
+  skip?: "merge-thread" | "overseer";
 }
 
 export interface FollowUpDeps {

@@ -47,7 +47,7 @@ environment every runner starts in, and the hermetic dev server.
   extensions, the harness; tour code), any package or toolchain change, the test setup this guide
   `watches`, and the module itself. Every other integration file is the everyday set. A new slow
   file, or a new area such a test drives from outside, goes in that list.
-- **At landing** the merge round runs `pnpm test`, then `pnpm test:int -- --landing --base <master>`:
+- **At landing** the merge queue runs `pnpm test`, then `pnpm test:int -- --landing --base <master>`:
   the everyday set, plus Chat processes when the branch triggers it; Tours never. It names what it
   skipped. `--groups <name,…|all>` runs only those groups, `--plan` prints the selection as JSON
   and runs nothing, and plain `pnpm test:int` runs every group: a release does that (the only
@@ -117,7 +117,7 @@ environment every runner starts in, and the hermetic dev server.
   integration tier's load too. Each browser launch costs seconds: split a growing Chrome file by
   scenario (as `runner-signin`, `-landed` and `-inplace` are) rather than raising its test timeouts.
 - Shared stand-in sites and probes are `*.integration.fixture.ts` beside the tests (not test files, so
-  no glob matches them). Test credentials are short fakes (`fake-pw-01`): the merge round's leak scan
+  no glob matches them). Test credentials are short fakes (`fake-pw-01`): the merge queue's leak scan
   flags any `password`/`token`/`secret`/`apiKey` assigned a literal of 16+ characters with no space. A test that needs
   a long value builds it at runtime (`"x".repeat(17)`, `"fake-copy-token".padEnd(48, "x")`).
 
@@ -184,5 +184,5 @@ Each is data a change may regenerate only on purpose, never to hide a regression
 | the runner, tier guard or preload | the runner's header comment, this guide, and §app.server-runtime/test-tiers or /test-repo-fence through a spec draft |
 
 While working: `pnpm test` constantly, `pnpm test:int --changed` before asking to land. Landing (the
-merge round) runs `pnpm test`, then `pnpm test:int -- --landing` (the everyday set plus the slow
+merge queue) runs `pnpm test`, then `pnpm test:int -- --landing` (the everyday set plus the slow
 groups the branch triggers, never Tours); a release runs the whole integration tier.

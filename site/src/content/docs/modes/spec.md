@@ -82,8 +82,8 @@ checks pass, the landing makes every draft on the branch official in one step an
 the code, so the docs land in the same merge as the code they describe, and there is no second,
 docs-only merge. Drafts that wouldn't fit (a promise with no note, or one that changed on the default
 branch since) hold the branch and go back to its chat, which fixes them without a new commit. The
-Landing card says what docs land with the branch, with the promises one click away; pressing Land It
-never records you as agreeing to them. Where nothing lands branches, the agent runs that one step
+merge queue makes them official in its merge copy before its checks run, so the docs that land were
+tested; pressing Land never records you as agreeing to them. Where nothing lands branches, the agent runs that one step
 itself before its last commit. A draft whose branch already landed without it lands with a fresh
 branch from the default branch, never on the default branch itself.
 

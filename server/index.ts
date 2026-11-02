@@ -47,7 +47,6 @@ import { meshLinks } from "./mesh/links";
 import { setLinkOrigin } from "./link-delivery";
 import { feedFrameKey, feedFrames, setOverseerDispatch, startOverseerLoop } from "./overseer";
 import { watchFeedInputs } from "./session-feed-watch";
-import { startLandingQueue } from "./landing-queue";
 import { setOffersDispatch } from "./session-offers";
 import { setCardsDispatch } from "./transcript-cards";
 import { setSovaPort } from "./extensions";
@@ -209,8 +208,6 @@ setOverseerDispatch((path, init) => app.request(path, init));
 // An offer card's buttons call the same routes in-process (§chat.offers/buttons).
 setOffersDispatch((path, init) => app.request(path, init));
 setCardsDispatch((path, init) => app.request(path, init));
-// The merge captain's landing queue: Sova shows the Landing card itself (§chat.offers/sova-landing).
-startLandingQueue();
 startOverseerLoop();
 startProjectOverseerLoop();
 startScheduleKeeper((path, init) => app.request(path, init));

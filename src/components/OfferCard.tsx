@@ -113,27 +113,6 @@ export function createOfferControls(path: () => string, inThread: (card: OfferCa
   };
 }
 
-/** What docs land with a branch (Sova's Landing card, §chat.offers/sova-landing): one line, the promises one click away. */
-function OfferDocs(props: { docs: NonNullable<OfferCard["docs"]> }) {
-  const [shown, setShown] = createSignal(false);
-  return (
-    <div class="card-body overseer-confirm-detail offer-card-docs">
-      <span>{props.docs.line}</span>
-      <Show when={props.docs.names.length}>
-        {" "}
-        <button type="button" class="button button-sm button-ghost offer-card-docs-toggle" aria-expanded={shown()} onClick={() => setShown(!shown())}>
-          {shown() ? "Hide the promises" : "Show the promises"}
-        </button>
-        <Show when={shown()}>
-          <ul class="offer-card-docs-list">
-            <For each={props.docs.names}>{(n) => <li class="text-mono">{n}</li>}</For>
-          </ul>
-        </Show>
-      </Show>
-    </div>
-  );
-}
-
 /** One offer card. `card`: as the transcript carried it; the controls' copy, when they have one, is newer. */
 export function OfferCardView(props: { card: OfferCard }) {
   const ctx = useContext(OfferContext);
@@ -149,7 +128,6 @@ export function OfferCardView(props: { card: OfferCard }) {
       </div>
       <Show when={card().from}>{(f) => <div class="card-body overseer-confirm-detail offer-card-from">From {f().title}</div>}</Show>
       <Show when={card().note}>{(n) => <div class="card-body overseer-confirm-detail">{n()}</div>}</Show>
-      <Show when={card().docs}>{(d) => <OfferDocs docs={d()} />}</Show>
       <Show when={card().rows}>
         <div class="card-body overseer-confirm-items">
           <OfferRows card={props.card} />
@@ -268,19 +246,18 @@ export function OfferActions(props: { card: OfferCard }) {
   );
 }
 
-/** "You chose {label}", and where, when the answer came from the other place (§chat.offers/landing-rows). */
+/** "You chose {label}". */
 function ChoiceWords(props: { choice: OfferChoice }) {
   return (
     <>
       You chose <strong>{props.choice.label}</strong>
-      <Show when={props.choice.where}>{(w) => <> in {w()}</>}</Show>
     </>
   );
 }
 
 /**
- * A rows card's rows (§chat.offers/card, Rows): each its label (a landing row's branch and short commit), its owner
- * chat as its own link, the drafts it leaves, then its buttons while open, else its state. The row is never a link.
+ * A rows card's rows (§chat.offers/card, Rows): each its label, then its buttons while open, else its state. The row is
+ * never a link.
  */
 export function OfferRows(props: { card: OfferCard }) {
   const ctx = useContext(OfferContext);
@@ -291,35 +268,19 @@ export function OfferRows(props: { card: OfferCard }) {
       <ul class="overseer-confirm-list offer-card-rows">
         <For each={card().rows ?? []}>
           {(row) => (
-            <li class="overseer-confirm-item offer-card-row" data-offer-row={row.id} data-phase={row.state} data-progress={row.progress}>
+            <li class="overseer-confirm-item offer-card-row" data-offer-row={row.id} data-phase={row.state}>
               <div class="overseer-confirm-item-line">
-                <span class="overseer-confirm-item-name">{row.branch ?? row.label}</span>
-                <Show when={row.commit}>{(c) => <span class="overseer-confirm-idea-id">{c()}</span>}</Show>
-                <Show when={row.owner}>
-                  {(o) => (
-                    <a class="overseer-confirm-item-meta offer-card-row-owner" href={`#/sid/${encodeURIComponent(o().id)}`} title={`Open ${o().title}`}>
-                      {o().title}
-                    </a>
-                  )}
-                </Show>
+                <span class="overseer-confirm-item-name">{row.label}</span>
               </div>
-              <Show when={row.drafts}>{(d) => <span class="overseer-confirm-item-meta">Spec drafts left: {d()}</span>}</Show>
               <Show when={row.state === "open" && card().state === "open"} fallback={<RowOutcome row={row} />}>
                 <Show when={ctx} fallback={<span class="overseer-confirm-hint">Waiting for an answer: {row.buttons.map((b) => b.label).join(" · ")}.</span>}>
-                  <ButtonSet buttons={row.buttons} canAct={canAct} press={(i) => ctx!.choose(card(), i, row.id)} label={`${row.branch ?? row.label}`} />
+                  <ButtonSet buttons={row.buttons} canAct={canAct} press={(i) => ctx!.choose(card(), i, row.id)} label={row.label} />
                 </Show>
               </Show>
             </li>
           )}
         </For>
       </ul>
-      <Show when={card().more}>
-        {(n) => (
-          <span class="overseer-confirm-hint">
-            {n()} more {n() === 1 ? "branch waits" : "branches wait"} for this card to be answered.
-          </span>
-        )}
-      </Show>
     </>
   );
 }
@@ -329,13 +290,6 @@ function RowOutcome(props: { row: OfferCardRow }) {
   return (
     <p class="overseer-confirm-answer">
       <Switch>
-        <Match when={r().state === "chosen" && r().progress === "landed"}>
-          <Icon name="check" small />
-          <span>Landed</span>
-        </Match>
-        <Match when={r().state === "chosen" && r().progress === "landing"}>
-          <span>Landing</span>
-        </Match>
         <Match when={r().state === "chosen" && r().choice}>
           {(choice) => (
             <>

@@ -168,7 +168,7 @@ writer**).
   docs with the code; a draft whose branch already landed without it lands with a
   fresh branch from the default branch, never on the default branch itself.
   `agree` is only for a decision the user made in the chat: it stamps the record
-  and makes nothing official; Land It is never agreement.
+  and makes nothing official; a Land is never agreement.
   Work that changes no behavior — refactors, tests, tooling — is exempt, and
   the agent says it is claiming the exemption. The documentation changes only
   through drafts; a promotion `conflict` is per declaration, and it is

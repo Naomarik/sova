@@ -1510,7 +1510,7 @@ const LAND_FIX = {
 };
 const idOf = (message) => /^(§[^\s:,;]+)/.exec(message ?? "")?.[1] ?? null;
 // One hash over every file under every draft's spec/ (draft.json apart: notes, evidence and receipts go there), so
-// Land It can say which drafts it was given. server/spec-drafts-state.ts and the merge round compute the same one.
+// An approval can say which drafts it was given. server/spec-drafts-state.ts and the merge queue compute the same one.
 // → {hash, names} | null (no drafts)
 async function draftsHashOf(root) {
   const names = await draftNames(root).catch(() => []);

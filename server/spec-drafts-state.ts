@@ -5,7 +5,7 @@ import { draftOfficial } from "../pi-config/extensions/spec/core/official.mjs";
 
 /**
  * Which of a worktree's spec drafts aren't official yet (§chat.worktrees/readiness), by the draft tool's own
- * rule (§tools.spec/draft-official, `official.mjs`), the one the merge round's check reads too: run here
+ * rule (§tools.spec/draft-official, `official.mjs`), the one the merge queue's docs step reads too: run here
  * on the drafts' files, never as a spec tool or a subprocess. Cached per folder until a stat of anything
  * it read changes.
  */
@@ -40,7 +40,7 @@ export function unofficialDrafts(dir: string): string[] | undefined {
   const read: string[] = [draftsDir];
   for (const n of names) {
     const r = draftOfficial(specRoot, join(draftsDir, n), draftsDir);
-    // Unreadable: nobody knows its state, so it isn't official (as the merge round's check reads it too).
+    // Unreadable: nobody knows its state, so it isn't official (as the merge queue's docs step reads it too).
     if (r) read.push(...r.read);
     else read.push(join(draftsDir, n, "draft.json"));
     if (!r?.official) left.push(n);
@@ -61,10 +61,10 @@ function stampOf(stamps: string): string {
   }
 }
 
-/** The spec drafts as a Land It sees them (§chat.worktrees/landing-answers): one hash over every file under each
+/** The spec drafts as an approval pins them (§chat.worktrees/landing-answers): one hash over every file under each
     draft's `spec/` (lines `<draft>/<path under spec/> <sha256>`, sorted, joined by "\n"; `draft.json`, where notes,
     evidence and receipts go, apart), each draft's own hash over its lines, and the names. The draft tool's `land`
-    and the merge round compute the same. undefined: no drafts. */
+    and the merge queue compute the same. undefined: no drafts. */
 export interface DraftsHash {
   hash: string;
   names: string[];
@@ -121,8 +121,8 @@ export function draftsHash(dir: string): DraftsHash | undefined {
   return { hash: hashOf(all), names, each };
 }
 
-/** The drafts that changed since a Land It recorded `pressed`, sorted; [] when none did. Without per-draft hashes a
-    changed whole names every draft (the merge round's draftsChanged). */
+/** The drafts that changed since an approval recorded `pressed`, sorted; [] when none did. Without per-draft hashes a
+    changed whole names every draft. */
 export function draftsChanged(pressed: { hash: string; names: string[]; each?: Record<string, string> } | undefined, now: DraftsHash | undefined): string[] {
   if (!pressed || (now?.hash ?? null) === pressed.hash) return [];
   const names = [...new Set([...pressed.names, ...(now?.names ?? [])])].sort();

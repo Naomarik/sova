@@ -16,8 +16,6 @@ import { readSeen } from "./seen";
 import { writeAutoTitle } from "./session-titles";
 import { listSessions } from "./sessions-index";
 import { sessionFeed } from "./session-feed";
-import { BOARD_EVERY_MS, BoardSource, mergeBoardFile, rowsIn } from "./merge-board";
-import { LANDING_FILE_NAME, readLanding } from "../pi-config/extensions/worktrees/landing.ts";
 import { readinessCovers, readinessIdle, readinessReading } from "./merge-readiness";
 import type { HEntry } from "../shared/harness";
 import { readBranch } from "./harness/pi/reader";
@@ -95,20 +93,12 @@ function heldBusy(path: string): boolean {
 
 /**
  * Start the keeper: a tick every 30 s, and discovery in the projects of listed sessions every few
- * minutes. Also keeps the merge board file (§chat.worktrees/merge-board) written every minute, and
- * hands the keeper the same board for merge-ready (§chat.schedules/merge-ready).
+ * minutes.
  */
 export function startScheduleKeeper(request: AppRequest): ScheduleKeeper {
   const tickMs = Number(process.env.SOVA_SCHEDULE_TICK_MS) || DEFAULT_TICK_MS;
   const speed = Math.max(1, Number(process.env.SOVA_SCHEDULE_SPEED) || 1);
   const t0 = Date.now();
-  const board = new BoardSource({
-    list: feedOrList,
-    idle: readinessIdle,
-    inputs: { reading: readinessReading, covers: readinessCovers, queued: heldBusy },
-    file: mergeBoardFile(),
-    now: () => Date.now(),
-  });
   const keeper = new ScheduleKeeper({
     file: schedulesFile(),
     logFile: scheduleRunsFile(),
@@ -144,12 +134,6 @@ export function startScheduleKeeper(request: AppRequest): ScheduleKeeper {
     loginName: (id) => loginName(id),
     lastTurn,
     brief: (text) => void briefOverseer(text).catch(() => {}),
-    async board() {
-      const b = await board.get(Math.min(tickMs, 25_000));
-      return { pending: b.pending, rowsIn: (root: string) => rowsIn(b, root) };
-    },
-    typedGoAheads: () => readLanding(join(stateRoot(), LANDING_FILE_NAME)).goAheads.filter((g) => g.by === "owner-chat"),
-    cardGoAheads: () => readLanding(join(stateRoot(), LANDING_FILE_NAME)).goAheads.filter((g) => g.by === "overseer-card"),
   });
   setScheduleKeeper(keeper);
   const tick = () => void keeper.tick().catch((err) => console.warn("[schedules] tick failed:", err instanceof Error ? err.message : String(err)));
@@ -163,9 +147,6 @@ export function startScheduleKeeper(request: AppRequest): ScheduleKeeper {
     await keeper.discover(roots, listProjectPlaybooks);
   };
   const find = () => void discover().catch((err) => console.warn("[schedules] discovery failed:", err instanceof Error ? err.message : String(err)));
-  const write = () => void board.get(BOARD_EVERY_MS / 2).catch((err) => console.warn("[merge-board] refresh failed:", err instanceof Error ? err.message : String(err)));
-  setTimeout(write, 10_000).unref();
-  setInterval(write, BOARD_EVERY_MS).unref();
   setTimeout(find, 3000).unref();
   setInterval(find, DISCOVER_MS).unref();
   // The first tick after the server is up, so a fire missed while it was down goes out (or is skipped) once.

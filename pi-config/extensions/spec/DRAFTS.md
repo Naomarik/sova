@@ -417,7 +417,7 @@ refuses the whole prune and deletes nothing. It deletes nothing it was not given
 `prune --official` needs no list: it deletes only drafts the tool confirms are already official
 and keeps every other one, listed with why (`kept`). It reads each draft folder of the project's
 own drafts folder, or with `--from DIR` of `DIR` (copies kept outside the project, such as the ones
-a merge round keeps when it removes a landed worktree), against the project's current spec by the
+a merge queue keeps when it removes a landed worktree), against the project's current spec by the
 rule, without Git; in the project, under the same lock and the same refusal of an interrupted
 promotion. A draft that changes at least one claim, every one official, is deleted; one not official yet, one that
 changes nothing, and one it can't read are kept. Without `--write` it lists what it would delete.

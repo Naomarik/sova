@@ -3,7 +3,7 @@
 // 30-minute floor and the 48-a-day cap, the next fire, and daylight saving's gap and repeat.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fireHead, maxFiresPerDay, mergeReadyReason, nextFire, parseWhen, pinSource, scheduleOf, scheduleText, zonedTime, type Trigger } from "./schedules";
+import { fireHead, maxFiresPerDay, nextFire, parseWhen, pinSource, scheduleOf, scheduleText, zonedTime, type Trigger } from "./schedules";
 import { parseWakeNudge, wakeTitle } from "./wake";
 
 const ok = (line: string): Trigger[] => {
@@ -33,19 +33,9 @@ test("the grammar: every trigger kind, case and spacing free", () => {
   assert.equal(scheduleText(ok("every 12h")), "Every 12 hours");
 });
 
-test("merge-ready: an event trigger with no times, its words, and the reason naming at most five branches", () => {
-  const t = ok(" Merge-Ready ;every 6h; claude-limit-reset");
-  assert.deepEqual(t.map((x) => x.src), ["merge-ready", "every 6h", "claude-limit-reset"]);
-  assert.equal(scheduleText(t), "When a branch is ready to merge · Every 6 hours · When a Claude limit resets");
-  assert.equal(nextFire(ok("merge-ready"), Date.now(), "UTC"), null, "no time of its own");
-  assert.equal(maxFiresPerDay(ok("merge-ready; every 30m")).n, 48, "it adds nothing to the per-day bound");
-  assert.notEqual(pinSource({ triggers: ok("merge-ready; every 6h") }, { key: "k", remove: [], grant: [], singleton: true, overseerMayStart: false }), pinSource({ triggers: ok("every 6h") }, { key: "k", remove: [], grant: [], singleton: true, overseerMayStart: false }), "adding it asks again");
-  assert.match(err("merge-ready-now"), /merge-ready/);
-  assert.equal(mergeReadyReason(["feat/x", "feat/y"]), "Ready to land: feat/x, feat/y.");
-  const seven = ["a", "b", "c", "d", "e", "f", "g"].map((b) => `feat/${b}`);
-  assert.equal(mergeReadyReason(seven), "Ready to land: feat/a, feat/b, feat/c, feat/d, feat/e, and 2 more.");
-  assert.equal(mergeReadyReason([], [], ["feat/d"]), "Go-ahead on the Overseer's card: feat/d.");
-  assert.equal(mergeReadyReason(["feat/a"], ["feat/c"], ["feat/d"]), "Ready to land: feat/a. Go-ahead typed in its own chat: feat/c. Go-ahead on the Overseer's card: feat/d.");
+test("merge-ready is no trigger: the merge queue starts its own runs", () => {
+  assert.match(err("merge-ready"), /"merge-ready" is not a trigger/);
+  assert.match(err("every 6h; merge-ready"), /"merge-ready" is not a trigger/);
 });
 
 test("one bad trigger makes the whole line invalid, with the exact error", () => {

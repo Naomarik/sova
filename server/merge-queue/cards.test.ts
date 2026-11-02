@@ -282,8 +282,8 @@ describe("the hidden line reaches the chat with its card note", () => {
   test("after the transcript cards' own note; nothing from either: null; a failing source: the cards' note alone", () => {
     setMergeCardNoteSource((s) => (s === "s1" ? "feat/a landed on master at abc1234." : null));
     try {
-      assert.equal(withMergeCardNote(null, "s1", null), "Merge queue:\nfeat/a landed on master at abc1234.");
-      assert.equal(withMergeCardNote("Card c1: chose A.", "s1", null), "Card c1: chose A.\nMerge queue:\nfeat/a landed on master at abc1234.");
+      assert.equal(withMergeCardNote(null, "s1", null), "From Sova's merge queue (not the user's words; nothing to answer):\nfeat/a landed on master at abc1234.");
+      assert.equal(withMergeCardNote("Card c1: chose A.", "s1", null), "Card c1: chose A.\nFrom Sova's merge queue (not the user's words; nothing to answer):\nfeat/a landed on master at abc1234.");
       assert.equal(withMergeCardNote(null, "s2", null), null);
       setMergeCardNoteSource(() => {
         throw new Error("x");

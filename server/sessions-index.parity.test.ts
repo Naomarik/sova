@@ -547,6 +547,20 @@ step("worker sessions: the owner names a worker (only the owner's file changes);
   await heardChange(h, [owner.path], "owner append");
   let rows = await assertParity("owner names the worker");
   assert.equal(rows.find((r) => r.path === worker.path)?.workerSession, true, "the fixture flags the worker");
+  // The owner only grows (lines with no worker facts): the flags' memo stands, and still answers right.
+  h = mark();
+  appendFileSync(owner.path, `${assistantMsg(owner.path, "more work, no workers named")}\n`);
+  await heardChange(h, [owner.path], "owner grows");
+  await assertParity("owner grew with no worker facts");
+  // Then names a second worker: the memo must move.
+  const worker2 = makeSession(folderB, "a second worker's task");
+  h = mark();
+  await heardChange(h, [worker2.path], "second worker file");
+  h = mark();
+  appendFileSync(owner.path, `${entry(owner.path, { type: "custom_message", customType: "subagent-complete", content: `### ag_04 (helper2) \u2014 done\nSession: ${worker2.path}\nModel: zai/glm-5.3\n\nok`, display: true })}\n`);
+  await heardChange(h, [owner.path], "owner names a second worker");
+  rows = await assertParity("owner names a second worker");
+  assert.equal(rows.find((r) => r.path === worker2.path)?.workerSession, true, "the second worker is flagged");
   // A worker that marks itself.
   const self = makeSession(folderB, "self-marked worker");
   h = mark();

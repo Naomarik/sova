@@ -13,6 +13,13 @@ export const realGit: Git = (args, cwd, opts = {}) =>
     });
   });
 
+/**
+ * `git status` as the queue reads a user's worktree or main checkout: with no optional locks and no fsmonitor, so the
+ * probe never refreshes and rewrites the index under index.lock (a user's or a chat's own `git add` beside it would
+ * fail). Every status the queue runs goes through here (server/merge-queue/guard.test.ts holds it).
+ */
+export const statusArgs = (...args: string[]): string[] => ["--no-optional-locks", "-c", "core.fsmonitor=false", "status", ...args];
+
 /** The full sha `ref` names, or null. */
 export async function revParse(git: Git, cwd: string, ref: string): Promise<string | null> {
   const r = await git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], cwd);

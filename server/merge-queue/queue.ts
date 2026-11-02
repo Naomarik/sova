@@ -20,7 +20,7 @@ import {
 } from "../../shared/merge-queue";
 import { HOOK_TIMEOUT_MAX, parseDefinition, type ProjectDef } from "../../shared/project-contract";
 import type { ChecksOf, EstimateRun, RunInput, RunMerge, RunOutcome, WakeThread } from "./contract";
-import { countBetween, type Git, isAncestor, realGit, revParse, worktreesOf } from "./guard";
+import { countBetween, type Git, isAncestor, realGit, revParse, statusArgs, worktreesOf } from "./guard";
 import { canLand, checkoutOf, dirtyWhy, firstParents, landTip, pushTip } from "./land";
 import type { MergeNoticeKind } from "./notices";
 import { sanityCheck } from "./conflicts";
@@ -291,7 +291,7 @@ export class ProjectQueue {
       if (!ahead) continue;
       const subject = (await this.git(["log", "-1", "--format=%s", w.head], this.root)).stdout.trim();
       if (/^temp\b/i.test(subject)) continue;
-      const st = await this.git(["status", "--porcelain"], w.path);
+      const st = await this.git(statusArgs("--porcelain"), w.path);
       if (st.code !== 0 || st.stdout.trim()) continue;
       out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead });
     }
@@ -344,7 +344,7 @@ export class ProjectQueue {
       if (/^temp\b/i.test(subject)) throw new MergeFailure("invalid-request", `${branch}'s head is a TEMP commit ("${subject.slice(0, 60)}"): it isn't finished`);
       const wt = (await worktreesOf(this.git, this.root)).find((w) => w.branch === branch && w.path !== this.root)?.path;
       if (wt && commit === tip) {
-        const st = await this.git(["status", "--porcelain"], wt);
+        const st = await this.git(statusArgs("--porcelain"), wt);
         const n = st.stdout.split("\n").filter(Boolean).length;
         if (st.code === 0 && n) throw new MergeFailure("invalid-request", `${branch} has ${n} uncommitted file${n === 1 ? "" : "s"} in ${wt}: Land is for a commit; commit or remove them first`);
       }

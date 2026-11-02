@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { NO_BACKGROUND_CLEANUP, noBackgroundCleanupEnv } from "../git-no-background";
-import { type Git, isAncestor, revParse, worktreesOf } from "./guard";
+import { type Git, isAncestor, revParse, statusArgs, worktreesOf } from "./guard";
 
 /**
  * Moving the target, the only place the queue writes the project's repository outside its merge copy.
@@ -20,7 +20,7 @@ export type LandResult =
 
 /** Whether `dir` has tracked uncommitted changes or an operation in progress; the reason, or null when clean. */
 export async function dirtyWhy(git: Git, dir: string): Promise<string | null> {
-  const st = await git(["status", "--porcelain", "--untracked-files=no"], dir);
+  const st = await git(statusArgs("--porcelain", "--untracked-files=no"), dir);
   if (st.code !== 0) return `git status failed in ${dir}: ${st.stderr.trim().split("\n")[0] ?? ""}`;
   const files = st.stdout.split("\n").filter(Boolean);
   if (files.length) return `${dir} has uncommitted changes (${files.length} file${files.length === 1 ? "" : "s"}: ${files.slice(0, 3).map((l) => l.slice(3)).join(", ")}${files.length > 3 ? ", …" : ""})`;

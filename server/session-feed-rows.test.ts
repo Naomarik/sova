@@ -204,7 +204,7 @@ test("a seen-only change (the server drops the seen signal) is a rows frame, and
 
 test("a list handed out by identity (unchanged rows, the same objects) costs no stringify in a re-diff; a fresh equal object still compares by value", async () => {
   const sig: SessionSummary["signals"] = { at: 100, turnId: "t1", provider: "jev", kinds: ["unverified"] };
-  const kept = [row("a", { signals: sig }), row("b", { tags: { topic: "x" } }), row("c")];
+  const kept = [row("a", { signals: sig }), row("b", { tags: { topic: "docs" } }), row("c")];
   let list = kept;
   const feed = new SessionFeed({ list: async () => [...list], intervalMs: 60_000, debounceMs: 0, minGapMs: 0 });
   const old: SessionFeedMessage[] = [];

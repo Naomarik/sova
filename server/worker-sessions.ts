@@ -169,8 +169,11 @@ export class WorkerSessions {
       return this.entries.get(path) ?? null; // unreadable right now: keep what we had
     }
     next.size = size;
+    const before = this.entries.get(path);
     this.entries.set(path, next);
-    this.version++;
+    // Only what `flagged` reads (whether the file is listed, its self mark, its refs) moves the version:
+    // a file that only grew by lines with no worker facts leaves the answer as it was.
+    if (!before || before.self !== next.self || before.refs.length !== next.refs.length || before.refs.some((r, i) => r !== next.refs[i])) this.version++;
     return next;
   }
 

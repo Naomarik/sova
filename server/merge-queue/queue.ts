@@ -587,11 +587,11 @@ export class ProjectQueue {
     return this.serial(async () => {
       const e = this.mustEntry(entryId);
       if (answer === "send-back") {
-        if (!["behaviour-differs", "review-flagged", "conflict", "drafts-changed"].includes(e.state)) throw new MergeFailure("invalid-request", `${e.branch} isn't waiting for you (it is ${e.state})`);
+        if (!["behaviour-differs", "review-flagged", "unattributed", "conflict", "drafts-changed"].includes(e.state)) throw new MergeFailure("invalid-request", `${e.branch} isn't waiting for you (it is ${e.state})`);
         this.clearConflictTimer(e.id);
         const was = e.state;
         e.state = "needs-fix";
-        e.reason = why?.trim() || (was === "review-flagged" ? `the review flagged it: ${e.review?.text ?? ""}`.trim() : was === "drafts-changed" ? "its spec drafts changed since you approved" : `conflicts with ${e.target}${e.conflict?.files.length ? ` in ${e.conflict.files.join(", ")}` : ""}`);
+        e.reason = why?.trim() || (was === "unattributed" ? `a check failed on the merge and on ${e.target} alone, and couldn't say whose failure it is${e.reason ? ` (${e.reason})` : ""}` : was === "review-flagged" ? `the review flagged it: ${e.review?.text ?? ""}`.trim() : was === "drafts-changed" ? "its spec drafts changed since you approved" : `conflicts with ${e.target}${e.conflict?.files.length ? ` in ${e.conflict.files.join(", ")}` : ""}`);
         e.updatedAt = this.iso();
         this.save();
         this.deps.notify?.("sent-back", e, { root: this.root });
@@ -609,12 +609,18 @@ export class ProjectQueue {
         return e;
       }
       if (answer === "land-anyway") {
-        if (e.state !== "review-flagged") throw new MergeFailure("invalid-request", `Land Anyway answers a flagged review; ${e.branch} is ${e.state}`);
-        e.notes = e.notes.filter((n) => n.kind !== "review");
-        e.notes.push({ kind: "review", text: `Landed over the review: ${e.review?.text ?? "flagged"}`.slice(0, NOTE_MAX), at: this.iso() });
-        e.approval.withoutReview = true;
+        if (e.state !== "review-flagged" && e.state !== "unattributed") throw new MergeFailure("invalid-request", `Land Anyway answers a flagged review or a failure no one can be blamed for; ${e.branch} is ${e.state}`);
+        if (e.state === "unattributed") {
+          e.notes.push({ kind: "master-red", text: `Landed anyway: ${e.reason ?? "a check failed on the merge and on the target alone"}`.slice(0, NOTE_MAX), at: this.iso() });
+          e.approval.overUnattributed = true;
+        } else {
+          e.notes = e.notes.filter((n) => n.kind !== "review");
+          e.notes.push({ kind: "review", text: `Landed over the review: ${e.review?.text ?? "flagged"}`.slice(0, NOTE_MAX), at: this.iso() });
+          e.approval.withoutReview = true;
+        }
         const run = e.run ? this.store.readRun(e.run) : null;
-        if (run?.tip && !this.current) {
+        // The tested tip lands only onto the target it was tested on; the line moved on meanwhile: rerun it first.
+        if (run?.tip && !this.current && (await this.targetHead()) === run.base) {
           e.state = "checking";
           e.updatedAt = this.iso();
           this.save();
@@ -1139,6 +1145,26 @@ export class ProjectQueue {
           this.wake("failed", e, run.id, { why: out.why ?? "failed" });
         }
         delete this.q.machineTries[e.id];
+        this.kickSoon();
+        return;
+      }
+      case "unattributed": {
+        // Land Anyway said yes to exactly this: the rerun again can't tell, so its tested tip lands.
+        if (e.approval.overUnattributed && run.tip) {
+          run.verdict = "passed";
+          this.store.writeRun(run);
+          this.addNotes(e, out.notes);
+          await this.landTested(e, run);
+          return;
+        }
+        run.verdict = "waiting";
+        this.store.writeRun(run);
+        e.state = "unattributed";
+        e.reason = out.why ?? `a check failed on the merge and on ${e.target} alone`;
+        this.addNotes(e, out.notes);
+        if (out.targetRed?.length) this.q.heads.targetRed = [...out.targetRed];
+        e.updatedAt = this.iso();
+        this.save();
         this.kickSoon();
         return;
       }

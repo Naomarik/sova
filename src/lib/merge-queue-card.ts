@@ -33,6 +33,8 @@ export function cardPill(d: Pick<MergeCardRevision, "state" | "position">): { la
       return { label: "Behaviour differs", tone: "warn" };
     case "review-flagged":
       return { label: "Review flagged", tone: "warn" };
+    case "unattributed":
+      return { label: "Can't tell whose failure", tone: "warn" };
     case "drafts-changed":
       return { label: "Drafts changed", tone: "warn" };
     case "needs-fix":
@@ -85,6 +87,7 @@ export function cardActions(c: Pick<MergeCard, "state" | "newerCommits">): CardA
     case "behaviour-differs":
       return ["accept", "send-back"];
     case "review-flagged":
+    case "unattributed":
       return ["land-anyway", "send-back"];
     case "landed":
       return c.newerCommits ? ["land-again"] : [];

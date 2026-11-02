@@ -192,6 +192,32 @@ describe("a branch's card in its own chat", () => {
     }
   });
 
+  test("can't tell whose failure: a waiting revision with Land Anyway / Send Back, no turn and no line; Send Back starts one marked turn", async () => {
+    const t = cardKit();
+    try {
+      const q = await t.k.q();
+      t.k.run.set(() => ({ verdict: "unattributed", why: "Unit tests failed on the merge and on master alone" }));
+      t.k.repo.branch("feat/u", { "u.txt": "u\n" });
+      const u = await q.add({ branch: "feat/u", by: "land-button", session: "s1" });
+      await until(async () => (await t.k.entry(u.entry.id)).state === "unattributed", "unattributed");
+      await until(async () => (await t.settle(), t.cards.cardsOf("s1")[0]!.revisions.some((r) => r.kind === "unattributed")), "unattributed revision");
+      const card = t.cards.cardsOf("s1")[0]!;
+      assert.equal(card.state, "unattributed");
+      assert.equal(card.reason, "Unit tests failed on the merge and on master alone");
+      assert.equal(t.wakes.length, 0, "waiting for the user: no turn");
+      assert.equal(t.cards.noteFor("s1", null), null, "and no hidden line");
+      await q.answer(u.entry.id, "send-back");
+      await t.settle();
+      await t.cards.sync(await q.view());
+      await t.settle();
+      assert.deepEqual(t.cards.cardsOf("s1")[0]!.revisions.map((r) => r.kind), ["approved", "unattributed", "sent-back"]);
+      assert.equal(t.wakes.length, 1);
+      assert.match(t.wakes[0]!.text, /^\[merge-queue\] The user sent feat\/u back: a check failed on the merge and on master alone, and couldn't say whose failure it is/);
+    } finally {
+      await t.k.done();
+    }
+  });
+
   test("six branches in one chat: six cards; a branch with no known chat: none; no card back-filled for an entry raised before", async () => {
     const t = cardKit();
     try {

@@ -1084,6 +1084,68 @@ describe("an invalid definition", () => {
   });
 });
 
+describe("can't tell whose failure", () => {
+  const WHY = "Unit tests failed on the merge and on master alone, and named no failing file";
+  test("waits for the user, blamed on no one, never landed on its own, the queue not paused; Land Anyway lands the tested tip", async () => {
+    const k = makeKit();
+    try {
+      const q = await k.q();
+      await q.pause("hold");
+      k.repo.branch("feat/u", { "u.txt": "u\n" });
+      k.repo.branch("feat/next", { "n.txt": "n\n" });
+      const u = await q.add({ branch: "feat/u", by: "land-button", session: "s1" });
+      const n = await q.add({ branch: "feat/next", by: "land-button" });
+      const before = k.repo.head();
+      k.run.set((inp) => (inp.entry.id === u.entry.id ? { verdict: "unattributed", why: WHY } : {}));
+      await q.resume();
+      await landed(k, n.entry.id);
+      const e = await k.entry(u.entry.id);
+      assert.equal(e.state, "unattributed");
+      assert.equal(e.reason, WHY);
+      assert.equal(q.isPaused(), false, "the queue doesn't pause");
+      assert.deepEqual(k.notices.filter((x) => x.branch === "feat/u").map((x) => x.kind), [], "never handed back to the chat");
+      const v = await q.view();
+      assert.deepEqual(v.needsYou.map((x) => [x.id, x.state]), [[u.entry.id, "unattributed"]]);
+      assert.notEqual(k.repo.head(), before);
+      assert.equal(sh(k.repo.root, "rev-parse", `${k.repo.head()}^2`), n.entry.commit, "only feat/next landed");
+      // The line moved on since its run: Land Anyway reruns it on the new target; again can't tell, so that tip lands.
+      await q.answer(u.entry.id, "land-anyway");
+      await landed(k, u.entry.id);
+      const done = await k.entry(u.entry.id);
+      assert.ok(done.approval.overUnattributed);
+      assert.ok(done.notes.some((x) => x.kind === "master-red" && /^Landed anyway: /.test(x.text)));
+      assert.equal(k.run.inputs.filter((i) => i.entry.id === u.entry.id).length, 2, "rerun on the moved target");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("Land Anyway onto the target it was tested on lands with no rerun; Send Back hands it back with the reason; Accept is refused", async () => {
+    const k = makeKit();
+    try {
+      const q = await k.q();
+      k.run.set(() => ({ verdict: "unattributed", why: WHY }));
+      k.repo.branch("feat/a", { "a1.txt": "a\n" });
+      const a = await q.add({ branch: "feat/a", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(a.entry.id)).state === "unattributed", "unattributed");
+      await assert.rejects(q.answer(a.entry.id, "accept"), /Accept answers a conflict/);
+      await q.answer(a.entry.id, "land-anyway");
+      await landed(k, a.entry.id);
+      assert.equal(k.run.inputs.length, 1, "no rerun");
+      k.repo.branch("feat/b", { "b1.txt": "b\n" });
+      const b = await q.add({ branch: "feat/b", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(b.entry.id)).state === "unattributed", "unattributed b");
+      await q.answer(b.entry.id, "send-back");
+      const back = await k.entry(b.entry.id);
+      assert.equal(back.state, "needs-fix");
+      assert.match(back.reason!, /failed on the merge and on master alone, and couldn't say whose failure it is/);
+      assert.deepEqual(k.notices.filter((x) => x.branch === "feat/b").map((x) => x.kind), ["sent-back"]);
+    } finally {
+      await k.done();
+    }
+  });
+});
+
 describe("the setup commit's push", () => {
   test("Save Checks isn't pushed on its own: the view shows the pushed sha and why, until the next landing pushes both", async () => {
     let saved = false;

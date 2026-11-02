@@ -62,6 +62,7 @@ const OUTCOME_OF_STATE: Partial<Record<MergeEntry["state"], MergeCardOutcome>> =
   // A conflict the merge thread is still judging is shown in place; its outcome is Behaviour differs or a hand-back.
   "behaviour-differs": "behaviour-differs",
   "review-flagged": "review-flagged",
+  unattributed: "unattributed",
   "drafts-changed": "drafts-changed",
 };
 const LINES_MAX = 50;

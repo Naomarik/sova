@@ -18,19 +18,21 @@
  * - `behaviour-differs`: the thread judged the two sides want different behaviour: waits for the user (Accept /
  *   Send Back), with both sides in plain words and the proposed resolution (`conflict`).
  * - `review-flagged`: the review step said blocking: waits for the user (Land Anyway / Send Back).
+ * - `unattributed`: a check that can't name its failures failed on the merge and on the target alone: neither side is
+ *   blamed and nothing lands on its own; waits for the user (Land Anyway / Send Back). The line moves on meanwhile.
  * - `drafts-changed`: the branch's spec drafts changed since the user approved: waits for a new Land.
  * - `needs-fix`: handed back to the branch's chat (a failure blamed on the branch, a conflict sent back, or the
  *   user's Send Back); a new Land queues it again.
  * - `landed`: master holds it (`landed`).
  * - `cancelled`: the user (or the branch's chat, on the user's word) took it out of the line.
  */
-export type MergeEntryState = "queued" | "checking" | "conflict" | "behaviour-differs" | "review-flagged" | "drafts-changed" | "needs-fix" | "landed" | "cancelled";
+export type MergeEntryState = "queued" | "checking" | "conflict" | "behaviour-differs" | "review-flagged" | "unattributed" | "drafts-changed" | "needs-fix" | "landed" | "cancelled";
 /** The states that wait for the user's answer (the "needs you" list). */
-export const WAITING_FOR_USER: readonly MergeEntryState[] = ["behaviour-differs", "review-flagged", "drafts-changed"];
+export const WAITING_FOR_USER: readonly MergeEntryState[] = ["behaviour-differs", "review-flagged", "unattributed", "drafts-changed"];
 /** The states an entry never leaves by itself. */
 export const ENTRY_FINAL: readonly MergeEntryState[] = ["landed", "cancelled", "needs-fix"];
 /** States that hold a place in the line (one live entry per branch at a time). */
-export const ENTRY_OPEN: readonly MergeEntryState[] = ["queued", "checking", "conflict", "behaviour-differs", "review-flagged", "drafts-changed"];
+export const ENTRY_OPEN: readonly MergeEntryState[] = ["queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed"];
 
 /** How the user approved: the Land button (composer modal, session pane, Merge Queue view) or "land it" typed in the
  *  branch's own chat (ingested from the worktree tool's go-ahead record). */
@@ -51,6 +53,8 @@ export interface MergeApproval {
   withoutSpecs?: true;
   /** "Land without review" / "land it, skip review": no review step for this merge. */
   withoutReview?: true;
+  /** Land Anyway on "Can't tell whose failure": a rerun that again can't tell lands its tested tip. */
+  overUnattributed?: true;
 }
 
 /** A note on an entry, shown on its row (queue view, composer popup, pane). Sova attaches no meaning to the text. */
@@ -419,8 +423,8 @@ export interface MergeCardsFeed {
 // ---- a branch's card in the chat that built it ---------------------------------------------------
 
 /** An outcome that moves the card to the bottom of the chat as a new revision. */
-export type MergeCardOutcome = "landed" | "needs-fix" | "conflict" | "behaviour-differs" | "review-flagged" | "drafts-changed" | "sent-back";
-export const MERGE_CARD_OUTCOMES: readonly MergeCardOutcome[] = ["landed", "needs-fix", "conflict", "behaviour-differs", "review-flagged", "drafts-changed", "sent-back"];
+export type MergeCardOutcome = "landed" | "needs-fix" | "conflict" | "behaviour-differs" | "review-flagged" | "unattributed" | "drafts-changed" | "sent-back";
+export const MERGE_CARD_OUTCOMES: readonly MergeCardOutcome[] = ["landed", "needs-fix", "conflict", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "sent-back"];
 
 /**
  * One copy of the card at its own point in the chat. The newest revision draws the whole card (the card's live data);
@@ -510,6 +514,8 @@ export function entryStateWords(e: Pick<MergeEntry, "state" | "position">): stri
       return "Behaviour differs · waiting for you";
     case "review-flagged":
       return "Review flagged · waiting for you";
+    case "unattributed":
+      return "Can't tell whose failure · waiting for you";
     case "drafts-changed":
       return "Drafts changed since you approved";
     case "needs-fix":

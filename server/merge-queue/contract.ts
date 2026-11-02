@@ -78,6 +78,10 @@ export type RunOutcomeVerdict =
   | "machine"
   /** The checks passed and the review said blocking: waits for the user (Land Anyway / Send Back). `tip` is set. */
   | "review-flagged"
+  /** A check that can't name its failures (a whole-check rerun) failed on the merge AND on the target alone: neither
+   *  side can be blamed. `why` says which check; `tip` is the tested merge (what Land Anyway lands); `targetRed` names
+   *  the check. Never auto-landed, never handed back, and the queue doesn't pause: it waits for the user. */
+  | "unattributed"
   /** Aborted (signal), or a timeout of the run as a whole: nothing blamed, run again. */
   | "void";
 
@@ -88,7 +92,7 @@ export interface RunOutcome {
   why?: string;
   /** The merge commit. */
   mergeSha?: string;
-  /** The commit that lands (the merge, plus the docs commit when drafts landed). passed / review-flagged. */
+  /** The commit that lands (the merge, plus the docs commit when drafts landed). passed / review-flagged / unattributed. */
   tip?: string;
   /** The merge copy's path. */
   copy?: string;

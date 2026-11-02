@@ -258,8 +258,8 @@ describe("a merge run", () => {
       expect(git(r.out.copy!, ["status", "--porcelain"])).toBe("");
     });
 
-    test("a branch that changes one tracked draft lands exactly that draft; the others stay as they were", async () => {
-      const fx = await tracked(30);
+    test("a branch that changes one of hundreds of tracked drafts lands exactly that draft; the others stay as they were", async () => {
+      const fx = await tracked(200);
       const before = fx.head();
       const br = fx.branch("one", { "src/app.txt": "changed\n" });
       fx.editDraft(br.checkout, nm(7), "Stale seven, now meant.");

@@ -12,7 +12,7 @@ export type Verb = (typeof VERBS)[number];
 export const DEPLOY_VERBS = ["deploy.check", "deploy.plan", "deploy.run", "deploy.status", "deploy.logs", "deploy.rollback", "deploy.request"] as const;
 export type DeployVerb = (typeof DEPLOY_VERBS)[number];
 /** The merge queue's verbs (shared/merge-queue.ts): a project's queue, its entries and runs, never an instance. */
-export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry"] as const;
+export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup"] as const;
 export type MergeVerb = (typeof MERGE_VERBS)[number];
 /** The merge verbs that change nothing. */
 export const MERGE_READ_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs"];
@@ -101,6 +101,12 @@ export const VERB_PARAMS: readonly VerbParam[] = [
   { wire: "theirs", type: "string", mergeOnly: true, tool: { name: "theirs", description: "merge.resolve: what the branch's side does, in plain words." }, cli: { flag: "theirs", description: "The branch's side, in plain words" } },
   { wire: "proposal", type: "string", mergeOnly: true, tool: { name: "proposal", description: "merge.resolve: what the resolution does, in plain words." }, cli: { flag: "proposal", description: "The proposed resolution, in plain words" } },
   { wire: "answer", type: "string", mergeOnly: true, cli: { flag: "answer", description: "accept | send-back | land-anyway" } },
+  { wire: "command", type: "string", mergeOnly: true, cli: { flag: "command", description: "merge.setup: the project's one test command" } },
+  { wire: "commands", type: "list", mergeOnly: true, cli: { flag: "commands", description: "merge.setup: its checks, each \"Label: command\", comma-separated" } },
+  { wire: "none", type: "boolean", mergeOnly: true, cli: { flag: "none", description: "merge.setup: the project has no automated tests" } },
+  { wire: "takesMin", type: "integer", mergeOnly: true, cli: { flag: "takes-min", description: "merge.setup: about how many minutes the tests take" } },
+  { wire: "requires", type: "list", mergeOnly: true, cli: { flag: "requires", description: "merge.setup: services that must start first, comma-separated" } },
+  { wire: "dryRun", type: "boolean", mergeOnly: true, cli: { flag: "dry-run", description: "merge.setup: Try It on Main, saving nothing" } },
   { wire: "text", type: "string", mergeOnly: true, tool: { name: "text", description: "merge.review: the reviewer's notes, short." }, cli: { flag: "text", description: "Text" } },
   { wire: "overrideTests", type: "string", cli: { flag: "override-tests", description: "Why the tests are overridden" } },
   { wire: "overrideDirty", type: "string", cli: { flag: "override-dirty", description: "Why a dirty tree is overridden" } },
@@ -112,7 +118,7 @@ export const VERB_PARAMS: readonly VerbParam[] = [
 export const VERB_FLAGS: { readonly instance: readonly string[]; readonly deploy: readonly string[]; readonly merge: readonly string[] } = {
   instance: ["project", "instance", "checkout", "branch", "from", "slot", "services", "restart", "lines", "keep-data", "resources", "ref", "select", "endpoint", "days", "link", "confirm"],
   deploy: ["project", "target", "commit", "ref", "plan", "deploy", "why", "lines", "override-tests", "override-dirty", "confirm", "dismiss"],
-  merge: ["project", "branch", "checkout", "commit", "entry", "run", "step", "lines", "note", "without-specs", "without-review", "chat", "checks", "select", "why", "verdict", "files", "ours", "theirs", "proposal", "answer", "text"],
+  merge: ["project", "branch", "checkout", "commit", "entry", "run", "step", "lines", "note", "without-specs", "without-review", "chat", "checks", "select", "why", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "none", "takes-min", "requires", "dry-run"],
 };
 
 export const ERROR_CODES = [

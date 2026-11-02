@@ -73,6 +73,7 @@ export type CommandId =
   | "project.verb.merge.answer"
   | "project.verb.merge.review"
   | "project.verb.merge.retry"
+  | "project.verb.merge.setup"
   | "project.services.view"
   | "project.overseer.idea.list"
   | "project.overseer.idea.get"
@@ -1157,6 +1158,18 @@ export interface CommandParams {
     "answer"?: string;
     /** Text */
     "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: Try It on Main, saving nothing */
+    "dry-run"?: boolean;
   };
   /** The project verb merge.logs, as the operator (sova-project merge.logs). (only looks; needs the card's owner trusted) */
   "project.verb.merge.logs": {
@@ -1204,6 +1217,18 @@ export interface CommandParams {
     "answer"?: string;
     /** Text */
     "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: Try It on Main, saving nothing */
+    "dry-run"?: boolean;
   };
   /** The project verb merge.add, as the operator (sova-project merge.add). (changes something; needs the card's owner trusted) */
   "project.verb.merge.add": {
@@ -1251,6 +1276,18 @@ export interface CommandParams {
     "answer"?: string;
     /** Text */
     "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: Try It on Main, saving nothing */
+    "dry-run"?: boolean;
   };
   /** The project verb merge.cancel, as the operator (sova-project merge.cancel). (changes something; needs the card's owner trusted) */
   "project.verb.merge.cancel": {
@@ -1298,6 +1335,18 @@ export interface CommandParams {
     "answer"?: string;
     /** Text */
     "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: Try It on Main, saving nothing */
+    "dry-run"?: boolean;
   };
   /** The project verb merge.pause, as the operator (sova-project merge.pause). (changes something; needs the card's owner trusted) */
   "project.verb.merge.pause": {
@@ -1345,6 +1394,18 @@ export interface CommandParams {
     "answer"?: string;
     /** Text */
     "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: Try It on Main, saving nothing */
+    "dry-run"?: boolean;
   };
   /** The project verb merge.resume, as the operator (sova-project merge.resume). (changes something; needs the card's owner trusted) */
   "project.verb.merge.resume": {
@@ -1392,6 +1453,18 @@ export interface CommandParams {
     "answer"?: string;
     /** Text */
     "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: Try It on Main, saving nothing */
+    "dry-run"?: boolean;
   };
   /** The project verb merge.note, as the operator (sova-project merge.note). (changes something; needs the card's owner trusted) */
   "project.verb.merge.note": {
@@ -1439,6 +1512,18 @@ export interface CommandParams {
     "answer"?: string;
     /** Text */
     "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: Try It on Main, saving nothing */
+    "dry-run"?: boolean;
   };
   /** The project verb merge.extend, as the operator (sova-project merge.extend). (changes something; needs the card's owner trusted) */
   "project.verb.merge.extend": {
@@ -1486,6 +1571,18 @@ export interface CommandParams {
     "answer"?: string;
     /** Text */
     "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: Try It on Main, saving nothing */
+    "dry-run"?: boolean;
   };
   /** The project verb merge.resolve, as the operator (sova-project merge.resolve). (changes something; needs the card's owner trusted) */
   "project.verb.merge.resolve": {
@@ -1533,6 +1630,18 @@ export interface CommandParams {
     "answer"?: string;
     /** Text */
     "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: Try It on Main, saving nothing */
+    "dry-run"?: boolean;
   };
   /** The project verb merge.answer, as the operator (sova-project merge.answer). (changes something; needs the card's owner trusted) */
   "project.verb.merge.answer": {
@@ -1580,6 +1689,18 @@ export interface CommandParams {
     "answer"?: string;
     /** Text */
     "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: Try It on Main, saving nothing */
+    "dry-run"?: boolean;
   };
   /** The project verb merge.review, as the operator (sova-project merge.review). (changes something; needs the card's owner trusted) */
   "project.verb.merge.review": {
@@ -1627,6 +1748,18 @@ export interface CommandParams {
     "answer"?: string;
     /** Text */
     "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: Try It on Main, saving nothing */
+    "dry-run"?: boolean;
   };
   /** The project verb merge.retry, as the operator (sova-project merge.retry). (changes something; needs the card's owner trusted) */
   "project.verb.merge.retry": {
@@ -1674,6 +1807,77 @@ export interface CommandParams {
     "answer"?: string;
     /** Text */
     "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: Try It on Main, saving nothing */
+    "dry-run"?: boolean;
+  };
+  /** The project verb merge.setup, as the operator (sova-project merge.setup). (changes something; needs the card's owner trusted) */
+  "project.verb.merge.setup": {
+    /** The project's root */
+    "project"?: string;
+    /** A branch name */
+    "branch"?: string;
+    /** A checkout's path */
+    "checkout"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** A merge queue entry id */
+    "entry"?: string;
+    /** A merge run id */
+    "run"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** A note on the entry */
+    "note"?: string;
+    /** Land without its spec drafts */
+    "without-specs"?: boolean;
+    /** Land without the review step */
+    "without-review"?: boolean;
+    /** The chat the approval was given in */
+    "chat"?: string;
+    /** Check ids, comma-separated */
+    "checks"?: string[];
+    /** Test selectors, comma-separated */
+    "select"?: string[];
+    /** Why */
+    "why"?: string;
+    /** A verdict */
+    "verdict"?: string;
+    /** Files, comma-separated */
+    "files"?: string[];
+    /** The target's side, in plain words */
+    "ours"?: string;
+    /** The branch's side, in plain words */
+    "theirs"?: string;
+    /** The proposed resolution, in plain words */
+    "proposal"?: string;
+    /** accept | send-back | land-anyway */
+    "answer"?: string;
+    /** Text */
+    "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: Try It on Main, saving nothing */
+    "dry-run"?: boolean;
   };
   /** A project's Branches tab: its copies, their services and the supervisor. (only looks; needs the card's owner trusted) */
   "project.services.view": {
@@ -2379,6 +2583,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.verb.merge.answer": "changes",
   "project.verb.merge.review": "changes",
   "project.verb.merge.retry": "changes",
+  "project.verb.merge.setup": "changes",
   "project.services.view": "looks",
   "project.overseer.idea.list": "looks",
   "project.overseer.idea.get": "looks",

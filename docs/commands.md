@@ -15,7 +15,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | --- | ---: |
 | Routes registered | 497 |
 | Routes a catalogue entry points at | 126 |
-| Catalogue entries | 169 |
+| Catalogue entries | 170 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -106,6 +106,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.verb.merge.answer` | Project merge.answer | changes | `POST /api/project-services/merge.answer` | admin |
 | `project.verb.merge.review` | Project merge.review | changes | `POST /api/project-services/merge.review` | admin |
 | `project.verb.merge.retry` | Project merge.retry | changes | `POST /api/project-services/merge.retry` | admin |
+| `project.verb.merge.setup` | Project merge.setup | changes | `POST /api/project-services/merge.setup` | admin |
 | `project.services.view` | Show Project Services | looks | `GET /api/projects/:pid/services` | sessions |
 | `project.overseer.idea.list` | List Project Ideas | looks | `GET /api/projects/:pid/overseer/ideas` | sessions |
 | `project.overseer.idea.get` | Show Project Idea | looks | `GET /api/projects/:pid/overseer/idea` | sessions |
@@ -704,7 +705,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `DELETE /api/overseer/todos/done` | admin | `overseer.todo.clear-done` |
 | `PUT /api/overseer/todos/order` | admin | `overseer.todo.reorder` |
 | `POST /api/previews/:id/off` | admin | `project.preview.off` |
-| `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.merge.add`, `project.verb.merge.answer`, `project.verb.merge.cancel`, `project.verb.merge.extend`, `project.verb.merge.logs`, `project.verb.merge.note`, `project.verb.merge.pause`, `project.verb.merge.resolve`, `project.verb.merge.resume`, `project.verb.merge.retry`, `project.verb.merge.review`, `project.verb.merge.status`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
+| `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.merge.add`, `project.verb.merge.answer`, `project.verb.merge.cancel`, `project.verb.merge.extend`, `project.verb.merge.logs`, `project.verb.merge.note`, `project.verb.merge.pause`, `project.verb.merge.resolve`, `project.verb.merge.resume`, `project.verb.merge.retry`, `project.verb.merge.review`, `project.verb.merge.setup`, `project.verb.merge.status`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
 | `GET /api/projects` | sessions | `project.list` |
 | `POST /api/projects` | admin | `project.create` |
 | `GET /api/projects/:pid` | sessions | `project.get` |

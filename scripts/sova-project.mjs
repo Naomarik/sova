@@ -23,8 +23,8 @@ import { resolve } from "node:path";
 import { exitOf } from "../shared/project-contract.ts";
 import { tokenHeaders } from "./sova-token.mjs";
 
-const VALUE = new Set(["project", "instance", "checkout", "branch", "from", "slot", "services", "lines", "resources", "ref", "select", "endpoint", "days", "link", "url", "target", "commit", "plan", "deploy", "why", "override-tests", "override-dirty", "entry", "run", "step", "note", "chat", "checks", "verdict", "files", "ours", "theirs", "proposal", "answer", "text"]);
-const FLAG = new Set(["restart", "keep-data", "confirm", "dismiss", "without-specs", "without-review"]);
+const VALUE = new Set(["project", "instance", "checkout", "branch", "from", "slot", "services", "lines", "resources", "ref", "select", "endpoint", "days", "link", "url", "target", "commit", "plan", "deploy", "why", "override-tests", "override-dirty", "entry", "run", "step", "note", "chat", "checks", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "takes-min", "requires"]);
+const FLAG = new Set(["restart", "keep-data", "confirm", "dismiss", "without-specs", "without-review", "none", "dry-run"]);
 const PATHS = new Set(["project", "checkout"]);
 
 function usage(msg) {
@@ -85,6 +85,12 @@ if (verb.startsWith("merge.")) {
     proposal: opts.proposal,
     answer: opts.answer,
     text: opts.text,
+    command: opts.command,
+    commands: list(opts.commands),
+    none: opts.none,
+    takesMin: num("takes-min"),
+    requires: list(opts.requires),
+    dryRun: opts["dry-run"],
   };
   for (const k of Object.keys(body)) if (body[k] === undefined) delete body[k];
 } else if (verb.startsWith("deploy.")) {

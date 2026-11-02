@@ -107,6 +107,7 @@ export async function startMergeQueue(opts: { request?: (path: string, init?: Re
     notify: notifier({ send: sendTo }),
     thread,
     draftsHash: (dir) => draftsHash(dir),
+    threadOf: (root) => (threadMod as { threadOf?: (r: string) => { session: string; startedAt: string } | null }).threadOf?.(root) ?? null,
     ...(legacyNames ? { legacyNames } : {}),
   });
   const q = queues;

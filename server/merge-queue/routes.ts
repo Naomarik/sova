@@ -57,6 +57,12 @@ interface Req {
   proposal?: string;
   answer?: string;
   text?: string;
+  command?: string;
+  commands?: string[];
+  none?: boolean;
+  takesMin?: number;
+  requires?: string[];
+  dryRun?: boolean;
 }
 
 const KEYS: Record<keyof Req, "string" | "boolean" | "number" | "strings"> = {
@@ -82,6 +88,12 @@ const KEYS: Record<keyof Req, "string" | "boolean" | "number" | "strings"> = {
   proposal: "string",
   answer: "string",
   text: "string",
+  command: "string",
+  commands: "strings",
+  none: "boolean",
+  takesMin: "number",
+  requires: "strings",
+  dryRun: "boolean",
 };
 
 function parse(body: unknown): Req {
@@ -197,8 +209,8 @@ function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, q: Project
   }
   if (sid && deps.isThreadChat?.(q.root, sid) && THREAD_VERBS.includes(verb)) return;
   if (reads && caller.kind !== "conform") return;
-  if (verb === "merge.add" || verb === "merge.answer" || verb === "merge.cancel" || verb === "merge.pause" || verb === "merge.resume")
-    throw new MergeFailure("forbidden", "only the user lands, cancels, pauses or answers: their Land button or their own word in the branch's chat");
+  if (verb === "merge.add" || verb === "merge.answer" || verb === "merge.cancel" || verb === "merge.pause" || verb === "merge.resume" || verb === "merge.setup")
+    throw new MergeFailure("forbidden", "only the user lands, cancels, pauses, answers or sets up the checks: their Land button or their own word in the branch's chat");
   if (verb === "merge.review") throw new MergeFailure("forbidden", "only the run's reviewer posts its review");
   throw new MergeFailure("forbidden", `only the project's merge thread calls ${verb}`);
 }
@@ -289,6 +301,17 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
     case "merge.retry":
       await q.retry(req.entry, req.note);
       return { changed: true, report: { view: await viewOf() } };
+    case "merge.setup": {
+      const r = await q.setup({
+        ...(req.command ? { command: req.command } : {}),
+        ...(req.commands ? { commands: req.commands } : {}),
+        ...(req.none ? { none: true } : {}),
+        ...(req.takesMin ? { takesMin: req.takesMin } : {}),
+        ...(req.requires ? { requires: req.requires } : {}),
+        ...(req.dryRun ? { dryRun: true } : {}),
+      });
+      return { changed: !req.dryRun, report: { ...(r.run ? { run: r.run } : {}), view: await viewOf() } };
+    }
   }
 }
 

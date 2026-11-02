@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type CheckPick,
@@ -9,6 +9,7 @@ import {
   type MergeEntry,
   type MergeNote,
   type MergeQueueView,
+  type MergeReady,
   type MergeRun,
   NOTE_MAX,
   type PauseInfo,
@@ -16,10 +17,10 @@ import {
   type ReviewVerdict,
   type RunStep,
 } from "../../shared/merge-queue";
-import type { ProjectDef } from "../../shared/project-contract";
+import { HOOK_TIMEOUT_MAX, parseDefinition, type ProjectDef } from "../../shared/project-contract";
 import type { ChecksOf, EstimateRun, RunInput, RunMerge, RunOutcome, WakeThread } from "./contract";
 import { countBetween, type Git, isAncestor, realGit, revParse, worktreesOf } from "./guard";
-import { canLand, firstParents, landTip, pushTip } from "./land";
+import { canLand, checkoutOf, dirtyWhy, firstParents, landTip, pushTip } from "./land";
 import type { MergeNoticeKind } from "./notices";
 import { sanityCheck } from "./conflicts";
 import { estimateFromRuns } from "./estimate";
@@ -75,6 +76,8 @@ export interface QueueDeps {
   keepRuns?: number;
   /** The project's review kit is declared (and readable). Default: `def.merge.review` set. */
   hasReviewKit?: (def: ProjectDef | null, root: string) => boolean;
+  /** The project's merge thread chat (thread.ts threadOf). */
+  threadOf?: (root: string) => { session: string; startedAt: string } | null;
   /** Hand a reviewer's verdict to the review step (default review-step.ts deliverReview). */
   deliverReview?: typeof deliverReview;
   /** The mechanical sanity check of a resolution (default conflicts.ts sanityCheck). */
@@ -256,7 +259,10 @@ export class ProjectQueue {
       else delete e.newerCommits;
     }
     const takes = this.deps.estimate ? this.deps.estimate(this.id, this.root) : this.estimateFromHistory();
-    return buildView({
+    const ready = await this.readyList(head);
+    const thread = this.deps.threadOf?.(this.root) ?? null;
+    const tryRun = this.trying?.run ?? (this.lastTry ? this.store.readRun(this.lastTry) : null);
+    const v = buildView({
       q: this.q,
       root: this.root,
       current: this.current?.run ?? null,
@@ -267,6 +273,30 @@ export class ProjectQueue {
       now: this.now(),
       readRun: (id) => this.store.readRun(id),
     });
+    return { ...v, ...(ready.length ? { ready } : {}), ...(thread ? { thread } : {}), ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}) };
+  }
+
+  private readyCache: { at: number; head: string; list: MergeReady[] } | null = null;
+  /** Ready, not approved (the view's Land list), re-read at most every 15 s or when the target moves. */
+  private async readyList(head: string): Promise<MergeReady[]> {
+    if (this.readyCache && this.readyCache.head === head && this.now() - this.readyCache.at < 15_000) return this.filterReady(this.readyCache.list);
+    const out: MergeReady[] = [];
+    for (const w of await worktreesOf(this.git, this.root)) {
+      if (!w.branch || !w.head || w.path === this.root || w.branch === this.q.target || w.branch === "master" || w.branch === "main" || !existsSync(w.path)) continue;
+      if (w.branch.startsWith("sova/")) continue;
+      const ahead = await countBetween(this.git, this.root, head, w.head);
+      if (!ahead) continue;
+      const subject = (await this.git(["log", "-1", "--format=%s", w.head], this.root)).stdout.trim();
+      if (/^temp\b/i.test(subject)) continue;
+      const st = await this.git(["status", "--porcelain"], w.path);
+      if (st.code !== 0 || st.stdout.trim()) continue;
+      out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead });
+    }
+    this.readyCache = { at: this.now(), head, list: out };
+    return this.filterReady(out);
+  }
+  private filterReady(list: MergeReady[]): MergeReady[] {
+    return list.filter((r) => !this.q.entries.some((e) => e.branch === r.branch && (ENTRY_OPEN.includes(e.state) || (e.state === "landed" && e.commit === r.commit))));
   }
 
   private estimateCache: { at: number; ms: number | null } | null = null;
@@ -618,6 +648,162 @@ export class ProjectQueue {
     });
   }
 
+  private trying: { run: MergeRun; ac: AbortController; done: Promise<void> } | null = null;
+  private lastTry: string | null = null;
+
+  /**
+   * merge.setup: the onboarding answer (one test command, a list of checks "Label: command", or no automated tests).
+   * `dryRun` (Try It on Main) runs those checks on the target alone in the merge copy and answers the run (it goes on in
+   * the background; merge.logs reads it); a failure there is the project's, never a branch's. Without `dryRun` the
+   * answer is written into the definition's `merge` section on the target, as one commit the queue moves the target to
+   * (the main folder fast-forwarded with it, never forced).
+   */
+  setup(req: { command?: string; commands?: string[]; none?: boolean; takesMin?: number; requires?: string[]; dryRun?: boolean }): Promise<{ run?: MergeRun; commit?: string }> {
+    return this.serial(async () => {
+      const kinds = [req.command ? 1 : 0, req.commands?.length ? 1 : 0, req.none ? 1 : 0].reduce((a, b) => a + b, 0);
+      if (kinds !== 1) throw new MergeFailure("invalid-request", "give one answer: a test command, a list of checks, or none (no automated tests)");
+      const head = await this.targetHead();
+      if (!head) throw new MergeFailure("not-found", `no branch ${this.q.target} in ${this.root}`);
+      const shown = await this.git(["show", `${head}:.sova/project.json`], this.root);
+      if (shown.code !== 0) throw new MergeFailure("unsupported", `${this.root} has no .sova/project.json on ${this.q.target} yet: set up its project verbs first (the project's onboarding), then its checks`);
+      let raw: Record<string, unknown>;
+      try {
+        raw = JSON.parse(shown.stdout) as Record<string, unknown>;
+      } catch {
+        throw new MergeFailure("invalid-request", `.sova/project.json on ${this.q.target} isn't JSON`);
+      }
+      const timeout = req.takesMin ? Math.min(HOOK_TIMEOUT_MAX, Math.max(60, req.takesMin * 60 * 2)) : undefined;
+      const slug = (label: string, i: number) => label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || `check-${i + 1}`;
+      const checks = req.none
+        ? ("none" as const)
+        : req.command
+          ? [{ id: "tests", label: "Tests", run: ["sh", "-c", req.command.trim()], ...(timeout ? { timeout } : {}), ...(req.requires?.length ? { requires: req.requires } : {}) }]
+          : req.commands!.map((c, i) => {
+              const m = /^\s*([^:]{1,60}):\s+(.+)$/.exec(c);
+              const label = (m ? m[1]! : c.trim().split(/\s+/).slice(0, 3).join(" ")).trim().slice(0, 60);
+              return { id: slug(label, i), label, run: ["sh", "-c", (m ? m[2]! : c).trim()], ...(timeout ? { timeout } : {}), ...(req.requires?.length ? { requires: req.requires } : {}) };
+            });
+      if (Array.isArray(checks)) {
+        const ids = new Set<string>();
+        for (const c of checks) {
+          while (ids.has(c.id)) c.id = `${c.id}-2`;
+          ids.add(c.id);
+        }
+      }
+      const merge = { ...((raw.merge as Record<string, unknown> | undefined) ?? {}), checks };
+      const text = `${JSON.stringify({ ...raw, merge }, null, 2)}\n`;
+      let def: ProjectDef;
+      try {
+        def = parseDefinition(text);
+      } catch (err) {
+        throw new MergeFailure("invalid-request", `that answer doesn't make a valid definition: ${err instanceof Error ? err.message : err}`);
+      }
+      if (req.dryRun) {
+        if (this.current || this.trying) throw new MergeFailure("busy", "a run is using the merge copy now: try again when it ends");
+        const runId = newId("mr");
+        const runDir = this.store.runDir(runId);
+        mkdirSync(runDir, { recursive: true });
+        const run: MergeRun = { id: runId, entry: "setup", project: this.id, branch: this.q.target, base: head, commit: head, steps: [], checks: [], verdict: "running", startedAt: this.iso(), why: "Try It on Main" };
+        this.store.writeRun(run);
+        const ac = new AbortController();
+        const stand: MergeEntry = { id: "setup", project: this.id, target: this.q.target, branch: this.q.target, commit: head, approval: { by: "land-button", at: this.iso(), commit: head }, state: "checking", runs: [runId], picks: [], notes: [], createdAt: this.iso(), updatedAt: this.iso() };
+        const input: RunInput = {
+          runId,
+          entry: stand,
+          project: { id: this.id, root: this.root, target: this.q.target, def },
+          base: head,
+          commit: head,
+          runDir,
+          picks: [],
+          review: false,
+          tryOnly: true,
+          signal: ac.signal,
+          awaitReview: () => Promise.reject(new Error("no review in a try")),
+        };
+        const hooks = {
+          step: (st: RunStep) => {
+            const i = run.steps.findIndex((x) => x.id === st.id);
+            if (i >= 0) run.steps[i] = { ...st };
+            else run.steps.push({ ...st });
+            this.store.writeRun(run);
+          },
+          checks: (list: CheckPick[]) => void (run.checks = list),
+          copy: (path: string) => void (run.copy = path),
+        };
+        const done = (async () => {
+          let out: RunOutcome;
+          try {
+            out = await this.deps.runMerge(input, hooks);
+          } catch (err) {
+            out = { verdict: "machine", why: err instanceof Error ? err.message : String(err), notes: [], checks: [] };
+          }
+          run.verdict = out.verdict === "passed" ? "passed" : out.verdict === "void" ? "void" : out.verdict === "machine" ? "machine" : "failed";
+          run.why = out.verdict === "passed" ? `the checks pass on ${this.q.target}` : `${out.why ?? "a check failed"}: it fails on ${this.q.target} itself, so it is the project's setup to fix, not any branch's`;
+          run.endedAt = this.iso();
+          if (out.noChecks) run.noChecks = true;
+          this.store.writeRun(run);
+          await this.serial(async () => {
+            this.trying = null;
+            this.schedulePublish();
+            this.kickSoon();
+          });
+        })();
+        this.trying = { run, ac, done };
+        this.lastTry = runId;
+        this.schedulePublish();
+        return { run: structuredClone(run) };
+      }
+      // Save: one commit on the target holding the new definition, moved to like a landing.
+      const co = await checkoutOf(this.git, this.root, this.q.target);
+      if (co) {
+        const why = await dirtyWhy(this.git, co);
+        if (why) throw new MergeFailure("invalid-request", `${why}: commit or put them away first (nothing is forced)`);
+      }
+      const tmp = join(this.store.dir, `setup-${Date.now()}`);
+      mkdirSync(this.store.dir, { recursive: true });
+      writeFileSync(`${tmp}.json`, text);
+      try {
+        const blob = (await this.git(["hash-object", "-w", `${tmp}.json`], this.root)).stdout.trim();
+        const env = { ...process.env, GIT_INDEX_FILE: `${tmp}.index` };
+        const steps: string[][] = [["read-tree", head], ["update-index", "--add", "--cacheinfo", `100644,${blob},.sova/project.json`]];
+        for (const a of steps) {
+          const r = await this.git(a, this.root, { env });
+          if (r.code !== 0) throw new MergeFailure("busy", `git ${a[0]} failed: ${r.stderr.trim()}`);
+        }
+        const tree = (await this.git(["write-tree"], this.root, { env })).stdout.trim();
+        const label = req.none ? "no automated tests" : req.command ? "one test command" : `${req.commands!.length} check${req.commands!.length === 1 ? "" : "s"}`;
+        // Who commits: the repository's own identity, else Sova's (as the run's commits in the copy).
+        const name = (await this.git(["config", "user.name"], this.root)).stdout.trim();
+        const email = (await this.git(["config", "user.email"], this.root)).stdout.trim();
+        const ident = name && email ? {} : { GIT_AUTHOR_NAME: name || "Sova merge queue", GIT_AUTHOR_EMAIL: email || "merge-queue@sova.invalid", GIT_COMMITTER_NAME: name || "Sova merge queue", GIT_COMMITTER_EMAIL: email || "merge-queue@sova.invalid" };
+        const c = await this.git(["commit-tree", tree, "-p", head, "-m", `Merge queue: set up checks (${label})`], this.root, { env: { ...process.env, ...ident } });
+        if (c.code !== 0) throw new MergeFailure("busy", `git commit-tree failed: ${c.stderr.trim()}`);
+        const commit = c.stdout.trim();
+        this.landing = true;
+        try {
+          const r = await landTip(this.git, this.root, this.q.target, head, commit);
+          if (r.kind !== "landed") throw new MergeFailure("busy", r.kind === "dirty" ? r.why : `${this.q.target} moved meanwhile: try again`);
+        } finally {
+          this.landing = false;
+        }
+        this.q.landed.push(commit);
+        this.q.knownTarget = commit;
+        this.checksCache = null;
+        this.save();
+        this.kickSoon();
+        return { commit };
+      } finally {
+        rmSync(`${tmp}.json`, { force: true });
+        rmSync(`${tmp}.index`, { force: true });
+      }
+    });
+  }
+
+  /** Tests: the Try It on Main run in flight, if any. */
+  tryingNow(): Promise<void> | null {
+    return this.trying?.done ?? null;
+  }
+
   private mustEntry(id: string): Entry {
     const e = this.entry(id);
     if (!e) throw new MergeFailure("not-found", `no queue entry ${id}`);
@@ -642,7 +828,7 @@ export class ProjectQueue {
   }
 
   private async startNext(): Promise<void> {
-    if (this.stopped || this.current || this.q.paused || this.landing) return;
+    if (this.stopped || this.current || this.trying || this.q.paused || this.landing) return;
     if (this.holdUntil > this.now()) return;
     const head = await this.targetHead();
     if (!head) return;
@@ -1118,6 +1304,10 @@ export class ProjectQueue {
     for (const t of this.timers) clearTimeout(t);
     for (const t of this.conflictTimers.values()) clearTimeout(t);
     if (this.publishTimer) clearTimeout(this.publishTimer);
+    if (this.trying) {
+      this.trying.ac.abort();
+      await this.trying.done.catch(() => {});
+    }
     const cur = this.current;
     if (cur) {
       cur.voidWhy = "stopping";

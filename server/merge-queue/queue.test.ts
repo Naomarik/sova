@@ -867,3 +867,91 @@ import { execFileSync } from "node:child_process";
 function execGit(cwd: string, args: string[], input: string): string {
   return execFileSync("git", args, { cwd, input, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid" } }).trim();
 }
+
+describe("setting up the checks", () => {
+  const DEF_TEXT = '{"version":1,"services":{"web":{"cmd":["true"]}}}\n';
+
+  test("no definition: refused, saying to set up the project first; one answer only", async () => {
+    const k = makeKit({ checks: "unset" });
+    try {
+      const q = await k.q();
+      await assert.rejects(q.setup({ none: true }), /has no \.sova\/project\.json/);
+      await assert.rejects(q.setup({ none: true, command: "make test" }), /give one answer/);
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("Try It on Main runs the answer's checks on the target alone, merging nothing, and saves nothing", async () => {
+    const k = makeKit({ checks: "unset" });
+    try {
+      k.repo.commitOn(k.repo.root, { ".sova/project.json": DEF_TEXT }, "definition");
+      const q = await k.q();
+      const before = k.repo.head();
+      const r = await q.setup({ commands: ["Unit tests: npm test", "Lint: npm run lint"], takesMin: 3, dryRun: true });
+      assert.equal(r.run!.verdict, "running");
+      await q.tryingNow();
+      const input = k.run.inputs[0]!;
+      assert.equal(input.tryOnly, true);
+      assert.equal(input.base, before);
+      assert.deepEqual((input.project.def!.merge!.checks as { id: string; label: string; run: string[]; timeout: number }[]).map((c) => [c.id, c.label, c.run, c.timeout]), [
+        ["unit-tests", "Unit tests", ["sh", "-c", "npm test"], 360],
+        ["lint", "Lint", ["sh", "-c", "npm run lint"], 360],
+      ]);
+      assert.equal(q.store.readRun(r.run!.id)!.verdict, "passed");
+      assert.equal(k.repo.head(), before, "nothing saved");
+      assert.equal((await q.view()).tryRun!.id, r.run!.id);
+      k.run.set(() => ({ verdict: "failed", why: "Unit tests failed" }));
+      const r2 = await q.setup({ command: "npm test", dryRun: true });
+      await q.tryingNow();
+      assert.match(q.store.readRun(r2.run!.id)!.why!, /fails on master itself, so it is the project's setup to fix, not any branch's/);
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("Save writes the merge section on the target as one commit the main folder moves to; a dirty main folder is refused", async () => {
+    const k = makeKit({ checks: "unset" });
+    try {
+      k.repo.commitOn(k.repo.root, { ".sova/project.json": DEF_TEXT }, "definition");
+      const q = await k.q();
+      writeFileSync(join(k.repo.root, "a.txt"), "dirty\n");
+      await assert.rejects(q.setup({ none: true }), /uncommitted changes/);
+      sh(k.repo.root, "checkout", "--", "a.txt");
+      const r = await q.setup({ none: true });
+      assert.equal(k.repo.head(), r.commit);
+      assert.equal(sh(k.repo.root, "rev-parse", "HEAD"), r.commit);
+      const saved = JSON.parse(sh(k.repo.root, "show", "master:.sova/project.json"));
+      assert.deepEqual(saved.merge, { checks: "none" });
+      assert.deepEqual(saved.services, { web: { cmd: ["true"] } });
+      assert.equal(sh(k.repo.root, "status", "--porcelain"), "");
+      // The queue moved the target itself: not a move from outside, and pushable with the next landing.
+      k.repo.branch("feat/a", { "b.txt": "b\n" });
+      assert.ok(q.file.landed.includes(r.commit!));
+      assert.equal(q.isPaused(), false);
+    } finally {
+      await k.done();
+    }
+  });
+});
+
+describe("the view's extras", () => {
+  test("ready, not approved: clean worktree branches ahead of the target, without TEMP heads or entries; the thread's chat", async () => {
+    const k = makeKit({ deps: { threadOf: () => ({ session: "t1", startedAt: "2026-11-02T00:00:00.000Z" }) } });
+    try {
+      const q = await k.q();
+      await q.pause("hold");
+      const a = k.repo.branch("feat/ready", { "r.txt": "r\n" });
+      k.repo.branch("feat/temp", { "t.txt": "t\n" }, { message: "TEMP wip" });
+      const d = k.repo.branch("feat/dirty", { "d.txt": "d\n" });
+      writeFileSync(join(d.path, "d.txt"), "x\n");
+      k.repo.branch("feat/queued", { "q.txt": "q\n" });
+      await q.add({ branch: "feat/queued", by: "land-button" });
+      const v = await q.view();
+      assert.deepEqual(v.ready!.map((r) => [r.branch, r.commit, r.ahead]), [["feat/ready", a.head, 1]]);
+      assert.deepEqual(v.thread, { session: "t1", startedAt: "2026-11-02T00:00:00.000Z" });
+    } finally {
+      await k.done();
+    }
+  });
+});

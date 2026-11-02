@@ -318,6 +318,11 @@ export interface MergeQueueView {
   heads: MergeQueueHeads;
   /** The merge thread's chat for this project, when one is recorded. */
   thread?: { session: string; startedAt: string };
+  /** Ready, not approved: this project's worktree branches with commits the target hasn't, a clean tree, a head that
+   *  isn't TEMP, and no entry in line or landed at that commit (the view's Land list). */
+  ready?: MergeReady[];
+  /** Try It on Main (merge.setup dryRun): the run in flight, or the last one. */
+  tryRun?: MergeRun;
   at: string;
 }
 
@@ -328,6 +333,14 @@ export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "
   /** The project has a review kit (the Land menu shows "Land without review"). */
   reviewKit?: boolean;
 };
+
+export interface MergeReady {
+  branch: string;
+  worktree: string;
+  commit: string;
+  /** Commits ahead of the target. */
+  ahead: number;
+}
 
 /** SessionWorktreeInfo.mergeProject: the project a worktree lands into, whatever its entry. */
 export interface WorktreeMergeProject {

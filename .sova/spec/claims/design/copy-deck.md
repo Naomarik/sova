@@ -226,7 +226,13 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Flip refused: another writer | Sandbox unchanged: another writer has this session. Nothing was written. |
 | Flip refused: other | Sandbox unchanged: {server error} |
 | Flip refused: server errors ({server error}) | Invalid or missing ?path= (must be a .jsonl under the pi sessions dir) · Expected JSON body { state: "off" \| "subagents" \| "on" } or { on: boolean } · state and on disagree · Session file not found · why the chat couldn't open (a TUI holds it, its remote placeholder folder is gone) |
-| TUI `/sandbox` usage | usage: /sandbox on \| subagents \| off |
+| TUI `/sandbox` usage | usage: /sandbox on \| subagents \| off \| clean [all] |
+| TUI `/sandbox` caches line (after the status line, §chat.sandbox/cache-cleanup) | Caches {size} of {limit} ({reason}) · cleaned {when}, freed up to {freed} · over the limit: Caches {size}, over the {limit} limit ({reason}): everything left was used recently · never cleaned: Caches: not cleaned yet · cleanup off: Caches: automatic cleanup off · {reason}: your maxSizeGB setting · 5% of the disk · 5% of free space · the 2 GB minimum |
+| TUI `/sandbox clean` result | Caches cleaned: freed up to {freed}; {size} left of {limit} |
+| TUI `/sandbox clean all` result | Caches cleared: freed up to {freed}; kept only what was used in the last hour |
+| TUI `/sandbox clean` refused (another cleanup running) | Caches: a cleanup is already running. Nothing was removed; try again later. |
+| TUI `/sandbox clean` failed | Caches: the cleanup failed ({error}). Nothing more was removed. |
+| Invalid `caches.json` (notice) | Sandbox: `caches.json` is invalid ({error}); cache cleanup is off. The sandbox is unaffected. |
 | TUI footer | sandbox on (and its suffixes, §chat.sandbox/toggle) · Off: sandbox off · Subagents only: nothing |
 | Unavailable refusal (tool error) | Sandbox unavailable: {reason}. Nothing ran. Turn the sandbox off to run tools unconfined. |
 | Denial note (end of a tool result) | [sandbox: a write or connection outside the policy was refused] |

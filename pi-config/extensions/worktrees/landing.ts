@@ -2,14 +2,13 @@
  * The user's go-aheads to land a branch at one commit, kept per user outside every repository:
  *
  *   <state root>/landing.json
- *   { "v": 1, "goAheads": [ { branch, commit, session?, at, by, withoutSpecs?, withoutReview?, in?, drafts? } ], "notYet": [ ... ],
- *     "docsEntries": [ ... ] }
+ *   { "v": 1, "goAheads": [ { branch, commit, session?, at, by, withoutSpecs?, withoutReview?, in?, drafts? } ] }
  *
  * The `worktree` tool's `land` writes one (`by: "owner-chat"`) for the user's word typed in the branch's own chat
  * (read by `typedGoAhead`, never a message another sender sent: `newestUserMessage`). Sova's merge queue reads those
  * records and queues the branch at that commit (server/merge-queue/ingest.ts). `withoutSpecs`: its drafts stay
- * behind; `withoutReview`: no review step. The other `by` values, `notYet` and `docsEntries` are older records, read
- * so a file holding them stays valid. Every writer holds the file's lock (withLandingLock).
+ * behind; `withoutReview`: no review step. The other `by` values are older records, read so a file holding them
+ * stays valid; an older file's `notYet` and `docsEntries` lists are ignored. Every writer holds the file's lock (withLandingLock).
  *
  * Node builtins only (the extension runs in every chat). Writes re-read the file, merge and replace it
  * atomically; a damaged file reads as no records.
@@ -35,7 +34,7 @@ export interface GoAhead {
 	/** ISO time. */
 	at: string;
 	by: GoAheadBy;
-	/** Merge Without Specs…: the user agreed its spec drafts stay behind. */
+	/** "land it without its specs": the user agreed its spec drafts stay behind. */
 	withoutSpecs?: true;
 	/** "land it, skip review": the merge queue lands it without its review step. */
 	withoutReview?: true;
@@ -52,29 +51,9 @@ export interface DraftsSeen {
 	each?: Record<string, string>;
 }
 
-/** A docs commit the merge round made on a branch at its landing, and the one parent it was made on. */
-export interface DocsEntry {
-	branch: string;
-	sha: string;
-	parent: string;
-	at: string;
-	drafts: string[];
-}
-
-export interface NotYet {
-	branch: string;
-	commit: string;
-	session?: string;
-	at: string;
-	/** The session it was given in, when not the branch's own. */
-	in?: string;
-}
-
 export interface LandingData {
 	v: 1;
 	goAheads: GoAhead[];
-	notYet: NotYet[];
-	docsEntries?: DocsEntry[];
 }
 
 /** pi's agent dir as pi resolves it: $PI_CODING_AGENT_DIR (a leading ~ expanded), else ~/.pi/agent. */
@@ -109,38 +88,21 @@ function cleanDrafts(v: unknown): DraftsSeen | undefined {
 	return { hash: v.hash, names: [...(v.names as string[])], ...(each ? { each: { ...each } } : {}) };
 }
 
-function cleanDocsEntry(v: unknown): DocsEntry | null {
-	if (!isRec(v) || !str(v.branch) || typeof v.sha !== "string" || !SHA.test(v.sha) || typeof v.parent !== "string" || !SHA.test(v.parent) || !str(v.at)) return null;
-	return { branch: v.branch, sha: v.sha, parent: v.parent, at: v.at, drafts: Array.isArray(v.drafts) ? v.drafts.filter(str) : [] };
-}
-
-function cleanNotYet(v: unknown): NotYet | null {
-	if (!isRec(v) || !str(v.branch) || typeof v.commit !== "string" || !SHA.test(v.commit) || !str(v.at)) return null;
-	return { branch: v.branch, commit: v.commit, ...(str(v.session) ? { session: v.session } : {}), at: v.at, ...(str(v.in) ? { in: v.in } : {}) };
-}
-
 export function readLanding(file: string = landingFile()): LandingData {
 	try {
 		const raw = JSON.parse(readFileSync(file, "utf8")) as unknown;
-		if (!isRec(raw) || raw.v !== 1) return { v: 1, goAheads: [], notYet: [] };
-		const docsEntries = (Array.isArray(raw.docsEntries) ? raw.docsEntries : []).map(cleanDocsEntry).filter((e): e is DocsEntry => !!e);
-		return {
-			v: 1,
-			goAheads: (Array.isArray(raw.goAheads) ? raw.goAheads : []).map(cleanGoAhead).filter((g): g is GoAhead => !!g),
-			notYet: (Array.isArray(raw.notYet) ? raw.notYet : []).map(cleanNotYet).filter((n): n is NotYet => !!n),
-			...(docsEntries.length ? { docsEntries } : {}),
-		};
+		// Older files also hold `notYet` and `docsEntries` lists: nothing reads them, and the next write drops them.
+		if (!isRec(raw) || raw.v !== 1) return { v: 1, goAheads: [] };
+		return { v: 1, goAheads: (Array.isArray(raw.goAheads) ? raw.goAheads : []).map(cleanGoAhead).filter((g): g is GoAhead => !!g) };
 	} catch {
-		return { v: 1, goAheads: [], notYet: [] };
+		return { v: 1, goAheads: [] };
 	}
 }
 
 function writeLanding(file: string, data: LandingData): void {
 	mkdirSync(dirname(file), { recursive: true });
 	const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-	// The round's docs entries are kept as read: an answer written here never drops one.
-	const docs = data.docsEntries?.length ? { docsEntries: data.docsEntries.slice(-LANDING_KEPT) } : {};
-	writeFileSync(tmp, `${JSON.stringify({ v: 1, goAheads: data.goAheads.slice(-LANDING_KEPT), notYet: data.notYet.slice(-LANDING_KEPT), ...docs }, null, 2)}\n`, { mode: 0o600 });
+	writeFileSync(tmp, `${JSON.stringify({ v: 1, goAheads: data.goAheads.slice(-LANDING_KEPT) }, null, 2)}\n`, { mode: 0o600 });
 	renameSync(tmp, file);
 }
 
@@ -150,9 +112,8 @@ export const LANDING_LOCK_STALE_MS = 10_000;
 const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 /**
- * Every writer of landing.json (Sova's server here, the merge round's driver, round.mjs withLandingLock, the same
- * protocol) holds `<file>.lock`, made with O_EXCL, while it re-reads, merges and replaces the file, so a go-ahead and
- * the round's docs entry written at once never drop each other. A lock older than LANDING_LOCK_STALE_MS is taken over.
+ * Every writer of landing.json (the `worktree` tool in any chat, Sova's tests) holds `<file>.lock`, made with O_EXCL,
+ * while it re-reads, merges and replaces the file, so two go-aheads written at once never drop each other. A lock older than LANDING_LOCK_STALE_MS is taken over.
  */
 export function withLandingLock<T>(file: string, fn: () => T): T {
 	mkdirSync(dirname(file), { recursive: true });
@@ -192,38 +153,8 @@ export function recordGoAhead(rec: GoAhead, file: string = landingFile()): void 
 	withLandingLock(file, () => {
 		const d = readLanding(file);
 		d.goAheads = [...d.goAheads.filter((g) => !(g.branch === ok.branch && g.commit === ok.commit)), ok];
-		d.notYet = d.notYet.filter((n) => !(n.branch === ok.branch && n.commit === ok.commit));
 		writeLanding(file, d);
 	});
-}
-
-/** Record the user's Not Yet for a branch at one commit. */
-export function recordNotYet(rec: NotYet, file: string = landingFile()): void {
-	const ok = cleanNotYet(rec);
-	if (!ok) throw new Error("Not a Not Yet: it needs a branch and a full commit sha.");
-	withLandingLock(file, () => {
-		const d = readLanding(file);
-		d.notYet = [...d.notYet.filter((n) => !(n.branch === ok.branch && n.commit === ok.commit)), ok];
-		writeLanding(file, d);
-	});
-}
-
-/**
- * The user's newest answer for this branch at exactly this commit: a go-ahead, or Not Yet. Both may be recorded
- * at one commit (Not Yet doesn't clear a go-ahead); the later `at` wins, and Not Yet wins a tie or a time that
- * can't be read. The merge round's driver keeps a copy (round.mjs landingAnswer), held equal by a test.
- */
-export function answerAt(data: LandingData, branch: string, commit: string): { kind: "go-ahead"; goAhead: GoAhead } | { kind: "not-yet"; notYet: NotYet } | undefined {
-	const go = data.goAheads.filter((g) => g.branch === branch && g.commit === commit).at(-1);
-	const no = data.notYet.filter((n) => n.branch === branch && n.commit === commit).at(-1);
-	if (go && (!no || Date.parse(go.at) > Date.parse(no.at))) return { kind: "go-ahead", goAhead: go };
-	return no ? { kind: "not-yet", notYet: no } : undefined;
-}
-
-/** The go-ahead for this branch at exactly this commit, if it is the newest answer there (answerAt). */
-export function goAheadFor(branch: string, commit: string, file: string = landingFile()): GoAhead | undefined {
-	const hit = answerAt(readLanding(file), branch, commit);
-	return hit?.kind === "go-ahead" ? hit.goAhead : undefined;
 }
 
 /** The invisible markers that name a user message another sender sent (§app.overseer/sent-marker): the Overseer's,

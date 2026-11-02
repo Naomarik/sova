@@ -101,7 +101,7 @@ export async function startMergeQueue(opts: { request?: (path: string, init?: Re
     const { startMergeReviewer } = await import("./reviewer");
     await startMergeReviewer(opts.request);
   }
-  // Sova's own project keeps the merge round's names file until it has its own.
+  // Sova's own project keeps its old private-names file (merge-round.json) until it has its own.
   const self = await projectOf(fileURLToPath(new URL("../..", import.meta.url)));
   const legacyNames = self.state === "ok" ? { root: self.root, file: join(stateRoot(), "merge-round.json") } : undefined;
   const sendTo = async (session: string, text: string): Promise<void> => {

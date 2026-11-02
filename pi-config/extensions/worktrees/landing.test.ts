@@ -3,39 +3,32 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { answerAt, goAheadFor, landingFile, newestUserMessage, readLanding, recordGoAhead, recordNotYet, typedGoAhead } from "./landing.ts";
+import { landingFile, newestUserMessage, readLanding, recordGoAhead, typedGoAhead } from "./landing.ts";
+
 
 const A = "a".repeat(40);
 const B = "b".repeat(40);
+/** The go-ahead recorded for this branch at exactly this commit (the merge queue's ingest reads the same records). */
+const goAheadFor = (branch: string, commit: string, file: string) => readLanding(file).goAheads.filter((g) => g.branch === branch && g.commit === commit).at(-1);
 
-test("go-aheads are kept per branch and exact commit; Not Yet is cleared by a go-ahead at the same commit", () => {
+test("go-aheads are kept per branch and exact commit; an older file's Not Yet and docs lists are ignored and dropped", () => {
 	const dir = mkdtempSync(join(tmpdir(), "landing-"));
 	const file = join(dir, "landing.json");
 	try {
 		assert.equal(goAheadFor("feat/x", A, file), undefined);
-		recordNotYet({ branch: "feat/x", commit: A, at: "2026-10-23T00:00:00Z" }, file);
-		assert.equal(readLanding(file).notYet.length, 1);
+		writeFileSync(file, JSON.stringify({ v: 1, goAheads: [], notYet: [{ branch: "feat/x", commit: A, at: "2026-10-23T00:00:00Z" }], docsEntries: [{ branch: "feat/x", sha: B, parent: A, at: "t", drafts: [] }] }));
+		assert.deepEqual(readLanding(file), { v: 1, goAheads: [] });
 		recordGoAhead({ branch: "feat/x", commit: A, at: "2026-10-23T00:01:00Z", by: "land-it", session: "s1" }, file);
 		assert.equal(goAheadFor("feat/x", A, file)?.session, "s1");
 		assert.equal(goAheadFor("feat/x", B, file), undefined, "another commit");
 		assert.equal(goAheadFor("feat/y", A, file), undefined, "another branch");
-		assert.equal(readLanding(file).notYet.length, 0);
+		assert.deepEqual(Object.keys(JSON.parse(readFileSync(file, "utf8"))), ["v", "goAheads"], "the next write drops the old lists");
 		assert.throws(() => recordGoAhead({ branch: "feat/x", commit: "abc", at: "x", by: "land-it" }, file), /full commit sha/);
 		writeFileSync(file, "{broken");
-		assert.deepEqual(readLanding(file), { v: 1, goAheads: [], notYet: [] });
+		assert.deepEqual(readLanding(file), { v: 1, goAheads: [] });
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
-});
-
-test("the newest answer at a commit wins; Not Yet wins a tie or a time that can't be read", () => {
-	const at = (go: string | undefined, no: string | undefined) =>
-		answerAt({ v: 1, goAheads: go ? [{ branch: "f", commit: A, at: go, by: "land-it" }] : [], notYet: no ? [{ branch: "f", commit: A, at: no }] : [] }, "f", A)?.kind ?? null;
-	assert.equal(at("2026-10-24T00:05:00Z", "2026-10-24T00:00:00Z"), "go-ahead");
-	assert.equal(at("2026-10-24T00:00:00Z", "2026-10-24T00:05:00Z"), "not-yet");
-	assert.equal(at("2026-10-24T00:00:00Z", "2026-10-24T00:00:00Z"), "not-yet");
-	assert.equal(at("x", "2026-10-24T00:00:00Z"), "not-yet");
-	assert.equal(at(undefined, undefined), null);
 });
 
 test("a Merge Branch record from before the guard was removed still reads", () => {
@@ -85,36 +78,20 @@ test("typedGoAhead: the user's word to land now, never a question, a condition, 
 		assert.equal(typedGoAhead(t), null, t);
 });
 
-test("a go-ahead typed in the owner's chat is kept like Land It and read back as the newest answer", () => {
+test("a go-ahead typed in the owner's chat is kept, and a newer one at the same commit replaces it", () => {
 	const dir = mkdtempSync(join(tmpdir(), "landing-"));
 	const file = join(dir, "landing.json");
 	try {
-		recordNotYet({ branch: "feat/x", commit: A, at: "2026-10-23T00:00:00Z" }, file);
-		recordGoAhead({ branch: "feat/x", commit: A, at: "2026-10-23T00:01:00Z", by: "owner-chat", session: "s1" }, file);
-		assert.equal(goAheadFor("feat/x", A, file)?.by, "owner-chat");
-		assert.equal(readLanding(file).notYet.length, 0);
+		recordGoAhead({ branch: "feat/x", commit: A, at: "2026-10-23T00:00:00Z", by: "owner-chat", session: "s1" }, file);
+		recordGoAhead({ branch: "feat/x", commit: A, at: "2026-10-23T00:01:00Z", by: "owner-chat", session: "s1", withoutReview: true }, file);
+		assert.equal(goAheadFor("feat/x", A, file)?.withoutReview, true);
+		assert.equal(readLanding(file).goAheads.length, 1);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
 
-test("Go on an Overseer card's land row is kept like Land It, and every later write keeps it", () => {
-	const dir = mkdtempSync(join(tmpdir(), "landing-"));
-	const file = join(dir, "landing.json");
-	try {
-		recordGoAhead({ branch: "feat/x", commit: A, at: "2026-10-23T00:01:00Z", by: "overseer-card", session: "s1" }, file);
-		recordGoAhead({ branch: "feat/y", commit: B, at: "2026-10-23T00:02:00Z", by: "land-it" }, file);
-		recordNotYet({ branch: "feat/z", commit: B, at: "2026-10-23T00:03:00Z" }, file);
-		assert.equal(goAheadFor("feat/x", A, file)?.by, "overseer-card");
-		assert.equal(readLanding(file).goAheads.length, 2);
-		// An unknown recorder is still dropped.
-		assert.throws(() => recordGoAhead({ branch: "feat/w", commit: A, at: "2026-10-23T00:04:00Z", by: "someone" as never }, file), /Not a go-ahead/);
-	} finally {
-		rmSync(dir, { recursive: true, force: true });
-	}
-});
-
-test("every go-ahead kind (captain-chat with its `in`, overseer-card) survives the other's write", () => {
+test("older go-ahead kinds (captain-chat with its `in`, overseer-card) still read, and survive a new write; an unknown kind is refused", () => {
 	const dir = mkdtempSync(join(tmpdir(), "landing-"));
 	const file = join(dir, "landing.json");
 	try {
@@ -122,6 +99,7 @@ test("every go-ahead kind (captain-chat with its `in`, overseer-card) survives t
 		recordGoAhead({ branch: "feat/o", commit: B, at: "2026-10-23T00:02:00Z", by: "overseer-card", session: "s1" }, file);
 		assert.deepEqual(goAheadFor("feat/c", A, file), { branch: "feat/c", commit: A, at: "2026-10-23T00:01:00Z", by: "captain-chat", in: "cap" });
 		assert.equal(goAheadFor("feat/o", B, file)?.by, "overseer-card");
+		assert.throws(() => recordGoAhead({ branch: "feat/w", commit: A, at: "2026-10-23T00:04:00Z", by: "someone" as never }, file), /Not a go-ahead/);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

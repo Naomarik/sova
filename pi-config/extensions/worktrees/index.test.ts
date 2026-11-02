@@ -370,7 +370,7 @@ test("land records the user's go-ahead typed in this chat for the branch at its 
 		rmSync(join(tree, "c.txt"));
 		const out = await f.call(c, { action: "land" });
 		assert.match(out.content[0].text, /Queued feat\/x at [0-9a-f]{7} to land\. Sova's merge queue merges it onto the newest master in its own copy/);
-		assert.doesNotMatch(out.content[0].text, /captain|Landing card/i);
+		assert.doesNotMatch(out.content[0].text, /captain|landing card/i);
 		assert.doesNotMatch(out.content[0].text, /press|Land It/);
 		assert.deepEqual(recorded(), [{ branch: "feat/x", commit: head, session: "s1", at: "2026-10-26T10:00:00.000Z", by: "owner-chat" }]);
 		// Without its specs, as the user said; by its branch name once tracked.

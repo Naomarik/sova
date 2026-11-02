@@ -8,7 +8,7 @@
 //   node scripts/merge-queue-projects.mjs --project nasabii   [--port 4829]
 //   node scripts/merge-queue-projects.mjs --project plain     [--port 4831]   # no .sova/project.json: onboarding O1-O5
 //   node scripts/merge-queue-projects.mjs --project motorsaif,nasabii --port 4830   # C1: two queues, one server, at once
-//   [--only P1,P2,…] [--real-model] [--keep] [--ws <dir>]
+//   [--only P1,P2,…] [--real-model] [--keep] [--ws <dir>] [--break <test file> | --break name=<file>,…]
 //
 // Each run works in a workspace of its own, ~/.cache/mq-projects/<projects>-<port>-<runid>/ (its clones of the seed
 // clones ~/.cache/mq-projects/<name>, their bare origins, .worktrees with the merge copy, the Sova under test, logs and
@@ -34,8 +34,8 @@ import { join } from "node:path";
 import { QueueClient, Results, SovaUnderTest, runWorkspace, check, git, gitOk, guardPath, log as plog, makeBranch, parseArgs, realHead, until } from "./merge-queue-qa-lib.mjs";
 
 const PROJECTS = {
-  motorsaif: { real: join(homedir(), "webapps", "motorsaif"), target: "main", realSha: "348559df", port: 4828 },
-  nasabii: { real: join(homedir(), "github", "rakiba", "projects", "nasabii"), target: "master", realSha: "c0ef5d7", port: 4829 },
+  motorsaif: { real: join(homedir(), "webapps", "motorsaif"), target: "main", realSha: "348559df", port: 4828, breakFile: "test/app/access_test.clj" },
+  nasabii: { real: join(homedir(), "github", "rakiba", "projects", "nasabii"), target: "master", realSha: "c0ef5d7", port: 4829, breakFile: "test/clj/nasabii/auth/session_test.clj" },
   // A plain repository with no .sova/project.json, made here (no real repo behind it): onboarding, then a landing.
   plain: { real: null, target: "main", realSha: null, port: 4831, synthetic: true },
 };
@@ -44,6 +44,10 @@ const { opt, has } = parseArgs();
 const names = opt("--project", "").split(",").filter(Boolean);
 check(names.length && names.every((n) => PROJECTS[n]), `--project one of ${Object.keys(PROJECTS).join(", ")} (comma-separated for C1)`);
 const PORT = Number(opt("--port", String(names.length === 1 ? PROJECTS[names[0]].port : 4830)));
+// P2/P3's break goes in a test that PASSES on the target (a flipped assertion inside an already-red test proves
+// nothing): --break <file> (one project) or --break name=<file>,name=<file>; default each project's breakFile, then
+// the first test file with an (is (= …)).
+const BREAK = Object.fromEntries(opt("--break", "").split(",").filter(Boolean).map((x) => (x.includes("=") ? x.split("=", 2) : [names[0], x])));
 const ONLY = opt("--only", "") ? new Set(opt("--only", "").split(",")) : null;
 const KEEP = has("--keep");
 const BASE = guardPath(join(homedir(), ".cache", "mq-projects"));
@@ -231,7 +235,8 @@ async function cases(P) {
     writeFileSync(join(LOGS, `${id}.${P.name}-run.json`), JSON.stringify(r, null, 2));
     return r?.run ?? null;
   };
-  const testRel = firstTestFile(P.root);
+  const testRel = BREAK[P.name] ?? (P.breakFile && existsSync(join(P.root, P.breakFile)) && readFileSync(join(P.root, P.breakFile), "utf8").includes("(is (= ") ? P.breakFile : firstTestFile(P.root));
+  log(`${P.name}: P2/P3 break ${testRel}`);
   const resumeIfPaused = async () => {
     const v = await P.q.view();
     if (v?.state === "paused") await P.q.resume();

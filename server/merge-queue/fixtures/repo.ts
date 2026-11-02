@@ -120,14 +120,14 @@ for (const f of files) {
   if (c === "hang") { console.log("unit: " + f + " hangs"); log("hang"); setInterval(() => {}, 1000); await new Promise(() => {}); }
   if (c.startsWith("gate")) {
     // Held until the test writes <state>/gates/<name> (released) — a check that is "running" for as long as a test needs.
-    const g = STATE + "/gates/" + (c.split(/\s+/)[1] || "main");
+    const g = STATE + "/gates/" + (c.split(/\\s+/)[1] || "main");
     mkdirSync(STATE + "/gates", { recursive: true });
-    writeFileSync(STATE + "/gates/" + (c.split(/\s+/)[1] || "main") + ".waiting", head);
+    writeFileSync(STATE + "/gates/" + (c.split(/\\s+/)[1] || "main") + ".waiting", head);
     console.log("unit: " + f + " waits at gate");
     while (!existsSync(g)) await new Promise((r) => setTimeout(r, 50));
   }
   // "forbid w1 w2": fails when src/list.txt holds every word (a combination of two branches breaks it).
-  const forbid = c.startsWith("forbid ") && c.split(/\s+/).slice(1).every((w) => conf("src/list.txt", "").split("\n").includes(w));
+  const forbid = c.startsWith("forbid ") && c.split(/\\s+/).slice(1).every((w) => conf("src/list.txt", "").split("\\n").includes(w));
   const bad = forbid || c === "fail" || (c === "flaky" && once("flaky:" + f + ":" + head));
   if (bad) { failures.push({ file: f, name: f.replace(/^tests\\//, ""), message: "expected pass, got " + c }); console.log("not ok " + f); }
   else { passed++; console.log("ok " + f); }
@@ -213,14 +213,13 @@ export class Fixture {
       setup: [{ id: "prep", run: ["node", "setup.mjs"] }],
       services: {} as Record<string, unknown>,
     };
-    if (this.opts.requireService) {
-      (def.services as Record<string, unknown>).svc = {
-        cmd: ["node", "svc.mjs"],
-        start: "on-demand",
-        ports: { tcp: { base: this.opts.requireService.portBase } },
-        ready: { tcp: "tcp", timeout: 10 },
-      };
-    }
+    // The parser wants at least one service: an on-demand one nothing starts unless the test command requires it.
+    (def.services as Record<string, unknown>).svc = {
+      cmd: ["node", "svc.mjs"],
+      start: "on-demand",
+      ports: { tcp: { base: this.opts.requireService?.portBase ?? 39_000 } },
+      ready: { tcp: "tcp", timeout: 10 },
+    };
     if (checks === "test-command") {
       def.test = { run: ["node", "runner.mjs"], ...(this.opts.requireService ? { requires: ["svc"] } : {}), timeout: 60, smoke: ["tests/a.txt"] };
     }

@@ -22,10 +22,10 @@ Only the merge verbs, through the project verbs tool, plus reading:
 
 Every one of them takes an optional `note`. In `merge.resolve`, `ours` is always **the target's side** and `theirs` **the branch's side**, whatever git calls them in your side worktree.
 
-You may read anything (`git log`, `git diff`, `git show`, files) and run this folder's scripts. You may create one side worktree to resolve a conflict in (`worktree create`), and commit there. You never: move or commit on the target branch; run git that writes in the main checkout (merge, reset, checkout, update-ref, push); call `worktree merge` or `worktree land`; resume a paused queue; tell anyone to restart anything; message other chats.
+You may read anything (`git log`, `git diff`, `git show`, files) and run this folder's scripts. You may create one side worktree to resolve a conflict in (`worktree create`), and commit there. `scripts/discover-names.mjs` writes the project's private-names file, only in the names interview. You never: move or commit on the target branch; run git that writes in the main checkout (merge, reset, checkout, update-ref, push); call `worktree merge` or `worktree land`; resume a paused queue; tell anyone to restart anything; message other chats.
 
 ## Each event, one short turn
-Sova sends you one message per event. Answer it with the verbs and stop: no waiting, no timers, no follow-up questions to Sova.
+Sova sends you one message per event. Answer it with the verbs and stop: no waiting, no timers, no follow-up questions to Sova. Ask the user nothing, except in the names interview.
 
 **Queued** (an entry joined the queue). Read the branch: `git diff --stat <target>...<commit>`, then the parts that matter. Then:
 1. **Picks** (`references/picks.md`): run `node scripts/blast-radius.mjs --base <target> --tip <commit> --repo <project root>`. It proposes checks from the project's map, each with its reason. Read the diff against it: drop a pick the change can't reach, add one the map missed (only check ids the project declares as optional). Send each with `merge.extend`, its reason in `why`. Nothing fits: send nothing. You only ever add: the required checks always run.
@@ -34,6 +34,8 @@ Sova sends you one message per event. Answer it with the verbs and stop: no wait
 **Conflict** (the branch doesn't merge cleanly onto the target). Judge it: `references/conflicts.md`.
 
 **Failed** (a check failed and Sova blamed the branch) or **Paused** (the queue stopped itself). Explain it: `references/failures.md`.
+
+**Names** (the project has no private-names list, so pushes are held). Run the interview with the user in your chat: `references/names.md`. It is the only event where you ask the user anything.
 
 ## What's worth noting (default)
 A note tells the user what this landing means beyond "it landed". One or two short sentences; the facts, no praise. Worth noting:
@@ -46,4 +48,4 @@ A note tells the user what this landing means beyond "it landed". One or two sho
 Nothing else. A note never grades the code (that is the review step's job) and never repeats the commit messages.
 
 ## Never
-Land, push or move the target. Drop or weaken a required check. Resolve a conflict where the two sides want different behaviour. Blame a branch for a failure that also happens on the target. Put secrets, tokens or private names in a note.
+Land, push or move the target. Drop or weaken a required check. Resolve a conflict where the two sides want different behaviour. Blame a branch for a failure that also happens on the target. Put secrets, tokens or private names in a note, or a private name anywhere but the names file.

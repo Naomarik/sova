@@ -5,8 +5,8 @@
 // verdict.mjs prints what merge.review takes and refuses a malformed verdict.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { copyFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { scratchRoot } from "../test-scratch";
 
@@ -82,4 +82,34 @@ test("verdict.mjs prints what to send with merge.review and refuses a malformed 
   const junk = spawnSync("node", [script, "--verdict", "ok", "--summary", "x", "--finding", "{nope"], { encoding: "utf8" });
   assert.equal(junk.status, 1);
   assert.match(junk.stderr, /not JSON/);
+});
+
+test("discover-names.mjs writes the project's names file (0600) with the user's names, prints values only with --show, and refuses without --file", () => {
+  const r = project();
+  commit(r, "README.md", "public text\n");
+  const agent = scratchRoot("mq-names-agent-");
+  const file = join(scratchRoot("mq-names-"), "merge-queue", "p1", "names.json");
+  const script = join(SCRIPTS, "discover-names.mjs");
+  // No tailscale, no Sova state: only the host, the home and git's email are discovered.
+  const env = { ...process.env, PI_CODING_AGENT_DIR: agent, PATH: [dirname(process.execPath), dirname(execFileSync("which", ["git"], { encoding: "utf8" }).trim())].join(":") };
+  const refused = spawnSync(process.execPath, [script], { encoding: "utf8", env });
+  assert.equal(refused.status, 2);
+  assert.match(refused.stderr, /--file <names file> is required/);
+  const out = execFileSync(process.execPath, [script, "--file", file, "--target", "main", "--repo", r, "--add-kind", "server", "--add", "secret-box-77", "--add", "client-acme-zz"], { encoding: "utf8", env });
+  assert.match(out, /Written to the names file \(0600\)/);
+  assert.match(out, /origin\/main not found here/);
+  assert.doesNotMatch(out, /secret-box-77|client-acme-zz/, "values never printed without --show");
+  const saved = JSON.parse(readFileSync(file, "utf8"));
+  assert.ok(saved.privateNames.includes("secret-box-77") && saved.privateNames.includes("client-acme-zz"));
+  assert.equal(saved.kinds["secret-box-77"], "server");
+  assert.equal(saved.restartUnit, undefined, "no restart setting in a project's names file");
+  assert.equal(statSync(file).mode & 0o777, 0o600);
+  const shown = execFileSync(process.execPath, [script, "--file", file, "--target", "main", "--repo", r, "--show"], { encoding: "utf8", env });
+  assert.match(shown, /- server: secret-box-77, client-acme-zz/);
+  // Additive, and other keys (Sova's legacy file's restartUnit) kept.
+  writeFileSync(file, JSON.stringify({ ...saved, restartUnit: "x.service" }));
+  execFileSync(process.execPath, [script, "--file", file, "--target", "main", "--repo", r, "--add", "third-name-q"], { encoding: "utf8", env });
+  const again = JSON.parse(readFileSync(file, "utf8"));
+  assert.ok(["secret-box-77", "client-acme-zz", "third-name-q"].every((n) => again.privateNames.includes(n)));
+  assert.equal(again.restartUnit, "x.service");
 });

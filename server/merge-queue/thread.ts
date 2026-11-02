@@ -2,7 +2,8 @@
  * The merge thread: one chat per project that follows the project's merge-queue playbook, started by
  * Sova. The queue tells it what happens (an entry queued, a conflict, a red run, a pause) and it acts
  * only through the merge verbs: a note on each landing, extra checks picked by blast radius, a
- * judgement on each conflict, an explanation of each failure.
+ * judgement on each conflict, an explanation of each failure; and, when a project has no private-names
+ * list, the names interview with the user in its own chat.
  *
  * It is off the critical path by construction: `notify` returns at once and never throws; the work
  * runs on a per-project chain that the queue never awaits. A thread that is missing, slow or broken
@@ -43,7 +44,9 @@ export type ThreadEvent =
   | { kind: "queued"; entry: ThreadEntry }
   | { kind: "conflict"; entry: ThreadEntry; run: string; files: string[] }
   | { kind: "failed"; entry: ThreadEntry; run: string; summary?: string }
-  | { kind: "paused"; why: string };
+  | { kind: "paused"; why: string }
+  /** The project has no private-names list: pushes are held until the user answers the interview. */
+  | { kind: "names"; file: string; target: string };
 
 /** A session as the thread rules read it. */
 export interface ThreadSession {
@@ -132,6 +135,11 @@ export function eventText(ev: ThreadEvent): string {
     }
     case "paused":
       return [`The queue paused: ${ev.why}.`, `If the logs say why and the pause holds an entry, explain it on that entry with merge.note (references/failures.md). Never resume it yourself.`].join("\n");
+    case "names":
+      return [
+        `Names: this project has no private-names list, so every push of ${ev.target} is held. Landings go on.`,
+        `Run the names interview with the user here, in your chat (references/names.md): \`node ${join(DEFAULT_PLAYBOOK_DIR, "scripts", "discover-names.mjs")} --file ${ev.file} --target ${ev.target} --repo <project root>\`, then ask them what else must never reach the public repo. Never write a name anywhere but that file.`,
+      ].join("\n");
   }
 }
 
@@ -142,7 +150,7 @@ export function firstText(root: string, playbook: string, ev: ThreadEvent): stri
   const read = own === method ? `Read ${method} now and follow it` : `Read the method, ${method}, then this project's own playbook, ${own}, which wins where they differ; follow them`;
   return [
     `You are the merge thread for the project at ${root}. ${read}, and read their references as they say. The method's scripts are in ${join(DEFAULT_PLAYBOOK_DIR, "scripts")}.`,
-    `You act only through the merge verbs (the project verbs tool). You never move ${ev.kind === "paused" ? "the target branch" : ev.entry.target}, never run git that writes in the main checkout, and never land anything: Sova does that.`,
+    `You act only through the merge verbs (the project verbs tool). You never move ${"entry" in ev ? ev.entry.target : "target" in ev ? ev.target : "the target branch"}, never run git that writes in the main checkout, and never land anything: Sova does that.`,
     "",
     eventText(ev),
   ].join("\n");

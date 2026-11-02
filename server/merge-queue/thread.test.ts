@@ -227,15 +227,31 @@ test("the project's own playbook is read after the method; without one the metho
 
 test("each event names the verbs it is answered with, all of them merge verbs the contract lists", async () => {
   const { MERGE_VERBS } = await import("../../shared/project-contract");
-  const evs: ThreadEvent[] = [queued(), { kind: "conflict", entry: entry(), run: "mr_1", files: ["a.ts"] }, { kind: "failed", entry: entry(), run: "mr_1", summary: "unit" }, { kind: "paused", why: "x" }];
+  const evs: ThreadEvent[] = [queued(), { kind: "conflict", entry: entry(), run: "mr_1", files: ["a.ts"] }, { kind: "failed", entry: entry(), run: "mr_1", summary: "unit" }, { kind: "paused", why: "x" }, { kind: "names", file: "/s/names.json", target: "main" }];
   for (const ev of evs) {
     const verbs = [...eventText(ev).matchAll(/\bmerge\.[a-z]+/g)].map((m) => m[0]);
     for (const v of verbs) assert.ok((MERGE_VERBS as readonly string[]).includes(v), `${ev.kind} names ${v}, not a merge verb`);
   }
-  for (const f of ["PLAYBOOK.md", "references/picks.md", "references/notes.md", "references/conflicts.md", "references/failures.md"]) {
+  for (const f of ["PLAYBOOK.md", "references/picks.md", "references/notes.md", "references/conflicts.md", "references/failures.md", "references/names.md"]) {
     const text = readFileSync(join(DEFAULT_PLAYBOOK_DIR, f), "utf8");
     for (const m of text.matchAll(/`(merge\.[a-z]+)/g)) assert.ok((MERGE_VERBS as readonly string[]).includes(m[1]!), `${f} names ${m[1]}, not a merge verb`);
   }
+});
+
+test("names: the thread is told the project's names file and target, and to run the interview in its own chat", async () => {
+  const text = eventText({ kind: "names", file: "/state/merge-queue/p1/names.json", target: "main" });
+  assert.match(text, /every push of main is held\. Landings go on\./);
+  assert.ok(text.includes(`${join(DEFAULT_PLAYBOOK_DIR, "scripts", "discover-names.mjs")} --file /state/merge-queue/p1/names.json --target main`));
+  assert.match(text, /here, in your chat/);
+  const first = firstText("/p", DEFAULT_PLAYBOOK_DIR, { kind: "names", file: "/f", target: "main" });
+  assert.match(first, /You never move main,/);
+  const dir = scratchRoot("mq-thread-");
+  const f = fakeSova(dir);
+  const t = new MergeThread(f.deps);
+  t.notify("/p", { kind: "names", file: "/f", target: "main" });
+  await t.idle("/p");
+  assert.equal(f.created.length, 1, "a names event starts the thread like any other");
+  assert.ok(readFileSync(join(DEFAULT_PLAYBOOK_DIR, "references", "names.md"), "utf8").includes("the one time you talk to the user"));
 });
 
 // ---- a stand-in model following the playbook ---------------------------------------------------

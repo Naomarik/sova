@@ -329,6 +329,7 @@ export class MergeCards {
     card.notes = structuredClone(e.notes);
     setOpt(card, "conflict", e.conflict ? structuredClone(e.conflict) : undefined);
     setOpt(card, "review", e.review ? structuredClone(e.review) : undefined);
+    setOpt(card, "unclear", e.state === "unattributed" && e.unclear?.length ? structuredClone(e.unclear) : undefined);
     setOpt(card, "landed", e.landed ? structuredClone(e.landed) : undefined);
     setOpt(card, "worktree", e.worktree);
     const thread = e.state === "needs-fix" ? e.notes.find((n) => n.kind === "thread") : undefined;

@@ -84,6 +84,7 @@ export function worktreeQueueInfo(view: MergeQueueView, branch: string): Worktre
     ...(e.landed ? { landed: e.landed } : {}),
     ...(e.conflict ? { conflict: e.conflict } : {}),
     ...(e.review ? { review: e.review } : {}),
+    ...(e.unclear?.length ? { unclear: e.unclear } : {}),
     ...(e.run ? { run: e.run } : {}),
     ...(view.review ? { reviewKit: true } : {}),
   };

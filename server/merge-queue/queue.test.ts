@@ -1124,10 +1124,12 @@ describe("can't tell whose failure", () => {
     const k = makeKit();
     try {
       const q = await k.q();
-      k.run.set(() => ({ verdict: "unattributed", why: WHY }));
+      k.run.set(() => ({ verdict: "unattributed", why: WHY, unclear: [{ check: "unit", label: "Unit tests", step: "rerun-master:unit" }] }));
       k.repo.branch("feat/a", { "a1.txt": "a\n" });
       const a = await q.add({ branch: "feat/a", by: "land-button", session: "s1" });
       await until(async () => (await k.entry(a.entry.id)).state === "unattributed", "unattributed");
+      const ua = await k.entry(a.entry.id);
+      assert.deepEqual(ua.unclear, [{ check: "unit", label: "Unit tests", run: ua.run!, step: "rerun-master:unit" }]);
       await assert.rejects(q.answer(a.entry.id, "accept"), /Accept answers a conflict/);
       await q.answer(a.entry.id, "land-anyway");
       await landed(k, a.entry.id);

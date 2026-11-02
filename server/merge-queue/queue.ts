@@ -961,6 +961,7 @@ export class ProjectQueue {
     e.run = runId;
     e.runs = [...e.runs, runId];
     delete e.reason;
+    delete e.unclear;
     e.updatedAt = this.iso();
     this.store.writeRun(run);
     const ac = new AbortController();
@@ -1161,6 +1162,7 @@ export class ProjectQueue {
         this.store.writeRun(run);
         e.state = "unattributed";
         e.reason = out.why ?? `a check failed on the merge and on ${e.target} alone`;
+        if (out.unclear?.length) e.unclear = out.unclear.map((u) => ({ check: u.check, label: u.label, run: run.id, step: u.step, ...(u.why ? { why: u.why } : {}) }));
         this.addNotes(e, out.notes);
         if (out.targetRed?.length) this.q.heads.targetRed = [...out.targetRed];
         e.updatedAt = this.iso();

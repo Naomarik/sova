@@ -169,6 +169,9 @@ export interface MergeEntry {
   conflictFiles?: string[];
   conflict?: ConflictJudgement;
   review?: ReviewVerdict;
+  /** Can't tell whose failure (state `unattributed`): each check that failed on the merge and on the target alone and
+   *  named no failures; its log is merge.logs {run, step}. */
+  unclear?: MergeUnclear[];
   notes: MergeNote[];
   /** landed: where master went. */
   landed?: { sha: string; from: string; at: string; pushed: PushState; pushWhy?: string };
@@ -335,7 +338,16 @@ export interface MergeQueueView {
 }
 
 /** What the session's worktree rows read (SessionWorktreeInfo.queue): the newest entry for that branch. */
-export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "eta" | "notes" | "landed" | "conflict" | "review"> & {
+/** One check that couldn't say whose failure it is. */
+export interface MergeUnclear {
+  check: string;
+  label: string;
+  run: string;
+  step: string;
+  why?: string;
+}
+
+export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear"> & {
   project: string;
   run?: string;
   /** The project has a review kit (the Land menu shows "Land without review"). */
@@ -485,6 +497,7 @@ export interface MergeCard {
   notes: MergeNote[];
   conflict?: ConflictJudgement;
   review?: ReviewVerdict;
+  unclear?: MergeUnclear[];
   landed?: MergeEntry["landed"];
   /** Commits and lines the branch brought, frozen at landing (absent before). */
   stats?: { commits: number; added: number; removed: number };

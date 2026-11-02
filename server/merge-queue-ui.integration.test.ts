@@ -737,7 +737,7 @@ for (const width of [1280, 390]) {
       ];
       const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { items });
       const { page } = o;
-      const row = page.locator(".message-from-queue");
+      const row = page.locator("[data-from-queue]");
       await row.waitFor({ timeout: 20_000 });
       const t = await words(row);
       assert.match(t, /Merge queue/);

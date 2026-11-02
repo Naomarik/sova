@@ -92,7 +92,9 @@ export function UserTurn(props: {
     </Show>
     <article
       class="message message-user"
-      classList={{ "message-from-session": !!props.fromSession, "message-from-queue": !!props.mergeQueue }}
+      classList={{ "message-from-session": !!props.fromSession }}
+      // An attribute, absent unless set: every other row's markup stays exactly as it was.
+      data-from-queue={props.mergeQueue ? "" : undefined}
       aria-label={props.time ? `${author()}, ${stampTime(props.time)}` : author()}
     >
       <div class="message-head">

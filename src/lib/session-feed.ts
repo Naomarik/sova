@@ -89,7 +89,7 @@ export function openSessionFeed(refreshList: () => void): void {
       // A project's merge queue moved: its tab takes the view, and worktree rows reload when an entry moved.
       else if (msg.type === "merge_queue") noteMergeFeed(msg);
       // A chat's merge queue cards moved: that chat's thread takes them.
-      else if ((msg as { type: string }).type === "merge_cards") noteMergeCards(msg as unknown as Parameters<typeof noteMergeCards>[0]);
+      else if (msg.type === "merge_cards") noteMergeCards(msg);
     },
   });
   createEffect(() => setOpen(socket.status() === "open"));

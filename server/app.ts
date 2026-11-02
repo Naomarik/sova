@@ -413,7 +413,7 @@ export function buildApp(deps: AppDeps) {
   registerProjectRoutes(app);
   // Project services: the verbs over a project's .sova/project.json (server/project-services/; §app/project-services).
   registerProjectServiceRoutes(app);
-  // A chat's merge queue cards (server/merge-queue/cards.ts; §chat.merge-queue/card).
+  // A chat's merge queue cards (server/merge-queue/cards.ts).
   registerMergeCardRoutes(app);
   registerServicesViewRoutes(app);
   // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).

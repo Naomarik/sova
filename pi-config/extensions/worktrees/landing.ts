@@ -186,8 +186,9 @@ export function newestUserMessage(branch: readonly unknown[]): { text: string; s
 	return { text: "" };
 }
 
-/** Sova's own messages and other sessions' arrive as user messages too: none of them is the user's typed word. */
-const NOT_TYPED = /^\s*(?:sova:|\[from session |\[schedule |go ahead: land )/i;
+/** Sova's own messages and other sessions' arrive as user messages too: none of them is the user's typed word (the
+ *  merge queue's wakes start "[merge-queue]", an Overseer's brief "[overseer-brief]"). */
+const NOT_TYPED = /^\s*(?:sova:|\[from session |\[schedule |\[merge-queue\]|\[overseer-brief\]|go ahead: land )/i;
 /** Before the verb: words that make it a question, a condition or a refusal rather than the word to land now. */
 const NOT_NOW = /\b(?:don'?t|dont|do not|never|not|no|should|shall|why|what|how|whether|when|once|after|before|until|if|wait|hold)\b/;
 

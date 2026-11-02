@@ -122,10 +122,10 @@ export async function startMergeQueue(opts: { request?: (path: string, init?: Re
   const self = await projectOf(fileURLToPath(new URL("../..", import.meta.url)));
   const legacyNames = self.state === "ok" ? { root: self.root, file: join(stateRoot(), "merge-round.json") } : undefined;
   const sendTo = async (session: string, text: string): Promise<void> => {
-    const [{ listSessions }, { sendToSession }] = await Promise.all([import("../sessions-index"), import("../session-offers")]);
+    const { listSessions } = await import("../sessions-index");
     const s = (await listSessions()).find((x) => x.id === session);
     if (!s) throw new Error(`no session ${session}`);
-    await sendToSession(s.path, text);
+    await (await import("./wake")).sendQueueWake(s.path, text);
   };
   const thread: WakeThread = (ev: ThreadEvent) => {
     const keeper = threadMod.mergeThread();

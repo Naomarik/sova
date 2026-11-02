@@ -309,10 +309,15 @@ describe("no fake message is left", () => {
     for (const f of readdirSync(dir).filter((n) => n.endsWith(".ts") && !n.endsWith(".test.ts"))) {
       const src = read(f);
       assert.doesNotMatch(src, /[`"']Sova(?: \([^)]*\))?: /, `${f}: a "Sova: …" text`);
-      if (f !== "wire.ts") assert.doesNotMatch(src, /sendToSession|session\.send\b/, `${f} sends to a chat`);
+      assert.doesNotMatch(src, /sendToSession|session\.send\b/, `${f} sends to a chat other than through wake.ts`);
+      if (f !== "wake.ts") assert.doesNotMatch(src, /\.send\(\{/, `${f} sends to a chat other than through wake.ts`);
     }
     // Readiness's ready-to-land messages ask the chat to act: marked wakes too, never a "Sova: …" bubble.
     const server = new URL("../", dir);
     for (const f of ["merge-readiness.ts", "ready-to-land.ts"]) assert.doesNotMatch(readFileSync(new URL(f, server), "utf8"), /[`"']Sova(?: \([^)]*\))?: /, `${f}: a "Sova: …" text`);
+    assert.match(readFileSync(new URL("merge-readiness.ts", server), "utf8"), /nudge: async \(path, text\) => \(await import\("\.\/merge-queue\/wake"\)\)\.sendQueueWake\(path, text\)/);
+    // The wake carries the "another session" marker the worktree tool's land refuses, in old chats too.
+    const wake = read("wake.ts");
+    assert.match(wake, /sentBySession: \{ \.\.\.MERGE_QUEUE_SENDER \}/);
   });
 });

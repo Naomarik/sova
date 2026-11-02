@@ -571,7 +571,8 @@ const defaultDeps = (): ReadinessDeps => ({
   draftsHash,
   docsPreview: previewDocs,
   landing: fileLandingStore(),
-  nudge: async (path, text) => (await import("./session-offers")).sendToSession(path, text),
+  // A marked wake, as the merge queue's own (server/merge-queue/wake.ts): never read as the user's word.
+  nudge: async (path, text) => (await import("./merge-queue/wake")).sendQueueWake(path, text),
   queueLandings: (sessionId) => queueLandingsHere(sessionId),
   landingOffered: async (dir) => {
     const { projectRootOf } = await import("./project-root");

@@ -142,15 +142,34 @@ describe("a merge run", () => {
     expect(r.out.notes.find((x) => x.kind === "master-red")!.text).toContain("tests/b.txt");
   });
 
-  test("a whole check red on the target alone: noted, the target listed red; red only with the branch: the branch's", async () => {
+  test("a whole check naming nothing, red on the target too: unattributed (never landed as the target's); red only with the branch: the branch's", async () => {
     const fx = fixture({ files: { "build.conf": "broken\n" } });
     const br = fx.branch("on-red", { "src/app.txt": "x\n" });
     const r = await run(fx, br);
-    expect(r.out).toMatchObject({ verdict: "passed", targetRed: ["Build"] });
+    expect(r.out).toMatchObject({ verdict: "unattributed", why: "can't tell whose failure: Build fails on master too and names no tests", targetRed: ["Build"], unclear: [{ check: "build", label: "Build", step: "rerun-master:build" }] });
+    expect(r.out.blame).toBeUndefined();
+    // The tested merge is what Land Anyway would land.
+    expect(r.out.tip).toBe(r.merged!);
+    expect(r.steps.get("rerun-master:build")!.result).toBe("failed");
     const fx2 = fixture();
     const br2 = fx2.branch("breaks-build", { "build.conf": "broken\n" });
     const r2 = await run(fx2, br2);
     expect(r2.out).toMatchObject({ verdict: "failed", blame: "branch", why: "Build failed (passes on master alone)" });
+  });
+
+  test("named failures: the target fails as many tests as the merge, other names: the branch's; only the same names: noted", async () => {
+    // Names without files (Kaocha): master fails a, the branch fixes a and breaks b. One failure each side.
+    const fx = fixture({ files: { "unit.names-only": "1\n", "tests/a.txt": "fail\n", "tests/b.txt": "ok\n" } });
+    const br = fx.branch("swap", { "tests/a.txt": "ok\n", "tests/b.txt": "fail\n" });
+    const r = await run(fx, br);
+    expect(r.out).toMatchObject({ verdict: "failed", blame: "branch" });
+    expect(r.out.why).toContain("b.txt");
+    expect(r.out.why).not.toContain("a.txt");
+    // Named the same on both sides: master's, noted, lands.
+    const fx2 = fixture({ files: { "unit.names-only": "1\n", "tests/a.txt": "fail\n" } });
+    const r2 = await run(fx2, fx2.branch("same", { "src/app.txt": "x\n" }));
+    expect(r2.out.verdict).toBe("passed");
+    expect(r2.out.notes.find((n) => n.kind === "master-red")!.text).toContain("a.txt");
   });
 
   test("setup broken on the target too: machine, nobody blamed; broken only by the branch: the branch's, with the setup log", async () => {

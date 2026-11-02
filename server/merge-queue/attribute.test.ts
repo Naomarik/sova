@@ -48,6 +48,18 @@ describe("whose failure is it", () => {
   });
 
   test("nothing red: passed, no notes", () => {
-    expect(summarize([])).toEqual({ verdict: "passed", notes: [], targetRed: [] });
+    expect(summarize([])).toEqual({ verdict: "passed", notes: [], targetRed: [], unclear: [] });
+  });
+
+  test("a whole check red on both sides naming nothing: unattributed, never passed as the target's; the branch's own failure still wins", () => {
+    const a = summarize([{ id: "unit", label: "Unit tests", files: [{ file: "a.test.ts", blame: "flaky" }] }, { id: "build", label: "Build", whole: "unattributed" }], { target: "main" });
+    expect(a.verdict).toBe("unattributed");
+    expect(a.blame).toBeUndefined();
+    expect(a.why).toBe("can't tell whose failure: Build fails on main too and names no tests");
+    expect(a.unclear).toEqual([{ id: "build", label: "Build", why: a.why }]);
+    expect(a.targetRed).toEqual(["Build"]);
+    expect(a.notes.map((n) => n.kind)).toEqual(["flaky"]);
+    const b = summarize([{ id: "build", label: "Build", whole: "unattributed" }, { id: "unit", label: "Unit tests", files: [{ file: "b.test.ts", blame: "branch" }] }]);
+    expect(b).toMatchObject({ verdict: "failed", blame: "branch" });
   });
 });

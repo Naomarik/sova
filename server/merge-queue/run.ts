@@ -360,7 +360,8 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
         return finish(signal.aborted ? voided("aborted") : out({ verdict: "machine", why: `couldn't start ${needs.join(", ")} in the merge copy: ${err instanceof Error ? err.message : err}`, copy, mergeSha, tip }));
       }
     }
-    const reds: { check: PlannedCheck; files: string[]; names?: string[] }[] = [];
+    // tipNamed: a whole check's failures as its rerun on the tip named them (files, else test names; [] = none).
+    const reds: { check: PlannedCheck; files: string[]; names?: string[]; tipNamed?: string[] }[] = [];
     const blames: CheckBlame[] = [];
     for (const check of list) {
       const st = steps.start(`check:${check.id}`, "check", check.label, { source: check.source, ...(check.why ? { why: check.why } : {}) });
@@ -408,7 +409,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
         blames.push({ id: check.id, label: check.label, files: files.map((file) => ({ file, blame: "flaky" as const })) });
         continue;
       }
-      reds.push({ check, files: still });
+      reds.push({ check, files: still, ...(files.length ? {} : { tipNamed: r2.failingFiles.length ? r2.failingFiles : namesOf(r2) }) });
       if (flaky.length) blames.push({ id: check.id, label: check.label, files: flaky.map((file) => ({ file, blame: "flaky" as const })) });
     }
     // 7. still red: the same on the target alone, in the same copy (after the review has read the tip).
@@ -427,7 +428,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       const sf = await runSetup({ def, scope: baseScope, steps, idPrefix: "rerun-master:setup:", labelPrefix: `Setup on ${target} alone: `, kind: "rerun-master", signal });
       if (signal.aborted) return finish(voided("aborted"));
       if (sf) return finish(out({ verdict: "machine", blame: "machine", why: `setup (${sf.failed.id}) fails on ${target} alone, so whose failure it is can't be told`, copy, mergeSha, tip }));
-      for (const { check, files, names } of reds) {
+      for (const { check, files, names, tipNamed } of reds) {
         const onBase = files.length ? await filesOn(copy, base, files) : [];
         const absent = files.filter((f) => !onBase.includes(f));
         const st = steps.start(`rerun-master:${check.id}`, "rerun-master", `${check.label} on ${target} alone${files.length ? ` (${onBase.length} file${onBase.length === 1 ? "" : "s"})` : ""}`);
@@ -442,9 +443,9 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
         if (names?.length) {
           const onT = namesOf(r);
           if (r.proc.code !== 0 && !onT.length) {
-            // Red on the target naming no test: nothing to tell the names apart by; the whole check is master's.
-            st.end("failed", { detail: `fails on ${target} too, naming no test` });
-            blames.push({ id: check.id, label: check.label, whole: blameCheck({ passesOnTip: false, onTarget: "fails" }) });
+            // Red on the target naming no test: nothing to tell the names apart by; whose it is can't be told.
+            st.end("failed", { detail: `fails on ${target} too, naming no test: can't tell whose failure` });
+            blames.push({ id: check.id, label: check.label, whole: "unattributed" });
             continue;
           }
           const failing = r.proc.code === 0 ? [] : names.filter((n) => onT.includes(n));
@@ -454,9 +455,21 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
           const failing = r.proc.code === 0 ? [] : r.failingFiles.length ? onBase.filter((f) => r.failingFiles.includes(f)) : onBase;
           st.end(r.proc.code === 0 ? "passed" : "failed", { detail: r.proc.code === 0 ? `passes on ${target}: the branch's` : `${failing.length} fail on ${target} too` });
           blames.push({ id: check.id, label: check.label, files: [...absent.map((file) => ({ file, blame: "branch" as const })), ...onBase.map((file) => ({ file, blame: blameFile({ passesOnTip: false, onTarget: failing.includes(file) ? "fails" : "passes" }) }))] });
+        } else if (r.proc.code === 0) {
+          st.end("passed", { detail: `passes on ${target}: the branch's` });
+          blames.push({ id: check.id, label: check.label, whole: blameCheck({ passesOnTip: false, onTarget: "passes" }) });
         } else {
-          st.end(r.proc.code === 0 ? "passed" : "failed", { detail: r.proc.code === 0 ? `passes on ${target}: the branch's` : `fails on ${target} too` });
-          blames.push({ id: check.id, label: check.label, whole: blameCheck({ passesOnTip: false, onTarget: r.proc.code === 0 ? "passes" : "fails" }) });
+          // Red on both: told apart only when both runs name their failures (a failure the target hasn't is the
+          // branch's, whatever the counts); else it waits for the user, never landed as the target's.
+          const onT = r.failingFiles.length ? r.failingFiles : namesOf(r);
+          if (!tipNamed?.length || !onT.length) {
+            st.end("failed", { detail: `fails on ${target} too, naming no tests: can't tell whose failure` });
+            blames.push({ id: check.id, label: check.label, whole: "unattributed" });
+          } else {
+            const mine = tipNamed.filter((n) => !onT.includes(n));
+            st.end("failed", { detail: `fails on ${target} too; ${mine.length} of ${tipNamed.length} only with the branch` });
+            blames.push({ id: check.id, label: check.label, files: tipNamed.map((file) => ({ file, blame: mine.includes(file) ? ("branch" as const) : ("master" as const) })) });
+          }
         }
       }
     }
@@ -465,6 +478,10 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     const attributed = a.notes.map((n) => ({ ...n, at }));
     if (a.verdict === "failed") return finish(out({ verdict: "failed", blame: a.blame!, why: a.why!, notes: attributed, copy, mergeSha, tip, ...(a.targetRed.length ? { targetRed: a.targetRed } : {}) }));
     const r = review ? await review.result : null;
+    if (a.verdict === "unattributed") {
+      // Waits for the user (Land Anyway lands `tip`); a blocking review still says so first.
+      return reviewed(r, out({ verdict: "unattributed", why: a.why!, notes: attributed, copy, mergeSha, tip, targetRed: a.targetRed, unclear: a.unclear.map((u) => ({ check: u.id, label: u.label, step: `rerun-master:${u.id}`, why: u.why })) }));
+    }
     return reviewed(r, out({ verdict: "passed", notes: attributed, copy, mergeSha, tip, ...(a.targetRed.length ? { targetRed: a.targetRed } : {}) }));
   } finally {
     await services?.down().catch(() => undefined);

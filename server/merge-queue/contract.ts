@@ -129,6 +129,9 @@ export interface ThreadEvent {
   files?: string[];
   /** names: the private names file the interview writes. */
   namesFile?: string;
+  /** The target's commit the entry was queued against (queued) or its run started on (conflict, failed): the thread
+   *  diffs `base...entry.commit`, which stays right after the entry lands. */
+  base?: string;
   why?: string;
 }
 export type WakeThread = (ev: ThreadEvent) => boolean;

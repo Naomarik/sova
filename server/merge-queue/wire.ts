@@ -113,13 +113,14 @@ export async function startMergeQueue(opts: { request?: (path: string, init?: Re
   const thread: WakeThread = (ev: ThreadEvent) => {
     const keeper = threadMod.mergeThread();
     const entry = { id: ev.entry.id, branch: ev.entry.branch, commit: ev.entry.commit, target: ev.entry.target };
+    const base = ev.base ? { base: ev.base } : {};
     const mapped =
       ev.kind === "queued"
-        ? { kind: "queued" as const, entry }
+        ? { kind: "queued" as const, entry, ...base }
         : ev.kind === "conflict"
-          ? { kind: "conflict" as const, entry, run: ev.run ?? "", files: ev.files ?? [] }
+          ? { kind: "conflict" as const, entry, run: ev.run ?? "", files: ev.files ?? [], ...base }
           : ev.kind === "failed"
-            ? { kind: "failed" as const, entry, run: ev.run ?? "", ...(ev.why ? { summary: ev.why } : {}) }
+            ? { kind: "failed" as const, entry, run: ev.run ?? "", ...(ev.why ? { summary: ev.why } : {}), ...base }
             : ev.kind === "paused"
               ? { kind: "paused" as const, why: ev.why ?? "paused" }
               : ev.kind === "names"

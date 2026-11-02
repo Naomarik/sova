@@ -237,7 +237,8 @@ describe("failures and blame", () => {
       assert.equal(e.state, "needs-fix");
       assert.equal(e.reason, "unit failed: src/a.test.ts");
       assert.deepEqual(k.notices.filter((n) => n.branch === "feat/bad").map((n) => n.kind), ["needs-fix"]);
-      assert.ok(k.thread.some((t) => t.kind === "failed" && t.entry.id === bad.entry.id));
+      assert.ok(k.thread.some((t) => t.kind === "failed" && t.entry.id === bad.entry.id && t.base === before), "the run's base, for the thread's diff");
+      assert.ok(k.thread.some((t) => t.kind === "queued" && t.entry.id === bad.entry.id && t.base === before));
       assert.notEqual(k.repo.head(), before);
       assert.equal(sh(k.repo.root, "rev-parse", `${k.repo.head()}^2`), ok.entry.commit);
     } finally {

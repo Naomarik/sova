@@ -1239,6 +1239,10 @@ export class ProjectQueue {
 
   private wake(kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names", e: Entry, run?: string, extra: { files?: string[]; why?: string; namesFile?: string } = {}): boolean {
     if (!this.deps.thread) return false;
+    // What the thread diffs against: the run's base, else the target as the queue last saw it.
+    const runBase = run ? (this.current?.run.id === run ? this.current.run.base : this.store.readRun(run)?.base) : undefined;
+    const base = runBase ?? this.q.knownTarget;
+    if (base) (extra as { base?: string }).base = base;
     try {
       return this.deps.thread({ kind, project: this.id, root: this.root, target: this.q.target, entry: structuredClone(e), ...(run ? { run } : {}), ...extra });
     } catch (err) {

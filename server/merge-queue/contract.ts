@@ -39,6 +39,9 @@ export interface RunInput {
   draftsDir?: string;
   /** The checks the merge thread added for this entry (merge.extend), on top of required + triggers. */
   picks: CheckPick[];
+  /** The project's private names file (store.ts namesFileOf): the leak scan reads it (`--names` / SOVA_LEAK_NAMES).
+   *  Absent: none yet (pushes are held until the merge thread's interview writes it). */
+  namesFile?: string;
   /** Run the review step (the project declares a kit and the approval didn't skip it). */
   review: boolean;
   /** Aborted when the run is voided (master moved, cancelled, server stopping). */
@@ -113,7 +116,7 @@ export type EstimateRun = (projectId: string, root: string) => number | null;
  *  (merge.resolve). `failed`: explain the failure (merge.note). `paused`: a machine pause to look at. `landed`: the note
  *  may still be written. Answers whether a thread was asked: false (none, or off) never delays anything. */
 export interface ThreadEvent {
-  kind: "queued" | "conflict" | "failed" | "paused" | "landed";
+  kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names";
   project: string;
   root: string;
   target: string;
@@ -121,6 +124,8 @@ export interface ThreadEvent {
   run?: string;
   /** conflict: the files. failed/paused: the one-line why. */
   files?: string[];
+  /** names: the private names file the interview writes. */
+  namesFile?: string;
   why?: string;
 }
 export type WakeThread = (ev: ThreadEvent) => boolean;

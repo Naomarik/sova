@@ -329,6 +329,19 @@ export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "
   reviewKit?: boolean;
 };
 
+/** SessionWorktreeInfo.mergeProject: the project a worktree lands into, whatever its entry. */
+export interface WorktreeMergeProject {
+  /** The registered project's id. */
+  id: string;
+  /** Its main checkout. */
+  root: string;
+  target: string;
+  checks: ChecksDeclared;
+  review: boolean;
+  /** The queue is paused (why). */
+  paused?: string;
+}
+
 // ---- the verbs (POST /api/project-services/merge.<x>; shared/project-contract.ts MERGE_VERBS) ---
 
 /**

@@ -178,7 +178,7 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   // Project instances back to their desired state (server/project-services/routes.ts).
   void reconcileProjectServices();
   // The merge queue: its verbs, its queues recovered, the typed "land it" door (server/merge-queue/wire.ts).
-  void startMergeQueue().catch((err) => console.error("[merge-queue] start failed:", err instanceof Error ? err.message : err));
+  void startMergeQueue({ request: (path, init) => app.request(path, init) }).catch((err) => console.error("[merge-queue] start failed:", err instanceof Error ? err.message : err));
   // Updates: the daily check, on the schedule updates.json keeps across restarts.
   startUpdates(info.port, HOST);
 }) as Server;

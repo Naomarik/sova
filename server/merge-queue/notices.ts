@@ -8,7 +8,7 @@ import { type MergeEntry, type MergeRun, newerWords } from "../../shared/merge-q
  * anything "live": the landing's note (the merge thread's) says what matters after it.
  */
 
-export type MergeNoticeKind = "landed" | "needs-fix" | "sent-back" | "drafts-changed";
+export type MergeNoticeKind = "landed" | "needs-fix" | "sent-back" | "drafts-changed" | "explained";
 
 const short = (sha: string | undefined) => (sha ?? "").slice(0, 7);
 
@@ -48,6 +48,10 @@ export function noticeText(kind: MergeNoticeKind, e: MergeEntry, extra: { run?: 
       else lines.push("Look at it, commit, and ask the user to land it again.");
       return lines.join("\n");
     }
+    case "explained": {
+      const n = e.notes.find((x) => x.kind === "thread");
+      return `Sova (merge thread) on why ${e.branch} didn't land: ${n?.text ?? e.reason ?? ""}`;
+    }
     case "drafts-changed":
       return `Sova: ${e.branch}'s spec drafts changed since the user approved it at ${short(e.commit)}, so it waits: the user lands it again once the drafts are as they want them.`;
   }
@@ -64,7 +68,7 @@ export function notifier(deps: NoticeDeps): (kind: MergeNoticeKind, e: MergeEntr
   const sent = new Set<string>();
   return (kind, e, extra) => {
     if (!e.session) return;
-    const key = `${e.id}:${kind}:${extra.run?.id ?? ""}`;
+    const key = `${e.id}:${kind}:${extra.run?.id ?? ""}${kind === "explained" ? `:${e.notes.find((n) => n.kind === "thread")?.text ?? ""}` : ""}`;
     if (sent.has(key)) return;
     sent.add(key);
     if (sent.size > 2000) sent.clear();

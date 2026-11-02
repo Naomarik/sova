@@ -32,6 +32,9 @@ import { buildView } from "./view";
  * copy-checks) owns the merge copy. Every change is written to the store before it is told to anyone.
  */
 
+/** The push hold while a project has no private names file (operator decision: exactly these words). */
+export const PUSH_HELD_NAMES = "push held: private names not set up yet";
+
 export class MergeFailure extends Error {
   constructor(
     readonly code: "invalid-request" | "not-found" | "forbidden" | "busy" | "unsupported" | "needs-confirm",
@@ -73,6 +76,8 @@ export interface QueueDeps {
   hasReviewKit?: (def: ProjectDef | null, root: string) => boolean;
   /** The mechanical sanity check of a resolution (default conflicts.ts sanityCheck). */
   sanity?: typeof sanityCheck;
+  /** Sova's own project keeps the merge round's names file (`<state>/merge-round.json`) until it has its own. */
+  legacyNames?: { root: string; file: string };
   /** Logs (default console). */
   log?: (line: string) => void;
 }
@@ -174,6 +179,7 @@ export class ProjectQueue {
   }
 
   save(): void {
+    this.viewCache = null;
     this.store.write(this.q);
     this.schedulePublish();
   }
@@ -216,6 +222,16 @@ export class ProjectQueue {
     const out = { head: head ?? "", def: at.def, checks, review };
     if (head) this.checksCache = out;
     return out;
+  }
+
+  private viewCache: { at: number; v: Promise<MergeQueueView> } | null = null;
+  /** The view, re-read at most every `ttlMs` (the worktree rows ask often). */
+  cachedView(ttlMs = 1500): Promise<MergeQueueView> {
+    if (this.viewCache && this.now() - this.viewCache.at < ttlMs) return this.viewCache.v;
+    const v = this.view();
+    this.viewCache = { at: this.now(), v };
+    v.catch(() => (this.viewCache = null));
+    return v;
   }
 
   async view(): Promise<MergeQueueView> {
@@ -407,6 +423,7 @@ export class ProjectQueue {
         const run = this.store.readRun(p.run);
         if (e && run) await this.landTested(e, run);
       }
+      await this.pushHeld();
       this.kickSoon();
     });
   }
@@ -417,6 +434,8 @@ export class ProjectQueue {
       this.setNote(e, text, by);
       e.updatedAt = this.iso();
       this.save();
+      // The thread's explanation of a failure handed back reaches the branch's chat too.
+      if (by === "thread" && e.state === "needs-fix" && text.trim()) this.deps.notify?.("explained", e, { root: this.root });
       return e;
     });
   }
@@ -573,6 +592,7 @@ export class ProjectQueue {
       this.q.machineTries = {};
       this.holdUntil = 0;
       this.save();
+      await this.pushHeld();
       this.kickSoon();
     });
   }
@@ -670,6 +690,7 @@ export class ProjectQueue {
       runDir,
       ...(draftsDir ? { draftsDir } : {}),
       picks: [...e.picks],
+      ...(this.names().exists ? { namesFile: this.names().file } : {}),
       review: d.review && !e.approval.withoutReview,
       signal: ac.signal,
       awaitReview: () =>
@@ -962,26 +983,49 @@ export class ProjectQueue {
     delete this.q.intent;
     this.save();
     this.log(`landed ${e.branch} at ${tip.slice(0, 7)}`);
-    const p = await pushTip(this.git, this.root, this.q.target, tip, { landed: new Set(this.q.landed), ...(def?.merge?.push === false ? { push: false } : {}), holdFile: join(this.store.dir, "push-hold") });
-    if (p.state === "pushed") {
-      e.landed.pushed = "pushed";
-      this.q.heads.pushed = tip;
-      delete this.q.heads.pushWhy;
-      // Earlier landings held back are pushed with it.
-      for (const x of this.q.entries) if (x.landed?.pushed === "not-pushed" && x.state === "landed") x.landed = { ...x.landed, pushed: "pushed" };
-    } else {
-      e.landed.pushed = p.state;
-      e.landed.pushWhy = p.why;
-      this.q.heads.pushWhy = p.why;
-      if (p.state === "not-pushed" && "remote" in p && p.remote) this.q.heads.pushed = p.remote;
-    }
-    this.save();
+    await this.push(tip, def, e);
     this.deps.notify?.("landed", e, { run, root: this.root });
     this.wake("landed", e, run.id);
     this.kickSoon();
   }
 
-  private wake(kind: "queued" | "conflict" | "failed" | "paused" | "landed", e: Entry, run?: string, extra: { files?: string[]; why?: string } = {}): boolean {
+  /** The private names file this project's leak scan and push read. */
+  names(): { file: string; exists: boolean; legacy: boolean } {
+    return this.store.namesFileOf(this.deps.legacyNames);
+  }
+
+  /** Push the target at `tip` (after a landing, or on resume/retry for one held back). `e`: the landing it is for. */
+  private async push(tip: string, def: ProjectDef | null, e?: Entry): Promise<void> {
+    const names = this.names();
+    let p: Awaited<ReturnType<typeof pushTip>>;
+    if (!names.exists && def?.merge?.push !== false) {
+      p = { state: "not-pushed", why: PUSH_HELD_NAMES };
+      if (e) this.wake("names", e, undefined, { namesFile: names.file });
+    } else p = await pushTip(this.git, this.root, this.q.target, tip, { landed: new Set(this.q.landed), ...(def?.merge?.push === false ? { push: false } : {}), holdFile: join(this.store.dir, "push-hold") });
+    if (p.state === "pushed") {
+      this.q.heads.pushed = tip;
+      delete this.q.heads.pushWhy;
+      // Every landing up to the tip is pushed with it.
+      for (const x of this.q.entries) if (x.state === "landed" && x.landed && x.landed.pushed !== "pushed" && (x.landed.sha === tip || (await isAncestor(this.git, this.root, x.landed.sha, tip)))) x.landed = { ...x.landed, pushed: "pushed" };
+      if (e?.landed) e.landed = { ...e.landed, pushed: "pushed" };
+      if (e?.landed) delete e.landed.pushWhy;
+    } else {
+      if (e?.landed) e.landed = { ...e.landed, pushed: p.state, pushWhy: p.why };
+      this.q.heads.pushWhy = p.why;
+      if (p.state === "not-pushed" && "remote" in p && p.remote) this.q.heads.pushed = p.remote;
+    }
+    this.save();
+  }
+
+  /** A push held back earlier goes now if it can (resume, retry). */
+  private async pushHeld(): Promise<void> {
+    if (!this.q.heads.pushWhy) return;
+    const head = await this.targetHead();
+    if (!head || !this.q.landed.includes(head)) return;
+    await this.push(head, (await this.declared()).def);
+  }
+
+  private wake(kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names", e: Entry, run?: string, extra: { files?: string[]; why?: string; namesFile?: string } = {}): boolean {
     if (!this.deps.thread) return false;
     try {
       return this.deps.thread({ kind, project: this.id, root: this.root, target: this.q.target, entry: structuredClone(e), ...(run ? { run } : {}), ...extra });

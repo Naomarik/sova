@@ -3352,6 +3352,9 @@ export interface SessionWorktreeInfo {
   gone?: "merged" | "unmerged" | "empty" | "unknown";
   /** Its newest merge queue entry (shared/merge-queue.ts), when it has one. Additive. */
   queue?: import("./merge-queue").WorktreeQueueInfo;
+  /** The merge queue of its project (a registered project's), entry or not: Land, Set Up and View Merge Queue read
+      it. Additive. */
+  mergeProject?: import("./merge-queue").WorktreeMergeProject;
 }
 
 // ---------------------------------------------------------------------------

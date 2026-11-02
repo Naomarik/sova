@@ -160,6 +160,24 @@ export class QueueStore {
     for (const id of ids.slice(0, Math.max(0, ids.length - keep))) if (!named.has(id)) rmSync(this.runDir(id), { recursive: true, force: true });
   }
 
+  /** The project's private names file (`<dir>/names.json`, `{v, privateNames, kinds?, sources?}`), or for the
+   *  project `legacyRoot` names (Sova's own), the merge round's `<state>/merge-round.json` while it has none of its own.
+   *  `exists`: the file is there and reads as JSON with a `privateNames` list (an empty list is an answer). */
+  namesFileOf(legacy?: { root: string; file: string }): { file: string; exists: boolean; legacy: boolean } {
+    const own = join(this.dir, "names.json");
+    const readable = (f: string): boolean => {
+      try {
+        const raw = JSON.parse(readFileSync(f, "utf8")) as { privateNames?: unknown };
+        return Array.isArray(raw.privateNames);
+      } catch {
+        return false;
+      }
+    };
+    if (readable(own)) return { file: own, exists: true, legacy: false };
+    if (legacy && legacy.root === this.root && readable(legacy.file)) return { file: legacy.file, exists: true, legacy: true };
+    return { file: own, exists: false, legacy: false };
+  }
+
   exists(): boolean {
     return existsSync(this.file);
   }

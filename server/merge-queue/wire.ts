@@ -1,13 +1,15 @@
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { LANDING_FILE_NAME } from "../../pi-config/extensions/worktrees/landing.ts";
 import { stateRoot } from "../state-root";
-import type { MergeQueueView } from "../../shared/merge-queue";
+import type { MergeQueueView, WorktreeMergeProject, WorktreeQueueInfo } from "../../shared/merge-queue";
 import type { RunMerge, ThreadEvent, WakeThread } from "./contract";
 import { startIngest } from "./ingest";
 import { notifier } from "./notices";
 import { MergeQueues } from "./queue";
 import { merger, recordedRoots } from "./routes";
 import { makeRunMerge } from "./run";
+import { worktreeQueueInfo } from "./view";
 
 /**
  * The server's merge queue: its queues (every project with records loaded and recovered at start), the `merge.*`
@@ -16,6 +18,17 @@ import { makeRunMerge } from "./run";
  */
 
 let queues: MergeQueues | null = null;
+let rowsOf: ((path: string, branch: string) => Promise<{ queue?: WorktreeQueueInfo; mergeProject?: WorktreeMergeProject }>) | null = null;
+
+/** A worktree row's queue fields (SessionWorktreeInfo.queue / mergeProject): only for a registered project's repo. */
+export async function worktreeQueueOf(path: string, branch: string): Promise<{ queue?: WorktreeQueueInfo; mergeProject?: WorktreeMergeProject }> {
+  if (!rowsOf) return {};
+  try {
+    return await rowsOf(path, branch);
+  } catch {
+    return {};
+  }
+}
 let ingest: { poke(): void; stop(): void } | null = null;
 
 export function mergeQueues(): MergeQueues | null {
@@ -27,7 +40,8 @@ export function pokeMergeIngest(): void {
   ingest?.poke();
 }
 
-export async function startMergeQueue(): Promise<void> {
+/** `request`: Sova's own routes in-process (app.request), for the merge thread's and the reviewer's chats. */
+export async function startMergeQueue(opts: { request?: (path: string, init?: RequestInit) => Response | Promise<Response> } = {}): Promise<void> {
   if (queues) return;
   const base = join(stateRoot(), "merge-queue");
   const [{ projectEngine }, { publishFeed }, { projectOf }, { definitionAt }, { draftsHash }, { listProjects }, checks, threadMod, review] = await Promise.all([
@@ -49,6 +63,14 @@ export async function startMergeQueue(): Promise<void> {
       return null;
     }
   };
+  if (opts.request) {
+    await threadMod.startMergeThread(opts.request);
+    const { startMergeReviewer } = await import("./reviewer");
+    await startMergeReviewer(opts.request);
+  }
+  // Sova's own project keeps the merge round's names file until it has its own.
+  const self = await projectOf(fileURLToPath(new URL("../..", import.meta.url)));
+  const legacyNames = self.state === "ok" ? { root: self.root, file: join(stateRoot(), "merge-round.json") } : undefined;
   const sendTo = async (session: string, text: string): Promise<void> => {
     const [{ listSessions }, { sendToSession }] = await Promise.all([import("../sessions-index"), import("../session-offers")]);
     const s = (await listSessions()).find((x) => x.id === session);
@@ -67,10 +89,13 @@ export async function startMergeQueue(): Promise<void> {
             ? { kind: "failed" as const, entry, run: ev.run ?? "", ...(ev.why ? { summary: ev.why } : {}) }
             : ev.kind === "paused"
               ? { kind: "paused" as const, why: ev.why ?? "paused" }
-              : null;
+              : ev.kind === "names"
+                ? { kind: "names" as const, file: ev.namesFile ?? "", target: ev.target }
+                : null;
     if (!mapped) return false;
-    const r = keeper.notify(ev.root, mapped) as unknown;
-    return r === false ? false : (threadMod as { hasMergeThread?: () => boolean }).hasMergeThread?.() ?? true;
+    if (!threadMod.hasMergeThread()) return false;
+    keeper.notify(ev.root, mapped as Parameters<typeof keeper.notify>[1]);
+    return true;
   };
   queues = new MergeQueues({
     base,
@@ -82,6 +107,7 @@ export async function startMergeQueue(): Promise<void> {
     notify: notifier({ send: sendTo }),
     thread,
     draftsHash: (dir) => draftsHash(dir),
+    ...(legacyNames ? { legacyNames } : {}),
   });
   const q = queues;
   projectEngine().merger = merger({
@@ -94,6 +120,15 @@ export async function startMergeQueue(): Promise<void> {
     reviewerOf: review.reviewerOf,
     deliverReview: review.deliverReview,
   });
+  rowsOf = async (path, branch) => {
+    const p = await projectOf(path);
+    if (p.state !== "ok" || !p.git) return {};
+    const id = projectIdOf(p.root);
+    if (!id) return {};
+    const v = await (await q.get(p.root)).cachedView();
+    const queue = worktreeQueueInfo(v, branch);
+    return { ...(queue ? { queue } : {}), mergeProject: { id, root: p.root, target: v.target, checks: v.checks, review: v.review, ...(v.paused ? { paused: v.paused.why } : {}) } };
+  };
   for (const root of recordedRoots(base)) void q.get(root).catch((err) => console.warn(`[merge-queue] ${root}: ${err instanceof Error ? err.message : err}`));
   ingest = startIngest({
     file: join(stateRoot(), LANDING_FILE_NAME),
@@ -111,6 +146,7 @@ export async function startMergeQueue(): Promise<void> {
 }
 
 export async function stopMergeQueue(): Promise<void> {
+  rowsOf = null;
   ingest?.stop();
   ingest = null;
   await queues?.stop();

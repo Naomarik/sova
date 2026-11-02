@@ -1,3 +1,4 @@
+import { MERGE_QUEUE_SENT_PREFIX } from "../shared/merge-queue";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ReadinessState, WorktreeLanding, WorktreeLandingDocs } from "../shared/protocol";
@@ -83,13 +84,14 @@ export function landingBlockers(t: LandingTree, s: LandingSession): LandingBlock
   return out;
 }
 
-/** The message Sova sends a finished session whose branch can't be approved for landing yet (§chat.worktrees/ready-to-land).
+/** The wake Sova sends a finished session whose branch can't be approved for landing yet (§chat.worktrees/ready-to-land),
+    marked as the merge queue's (MERGE_QUEUE_SENT_PREFIX), never drawn as the user's message.
     It names what blocks the landing. Once nothing blocks it, the user's go-ahead lands it: Land, or "land it" typed in
     the chat, which the session records with `worktree land`. */
 export function blockedNoteText(branch: string, commit: string, blockers: readonly LandingBlocker[]): string {
   const list = blockers.map((b) => b.text).join(", ");
   const fixes = blockers.map((b) => b.fix).join("; ");
-  return `Sova: ${branch} is finished at ${commit.slice(0, 7)}, but it can't be queued to land yet: ${list}. On ${branch}, ${fixes}. Once nothing blocks it, the user's go-ahead lands it through the merge queue: they press Land, or type "land it" in this chat, which you record with the worktree tool's land action.`;
+  return `${MERGE_QUEUE_SENT_PREFIX} ${branch} is finished at ${commit.slice(0, 7)}, but it can't be queued to land yet: ${list}. On ${branch}, ${fixes}. Once nothing blocks it, the user's go-ahead lands it through the merge queue: they press Land, or type "land it" in this chat, which you record with the worktree tool's land action.`;
 }
 
 /** The line a session answers with when it can't land its specs. */
@@ -275,12 +277,13 @@ export function fileLandingStore(file: () => string = readyToLandFile): LandingS
   };
 }
 
-/** The message Sova sends a session whose finished branch's drafts wouldn't land with it (§chat.worktrees/ready-to-land).
+/** The wake Sova sends a session whose finished branch's drafts wouldn't land with it (§chat.worktrees/ready-to-land),
+    marked as the merge queue's (MERGE_QUEUE_SENT_PREFIX).
     It names each problem and that fixing a draft needs no commit. */
 export function docsNudgeText(branch: string, commit: string, problems: readonly string[]): string {
   const shown = problems.slice(0, 8).join("; ") + (problems.length > 8 ? `; and ${problems.length - 8} more` : "");
   return (
-    `Sova: ${branch} is finished at ${commit.slice(0, 7)}, but its spec drafts wouldn't land with it: ${shown}. ` +
+    `${MERGE_QUEUE_SENT_PREFIX} ${branch} is finished at ${commit.slice(0, 7)}, but its spec drafts wouldn't land with it: ${shown}. ` +
     `Fix them in your drafts on ${branch}: that needs no commit (a promise with no note: record what you verified with the draft tool's evidence <draft> --id '<§id>' --by <you> --verification "<what you checked>" --note --write; a promise changed in the spec since the draft was made: run the draft tool's refresh <draft> --write and rewrite what it marks). ` +
     "If you can't, answer with one line: Can't land specs: <why>."
   );

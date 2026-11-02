@@ -1284,7 +1284,7 @@ test("Ready to land: decisions off falls back to the code-only conditions; a run
     const tr = r.readinessReading(path);
     assert.ok(tr.known && tr.value?.trees[0]?.landing?.state === "specs");
     assert.equal(sent.length, 1);
-    assert.match(sent[0]!, /^Sova: feat\/agents-row-dropdown is finished at eeeeeee, but its spec drafts wouldn't land with it: §x\/a \(draft landing-offer\): §x\/a has no verification note from its chat\. .*--note --write.*Can't land specs: <why>\.$/);
+    assert.match(sent[0]!, /^\[merge-queue\] feat\/agents-row-dropdown is finished at eeeeeee, but its spec drafts wouldn't land with it: §x\/a \(draft landing-offer\): §x\/a has no verification note from its chat\. .*--note --write.*Can't land specs: <why>\.$/);
     assert.doesNotMatch(sent[0]!, /Land It|promote/);
     now += r.READINESS_TTL_MS + 1;
     r.readinessOverlay(row);
@@ -1314,7 +1314,7 @@ test("a finished branch that can't be queued to land: Sova names what blocks it 
     "a failing check run",
   ]);
   const note = blockedNoteText("feat/x", t.head, landingBlockers({ ...t, dirty: true, dirtyCount: 1, dirtyFiles: ["notes/"] }, live)!);
-  assert.match(note, /^Sova: feat\/x is finished at fffffff, but it can't be queued to land yet: 1 uncommitted folder\. /);
+  assert.match(note, /^\[merge-queue\] feat\/x is finished at fffffff, but it can't be queued to land yet: 1 uncommitted folder\. /);
   assert.doesNotMatch(note, /Land It|card/);
   assert.match(note, /Once nothing blocks it, the user's go-ahead lands it through the merge queue: they press Land, or type "land it" in this chat, which you record with the worktree tool's land action\.$/);
 
@@ -1343,7 +1343,7 @@ test("a finished branch that can't be queued to land: Sova names what blocks it 
     r.readinessOverlay(row);
     await settle();
     assert.equal(sent.length, 1);
-    assert.match(sent[0]!, /^Sova: feat\/agents-row-dropdown is finished at 1111111, but it can't be queued to land yet: 1 uncommitted folder\./);
+    assert.match(sent[0]!, /^\[merge-queue\] feat\/agents-row-dropdown is finished at 1111111, but it can't be queued to land yet: 1 uncommitted folder\./);
     assert.doesNotMatch(sent[0]!, /Land It|card/);
     now += r.READINESS_TTL_MS + 1;
     r.readinessOverlay(row);

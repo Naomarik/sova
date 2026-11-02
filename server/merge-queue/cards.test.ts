@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { isMergeQueueText, type MergeCard, type MergeQueueView } from "../../shared/merge-queue";
+import { blockedNoteText, docsNudgeText } from "../ready-to-land";
 import { withMergeCardNote, setMergeCardNoteSource } from "./card-note";
 import { MergeCards } from "./cards";
 import type { QueueDeps } from "./queue";
@@ -293,6 +294,11 @@ describe("the hidden line reaches the chat with its card note", () => {
 });
 
 describe("no fake message is left", () => {
+  test("readiness's ready-to-land wakes (drafts don't fit, what still blocks) are marked as the merge queue's", () => {
+    assert.ok(isMergeQueueText(docsNudgeText("feat/x", "a".repeat(40), ["§x/a: no note"])));
+    assert.ok(isMergeQueueText(blockedNoteText("feat/x", "a".repeat(40), [{ text: "1 uncommitted folder", fix: "commit it" } as never])));
+  });
+
   test("the queue sends a chat only its marked wake: sendTo is the cards' wake alone, and no text poses as Sova's message", () => {
     const dir = new URL(".", import.meta.url);
     const read = (f: string) => readFileSync(new URL(f, dir), "utf8");
@@ -305,5 +311,8 @@ describe("no fake message is left", () => {
       assert.doesNotMatch(src, /[`"']Sova(?: \([^)]*\))?: /, `${f}: a "Sova: …" text`);
       if (f !== "wire.ts") assert.doesNotMatch(src, /sendToSession|session\.send\b/, `${f} sends to a chat`);
     }
+    // Readiness's ready-to-land messages ask the chat to act: marked wakes too, never a "Sova: …" bubble.
+    const server = new URL("../", dir);
+    for (const f of ["merge-readiness.ts", "ready-to-land.ts"]) assert.doesNotMatch(readFileSync(new URL(f, server), "utf8"), /[`"']Sova(?: \([^)]*\))?: /, `${f}: a "Sova: …" text`);
   });
 });

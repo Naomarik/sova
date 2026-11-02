@@ -26,6 +26,7 @@ import { checksOf, countsOf, type CopyScope, envOf, type PlannedCheck, picksOf, 
 import type { RunHooks, RunInput, RunMerge, RunOutcome } from "./contract";
 import { assertCopyOutsideState, CopyRefused, gitOut, gitProc, mergeCopyPath, moveCopy, prepareCopy, runProc } from "./copy";
 import { reviewStep, type ReviewDeps } from "./review-step";
+import { conflictsBetween } from "./conflicts";
 
 export interface RunDeps extends ReviewDeps {
   /** The state root and home the copy must stay out of (tests move them). */
@@ -240,10 +241,10 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       return out({ verdict: "failed", blame: "branch", why: `nothing to land: ${target} already has ${short(commit)}`, copy });
     }
     ms.log(`$ git merge --no-ff ${commit}\n`);
-    const m = await gitProc(copy, [...NO_BACKGROUND_CLEANUP, "merge", "--no-ff", "--no-edit", "-m", `Merge branch '${input.entry.branch}' into ${target}`, commit], { env: ident, log: ms.log, signal });
+    const m = await gitProc(copy, [...MERGE_FLAGS, "merge", "--no-ff", "--no-edit", "-m", `Merge branch '${input.entry.branch}' into ${target}`, commit], { env: ident, log: ms.log, signal });
     if (m.aborted) return (ms.end("failed", { detail: "aborted" }), voided("aborted"));
     if (m.code !== 0) {
-      const files = (await gitProc(copy, ["diff", "--name-only", "--diff-filter=U"])).out.split("\n").filter(Boolean);
+      const files = await conflictFiles(copy, base, commit);
       await gitProc(copy, ["merge", "--abort"], { log: ms.log });
       if (files.length) {
         ms.end("failed", { detail: `conflicts in ${files.length} file${files.length === 1 ? "" : "s"}: ${files.slice(0, 4).join(", ")}` });
@@ -596,6 +597,19 @@ async function identityEnv(copy: string): Promise<Record<string, string>> {
   return { GIT_AUTHOR_NAME: name || "Sova merge queue", GIT_AUTHOR_EMAIL: email || "merge-queue@sova.invalid", GIT_COMMITTER_NAME: name || "Sova merge queue", GIT_COMMITTER_EMAIL: email || "merge-queue@sova.invalid" };
 }
 
+/** Every merge in the copy: no background cleanup, and never git rerere (a user's rerere.enabled + autoupdate would
+ *  stage a recorded resolution silently and leave no unmerged path: a conflict must reach the thread and the user). */
+const MERGE_FLAGS: readonly string[] = [...NO_BACKGROUND_CLEANUP, "-c", "rerere.enabled=false", "-c", "rerere.autoupdate=false"];
+
+/** The files a failed merge conflicts in: the index's unmerged paths, else git's own merge of the two commits (a merge
+ *  that failed with nothing unmerged, as a recorded resolution staged by some config leaves it, is still a conflict). */
+async function conflictFiles(copy: string, a: string, b: string): Promise<string[]> {
+  const u = (await gitProc(copy, ["diff", "--name-only", "--diff-filter=U"])).out.split("\n").filter(Boolean);
+  if (u.length) return u;
+  const t = await conflictsBetween(copy, a, b);
+  return "files" in t ? t.files : [];
+}
+
 /** The thread's resolution, taken: as is when its first parent is the target's head, else with the target merged in. */
 async function takeResolution(copy: string, base: string, resolution: string, log: (s: string) => void, env: Record<string, string>, signal: AbortSignal): Promise<{ sha: string } | { conflict: string[] } | { error: string }> {
   const first = (await gitProc(copy, ["rev-parse", "--verify", "-q", `${resolution}^1`])).out.trim();
@@ -603,9 +617,9 @@ async function takeResolution(copy: string, base: string, resolution: string, lo
   if (co.code !== 0) return { error: `the resolution ${short(resolution)} can't be checked out: ${tail(co.out)}` };
   if (first === base) return { sha: (await gitOut(copy, ["rev-parse", "HEAD"])) };
   log(`its first parent ${short(first)} isn't the target's head: merging ${short(base)} into it\n`);
-  const m = await gitProc(copy, [...NO_BACKGROUND_CLEANUP, "merge", "--no-ff", "--no-edit", base], { env, log, signal });
+  const m = await gitProc(copy, [...MERGE_FLAGS, "merge", "--no-ff", "--no-edit", base], { env, log, signal });
   if (m.code !== 0) {
-    const files = (await gitProc(copy, ["diff", "--name-only", "--diff-filter=U"])).out.split("\n").filter(Boolean);
+    const files = await conflictFiles(copy, resolution, base);
     await gitProc(copy, ["merge", "--abort"], { log });
     return files.length ? { conflict: files } : { error: `git merge failed: ${tail(m.out)}` };
   }

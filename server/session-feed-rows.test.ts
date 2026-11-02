@@ -3,6 +3,8 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { SessionFeedMessage, SessionSummary } from "../shared/protocol";
+import { ListRows } from "../src/lib/list-rows";
+import { rowNeedsYou } from "../src/lib/signals";
 import { rowsDigest } from "../src/lib/summary-diff";
 import { diffRows, ROWS_MAX_BYTES, ROWS_MAX_ROWS, SessionFeed } from "./session-feed";
 
@@ -175,4 +177,27 @@ describe("rows sockets beside old ones", () => {
     assert.equal((await h.feed.snapshot(async () => 1)).body, 1);
     h.feed.stop();
   });
+});
+
+test("a seen-only change (the server drops the seen signal) is a rows frame, and the merged row shows no mark", async () => {
+  const sig: SessionSummary["signals"] = { at: 100, turnId: "t1", provider: "jev", kinds: ["unverified"] };
+  const h = harness([row("a", { signals: sig, seenAt: 50 }), row("b")]);
+  let view: SessionSummary[] = [];
+  const lr = new ListRows({ refetch: () => assert.fail("no re-read needed"), publish: (r) => (view = r) });
+  lr.socketOpened();
+  lr.fetchStarted();
+  h.feed.add((m) => lr.message(clone(m)), { rows: true });
+  await h.feed.idle();
+  const snap = await h.feed.snapshot(async () => [row("a", { signals: sig, seenAt: 50 }), row("b")].map(clone));
+  view = lr.snapshot(snap.body, { epoch: snap.epoch, version: snap.version });
+  const a0 = view.find((s) => s.id === "a")!;
+  assert.ok(rowNeedsYou(a0, { selected: null, busy: false }), "unseen: the mark shows");
+  // The user opens it elsewhere: seenAt moves past the signal and the server stops listing it.
+  await h.step([row("a", { seenAt: 150 }), row("b")]);
+  assert.equal(lr.refetches, 0);
+  const a1 = view.find((s) => s.id === "a")!;
+  assert.equal(a1.signals, undefined);
+  assert.equal(a1.seenAt, 150, "the upsert carries the server's current seenAt");
+  assert.equal(rowNeedsYou(a1, { selected: null, busy: false }), null);
+  h.feed.stop();
 });

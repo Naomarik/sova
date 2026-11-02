@@ -158,7 +158,8 @@ async function forgetSetup(copy: string): Promise<void> {
 export function makeRunMerge(deps: RunDeps = {}): RunMerge {
   // Services a check needs start through the server's project engine unless the caller gives another way.
   const withServices: RunDeps = { services: lazyEngineServices(), ...deps };
-  return (input, hooks) => runOnce(input, hooks, withServices).catch((err): RunOutcome => {
+  // RunInput.tryOnly (Try It on Main): nothing merged; the same as tryOnMain.
+  return (input, hooks) => (input.tryOnly ? tryOnce(input, hooks, withServices) : runOnce(input, hooks, withServices)).catch((err): RunOutcome => {
     // Never a throw: anything unexpected is the machine's, never the branch's.
     return { verdict: "machine", why: `the run stopped: ${err instanceof Error ? err.message : String(err)}`, notes: [], checks: [] };
   });

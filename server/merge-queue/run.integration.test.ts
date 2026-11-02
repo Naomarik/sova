@@ -23,7 +23,7 @@ const fixture = (o: ConstructorParameters<typeof Fixture>[0] = {}) => {
 };
 
 let n = 0;
-async function run(fx: Fixture, br: { branch: string; commit: string; checkout?: string }, o: { deps?: RunDeps; resolution?: string; drafts?: boolean; review?: boolean; picks?: RunInput["picks"]; signal?: AbortSignal; awaitReview?: RunInput["awaitReview"]; tryOnMain?: boolean } = {}) {
+async function run(fx: Fixture, br: { branch: string; commit: string; checkout?: string }, o: { deps?: RunDeps; resolution?: string; drafts?: boolean; review?: boolean; picks?: RunInput["picks"]; signal?: AbortSignal; awaitReview?: RunInput["awaitReview"]; tryOnMain?: boolean; tryOnly?: boolean } = {}) {
   const runId = `mr_t${++n}`;
   const runDir = join(fx.root, "runs", runId);
   mkdirSync(runDir, { recursive: true });
@@ -47,6 +47,7 @@ async function run(fx: Fixture, br: { branch: string; commit: string; checkout?:
     review: !!o.review,
     signal: o.signal ?? new AbortController().signal,
     // The review answers through deliverReview here (review-step.ts), never the queue's own waiter.
+    ...(o.tryOnly ? { tryOnly: true as const } : {}),
     awaitReview: o.awaitReview ?? (() => new Promise(() => {})),
   };
   const out: RunOutcome = await (o.tryOnMain ? makeTryOnMain : makeRunMerge)({ specCore: join(REPO_ROOT, "pi-config/extensions/spec/core"), ...o.deps })(input, {
@@ -367,6 +368,10 @@ describe("a merge run", () => {
     expect(r.out.verdict).toBe("failed");
     expect(r.out.blame).toBeUndefined();
     expect(r.out.why).toBe("Unit tests fails on master itself");
+    // The queue's way in: RunInput.tryOnly through the ordinary run (commit === base would otherwise be "nothing to land").
+    const viaFlag = await run(fx, { branch: fx.target, commit: before }, { tryOnly: true });
+    expect(viaFlag.out).toMatchObject({ verdict: "passed" });
+    expect(viaFlag.order).not.toContain("merge");
     const none = fixture({ checks: "none" });
     expect((await run(none, { branch: none.target, commit: none.head() }, { tryOnMain: true })).out).toMatchObject({ verdict: "passed", noChecks: true });
   });

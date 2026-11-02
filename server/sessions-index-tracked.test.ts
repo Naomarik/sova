@@ -12,7 +12,7 @@ const sessionsDir = join(agentDir, "sessions", "--tmp-tracked--");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 
-const { listSessions, listSessionsTracked, trackSessionFiles, trackedStats } = await import("./sessions-index");
+const { listIo, listSessions, listSessionsTracked, trackSessionFiles, trackedStats } = await import("./sessions-index");
 const { sessionsChanged } = await import("./list-generation");
 const { canonicalPath } = await import("./paths");
 
@@ -117,6 +117,28 @@ test("husk check: a husk that gains a user message is listed, cached or not", as
     t.note(h);
     assert.equal((await listSessionsTracked()).find((r) => r.path === h)?.title, "now real");
     assert.deepEqual(await listSessionsTracked(), await fresh());
+  } finally {
+    t.stop();
+  }
+});
+
+test("an incremental build with one named file stats two paths for it (watch path, summary) and opens it once", async () => {
+  const a = session("io one");
+  session("io two");
+  session("io three");
+  const t = trackSessionFiles();
+  try {
+    await listSessionsTracked();
+    appendFileSync(a, `${assistant("more")}\n`);
+    stamp(a);
+    t.note(a);
+    const before = { ...listIo };
+    const rows = await listSessionsTracked();
+    assert.deepEqual({ stats: listIo.stats - before.stats, opens: listIo.opens - before.opens }, { stats: 2, opens: 1 });
+    assert.deepEqual(rows, await fresh());
+    const idle = { ...listIo };
+    await listSessionsTracked();
+    assert.deepEqual({ ...listIo }, idle, "nothing named: no session file stat'ed or opened");
   } finally {
     t.stop();
   }

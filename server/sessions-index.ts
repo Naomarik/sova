@@ -39,6 +39,7 @@ import { projectCodingIds, projectKeeps, projectSessionLookup } from "./project-
 import { reservedRoots } from "./projects/contributions";
 import { removeMemory } from "./memory/store";
 import { removeSessionTours } from "./tours/lifecycle";
+import { byActivity } from "../src/lib/summary-diff";
 
 /**
  * What another layer adds to the list (organizations: a baton session's `baton`, an org session's `org`), and
@@ -195,38 +196,65 @@ const NL = 0x0a;
  * end wins), unlike the transcript's per-message resolution. null when the window has none.
  */
 export async function readTailModel(path: string, size: number): Promise<string | null> {
+  const win = await readTailWindowOf(path, size);
+  return win ? tailModelIn(win) : null;
+}
+
+/**
+ * The last MAX_TAIL bytes of a file, read once and shared by the tail readers (model, context,
+ * ending) of one summary. `bof`: the window starts at the file's first byte, so its first line is
+ * whole; otherwise that line started before the window and is never read. null when the file was
+ * truncated under the read.
+ */
+interface TailWindow {
+  buf: Buffer;
+  bof: boolean;
+}
+
+async function readTailWindow(fh: FileHandle, size: number): Promise<TailWindow | null> {
+  const floor = Math.max(0, size - MAX_TAIL);
+  const buf = Buffer.alloc(size - floor);
+  let got = 0;
+  while (got < buf.length) {
+    const { bytesRead } = await fh.read(buf, got, buf.length - got, floor + got);
+    if (bytesRead === 0) return null; // truncated under us: the next request retries
+    got += bytesRead;
+  }
+  return { buf, bof: floor === 0 };
+}
+
+async function readTailWindowOf(path: string, size: number): Promise<TailWindow | null> {
   const fh = await open(path, "r");
   try {
-    const floor = Math.max(0, size - MAX_TAIL);
-    let end = size;
-    let carry = Buffer.alloc(0); // bytes after the first newline seen so far: a line's start is still unread
-    while (end > floor) {
-      const start = Math.max(floor, end - CHUNK);
-      const chunk = Buffer.alloc(end - start);
-      const { bytesRead } = await fh.read(chunk, 0, chunk.length, start);
-      if (bytesRead < chunk.length) return null; // truncated under us: the next request retries
-      end = start;
-      const buf = carry.length ? Buffer.concat([chunk, carry]) : chunk;
-      // Complete lines are those after a newline in this buffer (or all of it at BOF).
-      let stop = buf.length;
-      for (;;) {
-        const i = stop > 0 ? buf.lastIndexOf(NL, stop - 1) : -1;
-        if (i < 0 && start > 0) break; // line start not read yet: carry it into the next chunk
-        const line = buf.subarray(i + 1, stop);
-        if (line.includes('"model_change"') || line.includes('"assistant"')) {
-          // A torn trailing line or one that isn't JSON reads as null: skipped.
-          const m = modelOf(lineEntry(line));
-          if (m) return m;
-        }
-        if (i < 0) return null;
-        stop = i;
-      }
-      carry = buf.subarray(0, stop);
-    }
-    return null;
+    return await readTailWindow(fh, size);
   } finally {
     await fh.close();
   }
+}
+
+/** The window's complete lines, last first (a torn trailing line included: its parse fails). */
+function* linesBack(win: TailWindow): Generator<Buffer> {
+  const buf = win.buf;
+  let stop = buf.length;
+  for (;;) {
+    const i = stop > 0 ? buf.lastIndexOf(NL, stop - 1) : -1;
+    if (i < 0 && !win.bof) return; // the line's start is before the window
+    yield buf.subarray(i + 1, stop);
+    if (i < 0) return;
+    stop = i;
+  }
+}
+
+/** readTailModel's answer from a window. */
+function tailModelIn(win: TailWindow): string | null {
+  for (const line of linesBack(win)) {
+    if (line.includes('"model_change"') || line.includes('"assistant"')) {
+      // A torn trailing line or one that isn't JSON reads as null: skipped.
+      const m = modelOf(lineEntry(line));
+      if (m) return m;
+    }
+  }
+  return null;
 }
 
 /** One `topic-outline` snapshot, as the summary row shows it. */
@@ -340,16 +368,11 @@ async function bytesBefore(fh: FileHandle, offset: number): Promise<Buffer> {
  * itself.
  * null when the file was truncated under the read.
  */
-async function readOutline(path: string, size: number, prev: OutlineScan | null): Promise<OutlineScan | null> {
-  const fh = await open(path, "r");
-  try {
-    const grown = prev !== null && size >= prev.size && (await bytesBefore(fh, prev.resume)).equals(prev.mark);
-    const scan = await scanOutline(fh, size, grown ? Math.max(0, prev.resume - 1) : 0);
-    if (!scan) return null;
-    return { found: scan.found ?? (grown ? prev.found : null), size, resume: scan.resume, mark: await bytesBefore(fh, scan.resume) };
-  } finally {
-    await fh.close();
-  }
+async function readOutline(fh: FileHandle, size: number, prev: OutlineScan | null): Promise<OutlineScan | null> {
+  const grown = prev !== null && size >= prev.size && (await bytesBefore(fh, prev.resume)).equals(prev.mark);
+  const scan = await scanOutline(fh, size, grown ? Math.max(0, prev.resume - 1) : 0);
+  if (!scan) return null;
+  return { found: scan.found ?? (grown ? prev.found : null), size, resume: scan.resume, mark: await bytesBefore(fh, scan.resume) };
 }
 
 /** Context fill read off the tail: tokens, plus the model of the assistant message that spent
@@ -383,39 +406,21 @@ function contextOf(h: HEntry | null): TailContext | "stale" | null {
  * neither. Not branch-aware — on a rewound session the tail can be a reply the head never sees.
  */
 export async function readTailContext(path: string, size: number): Promise<TailContext | null> {
-  const fh = await open(path, "r");
-  try {
-    const floor = Math.max(0, size - MAX_TAIL);
-    let end = size;
-    let carry = Buffer.alloc(0); // bytes after the first newline seen so far: a line's start is still unread
-    while (end > floor) {
-      const start = Math.max(floor, end - CHUNK);
-      const chunk = Buffer.alloc(end - start);
-      const { bytesRead } = await fh.read(chunk, 0, chunk.length, start);
-      if (bytesRead < chunk.length) return null; // truncated under us: the next request retries
-      end = start;
-      const buf = carry.length ? Buffer.concat([chunk, carry]) : chunk;
-      // Complete lines are those after a newline in this buffer (or all of it at BOF).
-      let stop = buf.length;
-      for (;;) {
-        const i = stop > 0 ? buf.lastIndexOf(NL, stop - 1) : -1;
-        if (i < 0 && start > 0) break; // line start not read yet: carry it into the next chunk
-        const line = buf.subarray(i + 1, stop);
-        if (line.includes('"assistant"') || line.includes("compaction")) {
-          // A torn trailing line or one that isn't JSON reads as null: skipped.
-          const hit = contextOf(lineEntry(line));
-          if (hit === "stale") return null;
-          if (hit) return hit;
-        }
-        if (i < 0) return null;
-        stop = i;
-      }
-      carry = buf.subarray(0, stop);
+  const win = await readTailWindowOf(path, size);
+  return win ? tailContextIn(win) : null;
+}
+
+/** readTailContext's answer from a window. */
+function tailContextIn(win: TailWindow): TailContext | null {
+  for (const line of linesBack(win)) {
+    if (line.includes('"assistant"') || line.includes("compaction")) {
+      // A torn trailing line or one that isn't JSON reads as null: skipped.
+      const hit = contextOf(lineEntry(line));
+      if (hit === "stale") return null;
+      if (hit) return hit;
     }
-    return null;
-  } finally {
-    await fh.close();
   }
+  return null;
 }
 
 /** When a reply happened, ms epoch: the message's own time (ms), else the entry's ISO one. */
@@ -500,55 +505,37 @@ function closeOf(text: string): string {
  * bounded window, so a listing never reads a whole transcript for them.
  */
 export async function readTailEnding(path: string, size: number): Promise<{ reply: LastReply | null; ending: TailEnding }> {
-  const fh = await open(path, "r");
+  const win = await readTailWindowOf(path, size);
+  return win ? tailEndingIn(win) : { reply: null, ending: {} };
+}
+
+/** readTailEnding's answer from a window. */
+function tailEndingIn(win: TailWindow): { reply: LastReply | null; ending: TailEnding } {
   let reply: LastReply | null = null;
   const ending: TailEnding = {};
-  const done = () => ({ reply, ending });
-  try {
-    const floor = Math.max(0, size - MAX_TAIL);
-    let end = size;
-    let carry = Buffer.alloc(0);
-    while (end > floor) {
-      const start = Math.max(floor, end - CHUNK);
-      const chunk = Buffer.alloc(end - start);
-      const { bytesRead } = await fh.read(chunk, 0, chunk.length, start);
-      if (bytesRead < chunk.length) return done();
-      end = start;
-      const buf = carry.length ? Buffer.concat([chunk, carry]) : chunk;
-      let stop = buf.length;
-      for (;;) {
-        const i = stop > 0 ? buf.lastIndexOf(NL, stop - 1) : -1;
-        if (i < 0 && start > 0) break;
-        const line = buf.subarray(i + 1, stop);
-        const wantReply = !reply && line.includes('"assistant"');
-        const wantUser = !ending.user && line.includes('"user"');
-        // A torn trailing line or one that isn't JSON reads as null: skipped.
-        const h = wantReply || wantUser ? lineEntry(line) : null;
-        if (wantReply && h?.kind === "assistant") {
-          const hit = finishedReply(h);
-          if (hit) {
-            reply = hit;
-            const said = joinedText(h, { images: false });
-            const close = closeOf(said);
-            ending.reply = { at: hit.at, text: excerpt(said), stop: hit.stopReason, ...(hit.error ? { error: hit.error } : {}), ...(close ? { close } : {}) };
-          }
-        } else if (wantUser && h) {
-          if (h.kind === "user") {
-            const said = joinedText(h, { images: false });
-            const at = entryTime(h);
-            if (said.trim() && !notTitle(said) && at !== null) ending.user = { at, text: excerpt(said) };
-          }
-        }
-        if (reply && ending.user) return done();
-        if (i < 0) return done();
-        stop = i;
+  for (const line of linesBack(win)) {
+    const wantReply = !reply && line.includes('"assistant"');
+    const wantUser = !ending.user && line.includes('"user"');
+    // A torn trailing line or one that isn't JSON reads as null: skipped.
+    const h = wantReply || wantUser ? lineEntry(line) : null;
+    if (wantReply && h?.kind === "assistant") {
+      const hit = finishedReply(h);
+      if (hit) {
+        reply = hit;
+        const said = joinedText(h, { images: false });
+        const close = closeOf(said);
+        ending.reply = { at: hit.at, text: excerpt(said), stop: hit.stopReason, ...(hit.error ? { error: hit.error } : {}), ...(close ? { close } : {}) };
       }
-      carry = buf.subarray(0, stop);
+    } else if (wantUser && h) {
+      if (h.kind === "user") {
+        const said = joinedText(h, { images: false });
+        const at = entryTime(h);
+        if (said.trim() && !notTitle(said) && at !== null) ending.user = { at, text: excerpt(said) };
+      }
     }
-    return done();
-  } finally {
-    await fh.close();
+    if (reply && ending.user) break;
   }
+  return { reply, ending };
 }
 
 /**
@@ -559,83 +546,90 @@ export async function readTailEnding(path: string, size: number): Promise<{ repl
 /** `input`: the head holds a user message of any kind. A wake nudge or a partner's link message
     never titles a session, but it is still something written in it: a session whose only user
     messages are link messages has real turns and is never an empty husk. */
-export async function readHead(path: string): Promise<{ header: any; title: string | null; model: string | null; overseer: boolean; input: boolean; profile?: ProfileEntryData | null } | null> {
+type HeadFacts = { header: any; title: string | null; model: string | null; overseer: boolean; input: boolean; profile?: ProfileEntryData | null };
+
+export async function readHead(path: string): Promise<HeadFacts | null> {
   const fh = await open(path, "r");
   try {
-    // The Overseer marker is written right after the header, before any user message, so the
-    // head read (which stops at the first user message) always sees it.
-    let overseer = false;
-    let profile: ProfileEntryData | null = null;
-    let input = false;
-    let header: any = null;
-    let title: string | null = null;
-    let model: string | null = null;
-    let pending = "";
-    let pos = 0;
-    const buf = Buffer.alloc(CHUNK);
-    const decoder = new TextDecoder("utf-8");
-    while (pos < MAX_HEAD) {
-      const { bytesRead } = await fh.read(buf, 0, CHUNK, pos);
-      if (bytesRead === 0) break;
-      pos += bytesRead;
-      pending += decoder.decode(buf.subarray(0, bytesRead), { stream: true });
-      const lines = pending.split("\n");
-      pending = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        let e: any;
-        try {
-          e = JSON.parse(line);
-        } catch {
-          continue;
-        }
-        if (!header) {
-          if (!headerOf(e)) return null; // not a pi session
-          header = e;
-          continue;
-        }
-        // A `null` line has always failed the head read (the file is left out of the list).
-        if (e === null) throw new TypeError("a null entry in the session's head");
-        const h = toHEntry(e);
-        if (h?.kind === "setting" && h.what === "model" && !model && h.provider && h.modelId) model = `${h.provider}/${h.modelId}`;
-        if (h?.kind === "state" && h.key === OVERSEER_ENTRY) overseer = true;
-        // The profile is fixed at the first message, so the newest entry before it is the session's.
-        // Its fold still reads the raw entry (SessionState replaces it).
-        if (h?.kind === "state" && h.key === PROFILE_ENTRY) profile = profileOnBranch([e]);
-        if (h?.kind === "assistant" && !model && h.provider && h.model) model = `${h.provider}/${h.model}`;
-        if (h?.kind === "user") {
-          input = true;
-          if (title === null && !notTitle(userText(h))) title = oneLine(userText(h));
-        }
-        if (title !== null && model) return { header, title, model, overseer, input, profile };
-      }
-      // Stop at the first user message even without a model: model_change precedes it.
-      if (title !== null) return { header, title, model, overseer, input, profile };
-    }
-    if (pending.trim() && title === null) {
-      if (pos < MAX_HEAD) {
-        // EOF: final line without trailing newline (or a writer mid-append)
-        try {
-          const e = JSON.parse(pending);
-          const h = header ? toHEntry(e) : null;
-          if (!header && headerOf(e)) header = e;
-          else if (h?.kind === "user") {
-            input = true;
-            if (!notTitle(userText(h))) title = oneLine(userText(h));
-          }
-        } catch {
-          // partial line: ignore
-        }
-      } else if (header) {
-        const t = titleFromPartial(pending);
-        if (t !== null) input = true;
-        if (t !== null && !notTitle(t)) title = oneLine(t);
-      }
-    }
-    return header ? { header, title, model, overseer, input, profile } : null;
+    return await readHeadFrom(fh);
   } finally {
     await fh.close();
   }
+}
+
+/** readHead on a handle the caller opened (and closes). */
+async function readHeadFrom(fh: FileHandle): Promise<HeadFacts | null> {
+  // The Overseer marker is written right after the header, before any user message, so the
+  // head read (which stops at the first user message) always sees it.
+  let overseer = false;
+  let profile: ProfileEntryData | null = null;
+  let input = false;
+  let header: any = null;
+  let title: string | null = null;
+  let model: string | null = null;
+  let pending = "";
+  let pos = 0;
+  const buf = Buffer.alloc(CHUNK);
+  const decoder = new TextDecoder("utf-8");
+  while (pos < MAX_HEAD) {
+    const { bytesRead } = await fh.read(buf, 0, CHUNK, pos);
+    if (bytesRead === 0) break;
+    pos += bytesRead;
+    pending += decoder.decode(buf.subarray(0, bytesRead), { stream: true });
+    const lines = pending.split("\n");
+    pending = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let e: any;
+      try {
+        e = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (!header) {
+        if (!headerOf(e)) return null; // not a pi session
+        header = e;
+        continue;
+      }
+      // A `null` line has always failed the head read (the file is left out of the list).
+      if (e === null) throw new TypeError("a null entry in the session's head");
+      const h = toHEntry(e);
+      if (h?.kind === "setting" && h.what === "model" && !model && h.provider && h.modelId) model = `${h.provider}/${h.modelId}`;
+      if (h?.kind === "state" && h.key === OVERSEER_ENTRY) overseer = true;
+      // The profile is fixed at the first message, so the newest entry before it is the session's.
+      // Its fold still reads the raw entry (SessionState replaces it).
+      if (h?.kind === "state" && h.key === PROFILE_ENTRY) profile = profileOnBranch([e]);
+      if (h?.kind === "assistant" && !model && h.provider && h.model) model = `${h.provider}/${h.model}`;
+      if (h?.kind === "user") {
+        input = true;
+        if (title === null && !notTitle(userText(h))) title = oneLine(userText(h));
+      }
+      if (title !== null && model) return { header, title, model, overseer, input, profile };
+    }
+    // Stop at the first user message even without a model: model_change precedes it.
+    if (title !== null) return { header, title, model, overseer, input, profile };
+  }
+  if (pending.trim() && title === null) {
+    if (pos < MAX_HEAD) {
+      // EOF: final line without trailing newline (or a writer mid-append)
+      try {
+        const e = JSON.parse(pending);
+        const h = header ? toHEntry(e) : null;
+        if (!header && headerOf(e)) header = e;
+        else if (h?.kind === "user") {
+          input = true;
+          if (!notTitle(userText(h))) title = oneLine(userText(h));
+        }
+      } catch {
+        // partial line: ignore
+      }
+    } else if (header) {
+      const t = titleFromPartial(pending);
+      if (t !== null) input = true;
+      if (t !== null && !notTitle(t)) title = oneLine(t);
+    }
+  }
+  return header ? { header, title, model, overseer, input, profile } : null;
 }
 
 /**
@@ -737,9 +731,14 @@ function gistChanged(path: string): void {
   }
 }
 
+/** Session-file syscalls of the listing's own reads (tests, measurement): stats of a file it may
+    summarize, and opens of one it reads. The align and worker scans keep their own. */
+export const listIo = { stats: 0, opens: 0 };
+
 async function summarize(path: string, resolveWindow?: WindowResolver): Promise<BaseSummary | null> {
   let st;
   try {
+    listIo.stats++;
     st = await stat(path);
   } catch {
     return null;
@@ -747,14 +746,25 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
   const hit = cache.get(path);
   if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return withWindow(hit, resolveWindow);
   try {
-    const head = await readHead(path);
-    if (!head || typeof head.header.id !== "string") return null;
+    // One handle for the head, the outline and one tail window the three tail readers share.
+    listIo.opens++;
+    const fh = await open(path, "r");
+    let head: HeadFacts | null;
+    let win: TailWindow | null = null;
+    let scan: OutlineScan | null = null;
+    try {
+      head = await readHeadFrom(fh);
+      if (!head || typeof head.header.id !== "string") return null;
+      win = await readTailWindow(fh, st.size);
+      scan = await readOutline(fh, st.size, hit?.outline ?? null);
+    } finally {
+      await fh.close();
+    }
     const h = head.header;
-    const model = (await readTailModel(path, st.size)) ?? head.model;
-    const scan = await readOutline(path, st.size, hit?.outline ?? null);
+    const model = (win ? tailModelIn(win) : null) ?? head.model;
     const outline = scan?.found ?? null;
-    const ctx = await readTailContext(path, st.size);
-    const { reply: lastReply, ending } = await readTailEnding(path, st.size);
+    const ctx = win ? tailContextIn(win) : null;
+    const { reply: lastReply, ending } = win ? tailEndingIn(win) : { reply: null, ending: {} as TailEnding };
     const align = await readAlignScan(path, st.size, hit?.align ?? null);
     // A workspace session (an org's baton or overseer file) is listed under the dir it opens in on
     // THIS host; its header keeps the dir of the host that created it (§app.organizations/portability).
@@ -1070,6 +1080,7 @@ async function trackedFiles(prev: readonly string[], dirty: ReadonlySet<string>)
   const present = new Map<string, boolean>();
   await Promise.all(
     [...dirty].map(async (p) => {
+      listIo.stats++;
       const st = await lstat(p).catch(() => null);
       present.set(p, !!st && st.isFile() && p.endsWith(".jsonl"));
     }),
@@ -1094,6 +1105,7 @@ function summaryOf(path: string, resolveWindow: WindowResolver | undefined, dirt
 async function zeroInputOf(path: string): Promise<boolean> {
   const hit = cache.get(path);
   if (hit) return hit.zeroInput;
+  listIo.stats++;
   const st = await stat(path).catch(() => null);
   return !!st && (await isZeroInput(path, st.size));
 }
@@ -1178,7 +1190,7 @@ async function buildSessions(track?: { files: string[]; dirty: ReadonlySet<strin
   }
   pruneReadiness(out);
   for (let i = 0; i < out.length; i++) out[i] = await withUnreadReplies(out[i]!);
-  out.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
+  out.sort(byActivity);
   return { rows: out, files };
 }
 

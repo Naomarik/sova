@@ -2,7 +2,7 @@ import { PROFILE_ENTRY, type ProfileEntryData } from "../shared/profiles";
 import { keptLabels, redactPreviewLinks, redactPreviewLinksDeep } from "./preview-kept";
 import { profileField, profileOnBranch } from "./session-profile";
 import { type Dirent, statSync } from "node:fs";
-import { type FileHandle, open, readdir, stat, unlink } from "node:fs/promises";
+import { type FileHandle, lstat, open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { OVERSEER_ENTRY, type SessionSummary } from "../shared/protocol";
 import { activityOf, type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
@@ -120,6 +120,9 @@ interface CacheEntry {
   /** How far the align read got (server/align-state.ts): the marker search resumes from it while
       the file only grows, and a file with no `align` result is never parsed. */
   align: AlignScan | null;
+  /** isZeroInput's answer for this (mtime, size): the head read already says it, so the list's
+      husk check never reads the file again while it is unchanged. */
+  zeroInput: boolean;
 }
 
 const cache = new Map<string, CacheEntry>();
@@ -129,10 +132,11 @@ const cache = new Map<string, CacheEntry>();
  *  is recomputed on every listing, never baked into a file's cached head facts. */
 const workerSessions = new WorkerSessions({ idOf: (p) => idOf(p) });
 
-/** The worker-session paths among `files`; best-effort — a failure hides nothing. */
-async function workerSessionPaths(files: string[]): Promise<Set<string>> {
+/** The worker-session paths among `files`; best-effort — a failure hides nothing. `changed`: only
+ *  these (and files never scanned) can have changed since the last refresh. */
+async function workerSessionPaths(files: string[], changed?: ReadonlySet<string>): Promise<Set<string>> {
   try {
-    return await workerSessions.refresh(files);
+    return await workerSessions.refresh(files, changed);
   } catch {
     return new Set();
   }
@@ -775,7 +779,18 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       ...(align.summary ? { align: align.summary } : {}),
       ...(profileField(head.profile) ? { profile: profileField(head.profile) } : {}),
     };
-    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan, lastReply, ending, marked: head.overseer, align };
+    const entry: CacheEntry = {
+      mtimeMs: st.mtimeMs,
+      size: st.size,
+      summary,
+      contextModel: ctx?.model ?? null,
+      outline: scan,
+      lastReply,
+      ending,
+      marked: head.overseer,
+      align,
+      zeroInput: st.size <= MAX_HEAD && !head.input,
+    };
     cache.set(path, entry);
     if (summary.outlineGist && summary.outlineGist !== hit?.summary.outlineGist) gistChanged(path);
     return withWindow(entry, resolveWindow);
@@ -954,7 +969,7 @@ export function listSessions(): Promise<SessionSummary[]> {
   const generation = listGeneration();
   let l = listing;
   if (!l || l.generation !== generation || now - l.startedAt >= LIST_REUSE_MS || now < l.startedAt) {
-    const mine: { generation: number; startedAt: number; rows: Promise<SessionSummary[]> } = { generation, startedAt: now, rows: buildSessions() };
+    const mine: { generation: number; startedAt: number; rows: Promise<SessionSummary[]> } = { generation, startedAt: now, rows: buildSessions().then((b) => b.rows) };
     listing = l = mine;
     mine.rows.catch(() => {
       if (listing === mine) listing = null;
@@ -963,8 +978,131 @@ export function listSessions(): Promise<SessionSummary[]> {
   return l.rows.then((rows) => [...rows]);
 }
 
-async function buildSessions(): Promise<SessionSummary[]> {
-  const files = await listSessionFiles();
+/** How often the tracked listing reads every folder and stats every file anyway: the net for a
+    change no watch event told of. */
+export const SWEEP_MS = 5 * 60_000;
+
+/**
+ * The session feed's file tracker: while a watch reports which session files changed
+ * (server/session-feed-watch.ts `files`), the feed's listing (listSessionsTracked) reuses the last
+ * file set and cached summaries and reads only the files named since its last build. `all`: the
+ * watch could not say (or nothing is known yet), so the next build reads every folder.
+ */
+const tracker = { active: 0, all: true, dirty: new Set<string>(), files: null as string[] | null, sweptAt: 0, chain: Promise.resolve() as Promise<unknown> };
+
+/** Start tracking (the feed's watch starts it with itself); returns the note sink and its stop. */
+export function trackSessionFiles(): { note: (path: string | null) => void; stop: () => void } {
+  tracker.active++;
+  let stopped = false;
+  return {
+    note: (path) => {
+      if (stopped) return;
+      if (path === null) tracker.all = true;
+      else tracker.dirty.add(path);
+    },
+    stop: () => {
+      if (stopped) return;
+      stopped = true;
+      if (--tracker.active === 0) {
+        // Untracked time is unseen time: the next tracked build starts from a full read.
+        tracker.all = true;
+        tracker.files = null;
+        tracker.dirty.clear();
+      }
+    },
+  };
+}
+
+/** Builds the tracked listing has run, and how many were full (tests, measurement). */
+export const trackedStats = { builds: 0, full: 0, lastDirty: 0 };
+
+/**
+ * listSessions for the session feed: the same rows (a full build gives the same list), but while a
+ * tracker runs only the files a watch named since the last build are stat'ed and read; every other
+ * file's cached summary stands. A full build runs when nothing is known yet, when the watch could
+ * not say what changed, and at least every SWEEP_MS. Without a tracker it is listSessions. Builds
+ * run one at a time; never shares listSessions' reuse window.
+ */
+export function listSessionsTracked(): Promise<SessionSummary[]> {
+  if (tracker.active === 0) return listSessions();
+  const run = tracker.chain.then(buildTracked, buildTracked);
+  tracker.chain = run.catch(() => undefined);
+  return run.then((rows) => [...rows]);
+}
+
+async function buildTracked(): Promise<SessionSummary[]> {
+  const now = Date.now();
+  trackedStats.builds++;
+  const full = tracker.all || tracker.files === null || now - tracker.sweptAt >= SWEEP_MS || now < tracker.sweptAt;
+  // Taken before any await: what is noted during this build is the next build's.
+  const dirty = tracker.dirty;
+  tracker.dirty = new Set();
+  if (full) {
+    tracker.all = false;
+    tracker.sweptAt = now;
+    trackedStats.full++;
+    try {
+      const b = await buildSessions();
+      if (tracker.active > 0) tracker.files = b.files;
+      return b.rows;
+    } catch (err) {
+      tracker.all = true;
+      throw err;
+    }
+  }
+  trackedStats.lastDirty = dirty.size;
+  try {
+    const files = await trackedFiles(tracker.files!, dirty);
+    const b = await buildSessions({ files, dirty });
+    if (tracker.active > 0 && !tracker.all) tracker.files = b.files;
+    return b.rows;
+  } catch (err) {
+    tracker.all = true;
+    throw err;
+  }
+}
+
+/** The last file set with each named path added (a listable session file now) or dropped (gone,
+    or no longer a plain file). Listed in listSessionFiles' places only: the watch reports only
+    from the folders that lists. */
+async function trackedFiles(prev: readonly string[], dirty: ReadonlySet<string>): Promise<string[]> {
+  if (dirty.size === 0) return [...prev];
+  const present = new Map<string, boolean>();
+  await Promise.all(
+    [...dirty].map(async (p) => {
+      const st = await lstat(p).catch(() => null);
+      present.set(p, !!st && st.isFile() && p.endsWith(".jsonl"));
+    }),
+  );
+  const out = prev.filter((p) => present.get(p) !== false);
+  const had = new Set(prev);
+  for (const [p, there] of present) if (there && !had.has(p)) out.push(p);
+  return out;
+}
+
+/** A clean file's summary (`dirty` names every file that may have changed): the cached one, with
+    no stat; a file with none is read like any other. */
+function summaryOf(path: string, resolveWindow: WindowResolver | undefined, dirty: ReadonlySet<string> | undefined): Promise<BaseSummary | null> {
+  if (dirty && !dirty.has(path)) {
+    const hit = cache.get(path);
+    if (hit) return Promise.resolve(withWindow(hit, resolveWindow));
+  }
+  return summarize(path, resolveWindow);
+}
+
+/** The husk check (isZeroInput) from the summary cache when it holds this file, else from the file. */
+async function zeroInputOf(path: string): Promise<boolean> {
+  const hit = cache.get(path);
+  if (hit) return hit.zeroInput;
+  const st = await stat(path).catch(() => null);
+  return !!st && (await isZeroInput(path, st.size));
+}
+
+/** Every row. `track`: the file set to list and the files that may have changed since the cached
+    summaries were read (only those are stat'ed and read); without it every folder is read and
+    every file stat'ed. Returns the rows and the file set they came from. */
+async function buildSessions(track?: { files: string[]; dirty: ReadonlySet<string> }): Promise<{ rows: SessionSummary[]; files: string[] }> {
+  const files = track ? track.files : await listSessionFiles();
   const live = readLive();
   const own = readOwnLiveRecords();
   const resolveWindow = await windowResolver();
@@ -984,8 +1122,8 @@ async function buildSessions(): Promise<SessionSummary[]> {
   // Archive cleanup prunes, and only the ids it deleted itself (cleanupSessions, below). The
   // batch prompt already answers a gone member with its own "missing" refusal code.
   const [results, workers] = await Promise.all([
-    Promise.all(files.map((f) => summarize(f, resolveWindow))),
-    workerSessionPaths(files),
+    Promise.all(files.map((f) => summaryOf(f, resolveWindow, track?.dirty))),
+    workerSessionPaths(files, track?.dirty),
   ]);
   const present = new Set(files);
   for (const k of cache.keys()) if (!present.has(k)) cache.delete(k);
@@ -1005,8 +1143,7 @@ async function buildSessions(): Promise<SessionSummary[]> {
     // waiting for its first link) needs them before anyone has written in it.
     const special = fields(s.path, s.id, s.cwd);
     if (s.title === "Untitled") {
-      const st2 = await stat(s.path).catch(() => null);
-      if (st2 && (await isZeroInput(s.path, st2.size))) {
+      if (await zeroInputOf(s.path)) {
         // A husk waiting on a dialog (a command run in a new session) is waiting on the user: listed.
         // So is one that carries a profile: a One at a time profile counts from its pick, so the
         // session holding it must be somewhere the user can find it (§chat.profiles/singleton).
@@ -1042,7 +1179,7 @@ async function buildSessions(): Promise<SessionSummary[]> {
   pruneReadiness(out);
   for (let i = 0; i < out.length; i++) out[i] = await withUnreadReplies(out[i]!);
   out.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
-  return out;
+  return { rows: out, files };
 }
 
 /**

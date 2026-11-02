@@ -218,10 +218,11 @@ export class WorkerSessions {
    * drop entries for files no longer listed, then union self-marked files with the resolved
    * durable and live refs. Recomputed on every call; nothing is baked in.
    */
-  async refresh(files: string[]): Promise<Set<string>> {
+  async refresh(files: string[], changed?: ReadonlySet<string>): Promise<Set<string>> {
     const listed = new Set(files);
     for (const k of this.entries.keys()) if (!listed.has(k)) this.entries.delete(k);
-    await Promise.all(files.map((f) => this.scan(f)));
+    // With `changed`, a file already scanned and not named in it is unchanged: no stat.
+    await Promise.all(files.map((f) => (!changed || changed.has(f) || !this.entries.has(f) ? this.scan(f) : undefined)));
     return this.flagged(listed);
   }
 

@@ -340,6 +340,9 @@ export class ProjectQueue {
         open.reason = "approved again";
         open.updatedAt = this.iso();
       }
+      // Nothing in line and nothing running: a move of the target from outside since is simply taken (there is no run
+      // to void); from here on, a move is flagged.
+      if (!this.current && !this.q.entries.some((x) => x.state === "queued" || x.state === "checking")) this.q.knownTarget = head;
       const e: Entry = {
         id: newId("mq"),
         project: this.id,

@@ -51,6 +51,8 @@ export interface VerbParam {
   };
   /** On the command line: its flag and description, and its default for a deploy verb. Absent: not there. */
   cli?: { flag: string; description: string; deployDefault?: string };
+  /** Only the merge verbs take it: on the merge thread's tool, never the generic project tools. */
+  mergeOnly?: true;
 }
 
 export const VERB_PARAMS: readonly VerbParam[] = [
@@ -85,21 +87,21 @@ export const VERB_PARAMS: readonly VerbParam[] = [
     cli: { flag: "why", description: "Why" },
   },
   // The merge verbs' own keys (shared/merge-queue.ts). On no generic tool: the merge thread's tool lists them.
-  { wire: "entry", type: "string", tool: { name: "entry", description: "merge.*: a queue entry, by its id (mq_…; merge.status lists them)." }, cli: { flag: "entry", description: "A merge queue entry id" } },
-  { wire: "run", type: "string", tool: { name: "run", description: "merge.logs/merge.review: a run, by its id (mr_…)." }, cli: { flag: "run", description: "A merge run id" } },
-  { wire: "step", type: "string", tool: { name: "step", description: "merge.logs: one step of the run, by its id (default every step's tail)." }, cli: { flag: "step", description: "A run step id" } },
-  { wire: "note", type: "string", tool: { name: "note", description: "merge.note (and every merge verb the merge thread calls): the entry's note, short free text shown on its row (at most 300 characters; empty clears it)." }, cli: { flag: "note", description: "A note on the entry" } },
-  { wire: "withoutSpecs", type: "boolean", cli: { flag: "without-specs", description: "Land without its spec drafts" } },
-  { wire: "withoutReview", type: "boolean", cli: { flag: "without-review", description: "Land without the review step" } },
-  { wire: "chat", type: "string", cli: { flag: "chat", description: "The chat the approval was given in" } },
-  { wire: "checks", type: "list", tool: { name: "checks", description: "merge.extend: check ids from the project's merge section to add to this entry's run (never removes one)." }, cli: { flag: "checks", description: "Check ids, comma-separated" } },
-  { wire: "verdict", type: "string", tool: { name: "verdict", description: "merge.resolve: no-behaviour-change | behaviour-differs; merge.review: ok | notes | blocking." }, cli: { flag: "verdict", description: "A verdict" } },
-  { wire: "files", type: "list", tool: { name: "files", description: "merge.resolve: the conflicted files the judgement covers." }, cli: { flag: "files", description: "Files, comma-separated" } },
-  { wire: "ours", type: "string", tool: { name: "ours", description: "merge.resolve: what the target's side does, in plain words." }, cli: { flag: "ours", description: "The target's side, in plain words" } },
-  { wire: "theirs", type: "string", tool: { name: "theirs", description: "merge.resolve: what the branch's side does, in plain words." }, cli: { flag: "theirs", description: "The branch's side, in plain words" } },
-  { wire: "proposal", type: "string", tool: { name: "proposal", description: "merge.resolve: what the resolution does, in plain words." }, cli: { flag: "proposal", description: "The proposed resolution, in plain words" } },
-  { wire: "answer", type: "string", cli: { flag: "answer", description: "accept | send-back | land-anyway" } },
-  { wire: "text", type: "string", tool: { name: "text", description: "merge.review: the reviewer's notes, short." }, cli: { flag: "text", description: "Text" } },
+  { wire: "entry", type: "string", mergeOnly: true, tool: { name: "entry", description: "merge.*: a queue entry, by its id (mq_…; merge.status lists them)." }, cli: { flag: "entry", description: "A merge queue entry id" } },
+  { wire: "run", type: "string", mergeOnly: true, tool: { name: "run", description: "merge.logs/merge.review: a run, by its id (mr_…)." }, cli: { flag: "run", description: "A merge run id" } },
+  { wire: "step", type: "string", mergeOnly: true, tool: { name: "step", description: "merge.logs: one step of the run, by its id (default every step's tail)." }, cli: { flag: "step", description: "A run step id" } },
+  { wire: "note", type: "string", mergeOnly: true, tool: { name: "note", description: "merge.note (and every merge verb the merge thread calls): the entry's note, short free text shown on its row (at most 300 characters; empty clears it)." }, cli: { flag: "note", description: "A note on the entry" } },
+  { wire: "withoutSpecs", type: "boolean", mergeOnly: true, cli: { flag: "without-specs", description: "Land without its spec drafts" } },
+  { wire: "withoutReview", type: "boolean", mergeOnly: true, cli: { flag: "without-review", description: "Land without the review step" } },
+  { wire: "chat", type: "string", mergeOnly: true, cli: { flag: "chat", description: "The chat the approval was given in" } },
+  { wire: "checks", type: "list", mergeOnly: true, tool: { name: "checks", description: "merge.extend: check ids from the project's merge section to add to this entry's run (never removes one)." }, cli: { flag: "checks", description: "Check ids, comma-separated" } },
+  { wire: "verdict", type: "string", mergeOnly: true, tool: { name: "verdict", description: "merge.resolve: no-behaviour-change | behaviour-differs; merge.review: ok | notes | blocking." }, cli: { flag: "verdict", description: "A verdict" } },
+  { wire: "files", type: "list", mergeOnly: true, tool: { name: "files", description: "merge.resolve: the conflicted files the judgement covers." }, cli: { flag: "files", description: "Files, comma-separated" } },
+  { wire: "ours", type: "string", mergeOnly: true, tool: { name: "ours", description: "merge.resolve: what the target's side does, in plain words." }, cli: { flag: "ours", description: "The target's side, in plain words" } },
+  { wire: "theirs", type: "string", mergeOnly: true, tool: { name: "theirs", description: "merge.resolve: what the branch's side does, in plain words." }, cli: { flag: "theirs", description: "The branch's side, in plain words" } },
+  { wire: "proposal", type: "string", mergeOnly: true, tool: { name: "proposal", description: "merge.resolve: what the resolution does, in plain words." }, cli: { flag: "proposal", description: "The proposed resolution, in plain words" } },
+  { wire: "answer", type: "string", mergeOnly: true, cli: { flag: "answer", description: "accept | send-back | land-anyway" } },
+  { wire: "text", type: "string", mergeOnly: true, tool: { name: "text", description: "merge.review: the reviewer's notes, short." }, cli: { flag: "text", description: "Text" } },
   { wire: "overrideTests", type: "string", cli: { flag: "override-tests", description: "Why the tests are overridden" } },
   { wire: "overrideDirty", type: "string", cli: { flag: "override-dirty", description: "Why a dirty tree is overridden" } },
   { wire: "confirm", type: "boolean", cli: { flag: "confirm", description: "The operator's confirm" } },

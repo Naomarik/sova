@@ -4,7 +4,7 @@ import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import type { HookCtx, ToolCtx, ToolSpec } from "../../shared/harness";
 import type { ClickChoice } from "../../shared/overseer-card";
-import { DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, VERB_PARAMS, VERBS, type VerbParam, type VerbResult } from "../../shared/project-contract";
+import { DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, MERGE_VERBS, VERB_PARAMS, VERBS, type VerbParam, type VerbResult } from "../../shared/project-contract";
 import { redactingTool, serverRedactor, type Redactor } from "../overseer-redact";
 import { toPiTool } from "../harness/pi/tools";
 import { WORKTREES } from "../harness/state-kinds";
@@ -25,7 +25,22 @@ import { registerInstanceNote, resultNote, sessionNote } from "./note";
 type Tool = ToolSpec;
 
 /** The rows of the contract's param table the tools take, in its order. */
-const TOOL_PARAMS = VERB_PARAMS.filter((p) => p.tool);
+const TOOL_PARAMS = VERB_PARAMS.filter((p) => p.tool && !p.mergeOnly);
+
+/** The merge thread's tool params (the merge verbs and the rows they take, plus project): its own tool, never the
+    generic project tools. */
+export function mergeToolParams() {
+  const rows = VERB_PARAMS.filter((p) => p.tool && (p.mergeOnly || ["project", "lines", "select", "why", "commit"].includes(p.wire)));
+  return {
+    type: "object",
+    properties: {
+      verb: { type: "string", enum: [...MERGE_VERBS], description: "The merge verb." },
+      ...Object.fromEntries(rows.map((p) => [p.tool!.name, toolSchema(p, false)])),
+    },
+    required: ["verb"],
+    additionalProperties: false,
+  };
+}
 
 /** A tool's JSON schema for one row of the contract's param table. */
 function toolSchema(p: VerbParam, overseer: boolean): Record<string, unknown> {

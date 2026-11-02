@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { NO_BACKGROUND_CLEANUP, noBackgroundCleanupEnv } from "../git-no-background";
 import { type Git, isAncestor, revParse, worktreesOf } from "./guard";
 
 /**
@@ -53,7 +54,7 @@ export async function landTip(git: Git, root: string, target: string, from: stri
   if (!(await isAncestor(git, root, from, to))) return { kind: "moved", head: from };
   const co = await checkoutOf(git, root, target);
   if (co) {
-    const r = await git(["merge", "--ff-only", "--no-edit", to], co);
+    const r = await git([...NO_BACKGROUND_CLEANUP, "merge", "--ff-only", "--no-edit", to], co);
     if (r.code !== 0) {
       const head = await revParse(git, root, `refs/heads/${target}`);
       if (head === to) return { kind: "landed" };
@@ -112,7 +113,7 @@ export async function pushTip(
     const foreign = between.filter((c) => !opts.landed.has(c));
     if (foreign.length) return { state: "not-pushed", why: `${target} has ${foreign.length} commit${foreign.length === 1 ? "" : "s"} the queue didn't land (${foreign[0]!.slice(0, 7)}${foreign.length > 1 ? ", …" : ""}): a release or a hand commit is pushed by its own owner`, remote };
   }
-  const r = await git(["push", "--porcelain", "origin", `${tip}:refs/heads/${target}`], root, { timeoutMs: 180_000 });
+  const r = await git(["push", "--porcelain", "origin", `${tip}:refs/heads/${target}`], root, { timeoutMs: 180_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...noBackgroundCleanupEnv() } });
   if (r.code !== 0) return { state: "not-pushed", why: `origin refused the push: ${(r.stderr || r.stdout).trim().split("\n").filter((l) => !l.startsWith("To ")).slice(0, 2).join(" ")}`, ...(remote ? { remote } : {}) };
   return { state: "pushed", sha: tip };
 }

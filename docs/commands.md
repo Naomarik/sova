@@ -15,7 +15,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | --- | ---: |
 | Routes registered | 497 |
 | Routes a catalogue entry points at | 126 |
-| Catalogue entries | 157 |
+| Catalogue entries | 169 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -29,7 +29,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Middleware and fallbacks | 2 |
 | Pending (not yet a command) | 304 |
 | Chat socket frame types | 12 |
-| Document/window keydown listeners | 8 |
+| Document/window keydown listeners | 9 |
 | Hand-written tool specs | 128 |
 
 ## Catalogue entries
@@ -94,6 +94,18 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.verb.deploy.logs` | Project deploy.logs | looks | `POST /api/project-services/deploy.logs` | admin |
 | `project.verb.deploy.rollback` | Project deploy.rollback | changes | `POST /api/project-services/deploy.rollback` | admin |
 | `project.verb.deploy.request` | Project deploy.request | changes | `POST /api/project-services/deploy.request` | admin |
+| `project.verb.merge.status` | Project merge.status | looks | `POST /api/project-services/merge.status` | admin |
+| `project.verb.merge.logs` | Project merge.logs | looks | `POST /api/project-services/merge.logs` | admin |
+| `project.verb.merge.add` | Project merge.add | changes | `POST /api/project-services/merge.add` | admin |
+| `project.verb.merge.cancel` | Project merge.cancel | changes | `POST /api/project-services/merge.cancel` | admin |
+| `project.verb.merge.pause` | Project merge.pause | changes | `POST /api/project-services/merge.pause` | admin |
+| `project.verb.merge.resume` | Project merge.resume | changes | `POST /api/project-services/merge.resume` | admin |
+| `project.verb.merge.note` | Project merge.note | changes | `POST /api/project-services/merge.note` | admin |
+| `project.verb.merge.extend` | Project merge.extend | changes | `POST /api/project-services/merge.extend` | admin |
+| `project.verb.merge.resolve` | Project merge.resolve | changes | `POST /api/project-services/merge.resolve` | admin |
+| `project.verb.merge.answer` | Project merge.answer | changes | `POST /api/project-services/merge.answer` | admin |
+| `project.verb.merge.review` | Project merge.review | changes | `POST /api/project-services/merge.review` | admin |
+| `project.verb.merge.retry` | Project merge.retry | changes | `POST /api/project-services/merge.retry` | admin |
 | `project.services.view` | Show Project Services | looks | `GET /api/projects/:pid/services` | sessions |
 | `project.overseer.idea.list` | List Project Ideas | looks | `GET /api/projects/:pid/overseer/ideas` | sessions |
 | `project.overseer.idea.get` | Show Project Idea | looks | `GET /api/projects/:pid/overseer/idea` | sessions |
@@ -692,7 +704,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `DELETE /api/overseer/todos/done` | admin | `overseer.todo.clear-done` |
 | `PUT /api/overseer/todos/order` | admin | `overseer.todo.reorder` |
 | `POST /api/previews/:id/off` | admin | `project.preview.off` |
-| `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
+| `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.merge.add`, `project.verb.merge.answer`, `project.verb.merge.cancel`, `project.verb.merge.extend`, `project.verb.merge.logs`, `project.verb.merge.note`, `project.verb.merge.pause`, `project.verb.merge.resolve`, `project.verb.merge.resume`, `project.verb.merge.retry`, `project.verb.merge.review`, `project.verb.merge.status`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
 | `GET /api/projects` | sessions | `project.list` |
 | `POST /api/projects` | admin | `project.create` |
 | `GET /api/projects/:pid` | sessions | `project.get` |
@@ -799,6 +811,7 @@ The `type` of every `ChatClientMessage` (`shared/protocol.ts`), the frames a pag
 | `src/components/InsightStrip.tsx` | document |
 | `src/components/Sidebar.tsx` | global |
 | `src/components/VoiceInput.tsx` | window |
+| `src/components/WorktreesModal.tsx` | document |
 | `src/vis/kinds/frame/srcdoc.ts` | global |
 
 ## Hand-written tool specs

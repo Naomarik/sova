@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { buildRequest, COMMANDS, wireKey } from "../shared/commands-catalog";
-import { DEPLOY_VERBS, ordered, VERB_FLAGS, VERB_PARAMS, type Verb } from "../shared/project-contract";
+import { DEPLOY_VERBS, MERGE_VERBS, ordered, VERB_FLAGS, VERB_PARAMS, type Verb } from "../shared/project-contract";
 import { stateView } from "./harness/state-view";
 import type { ProjectEngine } from "./project-services/engine";
 import { projectVerbsTool } from "./project-services/tools";
@@ -41,7 +41,7 @@ const verbEntries = COMMANDS.filter((c) => c.id.startsWith("project.verb."));
 
 describe("one table for a verb's params", () => {
   test("the tools' params are the table's rows that have a tool name, in its order, with its descriptions", () => {
-    const rows = VERB_PARAMS.filter((p) => p.tool);
+    const rows = VERB_PARAMS.filter((p) => p.tool && !p.mergeOnly);
     for (const [which, t] of Object.entries(tools())) {
       const props = (t.parameters as unknown as Schema).properties;
       assert.deepEqual(Object.keys(props), ["verb", ...rows.map((p) => p.tool!.name)], which);
@@ -56,7 +56,8 @@ describe("one table for a verb's params", () => {
     assert.equal(verbEntries.length > 0, true);
     for (const e of verbEntries) {
       const deploy = (DEPLOY_VERBS as readonly string[]).includes(e.id.slice("project.verb.".length));
-      assert.deepEqual(Object.keys(e.params), [...(deploy ? VERB_FLAGS.deploy : VERB_FLAGS.instance)], e.id);
+      const merge = (MERGE_VERBS as readonly string[]).includes(e.id.slice("project.verb.".length));
+      assert.deepEqual(Object.keys(e.params), [...(deploy ? VERB_FLAGS.deploy : merge ? VERB_FLAGS.merge : VERB_FLAGS.instance)], e.id);
       for (const [flag, p] of Object.entries(e.params)) {
         const row = VERB_PARAMS.find((r) => r.cli?.flag === flag)!;
         assert.equal(wireKey(flag, p), row.wire, `${e.id} --${flag}`);
@@ -73,8 +74,8 @@ describe("one table for a verb's params", () => {
     assert.equal(new Set(names).size, names.length);
     assert.equal(new Set(VERB_PARAMS.map((p) => p.wire)).size, VERB_PARAMS.length);
     for (const p of VERB_PARAMS) assert.ok(p.tool || p.cli, p.wire);
-    for (const f of [...VERB_FLAGS.instance, ...VERB_FLAGS.deploy]) assert.ok(flags.includes(f), `--${f} has no row`);
-    for (const f of flags) assert.ok(VERB_FLAGS.instance.includes(f) || VERB_FLAGS.deploy.includes(f), `--${f} is on no kind of verb`);
+    for (const f of [...VERB_FLAGS.instance, ...VERB_FLAGS.deploy, ...VERB_FLAGS.merge]) assert.ok(flags.includes(f), `--${f} has no row`);
+    for (const f of flags) assert.ok(VERB_FLAGS.instance.includes(f) || VERB_FLAGS.deploy.includes(f) || VERB_FLAGS.merge.includes(f), `--${f} is on no kind of verb`);
   });
 
   test("the operator's own params never reach the agents' tools: no tool row for confirm, the overrides, dismiss or slot", () => {
@@ -91,7 +92,7 @@ describe("one table for a verb's params", () => {
     const bodies: Record<string, unknown>[] = [];
     const { session } = tools(bodies);
     const ctx = { sessionId: "s", cwd: "/", leafId: () => null, state: () => stateView([]) } as never;
-    for (const p of VERB_PARAMS.filter((r) => r.tool)) {
+    for (const p of VERB_PARAMS.filter((r) => r.tool && !r.mergeOnly)) {
       const v = sample(p.type, p.wire);
       await session.execute("t", { verb: "status", [p.tool!.name]: v }, undefined, undefined, ctx);
       const sent = bodies.at(-1)!;
@@ -104,8 +105,9 @@ describe("one table for a verb's params", () => {
   });
 
   test("the catalogue's verb params are the bytes they were before the table", () => {
-    // sha256 of JSON.stringify(the project.verb.* entries) as shared/commands/projects.ts built them at 0ed11922.
-    const now = createHash("sha256").update(JSON.stringify(verbEntries)).digest("hex");
+    // sha256 of JSON.stringify(the project.verb.* entries) as shared/commands/projects.ts built them at 0ed11922
+    // (the merge verbs came later, with their own flags).
+    const now = createHash("sha256").update(JSON.stringify(verbEntries.filter((e) => !e.id.startsWith("project.verb.merge.")))).digest("hex");
     assert.equal(now, "952f705d0bd6cb3d1f3512b977f7c0cb111765ad00293609291c051c923a21b5");
   });
 

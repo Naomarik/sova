@@ -201,3 +201,43 @@ test("a seen-only change (the server drops the seen signal) is a rows frame, and
   assert.equal(rowNeedsYou(a1, { selected: null, busy: false }), null);
   h.feed.stop();
 });
+
+test("a list handed out by identity (unchanged rows, the same objects) costs no stringify in a re-diff; a fresh equal object still compares by value", async () => {
+  const sig: SessionSummary["signals"] = { at: 100, turnId: "t1", provider: "jev", kinds: ["unverified"] };
+  const kept = [row("a", { signals: sig }), row("b", { tags: { topic: "x" } }), row("c")];
+  let list = kept;
+  const feed = new SessionFeed({ list: async () => [...list], intervalMs: 60_000, debounceMs: 0, minGapMs: 0 });
+  const old: SessionFeedMessage[] = [];
+  const rows: SessionFeedMessage[] = [];
+  feed.add((m) => old.push(m));
+  feed.add((m) => rows.push(m), { rows: true });
+  await feed.idle();
+  const settle = async () => {
+    feed.nudge(0);
+    await new Promise((r) => setTimeout(r, 5));
+    await feed.idle();
+  };
+  await settle(); // every row's key, signature and marks are cached now
+  const real = JSON.stringify;
+  let calls = 0;
+  JSON.stringify = ((...a: Parameters<typeof JSON.stringify>) => (calls++, real(...a))) as typeof JSON.stringify;
+  const diffs = feed.diffs;
+  try {
+    await settle();
+  } finally {
+    JSON.stringify = real;
+  }
+  assert.equal(feed.diffs, diffs + 1, "the re-diff ran");
+  assert.equal(calls, 0, "same objects: nothing stringified");
+  // Fresh objects equal by value: no frame of any kind (compared by value, not identity).
+  const before = [old.length, rows.length];
+  list = kept.map(clone);
+  await settle();
+  assert.deepEqual([old.length, rows.length], before);
+  // A fresh object that differs: a frame, as always.
+  list = [clone(kept[0]!), clone(kept[1]!), row("c", { title: "renamed" })];
+  await settle();
+  assert.equal(rows.at(-1)?.type, "rows");
+  assert.equal(old.at(-1)?.type, "list_changed");
+  feed.stop();
+});

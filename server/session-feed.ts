@@ -54,8 +54,21 @@ export function diffRows(prev: ReadonlyMap<string, SessionSummary>, list: readon
 const newEpoch = () => randomBytes(6).toString("base64url");
 const FIELDS = ["signals", "workerSignals", "tags", "turnError"] as const;
 
-/** A row's overlays, or null when it has none. */
+const marksMemo = new WeakMap<SessionSummary, SessionMarks | null>();
+const signatureMemo = new WeakMap<SessionSummary, string>();
+
+/** A row's overlays, or null when it has none. The same object for the same row object (a row
+    the listing kept by identity costs nothing to compare again). */
 export function marksOf(s: SessionSummary): SessionMarks | null {
+  let m = marksMemo.get(s);
+  if (m === undefined) {
+    m = computeMarks(s);
+    marksMemo.set(s, m);
+  }
+  return m;
+}
+
+function computeMarks(s: SessionSummary): SessionMarks | null {
   const m: SessionMarks = { id: s.id, path: s.path };
   let any = false;
   for (const f of FIELDS) {
@@ -80,6 +93,8 @@ export function diffMarks(prev: ReadonlyMap<string, SessionMarks>, list: readonl
   const changes: SessionMarks[] = [];
   for (const [id, now] of next) {
     const before = prev.get(id);
+    // The same marks object: the same row object, so nothing to compare.
+    if (before === now) continue;
     const delta: SessionMarks = { id, path: now.path };
     let changed = false;
     for (const f of FIELDS) {
@@ -113,6 +128,15 @@ export function diffMarks(prev: ReadonlyMap<string, SessionMarks>, list: readonl
  * client re-reads the list); a session a TUI just created is a new path here.
  */
 export function rowSignature(s: SessionSummary): string {
+  let sig = signatureMemo.get(s);
+  if (sig === undefined) {
+    sig = computeSignature(s);
+    signatureMemo.set(s, sig);
+  }
+  return sig;
+}
+
+function computeSignature(s: SessionSummary): string {
   return JSON.stringify([s.live?.pid ?? null, s.live?.status ?? null, s.busy, s.activity?.state ?? null, s.lastActiveAt, s.archived, s.baton ?? null, s.org ?? null, s.title, s.readiness ?? null, s.groupId ?? null]);
 }
 

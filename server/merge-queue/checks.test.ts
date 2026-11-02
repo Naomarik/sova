@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseDefinition, type ProjectDef } from "../../shared/project-contract";
 import { scratchRoot } from "../test-scratch";
-import { checksOf, envOf, failingFilesIn, planChecks, readCheckOut, templateVarsOf } from "./checks";
+import { checksOf, envOf, failingFilesIn, planChecks, readCheckOut, templateVarsOf, testKey } from "./checks";
 
 const svc = { web: { cmd: ["node", "web.js"], ports: { http: { base: 5100 } } } };
 const def = (extra: Record<string, unknown>): ProjectDef => parseDefinition(JSON.stringify({ version: 1, services: svc, ...extra }));
@@ -105,9 +105,20 @@ describe("what a run checks", () => {
     // Names beyond the 50 failures kept for display are still every one (attribution follows them by name).
     writeFileSync(f, JSON.stringify({ failed: 60, failures: Array.from({ length: 60 }, (_, i) => ({ name: `t${i % 55}` })) }));
     expect(readCheckOut(f)!.failingNames.length).toBe(55);
+    // Kaocha's lines: one test, whatever line or verdict word, is one name.
+    writeFileSync(f, JSON.stringify({ failed: 3, failures: [{ name: "FAIL in (app.access-test/account-sign-in) (access_test.clj:74)" }, { name: "FAIL in (app.access-test/account-sign-in) (access_test.clj:75)" }, { name: "ERROR in (app.onboarding-test/practice-garage) (onboarding_test.clj:168)" }] }));
+    expect(readCheckOut(f)!.failingNames).toEqual(["app.access-test/account-sign-in", "app.onboarding-test/practice-garage"]);
     writeFileSync(f, "not json");
     expect(readCheckOut(f)).toBeNull();
     expect(readCheckOut(join(dir, "missing.json"))).toBeNull();
+  });
+
+  test("testKey: the test, without its verdict word or location", () => {
+    expect(testKey("FAIL in (a.b-test/c) (b_test.clj:12)")).toBe("a.b-test/c");
+    expect(testKey("ERROR in (a.b-test/c) (b_test.clj:3:4)")).toBe("a.b-test/c");
+    expect(testKey("src/x.test.ts:41")).toBe("src/x.test.ts");
+    expect(testKey("not ok 3 - adds numbers")).toBe("adds numbers");
+    expect(testKey("plain name")).toBe("plain name");
   });
 
   test("failing files from a runner's own output, relative only", () => {

@@ -164,9 +164,24 @@ export interface CheckReport {
   failures: { name?: string; file?: string; message?: string }[];
   /** Every failing test file, when the runner names them (uncapped). */
   failingFiles: string[];
-  /** Every failing test's name (uncapped, unique), for a runner that names tests but no file (Kaocha). */
+  /** Every failing test's name (uncapped, unique, as testKey reads it), for a runner that names tests but no file
+   *  (Kaocha). */
   failingNames: string[];
   notes: string[];
+}
+
+/**
+ * A failing test's name as compared across runs: the runner's verdict word and the file:line it points at dropped, so
+ * the same test failing on the merge and on the target reads as one even when the branch moved its lines, and two
+ * assertions of one test are one failure. "FAIL in (app.access-test/account-sign-in) (access_test.clj:74)" (Kaocha)
+ * → "app.access-test/account-sign-in".
+ */
+export function testKey(name: string): string {
+  let s = name.trim().replace(/^(?:FAIL(?:ED)?|ERROR|not ok \d+)\s*(?:in\b|-)?\s*/i, "");
+  // A trailing location: " (file.ext:12)", " (file.ext:12:3)", or ":12" / ":12:3" glued to the name.
+  s = s.replace(/\s*\([^()]*:\d+(?::\d+)?\)\s*$/, "").replace(/:\d+(?::\d+)?$/, "").trim();
+  const wrapped = /^\(([^()]+)\)$/.exec(s);
+  return (wrapped ? wrapped[1]!.trim() : s) || name.trim();
 }
 
 /** SOVA_OUT as a check wrote it; null when it wrote nothing readable. Lenient: a runner writes what it can. */
@@ -190,7 +205,7 @@ export function readCheckOut(file: string): CheckReport | null {
   }
   const listed = Array.isArray(o.failingFiles) ? o.failingFiles.filter((f): f is string => typeof f === "string" && !!f) : [];
   const failingFiles = [...new Set(listed.length ? listed : failures.flatMap((f) => (f.file ? [f.file] : [])))];
-  const failingNames = [...new Set((Array.isArray(o.failures) ? o.failures : []).flatMap((f) => (f && typeof f === "object" && typeof (f as Record<string, unknown>).name === "string" && (f as Record<string, unknown>).name ? [String((f as Record<string, unknown>).name).slice(0, 500)] : [])))];
+  const failingNames = [...new Set((Array.isArray(o.failures) ? o.failures : []).flatMap((f) => (f && typeof f === "object" && typeof (f as Record<string, unknown>).name === "string" && (f as Record<string, unknown>).name ? [testKey(String((f as Record<string, unknown>).name).slice(0, 500))] : [])).filter(Boolean))];
   const skippedWhy = typeof o.skipped === "string" && o.skipped ? o.skipped.slice(0, 300) : undefined;
   return {
     passed: n(o.passed),

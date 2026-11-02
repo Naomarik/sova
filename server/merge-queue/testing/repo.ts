@@ -130,8 +130,11 @@ for (const f of files) {
   const forbid = c.startsWith("forbid ") && c.split(/\\s+/).slice(1).every((w) => conf("src/list.txt", "").split("\\n").includes(w));
   const bad = forbid || c === "fail" || (c === "flaky" && once("flaky:" + f + ":" + head));
   // unit.names-only at the root: failures carry a name and no file (as Kaocha's runner reports them: motorsaif).
-  const named = existsSync("unit.names-only") ? {} : { file: f };
-  if (bad) { failures.push({ ...named, name: f.replace(/^tests\\//, ""), message: "expected pass, got " + c }); console.log("not ok " + f); }
+  const named = existsSync("unit.names-only") || existsSync("unit.kaocha") ? {} : { file: f };
+  // unit.kaocha: Kaocha's own line, "FAIL in (<ns>/<test>) (<file>:<line>)", the line being the file's line count.
+  const base = f.replace(/^tests\\//, "");
+  const name = existsSync("unit.kaocha") ? "FAIL in (app.unit-test/" + base.replace(/\\.txt$/, "") + ") (unit_test.clj:" + readFileSync(f, "utf8").split("\\n").length + ")" : base;
+  if (bad) { failures.push({ ...named, name, message: "expected pass, got " + c }); console.log("not ok " + f); }
   else { passed++; console.log("ok " + f); }
 }
 out({ passed, failed: failures.length, errors: 0, skipped: 0, failures });

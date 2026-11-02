@@ -172,6 +172,22 @@ describe("a merge run", () => {
     expect(r2.out.notes.find((n) => n.kind === "master-red")!.text).toContain("a.txt");
   });
 
+  test("D14, Kaocha's names: the target red on test A, the branch breaks B: the branch's, naming B; breaking only A (its lines moved): noted, lands", async () => {
+    const fx = fixture({ files: { "unit.kaocha": "1\n", "tests/a.txt": "fail\n", "tests/b.txt": "ok\n" } });
+    const br = fx.branch("breaks-b", { "tests/b.txt": "fail\n" });
+    const r = await run(fx, br);
+    expect(r.out).toMatchObject({ verdict: "failed", blame: "branch" });
+    expect(r.out.why).toContain("app.unit-test/b");
+    expect(r.out.why).not.toContain("app.unit-test/a");
+    expect(r.out.why).not.toContain("unit_test.clj");
+    expect(r.out.notes.find((n) => n.kind === "master-red")!.text).toContain("app.unit-test/a");
+    // The control: the branch touches only A (still failing, at another line): the same test, master's; it lands.
+    const fx2 = fixture({ files: { "unit.kaocha": "1\n", "tests/a.txt": "fail\n", "tests/b.txt": "ok\n" } });
+    const r2 = await run(fx2, fx2.branch("moves-a", { "tests/a.txt": "fail\n\n\n" }));
+    expect(r2.out.verdict).toBe("passed");
+    expect(r2.out.notes.find((n) => n.kind === "master-red")!.text).toContain("app.unit-test/a");
+  });
+
   test("setup broken on the target too: machine, nobody blamed; broken only by the branch: the branch's, with the setup log", async () => {
     const fx = fixture({ files: { "setup.conf": "broken\n" } });
     const br = fx.branch("innocent", { "src/app.txt": "x\n" });

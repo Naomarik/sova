@@ -57,7 +57,7 @@
       {"id": "build", "label": "Build", "run": ["pnpm", "run", "build"], "timeout": 900},
       {"id": "spec", "label": "Spec check", "run": ["node", "scripts/merge-checks/spec.mjs"], "timeout": 300},
       {"id": "leak-scan", "label": "Leak scan", "run": ["node", "scripts/merge-checks/leak-scan.mjs"], "timeout": 300},
-      {"id": "tour", "label": "Tours", "run": ["node", "scripts/nice.mjs", "node", "scripts/run-tests.mjs", "--integration"], "rerun": true, "timeout": 1800, "optional": true},
+      {"id": "e2e", "label": "Walkthroughs", "run": ["node", "scripts/merge-checks/e2e.mjs"], "rerun": true, "timeout": 1800, "optional": true},
       {"id": "integration-group", "label": "Slow test group", "run": ["node", "scripts/nice.mjs", "node", "scripts/run-tests.mjs", "--integration", "--groups"], "rerun": true, "timeout": 1800, "optional": true}
     ],
     "install": {"run": ["pnpm", "install", "--frozen-lockfile", "--offline"], "inputs": ["pnpm-lock.yaml", "pnpm-workspace.yaml", "package.json"], "timeout": 600},

@@ -35,8 +35,8 @@ export interface RunDeps extends ReviewDeps {
   /** Brings up services a check requires, in the copy; returns the slot its ports are numbered by, and how to stop
    *  them. Absent: a check that requires services fails as a machine problem (nothing can start them). */
   services?: (o: { root: string; copy: string; names: string[]; log: (s: string) => void; signal: AbortSignal }) => Promise<{ slot: number; down: () => Promise<void> }>;
-  /** The project's private-names file for the leak scan (keyed per project; Sova's is <state>/merge-round.json).
-   *  Null, or a file that doesn't exist: the scan checks secrets only and notes the push is held. */
+  /** The project's private-names file for the leak scan when the queue gives none (RunInput.namesFile wins). Null,
+   *  or a file that doesn't exist: the scan checks secrets only and notes the push is held. */
   leakNames?: (project: { id: string; root: string }) => string | null;
 }
 
@@ -155,7 +155,9 @@ async function forgetSetup(copy: string): Promise<void> {
 // ---- the run --------------------------------------------------------------------------------------
 
 export function makeRunMerge(deps: RunDeps = {}): RunMerge {
-  return (input, hooks) => runOnce(input, hooks, deps).catch((err): RunOutcome => {
+  // Services a check needs start through the server's project engine unless the caller gives another way.
+  const withServices: RunDeps = { services: lazyEngineServices(), ...deps };
+  return (input, hooks) => runOnce(input, hooks, withServices).catch((err): RunOutcome => {
     // Never a throw: anything unexpected is the machine's, never the branch's.
     return { verdict: "machine", why: `the run stopped: ${err instanceof Error ? err.message : String(err)}`, notes: [], checks: [] };
   });
@@ -183,7 +185,12 @@ export function engineServices(engine: { run: (verb: string, body: unknown, call
   };
 }
 
-/** The default run, wired with no services helper and the default reviewer (review-step.ts). */
+/** engineServices over the server's own engine (server/project-services/routes.ts), loaded on first use. */
+function lazyEngineServices(): NonNullable<RunDeps["services"]> {
+  return async (o) => engineServices((await import("../project-services/routes")).projectEngine())(o);
+}
+
+/** The default run: services through the server's engine, the reviewer the server wires (review-step.ts). */
 export const runMerge: RunMerge = makeRunMerge();
 
 async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise<RunOutcome> {
@@ -251,7 +258,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   // The changed paths the checks read (SOVA_MERGE_CHANGED): the branch's against the target.
   const changed = (await gitProc(copy, ["diff", "--name-only", `${base}...${mergeSha}`])).out.split("\n").filter(Boolean);
   const changedFile = join(input.runDir, "changed.txt");
-  const names = deps.leakNames?.({ id: project.id, root: project.root }) ?? null;
+  const names = input.namesFile ?? deps.leakNames?.({ id: project.id, root: project.root }) ?? null;
   const scope: CopyScope = { project: project.root, projectId: project.id, copy, slot: mergeSlotOf(def), data: join(input.runDir, "data"), target, base, tip: mergeSha, changedFile, ...(names ? { leakNames: names } : {}) };
   mkdirSync(scope.data, { recursive: true });
   writeFileSync(changedFile, `${changed.join("\n")}\n`);

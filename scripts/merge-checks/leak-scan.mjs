@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // Merge check and the check before a push: scans the commits about to be published (diff lines they
 // add, their messages, the names of files they add) for secrets and for the private names listed in
-// `privateNames` of a JSON file: --names <file>, else SOVA_LEAK_NAMES (the merge queue sets the project's own), else
-// `<state root>/merge-round.json` (Sova's). As a merge check (SOVA_VERB=merge), a missing or empty list scans for
-// secrets alone and notes that the push is held; otherwise it fails closed (exit 2).
+// `privateNames` of a JSON file: --names <file>, else SOVA_LEAK_NAMES (the merge queue sets the project's own,
+// <state>/merge-queue/<project>/names.json; Sova's stays <state root>/merge-round.json), else
+// `<state root>/merge-round.json`. As a merge check (SOVA_VERB=merge), a missing file scans for
+// secrets alone and notes that the push is held; otherwise it fails closed (exit 2). An empty list is an answer (no
+// private names): secrets only, nothing held.
 // Node builtins only.
 //
 //   node scripts/merge-checks/leak-scan.mjs [--range <a>..<b>] [--repo <dir>] [--names <file>]
@@ -76,11 +78,9 @@ if (raw) {
   } catch {
     stop(`${settingsFile} isn't valid JSON.`);
   }
-  names = Array.isArray(settings?.privateNames) ? settings.privateNames.filter((x) => typeof x === "string" && x.trim()) : [];
-  if (!names.length) {
-    if (!asCheck) stop(`${settingsFile} lists no privateNames.`);
-    notes.push("private names not set up yet (the list is empty): scanned for secrets only, and the push is held");
-  }
+  // An empty list is an answer (the project has no private names): secrets only, nothing held.
+  if (!Array.isArray(settings?.privateNames)) stop(`${settingsFile} has no privateNames list.`);
+  names = settings.privateNames.filter((x) => typeof x === "string" && x.trim());
 }
 for (const n of notes) console.log(`leak-scan: ${n}.`);
 // Each name's line in the settings file, so a hit can point at it without repeating it.

@@ -321,7 +321,7 @@ describe("a merge run", () => {
     expect(r.steps.get("services")).toMatchObject({ result: "passed" });
     expect(r.log("services")).toMatch(/down .*: stopped/);
     // Without anything that can start services, it's the machine's problem, never the branch's.
-    const r2 = await run(fx, fx.branch("svc2", { "src/app.txt": "svc2\n" }));
+    const r2 = await run(fx, fx.branch("svc2", { "src/app.txt": "svc2\n" }), { deps: { services: undefined } });
     expect(r2.out).toMatchObject({ verdict: "machine" });
     expect(r2.out.why).toMatch(/need svc running/);
   });

@@ -41,6 +41,7 @@ describe("merge checks", () => {
       ["statecharts", /no change to the statecharts/],
       ["spec", /no \.sova\/spec in this tree/],
       ["leak-scan", /no origin\/master: nothing would be published/],
+      ["e2e", /no walkthrough selected/],
     ];
     for (const [name, why] of cases) {
       const r = runCheck(name, tree, root, ["server/x.ts"], base);
@@ -49,6 +50,19 @@ describe("merge checks", () => {
       expect(r.report?.failed).toBe(0);
       expect(String(r.report?.skipped)).toMatch(why);
     }
+  });
+
+  test("e2e runs only walkthroughs under scripts/e2e of this tree: anything else selected fails, nothing built", () => {
+    const { root, tree, base } = repo();
+    const list = join(root, "c.txt");
+    writeFileSync(list, "a.txt");
+    const out = join(root, "e2e-out.json");
+    const r = spawnSync(process.execPath, [script("e2e"), "../evil.mjs", "scripts/e2e/missing.mjs"], { cwd: tree, encoding: "utf8", env: { ...process.env, SOVA_MERGE_BASE: base, SOVA_MERGE_CHANGED: list, SOVA_OUT: out } });
+    expect(r.status).toBe(1);
+    expect(r.stdout).not.toContain("pnpm run build");
+    const rep = JSON.parse(readFileSync(out, "utf8"));
+    expect(rep.failed).toBe(2);
+    expect(rep.failures.map((f: { name: string }) => f.name)).toEqual(["../evil.mjs", "scripts/e2e/missing.mjs"]);
   });
 
   test("a triggered check whose tree lacks its runner skips, naming what is missing", () => {
@@ -109,6 +123,12 @@ describe("merge checks", () => {
     const asCheck = runCheck("leak-scan", tree, root, ["c.txt"], base, { SOVA_LEAK_NAMES: join(root, "missing.json"), SOVA_VERB: "merge" });
     expect(asCheck.code).toBe(0);
     expect(String((asCheck.report?.notes as string[])[0])).toMatch(/private names not set up yet.*push is held/);
+    // An empty list is an answer: the project has no private names; secrets only, nothing held.
+    const emptyNames = join(root, "empty.json");
+    writeFileSync(emptyNames, JSON.stringify({ privateNames: [] }));
+    const empty = runCheck("leak-scan", tree, root, ["c.txt"], base, { SOVA_LEAK_NAMES: emptyNames, SOVA_VERB: "merge" });
+    expect(empty.code).toBe(0);
+    expect(empty.report?.notes).toEqual([]);
     writeFileSync(join(tree, "d.txt"), `key = "sk-${"a".repeat(40)}"\n`);
     git("add", "d.txt");
     git("commit", "-qm", "secret");

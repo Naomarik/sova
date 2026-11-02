@@ -72,6 +72,13 @@ test("a check that takes one selector per run is one pick per selection", () => 
   assert.match(p[0]!.why, /\(server\/tours\/browser\.ts, server\/tours\/checks\.ts\)$/);
 });
 
+test("every check Sova's map picks is declared in .sova/project.json's merge section", () => {
+  const def = JSON.parse(readFileSync(join(REPO, ".sova", "project.json"), "utf8")) as { merge?: { checks?: { id: string; optional?: boolean }[] } };
+  const declared = new Set((def.merge?.checks ?? []).map((c) => c.id));
+  for (const r of SOVA_MAP.rules as { pick: { id: string } }[]) assert.ok(declared.has(r.pick.id), `${r.pick.id} is not a check of .sova/project.json`);
+  for (const id of SOVA_MAP.perSelector as string[]) assert.ok(declared.has(id), id);
+});
+
 test("a map with no rules, or none, picks nothing", () => {
   assert.deepEqual(blastRadius(["statecharts/a"], { rules: [] }).picks, []);
   assert.deepEqual(blastRadius(["statecharts/a"], null).picks, []);

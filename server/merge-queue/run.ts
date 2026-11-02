@@ -442,6 +442,106 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   }
 }
 
+/**
+ * Try It on Main (onboarding): the checks a project is about to declare, run on the target itself, merging nothing.
+ * The copy reset to `base`, setup, then the checks `input.project.def` declares (the user's unsaved answer), each
+ * failure run once more (a pass then is noted flaky). No docs, no review, no attribution: a red here is the project's
+ * own, never a branch's. Outcome: passed (noChecks when "none"), failed with the failing step's label, machine or void.
+ */
+export function makeTryOnMain(deps: RunDeps = {}): RunMerge {
+  const withServices: RunDeps = { services: lazyEngineServices(), ...deps };
+  return (input, hooks) => tryOnce(input, hooks, withServices).catch((err): RunOutcome => ({ verdict: "machine", why: `the try stopped: ${err instanceof Error ? err.message : String(err)}`, notes: [], checks: [] }));
+}
+export const tryOnMain: RunMerge = makeTryOnMain();
+
+async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise<RunOutcome> {
+  const { project, base, signal } = input;
+  const target = project.target;
+  const steps = new Steps(input.runDir, hooks);
+  const notes: MergeNote[] = [];
+  let checksShown: CheckPick[] = [];
+  const out = (o: Omit<RunOutcome, "notes" | "checks">): RunOutcome => ({ ...o, notes, checks: checksShown });
+  const voided = (why: string) => out({ verdict: "void", why });
+  const copy = mergeCopyPath(project.root);
+  const def = project.def;
+  const cs = steps.start("copy", "copy", "Merge copy");
+  try {
+    assertCopyOutsideState(copy, { root: project.root, ...(deps.state ? { state: deps.state } : {}), ...(deps.home ? { home: deps.home } : {}) });
+    hooks.copy?.(copy);
+    cs.log(`copy: ${copy}\nbase: ${base} (${target}), nothing merged\n`);
+    await prepareCopy({ root: project.root, path: copy, base, log: cs.log, signal, ...(deps.state ? { state: deps.state } : {}), ...(deps.home ? { home: deps.home } : {}) });
+  } catch (err) {
+    if (signal.aborted) return (cs.end("failed", { detail: "aborted" }), voided("aborted"));
+    const why = err instanceof Error ? err.message : String(err);
+    cs.end("failed", { detail: why });
+    return out({ verdict: "machine", why: err instanceof CopyRefused ? `refused: ${why}` : `the merge copy couldn't be made ready: ${why}` });
+  }
+  cs.end("passed", { detail: `${copy} at ${short(base)}` });
+  if (!def) return out({ verdict: "machine", why: `${target} has no readable .sova/project.json`, copy });
+  const declared = checksOf(def);
+  if (declared === "unset") return out({ verdict: "machine", why: "no checks given to try", copy });
+  const changedFile = join(input.runDir, "changed.txt");
+  writeFileSync(changedFile, "\n");
+  const names = input.namesFile ?? deps.leakNames?.({ id: project.id, root: project.root }) ?? null;
+  const scope: CopyScope = { project: project.root, projectId: project.id, copy, slot: mergeSlotOf(def), data: join(input.runDir, "data"), target, base, tip: base, changedFile, ...(names ? { leakNames: names } : {}) };
+  mkdirSync(scope.data, { recursive: true });
+  const failed = await runSetup({ def, scope, steps, idPrefix: "setup:", labelPrefix: "Setup: ", kind: "setup", signal });
+  if (signal.aborted) return voided("aborted");
+  if (failed) {
+    if (failed.timedOut) return voided(`setup ${failed.failed.id} timed out`);
+    const again = await runSetup({ def, scope, steps, idPrefix: "rerun-tip:setup:", labelPrefix: "Setup again: ", kind: "rerun-tip", fresh: true, signal });
+    if (signal.aborted) return voided("aborted");
+    if (again) return out({ verdict: "failed", why: `setup (${again.failed.id}) fails on ${target} itself (log: ${again.step.log})`, copy });
+    notes.push({ kind: "flaky", text: `setup (${failed.failed.id}) failed, then passed on a rerun`, at: now() });
+  }
+  const list = planChecks(def, input.picks);
+  checksShown = picksOf(list);
+  hooks.checks(checksShown);
+  if (declared === "none") return out({ verdict: "passed", noChecks: true, copy });
+  let services: { slot: number; down: () => Promise<void> } | null = null;
+  try {
+    const needs = [...new Set(list.flatMap((c) => c.requires))];
+    if (needs.length) {
+      const ss = steps.start("services", "setup", `Start ${needs.join(", ")}`);
+      if (!deps.services) return (ss.end("failed", { detail: "nothing here can start services" }), out({ verdict: "machine", why: `the checks need ${needs.join(", ")} running, and nothing here can start them`, copy }));
+      try {
+        services = await deps.services({ root: project.root, copy, names: needs, log: ss.log, signal });
+        scope.slot = services.slot;
+        ss.end("passed", { detail: `slot ${services.slot}` });
+      } catch (err) {
+        ss.end("failed", { detail: String(err instanceof Error ? err.message : err) });
+        return signal.aborted ? voided("aborted") : out({ verdict: "machine", why: `couldn't start ${needs.join(", ")}: ${err instanceof Error ? err.message : err}`, copy });
+      }
+    }
+    const red: string[] = [];
+    for (const check of list) {
+      const st = steps.start(`check:${check.id}`, "check", check.label, { source: check.source });
+      const r = await runCheck({ def, scope, check, stepId: check.id, logFile: st.file, signal });
+      if (r.proc.aborted || signal.aborted) return (st.end("failed", { detail: "aborted" }), voided("aborted"));
+      if (r.proc.timedOut) return (st.end("failed", { detail: `timed out after ${check.timeoutSec} s` }), out({ verdict: "failed", why: `${check.label} timed out after ${check.timeoutSec} s on ${target} itself`, copy }));
+      if (r.proc.code === 0) {
+        st.end(r.report?.skippedWhy ? "skipped" : "passed", { counts: countsOf(r.report), ...(r.report?.skippedWhy ? { detail: `skipped: ${r.report.skippedWhy}` } : {}) });
+        continue;
+      }
+      st.end("failed", { counts: countsOf(r.report), detail: `exit ${r.proc.code}`, failures: (r.report?.failures ?? []).slice(0, 50) });
+      const again = steps.start(`rerun-tip:${check.id}`, "rerun-tip", `${check.label} again`);
+      const r2 = await runCheck({ def, scope, check, stepId: `rerun-tip:${check.id}`, logFile: again.file, signal });
+      if (r2.proc.aborted || signal.aborted) return (again.end("failed", { detail: "aborted" }), voided("aborted"));
+      if (r2.proc.code === 0) {
+        again.end("passed", { detail: "passes on a rerun: flaky" });
+        notes.push({ kind: "flaky", text: `${check.label} failed, then passed on a rerun`, at: now() });
+      } else {
+        again.end("failed", { detail: `exit ${r2.proc.code}` });
+        red.push(check.label);
+      }
+    }
+    if (red.length) return out({ verdict: "failed", why: `${red.join(", ")} fail${red.length === 1 ? "s" : ""} on ${target} itself`, copy });
+    return out({ verdict: "passed", copy });
+  } finally {
+    await services?.down().catch(() => undefined);
+  }
+}
+
 /** The run's outcome with the review's verdict folded in. */
 function reviewed(r: ReviewResult | null, o: RunOutcome): RunOutcome {
   if (!r) return o;

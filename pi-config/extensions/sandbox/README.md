@@ -195,7 +195,7 @@ tmp, and a host TCP relay to the proxy socket lives until that socket is gone.
 | `launch.ts` | extension | `encodeLaunchScope`, `decodeLaunchScope`: the `confine` answer's scope |
 | `shadow-prune.ts`, `shadow-prune-run.ts` | extension | the cache copies' cleanup: settings, scan, plan, lock, stamp, the low-priority child and its entry point, the `/sandbox` lines |
 | `backend.ts`, `backends/*`, `env.ts`, `proxy.ts` | backend | the seam, bwrap, Seatbelt, env allowlist and the git cleanup config, proxy |
-| `tests/unit/*.test.ts` | backend | unit tests of the backend files, and of `shadow-prune.ts` (`shadow-prune.unit.test.ts`, temp dirs only) |
+| `tests/unit/*.test.ts` | backend | unit tests of the backend files, and of `shadow-prune.ts` (`shadow-prune.unit.test.ts`, in-process, temp dirs only; its real child process in `shadow-prune.integration.test.ts`) |
 | `tests/*.unit.test.ts` | extension | unit tests of the four files above (`index.unit.test.ts` drives the factory on a fake `pi`) |
 | `tests/*` (other) | red-team | contract and escape suite |
 

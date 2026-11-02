@@ -28,7 +28,7 @@ import { canonicalize, loadPolicyFile, narrowScope, type ParentScope, parentScop
 import { encodeLaunchScope, OWNER_ID } from "./launch.ts";
 import { type ProxyHandle, proxySocketPath, startProxy } from "./proxy.ts";
 import { ensureSessionTmpDir, resolveSessionPolicy } from "./session-policy.ts";
-import { BUSY_TEXT, cachesLine, cleanResultText, invalidNotice, isDue, loadCacheSettings, lockHeld, lockPath, readStamp, startPrune } from "./shadow-prune.ts";
+import { BUSY_TEXT, cachesLine, cleanResultText, invalidNotice, isDue, loadCacheSettings, lockHeld, lockPath, pruneRunner, readStamp } from "./shadow-prune.ts";
 import {
 	describeActive,
 	isStarting,
@@ -444,7 +444,7 @@ export default function sandbox(pi: ExtensionAPI) {
 			if (!settings.value.on) return;
 			const now = Date.now();
 			if (!isDue(readStamp(dir), now) || lockHeld(lockPath(dir), now)) return;
-			void startPrune({ agentDir: dir, mode: "auto", settings: settings.value }).catch(() => {});
+			void pruneRunner.start({ agentDir: dir, mode: "auto", settings: settings.value }).catch(() => {});
 		} catch {
 			// Best-effort: the next sandboxed chat tries again.
 		}
@@ -453,7 +453,7 @@ export default function sandbox(pi: ExtensionAPI) {
 	/** `/sandbox clean [all]`: the same cleanup now, ignoring the daily throttle, and what it freed. */
 	async function cleanNow(all: boolean): Promise<void> {
 		const mode = all ? "all" : "clean";
-		let r: Awaited<ReturnType<typeof startPrune>>;
+		let r: Awaited<ReturnType<typeof pruneRunner.start>>;
 		try {
 			const dir = agentDir();
 			const settings = loadCacheSettings(dir);
@@ -465,7 +465,7 @@ export default function sandbox(pi: ExtensionAPI) {
 				notify(BUSY_TEXT, "warning");
 				return;
 			}
-			r = await startPrune({ agentDir: dir, mode, settings: settings.value, wait: true });
+			r = await pruneRunner.start({ agentDir: dir, mode, settings: settings.value, wait: true });
 		} catch (e) {
 			r = { kind: "error", error: (e as Error).message };
 		}

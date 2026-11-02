@@ -693,6 +693,12 @@ export function startPrune(opts: StartOptions): Promise<RunResult | { kind: "err
 	});
 }
 
+/**
+ * How the extension starts a run: `start` is `startPrune` (a real child process). A unit test swaps
+ * it for an in-process fake, so it starts no process.
+ */
+export const pruneRunner: { start: typeof startPrune } = { start: (opts) => startPrune(opts) };
+
 /** The child's side: low priority, one run, its result as one JSON line on stdout. Never throws. */
 export function runChild(arg: string): void {
 	try {

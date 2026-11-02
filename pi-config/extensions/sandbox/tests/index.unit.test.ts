@@ -27,6 +27,15 @@ mkdirSync(join(agentDir, "sandbox-policy"), { recursive: true });
 cpSync(join(HERE, "..", "..", "..", "sandbox-policy"), join(agentDir, "sandbox-policy"), { recursive: true });
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const { default: sandbox } = await import("../index.ts");
+// The cache cleanup runs in-process here (the unit tier starts no process): the same runPrune the
+// child runs, its result returned as the child would report it. shadow-prune.integration.test.ts
+// covers the real child.
+const { pruneRunner, runPrune } = await import("../shadow-prune.ts");
+pruneRunner.start = async (o) => {
+	let out: Awaited<ReturnType<typeof pruneRunner.start>> = { kind: "error", error: "no result" };
+	runPrune({ agentDir: o.agentDir, mode: o.mode, settings: o.settings, onResult: (r) => (out = r) });
+	return o.wait ? out : { kind: "skipped" };
+};
 /** Every started instance, stopped at the end even when a test failed before its own stop(). */
 const started: (() => Promise<void>)[] = [];
 test.after(async () => {

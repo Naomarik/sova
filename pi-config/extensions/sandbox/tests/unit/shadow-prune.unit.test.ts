@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, lstatSync, lutimesSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,7 +18,6 @@ import {
 	loadCacheSettings,
 	lockHeld,
 	lockPath,
-	lowPriorityPrefix,
 	measure,
 	type PlanEntry,
 	planPrune,
@@ -28,7 +26,6 @@ import {
 	scanShadows,
 	shadowDir,
 	stampPath,
-	startPrune,
 	trashDir,
 	validateCacheSettings,
 } from "../../shadow-prune.ts";
@@ -53,15 +50,6 @@ function file(path: string, kb: number, writtenAgo: number, readAgo: number = wr
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, Buffer.alloc(kb * 1024, 1));
 	utimesSync(path, new Date(NOW - readAgo), new Date(NOW - writtenAgo));
-}
-
-/** Wait for a condition, never a fixed sleep. */
-async function until(what: string, ok: () => boolean, ms = 20_000): Promise<void> {
-	const end = Date.now() + ms;
-	while (!ok()) {
-		if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
-		await new Promise((r) => setTimeout(r, 20));
-	}
 }
 
 const entry = (name: string, o: Partial<PlanEntry> & { usedAgo: number }): PlanEntry => ({
@@ -292,14 +280,10 @@ test("links are never followed: a link's target is neither measured nor dated, a
 	assert.equal(readFileSync(join(outside, "big")).length, 512 * 1024, "the target is untouched");
 });
 
-/** A symlink's own times, 20 days old (fs.lutimes where the runtime has it). */
+/** A symlink's own times, 20 days old (never its target's). */
 function lutimesOld(path: string): void {
 	const t = new Date(NOW - 20 * DAY);
-	try {
-		(require("node:fs") as typeof import("node:fs")).lutimesSync(path, t, t);
-	} catch {
-		spawnSync("touch", ["-h", "-d", t.toISOString(), path]);
-	}
+	lutimesSync(path, t, t);
 }
 
 test("a hard-linked file is counted once across all entries, and sizes are the space taken", (t) => {
@@ -424,7 +408,8 @@ test("the lock: a live holder blocks a run (nothing removed); a stale or dead on
 	utimesSync(lock, old, old);
 	assert.equal(lockHeld(lock), false);
 	// A dead pid: stale at once.
-	const dead = spawnSync(process.execPath, ["-e", ""]).pid!;
+	// A pid no process can have (above any pid_max): gone, without starting a process to get one.
+	const dead = 2 ** 31 - 2;
 	writeFileSync(lock, `${dead}\n`);
 	assert.equal(lockHeld(lock), false);
 	const r = runPrune({ agentDir: agent, mode: "clean", settings: S, disk: BIG, now: NOW });
@@ -459,41 +444,4 @@ test("the caches line: never cleaned, cleaned, over the limit, off", () => {
 	assert.equal(cachesLine(on, { ...stamp, cap: 2 * GiB, size: GiB, capReason: "floor" }, NOW), "Caches 1 GB of 2 GB (the 2 GB minimum) · cleaned 2 days ago, freed up to 512 MB");
 	assert.equal(cleanResultText({ ...stamp, freed: 1.5 * GiB }, "clean"), "Caches cleaned: freed up to 1.5 GB; 3 GB left of 10 GB");
 	assert.equal(BUSY_TEXT, "Caches: a cleanup is already running. Nothing was removed; try again later.");
-});
-
-// ---------------------------------------------------------------------------------------------
-// The child process
-
-test("the run goes in a low-priority child: nice 19 (and idle disk class on Linux) where found", () => {
-	const p = lowPriorityPrefix("linux");
-	if (spawnSync("sh", ["-c", "command -v nice"]).status === 0) assert.deepEqual(p.slice(1, 3), ["-n", "19"]);
-	if (spawnSync("sh", ["-c", "command -v ionice"]).status === 0) assert.equal(p.at(-1), "-c3");
-	assert.ok(!lowPriorityPrefix("darwin").some((a) => a.endsWith("ionice")));
-});
-
-test("startPrune: a waited run reports its result, then deletes the trash and releases the lock on its own", async (t) => {
-	const { agent, root } = tree(t);
-	const r = await startPrune({ agentDir: agent, mode: "clean", settings: S, wait: true });
-	assert.equal(r.kind, "done", JSON.stringify(r));
-	assert.ok(!existsSync(join(root, "home-.cache", "old-scratch")));
-	await until("the child to finish", () => !existsSync(lockPath(agent)));
-	assert.deepEqual(readdirSync(trashDir(agent)), []);
-	// A second one while a lock is held is refused, with nothing removed.
-	file(join(root, "home-.cache", "another-old", "f"), 1, 9 * DAY);
-	writeFileSync(lockPath(agent), `${process.pid}\n`);
-	assert.deepEqual(await startPrune({ agentDir: agent, mode: "all", settings: S, wait: true }), { kind: "busy" });
-	assert.ok(existsSync(join(root, "home-.cache", "another-old")));
-	rmSync(lockPath(agent));
-});
-
-test("startPrune unwaited: the automatic run is detached and writes its record", async (t) => {
-	const { agent } = tree(t);
-	await startPrune({ agentDir: agent, mode: "auto", settings: S });
-	await until("the record", () => readStamp(agent)?.lastRun !== undefined);
-	await until("the lock released", () => !existsSync(lockPath(agent)));
-});
-
-test("a child given bad arguments reports an error and never throws", async () => {
-	const r = await startPrune({ agentDir: "relative", mode: "clean", settings: S, wait: true });
-	assert.deepEqual(r, { kind: "error", error: "bad arguments" });
 });

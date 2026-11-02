@@ -158,7 +158,7 @@ async function forgetSetup(copy: string): Promise<void> {
 export function makeRunMerge(deps: RunDeps = {}): RunMerge {
   // Services a check needs start through the server's project engine unless the caller gives another way.
   const withServices: RunDeps = { services: lazyEngineServices(), ...deps };
-  // RunInput.tryOnly (Try It on Main): nothing merged; the same as tryOnMain.
+  // RunInput.tryOnly (Try It on Main): nothing merged (tryOnce).
   return (input, hooks) => (input.tryOnly ? tryOnce(input, hooks, withServices) : runOnce(input, hooks, withServices)).catch((err): RunOutcome => {
     // Never a throw: anything unexpected is the machine's, never the branch's.
     return { verdict: "machine", why: `the run stopped: ${err instanceof Error ? err.message : String(err)}`, notes: [], checks: [] };
@@ -444,17 +444,12 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
 }
 
 /**
- * Try It on Main (onboarding): the checks a project is about to declare, run on the target itself, merging nothing.
- * The copy reset to `base`, setup, then the checks `input.project.def` declares (the user's unsaved answer), each
- * failure run once more (a pass then is noted flaky). No docs, no review, no attribution: a red here is the project's
- * own, never a branch's. Outcome: passed (noChecks when "none"), failed with the failing step's label, machine or void.
+ * Try It on Main (onboarding; RunInput.tryOnly): the checks a project is about to declare, run on the target itself,
+ * merging nothing. The copy reset to `base`, setup, then the checks `input.project.def` declares (the user's unsaved
+ * answer), each failure run once more (a pass then is noted flaky). No docs, no review, no attribution: a red here is
+ * the project's own, never a branch's. Outcome: passed (noChecks when "none"), failed with the failing step's label,
+ * machine or void.
  */
-export function makeTryOnMain(deps: RunDeps = {}): RunMerge {
-  const withServices: RunDeps = { services: lazyEngineServices(), ...deps };
-  return (input, hooks) => tryOnce(input, hooks, withServices).catch((err): RunOutcome => ({ verdict: "machine", why: `the try stopped: ${err instanceof Error ? err.message : String(err)}`, notes: [], checks: [] }));
-}
-export const tryOnMain: RunMerge = makeTryOnMain();
-
 async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise<RunOutcome> {
   const { project, base, signal } = input;
   const target = project.target;

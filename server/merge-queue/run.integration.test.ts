@@ -10,7 +10,7 @@ import type { RunInput, RunOutcome } from "./contract";
 import { mergeCopyPath } from "./copy";
 import { Fixture, git, REPO_ROOT } from "./testing/repo";
 import { deliverReview, type StartReviewer } from "./review-step";
-import { engineServices, makeRunMerge, makeTryOnMain, type RunDeps } from "./run";
+import { engineServices, makeRunMerge, type RunDeps } from "./run";
 
 const fixtures: Fixture[] = [];
 after(() => {
@@ -23,7 +23,7 @@ const fixture = (o: ConstructorParameters<typeof Fixture>[0] = {}) => {
 };
 
 let n = 0;
-async function run(fx: Fixture, br: { branch: string; commit: string; checkout?: string }, o: { deps?: RunDeps; resolution?: string; drafts?: boolean; review?: boolean; picks?: RunInput["picks"]; signal?: AbortSignal; awaitReview?: RunInput["awaitReview"]; tryOnMain?: boolean; tryOnly?: boolean } = {}) {
+async function run(fx: Fixture, br: { branch: string; commit: string; checkout?: string }, o: { deps?: RunDeps; resolution?: string; drafts?: boolean; review?: boolean; picks?: RunInput["picks"]; signal?: AbortSignal; awaitReview?: RunInput["awaitReview"]; tryOnly?: boolean } = {}) {
   const runId = `mr_t${++n}`;
   const runDir = join(fx.root, "runs", runId);
   mkdirSync(runDir, { recursive: true });
@@ -50,7 +50,7 @@ async function run(fx: Fixture, br: { branch: string; commit: string; checkout?:
     ...(o.tryOnly ? { tryOnly: true as const } : {}),
     awaitReview: o.awaitReview ?? (() => new Promise(() => {})),
   };
-  const out: RunOutcome = await (o.tryOnMain ? makeTryOnMain : makeRunMerge)({ specCore: join(REPO_ROOT, "pi-config/extensions/spec/core"), ...o.deps })(input, {
+  const out: RunOutcome = await makeRunMerge({ specCore: join(REPO_ROOT, "pi-config/extensions/spec/core"), ...o.deps })(input, {
     step: (s) => {
       if (!steps.has(s.id)) order.push(s.id);
       steps.set(s.id, s);
@@ -358,22 +358,18 @@ describe("a merge run", () => {
   test("Try It on Main: the declared checks on the target itself, nothing merged; red is the project's own", async () => {
     const fx = fixture();
     const before = fx.head();
-    const ok = await run(fx, { branch: fx.target, commit: before }, { tryOnMain: true });
+    const ok = await run(fx, { branch: fx.target, commit: before }, { tryOnly: true });
     expect(ok.out).toMatchObject({ verdict: "passed" });
     expect(ok.out.tip).toBeUndefined();
     expect(ok.order).not.toContain("merge");
     for (const c of callsAt(fx, "unit")) expect(c.head).toBe(before);
     const red = fixture({ files: { "tests/b.txt": "fail\n" } });
-    const r = await run(red, { branch: red.target, commit: red.head() }, { tryOnMain: true });
+    const r = await run(red, { branch: red.target, commit: red.head() }, { tryOnly: true });
     expect(r.out.verdict).toBe("failed");
     expect(r.out.blame).toBeUndefined();
     expect(r.out.why).toBe("Unit tests fails on master itself");
-    // The queue's way in: RunInput.tryOnly through the ordinary run (commit === base would otherwise be "nothing to land").
-    const viaFlag = await run(fx, { branch: fx.target, commit: before }, { tryOnly: true });
-    expect(viaFlag.out).toMatchObject({ verdict: "passed" });
-    expect(viaFlag.order).not.toContain("merge");
     const none = fixture({ checks: "none" });
-    expect((await run(none, { branch: none.target, commit: none.head() }, { tryOnMain: true })).out).toMatchObject({ verdict: "passed", noChecks: true });
+    expect((await run(none, { branch: none.target, commit: none.head() }, { tryOnly: true })).out).toMatchObject({ verdict: "passed", noChecks: true });
   });
 
   test("every step's log exists from its first line", async () => {

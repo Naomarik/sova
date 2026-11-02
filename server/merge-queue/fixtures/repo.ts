@@ -9,6 +9,7 @@
  * - `tests/<name>.txt`: `pass` | `fail` | `flaky` (fails its first run per content, passes after) |
  *   `hang` (sleeps until killed): the `unit` check, which names its failing files in SOVA_OUT and reruns
  *   only the files passed as argv.
+ *   `gate <name>` (held until the test opens the gate) | `forbid <w>...` (fails when src/list.txt holds every word).
  * - `deps.lock`: the `install` setup step's input; `broken` fails it.
  *
  * Every script appends one JSON line per run to `<root>/state/calls.jsonl` ({script, cwd, head, argv,
@@ -17,7 +18,7 @@
  * The state dir is outside the repository, so nothing a check writes is ever committed or cleaned.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { scratchRoot } from "../../test-scratch";
 
@@ -38,6 +39,10 @@ export interface FixtureOptions {
   merge?: Record<string, unknown>;
   /** The repo's folder name (default `demo`). */
   name?: string;
+  /** Files on the target's first commit, over the defaults (e.g. `{"setup.conf": "broken\n"}`: master already broken). */
+  files?: Record<string, string>;
+  /** Make the scratch root under this folder instead of the OS temp dir (the copy-under-state-root case). */
+  under?: string;
 }
 
 export interface CallRecord {
@@ -113,7 +118,17 @@ let passed = 0;
 for (const f of files) {
   const c = readFileSync(f, "utf8").trim();
   if (c === "hang") { console.log("unit: " + f + " hangs"); log("hang"); setInterval(() => {}, 1000); await new Promise(() => {}); }
-  const bad = c === "fail" || (c === "flaky" && once("flaky:" + f + ":" + head));
+  if (c.startsWith("gate")) {
+    // Held until the test writes <state>/gates/<name> (released) — a check that is "running" for as long as a test needs.
+    const g = STATE + "/gates/" + (c.split(/\s+/)[1] || "main");
+    mkdirSync(STATE + "/gates", { recursive: true });
+    writeFileSync(STATE + "/gates/" + (c.split(/\s+/)[1] || "main") + ".waiting", head);
+    console.log("unit: " + f + " waits at gate");
+    while (!existsSync(g)) await new Promise((r) => setTimeout(r, 50));
+  }
+  // `forbid w1 w2`: fails when src/list.txt holds every word (a combination of two branches breaks it).
+  const forbid = c.startsWith("forbid ") && c.split(/\s+/).slice(1).every((w) => conf("src/list.txt", "").split("\n").includes(w));
+  const bad = forbid || c === "fail" || (c === "flaky" && once("flaky:" + f + ":" + head));
   if (bad) { failures.push({ file: f, name: f.replace(/^tests\\//, ""), message: "expected pass, got " + c }); console.log("not ok " + f); }
   else { passed++; console.log("ok " + f); }
 }
@@ -165,7 +180,10 @@ export class Fixture {
 
   constructor(opts: FixtureOptions = {}) {
     this.opts = opts;
-    this.root = scratchRoot("sova-mq-");
+    if (opts.under) {
+      mkdirSync(opts.under, { recursive: true });
+      this.root = mkdtempSync(join(opts.under, "sova-mq-"));
+    } else this.root = scratchRoot("sova-mq-");
     this.parent = join(this.root, "projects");
     this.name = opts.name ?? "demo";
     this.project = join(this.parent, this.name);
@@ -248,6 +266,17 @@ export class Fixture {
       put(".sova/playbooks/review/SKILL.md", REVIEW_KIT);
       put("review.conf", "ok\n");
     }
+    for (const [rel, text] of Object.entries(this.opts.files ?? {})) put(rel, text);
+  }
+
+  /** A check holding at gate `name` (tests/<x>.txt = `gate <name>`) has reached it. */
+  atGate(name = "main"): boolean {
+    return existsSync(join(this.state, "gates", `${name}.waiting`));
+  }
+  /** Release gate `name`: the held check goes on (and passes, unless its file says otherwise). */
+  openGate(name = "main"): void {
+    mkdirSync(join(this.state, "gates"), { recursive: true });
+    writeFileSync(join(this.state, "gates", name), "open");
   }
 
   // ------------------------------------------------------------------ branches

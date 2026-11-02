@@ -497,7 +497,8 @@ for (const width of [1280, 390]) {
       assert.match(await words(page.locator(".mq-onboard")), /We run npm test there\./);
       await page.getByRole("button", { name: "Try It on Master" }).click();
       await until("a try", () => o.calls.some((c) => c.verb === "merge.setup" && c.body.dryRun === true));
-      assert.deepEqual(lastCall(o, "merge.setup").body.checks, { kind: "command", command: "npm test" });
+      assert.equal(lastCall(o, "merge.setup").body.command, "npm test");
+      assert.equal(lastCall(o, "merge.setup").body.project, ROOT_DIR);
       await page.getByRole("button", { name: "Save Checks" }).click();
       await until("a save", () => o.calls.some((c) => c.verb === "merge.setup" && !c.body.dryRun));
       await shot(page, `${width}-onboard`);
@@ -511,10 +512,13 @@ for (const width of [1280, 390]) {
       assert.equal(o.calls.filter((c) => c.verb === "merge.setup").length, tries, "nothing tried");
       await page.getByRole("textbox", { name: "Checks" }).fill("Typecheck: npm run typecheck\nUnit tests: npm test");
       await page.getByRole("button", { name: "Try It on Master" }).click();
-      await until("a list try", () => o.calls.some((c) => c.verb === "merge.setup" && (c.body.checks as { kind: string }).kind === "list"));
-      assert.deepEqual(lastCall(o, "merge.setup").body.checks, { kind: "list", checks: [{ label: "Typecheck", command: "npm run typecheck" }, { label: "Unit tests", command: "npm test" }] });
+      await until("a list try", () => o.calls.some((c) => c.verb === "merge.setup" && Array.isArray(c.body.checks)));
+      assert.deepEqual(lastCall(o, "merge.setup").body.checks, [{ label: "Typecheck", run: "npm run typecheck" }, { label: "Unit tests", run: "npm test" }]);
+      assert.equal(lastCall(o, "merge.setup").body.dryRun, true);
       await page.getByText("This project has no automated tests").click();
       assert.match(await words(page.locator(".mq-onboard")), /master moves to that merged commit/);
+      await page.getByRole("button", { name: "Try the Merge Copy" }).click();
+      await until("a none try", () => o.calls.some((c) => c.verb === "merge.setup" && c.body.none === true && c.body.dryRun === true));
       await noSideScroll(page);
       await o.ctx.close();
     });

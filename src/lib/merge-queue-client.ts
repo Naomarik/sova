@@ -87,7 +87,13 @@ export type OnboardChecks =
   | { kind: "list"; checks: { label: string; command: string }[] }
   | { kind: "command"; command: string; takesMin?: number; requires?: string }
   | { kind: "none" };
-/** Try It on Main: the copy, setup and the command on the target alone, logged; nothing saved. */
-export const tryOnMain = (project: string, c: OnboardChecks) => runMergeVerb(project, "merge.setup", { checks: c, dryRun: true });
+/** merge.setup's params for an answer: one command (with how long and what starts first), a list, or none. */
+export function setupBody(c: OnboardChecks): Record<string, unknown> {
+  if (c.kind === "none") return { none: true };
+  if (c.kind === "list") return { checks: c.checks.map((x) => ({ label: x.label, run: x.command })) };
+  return { command: c.command, ...(c.takesMin ? { takesMin: c.takesMin } : {}), ...(c.requires ? { requires: c.requires } : {}) };
+}
+/** Try It on Main: the copy, setup and the checks on the target alone, logged; nothing saved. */
+export const tryOnMain = (project: string, c: OnboardChecks) => runMergeVerb(project, "merge.setup", { ...setupBody(c), dryRun: true });
 /** Save Checks: writes the project's merge section. */
-export const saveChecks = (project: string, c: OnboardChecks) => act(project, "merge.setup", { checks: c });
+export const saveChecks = (project: string, c: OnboardChecks) => act(project, "merge.setup", setupBody(c));

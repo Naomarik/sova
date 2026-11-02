@@ -55,7 +55,8 @@
 // checkout, which a sandboxed session can't write) and the next run sorts by it; a file never timed
 // falls back to KNOWN_SLOW, then to its alphabetical place. The run ends with the 10 slowest files.
 // Both: a temp dir inside a git repository is refused (exit 2) before anything runs, and no test
-// process gets a GIT_DIR-like variable; git's search stops at its temp dir (GIT_CEILING_DIRECTORIES).
+// process gets a GIT_DIR-like variable; git's search stops at its temp dir (GIT_CEILING_DIRECTORIES). Nor any
+// variable of a chat process the runner was started from (scripts/test-env.mjs: SOVA_CHAT_*, the session's ids).
 // SOVA_OUT=<file> (a project verb's or a merge check's report file): the run's counts are written there
 // as JSON when it ends, `{passed, failed, errors, skipped, failures: [{name, file, message?}]}` (at most
 // 50 failures; `failingFiles` lists every failing file, uncapped): one per failing test (bun's `(fail)` lines, the error printed above each as its
@@ -71,6 +72,11 @@ import { chosenRuntime, resolveBun } from "../server/runtime-choice.ts";
 import { affected, changedSince } from "./test-changed.mjs";
 import { GROUPS, groupOf, selectFiles } from "./test-groups.mjs";
 import { bunReport } from "./test-report.mjs";
+import { dropChatEnv } from "./test-env.mjs";
+
+// Started from inside a chat, the shell carries that chat process's own variables (SOVA_CHAT_UNIT, the session's ids):
+// a test would then act as that chat (an org engine refuses to open "in a chat process"). None reaches a test.
+dropChatEnv(process.env);
 
 const ROOT = path.join(import.meta.dirname, "..");
 const PRELOAD = "./pi-config/extensions/claude-code/tests/hermetic-env.mjs";

@@ -60,6 +60,26 @@ describe("blame", () => {
     assert.ok(s.notes.some((n) => n.kind === "master-red"), "noted");
   });
 
+  test("S5c: failures named without a file (Kaocha): a branch's NEW failing test is the branch's even while another test is red on master", async () => {
+    const { fx, h } = await setup({ files: { "unit.names-only": "1\n", "tests/a.txt": "fail\n" } });
+    const before = fx.head();
+    const b = fx.branch("newbreak", { "tests/b.txt": "fail\n" });
+    const e = await h.add({ branch: b.branch });
+    const s = await h.waitEntry(e.id, settled);
+    assert.equal(s.state, "needs-fix", `b.txt fails only with the branch, a.txt on master too: ${s.state}: ${s.reason} ${JSON.stringify(s.notes)}`);
+    assert.match(s.reason ?? "", /b\.txt/);
+    assert.equal(fx.head(), before, "master unmoved");
+  });
+
+  test("S5d: failures named without a file, the same ones red on master: noted, lands", async () => {
+    const { fx, h } = await setup({ files: { "unit.names-only": "1\n", "tests/a.txt": "fail\n" } });
+    const b = fx.branch("ok2", { "b2.txt": "b\n" });
+    const e = await h.add({ branch: b.branch });
+    const s = await h.waitEntry(e.id, settled);
+    assert.equal(s.state, "landed", `${s.state}: ${s.reason}`);
+    assert.ok(s.notes.some((n) => n.kind === "master-red"), "noted");
+  });
+
   test("S26: a flaky test (passes on rerun): noted, lands", async () => {
     const { fx, h } = await setup();
     const b = fx.branch("flaky", { "tests/c.txt": "flaky\n" });

@@ -129,7 +129,9 @@ for (const f of files) {
   // "forbid w1 w2": fails when src/list.txt holds every word (a combination of two branches breaks it).
   const forbid = c.startsWith("forbid ") && c.split(/\\s+/).slice(1).every((w) => conf("src/list.txt", "").split("\\n").includes(w));
   const bad = forbid || c === "fail" || (c === "flaky" && once("flaky:" + f + ":" + head));
-  if (bad) { failures.push({ file: f, name: f.replace(/^tests\\//, ""), message: "expected pass, got " + c }); console.log("not ok " + f); }
+  // unit.names-only at the root: failures carry a name and no file (as Kaocha's runner reports them: motorsaif).
+  const named = existsSync("unit.names-only") ? {} : { file: f };
+  if (bad) { failures.push({ ...named, name: f.replace(/^tests\\//, ""), message: "expected pass, got " + c }); console.log("not ok " + f); }
   else { passed++; console.log("ok " + f); }
 }
 out({ passed, failed: failures.length, errors: 0, skipped: 0, failures });

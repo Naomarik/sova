@@ -6,6 +6,7 @@
 //
 //   node scripts/merge-queue-projects.mjs --project motorsaif [--port 4828]
 //   node scripts/merge-queue-projects.mjs --project nasabii   [--port 4829]
+//   node scripts/merge-queue-projects.mjs --project plain     [--port 4831]   # no .sova/project.json: onboarding O1-O5
 //   node scripts/merge-queue-projects.mjs --project motorsaif,nasabii --port 4830   # C1: two queues, one server, at once
 //   [--only P1,P2,…] [--real-model] [--keep] [--fresh]
 //
@@ -22,7 +23,7 @@
 //   P5 conflict, differs   two branches set one number differently: behaviour differs, Send Back
 //   P6 review ok / block   the review kit declared on the target (outside, Resume): a docstring fix lands (review
 //                          ok); planted debt is flagged, Send Back
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { QueueClient, Results, SovaUnderTest, check, git, gitOk, guardPath, log as plog, makeBranch, parseArgs, realHead, until } from "./merge-queue-qa-lib.mjs";
@@ -30,6 +31,8 @@ import { QueueClient, Results, SovaUnderTest, check, git, gitOk, guardPath, log 
 const PROJECTS = {
   motorsaif: { real: join(homedir(), "webapps", "motorsaif"), target: "main", realSha: "348559df", port: 4828 },
   nasabii: { real: join(homedir(), "github", "rakiba", "projects", "nasabii"), target: "master", realSha: "c0ef5d7", port: 4829 },
+  // A plain repository with no .sova/project.json, made here (no real repo behind it): onboarding, then a landing.
+  plain: { real: null, target: "main", realSha: null, port: 4831, synthetic: true },
 };
 
 const { opt, has } = parseArgs();
@@ -49,6 +52,7 @@ const R = new Results(join(WS, "results.json"), tag, { fresh: has("--fresh") });
 /** Stops everything when a real repo's target moved: nothing here may touch it. */
 function assertRealUnchanged() {
   for (const [n, p] of Object.entries(PROJECTS)) {
+    if (!p.real) continue;
     const now = realHead(p.real, p.target);
     if (now && !now.startsWith(p.realSha)) {
       console.error(`SAFETY: ${n}'s real ${p.target} moved: ${now} (expected ${p.realSha}); stopping`);
@@ -62,6 +66,7 @@ function project(name) {
   const root = join(BASE, name);
   const origin = join(BASE, `${name}-origin.git`);
   const wt = join(BASE, ".worktrees");
+  if (p.synthetic) makePlain(root, origin, p.target);
   check(existsSync(root), `the clone ${root} exists (made by hand: git clone --no-hardlinks, origin replaced)`);
   const remotes = git(root, "remote", "-v");
   check(!/github\.com|git@/.test(remotes) && remotes.includes(origin), `${name}'s only remote is the local bare origin (${remotes})`);
@@ -76,6 +81,23 @@ function project(name) {
     return head();
   };
   return { name, ...p, root, origin, wt, q, head, originHead, branch, commitOutside };
+}
+
+/** A fresh plain repo: one module, a node:test file, no .sova at all; a local bare origin. */
+function makePlain(root, origin, target) {
+  for (const d of [root, origin]) rmSync(d, { recursive: true, force: true });
+  const wt = join(BASE, ".worktrees");
+  if (existsSync(wt)) for (const d of readdirSync(wt)) if (d.startsWith("plain-")) rmSync(join(wt, d), { recursive: true, force: true });
+  mkdirSync(root, { recursive: true });
+  git(root, "init", "-q", "-b", target);
+  writeFileSync(join(root, "add.mjs"), "export const add = (a, b) => a + b;\n");
+  writeFileSync(join(root, "add.test.mjs"), 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "./add.mjs";\ntest("add", () => assert.equal(add(2, 3), 5));\n');
+  writeFileSync(join(root, "README.md"), "# plain\n");
+  git(root, "add", "-A");
+  git(root, "commit", "-q", "-m", "plain: first commit");
+  git(BASE, "init", "-q", "--bare", "-b", target, origin);
+  git(root, "remote", "add", "origin", origin);
+  git(root, "push", "-q", "origin", target);
 }
 
 const terminal = ["landed", "needs-fix", "behaviour-differs", "review-flagged", "drafts-changed", "cancelled"];
@@ -96,7 +118,81 @@ const commentLine = (rel, text) => (dir) => {
   writeFileSync(f, `;; ${text}\n` + readFileSync(f, "utf8"));
 };
 
+async function plainCases(P) {
+  const k = (id, title, fn) => R.kase(`${id}.${P.name}`, title, async (ev) => {
+    try {
+      await fn(ev);
+    } finally {
+      writeFileSync(join(LOGS, `${id}.${P.name}-view.json`), JSON.stringify(await P.q.view().catch(() => null), null, 2));
+    }
+  }, ONLY && !ONLY.has(id) ? new Set() : null);
+  const setup = (body) => sova.verb("merge.setup", { project: P.root, ...body });
+  await k("O1", "plain repo, no .sova/project.json: not set up, an approval is refused with what to do", async (ev) => {
+    const v = await P.q.view();
+    ev.checks = v?.checks;
+    check(v?.checks === "unset", `checks unset (${v?.checks})`);
+    const b = P.branch("o1-early", (dir) => writeFileSync(join(dir, "README.md"), "# plain\nearly\n"));
+    const r = await sova.verb("merge.add", { project: P.root, branch: b.branch });
+    ev.add = r.error ?? r.merge?.entry?.state;
+    check(r.ok === false && r.error, `merge.add refused before setup (${JSON.stringify(r.error ?? r.merge?.entry?.state)})`);
+    check(!existsSync(join(P.root, ".sova", "project.json")), "nothing written yet");
+  });
+  await k("O2", "Try It on Main: the test command passes on main, nothing saved", async (ev) => {
+    const before = P.head();
+    const r = await setup({ command: "node --test", dryRun: true });
+    check(r.ok !== false && r.merge?.run, `a try started (${JSON.stringify(r.error ?? "")})`);
+    const v = await P.q.waitView((v) => v.tryRun?.id === r.merge.run.id && v.tryRun.verdict !== "running", "the try to end", 10 * 60_000);
+    ev.try = { verdict: v.tryRun.verdict, why: v.tryRun.why, steps: v.tryRun.steps?.map((s) => `${s.kind}:${s.id}:${s.result}`) };
+    check(v.tryRun.verdict === "passed", `the try passed (${v.tryRun.verdict}: ${v.tryRun.why})`);
+    check(P.head() === before, "main unmoved by a try");
+    check(v.checks === "unset", "still not set up");
+  });
+  await k("O3", "Save Checks: one queue-owned commit makes a minimal .sova/project.json", async (ev) => {
+    const before = P.head();
+    const r = await setup({ command: "node --test" });
+    check(r.ok !== false, `merge.setup accepted (${JSON.stringify(r.error ?? "")})`);
+    const v = await P.q.waitView((v) => v.checks !== "unset", "the checks declared", 120_000);
+    ev.checks = v.checks;
+    const after = P.head();
+    ev.commit = after;
+    check(after !== before && git(P.root, "rev-parse", `${after}^`) === before, "exactly one commit on main");
+    check(git(P.root, "diff", "--name-only", before, after) === ".sova/project.json", "only .sova/project.json");
+    const def = JSON.parse(git(P.root, "show", `${after}:.sova/project.json`));
+    ev.def = def;
+    check(def.merge?.checks?.length === 1 && def.merge.checks[0].run.join(" ").includes("node --test"), "the test command is the check");
+    check(git(P.root, "status", "--porcelain") === "", "the main checkout clean and at it");
+    ev.pushedSetup = P.originHead() === after;
+  });
+  await k("O4", "after setup a branch lands end to end", async (ev) => {
+    const b = P.branch("o4", (dir) => writeFileSync(join(dir, "add.mjs"), "// adds two numbers\nexport const add = (a, b) => a + b;\n"));
+    const e = await P.q.add(b.branch);
+    const done = await P.q.waitState(e.id, terminal, 20 * 60_000);
+    ev.state = done.state;
+    ev.reason = done.reason;
+    if (done.run) {
+      const r = await P.q.run(done.run, 300);
+      writeFileSync(join(LOGS, `O4.${P.name}-run.json`), JSON.stringify(r, null, 2));
+      ev.steps = r?.run?.steps?.map((s) => `${s.kind}:${s.id}:${s.result}`);
+    }
+    check(done.state === "landed", `landed (${done.state}: ${done.reason ?? ""})`);
+    check(done.landed?.sha === P.head(), "main == the landed sha");
+    check(P.originHead() === P.head(), "pushed");
+    check(ev.steps?.some((s) => s.endsWith(":tests:passed")), `the declared check ran (${ev.steps})`);
+  });
+  await k("O5", "a branch breaking the test after setup: needs a fix, main unmoved", async (ev) => {
+    const before = P.head();
+    const b = P.branch("o5", (dir) => writeFileSync(join(dir, "add.mjs"), "export const add = (a, b) => a - b;\n"));
+    const e = await P.q.add(b.branch);
+    const done = await P.q.waitState(e.id, terminal, 20 * 60_000);
+    ev.state = done.state;
+    ev.reason = done.reason;
+    check(done.state === "needs-fix", `needs a fix (${done.state}: ${done.reason ?? ""})`);
+    check(P.head() === before, "main unmoved");
+  });
+}
+
 async function cases(P) {
+  if (P.synthetic) return plainCases(P);
   const k = (id, title, fn) => R.kase(`${id}.${P.name}`, title, async (ev) => {
     try {
       await fn(ev);
@@ -251,7 +347,10 @@ async function main() {
   await sova.start(LOGS);
   try {
     const ps = names.map(project);
-    for (const P of ps) await sova.register(P.root, `${P.name}-qa`);
+    for (const P of ps) {
+      await sova.register(P.root, `${P.name}-qa`);
+      sova.seedNames(P.root);
+    }
     if (ps.length > 1) {
       // C1: both queues at once on this one server; each case list runs concurrently with the other.
       const t0 = Date.now();

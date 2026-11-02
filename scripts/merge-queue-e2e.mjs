@@ -63,6 +63,13 @@ function prepare() {
     git(E2E, "clone", "-q", "--no-hardlinks", HERE, PROJECT);
     git(PROJECT, "remote", "remove", "origin");
     git(PROJECT, "checkout", "-q", "-B", "master", head);
+    if (!storeWritable()) {
+      // Sandbox only: a copied node_modules names its source folder, so pnpm reinstalls before every `pnpm run` in a
+      // copy, and that needs the pnpm store's lock, read-only in a member sandbox. Off on this clone's master alone.
+      appendFileSync(join(PROJECT, "pnpm-workspace.yaml"), "\n# qa sandbox: the pnpm store is read-only here\nverifyDepsBeforeRun: false\n");
+      git(PROJECT, "commit", "-q", "-am", "qa sandbox: pnpm verifyDepsBeforeRun off (read-only store)");
+      log("sandbox: pnpm store read-only, verifyDepsBeforeRun off on the clone's master");
+    }
     git(E2E, "init", "-q", "--bare", "-b", "master", ORIGIN);
     git(PROJECT, "remote", "add", "origin", ORIGIN);
     git(PROJECT, "push", "-q", "origin", "master");
@@ -70,7 +77,20 @@ function prepare() {
   }
   check(!git(PROJECT, "remote", "-v").includes("github.com"), "the project's remotes never name GitHub");
   copyNodeModules(PROJECT);
-  sh("mise", ["trust", PROJECT], { allowFail: true });
+  sh("mise", ["trust", PROJECT], { allowFail: true, env: sova.miseEnv() });
+}
+
+function storeWritable() {
+  const m = /"storeDir":\s*"([^"]+)"/.exec(existsSync(join(HERE, "node_modules/.modules.yaml")) ? readFileSync(join(HERE, "node_modules/.modules.yaml"), "utf8") : "");
+  if (!m) return true;
+  try {
+    const probe = join(m[1], `.mq-e2e-probe-${process.pid}`);
+    writeFileSync(probe, "");
+    rmSync(probe);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const branch = (name, edit, opts = {}) => makeBranch(PROJECT, WT, "sova-e2e", `e2e/${name}`, edit, opts);
@@ -112,15 +132,20 @@ async function cases() {
   await kase("E1", "a good branch with a spec draft lands; docs official; note", async (ev) => {
     const b = branch("ok", (dir) => {
       appendFileSync(join(dir, "README.md"), "\n<!-- e2e: a one-line doc change -->\n");
+      // Runtime code too, so the playbook's "Restart" note applies (docs and .sova/spec alone get no note).
+      appendFileSync(join(dir, "server/index.ts"), "\n// e2e: a comment-only server change\n");
     });
     // A spec draft with its note (as a chat writes one): one sentence added to the first claim file.
     const cli = join(b.dir, "pi-config/extensions/spec/core/sova-spec-draft.mjs");
     sh("node", [cli, "new", "e2e-ok", "--root", b.dir, "--write", "--json"], { cwd: b.dir });
     const claims = join(b.dir, ".sova/spec/drafts/e2e-ok/spec/claims");
     const md = sh("bash", ["-c", `find ${claims} -name '*.md' | sort | head -1`]);
-    const id = readFileSync(md, "utf8").match(/^# (§\S+)/m)?.[1];
-    check(id, `a claim id in ${md}`);
+    check(md, `a claim file in ${claims}`);
     appendFileSync(md, "\nThe e2e probe sentence: added by the merge queue end to end.\n");
+    // The id the sentence changed (the last claim of the file), as the draft tool reads it.
+    const st = JSON.parse(sh("node", [cli, "status", "e2e-ok", "--root", b.dir, "--json"], { cwd: b.dir, allowFail: true }));
+    const id = (st.ids ?? []).find((x) => x.change === "modified")?.id;
+    check(id, `the draft changes a claim (${JSON.stringify(st.ids ?? []).slice(0, 300)})`);
     sh("node", [cli, "evidence", "e2e-ok", "--id", id, "--by", "e2e", "--verification", "e2e: read back after landing", "--note", "--root", b.dir, "--write", "--json"], { cwd: b.dir });
     ev.claim = id;
     const before = head();
@@ -141,6 +166,7 @@ async function cases() {
     }, 10 * 60_000, 5000).catch(() => null);
     ev.threadNote = noted?.notes?.find((n) => n.kind === "thread")?.text ?? null;
     check(ev.threadNote, "the merge thread left a note");
+    check(/server|restart/i.test(ev.threadNote), `the note says the server code changed (${ev.threadNote})`);
   });
 
   await kase("E2", "a broken unit test: needs a fix, blamed on the branch", async (ev) => {
@@ -200,9 +226,9 @@ async function cases() {
     const base = head();
     const a = branch("list-a", extendList("alpha"), { from: base });
     const b = branch("list-b", extendList("bravo"), { from: base });
-    const ea = await add(a);
+    const ea = await add(a, { withoutReview: true }); // review is E6's case
     check((await waitState(ea.id, ["landed", "needs-fix"], 90 * 60_000)).state === "landed", "a lands first");
-    const eb = await add(b);
+    const eb = await add(b, { withoutReview: true }); // review is E6's case
     const done = await waitState(eb.id, ["landed", "needs-fix", "behaviour-differs"], 120 * 60_000);
     await keepLogs("E4", done);
     ev.state = done.state;
@@ -223,10 +249,10 @@ async function cases() {
     };
     const a = branch("max-a", setConst(280), { from: base });
     const b = branch("max-b", setConst(320), { from: base });
-    const ea = await add(a);
+    const ea = await add(a, { withoutReview: true }); // review is E6's case
     check((await waitState(ea.id, ["landed", "needs-fix"], 90 * 60_000)).state === "landed", "a lands first");
     const before = head();
-    const eb = await add(b);
+    const eb = await add(b, { withoutReview: true }); // review is E6's case
     const w = await waitState(eb.id, ["behaviour-differs", "landed", "needs-fix"], 60 * 60_000);
     await keepLogs("E5", w);
     ev.conflict = w.conflict;
@@ -283,6 +309,7 @@ async function main() {
   await sova.start(LOGS);
   try {
     await sova.register(PROJECT, "sova-e2e");
+    sova.seedNames(PROJECT);
     await cases();
   } finally {
     writeFileSync(join(LOGS, "final-view.json"), JSON.stringify(await status().catch(() => null), null, 2));

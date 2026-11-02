@@ -159,4 +159,36 @@ describe("conflicts", () => {
     assert.match(s.reason ?? JSON.stringify(s.conflict?.sanity), /second parent|approved commit/);
     assert.equal(fx.head(), before);
   });
+
+  test("S2f: git rerere on (the user's global config has it) and the conflict resolved by hand before: still a conflict the thread judges, never a machine pause", async () => {
+    let called = 0;
+    const { fx, h, b } = await twoAppenders({
+      conflictWaitMs: 500,
+      thread: {
+        conflict: async () => {
+          called++;
+        },
+      },
+    });
+    // rerere.enabled + autoupdate, as in the user's ~/.config/git/config; the merge copy is a worktree of this repo,
+    // so it shares the config and rr-cache. One earlier hand resolution of the same conflict is recorded.
+    git(fx.project, ["config", "rerere.enabled", "true"]);
+    git(fx.project, ["config", "rerere.autoupdate", "true"]);
+    const tmp = join(fx.parent, "rerere-tmp");
+    git(fx.project, ["worktree", "add", "-q", "--detach", tmp, fx.target]);
+    git(tmp, ["merge", "--no-ff", "--no-edit", b.commit], { allowFail: true });
+    writeFileSync(join(tmp, "src/list.txt"), LIST_PLUS("delta\necho"));
+    git(tmp, ["add", "src/list.txt"]);
+    git(tmp, ["-c", "user.name=t", "-c", "user.email=t@t.invalid", "commit", "-q", "--no-edit"]);
+    git(fx.project, ["worktree", "remove", "--force", tmp]);
+    const before = fx.head();
+    const eb = await h.add({ branch: b.branch });
+    const v = await h.waitView((v) => v.state === "paused" || [...v.needsYou, ...v.needsFix, ...v.recent.map((r) => r.entry)].some((x) => x.id === eb.id), "the conflict judged, or a pause", 60_000);
+    assert.notEqual(v.state, "paused", `the queue paused: ${JSON.stringify(v.paused)}`);
+    const s = await h.entry(eb.id);
+    assert.ok(["conflict", "needs-fix"].includes(s.state), `${s.state}: ${s.reason}`);
+    assert.equal(called, 1, "the thread was asked to judge it");
+    assert.deepEqual(s.conflict?.files, ["src/list.txt"]);
+    assert.equal(fx.head(), before);
+  });
 });

@@ -3,6 +3,7 @@
 // under test with its own .agent, a hermetic server as a child process on its own port, the merge verbs over
 // HTTP as the operator, waits on conditions, and a results file. Node builtins only.
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
@@ -39,6 +40,7 @@ export async function until(what, fn, ms = 30 * 60_000, every = 2000) {
       const v = await fn();
       if (v) return v;
     } catch (e) {
+      if (e?.fatal) throw e;
       last = e;
     }
     if (Date.now() > end) throw new Error(`timed out after ${Math.round(ms / 1000)} s waiting for ${what}${last ? `: ${last.message}` : ""}`);
@@ -95,6 +97,14 @@ export class SovaUnderTest {
     this.logFile = null;
   }
 
+  /** mise's state (its trusted-config links) under the workspace: the user's own may be read-only in a sandbox, and
+   *  a test run never adds trust entries to it. Tools still come from the user's data dir (read only). */
+  miseEnv() {
+    const dir = join(this.ws, "mise-state");
+    mkdirSync(dir, { recursive: true });
+    return { MISE_STATE_DIR: dir };
+  }
+
   prepare() {
     mkdirSync(this.ws, { recursive: true });
     const head = git(HERE, "rev-parse", "HEAD");
@@ -103,7 +113,7 @@ export class SovaUnderTest {
     git(this.dir, "fetch", "-q", "origin", head);
     git(this.dir, "checkout", "-q", "--detach", head);
     copyNodeModules(this.dir);
-    sh("mise", ["trust", this.dir], { allowFail: true });
+    sh("mise", ["trust", this.dir], { allowFail: true, env: this.miseEnv() });
     sh("node", ["scripts/hermetic-agent-dir.mjs"], { cwd: this.dir });
     check(sh("git", ["check-ignore", ".agent/auth.json"], { cwd: this.dir, allowFail: true }) === ".agent/auth.json", ".agent is gitignored in the server clone");
     const auth = join(REAL_PI, "agent", "auth.json");
@@ -130,6 +140,7 @@ export class SovaUnderTest {
         SOVA_UPDATES_CHECK: "off",
         SOVA_GIT_MAINTENANCE: "off",
         SOVA_PRICES_FETCH: "off",
+        ...this.miseEnv(),
         ...this.env,
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -166,7 +177,15 @@ export class SovaUnderTest {
   }
 
   async http(method, path, body) {
-    const r = await fetch(this.base + path, { method, headers: { "content-type": "application/json", "x-sova-token": this.token ?? "" }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const t0 = Date.now();
+    let r;
+    try {
+      r = await fetch(this.base + path, { method, headers: { "content-type": "application/json", "x-sova-token": this.token ?? "" }, body: body === undefined ? undefined : JSON.stringify(body) });
+    } catch (e) {
+      throw new Error(`${method} ${path} failed after ${Date.now() - t0} ms: ${e?.cause?.code ?? ""} ${e?.cause?.message ?? e?.message}`);
+    }
+    const ms = Date.now() - t0;
+    if (ms > 5000) log(this.tag, `slow: ${method} ${path} took ${ms} ms`);
     const text = await r.text();
     let json;
     try {
@@ -180,6 +199,15 @@ export class SovaUnderTest {
   /** One merge verb as the operator (the route the Land button uses). */
   async verb(name, body) {
     return (await this.http("POST", `/api/project-services/${name}`, body)).json;
+  }
+
+  /** The project's private names for the leak scan, set up as the names interview would (store.ts namesFileOf:
+   *  <state>/merge-queue/<sha256(root)[:16]>/names.json). Without it the first landing's push is held "private
+   *  names not set up yet", as designed. */
+  seedNames(root, names = []) {
+    const dir = join(this.agent, "sova", "merge-queue", createHash("sha256").update(root).digest("hex").slice(0, 16));
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "names.json"), JSON.stringify({ privateNames: names }) + "\n");
   }
 
   async register(root, name) {
@@ -206,6 +234,8 @@ export function copyNodeModules(dir, from = HERE) {
 // ---------------------------------------------------------------- one project's queue
 
 export class QueueClient {
+  /** States an entry rests in until someone acts: a wait for anything else ends at once. */
+  static FINAL = ["landed", "needs-fix", "cancelled", "behaviour-differs", "review-flagged", "drafts-changed"];
   constructor(sova, root) {
     this.sova = sova;
     this.root = root;
@@ -224,10 +254,24 @@ export class QueueClient {
     if (v?.current?.entry === id) return { id, state: "checking", run: v.current.id };
     return null;
   }
-  async waitState(id, states, ms = 60 * 60_000) {
+  /** Waits for the entry to reach one of `states`; a pause no caller resumes (machine, master red, reviewer,
+   *  recovery) fails at once with its reason instead of waiting out `ms`. `allowPause` lists kinds to sit through. */
+  async waitState(id, states, ms = 60 * 60_000, { allowPause = ["master-moved", "operator"] } = {}) {
     return until(`entry ${id} in ${states.join("|")}`, async () => {
-      const e = await this.entry(id);
-      return e && states.includes(e.state) ? e : null;
+      const v = await this.view();
+      const found = QueueClient.entriesOf(v).find((x) => x.id === id) ?? (v?.current?.entry === id ? { id, state: "checking", run: v.current.id } : null);
+      if (found && states.includes(found.state)) return found;
+      if (found && QueueClient.FINAL.includes(found.state)) {
+        const err = new Error(`entry ${id} ended ${found.state} (waiting for ${states.join("|")}): ${found.reason ?? found.review?.text ?? ""}`.slice(0, 600));
+        err.fatal = true;
+        throw err;
+      }
+      if (v?.state === "paused" && v.paused && !allowPause.includes(v.paused.kind)) {
+        const err = new Error(`the queue paused (${v.paused.kind}): ${v.paused.why}`);
+        err.fatal = true;
+        throw err;
+      }
+      return null;
     }, ms);
   }
   async waitView(pred, what, ms = 30 * 60_000) {

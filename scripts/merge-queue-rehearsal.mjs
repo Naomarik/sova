@@ -89,7 +89,7 @@ function prepare() {
   }
   check(!git(PROJECT, "remote", "-v").includes("github.com"), "the clone's remotes never name GitHub");
   copyNodeModules(PROJECT);
-  sh("mise", ["trust", PROJECT], { allowFail: true });
+  sh("mise", ["trust", PROJECT], { allowFail: true, env: sova.miseEnv() });
 }
 
 /** Put the clone's master at `base` (and a fresh bare origin there): the replay's starting point. */
@@ -166,6 +166,7 @@ async function faults() {
     writeFileSync(join(PROJECT, "outside-r6.md"), "moved outside the queue\n");
     git(PROJECT, "add", "outside-r6.md");
     git(PROJECT, "commit", "-q", "-m", "rehearsal: a commit on master outside the queue");
+    git(PROJECT, "push", "-q", "origin", "master"); // its owner pushes a hand commit (the queue never pushes what it did not land)
     const outside = head();
     const v = await q.waitView((v) => v.state === "paused", "paused", 10 * 60_000);
     ev.paused = v.paused;
@@ -225,6 +226,7 @@ async function faults() {
     lines.splice(at, 0, 'console.error("rehearsal: setup broken on master"); process.exit(1);');
     writeFileSync(f, lines.join("\n"));
     git(PROJECT, "commit", "-q", "-am", "rehearsal: break setup on master (outside the queue)");
+    git(PROJECT, "push", "-q", "origin", "master"); // its owner pushes a hand commit (the queue never pushes what it did not land)
     const b = branch("r2", (dir) => writeFileSync(join(dir, "docs-r2.md"), "# rehearsal r2\n"));
     const e = await q.add(b.branch);
     // The outside move is noticed first (paused, master moved); Resume, then setup fails on master too.
@@ -242,6 +244,7 @@ async function faults() {
     // Fixed outside, Resume (twice: the fix is itself an outside move).
     writeFileSync(f, good);
     git(PROJECT, "commit", "-q", "-am", "rehearsal: fix setup on master (outside the queue)");
+    git(PROJECT, "push", "-q", "origin", "master"); // its owner pushes a hand commit (the queue never pushes what it did not land)
     await q.resume();
     const v2 = await q.waitView((v) => v.state !== "paused" || v.paused?.kind === "master-moved", "resumed or flagged again", 10 * 60_000);
     if (v2.state === "paused") await q.resume();
@@ -260,6 +263,7 @@ async function faults() {
     writeFileSync(pj, JSON.stringify(def, null, 2) + "\n");
     git(PROJECT, "add", ".sova/playbooks/review", ".sova/project.json");
     git(PROJECT, "commit", "-q", "-m", "rehearsal: declare the review kit (outside the queue)");
+    git(PROJECT, "push", "-q", "origin", "master"); // its owner pushes a hand commit (the queue never pushes what it did not land)
     if ((await q.view())?.state === "paused") await q.resume();
     const b = branch("r5", (dir) =>
       writeFileSync(
@@ -286,6 +290,7 @@ async function main() {
   await sova.start(LOGS);
   try {
     await sova.register(PROJECT, "sova-rehearsal");
+    sova.seedNames(PROJECT);
     await replay();
     await faults();
   } finally {

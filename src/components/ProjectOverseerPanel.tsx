@@ -27,7 +27,6 @@ import {
   getProjectWorktrees,
   getSessionSummaryById,
   listModels,
-  mergeCodingWorktree,
   openProjectOverseer,
   patchProjectOverseer,
   patchProjectOverseerTodo,
@@ -49,6 +48,7 @@ import { ACTIVITY_SHOWN, LIMIT_COLUMN_LABEL, LIMIT_COLUMNS, LIMIT_ROWS, limitCel
 import { actionLine, allowanceLine, gapArea, gapWords, holdHint, holdWords, isGap, IDEA_TITLE_MAX, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
 import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { ActionMenu } from "./ActionMenu";
+import { land, refusal } from "../lib/merge-queue-client";
 import { LinksBanner, type Links } from "./LinksBanner";
 import { Banner, Chip, Icon, Placeholder } from "./ui";
 import { PowersPanel } from "./PowersGrid";
@@ -966,6 +966,25 @@ function CodingSessions(props: {
       setWorking(null);
     }
   };
+  /** Land: the branch joins the project's merge queue at its head commit; the queue merges it onto
+      the target in its own copy, checks it there and moves the target to exactly that commit. */
+  const landRow = async (w: CodingRow & { worktree: string }) => {
+    if (working() || !po().worktrees.fresh()) return;
+    setWorking(w.sessionId);
+    try {
+      const no = refusal(await land(w.worktree));
+      if (no) throw new Error(no);
+      po().worktrees.refetch();
+      setErrors(({ [w.sessionId]: _, ...rest }) => rest);
+      const done = `Queued ${w.branch} to land on ${w.target}.`;
+      toast(done);
+      announce(done);
+    } catch (x) {
+      setErrors((e) => ({ ...e, [w.sessionId]: errText(x) }));
+    } finally {
+      setWorking(null);
+    }
+  };
   const retry = () => {
     po().info.refetch();
     po().worktrees.refetch();
@@ -1070,12 +1089,12 @@ function CodingSessions(props: {
                       <>
                         <Show when={gestures().merge !== false}>
                           <menu.Item
-                            label="Merge Branch"
-                            aria={`Merge Branch: ${row.branch} into ${row.target}`}
+                            label="Land"
+                            aria={`Land ${row.branch} on ${row.target}`}
                             icon={<Icon name="branch" small />}
-                            description={`${row.branch} into ${row.target}`}
-                            disabled={(gestures().merge || undefined) ?? (working() ? "Working" : undefined)}
-                            onRun={() => void act(row, () => mergeCodingWorktree(po().projectId(), row.sessionId), `Merged ${row.branch} into ${row.target}.`)}
+                            description={`Queues ${row.branch}: checked on ${row.target} first, then ${row.target} moves to it.`}
+                            disabled={(gestures().merge || undefined) ?? (working() ? "Working" : !row.worktree ? "Its folder is gone: land it from its chat." : undefined)}
+                            onRun={() => row.worktree && void landRow({ ...row, worktree: row.worktree })}
                           />
                         </Show>
                         <Show when={gestures().remove !== false}>

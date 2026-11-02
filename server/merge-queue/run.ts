@@ -19,6 +19,7 @@ import type { CheckPick, MergeNote, ReviewVerdict, RunStep, RunStepKind, StepRes
 import type { ProjectDef, StepDecl } from "../../shared/project-contract";
 import { render } from "../../shared/project-contract";
 import { slotLayoutOf } from "../../shared/project-slots";
+import { NO_BACKGROUND_CLEANUP } from "../git-no-background";
 import { agentRoot } from "../state-root";
 import { blameCheck, blameFile, blameSetup, type CheckBlame, summarize } from "./attribute";
 import { checksOf, countsOf, type CopyScope, envOf, type PlannedCheck, picksOf, planChecks, runCheck, templateVarsOf } from "./checks";
@@ -238,7 +239,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       return out({ verdict: "failed", blame: "branch", why: `nothing to land: ${target} already has ${short(commit)}`, copy });
     }
     ms.log(`$ git merge --no-ff ${commit}\n`);
-    const m = await gitProc(copy, ["merge", "--no-ff", "--no-edit", "-m", `Merge branch '${input.entry.branch}' into ${target}`, commit], { env: ident, log: ms.log, signal });
+    const m = await gitProc(copy, [...NO_BACKGROUND_CLEANUP, "merge", "--no-ff", "--no-edit", "-m", `Merge branch '${input.entry.branch}' into ${target}`, commit], { env: ident, log: ms.log, signal });
     if (m.aborted) return (ms.end("failed", { detail: "aborted" }), voided("aborted"));
     if (m.code !== 0) {
       const files = (await gitProc(copy, ["diff", "--name-only", "--diff-filter=U"])).out.split("\n").filter(Boolean);
@@ -500,7 +501,7 @@ async function takeResolution(copy: string, base: string, resolution: string, lo
   if (co.code !== 0) return { error: `the resolution ${short(resolution)} can't be checked out: ${tail(co.out)}` };
   if (first === base) return { sha: (await gitOut(copy, ["rev-parse", "HEAD"])) };
   log(`its first parent ${short(first)} isn't the target's head: merging ${short(base)} into it\n`);
-  const m = await gitProc(copy, ["merge", "--no-ff", "--no-edit", base], { env, log, signal });
+  const m = await gitProc(copy, [...NO_BACKGROUND_CLEANUP, "merge", "--no-ff", "--no-edit", base], { env, log, signal });
   if (m.code !== 0) {
     const files = (await gitProc(copy, ["diff", "--name-only", "--diff-filter=U"])).out.split("\n").filter(Boolean);
     await gitProc(copy, ["merge", "--abort"], { log });
@@ -518,7 +519,7 @@ async function makeDocs(o: { input: RunInput; copy: string; steps: Steps; ident:
     st.end("skipped", { detail: o.input.entry.approval.withoutSpecs ? "landing without its specs" : "no spec drafts" });
     return { kind: "none" };
   }
-  if (!existsSync(join(o.copy, ".sova", "spec", "manifest.json"))) {
+  if (!existsSync(join(o.copy, ".sova", "spec", "claims"))) {
     st.end("failed", { detail: "the target has no .sova/spec to land drafts into" });
     return { kind: "refused", why: `spec drafts (${names.join(", ")}) but ${o.input.project.target} has no .sova/spec` };
   }
@@ -568,7 +569,7 @@ async function makeDocs(o: { input: RunInput; copy: string; steps: Steps; ident:
   const add = await gitProc(o.copy, ["add", "--", ...paths], { log: st.log });
   if (add.code !== 0) return (st.end("failed", { detail: tail(add.out) }), { kind: "machine", why: `staging the docs failed: ${tail(add.out)}` });
   const subject = String(j.commitMessage?.subject || `Spec: land ${names.join(", ")}`);
-  const c = await gitProc(o.copy, ["commit", "--no-verify", "-m", subject, "-m", String(j.commitMessage?.body || verification), "-m", `Sova-Spec-Landing: merge-queue ${o.input.runId}`], { env: o.ident, log: st.log });
+  const c = await gitProc(o.copy, [...NO_BACKGROUND_CLEANUP, "commit", "--no-verify", "-m", subject, "-m", String(j.commitMessage?.body || verification), "-m", `Sova-Spec-Landing: merge-queue ${o.input.runId}`], { env: o.ident, log: st.log });
   if (c.code !== 0) return (st.end("failed", { detail: tail(c.out) }), { kind: "machine", why: `committing the docs failed: ${tail(c.out)}` });
   const sha = await gitOut(o.copy, ["rev-parse", "HEAD"]);
   st.end("passed", { detail: `${short(sha)}: ${subject}` });

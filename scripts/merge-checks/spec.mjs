@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { context, report, skip, specCore } from "./lib.mjs";
 
 const ctx = context();
-if (!existsSync(join(ctx.root, ".sova", "spec", "manifest.json"))) skip(ctx.out, "no .sova/spec in this tree");
+if (!existsSync(join(ctx.root, ".sova", "spec", "claims"))) skip(ctx.out, "no .sova/spec in this tree");
 const core = specCore();
 const fail = (name, message) => {
   console.log(`spec: ${message}`);

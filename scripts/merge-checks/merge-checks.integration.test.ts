@@ -138,8 +138,7 @@ describe("merge checks", () => {
 
   test("spec: a tree with a spec is checked by the spec tools; missing tools fail rather than pass", () => {
     const { root, tree, base } = repo();
-    mkdirSync(join(tree, ".sova", "spec"), { recursive: true });
-    writeFileSync(join(tree, ".sova", "spec", "manifest.json"), "{}\n");
+    mkdirSync(join(tree, ".sova", "spec", "claims"), { recursive: true });
     const r = runCheck("spec", tree, root, ["a.txt"], base, { SOVA_SPEC_CORE: join(root, "no-core") });
     expect(r.code).toBe(1);
     expect(String((r.report?.failures as { message: string }[])[0].message)).toMatch(/spec tools aren't at/);

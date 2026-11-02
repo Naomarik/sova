@@ -1,7 +1,7 @@
 import { createEffect, createSignal, For, on, Show } from "solid-js";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
-import { mins, notesOf, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView } from "../lib/merge-queue";
+import { mins, notesOf, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView } from "../lib/merge-queue";
 import { answerEntry, cancelEntry, landBranch, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
 import { createPoll } from "../lib/poll";
 import { mergeRunHref, projectSessionHref } from "../lib/projects-route";
@@ -167,7 +167,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatTitle?(
           title={pausedTitle(v())}
           body={
             <>
-              {v().paused?.kind !== "operator" ? v().paused?.why : "Approvals are still taken; nothing is checked until you resume."}
+              {v().paused?.kind !== "operator" ? sentence(v().paused?.why) : "Approvals are still taken; nothing is checked until you resume."}
               <Show when={v().paused?.run}>
                 {(r) => (
                   <>

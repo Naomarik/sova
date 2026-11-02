@@ -152,3 +152,10 @@ test("times and the waiting head", () => {
   assert.equal(mins(10), "1 min");
   assert.equal(waitingHead([{ eta: { startsInMs: 0, takesMs: 60_000 } }, { eta: { startsInMs: 60_000, takesMs: 120_000 } }] as Pick<MergeEntry, "eta">[]), "Waiting · 2 · the last one done in ~3 min");
 });
+
+test("a queue line as a sentence: capitalised and stopped once", async () => {
+  const { sentence } = await import("./merge-queue");
+  assert.equal(sentence("unit tests failed (passes on master alone)"), "Unit tests failed (passes on master alone).");
+  assert.equal(sentence("Done."), "Done.");
+  assert.equal(sentence(undefined), "");
+});

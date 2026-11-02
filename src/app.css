@@ -1683,3 +1683,4 @@ html, body { overflow: clip; overscroll-behavior: none; }
   border-top-right-radius: var(--r-md);
   border-bottom-right-radius: var(--r-md);
 }
+.mq-run p { margin: 0; }

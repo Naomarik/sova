@@ -447,7 +447,7 @@ for (const width of [1280, 390]) {
       const banner = page.locator(".mq-tab .banner");
       await banner.waitFor({ timeout: 20_000 });
       assert.match(await words(banner), /Paused: the target moved outside the queue\./);
-      assert.match(await words(banner), /master moved to 9f9f9f9/);
+      assert.match(await words(banner), /Master moved to 9f9f9f9 outside the queue; the run was voided\./);
       await banner.getByRole("button", { name: "Resume" }).click();
       await called(o, "merge.resume");
       await noRestartOrLive(page, ".mq-tab");

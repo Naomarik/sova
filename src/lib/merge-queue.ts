@@ -11,6 +11,14 @@ export { ordinal };
 
 export const short = (sha: string | undefined): string => (sha ?? "").slice(0, 7);
 
+/** A line from the queue as a sentence: capitalised, ending in a stop, so the next one can follow it. */
+export const sentence = (s: string | undefined): string => {
+  const t = (s ?? "").trim();
+  if (!t) return "";
+  const up = t[0]!.toUpperCase() + t.slice(1);
+  return /[.!?…]$/.test(up) ? up : `${up}.`;
+};
+
 /** Minutes, rounded up, never 0: "4 min". */
 export const mins = (ms: number | undefined): string => `${Math.max(1, Math.ceil((ms ?? 0) / 60_000))} min`;
 

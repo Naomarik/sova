@@ -1,6 +1,6 @@
 import { createEffect, createResource, createSignal, For, on, Show } from "solid-js";
 import { relativeTime } from "../lib/format";
-import { attribution, clock, short, sourceTag, verdictChip, type MergeQueueView, type MergeRun, type RunStep } from "../lib/merge-queue";
+import { attribution, clock, sentence, short, sourceTag, verdictChip, type MergeQueueView, type MergeRun, type RunStep } from "../lib/merge-queue";
 import { mergeChanged, readLog, readRun } from "../lib/merge-queue-client";
 import { projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { Banner, Icon } from "./ui";
@@ -51,6 +51,7 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
       <Show when={run()} fallback={<p class="orgs-empty">{run.error ? `Couldn't read this run. ${run.error instanceof Error ? run.error.message : String(run.error)}` : "Reading the run."}</p>}>
         {(r) => (
           <>
+            <div class="stack-2">
             <div class="cluster">
               <h2 class="orgs-h2 text-mono" id="mq-run-title">
                 {r().branch}
@@ -76,6 +77,7 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
                 </p>
               )}
             </Show>
+            </div>
             <div class="button-row">
               <AllLogs run={r()} />
               <Show when={props.view.thread}>
@@ -145,19 +147,19 @@ function Verdict(props: { run: MergeRun; target: string }) {
   return (
     <>
       <Show when={r().verdict === "failed" && r().blame === "branch"}>
-        <Banner tone="error" title={`${r().branch} broke ${failedStep()?.label ?? "a check"}. It didn't land; ${props.target} didn't move.`} body={`${r().why ?? "It passes on the target alone and fails with this branch."} It went back to its chat with the log.`} />
+        <Banner tone="error" title={`${r().branch} broke ${failedStep()?.label ?? "a check"}. It didn't land; ${props.target} didn't move.`} body={`${sentence(r().why) || "It passes on the target alone and fails with this branch."} It went back to its chat with the log.`} />
       </Show>
       <Show when={r().verdict === "failed" && r().blame === "resolution"}>
-        <Banner tone="warn" title="The merge thread's resolution failed a check." body={`${r().why ?? ""} It comes back to you; the branch isn't blamed.`.trim()} />
+        <Banner tone="warn" title="The merge thread's resolution failed a check." body={`${sentence(r().why)} It comes back to you; the branch isn't blamed.`.trim()} />
       </Show>
       <Show when={r().verdict === "failed" && (r().blame === "master" || r().blame === "flaky")}>
-        <Banner tone="warn" title={r().blame === "master" ? `Red on ${props.target} too.` : "Flaky: it passed on a rerun."} body={`${r().why ?? ""} Noted on the landing; it doesn't block.`.trim()} />
+        <Banner tone="warn" title={r().blame === "master" ? `Red on ${props.target} too.` : "Flaky: it passed on a rerun."} body={`${sentence(r().why)} Noted on the landing; it doesn't block.`.trim()} />
       </Show>
       <Show when={r().verdict === "machine"}>
-        <Banner tone="warn" title={`Stopped at ${failedStep()?.label ?? "setup"}. It's not the branch's fault, and nothing was merged.`} body={`${r().why ?? `It failed on ${props.target} alone too.`} Retried once, then paused. No chat was told to fix anything; the branch keeps its place.`} />
+        <Banner tone="warn" title={`Stopped at ${failedStep()?.label ?? "setup"}. It's not the branch's fault, and nothing was merged.`} body={`${sentence(r().why) || `It failed on ${props.target} alone too.`} Retried once, then paused. No chat was told to fix anything; the branch keeps its place.`} />
       </Show>
       <Show when={r().verdict === "void"}>
-        <Banner tone="info" title="This run stopped before it finished. Nothing was blamed." body={r().why ?? "It runs again from the start."} />
+        <Banner tone="info" title="This run stopped before it finished. Nothing was blamed." body={sentence(r().why) || "It runs again from the start."} />
       </Show>
       <Show when={r().verdict === "running" || r().verdict === "waiting" || r().verdict === "conflict"}>
         <p class="text-caption mq-nothing">Nothing has merged from this run. {props.target} moves only once every check passes.</p>

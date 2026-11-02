@@ -191,3 +191,52 @@ test("createPoll with no interval: read once, never again on a timer; a failure 
     mock.timers.reset();
   }
 });
+
+test("rows: a following list asks for rows=1, takes the rows frames, and re-reads through the feed's throttle; a server with no rows_hello is read the old way", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  try {
+    FakeSocket.all = [];
+    const { followListRows, requestListRead } = await import("./session-feed");
+    const { ListRows } = await import("./list-rows");
+    let refreshes = 0;
+    const published: number[] = [];
+    const lr = new ListRows({ refetch: () => requestListRead(() => refreshes++), publish: (r) => published.push(r.length) });
+    const unfollow = followListRows(lr);
+    const row = (id: string) => ({ id, path: `/s/${id}`, cwd: "/w", title: id, createdAt: "", lastActiveAt: "2026-01-01T00:00:00.000Z", model: null, live: null, busy: false, origin: "web", archived: false }) as const;
+    const dispose = solid.createRoot((dispose) => {
+      openSessionFeed(() => refreshes++);
+      return dispose;
+    });
+    const first = FakeSocket.all[0]!;
+    assert.equal(first.url, "ws://sova.test/ws/watch?feed=sessions&rows=1");
+    lr.fetchStarted();
+    first.open();
+    first.push({ type: "rows_hello", epoch: "e", version: 4 });
+    lr.snapshot([row("a")], { epoch: "e", version: 4 });
+    first.push({ type: "marks", full: true, sessions: [] });
+    first.push({ type: "rows", epoch: "e", from: 4, to: 5, upsert: [row("b")], remove: [] });
+    assert.deepEqual(published, [2], "the delta is merged, no re-read");
+    assert.equal(refreshes, 0);
+    // A gap: one re-read, at once, through the throttle; a second in the same second folds into one.
+    first.push({ type: "rows", epoch: "e", from: 9, to: 10, upsert: [], remove: ["/s/a"] });
+    first.push({ type: "list_changed" });
+    assert.equal(refreshes, 1);
+    mock.timers.tick(1000);
+    assert.equal(refreshes, 2);
+
+    // A reconnect to a server without rows: list_changed re-reads as before.
+    first.drop();
+    mock.timers.tick(1000);
+    const second = FakeSocket.all[1]!;
+    second.open();
+    mock.timers.tick(1000);
+    const before = refreshes;
+    second.push({ type: "marks", full: true, sessions: [] });
+    second.push({ type: "list_changed" });
+    assert.equal(refreshes, before + 1);
+    dispose();
+    unfollow();
+  } finally {
+    mock.timers.reset();
+  }
+});

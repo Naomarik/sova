@@ -4722,6 +4722,22 @@ export type SessionFeedMessage =
       to live, busy/activity or lastActiveAt). No payload: the client refetches the list
       (coalesced). */
   | { type: "list_changed" }
+  /** Only on a socket that asked for rows (`/ws/watch?feed=sessions&rows=1`), always its FIRST
+      frame: the list's current version. `epoch` names this feed's run (a restart, or the feed
+      stopping with its last listener, starts a new one); `version` counts its row changes. GET
+      /api/sessions names the version its body is at in `X-Sova-List-Version: <epoch>:<version>`.
+      A client that gets any other first frame is talking to a server without rows (it re-reads
+      on `list_changed`). Additive: a socket without `rows=1` never gets it. */
+  | { type: "rows_hello"; epoch: string; version: number }
+  /** On a rows socket instead of `list_changed`: the rows that changed between versions `from`
+      and `to` (= from + 1), whole (`upsert`, new or changed on any field a row shows), and the
+      paths that left the list (`remove`). The client applies it only at version `from`, sorts by
+      lastActiveAt, and re-reads the list on a gap or an epoch it doesn't hold. A change too big for
+      one frame (over ROWS_MAX_ROWS rows or ROWS_MAX_BYTES) comes as `list_changed` instead. */
+  | { type: "rows"; epoch: string; from: number; to: number; upsert: SessionSummary[]; remove: string[] }
+  /** On a rows socket once a minute: the digest (src/lib/summary-diff.ts rowsDigest) of the list at
+      `version`. A client at that version whose own digest differs re-reads the list. */
+  | { type: "rows_check"; epoch: string; version: number; digest: string }
   /** The session groups changed (a group made, renamed, reordered or deleted, or a session put into
       or taken out of one, by any client or the Overseer: server/session-groups.ts writes it). No
       payload: the client re-reads GET /api/session-groups and the list. Never on connect. Additive:

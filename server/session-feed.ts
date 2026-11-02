@@ -1,4 +1,6 @@
 import type { SessionFeedMessage, SessionMarks, SessionSummary } from "../shared/protocol";
+import { randomBytes } from "node:crypto";
+import { rowEntry, rowsDigest } from "../src/lib/summary-diff";
 import { attentionChanged } from "./attention-memo";
 
 /**
@@ -21,9 +23,35 @@ import { attentionChanged } from "./attention-memo";
  * The same diff also sends `list_changed` when a row changed in a way the marks can't carry (a
  * session a TUI just created, one that went away, its live record, running state or last
  * activity): the client has no other way to learn of those short of its own focus or busy poll.
+ *
+ * A socket that asks for rows (`add(send, { rows: true })`, `?rows=1`) gets the changed rows
+ * themselves instead: `rows_hello` first, then one `rows` frame per change of any field a row shows
+ * (src/lib/summary-diff.ts rowKey), numbered by a version, and a `rows_check` digest with each
+ * safety-net re-diff. A change too big for a frame is `list_changed` on that socket too. Every
+ * other socket (an older tab, a peer's proxied feed) gets `list_changed` exactly as before.
  */
 
 type Send = (msg: SessionFeedMessage) => void;
+
+/** A `rows` frame over this many rows, or this many bytes of JSON, goes as `list_changed`. */
+export const ROWS_MAX_ROWS = 200;
+export const ROWS_MAX_BYTES = 256 * 1024;
+
+/** The rows that changed between two lists, by rowKey: new or changed rows, and paths gone. */
+export function diffRows(prev: ReadonlyMap<string, SessionSummary>, list: readonly SessionSummary[]): { upsert: SessionSummary[]; remove: string[]; next: Map<string, SessionSummary> } {
+  const next = new Map<string, SessionSummary>();
+  const upsert: SessionSummary[] = [];
+  for (const s of list) {
+    next.set(s.path, s);
+    const before = prev.get(s.path);
+    if (before !== s && (!before || rowEntry(before).key !== rowEntry(s).key)) upsert.push(s);
+  }
+  const remove: string[] = [];
+  for (const path of prev.keys()) if (!next.has(path)) remove.push(path);
+  return { upsert, remove, next };
+}
+
+const newEpoch = () => randomBytes(6).toString("base64url");
 const FIELDS = ["signals", "workerSignals", "tags", "turnError"] as const;
 
 /** A row's overlays, or null when it has none. */
@@ -118,6 +146,15 @@ export const SAFETY_NET_MS = 60_000;
 
 export class SessionFeed {
   private readonly clients = new Set<Send>();
+  /** The clients that asked for rows (a subset of `clients`). */
+  private readonly rowClients = new Set<Send>();
+  /** This run of the feed: a new one at each start, so a version is never read across runs. */
+  private epochId = newEpoch();
+  /** Row changes seen in this run; `base` is the list at it (null before the first diff). */
+  private version = 0;
+  private base: Map<string, SessionSummary> | null = null;
+  /** The next re-diff also sends `rows_check` (the safety net's). */
+  private checkDue = false;
   /** Listeners whose snapshot is still being built. */
   private joining = 0;
   private sent = new Map<string, SessionMarks>();
@@ -144,12 +181,24 @@ export class SessionFeed {
     return this.clients.size;
   }
 
-  /** A new listener: existing ones get any pending delta first, then it gets the full snapshot. */
-  add(send: Send): () => void {
+  /** The list version as of the last diff (`X-Sova-List-Version`). */
+  get listVersion(): { epoch: string; version: number } {
+    return { epoch: this.epochId, version: this.version };
+  }
+
+  /** A new listener: existing ones get any pending delta first, then it gets the full snapshot (a
+      rows listener its `rows_hello` before that). */
+  add(send: Send, opts: { rows?: boolean } = {}): () => void {
     let gone = false;
     this.joining++;
     if (!this.timer) {
-      this.timer = setInterval(() => this.nudge(0), this.opts.intervalMs ?? SAFETY_NET_MS);
+      // A new run: a list read while no one listened (its version this run's 0 too) is never taken
+      // for this run's baseline, which may differ from it.
+      this.epochId = newEpoch();
+      this.timer = setInterval(() => {
+        this.checkDue = true;
+        this.nudge(0);
+      }, this.opts.intervalMs ?? SAFETY_NET_MS);
       this.timer.unref?.();
       try {
         this.unwatch = this.opts.watch?.(() => this.nudge()) ?? null;
@@ -165,11 +214,16 @@ export class SessionFeed {
       }
       if (gone) return;
       this.clients.add(send);
+      if (opts.rows) {
+        this.rowClients.add(send);
+        send({ type: "rows_hello", epoch: this.epochId, version: this.version });
+      }
       send({ type: "marks", full: true, sessions: [...this.sent.values()] });
     });
     return () => {
       gone = true;
       this.clients.delete(send);
+      this.rowClients.delete(send);
       if (this.clients.size === 0 && this.joining === 0) this.stop();
     };
   }
@@ -207,6 +261,22 @@ export class SessionFeed {
     for (const send of this.clients) send(msg);
   }
 
+  /** A list read for GET /api/sessions with the version it is at: run in turn with the re-diffs, so
+      no re-diff is halfway while the version is read. The list read starts after that version's
+      diff, so every later `rows` frame is at least as fresh as what it returns. */
+  snapshot<T>(read: () => Promise<T>): Promise<{ body: T; epoch: string; version: number }> {
+    return new Promise((resolve, reject) => {
+      this.run(async () => {
+        const { epoch, version } = this.listVersion;
+        try {
+          resolve({ body: await read(), epoch, version });
+        } catch (err) {
+          reject(err);
+        }
+      });
+    });
+  }
+
   /** Settles once every queued diff has run (tests). */
   idle(): Promise<void> {
     return this.chain;
@@ -227,6 +297,33 @@ export class SessionFeed {
     this.rows = null;
     this.extras = new Map();
     this.last = null;
+    // Its next run starts from a new baseline under a new epoch (add).
+    this.base = null;
+    this.version = 0;
+    this.checkDue = false;
+  }
+
+  /** The rows frames of one re-diff: a `rows` delta when any row changed (or `list_changed` when
+      it is too big), then the safety net's `rows_check`. */
+  private diffRowsOf(list: readonly SessionSummary[]): void {
+    const prev = this.base;
+    const { upsert, remove, next } = diffRows(prev ?? new Map(), list);
+    this.base = next;
+    if (prev && (upsert.length || remove.length)) {
+      const from = this.version++;
+      if (this.rowClients.size) {
+        const msg: SessionFeedMessage = { type: "rows", epoch: this.epochId, from, to: this.version, upsert, remove };
+        const big = upsert.length + remove.length > ROWS_MAX_ROWS || JSON.stringify(msg).length > ROWS_MAX_BYTES;
+        for (const send of this.rowClients) send(big ? { type: "list_changed" } : msg);
+      }
+    }
+    if (this.checkDue && prev) {
+      this.checkDue = false;
+      if (this.rowClients.size) {
+        const msg: SessionFeedMessage = { type: "rows_check", epoch: this.epochId, version: this.version, digest: rowsDigest(next.values()) };
+        for (const send of this.rowClients) send(msg);
+      }
+    }
   }
 
   private run(fn: () => Promise<void>): void {
@@ -254,9 +351,10 @@ export class SessionFeed {
       } finally {
         this.announcing = false;
       }
-      this.publish({ type: "list_changed" });
+      for (const send of this.clients) if (!this.rowClients.has(send)) send({ type: "list_changed" });
     }
     this.rows = rows;
+    this.diffRowsOf(list);
     if (!this.opts.after) return;
     const frames = await this.opts.after(list);
     for (const f of frames) {

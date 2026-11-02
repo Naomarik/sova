@@ -255,6 +255,15 @@ test("each event names the verbs it is answered with, all of them merge verbs th
   }
 });
 
+test("queued: the diff and the picks read from the base the entry was queued against, so a landed branch still shows its changes", () => {
+  const withBase = eventText({ kind: "queued", entry: entry("mq_9"), base: "b".repeat(40) });
+  assert.match(withBase, /onto master \(at bbbbbbb\)\./);
+  assert.ok(withBase.includes(`git diff ${"b".repeat(40)}...${"a".repeat(40)}`));
+  assert.ok(withBase.includes(`blast-radius.mjs --base ${"b".repeat(40)} --tip ${"a".repeat(40)}`));
+  const without = eventText(queued("mq_9"));
+  assert.ok(without.includes(`git diff master...${"a".repeat(40)}`), "no base: the target's name");
+});
+
 test("names: the thread is told the project's names file and target, and to run the interview in its own chat", async () => {
   const text = eventText({ kind: "names", file: "/state/merge-queue/p1/names.json", target: "main" });
   assert.match(text, /every push of main is held\. Landings go on\./);

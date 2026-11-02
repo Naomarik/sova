@@ -40,10 +40,12 @@ export const DEFAULT_PLAYBOOK_DIR = fileURLToPath(new URL(`../../playbooks/${PLA
 /** What the thread needs to know about an entry. */
 export type ThreadEntry = Pick<MergeEntry, "id" | "branch" | "commit" | "target">;
 
+/** `base`: the target's commit the entry was queued (or run) against. The branch's own changes are
+    `base...commit` even after it landed, when `target...commit` is empty. Absent: the target's name. */
 export type ThreadEvent =
-  | { kind: "queued"; entry: ThreadEntry }
-  | { kind: "conflict"; entry: ThreadEntry; run: string; files: string[] }
-  | { kind: "failed"; entry: ThreadEntry; run: string; summary?: string }
+  | { kind: "queued"; entry: ThreadEntry; base?: string }
+  | { kind: "conflict"; entry: ThreadEntry; run: string; files: string[]; base?: string }
+  | { kind: "failed"; entry: ThreadEntry; run: string; summary?: string; base?: string }
   | { kind: "paused"; why: string }
   /** The project has no private-names list: pushes are held until the user answers the interview. */
   | { kind: "names"; file: string; target: string };
@@ -112,10 +114,11 @@ export function eventText(ev: ThreadEvent): string {
   switch (ev.kind) {
     case "queued": {
       const e = ev.entry;
+      const base = ev.base ?? e.target;
       return [
-        `Queued: entry ${e.id} · ${e.branch} at ${short(e.commit)}, onto ${e.target}.`,
-        `Read what it changes (\`git diff ${e.target}...${e.commit}\`, read only). Then, in one short turn:`,
-        `1. pick extra checks by blast radius (the method's scripts/blast-radius.mjs, references/picks.md) and add them with merge.extend {entry: "${e.id}", checks: [id], why} (skip when nothing beyond the floor fits);`,
+        `Queued: entry ${e.id} · ${e.branch} at ${short(e.commit)}, onto ${e.target}${ev.base ? ` (at ${short(ev.base)})` : ""}.`,
+        `Read what it changes (\`git diff ${base}...${e.commit}\`, read only; it may land before you finish). Then, in one short turn:`,
+        `1. pick extra checks by blast radius (the method's scripts/blast-radius.mjs --base ${base} --tip ${e.commit}, references/picks.md) and add them with merge.extend {entry: "${e.id}", checks: [id], why} (skip when nothing beyond the floor fits; "landed" or "busy" means too late: go on to the note);`,
         `2. write its note with merge.note {entry: "${e.id}", note} ("What's worth noting" in the playbook; an empty note when nothing is).`,
       ].join("\n");
     }

@@ -27,8 +27,8 @@ You may read anything (`git log`, `git diff`, `git show`, files) and run this fo
 ## Each event, one short turn
 Sova sends you one message per event. Answer it with the verbs and stop: no waiting, no timers, no follow-up questions to Sova. Ask the user nothing, except in the names interview.
 
-**Queued** (an entry joined the queue). Read the branch: `git diff --stat <target>...<commit>`, then the parts that matter. Then:
-1. **Picks** (`references/picks.md`): run `node scripts/blast-radius.mjs --base <target> --tip <commit> --repo <project root>`. It proposes checks from the project's map, each with its reason. Read the diff against it: drop a pick the change can't reach, add one the map missed (only check ids the project declares as optional). Send each with `merge.extend`, its reason in `why`. Nothing fits: send nothing. You only ever add: the required checks always run.
+**Queued** (an entry joined the queue). Read the branch: `git diff --stat <base>...<commit>` with the base Sova's message names (the target's commit it was queued against; the entry may already have landed, and then `<target>...<commit>` is empty), then the parts that matter. Then:
+1. **Picks** (`references/picks.md`): run `node scripts/blast-radius.mjs --base <base> --tip <commit> --repo <project root>`. It proposes checks from the project's map, each with its reason. Read the diff against it: drop a pick the change can't reach, add one the map missed (only check ids the project declares as optional). Send each with `merge.extend`, its reason in `why`. Nothing fits: send nothing. You only ever add: the required checks always run. A refusal saying the entry is busy or landed means you were too late: that is fine, go on to the note.
 2. **Note** (`references/notes.md`): write the note with `merge.note`, from "What's worth noting" below (or the project's own list). Nothing worth noting: send an empty note, never filler.
 
 **Conflict** (the branch doesn't merge cleanly onto the target). Judge it: `references/conflicts.md`.

@@ -3,7 +3,7 @@
 The project declares its required checks (they always run) and, apart from them, optional checks the thread may add (checks marked `"optional": true` in `.sova/project.json`'s merge section; a pick of a required check makes it run even where it would skip itself, and shows your reason). You add the optional checks a branch's change can reach, each with one line saying why. You never remove or replace a required check.
 
 ## How
-1. `node scripts/blast-radius.mjs --base <target> --tip <commit> --repo <project root>` prints `{picks: [{id, why, select?}]}` from the project's map (`.sova/playbooks/merge-queue/references/blast-radius.json`). No map: no picks; go on from the diff alone.
+1. `node scripts/blast-radius.mjs --base <base> --tip <commit> --repo <project root>` (`<base>`: the target's commit Sova's message names) prints `{picks: [{id, why, select?}]}` from the project's map (`.sova/playbooks/merge-queue/references/blast-radius.json`). No map: no picks; go on from the diff alone.
 2. Read the diff against each pick:
    - keep a pick the change can really reach;
    - drop one the map matched on a path the change only touches trivially (a comment, a rename of a test fixture the check doesn't read) and say so in no note;

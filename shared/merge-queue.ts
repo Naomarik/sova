@@ -264,7 +264,6 @@ export type PauseKind =
   | "operator" // merge.pause
   | "master-moved" // the target moved outside the queue: the run was voided; resume to go on
   | "machine" // setup / machine failure on the target too, twice
-  | "master-red" // a whole check is red on the target alone
   | "main-checkout-dirty" // the project's main folder has uncommitted edits: master landed, the folder not moved
   | "reviewer" // the reviewer failed twice
   | "recovery" // a landing in flight at a stop could not be reconciled

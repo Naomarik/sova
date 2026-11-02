@@ -63,7 +63,12 @@ export const cardSha = (c: Pick<MergeCard, "landed" | "commit">): string => shor
 export function notPushed(c: Pick<MergeCard, "state" | "landed">): string | null {
   const l = c.landed;
   if (c.state !== "landed" || !l || l.pushed === "pushed") return null;
-  return `Not pushed: ${sentence(l.pushWhy) || "this project doesn't push from the queue."}`;
+  // The why may already say it ("not pushed: …", "push held: …"): said once, never "Not pushed: Push held: …".
+  const why = (l.pushWhy ?? "").trim().replace(/^not pushed\s*[:,-]?\s*/i, "");
+  if (!why) return "Not pushed: this project doesn't push from the queue.";
+  if (/^push(ed)?\b/i.test(why)) return sentence(why);
+  const tail = why.charAt(0).toLowerCase() + why.slice(1);
+  return `Not pushed: ${/[.!?…]$/.test(tail) ? tail : `${tail}.`}`;
 }
 
 /** "1 newer commit not included", on a landed card (Land Again beside it). */

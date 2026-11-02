@@ -8,11 +8,14 @@
 
 import { OVERSEER_BRIEF_PREFIX, type TranscriptItem } from "./protocol";
 import { stripSessionHeader } from "./profiles";
+import { isMergeQueueText, MERGE_QUEUE_SENT_PREFIX } from "./merge-queue";
 
 /** A user message's sender, by its marker. `baton` with `by: "operator"` is the user's own. */
 export type Sender =
   | { kind: "session"; sessionId: string; title: string; hop: number }
   | { kind: "overseer" }
+  /** A turn the merge queue started (Needs a fix, Send Back), by its prefix. */
+  | { kind: "merge-queue" }
   | { kind: "baton"; by: string };
 
 /** A proactive "Brief me" prompt (the Overseer's), by its prefix: never the user's own words. */
@@ -30,7 +33,7 @@ const entryOf = (rowId: string): string => {
     markers name one row, another session wins over the Overseer, and the Overseer over a baton
     participant (the transcript's own precedence). */
 export function sendersOf(items: readonly TranscriptItem[]): Map<string, Sender> {
-  const rank = { session: 3, overseer: 2, baton: 1 } as const;
+  const rank: Record<Sender["kind"], number> = { session: 3, overseer: 2, "merge-queue": 2, baton: 1 };
   const out = new Map<string, Sender>();
   const put = (id: string, s: Sender) => {
     const was = out.get(id);
@@ -53,7 +56,10 @@ export function otherSender(senders: ReadonlyMap<string, Sender>, rowId: string)
 
 /** The row's sender for the views: a marker's, else the Overseer's for a brief. */
 export function rowSender(row: Pick<TranscriptItem, "id" | "kind" | "text">, senders: ReadonlyMap<string, Sender>): Sender | undefined {
-  return otherSender(senders, row.id) ?? (row.kind === "user" && isBriefText(row.text) ? { kind: "overseer" } : undefined);
+  return (
+    otherSender(senders, row.id) ??
+    (row.kind === "user" && isBriefText(row.text) ? { kind: "overseer" } : row.kind === "user" && isMergeQueueText(row.text) ? { kind: "merge-queue" } : undefined)
+  );
 }
 
 /** What the user typed: a user row no marker names as someone else's, and never a brief. A wake
@@ -71,5 +77,6 @@ export function ownInputIds(rows: readonly TranscriptItem[]): string[] {
 export function messageBody(text: string, sender: Sender | undefined, brief = false): string {
   if (sender?.kind === "session") return stripSessionHeader(text);
   if (brief) return briefBody(text);
+  if (sender?.kind === "merge-queue") return text.trimStart().slice(MERGE_QUEUE_SENT_PREFIX.length).trim();
   return text;
 }

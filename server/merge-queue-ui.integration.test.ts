@@ -659,7 +659,8 @@ for (const width of [1280, 390]) {
       assert.match(t, /8 commits · \+970 −45 · /);
       assert.match(t, /Merge thread: Changes server code; restart Sova to pick it up\./);
       assert.match(t, /Flaky: server\/a\.test\.ts failed, then passed on a rerun/);
-      assert.match(t, /Not pushed: Push held: private names not set up yet\./);
+      assert.match(t, /Push held: private names not set up yet\./);
+      assert.doesNotMatch(t, /Not pushed: Push held/i, "the push reason is said once");
       assert.match(t, /1 newer commit not included/);
       assert.equal(await landed.getByRole("button", { name: "Review Changes from feat/settle-cpu" }).count(), 1);
       assert.equal(await landed.getByRole("button", { name: "Land Again feat/settle-cpu" }).count(), 1);
@@ -737,6 +738,10 @@ for (const width of [1280, 390]) {
       assert.match(t, /Merge queue/);
       assert.doesNotMatch(t, /\[merge-queue\]/);
       assert.match(t, /fix\/draft-autosave-race needs a fix/);
+      // The composer's Inputs counts only what you typed: 2, not the queue's turn.
+      const inputs = page.locator(".run-status-inputs");
+      await inputs.waitFor({ timeout: 10_000 });
+      assert.match(await words(inputs), /^2 inputs/);
       await o.ctx.close();
     });
 

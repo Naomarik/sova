@@ -39,7 +39,11 @@ test("each state's actions: none of them writes into the chat (all merge verbs)"
 
 test("landed: not pushed says why; newer commits are said", () => {
   const landed = { sha: "b".repeat(40), from: SHA, at: "2026-11-02T21:37:00Z", pushed: "not-pushed" as const, pushWhy: "push held: private names not set up yet" };
-  assert.equal(notPushed(card({ state: "landed", landed })), "Not pushed: Push held: private names not set up yet.");
+  // The why is said once, however it's phrased.
+  assert.equal(notPushed(card({ state: "landed", landed })), "Push held: private names not set up yet.");
+  assert.equal(notPushed(card({ state: "landed", landed: { ...landed, pushWhy: "Not pushed: origin is ahead" } })), "Not pushed: origin is ahead.");
+  assert.equal(notPushed(card({ state: "landed", landed: { ...landed, pushWhy: "The leak scan found a name" } })), "Not pushed: the leak scan found a name.");
+  assert.equal(notPushed(card({ state: "landed", landed: { ...landed, pushWhy: undefined } })), "Not pushed: this project doesn't push from the queue.");
   assert.equal(notPushed(card({ state: "landed", landed: { ...landed, pushed: "pushed" } })), null);
   assert.equal(cardNewer(card({ state: "landed", newerCommits: 1 })), "1 newer commit not included");
   assert.equal(cardPill(card({ state: "landed" })).label, "Landed");

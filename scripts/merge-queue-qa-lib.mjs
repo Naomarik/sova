@@ -52,6 +52,14 @@ export const check = (cond, what) => {
   if (!cond) throw new Error(`expected: ${what}`);
 };
 
+/** A workspace of this run's own: `<base>/<name>-<port>-<runid>` (never shared by two runs: its clone, bare origin,
+ *  .worktrees, merge copy, server clone and results). `--ws <dir>` reuses a given one on purpose. */
+export function runWorkspace(base, name, port, given) {
+  if (given) return guardPath(given);
+  const id = `${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}-${process.pid}-${Math.random().toString(16).slice(2, 6)}`;
+  return guardPath(join(base, `${name}-${port}-${id}`));
+}
+
 /** Refuses any path under ~/.pi or the live tree. */
 export function guardPath(p) {
   const r = resolve(p);
@@ -144,7 +152,20 @@ export class SovaUnderTest {
         ...this.env,
       },
       stdio: ["ignore", "pipe", "pipe"],
+      // Its own process group, so every exit path kills the server and everything it started (chats, services).
+      detached: true,
     });
+    const pgid = this.child.pid;
+    // Every exit path: a normal exit or an uncaught throw (the 'exit' hook, synchronous), and this script killed
+    // outright (SIGKILL, a timeout): a watchdog outside the group kills the group once this script is gone.
+    const reap = () => {
+      try {
+        process.kill(-pgid, "SIGKILL");
+      } catch {}
+    };
+    process.once("exit", reap);
+    this.reaps = [...(this.reaps ?? []), reap];
+    spawn("sh", ["-c", `while kill -0 ${process.pid} 2>/dev/null && kill -0 -- -${pgid} 2>/dev/null; do sleep 2; done; kill -9 -- -${pgid} 2>/dev/null; exit 0`], { detached: true, stdio: "ignore" }).unref();
     this.child.stdout.on("data", (d) => appendFileSync(this.logFile, d));
     this.child.stderr.on("data", (d) => appendFileSync(this.logFile, d));
     await until("the server's health", async () => (await fetch(`${this.base}/api/health`).catch(() => null))?.ok, 180_000, 500);
@@ -153,7 +174,13 @@ export class SovaUnderTest {
 
   /** The server process dies at once (SIGKILL): a crash, not a stop. */
   kill() {
-    this.child?.kill("SIGKILL");
+    const c = this.child;
+    if (!c) return;
+    try {
+      process.kill(-c.pid, "SIGKILL");
+    } catch {
+      c.kill("SIGKILL");
+    }
   }
 
   async stopServer() {
@@ -163,6 +190,10 @@ export class SovaUnderTest {
       c.kill("SIGTERM");
       await until("the server to stop", () => c.exitCode !== null || c.signalCode !== null, 30_000, 200).catch(() => c.kill("SIGKILL"));
     }
+    // Whatever it left in its group (a chat process, a service) goes with it.
+    try {
+      process.kill(-c.pid, "SIGKILL");
+    } catch {}
     this.child = null;
   }
 

@@ -8,7 +8,11 @@
 //   node scripts/merge-queue-projects.mjs --project nasabii   [--port 4829]
 //   node scripts/merge-queue-projects.mjs --project plain     [--port 4831]   # no .sova/project.json: onboarding O1-O5
 //   node scripts/merge-queue-projects.mjs --project motorsaif,nasabii --port 4830   # C1: two queues, one server, at once
-//   [--only P1,P2,…] [--real-model] [--keep] [--fresh]
+//   [--only P1,P2,…] [--real-model] [--keep] [--ws <dir>]
+//
+// Each run works in a workspace of its own, ~/.cache/mq-projects/<projects>-<port>-<runid>/ (its clones of the seed
+// clones ~/.cache/mq-projects/<name>, their bare origins, .worktrees with the merge copy, the Sova under test, logs and
+// results); its server is killed on every exit path (merge-queue-qa-lib.mjs).
 //
 // SAFETY: against the real repos only read-only git (rev-parse). After every case the real target sha is checked
 // unchanged (motorsaif main = 348559df, nasabii master = c0ef5d7); a change stops the script at once.
@@ -27,7 +31,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { QueueClient, Results, SovaUnderTest, check, git, gitOk, guardPath, log as plog, makeBranch, parseArgs, realHead, until } from "./merge-queue-qa-lib.mjs";
+import { QueueClient, Results, SovaUnderTest, runWorkspace, check, git, gitOk, guardPath, log as plog, makeBranch, parseArgs, realHead, until } from "./merge-queue-qa-lib.mjs";
 
 const PROJECTS = {
   motorsaif: { real: join(homedir(), "webapps", "motorsaif"), target: "main", realSha: "348559df", port: 4828 },
@@ -43,7 +47,10 @@ const PORT = Number(opt("--port", String(names.length === 1 ? PROJECTS[names[0]]
 const ONLY = opt("--only", "") ? new Set(opt("--only", "").split(",")) : null;
 const KEEP = has("--keep");
 const BASE = guardPath(join(homedir(), ".cache", "mq-projects"));
-const WS = join(BASE, `run-${names.join("+")}`);
+// This run's own workspace (operator's rule: no two runs share a clone, a server dir or a merge copy): the project
+// clones, their bare origins, .worktrees (the merge copy among them), the Sova under test and the results. The seed
+// clones at <BASE>/<name> are only ever cloned from (read only).
+const WS = runWorkspace(BASE, names.join("+"), PORT, opt("--ws", ""));
 const LOGS = join(WS, "logs");
 const tag = `projects:${names.join("+")}`;
 const log = (...a) => plog(tag, ...a);
@@ -64,12 +71,12 @@ function assertRealUnchanged() {
 
 function project(name) {
   const p = PROJECTS[name];
-  const root = join(BASE, name);
-  const origin = join(BASE, `${name}-origin.git`);
-  const wt = join(BASE, ".worktrees");
+  const root = join(WS, name);
+  const origin = join(WS, `${name}-origin.git`);
+  const wt = join(WS, ".worktrees");
   if (p.synthetic) makePlain(root, origin, p.target);
-  else resetClone(name, root, origin, wt, p.target);
-  check(existsSync(root), `the clone ${root} exists (made by hand: git clone --no-hardlinks, origin replaced)`);
+  else if (!existsSync(root)) cloneForRun(name, root, origin, p.target);
+  check(existsSync(root), `the clone ${root} exists`);
   const remotes = git(root, "remote", "-v");
   check(!/github\.com|git@/.test(remotes) && remotes.includes(origin), `${name}'s only remote is the local bare origin (${remotes})`);
   const q = new QueueClient(sova, root);
@@ -85,31 +92,26 @@ function project(name) {
   return { name, ...p, root, origin, wt, q, head, originHead, branch, commitOutside };
 }
 
-/** Every run starts from the clone's refs/qa/baseline (its target with the exported kits; made once by hand): the
- *  target reset there and force-pushed to the local bare origin, qa/* branches and their worktrees removed, rerere's
- *  recorded resolutions dropped (S2f covers rerere). Earlier runs' outside commits (a declared review kit, a broken
- *  test) never leak into the next. */
-function resetClone(name, root, origin, wt, target) {
-  if (!gitOk(root, "rev-parse", "-q", "--verify", "refs/qa/baseline")) return log(`${name}: no refs/qa/baseline; running on the clone as it is`);
-  for (const line of git(root, "worktree", "list", "--porcelain").split("\n")) {
-    const w = line.startsWith("worktree ") ? line.slice(9) : null;
-    if (w && w.startsWith(join(wt, `${name}-`))) spawnSync("git", ["-C", root, "worktree", "remove", "--force", w]);
-  }
-  git(root, "worktree", "prune");
-  git(root, "checkout", "-q", "-B", target, "refs/qa/baseline");
-  git(root, "reset", "-q", "--hard", "refs/qa/baseline");
-  git(root, "clean", "-qfd");
-  for (const b of git(root, "for-each-ref", "--format=%(refname:short)", "refs/heads/qa").split("\n").filter(Boolean)) git(root, "branch", "-q", "-D", b);
-  rmSync(join(root, ".git", "rr-cache"), { recursive: true, force: true });
-  git(root, "push", "-q", "-f", "origin", target);
-  log(`${name}: reset to its baseline ${git(root, "rev-parse", "--short", target)}`);
+/** This run's clone of the seed <BASE>/<name> (made once by hand from the real repo, origin replaced), at the seed's
+ *  refs/qa/baseline (its target with the exported kits) or its target: objects shared read-only with the seed
+ *  (--shared), a bare origin of its own. Nothing an earlier run did (a declared review kit, a broken test, rerere's
+ *  records, a merge copy) reaches it. */
+function cloneForRun(name, root, origin, target) {
+  const seed = join(BASE, name);
+  check(existsSync(join(seed, ".git")), `the seed clone ${seed} exists (git clone --no-hardlinks of the real repo, origin replaced)`);
+  const at = gitOk(seed, "rev-parse", "-q", "--verify", "refs/qa/baseline") ? git(seed, "rev-parse", "refs/qa/baseline") : git(seed, "rev-parse", target);
+  git(WS, "clone", "-q", "--shared", "--no-checkout", seed, root);
+  git(root, "checkout", "-q", "-B", target, at);
+  git(root, "remote", "remove", "origin");
+  git(WS, "init", "-q", "--bare", "-b", target, origin);
+  git(root, "remote", "add", "origin", origin);
+  git(root, "push", "-q", "origin", target);
+  log(`${name}: cloned for this run at ${at.slice(0, 8)} in ${root}`);
 }
 
 /** A fresh plain repo: one module, a node:test file, no .sova at all; a local bare origin. */
 function makePlain(root, origin, target) {
   for (const d of [root, origin]) rmSync(d, { recursive: true, force: true });
-  const wt = join(BASE, ".worktrees");
-  if (existsSync(wt)) for (const d of readdirSync(wt)) if (d.startsWith("plain-")) rmSync(join(wt, d), { recursive: true, force: true });
   mkdirSync(root, { recursive: true });
   git(root, "init", "-q", "-b", target);
   writeFileSync(join(root, "add.mjs"), "export const add = (a, b) => a + b;\n");
@@ -117,7 +119,7 @@ function makePlain(root, origin, target) {
   writeFileSync(join(root, "README.md"), "# plain\n");
   git(root, "add", "-A");
   git(root, "commit", "-q", "-m", "plain: first commit");
-  git(BASE, "init", "-q", "--bare", "-b", target, origin);
+  git(WS, "init", "-q", "--bare", "-b", target, origin);
   git(root, "remote", "add", "origin", origin);
   git(root, "push", "-q", "origin", target);
 }

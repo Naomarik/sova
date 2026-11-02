@@ -33,14 +33,15 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { HERE, LIVE_TREE, QueueClient, REAL_PI, Results, SovaUnderTest, check, copyNodeModules, git, guardPath, log as plog, makeBranch, parseArgs, realHead, sh, until } from "./merge-queue-qa-lib.mjs";
+import { HERE, LIVE_TREE, QueueClient, REAL_PI, Results, SovaUnderTest, check, copyNodeModules, git, guardPath, runWorkspace, log as plog, makeBranch, parseArgs, realHead, sh, until } from "./merge-queue-qa-lib.mjs";
 
 const { opt, has } = parseArgs();
 const PORT = Number(opt("--port", process.env.SOVA_PORT || "4826"));
 const ONLY = opt("--only", "") ? new Set(opt("--only", "").split(",")) : null;
 const KEEP = has("--keep");
 const FRESH = has("--fresh");
-const E2E = guardPath(join(homedir(), ".cache", "mq-e2e"));
+// This run's own workspace (never shared by two runs); --ws <dir> reuses one on purpose.
+const E2E = runWorkspace(join(homedir(), ".cache", "mq-e2e"), "sova", PORT, opt("--ws", ""));
 const PROJECT = join(E2E, "sova");
 const ORIGIN = join(E2E, "sova-origin.git");
 const WT = join(E2E, ".worktrees");

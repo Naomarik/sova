@@ -31,7 +31,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { HERE, LIVE_TREE, QueueClient, Results, SovaUnderTest, check, copyNodeModules, git, gitOk, guardPath, log as plog, makeBranch, parseArgs, realHead, sh, until } from "./merge-queue-qa-lib.mjs";
+import { HERE, LIVE_TREE, QueueClient, Results, SovaUnderTest, check, copyNodeModules, git, gitOk, guardPath, runWorkspace, log as plog, makeBranch, parseArgs, realHead, sh, until } from "./merge-queue-qa-lib.mjs";
 
 const { opt, has } = parseArgs();
 const PORT = Number(opt("--port", "4827"));
@@ -39,7 +39,8 @@ const COUNT = Number(opt("--count", "10"));
 const ONLY = opt("--only", "") ? new Set(opt("--only", "").split(",")) : null;
 const KEEP = has("--keep");
 const FRESH = has("--fresh");
-const WS = guardPath(join(homedir(), ".cache", "mq-rehearsal"));
+// This run's own workspace (never shared by two runs); --ws <dir> reuses one on purpose.
+const WS = runWorkspace(join(homedir(), ".cache", "mq-rehearsal"), "sova", PORT, opt("--ws", ""));
 const PROJECT = join(WS, "sova");
 const ORIGIN = join(WS, "sova-origin.git");
 const WT = join(WS, ".worktrees");

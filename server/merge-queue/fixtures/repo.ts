@@ -369,7 +369,9 @@ export class Fixture {
 
   /** A spec in the project (minimal, one claim), committed on the target, so branches can carry drafts. */
   async withSpec(): Promise<void> {
-    const specFixture = (await import("../../../pi-config/extensions/spec/tests/spec-fixture.mjs")) as {
+    // A variable specifier: the spec tools' own fixture writer is plain JS with no declarations.
+    const where = "../../../pi-config/extensions/spec/tests/spec-fixture.mjs";
+    const specFixture = (await import(where)) as {
       writeSpec: (root: string, o: Record<string, unknown>) => void;
     };
     specFixture.writeSpec(this.project, {
@@ -398,6 +400,13 @@ export class Fixture {
     writeFileSync(recFile, JSON.stringify({ [id]: { kind: "behavior", authority: "accepted", requires: [], code: ["src/app.txt"] } }, null, 2) + "\n");
     writeFileSync(join(spec, "claims/b", `${name}.md`), `# ${id}\n\n${prose}\n`);
     run("evidence", name, "--id", id, "--by", "chat", "--verification", "checked by hand", "--note", "--write");
+  }
+
+  /** Record the chat's verification note on draft `name` again (after an edit). */
+  noteDraft(checkout: string, name: string): void {
+    const cli = join(REPO_ROOT, "pi-config/extensions/spec/core/sova-spec-draft.mjs");
+    const r = spawnSync(process.execPath, [cli, "evidence", name, "--id", `§b/${name}`, "--by", "chat", "--verification", "checked again", "--note", "--write", "--root", checkout, "--json"], { encoding: "utf8", cwd: checkout });
+    if (r.status !== 0) throw new Error(`spec draft note: ${r.stdout}${r.stderr}`);
   }
 
   /** Edit a draft's prose after approval (the "drafts changed since you approved" case). */

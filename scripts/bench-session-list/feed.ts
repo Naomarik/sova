@@ -34,6 +34,7 @@ const SRC = resolve(opt("src", ".")!);
 const LABEL = opt("label", "run")!;
 const SEED = Number(opt("seed", "42"));
 const BUSY = Number(opt("busy", "4"));
+const BURST = { n: Number(opt("burst", "20")), gapMs: Number(opt("burst-gap", "3")) * 1000 };
 const T = { warmup: Number(opt("warmup", "30")), idle: Number(opt("idle", "180")), load: Number(opt("load", "180")), cool: Number(opt("cool", "20")) };
 const GAP = { min: Number(opt("min-gap", "0.5")) * 1000, max: Number(opt("max-gap", "2")) * 1000 };
 const S = (m: string) => join(SRC, "server", m);
@@ -88,16 +89,20 @@ const feed = feedMod.configureSessionFeed({
   frameKey: overseer.feedFrameKey,
 });
 
+const samples = { diff: [] as any[], get: [] as any[] };
+
 // The whole re-diff (list + marks + row signatures/deltas + after), timed by wrapping the feed's
 // own diff method; CPU outside it is background (readiness, live checks, watch, timers).
 {
   const orig = (feed as any).diff.bind(feed);
   (feed as any).diff = async (...a: any[]) => {
-    const c0 = cpuMs();
+    const c0 = cpuMs(), l0 = st.listCpuMs, a0 = st.afterCpuMs, t0 = performance.now();
     try {
       return await orig(...a);
     } finally {
-      st.diffCpuMs += cpuMs() - c0;
+      const d = cpuMs() - c0;
+      st.diffCpuMs += d;
+      samples.diff.push({ phase, cpuMs: d, listMs: st.listCpuMs - l0, afterMs: st.afterCpuMs - a0, wallMs: performance.now() - t0 });
     }
   };
 }
@@ -136,6 +141,7 @@ async function getSessions(): Promise<{ body: string; at: { epoch: string; versi
   st.gets++;
   st.getBytes += Buffer.byteLength(body);
   st.getCpuMs += cpuMs() - c0;
+  samples.get.push({ phase, cpuMs: cpuMs() - c0 });
   return { body, at };
 }
 let lr: any = null;
@@ -197,6 +203,20 @@ while (targets.length < BUSY && pool.length) {
 }
 let phase = "warmup";
 const linesBy: Record<string, number> = {};
+/** One real-shaped line appended to a target: its own message line k, re-stamped and chained. */
+function appendOne(t: { file: string; tmpl: any[]; leaf: string | null }, r: () => number, k: number) {
+  const e = structuredClone(t.tmpl[k % t.tmpl.length]);
+  const id = Math.floor(r() * 0xffffffff).toString(16).padStart(8, "0");
+  const now = new Date();
+  e.id = id;
+  e.parentId = t.leaf;
+  e.timestamp = now.toISOString();
+  if (e.message && typeof e.message.timestamp === "number") e.message.timestamp = now.getTime();
+  t.leaf = id;
+  appendFileSync(t.file, JSON.stringify(e) + "\n");
+  linesBy[phase] = (linesBy[phase] ?? 0) + 1;
+}
+
 function startWriters() {
   let stopped = false;
   const timers: any[] = [];
@@ -205,16 +225,7 @@ function startWriters() {
     let k = Math.floor(r() * t.tmpl.length);
     const tick = () => {
       if (stopped) return;
-      const e = structuredClone(t.tmpl[k++ % t.tmpl.length]);
-      const id = Math.floor(r() * 0xffffffff).toString(16).padStart(8, "0");
-      const now = new Date();
-      e.id = id;
-      e.parentId = t.leaf;
-      e.timestamp = now.toISOString();
-      if (e.message && typeof e.message.timestamp === "number") e.message.timestamp = now.getTime();
-      t.leaf = id;
-      appendFileSync(t.file, JSON.stringify(e) + "\n");
-      linesBy[phase] = (linesBy[phase] ?? 0) + 1;
+      appendOne(t, r, k++);
       timers[i] = setTimeout(tick, GAP.min + r() * (GAP.max - GAP.min));
     };
     timers[i] = setTimeout(tick, r() * GAP.max);
@@ -282,10 +293,51 @@ await runPhase("warmup", T.warmup);
 await runPhase("idle", T.idle);
 await runPhase("load", T.load, startWriters);
 await runPhase("cool", T.cool);
+
+// Per-action burst: one busy session, one line, then nothing for burst-gap; the CPU of that window
+// (append → quiet: the debounced diff, its frames and the tab's reaction). Each is paired with a
+// quiet control window of the same length just before it (background: readiness, live checks), so
+// burst − control is the action's own cost.
+const bursts: any[] = [];
+if (BURST.n > 0) {
+  phase = "burst";
+  const t = targets[0]!;
+  const r = rng(SEED * 1000 + 99);
+  let k = Math.floor(r() * t.tmpl.length);
+  await sleep(BURST.gapMs);
+  for (let i = 0; i < BURST.n; i++) {
+    const q0 = cpuMs();
+    await sleep(BURST.gapMs);
+    const q = cpuMs() - q0;
+    const d0 = feed.diffs, g0 = st.gets, m0 = st.msgs, tab0 = st.tabCpuMs;
+    const b0 = cpuMs();
+    appendOne(t, r, k++);
+    await sleep(BURST.gapMs);
+    await feed.idle();
+    const b = cpuMs() - b0 - (st.tabCpuMs - tab0);
+    bursts.push({ cpuMs: b, controlMs: q, netMs: b - q, diffs: feed.diffs - d0, gets: st.gets - g0, msgs: st.msgs - m0 });
+  }
+}
 clearInterval(sampler);
 unsubscribe();
 const out = opt("out");
-const result = { label: LABEL, at: new Date().toISOString(), src: SRC, wiring: TRACKED ? "tracked" : "full", commit: opt("commit") ?? null, tab: ROWS ? { mode: "rows", refetches: lr.refetches, following: lr.following } : { mode: "list_changed" }, config: { seed: SEED, busy: BUSY, T, gapMs: GAP, sessions: all.length, targets: targets.map((t) => t.file.slice(AGENT.length + 1)) }, cold, phases, series };
+const stat = (xs: number[]) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b), at = (p: number) => s[Math.min(s.length - 1, Math.max(0, Math.ceil(p * s.length) - 1))]!;
+  return { n: xs.length, mean: xs.reduce((a, b) => a + b, 0) / xs.length, p50: at(0.5), p95: at(0.95), max: s[s.length - 1] };
+};
+const loadDiffs = samples.diff.filter((d) => d.phase === "load");
+const perChange = {
+  diffCpuMs: stat(loadDiffs.map((d) => d.cpuMs)),
+  listMs: stat(loadDiffs.map((d) => d.listMs)),
+  restOfDiffMs: stat(loadDiffs.map((d) => d.cpuMs - d.listMs)),
+  afterMs: stat(loadDiffs.map((d) => d.afterMs)),
+  getMs: stat(samples.get.filter((g) => g.phase === "load").map((g) => g.cpuMs)),
+  idleListMs: stat(samples.diff.filter((d) => d.phase === "idle").map((d) => d.listMs)),
+};
+const burst = { raw: stat(bursts.map((b) => b.cpuMs)), control: stat(bursts.map((b) => b.controlMs)), net: stat(bursts.map((b) => b.netMs)), each: bursts };
+console.log(`[${LABEL}] per change: diff ${perChange.diffCpuMs?.mean.toFixed(1)} ms (list ${perChange.listMs?.mean.toFixed(1)}, rest ${perChange.restOfDiffMs?.mean.toFixed(1)}), GET ${perChange.getMs?.mean.toFixed(1) ?? "-"} ms; burst net mean ${burst.net?.mean.toFixed(1)} p95 ${burst.net?.p95.toFixed(1)} ms`);
+const result = { label: LABEL, perChange, burst, at: new Date().toISOString(), src: SRC, wiring: TRACKED ? "tracked" : "full", commit: opt("commit") ?? null, tab: ROWS ? { mode: "rows", refetches: lr.refetches, following: lr.following } : { mode: "list_changed" }, config: { seed: SEED, busy: BUSY, T, gapMs: GAP, sessions: all.length, targets: targets.map((t) => t.file.slice(AGENT.length + 1)) }, cold, phases, series, samples };
 if (out) writeFileSync(out, JSON.stringify(result, null, 2));
 console.log(`[${LABEL}] wrote ${out}${ROWS ? ` (tab refetches ${lr.refetches}, following ${lr.following})` : ""}`);
 process.exit(0);

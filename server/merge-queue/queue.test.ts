@@ -1032,6 +1032,41 @@ describe("setting up the checks", () => {
   });
 });
 
+describe("an invalid definition", () => {
+  test("is said, never read as Not set up: merge.add refuses with the parser's path and message, the view carries it, a line with entries pauses; once fixed, resume runs", async () => {
+    const ERR = '$.merge.checks[0].run[2]: a lone "$"';
+    let broken = false;
+    const k = makeKit({ deps: { definitionAt: async () => (broken ? { def: null, error: ERR } : { def: DEF, error: null }), checksOf: (def) => (def ? "declared" : "unset") } });
+    try {
+      const q = await k.q();
+      await q.pause("hold");
+      k.repo.branch("feat/in", { "in.txt": "in\n" });
+      const { entry } = await q.add({ branch: "feat/in", by: "land-button" });
+      // The definition breaks on the target (a new commit, so nothing cached is read).
+      k.repo.commitOn(k.repo.root, { "b.txt": "b\n" }, "breaks the definition");
+      broken = true;
+      k.repo.branch("feat/new", { "n.txt": "n\n" });
+      await assert.rejects(q.add({ branch: "feat/new", by: "land-button" }), (e: unknown) => e instanceof MergeFailure && e.code === "invalid-request" && e.message.startsWith(`The project's .sova/project.json is invalid: ${ERR}`) && !/Not set up/.test(e.message));
+      let v = await q.view();
+      assert.equal(v.invalid, ERR);
+      await q.resume();
+      await until(async () => (await q.view()).paused?.kind === "definition-invalid", "paused for the definition");
+      v = await q.view();
+      assert.match(v.paused!.why, /is invalid: \$\.merge\.checks\[0\]\.run\[2\]/);
+      assert.equal((await k.entry(entry.id)).state, "queued", "nothing ran, nothing handed back");
+      assert.equal(k.run.inputs.length, 0);
+      // Fixed on the target: resume runs it.
+      k.repo.commitOn(k.repo.root, { "c.txt": "c\n" }, "fixes it");
+      broken = false;
+      assert.equal((await q.view()).invalid, undefined);
+      await q.resume();
+      await landed(k, entry.id);
+    } finally {
+      await k.done();
+    }
+  });
+});
+
 describe("the setup commit's push", () => {
   test("Save Checks isn't pushed on its own: the view shows the pushed sha and why, until the next landing pushes both", async () => {
     let saved = false;

@@ -333,6 +333,8 @@ export function pausedTitle(v: Pick<MergeQueueView, "paused">): string {
       return "Paused: the reviewer failed twice.";
     case "recovery":
       return "Paused: a landing in flight at a stop needs a look.";
+    case "definition-invalid":
+      return "Paused: the project's .sova/project.json is invalid.";
   }
 }
 

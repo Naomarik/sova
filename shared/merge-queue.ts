@@ -260,7 +260,8 @@ export type PauseKind =
   | "master-red" // a whole check is red on the target alone
   | "main-checkout-dirty" // the project's main folder has uncommitted edits: master landed, the folder not moved
   | "reviewer" // the reviewer failed twice
-  | "recovery"; // a landing in flight at a stop could not be reconciled
+  | "recovery" // a landing in flight at a stop could not be reconciled
+  | "definition-invalid"; // the target's .sova/project.json doesn't parse: nothing runs until it is fixed
 export interface PauseInfo {
   kind: PauseKind;
   why: string;
@@ -298,6 +299,9 @@ export interface MergeQueueView {
   /** Branches tested together: fixed at 1, not shown. */
   batch: 1;
   state: "idle" | "running" | "paused";
+  /** The target's .sova/project.json is there but invalid (the parser's path and message): the queue isn't "not set up",
+      it can't read what was declared. `checks` then reads "unset"; show this instead of onboarding. */
+  invalid?: string;
   paused?: PauseInfo;
   checks: ChecksDeclared;
   /** The project declares a review kit. */

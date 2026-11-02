@@ -59,7 +59,8 @@ export function mergeQueues(): MergeQueues | null {
 export async function queueManages(root: string, target: string): Promise<boolean> {
   if (!queues) return false;
   const q = await queues.get(root);
-  return q.target === target && (await q.declared()).checks !== "unset";
+  const d = await q.declared();
+  return q.target === target && (d.checks !== "unset" || !!d.invalid);
 }
 
 /** Tests only: stand a set of queues in for the server's (null: none). */

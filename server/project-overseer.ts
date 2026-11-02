@@ -1222,7 +1222,8 @@ export async function landThroughQueue(projectId: string, root: string, sessionI
   const queues = mergeQueues();
   if (!queues) return false;
   const q = await queues.get(root);
-  if ((await q.declared()).checks === "unset") return false;
+  const d = await q.declared();
+  if (d.checks === "unset" && !d.invalid) return false;
   const branch = readBuild(projectId, sessionId)?.worktree?.branch;
   if (!branch) throw new OrgError("Its branch isn't known yet: nothing to land", 409);
   const { MergeFailure } = await import("./merge-queue/queue");

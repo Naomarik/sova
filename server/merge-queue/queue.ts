@@ -36,6 +36,9 @@ import { buildView } from "./view";
  */
 
 /** The push hold while a project has no private names file (operator decision: exactly these words). */
+/** What the queue says when the target's .sova/project.json doesn't parse (`error`: the parser's path and message). */
+export const invalidWords = (error: string): string => `The project's .sova/project.json is invalid: ${error}. Fix it on the target; nothing lands until it parses`;
+
 /** heads.pushWhy while the checks' setup commit waits for the next landing's push. */
 export const PUSH_WAITS_NEXT_LANDING = "not pushed yet: goes out with the next landing";
 export const PUSH_HELD_NAMES = "push held: private names not set up yet";
@@ -131,7 +134,7 @@ export class ProjectQueue {
   private landing = false;
   private publishTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
-  private checksCache: { head: string; def: ProjectDef | null; checks: ChecksDeclared; review: boolean } | null = null;
+  private checksCache: { head: string; def: ProjectDef | null; checks: ChecksDeclared; review: boolean; invalid?: string } | null = null;
 
   constructor(
     private readonly deps: QueueDeps,
@@ -224,13 +227,16 @@ export class ProjectQueue {
   }
 
   /** The target's definition and what it declares, cached per target head. */
-  async declared(): Promise<{ head: string | null; def: ProjectDef | null; checks: ChecksDeclared; review: boolean }> {
+  async declared(): Promise<{ head: string | null; def: ProjectDef | null; checks: ChecksDeclared; review: boolean; invalid?: string }> {
     const head = await this.targetHead();
     if (head && this.checksCache?.head === head) return this.checksCache;
     const at = head ? await this.deps.definitionAt(this.root, head) : { def: null, error: "no target" };
     const checks = this.deps.checksOf(at.def);
     const review = (this.deps.hasReviewKit ?? ((d) => !!d?.merge?.review))(at.def, this.root);
-    const out = { head: head ?? "", def: at.def, checks, review };
+    // A definition that is there but doesn't parse is not "not set up": its error is kept and said (definitionAt's other
+    // errors, "no commit …" and "no .sova/project.json at …", are a project with nothing declared).
+    const invalid = !at.def && at.error && !/^no /.test(at.error) ? at.error : undefined;
+    const out = { head: head ?? "", def: at.def, checks, review, ...(invalid ? { invalid } : {}) };
     if (head) this.checksCache = out;
     return out;
   }
@@ -278,7 +284,7 @@ export class ProjectQueue {
       now: this.now(),
       readRun: (id) => this.store.readRun(id),
     });
-    return { ...v, ...(ready.length ? { ready } : {}), ...(thread ? { thread } : {}), ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}) };
+    return { ...v, ...(d.invalid ? { invalid: d.invalid } : {}), ...(ready.length ? { ready } : {}), ...(thread ? { thread } : {}), ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}) };
   }
 
   private readyCache: { at: number; head: string; list: MergeReady[] } | null = null;
@@ -338,6 +344,7 @@ export class ProjectQueue {
       if (!commit) throw new MergeFailure("not-found", `no commit ${req.commit} in ${this.root}`);
       if (commit !== tip && !(await isAncestor(this.git, this.root, commit, tip))) throw new MergeFailure("invalid-request", `${commit.slice(0, 7)} isn't on ${branch}`);
       const d = await this.declared();
+      if (d.invalid) throw new MergeFailure("invalid-request", invalidWords(d.invalid));
       if (d.checks === "unset") throw new MergeFailure("unsupported", `Not set up: ${this.root} declares no checks for the merge queue yet (its merge section, a test command, or "no automated tests")`);
       const head = d.head || (await this.targetHead());
       if (!head) throw new MergeFailure("not-found", `no branch ${target} in ${this.root}`);
@@ -868,6 +875,14 @@ export class ProjectQueue {
     if (this.q.knownTarget !== head) {
       this.q.knownTarget = head;
       this.save();
+    }
+    // The definition doesn't parse: nothing is checked against a guess; the queue pauses and says why.
+    if (line.length) {
+      const d = await this.declared();
+      if (d.invalid) {
+        this.pauseNow("definition-invalid", invalidWords(d.invalid));
+        return;
+      }
     }
     for (const e of line) {
       // Drafts changed since the user's approval: wait for a new Land.

@@ -471,6 +471,9 @@ export interface ItemCodeInput {
   mode?: string;
   minor_modes?: string[];
   subagent_profile?: string;
+  /** The global Overseer's call only (§app.project-overseer/confirm-brief): `true` when the operator already said they
+      want this built; absent, the session first asks them to confirm the brief. The page's start never sends it. */
+  already_agreed?: boolean;
 }
 /** POST …/overseer/message: where the text went (idle: a turn started; mid-turn: queued as a follow-up). */
 export interface ProjectMessageResult {
@@ -487,6 +490,8 @@ export interface ItemCodeResult {
   note?: string;
   /** Its mode could not be set, so its first prompt was not sent (the session exists and is listed). */
   notPrompted?: string;
+  /** Its first prompt asks the operator to confirm the brief first (an Overseer's start, §app.project-overseer/confirm-brief). */
+  confirmBrief?: boolean;
 }
 
 /** New Coding Session: a coding session tied to no to-do or idea, with no first prompt (the operator writes it in the composer). */

@@ -361,6 +361,29 @@ md.core.ruler.after("inline", "task-lists", (state) => {
 });
 
 
+/** The working-notes heading's line (§chat.markdown/working-notes): exactly `### Working notes`, any case. */
+const WORKING_NOTES_LINE = /^### working notes[ \t]*\r?$/i;
+
+/**
+ * An assistant reply split at its working notes (§chat.markdown/working-notes): the first level-3
+ * heading outside a code block whose line reads exactly `### Working notes` (any case). `top` is the
+ * text before it; `notes` everything after it, absent when nothing follows (the heading then renders
+ * as nothing). A reply without the heading is all `top`. Read with the renderer's own parser, so a
+ * heading inside a fence, an indented block, a list or a quote never counts.
+ */
+export function splitWorkingNotes(text: string): { top: string; notes?: string } {
+  if (!/^### working notes[ \t]*\r?$/im.test(text)) return { top: text };
+  const lines = text.split("\n");
+  for (const t of md.parse(text, {})) {
+    if (t.type !== "heading_open" || t.tag !== "h3" || t.level !== 0 || !t.map) continue;
+    const at = t.map[0];
+    if (!WORKING_NOTES_LINE.test(lines[at] ?? "")) continue;
+    const notes = lines.slice(at + 1).join("\n");
+    return { top: lines.slice(0, at).join("\n"), ...(notes.trim() ? { notes } : {}) };
+  }
+  return { top: text };
+}
+
 export interface RenderedMarkdown {
   html: string;
   /** Raw source of each code block, in order, for Copy Code. */

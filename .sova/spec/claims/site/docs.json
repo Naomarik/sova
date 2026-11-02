@@ -19,7 +19,9 @@
       "§chat.alignment/style",
       "§chat.alignment/visuals",
       "§chat.alignment/settings-file",
-      "§app.settings-dialog/alignment"
+      "§app.settings-dialog/alignment",
+      "§chat.alignment/when",
+      "§chat.alignment/reply"
     ],
     "authority": "accepted",
     "evidence": "reviewed",

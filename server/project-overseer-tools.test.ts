@@ -42,7 +42,7 @@ const { OrgError } = await import("./org-error");
 const { TOOL_NEEDS: MASTER_NEEDS } = await import("./statecharts-replay");
 /** Master's level of each tool, as the powers carry it over (a level allowed a tool unattended ⇔ its power is On at that level). */
 const LEVEL_OF_POWER = (p: string): string | null => (p === "always" ? "L0" : (POWER_INFO as Record<string, { oldLevel: string | null }>)[p]?.oldLevel ?? null);
-const { codingModeChoice, codingModeSwitch } = await import("./project-coding-mode");
+const { codingModeChoice, codingModeSwitch, confirmBriefPrompt, CONFIRM_BRIEF_PARAGRAPH } = await import("./project-coding-mode");
 
 /** This computer's subagent profiles, as the fake host has them ("house" the default). */
 const PROFILES = { profiles: [{ id: "off", name: "Off", footprint: "no workers" }, { id: "house", name: "House", footprint: "4 routes" }, { id: "big", name: "Big team", footprint: "6 routes" }], default: "house", current: { id: "house", name: "House", source: "default" } } as never;
@@ -59,6 +59,10 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; settings?: Partia
   const limited: string[] = [];
   /** The mode each create/send reached the host with (a send without one records null). */
   const modes: (CodingModeSwitch | null)[] = [];
+  /** The already_agreed each create reached the host with. */
+  const agreedSeen: (boolean | undefined)[] = [];
+  /** The first prompt each create would send, as the real host makes it. */
+  const prompts: string[] = [];
   const dir = join(root, `ws${n++}`);
   const paths = projectOverseerPaths("prj_bbbbbbbb", dir);
   const settings = { ...defaultPoSettings(), autonomy: opts.autonomy ?? "L1", powers: readStoredPowers({ autonomy: opts.autonomy ?? "L1" }), ...opts.settings };
@@ -102,12 +106,16 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; settings?: Partia
     },
     subagentProfiles: () => PROFILES,
     playbookWaiting: async (id: string) => (opts.waiting?.[id] ? { title: "Project verbs: Portal", questions: opts.waiting[id]! } : null),
-    createCoding: async (input: { cwd: string; mode: ProjectCodingMode }) => {
+    createCoding: async (input: { cwd: string; prompt: string; mode: ProjectCodingMode; alreadyAgreed?: boolean }) => {
       // A statechart's refusal (opts.refuse): as the real host throws it.
       if (opts.refuse) throw opts.refuse;
       calls.push(`create:${input.cwd}`);
       modes.push(input.mode);
-      return { id: "c1", path: "/s/c1.jsonl", cwd: input.cwd };
+      agreedSeen.push(input.alreadyAgreed);
+      // As the real host decides it (§app.project-overseer/confirm-brief): asks first unless agreed, with align on.
+      const asked = confirmBriefPrompt(input.prompt, input.mode, !!input.alreadyAgreed);
+      prompts.push(asked.prompt);
+      return { id: "c1", path: "/s/c1.jsonl", cwd: input.cwd, ...(asked.confirm && asked.mode.minorModes.includes("align") ? { confirmBrief: true } : {}) };
     },
     send: async (id: string, _text: string, mode?: CodingModeSwitch) => {
       // As the build statechart refuses it (build/prompt's prompt-check).
@@ -160,7 +168,7 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; settings?: Partia
     assert.ok(t, name);
     return t.execute("call-1", params, undefined, undefined, undefined as never);
   };
-  return { host, tools, run, calls, modes, paths, state, limited, settings };
+  return { host, tools, run, calls, modes, agreedSeen, prompts, paths, state, limited, settings };
 }
 
 describe("the powers, as the statecharts declare them (al_3)", () => {
@@ -375,7 +383,7 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
     const f = fake({ attended: true, hostMode: { mode: "delegate", minorModes: ["align", "spec"] } });
     const r = await f.run("sova_create_session", { gap: "none", prompt: "p" });
     assert.deepEqual(f.modes, [{ mode: "delegate", minorModes: ["align", "spec"] }]);
-    assert.match((r.content[0] as { text: string }).text, /mode delegate · align · spec, subagent profile House\.$/);
+    assert.match((r.content[0] as { text: string }).text, /mode delegate · align · spec, subagent profile House\. It first asks the operator to confirm the brief\.$/);
   });
 
   test("every mode, minor mode and profile is accepted on a start and on a running session; spec stays on", async () => {
@@ -395,9 +403,10 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
       assert.deepEqual(f.calls, ["create:/proj", "send:in-root"], JSON.stringify(ask));
     }
     const f = fake({ attended: true });
-    const r = await f.run("sova_create_session", { gap: "none", prompt: "p", mode: "delegate", minor_modes: ["spec", "vis"], subagent_profile: "big" });
+    // Already agreed, so the mode is exactly as named (without it, align is added: §app.project-overseer/confirm-brief).
+    const r = await f.run("sova_create_session", { gap: "none", prompt: "p", mode: "delegate", minor_modes: ["spec", "vis"], subagent_profile: "big", already_agreed: true });
     assert.deepEqual(f.modes, [{ mode: "delegate", minorModes: ["spec", "vis"], subagentProfile: "big" }]);
-    assert.match((r.content[0] as { text: string }).text, /mode delegate · spec · visuals, subagent profile Big team\.$/);
+    assert.match((r.content[0] as { text: string }).text, /mode delegate · spec · visuals, subagent profile Big team\. Started as already agreed\.$/);
     // Spec is always on (§app.project-overseer/coding-mode): a set without it is refused before anything.
     for (const minor_modes of [[], ["align"], ["vis", "codemode"]]) {
       const g = fake({ attended: true });
@@ -423,7 +432,7 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
 
   test("a stored codingMode is ignored: a start gets this computer's default", async () => {
     const f = fake({ attended: true, settings: { codingMode: { mode: "delegate", minorModes: [] } } as never, hostMode: N(["spec"]) });
-    await f.run("sova_create_session", { gap: "none", prompt: "p" });
+    await f.run("sova_create_session", { gap: "none", prompt: "p", already_agreed: true });
     assert.deepEqual(f.modes, [N(["spec"])]);
   });
 
@@ -434,6 +443,35 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
     await f.run("sova_send", { session: "in-root", text: "go" });
     assert.deepEqual(f.modes, [{ minorModes: ["spec"] }, { subagentProfile: "big" }, null]);
     assert.match((r.content[0] as { text: string }).text, /It now runs normal · spec, subagent profile House\.$/);
+  });
+
+  test("§app.project-overseer/confirm-brief: already_agreed reaches the start only as true; the result says whether the session asks first", async () => {
+    const f = fake({ attended: true });
+    const text = (r: { content: unknown[] }) => (r.content[0] as { text: string }).text;
+    const asks = await f.run("sova_create_session", { gap: "none", prompt: "Build the API", minor_modes: ["align", "spec"] });
+    assert.match(text(asks), /, mode normal · align · spec, subagent profile House\. It first asks the operator to confirm the brief\.$/);
+    const agreed = await f.run("sova_create_session", { gap: "none", prompt: "Build the API", minor_modes: ["align", "spec"], already_agreed: true });
+    assert.match(text(agreed), /subagent profile House\. Started as already agreed\.$/);
+    // Only true counts: anything else is absent, so the session asks first.
+    const loose = await f.run("sova_create_session", { gap: "none", prompt: "Build the API", minor_modes: ["align", "spec"], already_agreed: "yes" });
+    assert.match(text(loose), /It first asks the operator to confirm the brief\.$/);
+    // Align left out of minor_modes, not already agreed: align is turned on anyway, so the session asks the operator first.
+    const off = await f.run("sova_create_session", { gap: "none", prompt: "Build the API", minor_modes: ["spec"] });
+    assert.match(text(off), /, mode normal · align · spec, subagent profile House\. It first asks the operator to confirm the brief\.$/);
+    assert.deepEqual([...(f.modes.at(-1) as ProjectCodingMode).minorModes].sort(), ["align", "spec"], "the host starts it with align on");
+    assert.equal(f.prompts.at(-1), `Build the API\n\n${CONFIRM_BRIEF_PARAGRAPH}`, "its first prompt asks first");
+    // Already agreed: the mode as given, align off included, and the brief as given.
+    const agreedOff = await f.run("sova_create_session", { gap: "none", prompt: "Build the API", minor_modes: ["spec"], already_agreed: true });
+    assert.match(text(agreedOff), /, mode normal · spec, subagent profile House\. Started as already agreed\.$/);
+    assert.deepEqual((f.modes.at(-1) as ProjectCodingMode).minorModes, ["spec"]);
+    assert.equal(f.prompts.at(-1), "Build the API");
+    assert.deepEqual(f.agreedSeen, [undefined, true, undefined, undefined, true]);
+    const tool = f.tools.find((t) => t.name === "sova_create_session")!;
+    const param = (tool.parameters as { properties: Record<string, { type: string; description: string }> }).properties.already_agreed;
+    assert.equal(param?.type, "boolean");
+    assert.match(param!.description, /only when the operator has already said, in their own words, that they want exactly this built\..*Never set it on your own judgement\./);
+    assert.match(tool.description, /Unless you pass already_agreed: true, align is turned on in its mode \(whatever minor_modes says\) and its first turn asks the operator one question/);
+    assert.match(param!.description, /Omitted: align is turned on in its mode/);
   });
 
   test("a verb playbook's run waiting on alignment answers refuses sova_send before anything is taken", async () => {

@@ -243,10 +243,11 @@ describe("a project's coding sessions", async () => {
     const info2 = await po.projectOverseerInfo(project.id);
     assert.equal(info2.coding.find((s) => s.sessionId === rows2.at(-1)!.sessionId)?.title, "Fix the footer");
     assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "delegate", strict: false, minorModes: ["align", "spec"] }, "unnamed: this computer's default");
-    // Any mode it names, minor modes included: no ceiling.
+    // Any mode it names, minor modes included: no ceiling. Already agreed, so exactly as named (otherwise align is
+    // added: §app.project-overseer/confirm-brief).
     const before3 = readBuilds(project.id).length;
     store.patchPoSettings(store.projectOverseerPaths(project.id), { caps: { createPerTurn: 10 } });
-    await asked.execute("t6", { gap: "none", prompt: "Draw it", mode: "normal", minor_modes: ["spec", "vis", "codemode"], subagent_profile: "off" }, undefined, undefined, undefined as never).catch(() => {});
+    await asked.execute("t6", { gap: "none", prompt: "Draw it", mode: "normal", minor_modes: ["spec", "vis", "codemode"], subagent_profile: "off", already_agreed: true }, undefined, undefined, undefined as never).catch(() => {});
     const named = readBuilds(project.id).slice(before3)[0];
     assert.ok(named?.path, "started");
     assert.deepEqual(modeEntries(named.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["spec", "vis", "codemode"] });

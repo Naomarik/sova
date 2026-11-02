@@ -136,3 +136,16 @@ test("a call's kind says whether it stands outside the Work run, by one rule for
   // Every other kind keeps out of it: a row of its kind is no call.
   for (const k of TRANSCRIPT_KINDS) if (!["settings", "offer", "show-changes", "card", "tour", "align", "tool"].includes(k.id)) assert.equal(k.outsideWork, undefined, k.id);
 });
+
+test("an align call that is only the change-request mark is a step, settled and streaming; any other align call stands outside the run", () => {
+  const settled = (args: unknown) => ({ id: "a1", kind: "tool-call", text: "align", toolCallId: "a1", tool: { args } }) as unknown as TranscriptItem;
+  const streamed = (args: unknown): LiveInput => liveBlockInput({ type: "toolCall", id: "a1", name: "align", args } as never, { author: () => "", model: () => undefined, streaming: () => false, showHead: () => false, timing: () => undefined, time: () => undefined });
+  const live: LiveKindContext = { tool: () => undefined, tourCall: () => undefined };
+  const mark = { ops: [{ op: "change_request" }] };
+  const create = { ops: [{ op: "change_request" }, { op: "create" }] };
+  assert.equal(outsideWork(kindOf(settled(mark), ctx()), "align"), false, "settled mark: a step");
+  assert.equal(outsideWork(liveKindOf(streamed(mark), live), "align"), false, "streamed mark: a step");
+  assert.equal(outsideWork(kindOf(settled(create), ctx()), "align"), true, "settled create: outside");
+  assert.equal(outsideWork(liveKindOf(streamed(create), live), "align"), true, "streamed create: outside");
+  assert.equal(outsideWork(liveKindOf(streamed(undefined), live), "align"), true, "no arguments yet: outside, as before");
+});

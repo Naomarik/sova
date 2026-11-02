@@ -45,7 +45,8 @@ import { newestByKey } from "./transcript-placement";
 import { explainOf } from "./explain";
 import { isLoginNoteRow } from "./change-rows";
 import { infoEstimate } from "./tail-render";
-import { CARD_TOOLS } from "./hidden-rows";
+import { CARD_TOOLS, isAlignMarkOnly } from "./hidden-rows";
+import { toolCallArgs } from "./message";
 
 /** Where a kind draws: in the page (Sova's own), as one of Sova's data cards, or in a sealed frame. */
 export type KindHost = "page" | "data" | "frame";
@@ -177,10 +178,11 @@ export interface TranscriptKind<V = unknown> {
   /**
    * A call this kind draws stands outside the Work run (§chat.transcript/work-chain): it is the
    * message, not the working, so it breaks the run. `true`: every call the kind matches; a function:
-   * decided by the call's tool name (the tool kind's own cards: a deck card, a link). Absent: a call
+   * decided by the call's tool name and the value the kind's match gave (the tool kind's own cards: a
+   * deck card, a link; an align call that is only the change-request mark stays a step). Absent: a call
    * of the kind is a step. Read by `outsideWork`, for settled and live rows alike.
    */
-  outsideWork?: true | ((toolName: string) => boolean);
+  outsideWork?: true | ((toolName: string, value: unknown) => boolean);
 }
 
 const kind = <V>(k: TranscriptKind<V>): TranscriptKind => k as unknown as TranscriptKind;
@@ -192,6 +194,9 @@ const doneCall = (input: LiveInput, ctx: LiveKindContext, name: (n: string) => b
   return t?.status === "done" ? t.details : undefined;
 };
 const named = (n: string) => (name: string) => name === n;
+/** A call's arguments, from the tool kind's value: a settled row or a streamed call block. */
+const callArgs = (value: unknown): unknown =>
+  typeof value !== "object" || value === null ? undefined : "kind" in value ? toolCallArgs(value as TranscriptItem) : (value as { args?: unknown }).args;
 /**
  * Calls the tool kind draws that stay outside the Work run by name, whatever their result: the deck
  * card, a link, a session sent to, every tour call (its request, progress and failure rows too,
@@ -352,12 +357,13 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   // Any other call: its tool card, or the card its result reads as (a deck card, a link), streamed arguments and all.
   kind({
     id: "tool",
-    match: (it) => isCall(it),
+    match: (it) => isCall(it) && it,
     host: "page",
     placement: "anchored",
     view: { page: "tool" },
     live: { match: (input) => input.kind === "call" && input.block, view: "tool" },
-    outsideWork: (name) => OUTSIDE_WORK_NAMES.has(name),
+    // The value is the settled row or the streamed call block: either gives the call's arguments.
+    outsideWork: (name, value) => OUTSIDE_WORK_NAMES.has(name) && !isAlignMarkOnly(name, callArgs(value)),
   }),
   // A paired result draws inside its call's card: its own row draws nothing.
   kind({ id: "tool-result-paired", match: (it, ctx) => it.kind === "tool-result" && !!it.toolCallId && !!ctx.hasCall?.(it.toolCallId), host: "page", placement: "anchored", drawsNothing: true }),
@@ -418,7 +424,7 @@ export function liveEndsOf(entry: Extract<LiveEntry, { kind: "assistant" }>): Li
  */
 export function outsideWork(hit: KindHit | undefined, toolName: string): boolean {
   const o = hit?.kind.outsideWork;
-  return o === true || (typeof o === "function" && o(toolName));
+  return o === true || (typeof o === "function" && o(toolName, hit?.value));
 }
 
 /** Two hits draw the same: the same kind, from the same value. */

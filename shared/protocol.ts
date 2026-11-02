@@ -1030,7 +1030,7 @@ export interface PlaybookCatalog {
 //                                   are ignored)
 // GET /api/settings/claude-status -> ClaudeCliStatus
 // GET /api/settings/align        -> AlignSettingsInfo
-// PUT /api/settings/align        -> AlignSettingsInfo (400 bad body: `{version: 1, style, visuals}`,
+// PUT /api/settings/align        -> AlignSettingsInfo (400 bad body: `{version: 1, style, visuals, eagerness?}`,
 //                                   the mode extension's strict parse, align-settings.ts)
 // ---------------------------------------------------------------------------
 /** Sova's own settings, stored in <agentDir>/sova/settings.json (server/web-settings.ts).
@@ -1038,7 +1038,7 @@ export interface PlaybookCatalog {
     subagent policy is. */
 export interface WebSettings {
   experimental: ExperimentalSettings;
-  /** Settings → Alignment's part of this file (style and visuals are mode-align.json's, AlignSettingsInfo). */
+  /** Settings → Alignment's part of this file (eagerness, style and visuals are mode-align.json's, AlignSettingsInfo). */
   alignment: AlignmentWebSettings;
 }
 
@@ -1056,10 +1056,11 @@ export interface AlignmentWebSettings {
   review: boolean;
 }
 
-/** GET/PUT /api/settings/align: the align mode's writing style and Visuals
-    (`<agent dir>/mode-align.json`, §chat.alignment/settings-file), and where they are stored. */
+/** GET/PUT /api/settings/align: the align mode's Eagerness, writing style and Visuals
+    (`<agent dir>/mode-align.json`, §chat.alignment/settings-file), and where they are stored.
+    `eagerness` is present only for Careful (absent: Eager, §chat.alignment/eagerness). */
 export interface AlignSettingsInfo {
-  settings: { version: 1; style: "default" | "simplified" | "pm"; visuals: boolean };
+  settings: { version: 1; style: "default" | "simplified" | "pm"; visuals: boolean; eagerness?: "eager" | "careful" };
   file: string;
 }
 

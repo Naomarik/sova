@@ -1,11 +1,13 @@
 // The align mode's settings file and what it adds to the prompt (§chat.alignment/settings-file,
-// §chat.alignment/style, §chat.alignment/visuals). Node builtins only: node --test align-settings.test.ts
+// §chat.alignment/eagerness, §chat.alignment/style, §chat.alignment/visuals). Node builtins only: node --test align-settings.test.ts
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import test from "node:test";
 import {
+	ALIGN_EAGERNESS_LABELS,
+	ALIGN_EAGERNESSES,
 	ALIGN_STYLE_LABELS,
 	ALIGN_STYLES,
 	alignSettingsDefaults,
@@ -19,8 +21,9 @@ import {
 	saveAlignSettings,
 } from "./align-settings.ts";
 import { alignFileSchema } from "./align.ts";
-import { ALIGN_INSTRUCTIONS, ALIGN_STYLE_PARAGRAPHS, ALIGN_VISUALS_PARAGRAPH, buildAlignPrompt, buildMinorPrompt, VIS_GUIDE_DIR, visToolsWanted } from "./minor.ts";
-import { buildAlignStyleNote, buildDelegateAlignBridge, buildModeNote, composePrompt, DEFAULT_ROUTES, DELEGATE_ALIGN_BRIDGE, PLANNER_VISUALS_PARAGRAPH } from "./prompt.ts";
+import { ALIGN_INSTRUCTIONS, ALIGN_STYLE_PARAGRAPHS, ALIGN_TRIGGER_PARAGRAPHS, ALIGN_TRIGGER_SHARED, ALIGN_VISUALS_PARAGRAPH, alignInstructions, buildAlignPrompt, buildMinorPrompt, VIS_GUIDE_DIR, visToolsWanted } from "./minor.ts";
+import { ALIGN_TOOL_DESCRIPTION, ALIGN_TOOL_GUIDELINES } from "./align-tool.ts";
+import { buildAlignEagernessNote, buildAlignStyleNote, buildDelegateAlignBridge, buildModeNote, composePrompt, DEFAULT_ROUTES, DELEGATE_ALIGN_BRIDGE, PLANNER_VISUALS_PARAGRAPH } from "./prompt.ts";
 import { MODE_NOTE_TYPE, restoreHead } from "./state.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "align-settings-"));
@@ -73,11 +76,14 @@ test("the styles: Project manager, Simplified, Technical, in that order; the sto
 	assert.equal(buildAlignPrompt(), ALIGN_INSTRUCTIONS);
 });
 
-test("a profile's override: style and/or visuals, never empty, nothing else; resolution is field by field", () => {
+test("a profile's override: eagerness, style and/or visuals, never empty, nothing else; resolution is field by field", () => {
 	assert.deepEqual(parseAlignOverride({ style: "pm" }, "p.alignment"), { style: "pm" });
 	assert.deepEqual(parseAlignOverride({ visuals: false }, "p.alignment"), { visuals: false });
+	assert.deepEqual(parseAlignOverride({ eagerness: "careful" }, "p.alignment"), { eagerness: "careful" });
+	assert.deepEqual(parseAlignOverride({ eagerness: "eager", style: "pm" }, "p.alignment"), { eagerness: "eager", style: "pm" }, "a profile may pin Eager over a Careful host");
 	for (const [value, error] of [
-		[{}, /must set style or visuals/],
+		[{}, /must set eagerness, style or visuals/],
+		[{ eagerness: "timid" }, /p\.alignment\.eagerness must be one of eager, careful/],
 		[[], /must be an object/],
 		[{ style: "loud" }, /p\.alignment\.style must be one of/],
 		[{ visuals: 1 }, /p\.alignment\.visuals must be true or false/],
@@ -87,11 +93,114 @@ test("a profile's override: style and/or visuals, never empty, nothing else; res
 		assert.ok("error" in parsed && error.test(parsed.error), JSON.stringify(parsed));
 	}
 	const host = { style: "simplified", visuals: true } as const;
-	assert.deepEqual(resolveAlign(host, null), { style: "simplified", visuals: true }, "no override: the host's file, exactly");
-	assert.deepEqual(resolveAlign(host, undefined), { style: "simplified", visuals: true });
-	assert.deepEqual(resolveAlign(host, { style: "pm" }), { style: "pm", visuals: true }, "the profile's style, the host's visuals");
-	assert.deepEqual(resolveAlign(host, { visuals: false }), { style: "simplified", visuals: false });
-	assert.deepEqual(resolveAlign(host, { style: "default", visuals: false }), { style: "default", visuals: false });
+	assert.deepEqual(resolveAlign(host, null), { eagerness: "eager", style: "simplified", visuals: true }, "no override: the host's file, exactly (no eagerness: Eager)");
+	assert.deepEqual(resolveAlign(host, undefined), { eagerness: "eager", style: "simplified", visuals: true });
+	assert.deepEqual(resolveAlign(host, { style: "pm" }), { eagerness: "eager", style: "pm", visuals: true }, "the profile's style, the host's visuals");
+	assert.deepEqual(resolveAlign(host, { visuals: false }), { eagerness: "eager", style: "simplified", visuals: false });
+	assert.deepEqual(resolveAlign(host, { style: "default", visuals: false }), { eagerness: "eager", style: "default", visuals: false });
+	// Eagerness, field by field like the others (§chat.subagent-profiles/resolution).
+	assert.deepEqual(resolveAlign(host, { eagerness: "careful" }), { eagerness: "careful", style: "simplified", visuals: true }, "the profile's eagerness, the host's style and visuals");
+	const careful = { ...host, eagerness: "careful" } as const;
+	assert.equal(resolveAlign(careful, null).eagerness, "careful", "a Careful host with no override");
+	assert.equal(resolveAlign(careful, { style: "pm" }).eagerness, "careful", "an override without eagerness keeps the host's");
+	assert.equal(resolveAlign(careful, { eagerness: "eager" }).eagerness, "eager", "the profile's Eager over a Careful host");
+});
+
+test("eagerness in mode-align.json: careful or absent (Eager), eager by hand reads the same, anything else refused; Eager files keep their bytes", () => {
+	assert.deepEqual(ALIGN_EAGERNESSES, ["eager", "careful"], "Eager then Careful, everywhere");
+	assert.deepEqual(ALIGN_EAGERNESSES.map((e) => ALIGN_EAGERNESS_LABELS[e]), ["Eager", "Careful"]);
+	assert.equal(alignSettingsDefaults().eagerness, undefined, "the default is Eager, stored as nothing");
+	assert.deepEqual(parseAlignSettings({ version: 1, style: "pm", visuals: false, eagerness: "careful" }), { version: 1, style: "pm", visuals: false, eagerness: "careful" });
+	assert.deepEqual(parseAlignSettings({ version: 1, style: "pm", visuals: false, eagerness: "eager" }), { version: 1, style: "pm", visuals: false }, "eager by hand: the same as absent");
+	assert.deepEqual(parseAlignSettings({ version: 1, style: "pm", visuals: false }), { version: 1, style: "pm", visuals: false }, "a file with no eagerness parses as before");
+	for (const eagerness of ["timid", "", "Careful", true, null, 1]) {
+		const parsed = parseAlignSettings({ version: 1, style: "pm", visuals: false, eagerness });
+		assert.ok("error" in parsed && /eagerness must be one of eager, careful/.test(parsed.error), `${JSON.stringify(eagerness)} → ${JSON.stringify(parsed)}`);
+	}
+	assert.equal(parseAlignSettingsText('{"version":1,"style":"pm","visuals":false,"eagerness":"sometimes"}').ok, false, "the mesh's check refuses it too");
+	const file = join(dir, "mode-align-eagerness.json");
+	writeFileSync(file, JSON.stringify({ version: 1, style: "pm", visuals: true, eagerness: "careful" }));
+	assert.equal(resolveAlign(loadAlignSettings(file), null).eagerness, "careful");
+	writeFileSync(file, JSON.stringify({ version: 1, style: "pm", visuals: true, eagerness: "bold" }));
+	assert.deepEqual(loadAlignSettings(file), alignSettingsDefaults(), "a refused eagerness reads the whole file as the defaults (Eager)");
+	saveAlignSettings(file, { version: 1, style: "pm", visuals: true, eagerness: "careful" });
+	assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { version: 1, style: "pm", visuals: true, eagerness: "careful" });
+	saveAlignSettings(file, { version: 1, style: "pm", visuals: true });
+	const eagerBytes = readFileSync(file, "utf8");
+	saveAlignSettings(file, { version: 1, style: "pm", visuals: true, eagerness: "eager" });
+	assert.equal(readFileSync(file, "utf8"), eagerBytes, "Eager writes no field: the same bytes as before the field existed");
+	assert.deepEqual(JSON.parse(eagerBytes), { version: 1, style: "pm", visuals: true });
+	rmSync(file);
+});
+
+test("the trigger paragraph: Eager is master's (any prompt implying work, short alignment for a specified ask, lean on asking); Careful the intent test, no example phrases", () => {
+	assert.equal(buildAlignPrompt(), alignInstructions("eager"), "no options: Eager");
+	assert.equal(ALIGN_INSTRUCTIONS, alignInstructions("eager"));
+	const eager = alignInstructions("eager");
+	const careful = alignInstructions("careful");
+	assert.ok(eager.includes(ALIGN_TRIGGER_PARAGRAPHS.eager) && !eager.includes(ALIGN_TRIGGER_PARAGRAPHS.careful), "the Eager block carries only its own trigger");
+	assert.ok(careful.includes(ALIGN_TRIGGER_PARAGRAPHS.careful) && !careful.includes(ALIGN_TRIGGER_PARAGRAPHS.eager), "the Careful block carries only its own trigger");
+	assert.equal(careful.replace(ALIGN_TRIGGER_PARAGRAPHS.careful, ALIGN_TRIGGER_PARAGRAPHS.eager), eager, "only the trigger paragraph differs");
+	assert.match(ALIGN_TRIGGER_PARAGRAPHS.eager, /any prompt that implies work \(a feature, an investigated fix, a refactor, a migration, new files, or any multi-step change\)/);
+	assert.match(ALIGN_TRIGGER_PARAGRAPHS.eager, /When the ask already looks fully specified, still record a short alignment with your reading of it and ask the user to confirm\./);
+	assert.match(ALIGN_TRIGGER_PARAGRAPHS.eager, /Bias heavily toward asking\./);
+	assert.match(ALIGN_TRIGGER_PARAGRAPHS.careful, /what do they want to be different when this is done\?/);
+	assert.match(ALIGN_TRIGGER_PARAGRAPHS.careful, /If it is the product \(how it looks, behaves or is built\), the message is a change request, however it is phrased\./);
+	assert.match(ALIGN_TRIGGER_PARAGRAPHS.careful, /want to know or understand something and the product can stay as it is, it is a question: answer it in your reply/);
+	assert.match(ALIGN_TRIGGER_PARAGRAPHS.careful, /An investigation into something broken or lacking is the first step of a change request: its findings go on an alignment card, never into a plan written in your reply\./);
+	assert.match(ALIGN_TRIGGER_PARAGRAPHS.careful, /When you can't tell which the message is, open the alignment anyway\./);
+	assert.match(ALIGN_TRIGGER_PARAGRAPHS.careful, /clarifying question first only when the message can't be planned without one/);
+	assert.doesNotMatch(ALIGN_TRIGGER_PARAGRAPHS.careful, /Bias heavily|"[^"]+"/, "no lean toward asking, and no example phrases in quotes");
+	assert.doesNotMatch(ALIGN_TRIGGER_PARAGRAPHS.eager, /second alignment just to confirm/, "the confirm-my-reading ban is Careful's alone");
+	for (const block of [eager, careful]) {
+		assert.ok(block.includes(ALIGN_TRIGGER_SHARED), "the shared wording is in both blocks");
+		assert.match(block, /a follow-up that plainly confirms, which means only an answer to an existing alignment card or the go-ahead for a command to run/, "the exemption, narrowed");
+		assert.match(block, /A "go", "yes", "do it" or "fix it" to anything you sketched in chat \(a plan, a fix, options in prose\) is a change request, never a confirmation: it opens an alignment first, never the build\./);
+		assert.match(block, /1\. Mark the run: call `align` with \{"op": "change_request"\}/, "the change-request mark is unchanged");
+		assert.match(block, /### Working notes/, "short replies and Working notes are unchanged");
+		assert.doesNotMatch(block, /follow-ups that plainly confirm,/, "the old, wide exemption is gone");
+		assert.doesNotMatch(block, /only after the user has said/, "the branch's middle rule is gone");
+	}
+	assert.equal(buildMinorPrompt("align", { eagerness: "careful", style: "pm", visuals: true }), `${careful}\n\n${ALIGN_STYLE_PARAGRAPHS.pm}\n\n${ALIGN_VISUALS_PARAGRAPH}`, "style and Visuals follow, as before");
+});
+
+test("one wording under both choices: the tool's description, its guideline and the Delegate+align bridge carry the shared sentence and name no choice", () => {
+	assert.ok(ALIGN_TOOL_DESCRIPTION.includes(ALIGN_TRIGGER_SHARED));
+	assert.ok(ALIGN_TOOL_GUIDELINES.some((line) => line.includes(ALIGN_TRIGGER_SHARED)));
+	assert.ok(DELEGATE_ALIGN_BRIDGE.includes(ALIGN_TRIGGER_SHARED));
+	for (const text of [ALIGN_TOOL_DESCRIPTION, ...ALIGN_TOOL_GUIDELINES, DELEGATE_ALIGN_BRIDGE, buildDelegateAlignBridge(true), ALIGN_TRIGGER_SHARED]) {
+		assert.doesNotMatch(text, /\b(?:Eager|Careful|eagerness)\b/i, "never names a choice");
+		assert.doesNotMatch(text, /the user said|user asks for something|has said they want/, "no trigger of its own");
+	}
+	const delegate = { mode: "delegate" as const, strict: false, minorModes: ["align" as const] };
+	const bridge = (eagerness: "eager" | "careful") => {
+		const text = composePrompt(delegate, DEFAULT_ROUTES, null, delegate.minorModes, { eagerness, style: "pm", visuals: false })!;
+		return text.slice(0, text.indexOf("# Minor mode: align"));
+	};
+	assert.equal(bridge("careful"), bridge("eager"), "the delegate block and bridge are the same bytes under both choices");
+	assert.match(DELEGATE_ALIGN_BRIDGE, /When a lighter worker \(an Investigation worker you sent on a bug report or a question\) already investigated the same matter and the user then asks for the change, put the root cause it found in the planning worker's prompt/);
+});
+
+test("the eagerness note: the new choice's trigger paragraph, replacing the one the block carries", () => {
+	assert.equal(
+		buildAlignEagernessNote("careful"),
+		`Eagerness change: the user set the align eagerness to Careful. This paragraph replaces the "Which prompts open an alignment" paragraph your align instructions carry (or an earlier note gave), from now on:\n\n${ALIGN_TRIGGER_PARAGRAPHS.careful}`,
+	);
+	assert.ok(buildAlignEagernessNote("eager").endsWith(ALIGN_TRIGGER_PARAGRAPHS.eager));
+	for (const e of ALIGN_EAGERNESSES) assert.ok(ALIGN_TRIGGER_PARAGRAPHS[e].startsWith("Which prompts open an alignment"), "the paragraph the note names is the one it replaces");
+});
+
+test("restoreHead: the Eagerness told and the head's, from the newest note, else the head's record, else Eager", () => {
+	const note = (details: Record<string, unknown>) => ({ type: "custom_message", customType: MODE_NOTE_TYPE, details: { v: 1, minorModes: ["align"], guides: [], ...details } });
+	const user = { type: "message", message: { role: "user" } };
+	assert.deepEqual(restoreHead([user, note({ eagerness: "careful", headEagerness: "eager" })]).eagerness, { told: "careful", head: "eager" });
+	assert.equal(restoreHead([user, note({ eagerness: "careful", headEagerness: "eager" })]).headEagerness, "eager");
+	assert.equal(restoreHead([user, note({ style: "pm", headStyle: "pm" })]).eagerness, undefined, "a style-only note tells no Eagerness");
+	assert.equal(restoreHead([user]).headEagerness, "eager", "a head nothing records was built Eager");
+	assert.equal(restoreHead([{ type: "custom", customType: "mode-head", data: { v: 1, style: "default", eagerness: "careful" } }, user]).headEagerness, "careful", "the head's own record");
+	assert.equal(restoreHead([{ type: "custom", customType: "mode-head", data: { v: 1, style: "pm" } }, user]).headEagerness, "eager", "an older record names no Eagerness: Eager");
+	assert.equal(restoreHead([note({ eagerness: "careful", headEagerness: "careful" }), { type: "compaction" }]).eagerness, undefined, "nothing across a compaction");
+	assert.equal(restoreHead([user, note({ eagerness: "timid", headEagerness: "eager" })]).eagerness, undefined, "an unknown value is skipped");
 });
 
 test("the paragraphs: Technical (\"default\") adds no text; Simplified and Project manager add exactly their own; Visuals follows the style", () => {

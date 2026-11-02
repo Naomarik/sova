@@ -111,21 +111,43 @@ Minor modes are extra instructions toggled independently of the major mode:
 zero or more can be active at once, in normal or delegate. Their blocks
 are appended after the delegate block (when in delegate) in registry order
 (`align`, then `spec`). Only `align` adds a bridge paragraph to the delegate
-block (the planning worker hand-off, said only there; with Visuals it also
+block (the planning worker hand-off, said only there and only for change
+requests, in the one wording true under both Eagerness choices
+(`ALIGN_TRIGGER_SHARED`): any other prompt is answered or delegated as the
+delegate block says; when a lighter Investigation worker already found the root
+cause and the user then asks for the change, the planning worker's brief carries
+it; with Visuals it also
 quotes the file schema with `visual` and a drawing paragraph to copy into the
 worker's prompt, naming the vis guide's directory, since a worker has no
 `vis_guide`); `spec` composes with either major mode and with `align` unchanged, and
 carries one paragraph of its own when a spec writer is set (see **Spec
 writer**).
 
-- **align** — before building anything non-trivial, the agent investigates
-  (in delegate, through a non-editing **Planning & specs** worker — never the
+- **align** — which prompts open an alignment (a change request) is the chat's
+  **Eagerness** (Settings → Alignment, see **Writing style and Visuals**): the
+  block carries that choice's trigger paragraph and only it
+  (`ALIGN_TRIGGER_PARAGRAPHS`). **Eager**, the default, is master's: any prompt
+  that implies work, a short alignment even for a fully specified ask, leaning
+  heavily toward asking. **Careful** is one test: what does the user want to be
+  different when this is done? The product, however phrased, is a change request;
+  wanting to know or understand, with the product left as it is, is a question
+  answered in chat; an investigation into something broken or lacking is the
+  first step of a change request, its findings on a card; unsure, open the card;
+  a clarifying question only when the message can't be planned without one. On
+  both, a "go", "yes", "do it" or "fix it" to anything sketched in chat opens a
+  card first. On a change request the agent marks the run (`change_request`), investigates (in
+  delegate, through a non-editing **Planning & specs** worker — never the
   cheaper Investigation profile, since this is design work; itself otherwise),
   records an alignment with the `align` tool (findings, approach, rejected
   alternatives, and questions with recommendations on architecture, UX, scope
-  and trade-offs), then stops and waits for the user's answers. Questions,
-  explicit commands, pointed-at one-liners and confirmations are exempt. Text
-  in `minor.ts`; see **Alignments**.
+  and trade-offs), then stops and waits for the user's answers; nothing is
+  built before it is confirmed. Explicit commands, pointed-at one-liners, a
+  user's "skip alignment" and a follow-up that plainly confirms (only an answer
+  to an existing card, or the go-ahead for a command to run) are exempt. Every reply opens
+  with a short part the user reads (the answer, what changed, what they must
+  decide, warnings and what went unchecked; about 80 words), and any working
+  detail goes after a line reading exactly `### Working notes`, which Sova
+  shows as a closed fold. Text in `minor.ts`; see **Alignments**.
 - **spec** — every behavior change is spec'd: the agent finds its roots in the
   project's `.sova/spec/` documentation with `map` and `where`, looks at their
   contents with `toc`, runs `impact --near` on what it will change, and `read`s
@@ -313,7 +335,10 @@ step's or technical note's `text`), `edit_question` (with Visuals, `visual`,
 decided, which must be reopened first), `accept_all`, `reopen`,
 `drop_question` and `drop_alignment` (each with a `reason`), `status`
 (`implementing`, `done`, back to `open`), `exempt` (alone, with a `reason`: a
-work request needs no alignment) and `get`. A field or op borrowed from
+work request needs no alignment), `change_request` (the change-request mark:
+touches no document, takes an optional `note`, alone or before the call's other
+ops; answered "Marked as a change request."; only the settle nudge reads it, under Careful) and
+`get`. A field or op borrowed from
 elsewhere gets a did-you-mean (`newText` → `text`, `why` → `reason`, op
 `delete` → `remove`, `create` with `fromFile` → `import`, a bare op without
 `{ops: [...]}`). The result is a compact echo of what is still open. Sessions
@@ -336,7 +361,9 @@ they are listed, and a recommendation that names an option by its label reads
   `/resume`, `/reload`, `/fork`, `/tree`, a rewind and a compaction all land on
   the right state with nothing else written.
 - **What the model sees** — the tool's description and guidelines (in pi's
-  tools section, so they survive a dropped mode section), the align prompt
+  tools section, so they survive a dropped mode section; they carry the shared
+  change-request sentence and never name an Eagerness, so switching it never
+  changes the tool set or restarts a Claude Code chat's CLI), the align prompt
   block, and a hidden `align-state` message on each user prompt listing the
   open alignments and their open questions, each with its lettered options. A
   compaction writes one more, right after its summary, that also lists their decided and dropped questions: a run
@@ -344,7 +371,11 @@ they are listed, and a recommendation that names an option by its label reads
   summary may state the alignments loosely. Nothing about alignments goes into
   the system prompt: a prompt change restarts a Claude Code session's CLI.
 - **No gate; one nudge** — nothing blocks edits or spawns while a question is
-  open. A run that is about to settle with no align call, whose final reply
+  open. A run that is about to settle with no align call, and, under Careful
+  only, that the agent marked as a change request (a `change_request` op, or
+  any align call naming an op other than `get`, refused or not; never guessed
+  from the prompt's or the reply's words; under Eager any run is judged, by the
+  Eagerness in effect when it settles), whose final reply without its `### Working notes` part
   reads like a plan asking the user to decide (`planSignal`: an old
   `## Alignment: <title>` block; a closing question that asks for a decision or a
   go-ahead, never a merge, push or restart confirmation, and not options offered
@@ -352,7 +383,7 @@ they are listed, and a recommendation that names an option by its label reads
   "Questions for you:"), gets one hidden
   `align-nudge` and one more request; never twice in a run. Only a successful
   align call that changed a document or recorded an exemption counts as recorded:
-  a refused call or a bare `get` does not.
+  a refused call, a bare `get` or the mark alone does not.
 - **Widget** — one line above the editor while align is on and an alignment is
   open: `◇ align · al_3 2/7 open · al_2 implementing · alt+a view`.
 - **Tool row** — the call as one dim line (`◇ align al_3 · decide q3 · → implementing`),
@@ -617,11 +648,22 @@ scoped `show_tour` for reviewed tours already attached to their conversation.
 ## Writing style and Visuals
 
 `~/.pi/agent/mode-align.json` (`align-settings.ts`, node builtins only) holds
-the align mode's writing style and Visuals; Sova's Settings → Alignment writes it:
+the align mode's Eagerness, writing style and Visuals; Sova's Settings → Alignment writes it:
 
 ```json
-{ "version": 1, "style": "pm", "visuals": true }
+{ "version": 1, "style": "pm", "visuals": true, "eagerness": "careful" }
 ```
+
+- `eagerness` is `careful` or absent (**Eager**, the default; `eager` written by
+  hand reads the same, anything else is malformed). The writer stores it only for
+  Careful, so an Eager file is byte for byte what an older device accepts (an
+  older device's strict parser refuses a Careful one). Only the block's trigger
+  paragraph and the settle nudge depend on it; it is re-read at every turn
+  boundary, and a later change reaches an open chat as one hidden `mode-note`
+  at its next run (`buildAlignEagernessNote`: the new trigger paragraph,
+  replacing the block's), possibly beside a style note; its details record the
+  Eagerness told and the head's, and a head built Careful is in its `mode-head`
+  record (`restoreHead`; none recorded: Eager).
 
 - `style` is `pm` (Project manager, the default: the fields the user reads
   describe only screens, controls, wording, states and flows, no code; technical
@@ -645,9 +687,9 @@ the align mode's writing style and Visuals; Sova's Settings → Alignment writes
   (`buildDelegateAlignBridge(true)`, `PLANNER_VISUALS_PARAGRAPH`), and the vis
   tools to the loadout even with vis off (`visToolsWanted`, the one rule Sova's
   `vis_check` follows too).
-- A subagent profile's optional `alignment` (`{style?, visuals?}`) overrides the
+- A subagent profile's optional `alignment` (`{eagerness?, style?, visuals?}`) overrides the
   file field by field for chats on it (`resolveAlign`).
-- Missing or malformed reads as Project manager with Visuals off; a head that
+- Missing or malformed reads as Project manager with Visuals off and Eager; a head that
   nothing records was still built in Technical (`restoreHead`), so an older
   chat rebuilds its head byte for byte and gets Project manager as one note; the strict parse
   (`parseAlignSettings`) refuses an unknown key or value, and the mesh checks
@@ -821,7 +863,7 @@ node --test index.test.ts     # pure state/prompt/minor/palette logic
 node --test delegate.test.ts  # the routing file: defaults, parsing, persistence, per-turn re-read
 node --test routing.test.ts   # primary → fallback → ask, discovery failure, policy
 node --test spec.test.ts      # the spec writer file: parsing, persistence, per-turn re-read
-node --test align-settings.test.ts # mode-align.json: strict parse, tolerant read, profile override, the paragraphs, the style note, visToolsWanted
+node --test align-settings.test.ts # mode-align.json: strict parse, tolerant read, profile override, the paragraphs, the trigger per Eagerness, the style and eagerness notes, visToolsWanted
 node --test align.test.ts     # alignments: ops, strict input and import, hints, fold, echo, note, nudge heuristic, legacy entries
 node --test review.test.ts    # adversarial review: the review and close_blocker ops, slots, guards, the record's normalization, the reviewer prompt
 node tests/smoke.mjs          # real index.ts against a fake pi host, no model requests
@@ -829,7 +871,7 @@ node tests/review-smoke.mjs   # the adversarial-review flag through index.ts: of
 node tests/wake-turn.mjs      # real pi session + scripted provider: same prompt whoever starts the turn
 node tests/note-turn.mjs      # real pi session + scripted provider: a minor toggle keeps the head; notes, reopen, compaction
 node tests/align-turn.mjs     # real pi session + scripted provider: the align tool, its hidden notes (per prompt, after a compaction) and the settle nudge
-node tests/style-turn.mjs     # real pi session + scripted provider: the writing style in the head, its one note, reopen; Visuals by flag and file
+node tests/style-turn.mjs     # real pi session + scripted provider: the writing style and Eagerness in the head, their one note each, reopen; Visuals by flag and file
 node --test spec-guard.test.ts # the census: digest, per tree (real Git + spec tools), failure once per cause, write guard, drift note, command detection
 node tests/spec-turn.mjs      # real pi session + scripted provider: census digest, forbidden writes, drift note, no turn-end check, mode:state
 node tests/spec-worker.mjs    # real pi session loading only spec-worker.ts (a pi worker's -e): the census digest; no turn-end check, no ledger

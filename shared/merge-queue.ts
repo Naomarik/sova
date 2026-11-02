@@ -342,6 +342,15 @@ export interface MergeReady {
   ahead: number;
 }
 
+/** SessionWorktreeInfo.mergeStats: the branch against the target, for the row's "N commits · +a −r". */
+export interface WorktreeMergeStats {
+  /** Commits the target hasn't. */
+  ahead: number;
+  /** Lines added and removed, the branch's side only (target...branch). */
+  added: number;
+  removed: number;
+}
+
 /** SessionWorktreeInfo.mergeProject: the project a worktree lands into, whatever its entry. */
 export interface WorktreeMergeProject {
   /** The registered project's id. */

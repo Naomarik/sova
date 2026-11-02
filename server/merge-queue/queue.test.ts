@@ -892,7 +892,7 @@ describe("setting up the checks", () => {
       assert.equal(r.run!.verdict, "running");
       await q.tryingNow();
       const input = k.run.inputs[0]!;
-      assert.equal(input.tryOnly, true);
+      assert.equal(input.tryOnly, true, "nothing merged");
       assert.equal(input.base, before);
       assert.deepEqual((input.project.def!.merge!.checks as { id: string; label: string; run: string[]; timeout: number }[]).map((c) => [c.id, c.label, c.run, c.timeout]), [
         ["unit-tests", "Unit tests", ["sh", "-c", "npm test"], 360],
@@ -905,6 +905,23 @@ describe("setting up the checks", () => {
       const r2 = await q.setup({ command: "npm test", dryRun: true });
       await q.tryingNow();
       assert.match(q.store.readRun(r2.run!.id)!.why!, /fails on master itself, so it is the project's setup to fix, not any branch's/);
+
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("Try It on Main never runs beside a landing run in the same copy", async () => {
+    const k = makeKit();
+    try {
+      k.repo.commitOn(k.repo.root, { ".sova/project.json": DEF_TEXT }, "definition");
+      const q = await k.q();
+      k.run.set((inp) => untilAborted(inp));
+      k.repo.branch("feat/x", { "x.txt": "x\n" });
+      const { entry } = await q.add({ branch: "feat/x", by: "land-button" });
+      await until(() => q.currentRun(), "a run");
+      await assert.rejects(q.setup({ command: "npm test", dryRun: true }), (e: unknown) => e instanceof MergeFailure && e.code === "busy");
+      await q.cancel(entry.id);
     } finally {
       await k.done();
     }

@@ -11096,12 +11096,12 @@
       ]
     },
     "project-verbs:session": {
-      "bytes": 5073,
+      "bytes": 6751,
       "tools": [
         {
           "name": "project_verbs",
           "label": "Project verbs",
-          "description": "Run this project's services for your own worktree through Sova: never start servers by hand (no nohup/setsid loops), use up/apply/logs here. You may create/up/down/apply/test instances of your own worktrees (never the main checkout), reset or teardown instances you created, and read status/logs/doctor or conform for your project. Run tests with test {select: [...]} rather than by hand: it runs in your instance, against its own ports and data. Verbs over the project's .sova/project.json, each answering one JSON result (ok, changed, state, steps, services, data, error {code, message}). create (a worktree's instance: slot, ports, data, setup), up (start and wait until ready; creates first), down (stop; keeps data), apply (build + reload each running service, wait until ready), status, logs, doctor (preflight), reset (fresh data), teardown (the only destructive verb: stops, deletes its data, removes a worktree Sova cut; never the branch), conform (Sova's conformance suite in two scratch copies), test (runs the project's test command in that instance, starting what it requires; tests {pass, passed, failed, failures…}; error tests-failed when it did not pass, unsupported when the project declares none). share {instance, endpoint, days?} gives a running copy a preview link to one endpoint the definition lists in share.endpoints (never anything else; never a copy whose data is sensitive); the result names the link by its id, never its URL, which only the operator sees. revoke {link} or {instance, endpoint?} ends links at once (never held). Teardown ends every link of its copy, and down of a copy with an active link is the operator's (needs-confirm). Error busy: another verb is running on that instance; try again later. Deploy (a target of the definition's deploy section, never an instance): deploy.status {target?} (each target's standing, last deploy and history) and deploy.logs {target | deploy} read; deploy.check {ref?} proves a recipe offline (programs, host values, credentials by presence; runs nothing). You never ship and never ask for a deploy: deploy.plan, deploy.run, deploy.rollback and deploy.request answer forbidden; say it in your report.",
+          "description": "Run this project's services for your own worktree through Sova: never start servers by hand (no nohup/setsid loops), use up/apply/logs here. You may create/up/down/apply/test instances of your own worktrees (never the main checkout), reset or teardown instances you created, and read status/logs/doctor or conform for your project. Run tests with test {select: [...]} rather than by hand: it runs in your instance, against its own ports and data. merge.status / merge.logs read this project's merge queue; the project's merge thread and a run's reviewer use the other merge verbs their instructions name. Verbs over the project's .sova/project.json, each answering one JSON result (ok, changed, state, steps, services, data, error {code, message}). create (a worktree's instance: slot, ports, data, setup), up (start and wait until ready; creates first), down (stop; keeps data), apply (build + reload each running service, wait until ready), status, logs, doctor (preflight), reset (fresh data), teardown (the only destructive verb: stops, deletes its data, removes a worktree Sova cut; never the branch), conform (Sova's conformance suite in two scratch copies), test (runs the project's test command in that instance, starting what it requires; tests {pass, passed, failed, failures…}; error tests-failed when it did not pass, unsupported when the project declares none). share {instance, endpoint, days?} gives a running copy a preview link to one endpoint the definition lists in share.endpoints (never anything else; never a copy whose data is sensitive); the result names the link by its id, never its URL, which only the operator sees. revoke {link} or {instance, endpoint?} ends links at once (never held). Teardown ends every link of its copy, and down of a copy with an active link is the operator's (needs-confirm). Error busy: another verb is running on that instance; try again later. Deploy (a target of the definition's deploy section, never an instance): deploy.status {target?} (each target's standing, last deploy and history) and deploy.logs {target | deploy} read; deploy.check {ref?} proves a recipe offline (programs, host values, credentials by presence; runs nothing). You never ship and never ask for a deploy: deploy.plan, deploy.run, deploy.rollback and deploy.request answer forbidden; say it in your report.",
           "promptSnippet": "run, reload, inspect and tear down your own worktree's running copy of the project (up, apply, logs, status…)",
           "parameters": {
             "type": "object",
@@ -11128,7 +11128,20 @@
                   "deploy.status",
                   "deploy.logs",
                   "deploy.rollback",
-                  "deploy.request"
+                  "deploy.request",
+                  "merge.status",
+                  "merge.logs",
+                  "merge.add",
+                  "merge.cancel",
+                  "merge.pause",
+                  "merge.resume",
+                  "merge.note",
+                  "merge.extend",
+                  "merge.resolve",
+                  "merge.answer",
+                  "merge.review",
+                  "merge.retry",
+                  "merge.setup"
                 ],
                 "description": "The verb."
               },
@@ -11225,6 +11238,56 @@
               "why": {
                 "type": "string",
                 "description": "deploy.request (and onboard): why, one line for the operator."
+              },
+              "entry": {
+                "type": "string",
+                "description": "merge.*: a queue entry, by its id (mq_…; merge.status lists them)."
+              },
+              "run": {
+                "type": "string",
+                "description": "merge.logs/merge.review: a run, by its id (mr_…)."
+              },
+              "step": {
+                "type": "string",
+                "description": "merge.logs: one step of the run, by its id (default every step's tail)."
+              },
+              "note": {
+                "type": "string",
+                "description": "merge.note (and every merge verb the merge thread calls): the entry's note, short free text shown on its row (at most 300 characters; empty clears it)."
+              },
+              "checks": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "merge.extend: check ids from the project's merge section to add to this entry's run (never removes one)."
+              },
+              "verdict": {
+                "type": "string",
+                "description": "merge.resolve: no-behaviour-change | behaviour-differs; merge.review: ok | notes | blocking."
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "merge.resolve: the conflicted files the judgement covers."
+              },
+              "ours": {
+                "type": "string",
+                "description": "merge.resolve: what the target's side does, in plain words."
+              },
+              "theirs": {
+                "type": "string",
+                "description": "merge.resolve: what the branch's side does, in plain words."
+              },
+              "proposal": {
+                "type": "string",
+                "description": "merge.resolve: what the resolution does, in plain words."
+              },
+              "text": {
+                "type": "string",
+                "description": "merge.review: the reviewer's notes, short."
               }
             },
             "required": [

@@ -191,3 +191,19 @@ describe("what the branch's chat is told", () => {
 });
 
 void writeFileSync;
+
+describe("the worktree row's numbers", () => {
+  test("commits ahead and lines +/− of the branch's side, against the target's head", async () => {
+    const { statsOf } = await import("./wire");
+    const repo = makeRepo({ prefix: "mq-stats-" });
+    try {
+      const b = repo.branch("feat/s", { "n.txt": "1\n2\n3\n" });
+      repo.commitOn(b.path, { "a.txt": "one\n" }, "second");
+      repo.commitOn(repo.root, { "m.txt": "master only\n" }, "on master");
+      assert.deepEqual(await statsOf(repo.root, repo.head(), "feat/s"), { ahead: 2, added: 3, removed: 2 });
+      assert.equal(await statsOf(repo.root, repo.head(), "feat/none"), null);
+    } finally {
+      repo.done();
+    }
+  });
+});

@@ -3355,6 +3355,9 @@ export interface SessionWorktreeInfo {
   /** The merge queue of its project (a registered project's), entry or not: Land, Set Up and View Merge Queue read
       it. Additive. */
   mergeProject?: import("./merge-queue").WorktreeMergeProject;
+  /** Its branch against the project's merge target (commits ahead, lines +/−), for a registered project's worktree.
+      Additive. */
+  mergeStats?: import("./merge-queue").WorktreeMergeStats;
 }
 
 // ---------------------------------------------------------------------------

@@ -2,12 +2,13 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LANDING_FILE_NAME } from "../../pi-config/extensions/worktrees/landing.ts";
 import { stateRoot } from "../state-root";
-import type { MergeQueueView, WorktreeMergeProject, WorktreeQueueInfo } from "../../shared/merge-queue";
+import type { MergeQueueView, WorktreeMergeProject, WorktreeMergeStats, WorktreeQueueInfo } from "../../shared/merge-queue";
 import type { RunMerge, ThreadEvent, WakeThread } from "./contract";
 import { startIngest } from "./ingest";
 import { notifier } from "./notices";
 import { MergeQueues } from "./queue";
 import { merger, recordedRoots } from "./routes";
+import { countBetween, realGit, revParse } from "./guard";
 import { engineServices, makeRunMerge } from "./run";
 import { worktreeQueueInfo } from "./view";
 
@@ -18,10 +19,11 @@ import { worktreeQueueInfo } from "./view";
  */
 
 let queues: MergeQueues | null = null;
-let rowsOf: ((path: string, branch: string) => Promise<{ queue?: WorktreeQueueInfo; mergeProject?: WorktreeMergeProject }>) | null = null;
+type RowFields = { queue?: WorktreeQueueInfo; mergeProject?: WorktreeMergeProject; mergeStats?: WorktreeMergeStats };
+let rowsOf: ((path: string, branch: string) => Promise<RowFields>) | null = null;
 
 /** A worktree row's queue fields (SessionWorktreeInfo.queue / mergeProject): only for a registered project's repo. */
-export async function worktreeQueueOf(path: string, branch: string): Promise<{ queue?: WorktreeQueueInfo; mergeProject?: WorktreeMergeProject }> {
+export async function worktreeQueueOf(path: string, branch: string): Promise<RowFields> {
   if (!rowsOf) return {};
   try {
     return await rowsOf(path, branch);
@@ -41,6 +43,24 @@ export function pokeMergeIngest(): void {
 }
 
 /** `request`: Sova's own routes in-process (app.request), for the merge thread's and the reviewer's chats. */
+const statsCache = new Map<string, WorktreeMergeStats | null>();
+/** The branch against the target: commits ahead and lines +/−, cached per (target head, branch head). */
+export async function statsOf(root: string, targetHead: string, branch: string): Promise<WorktreeMergeStats | null> {
+  if (!targetHead) return null;
+  const head = await revParse(realGit, root, `refs/heads/${branch}`);
+  if (!head) return null;
+  const key = `${root}\0${targetHead}\0${head}`;
+  if (statsCache.has(key)) return statsCache.get(key)!;
+  const ahead = await countBetween(realGit, root, targetHead, head);
+  const short = await realGit(["diff", "--shortstat", `${targetHead}...${head}`], root);
+  const added = Number(/(\d+) insertion/.exec(short.stdout)?.[1] ?? 0);
+  const removed = Number(/(\d+) deletion/.exec(short.stdout)?.[1] ?? 0);
+  const out = short.code === 0 ? { ahead, added, removed } : null;
+  if (statsCache.size > 500) statsCache.clear();
+  statsCache.set(key, out);
+  return out;
+}
+
 export async function startMergeQueue(opts: { request?: (path: string, init?: RequestInit) => Response | Promise<Response> } = {}): Promise<void> {
   if (queues) return;
   const base = join(stateRoot(), "merge-queue");
@@ -128,7 +148,8 @@ export async function startMergeQueue(opts: { request?: (path: string, init?: Re
     if (!id) return {};
     const v = await (await q.get(p.root)).cachedView();
     const queue = worktreeQueueInfo(v, branch);
-    return { ...(queue ? { queue } : {}), mergeProject: { id, root: p.root, target: v.target, checks: v.checks, review: v.review, ...(v.paused ? { paused: v.paused.why } : {}) } };
+    const stats = await statsOf(p.root, v.heads.target, branch);
+    return { ...(queue ? { queue } : {}), mergeProject: { id, root: p.root, target: v.target, checks: v.checks, review: v.review, ...(v.paused ? { paused: v.paused.why } : {}) }, ...(stats ? { mergeStats: stats } : {}) };
   };
   for (const root of recordedRoots(base)) void q.get(root).catch((err) => console.warn(`[merge-queue] ${root}: ${err instanceof Error ? err.message : err}`));
   ingest = startIngest({

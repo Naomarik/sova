@@ -213,6 +213,13 @@ async function assertParity(label: string, opts: { full?: boolean } = {}): Promi
   const diffs = f.map((s) => ({ path: s.path, diff: fieldDiff(s, byPath.get(s.path)!) })).filter((d) => Object.keys(d.diff).length);
   assert.deepEqual(diffs, [], `${label}: every row equal`);
   assert.deepEqual(f, o, `${label}: same order`);
+  // Every other caller (GET /api/sessions, session.list, the session_list tool, the Overseer, mesh
+  // peers through GET) lists with listSessions, a full pass over the new readers: the same rows too.
+  sessionsChanged(); // past its one-second reuse window, as a later caller would be
+  const fullNew = tieStable(await NEW.listSessions());
+  const fullDiffs = fullNew.map((s) => ({ path: s.path, diff: byPath.has(s.path) ? fieldDiff(s, byPath.get(s.path)!) : { row: { new: "present", old: "absent" } } })).filter((d) => Object.keys(d.diff).length);
+  assert.deepEqual(fullDiffs, [], `${label}: listSessions (full) rows equal the old build's`);
+  assert.deepEqual(fullNew, o, `${label}: listSessions (full) equals the old build`);
   const from = { old: heardEvents.old.length, new: heardEvents.new.length };
   hubs.old.seeList(old);
   hubs.new.seeList(fresh);

@@ -211,6 +211,16 @@ describe("master guard and the live tree", () => {
     assert.equal(v.state === "paused" ? `paused: ${v.paused?.why}` : "landed", "landed", `after a stop mid-cut: ${s.state}`);
   });
 
+  test("S8d: a merge copy left without its marker (Sova stopped between `git worktree add` and the marker write) is the queue's own: the next run reuses it, never pauses on it", async () => {
+    const { fx, h } = await setup();
+    // Exactly what that stop leaves: a detached worktree of the project at the copy's path, no marker in its git dir.
+    git(fx.project, ["worktree", "add", "-q", "--detach", mergeCopyOf(fx), fx.head()]);
+    const b = fx.branch("b", { "b.txt": "b\n" });
+    const e = await h.add({ branch: b.branch });
+    const v = await h.waitView((v) => v.state === "paused" || v.recent.some((r) => r.entry.id === e.id), "landed or paused", 60_000);
+    assert.equal(v.state === "paused" ? `paused: ${v.paused?.why}` : "landed", "landed");
+  });
+
   test("S20: push refused (origin moved past master): landed, not pushed, never forced; the reason on the strip", async () => {
     const { fx, h } = await setup();
     const other = join(fx.root, "other");

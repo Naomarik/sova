@@ -25,7 +25,7 @@ const settingsFile = join(agent, "sova", "merge-queue", "k0", "names.json");
 
 // Placeholders only: every value here is made up.
 const OWNER = "octo-owner";
-const V: Record<string, string> = {
+const V = {
   tsSelf: "zephyr-box",
   tsPeer: "quokka-node",
   tailnet: "tail0000.ts.net",
@@ -42,7 +42,7 @@ const V: Record<string, string> = {
   envHost: "vps-marmot.test",
   envIp: "100.64.0.77",
   hostId: "h_abcd1234",
-};
+} as const;
 
 // A word in more tracked files than the threshold (too common to block on), and one in 7 (listed, capped at 5 files).
 const COMMON = "zorbaword";
@@ -118,7 +118,7 @@ const discover = (argv: string[] = [], bin = tsOk) =>
 const settings = () => JSON.parse(readFileSync(settingsFile, "utf8"));
 const lower = (names: string[]) => names.map((n) => n.toLowerCase());
 const assertNoValues = (out: string) => {
-  for (const v of [...Object.values(V), OWNER, COMMON, MANY]) assert.ok(!out.toLowerCase().includes(v.toLowerCase()), `the output never names a value (${Object.keys(V).find((k) => V[k] === v) ?? "owner"})`);
+  for (const v of [...Object.values(V), OWNER, COMMON, MANY]) assert.ok(!out.toLowerCase().includes(v.toLowerCase()), `the output never names a value (${(Object.keys(V) as (keyof typeof V)[]).find((k) => V[k] === v) ?? "owner"})`);
 };
 
 test("a dry run writes nothing and prints kinds and counts only", () => {
@@ -137,7 +137,7 @@ test("writes the list at 0600, drops public, generic and short terms, and flags 
   assert.equal(statSync(settingsFile).mode & 0o777, 0o600);
   const s = settings();
   const names = lower(s.privateNames);
-  for (const v of Object.values(V)) assert.ok(names.includes(v.toLowerCase()), `found ${Object.keys(V).find((k) => V[k] === v)}`);
+  for (const v of Object.values(V)) assert.ok(names.includes(v.toLowerCase()), `found ${(Object.keys(V) as (keyof typeof V)[]).find((k) => V[k] === v)}`);
   assert.ok(names.includes("tail0000") && names.includes("fd7a:115c:a1e0::9") && names.includes("opsdeploy"), "tailnet label, IPv6 and a user@ part");
   for (const gone of [OWNER, "abc", "self", "vps", "tailscaled", "4801", "user@100.64.0.2", "100.64.0.2", "home", "local"]) assert.ok(!names.includes(gone), `dropped: ${gone}`);
   assert.equal(s.restartUnit, undefined);
@@ -192,7 +192,7 @@ test("a name of yours that is too common is kept with a masked warning, and warn
   assert.ok(i >= 0, "the user's own name is kept");
   assert.match(r.stdout, /^Too common to block on \(in more than 10 tracked files on origin\/master\)/m);
   assert.match(r.stdout, new RegExp(`^- word #${i + 1} \\(yours\\): 12 files$`, "m"));
-  assert.ok(!new RegExp(`- word #${i + 1}:`).test(r.stdout.split("Too common")[0]), "not listed under Already public");
+  assert.ok(!new RegExp(`- word #${i + 1}:`).test(r.stdout.split("Too common")[0] ?? ""), "not listed under Already public");
   const again = discover();
   assert.equal(again.status, 0, again.stderr);
   assert.ok(settings().privateNames.includes(COMMON), "never removed");
